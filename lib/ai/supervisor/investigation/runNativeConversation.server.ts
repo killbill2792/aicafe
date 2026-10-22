@@ -224,8 +224,8 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    const status=complete?"verified":
      hadUnavailable&&!structured.evidence.length?"unavailable":
      structured.evidence.length||conditional.length||prose.text?"partial":"unavailable";
-   return {intent:"unknown",status:requestedStatus==="unavailable"&&
-     !structured.evidence.length&&!prose.text?"unavailable":status,
+   return {intent:"unknown",status:requestedStatus==="unavailable"?
+     structured.evidence.length?"partial":"unavailable":status,
      evidence:structured.evidence,blocks:blocks.slice(0,30),investigationMemory:memoryState()};
  };
  const addFacts=(observation:Observation)=>{
@@ -658,5 +658,5 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
     modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
  }
  if(!(await sourceStillCurrent()))return {reply:staleReply(),usage};
- return {reply:reply(copy.fallback,[...facts.keys()].slice(-8)),usage};
+ return {reply:reply(copy.fallback,[...facts.keys()].slice(-8),"unavailable"),usage};
 }
