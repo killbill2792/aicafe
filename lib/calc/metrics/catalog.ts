@@ -49,6 +49,7 @@ export type MetricDailyInput = {
   laborCoverageVerified?:boolean;
   itemRevenueVerified?:boolean;
   attendanceCoverageVerified?:boolean;
+  attendanceSources?:string[];
 };
 type Definition = {
   key: MetricKey; unit: MetricUnit;

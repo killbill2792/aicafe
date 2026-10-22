@@ -243,7 +243,7 @@ export async function readMetricDay(businessId:string,date:string,
     const [orders,timecards,timezone]=await Promise.all([
       db.from("orders").select("closed_at,net_sales_cents").eq("business_id",businessId)
         .eq("business_date",date).limit(1001),
-      db.from("timecards").select("clock_in,clock_out,hourly_wage_cents,breaks")
+      db.from("timecards").select("clock_in,clock_out,hourly_wage_cents,breaks,source_type,source_provider")
         .eq("business_id",businessId)
         .gte("clock_in",new Date(Date.parse(date+"T00:00:00Z")-86400000).toISOString())
         .lt("clock_in",new Date(Date.parse(date+"T00:00:00Z")+172800000).toISOString()).limit(1001),
@@ -255,8 +255,13 @@ export async function readMetricDay(businessId:string,date:string,
       input.timecards=(timecards.data??[]).map(t=>({
         clockIn:t.clock_in,clockOut:t.clock_out,hourlyWageCents:Number(t.hourly_wage_cents),
         breaks:Array.isArray(t.breaks)?t.breaks as Timecard["breaks"]:[],
+        sourceType:t.source_type,sourceProvider:t.source_provider,
       }));
       input.timezone=timezone.data?.timezone;
+      // Presence of timecards (even imported ones) is not a completeness
+      // certificate for ALL paid attendance. owner_schedule is only a plan.
+      input.attendanceSources=[...new Set((timecards.data??[]).map(t=>t.source_type))];
+      input.attendanceCoverageVerified=false;
     }
   }
   const needed=new Set(opts.ingredientIds);

@@ -49,6 +49,14 @@ describe("M1 typed metric catalog",()=>{
     expect(computeMetric("item_revenue",{itemId}, {...recorded,itemRevenueVerified:false}).coverage).toBe(0);
     expect(computeMetric("sales_per_labor_hour",{fromHour:10,toHour:11},{...recorded,attendanceCoverageVerified:false}).value).toBeNull();
   });
+  it("never promotes owner schedules or partially imported timecards to confirmed attendance",()=>{
+    const schedule={...recorded,attendanceCoverageVerified:false,
+      attendanceSources:["owner_schedule"]};
+    expect(computeMetric("sales_per_labor_hour",{fromHour:10,toHour:12},schedule).coverage).toBe(0);
+    const partial={...recorded,attendanceCoverageVerified:false,
+      attendanceSources:["connected_pos","imported"]};
+    expect(computeMetric("sales_per_labor_hour",{fromHour:10,toHour:12},partial).value).toBeNull();
+  });
   it("rejects malformed hour range and reports labor-hour gaps",()=>{
     expect(()=>computeMetric("sales_per_labor_hour",{fromHour:18,toHour:9},recorded)).toThrow();
     const result=computeMetric("sales_per_labor_hour",{fromHour:9,toHour:10},recorded);
