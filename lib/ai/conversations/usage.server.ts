@@ -75,22 +75,28 @@ export async function recordSupervisorUsage(params: {
  */
 /** Owner-scoped ledger gate before launching a billable agent turn.
  * Uses existing RLS-protected usage records; no migration is needed.
- * The beta cap counts model calls per owner and UTC day, including retries.
+ * The beta cap counts model calls per owner and UTC attempt day, including retries.
  */
-export const MAX_OWNER_AGENT_TURNS_PER_DAY = 100;
+export const MAX_OWNER_MODEL_CALLS_PER_DAY = 600;
+export function ownerModelCallsLimit(value = process.env.AI_OWNER_MAX_MODEL_CALLS_PER_DAY): number {
+  if (value === undefined || value.trim() === "") return MAX_OWNER_MODEL_CALLS_PER_DAY;
+  const limit = Number(value);
+  return /^\d+$/.test(value) && Number.isSafeInteger(limit) && limit > 0
+    ? limit : MAX_OWNER_MODEL_CALLS_PER_DAY;
+}
 export async function assertOwnerAgentTurnAvailable(scope: ConversationScope): Promise<void> {
   const session = await createServerSupabaseClient();
-  const todayUtc = new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
+  const todayUtc = new Date().toISOString().slice(0, 10);
   const { data, error } = await session.from("ai_usage_events")
     .select("model_call_count")
     .eq("business_id", scope.businessId)
     .eq("owner_user_id", scope.ownerUserId)
-    .gte("created_at", todayUtc);
+    .eq("attempt_day", todayUtc);
   if (error || !data) throw new ConversationApiError(503, "usage_unavailable");
   // The ledger upserts repeated attempts under a single owner-message ID;
   // model-call totals still include every retry (including failed answers).
   const calls = data.reduce((total, entry) => total + entry.model_call_count, 0);
-  if (calls >= MAX_OWNER_AGENT_TURNS_PER_DAY)
+  if (calls >= ownerModelCallsLimit())
     throw new ConversationApiError(429, "owner_usage_limit_reached");
 }
 
