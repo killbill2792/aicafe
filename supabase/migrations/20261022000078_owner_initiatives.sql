@@ -409,7 +409,9 @@ begin
   select i.business_id,i.owner_user_id into b,u from owner_initiatives i
     where i.id=p_initiative_id and i.monitor_lease_token=p_token
       and i.monitor_lease_until>now() and i.evidence_revision=p_evidence_revision
-      and i.status='active' for update of i;
+      and i.status='active' and exists(select 1 from memberships m
+        where m.business_id=i.business_id and m.user_id=i.owner_user_id
+          and m.role='owner') for update of i;
   if not found then return 'stale'; end if;
   if p_row->>'business_id' is distinct from b::text or
      p_row->>'owner_user_id' is distinct from u::text or

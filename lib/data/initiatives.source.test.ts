@@ -126,6 +126,7 @@ describe("M1 canonical item evidence reader",()=>{
     });
     expect(day.salesTotalCoverageVerified).toBe(false);
     expect(computeMetric("net_sales",{},day).coverage).toBe(0);
+    expect(computeMetric("net_sales",{},day).invalidatesPrevious).toBe(true);
     expect(computeMetric("orders",{},day).value).toBeNull();
   });
   it("retains proven aggregate-only sales without inventing ticket counts",async()=>{

@@ -148,7 +148,17 @@ export const metricCatalog: Record<MetricKey, Definition> = {
     return raw!==undefined&&Number.isSafeInteger(raw)&&raw>=0?known(raw):missing("ingredientPrice",Boolean(d.ingredientPriceMicros));
   }},
 };
+const dependsOnSales=new Set<MetricKey>(["net_sales","orders","avg_ticket",
+  "item_units","item_revenue","item_margin","cogs_pct","labor_pct",
+  "sales_per_labor_hour","operating_margin","net_profit"]);
 export function computeMetric(key: MetricKey,params: MetricParams,day: MetricDailyInput): MetricResult {
   const entry=metricCatalog[key];
-  return entry.compute(day,entry.paramsSchema.parse(params));
+  const result=entry.compute(day,entry.paramsSchema.parse(params));
+  // The exact SQL source proof can contradict yesterday's rollup after a POS
+  // correction. A previously verified sales-derived observation must then be
+  // invalidated, rather than preserved by the monotone-coverage writer.
+  if(result.coverage<1 && day.facts?.salesDataStatus==="actual"&&
+    day.salesTotalCoverageVerified===false&&dependsOnSales.has(key))
+    return {...result,invalidatesPrevious:true};
+  return result;
 }
