@@ -28,7 +28,10 @@ jobs:
         run: npm install --no-save --package-lock=false playwright@1.58.2
       - name: Start staff fixture server
         run: |
-          npm run dev -- --hostname 127.0.0.1 > /tmp/staff-pr155-next.log 2>&1 &
+          # Next 16 defaults to Turbopack dev; its internal Google-font module
+          # can intermittently fail resolution on ephemeral GitHub runners.
+          # The screenshot fixture runs in Webpack mode only; production build is unchanged.
+          npm run dev -- --webpack --hostname 127.0.0.1 > /tmp/staff-pr155-next.log 2>&1 &
           for i in $(seq 1 90); do
             if curl -fsS 'http://127.0.0.1:3000/en/staff?fixture=1&week=2026-10-26' >/dev/null; then break; fi
             sleep 2

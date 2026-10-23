@@ -15,6 +15,8 @@ const shape={
  min_shift_enabled:z.boolean(),min_shift_minutes:z.number().int().min(0).max(1440),
  min_rest_enabled:z.boolean(),min_rest_minutes:z.number().int().min(0).max(1440),
  coverage_enabled:z.boolean(),min_headcount:z.number().int().min(1).max(30),
+ prep_minutes_before_open:z.number().int().min(0).max(240),
+ prep_minutes_after_close:z.number().int().min(0).max(240),
 };
 const teamRulePatch=z.strictObject(Object.fromEntries(Object.entries(shape).map(([k,v])=>[k,v.optional()])) as {[K in keyof typeof shape]:z.ZodOptional<(typeof shape)[K]>});
 const ruleKeys=Object.keys(shape) as (keyof typeof shape)[];

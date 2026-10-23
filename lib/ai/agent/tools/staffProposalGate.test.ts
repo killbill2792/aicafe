@@ -7,10 +7,10 @@ const gated=[
  "propose_rule_change","propose_send_schedule"
 ];
 describe("staff approval gate",()=>{
- it("does not expose a write proposal without a staff approval endpoint",()=>{
+ it("registers staff proposals only through the shared approval engine",()=>{
   const defined=new Set(agentToolDefinitions.map(d=>d.name));
   expect(defined.has("propose_price_change")).toBe(true);
-  expect(gated.filter(name=>defined.has(name))).toEqual([]);
+  expect(gated.filter(name=>defined.has(name))).toEqual(gated);
  });
  it("keeps registered scheduling tools read-only",()=>{
   for(const name of ["get_team","get_week_schedule","get_labor_rules","get_coverage_gaps","get_shift_cost"]){

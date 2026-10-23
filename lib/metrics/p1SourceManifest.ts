@@ -12,6 +12,18 @@ import type { SupportedId } from "./p1Catalog";
 type Surface = {capabilities:readonly SupportedId[]} |
   {restricted:string};
 export const SOURCE_SURFACES = {
+  "lib/data/staffProposalSources.server.ts":{
+    readStaffProposalToken:{restricted:"Owner-authenticated staff source revision token for proposal CAS, not a model-readable source"},
+    readStaffProposalSources:{restricted:"Owner and cafe scoped private staff schedule and availability reader for inert approval previews"},
+  },
+  "lib/data/ownerScheduleDelivery.server.ts":{
+    DeliveryReadError:{restricted:"Private error code for owner-only messaging handoff, not a model source"},
+    scheduleDeliveryContext:{restricted:"Owner membership and current café identity guard, not an agent-readable capability"},
+    readApprovedScheduleDelivery:{restricted:"Owner-only approved schedule and private recipient contact read, never a P1 metric"},
+    markOwnerScheduleDelivery:{restricted:"Server-authorized write of owner-composer tap to the private ledger, not model-callable"},
+    updateScheduleChannelPreference:{restricted:"Explicit owner-staff preferred channel change, never a model action"},
+    updateScheduleWhatsAppConsent:{restricted:"Explicit owner-attested staff WhatsApp opt-in change, never a model action"},
+  },
   "lib/data/usageVariance.server.ts":{
     readUsageBusinessDate:{restricted:"Owner-scoped cafe timezone for stock and reporting date defaults"},
     readUsageVariance:{restricted:"Owner-bound expected/actual usage reconciliation, not a generic P1 source"},
