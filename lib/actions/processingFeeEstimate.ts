@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { FeeCoverageDay } from "@/lib/data/processingFeeDefaults";
+import type { FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
