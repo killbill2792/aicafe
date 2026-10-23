@@ -1,3 +1,4 @@
+import type { UsageRow } from "@/lib/calc/usageVariance";
 import type { SchedulingDraftInputs } from "@/lib/calc/scheduling/draftWeek";
 import type { OpenHours } from "@/lib/business/openHours";
 import type { CafeStateService } from "@/lib/operating/cafeState";
@@ -12,7 +13,7 @@ import type { MonthlyBills, RecordedExpenses, SoldProduct, ItemSalesCoverage } f
 
 /** A read-only, evidence-carrying allow-list. The AI never receives a raw DB client. */
 export interface CafeToolset {
- getUsageVariance(businessId:string,input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}):Promise<any>;
+ getUsageVariance(businessId:string,input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null}>;
   getSchedulingDraftInputs(businessId:string):Promise<KnownSlice<SchedulingDraftInputs>>;
   getCafeSummary(businessId: string): ReturnType<CafeStateService["getCurrentState"]>;
   getProfitability(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafePeriodProfitability>>;
