@@ -97,6 +97,14 @@
     "salesCoverageMonth": "Sales data available for {actual} of {expected} days this month."
   },
   "AddCost": {
+    "backspace": "Backspace",
+    "statementAddMissingLine": "Add a missing line",
+    "statementMissingLineHint": "Enter the missing transaction details below.",
+    "statementMissingDescription": "Description",
+    "statementMissingAmount": "Amount",
+    "statementMissingDate": "Date",
+    "statementMissingCategory": "Category",
+    "statementMissingConfirm": "Add line",
     "title": "Add a cost",
     "placeholder": "Photo of receipt, bank statement upload, voice entry and manual entry are coming in the next milestone.",
     "optionPhoto": "Photo of receipt",
@@ -150,6 +158,12 @@
     "other": "Other"
   },
   "Bills": {
+    "amountHint": "Changes each month? Enter an average",
+    "dueDayOptional": "(optional)",
+    "missing": "Missing",
+    "confirmRemove": "Remove this bill?",
+    "saveError": "Could not save the bill.",
+    "variableCostHint": "Costs that change every month go in Money › Add cost",
     "title": "Monthly bills",
     "subtitle": "Entered once, used every month",
     "amountLabel": "Monthly amount",
