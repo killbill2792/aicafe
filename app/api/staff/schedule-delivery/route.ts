@@ -1,7 +1,7 @@
 import {NextResponse} from "next/server";
 import {z} from "zod";
 import {requireSameOrigin,readBoundedJson} from "@/lib/ai/conversations/http.server";
-import {DeliveryReadError,readApprovedScheduleDelivery,markOwnerScheduleDelivery,updateScheduleChannelPreference} from "@/lib/data/ownerScheduleDelivery.server";
+import {DeliveryReadError,readApprovedScheduleDelivery,markOwnerScheduleDelivery,updateScheduleChannelPreference,updateScheduleWhatsAppConsent} from "@/lib/data/ownerScheduleDelivery.server";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const locale=z.enum(["en","es","ar"]);
 const fail=(error:unknown)=>{
@@ -28,7 +28,9 @@ export async function POST(request:Request){
 export async function PATCH(request:Request){
  try{
   requireSameOrigin(request);
-  const result=await updateScheduleChannelPreference(await readBoundedJson(request));
+  const data=await readBoundedJson(request) as Record<string,unknown>;
+  const result=Object.hasOwn(data,"whatsappOptIn")
+    ? await updateScheduleWhatsAppConsent(data) : await updateScheduleChannelPreference(data);
   return NextResponse.json(result,{headers:{"Cache-Control":"no-store"}});
  }catch(error){return fail(error);}
 }

@@ -2694,7 +2694,9 @@
     "overlapWarning": "تعارض مع مناوبة أخرى",
     "prepareScheduleMessages": "تحضير رسائل الجدول",
     "scheduleNotSent": "لم تُرسل. انسخ هذه الرسائل وشاركها يدويًا.",
-    "inactivePerson": "غير نشط"
+    "inactivePerson": "غير نشط",
+    "deliveryConsent": "وافق الموظف على تلقي الجداول عبر واتساب",
+    "deliveryConsentError": "تعذر حفظ الموافقة على واتساب."
   },
   "OwnerScheduleDelivery": {
     "heading": "إرسال الجداول المعتمدة",

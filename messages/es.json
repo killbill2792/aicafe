@@ -2694,7 +2694,9 @@
     "overlapWarning": "Se superpone con otro turno",
     "prepareScheduleMessages": "Preparar mensajes del horario",
     "scheduleNotSent": "No enviados. Copia los mensajes y compártelos manualmente.",
-    "inactivePerson": "Inactivo"
+    "inactivePerson": "Inactivo",
+    "deliveryConsent": "El empleado aceptó recibir horarios por WhatsApp",
+    "deliveryConsentError": "No se pudo guardar el consentimiento para WhatsApp."
   },
   "OwnerScheduleDelivery": {
     "heading": "Enviar horarios aprobados",

@@ -26,7 +26,7 @@ export async function getWeekSchedule(raw:unknown){
   gaps:[],adjacentShifts:[],openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],profileAvailability:[],readOnly:true,timezone:owner.timezone
  }};
  const [people,shifts,profile,ruleResult,availability,profileAvailability]=await Promise.all([
-  owner.supabase.from("employees").select("id,display_name,role,active,default_hourly_wage_cents,wage_amount_cents,wage_period,available_days,min_weekly_minutes,max_weekly_minutes,phone_e164,color_index")
+  owner.supabase.from("employees").select("id,display_name,role,active,default_hourly_wage_cents,wage_amount_cents,wage_period,available_days,min_weekly_minutes,max_weekly_minutes,phone_e164,whatsapp_opt_in,color_index")
     .eq("business_id",owner.businessId).order("display_name"),
   owner.supabase.from("scheduled_shifts").select("*").eq("business_id",owner.businessId)
     .gte("local_date",plusDays(dates[0],-1)).lte("local_date",plusDays(dates[6],1)).is("deleted_at",null).order("start_local"),
@@ -45,7 +45,7 @@ export async function getWeekSchedule(raw:unknown){
     : p.default_hourly_wage_cents as number|null,
    minWeeklyMinutes:p.min_weekly_minutes as number|null,maxWeeklyMinutes:p.max_weekly_minutes as number|null,
    availableDays:p.available_days as number[]|null,colorIndex:p.color_index as number|null,
-   phone:p.phone_e164 as string|null,wagePeriod:p.wage_period as "hour"|"month"|"year",
+   phone:p.phone_e164 as string|null,whatsappOptIn:p.whatsapp_opt_in===true,wagePeriod:p.wage_period as "hour"|"month"|"year",
    salaryAmountCents:p.wage_period==="hour"?null:p.wage_amount_cents as number|null
  }));
  const team=allEmployees.filter(p=>p.active);

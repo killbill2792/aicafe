@@ -169,3 +169,16 @@ export async function updateScheduleChannelPreference(raw:unknown){
  if(error||!data)throw new DeliveryReadError("not_found");
  return {channel:params.channel};
 }
+
+/** Owner explicitly records the staff member's WhatsApp consent on their profile.
+ * Neither the AI nor a scheduled task may change consent. */
+export async function updateScheduleWhatsAppConsent(raw:unknown){
+ const params=z.strictObject({employeeId:uuid,whatsappOptIn:z.boolean()}).parse(raw);
+ const owner=await scheduleDeliveryContext();
+ const {data,error}=await owner.supabase.from("employees")
+   .update({whatsapp_opt_in:params.whatsappOptIn})
+   .eq("business_id",owner.businessId).eq("id",params.employeeId)
+   .select("id").maybeSingle();
+ if(error||!data)throw new DeliveryReadError("not_found");
+ return {whatsappOptIn:params.whatsappOptIn};
+}
