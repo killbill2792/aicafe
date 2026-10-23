@@ -7,7 +7,8 @@ import PageShell from "@/components/shared/PageShell";
 
 export const dynamic = "force-dynamic";
 
-export default async function CafeProfilePage() {
+export default async function CafeProfilePage({ searchParams }: { searchParams: Promise<{ focus?: string }> }) {
+  const focusHours = (await searchParams).focus === "hours";
   const user = await requireOwnBusiness();
   const [profile, t, tCommon] = await Promise.all([
     getCafeProfile(),
@@ -23,6 +24,7 @@ export default async function CafeProfilePage() {
       )}
       <CafeProfileForm
         profile={profile}
+        focusHours={focusHours}
         labels={{
           businessDetails: t("businessDetails"),
           cafeName: t("cafeName"),
@@ -55,6 +57,21 @@ export default async function CafeProfilePage() {
           save: t("save"),
           saving: t("saving"),
           saved: t("saved"),
+          locationOptional: t("locationOptional"),
+          hoursBadge: t("hoursBadge"),
+          copyWeekdays: t("copyWeekdays"),
+          timezoneSearch: t("timezoneSearch"),
+          timezoneEmpty: t("timezoneEmpty"),
+          chooseCountry: t("chooseCountry"),
+          chooseCurrency: t("chooseCurrency"),
+          chooseState: t("chooseState"),
+          invalidName: t("invalidName"),
+          invalidTimezone: t("invalidTimezone"),
+          invalidCurrency: t("invalidCurrency"),
+          invalidCountry: t("invalidCountry"),
+          invalidDate: t("invalidDate"),
+          invalidHours: t("invalidHours"),
+          invalidSummary: t("invalidSummary"),
         }}
       />
     </PageShell>
