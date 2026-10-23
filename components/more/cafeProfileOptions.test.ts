@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { openHoursToWeeklyInput, weeklyInputToOpenHours } from "@/lib/business/openHours";
-import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, shouldFocusHours, timezoneOptions, validateProfile } from "./cafeProfileOptions";
+import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, shouldFocusHours, timezoneOptions, usStateOptions, validateProfile } from "./cafeProfileOptions";
 
 describe("café profile redesign", () => {
   it("timezone picker displays plain labels but retains IANA storage values", () => {
@@ -19,6 +19,15 @@ describe("café profile redesign", () => {
     expect(currencyForCountry("ES")).toBe("EUR");
     expect(currencyForCountry("GB")).toBe("GBP");
     expect(currencyForCountry("SA")).toBe("SAR");
+  });
+
+  it("localizes U.S. state names without changing stored values", () => {
+    const spanish = usStateOptions("es").find((item) => item.value === "NM");
+    const arabic = usStateOptions("ar").find((item) => item.value === "CA");
+    expect(spanish?.label).toBe("Nuevo México");
+    expect(arabic?.label).toBe("كاليفورنيا");
+    expect(arabic?.legacyName).toBe("California");
+    expect(usStateOptions("ar")).toHaveLength(56);
   });
 
   it("copies Monday state and hours to Tuesday through Friday, not weekends", () => {
