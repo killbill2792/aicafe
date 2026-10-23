@@ -25,7 +25,7 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
   return (
     <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
-      <BillsManager
+      <BillsManager key={category ?? "none"}
         bills={bills}
         initialCategory={EXPENSE_CATEGORY_CODES.includes(category as ExpenseCategoryCode) && isBillCategory(category as ExpenseCategoryCode) ? category as ExpenseCategoryCode : null}
         categoryLabels={categoryLabels}
