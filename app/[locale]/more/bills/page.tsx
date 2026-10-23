@@ -36,6 +36,7 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
           missing: t("missing"),
           confirmRemove: t("confirmRemove"),
           saveError: t("saveError"),
+          removeError: t("removeError"),
           variableCostHint: t("variableCostHint"),
           dueDayLabel: t("dueDayLabel"),
           labelLabel: t("labelLabel"),
