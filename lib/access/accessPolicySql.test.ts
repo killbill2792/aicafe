@@ -11,6 +11,16 @@ describe("free access SQL security contract",()=>{
    expect(sql).toContain("if p_code_hash !~ '^[a-f0-9]{64}$' or p_business_id is null");
    expect(sql).not.toMatch(/end \$\$;[\s\S]*\n or p_business_id is null/);
  });
+ it("restores the shared demo after the trusted destructive database reseed",()=>{
+   const reset=readFileSync(new URL("../../scripts/db-reset.mjs",import.meta.url),"utf8");
+   const businessInsert=reset.indexOf('await insertRows(client, "businesses"');
+   const demoOverride=reset.indexOf("insert into public.cafe_access");
+   expect(businessInsert).toBeGreaterThan(-1);
+   expect(demoOverride).toBeGreaterThan(businessInsert);
+   expect(reset.slice(demoOverride)).toContain("mode = 'grandfathered'");
+   expect(reset.slice(demoOverride)).toContain("code_id = null, access_end = null");
+   expect(reset.slice(demoOverride)).toContain("[DEMO_BUSINESS_ID]");
+ });
  it("grandfathers existing cafes but expires new cafes until code redemption",()=>{
    expect(sql.indexOf("select id,'grandfathered'")).toBeLessThan(sql.indexOf("create trigger initialize_cafe_access"));
    expect(sql).toContain("(now() at time zone coalesce(nullif(new.timezone,''),'UTC'))::date - 1");
