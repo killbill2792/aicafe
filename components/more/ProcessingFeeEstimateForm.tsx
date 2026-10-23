@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import { useLocale } from "next-intl";
+import { firstUncoveredSalesDay, initialCardSalesShareBps, type FeeCoverageDay } from "@/lib/data/processingFeeDefaults";
 import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
-import { formatCents } from "@/lib/calc";
 import type { OwnerConfirmedProcessingFeePlan } from "@/lib/pos/processingFeeEstimate";
 import InfoPopover from "@/components/shared/InfoPopover";
 
@@ -61,6 +62,10 @@ type Labels = {
   coverageMissing: string;
   coverageSalesDays: string;
   incompleteWarning: string;
+  useRateForDays: string; daysCovered: string; selectProcessor: string; otherProcessor: string;
+  requiredProcessor: string; requiredEffectiveDate: string; requiredCardShare: string;
+  requiredRate: string; requiredRule: string; requiredAverageTicket: string;
+  invalidMix: string; uploadFeeReport: string; info: string;
 };
 
 type RuleDraft = {
@@ -74,6 +79,7 @@ type RuleDraft = {
 
 type SourceSummary = {
   connectedProvider: string | null;
+  processorCount: number;
   actualProviders: string[];
   actualFeeCents: number;
   trustedOrderDays: number;
@@ -135,30 +141,40 @@ export default function ProcessingFeeEstimateForm({
   plan,
   today,
   coverage,
+  coverageDays,
   sourceSummary,
   labels,
 }: {
   plan: OwnerConfirmedProcessingFeePlan | null;
   today: string;
   coverage: { salesDays: number; actualDays: number; estimatedDays: number; missingDays: number };
+  coverageDays: FeeCoverageDay[];
   sourceSummary: SourceSummary;
   labels: Labels;
 }) {
   const router = useRouter();
+  const locale = useLocale();
+  const fmt = (number: number) => new Intl.NumberFormat(locale).format(number);
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
+  const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
+  const borderError = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
+  const errorText = (key: string) => fieldErrors[key] ? <span role="alert" className="text-xs font-normal text-red-700">{fieldErrors[key]}</span> : null;
   const [isPending, startTransition] = useTransition();
   const [processorLabel, setProcessorLabel] = useState(plan?.processorLabel ?? providerLabel(sourceSummary.connectedProvider));
-  const [effectiveFrom, setEffectiveFrom] = useState(plan?.effectiveFrom ?? today);
-  const [processedSalesShare, setProcessedSalesShare] = useState(plan ? percentFromBps(plan.processedSalesShareBps) : "");
+  const [effectiveFrom, setEffectiveFrom] = useState(firstUncoveredSalesDay(coverageDays, today));
+  const [processedSalesShare, setProcessedSalesShare] = useState(() => { const value = initialCardSalesShareBps(plan?.processedSalesShareBps ?? null, sourceSummary.processorCount); return value === null ? "" : percentFromBps(value); });
   const [processedTransactionShare, setProcessedTransactionShare] = useState(
     plan ? percentFromBps(plan.processedTransactionShareBps) : "",
   );
   const [averageTicket, setAverageTicket] = useState(dollarsFromCents(plan?.averageProcessedTicketCents ?? null));
   const [rules, setRules] = useState<RuleDraft[]>(() => initialRules(plan));
   const [advanced, setAdvanced] = useState(
-    Boolean(plan && (plan.rules.length > 1 || plan.processedSalesShareBps !== plan.processedTransactionShareBps)),
+    Boolean(plan && (plan.rules.length > 1 || plan.processedSalesShareBps !== plan.processedTransactionShareBps || plan.rules.some((rule) => rule.salesMixBps !== 10_000 || rule.transactionMixBps !== 10_000))),
   );
   const [error, setError] = useState<string | null>(null);
   const [savedSummary, setSavedSummary] = useState<typeof coverage | null>(null);
+  const [coveredCount, setCoveredCount] = useState<number | null>(null);
   const initialCompleteActualCoverage =
     coverage.salesDays > 0 && coverage.actualDays === coverage.salesDays && coverage.missingDays === 0;
   const [showEstimate, setShowEstimate] = useState(!initialCompleteActualCoverage);
@@ -186,9 +202,36 @@ export default function ProcessingFeeEstimateForm({
     setRules((current) => (current.length > 1 ? current.filter((rule) => rule.id !== id) : current));
   }
 
-  function save() {
+  function save(coverMissing = false) {
+    const errors: Record<string,string> = {};
+    const invalid = (key: string, message: string) => { errors[key] = message; };
+    if (!processorLabel.trim()) invalid("processor", labels.requiredProcessor);
+    if (!effectiveFrom || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) invalid("effectiveFrom", labels.requiredEffectiveDate);
+    if (!processedSalesShare.trim() || bpsFromPercent(processedSalesShare) === null) invalid("cardShare", labels.requiredCardShare);
+    if (!advanced && (!firstRule.percentageRate.trim() || bpsFromPercent(firstRule.percentageRate) === null || Number(firstRule.percentageRate) > 50)) invalid("percentageRate", labels.requiredRate);
+    if (!advanced && firstRule.fixedFee.trim() && (Number(firstRule.fixedFee) < 0 || Number(firstRule.fixedFee) > 50 || !Number.isFinite(Number(firstRule.fixedFee)))) invalid("fixedFee", labels.requiredRule);
+    if (advanced) {
+      if (!processedTransactionShare.trim() || bpsFromPercent(processedTransactionShare) === null) invalid("transactionShare", labels.requiredRule);
+      for (const rule of rules) {
+        for (const name of ["label","percentageRate","fixedFee","salesMix","transactionMix"] as const) {
+          const value = rule[name];
+          if (name === "fixedFee" && !value.trim()) continue;
+          if (!value.trim() || (name !== "label" && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > (name === "percentageRate" || name === "fixedFee" ? 50 : 100)))) invalid(rule.id + "-" + name, labels.requiredRule);
+        }
+      }
+      if (rules.reduce((sum, rule) => sum + (bpsFromPercent(rule.salesMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-salesMix", labels.invalidMix);
+      if (rules.some((rule) => Number(rule.fixedFee) > 0) && rules.reduce((sum, rule) => sum + (bpsFromPercent(rule.transactionMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-transactionMix", labels.invalidMix);
+    }
+    if (rules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.trustedOrderDays < coverage.salesDays && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) {
+      setError(labels.incompleteWarning);
+      requestAnimationFrame(() => inputRefs.current[Object.keys(errors)[0]]?.focus());
+      return;
+    }
     setError(null);
     setSavedSummary(null);
+    setCoveredCount(null);
 
     const salesShareBps = bpsFromPercent(processedSalesShare);
     const transactionShareBps = advanced ? bpsFromPercent(processedTransactionShare) : salesShareBps;
@@ -248,7 +291,7 @@ export default function ProcessingFeeEstimateForm({
     startTransition(async () => {
       const result = await saveOwnerProcessingFeeEstimatePlan({
         processorLabel: processorLabel.trim(),
-        effectiveFrom,
+        effectiveFrom: coverMissing ? firstUncoveredSalesDay(coverageDays, today) : effectiveFrom,
         processedSalesShareBps: salesShareBps,
         processedTransactionShareBps: transactionShareBps,
         averageProcessedTicketCents,
@@ -259,12 +302,14 @@ export default function ProcessingFeeEstimateForm({
         return;
       }
       setSavedSummary(result.summary);
+      if (coverMissing) setCoveredCount(Math.max(0, coverage.missingDays - result.summary.missingDays));
       router.refresh();
     });
   }
 
   const shownCoverage = savedSummary ?? coverage;
   const connected = providerLabel(sourceSummary.connectedProvider);
+  const processorChoice = ["Toast", "Square", "Clover"].find((value) => value.toLowerCase() === processorLabel.toLowerCase()) ?? (processorLabel ? "Other" : "");
   const firstRule = rules[0] ?? {
     id: "rule-1",
     label: "",
@@ -298,8 +343,8 @@ export default function ProcessingFeeEstimateForm({
           )}
           <span className="rounded-full bg-paper px-3 py-1.5 text-xs font-bold text-ink">
             {labels.actualCoverage
-              .replace("{actual}", String(shownCoverage.actualDays))
-              .replace("{sales}", String(shownCoverage.salesDays))}
+              .replace("{actual}", fmt(shownCoverage.actualDays))
+              .replace("{sales}", fmt(shownCoverage.salesDays))}
           </span>
         </div>
 
@@ -307,13 +352,15 @@ export default function ProcessingFeeEstimateForm({
           <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">{labels.completeActualCoverage}</p>
         ) : shownCoverage.missingDays > 0 ? (
           <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">
-            {labels.missingCoverage.replace("{count}", String(shownCoverage.missingDays))}
+            {labels.missingCoverage.replace("{count}", fmt(shownCoverage.missingDays))}
           </p>
         ) : null}
 
+        {shownCoverage.missingDays > 0 && <button type="button" disabled={isPending} onClick={() => save(true)} className="min-h-12 rounded-full bg-accent px-4 text-sm font-bold text-on-accent disabled:opacity-40">{labels.useRateForDays.replace("{count}", fmt(shownCoverage.missingDays))}</button>}
+        {coveredCount !== null && <p role="status" className="text-sm font-bold text-good">{labels.daysCovered.replace("{count}", fmt(coveredCount))}</p>}
         {sourceSummary.actualFeeCents > 0 && (
           <p className="text-sm text-ink-muted">
-            {formatCents(sourceSummary.actualFeeCents)} · {labels.coverageActual}
+            {currency.format(sourceSummary.actualFeeCents / 100)} · {labels.coverageActual}
           </p>
         )}
 
@@ -322,7 +369,7 @@ export default function ProcessingFeeEstimateForm({
           className="flex min-h-12 items-center justify-center gap-2 rounded-full border border-line px-4 text-sm font-bold text-ink no-underline"
         >
           <Upload aria-hidden="true" size={18} />
-          {labels.uploadActual}
+          {labels.uploadFeeReport}
         </Link>
       </section>
 
@@ -345,23 +392,30 @@ export default function ProcessingFeeEstimateForm({
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
           <FieldTitle help={labels.processorHelp} helpLabel={`${labels.processor} info`}>{labels.processor}</FieldTitle>
-          <input
+          <select value={processorChoice} aria-invalid={Boolean(fieldErrors.processor)} ref={(node) => { inputRefs.current.processor = node; }} onChange={(event) => setProcessorLabel(event.target.value === "Other" ? "" : event.target.value)} className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor")}>
+            <option value="">{labels.selectProcessor}</option><option value="Toast">Toast</option><option value="Square">Square</option><option value="Clover">Clover</option><option value="Other">{labels.otherProcessor}</option>
+          </select>
+          {processorChoice === "Other" && <input
             value={processorLabel}
             onChange={(event) => setProcessorLabel(event.target.value)}
             maxLength={80}
-            placeholder={labels.processorPlaceholder}
+            placeholder={labels.otherProcessor}
             className="min-h-12 rounded-xl border border-line px-3 text-base"
-          />
+          />}
+          {errorText("processor")}
         </label>
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
           <FieldTitle help={labels.effectiveFromHelp} helpLabel={`${labels.effectiveFrom} info`}>{labels.effectiveFrom}</FieldTitle>
           <input
             type="date"
+            aria-invalid={Boolean(fieldErrors.effectiveFrom)}
+            ref={(node) => { inputRefs.current.effectiveFrom = node; }}
             value={effectiveFrom}
             onChange={(event) => setEffectiveFrom(event.target.value)}
-            className="min-h-12 rounded-xl border border-line px-3 text-base"
+            className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("effectiveFrom")}
           />
+          {errorText("effectiveFrom")}
         </label>
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
@@ -372,12 +426,15 @@ export default function ProcessingFeeEstimateForm({
             <input
               inputMode="decimal"
               value={processedSalesShare}
+              aria-invalid={Boolean(fieldErrors.cardShare)}
+              ref={(node) => { inputRefs.current.cardShare = node; }}
               onChange={(event) => setProcessedSalesShare(event.target.value)}
-              className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
+              className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("cardShare")}
             />
             <span className="font-bold text-ink-muted">%</span>
           </div>
           <span className="text-xs font-normal text-ink-muted">{labels.processedSalesShareHint}</span>
+          {errorText("cardShare")}
         </label>
 
         <div className="rounded-2xl bg-paper p-3">
@@ -390,11 +447,14 @@ export default function ProcessingFeeEstimateForm({
                 <input
                   inputMode="decimal"
                   value={firstRule.percentageRate}
+                  aria-invalid={Boolean(fieldErrors.percentageRate)}
+                  ref={(node) => { inputRefs.current.percentageRate = node; }}
                   onChange={(event) => updateRule(firstRule.id, "percentageRate", event.target.value)}
-                  className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base"
+                  className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base" + borderError("percentageRate")}
                 />
                 <span className="font-bold text-ink-muted">%</span>
               </div>
+              {errorText("percentageRate")}
             </label>
 
             <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
@@ -404,10 +464,13 @@ export default function ProcessingFeeEstimateForm({
                 <input
                   inputMode="decimal"
                   value={firstRule.fixedFee}
+                  aria-invalid={Boolean(fieldErrors.fixedFee)}
+                  ref={(node) => { inputRefs.current.fixedFee = node; }}
                   onChange={(event) => updateRule(firstRule.id, "fixedFee", event.target.value)}
-                  className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base"
+                  className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base" + borderError("fixedFee")}
                 />
               </div>
+              {errorText("fixedFee")}
             </label>
           </div>
         </div>
@@ -589,6 +652,16 @@ export default function ProcessingFeeEstimateForm({
             <span className="block text-ink-muted">{labels.coverageMissing}</span>
             <strong className="text-xl text-warn">{shownCoverage.missingDays}</strong>
           </div>
+        </div>
+        <div className="mt-4 divide-y divide-line" aria-label={labels.coverageTitle}>
+          {coverageDays.map((day) => (
+            <div key={day.date} className="flex min-h-12 items-center justify-between gap-3 py-2 text-sm">
+              <time dateTime={day.date}>{new Intl.DateTimeFormat(locale, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day.date + "T12:00:00Z"))}</time>
+              {day.status === "missing" && (savedSummary === null || shownCoverage.missingDays > 0)
+                ? <button type="button" disabled={isPending} onClick={() => save(true)} className="rounded-full border border-warn px-3 py-2 font-bold text-warn">{labels.coverageMissing}</button>
+                : <span className="text-ink-muted">{day.status === "actual" ? labels.coverageActual : labels.coverageEstimated}</span>}
+            </div>
+          ))}
         </div>
       </section>
 
