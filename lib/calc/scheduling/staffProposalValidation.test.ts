@@ -9,6 +9,12 @@ describe("staff approval scheduling validation",()=>{
   expect(()=>assertStaffShiftPlan([s,{...s,start:"11:00",end:"14:00"}])).toThrow(/Overlapping/);
   expect(()=>assertStaffShiftPlan([{...s,start:"08:00",end:"08:15",break_minutes:30}])).toThrow(/break/);
  });
+ it("detects retained Sunday overnight against next Monday replacement",()=>{
+  const sunday={...s,date:"2026-11-01",start:"20:00",end:"02:00"};
+  const monday={...s,date:"2026-11-02",start:"01:00",end:"08:00"};
+  expect(()=>assertStaffShiftPlan([monday,sunday])).toThrow(/Overlapping/);
+  expect(()=>assertStaffShiftPlan([{...monday,start:"02:00"},sunday])).not.toThrow();
+ });
  it("detects overlap across midnight",()=>{
   expect(()=>assertStaffShiftPlan([{...s,start:"22:00",end:"02:00",date:"2026-10-26"},
    {...s,start:"01:00",end:"05:00",date:"2026-10-27"}])).toThrow(/Overlapping/);

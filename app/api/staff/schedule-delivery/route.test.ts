@@ -13,17 +13,23 @@ vi.mock("@/lib/ai/conversations/http.server",()=>({
   readBoundedJson:(r:Request)=>r.json(),
 }));
 import {GET,POST,PATCH} from "./route";
+import {DeliveryReadError} from "@/lib/data/ownerScheduleDelivery.server";
 const req=(method:string,body:unknown)=>new Request("https://cafe.test/api/staff/schedule-delivery",{
   method,headers:{"content-type":"application/json"},body:JSON.stringify(body),
 });
 describe("owner schedule compose API",()=>{
  beforeEach(()=>{vi.clearAllMocks();mocks.mark.mockResolvedValue({state:"opened",channel:"whatsapp"});mocks.preferred.mockResolvedValue({channel:"sms"});});
  it("returns 404 on an unauthorized owner read, without disclosing recipients",async()=>{
-  mocks.read.mockRejectedValue(new (class extends Error{code="unauthorized";})());
-  // An unrecognized authorization error also fails closed, without recipient data.
+  mocks.read.mockRejectedValue(new DeliveryReadError("unauthorized"));
   const result=await GET(new Request("https://cafe.test/api/staff/schedule-delivery?week=2026-11-02"));
-  expect(result.status).toBe(503);
+  expect(result.status).toBe(404);
   expect(JSON.stringify(await result.json())).not.toContain("phone");
+ });
+ it("returns conflict when approved roster changes, without exposing an old message",async()=>{
+  mocks.read.mockRejectedValue(new DeliveryReadError("schedule_changed"));
+  const response=await GET(new Request("https://cafe.test/api/staff/schedule-delivery?week=2026-11-02"));
+  expect(response.status).toBe(409);
+  expect(JSON.stringify(await response.json())).not.toContain("message");
  });
  it("records the owner-chosen channel instead of claiming actual delivery",async()=>{
   const payload={proposalId:"11111111-1111-4111-8111-111111111111",
