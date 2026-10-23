@@ -67,6 +67,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
               missing: tBills("missing"),
               confirmRemove: tBills("confirmRemove"),
               saveError: tBills("saveError"),
+              removeError: tBills("removeError"),
               variableCostHint: tBills("variableCostHint"),
               dueDayLabel: tBills("dueDayLabel"),
               labelLabel: tBills("labelLabel"),
