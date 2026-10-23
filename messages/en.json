@@ -2696,7 +2696,8 @@
     "scheduleNotSent": "Not sent. Copy these messages and share them manually.",
     "inactivePerson": "Inactive",
     "deliveryConsent": "Staff member agreed to receive schedules on WhatsApp",
-    "deliveryConsentError": "Could not save WhatsApp consent."
+    "deliveryConsentError": "Could not save WhatsApp consent.",
+    "deliveryConsentAfterCreate": "WhatsApp consent defaults off. After adding this person, open their profile to record their opt-in."
   },
   "OwnerScheduleDelivery": {
     "heading": "Send approved schedules",

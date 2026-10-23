@@ -2696,7 +2696,8 @@
     "scheduleNotSent": "No enviados. Copia los mensajes y compártelos manualmente.",
     "inactivePerson": "Inactivo",
     "deliveryConsent": "El empleado aceptó recibir horarios por WhatsApp",
-    "deliveryConsentError": "No se pudo guardar el consentimiento para WhatsApp."
+    "deliveryConsentError": "No se pudo guardar el consentimiento para WhatsApp.",
+    "deliveryConsentAfterCreate": "La aceptación de WhatsApp está desactivada por defecto. Después de añadir a esta persona, abre su perfil para registrar su consentimiento."
   },
   "OwnerScheduleDelivery": {
     "heading": "Enviar horarios aprobados",

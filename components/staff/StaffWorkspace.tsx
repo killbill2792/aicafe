@@ -37,6 +37,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const uncheckedDays=uncheckedCoverageDays(data.dates,data.openHours,data.rules.coverage_enabled);
  const [screen,setScreen]=useState(tab),[sheet,setSheet]=useState<"person"|"shift"|null>(null);
  const [busy,startTransition]=useTransition(),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const [savingConsent,setSavingConsent]=useState(false);
  const [dismissed,setDismissed]=useState<string[]>([]);
  const [repeatWeekly,setRepeatWeekly]=useState(false),[fillsGap,setFillsGap]=useState(false),[breakOverridden,setBreakOverridden]=useState(false);
  const [inlineName,setInlineName]=useState(""),[inlineRole,setInlineRole]=useState("Barista");
@@ -72,6 +73,25 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    }));
   }else setAvailability(allDays());
   setSheet("person");
+ };
+ // An explicit owner action persists immediately; don't toggle the visible
+ // consent checkbox until the protected PATCH completes successfully.
+ const saveConsent=async(next:boolean)=>{
+  if(!personEditing||savingConsent||busy||data.readOnly)return;
+  setSavingConsent(true);setError("");
+  try{
+   const response=await fetch("/api/staff/schedule-delivery",{
+    method:"PATCH",credentials:"same-origin",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({employeeId:personEditing,whatsappOptIn:next})
+   });
+   if(!response.ok)throw new Error("consent");
+   setWhatsAppOptIn(next);
+   setData({...data,team:data.team.map(person=>person.id===personEditing?
+     {...person,whatsappOptIn:next}:person)});
+   router.refresh();
+  }catch{setError(t("deliveryConsentError"));}
+  finally{setSavingConsent(false);}
  };
  const mutateAvailability=(day:number,update:{start:string|null;end:string|null}|null)=>{
   setAvailabilityDirty(true);
@@ -271,7 +291,14 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+14155551234"
          className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3" dir="ltr"/>
       </label>
-      <button disabled={busy||!name.trim()} onClick={()=>run(()=>{
+      {personEditing?<label className="mt-3 flex min-h-12 items-center gap-3 rounded-xl border border-line p-3">
+        <input type="checkbox" checked={whatsAppOptIn}
+          disabled={savingConsent||busy||data.readOnly}
+          onChange={event=>void saveConsent(event.target.checked)}
+          className="size-6 shrink-0 accent-accent"/>
+        <span className="text-[17px]">{t("deliveryConsent")}</span>
+       </label>:<p className="mt-3 text-sm text-muted">{t("deliveryConsentAfterCreate")}</p>}
+       <button disabled={busy||savingConsent||!name.trim()} onClick={()=>run(()=>{
        const fields={name,role:role||null,wageCents:salaryPeriod?null:wage,availability:personEditing&&!availabilityDirty?null:availability,
         minWeeklyMinutes,maxWeeklyMinutes,phone:phone.trim()||null};
        return personEditing?updatePerson({id:personEditing,...fields}):addPerson(fields);
