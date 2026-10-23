@@ -1,0 +1,29 @@
+name: Staff Person RPC Input Guard
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/migrations/20261023000085_staff_person_input_guard.sql"
+      - "scripts/staff-person-input-guard-rls.sql"
+      - ".github/workflows/staff-person-input-guard.yml"
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  disposable-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: {version: latest}
+      - name: Start disposable Supabase
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+          supabase start
+      - name: Replay migrations
+        run: supabase db reset --local --yes
+      - name: Verify direct owner RPC validation and transaction isolation
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/staff-person-input-guard-rls.sql
+      - name: Stop disposable database
+        if: always()
+        run: supabase stop --no-backup
