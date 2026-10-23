@@ -4,7 +4,19 @@ import type { AgentToolContext, AgentToolResult } from "./index";
 const item=z.strictObject({itemId:z.uuid()});
 const ingredients=z.strictObject({query:z.string().max(80).nullable(),limit:z.number().int().min(1).max(20).nullable()});
 const empty=z.strictObject({});
+const usage=z.strictObject({from:z.string(),to:z.string(),ingredient:z.string().nullable(),groupBy:z.enum(["shift","day","staff"]).nullable()});
 export const suppliesTools={
+ get_usage_variance:{
+  agentId:"maya",schema:usage,description:"Read recipe-based expected ingredient use and counted actual use for inclusive dates. Shift/staff groups represent expected usage only.",
+  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+   const input=usage.parse(raw);
+   if(!ctx.tools.getUsageVariance)return {source:"usage_variance",period:{from:input.from,to:input.to},agentId:"maya",missing:["usageReaderUnavailable"],rows:null};
+   const result=await ctx.tools.getUsageVariance(input);
+   return {source:"usage_variance",period:{from:input.from,to:input.to},agentId:"maya",missing:result.missing,
+    rows:result.rows.slice(0,35),groupBy:result.groupBy,actualShiftUsage:null,
+    note:"Staff and shift splits are expected only; actual is reconciled from stock counts for the full period."};
+  }
+ },
   get_product_costs:{
     agentId:"maya",schema:item,description:"Known current menu-item product/recipe costs, by menu item id.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
