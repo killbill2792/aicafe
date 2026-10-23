@@ -34,7 +34,9 @@ export async function syncStaffRuleAlerts(){
     id:row.id as string,employeeId:row.employee_id as string,start:row.clock_in as string,
     end:row.clock_out as string,breaks:parseBreaks(row.breaks)
    }));
- const violations=dedupeAlerts(checkTimecardRules(actual,rules.data as unknown as RuleSettings,scope.timezone));
+ let violations:ReturnType<typeof dedupeAlerts>;
+ try{violations=dedupeAlerts(checkTimecardRules(actual,rules.data as unknown as RuleSettings,scope.timezone));}
+ catch{return {ok:false as const,error:"timecard_rule_validation_unavailable"};}
  if(violations.length){
   const rows=violations.map(v=>({business_id:owner.businessId,timecard_id:v.timecardId,
    employee_id:v.employeeId,rule_key:v.key,message:v.details,status:"new",
