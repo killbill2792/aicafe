@@ -26,6 +26,7 @@ async function withService(client,fn){
   await client.query("begin");
   try{
     await client.query("set local role service_role");
+    await client.query("select set_config('request.jwt.claim.role','service_role',true)");
     const result=await fn(client);
     await client.query("commit");
     return result;
@@ -70,7 +71,7 @@ try{
     create function auth.uid() returns uuid language sql stable as
       $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     create function auth.role() returns text language sql stable as
-      $$ select current_user::text $$;
+      $ select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),'anon') $;
     create table public.businesses(id uuid primary key);
     create table public.memberships(
       business_id uuid not null references businesses(id),
@@ -152,9 +153,11 @@ try{
   try{
     await db.query("begin");
     await db.query("set local role service_role");
+    await db.query("select set_config('request.jwt.claim.role','service_role',true)");
     await db.query(rpcTransition,params(raceId,1,"approve"));
     await other.query("begin");
     await other.query("set local role service_role");
+    await other.query("select set_config('request.jwt.claim.role','service_role',true)");
     let settled=false;
     const waiting=other.query(rpcEdit,editArgs(raceId,1,uuid(106),575))
       .then(()=>{settled=true;return null;},e=>{settled=true;return e;});
@@ -173,9 +176,11 @@ try{
     await draft(raceEditId,uuid(107));
     await db.query("begin");
     await db.query("set local role service_role");
+    await db.query("select set_config('request.jwt.claim.role','service_role',true)");
     await db.query(rpcEdit,editArgs(raceEditId,1,uuid(108),650));
     await other.query("begin");
     await other.query("set local role service_role");
+    await other.query("select set_config('request.jwt.claim.role','service_role',true)");
     settled=false;
     const waitingApprove=other.query(rpcTransition,params(raceEditId,1,"approve"))
       .then(()=>{settled=true;return null;},e=>{settled=true;return e;});
