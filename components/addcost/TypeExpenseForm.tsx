@@ -85,7 +85,11 @@ export default function TypeExpenseForm({
       });
       if (result.ok) {
         setStatus("saved");
-        setTimeout(() => router.push(safeReturnTo), 900);
+        setTimeout(() => {
+          // next-intl would add a second locale prefix to an already localized return path.
+          if (returnTo && /^\/(?:en|es|ar)(?:\/|[?#]|$)/.test(safeReturnTo)) window.location.assign(safeReturnTo);
+          else router.push(safeReturnTo);
+        }, 900);
       } else {
         setStatus("error");
         setError(labels.saveError);
