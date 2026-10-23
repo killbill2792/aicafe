@@ -6,7 +6,7 @@ import type {KnownSlice} from "@/lib/operating/types";
 
 export async function readSchedulingDraftInputs(client:SupabaseClient,businessId:string):Promise<KnownSlice<SchedulingDraftInputs>> {
  const [employees,schedules,availability,preferences,locations,business,teamRules,exceptions]=await Promise.all([
-  client.from("employees").select("id,display_name,default_hourly_wage_cents,wage_period,wage_amount_cents").eq("business_id",businessId).eq("active",true).limit(201),
+  client.from("employees").select("id,display_name,default_hourly_wage_cents,wage_period,wage_amount_cents,available_days").eq("business_id",businessId).eq("active",true).limit(201),
   client.from("staff_schedules").select("employee_id,day_of_week,start_time,end_time,unpaid_break_minutes,effective_from,effective_to").eq("business_id",businessId).eq("active",true).limit(201),
   client.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,confirmation,effective_from,effective_to").eq("business_id",businessId).limit(201),
   client.from("staff_scheduling_preferences").select("employee_id,max_weekly_minutes,effective_from,effective_to").eq("business_id",businessId).limit(201),

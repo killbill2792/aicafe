@@ -55,7 +55,7 @@ describe("pure scheduling draft",()=>{
     name:"cheap",origin:"suggested",start:"11:00",end:"13:00"
   }));
   expect(day.unfilled).toEqual([]);
-  expect(result.estimated).toContain("recurringShiftAdjustedForDatedAbsence");
+  expect(result.estimated).toContain("recurringShiftAdjustedForAvailability");
  });
  it("partial absence blocks suggested coverage only during the actual interval",()=>{
   const d=data();d.schedules=[];
@@ -75,6 +75,29 @@ describe("pure scheduling draft",()=>{
   const day=draftWeek(d,"2026-10-26").days[0];
   expect(day.unfilled).toEqual([{start:"09:00",end:"10:00",hours:1}]);
   expect(day.shifts).toEqual([expect.objectContaining({name:"cheap",start:"10:00",end:"12:00"})]);
+ });
+ it("an approved Mon/Wed/Fri restriction excludes retained Tuesday recurring shifts",()=>{
+  const d=data();d.employees=d.employees.map(e=>e.id==="expensive"?{...e,available_days:[3,5]}:e);
+  const day=draftWeek(d,"2026-10-26").days[0];
+  expect(day.shifts.some(s=>s.name==="expensive")).toBe(false);
+  expect(day.shifts).toContainEqual(expect.objectContaining({
+   name:"cheap",origin:"suggested",start:"09:00",end:"12:00"
+  }));
+  expect(day.unfilled).toEqual([]);
+  expect(draftWeek(d,"2026-10-26").estimated).toContain("recurringShiftAdjustedForAvailability");
+ });
+ it("a confirmed narrower window clips an existing recurring baseline",()=>{
+  const d=data();d.employees=d.employees.map(e=>e.id==="expensive"?{...e,available_days:[1]}:e);
+  d.schedules=[{employee_id:"expensive",day_of_week:1,start_time:"09:00",
+    end_time:"17:00",unpaid_break_minutes:30,effective_from:"2026-01-01",effective_to:null}];
+  d.openHours={mon:[["09:00","17:00"]]};
+  d.availability=d.availability.map(a=>a.employee_id==="expensive"?
+   {...a,start_local:"10:00",end_local:"12:00"}:{...a,end_local:"17:00"});
+  const day=draftWeek(d,"2026-10-26").days[0];
+  expect(day.shifts.filter(x=>x.name==="expensive")).toMatchObject([
+   {origin:"recurring",start:"10:00",end:"12:00"}
+  ]);
+  expect(day.unfilled).toEqual([]);
  });
  it("keeps recurring shifts and selects cheapest available for uncovered hours",()=>{
   const r=draftWeek(data(),"2026-10-26");

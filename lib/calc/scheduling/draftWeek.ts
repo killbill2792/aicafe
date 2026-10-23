@@ -1,7 +1,7 @@
 import type { OpenHours } from "@/lib/business/openHours";
 import { OPEN_HOURS_DAY_KEYS } from "@/lib/business/openHours";
 
-export type DraftEmployee={id:string;display_name:string;default_hourly_wage_cents:number|null;wage_period:string|null;wage_amount_cents:number|null};
+export type DraftEmployee={id:string;display_name:string;default_hourly_wage_cents:number|null;wage_period:string|null;wage_amount_cents:number|null;available_days?:number[]|null};
 export type DraftRecurring={employee_id:string;day_of_week:number;start_time:string;end_time:string;effective_from:string;effective_to:string|null;unpaid_break_minutes:number|null};
 export type DraftAvailability={employee_id:string;day_of_week:number;start_local:string;end_local:string;confirmation:string;effective_from:string;effective_to:string|null};
 export type DraftPreference={employee_id:string;max_weekly_minutes:number|null;effective_from:string;effective_to:string|null};
@@ -101,13 +101,32 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
   for(const r of inputs.schedules.filter(r=>r.day_of_week===weekday&&active(r,date)&&people.has(r.employee_id))){
    const a=minute(r.start_time),b=minute(r.end_time);
    if(a>=b){estimated.push("overnightRecurringShiftNotDrafted");continue;}
-   const portions=availableWindows(a,b,masksByPerson.get(r.employee_id)??[]);
+   let portions=availableWindows(a,b,masksByPerson.get(r.employee_id)??[]);
+   const ownerDays=people.get(r.employee_id)!.available_days;
+   // Once the owner replaces availability, old recurring baselines must
+   // obey those confirmed weekdays and time windows too.
+   if(ownerDays!==undefined&&ownerDays!==null){
+    const allowed=ownerDays.includes(weekday)?inputs.availability
+      .filter(v=>v.employee_id===r.employee_id&&v.day_of_week===weekday&&
+        v.confirmation==="owner_confirmed"&&active(v,date))
+      .map(v=>({start:minute(v.start_local),end:minute(v.end_local)})):[];
+    const clipped=portions.flatMap(p=>allowed.map(v=>({
+     start:Math.max(p.start,v.start),end:Math.min(p.end,v.end)
+    })).filter(v=>v.start<v.end)).sort((x,y)=>x.start-y.start||x.end-y.end);
+    const merged:Array<{start:number;end:number}>=[];
+    for(const interval of clipped){
+     const prev=merged[merged.length-1];
+     if(prev&&interval.start<=prev.end)prev.end=Math.max(prev.end,interval.end);
+     else merged.push({...interval});
+    }
+    portions=merged;
+   }
    if(portions.length===1&&portions[0].start===a&&portions[0].end===b){
     // Leave unaffected recurring shifts and their known break unchanged.
     add(r.employee_id,a,b,"recurring","unconfirmed",r.unpaid_break_minutes??0);
     continue;
    }
-   estimated.push("recurringShiftAdjustedForDatedAbsence");
+   estimated.push("recurringShiftAdjustedForAvailability");
    // Break allocation is estimated after a recurring shift is split; no
    // unpaid minutes are assigned to the unavailable interval.
    const breaks=portions.map(()=>0);
