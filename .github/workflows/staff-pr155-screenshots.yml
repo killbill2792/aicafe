@@ -1,0 +1,50 @@
+name: Staff Schedule Playwright Screenshots
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/**/staff/**"
+      - "components/staff/**"
+      - "lib/calc/scheduling/**"
+      - "messages/**"
+      - "scripts/staff-pr155-screenshots.mjs"
+      - ".github/workflows/staff-pr155-screenshots.yml"
+  workflow_dispatch:
+permissions: { contents: read }
+jobs:
+  visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STAFF_VISUAL_FIXTURES: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      STAFF_SCREENSHOT_DIR: "test-results/staff"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Install isolated Playwright runner without changing lockfile
+        run: npm install --no-save --package-lock=false playwright@1.58.2
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Start staff fixture server
+        run: |
+          npm run dev -- --hostname 127.0.0.1 > /tmp/staff-pr155-next.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -fsS 'http://127.0.0.1:3000/en/staff?fixture=1&week=2026-10-26' >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -f 'http://127.0.0.1:3000/en/staff?fixture=1&week=2026-10-26' >/dev/null
+      - name: Capture and verify all viewports, themes, languages
+        run: node scripts/staff-pr155-screenshots.mjs
+      - name: Upload visual regression screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staff-pr155-screenshots
+          path: test-results/staff/*.png
+          if-no-files-found: ignore
+      - name: Server logs on failure
+        if: failure()
+        run: tail -100 /tmp/staff-pr155-next.log || true
