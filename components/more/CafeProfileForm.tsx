@@ -5,7 +5,7 @@ import { useLocale } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { updateCafeProfile } from "@/lib/actions/business";
 import { openHoursToWeeklyInput, type OpenHours, type OpenHoursDayKey, type WeeklyHoursInput } from "@/lib/business/openHours";
-import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, matchingTimezoneOptions, moveTimezoneActiveIndex, shouldFocusHours, timezoneOptionScrollTop, timezoneOptions, usStateOptions, validateProfile } from "./cafeProfileOptions";
+import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, matchingTimezoneOptions, moveTimezoneActiveIndex, resolvedProfileTimezone, shouldFocusHours, timezoneOptionScrollTop, timezoneOptions, usStateOptions, validateProfile } from "./cafeProfileOptions";
 
 type Profile = {
   name: string;
@@ -96,7 +96,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
     delete next[key];
     return next;
   });
-  const timezones = useMemo(() => timezoneOptions(locale, profile.timezone), [locale, profile.timezone]);
+  const timezones = useMemo(() => timezoneOptions(locale, profile.timezone || browserTimezone), [locale, profile.timezone, browserTimezone]);
   const countries = useMemo(() => countryOptions(locale), [locale]);
   const usStates = useMemo(() => usStateOptions(labels.usStates), [labels.usStates]);
   const currencies = useMemo(() => currencyOptions(locale, profile.currency), [locale, profile.currency]);
@@ -126,7 +126,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   const [openedOn, setOpenedOn] = useState(profile.openedOn);
   const [timezone, setTimezone] = useState(profile.timezone);
   const [timezoneTouched, setTimezoneTouched] = useState(false);
-  const selectedTimezone = timezone || (!timezoneTouched && !profile.timezone ? browserTimezone : "");
+  const selectedTimezone = resolvedProfileTimezone(timezone, timezoneTouched, profile.timezone, browserTimezone);
   const shownTimezoneSearch = timezoneSearch || (!timezoneTouched && !profile.timezone
     ? (timezones.find((option) => option.value === browserTimezone)?.label ?? browserTimezone)
     : "");
@@ -213,6 +213,14 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
       }
       requestAnimationFrame(() => fieldRefs.current[firstError]?.focus());
       return;
+    }
+    // Commit the browser default to local state before router.refresh changes profile.timezone.
+    // Otherwise the untouched fallback disappears when the saved profile becomes non-empty.
+    if (!timezoneTouched && !profile.timezone && selectedTimezone) {
+      setTimezone(selectedTimezone);
+      setTimezoneSearch(timezones.find((option) => option.value === selectedTimezone)?.label ?? selectedTimezone);
+      setTimezoneTouched(true);
+      lastChosenTimezoneRef.current = selectedTimezone;
     }
     setStatus("idle");
     setError(null);
