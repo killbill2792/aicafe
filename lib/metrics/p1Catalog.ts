@@ -223,7 +223,7 @@ export const PUBLIC_TOOL_METHODS = [
   "getRecordedExpenses","getProductSales","getItemSalesCoverage","getMenuCatalog",
   "getStaffAttendance","getCurrentStaff","getRecurringSchedule","getBreakEven",
   "getExpenseChanges","getLaborMetrics","getInventoryStatus","getTeamTasks",
-  "getActiveSignals","getDecisionHistory","getOperatingSnapshot","getBusinessHours","getIngredientCosts",
+  "getActiveSignals","getDecisionHistory","getOperatingSnapshot","getBusinessHours","getIngredientCosts","getSchedulingDraftInputs",
 ] as const satisfies readonly (keyof BusinessScopedCafeTools)[];
 
 export const readers = {
@@ -296,6 +296,7 @@ export const canonicalSourcePaths = {
 
 /** Nonexposed surfaces cannot silently become "supported" or free model tools. */
 export const classified = {
+  getSchedulingDraftInputs:{kind:"restricted",reason:"Includes employee wages; exposed only through the read-only draft_week_schedule agent tool"},
   getCafeSummary:{kind:"restricted",reason:"Includes mixed personal and financial state; use bounded projections"},
   getMenuCatalog:{kind:"restricted",reason:"Legacy menu projection coerces missing database price to $0; P1 uses a null-preserving bounded source"},
   getActiveSignals:{kind:"restricted",reason:"Live signal generation loads unbounded menu/pricing observations; needs bounded source before registration"},
