@@ -266,15 +266,24 @@ BEGIN
        v_day:=(trim(both '"' from v_row::text))::date;
        IF v_day < v_today THEN
          RAISE EXCEPTION 'dated_absence_expired' USING ERRCODE='P0001'; END IF;
-       IF EXISTS(SELECT 1 FROM public.staff_availability_exceptions
+       -- A confirmed full-day closure already satisfies the approved request.
+       -- Partial or unconfirmed absences never block a new owner-approved day off.
+       -- Replace them atomically, regardless of where they were reported.
+       DELETE FROM public.staff_availability_exceptions
+        WHERE business_id=p_business_id AND employee_id=v_staff
+         AND local_date=v_day AND exception_type='unavailable'
+         AND (confirmation IS DISTINCT FROM 'owner_confirmed'
+              OR start_local IS NOT NULL OR end_local IS NOT NULL);
+       IF NOT EXISTS(SELECT 1 FROM public.staff_availability_exceptions
           WHERE business_id=p_business_id AND employee_id=v_staff
-            AND local_date=v_day AND source='owner_direct'
-            AND exception_type='unavailable')
-       THEN RAISE EXCEPTION 'absence_already_recorded' USING ERRCODE='P0001'; END IF;
-       INSERT INTO public.staff_availability_exceptions(business_id,employee_id,
+           AND local_date=v_day AND exception_type='unavailable'
+           AND confirmation='owner_confirmed'
+           AND start_local IS NULL AND end_local IS NULL) THEN
+         INSERT INTO public.staff_availability_exceptions(business_id,employee_id,
           local_date,exception_type,overnight,source,confirmation,confirmed_at,confirmed_by,created_by)
-       VALUES(p_business_id,v_staff,v_day,'unavailable',false,'owner_direct',
-         'owner_confirmed',now(),p_owner_user_id,p_owner_user_id);
+         VALUES(p_business_id,v_staff,v_day,'unavailable',false,'owner_direct',
+          'owner_confirmed',now(),p_owner_user_id,p_owner_user_id);
+       END IF;
      END LOOP;
    ELSE
      v_day:=(d->>'effective_from')::date;
@@ -282,10 +291,10 @@ BEGIN
        RAISE EXCEPTION 'availability_effective_date_expired' USING ERRCODE='P0001'; END IF;
      UPDATE public.staff_availability_rules SET effective_to=v_day-1
        WHERE business_id=p_business_id AND employee_id=v_staff
-         AND source='owner_direct' AND effective_from<v_day
+         AND effective_from<v_day
          AND (effective_to IS NULL OR effective_to>=v_day);
      DELETE FROM public.staff_availability_rules WHERE business_id=p_business_id
-       AND employee_id=v_staff AND source='owner_direct' AND effective_from>=v_day;
+       AND employee_id=v_staff AND effective_from>=v_day;
      FOR v_row IN SELECT value FROM jsonb_array_elements(d->'availability') LOOP
        IF (v_row->>'day')::int NOT BETWEEN 0 AND 6
          OR (v_row->>'start') IS NULL OR (v_row->>'end') IS NULL

@@ -2433,7 +2433,9 @@
     "exceptionAddAvailable": "Disponibilidad adicional",
     "exceptionHoursCap": "Límite diario en minutos",
     "exceptionOther": "Otro cambio de disponibilidad",
-    "ruleFallback": "Regla de horarios"
+    "ruleFallback": "Regla de horarios",
+    "ruleEnabled": "Activado",
+    "ruleDisabled": "Desactivado"
   },
   "SupervisorProposalCard": {
     "title": "Propuesta de cambio de precio",

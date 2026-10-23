@@ -44,7 +44,8 @@ describe("owner-scoped staff proposal data boundary",()=>{
   for(const catalog of [en,es,ar]){
    const copy=catalog.StaffApprovalCard;
    for(const label of ["exceptionUnavailable","exceptionApprovedLeave","exceptionReplaceDay",
-    "exceptionAddAvailable","exceptionHoursCap","exceptionOther","ruleFallback"] as const)
+    "exceptionAddAvailable","exceptionHoursCap","exceptionOther","ruleFallback",
+    "ruleEnabled","ruleDisabled"] as const)
     expect(copy[label].trim().length).toBeGreaterThan(0);
   }
  });

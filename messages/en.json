@@ -2433,7 +2433,9 @@
     "exceptionAddAvailable": "Additional availability",
     "exceptionHoursCap": "Daily minutes limit",
     "exceptionOther": "Other availability change",
-    "ruleFallback": "Scheduling rule"
+    "ruleFallback": "Scheduling rule",
+    "ruleEnabled": "Enabled",
+    "ruleDisabled": "Disabled"
   },
   "SupervisorProposalCard": {
     "title": "Price change proposal",

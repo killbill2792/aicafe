@@ -2433,7 +2433,9 @@
     "exceptionAddAvailable": "توافر إضافي",
     "exceptionHoursCap": "حد الدقائق اليومي",
     "exceptionOther": "تغيير آخر في التوافر",
-    "ruleFallback": "قاعدة الجدولة"
+    "ruleFallback": "قاعدة الجدولة",
+    "ruleEnabled": "مفعّل",
+    "ruleDisabled": "معطّل"
   },
   "SupervisorProposalCard": {
     "title": "اقتراح تغيير السعر",
