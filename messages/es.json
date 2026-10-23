@@ -2324,6 +2324,14 @@
     "weeklyMaxOk": "Respeta el máximo semanal",
     "weeklyMaxExceeded": "Supera el máximo semanal",
     "weekLabor": "Salarios semanales {before} → {after}",
-    "estimateBadge": "Estimación"
+    "estimateBadge": "Estimación",
+    "paid": "pagadas",
+    "ruleMeal": "Descanso para comer ausente o insuficiente",
+    "ruleRestBreak": "Falta descanso pagado",
+    "ruleWeeklyOT": "Límite semanal de horas extra superado",
+    "ruleDailyOT": "Límite diario de horas extra superado",
+    "ruleShortRest": "Descanso insuficiente entre turnos",
+    "loadError": "No se pudo cargar el horario o las reglas",
+    "unkWage": "Salario no disponible"
   }
 }

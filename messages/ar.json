@@ -2324,6 +2324,14 @@
     "weeklyMaxOk": "ضمن الحد الأسبوعي",
     "weeklyMaxExceeded": "تجاوز الحد الأسبوعي",
     "weekLabor": "أجور الأسبوع {before} ← {after}",
-    "estimateBadge": "تقدير"
+    "estimateBadge": "تقدير",
+    "paid": "مدفوعة",
+    "ruleMeal": "استراحة الطعام مفقودة أو قصيرة",
+    "ruleRestBreak": "الاستراحة المدفوعة مفقودة",
+    "ruleWeeklyOT": "تجاوز حد الساعات الإضافية الأسبوعية",
+    "ruleDailyOT": "تجاوز حد الساعات الإضافية اليومية",
+    "ruleShortRest": "راحة غير كافية بين المناوبات",
+    "loadError": "تعذر تحميل الجدول أو القواعد",
+    "unkWage": "الأجر غير متاح"
   }
 }

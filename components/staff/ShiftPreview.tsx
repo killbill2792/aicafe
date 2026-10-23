@@ -9,6 +9,7 @@ export default function ShiftPreview({personId,date,start,end,breakMinutes,editi
  rules:RuleSettings;currency:string;timezone:string
 }){
  const t=useTranslations("StaffSchedule");
+ const money=(c:number|null)=>c==null?t("unkWage"):fmt(c,currency);
  const result=previewShift({employeeId:personId,date,start,end,breakMinutes,editingId},team,shifts,gaps,availability,rules,timezone);
  if(!result)return <p role="alert" className="mt-4 rounded-xl bg-warn-soft p-3 text-warn-text">{t("shiftTimeError")}</p>;
  const checks=[
@@ -20,11 +21,11 @@ export default function ShiftPreview({personId,date,start,end,breakMinutes,editi
   [!result.aboveMaximum,t("weeklyMaxOk"),t("weeklyMaxExceeded")]
  ] as const;
  return <section className="mt-4 rounded-[20px] bg-surface2 p-4">
-  <div className="flex justify-between gap-2"><h3 className="font-bold">{t("shiftCost")}</h3><strong className="text-2xl">{fmt(result.next.costCents,currency)}</strong></div>
+  <div className="flex justify-between gap-2"><h3 className="font-bold">{t("shiftCost")}</h3><strong className="text-2xl">{money(result.next.costCents)}</strong></div>
   <p className="my-2 text-sm text-muted">{t("costBreakdown",{hours:(result.next.minutes/60).toFixed(1),break:breakMinutes,paid:(result.next.paidMinutes/60).toFixed(1)})}
     {result.next.wageCents!=null?" × "+fmt(result.next.wageCents,currency)+"/h":""}
     {result.next.estimated?" · "+t("estimate"):""}</p>
   {checks.map(([okay,good,bad],i)=><p key={i} className={`mt-1 text-sm font-semibold ${okay?"text-pos":"text-neg"}`}>{okay?"✓ ":"⚠ "}{okay?good:bad}</p>)}
-  <p className="mt-3 text-sm">{t("weekLabor",{before:fmt(result.before,currency),after:fmt(result.after,currency)})}<strong className="sr-only">{fmt(result.after,currency)}</strong>{result.estimated?" · "+t("estimated"):""}</p>
+  <p className="mt-3 text-sm">{t("weekLabor",{before:money(result.before),after:money(result.after)})}<strong className="sr-only">{fmt(result.after,currency)}</strong>{result.estimated?" · "+t("estimated"):""}</p>
  </section>;
 }

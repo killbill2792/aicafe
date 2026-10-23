@@ -2324,6 +2324,14 @@
     "weeklyMaxOk": "Weekly maximum respected",
     "weeklyMaxExceeded": "Exceeds weekly maximum",
     "weekLabor": "Week labor {before} → {after}",
-    "estimateBadge": "Estimate"
+    "estimateBadge": "Estimate",
+    "paid": "paid",
+    "ruleMeal": "Meal break missed or too short",
+    "ruleRestBreak": "Paid rest break missing",
+    "ruleWeeklyOT": "Weekly overtime threshold exceeded",
+    "ruleDailyOT": "Daily overtime threshold exceeded",
+    "ruleShortRest": "Insufficient rest between shifts",
+    "loadError": "Could not load the schedule or rules",
+    "unkWage": "Wage unavailable"
   }
 }

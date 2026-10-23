@@ -31,7 +31,7 @@ export default function WeekGrid({dates,people,shifts,gaps,openHours,currency,re
      {dates.map(date=><td key={date} className="p-1.5 align-middle">
       {shifts.filter(s=>s.employeeId===person.id&&s.date===date).map(s=><button key={s.id}
        disabled={readOnly} onClick={()=>onEdit(date,s.id)} className={`min-h-12 w-full rounded-xl border px-2 py-1 text-start text-[13px] font-bold ${index%2?"border-pos/20 bg-pos-soft text-pos":"border-accent-text/20 bg-accent-soft text-accent-text"}`}>
-       <span className="block">{s.start}–{s.end}</span><span className="block">{h(s.paidMinutes)} paid{s.estimated?" · "+t("estimated"):""}</span></button>)}
+       <span className="block">{s.start}–{s.end}</span><span className="block">{h(s.paidMinutes)} {t("paid")}{s.estimated?" · "+t("estimated"):""}</span></button>)}
       <button disabled={readOnly} aria-label={t("addPersonShift",{name:person.name,date})} onClick={()=>onAdd(date,person.id)}
        className="min-h-12 w-full text-muted hover:text-accent-text">+</button>
      </td>)}

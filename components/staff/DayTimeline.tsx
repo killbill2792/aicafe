@@ -1,4 +1,5 @@
 "use client";
+import {useTranslations} from "next-intl";
 import {dayTimeline,type DetailedShift,type ScheduleGap} from "@/lib/calc/scheduling/schedulePresentation";
 import type {OpenHours} from "@/lib/business/openHours";
 const palettes=["bg-accent-soft text-accent-text border-accent-text/20",
@@ -8,6 +9,7 @@ export default function DayTimeline({date,shifts,gaps,openHours,people,onShiftCl
  date:string;shifts:DetailedShift[];gaps:ScheduleGap[];openHours:OpenHours|null;
  people:{id:string;colorIndex:number|null}[];onShiftClick?:(id:string)=>void;preview?:DetailedShift|null
 }){
+ const t=useTranslations("StaffSchedule");
  const rendered=dayTimeline(date,preview?[...shifts.filter(s=>s.id!==preview.id),preview]:shifts,gaps,openHours);
  return <div className="w-full" dir="ltr">
   <div className="relative mt-2" style={{height:rendered.height}}>
@@ -20,7 +22,7 @@ export default function DayTimeline({date,shifts,gaps,openHours,people,onShiftCl
    {rendered.blocks.map(block=>{
     const person=people.find(p=>p.id===block.employeeId);
     const style=palettes[Math.abs(person?.colorIndex??people.findIndex(p=>p.id===block.employeeId))%palettes.length];
-    return <button type="button" key={block.id} title={block.title} aria-label={block.title}
+    return <button type="button" key={block.id} title={block.title.replace(/^Team /,t("team")+" ")} aria-label={block.title}
      onClick={()=>onShiftClick?.(block.id)} disabled={!onShiftClick}
      className={`absolute flex h-[26px] min-w-[18px] items-center truncate rounded-lg border px-1.5 text-[12px] font-bold ${style} ${preview?.id===block.id?"outline outline-[3px] outline-offset-1 outline-accent-text":""}`}
      style={{top:block.top,left:block.left+"%",width:Math.max(block.width,4)+"%"}}>

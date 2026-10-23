@@ -110,7 +110,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    {initialAlerts.filter(a=>!dismissed.includes(a.id)).length>0&&<section className="rounded-2xl border border-line bg-surface p-4">
     <h2 className="text-lg font-bold">{t("ruleAlerts")} · {initialAlerts.filter(a=>!dismissed.includes(a.id)).length}</h2>
     {initialAlerts.filter(a=>!dismissed.includes(a.id)).map(a=><div key={a.id} className="flex items-start gap-3 border-t border-line py-3">
-      <span aria-hidden="true">⚠</span><div className="min-w-0 flex-1"><p className="font-semibold">{a.rule_key.replaceAll("_"," ")}</p><p className="text-sm text-muted">{a.message}</p></div>
+      <span aria-hidden="true">⚠</span><div className="min-w-0 flex-1"><p className="font-semibold">{t(({meal:"ruleMeal",rest_break:"ruleRestBreak",weekly_overtime:"ruleWeeklyOT",daily_overtime:"ruleDailyOT",short_rest:"ruleShortRest"} as Record<string,"ruleMeal"|"ruleRestBreak"|"ruleWeeklyOT"|"ruleDailyOT"|"ruleShortRest">)[a.rule_key]??"ruleMeal")}</p></div>
       <button disabled={busy} className="min-h-12 rounded-lg border border-line px-3" onClick={()=>{setDismissed(ids=>[...ids,a.id]);run(()=>dismissStaffRuleAlert({id:a.id}));}}>{t("dismiss")}</button>
     </div>)}
    </section>}
