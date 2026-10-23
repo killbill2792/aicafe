@@ -1,6 +1,7 @@
 import "server-only";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {accessCodeHash,normalizeCode} from "@/lib/access/access.server";
+import {accessCodeHash} from "@/lib/access/access.server";
+import {normalizeCode} from "@/lib/access/status";
 export async function getAdminCodeConsole(){
  const db=createAdminSupabaseClient();
  const [{data:codes,error:cErr},{data:redemptions,error:rErr},{data:access,error:aErr},{data:cafes,error:bErr}]=await Promise.all([
