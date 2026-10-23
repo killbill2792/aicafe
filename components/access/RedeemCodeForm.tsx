@@ -16,7 +16,7 @@ export default function RedeemCodeForm({copy}:{copy:RedemptionCopy & {label:stri
  }}>
   <label className="w-full text-[17px] font-semibold">{copy.label}</label>
   <input dir="ltr" autoComplete="off" className="min-h-12 min-w-0 flex-1 rounded border px-3 py-2 text-[17px] text-ink" value={code} maxLength={64} placeholder={copy.placeholder} onChange={e=>setCode(e.target.value)} required/>
-  <button disabled={busy} className="min-h-12 rounded bg-ink px-4 py-2 text-[17px] font-semibold text-white disabled:opacity-60">{copy.submit}</button>
+  <button disabled={busy} className="min-h-12 rounded bg-accent px-4 py-2 text-[17px] font-semibold text-on-accent disabled:opacity-60">{copy.submit}</button>
   {message&&<p role={error?"alert":"status"} className="w-full text-[17px] leading-relaxed">{message}</p>}
  </form>;
 }
