@@ -1,5 +1,5 @@
 import "server-only";
-import { selectedFeeCoverageForSalesDays, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { knownProcessorCount, selectedFeeCoverageForSalesDays, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
@@ -141,12 +141,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
     (connectionsResult.data ?? []).find((connection) => connection.provider !== "demo" && connection.provider !== "csv")?.provider ??
     null;
 
-  const processorCount = new Set([
-    ...(connectionsResult.data ?? [])
-      .map((connection) => String(connection.provider).toLowerCase())
-      .filter((provider) => provider !== "demo" && provider !== "csv"),
-    ...actualProviders.map((provider) => provider.toLowerCase()),
-  ]).size;
+  const processorCount = knownProcessorCount(connectionsResult.data ?? [], factsResult.data ?? []);
 
   return {
     today,
