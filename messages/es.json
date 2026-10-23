@@ -97,6 +97,7 @@
     "salesCoverageMonth": "Hay ventas registradas para {actual} de {expected} días este mes."
   },
   "AddCost": {
+    "manualSaveError": "No se pudo guardar este gasto. Inténtalo de nuevo.",
     "backspace": "Borrar",
     "statementAddMissingLine": "Agregar una línea faltante",
     "statementMissingLineHint": "Introduce los datos de la transacción faltante.",
