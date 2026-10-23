@@ -175,6 +175,7 @@ export default function ProcessingFeeEstimateForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [savedSummary, setSavedSummary] = useState<typeof coverage | null>(null);
+  const [savedDays, setSavedDays] = useState<FeeCoverageDay[] | null>(null);
   const [coveredCount, setCoveredCount] = useState<number | null>(null);
   const initialCompleteActualCoverage =
     coverage.salesDays > 0 && coverage.actualDays === coverage.salesDays && coverage.missingDays === 0;
@@ -231,7 +232,6 @@ export default function ProcessingFeeEstimateForm({
       return;
     }
     setError(null);
-    setSavedSummary(null);
     setCoveredCount(null);
 
     const salesShareBps = bpsFromPercent(processedSalesShare);
@@ -292,7 +292,7 @@ export default function ProcessingFeeEstimateForm({
     startTransition(async () => {
       const result = await saveOwnerProcessingFeeEstimatePlan({
         processorLabel: processorLabel.trim(),
-        effectiveFrom: coverMissing ? firstUncoveredSalesDay(coverageDays, today) : effectiveFrom,
+        effectiveFrom: coverMissing ? firstUncoveredSalesDay(shownDays, today) : effectiveFrom,
         processedSalesShareBps: salesShareBps,
         processedTransactionShareBps: transactionShareBps,
         averageProcessedTicketCents,
@@ -303,12 +303,14 @@ export default function ProcessingFeeEstimateForm({
         return;
       }
       setSavedSummary(result.summary);
-      if (coverMissing) setCoveredCount(Math.max(0, coverage.missingDays - result.summary.missingDays));
+      setSavedDays(result.coverageDays);
+      if (coverMissing) setCoveredCount(Math.max(0, shownCoverage.missingDays - result.summary.missingDays));
       router.refresh();
     });
   }
 
   const shownCoverage = savedSummary ?? coverage;
+  const shownDays = savedDays ?? coverageDays;
   const connected = providerLabel(sourceSummary.connectedProvider);
   const processorChoice = ["Toast", "Square", "Clover"].find((value) => value.toLowerCase() === processorLabel.toLowerCase()) ?? (otherSelected ? "Other" : "");
   const firstRule = rules[0] ?? {
@@ -656,10 +658,10 @@ export default function ProcessingFeeEstimateForm({
           </div>
         </div>
         <div className="mt-4 divide-y divide-line" aria-label={labels.coverageTitle}>
-          {coverageDays.map((day) => (
+          {shownDays.map((day) => (
             <div key={day.date} className="flex min-h-12 items-center justify-between gap-3 py-2 text-sm">
               <time dateTime={day.date}>{new Intl.DateTimeFormat(locale, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day.date + "T12:00:00Z"))}</time>
-              {day.status === "missing" && (savedSummary === null || shownCoverage.missingDays > 0)
+              {day.status === "missing"
                 ? <button type="button" disabled={isPending} onClick={() => save(true)} className="rounded-full border border-warn px-3 py-2 font-bold text-warn">{labels.coverageMissing}</button>
                 : <span className="text-ink-muted">{day.status === "actual" ? labels.coverageActual : labels.coverageEstimated}</span>}
             </div>
