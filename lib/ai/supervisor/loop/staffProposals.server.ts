@@ -3,8 +3,8 @@ import {z} from "zod";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
+import {readStaffProposalToken,readStaffProposalSources,
+ type StaffProposalShift as Shift} from "@/lib/data/staffProposalSources.server";
 import {parseAvailabilityText} from "@/lib/calc/scheduling/parseAvailabilityText";
 import {assertStaffShiftPlan} from "@/lib/calc/scheduling/staffProposalValidation";
 import {staffProposalInputs,type StaffProposalName} from "@/lib/ai/agent/tools/staffProposals";
@@ -21,9 +21,6 @@ const effectSchema=z.strictObject({
  preview:z.array(line).min(1).max(100),
  payload:z.record(z.string(),z.unknown()),
 });
-type Person={id:string;display_name:string;role:string|null;active:boolean;
- wage_period:string;wage_amount_cents:number|null;phone_e164:string|null;whatsapp_opt_in:boolean};
-type Shift={id:string;employee_id:string;local_date:string;start_local:string;end_local:string;break_minutes:number;status:string;deleted_at:string|null};
 const dayNames={
  en:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],
  es:["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"],
@@ -35,17 +32,8 @@ const add=(d:string,n:number)=>new Date(Date.parse(d+"T12:00:00Z")+86400000*n).t
 const fmtShift=(s:Shift)=>when({date:s.local_date,start:s.start_local.slice(0,5),end:s.end_local.slice(0,5)});
 const display=(v:unknown)=>v===null||v===undefined?"—":String(v);
 function ensure(ok:unknown,msg:string):asserts ok{if(!ok)throw new Error(msg);}
-async function readToken(scope:OwnerLoopScope){
- const {data,error}=await createAdminSupabaseClient().rpc("supervisor_staff_source_token",{p_business_id:scope.businessId});
- if(error||typeof data!=="string"||!/^[a-f0-9]{32}$/.test(data))throw new Error("Staff revision unavailable; apply migration 088");
- return data;
-}
-export {readToken as readStaffProposalToken};
+export {readStaffProposalToken};
 async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
- const owner=await requireSchedulingOwner();
- if(!owner||owner.businessId!==scope.businessId)throw new Error("Only the current café owner can propose staff changes");
- const user=await owner.supabase.auth.getUser();
- if(user.error||user.data.user?.id!==scope.ownerUserId)throw new Error("Owner session changed");
  const input=staffProposalInputs[name].parse(raw);
  const copy=({en,es,ar} as const)[scope.locale].StaffApprovalCard;
  const days=dayNames[scope.locale];
@@ -55,32 +43,15 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    ?(input as {shift:{date:string}}).shift.date:null;
  const from=relevantWeek?add(relevantWeek,-1):changeDate?add(changeDate,-1):null;
  const to=relevantWeek?add(relevantWeek,7):changeDate?add(changeDate,1):null;
- const beforeToken=await readToken(scope);
- const db=createAdminSupabaseClient();
- const [peopleResult,shiftsResult,rulesResult,availabilityResult,exceptionsResult,locationResult]=await Promise.all([
-  db.from("employees").select("id,display_name,role,active,wage_period,wage_amount_cents,phone_e164,whatsapp_opt_in").eq("business_id",scope.businessId).limit(501),
-  from&&to?db.from("scheduled_shifts").select("id,employee_id,local_date,start_local,end_local,break_minutes,status,deleted_at")
-    .eq("business_id",scope.businessId).is("deleted_at",null).gte("local_date",from).lte("local_date",to).limit(501)
-    :Promise.resolve({data:[],error:null}),
-  db.from("team_rules").select("*").eq("business_id",scope.businessId).maybeSingle(),
-  db.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to,source").eq("business_id",scope.businessId).limit(501),
-  db.from("staff_availability_exceptions").select("employee_id,local_date,exception_type").eq("business_id",scope.businessId).limit(501),
-  db.from("locations").select("id").eq("business_id",scope.businessId).limit(501),
- ]);
- if([peopleResult,shiftsResult,rulesResult,availabilityResult,exceptionsResult,locationResult].some(r=>r.error))
-  throw new Error("Staff preview unavailable");
- if([peopleResult,shiftsResult,availabilityResult,exceptionsResult,locationResult].some(r=>(r.data??[]).length>500))
-  throw new Error("Too many staff records to preview safely");
- const people=(peopleResult.data??[]) as Person[],shifts=(shiftsResult.data??[]) as Shift[];
+ const beforeToken=await readStaffProposalToken(scope);
+ const {people,shifts,rules,availability,exceptions,timezone}=
+  await readStaffProposalSources(scope,from,to);
  const active=(id:string)=>{const p=people.find(p=>p.id===id&&p.active);ensure(p,"Active staff member not found");return p;};
  const preview:Array<{label:string;before:string;after:string}>=[];
  const shown=(id:string)=>people.find(p=>p.id===id)?.display_name??id;
  const item=(label:string,before:string,after:string)=>preview.push({label,before,after});
  let payload:Record<string,unknown>={};
- const cafeZone=await owner.supabase.from("businesses").select("timezone")
-   .eq("id",scope.businessId).single();
- if(cafeZone.error||!cafeZone.data?.timezone)throw new Error("Café timezone unavailable");
- const parts=new Intl.DateTimeFormat("en-US",{timeZone:cafeZone.data.timezone,
+ const parts=new Intl.DateTimeFormat("en-US",{timeZone:timezone,
    year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
  const part=(kind:string)=>parts.find(p=>p.type===kind)?.value??"";
  const localDate=part("year")+"-"+part("month")+"-"+part("day");
@@ -143,14 +114,23 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    ensure(parsed,"Use an unambiguous staff name, weekdays, and times");
    const matched=people.filter(p=>p.active&&p.display_name.trim().toLocaleLowerCase()===parsed.personName.trim().toLocaleLowerCase());
    ensure(matched.length===1,"Staff name not found or ambiguous");
-   const p=matched[0];const rows=(availabilityResult.data??[]).filter(x=>x.employee_id===p.id);
+   const p=matched[0];const rows=availability.filter(x=>x.employee_id===p.id);
    const old=rows.map(x=>days[x.day_of_week]+" "+String(x.start_local).slice(0,5)+"–"+String(x.end_local).slice(0,5)).join(", ")||copy.noAvailability;
    const windows=parsed.availability.map(x=>({day:x.day,start:x.start,end:x.end}));
    ensure(windows.every(x=>x.start!==null&&x.end!==null),"Incomplete availability window");
    const next=parsed.offDates?.length?copy.off+" "+parsed.offDates.join(", "):
      windows.map(x=>days[x.day]+" "+x.start+"–"+x.end).join(", ")||copy.noAvailability;
-   item(p.display_name,parsed.offDates?.length?
-     (exceptionsResult.data??[]).filter(x=>x.employee_id===p.id).map(x=>x.local_date+" "+x.exception_type).join(", ")||copy.noExceptions:old,next);
+   const absenceLabels:Record<string,string>={
+     unavailable:copy.exceptionUnavailable,approved_leave:copy.exceptionApprovedLeave,
+     replace_day:copy.exceptionReplaceDay,add_available:copy.exceptionAddAvailable,
+     hours_cap:copy.exceptionHoursCap
+    };
+    item(p.display_name,parsed.offDates?.length?
+     exceptions.filter(x=>x.employee_id===p.id).map(x=>x.local_date+" "+
+        (absenceLabels[x.exception_type]??copy.exceptionOther)+
+        (x.start_local&&x.end_local?" "+x.start_local.slice(0,5)+"–"+x.end_local.slice(0,5):"")+
+        (x.exception_type==="hours_cap"&&x.max_minutes!==null?" "+String(x.max_minutes):""))
+        .join(", ")||copy.noExceptions:old,next);
    payload={employee_id:p.id,availability:windows,off_dates:parsed.offDates??[],effective_from:localDate};break;
   }
   case "propose_rule_change":{
@@ -169,7 +149,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const ruleLabels:Record<string,string>={"meal_break_enabled":"mealBreak","meal_break_minutes":"mealMinutes","meal_break_after_minutes":"mealAfter","rest_break_enabled":"paidRest","rest_break_minutes":"restMinutes","rest_break_every_minutes":"restEvery","weekly_ot_enabled":"weeklyOvertime","weekly_ot_after_minutes":"weeklyAfter","ot_multiplier_bp":"multiplier","daily_ot_enabled":"dailyOvertime","daily_ot_after_minutes":"dailyAfter","max_shift_enabled":"longestShift","max_shift_minutes":"longestMinutes","min_shift_enabled":"shortestShift","min_shift_minutes":"shortestMinutes","min_rest_enabled":"betweenShifts","min_rest_minutes":"betweenMinutes","coverage_enabled":"minimumCoverage","min_headcount":"peopleWhileOpen","prep_minutes_before_open":"prepBeforeOpen","prep_minutes_after_close":"prepAfterClose"};
    const translatedRules=({en,es,ar} as const)[scope.locale].StaffSchedule as Record<string,string>;
    item(translatedRules[ruleLabels[d.rule]]??d.rule,
-     display((rulesResult.data as Record<string,unknown>|null)?.[d.rule]??defaults[d.rule as keyof typeof defaults]),display(v));
+     display(rules?.[d.rule]??defaults[d.rule as keyof typeof defaults]),display(v));
    payload={rule:d.rule,boolean_value:d.boolean_value,number_value:d.number_value};break;
   }
   case "propose_send_schedule":{
@@ -186,7 +166,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    payload={week_start:d.week_start};break;
   }
  }
- const afterToken=await readToken(scope);
+ const afterToken=await readStaffProposalToken(scope);
  ensure(beforeToken===afterToken,"Staff data changed while preparing preview; try again");
  return {effect:{operation:name,expectedToken:beforeToken,preview,payload},
    baseline:{source:"staff_schedule",status:"actual"},monitorSpec:{durationDays:1,metricScope:"staff"}};
