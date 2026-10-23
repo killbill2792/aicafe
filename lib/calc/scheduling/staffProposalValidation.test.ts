@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {assertStaffShiftPlan} from "./staffProposalValidation";
+import {assertStaffShiftPlan,formatStaffShiftWithBreak} from "./staffProposalValidation";
 const s={employee_id:"maria",date:"2026-10-26",start:"06:30",end:"12:00",break_minutes:30};
 describe("staff approval scheduling validation",()=>{
  it("permits a prep shift before opening and nonoverlapping shifts",()=>{
@@ -37,5 +37,16 @@ describe("localized staff rule approval values",()=>{
   const copy=en.StaffApprovalCard;
   expect(formatStaffApprovalRuleValue(0,copy)).toBe("0");
   expect(formatStaffApprovalRuleValue(null,copy)).toBe("—");
+ });
+});
+
+describe("schedule approval break disclosure",()=>{
+ it("distinguishes shifts with the same hours but different unpaid breaks",()=>{
+  const shift={date:"2026-11-02",start:"09:00",end:"17:00",break_minutes:30};
+  const before=formatStaffShiftWithBreak(shift,"min unpaid break");
+  const after=formatStaffShiftWithBreak({...shift,break_minutes:240},"min unpaid break");
+  expect(before).toContain("30 min unpaid break");
+  expect(after).toContain("240 min unpaid break");
+  expect(before).not.toBe(after);
  });
 });

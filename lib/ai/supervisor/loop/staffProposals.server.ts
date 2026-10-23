@@ -6,7 +6,7 @@ import ar from "@/messages/ar.json";
 import {readStaffProposalToken,readStaffProposalSources,
  type StaffProposalShift as Shift} from "@/lib/data/staffProposalSources.server";
 import {parseAvailabilityText} from "@/lib/calc/scheduling/parseAvailabilityText";
-import {assertStaffShiftPlan,formatStaffApprovalRuleValue} from "@/lib/calc/scheduling/staffProposalValidation";
+import {assertStaffShiftPlan,formatStaffApprovalRuleValue,formatStaffShiftWithBreak} from "@/lib/calc/scheduling/staffProposalValidation";
 import {staffProposalInputs,type StaffProposalName} from "@/lib/ai/agent/tools/staffProposals";
 import {registerLoopCapability,type OwnerLoopScope} from "./engine";
 
@@ -21,11 +21,7 @@ const effectSchema=z.strictObject({
  preview:z.array(line).min(1).max(100),
  payload:z.record(z.string(),z.unknown()),
 });
-const dayNames={
- en:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],
- es:["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"],
- ar:["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"],
-};
+const weekdayKeys=["sun","mon","tue","wed","thu","fri","sat"] as const;
 const when=(x:{date:string;start:string;end:string})=>x.date+" "+x.start+"–"+x.end;
 const isoDay=(d:string)=>new Date(d+"T12:00:00Z").getUTCDay();
 const add=(d:string,n:number)=>new Date(Date.parse(d+"T12:00:00Z")+86400000*n).toISOString().slice(0,10);
@@ -36,7 +32,8 @@ export {readStaffProposalToken};
 async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
  const input=staffProposalInputs[name].parse(raw);
  const copy=({en,es,ar} as const)[scope.locale].StaffApprovalCard;
- const days=dayNames[scope.locale];
+ const dayCopy=({en,es,ar} as const)[scope.locale].SchedulingAvailability;
+ const days=weekdayKeys.map(key=>dayCopy[key]);
  const relevantWeek=name==="propose_schedule"||name==="propose_send_schedule"
    ?(input as {week_start:string}).week_start:null;
  const changeDate=name==="propose_shift_change"
@@ -73,8 +70,13 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
     active(s.employee_id);ensure(s.date>=d.week_start&&s.date<=last,"Shift must fall in the selected week");
     // Overlaps, duplicates and breaks are checked in the pure planner above.
    }
-   item(copy.week+" "+d.week_start,old.map(s=>shown(s.employee_id)+" "+fmtShift(s)).join("\n")||copy.noDraftShifts,
-     d.shifts.map(s=>shown(s.employee_id)+" "+when(s)).join("\n")||copy.noShift);
+   item(copy.week+" "+d.week_start,
+     old.map(s=>shown(s.employee_id)+" "+formatStaffShiftWithBreak({
+       date:s.local_date,start:s.start_local.slice(0,5),end:s.end_local.slice(0,5),
+       break_minutes:s.break_minutes
+     },copy.breakMinutes)).join("\n")||copy.noDraftShifts,
+     d.shifts.map(s=>shown(s.employee_id)+" "+formatStaffShiftWithBreak(s,copy.breakMinutes))
+      .join("\n")||copy.noShift);
    payload={week_start:d.week_start,shifts:d.shifts};break;
   }
   case "propose_shift_change":{

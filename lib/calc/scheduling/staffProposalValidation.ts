@@ -21,3 +21,11 @@ export function formatStaffApprovalRuleValue(value:unknown,labels:{ruleEnabled:s
  if(typeof value==="boolean")return value?labels.ruleEnabled:labels.ruleDisabled;
  return value===null||value===undefined?"—":String(value);
 }
+
+/** Disclose unpaid break differences in both columns of schedule approvals. */
+export function formatStaffShiftWithBreak(
+ shift:{date:string;start:string;end:string;break_minutes:number},
+ label:string
+):string{
+ return `${shift.date} ${shift.start}–${shift.end} (${shift.break_minutes} ${label})`;
+}
