@@ -70,7 +70,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
   });
   if (!own) throw new Error("Own café not found.");
   const rawBusiness = own.businesses as unknown as
-    | { is_demo: boolean; timezone: string }
+    | { is_demo: boolean; timezone: string; currency: string }
     | { is_demo: boolean; timezone: string; currency: string }[];
   const business = Array.isArray(rawBusiness) ? rawBusiness[0] : rawBusiness;
   const businessId = own.business_id;
