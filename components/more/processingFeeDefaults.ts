@@ -24,6 +24,11 @@ export function missingCoverageSaveOptions(days: FeeCoverageDay[], today: string
   return { coverMissing: true as const, effectiveFrom: firstUncoveredSalesDay(days, today) };
 }
 
+export function isRealIsoDay(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(value + "T12:00:00Z");
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 /** Client-side field validation; error keys also drive aria-invalid and focus. */
 export function validateRequiredFeeFields(
   values: {
@@ -49,7 +54,7 @@ export function validateRequiredFeeFields(
     return value.trim() !== "" && Number.isFinite(number) && number >= 0 && number <= 100;
   };
   if (!values.processorLabel.trim()) errors.processor = messages.requiredProcessor;
-  if (!values.coverMissing && (!/^\d{4}-\d{2}-\d{2}$/.test(values.effectiveFrom) || Number.isNaN(Date.parse(values.effectiveFrom)))) {
+  if (!values.coverMissing && !isRealIsoDay(values.effectiveFrom)) {
     errors.effectiveFrom = messages.requiredEffectiveDate;
   }
   if (!percent(values.cardSalesShare)) errors.cardShare = messages.requiredCardShare;
