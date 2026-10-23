@@ -1,14 +1,15 @@
 "use client";
 import {useTranslations} from "next-intl";
 import type {OpenHours} from "@/lib/business/openHours";
+import {coverageVerification} from "@/lib/calc/scheduling/coverageGaps";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import {dayTotals,personTotals,type DetailedShift,type PersonForSchedule,type ScheduleGap} from "@/lib/calc/scheduling/schedulePresentation";
 const fmt=(value:number|null,currency:string)=>value===null?"—":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(value/100);
 const h=(minutes:number)=>Number((minutes/60).toFixed(1))+" h";
-export default function WeekGrid({dates,people,shifts,gaps,openHours,currency,readOnly,onAdd,onEdit}:{
+export default function WeekGrid({dates,people,shifts,gaps,openHours,currency,readOnly,coverageEnabled,onAdd,onEdit}:{
  dates:string[];people:PersonForSchedule[];shifts:DetailedShift[];gaps:ScheduleGap[];
- openHours:OpenHours|null;currency:string;readOnly:boolean;
+ openHours:OpenHours|null;currency:string;readOnly:boolean;coverageEnabled:boolean;
  onAdd:(date:string,personId:string)=>void;onEdit:(date:string,id:string)=>void
 }){
  const t=useTranslations("StaffSchedule");
@@ -48,8 +49,12 @@ export default function WeekGrid({dates,people,shifts,gaps,openHours,currency,re
    <tfoot className="font-semibold"><tr className="bg-surface2"><th className="p-3 text-start">{t("dayTotal")}</th>
     {dates.map(date=>{const day=dayTotals(date,shifts);return <td key={date} className="p-2 text-center">{h(day.paidMinutes)}<span className="block text-sm text-muted">{wageSummary(day)}{day.estimated?" "+t("estimated"):""}</span></td>})}<td/></tr>
     <tr><th className="p-3 text-start">{t("coverage")}</th>{dates.map(date=>{
-     const gap=gaps.find(g=>g.date===date);return <td key={date} className={`p-2 text-center text-sm ${gap?"text-neg":"text-pos"}`}>{gap?
-      "⚠ "+t("coverageDetail",{start:gap.start,end:gap.end,count:gap.headcount}):"✓ "+t("allDayCoverage")}</td>
+     const gap=gaps.find(g=>g.date===date),state=coverageVerification(date,openHours,coverageEnabled);
+     const checked=state==="checked";
+     const message=state==="disabled"?t("coverageDisabled"):state==="unknown"?t("coverageNotChecked"):
+      state==="closed"?t("closed"):gap?
+       "⚠ "+t("coverageDetail",{start:gap.start,end:gap.end,count:gap.headcount}):"✓ "+t("allDayCoverage");
+     return <td key={date} className={`p-2 text-center text-sm ${checked?(gap?"text-neg":"text-pos"):"text-muted"}`}>{message}</td>
     })}<td/></tr></tfoot>
   </table></div>;
 }
