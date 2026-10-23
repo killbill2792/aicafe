@@ -2,8 +2,9 @@ import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import BackHeader from "@/components/shared/BackHeader";
 import TypeExpenseForm from "@/components/addcost/TypeExpenseForm";
-import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
+import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
 import PageShell from "@/components/shared/PageShell";
+import { validCostCategory, validReturnTo } from "@/components/addcost/routeParams";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -22,9 +23,9 @@ export default async function TypeExpensePage({ searchParams }: { searchParams: 
   return (
     <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("optionType")} backHref="/add-cost" backLabel={tCommon("back")} />
-      <TypeExpenseForm
-        returnTo={returnTo}
-        initialCategory={EXPENSE_CATEGORY_CODES.includes(category as ExpenseCategoryCode) ? category as ExpenseCategoryCode : null}
+      <TypeExpenseForm key={category ?? "none"}
+        returnTo={validReturnTo(returnTo)}
+        initialCategory={validCostCategory(category)}
         categoryLabels={categoryLabels}
         todayDateStr={new Date().toISOString().slice(0, 10)}
         labels={{
