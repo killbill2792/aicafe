@@ -1284,7 +1284,8 @@
     "requiredAverageTicket": "Enter an average processed payment",
     "invalidMix": "Rates must total 100%",
     "info": "Information",
-    "noNewCoverage": "The rate was saved, but some days still need more fee details."
+    "noNewCoverage": "The rate was saved, but some days still need more fee details.",
+    "missingButton": "Missing"
   },
   "Economics": {
     "title": "Profit goal simulator",
