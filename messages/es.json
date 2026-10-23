@@ -1283,7 +1283,8 @@
     "requiredRule": "Completa los datos de esta tarifa",
     "requiredAverageTicket": "Introduce el importe promedio por pago procesado",
     "invalidMix": "Las tarifas deben sumar el 100 %",
-    "info": "Información"
+    "info": "Información",
+    "noNewCoverage": "Se guardó la tarifa, pero algunos días aún necesitan más datos sobre las comisiones."
   },
   "Economics": {
     "title": "Simulador de meta de ganancia",
