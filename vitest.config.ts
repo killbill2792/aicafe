@@ -9,7 +9,6 @@ export default defineConfig({
     // Reserve CPU for deterministic, wall-clock-bounded optimizer tests
     // instead of competing with excessive test workers.
     maxWorkers: 2,
-    minWorkers: 1,
   },
   resolve: {
     alias: {
