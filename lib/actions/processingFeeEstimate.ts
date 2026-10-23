@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { isRealIsoDay, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
@@ -24,7 +24,7 @@ const RateRuleSchema = z.object({
 
 const PlanSchema = z.object({
   processorLabel: z.string().trim().min(1).max(80),
-  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  effectiveFrom: z.string().refine(isRealIsoDay),
   processedSalesShareBps: z.number().int().min(0).max(10_000),
   processedTransactionShareBps: z.number().int().min(0).max(10_000),
   averageProcessedTicketCents: z.number().int().positive().nullable(),
