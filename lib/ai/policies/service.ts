@@ -43,6 +43,13 @@ export class TeamRulesService {
     return this.repository.listActiveRules(this.scope);
   }
 
+  /** Owner-scoped read of one rule (memory approval card). */
+  async getRule(id: string): Promise<TeamRule> {
+    const rule = await this.repository.findRule(this.scope, id);
+    if (!rule) throw new RuleNotFound("Rule not found");
+    return rule;
+  }
+
   createDraft(agentId: RuleAgent, instruction: string) {
     return this.repository.createDraft(this.scope, agentId, instruction);
   }

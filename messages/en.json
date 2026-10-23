@@ -2383,6 +2383,75 @@
       "conflict": "Updated elsewhere"
     }
   },
+  "ChatExperience": {
+    "ack": "Got it, I'm working on it.",
+    "answering": "Writing your answer now.",
+    "continuing": "Now answering your newer message.",
+    "followUpQueued": "Added your message. I'll include it in this answer.",
+    "followUpRead": "Read your new message.",
+    "resumed": "Still working on your last question. You can leave this page; the answer will be here.",
+    "tools": {
+      "get_profit": "Checked your profit",
+      "get_sales": "Checked your sales",
+      "get_menu_items": "Checked your menu",
+      "get_staff": "Checked your team",
+      "get_schedule": "Checked the schedule",
+      "get_labor": "Checked labor costs",
+      "get_business_hours": "Checked your opening hours",
+      "get_expenses": "Checked your expenses",
+      "get_bills": "Checked your bills",
+      "get_break_even": "Checked your break-even point",
+      "get_cost_summary": "Checked your costs",
+      "get_product_costs": "Checked product costs",
+      "get_ingredient_costs": "Checked ingredient costs",
+      "get_inventory": "Checked your stock",
+      "get_item_sales": "Checked item sales",
+      "get_price_recommendation": "Worked out a price",
+      "draft_week_schedule": "Drafted a week schedule",
+      "suggest_new_item_price": "Worked out a price for the new item",
+      "propose_price_change": "Prepared a price change for you to approve",
+      "get_initiatives": "Checked your plans",
+      "get_initiative_status": "Checked how your plan is going",
+      "record_checkin": "Noted your check-in",
+      "remember_cafe_fact": "Prepared a note for you to approve"
+    },
+    "agents": {
+      "supervisor": "Checked your café data",
+      "alex": "Checked sales and menu",
+      "olivia": "Checked team and hours",
+      "maya": "Checked supplies",
+      "leo": "Checked money"
+    },
+    "failures": {
+      "agent_turn_failed": "Something went wrong and I stopped. Tap Retry.",
+      "timeout": "This took too long and stopped. Tap Retry.",
+      "agent_busy": "I'm still on your earlier messages. Send this again in a moment.",
+      "reply_storage_failed": "The answer was ready but didn't save. Tap Retry.",
+      "reply_too_long": "The answer was too long to save. Ask for a shorter one.",
+      "owner_usage_limit_reached": "You've used today's chat limit. It resets tomorrow.",
+      "agent_request_failed": "I couldn't reach the server. Check your connection and tap Retry.",
+      "agent_stream_incomplete": "The connection dropped before the answer finished. Tap Retry.",
+      "attempts_exhausted": "I tried several times and couldn't finish. Try asking in a different way."
+    }
+  },
+  "MemoryCard": {
+    "title": "Remember this?",
+    "loading": "Loading…",
+    "approve": "Remember",
+    "reject": "Not now",
+    "saved": "Saved",
+    "notSaved": "Not saved",
+    "paused": "Paused",
+    "error": "That didn't work. Try again.",
+    "conflict": "This note changed. Reload the chat.",
+    "agents": {
+      "supervisor": "For the whole team",
+      "alex": "For Alex (sales and menu)",
+      "olivia": "For Olivia (team and hours)",
+      "maya": "For Maya (supplies)",
+      "leo": "For Leo (money)"
+    }
+  },
   "StaffSchedule": {
     "schedule": "Schedule",
     "team": "Team",

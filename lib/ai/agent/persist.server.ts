@@ -57,6 +57,7 @@ export function splitAgentText(text: string, unverified: readonly Span[] = []) {
   }
   return blocks;
 }
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function agentReplyPayload(turn: AgentTurn) {
   if (!turn.text.trim()) throw new AgentEmptyReplyError();
   const blocks = splitAgentText(turn.text, turn.unverified);
@@ -66,8 +67,16 @@ export function agentReplyPayload(turn: AgentTurn) {
       typeof result.proposalId==="string"&&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.proposalId)
       ?[result.proposalId]:[]))].slice(0,30-blocks.length);
+  // Memory cards come only from the memory tool's own draft result (never model text).
+  const memoryRuleIds=[...new Set(turn.results.flatMap(result=>
+    result.source==="memory_proposal"&&result.draft===true&&
+      result.saved===false&&result.missing.length===0&&
+      typeof result.ruleId==="string"&&UUID.test(result.ruleId)
+      ?[result.ruleId]:[]))].slice(0,Math.max(0,30-blocks.length-proposalIds.length));
   const status = persistedAgentStatus(turn);
-  const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId}))] };
+  const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
+    ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
+    ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId}))] };
   const unverified = turn.unverified.flatMap(item => {
     const rows: Array<typeof item & {blockIndex:number}> = [];
     let offset = 0;
@@ -86,6 +95,8 @@ export function agentReplyPayload(turn: AgentTurn) {
     unverified, endReason: turn.endReason, evidence:turn.evidence??[],agentIds:turn.agentIds??[],
     sources: turn.results.map(r => ({ source:r.source, period:r.period, missing:r.missing })),
     usage: { ...turn.usage },
+    // Owner messages answered inside this reply (CHAT_JOBS mid-run follow-ups).
+    ...(turn.absorbedOwnerMessageIds?.length?{absorbedOwnerMessageIds:[...turn.absorbedOwnerMessageIds]}:{}),
   } };
 }
 export async function persistAgentReply(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn) {
