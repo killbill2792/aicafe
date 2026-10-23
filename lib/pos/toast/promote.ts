@@ -1,6 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {recomputeDailyRollup} from "@/lib/pos/rollup";
+import {rebuildSalesFactRollups} from "@/lib/pos/salesFactRollups";
 import {ToastApiError} from "./client";
 import {z} from "zod";
 export const promoteSchema=z.object({
@@ -22,6 +23,49 @@ export async function promoteVerifiedToastDay(
  try {
    // Use existing canonical rollup, never another independent sales calculator.
    // No verified zero is promoted merely because an owner typed a matching zero report.
+   // The existing guarded RPC remains unchanged. Enrich from its exact staged
+   // snapshot, not from fabricated order metadata, then rebuild derived facts.
+   const {data:pilot,error:pilotError}=await db.from("toast_pilot_days")
+      .select("orders_snapshot").eq("business_id",p.businessId)
+      .eq("restaurant_guid",p.restaurantGuid).eq("business_date",p.businessDate).single();
+   if(pilotError||!pilot||!Array.isArray(pilot.orders_snapshot))throw new Error("Missing verified Toast snapshot");
+   const {data:staff,error:staffError}=await db.from("employees")
+      .select("id,pos_team_member_id").eq("business_id",p.businessId);
+   if(staffError)throw staffError;
+   const byPos=new Map((staff??[]).map(e=>[e.pos_team_member_id,e.id]));
+   for(const raw of pilot.orders_snapshot){
+      if(!raw||typeof raw!=="object")throw new Error("Invalid Toast order snapshot");
+      const rec=raw as Record<string,unknown>;
+      if(typeof rec.posOrderId!=="string"||!rec.posOrderId.startsWith(`toast:${p.restaurantGuid}:`))throw new Error("Untrusted Toast snapshot ID");
+      const employee=typeof rec.posEmployeeId==="string"?rec.posEmployeeId:null;
+      const employeeId=employee?byPos.get(`toast:${p.restaurantGuid}:${employee}`)??null:null;
+      const {data:order,error:orderError}=await db.from("orders")
+        .update({employee_id:employeeId,
+          dining_option:typeof rec.diningOption==="string"?rec.diningOption:null,
+          source_channel:typeof rec.sourceChannel==="string"?rec.sourceChannel:null,
+          guest_count:Number.isInteger(rec.guestCount)&&Number(rec.guestCount)>=0&&Number(rec.guestCount)<=32767?rec.guestCount:null})
+        .eq("business_id",p.businessId).eq("pos_order_id",rec.posOrderId)
+        .select("id").single();
+      if(orderError||!order)throw new Error("Toast fact enrichment failed");
+      if(Array.isArray(rec.lines)){
+        const byName=new Map<string,Set<string|null>>();
+        for(const line of rec.lines){
+          if(!line||typeof line!=="object"||typeof line.name!=="string")continue;
+          const categories=byName.get(line.name)??new Set<string|null>();
+          categories.add(typeof line.category==="string"?line.category:null);
+          byName.set(line.name,categories);
+        }
+        for(const [name,categories] of byName){
+          if(categories.size!==1)continue; // indistinguishable repeated lines
+          const {error}=await db.from("order_lines").update({category:[...categories][0]})
+           .eq("order_id",order.id).eq("name",name);
+          if(error)throw error;
+        }
+      }
+   }
+   const {data:business,error:tzError}=await db.from("businesses").select("timezone").eq("id",p.businessId).single();
+   if(tzError)throw tzError;
+   await rebuildSalesFactRollups(db,p.businessId,[p.businessDate],business.timezone);
    await recomputeDailyRollup(db,p.businessId,p.businessDate);
    // Legacy rollup can return without surfacing its final upsert error.
    // Verify the canonical revenue aggregate before claiming that the write worked.
