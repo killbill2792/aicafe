@@ -12,6 +12,7 @@ import type { MonthlyBills, RecordedExpenses, SoldProduct, ItemSalesCoverage } f
 
 /** A read-only, evidence-carrying allow-list. The AI never receives a raw DB client. */
 export interface CafeToolset {
+ getUsageVariance(businessId:string,input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}):Promise<any>;
   getSchedulingDraftInputs(businessId:string):Promise<KnownSlice<SchedulingDraftInputs>>;
   getCafeSummary(businessId: string): ReturnType<CafeStateService["getCurrentState"]>;
   getProfitability(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafePeriodProfitability>>;
@@ -81,8 +82,10 @@ export class StructuredCafeTools implements CafeToolset {
       breakEven: CafeToolset["getBreakEven"];
       schedulingDraftInputs:CafeToolset["getSchedulingDraftInputs"];
     },
+    private usageReader?:CafeToolset["getUsageVariance"],
   ) {}
 
+  getUsageVariance(businessId:string,input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}){return this.usageReader?this.usageReader(businessId,input):Promise.resolve({from:input.from,to:input.to,rows:[],missing:["usageReaderUnavailable"],groupBy:input.groupBy??null});}
   getSchedulingDraftInputs(businessId:string){return this.domainReaders?.schedulingDraftInputs(businessId)??Promise.resolve(missing<SchedulingDraftInputs>("scheduleDraftReaderUnavailable"));}
   getCafeSummary(businessId: string) { return this.states.getCurrentState(businessId); }
   async getProfitability(businessId: string, period: CafeStatePeriod) {
@@ -198,6 +201,7 @@ export class BusinessScopedCafeTools {
   constructor(private tools: CafeToolset, private businessId: string) {
     if (!businessId) throw new Error("Missing authorized café");
   }
+  getUsageVariance(input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}){return this.tools.getUsageVariance(this.businessId,input);}
   getSchedulingDraftInputs(){return this.tools.getSchedulingDraftInputs(this.businessId);}
   getCafeSummary() { return this.tools.getCafeSummary(this.businessId); }
   getProfitability(period: CafeStatePeriod) { return this.tools.getProfitability(this.businessId, period); }
