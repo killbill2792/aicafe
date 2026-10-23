@@ -32,6 +32,7 @@ export function localWeekStart(isoInstant:string,timezone:string):string {
  * Do not silently deduct a break when a rule is disabled or the shift is short. */
 export function automaticUnpaidBreakMinutes(start:string,end:string,rules:Pick<RuleSettings,
  "meal_break_enabled"|"meal_break_minutes"|"meal_break_after_minutes">):number{
+ if(start===end)return 0; // Let shift validation report the invalid window without crashing the editor.
  const minutes=elapsedMinutes(start,end,end<start);
  return rules.meal_break_enabled&&minutes>rules.meal_break_after_minutes?
    Math.min(240,minutes-1,rules.meal_break_minutes):0;

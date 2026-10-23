@@ -46,6 +46,7 @@ describe("staff schedule truth",()=>{
  it("derives automatic unpaid breaks only when the owner's configured rule applies",()=>{
    const custom={...rules,meal_break_after_minutes:360,meal_break_minutes:45};
    expect(automaticUnpaidBreakMinutes("09:00","14:00",custom)).toBe(0);
+   expect(automaticUnpaidBreakMinutes("09:00","09:00",custom)).toBe(0);
    expect(automaticUnpaidBreakMinutes("09:00","15:30",custom)).toBe(45);
    expect(automaticUnpaidBreakMinutes("22:00","05:00",custom)).toBe(45);
    expect(automaticUnpaidBreakMinutes("09:00","15:30",{...custom,meal_break_enabled:false})).toBe(0);
