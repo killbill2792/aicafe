@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useState,useTransition} from "react";
+import {useState,useTransition} from "react";
 import {useRouter} from "next/navigation";
 import {useTranslations} from "next-intl";
 import {Link} from "@/i18n/navigation";
@@ -23,7 +23,6 @@ const bounds:Record<string,[number,number,number]>={
 export default function RulesWorkspace({initial,week,readOnly=false}:{initial:RuleValues;week:string;readOnly?:boolean}){
  const t=useTranslations("StaffSchedule");const router=useRouter();
  const [values,setValues]=useState(initial),[draft,setDraft]=useState(""),[pending,transition]=useTransition();
- useEffect(()=>setValues(initial),[initial]);
  const [message,setMessage]=useState(""),[undo,setUndo]=useState<{key:string;value:number|boolean}|null>(null);
  const change=(key:string,value:number|boolean)=>{
    if(readOnly)return;
