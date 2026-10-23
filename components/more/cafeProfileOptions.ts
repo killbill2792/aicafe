@@ -73,32 +73,10 @@ export const US_STATES = [
   ["PR", "Puerto Rico"], ["VI", "U.S. Virgin Islands"],
 ] as const;
 
-/** The Intl region-name API does not provide U.S. subdivision display names. */
-const STATE_NAMES_ES = [
-  "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware",
-  "Distrito de Columbia", "Florida", "Georgia", "Hawái", "Idaho", "Illinois", "Indiana", "Iowa",
-  "Kansas", "Kentucky", "Luisiana", "Maine", "Maryland", "Massachusetts", "Míchigan", "Minnesota",
-  "Misisipi", "Misuri", "Montana", "Nebraska", "Nevada", "Nuevo Hampshire", "Nueva Jersey", "Nuevo México",
-  "Nueva York", "Carolina del Norte", "Dakota del Norte", "Ohio", "Oklahoma", "Oregón",
-  "Pensilvania", "Rhode Island", "Carolina del Sur", "Dakota del Sur", "Tennessee", "Texas",
-  "Utah", "Vermont", "Virginia", "Washington", "Virginia Occidental", "Wisconsin", "Wyoming",
-  "Samoa Americana", "Guam", "Islas Marianas del Norte", "Puerto Rico", "Islas Vírgenes de Estados Unidos",
-];
-const STATE_NAMES_AR = [
-  "ألاباما", "ألاسكا", "أريزونا", "أركنساس", "كاليفورنيا", "كولورادو", "كونيتيكت", "ديلاوير",
-  "مقاطعة كولومبيا", "فلوريدا", "جورجيا", "هاواي", "أيداهو", "إلينوي", "إنديانا", "آيوا",
-  "كانساس", "كنتاكي", "لويزيانا", "مين", "ماريلاند", "ماساتشوستس", "ميشيغان", "مينيسوتا",
-  "مسيسيبي", "ميزوري", "مونتانا", "نبراسكا", "نيفادا", "نيوهامبشير", "نيوجيرسي", "نيومكسيكو",
-  "نيويورك", "كارولاينا الشمالية", "داكوتا الشمالية", "أوهايو", "أوكلاهوما", "أوريغون",
-  "بنسلفانيا", "رود آيلاند", "كارولاينا الجنوبية", "داكوتا الجنوبية", "تينيسي", "تكساس",
-  "يوتا", "فيرمونت", "فرجينيا", "واشنطن", "فرجينيا الغربية", "ويسكونسن", "وايومنغ",
-  "ساموا الأمريكية", "غوام", "جزر ماريانا الشمالية", "بورتوريكو", "جزر العذراء الأمريكية",
-];
-
-export function usStateOptions(locale: string): { value: string; label: string; legacyName: string }[] {
-  const names = locale.startsWith("ar") ? STATE_NAMES_AR : locale.startsWith("es") ? STATE_NAMES_ES : null;
-  return US_STATES.map(([value, legacyName], index) => ({
-    value, legacyName, label: names?.[index] ?? legacyName,
+/** State codes and legacy saved English names remain stable; display names live in locale catalogs. */
+export function usStateOptions(translations: Record<string, string>): { value: string; label: string; legacyName: string }[] {
+  return US_STATES.map(([value, legacyName]) => ({
+    value, legacyName, label: translations[value],
   }));
 }
 
@@ -157,6 +135,12 @@ export type ProfileValuesToValidate = {
   hours: WeeklyHoursInput;
 };
 
+/** Reject normalized dates such as February 30 that Date.parse otherwise accepts. */
+function isValidCalendarDate(value: string): boolean {
+  const parsed = new Date(value + "T12:00:00Z");
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 export function validateProfile(values: ProfileValuesToValidate, messages: {
   name: string; timezone: string; currency: string; country: string; openedOn: string; hours: string;
 }): Record<string, string> {
@@ -169,7 +153,7 @@ export function validateProfile(values: ProfileValuesToValidate, messages: {
   } catch { errors.timezone = messages.timezone; }
   if (!/^[A-Z]{3}$/.test(values.currency) || !Intl.supportedValuesOf("currency").includes(values.currency)) errors.currency = messages.currency;
   if (values.countryCode && (!/^[A-Z]{2}$/.test(values.countryCode) || !ISO_COUNTRIES.includes(values.countryCode))) errors.countryCode = messages.country;
-  if (values.openedOn && (!/^\d{4}-\d{2}-\d{2}$/.test(values.openedOn) || Number.isNaN(Date.parse(values.openedOn + "T12:00:00Z")))) errors.openedOn = messages.openedOn;
+  if (values.openedOn && (!/^\d{4}-\d{2}-\d{2}$/.test(values.openedOn) || !isValidCalendarDate(values.openedOn))) errors.openedOn = messages.openedOn;
   for (const [key, day] of Object.entries(values.hours)) {
     if (day.mode === "open" && (!isValidLocalTime(day.open) || !isValidLocalTime(day.close) || day.open === day.close)) errors["hours-" + key] = messages.hours;
   }
