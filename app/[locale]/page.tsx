@@ -1,4 +1,5 @@
 import {readUsageVariance} from "@/lib/data/usageVariance.server";
+import {usageWeekEnding} from "@/lib/calc/usageDates";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
@@ -87,9 +88,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
   const [snapshot, menu] = await Promise.all([getSnapshot(), getMenuControlCenter()]);
-  const today=new Date().toISOString().slice(0,10);
-  const weekStart=new Date(Date.parse(today+"T12:00:00Z")-6*86400000).toISOString().slice(0,10);
-  const usageOver=await readUsageVariance({from:weekStart,to:today}).then(r=>r.rows.filter(x=>x.status==="over")).catch(()=>[]);
+  const usagePeriod=usageWeekEnding(snapshot.todayDateStr);
+  const usageOver=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to}).then(r=>r.rows.filter(x=>x.status==="over")).catch(()=>[]);
   const vm = buildHomeViewModel(snapshot, period);
   // Today is already the active viewmodel on the default Home period. Avoid recomputing
   // expensive cost-recovery projections just to render the compact snapshot.
