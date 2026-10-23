@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useLocale } from "next-intl";
-import { firstUncoveredSalesDay, initialCardSalesShareBps, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
@@ -162,7 +162,10 @@ export default function ProcessingFeeEstimateForm({
   const errorText = (key: string) => fieldErrors[key] ? <span role="alert" className="text-xs font-normal text-red-700">{fieldErrors[key]}</span> : null;
   const [isPending, startTransition] = useTransition();
   const [processorLabel, setProcessorLabel] = useState(plan?.processorLabel ?? providerLabel(sourceSummary.connectedProvider));
-  const [otherSelected, setOtherSelected] = useState(Boolean(plan?.processorLabel && !["Toast","Square","Clover"].some((name) => name.toLowerCase() === plan.processorLabel.toLowerCase())));
+  const [otherSelected, setOtherSelected] = useState(() => {
+    const name = plan?.processorLabel ?? sourceSummary.connectedProvider;
+    return Boolean(name && !["Toast", "Square", "Clover"].some((provider) => provider.toLowerCase() === name.toLowerCase()));
+  });
   const [effectiveFrom, setEffectiveFrom] = useState(firstUncoveredSalesDay(coverageDays, today));
   const [processedSalesShare, setProcessedSalesShare] = useState(() => { const value = initialCardSalesShareBps(plan?.processedSalesShareBps ?? null, sourceSummary.processorCount); return value === null ? "" : percentFromBps(value); });
   const [processedTransactionShare, setProcessedTransactionShare] = useState(
@@ -208,7 +211,7 @@ export default function ProcessingFeeEstimateForm({
     const errors: Record<string,string> = {};
     const invalid = (key: string, message: string) => { errors[key] = message; };
     if (!processorLabel.trim()) invalid("processor", labels.requiredProcessor);
-    if (!effectiveFrom || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) invalid("effectiveFrom", labels.requiredEffectiveDate);
+    if (!coverMissing && (!effectiveFrom || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom))) invalid("effectiveFrom", labels.requiredEffectiveDate);
     if (!processedSalesShare.trim() || bpsFromPercent(processedSalesShare) === null) invalid("cardShare", labels.requiredCardShare);
     if (!advanced && (!firstRule.percentageRate.trim() || bpsFromPercent(firstRule.percentageRate) === null || Number(firstRule.percentageRate) > 50)) invalid("percentageRate", labels.requiredRate);
     if (!advanced && firstRule.fixedFee.trim() && (Number(firstRule.fixedFee) < 0 || Number(firstRule.fixedFee) > 50 || !Number.isFinite(Number(firstRule.fixedFee)))) invalid("fixedFee", labels.requiredRule);
@@ -293,7 +296,7 @@ export default function ProcessingFeeEstimateForm({
     startTransition(async () => {
       const result = await saveOwnerProcessingFeeEstimatePlan({
         processorLabel: processorLabel.trim(),
-        effectiveFrom: coverMissing ? firstUncoveredSalesDay(shownDays, today) : effectiveFrom,
+        effectiveFrom: coverMissing ? missingCoverageSaveOptions(shownDays, today).effectiveFrom : effectiveFrom,
         processedSalesShareBps: salesShareBps,
         processedTransactionShareBps: transactionShareBps,
         averageProcessedTicketCents,
