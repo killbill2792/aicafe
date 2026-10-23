@@ -84,3 +84,21 @@ export function prepareAdvancedRateDraft<T extends { label: string }>(
     transactionShare: transactionShare.trim() ? transactionShare : cardShare,
   };
 }
+
+
+/** The selected fee fact is authoritative; a stale rollup flag is not coverage. */
+export function selectedFeeCoverageForSalesDays(
+  rows: ReadonlyArray<{ business_date: string; net_sales_cents: number }>,
+  facts: ReadonlyArray<{ business_date: string; status: string }>,
+): FeeCoverageDay[] {
+  const selected = new Map(facts
+    .filter((fact) => fact.status === "actual" || fact.status === "estimated")
+    .map((fact) => [fact.business_date, fact.status as FeeCoverageDay["status"]]));
+  return rows
+    .filter((row) => Number(row.net_sales_cents) > 0)
+    .map((row) => ({
+      date: row.business_date,
+      status: selected.get(row.business_date) ?? "missing" as const,
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
