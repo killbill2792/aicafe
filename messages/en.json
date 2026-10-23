@@ -166,6 +166,7 @@
     "missing": "Missing",
     "confirmRemove": "Remove this bill?",
     "saveError": "Could not save the bill.",
+    "removeError": "Could not remove this bill. Please try again.",
     "variableCostHint": "Costs that change every month go in Money › Add cost",
     "title": "Monthly bills",
     "subtitle": "Entered once, used every month",
