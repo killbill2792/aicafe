@@ -20,7 +20,7 @@ export default async function CafeProfilePage({ searchParams }: { searchParams: 
     <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
       {user?.email && (
-        <p className="px-1 text-sm text-ink-muted">{t("signedInAs", { email: user.email })}</p>
+        <p className="px-1 text-[17px] text-ink-muted">{t("signedInAs", { email: user.email })}</p>
       )}
       <CafeProfileForm
         profile={profile}
@@ -65,6 +65,7 @@ export default async function CafeProfilePage({ searchParams }: { searchParams: 
           chooseCountry: t("chooseCountry"),
           chooseCurrency: t("chooseCurrency"),
           chooseState: t("chooseState"),
+          usStates: t.raw("usStates") as Record<string, string>,
           invalidName: t("invalidName"),
           invalidTimezone: t("invalidTimezone"),
           invalidCurrency: t("invalidCurrency"),
