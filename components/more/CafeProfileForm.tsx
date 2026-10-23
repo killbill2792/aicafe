@@ -5,7 +5,7 @@ import { useLocale } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { updateCafeProfile } from "@/lib/actions/business";
 import { openHoursToWeeklyInput, type OpenHours, type OpenHoursDayKey, type WeeklyHoursInput } from "@/lib/business/openHours";
-import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, moveTimezoneActiveIndex, shouldFocusHours, timezoneOptionScrollTop, timezoneOptions, usStateOptions, validateProfile } from "./cafeProfileOptions";
+import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, matchingTimezoneOptions, moveTimezoneActiveIndex, shouldFocusHours, timezoneOptionScrollTop, timezoneOptions, usStateOptions, validateProfile } from "./cafeProfileOptions";
 
 type Profile = {
   name: string;
@@ -86,6 +86,8 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const hoursRef = useRef<HTMLElement | null>(null);
   const timezoneListRef = useRef<HTMLDivElement | null>(null);
+  const lastChosenTimezoneRef = useRef(profile.timezone);
+  const editRevisionRef = useRef(0);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const invalidClass = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
   const clearFieldError = (key: string) => setFieldErrors((errors) => {
@@ -102,11 +104,9 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
     timezoneOptions(locale, profile.timezone).find((option) => option.value === profile.timezone)?.label ?? profile.timezone);
   const [timezoneExpanded, setTimezoneExpanded] = useState(false);
   const [timezoneActive, setTimezoneActive] = useState(-1);
-  const timezoneResults = useMemo(() => {
-    const query = timezoneSearch.trim().toLocaleLowerCase(locale);
-    return timezones.filter((option) => !query || option.label.toLocaleLowerCase(locale).includes(query) || option.value.toLowerCase().includes(query)).slice(0, 40);
-  }, [timezones, timezoneSearch, locale]);
   const chooseTimezone = (value: string) => {
+    editRevisionRef.current += 1;
+    lastChosenTimezoneRef.current = value;
     setTimezone(value);
     setTimezoneTouched(true);
     setTimezoneSearch(timezones.find((option) => option.value === value)?.label ?? value);
@@ -130,6 +130,9 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   const shownTimezoneSearch = timezoneSearch || (!timezoneTouched && !profile.timezone
     ? (timezones.find((option) => option.value === browserTimezone)?.label ?? browserTimezone)
     : "");
+  const timezoneResults = useMemo(() =>
+    matchingTimezoneOptions(timezones, shownTimezoneSearch, locale),
+  [timezones, shownTimezoneSearch, locale]);
   const [currency, setCurrency] = useState(profile.currency || currencyForCountry(profile.countryCode));
   const [addressLine1, setAddressLine1] = useState(profile.addressLine1);
   const [addressLine2, setAddressLine2] = useState(profile.addressLine2);
@@ -194,6 +197,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   }
 
   function save() {
+    const saveRevision = editRevisionRef.current;
     const errors = validateProfile({ name, timezone: selectedTimezone, currency, countryCode, openedOn, hours }, {
       name: labels.invalidName, timezone: labels.invalidTimezone,
       currency: labels.invalidCurrency, country: labels.invalidCountry,
@@ -228,9 +232,9 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
         hours,
       });
       if (result.ok) {
-        setStatus("saved");
+        if (saveRevision === editRevisionRef.current) setStatus("saved");
         router.refresh();
-      } else {
+      } else if (saveRevision === editRevisionRef.current) {
         setStatus("error");
         setError(result.error);
       }
@@ -238,7 +242,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   }
 
   return (
-    <div className="flex flex-col gap-4" onChangeCapture={() => { setStatus("idle"); setError(null); }}>
+    <div className="flex flex-col gap-4" onChangeCapture={() => { editRevisionRef.current += 1; setStatus("idle"); setError(null); }}>
       {hoursNotSet && (
         <div role="status" className="self-start rounded-full bg-warn-tint px-3 py-1.5 text-sm font-bold text-warn">{labels.hoursBadge}</div>
       )}
@@ -272,7 +276,18 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
               onFocus={() => { setTimezoneExpanded(true); setTimezoneActive(-1); }}
               onChange={(e) => { setTimezoneTouched(true); setTimezoneSearch(e.target.value); setTimezone(""); setTimezoneExpanded(true); setTimezoneActive(-1); clearFieldError("timezone"); }}
               onKeyDown={(e) => {
-                if (e.key === "Escape") { setTimezoneExpanded(false); return; }
+                if (e.key === "Escape") {
+                  if (!timezoneExpanded) return;
+                  e.preventDefault();
+                  const restored = lastChosenTimezoneRef.current;
+                  setTimezone(restored);
+                  setTimezoneTouched(Boolean(restored));
+                  setTimezoneSearch(timezones.find((option) => option.value === restored)?.label ?? restored);
+                  setTimezoneExpanded(false);
+                  setTimezoneActive(-1);
+                  clearFieldError("timezone");
+                  return;
+                }
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                   e.preventDefault();
                   const direction = e.key === "ArrowDown" ? 1 : -1;
@@ -285,7 +300,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
             {timezoneExpanded && (
               <div id="cafe-timezone-options" role="listbox" ref={timezoneListRef} aria-label={labels.timezone} className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-line bg-card shadow-lg">
                 {timezoneResults.length ? timezoneResults.map((option, index) => (
-                  <button id={"cafe-timezone-" + index} key={option.value} type="button" role="option" aria-selected={selectedTimezone === option.value}
+                  <button id={"cafe-timezone-" + index} key={option.value} type="button" role="option" tabIndex={-1} aria-selected={selectedTimezone === option.value}
                     onPointerDown={(e) => e.preventDefault()} onClick={() => chooseTimezone(option.value)}
                     className={"block min-h-12 w-full px-3 py-2 text-start text-[17px] hover:bg-paper " + (index === timezoneActive ? "bg-paper font-semibold" : "")}>
                     {option.label}
@@ -343,7 +358,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
           </div>
           {hoursNotSet && <span className="shrink-0 rounded-full bg-warn-tint px-2 py-1 text-sm font-bold text-warn">{labels.hoursBadge}</span>}
         </div>
-        <button type="button" onClick={() => { setStatus("idle"); setError(null); setHours((current) => copyMondayToWeekdays(current)); setFieldErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !["hours-tue", "hours-wed", "hours-thu", "hours-fri"].includes(key)))); }}
+        <button type="button" onClick={() => { editRevisionRef.current += 1; setStatus("idle"); setError(null); setHours((current) => copyMondayToWeekdays(current)); setFieldErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !["hours-tue", "hours-wed", "hours-thu", "hours-fri"].includes(key)))); }}
           className="min-h-12 self-start rounded-full border border-line px-4 text-[17px] font-bold text-ink">{labels.copyWeekdays}</button>
         <div className="flex flex-col gap-2">
           {DAY_ORDER.map((key) => {
