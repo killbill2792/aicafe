@@ -10,6 +10,7 @@ import {evaluatePriceExperiment,simulatePriceExperiment,priceExperimentEstimated
 import {readPriceExperimentBaselineUnits,readPriceExperimentSalesDays} from "./sales.server";
 import {registerLoopCapability,loopRegistry} from "./engine";
 import {menuPriceChangeCapability} from "./menuPriceChange.server";
+import {staffCapabilities} from "./staffProposals.server";
 
 const cents=z.number().int().safe().nonnegative();
 const baseline=z.strictObject({
@@ -105,4 +106,4 @@ export const priceExperimentCapability=registerLoopCapability({
     };
   },
 });
-export const supervisorLoopRegistry=loopRegistry(priceExperimentCapability,menuPriceChangeCapability);
+export const supervisorLoopRegistry=loopRegistry(priceExperimentCapability,menuPriceChangeCapability,...staffCapabilities);

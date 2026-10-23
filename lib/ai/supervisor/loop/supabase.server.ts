@@ -69,6 +69,24 @@ export class SupabaseLoopRepository implements LoopRepository{
   /** These two menu-only operations extend the existing ledger rather than
    * creating a second proposal store. Both SQL functions are service-only and
    * lock the scoped, revisioned proposal row. */
+  /** Staff effects and committed ledger state are written in one SQL transaction. */
+  async commitStaff(scope:OwnerLoopScope,id:string,revision:number):
+    Promise<{state:"applied"|"stale";proposal:LoopProposal}>{
+    const {data,error}=await createAdminSupabaseClient().rpc("supervisor_commit_staff_proposal",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+      p_thread_id:scope.threadId,p_proposal_id:uuid.parse(id),p_revision:revision,
+    });
+    if(error||!data)failed(error,"Staff approval transaction failed");
+    const result=data as {state:string;proposal:Row};
+    if((result.state!=="applied"&&result.state!=="stale")||!result.proposal)
+      throw new Error("Invalid staff commit result");
+    const proposal=decode(result.proposal);
+    if(proposal.businessId!==scope.businessId||proposal.ownerUserId!==scope.ownerUserId||
+      proposal.threadId!==scope.threadId||proposal.id!==id||
+      proposal.status!==(result.state==="applied"?"committed":"stale"))
+      throw new Error("Staff commit result outside approval scope");
+    return {state:result.state,proposal};
+  }
   async markStalePrice(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
     const db=createAdminSupabaseClient();
     const {data,error}=await db.rpc("supervisor_mark_stale_menu_price",{

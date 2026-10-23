@@ -11,6 +11,7 @@ import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {menuPriceChangeCapabilityId,StaleProposalError}
   from "@/lib/ai/supervisor/loop/menuPriceChange.server";
+import {isStaffCapabilityId,readStaffProposalToken} from "@/lib/ai/supervisor/loop/staffProposals.server";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type Params={params:Promise<{threadId:string}>};
 const uuid=z.uuid(),revision=z.number().int().positive();
@@ -44,6 +45,16 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
     assertProposalScope(scope,p);
   }
   assertProposalScope(scope,p);
+  if(isStaffCapabilityId(p.capabilityId)){
+    const effect=supervisorLoopRegistry.get(p.capabilityId).parseEffect(p.canonicalEffectPayload) as
+      {preview:Array<{label:string;before:string;after:string}>;expectedToken:string};
+    const data={...card(p),preview:effect.preview};
+    if(p.status==="draft"){
+      try{if(await readStaffProposalToken(scope)!==effect.expectedToken)return {...data,state:"stale"};}
+      catch{return {...data,state:"failed"};}
+    }
+    return {...data,state:p.status==="approved"?"failed":data.state};
+  }
   if(p.capabilityId!==menuPriceChangeCapabilityId)return null;
   const effect=supervisorLoopRegistry.get(menuPriceChangeCapabilityId).parseEffect(p.canonicalEffectPayload);
   if(p.status==="executing"){
@@ -84,7 +95,34 @@ export async function POST(request:Request,{params}:Params){
     try{p=await repo.load(scope,input.proposalId);}
     catch{return conversationJson({error:"proposal_not_found"},404);}
     assertProposalScope(scope,p);
-    if(p.capabilityId!==menuPriceChangeCapabilityId)return conversationJson({error:"proposal_not_found"},404);
+    const staff=isStaffCapabilityId(p.capabilityId);
+    if(!staff&&p.capabilityId!==menuPriceChangeCapabilityId)
+      return conversationJson({error:"proposal_not_found"},404);
+    if(staff){
+      if(input.action==="edit")return conversationJson({error:"staff_edits_require_new_proposal"},422);
+      if(p.revision!==input.revision||!["draft","approved"].includes(p.status))
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      if(input.action==="cancel"){
+        if(p.status!=="draft")return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+        try{return conversationJson({proposal:await view(scope,repo,
+          await repo.transition(scope,p.id,p.revision,"reject"))});}
+        catch{return conversationJson({state:"conflict",proposal:await view(scope,repo,
+          await repo.load(scope,p.id))},409);}
+      }
+      // Only a persisted approval record enables the atomic SQL executor.
+      // The SQL function independently locks source and compares the token.
+      try{
+        const approved=p.status==="draft"?await approveLoop(scope,repo,p.id,p.revision):p;
+        const result=await repo.commitStaff(scope,p.id,approved.revision);
+        return conversationJson({state:result.state,proposal:await view(scope,repo,result.proposal)},
+          result.state==="stale"?409:200);
+      }catch{
+        const latest=await repo.load(scope,p.id);
+        return conversationJson({error:"staff_approval_failed",
+          proposal:await view(scope,repo,latest)},latest.revision!==p.revision&&
+            latest.status!=="approved"?409:500);
+      }
+    }
     if(p.revision!==input.revision||p.status!=="draft")
       return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
     if(input.action==="cancel"){
