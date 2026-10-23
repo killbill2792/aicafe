@@ -3,6 +3,7 @@ import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import { agentToolDefinitions, agentLabelsPrompt, agentForTool, executeAgentTool, type AgentToolContext, type AgentToolResult } from "./tools";
 import { statusFromResults } from "./status";
 import { checkNumbers,compactEvidence,type NumericEvidence } from "./checkNumbers";
+import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
@@ -272,11 +273,13 @@ export async function runAgentTurn(args: {
   } finally { controller.abort(); }
   usage.latencyMs = now() - started;
   const status = statusFromResults(results);
+  const toolResults=results.map(r=>r.result);
+  const verificationResults=usageEvidenceRefresh(toolResults,args.previousEvidence);
   return { text, endReason, status,
     unverified: checkNumbers(text, [ ...(args.history ?? []).filter(message => message.role === "user").map(message => message.content),
-      args.ownerText, ...absorbed.map(m => m.text) ].join("\n"), results.map(r=>r.result), args.context.locale,args.previousEvidence),
-    evidence:compactEvidence(results.map(r=>r.result)),
+      args.ownerText, ...absorbed.map(m => m.text) ].join("\n"), verificationResults, args.context.locale,args.previousEvidence),
+    evidence:compactEvidence(verificationResults),
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
-    results: results.map(r => r.result), usage,
+    results:toolResults, usage,
     ...(deliveredIds.size ? { absorbedOwnerMessageIds: [...deliveredIds] } : {}) };
 }

@@ -1,5 +1,6 @@
 "use server";
 
+import { saveUsageEntry as writeUsage } from "@/lib/data/usageVariance.server";
 import { revalidatePath } from "next/cache";
 import {
   listPantry as readPantry,
@@ -64,3 +65,5 @@ export async function createPantryIngredient(input:Parameters<typeof insertCusto
 export async function updatePantryIngredient(input:Parameters<typeof editCustomPantry>[0]):Promise<Awaited<ReturnType<typeof editCustomPantry>>>{
  const result=await editCustomPantry(input);if(result.ok)invalidatePantry();return result;
 }
+
+export async function saveUsageEntry(kind:"count"|"purchase",input:unknown){const result=await writeUsage(kind,input);if(result.ok){revalidatePath("/menu/pantry");revalidatePath("/");}return result;}
