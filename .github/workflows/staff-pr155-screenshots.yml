@@ -26,8 +26,6 @@ jobs:
       - run: npm ci
       - name: Install isolated Playwright runner without changing lockfile
         run: npm install --no-save --package-lock=false playwright@1.58.2
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
       - name: Start staff fixture server
         run: |
           npm run dev -- --hostname 127.0.0.1 > /tmp/staff-pr155-next.log 2>&1 &

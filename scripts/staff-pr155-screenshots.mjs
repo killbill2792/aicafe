@@ -5,7 +5,8 @@ import {join} from "node:path";
 const base=process.env.STAFF_SCREENSHOT_URL??"http://127.0.0.1:3000";
 const output=process.env.STAFF_SCREENSHOT_DIR??"test-results/staff";
 mkdirSync(output,{recursive:true});
-const browser=await chromium.launch({headless:true});
+// GitHub ubuntu-latest ships Chrome; no network-heavy browser download.
+const browser=await chromium.launch({headless:true,channel:"chrome"});
 const themes=["fresh-pour","night-roast","market-green","berry-mocha","blue-hour","matcha","caramel-sky","cherry-cola"];
 const errors=[];
 async function assertVisible(page,selector,label){
