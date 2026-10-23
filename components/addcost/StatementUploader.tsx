@@ -97,7 +97,11 @@ export default function StatementUploader({
       const result = await saveCategorizedLines("statement", state.lines);
       if (result.ok) {
         setSaveStatus("saved");
-        setTimeout(() => router.push(safeReturnTo), 900);
+        setTimeout(() => {
+          // next-intl would add a second locale prefix to an already localized return path.
+          if (returnTo && /^\/(?:en|es|ar)(?:\/|[?#]|$)/.test(safeReturnTo)) window.location.assign(safeReturnTo);
+          else router.push(safeReturnTo);
+        }, 900);
       } else {
         setSaveStatus("error");
       }
