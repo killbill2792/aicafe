@@ -279,7 +279,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         <button type="button" onClick={()=>setBreakMin(Math.min(240,breakMin+10))} className="min-h-12 min-w-10">+</button></div>
        <label className="flex min-h-14 items-center justify-between gap-3 border-t border-line">
         <span>{t("repeatEvery",{day:dayLabel(date).split(" ")[0]})}</span><input type="checkbox"
-         checked={repeatWeekly} onChange={e=>setRepeatWeekly(e.target.checked)} className="size-6 accent-[rgb(var(--accent))]"/></label>
+         checked={repeatWeekly} onChange={e=>setRepeatWeekly(e.target.checked)} className="size-6 accent-accent"/></label>
       </div>
       <ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={breakMin}
        editingId={editing} team={data.team} shifts={data.shifts} gaps={data.gaps}

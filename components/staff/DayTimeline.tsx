@@ -16,7 +16,7 @@ export default function DayTimeline({date,shifts,gaps,openHours,people,onShiftCl
      style={{left:band.left+"%",width:band.width+"%"}}/>)}
    {rendered.gaps.map((band,i)=><div key={"gap"+i} aria-hidden="true" className="absolute inset-y-0"
     style={{left:band.left+"%",width:band.width+"%",
-      backgroundImage:"repeating-linear-gradient(135deg,rgb(var(--neg) / 0.17) 0 5px,rgb(var(--neg) / 0.04) 5px 10px)"}}/>)}
+      backgroundImage:"repeating-linear-gradient(135deg,rgb(var(--c-neg) / 0.17) 0 5px,rgb(var(--c-neg) / 0.04) 5px 10px)"}}/>)}
    {rendered.blocks.map(block=>{
     const person=people.find(p=>p.id===block.employeeId);
     const style=palettes[Math.abs(person?.colorIndex??people.findIndex(p=>p.id===block.employeeId))%palettes.length];
