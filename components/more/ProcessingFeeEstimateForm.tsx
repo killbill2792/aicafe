@@ -465,7 +465,7 @@ export default function ProcessingFeeEstimateForm({
             <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
               <FieldTitle help={labels.fixedFeeHelp} helpLabel={`${labels.fixedFee} ${labels.info}`}>{labels.fixedFee}</FieldTitle>
               <div className="flex items-center gap-2">
-                <span className="font-bold text-ink-muted">$</span>
+                <span className="font-bold text-ink-muted">{currency.formatToParts(0).find((part) => part.type === "currency")?.value}</span>
                 <input
                   inputMode="decimal"
                   value={firstRule.fixedFee}
@@ -482,7 +482,7 @@ export default function ProcessingFeeEstimateForm({
 
         {firstFixedFee > 0 && sourceSummary.trustedOrderDays > 0 && !needsAverageTicket && (
           <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">
-            {labels.orderCountsAutomatic.replace("{count}", String(sourceSummary.trustedOrderDays))}
+            {labels.orderCountsAutomatic.replace("{count}", fmt(sourceSummary.trustedOrderDays))}
           </p>
         )}
 
@@ -490,7 +490,7 @@ export default function ProcessingFeeEstimateForm({
           <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
             <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} ${labels.info}`}>{labels.averageTicket}</FieldTitle>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-ink-muted">$</span>
+              <span className="font-bold text-ink-muted">{currency.formatToParts(0).find((part) => part.type === "currency")?.value}</span>
               <input
                 inputMode="decimal"
                 value={averageTicket}
@@ -498,7 +498,7 @@ export default function ProcessingFeeEstimateForm({
                 aria-invalid={Boolean(fieldErrors.averageTicket)}
                 onChange={(event) => setAverageTicket(event.target.value)}
                 placeholder="12.00"
-                className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
+                className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("averageTicket")}
               />
             </div>
             <span className="text-xs font-normal text-ink-muted">{labels.averageTicketHint}</span>
@@ -547,7 +547,7 @@ export default function ProcessingFeeEstimateForm({
           <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
             <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} ${labels.info}`}>{labels.averageTicket}</FieldTitle>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-ink-muted">$</span>
+              <span className="font-bold text-ink-muted">{currency.formatToParts(0).find((part) => part.type === "currency")?.value}</span>
               <input
                 inputMode="decimal"
                 value={averageTicket}
@@ -555,7 +555,7 @@ export default function ProcessingFeeEstimateForm({
                 aria-invalid={Boolean(fieldErrors.averageTicket)}
                 onChange={(event) => setAverageTicket(event.target.value)}
                 placeholder="12.00"
-                className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
+                className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("averageTicket")}
               />
             </div>
             <span className="text-xs font-normal text-ink-muted">{labels.averageTicketHint}</span>
@@ -565,7 +565,7 @@ export default function ProcessingFeeEstimateForm({
           {rules.map((rule, index) => (
             <div key={rule.id} className="flex flex-col gap-3 rounded-2xl bg-paper p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-ink">#{index + 1}</span>
+                <span className="text-sm font-bold text-ink">#{fmt(index + 1)}</span>
                 {rules.length > 1 && (
                   <button type="button" onClick={() => removeRule(rule.id)} className="min-h-10 rounded-full px-3 text-sm font-bold text-warn">
                     {labels.remove}
@@ -598,16 +598,17 @@ export default function ProcessingFeeEstimateForm({
                   aria-invalid={Boolean(fieldErrors[rule.id + "-percentageRate"])}
                   ref={(node) => { inputRefs.current[rule.id + "-percentageRate"] = node; }}
                       onChange={(event) => updateRule(rule.id, "percentageRate", event.target.value)}
-                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3"
+                      className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-percentageRate")}
                     />
                     <span className="font-bold text-ink-muted">%</span>
                   </div>
+                {errorText(rule.id + "-percentageRate")}
                 </label>
 
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
                   <FieldTitle help={labels.fixedFeeHelp} helpLabel={`${labels.fixedFee} ${labels.info}`}>{labels.fixedFee}</FieldTitle>
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-ink-muted">$</span>
+                    <span className="font-bold text-ink-muted">{currency.formatToParts(0).find((part) => part.type === "currency")?.value}</span>
                     <input
                       inputMode="decimal"
                       value={rule.fixedFee}
@@ -617,6 +618,7 @@ export default function ProcessingFeeEstimateForm({
                       className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-fixedFee")}
                     />
                   </div>
+                {errorText(rule.id + "-fixedFee")}
                 </label>
 
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
@@ -632,6 +634,7 @@ export default function ProcessingFeeEstimateForm({
                     />
                     <span className="font-bold text-ink-muted">%</span>
                   </div>
+                {errorText(rule.id + "-salesMix")}
                 </label>
 
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
@@ -643,10 +646,11 @@ export default function ProcessingFeeEstimateForm({
                   aria-invalid={Boolean(fieldErrors[rule.id + "-transactionMix"])}
                   ref={(node) => { inputRefs.current[rule.id + "-transactionMix"] = node; }}
                       onChange={(event) => updateRule(rule.id, "transactionMix", event.target.value)}
-                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3"
+                      className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-transactionMix")}
                     />
                     <span className="font-bold text-ink-muted">%</span>
                   </div>
+                {errorText(rule.id + "-transactionMix")}
                 </label>
               </div>
             </div>
@@ -663,19 +667,19 @@ export default function ProcessingFeeEstimateForm({
         <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
           <div className="rounded-xl bg-paper p-3">
             <span className="block text-ink-muted">{labels.coverageSalesDays}</span>
-            <strong className="text-xl text-ink">{shownCoverage.salesDays}</strong>
+            <strong className="text-xl text-ink">{fmt(shownCoverage.salesDays)}</strong>
           </div>
           <div className="rounded-xl bg-paper p-3">
             <span className="block text-ink-muted">{labels.coverageActual}</span>
-            <strong className="text-xl text-good">{shownCoverage.actualDays}</strong>
+            <strong className="text-xl text-good">{fmt(shownCoverage.actualDays)}</strong>
           </div>
           <div className="rounded-xl bg-paper p-3">
             <span className="block text-ink-muted">{labels.coverageEstimated}</span>
-            <strong className="text-xl text-ink">{shownCoverage.estimatedDays}</strong>
+            <strong className="text-xl text-ink">{fmt(shownCoverage.estimatedDays)}</strong>
           </div>
           <div className="rounded-xl bg-paper p-3">
             <span className="block text-ink-muted">{labels.coverageMissing}</span>
-            <strong className="text-xl text-warn">{shownCoverage.missingDays}</strong>
+            <strong className="text-xl text-warn">{fmt(shownCoverage.missingDays)}</strong>
           </div>
         </div>
         <div className="mt-4 divide-y divide-line" aria-label={labels.coverageTitle}>
