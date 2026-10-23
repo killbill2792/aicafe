@@ -82,6 +82,7 @@ type SourceSummary = {
   processorCount: number;
   actualProviders: string[];
   actualFeeCents: number;
+  currency: string;
   trustedOrderDays: number;
   untrustedFeeDates: string[];
 };
@@ -156,7 +157,7 @@ export default function ProcessingFeeEstimateForm({
   const router = useRouter();
   const locale = useLocale();
   const fmt = (number: number) => new Intl.NumberFormat(locale).format(number);
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: sourceSummary.currency || "USD" });
   const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
   const borderError = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
@@ -179,6 +180,7 @@ export default function ProcessingFeeEstimateForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [savedSummary, setSavedSummary] = useState<typeof coverage | null>(null);
+  const [savedDraftSignature, setSavedDraftSignature] = useState<string | null>(null);
   const [savedDays, setSavedDays] = useState<FeeCoverageDay[] | null>(null);
   const [coveredCount, setCoveredCount] = useState<number | null>(null);
   const initialCompleteActualCoverage =
@@ -263,7 +265,7 @@ export default function ProcessingFeeEstimateForm({
       ? submittingRules
       : [{
           ...firstRule,
-          label: labels.standardRate,
+          label: firstRule.label.trim() || labels.standardRate,
           salesMix: "100",
           transactionMix: "100",
         }];
@@ -320,12 +322,18 @@ export default function ProcessingFeeEstimateForm({
         return;
       }
       setSavedSummary(result.summary);
+      setSavedDraftSignature(draftSignature);
       setSavedDays(result.coverageDays);
       if (coverMissing) setCoveredCount(Math.max(0, shownCoverage.missingDays - result.summary.missingDays));
       router.refresh();
     });
   }
 
+  // Green saved confirmation only describes the form that was actually submitted.
+  const draftSignature = JSON.stringify({
+    processorLabel, effectiveFrom, processedSalesShare, processedTransactionShare,
+    averageTicket, rules, advanced,
+  });
   const shownCoverage = savedSummary ?? coverage;
   const shownDays = savedDays ?? coverageDays;
   const connected = providerLabel(sourceSummary.connectedProvider);
@@ -704,7 +712,7 @@ export default function ProcessingFeeEstimateForm({
       </section>
 
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
-      {savedSummary && <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">{labels.saved}</p>}
+      {savedSummary && savedDraftSignature === draftSignature && <p role="status" className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">{labels.saved}</p>}
 
       {showEstimate && (
         <button
