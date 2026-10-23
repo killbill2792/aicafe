@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useLocale } from "next-intl";
-import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, requiresAverageTicket, showAverageTicketField, untrustedDaysFromEffectiveDate, requiredRateMixErrors, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, requiresAverageTicket, showAverageTicketField, untrustedDaysFromEffectiveDate, requiredRateMixErrors, canAddRateRule, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
@@ -193,7 +193,7 @@ export default function ProcessingFeeEstimateForm({
 
   function addRule() {
     setAdvanced(true);
-    setRules((current) => [
+    setRules((current) => canAddRateRule(current.length) ? [
       ...current,
       {
         id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `rule-${Date.now()}`,
@@ -203,7 +203,7 @@ export default function ProcessingFeeEstimateForm({
         salesMix: "",
         transactionMix: "",
       },
-    ]);
+    ] : current);
   }
 
   function removeRule(id: string) {
@@ -668,7 +668,7 @@ export default function ProcessingFeeEstimateForm({
             </div>
           ))}
 
-          <button type="button" onClick={addRule} className="min-h-12 rounded-full border border-line px-4 text-sm font-bold text-ink">
+          <button type="button" onClick={addRule} disabled={!canAddRateRule(rules.length)} className="min-h-12 rounded-full border border-line px-4 text-sm font-bold text-ink disabled:opacity-40">
             {labels.addRule}
           </button>
         </section>
