@@ -148,7 +148,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const defaults=(await import("@/lib/calc/scheduling/teamRuleDefaults")).DEFAULT_TEAM_RULES;
    const ruleLabels:Record<string,string>={"meal_break_enabled":"mealBreak","meal_break_minutes":"mealMinutes","meal_break_after_minutes":"mealAfter","rest_break_enabled":"paidRest","rest_break_minutes":"restMinutes","rest_break_every_minutes":"restEvery","weekly_ot_enabled":"weeklyOvertime","weekly_ot_after_minutes":"weeklyAfter","ot_multiplier_bp":"multiplier","daily_ot_enabled":"dailyOvertime","daily_ot_after_minutes":"dailyAfter","max_shift_enabled":"longestShift","max_shift_minutes":"longestMinutes","min_shift_enabled":"shortestShift","min_shift_minutes":"shortestMinutes","min_rest_enabled":"betweenShifts","min_rest_minutes":"betweenMinutes","coverage_enabled":"minimumCoverage","min_headcount":"peopleWhileOpen","prep_minutes_before_open":"prepBeforeOpen","prep_minutes_after_close":"prepAfterClose"};
    const translatedRules=({en,es,ar} as const)[scope.locale].StaffSchedule as Record<string,string>;
-   item(translatedRules[ruleLabels[d.rule]]??d.rule,
+   item(translatedRules[ruleLabels[d.rule]]??copy.ruleFallback,
      display(rules?.[d.rule]??defaults[d.rule as keyof typeof defaults]),display(v));
    payload={rule:d.rule,boolean_value:d.boolean_value,number_value:d.number_value};break;
   }

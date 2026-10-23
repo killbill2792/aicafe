@@ -2432,7 +2432,8 @@
     "exceptionReplaceDay": "Disponibilidad reemplazada",
     "exceptionAddAvailable": "Disponibilidad adicional",
     "exceptionHoursCap": "Límite diario en minutos",
-    "exceptionOther": "Otro cambio de disponibilidad"
+    "exceptionOther": "Otro cambio de disponibilidad",
+    "ruleFallback": "Regla de horarios"
   },
   "SupervisorProposalCard": {
     "title": "Propuesta de cambio de precio",
