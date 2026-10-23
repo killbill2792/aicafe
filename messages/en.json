@@ -97,6 +97,7 @@
     "salesCoverageMonth": "Sales data available for {actual} of {expected} days this month."
   },
   "AddCost": {
+    "manualSaveError": "Could not save this cost. Please try again.",
     "backspace": "Backspace",
     "statementAddMissingLine": "Add a missing line",
     "statementMissingLineHint": "Enter the missing transaction details below.",
