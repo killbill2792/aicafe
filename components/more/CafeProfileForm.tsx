@@ -289,22 +289,41 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
             <input value={city} onChange={(e) => setCity(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-base" />
           </Field>
           <Field label={labels.region}>
-            <input value={region} onChange={(e) => setRegion(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-base" />
+            {countryCode === "US" ? (
+              <select value={region} onChange={(e) => setRegion(e.target.value)} className="min-h-12 rounded-xl border border-line bg-card px-3 text-base">
+                <option value="">{labels.chooseState}</option>
+                {region && !US_STATES.some(([code, name]) => region === code || region === name) && <option value={region}>{region}</option>}
+                {US_STATES.map(([code, name]) => (
+                  <option key={code} value={US_STATES.some(([otherCode, otherName]) => otherName === region && otherCode === code) ? region : code}>{name}</option>
+                ))}
+              </select>
+            ) : <input value={region} onChange={(e) => setRegion(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-base" />}
           </Field>
           <Field label={labels.postalCode}>
             <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} maxLength={24} className="min-h-12 rounded-xl border border-line px-3 text-base" />
           </Field>
-          <Field label={labels.countryCode}>
-            <input value={countryCode} onChange={(e) => setCountryCode(e.target.value.toUpperCase())} maxLength={2} className="min-h-12 rounded-xl border border-line px-3 text-base uppercase" />
+          <Field label={labels.countryCode} error={fieldErrors.countryCode}>
+            <select value={countryCode} ref={(node) => { fieldRefs.current.countryCode = node; }} aria-invalid={Boolean(fieldErrors.countryCode)}
+              onChange={(e) => changeCountry(e.target.value)}
+              className={"min-h-12 min-w-0 rounded-xl border border-line bg-card px-3 text-base" + invalidClass("countryCode")}>
+              <option value="">{labels.chooseCountry}</option>
+              {countryCode && !countries.some((item) => item.value === countryCode) && <option value={countryCode}>{countryCode}</option>}
+              {countries.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
           </Field>
         </div>
       </section>
 
-      <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
-        <div>
-          <h2 className="text-lg font-bold text-ink">{labels.regularHours}</h2>
-          <p className="mt-1 text-sm leading-snug text-ink-muted">{labels.regularHoursHint}</p>
+      <section id="cafe-hours" ref={hoursRef} tabIndex={-1} aria-labelledby="cafe-hours-heading" className="scroll-mt-24 flex flex-col gap-3 rounded-card-lg bg-card p-4 outline-none">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 id="cafe-hours-heading" className="text-lg font-bold text-ink">{labels.regularHours}</h2>
+            <p className="mt-1 text-sm leading-snug text-ink-muted">{labels.regularHoursHint}</p>
+          </div>
+          {hoursNotSet && <span className="shrink-0 rounded-full bg-warn-tint px-2 py-1 text-xs font-bold text-warn">{labels.hoursBadge}</span>}
         </div>
+        <button type="button" onClick={() => { setHours((current) => copyMondayToWeekdays(current)); setFieldErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !["hours-tue", "hours-wed", "hours-thu", "hours-fri"].includes(key)))); }}
+          className="min-h-11 self-start rounded-full border border-line px-4 text-sm font-bold text-ink">{labels.copyWeekdays}</button>
         <div className="flex flex-col gap-2">
           {DAY_ORDER.map((key) => {
             const day = hours[key];
@@ -313,8 +332,8 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
                 <span className="font-bold text-ink">{dayLabels[key]}</span>
                 <select
                   value={day.mode}
-                  onChange={(e) => changeMode(key, e.target.value as "unset" | "open" | "closed")}
-                  className="min-h-11 rounded-lg border border-line bg-card px-2 text-sm"
+                  onChange={(e) => { changeMode(key, e.target.value as "unset" | "open" | "closed"); clearFieldError("hours-" + key); }}
+                  className={"min-h-11 rounded-lg border border-line bg-card px-2 text-sm" + invalidClass("hours-" + key)}
                 >
                   <option value="unset">{labels.notSet}</option>
                   <option value="open">{labels.open}</option>
@@ -324,36 +343,44 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
                   <div className="col-span-2 flex min-w-0 items-center gap-2 sm:col-span-1">
                     <label className="flex min-w-0 flex-1 items-center gap-1 text-xs font-semibold text-ink-muted">
                       <span className="sr-only">{labels.opens}</span>
-                      <input type="time" value={day.open} onChange={(e) => changeTime(key, "open", e.target.value)} className="min-h-11 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-sm" />
+                      <input type="time" value={day.open} ref={(node) => { fieldRefs.current["hours-" + key] = node; }} aria-invalid={Boolean(fieldErrors["hours-" + key])}
+                        onChange={(e) => { changeTime(key, "open", e.target.value); clearFieldError("hours-" + key); }}
+                        className={"min-h-11 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-sm" + invalidClass("hours-" + key)} />
                     </label>
                     <span className="text-ink-muted">–</span>
                     <label className="flex min-w-0 flex-1 items-center gap-1 text-xs font-semibold text-ink-muted">
                       <span className="sr-only">{labels.closes}</span>
-                      <input type="time" value={day.close} onChange={(e) => changeTime(key, "close", e.target.value)} className="min-h-11 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-sm" />
+                      <input type="time" value={day.close} aria-invalid={Boolean(fieldErrors["hours-" + key])}
+                        onChange={(e) => { changeTime(key, "close", e.target.value); clearFieldError("hours-" + key); }}
+                        className={"min-h-11 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-sm" + invalidClass("hours-" + key)} />
                     </label>
                   </div>
                 )}
+                {fieldErrors["hours-" + key] && <p role="alert" className="col-span-2 text-xs font-normal text-red-700 sm:col-span-3">{fieldErrors["hours-" + key]}</p>}
               </div>
             );
           })}
         </div>
       </section>
 
-      {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
+      {error && <p role="alert" className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
       {status === "saved" && <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">{labels.saved}</p>}
-      <button type="button" onClick={save} disabled={isPending || !name.trim() || currency.trim().length !== 3} className="min-h-14 rounded-full bg-accent px-5 text-base font-bold text-on-accent disabled:opacity-40">
-        {isPending ? labels.saving : labels.save}
-      </button>
+      <div className="sticky bottom-20 z-20 -mx-4 border-t border-line bg-card/95 px-4 py-3 shadow-lg backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none">
+        <button type="button" onClick={save} disabled={isPending} className="min-h-14 w-full rounded-full bg-accent px-5 text-base font-bold text-on-accent disabled:opacity-40">
+          {isPending ? labels.saving : labels.save}
+        </button>
+      </div>
     </div>
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
       <span>{label}</span>
       {children}
       {hint && <span className="text-xs font-normal text-ink-muted">{hint}</span>}
+      {error && <span role="alert" className="text-xs font-normal text-red-700">{error}</span>}
     </label>
   );
 }
