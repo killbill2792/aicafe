@@ -104,8 +104,9 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   run(()=>item.type==="shift"?restoreShift({id:item.id}):setPersonActive({id:item.id,active:true}));
  };
  const fixGap=(gap:Data["gaps"][number])=>{
-  const person=bestFreePerson(data.team,gap.date,gap.start,gap.end,[...data.shifts,...data.adjacentShifts],data.availability);
-  openShift(gap.date,undefined,person?.id);
+  const civilDate=gap.shiftDate??gap.date;
+  const person=bestFreePerson(data.team,civilDate,gap.start,gap.end,[...data.shifts,...data.adjacentShifts],data.availability);
+  openShift(civilDate,undefined,person?.id);
   setStart(gap.start);setEnd(gap.end);
   setBreakOverridden(false);
   setFillsGap(true);

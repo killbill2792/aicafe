@@ -10,7 +10,7 @@ export type DetailedShift=CostLine&{id:string;employeeName?:string;status?:strin
 export type TimeWindow={start:string;end:string};
 export type AvailabilityEntry={employee_id:string;day_of_week:number;start_local:string;end_local:string;
  effective_from:string;effective_to:string|null};
-export type ScheduleGap={date:string;start:string;end:string;headcount:number;needed:number};
+export type ScheduleGap={date:string;start:string;end:string;headcount:number;needed:number;shiftDate?:string};
 
 const dateDay=(date:string)=>new Date(date+"T12:00:00Z").getUTCDay();
 const span=(start:string,end:string)=>{
@@ -123,7 +123,7 @@ export function previewShift(input:{employeeId:string;date:string;start:string;e
  const oldMinutes=personTotals(person.id,originals).paidMinutes;
  const hours=checkScheduledWeeklyBounds(oldMinutes+next.paidMinutes,person.minWeeklyMinutes,person.maxWeeklyMinutes);
  const length=checkShiftLength(input.start,input.end,input.breakMinutes,overnight,rules);
- const allGaps=gaps.filter(g=>g.date===input.date);
+ const allGaps=gaps.filter(g=>(g.shiftDate??g.date)===input.date);
  const covered=allGaps.some(g=>{
   const gap=span(g.start,g.end),s=span(input.start,input.end);
   return s.start<=gap.start&&s.end>=gap.end&&g.headcount+1>=g.needed;

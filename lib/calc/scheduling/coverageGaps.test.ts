@@ -33,6 +33,16 @@ describe("distinct-person coverage",()=>{
   expect(coverageVerification("2026-10-26",{mon:[["07:00","16:00"]]},false)).toBe("disabled");
   expect(uncheckedCoverageDays(["2026-10-26","2026-10-27"],{mon:[["07:00","16:00"]]},true)).toEqual(["2026-10-27"]);
  });
+ it("carries the actual date when fixing the after-midnight part of overnight opening",()=>{
+  const first={employeeId:"amy",date:"2026-10-26",start:"22:00",end:"00:00",
+   overnight:true,breakMinutes:0,wageCents:null};
+  const gaps=coverageGaps(["2026-10-26"],[first],{mon:[["22:00","02:00"]]},1);
+  expect(gaps).toEqual([{date:"2026-10-26",shiftDate:"2026-10-27",
+   start:"00:00",end:"02:00",headcount:0,needed:1}]);
+  const fix={employeeId:"bob",date:gaps[0].shiftDate!,start:gaps[0].start,end:gaps[0].end,
+   overnight:false,breakMinutes:0,wageCents:null};
+  expect(coverageGaps(["2026-10-26"],[first,fix],{mon:[["22:00","02:00"]]},1)).toEqual([]);
+ });
  it("can read an overnight shift originating outside the requested week",()=>{
   const shifts=[{employeeId:"amy",date:"2026-10-25",start:"22:00",end:"02:00",
     overnight:true,breakMinutes:0,wageCents:null}];
