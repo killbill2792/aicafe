@@ -2719,6 +2719,9 @@
     "sendAll": "Send all (one by one)",
     "next": "Next person",
     "skip": "Skip",
-    "listDone": "Finished opening list. Check each app to send."
+    "listDone": "Finished opening list. Check each app to send.",
+    "messageGreeting": "Hi {name},",
+    "messageWeek": "Here is your schedule for the week of {week}:",
+    "messageClosing": "Please check your shifts."
   }
 }

@@ -90,7 +90,14 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    ensure(isoDay(d.week_start)===1&&d.week_start>=localDate,"Choose a future Monday");
    const last=add(d.week_start,6),old=shifts.filter(x=>x.local_date>=d.week_start&&x.local_date<=last);
    ensure(old.every(x=>x.status==="draft"),"Sent shifts cannot be replaced");
-   assertStaffShiftPlan(d.shifts);
+   // Replacement keeps adjacent-week shifts; include those to catch overnight
+   // overlaps on both Monday and Sunday (the week itself is replaced).
+   const retained=shifts.filter(x=>x.local_date<d.week_start||x.local_date>last)
+     .filter(x=>d.shifts.some(s=>s.employee_id===x.employee_id))
+     .map(x=>({employee_id:x.employee_id,date:x.local_date,
+       start:x.start_local.slice(0,5),end:x.end_local.slice(0,5),
+       break_minutes:x.break_minutes}));
+   assertStaffShiftPlan([...d.shifts,...retained]);
    for(const s of d.shifts){
     active(s.employee_id);ensure(s.date>=d.week_start&&s.date<=last,"Shift must fall in the selected week");
     // Overlaps, duplicates and breaks are checked in the pure planner above.

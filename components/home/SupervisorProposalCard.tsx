@@ -102,8 +102,13 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
           </div>
         </div>)}
       </div>
-      {value.capabilityId==="olivia.staff_propose_send_schedule.v1"&&
+      {value.capabilityId==="olivia.staff_propose_send_schedule.v1"&&value.state!=="applied"&&
         <p className="mt-3 text-[17px]">{staffCopy.preparedOnly}</p>}
+      {value.state==="applied"&&(
+        value.capabilityId==="olivia.staff_propose_schedule.v1"||
+        value.capabilityId==="olivia.staff_propose_send_schedule.v1")&&
+        <OwnerScheduleSendPanel key={proposalId} proposalId={proposalId} locale={locale}/>}
+
       {(pending||retry)&&<div className="mt-4 flex flex-wrap gap-2">
         <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}
           onClick={()=>void invoke("approve")}>{retry?staffCopy.retry:staffCopy.approve}</button>

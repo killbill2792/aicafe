@@ -85,17 +85,21 @@ export async function readApprovedScheduleDelivery(source:unknown,
   const {data:prop,error:propErr}=await db.from("supervisor_proposals")
     .select("capability_id,committed_at").eq("id",proposalId).eq("business_id",owner.businessId).single();
   if(propErr||!prop)throw new DeliveryReadError("storage_unavailable");
-  let q=db.from("scheduled_shifts")
-    .select("employee_id,local_date,start_local,end_local,updated_at")
-    .eq("business_id",owner.businessId).is("deleted_at",null)
-    .gte("local_date",week).lte("local_date",addDays(week,6))
-    .order("local_date").order("start_local").limit(201);
-  if(prop.capability_id==="olivia.staff_propose_schedule.v1")q=q.eq("proposal_id",proposalId);
-  else q=q.lte("updated_at",prop.committed_at);
-  const {data,error}=await q;
-  if(error||!data||data.length>200)throw new DeliveryReadError("storage_unavailable");
-  shifts=data.map(s=>({employee_id:s.employee_id,date:s.local_date,
-    start:String(s.start_local).slice(0,5),end:String(s.end_local).slice(0,5)}));
+  // Read the immutable approval snapshot AND the complete current roster.
+  // The same server-side equality is rechecked under a table lock in the
+  // ledger RPC, so a stale preview cannot authorize a changed schedule.
+  const [{data:snapshot,error:snapshotError},{data:current,error:currentError}]=await Promise.all([
+    db.from("staff_schedule_handoff_snapshots").select("week_start,shifts")
+      .eq("business_id",owner.businessId).eq("proposal_id",proposalId).maybeSingle(),
+    db.rpc("staff_handoff_week_shifts",{p_business_id:owner.businessId,p_week:week}),
+  ]);
+  if(snapshotError||currentError||!snapshot||!Array.isArray(snapshot.shifts)||!Array.isArray(current))
+    throw new DeliveryReadError("storage_unavailable");
+  if(snapshot.week_start!==week||JSON.stringify(snapshot.shifts)!==JSON.stringify(current))
+    throw new DeliveryReadError("schedule_changed");
+  if(snapshot.shifts.length>200)throw new DeliveryReadError("storage_unavailable");
+  shifts=(snapshot.shifts as Array<{employee_id:string;date:string;start:string;end:string}>)
+    .map(s=>({employee_id:s.employee_id,date:s.date,start:s.start,end:s.end}));
  }else{
   const {data,error}=await db.from("scheduling_plan_assignments")
     .select("employee_id,starts_at,ends_at,location_id").eq("business_id",owner.businessId)

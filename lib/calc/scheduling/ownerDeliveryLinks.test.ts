@@ -30,3 +30,13 @@ describe("owner-initiated schedule compose links",()=>{
     .toContain("فاطمة");
  });
 });
+
+describe("localized prepared message templates",()=>{
+ it.each(["en","es","ar"] as const)("builds %s from its locale catalog",(locale)=>{
+  const message=buildScheduleMessage(locale,"Owner","2026-11-02",[{date:"2026-11-02",start:"08:00",end:"16:00"}]);
+  expect(message).toContain("Owner");
+  expect(message).toContain("2026-11-02: 08:00–16:00");
+  expect(message).not.toContain("{name}");
+  expect(message).not.toContain("{week}");
+ });
+});

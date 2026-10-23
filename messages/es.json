@@ -2719,6 +2719,9 @@
     "sendAll": "Enviar todos (uno por uno)",
     "next": "Siguiente persona",
     "skip": "Omitir",
-    "listDone": "Lista abierta. Envía cada mensaje desde la aplicación."
+    "listDone": "Lista abierta. Envía cada mensaje desde la aplicación.",
+    "messageGreeting": "Hola {name},",
+    "messageWeek": "Tu horario para la semana del {week}:",
+    "messageClosing": "Por favor, revisa tus turnos."
   }
 }

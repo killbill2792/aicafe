@@ -1,3 +1,6 @@
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 /** External compose only. These links do not send or confirm delivery. */
 export type OwnerChannel="whatsapp"|"sms";
 export const validE164=(phone:string|null|undefined):phone is string=>
@@ -17,11 +20,9 @@ export function eligibleForChannel(phone:string|null,optedIn:boolean,channel:Own
 }
 export type ShiftForMessage={date:string;start:string;end:string};
 export function buildScheduleMessage(locale:"en"|"es"|"ar",name:string,week:string,shifts:ShiftForMessage[]){
-  const lead={en:"Hi",es:"Hola",ar:"مرحبًا"}[locale];
-  const header={en:"Here is your schedule for the week of",es:"Tu horario para la semana del",
-    ar:"هذا جدول مناوباتك لأسبوع"}[locale];
-  const close={en:"Please check your shifts.",es:"Por favor, revisa tus turnos.",
-    ar:"يرجى مراجعة مناوباتك."}[locale];
+  const copy={en:en.OwnerScheduleDelivery,es:es.OwnerScheduleDelivery,ar:ar.OwnerScheduleDelivery}[locale];
+  const greeting=copy.messageGreeting.replace("{name}",name);
+  const header=copy.messageWeek.replace("{week}",week);
   const lines=shifts.map(s=>`${s.date}: ${s.start}–${s.end}`);
-  return `${lead} ${name},\n${header} ${week}:\n${lines.join("\n")}\n${close}`;
+  return [greeting,header,...lines,copy.messageClosing].join("\n");
 }
