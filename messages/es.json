@@ -251,7 +251,9 @@
     "todaySnapshotTitle": "Hoy",
     "taskSeeAll": "Ver todo",
     "businessOverviewTitle": "Resumen del negocio",
-    "businessOverviewIntro": "Tus datos confiables de ganancia, costos, recuperación, personal, menú, punto de equilibrio y alertas."
+    "businessOverviewIntro": "Tus datos confiables de ganancia, costos, recuperación, personal, menú, punto de equilibrio y alertas.",
+    "usageOverAlert": "El uso semanal supera lo esperado en más del 10 %",
+    "usageReview": "Revisar uso de ingredientes"
   },
   "Money": {
     "title": "Dinero",
@@ -2357,7 +2359,26 @@
     "quantity": "Cantidad",
     "unit": "Unidad",
     "editQuantityForSize": "Editar {ingredient} en {size}",
-    "invalidQuantity": "Introduce una cantidad mayor que cero y una unidad válida."
+    "invalidQuantity": "Introduce una cantidad mayor que cero y una unidad válida.",
+    "usageTitle": "Uso esperado frente al real",
+    "usagePeriod": "Período:",
+    "usageExpected": "Esperado",
+    "usageActual": "Real (conteo semanal)",
+    "usageDifference": "Diferencia",
+    "usageUnknown": "Faltan conteos o ventas",
+    "usage_on_target": "Dentro del objetivo",
+    "usage_watch": "Revisar",
+    "usage_over": "Uso excesivo",
+    "usageMissing": "Necesario",
+    "usageRecord": "Registrar inventario",
+    "usage_count": "Conteo semanal",
+    "usage_purchase": "Compra",
+    "usageIngredient": "Ingrediente",
+    "usageQuantity": "Cantidad",
+    "usageUnit": "Unidad",
+    "usageDate": "Fecha",
+    "usageSaved": "Guardado",
+    "usageCountNote": "Registre un conteo al cierre del día anterior y al cierre del último día. Registre las compras por fecha de recepción."
   },
   "SupervisorProposalCard": {
     "title": "Propuesta de cambio de precio",
