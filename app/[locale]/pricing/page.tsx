@@ -24,7 +24,7 @@ export default async function PricingPage(){
    <h2 className="text-xl font-bold">{t("accessTitle")}</h2>
    <p>{access.access.mode==="grandfathered"?t("fullAccess"):access.access.active?t("freeUntil",{date:access.access.accessEnd??""}):t("expired")}</p>
    {access.access.remind&&<p role="status" className="mt-2">{t("renewSoon",{date:access.access.accessEnd??""})}</p>}
-   <RedeemCodeForm copy={{label:t("haveCode"),placeholder:t("codePlaceholder"),submit:t("redeem"),success:t("redeemed"),error:t("redeemError"),invalid:t("redeemInvalid"),expiredCode:t("redeemExpired"),full:t("redeemFull"),rateLimited:t("redeemRateLimited"),pausedCafe:t("redeemPaused")}}/>
+   <RedeemCodeForm copy={{label:t("haveCode"),placeholder:t("codePlaceholder"),submit:t("redeem"),success:t("redeemed"),error:t("redeemError"),invalid:t("redeemInvalid"),expiredCode:t("redeemExpired"),full:t("redeemFull"),rateLimited:t("redeemRateLimited"),pausedCafe:t("redeemPaused"),alreadyRedeemed:t("redeemAlreadyUsed")}}/>
   </section>}
  </PageShell>;
 }
