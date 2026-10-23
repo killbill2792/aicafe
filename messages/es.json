@@ -1285,7 +1285,8 @@
     "invalidMix": "Las tarifas deben sumar el 100 %",
     "info": "Información",
     "noNewCoverage": "Se guardó la tarifa, pero algunos días aún necesitan más datos sobre las comisiones.",
-    "missingButton": "Falta"
+    "missingButton": "Falta",
+    "showDayBreakdown": "Ver los días con ventas y las comisiones faltantes"
   },
   "Economics": {
     "title": "Simulador de meta de ganancia",
