@@ -61,6 +61,10 @@ export function businessWageEstimate(people:{wageCents:number|null}[]):number|nu
  return known.length?Math.round(known.reduce((sum,n)=>sum+n,0)/known.length):null;
 }
 
+/** Report unknown compensation as missing data, not a complete total. */
+export function missingWageInputs(total:{unknownCount:number}):string[]{
+ return total.unknownCount>0?["wagesUnknownForSomeShifts"]:[];
+}
 /** A known subtotal with missing wages is not a complete labor total. */
 export function costCompleteness(total:{knownCostCents:number;unknownCount:number}):"complete"|"partial"|"unknown"{
  if(total.unknownCount===0)return "complete";

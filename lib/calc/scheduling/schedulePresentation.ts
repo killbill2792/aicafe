@@ -5,7 +5,8 @@ import {minuteOfDay,shiftCost,roleWageAverages,businessWageEstimate,aggregateCos
 import {checkShiftLength,checkScheduledWeeklyBounds,type RuleSettings} from "./ruleChecks";
 
 export type PersonForSchedule={id:string;name:string;role:string|null;wageCents:number|null;
- minWeeklyMinutes:number|null;maxWeeklyMinutes:number|null;availableDays:number[]|null;colorIndex:number|null};
+ minWeeklyMinutes:number|null;maxWeeklyMinutes:number|null;availableDays:number[]|null;colorIndex:number|null;
+ active?:boolean};
 export type DetailedShift=CostLine&{id:string;employeeName?:string;status?:string};
 export type TimeWindow={start:string;end:string};
 export type AvailabilityEntry={employee_id:string;day_of_week:number;start_local:string;end_local:string;
@@ -61,6 +62,12 @@ export function dayTotals(date:string,shifts:DetailedShift[]){
  const rows=shifts.filter(s=>s.date===date);
  return aggregateCosts(rows);
 }
+/** Inactive people remain visible if any retained dated shift refers to them. */
+export function peopleWithRetainedShifts<T extends {id:string;active:boolean}>(
+ people:readonly T[],shifts:readonly {employeeId:string}[]):T[]{
+ const retained=new Set(shifts.map(s=>s.employeeId));
+ return people.filter(p=>p.active||retained.has(p.id));
+}
 export function personTotals(personId:string,shifts:DetailedShift[]){
  return aggregateCosts(shifts.filter(s=>s.employeeId===personId));
 }
@@ -91,11 +98,19 @@ export function availabilityStatus(person:PersonForSchedule,date:string,start:st
  const range=span(start,end);
  if(overlapsEmployeeShift(person.id,date,start,end,shifts))return "on_shift";
  const valid=windows.filter(w=>w.employee_id===person.id&&w.day_of_week===day&&
-   w.effective_from<=date&&(w.effective_to===null||w.effective_to>=date))
-  .sort((a,b)=>b.effective_from.localeCompare(a.effective_from));
+   w.effective_from<=date&&(w.effective_to===null||w.effective_to>=date));
  if(valid.length){
-  const rangeAllowed=span(valid[0].start_local.slice(0,5),valid[0].end_local.slice(0,5));
-  if(range.start<rangeAllowed.start||range.end>rangeAllowed.end)return "unavailable";
+  // The foundation permits multiple windows on a weekday. Their union,
+  // including touching windows, must cover the full proposed shift.
+  const spans=valid.map(w=>span(w.start_local.slice(0,5),w.end_local.slice(0,5)))
+    .sort((a,b)=>a.start-b.start||a.end-b.end);
+  let coveredUntil=range.start;
+  for(const window of spans){
+   if(window.start>coveredUntil)break;
+   coveredUntil=Math.max(coveredUntil,window.end);
+   if(coveredUntil>=range.end)return "free";
+  }
+  return "unavailable";
  }
  return "free";
 }

@@ -35,12 +35,14 @@ export default function WeekGrid({dates,people,shifts,gaps,openHours,currency,re
     const week=personTotals(person.id,shifts);
     return <tr key={person.id} className="border-b border-line"><th scope="row" className="p-3 text-start">
      <div className="flex items-center gap-2"><span className="grid size-10 place-items-center rounded-full bg-accent-soft font-bold text-accent-text">{person.name[0]}</span>
-     <div><strong>{person.name}</strong><div className="text-sm font-normal text-muted">{person.role??t("team")} · {person.wageCents==null?t("noWage"):fmt(person.wageCents,currency)+"/h"}</div></div></div></th>
+     <div><strong>{person.name}</strong>{person.active===false&&
+       <span className="ms-2 text-sm font-normal text-muted">({t("inactivePerson")})</span>}
+       <div className="text-sm font-normal text-muted">{person.role??t("team")} · {person.wageCents==null?t("noWage"):fmt(person.wageCents,currency)+"/h"}</div></div></div></th>
      {dates.map(date=><td key={date} className="p-1.5 align-middle">
       {shifts.filter(s=>s.employeeId===person.id&&s.date===date).map(s=><button key={s.id}
        disabled={readOnly} onClick={()=>onEdit(date,s.id)} className={`min-h-12 w-full rounded-xl border px-2 py-1 text-start text-[13px] font-bold ${index%2?"border-pos/20 bg-pos-soft text-pos":"border-accent-text/20 bg-accent-soft text-accent-text"}`}>
        <span className="block">{s.start}–{s.end}</span><span className="block">{h(s.paidMinutes)} {t("paid")}{s.estimated?" · "+t("estimated"):""}</span></button>)}
-      <button disabled={readOnly} aria-label={t("addPersonShift",{name:person.name,date})} onClick={()=>onAdd(date,person.id)}
+      <button disabled={readOnly||person.active===false} aria-label={t("addPersonShift",{name:person.name,date})} onClick={()=>onAdd(date,person.id)}
        className="min-h-12 w-full text-muted hover:text-accent-text">+</button>
      </td>)}
      <td className="p-2 text-end font-bold">{h(week.paidMinutes)}<span className="block text-sm text-muted">{wageSummary(week)}{week.estimated?" "+t("estimated"):""}</span></td>

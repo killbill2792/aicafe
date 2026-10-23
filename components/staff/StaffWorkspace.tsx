@@ -176,7 +176,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      </div>
     </section>;
    })}</div>
-   <WeekGrid dates={data.dates} people={data.team} shifts={data.shifts} gaps={data.gaps}
+   <WeekGrid dates={data.dates} people={data.displayTeam} shifts={data.shifts} gaps={data.gaps}
     openHours={data.openHours} currency={data.currency} readOnly={data.readOnly} coverageEnabled={data.rules.coverage_enabled}
     onEdit={(d,id)=>openShift(d,id)} onAdd={(d,id)=>openShift(d,undefined,id)}/>
    {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">

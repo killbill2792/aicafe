@@ -29,7 +29,7 @@ export function createStaffScreenshotFixture(weekStart="2026-10-26"){
      status:"draft",source:"owner",breakSource:"rule",employeeName:p.name};
   });
  });
- return {dates,weekStart,team,shifts,total:aggregateCosts(shifts),
+ return {dates,weekStart,team,displayTeam:team,shifts,total:aggregateCosts(shifts),
   gaps:coverageGaps(dates,shifts,hours,2),openHours:hours,
   currency:"USD",rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},
   availability:[],profileAvailability:[],adjacentShifts:[],readOnly:false,timezone:"America/Los_Angeles"};

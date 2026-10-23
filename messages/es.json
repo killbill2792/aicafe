@@ -2553,6 +2553,7 @@
     "noOverlap": "Sin turnos superpuestos",
     "overlapWarning": "Se superpone con otro turno",
     "prepareScheduleMessages": "Preparar mensajes del horario",
-    "scheduleNotSent": "No enviados. Copia los mensajes y compártelos manualmente."
+    "scheduleNotSent": "No enviados. Copia los mensajes y compártelos manualmente.",
+    "inactivePerson": "Inactivo"
   }
 }

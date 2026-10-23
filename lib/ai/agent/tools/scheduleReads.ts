@@ -3,6 +3,7 @@ import {getTeam,getWeekSchedule,getCoverageGaps,getShiftCost} from "@/lib/action
 import {getTeamRules} from "@/lib/actions/teamRules";
 import {staffReadScope,mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
 import {uncheckedCoverageDays} from "@/lib/calc/scheduling/coverageGaps";
+import {missingWageInputs} from "@/lib/calc/scheduling/shiftCost";
 import type {AgentToolContext,AgentToolResult} from "./index";
 const week=z.strictObject({week_start:z.iso.date().nullable()});
 const none=z.strictObject({});
@@ -31,7 +32,8 @@ export const scheduleReadTools={
    const people=result.data.team.slice(0,30),shifts=result.data.shifts.slice(0,30);
    return {source:"employees+scheduled_shifts",period:{from:ws,to:new Date(Date.parse(ws+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
     agentId:"olivia",missing:[...(result.data.team.length>30?["morePeople"]:[]),
-     ...(result.data.shifts.length>30?["moreShifts"]:[])],estimated:result.data.totals.estimated,
+     ...(result.data.shifts.length>30?["moreShifts"]:[]),
+     ...missingWageInputs(result.data.totals)],estimated:result.data.totals.estimated,
     people:people.map(p=>({id:p.id,name:p.name,role:p.role,minWeeklyMinutes:p.minWeeklyMinutes,
       maxWeeklyMinutes:p.maxWeeklyMinutes,hasKnownWage:p.wageCents!==null})),
     shifts:shifts.map(s=>({employeeId:s.employeeId,date:s.date,paidMinutes:s.paidMinutes,
@@ -50,7 +52,7 @@ export const scheduleReadTools={
    const data=result.data;
    return {source:"scheduled_shifts",period:{from:data.dates[0],to:data.dates[6]},
      agentId:"olivia",missing:[...(data.shifts.length>40?["moreShifts"]:[]),
-       ...(data.total.unknownCount?["wagesUnknownForSomeShifts"]:[]),
+       ...missingWageInputs(data.total),
        ...(!data.rules.coverage_enabled?["coverageDisabled"]:
        uncheckedCoverageDays(data.dates,data.openHours,true).length?["openHoursIncomplete"]:[])],
      estimated:data.total.estimated,estimatedShiftCount:data.total.estimateCount,
