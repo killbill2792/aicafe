@@ -30,6 +30,7 @@ export default async function TypeExpensePage({ searchParams }: { searchParams: 
         todayDateStr={new Date().toISOString().slice(0, 10)}
         labels={{
           backspace: t("backspace"),
+          saveError: t("manualSaveError"),
           amountTitle: t("amountTitle"),
           categoryTitle: t("categoryTitle"),
           vendorLabel: t("vendorLabel"),
