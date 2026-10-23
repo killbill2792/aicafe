@@ -268,4 +268,58 @@ BEGIN
  THEN RAISE EXCEPTION 'modified schedule allowed owner handoff'; END IF;
 END $stale$;
 
+
+-- A changed recipient is NOT allowed, even with an otherwise unchanged roster.
+UPDATE public.scheduled_shifts SET start_local='08:00',updated_at=now()
+ WHERE business_id=:'business' AND employee_id=:'employee_id'
+ AND local_date=:'target_monday'::date;
+UPDATE public.employees SET phone_e164='+14155550124'
+ WHERE business_id=:'business' AND id=:'employee_id';
+DO $changedphone$
+DECLARE rejected boolean:=false;
+BEGIN
+ BEGIN
+  PERFORM public.staff_mark_owner_delivery(
+    current_setting('test.approval.business')::uuid,
+    (SELECT owner_user_id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)),
+    (SELECT employee_id FROM public.scheduled_shifts
+      WHERE proposal_id IS NULL AND local_date=(
+        SELECT week_start FROM public.staff_schedule_handoff_snapshots
+        WHERE proposal_id=(SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)))
+        LIMIT 1),
+    'sms','+14155550123',
+    (SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)),NULL);
+ EXCEPTION WHEN SQLSTATE 'P0001' THEN rejected:=true;
+ END;
+ IF NOT rejected THEN RAISE EXCEPTION 'old phone was accepted'; END IF;
+END $changedphone$;
+
+-- An unchanged phone and roster may record one OWNER-OPENED handoff; a second
+-- click is idempotent and cannot duplicate or change the audit.
+UPDATE public.employees SET phone_e164='+14155550123'
+ WHERE business_id=:'business' AND id=:'employee_id';
+SELECT public.staff_mark_owner_delivery(
+ :'business'::uuid,:'owner'::uuid,:'employee_id'::uuid,'sms','+14155550123',
+ :'send_id'::uuid,NULL);
+DO $ledger$
+DECLARE replay jsonb;
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.staff_schedule_deliveries
+   WHERE business_id=current_setting('test.approval.business')::uuid
+     AND proposal_id=(SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64))
+     AND status='sent_by_owner' AND channel='sms' AND sent_at IS NOT NULL
+     AND sent_by=(SELECT owner_user_id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)))
+ THEN RAISE EXCEPTION 'owner handoff ledger missing actor, channel or time'; END IF;
+ replay:=public.staff_mark_owner_delivery(
+  current_setting('test.approval.business')::uuid,
+  (SELECT owner_user_id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)),
+  (SELECT employee_id FROM public.staff_schedule_deliveries
+    WHERE proposal_id=(SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)) LIMIT 1),
+  'sms','+14155550123',
+  (SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)),NULL);
+ IF replay->>'state'<>'already_opened'
+ OR (SELECT count(*) FROM public.staff_schedule_deliveries WHERE
+      proposal_id=(SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)))<>1
+ THEN RAISE EXCEPTION 'owner handoff replay was not idempotent'; END IF;
+END $ledger$;
 ROLLBACK;
