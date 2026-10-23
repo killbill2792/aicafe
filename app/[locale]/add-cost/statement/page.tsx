@@ -45,6 +45,8 @@ export default async function StatementUploadPage({ searchParams }: { searchPara
           missingConfirm: t("statementMissingConfirm"),
           missingCancel: t("statementMissingCancel"),
           saveError: t("statementSaveError"),
+          readError: t("statementReadError"),
+          tryAgain: t("statementTryAgain"),
         }}
       />
     </PageShell>
