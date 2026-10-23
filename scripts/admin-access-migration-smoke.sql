@@ -75,3 +75,24 @@ begin
   end if;
 end $new_cafe_entitlement_check$;
 rollback;
+
+-- Deleting an administrator must not be blocked by inert home-card suggestions.
+begin;
+do $admin_suggestion_delete_check$
+declare
+  test_admin uuid := gen_random_uuid();
+  linked_admin uuid;
+begin
+  insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
+  values(test_admin,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+         'suggestion-delete-'||replace(test_admin::text,'-','')||'@example.invalid','',now(),now());
+  insert into public.admin_home_card_suggestions(topic,requested_by)
+  values('inventory',test_admin)
+  on conflict (topic) do update set requested_by=excluded.requested_by;
+  delete from auth.users where id=test_admin;
+  select requested_by into linked_admin from public.admin_home_card_suggestions where topic='inventory';
+  if not found or linked_admin is not null then
+    raise exception 'inert admin suggestion prevented account deletion or kept requester';
+  end if;
+end $admin_suggestion_delete_check$;
+rollback;
