@@ -91,7 +91,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw);
   if(name==="get_peak_hours"||name==="get_employee_sales"||name==="get_payroll_facts"){
     const period=posPeriodSchema.parse(raw);if(period.from>period.to)throw new Error("Invalid reporting range");
-    const reader=name==="get_peak_hours"?ctx.tools.getPeakHours(period):name==="get_employee_sales"?ctx.tools.getEmployeeSales(period):ctx.tools.getPayrollFacts(period);
+    const reader=name==="get_peak_hours"?ctx.tools.getPeakHours?.(period):name==="get_employee_sales"?ctx.tools.getEmployeeSales?.(period):ctx.tools.getPayrollFacts?.(period);
+    if(!reader)return {source:name,period,agentId:"alex",missing:["posFactsReaderUnavailable"]};
     const slice=await reader;
     return {source:name,period,agentId:name==="get_payroll_facts"?"olivia":"alex",
       missing:slice.quality.missingInputs,...(slice.available?slice.value:{data:null})};

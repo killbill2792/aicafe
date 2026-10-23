@@ -30,7 +30,7 @@ export async function rebuildSalesFactRollups(db:SupabaseClient,businessId:strin
   for(const [table,rows] of [["hourly_sales_rollup",[...hourly.values()]],["employee_sales_rollup",[...staff.values()]]] as const) {
    const removed=await db.from(table).delete().eq("business_id",businessId).eq("business_date",date);
    if(removed.error)throw removed.error;
-   if(rows.length){const inserted=await db.from(table).insert(rows);if(inserted.error)throw inserted.error;}
+   if(rows.length){const inserted=await db.from(table).insert([...rows]);if(inserted.error)throw inserted.error;}
   }
  }
 }

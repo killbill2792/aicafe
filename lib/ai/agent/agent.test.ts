@@ -86,7 +86,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       status:"partial",missing:["sales"] });
   });
   it("publishes exactly the registered strict functions", () => {
-    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["get_profit","get_sales","get_menu_items",
+    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["get_peak_hours","get_employee_sales","get_payroll_facts","get_profit","get_sales","get_menu_items",
       "get_staff","get_schedule","get_labor","get_business_hours","get_expenses","get_bills",
       "get_break_even","get_cost_summary","get_product_costs","get_ingredient_costs","get_inventory",
       "get_item_sales","get_price_recommendation","draft_week_schedule","suggest_new_item_price","propose_price_change",
