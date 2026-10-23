@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {projectUsageTool} from "@/lib/calc/usageToolProjection";
 import type { AgentToolContext, AgentToolResult } from "./index";
 
 const item=z.strictObject({itemId:z.uuid()});
@@ -12,9 +13,7 @@ export const suppliesTools={
    const input=usage.parse(raw);
    if(!ctx.tools.getUsageVariance)return {source:"usage_variance",period:{from:input.from,to:input.to},agentId:"maya",missing:["usageReaderUnavailable"],rows:null};
    const result=await ctx.tools.getUsageVariance({from:input.from,to:input.to,ingredient:input.ingredient,groupBy:input.group_by});
-   return {source:"usage_variance",period:{from:input.from,to:input.to},agentId:"maya",missing:result.missing,
-    rows:result.rows.slice(0,35),groupBy:result.groupBy,actualShiftUsage:null,
-    note:"Staff and shift splits are expected only; actual is reconciled from stock counts for the full period."};
+   return projectUsageTool(result);
   }
  },
   get_product_costs:{
