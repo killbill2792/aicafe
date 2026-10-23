@@ -104,6 +104,7 @@
     "statementMissingAmount": "المبلغ",
     "statementMissingDate": "التاريخ",
     "statementMissingCategory": "الفئة",
+    "statementSaveError": "تعذّر حفظ كشف الحساب. راجع السطور ثم حاول مرة أخرى.",
     "statementMissingConfirm": "إضافة السطر",
     "title": "إضافة مصروف",
     "placeholder": "صورة الإيصال، رفع كشف الحساب البنكي، الإدخال الصوتي والإدخال اليدوي ستتوفر في المرحلة القادمة.",
