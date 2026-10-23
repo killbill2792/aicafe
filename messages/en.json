@@ -2383,7 +2383,12 @@
     "usageExpectedOnly": "Expected only, based on Toast time entries; not actual consumption",
     "usageStart": "From",
     "usageEnd": "Through",
-    "usageApply": "Apply"
+    "usageApply": "Apply",
+    "usageStartCount": "Opening count needed for",
+    "usageEndCount": "Closing count needed for",
+    "usageCoverage": "Complete Toast sales history needed",
+    "usageRecipeMissing": "Check recipe or recorded modifier mapping",
+    "usageUnavailable": "Usage unavailable; retry after connecting Toast and saving stock counts"
   },
   "SupervisorProposalCard": {
     "title": "Price change proposal",
