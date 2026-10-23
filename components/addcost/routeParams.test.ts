@@ -4,6 +4,8 @@ import { addCostChoiceSuffix, validCostCategory, validReturnTo } from "./routePa
 describe("safe Add cost navigation", () => {
   it("accepts same-origin paths, including query strings", () => {
     expect(validReturnTo("/money")).toBe("/money");
+    expect(validReturnTo(["/money"])).toBeNull();
+    expect(validReturnTo(null)).toBeNull();
     expect(validReturnTo("/more/bills?category=rent")).toBe("/more/bills?category=rent");
     expect(validReturnTo("/money?filter=last%20month")).toBe("/money?filter=last%20month");
     expect(validReturnTo("/ar/money#expenses")).toBe("/ar/money#expenses");
@@ -13,6 +15,7 @@ describe("safe Add cost navigation", () => {
   });
   it("preselects only recognized categories and keeps the return path encoded", () => {
     expect(validCostCategory("rent")).toBe("rent");
+    expect(validCostCategory(["rent"])).toBeNull();
     expect(validCostCategory("bad")).toBeNull();
     expect(addCostChoiceSuffix("rent", "/more/bills?category=rent")).toBe("?category=rent&returnTo=%2Fmore%2Fbills%3Fcategory%3Drent");
     expect(addCostChoiceSuffix("bad", "//evil.invalid")).toBe("");
