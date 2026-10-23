@@ -43,6 +43,8 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
   if(result.available){
    expect(result.value.payPeriods).toHaveLength(1001);
    expect(result.value.payPeriods[0].netCents).toBeNull();
+   expect(result.quality.missingInputs).toContain("payrollUnknown:netCents");
+   expect(result.quality.missingInputs).toContain("payrollUnknown:employeeTaxCents");
   }
  });
 });

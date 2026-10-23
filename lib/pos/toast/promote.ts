@@ -27,18 +27,28 @@ export async function promoteVerifiedToastDay(
    // snapshot, not from fabricated order metadata, then rebuild derived facts.
    const {data:pilot,error:pilotError}=await db.from("toast_pilot_days")
       .select("orders_snapshot").eq("business_id",p.businessId)
-      .eq("restaurant_guid",p.restaurantGuid).eq("business_date",p.businessDate).single();
+      .eq("restaurant_guid",p.restaurantGuid).eq("location_id",p.locationId)
+      .eq("business_date",p.businessDate).eq("snapshot_sha256",p.checksum)
+      .eq("state","promoted").single();
    if(pilotError||!pilot||!Array.isArray(pilot.orders_snapshot))throw new Error("Missing verified Toast snapshot");
    const {data:staff,error:staffError}=await db.from("employees")
       .select("id,pos_team_member_id").eq("business_id",p.businessId);
    if(staffError)throw staffError;
    const byPos=new Map((staff??[]).map(e=>[e.pos_team_member_id,e.id]));
+   // Guarded Toast employees are linked through the owner-approved directory,
+   // not by rewriting the canonical employee's POS identity.
+   const {data:directory,error:directoryError}=await db.from("toast_employee_directory")
+      .select("employee_guid,linked_employee_id").eq("business_id",p.businessId)
+      .eq("restaurant_guid",p.restaurantGuid).eq("deleted",false);
+   if(directoryError)throw directoryError;
+   const approved=new Map((directory??[]).filter(e=>e.linked_employee_id)
+     .map(e=>[e.employee_guid,e.linked_employee_id]));
    for(const raw of pilot.orders_snapshot){
       if(!raw||typeof raw!=="object")throw new Error("Invalid Toast order snapshot");
       const rec=raw as Record<string,unknown>;
       if(typeof rec.posOrderId!=="string"||!rec.posOrderId.startsWith(`toast:${p.restaurantGuid}:`))throw new Error("Untrusted Toast snapshot ID");
       const employee=typeof rec.posEmployeeId==="string"?rec.posEmployeeId:null;
-      const employeeId=employee?byPos.get(`toast:${p.restaurantGuid}:${employee}`)??null:null;
+      const employeeId=employee?approved.get(employee)??byPos.get(`toast:${p.restaurantGuid}:${employee}`)??null:null;
       const {data:order,error:orderError}=await db.from("orders")
         .update({employee_id:employeeId,
           dining_option:typeof rec.diningOption==="string"?rec.diningOption:null,

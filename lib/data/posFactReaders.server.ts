@@ -89,11 +89,19 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
    if(found.truncated)return missing("payrollFactsPageLimit");
    if(!found.rows.length)return missing("noPayrollPeriodFacts");
    try{
-    return known({payPeriods:found.rows.map(r=>({employeeId:r.employee_id,payPeriodEnd:r.pay_period_end,
+    const payPeriods=found.rows.map(r=>({employeeId:r.employee_id,payPeriodEnd:r.pay_period_end,
       regularCents:cents(r.regular_cents),overtimeCents:cents(r.overtime_cents),
       doubleOvertimeCents:cents(r.double_overtime_cents),grossCents:cents(r.gross_cents),
       employeeTaxCents:cents(r.employee_tax_cents),employerTaxCents:cents(r.employer_tax_cents),
-      netCents:cents(r.net_cents),source:r.source}))});
+      netCents:cents(r.net_cents),source:r.source}));
+    // Missing payroll components are unknown, not zero or a complete answer.
+    const columns=[
+      "regularCents","overtimeCents","doubleOvertimeCents","grossCents",
+      "employeeTaxCents","employerTaxCents","netCents"
+    ] as const;
+    const missingInputs=columns.filter(col=>payPeriods.some(row=>row[col]===null))
+      .map(col=>"payrollUnknown:"+col);
+    return known({payPeriods},missingInputs);
    }catch{return missing("unsafePayrollFacts");}
   }
  };
