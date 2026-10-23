@@ -78,6 +78,23 @@ BEGIN
   RAISE EXCEPTION 'saving salaried staff changed canonical compensation';
  END IF;
 END $$;
+-- Profile-only update with null availability must preserve current windows and audit history.
+SELECT public.staff_write_person(:'business'::uuid,:'employee'::uuid,
+ '{"name":"Amy Updated","role":null,"wageCents":null,
+ "minWeeklyMinutes":1200,"maxWeeklyMinutes":2400,"phone":"+14155559876",
+ "availability":null}'::jsonb);
+DO $$
+BEGIN
+ IF (SELECT count(*) FROM public.staff_availability_rules
+  WHERE employee_id=current_setting('test.staff.employee')::uuid
+   AND day_of_week=1 AND start_local='07:00'::time
+   AND effective_from=(now() AT TIME ZONE 'America/Los_Angeles')::date)<>1
+ OR (SELECT count(*) FROM public.scheduling_foundation_audit_events
+  WHERE business_id=current_setting('test.staff.business')::uuid
+   AND table_name='staff_availability_rules' AND operation='INSERT')<>3 THEN
+  RAISE EXCEPTION 'profile-only update clobbered availability or audit';
+ END IF;
+END $$;
 -- A validation failure must roll back the complete profile and windows.
 DO $$
 BEGIN

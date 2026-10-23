@@ -10,6 +10,7 @@ describe("staff profile safety",()=>{
   expect(personFields.safeParse(sample).success).toBe(true);
   expect(personFields.safeParse({name:"Lena"}).success).toBe(true);
   expect(updatePersonFields.safeParse({...sample,id:"d637c32d-c82c-49af-8371-b31502292727"}).success).toBe(true);
+  expect(updatePersonFields.safeParse({...sample,availability:null,id:"d637c32d-c82c-49af-8371-b31502292727"}).success).toBe(true);
   expect(personFields.safeParse({...sample,availability:[]})).toMatchObject({success:true});
  });
  it("rejects duplicate days, partial windows and inverted min/max",()=>{
