@@ -2388,7 +2388,11 @@
     "usageEndCount": "Closing count needed for",
     "usageCoverage": "Complete Toast sales history needed",
     "usageRecipeMissing": "Check recipe or recorded modifier mapping",
-    "usageUnavailable": "Usage unavailable; retry after connecting Toast and saving stock counts"
+    "usageUnavailable": "Usage unavailable; retry after connecting Toast and saving stock counts",
+    "usageErrorInvalidQuantity": "Enter a valid quantity. Purchases must be greater than zero; a stock count may be zero.",
+    "usageErrorInvalidUnit": "Choose a unit compatible with this ingredient.",
+    "usageErrorIngredientNotFound": "This ingredient is no longer available in this café. Select another ingredient.",
+    "usageErrorSaveFailed": "Couldn't save this stock entry. Please retry."
   },
   "SupervisorProposalCard": {
     "title": "Price change proposal",
