@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validateOwnerConfirmedProcessingFeePlan } from "@/lib/pos/processingFeeEstimate";
 import {
   firstUncoveredSalesDay,
   initialCardSalesShareBps,
@@ -195,6 +196,37 @@ describe("processing fee redesign defaults", () => {
     expect(canAddRateRule(7)).toBe(true);
     expect(canAddRateRule(8)).toBe(false);
     expect(canAddRateRule(9)).toBe(false);
+  });
+
+  it("matches the server for combinations of zero/positive shares, fixed fees and mixes", () => {
+    for (const salesShareBps of [0, 10000]) {
+      for (const transactionShareBps of [0, 10000]) {
+        for (const fixedFeeCents of [0, 25]) {
+          for (const salesMixBps of [0, 10000]) {
+            for (const transactionMixBps of [0, 10000]) {
+              const rule = {
+                id: "r1", label: "Standard", percentageBps: 260, fixedFeeCents,
+                salesMixBps, transactionMixBps,
+              };
+              const server = validateOwnerConfirmedProcessingFeePlan({
+                processedSalesShareBps: salesShareBps,
+                processedTransactionShareBps: transactionShareBps,
+                averageProcessedTicketCents: null,
+                rules: [rule],
+              });
+              const client = requiredRateMixErrors([{
+                salesMix: String(salesMixBps / 100),
+                transactionMix: String(transactionMixBps / 100),
+                fixedFee: String(fixedFeeCents / 100),
+              }], String(salesShareBps / 100), String(transactionShareBps / 100));
+              expect(Boolean(client.salesMix || client.transactionMix),
+                JSON.stringify({ salesShareBps, transactionShareBps, fixedFeeCents, salesMixBps, transactionMixBps }))
+                .toBe(server !== null);
+            }
+          }
+        }
+      }
+    }
   });
 
   it("one-tap bypasses a manually empty date but still requires fee inputs", () => {
