@@ -47,6 +47,20 @@ alter table public.free_access_redeem_limits enable row level security;
 revoke all on public.free_access_codes,public.cafe_access,public.free_access_redemptions,public.free_access_redeem_limits from public,anon,authenticated;
 grant select,insert,update,delete on public.free_access_codes,public.cafe_access,public.free_access_redemptions,public.free_access_redeem_limits to service_role;
 
+-- Existing cafés were grandfathered above. New cafés require a code.
+-- Use an expired 'code' grant so redemption is possible, unlike admin pause.
+create or replace function public.initialize_new_cafe_access()
+returns trigger language plpgsql security definer set search_path=public as $
+begin
+ insert into public.cafe_access(business_id,mode,access_end)
+ values(new.id,'code',current_date - 1) on conflict (business_id) do nothing;
+ return new;
+end $;
+revoke all on function public.initialize_new_cafe_access() from public,anon,authenticated;
+drop trigger if exists initialize_cafe_access on public.businesses;
+create trigger initialize_cafe_access after insert on public.businesses
+for each row execute function public.initialize_new_cafe_access();
+
 -- Atomic redemption: throttle even incorrect codes; lock the code row before
 -- checking/incrementing its unique café count. Re-redeems don't consume another slot.
 create or replace function public.redeem_free_access_code(
@@ -93,13 +107,14 @@ begin
  if v_access.mode = 'paused' then
    return jsonb_build_object('status','paused_cafe');
  end if;
- -- A café redeeming the same code may extend; first-time cafés count once.
- if not exists (select 1 from public.free_access_redemptions
+ -- Code use is single-grant per café. A retry cannot mint more months.
+ if exists (select 1 from public.free_access_redemptions
       where code_id=v_code.id and business_id=p_business_id) then
-   select count(*) into v_used from public.free_access_redemptions where code_id=v_code.id;
-   if v_used>=v_code.max_cafes then
-     return jsonb_build_object('status','full');
-   end if;
+   return jsonb_build_object('status','already_redeemed');
+ end if;
+ select count(*) into v_used from public.free_access_redemptions where code_id=v_code.id;
+ if v_used>=v_code.max_cafes then
+   return jsonb_build_object('status','full');
  end if;
  if v_code.duration_months is not null then
    v_end := (greatest(v_today,case when v_access.mode='code' then v_access.access_end else v_today end)
