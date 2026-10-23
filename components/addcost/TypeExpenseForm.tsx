@@ -8,6 +8,7 @@ import PlainIcon from "@/components/icons/PlainIcon";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import { addManualExpense } from "@/lib/actions/expenses";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
+import { validReturnTo } from "@/components/addcost/routeParams";
 
 const CATEGORY_ICONS: Record<ExpenseCategoryCode, ExpenseIconCode> = {
   rent: "rent",
@@ -35,7 +36,7 @@ export default function TypeExpenseForm({
   categoryLabels: Record<ExpenseCategoryCode, string>;
   todayDateStr: string;
   initialCategory: ExpenseCategoryCode | null;
-  returnTo?: string;
+  returnTo?: string | null;
   labels: {
     backspace: string;
     amountTitle: string;
@@ -50,7 +51,7 @@ export default function TypeExpenseForm({
 }) {
   const router = useRouter();
   const locale = useLocale();
-  const safeReturnTo = returnTo && /^\/(?!\/)[^%\\\u0000-\u001f\u007f]*$/.test(returnTo) ? returnTo : "/money";
+  const safeReturnTo = validReturnTo(returnTo ?? undefined) ?? "/money";
   const [digits, setDigits] = useState(""); // raw digits, interpreted as cents
   const [category, setCategory] = useState<ExpenseCategoryCode | null>(initialCategory);
   const [vendor, setVendor] = useState("");
