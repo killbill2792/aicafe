@@ -2380,7 +2380,10 @@
     "usageSaved": "تم الحفظ",
     "usageCountNote": "سجّل جرد نهاية اليوم السابق لبداية الفترة وجرد نهاية اليوم الأخير والمشتريات بتاريخ استلامها.",
     "usageShifts": "تفصيل الورديات",
-    "usageExpectedOnly": "المتوقع فقط وفق سجلات حضور Toast، وليس استهلاكًا فعليًا"
+    "usageExpectedOnly": "المتوقع فقط وفق سجلات حضور Toast، وليس استهلاكًا فعليًا",
+    "usageStart": "من",
+    "usageEnd": "حتى",
+    "usageApply": "تطبيق"
   },
   "SupervisorProposalCard": {
     "title": "اقتراح تغيير السعر",
