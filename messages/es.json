@@ -2380,7 +2380,10 @@
     "usageSaved": "Guardado",
     "usageCountNote": "Registre un conteo al cierre del día anterior y al cierre del último día. Registre las compras por fecha de recepción.",
     "usageShifts": "Desglose por turnos",
-    "usageExpectedOnly": "Solo esperado, según fichajes de Toast; no es consumo real"
+    "usageExpectedOnly": "Solo esperado, según fichajes de Toast; no es consumo real",
+    "usageStart": "Desde",
+    "usageEnd": "Hasta",
+    "usageApply": "Aplicar"
   },
   "SupervisorProposalCard": {
     "title": "Propuesta de cambio de precio",
