@@ -5,7 +5,7 @@ import { useLocale } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { updateCafeProfile } from "@/lib/actions/business";
 import { openHoursToWeeklyInput, type OpenHours, type OpenHoursDayKey, type WeeklyHoursInput } from "@/lib/business/openHours";
-import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, shouldFocusHours, timezoneOptions, US_STATES, validateProfile } from "./cafeProfileOptions";
+import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, shouldFocusHours, timezoneOptions, usStateOptions, validateProfile } from "./cafeProfileOptions";
 
 type Profile = {
   name: string;
@@ -94,6 +94,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   });
   const timezones = useMemo(() => timezoneOptions(locale, profile.timezone), [locale, profile.timezone]);
   const countries = useMemo(() => countryOptions(locale), [locale]);
+  const usStates = useMemo(() => usStateOptions(locale), [locale]);
   const currencies = useMemo(() => currencyOptions(locale, profile.currency), [locale, profile.currency]);
   const [timezoneSearch, setTimezoneSearch] = useState(() =>
     timezoneOptions(locale, profile.timezone).find((option) => option.value === profile.timezone)?.label ?? profile.timezone);
@@ -294,9 +295,9 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
             {countryCode === "US" ? (
               <select value={region} onChange={(e) => setRegion(e.target.value)} className="min-h-12 rounded-xl border border-line bg-card px-3 text-base">
                 <option value="">{labels.chooseState}</option>
-                {region && !US_STATES.some(([code, name]) => region === code || region === name) && <option value={region}>{region}</option>}
-                {US_STATES.map(([code, name]) => (
-                  <option key={code} value={US_STATES.some(([otherCode, otherName]) => otherName === region && otherCode === code) ? region : code}>{name}</option>
+                {region && !usStates.some((item) => region === item.value || region === item.legacyName) && <option value={region}>{region}</option>}
+                {usStates.map((item) => (
+                  <option key={item.value} value={region === item.legacyName ? region : item.value}>{item.label}</option>
                 ))}
               </select>
             ) : <input value={region} onChange={(e) => setRegion(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-base" />}
