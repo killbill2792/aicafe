@@ -5,7 +5,7 @@ import { useLocale } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { updateCafeProfile } from "@/lib/actions/business";
 import { openHoursToWeeklyInput, type OpenHours, type OpenHoursDayKey, type WeeklyHoursInput } from "@/lib/business/openHours";
-import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, shouldFocusHours, timezoneOptions, usStateOptions, validateProfile } from "./cafeProfileOptions";
+import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, moveTimezoneActiveIndex, shouldFocusHours, timezoneOptionScrollTop, timezoneOptions, usStateOptions, validateProfile } from "./cafeProfileOptions";
 
 type Profile = {
   name: string;
@@ -85,6 +85,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   const browserTimezone = useSyncExternalStore(noTimezoneEvents, getBrowserTimezone, serverTimezone);
   const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const hoursRef = useRef<HTMLElement | null>(null);
+  const timezoneListRef = useRef<HTMLDivElement | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const invalidClass = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
   const clearFieldError = (key: string) => setFieldErrors((errors) => {
@@ -100,7 +101,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   const [timezoneSearch, setTimezoneSearch] = useState(() =>
     timezoneOptions(locale, profile.timezone).find((option) => option.value === profile.timezone)?.label ?? profile.timezone);
   const [timezoneExpanded, setTimezoneExpanded] = useState(false);
-  const [timezoneActive, setTimezoneActive] = useState(0);
+  const [timezoneActive, setTimezoneActive] = useState(-1);
   const timezoneResults = useMemo(() => {
     const query = timezoneSearch.trim().toLocaleLowerCase(locale);
     return timezones.filter((option) => !query || option.label.toLocaleLowerCase(locale).includes(query) || option.value.toLowerCase().includes(query)).slice(0, 40);
@@ -110,6 +111,9 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
     setTimezoneTouched(true);
     setTimezoneSearch(timezones.find((option) => option.value === value)?.label ?? value);
     setTimezoneExpanded(false);
+    setTimezoneActive(-1);
+    setStatus("idle");
+    setError(null);
     clearFieldError("timezone");
   };
 
@@ -135,6 +139,15 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   const [countryCode, setCountryCode] = useState(profile.countryCode);
   const [hours, setHours] = useState<WeeklyHoursInput>(() => openHoursToWeeklyInput(profile.openHours));
   const hoursNotSet = DAY_ORDER.some((key) => hours[key].mode === "unset");
+
+  useEffect(() => {
+    const list = timezoneListRef.current;
+    const activeOption = list?.children.item(timezoneActive) as HTMLElement | null;
+    if (!timezoneExpanded || !list || !activeOption) return;
+    list.scrollTop = timezoneOptionScrollTop(
+      list.scrollTop, list.clientHeight, activeOption.offsetTop, activeOption.offsetHeight,
+    );
+  }, [timezoneExpanded, timezoneActive, timezoneResults]);
 
   useEffect(() => {
     if (!shouldFocusHours(focusHours ? "hours" : undefined)) return;
@@ -225,7 +238,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" onChangeCapture={() => { setStatus("idle"); setError(null); }}>
       {hoursNotSet && (
         <div role="status" className="self-start rounded-full bg-warn-tint px-3 py-1.5 text-sm font-bold text-warn">{labels.hoursBadge}</div>
       )}
@@ -256,20 +269,24 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
               aria-activedescendant={timezoneExpanded && timezoneResults[timezoneActive] ? "cafe-timezone-" + timezoneActive : undefined}
               aria-invalid={Boolean(fieldErrors.timezone)} ref={(node) => { fieldRefs.current.timezone = node; }}
               value={shownTimezoneSearch} placeholder={labels.timezoneSearch}
-              onFocus={() => setTimezoneExpanded(true)}
-              onChange={(e) => { setTimezoneTouched(true); setTimezoneSearch(e.target.value); setTimezone(""); setTimezoneExpanded(true); setTimezoneActive(0); clearFieldError("timezone"); }}
+              onFocus={() => { setTimezoneExpanded(true); setTimezoneActive(-1); }}
+              onChange={(e) => { setTimezoneTouched(true); setTimezoneSearch(e.target.value); setTimezone(""); setTimezoneExpanded(true); setTimezoneActive(-1); clearFieldError("timezone"); }}
               onKeyDown={(e) => {
                 if (e.key === "Escape") { setTimezoneExpanded(false); return; }
-                if (e.key === "ArrowDown") { e.preventDefault(); setTimezoneExpanded(true); setTimezoneActive((index) => Math.min(index + 1, timezoneResults.length - 1)); }
-                if (e.key === "ArrowUp") { e.preventDefault(); setTimezoneActive((index) => Math.max(0, index - 1)); }
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const direction = e.key === "ArrowDown" ? 1 : -1;
+                  setTimezoneExpanded(true);
+                  setTimezoneActive((index) => moveTimezoneActiveIndex(index, direction, timezoneResults.length));
+                }
                 if (e.key === "Enter" && timezoneExpanded && timezoneResults[timezoneActive]) { e.preventDefault(); chooseTimezone(timezoneResults[timezoneActive].value); }
               }}
               className={"min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px] text-start" + invalidClass("timezone")} />
             {timezoneExpanded && (
-              <div id="cafe-timezone-options" role="listbox" className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-line bg-card shadow-lg">
+              <div id="cafe-timezone-options" role="listbox" ref={timezoneListRef} aria-label={labels.timezone} className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-line bg-card shadow-lg">
                 {timezoneResults.length ? timezoneResults.map((option, index) => (
                   <button id={"cafe-timezone-" + index} key={option.value} type="button" role="option" aria-selected={selectedTimezone === option.value}
-                    onMouseDown={(e) => e.preventDefault()} onClick={() => chooseTimezone(option.value)}
+                    onPointerDown={(e) => e.preventDefault()} onClick={() => chooseTimezone(option.value)}
                     className={"block min-h-12 w-full px-3 py-2 text-start text-[17px] hover:bg-paper " + (index === timezoneActive ? "bg-paper font-semibold" : "")}>
                     {option.label}
                   </button>
@@ -326,7 +343,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
           </div>
           {hoursNotSet && <span className="shrink-0 rounded-full bg-warn-tint px-2 py-1 text-sm font-bold text-warn">{labels.hoursBadge}</span>}
         </div>
-        <button type="button" onClick={() => { setHours((current) => copyMondayToWeekdays(current)); setFieldErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !["hours-tue", "hours-wed", "hours-thu", "hours-fri"].includes(key)))); }}
+        <button type="button" onClick={() => { setStatus("idle"); setError(null); setHours((current) => copyMondayToWeekdays(current)); setFieldErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !["hours-tue", "hours-wed", "hours-thu", "hours-fri"].includes(key)))); }}
           className="min-h-12 self-start rounded-full border border-line px-4 text-[17px] font-bold text-ink">{labels.copyWeekdays}</button>
         <div className="flex flex-col gap-2">
           {DAY_ORDER.map((key) => {
@@ -335,6 +352,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
               <div key={key} className="grid grid-cols-[4.5rem_1fr] gap-2 rounded-xl bg-paper p-3 sm:grid-cols-[5rem_8rem_1fr] sm:items-center">
                 <span className="font-bold text-ink">{dayLabels[key]}</span>
                 <select
+                  aria-label={dayLabels[key] + ": " + labels.regularHours}
                   value={day.mode}
                   onChange={(e) => { changeMode(key, e.target.value as "unset" | "open" | "closed"); clearFieldError("hours-" + key); }}
                   className={"min-h-12 rounded-lg border border-line bg-card px-2 text-[17px]" + invalidClass("hours-" + key)}
@@ -347,14 +365,14 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
                   <div className="col-span-2 flex min-w-0 flex-col items-stretch gap-2 sm:col-span-1 sm:flex-row sm:items-center">
                     <label className="flex min-w-0 flex-1 items-center gap-1 text-sm font-semibold text-ink-muted">
                       <span className="sr-only">{labels.opens}</span>
-                      <input type="time" value={day.open} ref={(node) => { fieldRefs.current["hours-" + key] = node; }} aria-invalid={Boolean(fieldErrors["hours-" + key])}
+                      <input type="time" value={day.open} aria-label={dayLabels[key] + ": " + labels.opens} ref={(node) => { fieldRefs.current["hours-" + key] = node; }} aria-invalid={Boolean(fieldErrors["hours-" + key])}
                         onChange={(e) => { changeTime(key, "open", e.target.value); clearFieldError("hours-" + key); }}
                         className={"min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-[17px]" + invalidClass("hours-" + key)} />
                     </label>
                     <span className="hidden text-ink-muted sm:inline">–</span>
                     <label className="flex min-w-0 flex-1 items-center gap-1 text-sm font-semibold text-ink-muted">
                       <span className="sr-only">{labels.closes}</span>
-                      <input type="time" value={day.close} aria-invalid={Boolean(fieldErrors["hours-" + key])}
+                      <input type="time" value={day.close} aria-label={dayLabels[key] + ": " + labels.closes} aria-invalid={Boolean(fieldErrors["hours-" + key])}
                         onChange={(e) => { changeTime(key, "close", e.target.value); clearFieldError("hours-" + key); }}
                         className={"min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-[17px]" + invalidClass("hours-" + key)} />
                     </label>
