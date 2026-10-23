@@ -45,7 +45,7 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
   // This is the owner clicking to open an external composer, NOT a delivery receipt.
   setBusy(person.id);setError("");
   try{
-   const result=await fetch(endpoint,{method:"POST",credentials:"same-origin",
+   const result=await fetch(endpoint,{method:"POST",credentials:"same-origin",keepalive:true,
      headers:{"content-type":"application/json"},
      body:JSON.stringify({...proposalId?{proposalId}:{week},employeeId:person.id,channel})});
    if(!result.ok)throw Error("ledger");
@@ -57,11 +57,14 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
  const method=(person:Recipient,channel:OwnerChannel)=>{
   const status=eligibleForChannel(person.phone,person.optedIn,channel);
   if(status!=="ready")return <span className="text-sm text-ink-muted">{status==="no_phone"?t.noPhone:t.noOptIn}</span>;
-  const isIOS=typeof navigator!=="undefined"&&/iPad|iPhone|iPod/.test(navigator.userAgent);
-  const href=composeScheduleLink(person.phone!,person.message,channel,isIOS);
+  // Render a deterministic href on the server; choose the iOS SMS separator
+  // only in the actual click, avoiding an SSR hydration mismatch.
+  const href=composeScheduleLink(person.phone!,person.message,channel);
   return <a href={href} target="_blank" rel="noopener noreferrer"
     className="inline-flex min-h-12 items-center justify-center rounded-xl border border-accent px-4 text-[17px] font-semibold text-accent-text"
-    onClick={()=>{
+    onClick={event=>{
+      if(channel==="sms" && /iPad|iPhone|iPod/.test(navigator.userAgent))
+        event.currentTarget.href=composeScheduleLink(person.phone!,person.message,"sms",true);
       void record(person,channel);
       if(batch.length&&batch[position]===person.id)setPosition(index=>index+1);
     }}>{channel==="whatsapp"?t.sendWhatsApp:t.sendSms}</a>;
