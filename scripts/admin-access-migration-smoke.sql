@@ -59,5 +59,19 @@ begin
         zone,access_mode,expiry,expected_date;
     end if;
   end loop;
+  -- Mirror the trusted demo reset override and prove it restores full access,
+  -- while the ordinary café paths above remain expired.
+  new_business := gen_random_uuid();
+  insert into public.businesses(id,name,timezone,is_demo)
+    values(new_business,'Disposable demo reseed','America/Los_Angeles',true);
+  insert into public.cafe_access(business_id,mode,code_id,access_end,updated_at)
+    values(new_business,'grandfathered',null,null,now())
+    on conflict (business_id) do update set
+      mode='grandfathered',code_id=null,access_end=null,updated_at=now();
+  select mode,access_end into access_mode,expiry
+    from public.cafe_access where business_id=new_business;
+  if access_mode is distinct from 'grandfathered' or expiry is not null then
+    raise exception 'trusted demo reseed did not restore unlimited access';
+  end if;
 end $new_cafe_entitlement_check$;
 rollback;
