@@ -3,11 +3,11 @@
 import { useState, useTransition } from "react";
 import { Delete } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
+import { useLocale } from "next-intl";
 import PlainIcon from "@/components/icons/PlainIcon";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import { addManualExpense } from "@/lib/actions/expenses";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
-import { formatCents } from "@/lib/calc";
 
 const CATEGORY_ICONS: Record<ExpenseCategoryCode, ExpenseIconCode> = {
   rent: "rent",
@@ -30,11 +30,14 @@ export default function TypeExpenseForm({
   todayDateStr,
   labels,
   initialCategory,
+  returnTo,
 }: {
   categoryLabels: Record<ExpenseCategoryCode, string>;
   todayDateStr: string;
   initialCategory: ExpenseCategoryCode | null;
+  returnTo?: string;
   labels: {
+    backspace: string;
     amountTitle: string;
     categoryTitle: string;
     vendorLabel: string;
@@ -46,6 +49,8 @@ export default function TypeExpenseForm({
   };
 }) {
   const router = useRouter();
+  const locale = useLocale();
+  const safeReturnTo = returnTo && /^\/(?!\/)[^%\\\u0000-\u001f\u007f]*$/.test(returnTo) ? returnTo : "/money";
   const [digits, setDigits] = useState(""); // raw digits, interpreted as cents
   const [category, setCategory] = useState<ExpenseCategoryCode | null>(initialCategory);
   const [vendor, setVendor] = useState("");
@@ -78,7 +83,7 @@ export default function TypeExpenseForm({
       });
       if (result.ok) {
         setStatus("saved");
-        setTimeout(() => router.push("/money"), 900);
+        setTimeout(() => router.push(safeReturnTo), 900);
       } else {
         setStatus("error");
         setError(result.error);
@@ -89,7 +94,7 @@ export default function TypeExpenseForm({
   return (
     <div className="flex flex-col gap-5">
       <section className="flex flex-col items-center gap-4 rounded-card-lg bg-card p-5">
-        <span className="font-headline text-money-sm font-bold">{formatCents(amountCents)}</span>
+        <span className="font-headline text-money-sm font-bold">{new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(amountCents / 100)}</span>
         <div className="grid w-full grid-cols-3 gap-2">
           {KEYPAD_KEYS.map((key, i) =>
             key === "" ? (
@@ -99,7 +104,7 @@ export default function TypeExpenseForm({
                 key={i}
                 type="button"
                 onClick={() => pressKey(key)}
-                aria-label={key === "back" ? "Backspace" : key}
+                aria-label={key === "back" ? labels.backspace : key}
                 className="flex h-14 items-center justify-center rounded-2xl bg-paper text-2xl font-bold text-ink"
               >
                 {key === "back" ? <Delete aria-hidden="true" size={22} /> : key}
