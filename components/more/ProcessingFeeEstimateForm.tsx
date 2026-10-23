@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useLocale } from "next-intl";
 import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, requiresAverageTicket, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
@@ -158,18 +158,10 @@ export default function ProcessingFeeEstimateForm({
   const fmt = (number: number) => new Intl.NumberFormat(locale).format(number);
   const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
   const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
-  const focusAfterReveal = useRef<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
   const borderError = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
   const errorText = (key: string) => fieldErrors[key] ? <span role="alert" className="text-xs font-normal text-red-700">{fieldErrors[key]}</span> : null;
   const [isPending, startTransition] = useTransition();
-  useEffect(() => {
-    const key = focusAfterReveal.current;
-    if (key && inputRefs.current[key]) {
-      inputRefs.current[key]?.focus();
-      focusAfterReveal.current = null;
-    }
-  }, [fieldErrors]);
   const [processorLabel, setProcessorLabel] = useState(plan?.processorLabel ?? providerLabel(sourceSummary.connectedProvider));
   const [otherSelected, setOtherSelected] = useState(() => {
     const name = plan?.processorLabel ?? sourceSummary.connectedProvider;
@@ -249,20 +241,8 @@ export default function ProcessingFeeEstimateForm({
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       setError(labels.incompleteWarning);
-      const first = Object.keys(errors)[0];
-      const needsAdvanced = Object.keys(errors).some((key) =>
-        key === "averageTicket" || key === "transactionShare" || key.startsWith("rule-") ||
-        rules.some((rule) => key.startsWith(rule.id + "-")),
-      );
-      if (!advanced && needsAdvanced) {
-        const defaults = prepareAdvancedRateDraft(rules, processedTransactionShare, processedSalesShare, labels.standardRate);
-        setProcessedTransactionShare(defaults.transactionShare);
-        setRules(defaults.rules);
-        setAdvanced(true);
-        focusAfterReveal.current = first;
-      } else {
-        requestAnimationFrame(() => inputRefs.current[first]?.focus());
-      }
+      // Validation may focus or highlight a field, but must never change which rules will be saved.
+      requestAnimationFrame(() => inputRefs.current[Object.keys(errors)[0]]?.focus());
       return;
     }
     setError(null);
@@ -521,6 +501,26 @@ export default function ProcessingFeeEstimateForm({
           </p>
         )}
 
+        {(advanced || needsAverageTicket) && (
+          <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
+            <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} ${labels.info}`}>{labels.averageTicket}</FieldTitle>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-ink-muted">{currency.formatToParts(0).find((part) => part.type === "currency")?.value}</span>
+              <input
+                inputMode="decimal"
+                value={averageTicket}
+                ref={(node) => { inputRefs.current.averageTicket = node; }}
+                aria-invalid={isFeeFieldInvalid(fieldErrors, "averageTicket")}
+                onChange={(event) => setAverageTicket(event.target.value)}
+                placeholder="12.00"
+                className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("averageTicket")}
+              />
+            </div>
+            <span className="text-xs font-normal text-ink-muted">{labels.averageTicketHint}</span>
+            {errorText("averageTicket")}
+          </label>
+        )}
+
         <button
           type="button"
           onClick={expandAdvanced}
@@ -559,23 +559,7 @@ export default function ProcessingFeeEstimateForm({
             {errorText("transactionShare")}
           </label>
 
-          <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-            <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} ${labels.info}`}>{labels.averageTicket}</FieldTitle>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-ink-muted">{currency.formatToParts(0).find((part) => part.type === "currency")?.value}</span>
-              <input
-                inputMode="decimal"
-                value={averageTicket}
-                ref={(node) => { inputRefs.current.averageTicket = node; }}
-                aria-invalid={isFeeFieldInvalid(fieldErrors, "averageTicket")}
-                onChange={(event) => setAverageTicket(event.target.value)}
-                placeholder="12.00"
-                className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("averageTicket")}
-              />
-            </div>
-            <span className="text-xs font-normal text-ink-muted">{labels.averageTicketHint}</span>
-            {errorText("averageTicket")}
-          </label>
+
 
           {rules.map((rule, index) => (
             <div key={rule.id} className="flex flex-col gap-3 rounded-2xl bg-paper p-3">
