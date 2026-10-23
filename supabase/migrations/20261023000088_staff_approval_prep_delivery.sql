@@ -37,6 +37,34 @@ REVOKE ALL ON public.staff_schedule_deliveries FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.staff_schedule_deliveries TO authenticated;
 GRANT ALL ON public.staff_schedule_deliveries TO service_role;
 
+
+-- One immutable source-of-truth snapshot per approved weekly handoff.
+CREATE TABLE IF NOT EXISTS public.staff_schedule_handoff_snapshots (
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ proposal_id uuid NOT NULL,
+ week_start date NOT NULL,
+ shifts jsonb NOT NULL CHECK(jsonb_typeof(shifts)='array'),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(business_id,proposal_id),
+ FOREIGN KEY(business_id,proposal_id) REFERENCES public.supervisor_proposals(business_id,id) ON DELETE CASCADE
+);
+ALTER TABLE public.staff_schedule_handoff_snapshots ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.staff_schedule_handoff_snapshots FROM PUBLIC,anon,authenticated;
+GRANT SELECT,INSERT ON public.staff_schedule_handoff_snapshots TO service_role;
+-- Shared canonical projection: additions, changes and deletions are all visible.
+CREATE OR REPLACE FUNCTION public.staff_handoff_week_shifts(p_business_id uuid,p_week date)
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $
+ SELECT coalesce(jsonb_agg(jsonb_build_object(
+  'id',s.id,'employee_id',s.employee_id,'date',s.local_date,
+  'start',to_char(s.start_local,'HH24:MI'),'end',to_char(s.end_local,'HH24:MI'),
+  'break_minutes',s.break_minutes) ORDER BY s.id),'[]'::jsonb)
+ FROM public.scheduled_shifts s
+ WHERE s.business_id=p_business_id AND s.deleted_at IS NULL
+ AND s.local_date BETWEEN p_week AND p_week+6
+$;
+REVOKE ALL ON FUNCTION public.staff_handoff_week_shifts(uuid,date) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.staff_handoff_week_shifts(uuid,date) TO service_role;
+
 -- Staff approvals extend the SAME immutable Supervisor proposal and approval
 -- ledger from migrations 074/083. Source CAS, staff writes and final status
 -- live in one transaction; no partial multi-row schedules or autonomous retries.
@@ -80,6 +108,10 @@ BEGIN
        WHERE m.business_id=p_business_id AND m.user_id=p_owner_user_id
         AND m.role='owner' AND b.is_demo=false)
  THEN RAISE EXCEPTION 'staff_owner_required' USING ERRCODE='42501'; END IF;
+ -- Authenticated actor provenance in existing foundation triggers uses auth.uid().
+ -- This transaction-local claim is installed ONLY after the service-only RPC
+ -- independently verifies p_owner_user_id is an actual owner of this cafe.
+ PERFORM set_config('request.jwt.claim.sub',p_owner_user_id::text,true);
 
  SELECT (now() AT TIME ZONE b.timezone)::date INTO v_today
    FROM public.businesses b WHERE b.id=p_business_id;
@@ -323,6 +355,29 @@ BEGIN
    RAISE EXCEPTION 'unrecognized_staff_operation' USING ERRCODE='22023';
  END IF;
 
+
+ -- Final transactional invariant, including retained Sunday/Monday overnight
+ -- shifts. SHARE ROW EXCLUSIVE lock above prevents concurrent roster writers.
+ IF v_kind IN ('propose_schedule','propose_shift_change') AND EXISTS(
+  SELECT 1 FROM public.scheduled_shifts a JOIN public.scheduled_shifts b
+   ON b.business_id=a.business_id AND b.employee_id=a.employee_id
+   AND b.id<>a.id AND b.deleted_at IS NULL
+  WHERE a.business_id=p_business_id AND a.proposal_id=p.id
+    AND a.deleted_at IS NULL
+    AND tsrange(a.local_date+a.start_local,
+       a.local_date+a.end_local+
+         CASE WHEN a.end_local<=a.start_local THEN interval '1 day' ELSE interval '0 day' END,'[)')
+       && tsrange(b.local_date+b.start_local,
+       b.local_date+b.end_local+
+         CASE WHEN b.end_local<=b.start_local THEN interval '1 day' ELSE interval '0 day' END,'[)')
+ ) THEN RAISE EXCEPTION 'overlapping_staff_shifts' USING ERRCODE='P0001'; END IF;
+ IF v_kind IN ('propose_schedule','propose_send_schedule') THEN
+   INSERT INTO public.staff_schedule_handoff_snapshots(business_id,proposal_id,week_start,shifts)
+   VALUES(p_business_id,p.id,v_week,public.staff_handoff_week_shifts(p_business_id,v_week));
+   IF (SELECT jsonb_array_length(shifts) FROM public.staff_schedule_handoff_snapshots
+       WHERE business_id=p_business_id AND proposal_id=p.id)=0
+   THEN RAISE EXCEPTION 'empty_schedule' USING ERRCODE='P0001'; END IF;
+ END IF;
  UPDATE public.supervisor_proposals SET status='committed',revision=revision+1,
    committed_at=now(),monitoring_start_date=v_today+1,updated_at=now()
    WHERE id=p.id RETURNING * INTO p;
@@ -380,6 +435,7 @@ DECLARE
  v_series public.scheduling_plan_series%rowtype;
  v_delivery public.staff_schedule_deliveries%rowtype;
  v_week date;v_operation text;
+ v_snapshot public.staff_schedule_handoff_snapshots%rowtype;
 BEGIN
  IF auth.role() IS DISTINCT FROM 'service_role' THEN
    RAISE EXCEPTION 'service_role_only' USING ERRCODE='42501'; END IF;
@@ -401,6 +457,7 @@ BEGIN
    OR (p_channel='whatsapp' AND v_employee.whatsapp_opt_in IS NOT TRUE) THEN
    RAISE EXCEPTION 'recipient_not_eligible' USING ERRCODE='P0001'; END IF;
  IF p_proposal_id IS NOT NULL THEN
+   LOCK TABLE public.scheduled_shifts IN SHARE MODE;
    SELECT * INTO v_proposal FROM public.supervisor_proposals
       WHERE id=p_proposal_id AND business_id=p_business_id
         AND status='committed' AND capability_id IN (
@@ -409,17 +466,14 @@ BEGIN
    IF NOT FOUND THEN RAISE EXCEPTION 'schedule_not_approved' USING ERRCODE='P0001'; END IF;
    v_operation:=v_proposal.canonical_effect_payload->>'operation';
    v_week:=(v_proposal.canonical_effect_payload->'payload'->>'week_start')::date;
-   IF v_operation='propose_schedule' THEN
-     IF NOT EXISTS(SELECT 1 FROM public.scheduled_shifts s
-       WHERE s.business_id=p_business_id AND s.proposal_id=p_proposal_id
-         AND s.employee_id=p_employee_id AND s.deleted_at IS NULL
-         AND s.local_date BETWEEN v_week AND v_week+6)
-     THEN RAISE EXCEPTION 'schedule_changed' USING ERRCODE='P0001'; END IF;
-   ELSIF NOT EXISTS(SELECT 1 FROM public.scheduled_shifts s
-       WHERE s.business_id=p_business_id AND s.employee_id=p_employee_id
-         AND s.deleted_at IS NULL AND s.local_date BETWEEN v_week AND v_week+6
-         AND s.updated_at <= v_proposal.committed_at)
+   SELECT * INTO v_snapshot FROM public.staff_schedule_handoff_snapshots
+     WHERE business_id=p_business_id AND proposal_id=p_proposal_id FOR SHARE;
+   IF NOT FOUND OR v_snapshot.week_start<>v_week
+      OR v_snapshot.shifts IS DISTINCT FROM public.staff_handoff_week_shifts(p_business_id,v_week)
    THEN RAISE EXCEPTION 'schedule_changed' USING ERRCODE='P0001'; END IF;
+   IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(v_snapshot.shifts) s
+       WHERE (s->>'employee_id')::uuid=p_employee_id)
+   THEN RAISE EXCEPTION 'staff_not_scheduled' USING ERRCODE='P0001'; END IF;
    SELECT * INTO v_delivery FROM public.staff_schedule_deliveries
      WHERE business_id=p_business_id AND proposal_id=p_proposal_id
        AND employee_id=p_employee_id FOR UPDATE;
