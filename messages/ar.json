@@ -2383,7 +2383,12 @@
     "usageExpectedOnly": "المتوقع فقط وفق سجلات حضور Toast، وليس استهلاكًا فعليًا",
     "usageStart": "من",
     "usageEnd": "حتى",
-    "usageApply": "تطبيق"
+    "usageApply": "تطبيق",
+    "usageStartCount": "يلزم جرد البداية ليوم",
+    "usageEndCount": "يلزم جرد النهاية ليوم",
+    "usageCoverage": "يلزم سجل مبيعات Toast كامل",
+    "usageRecipeMissing": "تحقق من الوصفة أو ربط الإضافات",
+    "usageUnavailable": "الاستخدام غير متاح، تحقق من اتصال Toast وبيانات الجرد"
   },
   "SupervisorProposalCard": {
     "title": "اقتراح تغيير السعر",
