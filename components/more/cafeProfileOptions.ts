@@ -83,12 +83,12 @@ export function usStateOptions(translations: Record<string, string>): { value: s
 /** Grouped ISO 4217 defaults for common territories and countries; unmapped countries keep USD. */
 const COUNTRY_CURRENCIES: Record<string, string> = Object.fromEntries(
   Object.entries({
-    USD: "US AS GU MP PR VI EC SV PA TL FM MH PW TC VG", EUR: "AD AT AX BE BL CY DE EE ES FI FR GF GP GR IE IT LT LU LV MC ME MF MQ MT NL PM PT RE SI SK SM VA YT",
-    GBP: "GB GG IM JE", CAD: "CA", AUD: "AU CX CC HM KI NR NF TV", NZD: "NZ CK NU PN TK",
+    USD: "US AS GU MP PR VI EC SV PA TL FM MH PW TC VG BQ IO UM", EUR: "AD AT AX BE BG BL CY DE EE ES FI FR GF GP GR HR IE IT LT LU LV MC ME MF MQ MT NL PM PT RE SI SK SM TF VA YT",
+    GBP: "GB GG IM JE GS", CAD: "CA", AUD: "AU CX CC HM KI NR NF TV", NZD: "NZ CK NU PN TK",
     AED: "AE", AFN: "AF", ALL: "AL", AMD: "AM", AOA: "AO", ARS: "AR", AWG: "AW", AZN: "AZ",
-    BAM: "BA", BBD: "BB", BDT: "BD", BGN: "BG", BHD: "BH", BIF: "BI", BMD: "BM", BND: "BN",
+    BAM: "BA", BBD: "BB", BDT: "BD", BHD: "BH", BIF: "BI", BMD: "BM", BND: "BN",
     BOB: "BO", BRL: "BR", BSD: "BS", BTN: "BT", BWP: "BW", BYN: "BY", BZD: "BZ",
-    CHF: "CH LI", CLP: "CL", CNY: "CN", COP: "CO", CRC: "CR", CUP: "CU", CVE: "CV", CZK: "CZ",
+    CDF: "CD", CHF: "CH LI", CLP: "CL", CNY: "CN", COP: "CO", CRC: "CR", CUP: "CU", CVE: "CV", CZK: "CZ",
     DKK: "DK FO GL", DJF: "DJ", DOP: "DO", DZD: "DZ", EGP: "EG", ERN: "ER", ETB: "ET",
     FJD: "FJ", FKP: "FK", GEL: "GE", GHS: "GH", GIP: "GI", GMD: "GM", GNF: "GN", GTQ: "GT", GYD: "GY",
     HKD: "HK", HNL: "HN", HTG: "HT", HUF: "HU", IDR: "ID", ILS: "IL PS", INR: "IN", IQD: "IQ", IRR: "IR", ISK: "IS",
@@ -102,7 +102,7 @@ const COUNTRY_CURRENCIES: Record<string, string> = Object.fromEntries(
     SOS: "SO", SRD: "SR", SSP: "SS", STN: "ST", SYP: "SY", SZL: "SZ", THB: "TH", TJS: "TJ", TMT: "TM",
     TND: "TN", TOP: "TO", TRY: "TR", TTD: "TT", TWD: "TW", TZS: "TZ", UAH: "UA", UGX: "UG",
     UYU: "UY", UZS: "UZ", VES: "VE", VND: "VN", VUV: "VU", WST: "WS", XAF: "CM CF CG GA GQ TD",
-    XCD: "AG AI DM GD KN LC MS VC", XOF: "BJ BF CI GW ML NE SN TG", XPF: "NC PF WF",
+    XCD: "AG AI DM GD KN LC MS VC", XCG: "CW SX", XOF: "BJ BF CI GW ML NE SN TG", XPF: "NC PF WF",
     YER: "YE", ZAR: "ZA", ZMW: "ZM", ZWG: "ZW",
   }).flatMap(([currency, countries]) => countries.split(" ").map((country) => [country, currency])),
 );
