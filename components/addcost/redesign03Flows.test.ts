@@ -8,7 +8,8 @@ describe("Redesign 03 screen contracts", () => {
     const page = source("app/[locale]/more/bills/page.tsx");
     const form = source("components/bills/BillsManager.tsx");
     expect(page).toContain('key={category ?? "none"}');
-    expect(form).toContain('openKey] = useState<string | null>(initialCategory)');
+    expect(form).toContain('openKey] = useState<string | null>(initialOpenKey)');
+    expect(form).toContain('initialCategory === OTHER_CATEGORY ? firstOtherBill?.id ?? NEW_OTHER_KEY');
     expect(form).toContain('scrollIntoView');
     expect(form).toContain('amountRef.current?.focus({ preventScroll: true })');
     expect(form).toContain('ref={amountInputRef}');
@@ -29,6 +30,10 @@ describe("Redesign 03 screen contracts", () => {
     expect(statement).toContain('aria-label={needsReview ? labels.lowConfidence : undefined}');
     expect(statement).toContain('state.balanceCheck && !state.balanceCheck.ok');
     expect(statement).toContain('makeMissingStatementLine(state.lines, state.balanceCheck');
+  });
+
+  it("shows a preselected ingredients category that would otherwise be hidden", () => {
+    expect(source("components/addcost/TypeExpenseForm.tsx")).toContain('c !== "ingredients" || initialCategory === "ingredients"');
   });
 
   it("respects safe return navigation in typed and statement entry", () => {
