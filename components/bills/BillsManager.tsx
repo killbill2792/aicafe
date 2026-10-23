@@ -73,18 +73,18 @@ function BillForm({
   return (
     <div className="flex flex-col gap-2.5 rounded-2xl bg-paper p-3.5">
       {showLabelField && (
-        <label className="flex flex-col gap-1 text-sm font-semibold">
+        <label className="flex flex-col gap-1 text-[17px] font-semibold">
           {labels.labelLabel}
           <input
             type="text"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder={labels.labelPlaceholder}
-            className="h-11 rounded-xl border border-line px-2.5 text-base"
+            className="min-h-12 rounded-xl border border-line px-2.5 text-base"
           />
         </label>
       )}
-      <label className="flex items-center justify-between gap-2 text-sm font-semibold">
+      <label className="flex items-center justify-between gap-2 text-[17px] font-semibold">
         {labels.amountLabel}
         <input
           ref={amountInputRef}
@@ -94,10 +94,10 @@ function BillForm({
           step="0.01"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          className="h-11 w-28 rounded-xl border border-line px-2.5 text-end text-base"
+          className="min-h-12 w-28 rounded-xl border border-line px-2.5 text-end text-base"
         />
       </label>
-      <p className="text-xs text-ink-muted">{labels.amountHint}</p>
+      <p className="text-[13px] text-ink-muted">{labels.amountHint}</p>
       <label className="flex items-center justify-between gap-2 text-sm font-semibold">
         <span>{labels.dueDayLabel} <span className="font-normal text-ink-muted">{labels.dueDayOptional}</span></span>
         <input
@@ -106,16 +106,16 @@ function BillForm({
           max={31}
           value={dueDay}
           onChange={(e) => setDueDay(e.target.value)}
-          className="h-11 w-20 rounded-xl border border-line px-2.5 text-end text-base"
+          className="min-h-12 w-20 rounded-xl border border-line px-2.5 text-end text-base"
         />
       </label>
-      {error && <p role="alert" className="text-sm text-warn">{labels.saveError}</p>}
+      {error && <p role="alert" className="text-[17px] text-warn">{labels.saveError}</p>}
       <div className="flex gap-2">
-        <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="h-11 flex-1 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40">
+        <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="min-h-12 flex-1 rounded-full bg-accent text-[17px] font-bold text-on-accent disabled:opacity-40">
           {labels.save}
         </button>
         {existing && (
-          <button type="button" onClick={handleDelete} disabled={isPending} className="h-11 rounded-full border border-warn px-4 text-sm font-bold text-warn">
+          <button type="button" onClick={handleDelete} disabled={isPending} className="min-h-12 rounded-full border border-warn px-4 text-[17px] font-bold text-warn">
             {labels.delete}
           </button>
         )}
@@ -169,7 +169,7 @@ export default function BillsManager({
         const isOpen = openKey === category;
         return (
           <div key={category} ref={initialCategory === category ? targetRef : undefined} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
-            <button type="button" onClick={() => toggle(category)} className="flex items-center gap-3">
+            <button type="button" onClick={() => toggle(category)} className="flex min-h-12 items-center gap-3">
               <PlainIcon code={category} size={32} color="currentColor" />
               <span className="flex-1 text-start text-base font-bold">{categoryLabels[category]}</span>
               {existing ? (
