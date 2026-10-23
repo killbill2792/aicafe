@@ -105,6 +105,8 @@
     "statementMissingAmount": "المبلغ",
     "statementMissingDate": "التاريخ",
     "statementMissingCategory": "الفئة",
+    "statementReadError": "تعذّرت قراءة الملف. تحقّق من تنسيقه ثم حاول مرة أخرى.",
+    "statementTryAgain": "اختيار ملف آخر",
     "statementSaveError": "تعذّر حفظ كشف الحساب. راجع السطور ثم حاول مرة أخرى.",
     "statementMissingCancel": "إلغاء",
     "statementMissingConfirm": "إضافة السطر",
