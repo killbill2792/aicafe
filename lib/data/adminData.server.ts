@@ -58,18 +58,21 @@ export async function getCafe(id:string){
   check(error);
   return business?summarizeCafe(admin,business):null;
 }
-export async function listConversations(filters:{cafe?:string; from?:string; to?:string; failed?:boolean; slow?:boolean; down?:boolean}) {
+export async function listConversations(filters:{cafe?:string; from?:string; to?:string; failed?:boolean; slow?:boolean; down?:boolean},page=0) {
   await requireAdmin();
-  let query=db().from("agent_turn_logs").select("id,business_id,thread_id,question,status,started_at,duration_ms,owner_feedback,model,input_tokens,output_tokens,cost_usd")
-    .order("started_at",{ascending:false}).limit(100);
+  const safePage=Number.isInteger(page)&&page>=0&&page<=9999?page:0;
+  const pageSize=50;
+  let query=db().from("agent_turn_logs").select("id,business_id,thread_id,question,status,started_at,duration_ms,owner_feedback,model,input_tokens,output_tokens,cost_usd",{count:"exact"})
+    .order("started_at",{ascending:false}).order("id",{ascending:false})
+    .range(safePage*pageSize,(safePage+1)*pageSize-1);
   if(filters.cafe && UUID.test(filters.cafe)) query=query.eq("business_id",filters.cafe);
   if(filters.from && /^\d{4}-\d{2}-\d{2}$/.test(filters.from)) query=query.gte("started_at",filters.from+"T00:00:00Z");
   if(filters.to && /^\d{4}-\d{2}-\d{2}$/.test(filters.to)) query=query.lte("started_at",filters.to+"T23:59:59Z");
   if(filters.failed) query=query.neq("status","ok");
   if(filters.slow) query=query.gt("duration_ms",20000);
   if(filters.down) query=query.eq("owner_feedback","down");
-  const {data,error}=await query;
-  check(error); return data??[];
+  const {data,error,count}=await query;
+  check(error); return {turns:data??[],total:count??0,page:safePage,pageSize};
 }
 export async function getConversation(id:string) {
   await requireAdmin();
