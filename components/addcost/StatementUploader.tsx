@@ -8,6 +8,7 @@ import { saveCategorizedLines, type ReviewLine } from "@/lib/actions/expenses";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import { validReturnTo } from "@/components/addcost/routeParams";
+import { makeMissingStatementLine } from "@/components/addcost/statementMissingLine";
 
 type ReviewableLine = ReviewLine & { correctedCategory?: ExpenseCategoryCode };
 type BalanceCheck = { openingCents: number; closingCents: number; sumCents: number; ok: boolean };
@@ -39,6 +40,7 @@ export default function StatementUploader({
     missingDate: string;
     missingCategory: string;
     missingConfirm: string;
+    saveError: string;
   };
 }) {
   const router = useRouter();
@@ -53,11 +55,16 @@ export default function StatementUploader({
   const [missingDate, setMissingDate] = useState("");
   const [missingCategory, setMissingCategory] = useState<ExpenseCategoryCode>("other");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const missingCandidate = state?.ok && state.balanceCheck ? makeMissingStatementLine(state.lines, state.balanceCheck, {
+    description: missingDescription, amount: missingAmount, date: missingDate, category: missingCategory,
+  }, labels.addMissingLine) : null;
 
   function handleFile(file: File) {
     startTransition(async () => {
       const text = await readUploadedFileAsCsvText(file);
       const result = await reviewStatementCsv(text);
+      setMissingLine(false);
+      setSaveStatus("idle");
       setState(result);
     });
   }
@@ -68,9 +75,15 @@ export default function StatementUploader({
   }
 
   function addMissingLine() {
-    if (!state?.ok || !missingDescription.trim() || !/^\d+(?:\.\d{1,2})?$/.test(missingAmount) || Number(missingAmount) <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(missingDate)) return;
-    const nextId = Math.max(-1, ...state.lines.map((line) => line.i)) + 1;
-    setState({ ...state, lines: [...state.lines, { i: nextId, description: missingDescription.trim(), date: missingDate, amountCents: Math.round(Number(missingAmount) * 100), category: missingCategory, reason: labels.addMissingLine, confidence: 1 }] });
+    if (!state?.ok || !state.balanceCheck) return;
+    const added = makeMissingStatementLine(state.lines, state.balanceCheck, {
+      description: missingDescription,
+      amount: missingAmount,
+      date: missingDate,
+      category: missingCategory,
+    }, labels.addMissingLine);
+    if (!added) return;
+    setState({ ...state, lines: [...state.lines, added.line], balanceCheck: added.balance });
     setMissingLine(false);
     setMissingDescription("");
     setMissingAmount("");
@@ -140,7 +153,7 @@ export default function StatementUploader({
               {EXPENSE_CATEGORY_CODES.map((code) => <option key={code} value={code}>{categoryLabels[code]}</option>)}
             </select>
           </label>
-          <button type="button" onClick={addMissingLine} disabled={!missingDescription.trim() || !/^\d+(?:\.\d{1,2})?$/.test(missingAmount) || Number(missingAmount) <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(missingDate)} className="h-11 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40">{labels.missingConfirm}</button>
+          <button type="button" onClick={addMissingLine} disabled={!missingCandidate} className="h-11 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40">{labels.missingConfirm}</button>
         </div>
       )}
       <div className="flex flex-col gap-2 rounded-card-lg bg-card p-2">
@@ -149,7 +162,7 @@ export default function StatementUploader({
           const needsReview = line.confidence < 0.7;
           const isExcluded = line.category === "exclude" && !line.correctedCategory;
           return (
-            <div key={line.i} aria-label={needsReview ? labels.lowConfidence : undefined} className={`flex flex-col gap-2 border-b p-2.5 last:border-b-0 ${needsReview ? "rounded-xl border-2 border-warn bg-warn-tint" : "border-line"}`}>
+            <div key={line.i} role={needsReview ? "group" : undefined} aria-label={needsReview ? labels.lowConfidence : undefined} className={`flex flex-col gap-2 border-b p-2.5 last:border-b-0 ${needsReview ? "rounded-xl border-2 border-warn bg-warn-tint" : "border-line"}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="flex-1 text-[15px] font-semibold text-ink">{line.description}</span>
                 <span className="text-base font-bold">{formatAmount(line.amountCents)}</span>
@@ -176,10 +189,11 @@ export default function StatementUploader({
           );
         })}
       </div>
+      {saveStatus === "error" && <p role="alert" className="text-sm text-warn">{labels.saveError}</p>}
       <button
         type="button"
         onClick={handleSaveAll}
-        disabled={saveStatus === "saving"}
+        disabled={saveStatus === "saving" || saveStatus === "saved" || missingLine}
         className="h-14 rounded-full bg-accent text-lg font-bold text-on-accent disabled:opacity-40"
       >
         {saveStatus === "saved" ? labels.saved : labels.saveAll}
