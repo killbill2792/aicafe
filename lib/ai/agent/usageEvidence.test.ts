@@ -25,6 +25,13 @@ describe("cross-turn usage numeric evidence",()=>{
   const persisted=[...prior,...compactEvidence(refreshed)];
   expect(checkNumbers(claim,"",[],"en",persisted)).toHaveLength(1);
  });
+ it("revokes a complete group from a preceding tool read in the same turn",()=>{
+  const complete=read(row);
+  const unknown=read({...row,expected:null,groups:[],differencePct:null,status:null});
+  const refreshed=usageEvidenceRefresh([complete,unknown]);
+  expect((refreshed[1].items as Array<{id:string;quantity:number|null}>)).toContainEqual({id:"milk:group:0",quantity:null});
+  expect(checkNumbers("Expected 346 ml that day","",refreshed,"en")).toHaveLength(1);
+ });
  it("does not revoke evidence from a different ingredient or period",()=>{
   const earlier=compactEvidence([read({...row,ingredientId:"oat",name:"Oat"})]);
   const anotherDate=compactEvidence([read(row,"2026-10-10","2026-10-11")]);
