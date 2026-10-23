@@ -25,6 +25,8 @@ import {
   StaffTeaserCard,
 } from "@/components/home/SectionCards";
 import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
+import {getCafeAccess} from "@/lib/access/access.server";
+import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { formatCents } from "@/lib/calc";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
@@ -82,6 +84,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const requestedLocale = await getLocale();
   const locale = requestedLocale === "es" || requestedLocale === "ar" ? requestedLocale : "en";
   const chatReadiness = await getSupervisorChatReadiness(Boolean(signedInUser));
+  const cafeAccess=signedInUser ? await getCafeAccess(await getActiveBusinessId(signedInUser.id)) : null;
   const { period: periodParam,thread:initialThread,experiment:initialExperiment } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
@@ -100,6 +103,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     getTranslations("SupervisorChat"),
     getTranslations("SupervisorExperiment"),
   ]);
+  const tAccess=await getTranslations("FreeAccess");
   const posStatus = await getPosConnectionStatus();
   const derivedTeam = buildOperationsTeamViewModel(snapshot, menu);
   const persistedTasks = await syncAndGetOperatingTasks([...derivedTeam.needsYou, ...derivedTeam.handled, ...derivedTeam.watching]);
@@ -185,14 +189,17 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {posStatus && posStatus.status !== "active" && <ReconnectBanner />}
 
       <div className="flex flex-col gap-4">
+        {cafeAccess&&!cafeAccess.active&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-base">
+          {tAccess("expired")} <Link className="underline" href="/pricing">{tAccess("haveCode")}</Link>
+        </p>}
         <SupervisorHomePanel
           initialThreadId={initialThread}
           initialProposalId={initialExperiment}
           experimentCopy={{open:tExperiment("open"),close:tExperiment("close"),product:tExperiment("product"),increase:tExperiment("increase"),preview:tExperiment("preview"),propose:tExperiment("propose"),approve:tExperiment("approve"),apply:tExperiment("apply"),done:tExperiment("done"),report:tExperiment("report"),waiting:tExperiment("waiting"),loading:tExperiment("loading"),error:tExperiment("error"),condition:tExperiment("condition"),confirmNote:tExperiment("confirmNote"),reportNote:tExperiment("reportNote"),selectProposal:tExperiment("selectProposal"),statusDraft:tExperiment("statusDraft"),statusApproved:tExperiment("statusApproved"),statusManual:tExperiment("statusManual"),statusMonitoring:tExperiment("statusMonitoring"),statusExecuting:tExperiment("statusExecuting"),statusRejected:tExperiment("statusRejected"),statusInProgress:tExperiment("statusInProgress"),statusComplete:tExperiment("statusComplete"),statusInsufficient:tExperiment("statusInsufficient")}}
           locale={locale}
           languageSwitch={<LanguageSwitch href="/" compact />}
-          chatEnabled={chatReadiness.enabled}
-          chatUnavailableReason={chatReadiness.reason}
+          chatEnabled={chatReadiness.enabled && (cafeAccess?.active ?? true)}
+          chatUnavailableReason={cafeAccess && !cafeAccess.active ? "owner_access_required" : chatReadiness.reason}
           snapshot={{
             title: t("todaySnapshotTitle"),
             hasSales: snapshot.todayHasData,

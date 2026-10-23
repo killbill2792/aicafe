@@ -2649,6 +2649,11 @@
     "codePlaceholder": "Enter access code",
     "redeem": "Redeem code",
     "redeemed": "Free until",
-    "redeemError": "Could not redeem code"
+    "redeemError": "Could not redeem code",
+    "redeemInvalid": "That code is not valid. Check it and try again.",
+    "redeemExpired": "That code has expired. Ask for a new one.",
+    "redeemFull": "That code has reached its café limit.",
+    "redeemRateLimited": "Too many attempts. Please try again in 15 minutes.",
+    "redeemPaused": "AI access was paused for this café. Contact the administrator."
   }
 }

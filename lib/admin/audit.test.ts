@@ -8,6 +8,11 @@ describe("private audit redaction", () => {
     expect(clean).not.toContain("owner@cafe.com");
     expect(clean).not.toContain("abcdef");
   });
+  it("never persists names, addresses, bank lines, receipts or arbitrary answers",()=>{
+    const content="Paid Jane Doe at 12 Market Street with Visa ending 1234; receipt: espresso $12.34; bank ACH reference 888";
+    expect(redactAuditText(content)).toBe("[content withheld]");
+    expect(redactAuditText("")).toBe("");
+  });
   it("does not fabricate cost without configured prices", () => {
     const oldInput = process.env.ADMIN_MODEL_INPUT_USD_PER_MILLION;
     const oldOutput = process.env.ADMIN_MODEL_OUTPUT_USD_PER_MILLION;

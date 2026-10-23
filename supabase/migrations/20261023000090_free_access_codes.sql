@@ -87,6 +87,9 @@ begin
  insert into public.cafe_access(business_id,mode)
  values(p_business_id,'grandfathered') on conflict (business_id) do nothing;
  select * into v_access from public.cafe_access where business_id=p_business_id for update;
+ if v_access.mode = 'paused' then
+   return jsonb_build_object('status','paused_cafe');
+ end if;
  -- A café redeeming the same code may extend; first-time cafés count once.
  if not exists (select 1 from public.free_access_redemptions
       where code_id=v_code.id and business_id=p_business_id) then
@@ -115,3 +118,55 @@ begin
 end $$;
 revoke all on function public.redeem_free_access_code(uuid,text,uuid) from public,anon,authenticated;
 grant execute on function public.redeem_free_access_code(uuid,text,uuid) to service_role;
+
+-- Admin override and extension share the same café row lock as redemption.
+-- This prevents a stale browser action from undoing a pause.
+create or replace function public.admin_change_cafe_access(
+ p_business_id uuid, p_action text, p_access_end date default null)
+returns jsonb language plpgsql security invoker set search_path=public as $$
+declare v_access public.cafe_access%rowtype;
+begin
+ if auth.role() is distinct from 'service_role' then
+   raise exception 'service_role_only' using errcode='42501';
+ end if;
+ if p_action not in ('extend','grandfathered','paused') then
+   return jsonb_build_object('status','invalid');
+ end if;
+ insert into public.cafe_access(business_id,mode) values(p_business_id,'grandfathered')
+ on conflict (business_id) do nothing;
+ select * into v_access from public.cafe_access where business_id=p_business_id for update;
+ if p_action='extend' then
+   if v_access.mode='paused' then return jsonb_build_object('status','paused_cafe'); end if;
+   if p_access_end is null or p_access_end < (now() at time zone 'UTC')::date then
+     return jsonb_build_object('status','invalid_end_date');
+   end if;
+   if v_access.mode='code' and v_access.access_end>=p_access_end then
+     return jsonb_build_object('status','not_an_extension');
+   end if;
+   update public.cafe_access set mode='code', access_end=p_access_end, updated_at=now()
+     where business_id=p_business_id;
+ else
+   update public.cafe_access set mode=p_action, code_id=null, access_end=null,updated_at=now()
+     where business_id=p_business_id;
+ end if;
+ return jsonb_build_object('status','ok');
+end $$;
+revoke all on function public.admin_change_cafe_access(uuid,text,date) from public,anon,authenticated;
+grant execute on function public.admin_change_cafe_access(uuid,text,date) to service_role;
+
+-- Once audit topic labels are derived, permanently eliminate any text that may
+-- have been written by older implementations before allowlist-only logging.
+update public.agent_turn_logs set
+ question='Owner question withheld',
+ final_answer=case when final_answer is not null then 'Assistant answer withheld' else null end,
+ error_text=case when error_text is not null then 'agent_turn_failed' else null end,
+ owner_feedback_comment=case when owner_feedback_comment is not null then '[comment withheld]' else null end,
+ question_topic=coalesce(question_topic,'other'),topic_version=1
+where question <> 'Owner question withheld'
+   or (final_answer is not null and final_answer <> 'Assistant answer withheld')
+   or owner_feedback_comment is not null and owner_feedback_comment <> '[comment withheld]'
+   or topic_version<1;
+update public.agent_turn_steps set
+ input_summary=null,output_summary=null,
+ error=case when error is not null then 'step_failed' else null end
+where input_summary is not null or output_summary is not null or error is not null;

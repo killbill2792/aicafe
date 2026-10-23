@@ -1,7 +1,8 @@
 "use client";
 import {useState} from "react";
 import {useRouter} from "next/navigation";
-export default function RedeemCodeForm({copy}:{copy:{label:string;placeholder:string;submit:string;success:string;error:string}}){
+import {redeemFailureMessage,type RedemptionCopy} from "@/lib/access/redemptionCopy";
+export default function RedeemCodeForm({copy}:{copy:RedemptionCopy & {label:string;placeholder:string;submit:string;success:string}}){
  const router=useRouter();const [code,setCode]=useState("");const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");const [error,setError]=useState(false);
  return <form className="mt-4 flex flex-wrap gap-2" onSubmit={async e=>{
@@ -9,7 +10,7 @@ export default function RedeemCodeForm({copy}:{copy:{label:string;placeholder:st
   try{
    const res=await fetch("/api/access/redeem",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})});
    const json=await res.json();setError(!res.ok);
-   setMessage(res.ok?copy.success+" "+json.access_end:copy.error+" ("+(json.status??json.error??"unavailable")+")");
+   setMessage(res.ok?copy.success+" "+json.access_end:redeemFailureMessage(json.status??json.error,copy));
    if(res.ok){setCode("");router.refresh();}
   }catch{setError(true);setMessage(copy.error);}finally{setBusy(false);}
  }}>

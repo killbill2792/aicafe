@@ -2649,6 +2649,11 @@
     "codePlaceholder": "Introduce el código de acceso",
     "redeem": "Canjear código",
     "redeemed": "Gratis hasta",
-    "redeemError": "No se pudo canjear el código"
+    "redeemError": "No se pudo canjear el código",
+    "redeemInvalid": "El código no es válido. Revísalo e inténtalo de nuevo.",
+    "redeemExpired": "El código ha caducado. Solicita uno nuevo.",
+    "redeemFull": "El código ya alcanzó su límite de cafeterías.",
+    "redeemRateLimited": "Demasiados intentos. Inténtalo de nuevo en 15 minutos.",
+    "redeemPaused": "El administrador pausó el acceso a la IA de esta cafetería. Contacta con él."
   }
 }
