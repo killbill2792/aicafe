@@ -249,9 +249,9 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
             </select>
           </Field>
         </div>
-        <Field label={labels.timezone} hint={labels.timezoneHint} error={fieldErrors.timezone}>
+        <Field label={labels.timezone} hint={labels.timezoneHint} error={fieldErrors.timezone} asDiv>
           <div className="relative" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setTimezoneExpanded(false); }}>
-            <input type="text" role="combobox" aria-autocomplete="list" aria-controls="cafe-timezone-options" aria-expanded={timezoneExpanded}
+            <input type="text" role="combobox" aria-label={labels.timezone} aria-autocomplete="list" aria-controls="cafe-timezone-options" aria-expanded={timezoneExpanded}
               aria-activedescendant={timezoneExpanded && timezoneResults[timezoneActive] ? "cafe-timezone-" + timezoneActive : undefined}
               aria-invalid={Boolean(fieldErrors.timezone)} ref={(node) => { fieldRefs.current.timezone = node; }}
               value={shownTimezoneSearch} placeholder={labels.timezoneSearch}
@@ -377,13 +377,15 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   );
 }
 
-function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
+function Field({ label, hint, error, children, asDiv = false }: { label: string; hint?: string; error?: string; children: ReactNode; asDiv?: boolean }) {
+  const content = (
+    <>
       <span>{label}</span>
       {children}
       {hint && <span className="text-xs font-normal text-ink-muted">{hint}</span>}
       {error && <span role="alert" className="text-xs font-normal text-red-700">{error}</span>}
-    </label>
+    </>
   );
+  const className = "flex flex-col gap-1 text-sm font-semibold text-ink";
+  return asDiv ? <div className={className}>{content}</div> : <label className={className}>{content}</label>;
 }
