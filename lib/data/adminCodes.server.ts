@@ -2,10 +2,12 @@ import "server-only";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {accessCodeHash} from "@/lib/access/access.server";
 import {normalizeCode} from "@/lib/access/status";
-export async function getAdminCodeConsole(){
+export async function getAdminCodeConsole(page=0){
+ const safePage=Number.isInteger(page)&&page>=0&&page<=9999?page:0;
+ const perPage=50;
  const db=createAdminSupabaseClient();
- const [{data:codes,error:cErr},{data:redemptions,error:rErr},{data:access,error:aErr},{data:cafes,error:bErr},{data:counts,error:countsErr}]=await Promise.all([
-   db.from("free_access_codes").select("id,code_hint,duration_months,fixed_end_date,max_cafes,note,active,created_at").order("created_at",{ascending:false}).limit(200),
+ const [{data:codes,error:cErr,count:codeTotal},{data:redemptions,error:rErr},{data:access,error:aErr},{data:cafes,error:bErr},{data:counts,error:countsErr}]=await Promise.all([
+   db.from("free_access_codes").select("id,code_hint,duration_months,fixed_end_date,max_cafes,note,active,created_at",{count:"exact"}).order("created_at",{ascending:false}).range(safePage*perPage,(safePage+1)*perPage-1),
    db.from("free_access_redemptions").select("code_id,business_id,redeemed_by,redeemed_at,access_end").order("redeemed_at",{ascending:false}).limit(500),
    db.from("cafe_access").select("business_id,mode,code_id,access_end").limit(1000),
    db.from("businesses").select("id,name").order("name").limit(1000),
@@ -17,7 +19,8 @@ export async function getAdminCodeConsole(){
   const {data}=await db.auth.admin.getUserById(id);
   return [id,data.user?.email??"Unknown"] as const;
  }));
- return {codes:(codes??[]).map(c=>({...c,redeemed_cafes:Number(totals[c.id]??0)})),redemptions:(redemptions??[]).map(r=>({
+ return {page:safePage,perPage,codeTotal:codeTotal??codes?.length??0,
+  codes:(codes??[]).map(c=>({...c,redeemed_cafes:Number(totals[c.id]??0)})),redemptions:(redemptions??[]).map(r=>({
    ...r,ownerEmail:Object.fromEntries(emails)[r.redeemed_by??""]??"—"})),
    access:access??[],cafes:cafes??[]};
 }

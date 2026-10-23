@@ -6,7 +6,7 @@ type Code={id:string;code_hint:string;duration_months:number|null;fixed_end_date
 type Redemption={code_id:string;business_id:string;redeemed_by:string|null;redeemed_at:string;access_end:string;ownerEmail:string};
 type Access={business_id:string;mode:string;code_id:string|null;access_end:string|null};
 type Cafe={id:string;name:string};
-export default function CodeConsole({codes,redemptions,access,cafes}:{codes:Code[];redemptions:Redemption[];access:Access[];cafes:Cafe[]}){
+export default function CodeConsole({codes,redemptions,access,cafes,page,perPage,codeTotal}:{codes:Code[];redemptions:Redemption[];access:Access[];cafes:Cafe[];page:number;perPage:number;codeTotal:number}){
  const router=useRouter();
  const [durationKind,setDurationKind]=useState("months");
  const [code,setCode]=useState("");
@@ -53,7 +53,11 @@ export default function CodeConsole({codes,redemptions,access,cafes}:{codes:Code
     <td className="p-3">{c.redeemed_cafes}</td><td className="p-3">{c.note??"—"}</td>
     <td className="p-3"><button disabled={busy} className="underline" onClick={()=>void action({action:"toggle",id:c.id,active:!c.active})}>{c.active?"Deactivate":"Activate"}</button></td></tr>)}</tbody>
   </table></div>
-  <h2 className="text-xl font-bold">Redemptions</h2>
+  <nav className="flex gap-4 text-[17px]" aria-label="Code pages">
+   {page>0&&<Link className="underline" href={"/admin/codes?page="+(page-1)}>Previous codes</Link>}
+   {(page+1)*perPage<codeTotal&&<Link className="underline" href={"/admin/codes?page="+(page+1)}>Next codes</Link>}
+  </nav>
+  <h2 className="text-xl font-bold">Recent redemptions</h2>
   <div className="overflow-x-auto rounded border bg-white"><table className="w-full text-left text-sm">
    <thead><tr className="bg-slate-100">{["Café","Owner","Code","Redeemed","Grant end","Current access end"].map(x=><th className="p-3" key={x}>{x}</th>)}</tr></thead>
    <tbody>{redemptions.map(r=><tr key={r.code_id+r.business_id} className="border-t">

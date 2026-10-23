@@ -56,6 +56,11 @@ export const SOURCE_SURFACES = {
   "lib/data/adminFeedback.server.ts":{
     saveOwnerTurnFeedback:{restricted:"Owner-scoped private diagnostic rating write, no free text stored"},
   },
+  "lib/data/usageVariance.server.ts":{
+    readUsageBusinessDate:{restricted:"Owner-scoped cafe timezone for stock and reporting date defaults"},
+    readUsageVariance:{restricted:"Owner-bound expected/actual usage reconciliation, not a generic P1 source"},
+    saveUsageEntry:{restricted:"Explicit owner stock/purchase write, not an AI capability"},
+  },
   "lib/data/posFactReaders.server.ts":{
     posFactReaders:{restricted:"Bounded owner-scoped POS fact projections; not a P1 general metric selector until the canonical-values project assigns a source policy"},
   },

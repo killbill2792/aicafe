@@ -89,7 +89,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(agentToolDefinitions.map(t=>t.name)).toEqual(["get_peak_hours","get_employee_sales","get_payroll_facts","get_profit","get_sales","get_menu_items",
       "get_staff","get_schedule","get_labor","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
-      "get_break_even","get_cost_summary","get_product_costs","get_ingredient_costs","get_inventory",
+      "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
       "get_item_sales","get_price_recommendation","draft_week_schedule","suggest_new_item_price","propose_price_change",
       "get_initiatives","get_initiative_status","record_checkin"]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);

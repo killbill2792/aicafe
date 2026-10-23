@@ -1,5 +1,6 @@
 import { posFactReaders } from "@/lib/data/posFactReaders.server";
 import "server-only";
+import {readUsageVariance} from "@/lib/data/usageVariance.server";
 import {readSchedulingDraftInputs} from "@/lib/data/schedulingDraftInputs.server";
 import { agentSourceReaders } from "@/lib/data/agentReadSources.server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
@@ -101,6 +102,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
         return projectBreakEven(snapshot);
       },
     },
+    async (requested,input)=>{assertBusiness(requested);return readUsageVariance(input);},
   );
   return new BusinessScopedCafeTools(tools, businessId);
 }
