@@ -12,7 +12,7 @@ type SupervisorCopy = {
 
 /** One conversation surface, not a dashboard card around another chat card. */
 export default function SupervisorHomePanel({
-  copy, chatCopy, chatEnabled, chatUnavailableReason, locale, snapshot, languageSwitch, experimentCopy, initialThreadId, initialProposalId,
+  copy, chatCopy, chatEnabled, chatUnavailableReason, canUseAi=true, locale, snapshot, languageSwitch, experimentCopy, initialThreadId, initialProposalId,
 }: {
   copy: SupervisorCopy;
   chatCopy: Omit<SupervisorChatCopy, keyof SupervisorCopy>;
@@ -21,11 +21,12 @@ export default function SupervisorHomePanel({
   initialThreadId?:string;initialProposalId?:string;
   languageSwitch?: React.ReactNode;
   chatEnabled: boolean;
+  canUseAi?: boolean;
   chatUnavailableReason: SupervisorChatUnavailableReason | null;
   locale: "en" | "es" | "ar";
 }) {
   return <SupervisorChatComposer
-    enabled={chatEnabled} unavailableReason={chatUnavailableReason}
+    enabled={chatEnabled} canUseAi={canUseAi} unavailableReason={chatUnavailableReason}
      snapshot={snapshot} locale={locale} languageSwitch={languageSwitch} experimentCopy={experimentCopy}
     initialThreadId={initialThreadId} initialProposalId={initialProposalId} copy={{ ...copy, ...chatCopy }}
   />;

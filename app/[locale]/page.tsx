@@ -198,8 +198,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           experimentCopy={{open:tExperiment("open"),close:tExperiment("close"),product:tExperiment("product"),increase:tExperiment("increase"),preview:tExperiment("preview"),propose:tExperiment("propose"),approve:tExperiment("approve"),apply:tExperiment("apply"),done:tExperiment("done"),report:tExperiment("report"),waiting:tExperiment("waiting"),loading:tExperiment("loading"),error:tExperiment("error"),condition:tExperiment("condition"),confirmNote:tExperiment("confirmNote"),reportNote:tExperiment("reportNote"),selectProposal:tExperiment("selectProposal"),statusDraft:tExperiment("statusDraft"),statusApproved:tExperiment("statusApproved"),statusManual:tExperiment("statusManual"),statusMonitoring:tExperiment("statusMonitoring"),statusExecuting:tExperiment("statusExecuting"),statusRejected:tExperiment("statusRejected"),statusInProgress:tExperiment("statusInProgress"),statusComplete:tExperiment("statusComplete"),statusInsufficient:tExperiment("statusInsufficient")}}
           locale={locale}
           languageSwitch={<LanguageSwitch href="/" compact />}
-          chatEnabled={chatReadiness.enabled && (cafeAccess?.active ?? true)}
-          chatUnavailableReason={cafeAccess && !cafeAccess.active ? "owner_access_required" : chatReadiness.reason}
+          chatEnabled={chatReadiness.enabled}
+          canUseAi={cafeAccess?.active ?? true}
+          chatUnavailableReason={chatReadiness.reason}
           snapshot={{
             title: t("todaySnapshotTitle"),
             hasSales: snapshot.todayHasData,
