@@ -1,4 +1,4 @@
-import type {NumericEvidence} from "./checkNumbers";
+import {compactEvidence,type NumericEvidence} from "./checkNumbers";
 import type {AgentToolResult} from "./tools";
 
 /** Invalidate only previously persisted group quantities for refreshed
@@ -8,7 +8,7 @@ import type {AgentToolResult} from "./tools";
 export function usageEvidenceRefresh(
  results:readonly AgentToolResult[],previous:readonly NumericEvidence[]=[]
 ):AgentToolResult[]{
- return results.map(result=>{
+ return results.map((result,index)=>{
   if(result.source!=="usage_variance"||!result.period||
    !Array.isArray(result.rows)||!Array.isArray(result.items))return result;
   const period=result.period.from+"/"+result.period.to+"/items:";
@@ -18,7 +18,8 @@ export function usageEvidenceRefresh(
    const row=item as Record<string,unknown>;
    if(typeof row.ingredientId!=="string"||row.expected!==null)continue;
    const prefix=period+row.ingredientId+":group:";
-   for(const old of previous){
+   const knownEvidence=[...previous,...compactEvidence(results.slice(0,index),Infinity)];
+   for(const old of knownEvidence){
     if(old.tool!=="usage_variance")continue;
     for(const v of old.values){
      if(v.unit!=="count"||!v.key.startsWith(prefix)||!v.key.endsWith("/quantity"))continue;
