@@ -53,7 +53,6 @@ export function calculateUsage(input:{
   const clocked=staff.filter(s=>Date.parse(s.clockIn)<=Date.parse(sale.closedAt) &&
    (s.clockOut===null||Date.parse(sale.closedAt)<Date.parse(s.clockOut)));
   const crew=clocked.map(s=>s.staff).sort();
-  const staffIds=clocked.map(s=>s.staffId).sort();
   for(const [id,qty] of lineTotals){
    if(!Number.isFinite(qty)||qty<0){salesMissing=true;continue;}
    let key="all",label="All";
