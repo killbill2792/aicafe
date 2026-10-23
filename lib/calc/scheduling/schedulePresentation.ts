@@ -68,16 +68,28 @@ export function totalOvertimeMinutes(people:PersonForSchedule[],shifts:DetailedS
  if(!enabled)return 0;
  return people.reduce((total,p)=>total+Math.max(0,personTotals(p.id,shifts).paidMinutes-afterMinutes),0);
 }
+/** Distinct shift starts may be on adjacent dates; compare the full dated
+ * intervals to avoid falsely marking an overnight worker as free. */
+export function overlapsEmployeeShift(employeeId:string,date:string,start:string,end:string,
+ shifts:DetailedShift[]):boolean{
+ const base=Date.parse(date+"T00:00:00Z")/60000;
+ const from=base+minuteOfDay(start);
+ const until=base+minuteOfDay(end)+(end<start?1440:0);
+ return shifts.some(s=>{
+  if(s.employeeId!==employeeId)return false;
+  const day=Date.parse(s.date+"T00:00:00Z")/60000;
+  const left=day+minuteOfDay(s.start);
+  const right=day+minuteOfDay(s.end)+(s.overnight?1440:0);
+  return left<until&&from<right;
+ });
+}
 export type AvailabilityStatus="free"|"off"|"on_shift"|"unavailable";
 export function availabilityStatus(person:PersonForSchedule,date:string,start:string,end:string,
  shifts:DetailedShift[],windows:AvailabilityEntry[]):AvailabilityStatus{
  const day=dateDay(date);
  if(person.availableDays!==null&&!person.availableDays.includes(day))return "off";
- const sameDay=shifts.filter(s=>s.employeeId===person.id&&s.date===date);
  const range=span(start,end);
- if(sameDay.some(s=>{
-  const on=span(s.start,s.end);return on.start<range.end&&range.start<on.end;
- }))return "on_shift";
+ if(overlapsEmployeeShift(person.id,date,start,end,shifts))return "on_shift";
  const valid=windows.filter(w=>w.employee_id===person.id&&w.day_of_week===day&&
    w.effective_from<=date&&(w.effective_to===null||w.effective_to>=date))
   .sort((a,b)=>b.effective_from.localeCompare(a.effective_from));
@@ -94,7 +106,7 @@ export function bestFreePerson(people:PersonForSchedule[],date:string,start:stri
 }
 export function previewShift(input:{employeeId:string;date:string;start:string;end:string;breakMinutes:number;editingId:string|null},
  people:PersonForSchedule[],shifts:DetailedShift[],gaps:ScheduleGap[],
- windows:AvailabilityEntry[],rules:RuleSettings,timezone="UTC"){
+ windows:AvailabilityEntry[],rules:RuleSettings,timezone="UTC",boundaryShifts:DetailedShift[]=[]){
  const person=people.find(p=>p.id===input.employeeId);
  if(!person)return null;
  const originals=shifts.filter(s=>s.id!==input.editingId);
@@ -116,9 +128,11 @@ export function previewShift(input:{employeeId:string;date:string;start:string;e
   const gap=span(g.start,g.end),s=span(input.start,input.end);
   return s.start<=gap.start&&s.end>=gap.end&&g.headcount+1>=g.needed;
  });
- const overlap=availabilityStatus(person,input.date,input.start,input.end,originals,windows);
+ const neighboring=[...originals,...boundaryShifts];
+ const overlapDetected=overlapsEmployeeShift(person.id,input.date,input.start,input.end,neighboring);
+ const overlap=availabilityStatus(person,input.date,input.start,input.end,neighboring,windows);
  const overtime=rules.weekly_ot_enabled&&oldMinutes+next.paidMinutes>rules.weekly_ot_after_minutes;
- const adjacent=originals.filter(s=>s.employeeId===person.id).map(s=>{
+ const adjacent=neighboring.filter(s=>s.employeeId===person.id).map(s=>{
    const midnight=(date:string,time:string)=>fromZonedTime(date+"T"+time+":00",timezone).getTime();
    const endDate=(date:string,overnight:boolean)=>
      overnight?new Date(Date.parse(date+"T12:00:00Z")+86400000).toISOString().slice(0,10):date;
@@ -135,8 +149,8 @@ export function previewShift(input:{employeeId:string;date:string;start:string;e
   beforeUnknownCount:before.unknownCount,
   afterUnknownCount:without.unknownCount+(next.unknown?1:0),
   estimated:before.estimated||next.estimated,unknown:before.unknownCount+(next.unknown?1:0),
-  oldCostCents:old?.costCents??null,covered,availability:overlap,
+  oldCostCents:old?.costCents??null,covered,availability:overlap,overlapDetected,
   previousMinutes:oldMinutes,projectedMinutes:oldMinutes+next.paidMinutes,
-  overtime,restMinutes:rest,shortRest:rules.min_rest_enabled&&rest!==null&&rest<rules.min_rest_minutes,
+  overtime,restMinutes:rest,shortRest:overlapDetected||(rules.min_rest_enabled&&rest!==null&&rest<rules.min_rest_minutes),
   tooLong:length.tooLong,tooShort:length.tooShort,belowMinimum:hours.belowMinimum,aboveMaximum:hours.aboveMaximum};
 }
