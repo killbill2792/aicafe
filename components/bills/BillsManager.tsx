@@ -15,7 +15,7 @@ const OTHER_CATEGORY: ExpenseCategoryCode = "other";
 // Sentinel key (not a real bill id) for the blank "add another Other bill" form.
 const NEW_OTHER_KEY = "__new_other__";
 
-type BillFormLabels = { amountLabel: string; amountHint: string; dueDayLabel: string; dueDayOptional: string; labelLabel: string; labelPlaceholder: string; save: string; delete: string; confirmRemove: string; saveError: string };
+type BillFormLabels = { amountLabel: string; amountHint: string; dueDayLabel: string; dueDayOptional: string; labelLabel: string; labelPlaceholder: string; save: string; delete: string; confirmRemove: string; saveError: string; removeError: string };
 
 function BillForm({
   existing,
@@ -78,9 +78,9 @@ function BillForm({
       try {
         const result = await deleteRecurringCost(existing.id);
         if (result.ok) onDone();
-        else setError(labels.saveError);
+        else setError(labels.removeError);
       } catch {
-        setError(labels.saveError);
+        setError(labels.removeError);
       } finally {
         actionLock.current = false;
       }
