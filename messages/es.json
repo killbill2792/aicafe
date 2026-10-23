@@ -2426,7 +2426,13 @@
     "off": "Libre todo el día",
     "noExceptions": "Sin excepciones por fecha",
     "notPrepared": "No preparado",
-    "preparedNotSent": "Solo preparar, no enviar"
+    "preparedNotSent": "Solo preparar, no enviar",
+    "exceptionUnavailable": "No disponible",
+    "exceptionApprovedLeave": "Ausencia aprobada",
+    "exceptionReplaceDay": "Disponibilidad reemplazada",
+    "exceptionAddAvailable": "Disponibilidad adicional",
+    "exceptionHoursCap": "Límite diario en minutos",
+    "exceptionOther": "Otro cambio de disponibilidad"
   },
   "SupervisorProposalCard": {
     "title": "Propuesta de cambio de precio",

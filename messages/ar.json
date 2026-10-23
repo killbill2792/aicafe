@@ -2426,7 +2426,13 @@
     "off": "إجازة طوال اليوم",
     "noExceptions": "لا توجد استثناءات بتاريخ",
     "notPrepared": "لم تُحضّر",
-    "preparedNotSent": "تحضير فقط دون إرسال"
+    "preparedNotSent": "تحضير فقط دون إرسال",
+    "exceptionUnavailable": "غير متاح",
+    "exceptionApprovedLeave": "إجازة معتمدة",
+    "exceptionReplaceDay": "توافر بديل",
+    "exceptionAddAvailable": "توافر إضافي",
+    "exceptionHoursCap": "حد الدقائق اليومي",
+    "exceptionOther": "تغيير آخر في التوافر"
   },
   "SupervisorProposalCard": {
     "title": "اقتراح تغيير السعر",

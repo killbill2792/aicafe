@@ -12,6 +12,10 @@ import type { SupportedId } from "./p1Catalog";
 type Surface = {capabilities:readonly SupportedId[]} |
   {restricted:string};
 export const SOURCE_SURFACES = {
+  "lib/data/staffProposalSources.server.ts":{
+    readStaffProposalToken:{restricted:"Owner-authenticated staff source revision token for proposal CAS, not a model-readable source"},
+    readStaffProposalSources:{restricted:"Owner and cafe scoped private staff schedule and availability reader for inert approval previews"},
+  },
   "lib/data/ownerScheduleDelivery.server.ts":{
     DeliveryReadError:{restricted:"Private error code for owner-only messaging handoff, not a model source"},
     scheduleDeliveryContext:{restricted:"Owner membership and current café identity guard, not an agent-readable capability"},

@@ -2426,7 +2426,13 @@
     "off": "Off all day",
     "noExceptions": "No dated exceptions",
     "notPrepared": "Not prepared",
-    "preparedNotSent": "Prepare only, not sent"
+    "preparedNotSent": "Prepare only, not sent",
+    "exceptionUnavailable": "Unavailable",
+    "exceptionApprovedLeave": "Approved leave",
+    "exceptionReplaceDay": "Replacement availability",
+    "exceptionAddAvailable": "Additional availability",
+    "exceptionHoursCap": "Daily minutes limit",
+    "exceptionOther": "Other availability change"
   },
   "SupervisorProposalCard": {
     "title": "Price change proposal",
