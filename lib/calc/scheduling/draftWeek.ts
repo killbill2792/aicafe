@@ -65,9 +65,18 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
   const after=Number.isInteger(inputs.prepMinutesAfterClose)&&inputs.prepMinutesAfterClose!>=0&&inputs.prepMinutesAfterClose!<=240?inputs.prepMinutesAfterClose!:0;
   // Coverage begins with prep and ends with cleanup, without inventing an
   // overnight window outside the current civil day.
-  const hours=(inputs.openHours?.[OPEN_HOURS_DAY_KEYS[weekday]]??[])
+  const expandedHours=(inputs.openHours?.[OPEN_HOURS_DAY_KEYS[weekday]]??[])
     .map(([a,b])=>[Math.max(0,minute(a)-before),Math.min(1439,minute(b)+after)] as [number,number])
-    .filter(([a,b])=>a<b);
+    .filter(([a,b])=>a<b)
+    .sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  // Each minute of required coverage must be counted once. Prep and cleanup
+  // can bridge a café's split opening hours or make two intervals overlap.
+  const hours:Array<[number,number]>=[];
+  for(const [start,end] of expandedHours){
+    const previous=hours[hours.length-1];
+    if(previous&&start<=previous[1])previous[1]=Math.max(previous[1],end);
+    else hours.push([start,end]);
+  }
   const shifts:DraftShift[]=[];
   // The same masks apply to recurring baseline shifts and suggested coverage.
   // Prior-day overnight absences also mask the morning after midnight.

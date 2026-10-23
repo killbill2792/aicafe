@@ -15,6 +15,49 @@ describe("pure scheduling draft",()=>{
   expect(day.shifts[0]).toMatchObject({start:"08:30",end:"12:15"});
   expect(day.unfilled).toEqual([]);
  });
+ it("counts overlapping prep and cleanup coverage exactly once across split hours",()=>{
+  // Service 09:00–12:00 / 13:00–17:00 + 60m prep/cleanup yields
+  // 08:00–13:00 and 12:00–18:00, whose union is 10, not 11 hours.
+  for(const periods of [
+    [["09:00","12:00"],["13:00","17:00"]],
+    [["13:00","17:00"],["09:00","12:00"]]
+  ] as [string,string][][]){
+    const d=data();d.openHours={mon:periods};d.prepMinutesBeforeOpen=60;
+    d.prepMinutesAfterClose=60;d.schedules=[];d.availability=[];
+    const day=draftWeek(d,"2026-10-26").days[0];
+    expect(day.openHours).toEqual([{start:"08:00",end:"18:00"}]);
+    expect(day.unfilled).toEqual([{start:"08:00",end:"18:00",hours:10}]);
+    expect(day.dayHours).toBe(0);
+  }
+ });
+ it("does not duplicate suggested shifts or wages across overlapping coverage",()=>{
+  const d=data();d.openHours={mon:[["09:00","12:00"],["13:00","17:00"]]};
+  d.prepMinutesBeforeOpen=60;d.prepMinutesAfterClose=60;
+  d.schedules=[];d.employees=[employee("cheap",1200)];
+  d.availability=[{employee_id:"cheap",day_of_week:1,start_local:"08:00",
+    end_local:"18:00",confirmation:"owner_confirmed",
+    effective_from:"2026-01-01",effective_to:null}];
+  const result=draftWeek(d,"2026-10-26"),day=result.days[0];
+  expect(day.shifts).toEqual([expect.objectContaining({
+    name:"cheap",start:"08:00",end:"18:00",paidHours:10,costCents:12000
+  })]);
+  expect(day.unfilled).toEqual([]);
+  expect(day.dayHours).toBe(10);
+  expect(result.totals.hours).toBe(10);
+  expect(result.totals.knownCostCents).toBe(12000);
+ });
+ it("coalesces touching intervals but preserves actual uncovered gaps",()=>{
+  const d=data();d.schedules=[];d.availability=[];
+  d.openHours={mon:[["09:00","12:00"],["12:00","14:00"],["15:00","17:00"]]};
+  const day=draftWeek(d,"2026-10-26").days[0];
+  expect(day.openHours).toEqual([
+    {start:"09:00",end:"14:00"},{start:"15:00",end:"17:00"}
+  ]);
+  expect(day.unfilled).toEqual([
+    {start:"09:00",end:"14:00",hours:5},
+    {start:"15:00",end:"17:00",hours:2}
+  ]);
+ });
  it("does not assign a person with a dated absence, even without a published schedule",()=>{
   const d=data();d.schedules=[];d.employees=[employee("cheap",1200)];
   d.availability=d.availability.filter(x=>x.employee_id==="cheap");
