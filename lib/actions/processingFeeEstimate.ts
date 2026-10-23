@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { FeeCoverageDay } from "@/lib/data/processingFeeDefaults";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
@@ -34,6 +35,7 @@ export type SaveProcessingFeeEstimateResult =
   | {
       ok: true;
       summary: { salesDays: number; actualDays: number; estimatedDays: number; missingDays: number };
+      coverageDays: FeeCoverageDay[];
     }
   | { ok: false; error: string };
 
@@ -152,11 +154,28 @@ export async function saveOwnerProcessingFeeEstimatePlan(input: unknown): Promis
     return { ok: false, error: error instanceof Error ? error.message : "Could not refresh processing-fee estimates." };
   }
 
+  const { data: dayRows, error: dayRowsError } = await ctx.supabase
+    .from("daily_rollups")
+    .select("business_date, net_sales_cents, card_fees_status")
+    .eq("business_id", ctx.businessId)
+    .gte("business_date", fromDate)
+    .lte("business_date", today);
+  if (dayRowsError) return { ok: false, error: dayRowsError.message };
+  const coverageDays: FeeCoverageDay[] = (dayRows ?? [])
+    .filter((day) => Number(day.net_sales_cents) > 0)
+    .map((day) => ({
+      date: day.business_date,
+      status: day.card_fees_status === "actual" || day.card_fees_status === "estimated"
+        ? day.card_fees_status
+        : "missing",
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+
   revalidatePath("/");
   revalidatePath("/menu");
   revalidatePath("/operations");
   revalidatePath("/money");
   revalidatePath("/more");
   revalidatePath("/more/processing-fees");
-  return { ok: true, summary };
+  return { ok: true, summary, coverageDays };
 }
