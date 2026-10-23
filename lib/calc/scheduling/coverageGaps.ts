@@ -3,6 +3,18 @@ import type { OpenHours } from "@/lib/business/openHours";
 import { OPEN_HOURS_DAY_KEYS } from "@/lib/business/openHours";
 
 export type CoverageGap={date:string;start:string;end:string;headcount:number;needed:number};
+export type CoverageVerification="checked"|"closed"|"unknown"|"disabled";
+export function coverageVerification(date:string,openHours:OpenHours|null,enabled:boolean):CoverageVerification{
+ if(!enabled)return "disabled";
+ const day=new Date(date+"T12:00:00Z").getUTCDay();
+ const windows=openHours?.[OPEN_HOURS_DAY_KEYS[day]];
+ if(windows===undefined)return "unknown";
+ return windows.length?"checked":"closed";
+}
+export function uncheckedCoverageDays(dates:string[],openHours:OpenHours|null,enabled:boolean):string[]{
+ return dates.filter(date=>coverageVerification(date,openHours,enabled)==="unknown");
+}
+
 const civilDay=(date:string)=>Date.parse(date+"T00:00:00Z")/60000;
 const clock=(minute:number)=>String(Math.floor(((minute%1440)+1440)%1440/60)).padStart(2,"0")+":"+
  String(((minute%60)+60)%60).padStart(2,"0");
