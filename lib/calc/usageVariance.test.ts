@@ -33,6 +33,17 @@ describe("weekly ingredient reconciliation",()=>{
  it("will not claim complete expected totals for unmapped Toast modifiers",()=>{
   const rows=calculateUsage({...base,sales:[{...sales[0],modifiers:[{posModifierId:"?",name:"Unknown"}]}]});
   expect(rows[0].expected).toBeNull();
+  expect(rows[0].groups).toEqual([]);
+  for(const groupBy of ["day","shift","staff"] as const){
+   expect(calculateUsage({...base,sales:[{...sales[0],modifiers:[{posModifierId:"?",name:"Unknown"}]}],groupBy})[0].groups).toEqual([]);
+  }
+ });
+ it("hides expected group numbers when Toast coverage is unproven",()=>{
+  for(const groupBy of ["day","shift","staff"] as const){
+   const result=calculateUsage({...base,salesCovered:false,groupBy})[0];
+   expect(result.expected).toBeNull();
+   expect(result.groups).toEqual([]);
+  }
  });
  it("splits expected once per crew/shift, with no invented actual split",()=>{
   const staff=[{id:"one",staffId:"a",staff:"Ada",locationId:"loc-a",clockIn:"2026-10-21T10:00:00Z",clockOut:"2026-10-21T13:00:00Z"},
