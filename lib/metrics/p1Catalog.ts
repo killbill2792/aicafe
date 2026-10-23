@@ -219,7 +219,7 @@ export const values = {
 export type SupportedId = keyof typeof values;
 export const PUBLIC_TOOL_METHODS = [
   "getCafeSummary","getProfitability","getBusinessCostSummary","getProductEconomics",
-  "getSalesTrend","getPricingRecommendation","getExpenseSummary","getMonthlyBills",
+  "getUsageVariance","getSalesTrend","getPricingRecommendation","getExpenseSummary","getMonthlyBills",
   "getRecordedExpenses","getProductSales","getItemSalesCoverage","getMenuCatalog",
   "getStaffAttendance","getCurrentStaff","getRecurringSchedule","getBreakEven",
   "getExpenseChanges","getLaborMetrics","getInventoryStatus","getTeamTasks",
@@ -296,6 +296,7 @@ export const canonicalSourcePaths = {
 
 /** Nonexposed surfaces cannot silently become "supported" or free model tools. */
 export const classified = {
+  getUsageVariance:{kind:"restricted",reason:"Owner-authenticated bounded Toast recipe usage and stock reconciliation; accessible only via Maya typed tool"},
   getSchedulingDraftInputs:{kind:"restricted",reason:"Includes employee wages; exposed only through the read-only draft_week_schedule agent tool"},
   getCafeSummary:{kind:"restricted",reason:"Includes mixed personal and financial state; use bounded projections"},
   getMenuCatalog:{kind:"restricted",reason:"Legacy menu projection coerces missing database price to $0; P1 uses a null-preserving bounded source"},
