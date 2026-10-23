@@ -11,7 +11,7 @@ export function createStaffScreenshotFixture(weekStart="2026-10-26"){
  const dates=Array.from({length:7},(_,i)=>new Date(Date.parse(weekStart+"T12:00:00Z")+i*86400000).toISOString().slice(0,10));
  const team=employees.map(([name,role,wageCents],i)=>({
   id:`00000000-0000-4000-8000-${String(i+1).padStart(12,"0")}`,
-  name,role,wageCents,minWeeklyMinutes:null,maxWeeklyMinutes:null,
+  name,role,wageCents,wagePeriod:"hour" as const,salaryAmountCents:null,minWeeklyMinutes:null,maxWeeklyMinutes:null,
   availableDays:[0,1,2,3,4,5,6],colorIndex:i,phone:null
  }));
  const hours:OpenHours={
