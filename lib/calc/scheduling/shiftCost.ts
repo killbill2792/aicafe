@@ -60,3 +60,9 @@ export function businessWageEstimate(people:{wageCents:number|null}[]):number|nu
  const known=people.map(person=>person.wageCents).filter((n):n is number=>n!==null&&n>0);
  return known.length?Math.round(known.reduce((sum,n)=>sum+n,0)/known.length):null;
 }
+
+/** A known subtotal with missing wages is not a complete labor total. */
+export function costCompleteness(total:{knownCostCents:number;unknownCount:number}):"complete"|"partial"|"unknown"{
+ if(total.unknownCount===0)return "complete";
+ return total.knownCostCents===0?"unknown":"partial";
+}

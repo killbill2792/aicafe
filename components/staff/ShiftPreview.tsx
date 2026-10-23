@@ -1,6 +1,7 @@
 "use client";
 import {useTranslations} from "next-intl";
 import {previewShift,type PersonForSchedule,type DetailedShift,type ScheduleGap,type AvailabilityEntry} from "@/lib/calc/scheduling/schedulePresentation";
+import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import type {RuleSettings} from "@/lib/calc/scheduling/ruleChecks";
 const fmt=(c:number|null,currency:string)=>c==null?"Unknown":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(c/100);
 export default function ShiftPreview({personId,date,start,end,breakMinutes,editingId,team,shifts,gaps,availability,rules,currency,timezone}:{
@@ -9,7 +10,13 @@ export default function ShiftPreview({personId,date,start,end,breakMinutes,editi
  rules:RuleSettings;currency:string;timezone:string
 }){
  const t=useTranslations("StaffSchedule");
- const money=(c:number|null)=>c==null?t("unkWage"):fmt(c,currency);
+ const money=(c:number|null)=>c==null?t("unknownWages"):fmt(c,currency);
+ const weeklyCost=(knownCents:number,unknownCount:number)=>{
+  const state=costCompleteness({knownCostCents:knownCents,unknownCount});
+  return state==="unknown"?t("unknownWages"):
+   state==="partial"?t("partialWages",{known:fmt(knownCents,currency),count:unknownCount}):
+   fmt(knownCents,currency);
+ };
  const result=previewShift({employeeId:personId,date,start,end,breakMinutes,editingId},team,shifts,gaps,availability,rules,timezone);
  if(!result)return <p role="alert" className="mt-4 rounded-xl bg-warn-soft p-3 text-warn-text">{t("shiftTimeError")}</p>;
  const checks=[
@@ -26,6 +33,6 @@ export default function ShiftPreview({personId,date,start,end,breakMinutes,editi
     {result.next.wageCents!=null?" × "+fmt(result.next.wageCents,currency)+"/h":""}
     {result.next.estimated?" · "+t("estimate"):""}</p>
   {checks.map(([okay,good,bad],i)=><p key={i} className={`mt-1 text-sm font-semibold ${okay?"text-pos":"text-neg"}`}>{okay?"✓ ":"⚠ "}{okay?good:bad}</p>)}
-  <p className="mt-3 text-sm">{t("weekLabor",{before:money(result.before),after:money(result.after)})}<strong className="sr-only">{fmt(result.after,currency)}</strong>{result.estimated?" · "+t("estimated"):""}</p>
+  <p className="mt-3 text-sm">{t("weekLabor",{before:weeklyCost(result.before,result.beforeUnknownCount),after:weeklyCost(result.after,result.afterUnknownCount)})}{result.estimated?" · "+t("estimated"):""}</p>
  </section>;
 }

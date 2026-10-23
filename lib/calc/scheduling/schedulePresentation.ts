@@ -132,6 +132,8 @@ export function previewShift(input:{employeeId:string;date:string;start:string;e
  }).filter(Number.isFinite);
  const rest=adjacent.length?Math.min(...adjacent):null;
  return {next,before:before.knownCostCents,after:projectedCost,
+  beforeUnknownCount:before.unknownCount,
+  afterUnknownCount:without.unknownCount+(next.unknown?1:0),
   estimated:before.estimated||next.estimated,unknown:before.unknownCount+(next.unknown?1:0),
   oldCostCents:old?.costCents??null,covered,availability:overlap,
   previousMinutes:oldMinutes,projectedMinutes:oldMinutes+next.paidMinutes,
