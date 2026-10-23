@@ -59,9 +59,13 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
  const shown=(id:string)=>people.find(p=>p.id===id)?.display_name??id;
  const item=(label:string,before:string,after:string)=>preview.push({label,before,after});
  let payload:Record<string,unknown>={};
- const today=new Intl.DateTimeFormat("en-CA",{timeZone:(await owner.supabase.from("businesses").select("timezone").eq("id",scope.businessId).single()).data?.timezone??"UTC",
-  year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
- const localDate=/^\d{4}-\d{2}-\d{2}$/.test(today)?today:new Date().toISOString().slice(0,10);
+ const cafeZone=await owner.supabase.from("businesses").select("timezone")
+   .eq("id",scope.businessId).single();
+ if(cafeZone.error||!cafeZone.data?.timezone)throw new Error("Café timezone unavailable");
+ const parts=new Intl.DateTimeFormat("en-US",{timeZone:cafeZone.data.timezone,
+   year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+ const part=(kind:string)=>parts.find(p=>p.type===kind)?.value??"";
+ const localDate=part("year")+"-"+part("month")+"-"+part("day");
  switch(name){
   case "propose_schedule":{
    const d=input as z.infer<typeof staffProposalInputs.propose_schedule>;

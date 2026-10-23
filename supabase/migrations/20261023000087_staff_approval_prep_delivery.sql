@@ -55,7 +55,9 @@ BEGIN
         from public.%I r where r.business_id=$1',t) INTO part USING p_business_id;
    rows:=rows || jsonb_build_object(t,part);
  END LOOP;
- RETURN md5(rows::text);
+ RETURN md5(jsonb_build_object('rows',rows,'cafe_date',
+   (now() AT TIME ZONE (SELECT b.timezone FROM public.businesses b WHERE b.id=p_business_id))::date,
+   'timezone',(SELECT b.timezone FROM public.businesses b WHERE b.id=p_business_id))::text);
 END $$;
 REVOKE ALL ON FUNCTION public.supervisor_staff_source_token(uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.supervisor_staff_source_token(uuid) TO service_role;
@@ -67,7 +69,7 @@ DECLARE
  p public.supervisor_proposals;
  e jsonb; d jsonb; v_kind text; v_row jsonb; v_staff uuid; v_day date;
  v_week date; v_shift uuid; v_rule text; v_old int; v_actor uuid;
- v_changed integer; v_result jsonb; v_seen text[]:='{}';
+ v_changed integer; v_today date; v_seen text[]:='{}';
  v_bool boolean; v_number int;
 BEGIN
  IF auth.role()<>'service_role' THEN RAISE EXCEPTION 'service_role_only'; END IF;
@@ -79,6 +81,9 @@ BEGIN
         AND m.role='owner' AND b.is_demo=false)
  THEN RAISE EXCEPTION 'staff_owner_required' USING ERRCODE='42501'; END IF;
 
+ SELECT (now() AT TIME ZONE b.timezone)::date INTO v_today
+   FROM public.businesses b WHERE b.id=p_business_id;
+ IF v_today IS NULL THEN RAISE EXCEPTION 'cafe_timezone_missing' USING ERRCODE='22023'; END IF;
  -- Take Olivia's existing source-write advisory lock first; the table locks
  -- then serialize even writers that do not use the advisory protocol.
  PERFORM pg_advisory_xact_lock(hashtextextended('olivia-'||p_business_id::text,0));
@@ -126,7 +131,7 @@ BEGIN
 
  IF v_kind='propose_schedule' THEN
    v_week:=(d->>'week_start')::date;
-   IF extract(isodow FROM v_week)<>1 OR v_week < current_date
+   IF extract(isodow FROM v_week)<>1 OR v_week < v_today
       OR jsonb_typeof(d->'shifts') IS DISTINCT FROM 'array'
       OR jsonb_array_length(d->'shifts')>60 THEN
      RAISE EXCEPTION 'invalid_schedule' USING ERRCODE='22023'; END IF;
@@ -144,9 +149,9 @@ BEGIN
        NOT EXISTS (SELECT 1 FROM public.employees
          WHERE id=v_staff AND business_id=p_business_id AND active)
      THEN RAISE EXCEPTION 'invalid_schedule_shift' USING ERRCODE='22023'; END IF;
-     IF v_staff::text||v_day::text||v_row->>'start'=ANY(v_seen)
+     IF (v_staff::text||v_day::text||(v_row->>'start'))=ANY(v_seen)
      THEN RAISE EXCEPTION 'duplicate_schedule_shift' USING ERRCODE='22023'; END IF;
-     v_seen:=array_append(v_seen,v_staff::text||v_day::text||v_row->>'start');
+     v_seen:=array_append(v_seen,(v_staff::text||v_day::text||(v_row->>'start')));
    END LOOP;
    UPDATE public.scheduled_shifts SET deleted_at=now(),updated_at=now()
      WHERE business_id=p_business_id AND local_date BETWEEN v_week AND v_week+6
@@ -163,7 +168,7 @@ BEGIN
  ELSIF v_kind='propose_shift_change' THEN
    v_row:=d->'shift';v_staff:=(v_row->>'employee_id')::uuid;
    v_day:=(v_row->>'date')::date;
-   IF v_day < current_date OR v_row->>'start'=v_row->>'end' OR
+   IF v_day < v_today OR v_row->>'start'=v_row->>'end' OR
      (v_row->>'break_minutes')::int NOT BETWEEN 0 AND 240 OR
      NOT EXISTS(SELECT 1 FROM public.employees WHERE business_id=p_business_id
        AND id=v_staff AND active) THEN
@@ -227,8 +232,13 @@ BEGIN
    IF jsonb_array_length(d->'off_dates')>0 THEN
      FOR v_row IN SELECT value FROM jsonb_array_elements(d->'off_dates') LOOP
        v_day:=(trim(both '"' from v_row::text))::date;
-       IF v_day < current_date THEN
+       IF v_day < v_today THEN
          RAISE EXCEPTION 'dated_absence_expired' USING ERRCODE='P0001'; END IF;
+       IF EXISTS(SELECT 1 FROM public.staff_availability_exceptions
+          WHERE business_id=p_business_id AND employee_id=v_staff
+            AND local_date=v_day AND source='owner_direct'
+            AND exception_type='unavailable')
+       THEN RAISE EXCEPTION 'absence_already_recorded' USING ERRCODE='P0001'; END IF;
        INSERT INTO public.staff_availability_exceptions(business_id,employee_id,
           local_date,exception_type,overnight,source,confirmation,confirmed_at,confirmed_by,created_by)
        VALUES(p_business_id,v_staff,v_day,'unavailable',false,'owner_direct',
@@ -236,7 +246,7 @@ BEGIN
      END LOOP;
    ELSE
      v_day:=(d->>'effective_from')::date;
-     IF v_day < current_date THEN
+     IF v_day < v_today THEN
        RAISE EXCEPTION 'availability_effective_date_expired' USING ERRCODE='P0001'; END IF;
      UPDATE public.staff_availability_rules SET effective_to=v_day-1
        WHERE business_id=p_business_id AND employee_id=v_staff
@@ -314,7 +324,7 @@ BEGIN
  END IF;
 
  UPDATE public.supervisor_proposals SET status='committed',revision=revision+1,
-   committed_at=now(),monitoring_start_date=current_date+1,updated_at=now()
+   committed_at=now(),monitoring_start_date=v_today+1,updated_at=now()
    WHERE id=p.id RETURNING * INTO p;
  RETURN jsonb_build_object('state','applied','proposal',to_jsonb(p));
 END $$;
