@@ -1285,7 +1285,8 @@
     "invalidMix": "Rates must total 100%",
     "info": "Information",
     "noNewCoverage": "The rate was saved, but some days still need more fee details.",
-    "missingButton": "Missing"
+    "missingButton": "Missing",
+    "showDayBreakdown": "Show sales days and missing-fee fixes"
   },
   "Economics": {
     "title": "Profit goal simulator",
