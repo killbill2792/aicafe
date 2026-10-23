@@ -28,6 +28,7 @@ export default async function TypeExpensePage({ searchParams }: { searchParams: 
         categoryLabels={categoryLabels}
         todayDateStr={new Date().toISOString().slice(0, 10)}
         labels={{
+          backspace: t("backspace"),
           amountTitle: t("amountTitle"),
           categoryTitle: t("categoryTitle"),
           vendorLabel: t("vendorLabel"),
