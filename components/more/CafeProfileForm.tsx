@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useLocale } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { updateCafeProfile } from "@/lib/actions/business";
 import { openHoursToWeeklyInput, type OpenHours, type OpenHoursDayKey, type WeeklyHoursInput } from "@/lib/business/openHours";
+import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, shouldFocusHours, timezoneOptions, US_STATES, validateProfile } from "./cafeProfileOptions";
 
 type Profile = {
   name: string;
@@ -52,11 +54,55 @@ type Labels = {
   save: string;
   saving: string;
   saved: string;
+  locationOptional: string;
+  hoursBadge: string;
+  copyWeekdays: string;
+  timezoneSearch: string;
+  timezoneEmpty: string;
+  chooseCountry: string;
+  chooseCurrency: string;
+  chooseState: string;
+  invalidName: string;
+  invalidTimezone: string;
+  invalidCurrency: string;
+  invalidCountry: string;
+  invalidDate: string;
+  invalidHours: string;
+  invalidSummary: string;
 };
 
 const DAY_ORDER: OpenHoursDayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
-export default function CafeProfileForm({ profile, labels }: { profile: Profile; labels: Labels }) {
+export default function CafeProfileForm({ profile, labels, focusHours = false }: { profile: Profile; labels: Labels; focusHours?: boolean }) {
+  const locale = useLocale();
+  const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
+  const hoursRef = useRef<HTMLElement | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const invalidClass = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
+  const clearFieldError = (key: string) => setFieldErrors((errors) => {
+    if (!errors[key]) return errors;
+    const next = { ...errors };
+    delete next[key];
+    return next;
+  });
+  const timezones = useMemo(() => timezoneOptions(locale, profile.timezone), [locale, profile.timezone]);
+  const countries = useMemo(() => countryOptions(locale), [locale]);
+  const currencies = useMemo(() => currencyOptions(locale, profile.currency), [locale, profile.currency]);
+  const [timezoneSearch, setTimezoneSearch] = useState(() =>
+    timezoneOptions(locale, profile.timezone).find((option) => option.value === profile.timezone)?.label ?? profile.timezone);
+  const [timezoneExpanded, setTimezoneExpanded] = useState(false);
+  const [timezoneActive, setTimezoneActive] = useState(0);
+  const timezoneResults = useMemo(() => {
+    const query = timezoneSearch.trim().toLocaleLowerCase(locale);
+    return timezones.filter((option) => !query || option.label.toLocaleLowerCase(locale).includes(query) || option.value.toLowerCase().includes(query)).slice(0, 40);
+  }, [timezones, timezoneSearch, locale]);
+  const chooseTimezone = (value: string) => {
+    setTimezone(value);
+    setTimezoneSearch(timezones.find((option) => option.value === value)?.label ?? value);
+    setTimezoneExpanded(false);
+    clearFieldError("timezone");
+  };
+
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
@@ -65,7 +111,7 @@ export default function CafeProfileForm({ profile, labels }: { profile: Profile;
   const [locationName, setLocationName] = useState(profile.locationName);
   const [openedOn, setOpenedOn] = useState(profile.openedOn);
   const [timezone, setTimezone] = useState(profile.timezone);
-  const [currency, setCurrency] = useState(profile.currency);
+  const [currency, setCurrency] = useState(profile.currency || currencyForCountry(profile.countryCode));
   const [addressLine1, setAddressLine1] = useState(profile.addressLine1);
   const [addressLine2, setAddressLine2] = useState(profile.addressLine2);
   const [city, setCity] = useState(profile.city);
@@ -73,6 +119,32 @@ export default function CafeProfileForm({ profile, labels }: { profile: Profile;
   const [postalCode, setPostalCode] = useState(profile.postalCode);
   const [countryCode, setCountryCode] = useState(profile.countryCode);
   const [hours, setHours] = useState<WeeklyHoursInput>(() => openHoursToWeeklyInput(profile.openHours));
+  const hoursNotSet = DAY_ORDER.some((key) => hours[key].mode === "unset");
+
+  useEffect(() => {
+    if (profile.timezone) return;
+    const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!browserTimezone) return;
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: browserTimezone });
+      setTimezone(browserTimezone);
+      setTimezoneSearch(timezones.find((option) => option.value === browserTimezone)?.label ?? browserTimezone);
+    } catch { /* Keep empty and require an explicit choice. */ }
+  }, [profile.timezone, timezones]);
+
+  useEffect(() => {
+    if (!shouldFocusHours(focusHours ? "hours" : undefined)) return;
+    const node = hoursRef.current;
+    if (!node) return;
+    node.scrollIntoView({ block: "start" });
+    node.focus({ preventScroll: true });
+  }, [focusHours]);
+
+  const changeCountry = (next: string) => {
+    setCountryCode(next);
+    if (!currency || currency === currencyForCountry(countryCode)) setCurrency(currencyForCountry(next));
+    clearFieldError("countryCode");
+  };
 
   const dayLabels: Record<OpenHoursDayKey, string> = {
     mon: labels.dayMon,
@@ -105,6 +177,22 @@ export default function CafeProfileForm({ profile, labels }: { profile: Profile;
   }
 
   function save() {
+    const errors = validateProfile({ name, timezone, currency, countryCode, openedOn, hours }, {
+      name: labels.invalidName, timezone: labels.invalidTimezone,
+      currency: labels.invalidCurrency, country: labels.invalidCountry,
+      openedOn: labels.invalidDate, hours: labels.invalidHours,
+    });
+    setFieldErrors(errors);
+    const firstError = Object.keys(errors)[0];
+    if (firstError) {
+      setStatus("error");
+      setError(labels.invalidSummary);
+      if (firstError.startsWith("hours-")) {
+        hoursRef.current?.scrollIntoView({ block: "start" });
+      }
+      requestAnimationFrame(() => fieldRefs.current[firstError]?.focus());
+      return;
+    }
     setStatus("idle");
     setError(null);
     startTransition(async () => {
