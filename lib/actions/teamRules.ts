@@ -49,10 +49,10 @@ export async function addCustomRule(raw:unknown){
  const parsed=z.strictObject({text:z.string().trim().min(1).max(500)}).safeParse(raw);
  if(!parsed.success)return {ok:false as const,error:"invalid_input"};
  const owner=await requireSchedulingOwner();if(!owner)return {ok:false as const,error:"unauthorized"};
- const {error}=await owner.supabase.from("staff_custom_rules").insert({
-   business_id:owner.businessId,rule_text:parsed.data.text});
- if(error)return {ok:false as const,error:"storage_unavailable"};
- revalidatePath("/staff/rules");return {ok:true as const};
+ const {data,error}=await owner.supabase.from("staff_custom_rules").insert({
+   business_id:owner.businessId,rule_text:parsed.data.text}).select("id,rule_text").single();
+ if(error||!data)return {ok:false as const,error:"storage_unavailable"};
+ revalidatePath("/staff/rules");return {ok:true as const,data};
 }
 export async function removeCustomRule(raw:unknown){
  const parsed=z.strictObject({id:z.string().uuid()}).safeParse(raw);

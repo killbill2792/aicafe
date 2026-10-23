@@ -13,11 +13,11 @@ export default function ShiftPreview({personId,date,start,end,breakMinutes,editi
  const result=previewShift({employeeId:personId,date,start,end,breakMinutes,editingId},team,shifts,gaps,availability,rules,timezone);
  if(!result)return <p role="alert" className="mt-4 rounded-xl bg-warn-soft p-3 text-warn-text">{t("shiftTimeError")}</p>;
  const checks=[
-  [result.covered,"Fills a coverage gap","Coverage gap remains"],
+  [result.covered,t("gapFilled"),t("gapRemains")],
   [!result.overtime,t("noOvertime",{hours:result.projectedMinutes/60}),t("exceedsOvertime")],
   [!result.shortRest,result.restMinutes===null?t("noAdjacent"):t("hoursRest",{hours:(result.restMinutes/60).toFixed(1)}),t("shortRest")],
   [!result.tooLong&&!result.tooShort,t("withinShift"),t("outsideShift")],
-  [result.availability==="free",t("availableForShift"),t("availabilityStatus",{status:result.availability.replace("_"," ")})],
+  [result.availability==="free",t("availableForShift"),t("availabilityStatus",{status:t(result.availability==="off"?"off":result.availability==="on_shift"?"onShift":"unavailable")})],
   [!result.aboveMaximum,t("weeklyMaxOk"),t("weeklyMaxExceeded")]
  ] as const;
  return <section className="mt-4 rounded-[20px] bg-surface2 p-4">

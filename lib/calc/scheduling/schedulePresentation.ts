@@ -45,10 +45,10 @@ export function dayTimeline(date:string,shifts:DetailedShift[],gaps:ScheduleGap[
   }),
   blocks:dayShifts.map((s,i)=>{
    const w=span(s.start,s.end);
-   return {...band(w.start,w.end),id:s.id,employeeId:s.employeeId,top:i*30+2,
+   return {...band(w.start,w.end),id:s.id,employeeId:s.employeeId,top:i*52+2,
     title:(s.employeeName??"Team")+" "+s.start+"–"+s.end,estimated:s.estimated};
   }),
-  height:Math.max(36,dayShifts.length*30+4)
+  height:Math.max(52,dayShifts.length*52+4)
  };
 }
 export function dayTotals(date:string,shifts:DetailedShift[]){

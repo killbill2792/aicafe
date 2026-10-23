@@ -189,9 +189,12 @@ BEGIN
   v_id:=p_id;
   UPDATE public.employees SET display_name=btrim(p_payload->>'name'),
    role=nullif(btrim(p_payload->>'role'),''),
-   wage_period='hour',
-   wage_amount_cents=(p_payload->>'wageCents')::bigint,
-   default_hourly_wage_cents=(p_payload->>'wageCents')::bigint,
+   -- Only hourly compensation is editable in this sheet. A salary is canonical,
+   -- and the UI's derived hourly equivalent must NEVER overwrite or erase it.
+   wage_amount_cents=CASE WHEN wage_period='hour'
+     THEN (p_payload->>'wageCents')::bigint ELSE wage_amount_cents END,
+   default_hourly_wage_cents=CASE WHEN wage_period='hour'
+     THEN (p_payload->>'wageCents')::bigint ELSE default_hourly_wage_cents END,
    phone_e164=nullif(p_payload->>'phone',''),
    min_weekly_minutes=(p_payload->>'minWeeklyMinutes')::int,
    max_weekly_minutes=(p_payload->>'maxWeeklyMinutes')::int,

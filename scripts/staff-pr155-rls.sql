@@ -63,6 +63,21 @@ BEGIN
    RAISE EXCEPTION 'person update not atomic/audited';
  END IF;
 END $$;
+-- Editing only availability or phone must not change canonical monthly/yearly pay.
+SELECT set_config('request.jwt.claim.sub',:'owner',true);
+UPDATE public.employees SET wage_period='month',wage_amount_cents=310000,
+ default_hourly_wage_cents=1800 WHERE id=:'employee'::uuid;
+SELECT public.staff_write_person(:'business'::uuid,:'employee'::uuid,
+ '{"name":"Amy Updated","role":null,"wageCents":null,
+ "minWeeklyMinutes":1200,"maxWeeklyMinutes":2400,"phone":"+14155551234",
+ "availability":[{"day":1,"start":"07:00","end":"13:00"}]}'::jsonb);
+DO $
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM public.employees WHERE id=current_setting('test.staff.employee')::uuid
+  AND wage_period='month' AND wage_amount_cents=310000 AND default_hourly_wage_cents=1800) THEN
+  RAISE EXCEPTION 'saving salaried staff changed canonical compensation';
+ END IF;
+END $;
 -- A validation failure must roll back the complete profile and windows.
 DO $$
 BEGIN

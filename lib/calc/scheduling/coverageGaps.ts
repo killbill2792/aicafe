@@ -20,13 +20,14 @@ export function coverageGaps(dates:string[],shifts:CostShift[],openHours:OpenHou
         const x=minuteOfDay(s.start),y=minuteOfDay(s.end)+(s.overnight?1440:0);
         boundaries.add(Math.max(a,Math.min(b,x)));
         boundaries.add(Math.max(a,Math.min(b,y)));
-        return [x,y] as const;
+        return {employeeId:s.employeeId,start:x,end:y};
       });
       const edges=[...boundaries].sort((x,y)=>x-y);
       for(let i=0;i<edges.length-1;i++){
         const left=edges[i],right=edges[i+1];
         if(right<=left)continue;
-        const count=rows.filter(([x,y])=>x<=left&&y>=right).length;
+        const count=new Set(rows.filter(s=>s.start<=left&&s.end>=right)
+          .map(s=>s.employeeId)).size;
         if(count>=needed)continue;
         const prev=result[result.length-1];
         if(prev&&prev.date===date&&prev.headcount===count&&prev.end===clock(left)){

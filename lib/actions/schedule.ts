@@ -100,16 +100,21 @@ export async function upsertShift(raw:unknown){
  const row={business_id:owner.businessId,employee_id:p.data.employeeId,local_date:p.data.date,
    start_local:p.data.start,end_local:p.data.end,overnight,break_minutes:breakMinutes,
    break_source:p.data.breakMinutes==null?"rule":"owner",status:"draft",source:"owner"};
+ // The dated roster and legacy payroll schedule are separate systems.
+ // Materialize a clearly bounded year of weekly dated shifts atomically instead
+ // of inserting null-wage payroll templates that would poison timecard creation.
+ if(p.data.repeatWeekly&&p.data.id)return {ok:false as const,error:"repeat_requires_new_shift"};
+ if(p.data.repeatWeekly){
+  const weekly=Array.from({length:52},(_,n)=>({...row,
+   local_date:plusDays(p.data.date,n*7),source:n===0?"owner":"repeat"}));
+  const saved=await owner.supabase.from("scheduled_shifts").insert(weekly).select("id");
+  if(saved.error||!saved.data?.length)return {ok:false as const,error:"storage_unavailable"};
+  revalidatePath("/staff");return {ok:true as const,id:saved.data[0].id as string};
+ }
  const query=p.data.id?owner.supabase.from("scheduled_shifts").update(row).eq("id",p.data.id)
    .eq("business_id",owner.businessId).is("deleted_at",null).select("id").maybeSingle()
   :owner.supabase.from("scheduled_shifts").insert(row).select("id").single();
  const saved=await query;if(saved.error||!saved.data)return {ok:false as const,error:"storage_unavailable"};
- if(p.data.repeatWeekly){
-   // A recurring template is written separately; never creates payroll timecards.
-   await owner.supabase.from("staff_schedules").insert({business_id:owner.businessId,employee_id:p.data.employeeId,
-     day_of_week:new Date(p.data.date+"T12:00:00Z").getUTCDay(),start_time:p.data.start,
-     end_time:p.data.end,unpaid_break_minutes:breakMinutes,hourly_wage_cents:null,effective_from:p.data.date,active:true});
- }
  revalidatePath("/staff");return {ok:true as const,id:saved.data.id as string};
 }
 export async function removeShift(raw:unknown){

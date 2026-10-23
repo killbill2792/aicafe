@@ -6,7 +6,7 @@ import {dismissStaffRuleAlert} from "@/lib/actions/ruleAlerts";
 import DayTimeline from "./DayTimeline";
 import WeekGrid from "./WeekGrid";
 import ShiftPreview from "./ShiftPreview";
-import {dayTotals,bestFreePerson,availabilityStatus,totalOvertimeMinutes,previewShift,type DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
+import {dayTotals,personTotals,bestFreePerson,availabilityStatus,totalOvertimeMinutes,previewShift,type DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 import Link from "next/link";
 import {addPerson,updatePerson,setPersonActive} from "@/lib/actions/teamWorkspace";
@@ -191,7 +191,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       <span className="grid size-12 place-items-center rounded-full bg-accent-soft font-bold">{p.name[0]}</span>
       <div className="min-w-0 flex-1"><b>{p.name}</b><span className="ms-2 text-sm text-muted">{p.role?roleLabel(p.role):t("team")}</span>
         <div className="text-sm text-muted">{p.wageCents==null?t("noWage"):fmt(p.wageCents,data.currency)+"/h"}</div></div>
-      <div className="text-end">{hours(data.shifts.filter(s=>s.employeeId===p.id).reduce((n,s)=>n+s.paidMinutes,0))} h</div>
+      <div className="text-end">{hours(personTotals(p.id,data.shifts).paidMinutes)} h</div>
       <button disabled={data.readOnly} onClick={()=>openPerson(p)} className="min-h-12 px-2">{t("edit")}</button>
      </div>)}
      <div className="border-t border-line pt-3 font-bold">{t("total")} {fmt(data.total.knownCostCents,data.currency)} {data.total.estimated?" · "+t("estimate"):""}</div>

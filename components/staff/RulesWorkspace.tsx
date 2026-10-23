@@ -1,5 +1,5 @@
 "use client";
-import {useState,useTransition} from "react";
+import {useEffect,useState,useTransition} from "react";
 import {useRouter} from "next/navigation";
 import {useTranslations} from "next-intl";
 import {Link} from "@/i18n/navigation";
@@ -23,6 +23,7 @@ const bounds:Record<string,[number,number,number]>={
 export default function RulesWorkspace({initial,week,readOnly=false}:{initial:RuleValues;week:string;readOnly?:boolean}){
  const t=useTranslations("StaffSchedule");const router=useRouter();
  const [values,setValues]=useState(initial),[draft,setDraft]=useState(""),[pending,transition]=useTransition();
+ useEffect(()=>setValues(initial),[initial]);
  const [message,setMessage]=useState(""),[undo,setUndo]=useState<{key:string;value:number|boolean}|null>(null);
  const change=(key:string,value:number|boolean)=>{
    if(readOnly)return;
@@ -72,7 +73,9 @@ export default function RulesWorkspace({initial,week,readOnly=false}:{initial:Ru
     <label className="mt-3 block">{t("newRule")}<textarea value={draft} onChange={e=>setDraft(e.target.value)}
      maxLength={500} disabled={readOnly} className="mt-2 min-h-24 w-full rounded-xl border border-line bg-surface p-3"/></label>
     <button disabled={readOnly||pending||!draft.trim()} onClick={()=>transition(async()=>{const result=await addCustomRule({text:draft});
-      if(result.ok){setDraft("");router.refresh();setMessage(t("saved"));}
+      if(result.ok){setDraft("");setValues(prev=>({...prev,
+       custom:[...prev.custom.filter(x=>x.id!==result.data.id),result.data]}));
+       router.refresh();setMessage(t("saved"));}
       else setMessage(t("saveFailed"));
     })} className="mt-2 min-h-12 rounded-xl bg-accent px-4 text-on-accent">{t("addRule")}</button>
    </section>
