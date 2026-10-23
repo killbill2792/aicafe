@@ -73,6 +73,35 @@ export const US_STATES = [
   ["PR", "Puerto Rico"], ["VI", "U.S. Virgin Islands"],
 ] as const;
 
+/** The Intl region-name API does not provide U.S. subdivision display names. */
+const STATE_NAMES_ES = [
+  "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware",
+  "Distrito de Columbia", "Florida", "Georgia", "Hawái", "Idaho", "Illinois", "Indiana", "Iowa",
+  "Kansas", "Kentucky", "Luisiana", "Maine", "Maryland", "Massachusetts", "Míchigan", "Minnesota",
+  "Misisipi", "Misuri", "Montana", "Nebraska", "Nevada", "Nuevo Hampshire", "Nueva Jersey", "Nuevo México",
+  "Nueva York", "Carolina del Norte", "Dakota del Norte", "Ohio", "Oklahoma", "Oregón",
+  "Pensilvania", "Rhode Island", "Carolina del Sur", "Dakota del Sur", "Tennessee", "Texas",
+  "Utah", "Vermont", "Virginia", "Washington", "Virginia Occidental", "Wisconsin", "Wyoming",
+  "Samoa Americana", "Guam", "Islas Marianas del Norte", "Puerto Rico", "Islas Vírgenes de Estados Unidos",
+];
+const STATE_NAMES_AR = [
+  "ألاباما", "ألاسكا", "أريزونا", "أركنساس", "كاليفورنيا", "كولورادو", "كونيتيكت", "ديلاوير",
+  "مقاطعة كولومبيا", "فلوريدا", "جورجيا", "هاواي", "أيداهو", "إلينوي", "إنديانا", "آيوا",
+  "كانساس", "كنتاكي", "لويزيانا", "مين", "ماريلاند", "ماساتشوستس", "ميشيغان", "مينيسوتا",
+  "مسيسيبي", "ميزوري", "مونتانا", "نبراسكا", "نيفادا", "نيوهامبشير", "نيوجيرسي", "نيومكسيكو",
+  "نيويورك", "كارولاينا الشمالية", "داكوتا الشمالية", "أوهايو", "أوكلاهوما", "أوريغون",
+  "بنسلفانيا", "رود آيلاند", "كارولاينا الجنوبية", "داكوتا الجنوبية", "تينيسي", "تكساس",
+  "يوتا", "فيرمونت", "فرجينيا", "واشنطن", "فرجينيا الغربية", "ويسكونسن", "وايومنغ",
+  "ساموا الأمريكية", "غوام", "جزر ماريانا الشمالية", "بورتوريكو", "جزر العذراء الأمريكية",
+];
+
+export function usStateOptions(locale: string): { value: string; label: string; legacyName: string }[] {
+  const names = locale.startsWith("ar") ? STATE_NAMES_AR : locale.startsWith("es") ? STATE_NAMES_ES : null;
+  return US_STATES.map(([value, legacyName], index) => ({
+    value, legacyName, label: names?.[index] ?? legacyName,
+  }));
+}
+
 /** Grouped ISO 4217 defaults for common territories and countries; unmapped countries keep USD. */
 const COUNTRY_CURRENCIES: Record<string, string> = Object.fromEntries(
   Object.entries({
