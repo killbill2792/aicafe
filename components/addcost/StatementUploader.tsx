@@ -7,6 +7,7 @@ import { reviewStatementCsv } from "@/lib/actions/statementReview";
 import { saveCategorizedLines, type ReviewLine } from "@/lib/actions/expenses";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
+import { validReturnTo } from "@/components/addcost/routeParams";
 
 type ReviewableLine = ReviewLine & { correctedCategory?: ExpenseCategoryCode };
 type BalanceCheck = { openingCents: number; closingCents: number; sumCents: number; ok: boolean };
@@ -17,7 +18,9 @@ type ReviewState =
 export default function StatementUploader({
   categoryLabels,
   labels,
+  returnTo,
 }: {
+  returnTo?: string | null;
   categoryLabels: Record<ExpenseCategoryCode, string>;
   labels: {
     uploadPrompt: string;
@@ -40,6 +43,7 @@ export default function StatementUploader({
 }) {
   const router = useRouter();
   const locale = useLocale();
+  const safeReturnTo = validReturnTo(returnTo ?? undefined) ?? "/money";
   const formatAmount = (cents: number) => new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(cents / 100);
   const [state, setState] = useState<ReviewState | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -80,7 +84,7 @@ export default function StatementUploader({
       const result = await saveCategorizedLines("statement", state.lines);
       if (result.ok) {
         setSaveStatus("saved");
-        setTimeout(() => router.push("/money"), 900);
+        setTimeout(() => router.push(safeReturnTo), 900);
       } else {
         setSaveStatus("error");
       }
