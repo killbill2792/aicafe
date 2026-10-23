@@ -89,7 +89,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   const lastChosenTimezoneRef = useRef(profile.timezone);
   const editRevisionRef = useRef(0);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const invalidClass = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
+  const invalidClass = (key: string) => fieldErrors[key] ? " !border-neg ring-2 ring-neg" : "";
   const clearFieldError = (key: string) => setFieldErrors((errors) => {
     if (!errors[key]) return errors;
     const next = { ...errors };
@@ -274,6 +274,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
               aria-invalid={Boolean(fieldErrors.timezone)} ref={(node) => { fieldRefs.current.timezone = node; }}
               value={shownTimezoneSearch} placeholder={labels.timezoneSearch}
               onFocus={() => { setTimezoneExpanded(true); setTimezoneActive(-1); }}
+              onClick={() => { if (!timezoneExpanded) { setTimezoneExpanded(true); setTimezoneActive(-1); } }
               onChange={(e) => { setTimezoneTouched(true); setTimezoneSearch(e.target.value); setTimezone(""); setTimezoneExpanded(true); setTimezoneActive(-1); clearFieldError("timezone"); }}
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
@@ -393,7 +394,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
                     </label>
                   </div>
                 )}
-                {fieldErrors["hours-" + key] && <p role="alert" className="col-span-2 text-sm font-normal text-red-700 sm:col-span-3">{fieldErrors["hours-" + key]}</p>}
+                {fieldErrors["hours-" + key] && <p role="alert" className="col-span-2 text-sm font-normal text-neg sm:col-span-3">{fieldErrors["hours-" + key]}</p>}
               </div>
             );
           })}
@@ -417,7 +418,7 @@ function Field({ label, hint, error, children, asDiv = false }: { label: string;
       <span>{label}</span>
       {children}
       {hint && <span className="text-sm font-normal text-ink-muted">{hint}</span>}
-      {error && <span role="alert" className="text-sm font-normal text-red-700">{error}</span>}
+      {error && <span role="alert" className="text-sm font-normal text-neg">{error}</span>}
     </>
   );
   const className = "flex flex-col gap-1 text-[17px] font-semibold text-ink";
