@@ -140,6 +140,7 @@ export default function BillsManager({
   const amountRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (!initialCategory || !SINGLE_SLOT_CATEGORIES.includes(initialCategory)) return;
+    setOpenKey(initialCategory);
     targetRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
     amountRef.current?.focus({ preventScroll: true });
   }, [initialCategory]);
