@@ -62,6 +62,12 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
             categoryLabels={categoryLabels}
             labels={{
               amountLabel: tBills("amountLabel"),
+              amountHint: tBills("amountHint"),
+              dueDayOptional: tBills("dueDayOptional"),
+              missing: tBills("missing"),
+              confirmRemove: tBills("confirmRemove"),
+              saveError: tBills("saveError"),
+              variableCostHint: tBills("variableCostHint"),
               dueDayLabel: tBills("dueDayLabel"),
               labelLabel: tBills("labelLabel"),
               labelPlaceholder: tBills("labelPlaceholder"),
