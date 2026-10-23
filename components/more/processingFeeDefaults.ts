@@ -117,11 +117,39 @@ export function activeRateDrafts<T>(rules: readonly T[], advanced: boolean): T[]
 }
 
 /** Only the currently submitted rules may require a fallback ticket assumption. */
+/** An average ticket is only needed for estimate days within the submitted plan's window. */
+export function untrustedDaysFromEffectiveDate(
+  untrustedFeeDates: readonly string[],
+  effectiveFrom: string,
+): number {
+  if (!isRealIsoDay(effectiveFrom)) return 0;
+  return untrustedFeeDates.filter((day) => day >= effectiveFrom).length;
+}
+
 export function requiresAverageTicket(
   activeRules: readonly { fixedFee: string }[],
   untrustedFeeDays: number,
+  processedTransactionShare: string,
 ): boolean {
-  return untrustedFeeDays > 0 && activeRules.some((rule) => Number(rule.fixedFee) > 0);
+  return untrustedFeeDays > 0 &&
+    Number(processedTransactionShare) > 0 &&
+    activeRules.some((rule) => Number(rule.fixedFee) > 0);
+}
+
+/** Mirrors validateOwnerConfirmedProcessingFeePlan: mix totals matter only when their
+ * associated share is positive (transaction mix further requires fixed fees). */
+export function requiredRateMixErrors(
+  rules: readonly { salesMix: string; transactionMix: string; fixedFee: string }[],
+  salesShare: string,
+  transactionShare: string,
+): { salesMix: boolean; transactionMix: boolean } {
+  const sum = (key: "salesMix" | "transactionMix") =>
+    rules.reduce((total, rule) => total + Math.round(Number(rule[key]) * 100), 0);
+  const hasFixedFees = rules.some((rule) => Number(rule.fixedFee) > 0);
+  return {
+    salesMix: Number(salesShare) > 0 && sum("salesMix") !== 10000,
+    transactionMix: hasFixedFees && Number(transactionShare) > 0 && sum("transactionMix") !== 10000,
+  };
 }
 
 /** A required simple-mode ticket input is visible without enabling advanced rules. */
