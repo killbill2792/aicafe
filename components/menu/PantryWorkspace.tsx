@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Plus, Search, Check, Coffee, Milk, Package, Cookie, Droplets } from "lucide-react";
+import { Plus, Search, Coffee, Milk, Package, Cookie, Droplets } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import {saveUsageEntry,addFromStarter,savePackPrice,createPantryIngredient,updatePantryIngredient} from "@/lib/actions/pantry";
 import {pantryUnitCostCents} from "@/lib/calc/pantryDisplay";
