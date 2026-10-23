@@ -3,10 +3,28 @@ import en from "../../messages/en.json";
 import es from "../../messages/es.json";
 import ar from "../../messages/ar.json";
 import { openHoursToWeeklyInput, weeklyInputToOpenHours } from "@/lib/business/openHours";
-import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, shouldFocusHours, timezoneOptions, usStateOptions, US_STATES, validateProfile } from "./cafeProfileOptions";
+import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, moveTimezoneActiveIndex, shouldFocusHours, timezoneOptionScrollTop, timezoneOptions, usStateOptions, US_STATES, validateProfile } from "./cafeProfileOptions";
 
 describe("café profile redesign", () => {
-  it("timezone picker displays plain labels but retains IANA storage values", () => {
+  it("keeps combobox keyboard focus within available options", () => {
+    expect(moveTimezoneActiveIndex(-1, 1, 40)).toBe(0);
+    expect(moveTimezoneActiveIndex(-1, -1, 40)).toBe(39);
+    expect(moveTimezoneActiveIndex(0, -1, 40)).toBe(0);
+    expect(moveTimezoneActiveIndex(39, 1, 40)).toBe(39);
+    expect(moveTimezoneActiveIndex(3, 1, 40)).toBe(4);
+    expect(moveTimezoneActiveIndex(3, -1, 40)).toBe(2);
+    expect(moveTimezoneActiveIndex(-1, 1, 0)).toBe(-1);
+    expect(moveTimezoneActiveIndex(-1, -1, 0)).toBe(-1);
+  });
+
+  it("scrolls overflowing timezone options into view without moving an already visible option", () => {
+    expect(timezoneOptionScrollTop(0, 256, 300, 48)).toBe(92);
+    expect(timezoneOptionScrollTop(200, 256, 96, 48)).toBe(96);
+    expect(timezoneOptionScrollTop(96, 256, 144, 48)).toBe(96);
+    expect(timezoneOptionScrollTop(0, 256, 0, 48)).toBe(0);
+  });
+
+  it("timezone picker displays plain labels but retains IANA storage values () => {
     const options = timezoneOptions("en", "America/Los_Angeles");
     const losAngeles = options.find((item) => item.value === "America/Los_Angeles");
     expect(losAngeles).toBeDefined();
