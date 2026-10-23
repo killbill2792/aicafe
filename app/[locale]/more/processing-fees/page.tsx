@@ -91,6 +91,7 @@ export default async function ProcessingFeesPage() {
           uploadFeeReport: t("uploadFeeReport"),
           info: t("info"),
           noNewCoverage: t("noNewCoverage"),
+          missingButton: t("missingButton"),
         }}
       />
     </PageShell>
