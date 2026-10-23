@@ -17,6 +17,8 @@ import { chatExperienceFlags, type ChatExperienceFlags } from "@/lib/ai/agent/fl
 import { styleReport } from "@/lib/ai/agent/style";
 import type { AgentToolContext } from "@/lib/ai/agent/tools";
 import { isJobStepAgent, type AgentJob } from "@/lib/ai/agent/jobState";
+import { scheduleTurnAudit } from "@/lib/admin/audit.server";
+import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,6 +80,8 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
   const { scope, threadId: id, owner, emit, flags, job, jobs } = p;
   let logged = false;
   const startedAt = Date.now();
+  const auditSteps: AgentAuditStep[] = [];
+  let completedTurn: AgentTurn | undefined;
   let steps: Promise<void> = Promise.resolve();
   try {
     const [tools, identity, page, memory] = await Promise.all([
@@ -120,6 +124,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
           newPriceCents:effect.newPriceCents};
       }} };
     const result = await runAgentTurn({ ownerText: p.ownerText, history, context,
+       onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       previousEvidence,
       onTool:(name,agentId)=>{
         emit("tool",{name,agentId});
@@ -134,6 +139,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
         takeFollowUps: (max: number): Promise<OwnerFollowUp[]> => jobs.takeAgentJobInbox(job.id, max),
         onFollowUp: (count: number) => emit("followup", { count }),
       } : {}) });
+    completedTurn = result;
     let reply: Awaited<ReturnType<typeof persistAgentReply>>;
     try {
       if (!result.text.trim()) throw new AgentEmptyReplyError();
@@ -152,6 +158,11 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       logged=true;
     }
     await steps;
+    scheduleTurnAudit({ scope, owner, startedAt, endedAt: Date.now(), replyId: reply.id,
+      answer: result.text, turn: result, steps: auditSteps,
+      status: result.endReason === "timeout" ? "timeout" :
+        result.endReason === "provider_error" || result.endReason === "tool_errors" ? "failed" : "ok",
+      ...(result.endReason === "complete" ? {} : { error: result.endReason }) });
     emit("done", { reply, status: result.status, endReason: result.endReason,
       unverified: result.unverified, usage: result.usage,
       ...(job ? { jobId: job.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] } : {}) });
@@ -161,6 +172,9 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       modelCalls:0,toolCalls:0,tools:[],latencyMs:Date.now()-startedAt,unverifiedCount:0});
     const code = errorCode(error);
     console.error("agent_sse_error",{code});
+    scheduleTurnAudit({ scope, owner, startedAt, endedAt: Date.now(), turn: completedTurn,
+      answer: completedTurn?.text, steps: auditSteps,
+      status: completedTurn?.endReason === "timeout" ? "timeout" : "failed", error: code });
     emit("error", { code, ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),
       ...(job ? { jobId: job.id } : {}) });
     return { errorCode: code };

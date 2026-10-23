@@ -9,6 +9,8 @@ export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
 type Event = { type: string; [key: string]: unknown };
 export type AgentProvider = (params: Record<string, unknown>, signal: AbortSignal) => AsyncIterable<Event>;
+export type AgentAuditStep = { kind: "model_call" | "tool_call" | "approval_card" | "memory"; toolName?: string;
+  inputSummary?: string; outputSummary?: string; durationMs: number; error?: string };
 export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType<typeof statusFromResults>;
   unverified: ReturnType<typeof checkNumbers>; results: AgentToolResult[]; evidence?: NumericEvidence[]; tools?:string[]; agentIds?:string[];
   usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number };
@@ -68,6 +70,8 @@ export async function runAgentTurn(args: {
    * get their own continuation turn). */
   takeFollowUps?: (max: number) => Promise<OwnerFollowUp[]>;
   onFollowUp?: (count: number) => void;
+  /** Redacted, synchronous event collector. Never persists while the loop is running. */
+  onAuditStep?: (step: AgentAuditStep) => void;
 }): Promise<AgentTurn> {
   const now = args.now ?? Date.now, started = now(), deadline = started + 60000;
   const workDeadline = deadline - 12000; // reserve time for the final no-tool answer
@@ -109,6 +113,7 @@ export async function runAgentTurn(args: {
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0 };
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
   const model = configuredSupervisorModel();
+  const audit = (step: AgentAuditStep) => { try { args.onAuditStep?.(step); } catch { /* audit is non-critical */ } };
   const request = (final: boolean) => ({
     model, instructions: agentInstructions(Boolean(args.style)),
     tools: [...agentToolDefinitions, ...(args.extraTools ?? [])],
@@ -118,6 +123,8 @@ export async function runAgentTurn(args: {
   const call = async (final: boolean) => {
     const calls: ToolCall[] = [], output: unknown[] = [];
     const callTextStart = text.length;
+    const modelStart = now();
+    let modelError: string | undefined;
     let completed = false;
     const remaining = (final ? deadline : workDeadline) - now();
     if (remaining <= 0) throw new Error("deadline");
@@ -153,13 +160,18 @@ export async function runAgentTurn(args: {
         for (const message of absorbed) deliveredIds.add(message.id);
       return calls;
     } catch (error) {
+      modelError = "model_call_failed";
       const discardChars = text.length - callTextStart;
       if (discardChars > 0) {
         text = text.slice(0, callTextStart);
         args.onReset?.(discardChars);
       }
       throw error;
-    } finally { clearTimeout(timeout); }
+    } finally {
+      clearTimeout(timeout);
+      audit({ kind: "model_call", inputSummary: final ? "Final response; no tools" : "Model request; prompts withheld",
+        outputSummary: completed ? "Completed" : "Incomplete", durationMs: Math.max(0, now() - modelStart), error: modelError });
+    }
   };
   try {
     for (let round = 0; round < 5; round++) {
@@ -193,6 +205,8 @@ export async function runAgentTurn(args: {
         startedTools.push(tool.name);
         args.onTool?.(tool.name,agentForTool(tool.name));
         let result: AgentToolResult;
+        const toolStart = now();
+        let toolError: string | undefined;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
           result = await Promise.race([executeAgentTool(tool.name, JSON.parse(tool.arguments), args.context),
@@ -209,7 +223,22 @@ export async function runAgentTurn(args: {
           } : error instanceof SyntaxError ? { error: "invalid_json" }
             : { error: now() >= workDeadline ? "deadline_exceeded" : "tool_unavailable" };
           result = { source: tool.name, period: null, missing: [String(detail.error)], ...detail };
+          toolError = String(detail.error);
         } finally { clearTimeout(toolTimer); }
+        let argumentKeys: string[] = [];
+        try {
+          const parsed: unknown = JSON.parse(tool.arguments);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+            argumentKeys = Object.keys(parsed).filter(key => /^[a-zA-Z_]{1,40}$/.test(key)).slice(0, 12);
+        } catch { /* invalid JSON already handled above */ }
+        audit({ kind: "tool_call", toolName: tool.name,
+          inputSummary: "Argument fields: " + (argumentKeys.join(", ") || "none"),
+          outputSummary: toolError ? "Tool failed" : result.missing.length ? "Missing input(s)" : "Completed",
+          durationMs: Math.max(0, now() - toolStart), error: toolError });
+        if (result.draft === true && result.saved === false) {
+          audit({ kind: result.source === "memory_proposal" ? "memory" : "approval_card",
+            toolName: tool.name, inputSummary: "Draft request", outputSummary: "Awaiting owner approval", durationMs: 0 });
+        }
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
         if (now() >= workDeadline || failures >= 2) {
@@ -242,6 +271,8 @@ export async function runAgentTurn(args: {
           try {
             usage.modelCalls++;
             let completed = false;
+            const finalStart = now();
+            let finalError: string | undefined;
             for await (const event of provider(request(true), finalController.signal)) {
               if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
               if (now() >= deadline) throw new Error("deadline");
@@ -259,13 +290,18 @@ export async function runAgentTurn(args: {
             if (text.length > finalTextStart)
               for (const message of absorbed) deliveredIds.add(message.id);
           } catch (error) {
+            finalError = "model_call_failed";
             const discardChars = text.length - finalTextStart;
             if (discardChars > 0) {
               text = text.slice(0, finalTextStart);
               args.onReset?.(discardChars);
             }
             throw error;
-          } finally { clearTimeout(timeout); }
+          } finally {
+            clearTimeout(timeout);
+            audit({ kind: "model_call", inputSummary: "Final response; no tools",
+              outputSummary: completed ? "Completed" : "Incomplete", durationMs: Math.max(0, now() - finalStart), error: finalError });
+          }
         }
       } catch { endReason = now() >= deadline ? "timeout" : "provider_error"; }
     }
