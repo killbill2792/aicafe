@@ -2359,6 +2359,30 @@
     "editQuantityForSize": "Editar {ingredient} en {size}",
     "invalidQuantity": "Introduce una cantidad mayor que cero y una unidad válida."
   },
+  "SupervisorProposalCard": {
+    "title": "Propuesta de cambio de precio",
+    "proposedBy": "Propuesto por Alex",
+    "editedByYou": "Editado por ti",
+    "approve": "Aprobar",
+    "edit": "Editar",
+    "cancel": "Cancelar",
+    "save": "Guardar propuesta",
+    "newPrice": "Nuevo precio (USD)",
+    "loading": "Cargando propuesta…",
+    "error": "No se pudo actualizar esta propuesta.",
+    "stale": "El precio actual cambió. Pídele a Alex otra propuesta.",
+    "failed": "No se aplicó. No se cambió nada. Pídele a Alex otra propuesta.",
+    "states": {
+      "pending": "Pendiente de aprobación",
+      "applying": "Aplicando…",
+      "applied": "Aplicado",
+      "cancelled": "Cancelado",
+      "edited": "Editado",
+      "stale": "Precio cambiado",
+      "failed": "No se aplicó",
+      "conflict": "Actualizado en otra sesión"
+    }
+  },
   "StaffSchedule": {
     "schedule": "Horario",
     "team": "Equipo",

@@ -5,7 +5,7 @@ import type {AgentId,OperatingTaskKind,OperatingTask} from "@/lib/operating/task
 export type LoopLocale="en"|"es"|"ar";
 export type OwnerLoopScope={businessId:string;ownerUserId:string;threadId:string;locale:LoopLocale};
 export type ProposalStatus="draft"|"approved"|"executing"|"committed"|"manual_pending"|
-  "manual_confirmed"|"monitored"|"rejected"|"expired";
+  "manual_confirmed"|"monitored"|"rejected"|"expired"|"stale";
 export type LoopProposal={
   id:string;businessId:string;ownerUserId:string;threadId:string;
   capabilityId:string;capabilityVersion:number;canonicalEffectPayload:unknown;

@@ -66,6 +66,36 @@ export class SupabaseLoopRepository implements LoopRepository{
     if(error||!data)return failed(error,"Proposal state conflict");
     return decode(data as Row);
   }
+  /** These two menu-only operations extend the existing ledger rather than
+   * creating a second proposal store. Both SQL functions are service-only and
+   * lock the scoped, revisioned proposal row. */
+  async markStalePrice(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
+    const db=createAdminSupabaseClient();
+    const {data,error}=await db.rpc("supervisor_mark_stale_menu_price",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+      p_thread_id:scope.threadId,p_proposal_id:uuid.parse(id),p_revision:revision,
+    });
+    if(error||!data)return failed(error,"Proposal stale transition failed");
+    return decode(data as Row);
+  }
+  async replacePriceDraft(scope:OwnerLoopScope,id:string,revision:number,
+    requestKey:string,newEffect:Record<string,unknown>,newEffectHash:string):
+    Promise<{replaced:LoopProposal;proposal:LoopProposal}>{
+    const db=createAdminSupabaseClient();
+    const {data,error}=await db.rpc("supervisor_replace_menu_price_draft",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+      p_thread_id:scope.threadId,p_proposal_id:uuid.parse(id),p_revision:revision,
+      p_request_key:uuid.parse(requestKey),p_effect:newEffect,p_effect_hash:newEffectHash,
+    });
+    if(error||!data)return failed(error,"Proposal edit transaction failed");
+    const rows=data as {replaced:Row;proposal:Row};
+    const replaced=decode(rows.replaced),proposal=decode(rows.proposal);
+    if(replaced.businessId!==scope.businessId||replaced.ownerUserId!==scope.ownerUserId||
+      replaced.threadId!==scope.threadId||proposal.businessId!==scope.businessId||
+      proposal.ownerUserId!==scope.ownerUserId||proposal.threadId!==scope.threadId)
+      throw new Error("Proposal edit returned outside scope");
+    return {replaced,proposal};
+  }
   async addSample(scope:OwnerLoopScope,id:string,sample:LoopSample):Promise<void>{
     const db=createAdminSupabaseClient();
     const {error}=await db.from("supervisor_monitor_samples").upsert({

@@ -2359,6 +2359,30 @@
     "editQuantityForSize": "Edit {ingredient} in {size}",
     "invalidQuantity": "Enter an amount greater than zero in a valid unit."
   },
+  "SupervisorProposalCard": {
+    "title": "Price change proposal",
+    "proposedBy": "Proposed by Alex",
+    "editedByYou": "Edited by you",
+    "approve": "Approve",
+    "edit": "Edit",
+    "cancel": "Cancel",
+    "save": "Save proposal",
+    "newPrice": "New price (USD)",
+    "loading": "Loading proposal…",
+    "error": "Could not update this proposal.",
+    "stale": "The current menu price has changed. Ask Alex to propose again.",
+    "failed": "Didn't apply. Nothing was changed. Ask Alex to propose again.",
+    "states": {
+      "pending": "Pending approval",
+      "applying": "Applying…",
+      "applied": "Applied",
+      "cancelled": "Cancelled",
+      "edited": "Edited",
+      "stale": "Price changed",
+      "failed": "Didn't apply",
+      "conflict": "Updated elsewhere"
+    }
+  },
   "StaffSchedule": {
     "schedule": "Schedule",
     "team": "Team",

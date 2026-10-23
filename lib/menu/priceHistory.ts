@@ -9,17 +9,28 @@ export async function setCanonicalMenuPrice(
     businessId: string;
     menuItemId: string;
     priceCents: number;
+    /** Approval-only: require this baseline under the same lock as Menu history. */
+    expectedOldPriceCents?: number;
     sourceType: MenuPriceSource;
     sourceProvider?: string | null;
   },
 ): Promise<boolean> {
-  const { data, error } = await supabase.rpc("set_menu_item_price_with_history", {
-    p_business_id: input.businessId,
-    p_menu_item_id: input.menuItemId,
-    p_new_price_cents: input.priceCents,
-    p_source_type: input.sourceType,
-    p_source_provider: input.sourceProvider ?? null,
-  });
+  // All callers share the canonical Menu price writer. Approval adds a
+  // database-level compare-and-swap, never a fallible SELECT-then-write.
+  const compareAndSwap = input.expectedOldPriceCents !== undefined;
+  const { data, error } = await supabase.rpc(
+    compareAndSwap
+      ? "set_menu_item_price_with_history_if_current"
+      : "set_menu_item_price_with_history",
+    {
+      p_business_id: input.businessId,
+      p_menu_item_id: input.menuItemId,
+      ...(compareAndSwap ? { p_expected_old_price_cents: input.expectedOldPriceCents } : {}),
+      p_new_price_cents: input.priceCents,
+      p_source_type: input.sourceType,
+      p_source_provider: input.sourceProvider ?? null,
+    },
+  );
   if (error) throw error;
   return data === true;
 }
