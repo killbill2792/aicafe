@@ -54,3 +54,9 @@ export function roleWageAverages(people: {role:string|null;wageCents:number|null
   }
   return new Map([...grouped].map(([key,v])=>[key,Math.round(v.sum/v.count)]));
 }
+
+/** Business-wide last-resort average is explicitly estimated, never canonical pay. */
+export function businessWageEstimate(people:{wageCents:number|null}[]):number|null{
+ const known=people.map(person=>person.wageCents).filter((n):n is number=>n!==null&&n>0);
+ return known.length?Math.round(known.reduce((sum,n)=>sum+n,0)/known.length):null;
+}

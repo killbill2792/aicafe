@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {shiftCost,aggregateCosts,paidMinutes} from "./shiftCost";
+import {shiftCost,aggregateCosts,paidMinutes,businessWageEstimate} from "./shiftCost";
 import {coverageGaps} from "./coverageGaps";
 import {checkScheduledWeeklyBounds,checkTimecardRules} from "./ruleChecks";
 const rules={meal_break_enabled:true,meal_break_minutes:30,meal_break_after_minutes:300,
@@ -27,6 +27,8 @@ describe("staff schedule truth",()=>{
    expect(shiftCost(input,1850)).toMatchObject({costCents:10175,estimated:true,unknown:false});
    expect(shiftCost(input)).toMatchObject({costCents:null,estimated:true,unknown:true});
    expect(paidMinutes(input)).toBe(330);
+   expect(businessWageEstimate([{wageCents:2000},{wageCents:null},{wageCents:2400}])).toBe(2200);
+   expect(shiftCost(input,null,2200)).toMatchObject({costCents:12100,estimated:true,unknown:false});
  });
  it("computes sub-day coverage gaps and doesn't fabricate hours for unknown days",()=>{
    const open={wed:[["07:00","16:00"]],sun:[["07:00","15:00"]]} as const;

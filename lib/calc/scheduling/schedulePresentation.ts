@@ -1,7 +1,7 @@
 import {fromZonedTime} from "date-fns-tz";
 import type {OpenHours} from "@/lib/business/openHours";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
-import {minuteOfDay,shiftCost,roleWageAverages,aggregateCosts,type CostShift,type CostLine} from "./shiftCost";
+import {minuteOfDay,shiftCost,roleWageAverages,businessWageEstimate,aggregateCosts,type CostShift,type CostLine} from "./shiftCost";
 import {checkShiftLength,checkScheduledWeeklyBounds,type RuleSettings} from "./ruleChecks";
 
 export type PersonForSchedule={id:string;name:string;role:string|null;wageCents:number|null;
@@ -98,7 +98,7 @@ export function previewShift(input:{employeeId:string;date:string;start:string;e
  const overnight=input.end<input.start;
  let next:CostLine;
  try {next=shiftCost({employeeId:input.employeeId,date:input.date,start:input.start,end:input.end,
-   breakMinutes:input.breakMinutes,overnight,wageCents:person.wageCents,role:person.role},wage);}
+   breakMinutes:input.breakMinutes,overnight,wageCents:person.wageCents,role:person.role},wage,businessWageEstimate(people));}
  catch{return null;}
  const before=aggregateCosts(shifts),without=aggregateCosts(originals);
  const projectedCost=without.knownCostCents+(next.costCents??0);

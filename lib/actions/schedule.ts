@@ -9,7 +9,7 @@ import {DEFAULT_TEAM_RULES} from "@/lib/calc/scheduling/teamRuleDefaults";
 import {DEMO_BUSINESS_ID} from "@/lib/constants";
 import {getTeamRules} from "./teamRules";
 import {coverageGaps} from "@/lib/calc/scheduling/coverageGaps";
-import {shiftCost,roleWageAverages,aggregateCosts,elapsedMinutes,type CostShift} from "@/lib/calc/scheduling/shiftCost";
+import {shiftCost,roleWageAverages,businessWageEstimate,aggregateCosts,elapsedMinutes,type CostShift} from "@/lib/calc/scheduling/shiftCost";
 const iso=z.iso.date(),hhmm=z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 const weekInput=z.strictObject({weekStart:iso});
 
@@ -41,13 +41,13 @@ export async function getWeekSchedule(raw:unknown){
    availableDays:p.available_days as number[]|null,colorIndex:p.color_index as number|null,
    phone:p.phone_e164 as string|null
  }));
- const averages=roleWageAverages(team);
+ const averages=roleWageAverages(team),defaultWage=businessWageEstimate(team);
  const mapped=(shifts.data??[]).map(s=>{
    const person=team.find(p=>p.id===s.employee_id);
    const input:CostShift={employeeId:s.employee_id,date:s.local_date,start:String(s.start_local).slice(0,5),
       end:String(s.end_local).slice(0,5),overnight:s.overnight,
       breakMinutes:s.break_minutes,wageCents:person?.wageCents??null,role:person?.role};
-   return {...shiftCost(input,person?.role?averages.get(person.role.toLowerCase())??null:null),
+   return {...shiftCost(input,person?.role?averages.get(person.role.toLowerCase())??null:null,defaultWage),
      id:s.id as string,status:s.status as string,source:s.source as string,breakSource:s.break_source as string,
      employeeName:person?.name??"Unknown"};
  });
@@ -74,14 +74,14 @@ export async function getShiftCost(raw:unknown){
  const schedule=await getWeekSchedule({weekStart:ws});if(!schedule.ok)return schedule;
  const person=schedule.data.team.find(person=>person.id===p.data.employeeId);
  if(!person)return {ok:false as const,error:"unknown_employee"};
- const roleAverage=roleWageAverages(schedule.data.team);
+ const roleAverage=roleWageAverages(schedule.data.team),defaultWage=businessWageEstimate(schedule.data.team);
  const breakMinutes=p.data.breakMinutes??(elapsedMinutes(p.data.start,p.data.end,p.data.end<p.data.start)>
    schedule.data.rules.meal_break_after_minutes&&schedule.data.rules.meal_break_enabled?
    schedule.data.rules.meal_break_minutes:0);
  return {ok:true as const,data:shiftCost({
    employeeId:p.data.employeeId,date:p.data.date,start:p.data.start,end:p.data.end,
    overnight:p.data.end<p.data.start,breakMinutes,wageCents:person.wageCents,role:person.role
- },person.role?roleAverage.get(person.role.toLowerCase())??null:null)};
+ },person.role?roleAverage.get(person.role.toLowerCase())??null:null,defaultWage)};
 }
 export async function upsertShift(raw:unknown){
  const p=shiftInput.safeParse(raw);if(!p.success)return {ok:false as const,error:"invalid_input"};
