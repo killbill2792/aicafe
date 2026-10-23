@@ -3,6 +3,7 @@ import {z} from "zod";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 import {parseAvailabilityText} from "@/lib/calc/scheduling/parseAvailabilityText";
+import {assertStaffShiftPlan} from "@/lib/calc/scheduling/staffProposalValidation";
 import {staffProposalInputs,type StaffProposalName} from "@/lib/ai/agent/tools/staffProposals";
 import {registerLoopCapability,type OwnerLoopScope} from "./engine";
 
@@ -72,12 +73,10 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    ensure(isoDay(d.week_start)===1&&d.week_start>=localDate,"Choose a future Monday");
    const last=add(d.week_start,6),old=shifts.filter(x=>x.local_date>=d.week_start&&x.local_date<=last);
    ensure(old.every(x=>x.status==="draft"),"Sent shifts cannot be replaced");
-   const keys=new Set<string>();
+   assertStaffShiftPlan(d.shifts);
    for(const s of d.shifts){
     active(s.employee_id);ensure(s.date>=d.week_start&&s.date<=last,"Shift must fall in the selected week");
-    ensure(s.start!==s.end&&s.break_minutes<(s.end>s.start?(Date.parse("2000-01-01T"+s.end+"Z")-Date.parse("2000-01-01T"+s.start+"Z"))/60000:1440),"Invalid shift or break");
-    const k=s.employee_id+"|"+s.date+"|"+s.start;
-    ensure(!keys.has(k),"Duplicate staff shift");keys.add(k);
+    // Overlaps, duplicates and breaks are checked in the pure planner above.
    }
    item("Week "+d.week_start,old.map(s=>shown(s.employee_id)+" "+fmtShift(s)).join("\n")||"No draft shifts",
      d.shifts.map(s=>shown(s.employee_id)+" "+when(s)).join("\n")||"No shifts");
@@ -91,7 +90,9 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    ensure(!old||(old.employee_id===person.id&&old.local_date===d.shift.date),"Cannot change a shift's identity");
    ensure(!d.remove||old,"A new shift cannot be removed");
    ensure(d.shift.date>=localDate,"Past shifts cannot be changed");
-   ensure(d.shift.start!==d.shift.end,"Shift must have a duration");
+   assertStaffShiftPlan([d.shift,...shifts.filter(x=>x.id!==d.shift_id&&x.employee_id===d.shift.employee_id).map(x=>({
+     employee_id:x.employee_id,date:x.local_date,start:x.start_local.slice(0,5),
+     end:x.end_local.slice(0,5),break_minutes:x.break_minutes}))]);
    item(person.display_name,old?fmtShift(old)+" ("+old.break_minutes+"m break)":"No shift",
      d.remove?"Removed":when(d.shift)+" ("+d.shift.break_minutes+"m break)");
    payload={shift_id:d.shift_id,shift:d.shift,remove:d.remove};break;
