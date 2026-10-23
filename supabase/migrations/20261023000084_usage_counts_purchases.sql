@@ -70,7 +70,7 @@ begin
    ) into v_covered;
  select coalesce(jsonb_agg(jsonb_build_object(
   'id',l.external_time_entry_id::text,
-  'clockIn',l.clock_in,'clockOut',l.clock_out,
+  'clockIn',l.clock_in,'clockOut',l.clock_out,\n  'locationId',l.location_id::text,
   'staff',coalesce(e.display_name,'Unlinked Toast employee'),
   'staffId',l.external_employee_id::text
  ) order by l.clock_in,l.external_time_entry_id),'[]'::jsonb) into v_staff
