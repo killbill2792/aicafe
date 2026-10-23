@@ -13,6 +13,11 @@ describe("deterministic question topics",()=>{
     ["¿Cuál es el punto de equilibrio?", "break_even"],
     ["¿Qué productos son más vendidos?", "best_sellers"],
     ["كم تكلفة العمالة؟", "labor"],
+    ["ما هي المنتجات الأكثر مبيعا؟", "best_sellers"],
+    ["ما هي الإيرادات اليوم؟", "sales"],
+    ["ما هي اَلْإِيْرَادَات اليوم؟", "sales"],
+    ["ما هي أَفْضَل مَبِيعَات اليوم؟", "best_sellers"],
+    ["أين نقطة التَّعادُل؟", "break_even"],
     ["Hi!", "other"],
   ])("classifies %s as %s",(text,topic)=>expect(classifyOwnerQuestion(text)).toBe(topic));
   it("does not invent topics and keeps candidate flags explicit",()=>{
