@@ -32,8 +32,8 @@ export async function reviewVoiceExpense(transcript: string): Promise<VoiceRevie
   try {
     const expense = await parseVoiceExpense(transcript, today);
     return { ok: true, expense };
-  } catch (err) {
-    console.error("[reviewVoiceExpense] failed", err);
+  } catch {
+    console.error("voice_review_failed");
     return { ok: false, error: "Couldn't understand that. Try again or type it in instead." };
   }
 }

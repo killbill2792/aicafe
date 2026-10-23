@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { parseStatementCsv } from "@/lib/expenses/parseStatementCsv";
+import {getCafeAccess} from "@/lib/access/access.server";
 import { categorizeLines } from "@/lib/expenses/categorize";
 import type { ReviewLine } from "./expenses";
 
@@ -22,6 +23,7 @@ export async function reviewStatementCsv(csvText: string): Promise<StatementRevi
   if (!user) return { ok: false, error: "Sign in first." };
   const businessId = await getActiveBusinessId(user.id);
 
+  const access=await getCafeAccess(businessId);
   const parsed = parseStatementCsv(csvText);
   if (parsed.lines.length === 0) return { ok: false, error: "No transaction lines were found in that file." };
 
@@ -32,6 +34,7 @@ export async function reviewStatementCsv(csvText: string): Promise<StatementRevi
     supabase,
     businessId,
     moneyOutLines.map((l) => ({ i: l.i, date: l.date, description: l.description, amount: l.amountCents / 100 })),
+    access.active,
   );
 
   const byIndex = new Map(moneyOutLines.map((l) => [l.i, l]));

@@ -29,8 +29,8 @@ export async function reviewReceiptPhoto(imageDataUrl: string): Promise<ReceiptR
   try {
     const receipt = await readReceipt(imageDataUrl);
     return { ok: true, receipt, suggestedCategory: coerceCategory(receipt.vendor, receipt.suggested_category) };
-  } catch (err) {
-    console.error("[reviewReceiptPhoto] failed", err);
+  } catch {
+    console.error("receipt_review_failed");
     return { ok: false, error: "Couldn't read that receipt. Try again or type it in instead." };
   }
 }

@@ -54,8 +54,8 @@ export async function categorizeLines(
         const original = needsAi.find((l) => l.i === line.i);
         results.push({ i: line.i, category: line.category, vendor: line.vendor || original?.description || "", reason: line.reason, confidence: line.confidence, source: "ai" });
       }
-    } catch (err) {
-      console.error("[categorizeLines] AI categorization failed", err);
+    } catch {
+      console.error("statement_categorization_failed");
       for (const line of needsAi) {
         results.push({ i: line.i, category: "other", vendor: line.description, reason: "Could not categorize automatically", confidence: 0, source: "uncategorized" });
       }

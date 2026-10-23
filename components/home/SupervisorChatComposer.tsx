@@ -170,7 +170,7 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
       setRating(value);
     }catch{setError(true);}finally{setSaving(false);}
   }
-  return <div className="ps-1 text-sm text-ink-muted">
+  return <div className="ps-1 text-[17px] leading-relaxed text-ink-muted">
     <div className="flex items-center gap-2">
       <button type="button" onClick={()=>void send("up")} disabled={saving} aria-label={copy.feedbackUp}
         aria-pressed={rating==="up"} className="min-h-12 min-w-12 rounded-lg border border-line px-3">{<ThumbsUp size={18} aria-hidden/>}</button>
@@ -179,7 +179,7 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
       {rating&&<span role="status">{copy.feedbackSaved}</span>}
     </div>
     {rating==="down"&&<textarea aria-label={copy.feedbackDown} value={comment} onChange={e=>setComment(e.target.value)}
-      maxLength={1000} rows={2} className="mt-2 w-full rounded-lg border border-line p-2"/>}
+      maxLength={1000} rows={2} className="mt-2 min-h-12 w-full rounded-lg border border-line p-3 text-[17px]"/>}
     {rating==="down"&&<button className="min-h-12 underline" onClick={()=>void send("down")} disabled={saving} type="button">{copy.feedbackSaved}</button>}
     {error&&<p role="alert">{copy.feedbackError}</p>}
   </div>;
