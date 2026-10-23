@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useLocale } from "next-intl";
-import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
@@ -208,13 +208,12 @@ export default function ProcessingFeeEstimateForm({
   }
 
   function save(coverMissing = false) {
-    const errors: Record<string,string> = {};
+    const errors = validateRequiredFeeFields({
+      processorLabel, effectiveFrom, cardSalesShare: processedSalesShare,
+      percentageRate: firstRule.percentageRate, fixedFee: firstRule.fixedFee,
+      advanced, coverMissing,
+    }, labels);
     const invalid = (key: string, message: string) => { errors[key] = message; };
-    if (!processorLabel.trim()) invalid("processor", labels.requiredProcessor);
-    if (!coverMissing && (!effectiveFrom || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom))) invalid("effectiveFrom", labels.requiredEffectiveDate);
-    if (!processedSalesShare.trim() || bpsFromPercent(processedSalesShare) === null) invalid("cardShare", labels.requiredCardShare);
-    if (!advanced && (!firstRule.percentageRate.trim() || bpsFromPercent(firstRule.percentageRate) === null || Number(firstRule.percentageRate) > 50)) invalid("percentageRate", labels.requiredRate);
-    if (!advanced && firstRule.fixedFee.trim() && (Number(firstRule.fixedFee) < 0 || Number(firstRule.fixedFee) > 50 || !Number.isFinite(Number(firstRule.fixedFee)))) invalid("fixedFee", labels.requiredRule);
     if (advanced) {
       if (!processedTransactionShare.trim() || bpsFromPercent(processedTransactionShare) === null) invalid("transactionShare", labels.requiredRule);
       for (const rule of rules) {
@@ -399,7 +398,7 @@ export default function ProcessingFeeEstimateForm({
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
           <FieldTitle help={labels.processorHelp} helpLabel={`${labels.processor} ${labels.info}`}>{labels.processor}</FieldTitle>
-          <select value={processorChoice} aria-invalid={Boolean(fieldErrors.processor)} ref={(node) => { inputRefs.current.processor = node; }} onChange={(event) => { setOtherSelected(event.target.value === "Other"); setProcessorLabel(event.target.value === "Other" ? "" : event.target.value); }} className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor")}>
+          <select value={processorChoice} aria-invalid={isFeeFieldInvalid(fieldErrors, "processor")} ref={(node) => { inputRefs.current.processor = node; }} onChange={(event) => { setOtherSelected(event.target.value === "Other"); setProcessorLabel(event.target.value === "Other" ? "" : event.target.value); }} className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor")}>
             <option value="">{labels.selectProcessor}</option><option value="Toast">Toast</option><option value="Square">Square</option><option value="Clover">Clover</option><option value="Other">{labels.otherProcessor}</option>
           </select>
           {processorChoice === "Other" && <input
@@ -407,7 +406,7 @@ export default function ProcessingFeeEstimateForm({
             onChange={(event) => setProcessorLabel(event.target.value)}
             maxLength={80}
             placeholder={labels.otherProcessor}
-            aria-invalid={Boolean(fieldErrors.processor)}
+            aria-invalid={isFeeFieldInvalid(fieldErrors, "processor")}
             className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor") }
           />}
           {errorText("processor")}
@@ -417,7 +416,7 @@ export default function ProcessingFeeEstimateForm({
           <FieldTitle help={labels.effectiveFromHelp} helpLabel={`${labels.effectiveFrom} ${labels.info}`}>{labels.effectiveFrom}</FieldTitle>
           <input
             type="date"
-            aria-invalid={Boolean(fieldErrors.effectiveFrom)}
+            aria-invalid={isFeeFieldInvalid(fieldErrors, "effectiveFrom")}
             ref={(node) => { inputRefs.current.effectiveFrom = node; }}
             value={effectiveFrom}
             onChange={(event) => setEffectiveFrom(event.target.value)}
@@ -434,7 +433,7 @@ export default function ProcessingFeeEstimateForm({
             <input
               inputMode="decimal"
               value={processedSalesShare}
-              aria-invalid={Boolean(fieldErrors.cardShare)}
+              aria-invalid={isFeeFieldInvalid(fieldErrors, "cardShare")}
               ref={(node) => { inputRefs.current.cardShare = node; }}
               onChange={(event) => setProcessedSalesShare(event.target.value)}
               className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("cardShare")}
@@ -455,7 +454,7 @@ export default function ProcessingFeeEstimateForm({
                 <input
                   inputMode="decimal"
                   value={firstRule.percentageRate}
-                  aria-invalid={Boolean(fieldErrors.percentageRate)}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, "percentageRate")}
                   ref={(node) => { inputRefs.current.percentageRate = node; }}
                   onChange={(event) => updateRule(firstRule.id, "percentageRate", event.target.value)}
                   className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base" + borderError("percentageRate")}
@@ -472,7 +471,7 @@ export default function ProcessingFeeEstimateForm({
                 <input
                   inputMode="decimal"
                   value={firstRule.fixedFee}
-                  aria-invalid={Boolean(fieldErrors.fixedFee)}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, "fixedFee")}
                   ref={(node) => { inputRefs.current.fixedFee = node; }}
                   onChange={(event) => updateRule(firstRule.id, "fixedFee", event.target.value)}
                   className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base" + borderError("fixedFee")}
@@ -498,7 +497,7 @@ export default function ProcessingFeeEstimateForm({
                 inputMode="decimal"
                 value={averageTicket}
                 ref={(node) => { inputRefs.current.averageTicket = node; }}
-                aria-invalid={Boolean(fieldErrors.averageTicket)}
+                aria-invalid={isFeeFieldInvalid(fieldErrors, "averageTicket")}
                 onChange={(event) => setAverageTicket(event.target.value)}
                 placeholder="12.00"
                 className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("averageTicket")}
@@ -536,7 +535,7 @@ export default function ProcessingFeeEstimateForm({
               <input
                 inputMode="decimal"
                 ref={(node) => { inputRefs.current.transactionShare = node; }}
-                aria-invalid={Boolean(fieldErrors.transactionShare)}
+                aria-invalid={isFeeFieldInvalid(fieldErrors, "transactionShare")}
                 value={processedTransactionShare}
                 onChange={(event) => setProcessedTransactionShare(event.target.value)}
                 className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("transactionShare")}
@@ -555,7 +554,7 @@ export default function ProcessingFeeEstimateForm({
                 inputMode="decimal"
                 value={averageTicket}
                 ref={(node) => { inputRefs.current.averageTicket = node; }}
-                aria-invalid={Boolean(fieldErrors.averageTicket)}
+                aria-invalid={isFeeFieldInvalid(fieldErrors, "averageTicket")}
                 onChange={(event) => setAverageTicket(event.target.value)}
                 placeholder="12.00"
                 className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("averageTicket")}
@@ -580,7 +579,7 @@ export default function ProcessingFeeEstimateForm({
                 {labels.ruleLabel}
                 <input
                   value={rule.label}
-                  aria-invalid={Boolean(fieldErrors[rule.id + "-label"])}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, rule.id + "-label")}
                   ref={(node) => { inputRefs.current[rule.id + "-label"] = node; }}
                   onChange={(event) => updateRule(rule.id, "label", event.target.value)}
                   placeholder={labels.ruleLabelPlaceholder}
@@ -598,7 +597,7 @@ export default function ProcessingFeeEstimateForm({
                     <input
                       inputMode="decimal"
                       value={rule.percentageRate}
-                  aria-invalid={Boolean(fieldErrors[rule.id + "-percentageRate"])}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, rule.id + "-percentageRate")}
                   ref={(node) => { inputRefs.current[rule.id + "-percentageRate"] = node; }}
                       onChange={(event) => updateRule(rule.id, "percentageRate", event.target.value)}
                       className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-percentageRate")}
@@ -615,7 +614,7 @@ export default function ProcessingFeeEstimateForm({
                     <input
                       inputMode="decimal"
                       value={rule.fixedFee}
-                  aria-invalid={Boolean(fieldErrors[rule.id + "-fixedFee"])}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, rule.id + "-fixedFee")}
                   ref={(node) => { inputRefs.current[rule.id + "-fixedFee"] = node; }}
                       onChange={(event) => updateRule(rule.id, "fixedFee", event.target.value)}
                       className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-fixedFee")}
@@ -630,7 +629,7 @@ export default function ProcessingFeeEstimateForm({
                     <input
                       inputMode="decimal"
                       value={rule.salesMix}
-                  aria-invalid={Boolean(fieldErrors[rule.id + "-salesMix"])}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, rule.id + "-salesMix")}
                   ref={(node) => { inputRefs.current[rule.id + "-salesMix"] = node; }}
                       onChange={(event) => updateRule(rule.id, "salesMix", event.target.value)}
                       className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-salesMix")}
@@ -646,7 +645,7 @@ export default function ProcessingFeeEstimateForm({
                     <input
                       inputMode="decimal"
                       value={rule.transactionMix}
-                  aria-invalid={Boolean(fieldErrors[rule.id + "-transactionMix"])}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, rule.id + "-transactionMix")}
                   ref={(node) => { inputRefs.current[rule.id + "-transactionMix"] = node; }}
                       onChange={(event) => updateRule(rule.id, "transactionMix", event.target.value)}
                       className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-transactionMix")}
