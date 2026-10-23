@@ -1,4 +1,5 @@
 import "server-only";
+import { unverifiedToastSalesDates } from "@/lib/pos/toast/reportingCoverage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 
@@ -47,9 +48,16 @@ function missingDays(p:CafeStatePeriod,dates:string[],key:string){
  return new Set(dates).size<expected?[key]:[];
 }
 export function posFactReaders(db:SupabaseClient,businessId:string){
+ async function blockedToastDates(period:CafeStatePeriod):Promise<Set<string>|null>{
+  if(process.env.TOAST_PILOT_IMPORT_ENABLED!=="true")return new Set();
+  try{return await unverifiedToastSalesDates(db,businessId,period.from,period.to);}
+  catch{return null;} // Fail closed. A missing verification response is never proof.
+ }
  return {
   async peakHours(period:CafeStatePeriod):Promise<KnownSlice<PeakHourFacts>>{
    checkPeriod(period);
+   const blocked=await blockedToastDates(period);
+   if(blocked===null)return missing("toastSalesVerificationUnavailable");
    const found=await readPages<{business_date:string;hour_local:number;location_id:string|null;net_sales_cents:unknown;orders_count:unknown}>((start,end)=>
      db.from("hourly_sales_rollup").select("business_date,hour_local,location_id,net_sales_cents,orders_count")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
@@ -57,26 +65,32 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
      .order("net_sales_cents").order("orders_count").range(start,end));
    if(found.error)return missing("hourlySalesUnavailable");
    if(found.truncated)return missing("hourlySalesPageLimit");
-   if(!found.rows.length)return missing("noHourlySalesFacts");
+   if(!found.rows.length)return missing(blocked.size?"toastSalesAwaitingIndependentReview":"noHourlySalesFacts");
    try{
-    const hours=found.rows.map(r=>({date:r.business_date,hourLocal:integer(r.hour_local),locationId:r.location_id,
+    const hours=found.rows.filter(r=>!blocked.has(r.business_date)).map(r=>({date:r.business_date,hourLocal:integer(r.hour_local),locationId:r.location_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
-    return known({hours},missingDays(period,hours.map(r=>r.date),"hourlySalesDatesNotObserved"));
+    if(!hours.length)return missing("toastSalesAwaitingIndependentReview");
+    return known({hours},[...missingDays(period,hours.map(r=>r.date),"hourlySalesDatesNotObserved"),
+      ...(blocked.size?["toastSalesAwaitingIndependentReview"]:[])]);
    }catch{return missing("unsafeHourlySalesFacts");}
   },
   async employeeSales(period:CafeStatePeriod):Promise<KnownSlice<EmployeeSalesFacts>>{
    checkPeriod(period);
+   const blocked=await blockedToastDates(period);
+   if(blocked===null)return missing("toastSalesVerificationUnavailable");
    const found=await readPages<{business_date:string;employee_id:string;net_sales_cents:unknown;orders_count:unknown}>((start,end)=>
      db.from("employee_sales_rollup").select("business_date,employee_id,net_sales_cents,orders_count")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
      .order("business_date").order("employee_id").order("net_sales_cents").order("orders_count").range(start,end));
    if(found.error)return missing("employeeSalesUnavailable");
    if(found.truncated)return missing("employeeSalesPageLimit");
-   if(!found.rows.length)return missing("noEmployeeSalesFacts");
+   if(!found.rows.length)return missing(blocked.size?"toastSalesAwaitingIndependentReview":"noEmployeeSalesFacts");
    try{
-    const employees=found.rows.map(r=>({date:r.business_date,employeeId:r.employee_id,
+    const employees=found.rows.filter(r=>!blocked.has(r.business_date)).map(r=>({date:r.business_date,employeeId:r.employee_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
-    return known({employees},missingDays(period,employees.map(r=>r.date),"employeeSalesDatesNotObserved"));
+    if(!employees.length)return missing("toastSalesAwaitingIndependentReview");
+    return known({employees},[...missingDays(period,employees.map(r=>r.date),"employeeSalesDatesNotObserved"),
+      ...(blocked.size?["toastSalesAwaitingIndependentReview"]:[])]);
    }catch{return missing("unsafeEmployeeSalesFacts");}
   },
   async payrollFacts(period:CafeStatePeriod):Promise<KnownSlice<PayrollFacts>>{
