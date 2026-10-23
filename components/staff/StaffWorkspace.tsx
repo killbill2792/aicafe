@@ -97,6 +97,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const previewBlock:DetailedShift|null=proposed?{...proposed.next,id:editing??"preview",
   employeeName:data.team.find(p=>p.id===chosen)?.name??t("team"),status:"draft"}:null;
  const dayLabel=(d:string)=>new Intl.DateTimeFormat(locale,{weekday:"short",day:"numeric",timeZone:"UTC"}).format(new Date(d+"T12:00:00Z"));
+ const weekday=(d:string,long=false)=>new Intl.DateTimeFormat(locale,{weekday:long?"long":"short",timeZone:"UTC"}).format(new Date(d+"T12:00:00Z"));
  const status=data.shifts.some(s=>s.status==="sent")?t("sent"):t("draft");
  return <div className="mx-auto w-full max-w-7xl space-y-3 px-4 pb-32 pt-5 text-fg" dir={locale==="ar"?"rtl":"ltr"}>
   <header className="flex items-center justify-between gap-3"><h1 className="font-headline text-2xl font-extrabold">{t("schedule")}</h1>
@@ -130,7 +131,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     const totals=dayTotals(d,data.shifts);
     return <a key={d} href={"#day-"+d} className={`relative rounded-xl border border-line bg-surface px-1 py-2 text-center text-sm ${i===0?"bg-accent text-on-accent":""}`}>
      {data.gaps.some(g=>g.date===d)&&<span aria-label={t("gap")} className="absolute end-1 top-1 size-2 rounded-full bg-neg"/>}
-     <span className="block text-xs font-bold">{dayLabel(d).split(" ")[0]}</span>
+     <span className="block text-xs font-bold">{weekday(d)}</span>
      <strong className="block font-headline text-lg">{new Date(d+"T12:00:00Z").getUTCDate()}</strong>
      <span className="block text-xs">{Number((totals.paidMinutes/60).toFixed(1))}h</span></a>;
    })}</nav>
@@ -278,7 +279,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         <button type="button" onClick={()=>setBreakMin(Math.max(0,breakMin-10))} className="min-h-12 min-w-10">−</button>
         <button type="button" onClick={()=>setBreakMin(Math.min(240,breakMin+10))} className="min-h-12 min-w-10">+</button></div>
        <label className="flex min-h-14 items-center justify-between gap-3 border-t border-line">
-        <span>{t("repeatEvery",{day:dayLabel(date).split(" ")[0]})}</span><input type="checkbox"
+        <span>{t("repeatEvery",{day:weekday(date,true)})}</span><input type="checkbox"
          checked={repeatWeekly} onChange={e=>setRepeatWeekly(e.target.checked)} className="size-6 accent-accent"/></label>
       </div>
       <ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={breakMin}
