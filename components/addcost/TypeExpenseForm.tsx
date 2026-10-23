@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { Delete } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import { useLocale } from "next-intl";
@@ -61,6 +61,7 @@ export default function TypeExpenseForm({
   const [status, setStatus] = useState<"idle" | "error" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const submitLock = useRef(false);
 
   const amountCents = digits === "" ? 0 : Math.min(Number(digits), 99_999_999);
 
@@ -73,26 +74,34 @@ export default function TypeExpenseForm({
   }
 
   function handleSave() {
-    if (amountCents === 0 || !category) return;
+    if (amountCents === 0 || !category || submitLock.current || status === "saved") return;
+    submitLock.current = true;
     setError(null);
     startTransition(async () => {
-      const result = await addManualExpense({
-        amountCents,
-        category,
-        vendor: vendor || undefined,
-        spentOn: date,
-        customLabel: category === "other" && customLabel ? customLabel : undefined,
-      });
-      if (result.ok) {
-        setStatus("saved");
-        setTimeout(() => {
-          // next-intl would add a second locale prefix to an already localized return path.
-          if (returnTo && /^\/(?:en|es|ar)(?:\/|[?#]|$)/.test(safeReturnTo)) window.location.assign(safeReturnTo);
-          else router.push(safeReturnTo);
-        }, 900);
-      } else {
+      try {
+        const result = await addManualExpense({
+          amountCents,
+          category,
+          vendor: vendor || undefined,
+          spentOn: date,
+          customLabel: category === "other" && customLabel ? customLabel : undefined,
+        });
+        if (result.ok) {
+          setStatus("saved");
+          setTimeout(() => {
+            // next-intl would add a second locale prefix to an already localized return path.
+            if (returnTo && /^\/(?:en|es|ar)(?:\/|[?#]|$)/.test(safeReturnTo)) window.location.assign(safeReturnTo);
+            else router.push(safeReturnTo);
+          }, 900);
+        } else {
+          setStatus("error");
+          setError(labels.saveError);
+          submitLock.current = false;
+        }
+      } catch {
         setStatus("error");
         setError(labels.saveError);
+        submitLock.current = false;
       }
     });
   }
@@ -182,7 +191,7 @@ export default function TypeExpenseForm({
       <button
         type="button"
         onClick={handleSave}
-        disabled={amountCents === 0 || !category || isPending || status === "saved"}
+        disabled={amountCents === 0 || !category || isPending || submitLock.current || status === "saved"}
         className="h-14 rounded-full bg-accent text-lg font-bold text-on-accent disabled:opacity-40"
       >
         {status === "saved" ? labels.saved : labels.save}
