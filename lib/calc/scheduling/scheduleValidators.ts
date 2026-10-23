@@ -7,13 +7,14 @@ const availabilityDay=z.strictObject({
  .refine(d=>d.start===null||d.start!==d.end,"Nonzero window required");
 export const personFields=z.strictObject({
  name:z.string().trim().min(1).max(80),
- role:z.string().trim().max(60).nullable(),
- wageCents:z.number().int().positive().nullable(),
+ role:z.string().trim().max(60).nullable().optional().default(null),
+ wageCents:z.number().int().positive().nullable().optional().default(null),
  availability:z.array(availabilityDay).max(7).refine(days=>
-  new Set(days.map(d=>d.day)).size===days.length,"Repeated day"),
- minWeeklyMinutes:z.number().int().min(0).max(10080).nullable(),
- maxWeeklyMinutes:z.number().int().min(0).max(10080).nullable(),
- phone:z.string().regex(/^\+[1-9]\d{1,14}$/).nullable()
+  new Set(days.map(d=>d.day)).size===days.length,"Repeated day")
+  .optional().default(()=>Array.from({length:7},(_,day)=>({day,start:null,end:null}))),
+ minWeeklyMinutes:z.number().int().min(0).max(10080).nullable().optional().default(null),
+ maxWeeklyMinutes:z.number().int().min(0).max(10080).nullable().optional().default(null),
+ phone:z.string().regex(/^\+[1-9]\d{1,14}$/).nullable().optional().default(null)
 }).refine(p=>p.minWeeklyMinutes===null||p.maxWeeklyMinutes===null||
   p.minWeeklyMinutes<=p.maxWeeklyMinutes,"Invalid weekly range");
 

@@ -157,10 +157,8 @@ export async function sendSchedule(raw:unknown){
    name:person.name,phone:person.phone,text:person.name+" — "+schedule.data.shifts
     .filter(s=>s.employeeId===person.id).map(s=>s.date+" "+s.start+"–"+s.end).join("; ")
  })).filter(x=>x.text.endsWith(" — ")===false);
- const {error}=await owner.supabase.from("scheduled_shifts").update({status:"sent"})
-   .eq("business_id",owner.businessId).is("deleted_at",null).gte("local_date",p.data.weekStart)
-  .lte("local_date",plusDays(p.data.weekStart,6));
- if(error)return {ok:false as const,error:"storage_unavailable"};
+ // Generating copy-ready messages is NOT delivery. Never claim a sent schedule
+ // or mutate a shift until an actual staff delivery channel confirms it.
  // WhatsApp transport is intentionally not connected: owner gets copy-ready text instead.
- revalidatePath("/staff");return {ok:true as const,data:{messages,channel:"copy" as const}};
+ return {ok:true as const,data:{messages,channel:"copy" as const}};
 }
