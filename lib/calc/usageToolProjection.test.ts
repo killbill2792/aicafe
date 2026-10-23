@@ -1,5 +1,6 @@
 import {describe,it,expect} from "vitest";
 import {projectUsageTool} from "./usageToolProjection";
+import {calculateUsage} from "./usageVariance";
 import {checkNumbers,compactEvidence} from "@/lib/ai/agent/checkNumbers";
 import type {UsageRow} from "./usageVariance";
 
@@ -22,6 +23,20 @@ describe("budgeted Maya usage evidence",()=>{
   expect(r.rows[0].actual).toBeNull();
   expect(r.items.find(x=>x.metric==="actual")?.quantity).toBeNull();
   expect(compactEvidence([r]).flatMap(x=>x.values).some(x=>x.key.includes("actual")&&x.value===0)).toBe(false);
+ });
+ it("does not register partial day/shift quantities when the calculation is unknown",()=>{
+  const rows=calculateUsage({
+   ingredients:[{id:"milk",name:"Milk",unit:"ml"}],
+   recipes:[{menuItemId:"latte",ingredientId:"milk",quantity:200}],
+   modifiers:[],sales:[{menuItemId:"latte",quantity:2,businessDate:"2026-10-21",
+    closedAt:"2026-10-21T12:00:00Z",locationId:"loc-a",
+    modifiers:[{posModifierId:"unknown",name:"Oat milk"}]}],
+   salesCovered:true,counts:[],purchases:[],from:"2026-10-20",to:"2026-10-21",groupBy:"day"
+  });
+  const projected=projectUsageTool({from:"2026-10-20",to:"2026-10-21",rows,groupBy:"day",missing:rows[0].missing});
+  expect(projected.rows[0].expected).toBeNull();
+  expect(projected.rows[0].groups).toEqual([]);
+  expect(projected.items.filter(x=>x.metric==="expected_group")).toEqual([]);
  });
  it("caps both nested groups and rows and marks omissions without inventing actual shift use",()=>{
   const rows=Array.from({length:45},(_,i)=>({...milk,ingredientId:"ingredient-"+i,
