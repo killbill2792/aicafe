@@ -9,10 +9,18 @@ create index if not exists agent_turn_logs_topic_recent_idx
 create table if not exists public.admin_home_card_suggestions (
   id uuid primary key default gen_random_uuid(),
   topic text not null unique check (topic in ('break_even','best_sellers','labor','schedule','menu_price','sales','expenses','inventory')),
-  requested_by uuid not null references auth.users(id) on delete restrict,
+  requested_by uuid references auth.users(id) on delete set null,
   status text not null default 'suggested' check (status = 'suggested'),
   created_at timestamptz not null default now()
 );
+-- Earlier previews may have installed a restrictive NOT NULL / RESTRICT key.
+-- Admin suggestions are inert history and must never block account deletion.
+alter table public.admin_home_card_suggestions alter column requested_by drop not null;
+alter table public.admin_home_card_suggestions
+  drop constraint if exists admin_home_card_suggestions_requested_by_fkey;
+alter table public.admin_home_card_suggestions
+  add constraint admin_home_card_suggestions_requested_by_fkey
+  foreign key (requested_by) references auth.users(id) on delete set null;
 alter table public.admin_home_card_suggestions enable row level security;
 revoke all on public.admin_home_card_suggestions from public, anon, authenticated;
 grant select, insert on public.admin_home_card_suggestions to service_role;
