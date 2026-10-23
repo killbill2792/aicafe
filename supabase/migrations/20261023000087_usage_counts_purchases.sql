@@ -85,6 +85,7 @@ begin
   and coalesce(l.clock_out,now()) >= (p_from::timestamp at time zone b.timezone);
  return jsonb_build_object('covered',v_covered,'staff',v_staff,
   'modifierMappings',coalesce((select jsonb_agg(jsonb_build_object(
+   'restaurantGuid',c.restaurant_guid::text,
    'posModifierId',c.provider_guid::text,'recipeId',c.linked_modifier_recipe_id::text))
    from public.toast_catalog_facts c where c.business_id=p_business_id
    and c.kind='modifier' and c.linked_modifier_recipe_id is not null),'[]'::jsonb));
