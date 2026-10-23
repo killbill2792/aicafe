@@ -71,7 +71,7 @@ try{
     create function auth.uid() returns uuid language sql stable as
       $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     create function auth.role() returns text language sql stable as
-      $ select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),'anon') $;
+      $$ select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),'anon') $$;
     create table public.businesses(id uuid primary key);
     create table public.memberships(
       business_id uuid not null references businesses(id),
