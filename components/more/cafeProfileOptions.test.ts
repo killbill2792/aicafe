@@ -3,9 +3,18 @@ import en from "../../messages/en.json";
 import es from "../../messages/es.json";
 import ar from "../../messages/ar.json";
 import { openHoursToWeeklyInput, weeklyInputToOpenHours } from "@/lib/business/openHours";
-import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, matchingTimezoneOptions, moveTimezoneActiveIndex, shouldFocusHours, timezoneOptionScrollTop, timezoneOptions, usStateOptions, US_STATES, validateProfile } from "./cafeProfileOptions";
+import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, matchingTimezoneOptions, moveTimezoneActiveIndex, resolvedProfileTimezone, shouldFocusHours, timezoneOptionScrollTop, timezoneOptions, usStateOptions, US_STATES, validateProfile } from "./cafeProfileOptions";
 
 describe("café profile redesign", () => {
+  it("keeps an automatically selected browser timezone valid after persisting and refreshing props", () => {
+    const browser = "America/Los_Angeles";
+    const firstSave = resolvedProfileTimezone("", false, "", browser);
+    expect(firstSave).toBe(browser);
+    expect(resolvedProfileTimezone(firstSave, true, firstSave, browser)).toBe(browser);
+    // An owner typing over a saved selection must not silently use the browser fallback.
+    expect(resolvedProfileTimezone("", true, firstSave, browser)).toBe("");
+  });
+
   it("filters the displayed timezone text, including the browser's automatic default", () => {
     const options = timezoneOptions("en", "America/Los_Angeles");
     const browserLabel = options.find((option) => option.value === "America/Los_Angeles")?.label ?? "";
