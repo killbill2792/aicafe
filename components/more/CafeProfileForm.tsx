@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { useLocale } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { updateCafeProfile } from "@/lib/actions/business";
@@ -72,9 +72,16 @@ type Labels = {
 };
 
 const DAY_ORDER: OpenHoursDayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const noTimezoneEvents = () => () => {};
+const serverTimezone = () => "";
+function getBrowserTimezone(): string {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone ?? ""; }
+  catch { return ""; }
+}
 
 export default function CafeProfileForm({ profile, labels, focusHours = false }: { profile: Profile; labels: Labels; focusHours?: boolean }) {
   const locale = useLocale();
+  const browserTimezone = useSyncExternalStore(noTimezoneEvents, getBrowserTimezone, serverTimezone);
   const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const hoursRef = useRef<HTMLElement | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -98,6 +105,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   }, [timezones, timezoneSearch, locale]);
   const chooseTimezone = (value: string) => {
     setTimezone(value);
+    setTimezoneTouched(true);
     setTimezoneSearch(timezones.find((option) => option.value === value)?.label ?? value);
     setTimezoneExpanded(false);
     clearFieldError("timezone");
@@ -111,6 +119,11 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   const [locationName, setLocationName] = useState(profile.locationName);
   const [openedOn, setOpenedOn] = useState(profile.openedOn);
   const [timezone, setTimezone] = useState(profile.timezone);
+  const [timezoneTouched, setTimezoneTouched] = useState(false);
+  const selectedTimezone = timezone || (!timezoneTouched && !profile.timezone ? browserTimezone : "");
+  const shownTimezoneSearch = timezoneSearch || (!timezoneTouched && !profile.timezone
+    ? (timezones.find((option) => option.value === browserTimezone)?.label ?? browserTimezone)
+    : "");
   const [currency, setCurrency] = useState(profile.currency || currencyForCountry(profile.countryCode));
   const [addressLine1, setAddressLine1] = useState(profile.addressLine1);
   const [addressLine2, setAddressLine2] = useState(profile.addressLine2);
@@ -120,17 +133,6 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   const [countryCode, setCountryCode] = useState(profile.countryCode);
   const [hours, setHours] = useState<WeeklyHoursInput>(() => openHoursToWeeklyInput(profile.openHours));
   const hoursNotSet = DAY_ORDER.some((key) => hours[key].mode === "unset");
-
-  useEffect(() => {
-    if (profile.timezone) return;
-    const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (!browserTimezone) return;
-    try {
-      new Intl.DateTimeFormat("en-US", { timeZone: browserTimezone });
-      setTimezone(browserTimezone);
-      setTimezoneSearch(timezones.find((option) => option.value === browserTimezone)?.label ?? browserTimezone);
-    } catch { /* Keep empty and require an explicit choice. */ }
-  }, [profile.timezone, timezones]);
 
   useEffect(() => {
     if (!shouldFocusHours(focusHours ? "hours" : undefined)) return;
@@ -177,7 +179,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   }
 
   function save() {
-    const errors = validateProfile({ name, timezone, currency, countryCode, openedOn, hours }, {
+    const errors = validateProfile({ name, timezone: selectedTimezone, currency, countryCode, openedOn, hours }, {
       name: labels.invalidName, timezone: labels.invalidTimezone,
       currency: labels.invalidCurrency, country: labels.invalidCountry,
       openedOn: labels.invalidDate, hours: labels.invalidHours,
@@ -200,7 +202,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
         name,
         locationName,
         openedOn,
-        timezone,
+        timezone: selectedTimezone,
         currency: currency.toUpperCase(),
         addressLine1,
         addressLine2,
@@ -251,9 +253,9 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
             <input type="text" role="combobox" aria-autocomplete="list" aria-controls="cafe-timezone-options" aria-expanded={timezoneExpanded}
               aria-activedescendant={timezoneExpanded && timezoneResults[timezoneActive] ? "cafe-timezone-" + timezoneActive : undefined}
               aria-invalid={Boolean(fieldErrors.timezone)} ref={(node) => { fieldRefs.current.timezone = node; }}
-              value={timezoneSearch} placeholder={labels.timezoneSearch}
+              value={shownTimezoneSearch} placeholder={labels.timezoneSearch}
               onFocus={() => setTimezoneExpanded(true)}
-              onChange={(e) => { setTimezoneSearch(e.target.value); setTimezone(""); setTimezoneExpanded(true); setTimezoneActive(0); clearFieldError("timezone"); }}
+              onChange={(e) => { setTimezoneTouched(true); setTimezoneSearch(e.target.value); setTimezone(""); setTimezoneExpanded(true); setTimezoneActive(0); clearFieldError("timezone"); }}
               onKeyDown={(e) => {
                 if (e.key === "Escape") { setTimezoneExpanded(false); return; }
                 if (e.key === "ArrowDown") { e.preventDefault(); setTimezoneExpanded(true); setTimezoneActive((index) => Math.min(index + 1, timezoneResults.length - 1)); }
@@ -264,7 +266,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
             {timezoneExpanded && (
               <div id="cafe-timezone-options" role="listbox" className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-line bg-card shadow-lg">
                 {timezoneResults.length ? timezoneResults.map((option, index) => (
-                  <button id={"cafe-timezone-" + index} key={option.value} type="button" role="option" aria-selected={timezone === option.value}
+                  <button id={"cafe-timezone-" + index} key={option.value} type="button" role="option" aria-selected={selectedTimezone === option.value}
                     onMouseDown={(e) => e.preventDefault()} onClick={() => chooseTimezone(option.value)}
                     className={"block min-h-11 w-full px-3 py-2 text-start text-sm hover:bg-paper " + (index === timezoneActive ? "bg-paper font-semibold" : "")}>
                     {option.label}
