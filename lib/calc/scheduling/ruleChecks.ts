@@ -15,8 +15,14 @@ export type TimecardForRules={
 };
 export type RuleViolation={timecardId:string;employeeId:string;key:"meal"|"rest_break"|"weekly_overtime"|"daily_overtime"|"short_rest";details:string};
 
+const dateFormatters=new Map<string,Intl.DateTimeFormat>();
 const localDate=(instant:number,timezone:string):string=>{
- const parts=new Intl.DateTimeFormat("en-US",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(instant);
+ let formatter=dateFormatters.get(timezone);
+ if(!formatter){
+  formatter=new Intl.DateTimeFormat("en-US",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit"});
+  dateFormatters.set(timezone,formatter);
+ }
+ const parts=formatter.formatToParts(instant);
  const part=(type:string)=>parts.find(p=>p.type===type)?.value??"";
  return part("year")+"-"+part("month")+"-"+part("day");
 };
@@ -38,6 +44,29 @@ export function automaticUnpaidBreakMinutes(start:string,end:string,rules:Pick<R
    Math.min(240,minutes-1,rules.meal_break_minutes):0;
 }
 
+/** Resolve the first instant that belongs to another civil date. Timezones
+ * such as America/Santiago skip 00:00 on some days; fromZonedTime(midnight)
+ * may return a time still on the previous date. Validate the fast path and
+ * search locally only for exceptional midnight transitions. */
+function nextLocalDateBoundary(cursor:number,timezone:string):number{
+ const date=localDate(cursor,timezone);
+ const target=nextCivilDate(date);
+ const midnight=fromZonedTime(target+"T00:00:00",timezone).getTime();
+ if(midnight>cursor&&localDate(midnight,timezone)!==date&&localDate(midnight-1,timezone)===date)
+  return midnight;
+ const step=5*60000,limit=cursor+72*3600000;
+ let previous=cursor;
+ for(let probe=cursor+step;probe<=limit;probe+=step){
+  if(localDate(probe,timezone)===date){previous=probe;continue;}
+  let low=previous,high=probe;
+  while(high-low>1){
+   const mid=Math.floor((low+high)/2);
+   if(localDate(mid,timezone)===date)low=mid;else high=mid;
+  }
+  return high;
+ }
+ throw new Error("local_date_boundary_unavailable");
+}
 type Window={start:number;end:number};
 function paidWindows(start:number,end:number,breaks:TimecardForRules["breaks"]):Window[]{
  const unpaid=breaks.filter(b=>!b.paid)
@@ -61,9 +90,7 @@ function perLocalDay(windows:Window[],timezone:string):Map<string,number>{
   let cursor=window.start;
   while(cursor<window.end){
    const date=localDate(cursor,timezone);
-   const nextMidnight=fromZonedTime(nextCivilDate(date)+"T00:00:00",timezone).getTime();
-   if(nextMidnight<=cursor)throw new Error("invalid_business_timezone_boundary");
-   const stop=Math.min(window.end,nextMidnight);
+   const stop=Math.min(window.end,nextLocalDateBoundary(cursor,timezone));
    result.set(date,(result.get(date)??0)+(stop-cursor)/60000);
    cursor=stop;
   }
