@@ -1,4 +1,5 @@
 import "server-only";
+import {usageBusinessDay} from "@/lib/calc/usageDates";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
@@ -23,6 +24,13 @@ async function scope(){
   .eq("user_id",user.id).eq("business_id",businessId).maybeSingle();
  if(error||membership?.role!=="owner")throw new Error("owner_required");
  return {db,businessId};
+}
+/** Owner-scoped source of today's date for closing stock and default windows. */
+export async function readUsageBusinessDate():Promise<string>{
+ const {db,businessId}=await scope();
+ const {data,error}=await db.from("businesses").select("timezone").eq("id",businessId).single();
+ if(error||!data?.timezone)throw new Error("usage_timezone_unavailable");
+ return usageBusinessDay(new Date(),data.timezone);
 }
 async function allRows<T>(load:(first:number,last:number)=>PromiseLike<{data:T[]|null;error:unknown}>,max=20000):Promise<T[]>{
  const all:T[]=[];
