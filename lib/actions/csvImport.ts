@@ -9,6 +9,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { recomputeDailyRollup } from "@/lib/pos/rollup";
 import { rebuildSalesFactRollups } from "@/lib/pos/salesFactRollups";
+import { readStagedSalesGroups, readCsvFeeOrders } from "@/lib/pos/csv/finalizeReads";
 import { matchCatalogItem } from "@/lib/pos/catalogMatching";
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { NEW_EMPLOYEE } from "@/lib/constants";
@@ -366,8 +367,9 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
     return { ok: false, imported: 0, errorCode: "finalize_failed" };
   }
 
-  const { data: groupRows } = await supabase.from("csv_sales_import_groups").select("business_date, item_name, category, menu_item_id, source_row_count, conflict_reason").eq("job_id", jobId);
-  const groups = groupRows ?? [];
+  // Fail closed if any page is unavailable: SQL may have promoted more than
+  // 1,000 groups and finalization must not mark missing categories as complete.
+  const groups = await readStagedSalesGroups(supabase, businessId, jobId);
   const promotedGroups = groups.filter((g) => g.conflict_reason !== "toast_covers_date");
   const affectedDates = [...new Set(promotedGroups.map((g) => g.business_date as string))];
   const skippedToastConflictDates = [...new Set(groups.filter((g) => g.conflict_reason === "toast_covers_date").map((g) => g.business_date as string))];
@@ -392,18 +394,12 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
   }
 
   for (const date of affectedDates) {
-    const { data: feeOrders, error: feeOrdersError } = await supabase
-      .from("orders")
-      .select("processing_fee_cents, processing_fee_status")
-      .eq("business_id", businessId)
-      .eq("business_date", date)
-      .eq("processing_fee_provider", "csv");
-    if (feeOrdersError) throw feeOrdersError;
-    if ((feeOrders ?? []).length > 0 && (feeOrders ?? []).every((order) => order.processing_fee_status === "actual")) {
+    const feeOrders = await readCsvFeeOrders(supabase, businessId, date);
+    if (feeOrders.length > 0 && feeOrders.every((order) => order.processing_fee_status === "actual")) {
       await upsertProcessingFeeDailyFact(supabase, {
         businessId,
         businessDate: date,
-        amountCents: (feeOrders ?? []).reduce((sum, order) => sum + Number(order.processing_fee_cents), 0),
+        amountCents: feeOrders.reduce((sum, order) => sum + Number(order.processing_fee_cents), 0),
         status: "actual",
         sourceType: "manual_actual",
         provider: "csv",
