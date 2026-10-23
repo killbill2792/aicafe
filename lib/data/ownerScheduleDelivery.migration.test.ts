@@ -31,4 +31,3 @@ describe("staff owner-send SQL invariants",()=>{
    expect(migration).toMatch(/overlapping_staff_shifts/);
  });
 });
-});
