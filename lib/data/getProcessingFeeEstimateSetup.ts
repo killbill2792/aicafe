@@ -24,6 +24,7 @@ export type ProcessingFeeEstimateSetup = {
     processorCount: number;
     actualProviders: string[];
     actualFeeCents: number;
+    currency: string;
     trustedOrderDays: number;
     untrustedFeeDates: string[];
   };
@@ -36,7 +37,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       plan: null,
       coverageDays: [],
       coverage: { salesDays: 0, actualDays: 0, estimatedDays: 0, missingDays: 0 },
-      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, trustedOrderDays: 0, untrustedFeeDates: [] },
+      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, currency: "USD", trustedOrderDays: 0, untrustedFeeDates: [] },
     };
   }
 
@@ -50,18 +51,18 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       plan: null,
       coverageDays: [],
       coverage: { salesDays: 0, actualDays: 0, estimatedDays: 0, missingDays: 0 },
-      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, trustedOrderDays: 0, untrustedFeeDates: [] },
+      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, currency: "USD", trustedOrderDays: 0, untrustedFeeDates: [] },
     };
   }
 
   const { data: memberships, error: membershipError } = await supabase
     .from("memberships")
-    .select("business_id, businesses(is_demo, timezone)")
+    .select("business_id, businesses(is_demo, timezone, currency)")
     .eq("user_id", user.id);
   if (membershipError) throw membershipError;
   const own = (memberships ?? []).find((membership) => {
     const raw = membership.businesses as unknown as
-      | { is_demo: boolean; timezone: string }
+      | { is_demo: boolean; timezone: string; currency: string }
       | { is_demo: boolean; timezone: string }[]
       | null;
     const business = Array.isArray(raw) ? raw[0] : raw;
@@ -74,6 +75,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
   const business = Array.isArray(rawBusiness) ? rawBusiness[0] : rawBusiness;
   const businessId = own.business_id;
   const timezone = business?.timezone ?? "America/Los_Angeles";
+  const currency = business?.currency || "USD";
   const today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
   const fromDate = formatInTimeZone(subDays(new Date(`${today}T12:00:00Z`), 89), "UTC", "yyyy-MM-dd");
 
@@ -156,6 +158,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       processorCount,
       actualProviders,
       actualFeeCents: actualFacts.reduce((sum, fact) => sum + Number(fact.amount_cents), 0),
+      currency,
       trustedOrderDays,
       untrustedFeeDates,
     },
