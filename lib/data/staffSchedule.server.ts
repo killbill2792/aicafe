@@ -26,7 +26,7 @@ export async function getWeekSchedule(raw:unknown){
   owner.supabase.from("employees").select("id,display_name,role,active,default_hourly_wage_cents,wage_amount_cents,wage_period,available_days,min_weekly_minutes,max_weekly_minutes,phone_e164,color_index")
     .eq("business_id",owner.businessId).order("display_name"),
   owner.supabase.from("scheduled_shifts").select("*").eq("business_id",owner.businessId)
-    .gte("local_date",dates[0]).lte("local_date",dates[6]).is("deleted_at",null).order("start_local"),
+    .gte("local_date",plusDays(dates[0],-1)).lte("local_date",plusDays(dates[6],1)).is("deleted_at",null).order("start_local"),
   owner.supabase.from("locations").select("open_hours").eq("business_id",owner.businessId)
    .order("name").limit(1).maybeSingle(),getTeamRules(),
   owner.supabase.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to")
@@ -58,10 +58,11 @@ export async function getWeekSchedule(raw:unknown){
      id:s.id as string,status:s.status as string,source:s.source as string,breakSource:s.break_source as string,
      employeeName:person?.name??"Unknown"};
  });
- const total=aggregateCosts(mapped),gaps=coverageGaps(dates,mapped,openHours,
+ const inWeek=mapped.filter(s=>s.date>=dates[0]&&s.date<=dates[6]);
+ const total=aggregateCosts(inWeek),gaps=coverageGaps(dates,mapped,openHours,
    ruleResult.data.coverage_enabled?ruleResult.data.min_headcount:0);
  return {ok:true as const,data:{
-   dates,team,shifts:mapped,total,gaps,openHours,
+   dates,team,shifts:inWeek,total,gaps,openHours,
    currency:owner.currency,rules:ruleResult.data,
    availability:availability.data??[],profileAvailability:profileAvailability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone
  }};
