@@ -1,5 +1,5 @@
 import "server-only";
-import { knownProcessorCount, selectedFeeCoverageForSalesDays, untrustedEstimateDayCount, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { knownProcessorCount, selectedFeeCoverageForSalesDays, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
@@ -25,7 +25,7 @@ export type ProcessingFeeEstimateSetup = {
     actualProviders: string[];
     actualFeeCents: number;
     trustedOrderDays: number;
-    untrustedFeeDays: number;
+    untrustedFeeDates: string[];
   };
 };
 
@@ -36,7 +36,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       plan: null,
       coverageDays: [],
       coverage: { salesDays: 0, actualDays: 0, estimatedDays: 0, missingDays: 0 },
-      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, trustedOrderDays: 0, untrustedFeeDays: 0 },
+      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, trustedOrderDays: 0, untrustedFeeDates: [] },
     };
   }
 
@@ -50,7 +50,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       plan: null,
       coverageDays: [],
       coverage: { salesDays: 0, actualDays: 0, estimatedDays: 0, missingDays: 0 },
-      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, trustedOrderDays: 0, untrustedFeeDays: 0 },
+      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, trustedOrderDays: 0, untrustedFeeDates: [] },
     };
   }
 
@@ -136,7 +136,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
     ) !== null)
     .map((row) => row.business_date));
   const trustedOrderDays = trustedOrderDates.size;
-  const untrustedFeeDays = untrustedEstimateDayCount(coverageDays, trustedOrderDates);
+  const untrustedFeeDates = coverageDays.filter((day) => day.status !== "actual" && !trustedOrderDates.has(day.date)).map((day) => day.date);
 
   const actualFacts = (factsResult.data ?? []).filter((fact) => fact.status === "actual");
   const actualProviders = [...new Set(actualFacts.map((fact) => String(fact.provider)).filter(Boolean))].sort();
@@ -157,7 +157,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       actualProviders,
       actualFeeCents: actualFacts.reduce((sum, fact) => sum + Number(fact.amount_cents), 0),
       trustedOrderDays,
-      untrustedFeeDays,
+      untrustedFeeDates,
     },
   };
 }
