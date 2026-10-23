@@ -8,6 +8,7 @@ import {DEFAULT_TEAM_RULES} from "@/lib/calc/scheduling/teamRuleDefaults";
 import {DEMO_BUSINESS_ID} from "@/lib/constants";
 import {getTeamRules} from "./staffRules.server";
 import {coverageGaps} from "@/lib/calc/scheduling/coverageGaps";
+import {automaticUnpaidBreakMinutes} from "@/lib/calc/scheduling/ruleChecks";
 import {shiftCost,roleWageAverages,businessWageEstimate,aggregateCosts,elapsedMinutes,type CostShift} from "@/lib/calc/scheduling/shiftCost";
 const iso=z.iso.date(),hhmm=z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 const weekInput=z.strictObject({weekStart:iso});
@@ -83,9 +84,8 @@ export async function getShiftCost(raw:unknown){
  const person=schedule.data.team.find(person=>person.id===p.data.employeeId);
  if(!person)return {ok:false as const,error:"unknown_employee"};
  const roleAverage=roleWageAverages(schedule.data.team),defaultWage=businessWageEstimate(schedule.data.team);
- const breakMinutes=p.data.breakMinutes??(elapsedMinutes(p.data.start,p.data.end,p.data.end<p.data.start)>
-   schedule.data.rules.meal_break_after_minutes&&schedule.data.rules.meal_break_enabled?
-   schedule.data.rules.meal_break_minutes:0);
+ const breakMinutes=p.data.breakMinutes??automaticUnpaidBreakMinutes(
+   p.data.start,p.data.end,schedule.data.rules);
  return {ok:true as const,data:shiftCost({
    employeeId:p.data.employeeId,date:p.data.date,start:p.data.start,end:p.data.end,
    overnight:p.data.end<p.data.start,breakMinutes,wageCents:person.wageCents,role:person.role
@@ -100,8 +100,7 @@ export async function upsertShift(raw:unknown){
  const rules=await getTeamRules();if(!rules.ok)return rules;
  const overnight=p.data.end<p.data.start;
  let length:number;try{length=elapsedMinutes(p.data.start,p.data.end,overnight);}catch{return {ok:false as const,error:"invalid_shift"};}
- const breakMinutes=p.data.breakMinutes??(rules.data.meal_break_enabled&&length>rules.data.meal_break_after_minutes?
-   rules.data.meal_break_minutes:0);
+ const breakMinutes=p.data.breakMinutes??automaticUnpaidBreakMinutes(p.data.start,p.data.end,rules.data);
  if(breakMinutes>=length)return {ok:false as const,error:"invalid_break"};
  const row={business_id:owner.businessId,employee_id:p.data.employeeId,local_date:p.data.date,
    start_local:p.data.start,end_local:p.data.end,overnight,break_minutes:breakMinutes,

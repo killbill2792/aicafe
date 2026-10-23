@@ -32,5 +32,5 @@ export function createStaffScreenshotFixture(weekStart="2026-10-26"){
  return {dates,weekStart,team,shifts,total:aggregateCosts(shifts),
   gaps:coverageGaps(dates,shifts,hours,2),openHours:hours,
   currency:"USD",rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},
-  availability:[],profileAvailability:[],readOnly:false,timezone:"America/Los_Angeles"};
+  availability:[],profileAvailability:[],adjacentShifts:[],readOnly:false,timezone:"America/Los_Angeles"};
 }
