@@ -57,7 +57,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         body:JSON.stringify({action,proposalId:value.proposalId,revision:value.revision,
           ...(action==="edit"?{newPriceCents:cents}:{})})});
       const result=await response.json() as {proposal?:ProposalView;state?:string;currentPriceCents?:number};
-      if(!response.ok)setError(true);
+      if(!response.ok && result.proposal?.state!=="applied" && result.proposal?.state!=="stale" && result.state!=="stale")setError(true);
       if(result.state==="unchanged"){
         // A 422 is form validation; the stored draft is still actionable.
         setValue(value);setError(true);

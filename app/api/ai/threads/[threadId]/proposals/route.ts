@@ -118,6 +118,12 @@ export async function POST(request:Request,{params}:Params){
           result.state==="stale"?409:200);
       }catch{
         const latest=await repo.load(scope,p.id);
+        // A lost HTTP response after a committed SQL transaction is not a
+        // failed write. Read the durable ledger before showing Retry.
+        if(latest.status==="committed")
+          return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
+        if(latest.status==="stale")
+          return conversationJson({state:"stale",proposal:await view(scope,repo,latest)},409);
         return conversationJson({error:"staff_approval_failed",
           proposal:await view(scope,repo,latest)},latest.revision!==p.revision&&
             latest.status!=="approved"?409:500);

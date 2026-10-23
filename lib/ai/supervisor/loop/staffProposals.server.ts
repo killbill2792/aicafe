@@ -9,7 +9,7 @@ import {registerLoopCapability,type OwnerLoopScope} from "./engine";
 const names=Object.keys(staffProposalInputs) as StaffProposalName[];
 export const staffCapabilityId=(name:StaffProposalName)=>"olivia.staff_"+name+".v1";
 export const isStaffCapabilityId=(id:string)=>names.some(n=>staffCapabilityId(n)===id);
-const line=z.strictObject({label:z.string().max(220),before:z.string().max(1200),after:z.string().max(1200)});
+const line=z.strictObject({label:z.string().max(220),before:z.string().max(6000),after:z.string().max(6000)});
 const effectSchema=z.strictObject({
  operation:z.enum(["propose_schedule","propose_shift_change","propose_add_staff",
   "propose_staff_change","propose_availability_change","propose_rule_change","propose_send_schedule"]),
@@ -148,7 +148,9 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const eligible=people.filter(p=>p.active&&p.phone_e164&&p.whatsapp_opt_in&&week.some(s=>s.employee_id===p.id));
    ensure(week.length>0,"No shifts scheduled for this week");
    item("Week "+d.week_start,"Not prepared",
-     "Prepare copy-ready schedules for "+eligible.map(p=>p.display_name).join(", ")+". Not sent via WhatsApp.");
+     "Prepare only (no messages sent): "+eligible.map(p=>p.display_name).join(", ")+
+     "\n"+week.filter(s=>eligible.some(p=>p.id===s.employee_id))
+       .map(s=>shown(s.employee_id)+" "+fmtShift(s)).join("\n"));
    payload={week_start:d.week_start};break;
   }
  }
