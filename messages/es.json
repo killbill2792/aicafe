@@ -2693,6 +2693,7 @@
     "redeemExpired": "El código ha caducado. Solicita uno nuevo.",
     "redeemFull": "El código ya alcanzó su límite de cafeterías.",
     "redeemRateLimited": "Demasiados intentos. Inténtalo de nuevo en 15 minutos.",
-    "redeemPaused": "El administrador pausó el acceso a la IA de esta cafetería. Contacta con él."
+    "redeemPaused": "El administrador pausó el acceso a la IA de esta cafetería. Contacta con él.",
+    "redeemAlreadyUsed": "Este código ya se usó para esta cafetería. Introduce otro código para ampliar el acceso."
   }
 }
