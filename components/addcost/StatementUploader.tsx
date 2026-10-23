@@ -42,6 +42,8 @@ export default function StatementUploader({
     missingConfirm: string;
     missingCancel: string;
     saveError: string;
+    readError: string;
+    tryAgain: string;
   };
 }) {
   const router = useRouter();
@@ -58,19 +60,27 @@ export default function StatementUploader({
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   // Synchronous guard: two clicks before React commits state must not create parallel saves.
   const saveLock = useRef(false);
+  const readLock = useRef(false);
   const isSavingOrSaved = saveStatus === "saving" || saveStatus === "saved";
   const missingCandidate = state?.ok && state.balanceCheck ? makeMissingStatementLine(state.lines, state.balanceCheck, {
     description: missingDescription, amount: missingAmount, date: missingDate, category: missingCategory,
   }, labels.addMissingLine) : null;
 
   function handleFile(file: File) {
-    if (saveLock.current || isSavingOrSaved) return;
+    if (saveLock.current || isSavingOrSaved || readLock.current) return;
+    readLock.current = true;
     startTransition(async () => {
-      const text = await readUploadedFileAsCsvText(file);
-      const result = await reviewStatementCsv(text);
-      setMissingLine(false);
-      setSaveStatus("idle");
-      setState(result);
+      try {
+        const text = await readUploadedFileAsCsvText(file);
+        const result = await reviewStatementCsv(text);
+        setMissingLine(false);
+        setSaveStatus("idle");
+        setState(result);
+      } catch {
+        setState({ ok: false, error: labels.readError });
+      } finally {
+        readLock.current = false;
+      }
     });
   }
 
@@ -124,7 +134,7 @@ export default function StatementUploader({
     return (
       <label className="flex flex-col items-center gap-3 rounded-card-lg border-2 border-dashed border-line bg-card p-8 text-center">
         <span className="text-base font-semibold text-ink">{isPending ? labels.reading : labels.uploadPrompt}</span>
-        <span className="rounded-full bg-accent px-5 py-2.5 text-sm font-bold text-on-accent">{labels.chooseFile}</span>
+        <span className="flex min-h-12 items-center rounded-full bg-accent px-5 py-2.5 text-[17px] font-bold text-on-accent">{labels.chooseFile}</span>
         <input
           type="file"
           accept={UPLOAD_FILE_ACCEPT}
@@ -139,13 +149,18 @@ export default function StatementUploader({
   }
 
   if (!state.ok) {
-    return <p className="rounded-card-lg bg-warn-tint p-4 text-warn">{state.error}</p>;
+    return (
+      <div className="flex flex-col gap-3 rounded-card-lg bg-warn-tint p-4">
+        <p role="alert" className="text-[17px] text-warn">{state.error}</p>
+        <button type="button" onClick={() => setState(null)} className="min-h-12 rounded-full border border-line px-4 text-[17px] font-bold text-ink">{labels.tryAgain}</button>
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col gap-3.5">
       {state.balanceCheck && (
-        <div className={`rounded-2xl p-3.5 text-sm font-semibold ${state.balanceCheck.ok ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>
+        <div className={`rounded-2xl p-3.5 text-[17px] font-semibold ${state.balanceCheck.ok ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>
           {state.balanceCheck.ok ? labels.balanceOk : labels.balanceMismatch}
         </div>
       )}
@@ -183,11 +198,11 @@ export default function StatementUploader({
           return (
             <div key={line.i} role={needsReview ? "group" : undefined} aria-label={needsReview ? labels.lowConfidence : undefined} className={`flex flex-col gap-2 border-b p-2.5 last:border-b-0 ${needsReview ? "rounded-xl border-2 border-warn bg-warn-tint" : "border-line"}`}>
               <div className="flex items-center justify-between gap-2">
-                <span className="flex-1 text-[15px] font-semibold text-ink">{line.description}</span>
-                <span className="text-base font-bold">{formatAmount(line.amountCents)}</span>
+                <span className="flex-1 text-[17px] font-semibold text-ink">{line.description}</span>
+                <span className="text-[17px] font-bold">{formatAmount(line.amountCents)}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className={`text-xs ${line.confidence < 0.7 ? "font-bold text-warn" : "text-ink-muted"}`}>
+                <span className={`text-[13px] ${line.confidence < 0.7 ? "font-bold text-warn" : "text-ink-muted"}`}>
                   {line.reason}
                   {line.confidence < 0.7 ? ` · ${labels.lowConfidence}` : ""}
                 </span>
@@ -209,7 +224,7 @@ export default function StatementUploader({
           );
         })}
       </div>
-      {saveStatus === "error" && <p role="alert" className="text-sm text-warn">{labels.saveError}</p>}
+      {saveStatus === "error" && <p role="alert" className="text-[17px] text-warn">{labels.saveError}</p>}
       <button
         type="button"
         onClick={handleSaveAll}
