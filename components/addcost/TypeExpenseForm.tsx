@@ -39,6 +39,7 @@ export default function TypeExpenseForm({
   returnTo?: string | null;
   labels: {
     backspace: string;
+    saveError: string;
     amountTitle: string;
     categoryTitle: string;
     vendorLabel: string;
@@ -87,7 +88,7 @@ export default function TypeExpenseForm({
         setTimeout(() => router.push(safeReturnTo), 900);
       } else {
         setStatus("error");
-        setError(result.error);
+        setError(labels.saveError);
       }
     });
   }
@@ -163,6 +164,7 @@ export default function TypeExpenseForm({
         <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink-muted">
           {labels.dateLabel}
           <input
+            lang={locale}
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
