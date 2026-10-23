@@ -105,6 +105,8 @@
     "statementMissingAmount": "Amount",
     "statementMissingDate": "Date",
     "statementMissingCategory": "Category",
+    "statementReadError": "Could not read this file. Check the format and try again.",
+    "statementTryAgain": "Choose another file",
     "statementSaveError": "Could not save the statement. Check the lines and try again.",
     "statementMissingCancel": "Cancel",
     "statementMissingConfirm": "Add line",
