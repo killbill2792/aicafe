@@ -132,3 +132,11 @@ export function knownProcessorCount(
     .filter((name) => name.length > 0 && name !== "csv" && name !== "demo");
   return new Set(names).size;
 }
+
+/** Real actuals never require an owner fallback, regardless of order-count coverage. */
+export function untrustedEstimateDayCount(
+  coverageDays: readonly FeeCoverageDay[],
+  trustedOrderDates: ReadonlySet<string>,
+): number {
+  return coverageDays.filter((day) => day.status !== "actual" && !trustedOrderDates.has(day.date)).length;
+}
