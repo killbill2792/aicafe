@@ -134,6 +134,8 @@ DECLARE
  v_days smallint[];
  v_start text;
  v_end text;
+ v_change_availability boolean;
+ v_windows jsonb;
 BEGIN
  IF p_business_id IS NULL OR p_payload IS NULL OR
     NOT public.scheduling_is_owner(p_business_id) OR
@@ -141,16 +143,19 @@ BEGIN
      WHERE id=p_business_id AND is_demo=false) THEN
    RAISE EXCEPTION 'owner authorization required' USING ERRCODE='42501';
  END IF;
+ v_change_availability := jsonb_typeof(p_payload->'availability')='array';
+ v_windows := CASE WHEN v_change_availability THEN p_payload->'availability' ELSE '[]'::jsonb END;
  IF jsonb_typeof(p_payload)<>'object' OR
-   jsonb_typeof(p_payload->'availability')<>'array' OR
-   jsonb_array_length(p_payload->'availability')>7 OR
+   NOT (v_change_availability OR (p_id IS NOT NULL AND
+     jsonb_typeof(p_payload->'availability')='null')) OR
+   jsonb_array_length(v_windows)>7 OR
    length(btrim(p_payload->>'name')) NOT BETWEEN 1 AND 80 OR
    length(coalesce(p_payload->>'role',''))>60 OR
    length(coalesce(p_payload->>'phone',''))>32 OR
    EXISTS (SELECT 1 FROM jsonb_object_keys(p_payload) as k(key)
      WHERE k.key NOT IN ('name','role','wageCents','phone',
        'minWeeklyMinutes','maxWeeklyMinutes','availability')) OR
-   EXISTS (SELECT 1 FROM jsonb_array_elements(p_payload->'availability') a
+   EXISTS (SELECT 1 FROM jsonb_array_elements(v_windows) a
      WHERE jsonb_typeof(a)<>'object'
         OR (a->>'day') !~ '^[0-6]$'
         OR jsonb_typeof(a->'start') NOT IN ('string','null')
@@ -162,17 +167,19 @@ BEGIN
           (a->>'end') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' OR
           (a->>'start')=(a->>'end')))
    ) OR
-   (SELECT count(*) FROM jsonb_array_elements(p_payload->'availability')) <>
+   (SELECT count(*) FROM jsonb_array_elements(v_windows)) <>
    (SELECT count(DISTINCT a->>'day')
-      FROM jsonb_array_elements(p_payload->'availability') a) THEN
+      FROM jsonb_array_elements(v_windows) a) THEN
   RAISE EXCEPTION 'invalid person request' USING ERRCODE='22023';
  END IF;
  PERFORM 1 FROM public.businesses WHERE id=p_business_id FOR SHARE;
  SELECT (now() AT TIME ZONE b.timezone)::date INTO v_today
  FROM public.businesses b WHERE b.id=p_business_id;
  v_previous := v_today - 1;
- SELECT coalesce(array_agg((a->>'day')::smallint),ARRAY[]::smallint[])
- INTO v_days FROM jsonb_array_elements(p_payload->'availability') a;
+ IF v_change_availability THEN
+  SELECT coalesce(array_agg((a->>'day')::smallint),ARRAY[]::smallint[])
+  INTO v_days FROM jsonb_array_elements(v_windows) a;
+ END IF;
  IF p_id IS NULL THEN
   INSERT INTO public.employees(business_id,display_name,role,
    wage_period,wage_amount_cents,default_hourly_wage_cents,
@@ -199,11 +206,11 @@ BEGIN
    phone_e164=nullif(p_payload->>'phone',''),
    min_weekly_minutes=(p_payload->>'minWeeklyMinutes')::int,
    max_weekly_minutes=(p_payload->>'maxWeeklyMinutes')::int,
-   available_days=v_days
+   available_days=CASE WHEN v_change_availability THEN v_days ELSE available_days END
    WHERE business_id=p_business_id AND id=v_id;
  END IF;
- -- Retain historical rules, replacing only active/future owner-set windows.
- -- Existing availability audit triggers still run in this transaction.
+ -- Retain historical availability on profile-only edits.
+ IF v_change_availability THEN
  UPDATE public.staff_availability_rules
  SET effective_to=v_previous
  WHERE business_id=p_business_id AND employee_id=v_id
@@ -212,7 +219,7 @@ BEGIN
  DELETE FROM public.staff_availability_rules
  WHERE business_id=p_business_id AND employee_id=v_id
    AND source='owner_direct' AND effective_from>=v_today;
- FOR v_day IN SELECT value FROM jsonb_array_elements(p_payload->'availability') LOOP
+ FOR v_day IN SELECT value FROM jsonb_array_elements(v_windows) LOOP
   v_start:=v_day->>'start'; v_end:=v_day->>'end';
   IF v_start IS NOT NULL THEN
    INSERT INTO public.staff_availability_rules
@@ -223,6 +230,7 @@ BEGIN
       'owner_direct','unconfirmed');
   END IF;
  END LOOP;
+ END IF;
  RETURN v_id;
 END $$;
 REVOKE ALL ON FUNCTION public.staff_write_person(uuid,uuid,jsonb) FROM public,anon;
