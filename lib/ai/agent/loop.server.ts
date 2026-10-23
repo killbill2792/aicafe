@@ -81,8 +81,20 @@ export async function runAgentTurn(args: {
   const readFollowUps = async (): Promise<number> => {
     if (!args.takeFollowUps || absorbed.length >= 5 || now() >= workDeadline) return 0;
     let fresh: OwnerFollowUp[] = [];
-    try { fresh = (await args.takeFollowUps(5 - absorbed.length)).filter(m => m.text.trim() && !absorbed.some(a => a.id === m.id)); }
-    catch { return 0; }
+    const remaining = workDeadline - now();
+    if (remaining <= 0) return 0;
+    let inboxTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const messages = await Promise.race([
+        args.takeFollowUps(5 - absorbed.length),
+        new Promise<never>((_, reject) => {
+          inboxTimer = setTimeout(() => reject(new Error("inbox_deadline")), remaining);
+        }),
+      ]);
+      if (now() >= workDeadline) return 0;
+      fresh = messages.filter(m => m.text.trim() && !absorbed.some(a => a.id === m.id));
+    } catch { return 0; }
+    finally { clearTimeout(inboxTimer); }
     for (const message of fresh) {
       absorbed.push(message);
       input.push({ role: "user", content: message.text });

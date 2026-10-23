@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { agentInstructions, agentPromptCacheKey, runAgentTurn, type AgentProvider, type OwnerFollowUp } from "./loop.server";
 import { STYLE_RULES } from "./style";
 import { memoryToolDefinition } from "./tools/memory";
@@ -106,6 +106,35 @@ describe("mid-run follow-ups (CHAT_JOBS)", () => {
     expect(result.text).toBe("Hi.");
     expect(requests).toHaveLength(1);
     expect(result.absorbedOwnerMessageIds).toBeUndefined();
+  });
+  it("times out a stalled inbox at the work deadline and keeps the final-answer window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const { requests, provider } = recording([
+        [call("get_menu_items", '{"query":null,"limit":null}', "c1"), completed],
+        [text("Final answer."), completed],
+      ]);
+      let enteredInbox = false;
+      let releaseInbox: (messages: OwnerFollowUp[]) => void = () => undefined;
+      const stalled = new Promise<OwnerFollowUp[]>(resolve => { releaseInbox = resolve; });
+      const turn = runAgentTurn({ ownerText: "Latte?", context, provider,
+        takeFollowUps: () => { enteredInbox = true; return stalled; } });
+      for (let i = 0; i < 30 && !enteredInbox; i++) await Promise.resolve();
+      expect(enteredInbox).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(48_000);
+      const result = await turn;
+      expect(requests).toHaveLength(2);
+      expect(requests[1].tool_choice).toBe("none");
+      expect(result.text).toBe("Final answer.");
+      expect(result.endReason).toBe("timeout");
+      expect(result.absorbedOwnerMessageIds).toBeUndefined();
+      expect(result.usage.latencyMs).toBeLessThanOrEqual(60_000);
+      releaseInbox([{ id: "99999999-9999-4999-8999-999999999999", text: "too late" }]);
+      await Promise.resolve();
+      expect(result.absorbedOwnerMessageIds).toBeUndefined();
+    } finally { vi.useRealTimers(); }
   });
   it("caps absorbed follow-ups at five per turn", async () => {
     const many = Array.from({ length: 5 }, (_, i) => ({ id: `3333333${i}-3333-4333-8333-333333333333`, text: "more " + i }));
