@@ -11,6 +11,7 @@ import {
   activeRateDrafts,
   knownProcessorCount,
   untrustedEstimateDayCount,
+  requiresAverageTicket,
 } from "./processingFeeDefaults";
 
 describe("processing fee redesign defaults", () => {
@@ -129,6 +130,13 @@ describe("processing fee redesign defaults", () => {
     expect(untrustedEstimateDayCount(days, new Set(["2026-10-03", "2026-10-04"]))).toBe(0);
     expect(untrustedEstimateDayCount(days, new Set(["2026-10-03"]))).toBe(1);
     expect(untrustedEstimateDayCount(days, new Set())).toBe(2);
+  });
+
+  it("uses the exact same active-rule ticket requirement in UI and save", () => {
+    const allRules = [{ fixedFee: "0" }, { fixedFee: "0.25" }];
+    expect(requiresAverageTicket(activeRateDrafts(allRules, false), 3)).toBe(false);
+    expect(requiresAverageTicket(activeRateDrafts(allRules, true), 3)).toBe(true);
+    expect(requiresAverageTicket(activeRateDrafts(allRules, true), 0)).toBe(false);
   });
 
   it("one-tap bypasses a manually empty date but still requires fee inputs", () => {
