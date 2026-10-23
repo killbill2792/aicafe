@@ -85,6 +85,12 @@ export const SOURCE_SURFACES = {
   "lib/data/getMenuItemsForEdit.ts": {
     getMenuItemsForEdit:{capabilities:["menu.recipe","menu.ingredients"]},
   },
+  "lib/data/proposalEdits.server.ts":{
+    latestEditedProposalId:{restricted:"Scoped private approval-history traversal after server authentication; not an agent-readable metric"},
+  },
+  "lib/data/proposalPrices.server.ts":{
+    ownerMenuPrice:{restricted:"Owner-session active-product price check used only during explicit approval; never a generic model selector"},
+  },
   "lib/data/getMenuControlCenter.ts": {
     getMenuControlCenter:{capabilities:["pricing.recommendation","menu.product_economics"]},
   },

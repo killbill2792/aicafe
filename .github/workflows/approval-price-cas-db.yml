@@ -1,0 +1,32 @@
+name: Approval Price CAS Database Verification
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/migrations/20261023000082_owner_approved_menu_price_cas.sql"
+      - "supabase/migrations/20261008000031_pricing_evidence.sql"
+      - "scripts/test-approval-price-cas-db.mjs"
+      - ".github/workflows/approval-price-cas-db.yml"
+permissions:
+  contents: read
+jobs:
+  postgres:
+    name: Owner-approved Menu price transaction and concurrency
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/test-approval-price-cas-db.mjs

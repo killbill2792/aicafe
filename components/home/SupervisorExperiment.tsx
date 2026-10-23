@@ -10,7 +10,7 @@ export type ExperimentCopy={
   statusInProgress:string;statusComplete:string;statusInsufficient:string;
 };
 type Item={id:string;name:string;priceCents:number};
-type Proposal={id:string;revision:number;status:string;monitoring_start_date:string|null;
+type Proposal={id:string;capability_id:string;revision:number;status:string;monitoring_start_date:string|null;
   canonical_effect_payload:{productName:string;oldPriceCents:number;newPriceCents:number}};
 type Simulation={effect:{productName:string;oldPriceCents:number;newPriceCents:number};
   baseline:{estimatedAdditionalRevenue7DaysCents:number}};
@@ -28,7 +28,7 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
   let alive=true;
   void fetch(listEndpoint,{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error();return r.json();})
    .then((v:{catalog:Item[];proposals:Proposal[]})=>{
-    if(alive){setItems(v.catalog);setItemId(v.catalog[0]?.id??"");setProposals(v.proposals);}
+    if(alive){setItems(v.catalog);setItemId(v.catalog[0]?.id??"");setProposals(v.proposals.filter(p=>p.capability_id==="alex.drink_price_experiment.v1"));}
    }).catch(()=>{if(alive)setError(true);});
   return ()=>{alive=false;};
  },[listEndpoint,refreshVersion]);
@@ -44,7 +44,7 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
    const latest=await fetch(listEndpoint,{cache:"no-store"});
    if(!latest.ok)throw new Error();
    const state=await latest.json() as {proposals:Proposal[]};
-   setProposals(state.proposals);
+   setProposals(state.proposals.filter(p=>p.capability_id==="alex.drink_price_experiment.v1"));
    if(payload.action==="propose"&&state.proposals?.[0]?.id)setSelectedProposalId(state.proposals[0].id);
   }catch{setError(true);}finally{setBusy(false);}
  };

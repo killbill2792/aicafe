@@ -1,3 +1,8 @@
+import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
+import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
+import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
+import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
+import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { addOwnerMessageInput, threadIdInput } from "@/lib/ai/conversations/contracts";
 import { conversationError, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
@@ -65,7 +70,20 @@ export async function POST(request: Request, context: RouteContext) {
                 [String(b.text)] : []).join(" ") })).filter(m => m.content);
           const result = await runAgentTurn({ ownerText: input.text, history,
             context: { tools, asOf: identity.asOf, locale: input.locale,timezone:identity.timezone,
-              threadId:id,ownerMessageId:owner.id },
+              threadId:id,ownerMessageId:owner.id,
+              proposals:{proposePriceChange:async({productId,newPriceCents})=>{
+                const stable=JSON.stringify({ownerMessageId:owner.id,productId,newPriceCents});
+                // RFC 4122 UUIDv5: the thread UUID is the namespace.
+                const requestKey=proposalRequestKey(id,stable);
+                const proposal=await proposeLoop({...scope,threadId:id,locale:input.locale},
+                  supervisorLoopRegistry,new SupabaseLoopRepository(),menuPriceChangeCapabilityId,
+                  {productId,newPriceCents},requestKey);
+                const effect=proposal.canonicalEffectPayload as {
+                  productName:string;oldPriceCents:number;newPriceCents:number};
+                return {proposalId:proposal.id,revision:proposal.revision,
+                  productName:effect.productName,oldPriceCents:effect.oldPriceCents,
+                  newPriceCents:effect.newPriceCents};
+              }} },
             previousEvidence,onTool:(name,agentId)=>emit("tool",{name,agentId}),
             onDelta: delta => emit("delta", { text: delta }),
             onReset: discardChars => emit("reset", { discardChars }) });

@@ -17,6 +17,7 @@ import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleCon
   hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
 import { ChatMarkdown } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
+import SupervisorProposalCard from "./SupervisorProposalCard";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
 import { groupReplyBlocks } from "./supervisorReplyPresentation";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
@@ -79,8 +80,10 @@ function progressStatusText(copy: SupervisorChatCopy, status: SupervisorProgress
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-function ReplyBlock({ block, copy, locale, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; unverified?: { start: number; end: number }[] }) {
+function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; unverified?: { start: number; end: number }[] }) {
   if (!record(block)) return null;
+  if(block.type==="proposal_card"&&typeof block.proposalId==="string"&&threadId)
+    return <SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/>;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
     return block.type === "warning"
       ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
@@ -138,7 +141,7 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
         const spans = rawSpans.filter(record)
           .filter(v => v.blockIndex === i && typeof v.start === "number" && typeof v.end === "number")
           .map(v => ({ start: Number(v.start), end: Number(v.end) }));
-        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} unverified={spans}/>;
+        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} threadId={message.threadId} unverified={spans}/>;
       })}
     </div>
   </article>;

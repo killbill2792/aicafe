@@ -7,6 +7,7 @@ import { suppliesTools } from "./supplies";
 import { salesTools } from "./sales";
 import {draftScheduleTools} from "./draftSchedule";
 import {newItemPriceTools} from "./newItemPrice";
+import {proposalTools} from "./proposals";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { CafeStatePeriod } from "@/lib/operating/types";
@@ -24,12 +25,13 @@ export type AgentToolContext = {
   timezone?:string;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;
+  proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>};
 };
 const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
 const schemas = { get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools } as const;
+  ...staffTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools } as const;
 export type AgentToolName = keyof typeof schemas;
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name in staffTools||name in hoursTools||name in draftScheduleTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
@@ -69,6 +71,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
+  if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
   if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
   if(name==="get_labor")return staffTools.get_labor.execute(raw,ctx);
