@@ -3,10 +3,10 @@ import {useState} from "react";
 import {useRouter} from "next/navigation";
 import Link from "next/link";
 type Code={id:string;code_hint:string;duration_months:number|null;fixed_end_date:string|null;max_cafes:number;redeemed_cafes:number;note:string|null;active:boolean;created_at:string};
-type Redemption={code_id:string;business_id:string;redeemed_by:string|null;redeemed_at:string;access_end:string;ownerEmail:string};
+type Redemption={code_id:string;business_id:string;redeemed_by:string|null;redeemed_at:string;access_end:string;ownerEmail:string;cafeName:string;codeHint:string};
 type Access={business_id:string;mode:string;code_id:string|null;access_end:string|null};
 type Cafe={id:string;name:string};
-export default function CodeConsole({codes,redemptions,access,cafes,page,perPage,codeTotal}:{codes:Code[];redemptions:Redemption[];access:Access[];cafes:Cafe[];page:number;perPage:number;codeTotal:number}){
+export default function CodeConsole({codes,redemptions,access,cafes,page,perPage,codeTotal,cafePage,cafePerPage,cafeTotal}:{codes:Code[];redemptions:Redemption[];access:Access[];cafes:Cafe[];page:number;perPage:number;codeTotal:number;cafePage:number;cafePerPage:number;cafeTotal:number}){
  const router=useRouter();
  const [durationKind,setDurationKind]=useState("months");
  const [code,setCode]=useState("");
@@ -28,7 +28,7 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
   }catch(e){setError(e instanceof Error?e.message:"Request failed");}
   finally{setBusy(false);}
  }
- const café=(id:string)=>cafes.find(c=>c.id===id)?.name??id;
+ const pageUrl=(codeIndex:number,cafeIndex:number)=>"/admin/codes?page="+codeIndex+"&cafePage="+cafeIndex;
  return <section className="space-y-7">
   <div><h1 className="text-2xl font-bold">Free access codes</h1><p className="text-sm text-slate-600">No payments. Codes are stored as hashes; copy a new code when it is created.</p></div>
   {error&&<p role="alert" className="rounded border border-red-400 p-3 text-red-700">{error}</p>}
@@ -54,19 +54,20 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
     <td className="p-3"><button disabled={busy} className="underline" onClick={()=>void action({action:"toggle",id:c.id,active:!c.active})}>{c.active?"Deactivate":"Activate"}</button></td></tr>)}</tbody>
   </table></div>
   <nav className="flex gap-4 text-[17px]" aria-label="Code pages">
-   {page>0&&<Link className="underline" href={"/admin/codes?page="+(page-1)}>Previous codes</Link>}
-   {(page+1)*perPage<codeTotal&&<Link className="underline" href={"/admin/codes?page="+(page+1)}>Next codes</Link>}
+   {page>0&&<Link className="underline" href={pageUrl(page-1,cafePage)}>Previous codes</Link>}
+   {(page+1)*perPage<codeTotal&&<Link className="underline" href={pageUrl(page+1,cafePage)}>Next codes</Link>}
   </nav>
   <h2 className="text-xl font-bold">Recent redemptions</h2>
   <div className="overflow-x-auto rounded border bg-white"><table className="w-full text-left text-sm">
    <thead><tr className="bg-slate-100">{["Café","Owner","Code","Redeemed","Grant end","Current access end"].map(x=><th className="p-3" key={x}>{x}</th>)}</tr></thead>
    <tbody>{redemptions.map(r=><tr key={r.code_id+r.business_id} className="border-t">
-    <td className="p-3">{café(r.business_id)}</td><td className="p-3">{r.ownerEmail}</td>
-    <td className="p-3">{codes.find(c=>c.id===r.code_id)?.code_hint??"—"}</td>
+    <td className="p-3">{r.cafeName}</td><td className="p-3">{r.ownerEmail}</td>
+    <td className="p-3">{r.codeHint}</td>
     <td className="p-3">{r.redeemed_at.slice(0,10)}</td><td className="p-3">{r.access_end}</td>
     <td className="p-3">{access.find(a=>a.business_id===r.business_id)?.access_end??"Grandfathered"}</td></tr>)}</tbody>
   </table></div>
   <h2 className="text-xl font-bold">Café access control</h2>
+  <p className="text-[17px]">{cafeTotal} cafés · page {cafePage+1} of {Math.max(1,Math.ceil(cafeTotal/cafePerPage))}</p>
   <div className="space-y-2">{cafes.map(c=>{const state=access.find(a=>a.business_id===c.id);return <div key={c.id} className="flex flex-wrap items-center gap-3 rounded border bg-white p-3 text-sm">
    <strong>{c.name}</strong><span>{state?.mode??"grandfathered"} {state?.access_end??""}</span>
    <form className="flex items-center gap-2" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);void action({action:"extend",businessId:c.id,accessEnd:form.get("end")});}}>
@@ -76,5 +77,9 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
    <button disabled={busy} className="underline" onClick={()=>void action({action:"setMode",businessId:c.id,mode:"grandfathered"})}>Full access</button>
    <button disabled={busy} className="underline" onClick={()=>void action({action:"setMode",businessId:c.id,mode:"paused"})}>Pause AI</button>
   </div>})}</div>
+  <nav className="flex gap-4 text-[17px]" aria-label="Café access pages">
+   {cafePage>0&&<Link className="underline" href={pageUrl(page,cafePage-1)}>Previous cafés</Link>}
+   {(cafePage+1)*cafePerPage<cafeTotal&&<Link className="underline" href={pageUrl(page,cafePage+1)}>Next cafés</Link>}
+  </nav>
  </section>;
 }
