@@ -196,7 +196,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px] leading-relaxed">
           {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
           {" "}<Link className="inline-flex min-h-12 items-center underline" href="/pricing">{tAccess("haveCode")}</Link>
-        </p>
+        </p>}
         <SupervisorHomePanel
           initialThreadId={initialThread}
           initialProposalId={initialExperiment}
