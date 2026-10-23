@@ -23,3 +23,45 @@ export function initialCardSalesShareBps(
 export function missingCoverageSaveOptions(days: FeeCoverageDay[], today: string) {
   return { coverMissing: true as const, effectiveFrom: firstUncoveredSalesDay(days, today) };
 }
+
+/** Client-side field validation; error keys also drive aria-invalid and focus. */
+export function validateRequiredFeeFields(
+  values: {
+    processorLabel: string;
+    effectiveFrom: string;
+    cardSalesShare: string;
+    percentageRate: string;
+    fixedFee: string;
+    advanced: boolean;
+    coverMissing: boolean;
+  },
+  messages: {
+    requiredProcessor: string;
+    requiredEffectiveDate: string;
+    requiredCardShare: string;
+    requiredRate: string;
+    requiredRule: string;
+  },
+): Record<string, string> {
+  const errors: Record<string, string> = {};
+  const percent = (value: string) => {
+    const number = Number(value);
+    return value.trim() !== "" && Number.isFinite(number) && number >= 0 && number <= 100;
+  };
+  if (!values.processorLabel.trim()) errors.processor = messages.requiredProcessor;
+  if (!values.coverMissing && (!/^\\d{4}-\\d{2}-\\d{2}$/.test(values.effectiveFrom) || Number.isNaN(Date.parse(values.effectiveFrom)))) {
+    errors.effectiveFrom = messages.requiredEffectiveDate;
+  }
+  if (!percent(values.cardSalesShare)) errors.cardShare = messages.requiredCardShare;
+  if (!values.advanced && (!percent(values.percentageRate) || Number(values.percentageRate) > 50)) {
+    errors.percentageRate = messages.requiredRate;
+  }
+  if (!values.advanced && values.fixedFee.trim() && (!percent(values.fixedFee) || Number(values.fixedFee) > 50)) {
+    errors.fixedFee = messages.requiredRule;
+  }
+  return errors;
+}
+
+export function isFeeFieldInvalid(errors: Record<string, string>, key: string): boolean {
+  return Boolean(errors[key]);
+}
