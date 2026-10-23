@@ -107,9 +107,10 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    ensure(!old||(old.employee_id===person.id&&old.local_date===d.shift.date),"Cannot change a shift's identity");
    ensure(!d.remove||old,"A new shift cannot be removed");
    ensure(d.shift.date>=localDate,"Past shifts cannot be changed");
-   assertStaffShiftPlan([d.shift,...shifts.filter(x=>x.id!==d.shift_id&&x.employee_id===d.shift.employee_id).map(x=>({
-     employee_id:x.employee_id,date:x.local_date,start:x.start_local.slice(0,5),
-     end:x.end_local.slice(0,5),break_minutes:x.break_minutes}))]);
+   if(!d.remove)assertStaffShiftPlan([d.shift,
+     ...shifts.filter(x=>x.id!==d.shift_id&&x.employee_id===d.shift.employee_id).map(x=>({
+       employee_id:x.employee_id,date:x.local_date,start:x.start_local.slice(0,5),
+       end:x.end_local.slice(0,5),break_minutes:x.break_minutes}))]);
    item(person.display_name,old?fmtShift(old)+" ("+old.break_minutes+" "+copy.breakMinutes+")":copy.noShift,
      d.remove?copy.removed:when(d.shift)+" ("+d.shift.break_minutes+" "+copy.breakMinutes+")");
    payload={shift_id:d.shift_id,shift:d.shift,remove:d.remove};break;
@@ -121,7 +122,9 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    payload=d;break;
   }
   case "propose_staff_change":{
-   const d=input as z.infer<typeof staffProposalInputs.propose_staff_change>,p=active(d.employee_id);
+   const d=input as z.infer<typeof staffProposalInputs.propose_staff_change>;
+   const p=people.find(p=>p.id===d.employee_id);
+   ensure(p,"Staff member not found");
    ensure(p.wage_period==="hour","Salary workers require manual review");
    item(p.display_name,p.display_name+" · "+(p.role??copy.noRole)+" · "+display(p.wage_amount_cents)+" "+copy.perHour+" · "+(p.phone_e164??copy.noPhone)+" · "+(p.active?copy.active:copy.inactive),
      d.name+" · "+(d.role??copy.noRole)+" · "+d.wage_cents+" "+copy.perHour+" · "+(d.phone??copy.noPhone)+" · "+(d.active?copy.active:copy.inactive));
@@ -156,7 +159,10 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const v=bool?d.boolean_value:d.number_value;
    ensure(bool||(limits[d.rule]&&d.number_value!>=limits[d.rule][0]&&d.number_value!<=limits[d.rule][1]),"Rule outside allowed range");
    const defaults=(await import("@/lib/calc/scheduling/teamRuleDefaults")).DEFAULT_TEAM_RULES;
-   item(d.rule,display((rulesResult.data as Record<string,unknown>|null)?.[d.rule]??defaults[d.rule as keyof typeof defaults]),display(v));
+   const ruleLabels:Record<string,string>={"meal_break_enabled":"mealBreak","meal_break_minutes":"mealMinutes","meal_break_after_minutes":"mealAfter","rest_break_enabled":"paidRest","rest_break_minutes":"restMinutes","rest_break_every_minutes":"restEvery","weekly_ot_enabled":"weeklyOvertime","weekly_ot_after_minutes":"weeklyAfter","ot_multiplier_bp":"multiplier","daily_ot_enabled":"dailyOvertime","daily_ot_after_minutes":"dailyAfter","max_shift_enabled":"longestShift","max_shift_minutes":"longestMinutes","min_shift_enabled":"shortestShift","min_shift_minutes":"shortestMinutes","min_rest_enabled":"betweenShifts","min_rest_minutes":"betweenMinutes","coverage_enabled":"minimumCoverage","min_headcount":"peopleWhileOpen","prep_minutes_before_open":"prepBeforeOpen","prep_minutes_after_close":"prepAfterClose"};
+   const translatedRules=({en,es,ar} as const)[scope.locale].StaffSchedule as Record<string,string>;
+   item(translatedRules[ruleLabels[d.rule]]??d.rule,
+     display((rulesResult.data as Record<string,unknown>|null)?.[d.rule]??defaults[d.rule as keyof typeof defaults]),display(v));
    payload={rule:d.rule,boolean_value:d.boolean_value,number_value:d.number_value};break;
   }
   case "propose_send_schedule":{
@@ -165,6 +171,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const week=shifts.filter(x=>x.local_date>=d.week_start&&x.local_date<=add(d.week_start,6));
    const eligible=people.filter(p=>p.active&&p.phone_e164&&p.whatsapp_opt_in&&week.some(s=>s.employee_id===p.id));
    ensure(week.length>0,"No shifts scheduled for this week");
+   ensure(eligible.length>0,"No opted-in staff member with a phone number for this week");
    item(copy.week+" "+d.week_start,copy.notPrepared,
      copy.preparedNotSent+": "+eligible.map(p=>p.display_name).join(", ")+
      "\n"+week.filter(s=>eligible.some(p=>p.id===s.employee_id))

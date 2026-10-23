@@ -216,7 +216,7 @@ BEGIN
      wage_amount_cents=(d->>'wage_cents')::bigint,
      default_hourly_wage_cents=(d->>'wage_cents')::bigint,
      phone_e164=nullif(d->>'phone',''),active=(d->>'active')::boolean
-   WHERE business_id=p_business_id AND id=v_staff AND active AND wage_period='hour'
+   WHERE business_id=p_business_id AND id=v_staff AND wage_period='hour'
      AND (d->>'wage_cents')::bigint BETWEEN 1 AND 10000000;
    GET DIAGNOSTICS v_changed=ROW_COUNT;
    IF v_changed<>1 THEN RAISE EXCEPTION 'staff_changed_or_not_hourly' USING ERRCODE='P0001'; END IF;
@@ -310,6 +310,12 @@ BEGIN
    v_week:=(d->>'week_start')::date;
    IF extract(isodow FROM v_week)<>1 THEN
      RAISE EXCEPTION 'invalid_week' USING ERRCODE='22023'; END IF;
+   IF NOT EXISTS(SELECT 1 FROM public.scheduled_shifts s
+      JOIN public.employees e2 ON e2.business_id=s.business_id AND e2.id=s.employee_id
+      WHERE s.business_id=p_business_id AND s.local_date BETWEEN v_week AND v_week+6
+       AND s.deleted_at IS NULL AND e2.active AND e2.phone_e164 IS NOT NULL
+       AND e2.whatsapp_opt_in IS TRUE)
+   THEN RAISE EXCEPTION 'no_opted_in_schedule_recipients' USING ERRCODE='P0001'; END IF;
    INSERT INTO public.staff_schedule_deliveries(
       business_id,proposal_id,employee_id,recipient_e164,status)
    SELECT DISTINCT p_business_id,p.id,s.employee_id,e2.phone_e164,'prepared'
