@@ -341,7 +341,7 @@ VALUES(:'override_id',:'business',:'owner',:'thread_id',gen_random_uuid(),
   'payload',jsonb_build_object('employee_id',:'employee_id',
    'availability',jsonb_build_array(jsonb_build_object('day',1,'start','08:00','end','12:00')),
    'off_dates','[]'::jsonb,'effective_from',:'target_monday')),
- repeat('g',64),'{}','{"durationDays":1,"metricScope":"staff"}','en');
+ repeat('1',64),'{}','{"durationDays":1,"metricScope":"staff"}','en');
 SELECT public.supervisor_transition_proposal(
  :'business'::uuid,:'owner'::uuid,:'override_id'::uuid,1,'approve',NULL);
 SELECT public.supervisor_commit_staff_proposal(
@@ -353,12 +353,12 @@ BEGIN
    AND source='worker_reported_by_owner' AND day_of_week=2
    AND (effective_to IS NULL OR effective_to >=
      (SELECT (canonical_effect_payload->'payload'->>'effective_from')::date
-      FROM public.supervisor_proposals WHERE effect_hash=repeat('g',64))))
+      FROM public.supervisor_proposals WHERE effect_hash=repeat('1',64))))
  OR NOT EXISTS(SELECT 1 FROM public.staff_availability_rules
   WHERE business_id=current_setting('test.approval.business')::uuid
    AND source='owner_direct' AND day_of_week=1 AND start_local='08:00'::time
    AND effective_from=(SELECT (canonical_effect_payload->'payload'->>'effective_from')::date
-    FROM public.supervisor_proposals WHERE effect_hash=repeat('g',64)))
+    FROM public.supervisor_proposals WHERE effect_hash=repeat('1',64)))
  THEN RAISE EXCEPTION 'recurring replacement did not supersede worker-reported hours'; END IF;
 END $supersede$;
 
@@ -382,7 +382,7 @@ VALUES(:'dayoff_id',:'business',:'owner',:'thread_id',gen_random_uuid(),
   'payload',jsonb_build_object('employee_id',:'employee_id','availability','[]'::jsonb,
    'off_dates',jsonb_build_array((:'target_monday'::date+2)::text),
    'effective_from',:'target_monday')),
- repeat('h',64),'{}','{"durationDays":1,"metricScope":"staff"}','en');
+ repeat('2',64),'{}','{"durationDays":1,"metricScope":"staff"}','en');
 SELECT public.supervisor_transition_proposal(
  :'business'::uuid,:'owner'::uuid,:'dayoff_id'::uuid,1,'approve',NULL);
 SELECT public.supervisor_commit_staff_proposal(
@@ -392,15 +392,15 @@ BEGIN
  IF (SELECT count(*) FROM public.staff_availability_exceptions
    WHERE business_id=current_setting('test.approval.business')::uuid
     AND local_date=(SELECT ((canonical_effect_payload->'payload'->'off_dates'->>0)::date)
-     FROM public.supervisor_proposals WHERE effect_hash=repeat('h',64))
+     FROM public.supervisor_proposals WHERE effect_hash=repeat('2',64))
     AND exception_type='unavailable')<>1
  OR NOT EXISTS(SELECT 1 FROM public.staff_availability_exceptions
    WHERE business_id=current_setting('test.approval.business')::uuid
     AND local_date=(SELECT ((canonical_effect_payload->'payload'->'off_dates'->>0)::date)
-     FROM public.supervisor_proposals WHERE effect_hash=repeat('h',64))
+     FROM public.supervisor_proposals WHERE effect_hash=repeat('2',64))
     AND start_local IS NULL AND end_local IS NULL
     AND confirmation='owner_confirmed' AND confirmed_by=
-     (SELECT owner_user_id FROM public.supervisor_proposals WHERE effect_hash=repeat('h',64)))
+     (SELECT owner_user_id FROM public.supervisor_proposals WHERE effect_hash=repeat('2',64)))
  THEN RAISE EXCEPTION 'approved day off did not supersede partial or unconfirmed windows'; END IF;
 END $fullabsence$;
 ROLLBACK;
