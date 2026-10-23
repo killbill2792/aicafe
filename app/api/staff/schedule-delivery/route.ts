@@ -7,7 +7,8 @@ const locale=z.enum(["en","es","ar"]);
 const fail=(error:unknown)=>{
  const key=error instanceof DeliveryReadError?error.code:"storage_unavailable";
  return NextResponse.json({error:key},{status:key==="unauthorized"?404:
-   key==="not_approved"||key==="schedule_changed"?409:key==="invalid_week"||key==="recipient_not_eligible"?422:503,
+   key==="not_approved"||key==="schedule_changed"?409:
+   key==="invalid_week"||key==="invalid_input"||key==="recipient_not_eligible"?422:503,
    headers:{"Cache-Control":"no-store"}});
 };
 export async function GET(request:Request){

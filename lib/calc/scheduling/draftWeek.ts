@@ -59,6 +59,10 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
     .map(([a,b])=>[Math.max(0,minute(a)-before),Math.min(1439,minute(b)+after)] as [number,number])
     .filter(([a,b])=>a<b);
   const shifts:DraftShift[]=[];
+  // Dated absences constrain the authoritative recurring baseline too,
+  // not only suggested coverage. Excluding it early leaves a real gap.
+  const unavailableToday=new Set((inputs.unavailableDates??[])
+    .filter(x=>x.date===date).map(x=>x.employeeId));
   const add=(id:string,start:number,end:number,origin:"recurring"|"suggested",confirmation:"confirmed"|"unconfirmed",unpaid=0)=>{
    const e=people.get(id);if(!e||end<=start)return;
    const paidMinutes=Math.max(0,end-start-unpaid),rate=wage(e),cost=rate===null?null:Math.round(paidMinutes*rate/60);
@@ -66,7 +70,7 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
    occupied.set(id,[...(occupied.get(id)??[]),{day,start,end}]);
    minutesByPerson.set(id,(minutesByPerson.get(id)??0)+paidMinutes);
   };
-  for(const r of inputs.schedules.filter(r=>r.day_of_week===weekday&&active(r,date)&&people.has(r.employee_id))){
+  for(const r of inputs.schedules.filter(r=>r.day_of_week===weekday&&active(r,date)&&people.has(r.employee_id)&&!unavailableToday.has(r.employee_id))){
    const a=minute(r.start_time),b=minute(r.end_time);
    if(a<b)add(r.employee_id,a,b,"recurring","unconfirmed",r.unpaid_break_minutes??0);
    else estimated.push("overnightRecurringShiftNotDrafted");
@@ -85,7 +89,7 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
     if(shifts.some(s=>minute(s.start)<=start&&minute(s.end)>=end)){previous=null;continue;}
     const eligible=inputs.employees.flatMap(e=>{
       const options=inputs.availability.filter(r=>r.employee_id===e.id&&r.day_of_week===weekday&&active(r,date)&&minute(r.start_local)<=start&&minute(r.end_local)>=end);
-      if(!options.length||inputs.unavailableDates?.some(x=>x.employeeId===e.id&&x.date===date))return [];
+      if(!options.length||unavailableToday.has(e.id))return [];
       if((occupied.get(e.id)??[]).some(o=>o.day===day&&o.start<end&&o.end>start))return [];
       if((minutesByPerson.get(e.id)??0)+(end-start)>weeklyLimit(inputs.preferences,e.id,date))return [];
       return [{e,confirmed:options.some(o=>o.confirmation==="owner_confirmed"),rate:wage(e)}];

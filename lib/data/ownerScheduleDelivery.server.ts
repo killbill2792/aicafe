@@ -139,12 +139,20 @@ export async function readApprovedScheduleDelivery(source:unknown,
 }
 export async function markOwnerScheduleDelivery(raw:unknown){
  const params=z.strictObject({proposalId:uuid.optional(),week:weekInput.optional(),
-   employeeId:uuid,channel:z.enum(["whatsapp","sms"]),expectedPhone:z.string().regex(/^\+[1-9]\d{1,14}$/)}).parse(raw);
+   planRevisionId:uuid.optional(),employeeId:uuid,channel:z.enum(["whatsapp","sms"]),
+   expectedPhone:z.string().regex(/^\+[1-9]\d{1,14}$/)}).parse(raw);
+ if((params.proposalId && params.planRevisionId) ||
+    (!params.proposalId && (!params.week||!params.planRevisionId)))
+  throw new DeliveryReadError("invalid_input");
  const owner=await scheduleDeliveryContext();
  // Resolve source on every write (including approval status/tenant) before SQL CAS.
  const schedule=await readApprovedScheduleDelivery({
    ...(params.proposalId?{proposalId:params.proposalId}:{week:params.week}),
  },"en",owner);
+ // The exact plan revision used to render the message must still be the
+ // authorized revision. A week-only request could silently switch revisions.
+ if(!params.proposalId && schedule.source.planRevisionId!==params.planRevisionId)
+  throw new DeliveryReadError("schedule_changed");
  const person=schedule.recipients.find(x=>x.id===params.employeeId);
  if(!person||person.phone!==params.expectedPhone||
    eligibleForChannel(person.phone,person.optedIn,params.channel)!=="ready")

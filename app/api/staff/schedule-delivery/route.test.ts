@@ -31,6 +31,16 @@ describe("owner schedule compose API",()=>{
   expect(response.status).toBe(409);
   expect(JSON.stringify(await response.json())).not.toContain("message");
  });
+ it("rejects stale displayed revision without recording a replacement as opened",async()=>{
+  mocks.mark.mockRejectedValue(new DeliveryReadError("schedule_changed"));
+  const response=await POST(req("POST",{
+    week:"2026-11-02",planRevisionId:"11111111-1111-4111-8111-111111111111",
+    employeeId:"22222222-2222-4222-8222-222222222222",
+    channel:"sms",expectedPhone:"+14155550123"
+  }));
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({error:"schedule_changed"});
+ });
  it("records the owner-chosen channel instead of claiming actual delivery",async()=>{
   const payload={proposalId:"11111111-1111-4111-8111-111111111111",
     employeeId:"22222222-2222-4222-8222-222222222222",channel:"whatsapp",

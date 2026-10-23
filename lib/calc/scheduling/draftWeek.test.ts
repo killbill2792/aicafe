@@ -21,6 +21,24 @@ describe("pure scheduling draft",()=>{
   d.unavailableDates=[{employeeId:"cheap",date:"2026-10-26"}];
   expect(draftWeek(d,"2026-10-26").days[0].unfilled).toEqual([{start:"09:00",end:"12:00",hours:3}]);
  });
+ it("dated leave suppresses an existing recurring shift and permits replacement coverage",()=>{
+  const d=data();d.unavailableDates=[{employeeId:"expensive",date:"2026-10-26"}];
+  const monday=draftWeek(d,"2026-10-26").days[0];
+  expect(monday.shifts).toEqual([{
+    name:"cheap",start:"09:00",end:"12:00",paidHours:3,
+    wageCentsPerHour:1200,costCents:3600,origin:"suggested",availability:"confirmed"
+  }]);
+  expect(monday.unfilled).toEqual([]);
+  expect(monday.dayCostCents).toBe(3600);
+ });
+ it("absence of the only recurring worker opens the full coverage gap",()=>{
+  const d=data();d.employees=[employee("expensive",2500)];
+  d.availability=d.availability.filter(x=>x.employee_id==="expensive");
+  d.unavailableDates=[{employeeId:"expensive",date:"2026-10-26"}];
+  const monday=draftWeek(d,"2026-10-26").days[0];
+  expect(monday.shifts).toEqual([]);
+  expect(monday.unfilled).toEqual([{start:"09:00",end:"12:00",hours:3}]);
+ });
  it("keeps recurring shifts and selects cheapest available for uncovered hours",()=>{
   const r=draftWeek(data(),"2026-10-26");
   expect(r.days[0].shifts[0]).toMatchObject({name:"expensive",origin:"recurring"});

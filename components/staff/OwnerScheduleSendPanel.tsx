@@ -47,7 +47,8 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
   try{
    const result=await fetch(endpoint,{method:"POST",credentials:"same-origin",keepalive:true,
      headers:{"content-type":"application/json"},
-     body:JSON.stringify({...proposalId?{proposalId}:{week},employeeId:person.id,channel,
+     body:JSON.stringify({...proposalId?{proposalId}:{week,
+       planRevisionId:data?.source.planRevisionId},employeeId:person.id,channel,
        expectedPhone:person.phone})});
    if(!result.ok){
      if(result.status===409){setNotApproved(true);setData(null);}
