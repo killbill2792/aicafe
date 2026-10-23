@@ -3,6 +3,8 @@ import {
   firstUncoveredSalesDay,
   initialCardSalesShareBps,
   missingCoverageSaveOptions,
+  validateRequiredFeeFields,
+  isFeeFieldInvalid,
 } from "./processingFeeDefaults";
 
 describe("processing fee redesign defaults", () => {
@@ -33,5 +35,35 @@ describe("processing fee redesign defaults", () => {
       coverMissing: true,
       effectiveFrom: "2026-07-27",
     });
+  });
+  it("returns field-specific messages for empty and invalid required inputs", () => {
+    const messages = {
+      requiredProcessor: "Choose your processor",
+      requiredEffectiveDate: "Choose a date",
+      requiredCardShare: "Enter card sales",
+      requiredRate: "Enter percentage",
+      requiredRule: "Enter fee",
+    };
+    const errors = validateRequiredFeeFields({
+      processorLabel: "", effectiveFrom: "", cardSalesShare: "",
+      percentageRate: "60", fixedFee: "-1", advanced: false, coverMissing: false,
+    }, messages);
+    expect(Object.keys(errors).sort()).toEqual([
+      "cardShare", "effectiveFrom", "fixedFee", "percentageRate", "processor",
+    ]);
+    expect(errors.cardShare).toBe(messages.requiredCardShare);
+    expect(isFeeFieldInvalid(errors, "cardShare")).toBe(true);
+    expect(isFeeFieldInvalid(errors, "averageTicket")).toBe(false);
+  });
+
+  it("one-tap bypasses a manually empty date but still requires fee inputs", () => {
+    const messages = {
+      requiredProcessor: "Processor", requiredEffectiveDate: "Date",
+      requiredCardShare: "Card share", requiredRate: "Rate", requiredRule: "Fee",
+    };
+    expect(validateRequiredFeeFields({
+      processorLabel: "Toast", effectiveFrom: "", cardSalesShare: "100",
+      percentageRate: "2.6", fixedFee: "0.15", advanced: false, coverMissing: true,
+    }, messages)).toEqual({});
   });
 });
