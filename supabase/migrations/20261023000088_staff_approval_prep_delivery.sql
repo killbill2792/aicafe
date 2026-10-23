@@ -374,7 +374,8 @@ BEGIN
  IF v_kind IN ('propose_schedule','propose_send_schedule') THEN
    INSERT INTO public.staff_schedule_handoff_snapshots(business_id,proposal_id,week_start,shifts)
    VALUES(p_business_id,p.id,v_week,public.staff_handoff_week_shifts(p_business_id,v_week));
-   IF (SELECT jsonb_array_length(shifts) FROM public.staff_schedule_handoff_snapshots
+   IF v_kind='propose_send_schedule' AND
+      (SELECT jsonb_array_length(shifts) FROM public.staff_schedule_handoff_snapshots
        WHERE business_id=p_business_id AND proposal_id=p.id)=0
    THEN RAISE EXCEPTION 'empty_schedule' USING ERRCODE='P0001'; END IF;
  END IF;
