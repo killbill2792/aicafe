@@ -8,9 +8,9 @@ import PageShell from "@/components/shared/PageShell";
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
-export default async function TypeExpensePage({ searchParams }: { searchParams: Promise<{ category?: string }> }) {
+export default async function TypeExpensePage({ searchParams }: { searchParams: Promise<{ category?: string; returnTo?: string }> }) {
   await requireOwnBusiness();
-  const [{ category }, t] = await Promise.all([searchParams, getTranslations("AddCost")]);
+  const [{ category, returnTo }, t] = await Promise.all([searchParams, getTranslations("AddCost")]);
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");
 
@@ -23,6 +23,7 @@ export default async function TypeExpensePage({ searchParams }: { searchParams: 
     <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("optionType")} backHref="/add-cost" backLabel={tCommon("back")} />
       <TypeExpenseForm
+        returnTo={returnTo}
         initialCategory={EXPENSE_CATEGORY_CODES.includes(category as ExpenseCategoryCode) ? category as ExpenseCategoryCode : null}
         categoryLabels={categoryLabels}
         todayDateStr={new Date().toISOString().slice(0, 10)}
