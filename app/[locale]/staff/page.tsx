@@ -19,6 +19,6 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
   : await Promise.all([getWeekSchedule({weekStart:selected}),syncStaffRuleAlerts()]);
  return <PageShell className="!max-w-full">{result.ok?
   <StaffWorkspace initial={result.data} tab={tab} locale={locale} teamExtras={<TeamLegacyMetrics/>}
-   initialAlerts={alerts.ok?alerts.alerts:[]} alertError={alerts.ok?null:alerts.error}/>:
+   initialAlerts={alerts.ok?[...alerts.alerts]:[]} alertError={alerts.ok?null:alerts.error}/>:
   <div className="p-6 text-fg"><h1>{t("schedule")}</h1><p role="alert">{t("loadError")} ({result.error}).</p></div>}</PageShell>;
 }
