@@ -16,7 +16,7 @@ function fixture(changed=false,rosterGuids:string[]=[employeeGuid]){
  const from=(table:string)=>{
   const filters:Record<string,unknown>={};
   const chain={
-   select:()=>chain,eq:(key:string,value:unknown)=>{(fields[table]??=[]).push([key,value]);filters[key]=value;return chain;},
+   select:()=>chain,order:()=>chain,eq:(key:string,value:unknown)=>{(fields[table]??=[]).push([key,value]);filters[key]=value;return chain;},
    in:(key:string,values:string[])=>{(fields[table]??=[]).push([key,values]);filters[key]=values;return chain;},
    update:(value:Record<string,unknown>)=>{if(table==="orders")writes.push(value);return chain;},
    then:(resolve:(value:{data:unknown[];error:null})=>unknown)=>{

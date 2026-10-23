@@ -75,7 +75,7 @@ export async function recomputeDailyRollup(
   const voidsCents = voidedLines.reduce((s, l) => s + l.net_sales_cents, 0);
 
   // Theoretical ingredient cost: recipe cost per menu item × quantity sold, at this date's prices.
-  const menuItemIds = [...new Set(nonVoidedLines.map((l) => l.menu_item_id).filter(Boolean))];
+  const menuItemIds = [...new Set(nonVoidedLines.map((l) => l.menu_item_id).filter((id): id is string => id !== null))];
   let ingredientsCents = 0;
   if (menuItemIds.length > 0) {
     const recipeLines:Array<{menu_item_id:string;ingredient_id:string;quantity:number}>=[];
