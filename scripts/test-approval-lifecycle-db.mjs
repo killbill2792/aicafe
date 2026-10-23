@@ -129,16 +129,13 @@ try{
   await draft(staleId,uuid(104));
   await expectError(()=>withService(db,c=>c.query(
     rpcStale,[B,OWNER,THREAD,staleId,1])),"P0001");
-  const approved=await withService(db,c=>c.query(rpcTransition,params(staleId,1,"approve")));
-  assert.equal(approved.rows[0].value.status,"approved");
-  const claimed=await withService(db,c=>c.query(rpcTransition,params(staleId,2,"claim_commit")));
-  assert.equal(claimed.rows[0].value.status,"executing");
+  await withService(db,c=>c.query(rpcTransition,params(staleId,1,"approve")));
+  assert.deepEqual(await row(staleId),{status:"approved",revision:2});
+  await withService(db,c=>c.query(rpcTransition,params(staleId,2,"claim_commit")));
+  assert.deepEqual(await row(staleId),{status:"executing",revision:3});
   await expectError(()=>withService(db,c=>c.query(
     rpcStale,[B,OWNER,uuid(888),staleId,3])),"P0001");
-  const stale=await withService(db,async c=>(await c.query(
-    rpcStale,[B,OWNER,THREAD,staleId,3])).rows[0].value);
-  assert.equal(stale.status,"stale");
-  assert.equal(stale.revision,4);
+  await withService(db,c=>c.query(rpcStale,[B,OWNER,THREAD,staleId,3]));
   assert.deepEqual(await row(staleId),{status:"stale",revision:4});
   await expectError(()=>withService(db,c=>c.query(
     rpcStale,[B,OWNER,THREAD,staleId,3])),"P0001");
