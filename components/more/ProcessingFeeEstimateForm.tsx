@@ -65,7 +65,7 @@ type Labels = {
   useRateForDays: string; daysCovered: string; selectProcessor: string; otherProcessor: string;
   requiredProcessor: string; requiredEffectiveDate: string; requiredCardShare: string;
   requiredRate: string; requiredRule: string; requiredAverageTicket: string;
-  invalidMix: string; uploadFeeReport: string; info: string;
+  invalidMix: string; uploadFeeReport: string; info: string; noNewCoverage: string;
 };
 
 type RuleDraft = {
@@ -222,7 +222,7 @@ export default function ProcessingFeeEstimateForm({
         }
       }
       if (rules.reduce((sum, rule) => sum + (bpsFromPercent(rule.salesMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-salesMix", labels.invalidMix);
-      if (rules.some((rule) => Number(rule.fixedFee) > 0) && rules.reduce((sum, rule) => sum + (bpsFromPercent(rule.transactionMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-transactionMix", labels.invalidMix);
+      if (rules.reduce((sum, rule) => sum + (bpsFromPercent(rule.transactionMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-transactionMix", labels.invalidMix);
     }
     if (rules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.trustedOrderDays < coverage.salesDays && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
     setFieldErrors(errors);
@@ -361,7 +361,7 @@ export default function ProcessingFeeEstimateForm({
         ) : null}
 
         {shownCoverage.missingDays > 0 && <button type="button" disabled={isPending} onClick={() => save(true)} className="min-h-12 rounded-full bg-accent px-4 text-sm font-bold text-on-accent disabled:opacity-40">{labels.useRateForDays.replace("{count}", fmt(shownCoverage.missingDays))}</button>}
-        {coveredCount !== null && <p role="status" className="text-sm font-bold text-good">{labels.daysCovered.replace("{count}", fmt(coveredCount))}</p>}
+        {coveredCount !== null && <p role="status" className={`text-sm font-bold ${coveredCount ? "text-good" : "text-warn"}`}>{coveredCount ? labels.daysCovered.replace("{count}", fmt(coveredCount)) : labels.noNewCoverage}</p>}
         {sourceSummary.actualFeeCents > 0 && (
           <p className="text-sm text-ink-muted">
             {currency.format(sourceSummary.actualFeeCents / 100)} · {labels.coverageActual}
