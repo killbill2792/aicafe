@@ -13,7 +13,7 @@ export default async function CafesPage(){
         <td className="p-3">{c.pos?`${c.pos.provider}: ${c.pos.status}`:"Not connected"}</td>
         <td className="p-3">{c.firstSale?`${c.firstSale} – ${c.lastSale}`:"None"}</td>
         <td className="p-3">{c.staffCount??"—"}</td><td className="p-3">{c.menuCount??"—"}</td>
-        <td className="p-3">{c.is_demo?"Demo":"Standard"}</td>
+        <td className="p-3">{c.access.mode==="grandfathered"?"Full access":c.access.mode==="paused"?"Paused":c.access.active?"Free until "+c.access.accessEnd:"Expired"}</td>
       </tr>)}</tbody>
     </table></div></section>;
 }

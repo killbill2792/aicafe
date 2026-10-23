@@ -11,7 +11,7 @@ export default async function AdminLayout({children}:{children:ReactNode}) {
       <Link href="/admin" className="font-bold">AI CAFE · Admin</Link>
       <Link href="/admin/cafes">Cafes</Link><Link href="/admin/conversations">Conversations</Link>
       <Link href="/admin/costs">Costs</Link><Link href="/admin/patterns">Patterns</Link>
-      <Link href="/admin/proactive">Proactive</Link>
+      <Link href="/admin/proactive">Proactive</Link><Link href="/admin/codes">Access codes</Link>
     </nav></header><main className="mx-auto max-w-6xl p-5">{children}</main>
   </body></html>;
 }

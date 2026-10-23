@@ -18,6 +18,7 @@ export default async function MorePage() {
 
   const links = [
     { href: "/more/cafe-profile", Icon: Store, label: t("cafeProfile") },
+    { href: "/pricing", Icon: CreditCard, label: t("pricingAccess") },
     { href: "/more/processing-fees", Icon: Percent, label: t("processingFees") },
     { href: "/more/economics", Icon: Target, label: t("economics") },
     { href: "/more/bills", Icon: Receipt, label: t("monthlyBills") },

@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "./auth.server";
+import { getCafeAccess } from "@/lib/access/access.server";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const db = () => createAdminSupabaseClient();
 function check(error: {message:string}|null) { if(error) throw error; }
@@ -11,13 +12,14 @@ export async function listCafes() {
   check(error);
   return Promise.all((businesses??[]).map(async business => {
     const id=business.id;
-    const [members,threads,pos,sales,staff,menu] = await Promise.all([
+    const [members,threads,pos,sales,staff,menu,access] = await Promise.all([
       admin.from("memberships").select("user_id").eq("business_id",id).eq("role","owner").limit(10),
       admin.from("ai_threads").select("last_message_at").eq("business_id",id).order("last_message_at",{ascending:false}).limit(1),
       admin.from("pos_connections").select("provider,status").eq("business_id",id).limit(1),
       admin.from("orders").select("business_date").eq("business_id",id).order("business_date",{ascending:true}).limit(1),
       admin.from("employees").select("*",{count:"exact",head:true}).eq("business_id",id),
       admin.from("menu_items").select("*",{count:"exact",head:true}).eq("business_id",id),
+      getCafeAccess(id),
     ]);
     [members,threads,pos,sales,staff,menu].forEach(item=>check(item.error));
     const latest=await admin.from("orders").select("business_date").eq("business_id",id).order("business_date",{ascending:false}).limit(1);
@@ -30,7 +32,7 @@ export async function listCafes() {
     return { ...business, owners:emails, lastActive:threads.data?.[0]?.last_message_at??null,
       pos:pos.data?.[0]??null, firstSale:sales.data?.[0]?.business_date??null,
       lastSale:latest.data?.[0]?.business_date??null,
-      staffCount:staff.count??null, menuCount:menu.count??null };
+      staffCount:staff.count??null, menuCount:menu.count??null, access };
   }));
 }
 export async function getCafe(id:string) {

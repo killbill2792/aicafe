@@ -745,7 +745,8 @@
     "economics": "Profit goal simulator",
     "signOut": "Sign Out",
     "signingOut": "Signing out…",
-    "signOutError": "Could not sign out. Try again."
+    "signOutError": "Could not sign out. Try again.",
+    "pricingAccess": "Pricing and access"
   },
   "BreakEven": {
     "title": "Break-even plan",
@@ -2628,5 +2629,26 @@
     "prepareScheduleMessages": "Prepare schedule messages",
     "scheduleNotSent": "Not sent. Copy these messages and share them manually.",
     "inactivePerson": "Inactive"
+  },
+  "FreeAccess": {
+    "pricing": "Plans and pricing",
+    "noPayments": "No payment is collected here. Enter a free access code to continue using AI.",
+    "starter": "Starter",
+    "growth": "Growth",
+    "perMonth": "/ month",
+    "planStarterFeature1": "View your café data",
+    "planStarterFeature2": "AI assistant access with a valid code",
+    "planGrowthFeature1": "Reports and staff insights",
+    "planGrowthFeature2": "AI assistant and approvals with a valid code",
+    "accessTitle": "Your café access",
+    "fullAccess": "Full access included",
+    "freeUntil": "Free until {date}",
+    "expired": "Free access ended. You can still read your data. Enter another code to use AI and approvals.",
+    "renewSoon": "Access ends on {date}. Redeem another code to continue.",
+    "haveCode": "Have a code?",
+    "codePlaceholder": "Enter access code",
+    "redeem": "Redeem code",
+    "redeemed": "Free until",
+    "redeemError": "Could not redeem code"
   }
 }

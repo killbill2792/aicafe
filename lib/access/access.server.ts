@@ -1,0 +1,33 @@
+import "server-only";
+import {createHash} from "node:crypto";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {createServerSupabaseClient} from "@/lib/supabase/server";
+import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
+import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
+import {accessStatus,normalizeCode,validCode,type CafeAccess} from "./status";
+export type OwnerAccess={businessId:string;userId:string;access:CafeAccess};
+export async function getCafeAccess(businessId:string):Promise<CafeAccess>{
+  const {data,error}=await createAdminSupabaseClient().from("cafe_access")
+    .select("mode,access_end").eq("business_id",businessId).maybeSingle();
+  // Only a not-yet-installed migration fails open; never turn outages into free access.
+  if(error && !["42P01","PGRST205"].includes(error.code??"")) throw error;
+  return accessStatus(data);
+}
+export async function requireOwnerAccessScope():Promise<OwnerAccess>{
+  const client=await createServerSupabaseClient();
+  const {data:{user},error}=await client.auth.getUser();
+  if(error||!user)throw new ConversationApiError(401,"authentication_required");
+  const businessId=await getActiveBusinessId(user.id);
+  const {data:membership,error:membershipError}=await client.from("memberships").select("role")
+    .eq("business_id",businessId).eq("user_id",user.id).maybeSingle();
+  if(membershipError)throw membershipError;
+  if(membership?.role!=="owner")throw new ConversationApiError(403,"owner_access_required");
+  return {businessId,userId:user.id,access:await getCafeAccess(businessId)};
+}
+export async function assertCafeAiAccess(businessId:string):Promise<void>{
+  if(!(await getCafeAccess(businessId)).active)throw new ConversationApiError(403,"access_expired");
+}
+export function accessCodeHash(raw:string):string{
+  if(!validCode(raw))throw new ConversationApiError(422,"invalid_code");
+  return createHash("sha256").update(normalizeCode(raw),"utf8").digest("hex");
+}

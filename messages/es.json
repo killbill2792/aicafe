@@ -745,7 +745,8 @@
     "economics": "Simulador de meta de ganancia",
     "signOut": "Cerrar sesión",
     "signingOut": "Cerrando sesión…",
-    "signOutError": "No se pudo cerrar sesión. Inténtalo de nuevo."
+    "signOutError": "No se pudo cerrar sesión. Inténtalo de nuevo.",
+    "pricingAccess": "Precios y acceso"
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
@@ -2628,5 +2629,26 @@
     "prepareScheduleMessages": "Preparar mensajes del horario",
     "scheduleNotSent": "No enviados. Copia los mensajes y compártelos manualmente.",
     "inactivePerson": "Inactivo"
+  },
+  "FreeAccess": {
+    "pricing": "Planes y precios",
+    "noPayments": "Aquí no se cobra ningún pago. Introduce un código de acceso gratuito para seguir usando la IA.",
+    "starter": "Inicial",
+    "growth": "Crecimiento",
+    "perMonth": "/ mes",
+    "planStarterFeature1": "Consulta los datos de tu cafetería",
+    "planStarterFeature2": "Acceso al asistente de IA con un código válido",
+    "planGrowthFeature1": "Informes y datos del personal",
+    "planGrowthFeature2": "Asistente de IA y aprobaciones con un código válido",
+    "accessTitle": "Acceso de tu cafetería",
+    "fullAccess": "Acceso completo incluido",
+    "freeUntil": "Gratis hasta {date}",
+    "expired": "El acceso gratuito terminó. Puedes seguir consultando tus datos. Introduce otro código para usar la IA y las aprobaciones.",
+    "renewSoon": "El acceso termina el {date}. Canjea otro código para continuar.",
+    "haveCode": "¿Tienes un código?",
+    "codePlaceholder": "Introduce el código de acceso",
+    "redeem": "Canjear código",
+    "redeemed": "Gratis hasta",
+    "redeemError": "No se pudo canjear el código"
   }
 }

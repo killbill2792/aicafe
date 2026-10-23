@@ -18,6 +18,7 @@ import { styleReport } from "@/lib/ai/agent/style";
 import type { AgentToolContext } from "@/lib/ai/agent/tools";
 import { isJobStepAgent, type AgentJob } from "@/lib/ai/agent/jobState";
 import { scheduleTurnAudit } from "@/lib/admin/audit.server";
+import { assertCafeAiAccess } from "@/lib/access/access.server";
 import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 
 export const runtime = "nodejs";
@@ -199,6 +200,7 @@ export async function POST(request: Request, context: RouteContext) {
     const id = parseInput(threadIdInput, threadId);
     const input = parseInput(addOwnerMessageInput, await readBoundedJson(request));
     const { scope, service } = await authenticatedConversationContext();
+    await assertCafeAiAccess(scope.businessId);
     const readiness = await getSupervisorChatReadiness(true);
     if (!readiness.enabled) throw new ConversationApiError(503, readiness.reason);
     const thread = await service.getThread(id);
@@ -266,6 +268,7 @@ export async function POST(request: Request, context: RouteContext) {
             break;
           }
           try {
+            await assertCafeAiAccess(scope.businessId);
             await assertOwnerAgentTurnAvailable(scope);
             owner = await jobs.readOwnerMessage(scope, id, next.ownerMessageId);
             ownerText = owner.text ?? "";
