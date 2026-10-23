@@ -2388,7 +2388,11 @@
     "usageEndCount": "Falta conteo final para",
     "usageCoverage": "Falta historial completo de ventas de Toast",
     "usageRecipeMissing": "Revise la receta o los modificadores registrados",
-    "usageUnavailable": "Uso no disponible; compruebe Toast y los conteos"
+    "usageUnavailable": "Uso no disponible; compruebe Toast y los conteos",
+    "usageErrorInvalidQuantity": "Introduzca una cantidad válida. Las compras deben ser mayores que cero; un conteo puede ser cero.",
+    "usageErrorInvalidUnit": "Elija una unidad compatible con este ingrediente.",
+    "usageErrorIngredientNotFound": "Este ingrediente ya no está disponible en esta cafetería. Elija otro.",
+    "usageErrorSaveFailed": "No se pudo guardar el registro de inventario. Vuelva a intentarlo."
   },
   "SupervisorProposalCard": {
     "title": "Propuesta de cambio de precio",
