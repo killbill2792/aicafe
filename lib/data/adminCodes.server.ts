@@ -37,7 +37,7 @@ export async function getAdminCodeConsole(page=0,cafePage=0){
  const access=accessPages.flatMap(result=>result.data??[]);
  const names=Object.fromEntries([...cafeRows,...historyCafePages.flatMap(result=>result.data??[])]
    .map(c=>[c.id,c.name] as const));
- const hints=Object.fromEntries([...codes??[],...historyCodePages.flatMap(result=>result.data??[])]
+ const hints=Object.fromEntries([...(codes??[]),...historyCodePages.flatMap(result=>result.data??[])]
    .map(c=>[c.id,c.code_hint] as const));
  const totals=(counts??{}) as Record<string,number>;
  const ownerIds=[...new Set(history.map(r=>r.redeemed_by).filter((x):x is string=>!!x))];
