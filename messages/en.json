@@ -2693,6 +2693,7 @@
     "redeemExpired": "That code has expired. Ask for a new one.",
     "redeemFull": "That code has reached its café limit.",
     "redeemRateLimited": "Too many attempts. Please try again in 15 minutes.",
-    "redeemPaused": "AI access was paused for this café. Contact the administrator."
+    "redeemPaused": "AI access was paused for this café. Contact the administrator.",
+    "redeemAlreadyUsed": "This code has already been used for this café. Enter a different code to extend access."
   }
 }
