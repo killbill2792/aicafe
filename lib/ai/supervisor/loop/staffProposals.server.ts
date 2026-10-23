@@ -154,7 +154,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    baseline:{source:"staff_schedule",status:"actual"},monitorSpec:{durationDays:1,metricScope:"staff"}};
 }
 export const staffCapabilities=names.map(name=>registerLoopCapability({
- id:staffCapabilityId(name),version:1,inputSchema:staffProposalInputs[name],effectSchema,
+ id:staffCapabilityId(name),version:1,inputSchema:staffProposalInputs[name] as z.ZodType<unknown>,effectSchema,
  proposalDescription:"Create an inert staff action card requiring a fresh explicit owner approval.",
  simulate:(scope,raw)=>prepare(scope,name,raw),
  // The approval endpoint owns the atomic SQL commit; never use the generic split commit.
