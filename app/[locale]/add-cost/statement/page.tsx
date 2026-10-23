@@ -34,6 +34,13 @@ export default async function StatementUploadPage() {
           balanceMismatch: t("statementBalanceMismatch"),
           lowConfidence: t("statementLowConfidence"),
           exclude: t("statementExclude"),
+          addMissingLine: t("statementAddMissingLine"),
+          missingLineHint: t("statementMissingLineHint"),
+          missingDescription: t("statementMissingDescription"),
+          missingAmount: t("statementMissingAmount"),
+          missingDate: t("statementMissingDate"),
+          missingCategory: t("statementMissingCategory"),
+          missingConfirm: t("statementMissingConfirm"),
         }}
       />
     </PageShell>
