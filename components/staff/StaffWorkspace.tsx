@@ -2,6 +2,11 @@
 import {useEffect,useState,useTransition} from "react";
 import {useRouter} from "next/navigation";
 import {dismissStaffRuleAlert} from "@/lib/actions/ruleAlerts";
+import DayTimeline from "./DayTimeline";
+import WeekGrid from "./WeekGrid";
+import ShiftPreview from "./ShiftPreview";
+import {dayTotals,bestFreePerson,availabilityStatus,totalOvertimeMinutes,previewShift,type DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
+import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 import Link from "next/link";
 import {addPerson,updatePerson,setPersonActive} from "@/lib/actions/teamWorkspace";
 import {upsertShift,removeShift,restoreShift,copyWeek,sendSchedule} from "@/lib/actions/schedule";
@@ -19,6 +24,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const [screen,setScreen]=useState(tab),[sheet,setSheet]=useState<"person"|"shift"|null>(null);
  const [busy,startTransition]=useTransition(),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [dismissed,setDismissed]=useState<string[]>([]);
+ const [repeatWeekly,setRepeatWeekly]=useState(false),[fillsGap,setFillsGap]=useState(false);
+ const [inlineName,setInlineName]=useState(""),[inlineRole,setInlineRole]=useState("Barista");
  const [name,setName]=useState(""),[role,setRole]=useState("Barista"),[wage,setWage]=useState<number|null>(null);
  const [phone,setPhone]=useState(""),[minWeeklyMinutes,setMinWeeklyMinutes]=useState<number|null>(null),
   [maxWeeklyMinutes,setMaxWeeklyMinutes]=useState<number|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
@@ -60,7 +67,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   return String(Math.floor(next/60)).padStart(2,"0")+":"+String(next%60).padStart(2,"0");
  };
  const openShift=(d:string,id?:string,employeeId?:string)=>{
-  const shift=data.shifts.find(s=>s.id===id);setDate(d);setEditing(id??null);
+  const shift=data.shifts.find(s=>s.id===id);setDate(d);setEditing(id??null);setFillsGap(false);setRepeatWeekly(false);
   setChosen(shift?.employeeId??employeeId??data.team[0]?.id??"");
   setStart(shift?.start??"07:00");setEnd(shift?.end??"15:00");setBreakMin(shift?.breakMinutes??30);setSheet("shift");
  };
@@ -76,6 +83,17 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const undoRemove=()=>{if(!undo)return;const item=undo;setUndo(null);
   run(()=>item.type==="shift"?restoreShift({id:item.id}):setPersonActive({id:item.id,active:true}));
  };
+ const fixGap=(gap:Data["gaps"][number])=>{
+  const person=bestFreePerson(data.team,gap.date,gap.start,gap.end,data.shifts,data.availability);
+  openShift(gap.date,undefined,person?.id);
+  setStart(gap.start);setEnd(gap.end);
+  setBreakMin(data.rules.meal_break_enabled?data.rules.meal_break_minutes:0);
+  setFillsGap(true);
+ };
+ const proposed=sheet==="shift"?previewShift({employeeId:chosen,date,start,end,breakMinutes:breakMin,editingId:editing},
+  data.team,data.shifts,data.gaps,data.availability,data.rules):null;
+ const previewBlock:DetailedShift|null=proposed?{...proposed.next,id:editing??"preview",
+  employeeName:data.team.find(p=>p.id===chosen)?.name??"Team",status:"draft"}:null;
  const dayLabel=(d:string)=>new Intl.DateTimeFormat(locale,{weekday:"short",day:"numeric",timeZone:"UTC"}).format(new Date(d+"T12:00:00Z"));
  const status=data.shifts.some(s=>s.status==="sent")?"Sent":"Draft";
  return <div className="mx-auto w-full max-w-7xl space-y-3 px-4 pb-32 pt-5 text-fg" dir={locale==="ar"?"rtl":"ltr"}>
@@ -99,41 +117,72 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     <div className="text-center font-semibold">{dayLabel(data.dates[0])} – {dayLabel(data.dates[6])}<div className="text-sm text-muted">{status}</div></div>
     <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")+7*86400000).toISOString().slice(0,10)}`} className="p-3">›</Link>
    </div>
-   <div className="grid grid-cols-3 gap-2">{[
+   <div className="grid grid-cols-3 gap-2 lg:grid-cols-4">{[
     ["Paid hours",String(hours(data.total.paidMinutes))],
     ["Wages",fmt(data.total.knownCostCents,data.currency)],
-    ["Gaps",String(data.gaps.length)]
-   ].map(([label,value])=><div key={label} className="rounded-2xl border border-line bg-surface p-3"><strong className="block text-xl">{value}</strong><span className="text-sm text-muted">{label}</span></div>)}</div>
+    ["Gaps",String(data.gaps.length)],
+    ["Overtime",String(Number((totalOvertimeMinutes(data.team,data.shifts,data.rules.weekly_ot_after_minutes,data.rules.weekly_ot_enabled)/60).toFixed(1)))+" h"]
+   ].map(([label,value])=><div key={label} className={`rounded-2xl border border-line bg-surface p-3 ${label==="Overtime"?"hidden lg:block":""} ${label==="Gaps"&&data.gaps.length?"border-neg bg-neg-soft":""}`}><strong className="block text-xl">{value}</strong><span className="text-sm text-muted">{label}</span></div>)}</div>
    {data.total.estimated&&<p className="rounded-xl bg-warn-soft p-3 text-warn-text">Estimate: {data.total.estimateCount} estimated shift(s), {data.total.unknownCount} without an available wage estimate.</p>}
-   <nav aria-label="Week days" className="grid grid-cols-7 gap-1">{data.dates.map(d=><a key={d} href={"#day-"+d} className="rounded-xl bg-surface2 px-1 py-3 text-center text-sm">{dayLabel(d)}{data.gaps.some(g=>g.date===d)&&<span className="block text-neg">●</span>}</a>)}</nav>
-   <div className="space-y-3 lg:hidden">{data.dates.map(d=><section key={d} id={"day-"+d} className="rounded-[20px] border border-line bg-surface p-4">
-    <div className="flex items-center justify-between gap-2"><h2 className="text-lg font-bold">{dayLabel(d)}</h2>
-      <strong>{hours(data.shifts.filter(s=>s.date===d).reduce((n,s)=>n+s.paidMinutes,0))} h</strong></div>
-    <div className="mt-3 space-y-2">{data.shifts.filter(s=>s.date===d).map(s=><button key={s.id} onClick={()=>openShift(d,s.id)}
-      className="flex min-h-12 w-full items-center justify-between rounded-xl bg-accent-soft px-3 text-start text-accent-text">
-      <span>{s.employeeName} · {s.start}–{s.end}</span><span>{hours(s.paidMinutes)} h · {fmt(s.costCents,data.currency)}{s.estimated?" est.":""}</span>
-    </button>)}</div>
-    {data.gaps.filter(g=>g.date===d).map(g=><button key={g.start} disabled={data.readOnly} onClick={()=>openShift(d)}
-      className="mt-2 flex min-h-12 w-full items-center justify-between rounded-xl bg-neg-soft px-3 text-neg">
-      ⚠ {g.start}–{g.end} · {g.headcount} on <b>Fix</b></button>)}
-    <button disabled={data.readOnly} onClick={()=>openShift(d)} className="mt-3 min-h-12 w-full rounded-xl border-2 border-dashed border-line text-accent-text">+ shift</button>
-   </section>)}</div>
-   <div className="hidden overflow-x-auto rounded-[20px] border border-line bg-surface lg:block"><table className="w-full min-w-[920px] text-start">
-    <thead><tr><th className="p-3 text-start">Team</th>{data.dates.map(d=><th key={d} className="p-3">{dayLabel(d)}</th>)}<th>Week</th></tr></thead>
-    <tbody>{data.team.map(p=><tr key={p.id} className="border-t border-line"><th className="p-3 text-start">{p.name}<small className="block text-muted">{p.role??"Team"}</small></th>
-      {data.dates.map(d=><td key={d} className="p-2">{data.shifts.filter(s=>s.date===d&&s.employeeId===p.id).map(s=><button key={s.id} onClick={()=>openShift(d,s.id)} className="block w-full rounded-lg bg-accent-soft p-2 text-sm text-accent-text">{s.start}–{s.end}<span className="block">{hours(s.paidMinutes)} h</span></button>)}<button disabled={data.readOnly} onClick={()=>openShift(d,undefined,p.id)} className="min-h-12 w-full text-muted">+</button></td>)}
-      <td className="p-2 text-center">{hours(data.shifts.filter(s=>s.employeeId===p.id).reduce((n,s)=>n+s.paidMinutes,0))} h</td>
-    </tr>)}</tbody>
-    <tfoot><tr><th className="p-3">Coverage</th>{data.dates.map(d=><td key={d} className="p-2 text-sm">{data.gaps.some(g=>g.date===d)?"⚠ Gap":"✓"}</td>)}<td /></tr></tfoot>
-   </table></div>
-   {data.shifts.length===0&&<p className="rounded-2xl border border-line bg-surface p-5">No shifts this week. Copy last week or add a shift.</p>}
+   <nav aria-label="Week days" className="grid grid-cols-7 gap-1">{data.dates.map((d,i)=>{
+    const totals=dayTotals(d,data.shifts);
+    return <a key={d} href={"#day-"+d} className={`relative rounded-xl border border-line bg-surface px-1 py-2 text-center text-sm ${i===0?"bg-accent text-on-accent":""}`}>
+     {data.gaps.some(g=>g.date===d)&&<span aria-label="Gap" className="absolute end-1 top-1 size-2 rounded-full bg-neg"/>}
+     <span className="block text-xs font-bold">{dayLabel(d).split(" ")[0]}</span>
+     <strong className="block font-headline text-lg">{new Date(d+"T12:00:00Z").getUTCDate()}</strong>
+     <span className="block text-xs">{Number((totals.paidMinutes/60).toFixed(1))}h</span></a>;
+   })}</nav>
+   <div className="space-y-3 lg:hidden">{data.dates.map(d=>{
+    const totals=dayTotals(d,data.shifts);
+    const weekday=new Date(d+"T12:00:00Z").getUTCDay();
+    const opening=data.openHours?.[OPEN_HOURS_DAY_KEYS[weekday]];
+    return <section key={d} id={"day-"+d} className="rounded-[20px] border border-line bg-surface p-3">
+     <div className="flex flex-wrap items-baseline gap-2">
+      <h2 className="text-lg font-bold">{dayLabel(d)}</h2>
+      <span className="text-sm text-muted">{opening===undefined?"Hours not set":opening.length?"Open "+opening.map(a=>a.join("–")).join(", "):"Closed"}</span>
+      <strong className="ms-auto text-sm">{Number((totals.paidMinutes/60).toFixed(1))} h · {fmt(totals.knownCostCents,data.currency)}{totals.estimated?" est.":""}</strong>
+     </div>
+     <DayTimeline date={d} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours} people={data.team}
+      onShiftClick={data.readOnly?undefined:(id)=>openShift(d,id)}/>
+     <div className="mt-3 flex flex-wrap gap-2">
+      {data.gaps.filter(g=>g.date===d).map(g=><button disabled={data.readOnly} key={g.start}
+       onClick={()=>fixGap(g)} className="min-h-12 flex-1 rounded-xl bg-neg-soft p-2 text-sm font-bold text-neg">
+       ⚠ {g.start}–{g.end} · only {g.headcount} person on — Fix</button>)}
+      <button disabled={data.readOnly} onClick={()=>openShift(d)} className="min-h-12 rounded-xl border-2 border-dashed border-line px-4 font-bold text-accent-text">+ shift</button>
+     </div>
+    </section>;
+   })}</div>
+   <WeekGrid dates={data.dates} people={data.team} shifts={data.shifts} gaps={data.gaps}
+    openHours={data.openHours} currency={data.currency} readOnly={data.readOnly}
+    onEdit={(d,id)=>openShift(d,id)} onAdd={(d,id)=>openShift(d,undefined,id)}/>
+   {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">
+    <h2 className="font-headline text-xl font-bold">No shifts this week</h2><p className="my-2 text-muted">Start with last week or add your first shift.</p>
+    <div className="grid gap-2 sm:grid-cols-3">
+     <button disabled={data.readOnly||busy} className="min-h-12 rounded-xl border border-accent px-3 text-accent-text"
+      onClick={()=>run(()=>copyWeek({fromWeekStart:new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10),toWeekStart:data.weekStart}))}>Copy last week</button>
+     <button disabled className="min-h-12 rounded-xl border border-line px-3 text-muted" title="Requires owner approval cards">Ask Olivia · coming soon</button>
+     <button disabled={data.readOnly} className="min-h-12 rounded-xl bg-accent px-3 text-on-accent" onClick={()=>openShift(data.dates[0])}>+ shift</button>
+    </div></section>}
    <div className="fixed inset-x-0 bottom-16 z-20 flex gap-2 border-t border-line bg-surface p-3 lg:bottom-0">
     <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl border border-accent text-accent-text" onClick={()=>run(()=>copyWeek({fromWeekStart:new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10),toWeekStart:data.weekStart}))}>Copy last week</button>
     <button disabled={busy} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={()=>startTransition(async()=>{const r=await sendSchedule({weekStart:data.weekStart});if(!r.ok){setError(r.error);return;}setNotice(r.data.messages.map(m=>m.text).join("\n"));})}>Send to team</button>
    </div>
   </>:<>
    <section className="rounded-[20px] border border-line bg-surface p-4"><h2 className="text-lg font-bold">Add someone</h2>
-     <button disabled={data.readOnly} onClick={()=>openPerson()} className="mt-3 min-h-12 w-full rounded-xl border-2 border-dashed border-accent text-accent-text">+ Add person</button></section>
+     <div className="mt-3 flex gap-2"><input autoComplete="off" placeholder="Name" aria-label="New person's name"
+       value={inlineName} onChange={e=>setInlineName(e.target.value)} disabled={data.readOnly}
+       className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-surface p-3"/>
+       <button disabled={data.readOnly||busy||!inlineName.trim()} onClick={()=>run(async()=>{
+        const response=await addPerson({name:inlineName.trim(),role:inlineRole,wageCents:null,
+         availability:Array.from({length:7},(_,day)=>({day,start:null,end:null})),
+         minWeeklyMinutes:null,maxWeeklyMinutes:null,phone:null});
+        if(response.ok)setInlineName("");return response;
+       })} className="min-h-12 rounded-xl bg-accent px-4 text-on-accent">Add</button></div>
+     <div className="mt-2 flex flex-wrap gap-2">{["Barista","Manager","Baker","Cashier"].map(role=><button
+      disabled={data.readOnly} key={role} onClick={()=>setInlineRole(role)} aria-pressed={inlineRole===role}
+      className={`min-h-12 rounded-full border border-line px-3 text-sm ${inlineRole===role?"bg-accent-soft text-accent-text":""}`}>{role}</button>)}</div>
+     <button disabled={data.readOnly} onClick={()=>openPerson()} className="mt-3 min-h-12 w-full rounded-xl border-2 border-dashed border-accent text-accent-text">+ More details (optional)</button>
+   </section>
    <section className="rounded-[20px] border border-line bg-surface p-4"><h2 className="mb-3 font-bold">Your team · {data.team.length}</h2>
      {data.team.map(p=><div key={p.id} className="flex min-h-16 items-center gap-3 border-t border-line py-3">
       <span className="grid size-12 place-items-center rounded-full bg-accent-soft font-bold">{p.name[0]}</span>
@@ -151,7 +200,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   {notice&&<div role="dialog" className="fixed inset-4 z-50 overflow-auto rounded-2xl bg-surface p-5 shadow-2xl"><h2>Ready to copy</h2><pre className="whitespace-pre-wrap">{notice}</pre><button onClick={()=>navigator.clipboard.writeText(notice)} className="my-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent">Copy</button><button onClick={()=>setNotice("")} className="ms-3 min-h-12">Close</button></div>}
   {sheet&&<div className="fixed inset-0 z-40 flex items-end justify-center bg-black/50" onClick={()=>setSheet(null)}>
    <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-5 pb-8" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true">
-    <div className="mx-auto mb-3 h-1 w-12 rounded bg-line"/><h2 className="font-headline text-xl font-bold">{sheet==="person"?(personEditing?"Edit person":"Add person"):"Add / edit shift"}</h2>
+    <div className="mx-auto mb-3 h-1 w-12 rounded bg-line"/>{fillsGap&&sheet==="shift"&&<p className="text-sm font-bold text-pos">✓ Fills the gap</p>}<h2 className="font-headline text-xl font-bold">{sheet==="person"?(personEditing?"Edit person":"Add person"):(editing?"Edit shift":"Add shift · "+dayLabel(date))}</h2>
     {sheet==="person"?<>
       <label className="mt-3 block font-semibold">Name<input value={name} onChange={e=>setName(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"/></label>
       <div className="mt-3 flex flex-wrap gap-2">{["Barista","Manager","Baker","Cashier"].map(r=><button key={r} aria-pressed={role===r} onClick={()=>setRole(r)} className="min-h-12 rounded-full border border-line px-3">{r}</button>)}</div>
@@ -204,16 +253,35 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        {personEditing?"Save changes":"Add "+name.trim()}</button>
       {personEditing&&<button disabled={busy} onClick={removePerson} className="mt-2 min-h-12 w-full text-neg">Remove person · Undo available</button>}
     </>:<>
-      <label className="mt-3 block">Who<select value={chosen} onChange={e=>setChosen(e.target.value)} className="min-h-12 w-full rounded-xl border border-line bg-surface">{data.team.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <div className="mt-3"><h3 className="font-bold">Who</h3><div className="mt-2 flex flex-wrap gap-2">{data.team.map(p=>{
+       const status=availabilityStatus(p,date,start,end,data.shifts.filter(s=>s.id!==editing),data.availability);
+       return <button key={p.id} type="button" aria-pressed={chosen===p.id} onClick={()=>setChosen(p.id)}
+        className={`flex min-h-12 items-center gap-2 rounded-full border px-2 py-1 font-bold ${chosen===p.id?"border-accent-text bg-accent-soft text-accent-text":"border-line bg-surface"}`}>
+        <span className="grid size-9 place-items-center rounded-full bg-surface2">{p.name[0]}</span>
+        {p.name}<span className={`text-sm font-normal ${status==="free"?"text-pos":"text-muted"}`}>{status.replace("_"," ")}</span></button>;
+      })}</div></div>
       {([["Start",start,setStart],["End",end,setEnd]] as const).map(([label,time,set])=><div key={label} className="mt-3">
        <b>{label}</b><div className="flex items-center justify-between rounded-xl bg-surface2">
-        <button onClick={()=>set(new Date(Date.parse("2000-01-01T"+time+":00Z")-1800000).toISOString().slice(11,16))} className="min-h-12 min-w-12">−</button>
+        <button onClick={()=>set(timeStep(time,-30))} className="min-h-12 min-w-12">−</button>
         <span>{time}</span>
-        <button onClick={()=>set(new Date(Date.parse("2000-01-01T"+time+":00Z")+1800000).toISOString().slice(11,16))} className="min-h-12 min-w-12">+</button>
+        <button onClick={()=>set(timeStep(time,30))} className="min-h-12 min-w-12">+</button>
        </div></div>)}
-      <label className="mt-3 flex min-h-12 items-center gap-2">Unpaid break
-       <button onClick={()=>setBreakMin(Math.max(0,breakMin-10))} className="min-h-12 min-w-12">−</button>{breakMin} min<button onClick={()=>setBreakMin(Math.min(240,breakMin+10))} className="min-h-12 min-w-12">+</button></label>
-      <button disabled={busy||!chosen} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakMin}))}
+      <p className="mt-2 text-center text-sm text-muted">− / + moves 30 min</p>
+      <DayTimeline date={date} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours}
+       people={data.team} preview={previewBlock}/>
+      <div className="mt-4 rounded-2xl border border-line p-3">
+       <div className="flex min-h-14 items-center gap-2"><span aria-hidden="true">☕</span>
+        <div className="flex-1"><strong>{breakMin}-min unpaid break</strong><p className="text-sm text-muted">Auto: shifts over {data.rules.meal_break_after_minutes/60} h · Default</p></div>
+        <button type="button" onClick={()=>setBreakMin(Math.max(0,breakMin-10))} className="min-h-12 min-w-10">−</button>
+        <button type="button" onClick={()=>setBreakMin(Math.min(240,breakMin+10))} className="min-h-12 min-w-10">+</button></div>
+       <label className="flex min-h-14 items-center justify-between gap-3 border-t border-line">
+        <span>Repeat every {dayLabel(date).split(" ")[0]}</span><input type="checkbox"
+         checked={repeatWeekly} onChange={e=>setRepeatWeekly(e.target.checked)} className="size-6 accent-[rgb(var(--accent))]"/></label>
+      </div>
+      <ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={breakMin}
+       editingId={editing} team={data.team} shifts={data.shifts} gaps={data.gaps}
+       availability={data.availability} rules={data.rules} currency={data.currency}/>
+      <button disabled={busy||!chosen} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakMin,repeatWeekly}))}
        className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">Save shift</button>
       {editing&&<button className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>Remove shift</button>}
     </>}
