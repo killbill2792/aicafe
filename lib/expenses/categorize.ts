@@ -24,6 +24,7 @@ export async function categorizeLines(
   supabase: SupabaseClient,
   businessId: string,
   lines: StatementLineInput[],
+  allowAi=true,
 ): Promise<CategorizedLine[]> {
   const { data: vendorRules } = await supabase.from("vendor_rules").select("normalized_vendor, category_code").eq("business_id", businessId);
   const vendorRuleMap = new Map((vendorRules ?? []).map((r) => [r.normalized_vendor, r.category_code as ExpenseCategoryCode]));
@@ -46,7 +47,7 @@ export async function categorizeLines(
     needsAi.push(line);
   }
 
-  if (needsAi.length > 0 && isAiConfigured()) {
+  if (needsAi.length > 0 && allowAi && isAiConfigured()) {
     try {
       const knownVendors = [...vendorRuleMap.keys()];
       const aiResult = await categorizeStatementLines({ knownVendors, lines: needsAi });

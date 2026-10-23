@@ -5,6 +5,8 @@ import { isAiConfigured } from "@/lib/ai/types";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import {requireOwnerAccessScope} from "@/lib/access/access.server";
+import {getTranslations} from "next-intl/server";
 import { parseVoiceExpense, type VoiceExpenseResult } from "@/lib/ai/prompts/voiceExpense";
 
 export type VoiceReviewResult = { ok: true; expense: VoiceExpenseResult } | { ok: false; error: string };
@@ -16,6 +18,13 @@ export async function reviewVoiceExpense(transcript: string): Promise<VoiceRevie
   if (!isAiConfigured()) return { ok: false, error: "Voice entry isn't available right now. Try again later, or type it in instead." };
   if (!transcript.trim()) return { ok: false, error: "Didn't catch that — try again." };
 
+  let owner:Awaited<ReturnType<typeof requireOwnerAccessScope>>;
+  try{owner=await requireOwnerAccessScope();}
+  catch{return {ok:false,error:"Sign in first."};}
+  if(!owner.access.active){
+    const t=await getTranslations("FreeAccess");
+    return {ok:false,error:t("expired")};
+  }
   let today = new Date().toISOString().slice(0, 10);
   if (isSupabaseConfigured()) {
     const supabase = await createServerSupabaseClient();
