@@ -31,6 +31,11 @@ export default function StatementUploader({
     exclude: string;
     addMissingLine: string;
     missingLineHint: string;
+    missingDescription: string;
+    missingAmount: string;
+    missingDate: string;
+    missingCategory: string;
+    missingConfirm: string;
   };
 }) {
   const router = useRouter();
@@ -39,6 +44,10 @@ export default function StatementUploader({
   const [state, setState] = useState<ReviewState | null>(null);
   const [isPending, startTransition] = useTransition();
   const [missingLine, setMissingLine] = useState(false);
+  const [missingDescription, setMissingDescription] = useState("");
+  const [missingAmount, setMissingAmount] = useState("");
+  const [missingDate, setMissingDate] = useState("");
+  const [missingCategory, setMissingCategory] = useState<ExpenseCategoryCode>("other");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   function handleFile(file: File) {
@@ -52,6 +61,16 @@ export default function StatementUploader({
   function updateCategory(i: number, category: ExpenseCategoryCode | "exclude") {
     if (!state?.ok) return;
     setState({ ...state, lines: state.lines.map((l) => (l.i === i ? { ...l, correctedCategory: category === "exclude" ? undefined : category, category: category === "exclude" ? "exclude" : l.category } : l)) });
+  }
+
+  function addMissingLine() {
+    if (!state?.ok || !missingDescription.trim() || !/^\d+(?:\.\d{1,2})?$/.test(missingAmount) || Number(missingAmount) <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(missingDate)) return;
+    const nextId = Math.max(-1, ...state.lines.map((line) => line.i)) + 1;
+    setState({ ...state, lines: [...state.lines, { i: nextId, description: missingDescription.trim(), date: missingDate, amountCents: Math.round(Number(missingAmount) * 100), category: missingCategory, reason: labels.addMissingLine, confidence: 1 }] });
+    setMissingLine(false);
+    setMissingDescription("");
+    setMissingAmount("");
+    setMissingDate("");
   }
 
   function handleSaveAll() {
@@ -100,7 +119,26 @@ export default function StatementUploader({
       {state.balanceCheck && !state.balanceCheck.ok && (
         <button type="button" onClick={() => setMissingLine(true)} className="rounded-full border border-warn px-4 py-3 text-sm font-bold text-warn">{labels.addMissingLine}</button>
       )}
-      {missingLine && <p role="status" className="text-sm text-warn">{labels.missingLineHint}</p>}
+      {missingLine && (
+        <div className="flex flex-col gap-3 rounded-card-lg border border-warn bg-card p-4">
+          <p className="text-sm text-ink-muted">{labels.missingLineHint}</p>
+          <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingDescription}
+            <input type="text" value={missingDescription} onChange={(e) => setMissingDescription(e.target.value)} className="h-11 rounded-xl border border-line px-3" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingAmount}
+            <input type="number" min="0.01" step="0.01" value={missingAmount} onChange={(e) => setMissingAmount(e.target.value)} className="h-11 rounded-xl border border-line px-3" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingDate}
+            <input type="date" value={missingDate} onChange={(e) => setMissingDate(e.target.value)} className="h-11 rounded-xl border border-line px-3" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingCategory}
+            <select value={missingCategory} onChange={(e) => setMissingCategory(e.target.value as ExpenseCategoryCode)} className="h-11 rounded-xl border border-line px-3">
+              {EXPENSE_CATEGORY_CODES.map((code) => <option key={code} value={code}>{categoryLabels[code]}</option>)}
+            </select>
+          </label>
+          <button type="button" onClick={addMissingLine} disabled={!missingDescription.trim() || !/^\d+(?:\.\d{1,2})?$/.test(missingAmount) || Number(missingAmount) <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(missingDate)} className="h-11 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40">{labels.missingConfirm}</button>
+        </div>
+      )}
       <div className="flex flex-col gap-2 rounded-card-lg bg-card p-2">
         {state.lines.map((line) => {
           const category = line.correctedCategory ?? (line.category === "exclude" ? "other" : line.category);
