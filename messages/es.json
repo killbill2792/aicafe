@@ -106,6 +106,7 @@
     "statementMissingDate": "Fecha",
     "statementMissingCategory": "Categoría",
     "statementSaveError": "No se pudo guardar el estado de cuenta. Revisa las líneas e inténtalo de nuevo.",
+    "statementMissingCancel": "Cancelar",
     "statementMissingConfirm": "Agregar línea",
     "title": "Agregar un gasto",
     "placeholder": "Foto de recibo, carga de estado de cuenta, entrada por voz y entrada manual llegan en el próximo hito.",
