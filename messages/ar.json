@@ -97,6 +97,7 @@
     "salesCoverageMonth": "تتوفر بيانات مبيعات لـ {actual} من {expected} أيام هذا الشهر."
   },
   "AddCost": {
+    "manualSaveError": "تعذّر حفظ هذا المصروف. حاول مرة أخرى.",
     "backspace": "حذف",
     "statementAddMissingLine": "إضافة سطر مفقود",
     "statementMissingLineHint": "أدخل تفاصيل المعاملة المفقودة أدناه.",
