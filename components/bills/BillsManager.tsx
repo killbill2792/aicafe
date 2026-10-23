@@ -39,6 +39,7 @@ function BillForm({
   const [dueDay, setDueDay] = useState(existing?.dueDay ? String(existing.dueDay) : "");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const actionLock = useRef(false);
 
   const finalLabel = showLabelField ? label.trim() : defaultLabel;
   const amountCents = recurringCostAmountCentsFromInput(amount);
@@ -46,27 +47,43 @@ function BillForm({
   const canSave = Boolean(finalLabel) && amountCents !== null;
 
   function handleSave() {
-    if (!canSave || amountCents === null) return;
+    if (!canSave || amountCents === null || actionLock.current) return;
+    actionLock.current = true;
+    setError(null);
     startTransition(async () => {
-      const result = await saveRecurringCost({
-        id: existing?.id,
-        category,
-        label: finalLabel,
-        amountCents,
-        frequency: "monthly",
-        dueDay: Number(dueDay) || undefined,
-      });
-      if (result.ok) onDone();
-      else setError(result.error);
+      try {
+        const result = await saveRecurringCost({
+          id: existing?.id,
+          category,
+          label: finalLabel,
+          amountCents,
+          frequency: "monthly",
+          dueDay: Number(dueDay) || undefined,
+        });
+        if (result.ok) onDone();
+        else setError(labels.saveError);
+      } catch {
+        setError(labels.saveError);
+      } finally {
+        actionLock.current = false;
+      }
     });
   }
 
   function handleDelete() {
-    if (!existing || !window.confirm(labels.confirmRemove)) return;
+    if (!existing || actionLock.current || !window.confirm(labels.confirmRemove)) return;
+    actionLock.current = true;
+    setError(null);
     startTransition(async () => {
-      const result = await deleteRecurringCost(existing.id);
-      if (result.ok) onDone();
-      else setError(result.error);
+      try {
+        const result = await deleteRecurringCost(existing.id);
+        if (result.ok) onDone();
+        else setError(labels.saveError);
+      } catch {
+        setError(labels.saveError);
+      } finally {
+        actionLock.current = false;
+      }
     });
   }
 
@@ -80,7 +97,7 @@ function BillForm({
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder={labels.labelPlaceholder}
-            className="min-h-12 rounded-xl border border-line px-2.5 text-base"
+            className="min-h-12 rounded-xl border border-line px-2.5 text-[17px]"
           />
         </label>
       )}
@@ -94,7 +111,7 @@ function BillForm({
           step="0.01"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          className="min-h-12 w-28 rounded-xl border border-line px-2.5 text-end text-base"
+          className="min-h-12 w-28 rounded-xl border border-line px-2.5 text-end text-[17px]"
         />
       </label>
       <p className="text-[13px] text-ink-muted">{labels.amountHint}</p>
@@ -106,16 +123,16 @@ function BillForm({
           max={31}
           value={dueDay}
           onChange={(e) => setDueDay(e.target.value)}
-          className="min-h-12 w-20 rounded-xl border border-line px-2.5 text-end text-base"
+          className="min-h-12 w-20 rounded-xl border border-line px-2.5 text-end text-[17px]"
         />
       </label>
       {error && <p role="alert" className="text-[17px] text-warn">{labels.saveError}</p>}
       <div className="flex gap-2">
-        <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="min-h-12 flex-1 rounded-full bg-accent text-[17px] font-bold text-on-accent disabled:opacity-40">
+        <button type="button" onClick={handleSave} disabled={isPending || !canSave || actionLock.current} className="min-h-12 flex-1 rounded-full bg-accent text-[17px] font-bold text-on-accent disabled:opacity-40">
           {labels.save}
         </button>
         {existing && (
-          <button type="button" onClick={handleDelete} disabled={isPending} className="min-h-12 rounded-full border border-warn px-4 text-[17px] font-bold text-warn">
+          <button type="button" onClick={handleDelete} disabled={isPending || actionLock.current} className="min-h-12 rounded-full border border-warn px-4 text-[17px] font-bold text-warn">
             {labels.delete}
           </button>
         )}
@@ -171,13 +188,13 @@ export default function BillsManager({
           <div key={category} ref={initialCategory === category ? targetRef : undefined} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
             <button type="button" onClick={() => toggle(category)} className="flex min-h-12 items-center gap-3">
               <PlainIcon code={category} size={32} color="currentColor" />
-              <span className="flex-1 text-start text-base font-bold">{categoryLabels[category]}</span>
+              <span className="flex-1 text-start text-[17px] font-bold">{categoryLabels[category]}</span>
               {existing ? (
-                <span className="text-base font-bold">
+                <span className="text-[17px] font-bold">
                   {money.format(existing.amountCents / 100)}
                 </span>
               ) : (
-                <span className="rounded-full bg-warn-tint px-2.5 py-1 text-xs font-bold text-warn">{labels.missing}</span>
+                <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[13px] font-bold text-warn">{labels.missing}</span>
               )}
             </button>
             {isOpen && (
@@ -205,8 +222,8 @@ export default function BillsManager({
           <div key={bill.id} ref={initialCategory === OTHER_CATEGORY && bill.id === initialOpenKey ? targetRef : undefined} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
             <button type="button" onClick={() => toggle(bill.id)} className="flex items-center gap-3">
               <PlainIcon code={OTHER_CATEGORY} size={32} color="currentColor" />
-              <span className="min-w-0 flex-1 truncate text-start text-base font-bold">{bill.label}</span>
-              <span className="text-base font-bold">
+              <span className="min-w-0 flex-1 truncate text-start text-[17px] font-bold">{bill.label}</span>
+              <span className="text-[17px] font-bold">
                 {money.format(bill.amountCents / 100)}
               </span>
             </button>
@@ -241,7 +258,7 @@ export default function BillsManager({
         <button
           type="button"
           onClick={() => toggle(NEW_OTHER_KEY)}
-          className="flex items-center gap-3 rounded-card-lg bg-card p-4 text-start text-base font-bold text-good"
+          className="flex items-center gap-3 rounded-card-lg bg-card p-4 text-start text-[17px] font-bold text-good"
         >
           <PlainIcon code={OTHER_CATEGORY} size={32} color="currentColor" />
           {labels.addAnother}
