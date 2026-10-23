@@ -1,11 +1,11 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
-const uuid=z.uuid(),date=z.iso.date(),clock=z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/);
+const uuid=z.uuid(),date=z.iso.date(),clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const shift=z.strictObject({employee_id:uuid,date,start:clock,end:clock,
   break_minutes:z.number().int().min(0).max(240)});
 const person=z.strictObject({name:z.string().trim().min(1).max(80),
   role:z.string().trim().max(60).nullable(),wage_cents:z.number().int().min(1).max(10000000),
-  phone:z.string().regex(/^\\+[1-9]\\d{1,14}$/).nullable()});
+  phone:z.string().regex(/^\+[1-9]\d{1,14}$/).nullable()});
 const rules=[
  "meal_break_enabled","meal_break_minutes","meal_break_after_minutes",
  "rest_break_enabled","rest_break_minutes","rest_break_every_minutes",

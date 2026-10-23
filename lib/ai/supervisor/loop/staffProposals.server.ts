@@ -26,7 +26,7 @@ const isoDay=(d:string)=>new Date(d+"T12:00:00Z").getUTCDay();
 const add=(d:string,n:number)=>new Date(Date.parse(d+"T12:00:00Z")+86400000*n).toISOString().slice(0,10);
 const fmtShift=(s:Shift)=>when({date:s.local_date,start:s.start_local.slice(0,5),end:s.end_local.slice(0,5)});
 const display=(v:unknown)=>v===null||v===undefined?"—":String(v);
-const ensure=(ok:unknown,msg:string):asserts ok=>{if(!ok)throw new Error(msg);};
+function ensure(ok:unknown,msg:string):asserts ok{if(!ok)throw new Error(msg);}
 async function readToken(scope:OwnerLoopScope){
  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_staff_source_token",{p_business_id:scope.businessId});
  if(error||typeof data!=="string"||!/^[a-f0-9]{32}$/.test(data))throw new Error("Staff revision unavailable; apply migration 087");
@@ -58,7 +58,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
  const preview:Array<{label:string;before:string;after:string}>=[];
  const shown=(id:string)=>people.find(p=>p.id===id)?.display_name??id;
  const item=(label:string,before:string,after:string)=>preview.push({label,before,after});
- let payload:Record<string,unknown>;
+ let payload:Record<string,unknown>={};
  const today=new Intl.DateTimeFormat("en-CA",{timeZone:(await owner.supabase.from("businesses").select("timezone").eq("id",scope.businessId).single()).data?.timezone??"UTC",
   year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
  const localDate=/^\d{4}-\d{2}-\d{2}$/.test(today)?today:new Date().toISOString().slice(0,10);
