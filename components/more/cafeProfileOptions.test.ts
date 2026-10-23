@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import en from "../../messages/en.json";
+import es from "../../messages/es.json";
+import ar from "../../messages/ar.json";
 import { openHoursToWeeklyInput, weeklyInputToOpenHours } from "@/lib/business/openHours";
-import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, shouldFocusHours, timezoneOptions, usStateOptions, validateProfile } from "./cafeProfileOptions";
+import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, shouldFocusHours, timezoneOptions, usStateOptions, US_STATES, validateProfile } from "./cafeProfileOptions";
 
 describe("café profile redesign", () => {
   it("timezone picker displays plain labels but retains IANA storage values", () => {
@@ -22,12 +25,18 @@ describe("café profile redesign", () => {
   });
 
   it("localizes U.S. state names without changing stored values", () => {
-    const spanish = usStateOptions("es").find((item) => item.value === "NM");
-    const arabic = usStateOptions("ar").find((item) => item.value === "CA");
+    const spanish = usStateOptions(es.CafeProfile.usStates).find((item) => item.value === "NM");
+    const arabic = usStateOptions(ar.CafeProfile.usStates).find((item) => item.value === "CA");
     expect(spanish?.label).toBe("Nuevo México");
     expect(arabic?.label).toBe("كاليفورنيا");
     expect(arabic?.legacyName).toBe("California");
-    expect(usStateOptions("ar")).toHaveLength(56);
+    expect(usStateOptions(ar.CafeProfile.usStates)).toHaveLength(56);
+    for (const locale of [en, es, ar]) {
+      expect(Object.keys(locale.CafeProfile.usStates)).toHaveLength(US_STATES.length);
+      for (const [code] of US_STATES) {
+        expect(locale.CafeProfile.usStates[code]).toBeTruthy();
+      }
+    }
   });
 
   it("copies Monday state and hours to Tuesday through Friday, not weekends", () => {
@@ -69,6 +78,10 @@ describe("café profile redesign", () => {
       countryCode: "US", openedOn: "2024-01-02", hours,
     }, messages)).toEqual({});
     hours.mon = { mode: "open", open: "09:00", close: "09:00" };
+    expect(validateProfile({
+      name: "Cafe", timezone: "America/Los_Angeles", currency: "USD", countryCode: "US",
+      openedOn: "2025-02-30", hours: openHoursToWeeklyInput(null),
+    }, messages)).toEqual({ openedOn: "date" });
     expect(validateProfile({
       name: "", timezone: "invalid-timezone", currency: "US", countryCode: "USA",
       openedOn: "invalid", hours,
