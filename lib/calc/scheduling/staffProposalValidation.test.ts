@@ -1,0 +1,16 @@
+import {describe,it,expect} from "vitest";
+import {assertStaffShiftPlan} from "./staffProposalValidation";
+const s={employee_id:"maria",date:"2026-10-26",start:"06:30",end:"12:00",break_minutes:30};
+describe("staff approval scheduling validation",()=>{
+ it("permits a prep shift before opening and nonoverlapping shifts",()=>{
+  expect(()=>assertStaffShiftPlan([s,{...s,start:"12:00",end:"16:00"}])).not.toThrow();
+ });
+ it("rejects overlapping employee shifts and shifts with impossible breaks",()=>{
+  expect(()=>assertStaffShiftPlan([s,{...s,start:"11:00",end:"14:00"}])).toThrow(/Overlapping/);
+  expect(()=>assertStaffShiftPlan([{...s,start:"08:00",end:"08:15",break_minutes:30}])).toThrow(/break/);
+ });
+ it("detects overlap across midnight",()=>{
+  expect(()=>assertStaffShiftPlan([{...s,start:"22:00",end:"02:00",date:"2026-10-26"},
+   {...s,start:"01:00",end:"05:00",date:"2026-10-27"}])).toThrow(/Overlapping/);
+ });
+});
