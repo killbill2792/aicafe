@@ -15,8 +15,8 @@ export async function recomputeDailyRollup(
   supabase: SupabaseClient,
   businessId: string,
   businessDate: string,
-  options: { salesDataStatus?: SalesDataStatus } = {},
-): Promise<void> {
+  options: { salesDataStatus?: SalesDataStatus; dryRun?: boolean } = {},
+): Promise<void | Record<string, unknown>> {
   const { data: business } = await supabase.from("businesses").select("payroll_tax_rate, payroll_tax_rate_source, timezone").eq("id", businessId).single();
   const payrollTaxRate = Number(business?.payroll_tax_rate ?? 0.12);
   const payrollTaxRateSource = business?.payroll_tax_rate_source ?? "system_estimate";
@@ -36,7 +36,7 @@ export async function recomputeDailyRollup(
   // product/day CSV rows are never treated as transactions; the estimator will use a real
   // provider-attributed order count only when it fully reconciles to the day's sales, otherwise
   // it requires the owner's explicit average processed-ticket assumption.
-  await ensureOwnerConfirmedProcessingFeeEstimateForDay(supabase, {
+  if (!options.dryRun) await ensureOwnerConfirmedProcessingFeeEstimateForDay(supabase, {
     businessId,
     businessDate,
     netSalesCents,
@@ -151,8 +151,7 @@ export async function recomputeDailyRollup(
     drinksCount,
   });
 
-  await supabase.from("daily_rollups").upsert(
-    {
+  const proposed = {
       business_id: businessId,
       business_date: businessDate,
       net_sales_cents: netSalesCents,
@@ -167,7 +166,11 @@ export async function recomputeDailyRollup(
       card_fees_cents: selectedProcessingFee.amountCents,
       card_fees_status: selectedProcessingFee.status,
       voids_cents: voidsCents,
-    },
+    };
+  // Read-only preview uses the same sales, recipe and payroll calculations.
+  // Never insert or update a fact (including fee estimates) in dry-run mode.
+  if (options.dryRun) return proposed;
+  await supabase.from("daily_rollups").upsert(proposed,
     { onConflict: "business_id,business_date" },
   );
 }
