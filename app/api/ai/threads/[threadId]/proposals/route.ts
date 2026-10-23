@@ -30,7 +30,7 @@ const card=(p:LoopProposal,state?:string)=>({
   proposalId:p.id,revision:p.revision,
   state:state??({draft:"pending",approved:"applying",executing:"applying",
     committed:"applied",monitored:"applied",rejected:"cancelled",
-    expired:"cancelled",manual_pending:"applying",manual_confirmed:"applied"} as Record<string,string>)[p.status]??"failed",
+    expired:"cancelled",stale:"stale",manual_pending:"applying",manual_confirmed:"applied"} as Record<string,string>)[p.status]??"failed",
   capabilityId:p.capabilityId,...(p.canonicalEffectPayload as Record<string,unknown>),
   editedByOwner:p.baseline.editedByOwner===true,
 });
@@ -51,6 +51,8 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
     if(current===effect.newPriceCents)return card(p,"applied");
     return card(p,"applying");
   }
+  if(p.status==="stale")
+    return {...card(p),currentPriceCents:await ownerMenuPrice(scope,String(effect.productId))};
   if(p.status==="draft"){
     const current=await ownerMenuPrice(scope,String(effect.productId));
     if(current!==effect.oldPriceCents)return {...card(p,"stale"),currentPriceCents:current};
@@ -100,27 +102,46 @@ export async function POST(request:Request,{params}:Params){
       const simulation=await simulateLoop({...scope,locale:p.locale},supervisorLoopRegistry,menuPriceChangeCapabilityId,
         {productId:effect.productId,newPriceCents:input.newPriceCents});
       const canonical=supervisorLoopRegistry.get(menuPriceChangeCapabilityId).parseEffect(simulation.effect);
-      // A replacement is a distinct immutable proposal. Never execute while editing.
-      let old:LoopProposal;
-      try{old=await repo.transition(scope,p.id,p.revision,"reject");}
-      catch{return conversationJson({state:"conflict",proposal:await view(scope,repo,await repo.load(scope,p.id))},409);}
+      // One locked database transaction checks the old revision, rejects it,
+      // and inserts its replacement. If INSERT fails, rejection rolls back.
+      // An approval racing with Edit is serialized by the same proposal lock.
       const key=proposalRequestKey(p.id,JSON.stringify({revision:p.revision,newPriceCents:input.newPriceCents}));
-      const next=await repo.create({...scope,locale:p.locale},key,{businessId:scope.businessId,
-        ownerUserId:scope.ownerUserId,threadId:scope.threadId,
-        capabilityId:menuPriceChangeCapabilityId,capabilityVersion:1,
-        canonicalEffectPayload:canonical,effectHash:effectHash(canonical),
-        baseline:{...simulation.baseline,editedByOwner:true,editedFrom:old.id},
-        monitorSpec:simulation.monitorSpec,locale:p.locale});
-      return conversationJson({proposal:card(next),replaced:card(old,"edited")});
+      let replacement:Awaited<ReturnType<typeof repo.replacePriceDraft>>;
+      try{
+        replacement=await repo.replacePriceDraft(
+          {...scope,locale:p.locale},p.id,p.revision,key,canonical,effectHash(canonical));
+      }catch(error){
+        const latest=await repo.load(scope,p.id);
+        if(latest.status!=="draft"||latest.revision!==p.revision)
+          return conversationJson({state:"conflict",proposal:await view(scope,repo,latest)},409);
+        throw error; // The original draft remains actionable on a failed INSERT.
+      }
+      return conversationJson({proposal:card(replacement.proposal),
+        replaced:card(replacement.replaced,"edited")});
     }
     try{
       const approved=await approveLoop(scope,repo,p.id,p.revision);
       const committed=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision);
       return conversationJson({proposal:card(committed.proposal)});
     }catch(error){
-      if(error instanceof StaleProposalError)return conversationJson({
-        state:"stale",currentPriceCents:error.currentPriceCents,
-        proposal:{...card(p,"stale"),currentPriceCents:error.currentPriceCents}},409);
+      if(error instanceof StaleProposalError){
+        // Only StaleProposalError proves that no menu price/history write
+        // happened. Persist that terminal result after the atomic claim;
+        // never retry a potentially completed effect.
+        const latest=await repo.load(scope,p.id);
+        if(latest.status==="executing"){
+          try{
+            const stale=await repo.markStalePrice(scope,p.id,latest.revision);
+            return conversationJson({state:"stale",currentPriceCents:error.currentPriceCents,
+              proposal:{...card(stale),currentPriceCents:error.currentPriceCents}},409);
+          }catch{
+            // A competing terminal transition wins; always show stored truth.
+            const now=await repo.load(scope,p.id);
+            return conversationJson({state:"conflict",proposal:await view(scope,repo,now)},409);
+          }
+        }
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,latest)},409);
+      }
       const latest=await repo.load(scope,p.id);
       if(latest.status==="draft"||latest.status==="approved")
         return conversationJson({state:"conflict",proposal:await view(scope,repo,latest)},409);
