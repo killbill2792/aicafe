@@ -2,11 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "@/i18n/navigation";
+import { useLocale } from "next-intl";
 import { reviewStatementCsv } from "@/lib/actions/statementReview";
 import { saveCategorizedLines, type ReviewLine } from "@/lib/actions/expenses";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
-import { formatCents } from "@/lib/calc";
 
 type ReviewableLine = ReviewLine & { correctedCategory?: ExpenseCategoryCode };
 type BalanceCheck = { openingCents: number; closingCents: number; sumCents: number; ok: boolean };
@@ -29,11 +29,16 @@ export default function StatementUploader({
     balanceMismatch: string;
     lowConfidence: string;
     exclude: string;
+    addMissingLine: string;
+    missingLineHint: string;
   };
 }) {
   const router = useRouter();
+  const locale = useLocale();
+  const formatAmount = (cents: number) => new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(cents / 100);
   const [state, setState] = useState<ReviewState | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [missingLine, setMissingLine] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   function handleFile(file: File) {
@@ -92,15 +97,20 @@ export default function StatementUploader({
           {state.balanceCheck.ok ? labels.balanceOk : labels.balanceMismatch}
         </div>
       )}
+      {state.balanceCheck && !state.balanceCheck.ok && (
+        <button type="button" onClick={() => setMissingLine(true)} className="rounded-full border border-warn px-4 py-3 text-sm font-bold text-warn">{labels.addMissingLine}</button>
+      )}
+      {missingLine && <p role="status" className="text-sm text-warn">{labels.missingLineHint}</p>}
       <div className="flex flex-col gap-2 rounded-card-lg bg-card p-2">
         {state.lines.map((line) => {
           const category = line.correctedCategory ?? (line.category === "exclude" ? "other" : line.category);
+          const needsReview = line.confidence < 0.7;
           const isExcluded = line.category === "exclude" && !line.correctedCategory;
           return (
-            <div key={line.i} className="flex flex-col gap-2 border-b border-line p-2.5 last:border-b-0">
+            <div key={line.i} aria-label={needsReview ? labels.lowConfidence : undefined} className={`flex flex-col gap-2 border-b p-2.5 last:border-b-0 ${needsReview ? "rounded-xl border-2 border-warn bg-warn-tint" : "border-line"}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="flex-1 text-[15px] font-semibold text-ink">{line.description}</span>
-                <span className="text-base font-bold">{formatCents(line.amountCents)}</span>
+                <span className="text-base font-bold">{formatAmount(line.amountCents)}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className={`text-xs ${line.confidence < 0.7 ? "font-bold text-warn" : "text-ink-muted"}`}>
