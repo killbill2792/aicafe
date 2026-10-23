@@ -228,6 +228,7 @@ export default function ProcessingFeeEstimateForm({
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       setError(labels.incompleteWarning);
+      if (Object.keys(errors).some((key) => key.includes("-"))) setAdvanced(true);
       requestAnimationFrame(() => inputRefs.current[Object.keys(errors)[0]]?.focus());
       return;
     }
@@ -394,7 +395,7 @@ export default function ProcessingFeeEstimateForm({
         </div>
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-          <FieldTitle help={labels.processorHelp} helpLabel={`${labels.processor} info`}>{labels.processor}</FieldTitle>
+          <FieldTitle help={labels.processorHelp} helpLabel={`${labels.processor} ${labels.info}`}>{labels.processor}</FieldTitle>
           <select value={processorChoice} aria-invalid={Boolean(fieldErrors.processor)} ref={(node) => { inputRefs.current.processor = node; }} onChange={(event) => { setOtherSelected(event.target.value === "Other"); setProcessorLabel(event.target.value === "Other" ? "" : event.target.value); }} className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor")}>
             <option value="">{labels.selectProcessor}</option><option value="Toast">Toast</option><option value="Square">Square</option><option value="Clover">Clover</option><option value="Other">{labels.otherProcessor}</option>
           </select>
@@ -410,7 +411,7 @@ export default function ProcessingFeeEstimateForm({
         </label>
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-          <FieldTitle help={labels.effectiveFromHelp} helpLabel={`${labels.effectiveFrom} info`}>{labels.effectiveFrom}</FieldTitle>
+          <FieldTitle help={labels.effectiveFromHelp} helpLabel={`${labels.effectiveFrom} ${labels.info}`}>{labels.effectiveFrom}</FieldTitle>
           <input
             type="date"
             aria-invalid={Boolean(fieldErrors.effectiveFrom)}
@@ -423,7 +424,7 @@ export default function ProcessingFeeEstimateForm({
         </label>
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-          <FieldTitle help={labels.processedSalesShareHelp} helpLabel={`${labels.processedSalesShare} info`}>
+          <FieldTitle help={labels.processedSalesShareHelp} helpLabel={`${labels.processedSalesShare} ${labels.info}`}>
             {labels.processedSalesShare}
           </FieldTitle>
           <div className="flex items-center gap-2">
@@ -444,7 +445,7 @@ export default function ProcessingFeeEstimateForm({
         <div className="rounded-2xl bg-paper p-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-              <FieldTitle help={labels.percentageRateHelp} helpLabel={`${labels.percentageRate} info`}>
+              <FieldTitle help={labels.percentageRateHelp} helpLabel={`${labels.percentageRate} ${labels.info}`}>
                 {labels.percentageRate}
               </FieldTitle>
               <div className="flex items-center gap-2">
@@ -462,7 +463,7 @@ export default function ProcessingFeeEstimateForm({
             </label>
 
             <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-              <FieldTitle help={labels.fixedFeeHelp} helpLabel={`${labels.fixedFee} info`}>{labels.fixedFee}</FieldTitle>
+              <FieldTitle help={labels.fixedFeeHelp} helpLabel={`${labels.fixedFee} ${labels.info}`}>{labels.fixedFee}</FieldTitle>
               <div className="flex items-center gap-2">
                 <span className="font-bold text-ink-muted">$</span>
                 <input
@@ -487,18 +488,21 @@ export default function ProcessingFeeEstimateForm({
 
         {needsAverageTicket && !advanced && (
           <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-            <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} info`}>{labels.averageTicket}</FieldTitle>
+            <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} ${labels.info}`}>{labels.averageTicket}</FieldTitle>
             <div className="flex items-center gap-2">
               <span className="font-bold text-ink-muted">$</span>
               <input
                 inputMode="decimal"
                 value={averageTicket}
+                ref={(node) => { inputRefs.current.averageTicket = node; }}
+                aria-invalid={Boolean(fieldErrors.averageTicket)}
                 onChange={(event) => setAverageTicket(event.target.value)}
                 placeholder="12.00"
                 className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
               />
             </div>
             <span className="text-xs font-normal text-ink-muted">{labels.averageTicketHint}</span>
+            {errorText("averageTicket")}
           </label>
         )}
 
@@ -522,34 +526,40 @@ export default function ProcessingFeeEstimateForm({
           </div>
 
           <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-            <FieldTitle help={labels.processedTransactionShareHelp} helpLabel={`${labels.processedTransactionShare} info`}>
+            <FieldTitle help={labels.processedTransactionShareHelp} helpLabel={`${labels.processedTransactionShare} ${labels.info}`}>
               {labels.processedTransactionShare}
             </FieldTitle>
             <div className="flex items-center gap-2">
               <input
                 inputMode="decimal"
+                ref={(node) => { inputRefs.current.transactionShare = node; }}
+                aria-invalid={Boolean(fieldErrors.transactionShare)}
                 value={processedTransactionShare}
                 onChange={(event) => setProcessedTransactionShare(event.target.value)}
-                className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
+                className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("transactionShare")}
               />
               <span className="font-bold text-ink-muted">%</span>
             </div>
             <span className="text-xs font-normal text-ink-muted">{labels.processedTransactionShareHint}</span>
+            {errorText("transactionShare")}
           </label>
 
           <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-            <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} info`}>{labels.averageTicket}</FieldTitle>
+            <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} ${labels.info}`}>{labels.averageTicket}</FieldTitle>
             <div className="flex items-center gap-2">
               <span className="font-bold text-ink-muted">$</span>
               <input
                 inputMode="decimal"
                 value={averageTicket}
+                ref={(node) => { inputRefs.current.averageTicket = node; }}
+                aria-invalid={Boolean(fieldErrors.averageTicket)}
                 onChange={(event) => setAverageTicket(event.target.value)}
                 placeholder="12.00"
                 className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
               />
             </div>
             <span className="text-xs font-normal text-ink-muted">{labels.averageTicketHint}</span>
+            {errorText("averageTicket")}
           </label>
 
           {rules.map((rule, index) => (
@@ -567,21 +577,26 @@ export default function ProcessingFeeEstimateForm({
                 {labels.ruleLabel}
                 <input
                   value={rule.label}
+                  aria-invalid={Boolean(fieldErrors[rule.id + "-label"])}
+                  ref={(node) => { inputRefs.current[rule.id + "-label"] = node; }}
                   onChange={(event) => updateRule(rule.id, "label", event.target.value)}
                   placeholder={labels.ruleLabelPlaceholder}
-                  className="min-h-11 rounded-lg border border-line bg-card px-3"
+                  className={"min-h-11 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-label")}
                 />
+                {errorText(rule.id + "-label")}
               </label>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-                  <FieldTitle help={labels.percentageRateHelp} helpLabel={`${labels.percentageRate} info`}>
+                  <FieldTitle help={labels.percentageRateHelp} helpLabel={`${labels.percentageRate} ${labels.info}`}>
                     {labels.percentageRate}
                   </FieldTitle>
                   <div className="flex items-center gap-2">
                     <input
                       inputMode="decimal"
                       value={rule.percentageRate}
+                  aria-invalid={Boolean(fieldErrors[rule.id + "-percentageRate"])}
+                  ref={(node) => { inputRefs.current[rule.id + "-percentageRate"] = node; }}
                       onChange={(event) => updateRule(rule.id, "percentageRate", event.target.value)}
                       className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3"
                     />
@@ -590,37 +605,43 @@ export default function ProcessingFeeEstimateForm({
                 </label>
 
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-                  <FieldTitle help={labels.fixedFeeHelp} helpLabel={`${labels.fixedFee} info`}>{labels.fixedFee}</FieldTitle>
+                  <FieldTitle help={labels.fixedFeeHelp} helpLabel={`${labels.fixedFee} ${labels.info}`}>{labels.fixedFee}</FieldTitle>
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-ink-muted">$</span>
                     <input
                       inputMode="decimal"
                       value={rule.fixedFee}
+                  aria-invalid={Boolean(fieldErrors[rule.id + "-fixedFee"])}
+                  ref={(node) => { inputRefs.current[rule.id + "-fixedFee"] = node; }}
                       onChange={(event) => updateRule(rule.id, "fixedFee", event.target.value)}
-                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3"
+                      className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-fixedFee")}
                     />
                   </div>
                 </label>
 
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-                  <FieldTitle help={labels.salesMixHelp} helpLabel={`${labels.salesMix} info`}>{labels.salesMix}</FieldTitle>
+                  <FieldTitle help={labels.salesMixHelp} helpLabel={`${labels.salesMix} ${labels.info}`}>{labels.salesMix}</FieldTitle>
                   <div className="flex items-center gap-2">
                     <input
                       inputMode="decimal"
                       value={rule.salesMix}
+                  aria-invalid={Boolean(fieldErrors[rule.id + "-salesMix"])}
+                  ref={(node) => { inputRefs.current[rule.id + "-salesMix"] = node; }}
                       onChange={(event) => updateRule(rule.id, "salesMix", event.target.value)}
-                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3"
+                      className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-salesMix")}
                     />
                     <span className="font-bold text-ink-muted">%</span>
                   </div>
                 </label>
 
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-                  <FieldTitle help={labels.transactionMixHelp} helpLabel={`${labels.transactionMix} info`}>{labels.transactionMix}</FieldTitle>
+                  <FieldTitle help={labels.transactionMixHelp} helpLabel={`${labels.transactionMix} ${labels.info}`}>{labels.transactionMix}</FieldTitle>
                   <div className="flex items-center gap-2">
                     <input
                       inputMode="decimal"
                       value={rule.transactionMix}
+                  aria-invalid={Boolean(fieldErrors[rule.id + "-transactionMix"])}
+                  ref={(node) => { inputRefs.current[rule.id + "-transactionMix"] = node; }}
                       onChange={(event) => updateRule(rule.id, "transactionMix", event.target.value)}
                       className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3"
                     />
