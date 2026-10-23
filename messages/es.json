@@ -2519,6 +2519,8 @@
     "ruleShortRest": "Descanso insuficiente entre turnos",
     "loadError": "No se pudo cargar el horario o las reglas",
     "unkWage": "Salario no disponible",
-    "salaryManaged": "El sueldo se gestiona en la configuración salarial. Editar este perfil no cambia el sueldo mensual o anual."
+    "salaryManaged": "El sueldo se gestiona en la configuración salarial. Editar este perfil no cambia el sueldo mensual o anual.",
+    "unknownWages": "Total de salarios desconocido",
+    "partialWages": "Parcial · {known} calculados, {count} salarios desconocidos"
   }
 }

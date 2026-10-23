@@ -2519,6 +2519,8 @@
     "ruleShortRest": "Insufficient rest between shifts",
     "loadError": "Could not load the schedule or rules",
     "unkWage": "Wage unavailable",
-    "salaryManaged": "Salary is managed in staff pay settings. Editing this profile does not change monthly or yearly salary."
+    "salaryManaged": "Salary is managed in staff pay settings. Editing this profile does not change monthly or yearly salary.",
+    "unknownWages": "Wage total unknown",
+    "partialWages": "Partial · {known} priced, {count} wages unknown"
   }
 }

@@ -8,6 +8,7 @@ import WeekGrid from "./WeekGrid";
 import ShiftPreview from "./ShiftPreview";
 import {dayTotals,personTotals,bestFreePerson,availabilityStatus,totalOvertimeMinutes,previewShift,type DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
+import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import Link from "next/link";
 import {addPerson,updatePerson,setPersonActive} from "@/lib/actions/teamWorkspace";
 import {upsertShift,removeShift,restoreShift,copyWeek,sendSchedule} from "@/lib/actions/schedule";
@@ -19,6 +20,12 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  initial:Data;tab?:string;locale?:string;initialAlerts?:Alert[];alertError?:string|null;teamExtras?:React.ReactNode
 }){
  const router=useRouter();const t=useTranslations("StaffSchedule");
+ const wageSummary=(value:{knownCostCents:number;unknownCount:number})=>{
+  const status=costCompleteness(value);
+  return status==="unknown"?t("unknownWages"):
+   status==="partial"?t("partialWages",{known:fmt(value.knownCostCents,data.currency),count:value.unknownCount}):
+   fmt(value.knownCostCents,data.currency);
+ };
  const roleLabel=(v:string)=>({Barista:t("roleBarista"),Manager:t("roleManager"),Baker:t("roleBaker"),Cashier:t("roleCashier")}[v]??v);
  const [version,setVersion]=useState({initial,local:initial});
  const data=version.initial===initial?version.local:initial;
@@ -125,7 +132,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    </div>
    <div className="grid grid-cols-3 gap-2 lg:grid-cols-4">{[
     [t("paidHours"),String(hours(data.total.paidMinutes))],
-    [t("wages"),fmt(data.total.knownCostCents,data.currency)],
+    [t("wages"),wageSummary(data.total)],
     [t("gaps"),String(data.gaps.length)],
     [t("overtime"),String(Number((totalOvertimeMinutes(data.team,data.shifts,data.rules.weekly_ot_after_minutes,data.rules.weekly_ot_enabled)/60).toFixed(1)))+" h"]
    ].map(([label,value])=><div key={label} className={`rounded-2xl border border-line bg-surface p-3 ${label===t("overtime")?"hidden lg:block":""} ${label===t("gaps")&&data.gaps.length?"border-neg bg-neg-soft":""}`}><strong className="block text-xl">{value}</strong><span className="text-sm text-muted">{label}</span></div>)}</div>
@@ -146,7 +153,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      <div className="flex flex-wrap items-baseline gap-2">
       <h2 className="text-lg font-bold">{dayLabel(d)}</h2>
       <span className="text-sm text-muted">{opening===undefined?t("hoursNotSet"):opening.length?t("open")+" "+opening.map(a=>a.join("–")).join(", "):t("closed")}</span>
-      <strong className="ms-auto text-sm">{Number((totals.paidMinutes/60).toFixed(1))} h · {fmt(totals.knownCostCents,data.currency)}{totals.estimated?" "+t("estimated"):""}</strong>
+      <strong className="ms-auto text-sm">{Number((totals.paidMinutes/60).toFixed(1))} h · {wageSummary(totals)}{totals.estimated?" "+t("estimated"):""}</strong>
      </div>
      <DayTimeline date={d} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours} people={data.team}
       onShiftClick={data.readOnly?undefined:(id)=>openShift(d,id)}/>
@@ -197,7 +204,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       <div className="text-end">{hours(personTotals(p.id,data.shifts).paidMinutes)} h</div>
       <button disabled={data.readOnly} onClick={()=>openPerson(p)} className="min-h-12 px-2">{t("edit")}</button>
      </div>)}
-     <div className="border-t border-line pt-3 font-bold">{t("total")} {fmt(data.total.knownCostCents,data.currency)} {data.total.estimated?" · "+t("estimate"):""}</div>
+     <div className="border-t border-line pt-3 font-bold">{t("total")} {wageSummary(data.total)} {data.total.estimated?" · "+t("estimate"):""}</div>
    </section>
    <Link href={`/${locale}/staff/rules`} className="block rounded-[20px] border border-line bg-surface p-4">{t("rulesCard")} <span className="block text-muted">{t("defaultNote")}</span></Link>
    {teamExtras}

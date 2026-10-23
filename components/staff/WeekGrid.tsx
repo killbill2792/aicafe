@@ -2,6 +2,7 @@
 import {useTranslations} from "next-intl";
 import type {OpenHours} from "@/lib/business/openHours";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
+import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import {dayTotals,personTotals,type DetailedShift,type PersonForSchedule,type ScheduleGap} from "@/lib/calc/scheduling/schedulePresentation";
 const fmt=(value:number|null,currency:string)=>value===null?"—":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(value/100);
 const h=(minutes:number)=>Number((minutes/60).toFixed(1))+" h";
@@ -11,6 +12,12 @@ export default function WeekGrid({dates,people,shifts,gaps,openHours,currency,re
  onAdd:(date:string,personId:string)=>void;onEdit:(date:string,id:string)=>void
 }){
  const t=useTranslations("StaffSchedule");
+ const wageSummary=(value:{knownCostCents:number;unknownCount:number})=>{
+  const status=costCompleteness(value);
+  return status==="unknown"?t("unknownWages"):
+   status==="partial"?t("partialWages",{known:fmt(value.knownCostCents,currency),count:value.unknownCount}):
+   fmt(value.knownCostCents,currency);
+ };
  const stamp=(date:string)=>new Intl.DateTimeFormat(undefined,{weekday:"short",day:"numeric",timeZone:"UTC"}).format(new Date(date+"T12:00:00Z"));
  return <div className="hidden overflow-x-auto rounded-[20px] border border-line bg-surface lg:block">
   <table className="w-full min-w-[960px] border-collapse text-start text-[15px]">
@@ -35,11 +42,11 @@ export default function WeekGrid({dates,people,shifts,gaps,openHours,currency,re
       <button disabled={readOnly} aria-label={t("addPersonShift",{name:person.name,date})} onClick={()=>onAdd(date,person.id)}
        className="min-h-12 w-full text-muted hover:text-accent-text">+</button>
      </td>)}
-     <td className="p-2 text-end font-bold">{h(week.paidMinutes)}<span className="block text-sm text-muted">{fmt(week.knownCostCents,currency)}{week.estimated?" "+t("estimated"):""}</span></td>
+     <td className="p-2 text-end font-bold">{h(week.paidMinutes)}<span className="block text-sm text-muted">{wageSummary(week)}{week.estimated?" "+t("estimated"):""}</span></td>
     </tr>;
    })}</tbody>
    <tfoot className="font-semibold"><tr className="bg-surface2"><th className="p-3 text-start">{t("dayTotal")}</th>
-    {dates.map(date=>{const day=dayTotals(date,shifts);return <td key={date} className="p-2 text-center">{h(day.paidMinutes)}<span className="block text-sm text-muted">{fmt(day.knownCostCents,currency)}{day.estimated?" "+t("estimated"):""}</span></td>})}<td/></tr>
+    {dates.map(date=>{const day=dayTotals(date,shifts);return <td key={date} className="p-2 text-center">{h(day.paidMinutes)}<span className="block text-sm text-muted">{wageSummary(day)}{day.estimated?" "+t("estimated"):""}</span></td>})}<td/></tr>
     <tr><th className="p-3 text-start">{t("coverage")}</th>{dates.map(date=>{
      const gap=gaps.find(g=>g.date===date);return <td key={date} className={`p-2 text-center text-sm ${gap?"text-neg":"text-pos"}`}>{gap?
       "⚠ "+t("coverageDetail",{start:gap.start,end:gap.end,count:gap.headcount}):"✓ "+t("allDayCoverage")}</td>
