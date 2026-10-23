@@ -15,6 +15,13 @@ describe("Redesign 03 screen contracts", () => {
     expect(form).toContain('ref={amountInputRef}');
   });
 
+  it("reports the correct bill operation error instead of a generic save error", () => {
+    const bills = source("components/bills/BillsManager.tsx");
+    expect(bills).toContain('setError(labels.removeError)');
+    expect(bills).toContain('setError(labels.saveError)');
+    expect(bills).toContain('role="alert" className="text-[17px] text-warn">{error}</p>');
+  });
+
   it("does not expose unavailable AI entry methods", () => {
     const choices = source("app/[locale]/add-cost/page.tsx");
     expect(choices).toContain('const aiEnabled = isAiConfigured()');
