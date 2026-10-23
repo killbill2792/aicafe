@@ -1461,7 +1461,11 @@
     "statusStorage": "Supervisor chat cannot access its private conversation storage or secure reply writer. Verify Supabase migration #33 and the server permissions.",
     "staffIssuesSummary": "Team records show {needs} staff coverage requests needing attention and {watching} being watched. These are recorded Team tasks, not a complete check of staff attendance or availability.",
     "staffIssuesNone": "No open staff coverage issues are recorded in Team right now. This does not confirm that every shift is covered or that there are no other staffing problems.",
-    "staffIssuesUnavailable": "I can't verify staff issues because the Team task records are unavailable. Please check the Team page."
+    "staffIssuesUnavailable": "I can't verify staff issues because the Team task records are unavailable. Please check the Team page.",
+    "feedbackUp": "Helpful answer",
+    "feedbackDown": "Not helpful",
+    "feedbackSaved": "Feedback saved",
+    "feedbackError": "Could not save feedback. Try again."
   },
   "TeamRules": {
     "title": "Team rules & approvals",

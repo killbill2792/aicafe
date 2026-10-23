@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown, UsersRound, ArrowDown } from "lucide-react";
+import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown, UsersRound, ArrowDown } from "lucide-react";
 import { AgentAvatar, agentVisuals } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
 import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
@@ -46,6 +46,7 @@ export type SupervisorChatCopy = {
   needsYou: string; handled: string; watching: string;
   answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
+  feedbackUp: string; feedbackDown: string; feedbackSaved: string; feedbackError: string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
 type Locale = "en" | "es" | "ar";
@@ -154,6 +155,35 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
   </article>;
 }
 
+function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:SupervisorChatCopy}) {
+  const [rating,setRating]=useState<"up"|"down"|null>(null);
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState(false);
+  const [comment,setComment]=useState("");
+  async function send(value:"up"|"down") {
+    setSaving(true);setError(false);
+    try {
+      const response=await fetch("/api/ai/threads/"+encodeURIComponent(message.threadId)+"/feedback",{
+        method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",
+        body:JSON.stringify({messageId:message.id,rating:value,comment:comment.trim()||undefined})});
+      if(!response.ok)throw new Error("feedback_failed");
+      setRating(value);
+    }catch{setError(true);}finally{setSaving(false);}
+  }
+  return <div className="ps-1 text-sm text-ink-muted">
+    <div className="flex items-center gap-2">
+      <button type="button" onClick={()=>void send("up")} disabled={saving} aria-label={copy.feedbackUp}
+        aria-pressed={rating==="up"} className="min-h-12 min-w-12 rounded-lg border border-line px-3">{<ThumbsUp size={18} aria-hidden/>}</button>
+      <button type="button" onClick={()=>void send("down")} disabled={saving} aria-label={copy.feedbackDown}
+        aria-pressed={rating==="down"} className="min-h-12 min-w-12 rounded-lg border border-line px-3">{<ThumbsDown size={18} aria-hidden/>}</button>
+      {rating&&<span role="status">{copy.feedbackSaved}</span>}
+    </div>
+    {rating==="down"&&<textarea aria-label={copy.feedbackDown} value={comment} onChange={e=>setComment(e.target.value)}
+      maxLength={1000} rows={2} className="mt-2 w-full rounded-lg border border-line p-2"/>}
+    {rating==="down"&&<button className="min-h-12 underline" onClick={()=>void send("down")} disabled={saving} type="button">{copy.feedbackSaved}</button>}
+    {error&&<p role="alert">{copy.feedbackError}</p>}
+  </div>;
+}
 function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
   return <div className="w-full space-y-4 text-start">
     <section aria-label={snapshot.title}>
@@ -830,6 +860,7 @@ export default function SupervisorChatComposer({
             if(!dismiss)void sendText(isOption&&question.data.input.kind==="options"?
               question.data.input.options.find(o=>o.id===value)?.label[locale]??value:value);
           }}/>
+        {message.role==="supervisor"&&<AnswerFeedback message={message} copy={copy}/>}
         {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-line bg-warn-soft p-3 text-[15px] text-ink" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
           <span className="flex-1">{shownFailure ? failureLine(shownFailure, liveCopy) : copy.answerFailed}</span>

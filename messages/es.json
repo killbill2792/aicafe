@@ -1461,7 +1461,11 @@
     "statusStorage": "El chat del Supervisor no puede acceder a su historial privado ni al escritor de respuestas seguro. Comprueba la migración #33 y los permisos del servidor.",
     "staffIssuesSummary": "Los registros de Equipo muestran {needs} solicitudes de cobertura de personal que requieren atención y {watching} en seguimiento. Son tareas registradas, no una comprobación completa de asistencia o disponibilidad.",
     "staffIssuesNone": "No hay incidencias abiertas de cobertura de personal registradas en Equipo ahora mismo. Esto no confirma que todos los turnos estén cubiertos ni que no existan otros problemas.",
-    "staffIssuesUnavailable": "No puedo verificar los problemas de personal porque los registros de tareas de Equipo no están disponibles. Revisa la página de Equipo."
+    "staffIssuesUnavailable": "No puedo verificar los problemas de personal porque los registros de tareas de Equipo no están disponibles. Revisa la página de Equipo.",
+    "feedbackUp": "Respuesta útil",
+    "feedbackDown": "No fue útil",
+    "feedbackSaved": "Opinión guardada",
+    "feedbackError": "No se pudo guardar. Inténtalo otra vez."
   },
   "TeamRules": {
     "title": "Reglas y aprobaciones del equipo",

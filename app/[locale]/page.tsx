@@ -231,6 +231,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             answerFailed: tChat("answerFailed"), retryAnswer: tChat("retryAnswer"),
             todaySummary: tChat("todaySummary"),
             unverified: tChat("unverified"),
+            feedbackUp: tChat("feedbackUp"), feedbackDown: tChat("feedbackDown"),
+            feedbackSaved: tChat("feedbackSaved"), feedbackError: tChat("feedbackError"),
             ownerInputDismiss:tChat("ownerInputDismiss"),
             ownerInputConfirm:tChat("ownerInputConfirm"),
             ownerInputOther:tChat("ownerInputOther"),
