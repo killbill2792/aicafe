@@ -1,6 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {coverageGaps} from "./coverageGaps";
-const open={sun:[],mon:[["07:00","10:00"]],tue:[],wed:[],thu:[],fri:[],sat:[]} as const;
+import type {OpenHours} from "@/lib/business/openHours";
+const open:OpenHours={sun:[],mon:[["07:00","10:00"]],tue:[],wed:[],thu:[],fri:[],sat:[]};
 describe("distinct-person coverage",()=>{
  it("does not mistake overlapping shifts from one person for two employees",()=>{
   const rows=[{employeeId:"amy",date:"2026-10-26",start:"07:00",end:"10:00",overnight:false,

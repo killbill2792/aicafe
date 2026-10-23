@@ -29,7 +29,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const [repeatWeekly,setRepeatWeekly]=useState(false),[fillsGap,setFillsGap]=useState(false);
  const [inlineName,setInlineName]=useState(""),[inlineRole,setInlineRole]=useState("Barista");
  const [name,setName]=useState(""),[role,setRole]=useState("Barista"),[wage,setWage]=useState<number|null>(null);
- const [phone,setPhone]=useState(""),[minWeeklyMinutes,setMinWeeklyMinutes]=useState<number|null>(null),
+ const [phone,setPhone]=useState(""),[salaryPeriod,setSalaryPeriod]=useState<string|null>(null),[minWeeklyMinutes,setMinWeeklyMinutes]=useState<number|null>(null),
   [maxWeeklyMinutes,setMaxWeeklyMinutes]=useState<number|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
  const [chosen,setChosen]=useState(data.team[0]?.id??""),[date,setDate]=useState(data.dates[0]);
  const [start,setStart]=useState("07:00"),[end,setEnd]=useState("15:00"),[breakMin,setBreakMin]=useState(30);
@@ -45,7 +45,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  });
  const openPerson=(person?:Data["team"][number])=>{
   setPersonEditing(person?.id??null);setName(person?.name??"");setRole(person?.role??"Barista");
-  setWage(person?.wageCents??null);setPhone(person?.phone??"");
+  setWage(person?.wageCents??null);setSalaryPeriod(person?.wagePeriod&&person.wagePeriod!=="hour"?person.wagePeriod:null);
+  setPhone(person?.phone??"");
   setMinWeeklyMinutes(person?.minWeeklyMinutes??null);setMaxWeeklyMinutes(person?.maxWeeklyMinutes??null);
   if(person){
    const days=person.availableDays??[0,1,2,3,4,5,6];
@@ -209,11 +210,12 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       <label className="mt-3 block font-semibold">{t("name")}<input value={name} onChange={e=>setName(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"/></label>
       <div className="mt-3 flex flex-wrap gap-2">{["Barista","Manager","Baker","Cashier"].map(r=><button key={r} aria-pressed={role===r} onClick={()=>setRole(r)} className="min-h-12 rounded-full border border-line px-3">{roleLabel(r)}</button>)}</div>
       <p className="mt-4 text-muted">{t("optional")}</p>
+      {salaryPeriod?<p className="mt-3 rounded-xl bg-surface2 p-3 text-muted">{t("salaryManaged")}</p>:
       <label className="mt-3 block">{t("hourlyWage")}<div className="mt-2 flex items-center gap-4">
        <button className="min-h-12 min-w-12 rounded-xl bg-surface2" onClick={()=>setWage(Math.max(0,(wage??1900)-50))}>−</button>
        <strong>{wage==null?t("estimate"):fmt(wage,data.currency)}</strong>
        <button className="min-h-12 min-w-12 rounded-xl bg-surface2" onClick={()=>setWage((wage??1850)+50)}>+</button>
-       <button onClick={()=>setWage(null)} className="min-h-12">{t("skip")}</button></div></label>
+       <button onClick={()=>setWage(null)} className="min-h-12">{t("skip")}</button></div></label>}
       <div className="mt-4"><h3 className="font-bold">{t("usuallyAvailable")}</h3>
        <p className="text-sm text-muted">{t("availabilityHelp")}</p>
        {[0,1,2,3,4,5,6].map(day=>{const label=new Intl.DateTimeFormat(locale,{weekday:"short",timeZone:"UTC"}).format(new Date(Date.UTC(2026,9,25+day)));
@@ -250,7 +252,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
          className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3" dir="ltr"/>
       </label>
       <button disabled={busy||!name.trim()} onClick={()=>run(()=>{
-       const fields={name,role:role||null,wageCents:wage,availability,
+       const fields={name,role:role||null,wageCents:salaryPeriod?null:wage,availability,
         minWeeklyMinutes,maxWeeklyMinutes,phone:phone.trim()||null};
        return personEditing?updatePerson({id:personEditing,...fields}):addPerson(fields);
       })} className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">

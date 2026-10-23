@@ -39,7 +39,8 @@ export async function getWeekSchedule(raw:unknown){
     : p.default_hourly_wage_cents as number|null,
    minWeeklyMinutes:p.min_weekly_minutes as number|null,maxWeeklyMinutes:p.max_weekly_minutes as number|null,
    availableDays:p.available_days as number[]|null,colorIndex:p.color_index as number|null,
-   phone:p.phone_e164 as string|null
+   phone:p.phone_e164 as string|null,wagePeriod:p.wage_period as "hour"|"month"|"year",
+   salaryAmountCents:p.wage_period==="hour"?null:p.wage_amount_cents as number|null
  }));
  const openHours=normalizeOpenHours(profile.data?.open_hours);
  const averages=roleWageAverages(team),defaultWage=businessWageEstimate(team);

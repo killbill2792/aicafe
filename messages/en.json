@@ -2420,7 +2420,7 @@
     "stepHint": "− / + moves 30 min",
     "unpaidBreak": "{minutes}-min unpaid break",
     "autoBreak": "Automatic after {hours} h · Default",
-    "repeatEvery": "Repeat every {day}",
+    "repeatEvery": "Repeat {day} for 52 weeks",
     "saveShift": "Save shift",
     "removeShift": "Remove shift",
     "cancel": "Cancel",
@@ -2498,6 +2498,7 @@
     "ruleDailyOT": "Daily overtime threshold exceeded",
     "ruleShortRest": "Insufficient rest between shifts",
     "loadError": "Could not load the schedule or rules",
-    "unkWage": "Wage unavailable"
+    "unkWage": "Wage unavailable",
+    "salaryManaged": "Salary is managed in staff pay settings. Editing this profile does not change monthly or yearly salary."
   }
 }

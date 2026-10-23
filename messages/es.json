@@ -2420,7 +2420,7 @@
     "stepHint": "− / + cambia 30 min",
     "unpaidBreak": "Descanso no remunerado de {minutes} min",
     "autoBreak": "Automático después de {hours} h · Predeterminado",
-    "repeatEvery": "Repetir cada {day}",
+    "repeatEvery": "Repetir los {day} durante 52 semanas",
     "saveShift": "Guardar turno",
     "removeShift": "Eliminar turno",
     "cancel": "Cancelar",
@@ -2498,6 +2498,7 @@
     "ruleDailyOT": "Límite diario de horas extra superado",
     "ruleShortRest": "Descanso insuficiente entre turnos",
     "loadError": "No se pudo cargar el horario o las reglas",
-    "unkWage": "Salario no disponible"
+    "unkWage": "Salario no disponible",
+    "salaryManaged": "El sueldo se gestiona en la configuración salarial. Editar este perfil no cambia el sueldo mensual o anual."
   }
 }
