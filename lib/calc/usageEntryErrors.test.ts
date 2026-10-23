@@ -16,7 +16,7 @@ describe("owner-facing Pantry stock errors",()=>{
   for(const dict of [en,es,ar]){
    for(const error of errors){
     const key=usageEntryErrorKey(error);
-    const message=(dict.MenuBuilder as Record<string,string>)[key];
+    const message=Object.entries(dict.MenuBuilder).find(([name])=>name===key)?.[1];
     expect(message).toBeTruthy();
     expect(message).not.toBe(error);
     expect(message).not.toMatch(/(?:invalid_quantity|invalid_unit|save_failed|ingredient_not_found)/);
