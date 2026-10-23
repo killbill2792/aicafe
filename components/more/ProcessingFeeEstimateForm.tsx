@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useLocale } from "next-intl";
-import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
@@ -225,6 +225,7 @@ export default function ProcessingFeeEstimateForm({
   }
 
   function save(coverMissing = false) {
+    const submittingRules = activeRateDrafts(rules, advanced);
     const errors = validateRequiredFeeFields({
       processorLabel, effectiveFrom, cardSalesShare: processedSalesShare,
       percentageRate: firstRule.percentageRate, fixedFee: firstRule.fixedFee,
@@ -233,17 +234,17 @@ export default function ProcessingFeeEstimateForm({
     const invalid = (key: string, message: string) => { errors[key] = message; };
     if (advanced) {
       if (!processedTransactionShare.trim() || bpsFromPercent(processedTransactionShare) === null) invalid("transactionShare", labels.requiredRule);
-      for (const rule of rules) {
+      for (const rule of submittingRules) {
         for (const name of ["label","percentageRate","fixedFee","salesMix","transactionMix"] as const) {
           const value = rule[name];
           if (name === "fixedFee" && !value.trim()) continue;
           if (!value.trim() || (name !== "label" && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > (name === "percentageRate" || name === "fixedFee" ? 50 : 100)))) invalid(rule.id + "-" + name, labels.requiredRule);
         }
       }
-      if (rules.reduce((sum, rule) => sum + (bpsFromPercent(rule.salesMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-salesMix", labels.invalidMix);
-      if (rules.reduce((sum, rule) => sum + (bpsFromPercent(rule.transactionMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-transactionMix", labels.invalidMix);
+      if (submittingRules.reduce((sum, rule) => sum + (bpsFromPercent(rule.salesMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-salesMix", labels.invalidMix);
+      if (submittingRules.reduce((sum, rule) => sum + (bpsFromPercent(rule.transactionMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-transactionMix", labels.invalidMix);
     }
-    if (rules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.trustedOrderDays < coverage.salesDays && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
+    if (submittingRules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.trustedOrderDays < coverage.salesDays && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       setError(labels.incompleteWarning);
@@ -274,7 +275,7 @@ export default function ProcessingFeeEstimateForm({
     }
 
     const ruleDrafts = advanced
-      ? rules
+      ? submittingRules
       : [{
           ...firstRule,
           label: labels.standardRate,
@@ -353,8 +354,9 @@ export default function ProcessingFeeEstimateForm({
     salesMix: "100",
     transactionMix: "100",
   };
+  const activeRules = activeRateDrafts(rules, advanced);
   const firstFixedFee = Number(firstRule.fixedFee || 0);
-  const needsAverageTicket = firstFixedFee > 0 && sourceSummary.trustedOrderDays < coverage.salesDays;
+  const needsAverageTicket = activeRules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.trustedOrderDays < coverage.salesDays;
   const completeActualCoverage =
     shownCoverage.salesDays > 0 && shownCoverage.actualDays === shownCoverage.salesDays && shownCoverage.missingDays === 0;
 
