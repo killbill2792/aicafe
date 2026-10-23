@@ -6,6 +6,7 @@ import {
   validateRequiredFeeFields,
   isFeeFieldInvalid,
   prepareAdvancedRateDraft,
+  selectedFeeCoverageForSalesDays,
 } from "./processingFeeDefaults";
 
 describe("processing fee redesign defaults", () => {
@@ -37,6 +38,18 @@ describe("processing fee redesign defaults", () => {
       effectiveFrom: "2026-07-27",
     });
   });
+  it("treats missing selected facts as uncovered even if rollup status is stale", () => {
+    const rows = [
+      { business_date: "2026-10-20", net_sales_cents: 30000, card_fees_status: "estimated" },
+      { business_date: "2026-10-21", net_sales_cents: 20000, card_fees_status: "actual" },
+      { business_date: "2026-10-22", net_sales_cents: 0, card_fees_status: "missing" },
+    ];
+    expect(selectedFeeCoverageForSalesDays(rows, [{ business_date: "2026-10-21", status: "actual" }])).toEqual([
+      { date: "2026-10-21", status: "actual" },
+      { date: "2026-10-20", status: "missing" },
+    ]);
+  });
+
   it("returns field-specific messages for empty and invalid required inputs", () => {
     const messages = {
       requiredProcessor: "Choose your processor",
