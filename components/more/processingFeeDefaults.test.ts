@@ -15,6 +15,7 @@ import {
   showAverageTicketField,
   untrustedDaysFromEffectiveDate,
   requiredRateMixErrors,
+  canAddRateRule,
 } from "./processingFeeDefaults";
 
 describe("processing fee redesign defaults", () => {
@@ -187,6 +188,13 @@ describe("processing fee redesign defaults", () => {
       { salesMix: "40", transactionMix: "60", fixedFee: "0.1" },
     ];
     expect(requiredRateMixErrors(mixed, "100", "100")).toEqual({ salesMix: false, transactionMix: false });
+  });
+
+  it("stops rate-rule additions at the server schema limit", () => {
+    expect(canAddRateRule(1)).toBe(true);
+    expect(canAddRateRule(7)).toBe(true);
+    expect(canAddRateRule(8)).toBe(false);
+    expect(canAddRateRule(9)).toBe(false);
   });
 
   it("one-tap bypasses a manually empty date but still requires fee inputs", () => {
