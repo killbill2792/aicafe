@@ -2,7 +2,7 @@ import { minuteOfDay, type CostShift } from "./shiftCost";
 import type { OpenHours } from "@/lib/business/openHours";
 import { OPEN_HOURS_DAY_KEYS } from "@/lib/business/openHours";
 
-export type CoverageGap={date:string;start:string;end:string;headcount:number;needed:number};
+export type CoverageGap={date:string;start:string;end:string;headcount:number;needed:number;shiftDate?:string};
 export type CoverageVerification="checked"|"closed"|"unknown"|"disabled";
 export function coverageVerification(date:string,openHours:OpenHours|null,enabled:boolean):CoverageVerification{
  if(!enabled)return "disabled";
@@ -16,6 +16,7 @@ export function uncheckedCoverageDays(dates:string[],openHours:OpenHours|null,en
 }
 
 const civilDay=(date:string)=>Date.parse(date+"T00:00:00Z")/60000;
+const nextCivilDay=(date:string)=>new Date(Date.parse(date+"T12:00:00Z")+86400000).toISOString().slice(0,10);
 const clock=(minute:number)=>String(Math.floor(((minute%1440)+1440)%1440/60)).padStart(2,"0")+":"+
  String(((minute%60)+60)%60).padStart(2,"0");
 
@@ -53,7 +54,8 @@ export function coverageGaps(dates:string[],shifts:CostShift[],openHours:OpenHou
     const from=clock(left-base),to=clock(right-base);
     const prev=result[result.length-1];
     if(prev&&prev.date===date&&prev.headcount===count&&prev.end===from)prev.end=to;
-    else result.push({date,start:from,end:to,headcount:count,needed});
+    else result.push({date,start:from,end:to,headcount:count,needed,
+      ...(left>=base+1440?{shiftDate:nextCivilDay(date)}:{})});
    }
   }
  }
