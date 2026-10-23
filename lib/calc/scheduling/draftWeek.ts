@@ -6,7 +6,7 @@ export type DraftRecurring={employee_id:string;day_of_week:number;start_time:str
 export type DraftAvailability={employee_id:string;day_of_week:number;start_local:string;end_local:string;confirmation:string;effective_from:string;effective_to:string|null};
 export type DraftPreference={employee_id:string;max_weekly_minutes:number|null;effective_from:string;effective_to:string|null};
 export type SchedulingDraftInputs={employees:DraftEmployee[];schedules:DraftRecurring[];availability:DraftAvailability[];preferences:DraftPreference[];
-  openHours:OpenHours|null;prepMinutesBeforeOpen?:number;prepMinutesAfterClose?:number;unavailableDates?:Array<{employeeId:string;date:string}>;timezone:string;timezoneDefaultedToUtc?:boolean;city:string|null;region:string|null;countryCode:string|null;missing?:string[]};
+  openHours:OpenHours|null;prepMinutesBeforeOpen?:number;prepMinutesAfterClose?:number;unavailableDates?:Array<{employeeId:string;date:string;start?:string|null;end?:string|null;overnight?:boolean}>;timezone:string;timezoneDefaultedToUtc?:boolean;city:string|null;region:string|null;countryCode:string|null;missing?:string[]};
 const minute=(v:string)=>Number(v.slice(0,2))*60+Number(v.slice(3,5));
 const time=(n:number)=>String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");
 const active=(row:{effective_from:string;effective_to:string|null},date:string)=>row.effective_from<=date&&(!row.effective_to||row.effective_to>=date);
@@ -47,6 +47,16 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
  const people=new Map(inputs.employees.map(e=>[e.id,e]));
  const wage=(e:DraftEmployee)=>e.wage_period==="hour"&&e.wage_amount_cents!==null?e.wage_amount_cents:
    e.wage_period!=="hour"?null:e.default_hourly_wage_cents;
+ // A dated mask excludes only its actual local wall-clock window.
+ const availableWindows=(start:number,end:number,masks:readonly {start:number;end:number}[])=>{
+  let windows=[{start,end}];
+  for(const mask of masks)windows=windows.flatMap(w=>
+    mask.end<=w.start||mask.start>=w.end?[w]:[
+     ...(mask.start>w.start?[{start:w.start,end:mask.start}]:[]),
+     ...(mask.end<w.end?[{start:mask.end,end:w.end}]:[])
+    ]);
+  return windows;
+ };
  const occupied=new Map<string,Array<{day:number;start:number;end:number}>>();
  const minutesByPerson=new Map<string,number>();
  const days=Array.from({length:7},(_,day)=>{
@@ -59,10 +69,28 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
     .map(([a,b])=>[Math.max(0,minute(a)-before),Math.min(1439,minute(b)+after)] as [number,number])
     .filter(([a,b])=>a<b);
   const shifts:DraftShift[]=[];
-  // Dated absences constrain the authoritative recurring baseline too,
-  // not only suggested coverage. Excluding it early leaves a real gap.
-  const unavailableToday=new Set((inputs.unavailableDates??[])
-    .filter(x=>x.date===date).map(x=>x.employeeId));
+  // The same masks apply to recurring baseline shifts and suggested coverage.
+  // Prior-day overnight absences also mask the morning after midnight.
+  const masksByPerson=new Map<string,Array<{start:number;end:number}>>();
+  const previous=addDays(date,-1);
+  for(const person of inputs.employees){
+   const masks:Array<{start:number;end:number}>=[];
+   for(const absence of inputs.unavailableDates??[]){
+    if(absence.employeeId!==person.id)continue;
+    const full=absence.start==null||absence.end==null;
+    if(absence.date===date){
+     if(full)masks.push({start:0,end:1440});
+     else{
+      const start=minute(absence.start!),end=minute(absence.end!);
+      masks.push({start,end:absence.overnight||end<start?1440:end});
+     }
+    }else if(absence.date===previous&&!full){
+     const start=minute(absence.start!),end=minute(absence.end!);
+     if(absence.overnight||end<start)masks.push({start:0,end});
+    }
+   }
+   masksByPerson.set(person.id,masks.filter(m=>m.start<m.end));
+  }
   const add=(id:string,start:number,end:number,origin:"recurring"|"suggested",confirmation:"confirmed"|"unconfirmed",unpaid=0)=>{
    const e=people.get(id);if(!e||end<=start)return;
    const paidMinutes=Math.max(0,end-start-unpaid),rate=wage(e),cost=rate===null?null:Math.round(paidMinutes*rate/60);
@@ -70,10 +98,23 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
    occupied.set(id,[...(occupied.get(id)??[]),{day,start,end}]);
    minutesByPerson.set(id,(minutesByPerson.get(id)??0)+paidMinutes);
   };
-  for(const r of inputs.schedules.filter(r=>r.day_of_week===weekday&&active(r,date)&&people.has(r.employee_id)&&!unavailableToday.has(r.employee_id))){
+  for(const r of inputs.schedules.filter(r=>r.day_of_week===weekday&&active(r,date)&&people.has(r.employee_id))){
    const a=minute(r.start_time),b=minute(r.end_time);
-   if(a<b)add(r.employee_id,a,b,"recurring","unconfirmed",r.unpaid_break_minutes??0);
-   else estimated.push("overnightRecurringShiftNotDrafted");
+   if(a>=b){estimated.push("overnightRecurringShiftNotDrafted");continue;}
+   const portions=availableWindows(a,b,masksByPerson.get(r.employee_id)??[]);
+   if(portions.length!==1||portions[0]?.start!==a||portions[0]?.end!==b)
+     estimated.push("recurringShiftAdjustedForDatedAbsence");
+   // Break allocation is estimated after a recurring shift is split; no
+   // unpaid minutes are assigned to the unavailable interval.
+   const breaks=portions.map(()=>0);
+   let remaining=Math.min(r.unpaid_break_minutes??0,
+     portions.reduce((sum,p)=>sum+Math.max(0,p.end-p.start-1),0));
+   for(const i of portions.map((_,i)=>i).sort((i,j)=>
+      (portions[j].end-portions[j].start)-(portions[i].end-portions[i].start))){
+    const part=portions[i],taken=Math.min(remaining,Math.max(0,part.end-part.start-1));
+    breaks[i]=taken;remaining-=taken;
+   }
+   portions.forEach((p,i)=>add(r.employee_id,p.start,p.end,"recurring","unconfirmed",breaks[i]));
   }
   // Split each open interval at all availability/shift boundaries, then select
   // the cheapest confirmed eligible employee for each uncovered segment.
@@ -82,6 +123,8 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
    const boundary=new Set<number>([a,b]);
    for(const s of shifts){const x=minute(s.start),y=minute(s.end);if(x>a&&x<b)boundary.add(x);if(y>a&&y<b)boundary.add(y);}
    for(const r of inputs.availability.filter(r=>r.day_of_week===weekday&&active(r,date))){for(const v of [minute(r.start_local),minute(r.end_local)])if(v>a&&v<b)boundary.add(v);}
+   for(const masks of masksByPerson.values())for(const mask of masks)
+    for(const v of [mask.start,mask.end])if(v>a&&v<b)boundary.add(v);
    const points=[...boundary].sort((x,y)=>x-y);
    let previous:string|null=null;
    for(let i=0;i<points.length-1;i++){
@@ -89,7 +132,7 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
     if(shifts.some(s=>minute(s.start)<=start&&minute(s.end)>=end)){previous=null;continue;}
     const eligible=inputs.employees.flatMap(e=>{
       const options=inputs.availability.filter(r=>r.employee_id===e.id&&r.day_of_week===weekday&&active(r,date)&&minute(r.start_local)<=start&&minute(r.end_local)>=end);
-      if(!options.length||unavailableToday.has(e.id))return [];
+      if(!options.length||(masksByPerson.get(e.id)??[]).some(m=>m.start<end&&m.end>start))return [];
       if((occupied.get(e.id)??[]).some(o=>o.day===day&&o.start<end&&o.end>start))return [];
       if((minutesByPerson.get(e.id)??0)+(end-start)>weeklyLimit(inputs.preferences,e.id,date))return [];
       return [{e,confirmed:options.some(o=>o.confirmation==="owner_confirmed"),rate:wage(e)}];

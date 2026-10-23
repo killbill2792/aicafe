@@ -39,6 +39,43 @@ describe("pure scheduling draft",()=>{
   expect(monday.shifts).toEqual([]);
   expect(monday.unfilled).toEqual([{start:"09:00",end:"12:00",hours:3}]);
  });
+ it("masks only midday absence, splits recurring hours and fills the gap",()=>{
+  const d=data();
+  d.schedules=[{employee_id:"expensive",day_of_week:1,start_time:"09:00",end_time:"17:00",
+    unpaid_break_minutes:30,effective_from:"2026-01-01",effective_to:null}];
+  d.openHours={mon:[["09:00","17:00"]]};
+  d.availability=d.availability.map(r=>({...r,end_local:"17:00"}));
+  d.unavailableDates=[{employeeId:"expensive",date:"2026-10-26",start:"11:00",end:"13:00"}];
+  const result=draftWeek(d,"2026-10-26"),day=result.days[0];
+  expect(day.shifts.filter(s=>s.name==="expensive")).toMatchObject([
+    {origin:"recurring",start:"09:00",end:"11:00"},
+    {origin:"recurring",start:"13:00",end:"17:00"}
+  ]);
+  expect(day.shifts).toContainEqual(expect.objectContaining({
+    name:"cheap",origin:"suggested",start:"11:00",end:"13:00"
+  }));
+  expect(day.unfilled).toEqual([]);
+  expect(result.estimated).toContain("recurringShiftAdjustedForDatedAbsence");
+ });
+ it("partial absence blocks suggested coverage only during the actual interval",()=>{
+  const d=data();d.schedules=[];
+  d.availability=d.availability.filter(a=>a.employee_id==="cheap");
+  d.unavailableDates=[{employeeId:"cheap",date:"2026-10-26",start:"10:00",end:"11:00"}];
+  const day=draftWeek(d,"2026-10-26").days[0];
+  expect(day.shifts).toEqual([
+    expect.objectContaining({name:"cheap",start:"09:00",end:"10:00"}),
+    expect.objectContaining({name:"cheap",start:"11:00",end:"12:00"})
+  ]);
+  expect(day.unfilled).toEqual([{start:"10:00",end:"11:00",hours:1}]);
+ });
+ it("overnight absence also blocks the morning of the following date",()=>{
+  const d=data();d.schedules=[];
+  d.availability=d.availability.filter(a=>a.employee_id==="cheap");
+  d.unavailableDates=[{employeeId:"cheap",date:"2026-10-25",start:"22:00",end:"10:00",overnight:true}];
+  const day=draftWeek(d,"2026-10-26").days[0];
+  expect(day.unfilled).toEqual([{start:"09:00",end:"10:00",hours:1}]);
+  expect(day.shifts).toEqual([expect.objectContaining({name:"cheap",start:"10:00",end:"12:00"})]);
+ });
  it("keeps recurring shifts and selects cheapest available for uncovered hours",()=>{
   const r=draftWeek(data(),"2026-10-26");
   expect(r.days[0].shifts[0]).toMatchObject({name:"expensive",origin:"recurring"});

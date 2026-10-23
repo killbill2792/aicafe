@@ -13,7 +13,7 @@ export async function readSchedulingDraftInputs(client:SupabaseClient,businessId
   client.from("locations").select("open_hours,timezone,city,region,country_code").eq("business_id",businessId).order("name").limit(1),
   client.from("businesses").select("timezone").eq("id",businessId).single(),
   client.from("team_rules").select("prep_minutes_before_open,prep_minutes_after_close").eq("business_id",businessId).maybeSingle(),
-  client.from("staff_availability_exceptions").select("employee_id,local_date,exception_type").eq("business_id",businessId).limit(201)
+  client.from("staff_availability_exceptions").select("employee_id,local_date,exception_type,start_local,end_local,overnight,confirmation").eq("business_id",businessId).eq("confirmation","owner_confirmed").limit(201)
  ]);
  for(const result of [employees,schedules,availability,preferences,locations,business,teamRules,exceptions])if(result.error)throw result.error;
  const missing:string[]=[];
@@ -27,7 +27,10 @@ export async function readSchedulingDraftInputs(client:SupabaseClient,businessId
   preferences:(preferences.data??[]).slice(0,200),
   openHours,prepMinutesBeforeOpen:teamRules.data?.prep_minutes_before_open??0,
   prepMinutesAfterClose:teamRules.data?.prep_minutes_after_close??0,
-  unavailableDates:(exceptions.data??[]).filter(x=>["unavailable","approved_leave"].includes(x.exception_type)).map(x=>({employeeId:x.employee_id,date:x.local_date})),
+  unavailableDates:(exceptions.data??[]).filter(x=>["unavailable","approved_leave"].includes(x.exception_type)).map(x=>({employeeId:x.employee_id,date:x.local_date,
+    start:x.start_local===null?null:String(x.start_local).slice(0,5),
+    end:x.end_local===null?null:String(x.end_local).slice(0,5),
+    overnight:x.overnight===true})),
   timezone:location?.timezone??business.data?.timezone??"UTC",
   timezoneDefaultedToUtc:!location?.timezone&&!business.data?.timezone,
   city:location?.city??null,region:location?.region??null,countryCode:location?.country_code??null
