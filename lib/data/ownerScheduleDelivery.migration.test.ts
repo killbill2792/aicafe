@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
-const migration=readFileSync(resolve("supabase/migrations/20261023000088_staff_approval_prep_delivery.sql"),"utf8");
+const migration=readFileSync(resolve("supabase/migrations/20261023000091_staff_approval_prep_delivery.sql"),"utf8");
 describe("staff owner-send SQL invariants",()=>{
  it("does not grant the browser the ability to forge sent receipts",()=>{
   expect(migration).toMatch(/staff_mark_owner_delivery/);

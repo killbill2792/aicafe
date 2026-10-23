@@ -16,7 +16,7 @@ async function verifyOwner(scope:StaffSourceScope){
 export async function readStaffProposalToken(scope:StaffSourceScope){
  await verifyOwner(scope);
  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_staff_source_token",{p_business_id:scope.businessId});
- if(error||typeof data!=="string"||!/^[a-f0-9]{32}$/.test(data))throw new Error("Staff revision unavailable; apply migration 088");
+ if(error||typeof data!=="string"||!/^[a-f0-9]{32}$/.test(data))throw new Error("Staff revision unavailable; apply migration 091");
  return data;
 }
 
