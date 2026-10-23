@@ -5,7 +5,7 @@ import {rebuildSalesFactRollups} from "./salesFactRollups";
 import type {SupabaseClient} from "@supabase/supabase-js";
 describe("atomic POS sales fact rebuilding",()=>{
  it("uses a transactional database RPC once per affected date, never client-side deletes",async()=>{
-  const rpc=vi.fn(async()=>({error:null}));
+  const rpc=vi.fn(async (_name:string,_args:Record<string,unknown>)=>({error:null}));
   const db={rpc,from:()=>{throw Error("nontransactional table mutation")}} as unknown as SupabaseClient;
   await rebuildSalesFactRollups(db,"business",["2026-08-23","2026-08-22","2026-08-22"],"America/Los_Angeles");
   expect(rpc).toHaveBeenCalledTimes(2);
