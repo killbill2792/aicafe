@@ -8,19 +8,6 @@ const data=():SchedulingDraftInputs=>({
  preferences:[],openHours:{mon:[["09:00","12:00"]]},timezone:"America/Los_Angeles",city:null,region:null,countryCode:null
 });
 describe("pure scheduling draft",()=>{
- it("permits preparation before opening and cleanup after closing while retaining service coverage",()=>{
-  const d=data();d.schedules=[];d.prepMinutesBeforeOpen=30;d.prepMinutesAfterClose=15;
-  d.availability=d.availability.map(x=>({...x,start_local:"08:30",end_local:"12:15"}));
-  const day=draftWeek(d,"2026-10-26").days[0];
-  expect(day.shifts[0]).toMatchObject({start:"08:30",end:"12:15"});
-  expect(day.unfilled).toEqual([]);
- });
- it("does not assign a person with a dated absence, even without a published schedule",()=>{
-  const d=data();d.schedules=[];d.employees=[employee("cheap",1200)];
-  d.availability=d.availability.filter(x=>x.employee_id==="cheap");
-  d.unavailableDates=[{employeeId:"cheap",date:"2026-10-26"}];
-  expect(draftWeek(d,"2026-10-26").days[0].unfilled).toEqual([{start:"09:00",end:"12:00",hours:3}]);
- });
  it("keeps recurring shifts and selects cheapest available for uncovered hours",()=>{
   const r=draftWeek(data(),"2026-10-26");
   expect(r.days[0].shifts[0]).toMatchObject({name:"expensive",origin:"recurring"});

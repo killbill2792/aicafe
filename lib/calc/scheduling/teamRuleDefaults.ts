@@ -4,6 +4,5 @@ export const DEFAULT_TEAM_RULES={
  weekly_ot_enabled:true,weekly_ot_after_minutes:2400,ot_multiplier_bp:15000,
  daily_ot_enabled:false,daily_ot_after_minutes:480,
  max_shift_enabled:true,max_shift_minutes:600,min_shift_enabled:true,min_shift_minutes:180,
- min_rest_enabled:true,min_rest_minutes:600,coverage_enabled:true,min_headcount:2,
- prep_minutes_before_open:0,prep_minutes_after_close:0
+ min_rest_enabled:true,min_rest_minutes:600,coverage_enabled:true,min_headcount:2
 } as const;

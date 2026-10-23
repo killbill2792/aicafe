@@ -6,7 +6,7 @@ export type DraftRecurring={employee_id:string;day_of_week:number;start_time:str
 export type DraftAvailability={employee_id:string;day_of_week:number;start_local:string;end_local:string;confirmation:string;effective_from:string;effective_to:string|null};
 export type DraftPreference={employee_id:string;max_weekly_minutes:number|null;effective_from:string;effective_to:string|null};
 export type SchedulingDraftInputs={employees:DraftEmployee[];schedules:DraftRecurring[];availability:DraftAvailability[];preferences:DraftPreference[];
-  openHours:OpenHours|null;prepMinutesBeforeOpen?:number;prepMinutesAfterClose?:number;unavailableDates?:Array<{employeeId:string;date:string}>;timezone:string;timezoneDefaultedToUtc?:boolean;city:string|null;region:string|null;countryCode:string|null;missing?:string[]};
+  openHours:OpenHours|null;timezone:string;timezoneDefaultedToUtc?:boolean;city:string|null;region:string|null;countryCode:string|null;missing?:string[]};
 const minute=(v:string)=>Number(v.slice(0,2))*60+Number(v.slice(3,5));
 const time=(n:number)=>String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");
 const active=(row:{effective_from:string;effective_to:string|null},date:string)=>row.effective_from<=date&&(!row.effective_to||row.effective_to>=date);
@@ -51,13 +51,7 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
  const minutesByPerson=new Map<string,number>();
  const days=Array.from({length:7},(_,day)=>{
   const date=addDays(weekStart,day),weekday=new Date(date+"T12:00:00Z").getUTCDay();
-  const before=Number.isInteger(inputs.prepMinutesBeforeOpen)&&inputs.prepMinutesBeforeOpen!>=0&&inputs.prepMinutesBeforeOpen!<=240?inputs.prepMinutesBeforeOpen!:0;
-  const after=Number.isInteger(inputs.prepMinutesAfterClose)&&inputs.prepMinutesAfterClose!>=0&&inputs.prepMinutesAfterClose!<=240?inputs.prepMinutesAfterClose!:0;
-  // Coverage begins with prep and ends with cleanup, without inventing an
-  // overnight window outside the current civil day.
-  const hours=(inputs.openHours?.[OPEN_HOURS_DAY_KEYS[weekday]]??[])
-    .map(([a,b])=>[Math.max(0,minute(a)-before),Math.min(1439,minute(b)+after)] as [number,number])
-    .filter(([a,b])=>a<b);
+  const hours=(inputs.openHours?.[OPEN_HOURS_DAY_KEYS[weekday]]??[]).map(([a,b])=>[minute(a),minute(b)] as [number,number]).filter(([a,b])=>a<b);
   const shifts:DraftShift[]=[];
   const add=(id:string,start:number,end:number,origin:"recurring"|"suggested",confirmation:"confirmed"|"unconfirmed",unpaid=0)=>{
    const e=people.get(id);if(!e||end<=start)return;
@@ -85,7 +79,7 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
     if(shifts.some(s=>minute(s.start)<=start&&minute(s.end)>=end)){previous=null;continue;}
     const eligible=inputs.employees.flatMap(e=>{
       const options=inputs.availability.filter(r=>r.employee_id===e.id&&r.day_of_week===weekday&&active(r,date)&&minute(r.start_local)<=start&&minute(r.end_local)>=end);
-      if(!options.length||inputs.unavailableDates?.some(x=>x.employeeId===e.id&&x.date===date))return [];
+      if(!options.length)return [];
       if((occupied.get(e.id)??[]).some(o=>o.day===day&&o.start<end&&o.end>start))return [];
       if((minutesByPerson.get(e.id)??0)+(end-start)>weeklyLimit(inputs.preferences,e.id,date))return [];
       return [{e,confirmed:options.some(o=>o.confirmation==="owner_confirmed"),rate:wage(e)}];

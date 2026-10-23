@@ -1,4 +1,5 @@
 import type { PeakHourFacts, EmployeeSalesFacts, PayrollFacts } from "@/lib/data/posFactReaders.server";
+import type {UsageRow} from "@/lib/calc/usageVariance";
 import type { SchedulingDraftInputs } from "@/lib/calc/scheduling/draftWeek";
 import type { OpenHours } from "@/lib/business/openHours";
 import type { CafeStateService } from "@/lib/operating/cafeState";
@@ -13,6 +14,7 @@ import type { MonthlyBills, RecordedExpenses, SoldProduct, ItemSalesCoverage } f
 
 /** A read-only, evidence-carrying allow-list. The AI never receives a raw DB client. */
 export interface CafeToolset {
+  getUsageVariance(businessId:string,input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null}>;
   getPeakHours(businessId:string,period:CafeStatePeriod):Promise<KnownSlice<PeakHourFacts>>;
   getEmployeeSales(businessId:string,period:CafeStatePeriod):Promise<KnownSlice<EmployeeSalesFacts>>;
   getPayrollFacts(businessId:string,period:CafeStatePeriod):Promise<KnownSlice<PayrollFacts>>;
@@ -86,8 +88,10 @@ export class StructuredCafeTools implements CafeToolset {
       breakEven: CafeToolset["getBreakEven"];
       schedulingDraftInputs:CafeToolset["getSchedulingDraftInputs"];
     },
+    private usageReader?:CafeToolset["getUsageVariance"],
   ) {}
 
+  getUsageVariance(businessId:string,input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}){return this.usageReader?this.usageReader(businessId,input):Promise.resolve({from:input.from,to:input.to,rows:[],missing:["usageReaderUnavailable"],groupBy:input.groupBy??null});}
   getPeakHours(_businessId:string,period:CafeStatePeriod){return this.posReaders?.peakHours(period)??Promise.resolve(missing<PeakHourFacts>("peakHoursUnavailable"));}
   getEmployeeSales(_businessId:string,period:CafeStatePeriod){return this.posReaders?.employeeSales(period)??Promise.resolve(missing<EmployeeSalesFacts>("employeeSalesUnavailable"));}
   getPayrollFacts(_businessId:string,period:CafeStatePeriod){return this.posReaders?.payrollFacts(period)??Promise.resolve(missing<PayrollFacts>("payrollFactsUnavailable"));}
@@ -209,6 +213,7 @@ export class BusinessScopedCafeTools {
   getPeakHours(period:CafeStatePeriod){return this.tools.getPeakHours(this.businessId,period);}
   getEmployeeSales(period:CafeStatePeriod){return this.tools.getEmployeeSales(this.businessId,period);}
   getPayrollFacts(period:CafeStatePeriod){return this.tools.getPayrollFacts(this.businessId,period);}
+  getUsageVariance(input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}){return this.tools.getUsageVariance(this.businessId,input);}
   getSchedulingDraftInputs(){return this.tools.getSchedulingDraftInputs(this.businessId);}
   getCafeSummary() { return this.tools.getCafeSummary(this.businessId); }
   getProfitability(period: CafeStatePeriod) { return this.tools.getProfitability(this.businessId, period); }

@@ -1,3 +1,5 @@
+import {readUsageVariance} from "@/lib/data/usageVariance.server";
+import {usageWeekEnding} from "@/lib/calc/usageDates";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
@@ -86,6 +88,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
   const [snapshot, menu] = await Promise.all([getSnapshot(), getMenuControlCenter()]);
+  const usagePeriod=usageWeekEnding(snapshot.todayDateStr);
+  const usageOver=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to}).then(r=>r.rows.filter(x=>x.status==="over")).catch(()=>[]);
   const vm = buildHomeViewModel(snapshot, period);
   // Today is already the active viewmodel on the default Home period. Avoid recomputing
   // expensive cost-recovery projections just to render the compact snapshot.
@@ -434,6 +438,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             unavailableLabel={vm.breakEvenUnavailableReason === "missing_costs" ? t("breakEvenMissingCosts", { categories: vm.missingCategories.map((line) => line.label).join(", ") }) : vm.breakEvenUnavailableReason === "missing_sales" ? t("breakEvenMissingSales") : undefined}
           />
 
+          {usageOver.length>0&&<Link href="/menu/pantry" className="block rounded-2xl border border-line bg-warn-soft p-4 text-warn"><p className="font-bold">{t("usageOverAlert")}</p><p>{usageOver.map(x=>x.name).join(", ")}</p><p className="underline">{t("usageReview")}</p></Link>}
           <AlertsTeaserCard
             step={5}
             title={t("alertsSection")}

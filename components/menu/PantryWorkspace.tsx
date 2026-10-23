@@ -1,23 +1,27 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Plus, Search, Check, Coffee, Milk, Package, Cookie, Droplets } from "lucide-react";
+import { Plus, Search, Coffee, Milk, Package, Cookie, Droplets } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
-import {addFromStarter,savePackPrice,createPantryIngredient,updatePantryIngredient} from "@/lib/actions/pantry";
+import {saveUsageEntry,addFromStarter,savePackPrice,createPantryIngredient,updatePantryIngredient} from "@/lib/actions/pantry";
+import {usageEntryErrorKey} from "@/lib/calc/usageEntryErrors";
 import {pantryUnitCostCents} from "@/lib/calc/pantryDisplay";
 import { packBaseQuantity } from "@/lib/calc/recipeUnits";
 import { formatCents } from "@/lib/calc";
 import type { BaseUnit } from "@/lib/calc/recipeUnits";
 import type { PantryCategory } from "@/lib/menu/pantryStarter";
 
+import type { UsageRow } from "@/lib/calc/usageVariance";
+type Variance={from:string;to:string;rows:UsageRow[]};
 type Item = {id:string;name:string;category:string|null;starterKey:string|null;baseUnit:BaseUnit;costPerBaseMicros:number|null;packQuantity:number|null;packUnit:string|null;packCostCents:number|null;usedInCount:number};
 type Starter = {key:string;name:string;category:string;baseUnit:BaseUnit;packQuantity:number;packUnit:string};
 const categories=["all","coffee","milk","syrups","packaging","bakery","other"] as const;
 function categoryOf(value:string|null) { if(value==="syrup"||value==="sauce")return "syrups";if(value==="bakery"||value==="food")return "bakery";if(value==="coffee"||value==="milk"||value==="packaging")return value;return "other"; }
 function icon(category:string) {const cls="h-5 w-5";switch(category){case "coffee":return <Coffee className={cls}/>;case "milk":return <Milk className={cls}/>;case "syrups":return <Droplets className={cls}/>;case "bakery":return <Cookie className={cls}/>;default:return <Package className={cls}/>;}}
 const units:Record<BaseUnit,string[]>={ml:["gal","qt","l","ml","fl_oz"],g:["lb","kg","oz_wt","g"],each:["each","dozen","case(100)","case(1000)"]};
-export default function PantryWorkspace({items,starters,labels:t}:{items:Item[];starters:Starter[];labels:Record<string,string>}) {
- const router=useRouter();const [query,setQuery]=useState("");const [filter,setFilter]=useState<string>("all");const [dialog,setDialog]=useState<"starter"|"custom"|"price"|"edit"|null>(null);
+export default function PantryWorkspace({items,starters,labels:t,variance,businessToday}:{items:Item[];starters:Starter[];labels:Record<string,string>;variance:Variance|null;businessToday:string}) {
+ const router=useRouter();const [entryKind,setEntryKind]=useState<"count"|"purchase">("count"); const [entryItem,setEntryItem]=useState(items[0]?.id??""); const [entryQuantity,setEntryQuantity]=useState(""); const [entryUnit,setEntryUnit]=useState<string>(items[0]?.baseUnit??"each"); const [entryDate,setEntryDate]=useState(businessToday); const [entryError,setEntryError]=useState(""); const [entryDone,setEntryDone]=useState(false);
+ const [query,setQuery]=useState("");const [filter,setFilter]=useState<string>("all");const [dialog,setDialog]=useState<"starter"|"custom"|"price"|"edit"|null>(null);
  const [selected,setSelected]=useState<Item|null>(null);const [chosen,setChosen]=useState<string[]>([]);const [name,setName]=useState("");const [category,setCategory]=useState<PantryCategory>("other");const [baseUnit,setBaseUnit]=useState<BaseUnit>("each");
  const [quantity,setQuantity]=useState("1");const [unit,setUnit]=useState("each");const [price,setPrice]=useState("");const [error,setError]=useState("");const [pending,start]=useTransition();
  const missing=items.filter(item=>item.packCostCents===null).length;
@@ -29,9 +33,34 @@ export default function PantryWorkspace({items,starters,labels:t}:{items:Item[];
  function submitStarters(){start(async()=>{const result=await addFromStarter(chosen);if(!result.ok)setError(t.error);else{setDialog(null);setChosen([]);router.refresh();}});}
  function submitEdit(){if(!selected)return;start(async()=>{const result=await updatePantryIngredient({id:selected.id,name,category});if(!result.ok)setError(t.error);else{setDialog(null);router.refresh();}});}
  function submitCustom(){start(async()=>{const result=await createPantryIngredient({name,category,baseUnit});if(!result.ok)setError(t.error);else{setDialog(null);setName("");router.refresh();}});}
+ function saveEntry(){const chosen=items.find(i=>i.id===entryItem);if(!chosen)return;setEntryError("");setEntryDone(false);start(async()=>{const result=await saveUsageEntry(entryKind,{ingredientId:chosen.id,quantity:Number(entryQuantity),unit:entryUnit,date:entryDate});if(!result.ok)setEntryError(result.error);else{setEntryQuantity("");setEntryDone(true);router.refresh();}});}
  const fmt=(pattern:string,values:Record<string,string|number>)=>Object.entries(values).reduce((text,[key,value])=>text.replaceAll("{"+key+"}",String(value)),pattern);
  return <div className="mx-auto w-full max-w-5xl text-ink">
  <div className="mb-4 flex items-center justify-between gap-3"><h1 className="font-headline text-3xl font-extrabold">{t.title}</h1><button type="button" onClick={()=>{setError("");setDialog("starter");}} aria-label={t.add} className="flex size-12 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent"><Plus/></button></div>
+ <form method="get" className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-card p-3">
+ <label className="min-w-0 flex-1">{t.usageStart}<input type="date" name="from" defaultValue={variance?.from??""} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2"/></label>
+ <label className="min-w-0 flex-1">{t.usageEnd}<input type="date" name="to" defaultValue={variance?.to??""} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2"/></label>
+ <button type="submit" className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent">{t.usageApply}</button></form>
+ <section className="mb-5 rounded-2xl border border-line bg-card p-4">
+ <h2 className="font-headline text-xl font-bold">{t.usageTitle}</h2><p className="text-ink-muted">{t.usagePeriod} {variance?.from??"—"} – {variance?.to??"—"}</p>
+ {!variance&&<p className="mt-3 text-ink-muted">{t.usageUnavailable}</p>}
+ <div className="mt-3 grid gap-2 sm:grid-cols-2">{variance?.rows.map(row=><div key={row.ingredientId} className="rounded-xl border border-line p-3">
+ <div className="flex justify-between gap-2"><h3 className="font-bold">{row.name}</h3><span className={row.status==="over"?"font-bold text-warn":"text-ink-muted"}>{row.status?t["usage_"+row.status]:t.usageUnknown}</span></div>
+ <p>{t.usageExpected}: {row.expected===null?"—":row.expected.toLocaleString()} {row.unit}</p><p>{t.usageActual}: {row.actual===null?"—":row.actual.toLocaleString()} {row.unit}</p>
+ <p>{t.usageDifference}: {row.differencePct===null?"—":row.differencePct.toFixed(1)+"%"}</p>
+ {!!row.groups.length&&<details className="mt-2"><summary className="min-h-10 cursor-pointer font-semibold">{t.usageShifts}</summary><p className="text-sm text-ink-muted">{t.usageExpectedOnly}</p>{row.groups.map(g=><p key={g.key} className="mt-1 text-sm">{g.label}: {g.expected.toLocaleString()} {row.unit}</p>)}</details>}
+ {!!row.missing.length&&<p className="text-sm text-ink-muted">{t.usageMissing}: {row.missing.map(reason=>reason.startsWith("startCount:")?t.usageStartCount+" "+reason.slice(11):reason.startsWith("endCount:")?t.usageEndCount+" "+reason.slice(9):reason==="toastSalesCoverage"?t.usageCoverage:t.usageRecipeMissing).join(", ")}</p>}
+ </div>)}</div></section>
+ <section className="mb-5 rounded-2xl border border-line bg-card p-4"><h2 className="font-headline text-xl font-bold">{t.usageRecord}</h2>
+ <div className="mt-3 flex gap-2">{(["count","purchase"] as const).map(k=><button type="button" key={k} aria-pressed={entryKind===k} onClick={()=>setEntryKind(k)} className={`min-h-12 rounded-xl border px-4 font-bold ${entryKind===k?"bg-accent text-on-accent":"border-line"}`}>{t["usage_"+k]}</button>)}</div>
+ <div className="mt-3 grid gap-3 sm:grid-cols-2">
+ <label>{t.usageIngredient}<select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3" value={entryItem} onChange={e=>{setEntryItem(e.target.value);setEntryUnit(items.find(i=>i.id===e.target.value)?.baseUnit??"each");}}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
+ <label>{t.usageQuantity}<input type="number" min={entryKind==="count"?"0":"0.0001"} step="any" value={entryQuantity} onChange={e=>setEntryQuantity(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label>
+ <label>{t.usageUnit}<select value={entryUnit} onChange={e=>setEntryUnit(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3">{(units[items.find(i=>i.id===entryItem)?.baseUnit??"each"]).map(u=><option key={u} value={u}>{u}</option>)}</select></label>
+ <label>{t.usageDate}<input type="date" value={entryDate} onChange={e=>setEntryDate(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label></div>
+ {!!entryError&&<p role="alert" className="mt-2 text-warn">{t.error}: {t[usageEntryErrorKey(entryError)]??t.usageErrorSaveFailed}</p>}{entryDone&&<p role="status" className="mt-2">{t.usageSaved}</p>}
+ <button type="button" disabled={pending||!entryItem||entryQuantity.trim()===""||Number(entryQuantity)<0} onClick={saveEntry} className="mt-3 min-h-12 rounded-xl bg-accent px-6 font-bold text-on-accent disabled:opacity-50">{t.save}</button>
+ <p className="mt-2 text-sm text-ink-muted">{t.usageCountNote}</p></section>
  <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-line bg-card px-4"><Search className="size-5 text-ink-muted"/><input className="min-w-0 flex-1 bg-transparent text-[17px] outline-none" value={query} onChange={e=>setQuery(e.target.value)} placeholder={t.search}/></label>
  <div className="my-4 flex flex-wrap gap-2">{categories.map(key=><button type="button" key={key} onClick={()=>setFilter(key)} aria-pressed={filter===key} className={`min-h-12 rounded-full border px-4 text-[15px] font-semibold ${filter===key?"border-accent bg-accent text-on-accent":"border-line bg-card text-ink"}`}>{t[key]}</button>)}</div>
  {items.length>0&&missing>0&&<div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-warn-soft p-4 text-warn"><span className="font-bold">{fmt(t.confirmed,{done:items.length-missing,total:items.length})}</span><button type="button" onClick={()=>{setFilter("all");setQuery("");document.getElementById("pending-pantry")?.scrollIntoView({behavior:"smooth"});}} className="min-h-12 font-bold underline">{t.reviewNow}</button></div>}

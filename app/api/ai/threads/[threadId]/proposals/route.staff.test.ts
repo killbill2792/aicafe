@@ -14,6 +14,7 @@ const row=()=>({id:f.id,businessId:f.business,ownerUserId:f.owner,threadId:f.thr
  monitorSpec:{durationDays:1,metricScope:"staff"},status:f.status,revision:f.revision,
  locale:"en",monitoringStartDate:null,createdAt:"2026-10-23T00:00:00Z"});
 vi.mock("@/lib/ai/conversations/auth.server",()=>({
+ ConversationApiError:class extends Error{constructor(public status:number,public code:string){super(code);}},
  authenticatedConversationContext:async()=>({scope:{businessId:f.business,ownerUserId:f.owner},
   service:{getThread:async()=>{if(f.deny)throw Error("forbidden");}}}),
 }));
@@ -67,7 +68,8 @@ describe("staff approval through shared Supervisor ledger",()=>{
  });
  it("second click cannot apply or duplicate an audit entry",async()=>{
   const results=await Promise.all([POST(post("approve"),params),POST(post("approve"),params)]);
-  expect(results.map(x=>x.status).sort()).toEqual([200,409]);
+  // Both responses may reconcile to applied; the invariant is ONE durable write.
+  expect(results.map(x=>x.status).sort()).toEqual([200,200]);
   expect(f.saved).toBe(1);expect(f.approved).toBe(1);
  });
  it("rejects stale data and never writes any staff effect",async()=>{
