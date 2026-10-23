@@ -24,7 +24,6 @@ async function scope(){
  if(error||membership?.role!=="owner")throw new Error("owner_required");
  return {db,businessId};
 }
-const dateAfter=(day:string)=>new Date(Date.parse(day+"T12:00:00Z")+86400000).toISOString().slice(0,10);
 async function allRows<T>(load:(first:number,last:number)=>PromiseLike<{data:T[]|null;error:unknown}>,max=20000):Promise<T[]>{
  const all:T[]=[];
  for(let offset=0;offset<=max;offset+=500){
