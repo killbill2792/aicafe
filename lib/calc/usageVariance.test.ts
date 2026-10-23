@@ -44,5 +44,15 @@ describe("weekly ingredient reconciliation",()=>{
   expect(perStaff.groups.reduce((n,g)=>n+g.expected,0)).toBe(400);
   expect(calculateUsage({...base,staff,groupBy:"day"})[0].groups[0].key).toBe("2026-10-21");
  });
- it("never assigns one restaurant\'s sales to another restaurant\'s crew",()=>{\n  const staff=[{id:"a",staffId:"a",staff:"Ada",locationId:"loc-a",clockIn:"2026-10-21T10:00:00Z",clockOut:"2026-10-21T13:00:00Z"},\n   {id:"b",staffId:"b",staff:"Ben",locationId:"loc-b",clockIn:"2026-10-21T10:00:00Z",clockOut:"2026-10-21T13:00:00Z"}];\n  const a=calculateUsage({...base,staff,groupBy:"staff"})[0];\n  expect(a.groups).toMatchObject([{label:"Ada",expected:400,actual:null}]);\n  const b=calculateUsage({...base,staff,groupBy:"shift"})[0];\n  expect(b.groups[0].staff).toEqual(["Ada"]);\n  const unknown=calculateUsage({...base,sales:[{...sales[0],locationId:null}],staff,groupBy:"staff"})[0];\n  expect(unknown.groups[0].label).toContain("No matched");\n });\n it("uses the prior closing count as the opening boundary",()=>expect(previousDate("2026-03-01")).toBe("2026-02-28"));
+ it("never assigns one restaurant's sales to another restaurant\'s crew",()=>{
+  const staff=[{id:"a",staffId:"a",staff:"Ada",locationId:"loc-a",clockIn:"2026-10-21T10:00:00Z",clockOut:"2026-10-21T13:00:00Z"},
+   {id:"b",staffId:"b",staff:"Ben",locationId:"loc-b",clockIn:"2026-10-21T10:00:00Z",clockOut:"2026-10-21T13:00:00Z"}];
+  const a=calculateUsage({...base,staff,groupBy:"staff"})[0];
+  expect(a.groups).toMatchObject([{label:"Ada",expected:400,actual:null}]);
+  const b=calculateUsage({...base,staff,groupBy:"shift"})[0];
+  expect(b.groups[0].staff).toEqual(["Ada"]);
+  const unknown=calculateUsage({...base,sales:[{...sales[0],locationId:null}],staff,groupBy:"staff"})[0];
+  expect(unknown.groups[0].label).toContain("No matched");
+ });
+ it("uses the prior closing count as the opening boundary",()=>expect(previousDate("2026-03-01")).toBe("2026-02-28"));
 });
