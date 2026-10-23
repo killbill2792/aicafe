@@ -1,5 +1,5 @@
 import "server-only";
-import type { FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { selectedFeeCoverageForSalesDays, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
@@ -109,20 +109,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
   if (ordersResult.error) throw ordersResult.error;
 
   const salesDays = (rollupsResult.data ?? []).filter((row) => Number(row.net_sales_cents) > 0);
-  const factsByDate = new Map(
-    (factsResult.data ?? [])
-      .filter((fact) => fact.status === "actual" || fact.status === "estimated")
-      .map((fact) => [fact.business_date, fact.status as FeeCoverageDay["status"]]),
-  );
-  const coverageDays: FeeCoverageDay[] = salesDays
-    .map((row) => ({
-      date: row.business_date,
-      status: factsByDate.get(row.business_date) ??
-        (row.card_fees_status === "actual" || row.card_fees_status === "estimated"
-          ? row.card_fees_status
-          : "missing"),
-    }))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const coverageDays = selectedFeeCoverageForSalesDays(salesDays, factsResult.data ?? []);
   const coverage = {
     salesDays: coverageDays.length,
     actualDays: coverageDays.filter((day) => day.status === "actual").length,
