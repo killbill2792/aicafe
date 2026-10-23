@@ -2,6 +2,7 @@ import {z} from "zod";
 import {getTeam,getWeekSchedule,getCoverageGaps,getShiftCost} from "@/lib/actions/schedule";
 import {getTeamRules} from "@/lib/actions/teamRules";
 import {staffReadScope,mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
+import {uncheckedCoverageDays} from "@/lib/calc/scheduling/coverageGaps";
 import type {AgentToolContext,AgentToolResult} from "./index";
 const week=z.strictObject({week_start:z.iso.date().nullable()});
 const none=z.strictObject({});
@@ -49,7 +50,9 @@ export const scheduleReadTools={
    const data=result.data;
    return {source:"scheduled_shifts",period:{from:data.dates[0],to:data.dates[6]},
      agentId:"olivia",missing:[...(data.shifts.length>40?["moreShifts"]:[]),
-       ...(data.total.unknownCount?["wagesUnknownForSomeShifts"]:[])],
+       ...(data.total.unknownCount?["wagesUnknownForSomeShifts"]:[]),
+       ...(!data.rules.coverage_enabled?["coverageDisabled"]:
+       uncheckedCoverageDays(data.dates,data.openHours,true).length?["openHoursIncomplete"]:[])],
      estimated:data.total.estimated,estimatedShiftCount:data.total.estimateCount,
      paidMinutes:data.total.paidMinutes,knownWagesCents:data.total.knownCostCents,
      shifts:data.shifts.slice(0,40).map(s=>({id:s.id,date:s.date,employeeId:s.employeeId,
@@ -79,7 +82,8 @@ export const scheduleReadTools={
    if(!gaps.ok)return fail("coverage_gaps",null,gaps.error);
    if(!whole.ok)return fail("coverage_gaps",null,whole.error);
    return {source:"scheduled_shifts+locations.open_hours",period:{from:ws,to:whole.data.dates[6]},
-    agentId:"olivia",missing:[...(whole.data.openHours?[]:["openHoursNotConfigured"]),
+    agentId:"olivia",missing:[...(!whole.data.rules.coverage_enabled?["coverageDisabled"]:
+      uncheckedCoverageDays(whole.data.dates,whole.data.openHours,true).length?["openHoursIncomplete"]:[]),
       ...(gaps.data.gaps.length>30?["moreGaps"]:[])],estimated:false,gaps:gaps.data.gaps.slice(0,30)};
   }
  },

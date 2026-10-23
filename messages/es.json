@@ -2545,6 +2545,12 @@
     "unkWage": "Salario no disponible",
     "salaryManaged": "El sueldo se gestiona en la configuración salarial. Editar este perfil no cambia el sueldo mensual o anual.",
     "unknownWages": "Total de salarios desconocido",
-    "partialWages": "Parcial · {known} calculados, {count} salarios desconocidos"
+    "partialWages": "Parcial · {known} calculados, {count} salarios desconocidos",
+    "coverageDisabled": "Verificación de cobertura desactivada",
+    "coverageNotChecked": "Cobertura sin verificar",
+    "breakManual": "Descanso definido por ti",
+    "breakDisabled": "Descansos automáticos desactivados",
+    "noOverlap": "Sin turnos superpuestos",
+    "overlapWarning": "Se superpone con otro turno"
   }
 }

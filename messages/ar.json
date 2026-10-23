@@ -2545,6 +2545,12 @@
     "unkWage": "الأجر غير متاح",
     "salaryManaged": "تُدار الرواتب في إعدادات الأجور. تعديل هذا الملف لا يغيّر الراتب الشهري أو السنوي.",
     "unknownWages": "إجمالي الأجور غير معروف",
-    "partialWages": "جزئي · {known} محسوبة، و{count} أجور غير معروفة"
+    "partialWages": "جزئي · {known} محسوبة، و{count} أجور غير معروفة",
+    "coverageDisabled": "Comprobación de cobertura desactivada",
+    "coverageNotChecked": "لم يتم التحقق من التغطية",
+    "breakManual": "استراحة حددتها أنت",
+    "breakDisabled": "استراحات الطعام التلقائية معطّلة",
+    "noOverlap": "لا توجد مناوبة متداخلة",
+    "overlapWarning": "تعارض مع مناوبة أخرى"
   }
 }

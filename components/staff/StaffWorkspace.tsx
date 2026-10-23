@@ -8,7 +8,7 @@ import WeekGrid from "./WeekGrid";
 import ShiftPreview from "./ShiftPreview";
 import {dayTotals,personTotals,bestFreePerson,availabilityStatus,totalOvertimeMinutes,previewShift,type DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
-import {uncheckedCoverageDays} from "@/lib/calc/scheduling/coverageGaps";
+import {uncheckedCoverageDays,coverageVerification} from "@/lib/calc/scheduling/coverageGaps";
 import {automaticUnpaidBreakMinutes} from "@/lib/calc/scheduling/ruleChecks";
 import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import Link from "next/link";
@@ -175,7 +175,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     </section>;
    })}</div>
    <WeekGrid dates={data.dates} people={data.team} shifts={data.shifts} gaps={data.gaps}
-    openHours={data.openHours} currency={data.currency} readOnly={data.readOnly}
+    openHours={data.openHours} currency={data.currency} readOnly={data.readOnly} coverageEnabled={data.rules.coverage_enabled}
     onEdit={(d,id)=>openShift(d,id)} onAdd={(d,id)=>openShift(d,undefined,id)}/>
    {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">
     <h2 className="font-headline text-xl font-bold">{t("noShifts")}</h2><p className="my-2 text-muted">{t("emptyHelp")}</p>
@@ -305,7 +305,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       </div>
       <ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={appliedBreak}
        editingId={editing} team={data.team} shifts={data.shifts} gaps={data.gaps}
-       availability={data.availability} boundaryShifts={data.adjacentShifts} coverageChecked={data.rules.coverage_enabled&&uncheckedCoverageDays([date],data.openHours,true).length===0} rules={data.rules} currency={data.currency} timezone={data.timezone}/>
+       availability={data.availability} boundaryShifts={data.adjacentShifts} coverageChecked={coverageVerification(date,data.openHours,data.rules.coverage_enabled)==="checked"} rules={data.rules} currency={data.currency} timezone={data.timezone}/>
       <button disabled={busy||!chosen} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakOverridden?breakMin:undefined,repeatWeekly}))}
        className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">{t("saveShift")}</button>
       {editing&&<button className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}

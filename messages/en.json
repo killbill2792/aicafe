@@ -2545,6 +2545,12 @@
     "unkWage": "Wage unavailable",
     "salaryManaged": "Salary is managed in staff pay settings. Editing this profile does not change monthly or yearly salary.",
     "unknownWages": "Wage total unknown",
-    "partialWages": "Partial · {known} priced, {count} wages unknown"
+    "partialWages": "Partial · {known} priced, {count} wages unknown",
+    "coverageDisabled": "Coverage checks turned off",
+    "coverageNotChecked": "Coverage not verified",
+    "breakManual": "Break set by you",
+    "breakDisabled": "Automatic meal breaks are off",
+    "noOverlap": "No other shift overlaps",
+    "overlapWarning": "Double-booked with another shift"
   }
 }
