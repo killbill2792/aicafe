@@ -7,6 +7,22 @@ ALTER TABLE public.team_rules
    CHECK (prep_minutes_after_close BETWEEN 0 AND 240);
 ALTER TABLE public.employees
  ADD COLUMN IF NOT EXISTS whatsapp_opt_in boolean NOT NULL DEFAULT false;
+
+-- A phone edit, from ANY write route, invalidates WhatsApp consent for the
+-- previous recipient number. The owner must record opt-in for the new number.
+CREATE OR REPLACE FUNCTION public.staff_reset_whatsapp_consent_on_phone_change()
+RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $staff_consent$
+BEGIN
+ IF OLD.phone_e164 IS DISTINCT FROM NEW.phone_e164 THEN
+   NEW.whatsapp_opt_in := false;
+ END IF;
+ RETURN NEW;
+END $staff_consent$;
+DROP TRIGGER IF EXISTS staff_reset_whatsapp_consent_on_phone_change ON public.employees;
+CREATE TRIGGER staff_reset_whatsapp_consent_on_phone_change
+ BEFORE UPDATE OF phone_e164 ON public.employees FOR EACH ROW
+ EXECUTE FUNCTION public.staff_reset_whatsapp_consent_on_phone_change();
+
 CREATE TABLE IF NOT EXISTS public.staff_schedule_deliveries (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
  business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,

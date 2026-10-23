@@ -31,5 +31,7 @@ describe("staff owner-send SQL invariants",()=>{
    expect(migration).toMatch(/overlapping_staff_shifts/);
    expect(migration).toMatch(/v_employee.phone_e164 IS DISTINCT FROM p_expected_phone/);
    expect(migration).toMatch(/v_delivery.channel IS DISTINCT FROM p_channel/);
+   expect(migration).toMatch(/staff_reset_whatsapp_consent_on_phone_change/);
+   expect(migration).toMatch(/OLD.phone_e164 IS DISTINCT FROM NEW.phone_e164/);
  });
 });

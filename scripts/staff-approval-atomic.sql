@@ -425,4 +425,29 @@ BEGIN
      (SELECT owner_user_id FROM public.supervisor_proposals WHERE effect_hash=repeat('2',64)))
  THEN RAISE EXCEPTION 'approved day off did not supersede partial or unconfirmed windows'; END IF;
 END $fullabsence$;
+
+-- Consent follows the number, not the staff record. Test both phone changes
+-- and an unchanged number, which must preserve a fresh explicit opt-in.
+UPDATE public.employees SET whatsapp_opt_in=true
+ WHERE business_id=:'business' AND id=:'employee_id';
+UPDATE public.employees SET phone_e164='+14155550124'
+ WHERE business_id=:'business' AND id=:'employee_id';
+DO $resetconsent$
+BEGIN
+ IF EXISTS(SELECT 1 FROM public.employees WHERE
+   business_id=current_setting('test.approval.business')::uuid
+   AND phone_e164='+14155550124' AND whatsapp_opt_in IS TRUE)
+ THEN RAISE EXCEPTION 'WhatsApp consent survived change of phone'; END IF;
+END $resetconsent$;
+UPDATE public.employees SET whatsapp_opt_in=true
+ WHERE business_id=:'business' AND id=:'employee_id';
+UPDATE public.employees SET phone_e164='+14155550124'
+ WHERE business_id=:'business' AND id=:'employee_id';
+DO $keepconsent$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.employees WHERE
+   business_id=current_setting('test.approval.business')::uuid
+   AND phone_e164='+14155550124' AND whatsapp_opt_in IS TRUE)
+ THEN RAISE EXCEPTION 'WhatsApp consent reset without a phone change'; END IF;
+END $keepconsent$;
 ROLLBACK;
