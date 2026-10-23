@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useLocale } from "next-intl";
-import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
@@ -217,12 +217,9 @@ export default function ProcessingFeeEstimateForm({
 
   function expandAdvanced() {
     if (!advanced) {
-      // The simple rate already has all the information the advanced rule needs.
-      // Reveal optional controls without silently turning valid simple inputs invalid.
-      setProcessedTransactionShare((share) => share.trim() ? share : processedSalesShare);
-      setRules((current) => current.map((rule, index) =>
-        index === 0 && !rule.label.trim() ? { ...rule, label: labels.standardRate } : rule,
-      ));
+      const defaults = prepareAdvancedRateDraft(rules, processedTransactionShare, processedSalesShare, labels.standardRate);
+      setProcessedTransactionShare(defaults.transactionShare);
+      setRules(defaults.rules);
     }
     setAdvanced((value) => !value);
   }
@@ -251,11 +248,14 @@ export default function ProcessingFeeEstimateForm({
     if (Object.keys(errors).length) {
       setError(labels.incompleteWarning);
       const first = Object.keys(errors)[0];
-      if (!advanced && (first === "averageTicket" || first === "transactionShare" || first.includes("-"))) {
-        setProcessedTransactionShare((share) => share.trim() ? share : processedSalesShare);
-        setRules((current) => current.map((rule, index) =>
-          index === 0 && !rule.label.trim() ? { ...rule, label: labels.standardRate } : rule,
-        ));
+      const needsAdvanced = Object.keys(errors).some((key) =>
+        key === "averageTicket" || key === "transactionShare" || key.startsWith("rule-") ||
+        rules.some((rule) => key.startsWith(rule.id + "-")),
+      );
+      if (!advanced && needsAdvanced) {
+        const defaults = prepareAdvancedRateDraft(rules, processedTransactionShare, processedSalesShare, labels.standardRate);
+        setProcessedTransactionShare(defaults.transactionShare);
+        setRules(defaults.rules);
         setAdvanced(true);
         focusAfterReveal.current = first;
       } else {
