@@ -118,7 +118,7 @@ export default function TypeExpenseForm({
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
         <h2 className="text-base font-bold">{labels.categoryTitle}</h2>
         <div className="grid grid-cols-3 gap-2">
-          {EXPENSE_CATEGORY_CODES.filter((c) => c !== "ingredients").map((code) => (
+          {EXPENSE_CATEGORY_CODES.filter((c) => c !== "ingredients" || initialCategory === "ingredients").map((code) => (
             <button
               key={code}
               type="button"
@@ -176,7 +176,7 @@ export default function TypeExpenseForm({
       <button
         type="button"
         onClick={handleSave}
-        disabled={amountCents === 0 || !category || isPending}
+        disabled={amountCents === 0 || !category || isPending || status === "saved"}
         className="h-14 rounded-full bg-accent text-lg font-bold text-on-accent disabled:opacity-40"
       >
         {status === "saved" ? labels.saved : labels.save}
