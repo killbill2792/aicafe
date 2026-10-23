@@ -10,7 +10,7 @@ export default async function CafePage({params}:{params:Promise<{cafeId:string}>
       {([["Owners",c.owners.join(", ")||"—"],["Signed up",c.created_at],["Last active",c.lastActive??"Unknown"],
         ["POS connection",c.pos?`${c.pos.provider}: ${c.pos.status}`:"Not connected"],["Imported sales",c.firstSale?`${c.firstSale} to ${c.lastSale}`:"No sales recorded"],
         ["Staff count",String(c.staffCount??"Unknown")],["Menu items",String(c.menuCount??"Unknown")],
-        ["Access",c.is_demo?"Demo":"Standard"]] as const).map(([label,value])=><div key={label}><dt className="text-sm text-slate-500">{label}</dt><dd className="break-words font-medium">{value}</dd></div>)}
+        ["Access",c.access.mode==="grandfathered"?"Full access":c.access.mode==="paused"?"Paused":c.access.active?"Free until "+c.access.accessEnd:"Expired"]] as const).map(([label,value])=><div key={label}><dt className="text-sm text-slate-500">{label}</dt><dd className="break-words font-medium">{value}</dd></div>)}
     </dl><Link className="text-blue-700 underline" href={`/admin/conversations?cafe=${c.id}`}>View conversations →</Link>
   </section>;
 }

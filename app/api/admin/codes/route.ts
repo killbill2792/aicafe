@@ -5,6 +5,7 @@ import {requireAdmin} from "@/lib/admin/auth.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {requireSameOrigin,readBoundedJson} from "@/lib/ai/conversations/http.server";
 import {accessCodeHash,normalizeCode} from "@/lib/access/access.server";
+import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const uuid=z.uuid();
 const actions=z.discriminatedUnion("action",[
@@ -67,7 +68,7 @@ export async function POST(request:Request){
   }
   return NextResponse.json({saved:true},{headers:{"Cache-Control":"no-store"}});
  }catch(error){
-  if(error instanceof Error && error.message==="invalid_code")
+  if(error instanceof ConversationApiError && error.code==="invalid_code")
    return NextResponse.json({error:"invalid_code"},{status:422});
   console.error("admin_free_access_action_failed");
   return NextResponse.json({error:"access_action_failed"},{status:503});
