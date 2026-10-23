@@ -53,7 +53,7 @@ REVOKE ALL ON public.staff_schedule_handoff_snapshots FROM PUBLIC,anon,authentic
 GRANT SELECT,INSERT ON public.staff_schedule_handoff_snapshots TO service_role;
 -- Shared canonical projection: additions, changes and deletions are all visible.
 CREATE OR REPLACE FUNCTION public.staff_handoff_week_shifts(p_business_id uuid,p_week date)
-RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $handoff$
  SELECT coalesce(jsonb_agg(jsonb_build_object(
   'id',s.id,'employee_id',s.employee_id,'date',s.local_date,
   'start',to_char(s.start_local,'HH24:MI'),'end',to_char(s.end_local,'HH24:MI'),
@@ -61,7 +61,7 @@ RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $
  FROM public.scheduled_shifts s
  WHERE s.business_id=p_business_id AND s.deleted_at IS NULL
  AND s.local_date BETWEEN p_week AND p_week+6
-$;
+$handoff$;
 REVOKE ALL ON FUNCTION public.staff_handoff_week_shifts(uuid,date) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.staff_handoff_week_shifts(uuid,date) TO service_role;
 
