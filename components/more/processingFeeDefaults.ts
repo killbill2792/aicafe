@@ -107,3 +107,28 @@ export function selectedFeeCoverageForSalesDays(
     }))
     .sort((a, b) => b.date.localeCompare(a.date));
 }
+
+/**
+ * The form may retain an advanced draft when the owner switches back to simple mode.
+ * Hidden rules are not submitted, so they must never influence validation or required inputs.
+ */
+export function activeRateDrafts<T>(rules: readonly T[], advanced: boolean): T[] {
+  return advanced ? [...rules] : rules.slice(0, 1);
+}
+
+/** A POS connection or provider-attributed connected actual is evidence of a processor.
+ * An uploaded/manual actual is not evidence of an additional card processor.
+ */
+export function knownProcessorCount(
+  activeConnections: readonly { provider: string }[],
+  selectedFacts: readonly { provider: string; source_type: string }[],
+): number {
+  const names = [
+    ...activeConnections.map((item) => item.provider),
+    ...selectedFacts
+      .filter((fact) => fact.source_type === "connected_pos_actual")
+      .map((fact) => fact.provider),
+  ].map((name) => name.toLowerCase().trim())
+    .filter((name) => name.length > 0 && name !== "csv" && name !== "demo");
+  return new Set(names).size;
+}
