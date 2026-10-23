@@ -102,8 +102,12 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
    const a=minute(r.start_time),b=minute(r.end_time);
    if(a>=b){estimated.push("overnightRecurringShiftNotDrafted");continue;}
    const portions=availableWindows(a,b,masksByPerson.get(r.employee_id)??[]);
-   if(portions.length!==1||portions[0]?.start!==a||portions[0]?.end!==b)
-     estimated.push("recurringShiftAdjustedForDatedAbsence");
+   if(portions.length===1&&portions[0].start===a&&portions[0].end===b){
+    // Leave unaffected recurring shifts and their known break unchanged.
+    add(r.employee_id,a,b,"recurring","unconfirmed",r.unpaid_break_minutes??0);
+    continue;
+   }
+   estimated.push("recurringShiftAdjustedForDatedAbsence");
    // Break allocation is estimated after a recurring shift is split; no
    // unpaid minutes are assigned to the unavailable interval.
    const breaks=portions.map(()=>0);
