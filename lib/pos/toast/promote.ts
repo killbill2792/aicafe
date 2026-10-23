@@ -2,6 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {recomputeDailyRollup} from "@/lib/pos/rollup";
 import {rebuildSalesFactRollups} from "@/lib/pos/salesFactRollups";
+import {readAllPosRows} from "@/lib/pos/pagedReads";
 import {ToastApiError,GUID} from "./client";
 import {z} from "zod";
 export const promoteSchema=z.object({
@@ -93,14 +94,15 @@ export async function promoteVerifiedToastDay(
    await recomputeDailyRollup(db,p.businessId,p.businessDate);
    // Legacy rollup can return without surfacing its final upsert error.
    // Verify the canonical revenue aggregate before claiming that the write worked.
-   const [{data:allOrders,error:ordersError},{data:rollup,error:rollupError}]=await Promise.all([
-     db.from("orders").select("net_sales_cents").eq("business_id",p.businessId)
-       .eq("business_date",p.businessDate),
-     db.from("daily_rollups").select("net_sales_cents").eq("business_id",p.businessId)
-       .eq("business_date",p.businessDate).maybeSingle(),
-   ]);
-   if(ordersError||rollupError||!rollup)throw new ToastApiError("unavailable");
-   const sum=(allOrders??[]).reduce((total,row)=>total+Number(row.net_sales_cents),0);
+   const allOrders=await readAllPosRows((first,last)=>db.from("orders")
+      .select("id,net_sales_cents").eq("business_id",p.businessId)
+      .eq("business_date",p.businessDate).order("id").range(first,last),
+      "guarded Toast canonical orders");
+   const {data:rollup,error:rollupError}=await db.from("daily_rollups")
+      .select("net_sales_cents").eq("business_id",p.businessId)
+      .eq("business_date",p.businessDate).maybeSingle();
+   if(rollupError||!rollup)throw new ToastApiError("unavailable");
+   const sum=allOrders.reduce((total,row)=>total+Number(row.net_sales_cents),0);
    if(!Number.isSafeInteger(sum)||sum!==Number(rollup.net_sales_cents))
      throw new ToastApiError("unavailable");
  } catch {

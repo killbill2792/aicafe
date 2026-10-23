@@ -25,6 +25,7 @@ function fixture(changed=false,rosterGuids:string[]=[employeeGuid]){
       table==="orders"?[{net_sales_cents:100}]:[];
     return Promise.resolve({data,error:null}).then(resolve);
    },
+   range:async()=>({data:table==="orders"?[{net_sales_cents:100}]:[],error:null}),
    single:async()=> {
     if(table==="toast_pilot_days")return {data:changed||filters.snapshot_sha256!==p.checksum||filters.state!=="promoted"?
       null:{orders_snapshot:rosterGuids.map(posEmployeeId=>({posOrderId:`toast:${guid}:${guid}`,posEmployeeId,lines:[]}))},error:null};

@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
+import {readAllPosRows,posIdBatches} from "./pagedReads";
 import { itemIngredientCostCents, wagesCentsForTimecard } from "@/lib/calc";
 import { processingFeeForRollup } from "./processingFees";
 import { ensureOwnerConfirmedProcessingFeeEstimateForDay } from "./processingFeeEstimate.server";
@@ -22,14 +23,15 @@ export async function recomputeDailyRollup(
   const payrollTaxRateSource = business?.payroll_tax_rate_source ?? "system_estimate";
   const timezone = business?.timezone ?? "America/Los_Angeles";
 
-  const { data: orders } = await supabase
+  const orders = await readAllPosRows((first,last)=>supabase
     .from("orders")
     .select("id, net_sales_cents, pos_order_id, processing_fee_provider")
     .eq("business_id", businessId)
-    .eq("business_date", businessDate);
+    .eq("business_date", businessDate)
+    .order("id").range(first,last),"daily orders");
 
-  const orderIds = (orders ?? []).map((o) => o.id);
-  const netSalesCents = (orders ?? []).reduce((s, o) => s + o.net_sales_cents, 0);
+  const orderIds = orders.map((o) => o.id);
+  const netSalesCents = orders.reduce((s, o) => s + o.net_sales_cents, 0);
   const ordersCount = orderIds.length;
 
   // Keep the owner-confirmed fallback current before selecting the canonical fee fact. Synthetic
@@ -40,7 +42,7 @@ export async function recomputeDailyRollup(
     businessId,
     businessDate,
     netSalesCents,
-    orders: (orders ?? []).map((order) => ({
+    orders: orders.map((order) => ({
       posOrderId: order.pos_order_id,
       netSalesCents: Number(order.net_sales_cents),
       processingFeeProvider: order.processing_fee_provider,
@@ -59,15 +61,16 @@ export async function recomputeDailyRollup(
     status: processingFeeFact.status,
   } : null);
 
-  const { data: lines } = orderIds.length
-    ? await supabase
-        .from("order_lines")
-        .select("id, order_id, menu_item_id, quantity, net_sales_cents, voided")
-        .in("order_id", orderIds)
-    : { data: [] };
+  const lines: Array<{id:string;order_id:string;menu_item_id:string|null;
+    quantity:number;net_sales_cents:number;voided:boolean}> = [];
+  for (const batch of posIdBatches(orderIds)) {
+    lines.push(...await readAllPosRows((first,last)=>supabase.from("order_lines")
+      .select("id, order_id, menu_item_id, quantity, net_sales_cents, voided")
+      .in("order_id",batch).order("id").range(first,last),"daily order lines"));
+  }
 
-  const nonVoidedLines = (lines ?? []).filter((l) => !l.voided);
-  const voidedLines = (lines ?? []).filter((l) => l.voided);
+  const nonVoidedLines = lines.filter((l) => !l.voided);
+  const voidedLines = lines.filter((l) => l.voided);
   const drinksCount = nonVoidedLines.reduce((s, l) => s + Number(l.quantity), 0);
   const voidsCents = voidedLines.reduce((s, l) => s + l.net_sales_cents, 0);
 
@@ -75,16 +78,22 @@ export async function recomputeDailyRollup(
   const menuItemIds = [...new Set(nonVoidedLines.map((l) => l.menu_item_id).filter(Boolean))];
   let ingredientsCents = 0;
   if (menuItemIds.length > 0) {
-    const { data: recipeLines } = await supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", menuItemIds);
-    const ingredientIds = [...new Set((recipeLines ?? []).map((r) => r.ingredient_id))];
-    const { data: priceRows } = ingredientIds.length
-      ? await supabase
-          .from("ingredient_prices")
-          .select("ingredient_id, effective_from, cost_per_base_unit_micros")
-          .in("ingredient_id", ingredientIds)
-          .lte("effective_from", businessDate)
-          .order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })
-      : { data: [] };
+    const recipeLines:Array<{menu_item_id:string;ingredient_id:string;quantity:number}>=[];
+    for(const batch of posIdBatches(menuItemIds)){
+      recipeLines.push(...await readAllPosRows((first,last)=>supabase.from("recipe_lines")
+        .select("menu_item_id, ingredient_id, quantity").in("menu_item_id",batch)
+        .order("menu_item_id").order("ingredient_id").range(first,last),"recipe lines"));
+    }
+    const ingredientIds = [...new Set(recipeLines.map((r) => r.ingredient_id))];
+    const priceRows:Array<{ingredient_id:string;effective_from:string;
+      cost_per_base_unit_micros:number}>=[];
+    for(const batch of posIdBatches(ingredientIds)){
+      priceRows.push(...await readAllPosRows((first,last)=>supabase.from("ingredient_prices")
+        .select("ingredient_id, effective_from, cost_per_base_unit_micros")
+        .in("ingredient_id",batch).lte("effective_from",businessDate)
+        .order("effective_from",{ascending:true}).order("recorded_at",{ascending:true})
+        .order("id",{ascending:true}).range(first,last),"ingredient prices"));
+    }
     const priceMicros: Record<string, number> = {};
     for (const row of priceRows ?? []) priceMicros[row.ingredient_id] = row.cost_per_base_unit_micros;
 
@@ -108,14 +117,14 @@ export async function recomputeDailyRollup(
   // time an evening shift actually existed to expose it.
   const dayStartUtc = fromZonedTime(`${businessDate}T00:00:00`, timezone).toISOString();
   const dayEndUtc = fromZonedTime(`${businessDate}T23:59:59.999`, timezone).toISOString();
-  const { data: timecards } = await supabase
+  const timecards=await readAllPosRows((first,last)=>supabase
     .from("timecards")
-    .select("clock_in, clock_out, hourly_wage_cents, breaks")
+    .select("id, clock_in, clock_out, hourly_wage_cents, breaks")
     .eq("business_id", businessId)
     .gte("clock_in", dayStartUtc)
-    .lte("clock_in", dayEndUtc);
+    .lte("clock_in", dayEndUtc).order("id").range(first,last),"daily timecards");
 
-  const wagesCents = (timecards ?? []).reduce(
+  const wagesCents = timecards.reduce(
     (sum, tc) =>
       sum +
       wagesCentsForTimecard({
@@ -170,7 +179,8 @@ export async function recomputeDailyRollup(
   // Read-only preview uses the same sales, recipe and payroll calculations.
   // Never insert or update a fact (including fee estimates) in dry-run mode.
   if (options.dryRun) return proposed;
-  await supabase.from("daily_rollups").upsert(proposed,
+  const {error:writeError}=await supabase.from("daily_rollups").upsert(proposed,
     { onConflict: "business_id,business_date" },
   );
+  if(writeError)throw writeError;
 }
