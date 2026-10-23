@@ -83,6 +83,7 @@ type SourceSummary = {
   actualProviders: string[];
   actualFeeCents: number;
   trustedOrderDays: number;
+  untrustedFeeDays: number;
 };
 
 function percentFromBps(value: number): string {
@@ -244,7 +245,7 @@ export default function ProcessingFeeEstimateForm({
       if (submittingRules.reduce((sum, rule) => sum + (bpsFromPercent(rule.salesMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-salesMix", labels.invalidMix);
       if (submittingRules.reduce((sum, rule) => sum + (bpsFromPercent(rule.transactionMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-transactionMix", labels.invalidMix);
     }
-    if (submittingRules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.trustedOrderDays < coverage.salesDays && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
+    if (submittingRules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.untrustedFeeDays > 0 && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       setError(labels.incompleteWarning);
@@ -315,7 +316,7 @@ export default function ProcessingFeeEstimateForm({
     }
 
     const hasFixedFee = parsedRules.some((rule) => (rule?.fixedFeeCents ?? 0) > 0);
-    const needsAverageTicket = hasFixedFee && sourceSummary.trustedOrderDays < coverage.salesDays;
+    const needsAverageTicket = hasFixedFee && sourceSummary.untrustedFeeDays > 0;
     const averageProcessedTicketCents = needsAverageTicket ? centsFromDollars(averageTicket, true) : null;
     if (needsAverageTicket && averageProcessedTicketCents === null) {
       setError(labels.incompleteWarning);
@@ -356,7 +357,7 @@ export default function ProcessingFeeEstimateForm({
   };
   const activeRules = activeRateDrafts(rules, advanced);
   const firstFixedFee = Number(firstRule.fixedFee || 0);
-  const needsAverageTicket = activeRules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.trustedOrderDays < coverage.salesDays;
+  const needsAverageTicket = activeRules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.untrustedFeeDays > 0;
   const completeActualCoverage =
     shownCoverage.salesDays > 0 && shownCoverage.actualDays === shownCoverage.salesDays && shownCoverage.missingDays === 0;
 
