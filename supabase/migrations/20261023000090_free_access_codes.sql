@@ -50,12 +50,14 @@ grant select,insert,update,delete on public.free_access_codes,public.cafe_access
 -- Existing cafés were grandfathered above. New cafés require a code.
 -- Use an expired 'code' grant so redemption is possible, unlike admin pause.
 create or replace function public.initialize_new_cafe_access()
-returns trigger language plpgsql security definer set search_path=public as $
+returns trigger language plpgsql security definer set search_path=public as $cafe_init$
 begin
  insert into public.cafe_access(business_id,mode,access_end)
- values(new.id,'code',current_date - 1) on conflict (business_id) do nothing;
+ values(new.id,'code',
+   (now() at time zone coalesce(nullif(new.timezone,''),'UTC'))::date - 1)
+ on conflict (business_id) do nothing;
  return new;
-end $;
+end $cafe_init$;
 revoke all on function public.initialize_new_cafe_access() from public,anon,authenticated;
 drop trigger if exists initialize_cafe_access on public.businesses;
 create trigger initialize_cafe_access after insert on public.businesses
