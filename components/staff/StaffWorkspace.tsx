@@ -196,6 +196,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      <div className="border-t border-line pt-3 font-bold">{t("total")} {fmt(data.total.knownCostCents,data.currency)} {data.total.estimated?" · "+t("estimate"):""}</div>
    </section>
    <Link href={`/${locale}/staff/rules`} className="block rounded-[20px] border border-line bg-surface p-4">{t("rulesCard")} <span className="block text-muted">{t("defaultNote")}</span></Link>
+   {teamExtras}
   </>}
   {undo&&<div role="status" className="fixed inset-x-4 bottom-36 z-30 flex items-center justify-between rounded-xl bg-fg p-4 text-bg shadow-lg"><span>{undo.message}</span><button onClick={undoRemove} className="min-h-12 px-3 font-bold">{t("undo")}</button></div>}
   {error&&<p role="alert" className="rounded-xl bg-neg-soft p-3 text-neg">{error}</p>}
