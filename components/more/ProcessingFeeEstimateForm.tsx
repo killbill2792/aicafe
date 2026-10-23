@@ -406,6 +406,7 @@ export default function ProcessingFeeEstimateForm({
             onChange={(event) => setProcessorLabel(event.target.value)}
             maxLength={80}
             placeholder={labels.otherProcessor}
+            ref={(node) => { inputRefs.current.processor = node; }}
             aria-invalid={isFeeFieldInvalid(fieldErrors, "processor")}
             className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor") }
           />}
@@ -669,7 +670,7 @@ export default function ProcessingFeeEstimateForm({
             <div key={day.date} className="flex min-h-12 items-center justify-between gap-3 py-2 text-sm">
               <time dateTime={day.date}>{new Intl.DateTimeFormat(locale, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day.date + "T12:00:00Z"))}</time>
               {day.status === "missing"
-                ? <button type="button" disabled={isPending} onClick={() => save(true)} className="rounded-full border border-warn px-3 py-2 font-bold text-warn">{labels.missingButton}</button>
+                ? <button type="button" disabled={isPending} onClick={() => save(true)} className="min-h-12 rounded-full border border-warn px-3 py-2 font-bold text-warn">{labels.missingButton}</button>
                 : <span className="text-ink-muted">{day.status === "actual" ? labels.coverageActual : labels.coverageEstimated}</span>}
             </div>
           ))}
