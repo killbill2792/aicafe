@@ -1,6 +1,5 @@
 /** Raj Cafe backfill plan. Dry-run by default; no production writes or credentials.
  * The production runner is intentionally not exposed. */
-import { recomputeDailyRollup } from "../lib/pos/rollup";
 import type { SupabaseClient } from "@supabase/supabase-js";
 export const rajCafeDates=Array.from({length:14},(_,i)=>new Date(Date.UTC(2026,7,22+i)).toISOString().slice(0,10));
 export async function planRajCafeRollups(db:SupabaseClient,businessId:string) {
@@ -14,4 +13,3 @@ export async function planRajCafeRollups(db:SupabaseClient,businessId:string) {
 }
 // The operational recompute entry point is recomputeDailyRollup(db,businessId,date).
 // Do not invoke it from this dry-run file.
-void recomputeDailyRollup;

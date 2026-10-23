@@ -1,3 +1,4 @@
+import { posFactReaders } from "@/lib/data/posFactReaders.server";
 import "server-only";
 import {readSchedulingDraftInputs} from "@/lib/data/schedulingDraftInputs.server";
 import { agentSourceReaders } from "@/lib/data/agentReadSources.server";
@@ -74,6 +75,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
     supervisorFactReaders(client, businessId),
     supervisorHistoricalReaders(client, businessId),
     agentSourceReaders(client,businessId),
+    posFactReaders(client,businessId),
     {
       schedulingDraftInputs:async(requested)=>{assertBusiness(requested);return readSchedulingDraftInputs(client,businessId);},
       currentStaff: async (requested) => {

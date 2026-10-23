@@ -30,7 +30,13 @@ export type AgentToolContext = {
 const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
-const schemas = { get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
+const posPeriodSchema=z.strictObject({from:z.iso.date(),to:z.iso.date()});
+const posReadTools={
+  get_peak_hours:{schema:posPeriodSchema,description:"Read recorded hourly revenue and order counts for a date range."},
+  get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
+  get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
+};
+const schemas = { ...posReadTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
   ...staffTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools } as const;
 export type AgentToolName = keyof typeof schemas;
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name in staffTools||name in hoursTools||name in draftScheduleTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
@@ -83,6 +89,13 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_product_costs")return suppliesTools.get_product_costs.execute(raw,ctx);
   if(name==="get_ingredient_costs")return suppliesTools.get_ingredient_costs.execute(raw,ctx);
   if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw);
+  if(name==="get_peak_hours"||name==="get_employee_sales"||name==="get_payroll_facts"){
+    const period=posPeriodSchema.parse(raw);if(period.from>period.to)throw new Error("Invalid reporting range");
+    const reader=name==="get_peak_hours"?ctx.tools.getPeakHours(period):name==="get_employee_sales"?ctx.tools.getEmployeeSales(period):ctx.tools.getPayrollFacts(period);
+    const slice=await reader;
+    return {source:name,period,agentId:name==="get_payroll_facts"?"olivia":"alex",
+      missing:slice.quality.missingInputs,...(slice.available?slice.value:{data:null})};
+  }
   if(name==="get_item_sales")return salesTools.get_item_sales.execute(raw,ctx);
   if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
   if (name === "get_menu_items") {
