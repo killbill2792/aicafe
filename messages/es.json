@@ -134,7 +134,11 @@
     "voiceTranscriptLabel": "Escuchamos",
     "aiUnavailableTitle": "No disponible por ahora",
     "aiUnavailableReceiptBody": "La lectura de fotos de recibos aún no está activada para este café. Aún puedes agregar este gasto escribiéndolo.",
-    "aiUnavailableVoiceBody": "La entrada por voz aún no está activada para este café. Aún puedes agregar este gasto escribiéndolo."
+    "aiUnavailableVoiceBody": "La entrada por voz aún no está activada para este café. Aún puedes agregar este gasto escribiéndolo.",
+    "voiceUnavailable": "La entrada por voz no está disponible ahora. Inténtalo más tarde o escríbelo.",
+    "voiceNoTranscript": "No se escuchó nada. Inténtalo de nuevo.",
+    "voiceAuthRequired": "Inicia sesión para usar la entrada por voz.",
+    "voiceParseFailed": "No pudimos entenderlo. Inténtalo de nuevo o escríbelo."
   },
   "Categories": {
     "rent": "Renta",
