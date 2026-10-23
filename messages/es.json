@@ -105,6 +105,8 @@
     "statementMissingAmount": "Monto",
     "statementMissingDate": "Fecha",
     "statementMissingCategory": "Categoría",
+    "statementReadError": "No se pudo leer el archivo. Comprueba el formato e inténtalo de nuevo.",
+    "statementTryAgain": "Elegir otro archivo",
     "statementSaveError": "No se pudo guardar el estado de cuenta. Revisa las líneas e inténtalo de nuevo.",
     "statementMissingCancel": "Cancelar",
     "statementMissingConfirm": "Agregar línea",
