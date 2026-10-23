@@ -41,7 +41,13 @@ export function dayTimeline(date:string,shifts:DetailedShift[],gaps:ScheduleGap[
   first,last,ticks,
   open:intervals.map(s=>band(s.start,s.end)),
   gaps:gaps.filter(g=>g.date===date).map(g=>{
-   const w=span(g.start,g.end);return {...band(w.start,w.end),...g};
+   const w=span(g.start,g.end);
+   // An overnight opening's 00:00-02:00 portion belongs after 24:00
+   // on the opening date, not at the left edge of that day's timeline.
+   const afterMidnight=intervals.some(o=>o.end>1440&&w.start<o.start&&
+     w.end<=o.end-1440);
+   const offset=afterMidnight?1440:0;
+   return {...band(w.start+offset,w.end+offset),...g};
   }),
   blocks:dayShifts.map((s,i)=>{
    const w=span(s.start,s.end);
