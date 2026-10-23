@@ -33,11 +33,11 @@ VALUES (:'proposal_id',:'business',:'owner',:'thread_id',gen_random_uuid(),
  repeat('a',64),'{}','{"durationDays":1,"metricScope":"staff"}','en');
 SELECT set_config('test.approval.business',:'business',true);
 SELECT set_config('test.approval.proposal',:'proposal_id',true);
-DO $
+DO $$
 BEGIN
  IF EXISTS(SELECT 1 FROM public.team_rules WHERE business_id=current_setting('test.approval.business')::uuid)
  THEN RAISE EXCEPTION 'inert card unexpectedly wrote staff data'; END IF;
-END $;
+END $$;
 -- A manager, foreign café and other thread cannot approve this private card.
 DO $$
 DECLARE denied boolean;
