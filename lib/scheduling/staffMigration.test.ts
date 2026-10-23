@@ -13,6 +13,15 @@ describe("staff workspace SQL deployment safety",()=>{
    expect((sql.match(/\$\$/g)??[])).toHaveLength(4);
  });
 
+ it("checks the authenticated staff RPC regression script's PL/pgSQL delimiters",()=>{
+   const replay=readFileSync(join(process.cwd(),"scripts/staff-pr155-rls.sql"),"utf8");
+   expect(replay).not.toMatch(/^\\s*(?:DO \\$|END \\$;)\\s*$/m);
+   const opens=(replay.match(/^DO \\$\\$/gm)??[]).length;
+   const closes=(replay.match(/^END \\$\\$;$/gm)??[]).length;
+   expect(opens).toBeGreaterThan(0);
+   expect(opens).toBe(closes);
+ });
+
  it("balances structural parentheses without counting literals or SQL comments",()=>{
    const stripped=sql.replace(/'(?:''|[^'])*'/g,"''").replace(/--[^\n]*/g,"");
    let balance=0;
