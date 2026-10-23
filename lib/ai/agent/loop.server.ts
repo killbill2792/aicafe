@@ -268,11 +268,11 @@ export async function runAgentTurn(args: {
         else {
           const timeout = setTimeout(() => finalController.abort(), left);
           const finalTextStart = text.length;
+          const finalStart = now();
+          let completed = false;
+          let finalError: string | undefined;
           try {
             usage.modelCalls++;
-            let completed = false;
-            const finalStart = now();
-            let finalError: string | undefined;
             for await (const event of provider(request(true), finalController.signal)) {
               if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
               if (now() >= deadline) throw new Error("deadline");

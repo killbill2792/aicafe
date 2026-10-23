@@ -13,12 +13,12 @@ export default async function TurnPage({params}:{params:Promise<{turnId:string}>
       {t.error_text&&<p className="mt-2 text-red-700">Error: {t.error_text}</p>}
     </div>
     <div className="rounded-lg border bg-white p-4"><h2 className="font-semibold">Owner question</h2><p className="mt-2 whitespace-pre-wrap break-words">{t.question}</p></div>
-    <ol className="space-y-3 border-s-2 border-slate-300 ps-5">{t.steps.map(step=><li key={step.id} className="rounded-lg border bg-white p-4">
+    <ol className="space-y-3 border-s-2 border-slate-300 ps-5">{t.steps.map((step: {id:string;step_order:number;kind:string;tool_name:string|null;duration_ms:number|null;input_summary:string|null;output_summary:string|null;error:string|null})=><li key={step.id} className="rounded-lg border bg-white p-4">
       <h2 className="font-semibold">{step.step_order}. {step.kind.replace("_"," ")} {step.tool_name??""} · {step.duration_ms??"?"} ms</h2>
       <p className="text-sm">{step.input_summary??""}</p><p className="text-sm">{step.output_summary??""}</p>
       {step.error&&<p className="font-semibold text-red-700">{step.error}</p>}
     </li>)}</ol>
     <div className="rounded-lg border bg-white p-4"><h2 className="font-semibold">Final answer</h2><p className="mt-2 whitespace-pre-wrap break-words">{t.final_answer??"No answer persisted"}</p></div>
-    <div className="text-sm">Retry of: {t.retry_of?<Link className="text-blue-700 underline" href={`/admin/conversations/${t.retry_of}`}>{t.retry_of}</Link>:"None"} · Retried by: {t.retries.length?t.retries.map(r=><Link key={r.id} className="ms-2 text-blue-700 underline" href={`/admin/conversations/${r.id}`}>{r.started_at} ({r.status})</Link>):"None"}</div>
+    <div className="text-sm">Retry of: {t.retry_of?<Link className="text-blue-700 underline" href={`/admin/conversations/${t.retry_of}`}>{t.retry_of}</Link>:"None"} · Retried by: {t.retries.length?t.retries.map((r: {id:string;started_at:string;status:string})=><Link key={r.id} className="ms-2 text-blue-700 underline" href={`/admin/conversations/${r.id}`}>{r.started_at} ({r.status})</Link>):"None"}</div>
   </section>;
 }
