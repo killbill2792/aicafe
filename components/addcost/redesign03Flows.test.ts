@@ -69,6 +69,14 @@ describe("Redesign 03 screen contracts", () => {
     expect(source("components/addcost/TypeExpenseForm.tsx")).toContain('c !== "ingredients" || initialCategory === "ingredients"');
   });
 
+  it("prevents duplicate manual costs during async submission", () => {
+    const typed = source("components/addcost/TypeExpenseForm.tsx");
+    expect(typed).toContain('const submitLock = useRef(false)');
+    expect(typed).toContain('submitLock.current = true');
+    expect(typed).toContain('submitLock.current = false');
+    expect(typed).toContain('if (amountCents === 0 || !category || submitLock.current || status === "saved") return;');
+  });
+
   it("respects safe return navigation in typed and statement entry", () => {
     const typed = source("components/addcost/TypeExpenseForm.tsx");
     const statement = source("components/addcost/StatementUploader.tsx");
