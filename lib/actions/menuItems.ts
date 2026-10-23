@@ -261,6 +261,7 @@ export async function updateMenuItemPrice(input: z.infer<typeof PriceSchema>): P
 const AggregateProductCostSchema = z.object({
   menuItemId: z.string().uuid(),
   costCents: z.number().int().positive(),
+  estimated: z.boolean().optional(),
 });
 
 export async function saveMenuItemAggregateCost(input: z.infer<typeof AggregateProductCostSchema>): Promise<ActionResult> {
@@ -276,7 +277,7 @@ export async function saveMenuItemAggregateCost(input: z.infer<typeof AggregateP
     menu_item_id: item.id,
     cost_cents: parsed.data.costCents,
     source_type: "owner_manual",
-    status: "confirmed",
+    status: parsed.data.estimated ? "estimated" : "confirmed",
     source_label: "Owner",
     updated_at: new Date().toISOString(),
   }, { onConflict: "business_id,menu_item_id" });

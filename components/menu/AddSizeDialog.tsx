@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { addMenuItem } from "@/lib/actions/menuItems";
+import { scaleRecipeToSize } from "@/lib/actions/pantry";
 import { formatCents } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 import { isAmbiguousNumericSizeLabel } from "@/lib/menu/sizeLabel";
@@ -32,6 +33,7 @@ export default function AddSizeDialog({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [clarifySize, setClarifySize] = useState(false);
+  const [createdWithoutRecipe,setCreatedWithoutRecipe]=useState<string|null>(null);
 
   function handleSubmitClick() {
     const priceCents = Math.round((Number(price) || 0) * 100);
@@ -45,6 +47,8 @@ export default function AddSizeDialog({
 
   function submit(resolvedSizeLabel: string) {
     const priceCents = Math.round((Number(price) || 0) * 100);
+    const source=siblingSizes.find(sibling=>sibling.id===copyFrom);
+    const canScale=Boolean(copyFrom&&source&&/^\d+ oz$/.test(source.sizeLabel??"")&&/^\d+ oz$/.test(resolvedSizeLabel.trim()));
     setError(null);
     startTransition(async () => {
       const result = await addMenuItem({
@@ -53,9 +57,15 @@ export default function AddSizeDialog({
         priceCents,
         category,
         menuGroup: menuGroup ?? undefined,
-        copyRecipeFromItemId: copyFrom || undefined,
+        copyRecipeFromItemId:copyFrom&&!canScale?copyFrom:undefined,
       });
-      if (result.ok) onDone(result.id, siblingSizes.find((sibling) => sibling.id === copyFrom)?.sizeLabel ?? null);
+      if (result.ok) {
+        if (copyFrom&&canScale) {
+          const scaled = await scaleRecipeToSize(copyFrom, result.id);
+          if (!scaled.ok) { setCreatedWithoutRecipe(result.id);setError(t("newSizeNeedsRecipe")); return; }
+        }
+        onDone(result.id, siblingSizes.find((sibling) => sibling.id === copyFrom)?.sizeLabel ?? null);
+      }
       else setError(result.error);
     });
   }
@@ -94,10 +104,11 @@ export default function AddSizeDialog({
             </label>
           </fieldset>
         )}
-        {error && <p className="text-sm text-warn">{error}</p>}
+        {error && <p className="text-sm text-warn" role="alert">{error}</p>}
+        {createdWithoutRecipe&&<button type="button" onClick={()=>onDone(createdWithoutRecipe,null)} className="min-h-12 w-full rounded-xl bg-accent px-3 font-bold text-on-accent">{t("finishNewSize")}</button>}
         <div className="flex gap-2">
           <button type="button" onClick={onClose} className="h-12 flex-1 rounded-full border border-line text-base font-semibold text-ink-muted">{t("cancel")}</button>
-          <button type="button" onClick={handleSubmitClick} disabled={isPending || !sizeLabel.trim() || !price} className="h-12 flex-1 rounded-full bg-accent text-base font-bold text-on-accent disabled:opacity-40">{t("addSize")}</button>
+          <button type="button" onClick={handleSubmitClick} disabled={isPending || !!createdWithoutRecipe || !sizeLabel.trim() || !price} className="h-12 flex-1 rounded-full bg-accent text-base font-bold text-on-accent disabled:opacity-40">{t("addSize")}</button>
         </div>
       </div>
 

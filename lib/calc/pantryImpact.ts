@@ -35,7 +35,7 @@ export function calculatePantryPriceImpact(
       ? null : priceCents - beforeCostCents;
     const marginAfterCents = priceCents === null || afterCostCents === null
       ? null : priceCents - afterCostCents;
-    const basis = (source: "recipe" | "owner_total" | null): PantryImpactCostBasis =>
+    const basis = (source: "recipe" | "owner_total" | "combo" | null): PantryImpactCostBasis =>
       source === "recipe" ? "recipe" : source === "owner_total"
         ? fallback?.status === "estimated" ? "owner_total_estimated" : "owner_total_confirmed"
         : null;

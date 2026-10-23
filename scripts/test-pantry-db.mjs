@@ -111,6 +111,9 @@ try {
       with check (exists (select 1 from public.${parent} p where p.id=${col} and public.is_member(p.business_id)))`);
   }
   await db.query(readFileSync(new URL("../supabase/migrations/20261022000079_pantry_packs.sql", import.meta.url), "utf8"));
+  await db.query(readFileSync(new URL("../supabase/migrations/20261022000080_menu_options_combos.sql", import.meta.url), "utf8"));
+  await db.query("grant all on public.menu_product_addons, public.menu_combo_components to authenticated");
+  await db.query("grant execute on function public.save_menu_product_addons(uuid,uuid,jsonb) to authenticated");
   await db.query("insert into businesses(id) values($1),($2)",[A,B]);
   await db.query("insert into memberships values($1,$2),($3,$4)",[A,OWNER,B,OTHER]);
   await db.query("insert into menu_items(id,business_id,name,base_name,price_cents) values($1,$2,'Latte','Latte',550)",[PARENT,A]);
@@ -184,6 +187,31 @@ try {
     await rejectStatement(c,rpc("pantry_replace_recipes",[],3),
       [A,PARENT,JSON.stringify([{...completeCAS[0],expectedSiblingIds:[PARENT]}])],"40001");
 
+  });
+  // New Add-ons Save commits a default milk replacement and recipe CAS in
+  // one PostgreSQL transaction. No split state may survive a stale conflict.
+  await asOwner(db,async c=>{
+    const alt=(await c.query("insert into ingredients(business_id,name,base_unit) values($1,'Oat Milk','ml') returning id",[A])).rows[0].id;
+    const family=(await c.query("select id from menu_items where business_id=$1 and base_name='Latte' order by id",[A])).rows.map(x=>x.id);
+    const target=family.find(id=>id!==PARENT);assert.ok(target);
+    const original=(await c.query("select ingredient_id,quantity,display_unit,display_quantity from recipe_lines where menu_item_id=$1 order by ingredient_id",[target])).rows.map(row=>({
+      ingredientId:row.ingredient_id,quantity:Number(row.quantity),displayUnit:row.display_unit,
+      displayQuantity:row.display_quantity===null?null:Number(row.display_quantity),
+    }));
+    const updated=original.map(line=>line.ingredientId===owned["milk-whole"]?{...line,ingredientId:alt}:line);
+    const changes=[{menuItemId:target,expectedLines:original,expectedSourceLines:original,
+      expectedSiblingIds:family,lines:updated}];
+    const option=ingredientId=>({ingredientId,kind:"milk",enabled:true,isDefault:true,
+      upchargeCents:0,displayUnit:"ml",displayQuantity:1});
+    await c.query("select public.save_menu_product_addons($1,$2,$3)",[A,target,
+      JSON.stringify({options:[option(alt)],recipeChanges:changes})]);
+    assert.equal((await c.query("select ingredient_id from recipe_lines where menu_item_id=$1 and ingredient_id=$2",[target,alt])).rowCount,1);
+    assert.equal((await c.query("select ingredient_id from menu_product_addons where menu_item_id=$1 and is_default=true",[target])).rows[0].ingredient_id,alt);
+    await rejectStatement(c,"select public.save_menu_product_addons($1,$2,$3)",[A,target,
+      JSON.stringify({options:[option(owned["milk-whole"])],recipeChanges:changes})],"40001");
+    assert.equal((await c.query("select ingredient_id from menu_product_addons where menu_item_id=$1 and is_default=true",[target])).rows[0].ingredient_id,alt,
+      "failed concurrent recipe change must never change saved default milk");
+    assert.equal((await c.query("select ingredient_id from recipe_lines where menu_item_id=$1 and ingredient_id=$2",[target,alt])).rowCount,1);
   });
   // A legacy editor updates an unrelated line in an open transaction. The
   // bulk RPC must wait for its ROW EXCLUSIVE lock, then detect the stale
