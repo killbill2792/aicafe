@@ -111,7 +111,7 @@ select jsonb_build_object(
    from recent group by topic) x),
  'daily',(select coalesce(jsonb_agg(to_jsonb(x) order by x.day desc, x.questions desc),'[]'::jsonb) from (
    select day,topic,count(*) as questions,count(distinct business_id) as cafes
-   from recent group by day,topic order by day desc,questions desc limit 400) x),
+   from recent group by day,topic order by day desc,questions desc) x),
  'pending',(select count(*) from public.agent_turn_logs
    where started_at>=now()-interval '90 days' and question_topic is null)
 ) $$;
