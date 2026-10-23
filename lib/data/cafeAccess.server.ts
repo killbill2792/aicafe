@@ -7,11 +7,15 @@ import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
 import {accessStatus,normalizeCode,validCode,type CafeAccess} from "@/lib/access/status";
 export type OwnerAccess={businessId:string;userId:string;access:CafeAccess};
 export async function getCafeAccess(businessId:string):Promise<CafeAccess>{
-  const {data,error}=await createAdminSupabaseClient().from("cafe_access")
-    .select("mode,access_end").eq("business_id",businessId).maybeSingle();
+  const client=createAdminSupabaseClient();
+  const [{data,error},{data:business,error:tzError}]=await Promise.all([
+   client.from("cafe_access").select("mode,access_end").eq("business_id",businessId).maybeSingle(),
+   client.from("businesses").select("timezone").eq("id",businessId).maybeSingle(),
+  ]);
+  if(tzError)throw tzError;
   // Only a not-yet-installed migration fails open; never turn outages into free access.
   if(error && !["42P01","PGRST205"].includes(error.code??"")) throw error;
-  return accessStatus(data);
+  return accessStatus(data, new Date(),business?.timezone||"UTC");
 }
 export async function requireOwnerAccessScope():Promise<OwnerAccess>{
   const client=await createServerSupabaseClient();
