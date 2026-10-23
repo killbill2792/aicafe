@@ -85,11 +85,11 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(statusFromResults([{callId:"b",name:"get_sales",arguments:'{"period":"today"}',result:{...base,missing:["sales"]}}])).toEqual({
       status:"partial",missing:["sales"] });
   });
-  it("publishes only three strict functions", () => {
+  it("publishes exactly the registered strict functions", () => {
     expect(agentToolDefinitions.map(t=>t.name)).toEqual(["get_profit","get_sales","get_menu_items",
       "get_staff","get_schedule","get_labor","get_business_hours","get_expenses","get_bills",
       "get_break_even","get_cost_summary","get_product_costs","get_ingredient_costs","get_inventory",
-      "get_item_sales","get_price_recommendation","draft_week_schedule","suggest_new_item_price",
+      "get_item_sales","get_price_recommendation","draft_week_schedule","suggest_new_item_price","propose_price_change",
       "get_initiatives","get_initiative_status","record_checkin"]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);
     expect(agentToolDefinitions.some(t=>t.name==="propose_initiative")).toBe(false);

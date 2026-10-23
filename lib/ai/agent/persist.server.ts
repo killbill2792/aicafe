@@ -60,8 +60,14 @@ export function splitAgentText(text: string, unverified: readonly Span[] = []) {
 export function agentReplyPayload(turn: AgentTurn) {
   if (!turn.text.trim()) throw new AgentEmptyReplyError();
   const blocks = splitAgentText(turn.text, turn.unverified);
+  const proposalIds=[...new Set(turn.results.flatMap(result=>
+    result.source==="price_change_proposal"&&result.draft===true&&
+      result.saved===false&&result.missing.length===0&&
+      typeof result.proposalId==="string"&&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.proposalId)
+      ?[result.proposalId]:[]))].slice(0,30-blocks.length);
   const status = persistedAgentStatus(turn);
-  const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks };
+  const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId}))] };
   const unverified = turn.unverified.flatMap(item => {
     const rows: Array<typeof item & {blockIndex:number}> = [];
     let offset = 0;
