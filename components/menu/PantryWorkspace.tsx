@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Plus, Search, Coffee, Milk, Package, Cookie, Droplets } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import {saveUsageEntry,addFromStarter,savePackPrice,createPantryIngredient,updatePantryIngredient} from "@/lib/actions/pantry";
+import {usageEntryErrorKey} from "@/lib/calc/usageEntryErrors";
 import {pantryUnitCostCents} from "@/lib/calc/pantryDisplay";
 import { packBaseQuantity } from "@/lib/calc/recipeUnits";
 import { formatCents } from "@/lib/calc";
@@ -57,7 +58,7 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  <label>{t.usageQuantity}<input type="number" min={entryKind==="count"?"0":"0.0001"} step="any" value={entryQuantity} onChange={e=>setEntryQuantity(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label>
  <label>{t.usageUnit}<select value={entryUnit} onChange={e=>setEntryUnit(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3">{(units[items.find(i=>i.id===entryItem)?.baseUnit??"each"]).map(u=><option key={u} value={u}>{u}</option>)}</select></label>
  <label>{t.usageDate}<input type="date" value={entryDate} onChange={e=>setEntryDate(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label></div>
- {!!entryError&&<p role="alert" className="mt-2 text-warn">{t.error}: {entryError}</p>}{entryDone&&<p role="status" className="mt-2">{t.usageSaved}</p>}
+ {!!entryError&&<p role="alert" className="mt-2 text-warn">{t.error}: {t[usageEntryErrorKey(entryError)]??t.usageErrorSaveFailed}</p>}{entryDone&&<p role="status" className="mt-2">{t.usageSaved}</p>}
  <button type="button" disabled={pending||!entryItem||entryQuantity.trim()===""||Number(entryQuantity)<0} onClick={saveEntry} className="mt-3 min-h-12 rounded-xl bg-accent px-6 font-bold text-on-accent disabled:opacity-50">{t.save}</button>
  <p className="mt-2 text-sm text-ink-muted">{t.usageCountNote}</p></section>
  <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-line bg-card px-4"><Search className="size-5 text-ink-muted"/><input className="min-w-0 flex-1 bg-transparent text-[17px] outline-none" value={query} onChange={e=>setQuery(e.target.value)} placeholder={t.search}/></label>
