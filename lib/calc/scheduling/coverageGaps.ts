@@ -3,38 +3,47 @@ import type { OpenHours } from "@/lib/business/openHours";
 import { OPEN_HOURS_DAY_KEYS } from "@/lib/business/openHours";
 
 export type CoverageGap={date:string;start:string;end:string;headcount:number;needed:number};
-const clock=(m:number)=>String(Math.floor(m/60)%24).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+const civilDay=(date:string)=>Date.parse(date+"T00:00:00Z")/60000;
+const clock=(minute:number)=>String(Math.floor(((minute%1440)+1440)%1440/60)).padStart(2,"0")+":"+
+ String(((minute%60)+60)%60).padStart(2,"0");
+
+/** Count unique people across dated openings, including previous/next-day
+ * shifts. Civil minutes avoid UTC-week and DST-based weekday drift; actual
+ * pay elapsed-time calculations are handled separately by shiftCost. */
 export function coverageGaps(dates:string[],shifts:CostShift[],openHours:OpenHours|null,needed:number):CoverageGap[]{
-  if(!openHours || needed<1) return [];
-  const result:CoverageGap[]=[];
-  for(const date of dates){
-    const [y,m,d]=date.split("-").map(Number);
-    const day=OPEN_HOURS_DAY_KEYS[new Date(Date.UTC(y,m-1,d)).getUTCDay()];
-    const intervals=openHours[day];
-    if(!intervals)continue; // Unknown trading hours are missing, not a full-day 'gap'.
-    for(const [start,end] of intervals){
-      const a=minuteOfDay(start);let b=minuteOfDay(end);
-      if(b<=a)b+=1440;
-      const boundaries=new Set([a,b]);
-      const rows=shifts.filter(s=>s.date===date).map(s=>{
-        const x=minuteOfDay(s.start),y=minuteOfDay(s.end)+(s.overnight?1440:0);
-        boundaries.add(Math.max(a,Math.min(b,x)));
-        boundaries.add(Math.max(a,Math.min(b,y)));
-        return {employeeId:s.employeeId,start:x,end:y};
-      });
-      const edges=[...boundaries].sort((x,y)=>x-y);
-      for(let i=0;i<edges.length-1;i++){
-        const left=edges[i],right=edges[i+1];
-        if(right<=left)continue;
-        const count=new Set(rows.filter(s=>s.start<=left&&s.end>=right)
-          .map(s=>s.employeeId)).size;
-        if(count>=needed)continue;
-        const prev=result[result.length-1];
-        if(prev&&prev.date===date&&prev.headcount===count&&prev.end===clock(left)){
-          prev.end=clock(right);
-        }else result.push({date,start:clock(left),end:clock(right),headcount:count,needed});
-      }
-    }
+ if(!openHours || needed<1)return [];
+ const work=shifts.map(s=>{
+  const base=civilDay(s.date),start=base+minuteOfDay(s.start);
+  const end=base+minuteOfDay(s.end)+(s.overnight?1440:0);
+  return {employeeId:s.employeeId,start,end};
+ });
+ const result:CoverageGap[]=[];
+ for(const date of dates){
+  const base=civilDay(date),weekday=new Date(date+"T12:00:00Z").getUTCDay();
+  const intervals=openHours[OPEN_HOURS_DAY_KEYS[weekday]];
+  if(!intervals)continue; // Missing hours are not zero coverage.
+  for(const [opening,closing] of intervals){
+   const start=base+minuteOfDay(opening);
+   let end=base+minuteOfDay(closing);
+   if(end<=start)end+=1440;
+   const boundaries=new Set([start,end]);
+   for(const row of work){
+    if(row.start>=end||row.end<=start)continue;
+    boundaries.add(Math.max(start,row.start));
+    boundaries.add(Math.min(end,row.end));
+   }
+   const edges=[...boundaries].sort((a,b)=>a-b);
+   for(let i=0;i<edges.length-1;i++){
+    const left=edges[i],right=edges[i+1];
+    if(right<=left)continue;
+    const count=new Set(work.filter(s=>s.start<=left&&s.end>=right).map(s=>s.employeeId)).size;
+    if(count>=needed)continue;
+    const from=clock(left-base),to=clock(right-base);
+    const prev=result[result.length-1];
+    if(prev&&prev.date===date&&prev.headcount===count&&prev.end===from)prev.end=to;
+    else result.push({date,start:from,end:to,headcount:count,needed});
+   }
   }
-  return result;
+ }
+ return result;
 }
