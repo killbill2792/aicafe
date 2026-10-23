@@ -18,6 +18,11 @@ import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleCon
 import { ChatMarkdown } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
 import SupervisorProposalCard from "./SupervisorProposalCard";
+import MemoryCard from "./MemoryCard";
+import ChatJobProgress from "./ChatJobProgress";
+import { useAgentJobWatcher } from "./useAgentJobWatcher";
+import { answeredOwnerMessageIds, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
+import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
 import { groupReplyBlocks } from "./supervisorReplyPresentation";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
@@ -84,6 +89,8 @@ function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block:
   if (!record(block)) return null;
   if(block.type==="proposal_card"&&typeof block.proposalId==="string"&&threadId)
     return <SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/>;
+  if(block.type==="memory_card"&&typeof block.ruleId==="string")
+    return <MemoryCard ruleId={block.ruleId} locale={locale}/>;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
     return block.type === "warning"
       ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
@@ -231,6 +238,20 @@ export default function SupervisorChatComposer({
   const messageContent = useRef<HTMLDivElement | null>(null);
   const retryId = useRef<string | null>(null);
   const threadRequestId = useRef<string | null>(null);
+  // CHAT_JOBS (server flag): these stay empty/null unless the server sends an
+  // "ack" event, so with the flag off the composer behaves exactly as before.
+  const liveCopy = chatExperienceCopy(locale);
+  const [liveJobId, setLiveJobId] = useState<string | null>(null);
+  const [liveSteps, setLiveSteps] = useState<AgentJobStep[]>([]);
+  const [liveNote, setLiveNote] = useState<string | null>(null);
+  const [failureCode, setFailureCode] = useState<string | null>(null);
+  const [queuedOwner, setQueuedOwner] = useState<{ id: string; text: string; clientMessageId: string }[]>([]);
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const watcher = useAgentJobWatcher(threadId, enabled && !sending, (job) => {
+    setReloadVersion((v) => v + 1);
+    if (job.status === "failed") { setFailureCode(job.errorCode ?? "agent_turn_failed"); setError(true); }
+  });
+  const resumedRunning = !sending && watcher.job?.status === "running";
 
   function cleanupRecording() {
     recordingGeneration.current++;
@@ -313,7 +334,7 @@ export default function SupervisorChatComposer({
         setThreadTitle(threads.find((thread) => thread.id === threadId)?.title ?? null);
       }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [enabled, threadId, sending, threads]);
+  }, [enabled, threadId, sending, threads, reloadVersion]);
   useEffect(() => {
     if (!enabled || !threadId) return;
     const controller = new AbortController();
@@ -394,8 +415,54 @@ export default function SupervisorChatComposer({
     threadRequestId.current = null;
     return created.thread.id;
   }
+  async function agentErrorCode(response: Response): Promise<string> {
+    try { const body = await response.json() as { error?: unknown }; return typeof body.error === "string" ? body.error : "agent_request_failed"; }
+    catch { return "agent_request_failed"; }
+  }
+  /** CHAT_JOBS: a message sent while an answer is still being worked on joins
+   * that same job; the server folds it into the answer or answers it right after. */
+  async function sendFollowUp(text: string) {
+    const id = threadId;
+    if (!id || !enabled || text.length > 4000) return;
+    const clientMessageId = crypto.randomUUID();
+    setDraft(""); setFailureCode(null);
+    setQueuedOwner((queue) => [...queue, { id: "queued-" + clientMessageId, text, clientMessageId }]);
+    pinned.current = true;
+    try {
+      const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientMessageId, text, locale }),
+      });
+      if (!response.ok || !response.body) throw new Error(await agentErrorCode(response));
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const read = readSseFrames(buffer + decoder.decode(value, { stream: true }));
+          buffer = read.rest;
+          for (const frame of read.frames) {
+            if (frame.type === "error") throw new Error(typeof frame.data.code === "string" ? frame.data.code : "agent_turn_failed");
+            if (frame.type === "ack") setLiveNote(frame.data.mode === "started" ? liveCopy.answering : liveCopy.followUpQueued);
+          }
+        }
+      } finally { reader.releaseLock(); }
+      const page = await loadMessages(id);
+      if (selectedThreadId.current === id) { setMessages(page.items); setNextOffset(page.nextOffset); }
+      if (!sending) watcher.recheck();
+    } catch (failure) {
+      setDraft((current) => current || text);
+      setFailureCode(failure instanceof Error ? failure.message : "agent_turn_failed");
+    } finally {
+      setQueuedOwner((queue) => queue.filter((item) => item.clientMessageId !== clientMessageId));
+    }
+  }
   async function sendText(value: string, existingKey?: string) {
     const text = value.trim();
+    if (!existingKey && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
+      !uploading && !recorder.current && dictation !== "recognizing") return sendFollowUp(text);
     if (!enabled || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
     const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
     retryId.current = clientMessageId;
@@ -407,8 +474,11 @@ export default function SupervisorChatComposer({
       setShowNewMessage(false);
       setDraft("");
     }
-    setSending(true); setError(false); setProgressStatus(null); setStreamedText("");
+    setSending(true); setError(false); setFailureCode(null); setProgressStatus(null); setStreamedText("");
     let attemptedThreadId: string | null = null;
+    // Set once the server confirms a background job; from then on a dropped
+    // connection is not a failure because the answer keeps being written.
+    let jobConfirmed = false, serverError = false;
     try {
       const id = await ensureThread();
       attemptedThreadId = id;
@@ -424,18 +494,30 @@ export default function SupervisorChatComposer({
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          let boundary: RegExpExecArray | null;
-          while ((boundary = /\r?\n\r?\n/.exec(buffer)) !== null) {
-            const frame = buffer.slice(0, boundary.index);
-            buffer = buffer.slice(boundary.index + boundary[0].length);
-            const type = frame.split(/\r?\n/).find(line => line.startsWith("event: "))?.slice(7);
-            const data = frame.split(/\r?\n/).find(line => line.startsWith("data: "))?.slice(6);
-            if (!data) continue;
-            const event = JSON.parse(data) as { text?: string; code?: string; discardChars?: number; agentId?:string };
-            if (type === "tool" && (event.agentId === "alex" || event.agentId === "olivia" ||
+          const read = readSseFrames(buffer + decoder.decode(value, { stream: true }));
+          buffer = read.rest;
+          for (const { type, data } of read.frames) {
+            const event = data as { text?: string; code?: string; discardChars?: number; agentId?: string;
+              name?: string; jobId?: string; mode?: string };
+            if (type === "ack" && typeof event.jobId === "string") {
+              jobConfirmed = true;
+              setLiveJobId(event.jobId);
+              if (event.mode === "continuation") {
+                setStreamedText(""); setLiveSteps([]); setLiveNote(liveCopy.continuing);
+              } else if (event.mode !== "started") {
+                // Already running elsewhere (another tab, or a retry): hand over to the watcher.
+                finished = true; setLiveNote(liveCopy.followUpQueued);
+              }
+            } else if (type === "tool" && (event.agentId === "alex" || event.agentId === "olivia" ||
               event.agentId === "maya" || event.agentId === "leo")) {
               setProgressStatus({agent:event.agentId,stage:"reading"});
+              const stepTool = event.name, stepAgent = event.agentId;
+              if (typeof stepTool === "string" && isJobStepAgent(stepAgent)) {
+                const step: AgentJobStep = { tool: stepTool, agent: stepAgent };
+                setLiveSteps((steps) => [...steps, step].slice(-12));
+              }
+            } else if (type === "followup") {
+              setLiveNote(liveCopy.followUpRead);
             } else if (type === "delta" && typeof event.text === "string") {
               setStreamedText(current => current + event.text);
               setProgressStatus({ agent: "supervisor", stage: "answering" });
@@ -443,8 +525,17 @@ export default function SupervisorChatComposer({
               event.discardChars !== undefined && event.discardChars >= 0) {
               setStreamedText(current => current.slice(0, Math.max(0, current.length - event.discardChars!)));
             } else if (type === "error") {
+              serverError = true;
               throw new Error(event.code ?? "agent_turn_failed");
-            } else if (type === "done") finished = true;
+            } else if (type === "done") {
+              finished = true;
+              if (jobConfirmed) {
+                // A continuation may follow on this same stream; show this answer now.
+                const page = await loadMessages(id);
+                setMessages(page.items); setNextOffset(page.nextOffset);
+                setOptimisticOwner(null); setStreamedText(""); setLiveNote(null);
+              }
+            }
           }
         }
       } finally { reader.releaseLock(); }
@@ -456,7 +547,7 @@ export default function SupervisorChatComposer({
       await refreshThreads();
       retryId.current = null; setStreamedText("");
       dispatchDictation({ type: "reset" }); setMediaNotice("");
-    } catch {
+    } catch (failure) {
       if (existingKey) retryId.current = null;
       // Server may have persisted the owner turn before the response failed.
       if (attemptedThreadId) {
@@ -465,13 +556,20 @@ export default function SupervisorChatComposer({
           setMessages(page.items); setNextOffset(page.nextOffset);
         } catch { /* do not fabricate a durable turn */ }
       }
-      if (!existingKey) {
-        setOptimisticOwner(null);
-        setDraft(current=>current || text);
+      if (jobConfirmed && !serverError) {
+        // Connection dropped but the job keeps running: the watcher resumes it.
+        setOptimisticOwner(null); retryId.current = null;
+      } else {
+        if (!existingKey) {
+          setOptimisticOwner(null);
+          setDraft(current=>current || text);
+        }
+        if (jobConfirmed) setFailureCode(failure instanceof Error ? failure.message : "agent_turn_failed");
+        setError(true);
       }
-      setError(true);
     } finally {
       setSending(false); setProgressStatus(null); setStreamedText("");
+      setLiveJobId(null); setLiveSteps([]); setLiveNote(null);
     }
   }
   async function loadOlder() {
@@ -516,6 +614,7 @@ export default function SupervisorChatComposer({
     setThreadTitle(threads.find((thread) => thread.id === id)?.title ?? null);
     setSnapshotExpanded(false);
     setDraft(""); setMediaNotice(""); setError(false); setHistoryOpen(false);
+    setFailureCode(null); setQueuedOwner([]);
     retryId.current = null; threadRequestId.current = null;
     composer.current?.focus();
   }
@@ -642,13 +741,14 @@ export default function SupervisorChatComposer({
   const displayedMessages: ConversationMessage[] = visibleConversationMessages(
     messages, optimisticOwner, threadId, new Date().toISOString());
   const activeQuestionMessageId=activeOwnerQuestionMessageId(displayedMessages);
-  const answeredOwnerIds = new Set(messages.flatMap((message) =>
-    message.role === "supervisor" && typeof message.grounding?.ownerMessageId === "string"
-      ? [message.grounding.ownerMessageId] : []));
+  const answeredOwnerIds = answeredOwnerMessageIds(messages);
+  const inFlightOwnerIds = inFlightOwnerMessageIds(watcher.job);
   const pendingOwnerIds = new Set(!sending ? messages
     .filter((message) => message.role === "owner" && Boolean(message.clientMessageId) &&
-      !answeredOwnerIds.has(message.id))
+      !answeredOwnerIds.has(message.id) && !inFlightOwnerIds.has(message.id))
     .map((message) => message.id) : []);
+  const inputLocked = sending && !liveJobId;
+  const shownFailure = failureCode ?? (watcher.job?.status === "failed" ? watcher.job.errorCode ?? null : null);
   const durationLabel = String(Math.floor(elapsed / 60)) + ":" + String(elapsed % 60).padStart(2, "0");
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
@@ -732,11 +832,17 @@ export default function SupervisorChatComposer({
           }}/>
         {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-line bg-warn-soft p-3 text-[15px] text-ink" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
-          <span className="flex-1">{copy.answerFailed}</span>
+          <span className="flex-1">{shownFailure ? failureLine(shownFailure, liveCopy) : copy.answerFailed}</span>
           <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined)}
             className="min-h-10 rounded-xl bg-accent px-3 font-bold text-on-accent">{copy.retryAnswer}</button>
         </div>}
       </div>)}
+      {queuedOwner.map((item) => <article key={item.id} className="ms-auto w-fit max-w-[80%] rounded-[22px] rounded-ee-md bg-accent-soft px-4 py-3 text-[17px] text-ink opacity-80 shadow-sm">
+        <p className="whitespace-pre-wrap break-words">{item.text}</p>
+      </article>)}
+      {(sending && liveJobId || resumedRunning) && <ChatJobProgress locale={locale} acknowledged
+        steps={sending ? liveSteps : watcher.job?.progress ?? []}
+        note={sending ? liveNote : liveCopy.resumed} />}
       {sending && streamedText && <article className="w-full space-y-3"><div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div><ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/></article>}
       {sending && <div className="flex items-center gap-3 text-[16px] text-ink-muted" role="status">
         {parseAgentId(progressStatus?.agent) ?
@@ -785,11 +891,11 @@ export default function SupervisorChatComposer({
         <textarea id="supervisor-home-composer" ref={composer}
           rows={1} maxLength={4000} value={draft}
           onChange={(event) => { setDraft(event.target.value); retryId.current = null; }}
-          onKeyDown={composerKey} disabled={!enabled || sending}
+          onKeyDown={composerKey} disabled={!enabled || inputLocked}
           placeholder={copy.askAnything}
           className="min-w-0 max-h-40 min-h-12 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-3 text-[17px] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
         <button type="submit" aria-label={copy.sendMessage}
-          disabled={!enabled || sending || !draft.trim() || dictation === "listening" || dictation === "recognizing"}
+          disabled={!enabled || inputLocked || !draft.trim() || dictation === "listening" || dictation === "recognizing"}
           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent shadow-sm hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
           <Send size={21} aria-hidden="true" />
         </button>
@@ -801,7 +907,8 @@ export default function SupervisorChatComposer({
         {copy.transcribing}
       </p>}
       <div role="status" aria-live="polite" className="text-[14px] font-medium text-ink-muted">
-        {error && pendingOwnerIds.size === 0 ? copy.answerFailed : uploading ? copy.attachmentUpload
+        {failureCode && (!error || pendingOwnerIds.size === 0) ? failureLine(failureCode, liveCopy)
+          : error && pendingOwnerIds.size === 0 ? copy.answerFailed : uploading ? copy.attachmentUpload
           : dictation === "error" || dictation === "ready" ? mediaNotice
             : mediaNotice === copy.attachmentSaved ? mediaNotice : ""}
       </div>

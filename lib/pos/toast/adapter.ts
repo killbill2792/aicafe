@@ -6,17 +6,17 @@ import {PosNotConnectedError} from "../types";
 import {createToastClient,GUID,ToastApiError} from "./client";
 type Range={since:Date;until:Date};
 type Discount={nonTaxDiscountAmount?:number|null};
-type Selection={displayName?:string|null;item?:{guid:string}|null;quantity:number;price:number;
+type Selection={salesCategory?:{name?:string|null}|null;displayName?:string|null;item?:{guid:string}|null;quantity:number;price:number;
   voided?:boolean|null;modifiers?:{displayName?:string|null;item?:{guid:string}|null}[]|null;
   refundDetails?:{refundAmount?:number|null}|null;appliedDiscounts?:Discount[]|null};
 type Check={amount:number;taxAmount:number;paymentStatus:string;closedDate?:string|null;
   appliedDiscounts?:Discount[]|null;appliedServiceCharges?:unknown[]|null;selections:Selection[];
   payments:{tipAmount?:number|null;refundStatus?:string|null;
     refund?:{refundAmount?:number|null;tipRefundAmount?:number|null}|null}[]};
-type Order={guid:string;closedDate?:string|null;createdInTestMode?:boolean|null;
+type Order={guid:string;server?:{guid:string}|null;openedBy?:{guid:string}|null;diningOption?:{name?:string|null}|null;source?:string|null;numberOfGuests?:number|null;closedDate?:string|null;createdInTestMode?:boolean|null;
   deleted?:boolean|null;voided?:boolean|null;modifiedDate?:string|null;checks:Check[]};
 const discount=z.object({nonTaxDiscountAmount:z.number().nullish()});
-const selection=z.object({displayName:z.string().nullish(),item:z.object({guid:GUID}).nullish(),
+const selection=z.object({salesCategory:z.object({name:z.string().nullish()}).nullish(),displayName:z.string().nullish(),item:z.object({guid:GUID}).nullish(),
   quantity:z.number(),price:z.number(),voided:z.boolean().nullish(),
   modifiers:z.array(z.object({displayName:z.string().nullish(),item:z.object({guid:GUID}).nullish()})).nullish(),
   refundDetails:z.object({refundAmount:z.number().nullish()}).nullish(),
@@ -27,7 +27,7 @@ const check=z.object({amount:z.number(),taxAmount:z.number(),paymentStatus:z.str
   selections:z.array(selection),payments:z.array(z.object({
     tipAmount:z.number().nullish(),refundStatus:z.string().nullish(),
     refund:z.object({refundAmount:z.number().nullish(),tipRefundAmount:z.number().nullish()}).nullish()}))});
-const ordersSchema=z.array(z.object({guid:GUID,closedDate:z.string().nullish(),
+const ordersSchema=z.array(z.object({guid:GUID,server:z.object({guid:GUID}).nullish(),openedBy:z.object({guid:GUID}).nullish(),diningOption:z.object({name:z.string().nullish()}).nullish(),source:z.string().nullish(),numberOfGuests:z.number().int().min(0).max(32767).nullish(),closedDate:z.string().nullish(),
   createdInTestMode:z.boolean().nullish(),deleted:z.boolean().nullish(),voided:z.boolean().nullish(),modifiedDate:z.string().nullish(),
   checks:z.array(check)}));
 const employeesSchema=z.array(z.object({guid:GUID,firstName:z.string().nullish(),
@@ -103,7 +103,7 @@ export function normalizeToastOrder(order:Order,restaurantGuid:string):PosOrder|
         name:s.displayName?.trim()||"Menu item",quantity:s.quantity,
         netSalesCents:s.voided?0:cents(s.price)-refunded,
         modifiers:(s.modifiers??[]).map(m=>({posModifierId:m.item?.guid??"",name:m.displayName??""})),
-        voided:Boolean(s.voided),voidedBy:null});
+        voided:Boolean(s.voided),voidedBy:null,category:s.salesCategory?.name?.trim()||null});
     }
     for(const payment of c.payments) {
       tips+=cents(payment.tipAmount)-cents(payment.refund?.tipRefundAmount);
@@ -114,6 +114,9 @@ export function normalizeToastOrder(order:Order,restaurantGuid:string):PosOrder|
   }
   if(refunds>netBeforeRefunds||tips<0)throw new ToastApiError("invalid_response");
   return {posOrderId:"toast:"+restaurantGuid+":"+order.guid,posLocationId:restaurantGuid,
+    posEmployeeId:order.server?.guid??order.openedBy?.guid??null,
+    diningOption:order.diningOption?.name?.trim()||null,sourceChannel:order.source?.trim()||null,
+    guestCount:order.numberOfGuests??null,
     closedAt:timestamp(order.closedDate),grossSalesCents:netBeforeRefunds+discounts,
     discountsCents:discounts,refundsCents:refunds,taxCents:tax,tipCents:tips,
     processingFeeStatus:"missing",processingFeeCents:0,

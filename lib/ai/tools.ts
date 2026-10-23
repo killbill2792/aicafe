@@ -1,4 +1,5 @@
-import type { UsageRow } from "@/lib/calc/usageVariance";
+import type { PeakHourFacts, EmployeeSalesFacts, PayrollFacts } from "@/lib/data/posFactReaders.server";
+import type {UsageRow} from "@/lib/calc/usageVariance";
 import type { SchedulingDraftInputs } from "@/lib/calc/scheduling/draftWeek";
 import type { OpenHours } from "@/lib/business/openHours";
 import type { CafeStateService } from "@/lib/operating/cafeState";
@@ -13,7 +14,10 @@ import type { MonthlyBills, RecordedExpenses, SoldProduct, ItemSalesCoverage } f
 
 /** A read-only, evidence-carrying allow-list. The AI never receives a raw DB client. */
 export interface CafeToolset {
- getUsageVariance(businessId:string,input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null}>;
+  getUsageVariance(businessId:string,input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null}>;
+  getPeakHours(businessId:string,period:CafeStatePeriod):Promise<KnownSlice<PeakHourFacts>>;
+  getEmployeeSales(businessId:string,period:CafeStatePeriod):Promise<KnownSlice<EmployeeSalesFacts>>;
+  getPayrollFacts(businessId:string,period:CafeStatePeriod):Promise<KnownSlice<PayrollFacts>>;
   getSchedulingDraftInputs(businessId:string):Promise<KnownSlice<SchedulingDraftInputs>>;
   getCafeSummary(businessId: string): ReturnType<CafeStateService["getCurrentState"]>;
   getProfitability(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafePeriodProfitability>>;
@@ -77,6 +81,7 @@ export class StructuredCafeTools implements CafeToolset {
       staffAttendance: CafeToolset["getStaffAttendance"];
     },
     private extraReaders?: {hours:CafeToolset["getBusinessHours"];ingredientCosts:CafeToolset["getIngredientCosts"]},
+    private posReaders?: {peakHours:(period:CafeStatePeriod)=>Promise<KnownSlice<PeakHourFacts>>;employeeSales:(period:CafeStatePeriod)=>Promise<KnownSlice<EmployeeSalesFacts>>;payrollFacts:(period:CafeStatePeriod)=>Promise<KnownSlice<PayrollFacts>>},
     private domainReaders?: {
       currentStaff: CafeToolset["getCurrentStaff"];
       recurringSchedule: CafeToolset["getRecurringSchedule"];
@@ -87,6 +92,9 @@ export class StructuredCafeTools implements CafeToolset {
   ) {}
 
   getUsageVariance(businessId:string,input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}){return this.usageReader?this.usageReader(businessId,input):Promise.resolve({from:input.from,to:input.to,rows:[],missing:["usageReaderUnavailable"],groupBy:input.groupBy??null});}
+  getPeakHours(_businessId:string,period:CafeStatePeriod){return this.posReaders?.peakHours(period)??Promise.resolve(missing<PeakHourFacts>("peakHoursUnavailable"));}
+  getEmployeeSales(_businessId:string,period:CafeStatePeriod){return this.posReaders?.employeeSales(period)??Promise.resolve(missing<EmployeeSalesFacts>("employeeSalesUnavailable"));}
+  getPayrollFacts(_businessId:string,period:CafeStatePeriod){return this.posReaders?.payrollFacts(period)??Promise.resolve(missing<PayrollFacts>("payrollFactsUnavailable"));}
   getSchedulingDraftInputs(businessId:string){return this.domainReaders?.schedulingDraftInputs(businessId)??Promise.resolve(missing<SchedulingDraftInputs>("scheduleDraftReaderUnavailable"));}
   getCafeSummary(businessId: string) { return this.states.getCurrentState(businessId); }
   async getProfitability(businessId: string, period: CafeStatePeriod) {
@@ -202,6 +210,9 @@ export class BusinessScopedCafeTools {
   constructor(private tools: CafeToolset, private businessId: string) {
     if (!businessId) throw new Error("Missing authorized café");
   }
+  getPeakHours(period:CafeStatePeriod){return this.tools.getPeakHours(this.businessId,period);}
+  getEmployeeSales(period:CafeStatePeriod){return this.tools.getEmployeeSales(this.businessId,period);}
+  getPayrollFacts(period:CafeStatePeriod){return this.tools.getPayrollFacts(this.businessId,period);}
   getUsageVariance(input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}){return this.tools.getUsageVariance(this.businessId,input);}
   getSchedulingDraftInputs(){return this.tools.getSchedulingDraftInputs(this.businessId);}
   getCafeSummary() { return this.tools.getCafeSummary(this.businessId); }

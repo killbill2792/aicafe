@@ -4,6 +4,7 @@ import { agentToolDefinitions, agentLabelsPrompt, agentForTool, executeAgentTool
 import { statusFromResults } from "./status";
 import { checkNumbers,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
+import { STYLE_RULES } from "./style";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -11,7 +12,17 @@ type Event = { type: string; [key: string]: unknown };
 export type AgentProvider = (params: Record<string, unknown>, signal: AbortSignal) => AsyncIterable<Event>;
 export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType<typeof statusFromResults>;
   unverified: ReturnType<typeof checkNumbers>; results: AgentToolResult[]; evidence?: NumericEvidence[]; tools?:string[]; agentIds?:string[];
-  usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number } };
+  usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number };
+  /** Owner messages sent while this turn ran and read by the model before a later step. */
+  absorbedOwnerMessageIds?: string[] };
+/** A message the owner sent while the turn was running. */
+export type OwnerFollowUp = { id: string; text: string };
+/** Stable instruction prefix. Style rules are appended (not per-turn data), so the
+ * whole prefix stays identical across turns and cafés and is served from cache. */
+export function agentInstructions(style: boolean): string {
+  return SYSTEM_PROMPT + "\n" + (style ? STYLE_RULES + "\n" : "") + agentLabelsPrompt;
+}
+export function agentPromptCacheKey(style: boolean): string { return style ? "cafe-agent-v2" : "cafe-agent-v1"; }
 export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. Ask one specific clarifying question naturally when needed. On incomplete evidence explain what is known and missing. A proposal is not a completed action; say 'I've drafted this for your approval.' No JSON envelope.";
 
 export async function* openAIProvider(params: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<Event> {
@@ -46,21 +57,64 @@ export async function runAgentTurn(args: {
   onReset?: (discardChars: number) => void;
   now?: () => number; onTool?: (name:string,agentId:string)=>void;
   previousEvidence?:readonly NumericEvidence[];
+  /** CHAT_STYLE_V2: append STYLE_RULES to the cached instruction prefix. */
+  style?: boolean;
+  /** CHAT_MEMORY: owner-approved café facts, already capped and formatted. Sent as
+   * the first input item (stable per café, so it also caches) — never in instructions. */
+  memoryFacts?: string | null;
+  /** Extra strict tool definitions enabled by a flag (e.g. the memory tool). */
+  extraTools?: readonly unknown[];
+  /** CHAT_JOBS: returns up to `max` owner follow-ups not yet read (each exactly once).
+   * Called before each later model step; failures are ignored (unread messages then
+   * get their own continuation turn). */
+  takeFollowUps?: (max: number) => Promise<OwnerFollowUp[]>;
+  onFollowUp?: (count: number) => void;
 }): Promise<AgentTurn> {
   const now = args.now ?? Date.now, started = now(), deadline = started + 60000;
   const workDeadline = deadline - 12000; // reserve time for the final no-tool answer
   const controller = new AbortController();
   const provider = args.provider ?? openAIProvider;
-  const input: unknown[] = [...(args.history ?? []), { role: "user", content: args.ownerText }];
+  const input: unknown[] = [
+    ...(args.memoryFacts ? [{ role: "developer", content: args.memoryFacts }] : []),
+    ...(args.history ?? []), { role: "user", content: args.ownerText }];
+  const absorbed: OwnerFollowUp[] = [];
+  // Mark inbox messages answered only when a model response has completed.
+  const deliveredIds = new Set<string>();
+  // Reads queued owner messages into the conversation before the next model step.
+  const readFollowUps = async (): Promise<number> => {
+    if (!args.takeFollowUps || absorbed.length >= 5 || now() >= workDeadline) return 0;
+    let fresh: OwnerFollowUp[] = [];
+    const remaining = workDeadline - now();
+    if (remaining <= 0) return 0;
+    let inboxTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const messages = await Promise.race([
+        args.takeFollowUps(5 - absorbed.length),
+        new Promise<never>((_, reject) => {
+          inboxTimer = setTimeout(() => reject(new Error("inbox_deadline")), remaining);
+        }),
+      ]);
+      if (now() >= workDeadline) return 0;
+      fresh = messages.filter(m => m.text.trim() && !absorbed.some(a => a.id === m.id));
+    } catch { return 0; }
+    finally { clearTimeout(inboxTimer); }
+    for (const message of fresh) {
+      absorbed.push(message);
+      input.push({ role: "user", content: message.text });
+    }
+    if (fresh.length) args.onFollowUp?.(fresh.length);
+    return fresh.length;
+  };
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
   const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0 };
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
   const model = configuredSupervisorModel();
   const request = (final: boolean) => ({
-    model, instructions: SYSTEM_PROMPT + "\n" + agentLabelsPrompt, tools: agentToolDefinitions,
+    model, instructions: agentInstructions(Boolean(args.style)),
+    tools: [...agentToolDefinitions, ...(args.extraTools ?? [])],
     tool_choice: final ? "none" : "auto", stream: true,
-    max_output_tokens: 1200, prompt_cache_key: "cafe-agent-v1", input,
+    max_output_tokens: 1200, prompt_cache_key: agentPromptCacheKey(Boolean(args.style)), input,
   });
   const call = async (final: boolean) => {
     const calls: ToolCall[] = [], output: unknown[] = [];
@@ -94,6 +148,10 @@ export async function runAgentTurn(args: {
       }
       if (!completed) throw new Error("provider_incomplete");
       input.push(...output);
+      // A tool-only response is not an answer. Keep those follow-ups unclaimed
+      // until a completed text response can be persisted.
+      if (!calls.length && text.length > callTextStart)
+        for (const message of absorbed) deliveredIds.add(message.id);
       return calls;
     } catch (error) {
       const discardChars = text.length - callTextStart;
@@ -107,10 +165,19 @@ export async function runAgentTurn(args: {
   try {
     for (let round = 0; round < 5; round++) {
       if (now() >= workDeadline) { endReason = "timeout"; break; }
+      if (round > 0) await readFollowUps();
       let calls: ToolCall[];
       try { calls = await call(false); }
       catch { endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
-      if (!calls.length) { finished = true; break; }
+      if (!calls.length) {
+        // The owner added something while this answer streamed: answer it in the
+        // same reply (one extra bounded call) instead of silently dropping it.
+        if (round < 4 && usage.modelCalls < 5 && await readFollowUps()) {
+          if (text && !text.endsWith("\n")) { text += "\n\n"; args.onDelta?.("\n\n"); }
+          continue;
+        }
+        finished = true; break;
+      }
       for (let index = 0; index < calls.length; index++) {
         const tool = calls[index];
         if (usage.toolCalls >= 8 || now() >= workDeadline || failures >= 2) {
@@ -163,6 +230,7 @@ export async function runAgentTurn(args: {
     }
     if (!finished && endReason === "complete") endReason = "budget";
     if (!finished && usage.modelCalls < 6 && now() < deadline) {
+      await readFollowUps();
       // Exactly one final no-tool request; never allow another model tool call.
       // Recovery is bounded even after provider disconnect/incomplete response.
       try {
@@ -189,6 +257,8 @@ export async function runAgentTurn(args: {
               }
             }
             if (!completed) throw new Error("provider_incomplete");
+            if (text.length > finalTextStart)
+              for (const message of absorbed) deliveredIds.add(message.id);
           } catch (error) {
             const discardChars = text.length - finalTextStart;
             if (discardChars > 0) {
@@ -207,8 +277,9 @@ export async function runAgentTurn(args: {
   const verificationResults=usageEvidenceRefresh(toolResults,args.previousEvidence);
   return { text, endReason, status,
     unverified: checkNumbers(text, [ ...(args.history ?? []).filter(message => message.role === "user").map(message => message.content),
-      args.ownerText ].join("\n"), verificationResults, args.context.locale,args.previousEvidence),
+      args.ownerText, ...absorbed.map(m => m.text) ].join("\n"), verificationResults, args.context.locale,args.previousEvidence),
     evidence:compactEvidence(verificationResults),
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
-    results:toolResults, usage };
+    results:toolResults, usage,
+    ...(deliveredIds.size ? { absorbedOwnerMessageIds: [...deliveredIds] } : {}) };
 }

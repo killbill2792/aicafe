@@ -218,8 +218,9 @@ export const values = {
 
 export type SupportedId = keyof typeof values;
 export const PUBLIC_TOOL_METHODS = [
-  "getCafeSummary","getProfitability","getBusinessCostSummary","getProductEconomics",
-  "getUsageVariance","getSalesTrend","getPricingRecommendation","getExpenseSummary","getMonthlyBills",
+  "getPeakHours","getEmployeeSales","getPayrollFacts",
+  "getCafeSummary","getProfitability","getBusinessCostSummary","getProductEconomics","getUsageVariance",
+  "getSalesTrend","getPricingRecommendation","getExpenseSummary","getMonthlyBills",
   "getRecordedExpenses","getProductSales","getItemSalesCoverage","getMenuCatalog",
   "getStaffAttendance","getCurrentStaff","getRecurringSchedule","getBreakEven",
   "getExpenseChanges","getLaborMetrics","getInventoryStatus","getTeamTasks",
@@ -296,7 +297,10 @@ export const canonicalSourcePaths = {
 
 /** Nonexposed surfaces cannot silently become "supported" or free model tools. */
 export const classified = {
-  getUsageVariance:{kind:"restricted",reason:"Owner-authenticated bounded Toast recipe usage and stock reconciliation; accessible only via Maya typed tool"},
+  getUsageVariance:{kind:"restricted",reason:"Owner-authenticated, bounded Toast recipe and stock usage via Maya only"},
+  getPeakHours:{kind:"restricted",reason:"New POS hourly facts require a dedicated P1 source-purpose policy before registration"},
+  getEmployeeSales:{kind:"restricted",reason:"New staff-attributed revenue requires a dedicated P1 source-purpose policy before registration"},
+  getPayrollFacts:{kind:"restricted",reason:"Employee pay period facts require a dedicated P1 source-purpose policy before registration"},
   getSchedulingDraftInputs:{kind:"restricted",reason:"Includes employee wages; exposed only through the read-only draft_week_schedule agent tool"},
   getCafeSummary:{kind:"restricted",reason:"Includes mixed personal and financial state; use bounded projections"},
   getMenuCatalog:{kind:"restricted",reason:"Legacy menu projection coerces missing database price to $0; P1 uses a null-preserving bounded source"},

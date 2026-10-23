@@ -1,0 +1,33 @@
+name: Staff Workspace RLS and RPC Verification
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "lib/actions/schedule.ts"
+      - "lib/actions/teamWorkspace.ts"
+      - "lib/scheduling/staffScope.server.ts"
+      - "lib/calc/scheduling/**"
+      - "supabase/migrations/20261022000081_staff_workspace.sql"
+      - "scripts/staff-pr155-rls.sql"
+      - ".github/workflows/staff-pr155-verify.yml"
+  workflow_dispatch:
+permissions: { contents: read }
+jobs:
+  disposable-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Start disposable Supabase
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+          supabase start
+      - name: Replay migrations
+        run: supabase db reset --local --yes
+      - name: Check owner/manager permissions and atomic availability audit
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/staff-pr155-rls.sql
+      - name: Stop database
+        if: always()
+        run: supabase stop --no-backup

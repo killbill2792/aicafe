@@ -65,6 +65,7 @@ export type EvidenceReference = {
 export type SupervisorReplyBlock =
   | OwnerQuestion
   | { type: "proposal_card"; proposalId: string }
+  | { type: "memory_card"; ruleId: string }
   | { type: "text"; text: string }
   | { type: "warning"; code: string; text: string }
   | { type: "metric"; label: string; valueCents: number; source: EvidenceReference }
@@ -94,6 +95,8 @@ const textBlockSchema = z.strictObject({
   type: z.literal("text"), text: z.string().min(1).max(1200),
 });
 const proposalCardSchema=z.strictObject({type:z.literal("proposal_card"),proposalId:z.uuid()});
+// Draft café fact (ai_team_rules row) the owner can approve; created only by the memory tool.
+const memoryCardSchema=z.strictObject({type:z.literal("memory_card"),ruleId:z.uuid()});
 const warningBlockSchema = z.strictObject({
   type: z.literal("warning"), code: z.string().min(1).max(80),
   text: z.string().trim().min(1).max(1200),
@@ -136,5 +139,5 @@ export const groundedReplySchema = z.strictObject({
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.discriminatedUnion("type",
     [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, percentBlockSchema,
-      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema])).min(1).max(30),
+      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,memoryCardSchema])).min(1).max(30),
 });
