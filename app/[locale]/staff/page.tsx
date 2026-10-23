@@ -9,7 +9,7 @@ import {syncStaffRuleAlerts} from "@/lib/scheduling/ruleAlerts.server";
 export const dynamic="force-dynamic";
 export default async function StaffPage({params,searchParams}:{params:Promise<{locale:string}>;searchParams:Promise<{tab?:string;week?:string;fixture?:string}>}){
  await requireOwnBusiness();
- const [{locale},{tab,week,fixture}]="await Promise.all([params,searchParams]);
+ const [{locale},{tab,week,fixture}]=await Promise.all([params,searchParams]);
  const scope=await staffReadScope();
  const selected=/^\d{4}-\d{2}-\d{2}$/.test(week??"")?week!:mondayOfLocalDate(scope.ok?scope.today:new Date().toISOString().slice(0,10));
  const useFixture=process.env.NODE_ENV==="development"&&process.env.STAFF_VISUAL_FIXTURES==="true"&&fixture==="1";
