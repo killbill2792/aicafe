@@ -39,7 +39,7 @@ export default function WeekGrid({dates,people,shifts,gaps,openHours,currency,re
     </tr>;
    })}</tbody>
    <tfoot className="font-semibold"><tr className="bg-surface2"><th className="p-3 text-start">{t("dayTotal")}</th>
-    {dates.map(date=>{const t=dayTotals(date,shifts);return <td key={date} className="p-2 text-center">{h(t.paidMinutes)}<span className="block text-sm text-muted">{fmt(t.knownCostCents,currency)}{t.estimated?" "+t("estimated"):""}</span></td>})}<td/></tr>
+    {dates.map(date=>{const day=dayTotals(date,shifts);return <td key={date} className="p-2 text-center">{h(day.paidMinutes)}<span className="block text-sm text-muted">{fmt(day.knownCostCents,currency)}{day.estimated?" "+t("estimated"):""}</span></td>})}<td/></tr>
     <tr><th className="p-3 text-start">{t("coverage")}</th>{dates.map(date=>{
      const gap=gaps.find(g=>g.date===date);return <td key={date} className={`p-2 text-center text-sm ${gap?"text-neg":"text-pos"}`}>{gap?
       "⚠ "+t("coverageDetail",{start:gap.start,end:gap.end,count:gap.headcount}):"✓ "+t("allDayCoverage")}</td>
