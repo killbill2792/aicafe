@@ -14,7 +14,7 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
  const selected=/^\d{4}-\d{2}-\d{2}$/.test(week??"")?week!:mondayOfLocalDate(scope.ok?scope.today:new Date().toISOString().slice(0,10));
  const useFixture=process.env.NODE_ENV==="development"&&process.env.STAFF_VISUAL_FIXTURES==="true"&&fixture==="1";
  const [result,alerts]=useFixture
-  ? [{ok:true as const,data:createStaffScreenshotFixture(selected)},{ok:true as const,alerts:[]}]
+  ? ([{ok:true as const,data:createStaffScreenshotFixture(selected)},{ok:true as const,alerts:[]}] as const)
   : await Promise.all([getWeekSchedule({weekStart:selected}),syncStaffRuleAlerts()]);
  return <PageShell className="!max-w-full">{result.ok?
   <StaffWorkspace initial={result.data} tab={tab} locale={locale} teamExtras={<TeamLegacyMetrics/>}
