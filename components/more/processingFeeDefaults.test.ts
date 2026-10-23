@@ -5,6 +5,7 @@ import {
   missingCoverageSaveOptions,
   validateRequiredFeeFields,
   isFeeFieldInvalid,
+  prepareAdvancedRateDraft,
 } from "./processingFeeDefaults";
 
 describe("processing fee redesign defaults", () => {
@@ -54,6 +55,21 @@ describe("processing fee redesign defaults", () => {
     expect(errors.cardShare).toBe(messages.requiredCardShare);
     expect(isFeeFieldInvalid(errors, "cardShare")).toBe(true);
     expect(isFeeFieldInvalid(errors, "averageTicket")).toBe(false);
+  });
+
+  it("preserves a valid simple fixed-fee rate when revealing advanced average-ticket details", () => {
+    const original = [{ id: "r1", label: "", percentageRate: "2.6", fixedFee: "0.15", salesMix: "100", transactionMix: "100" }];
+    const revealed = prepareAdvancedRateDraft(original, "", "100", "Standard rate");
+    expect(revealed.transactionShare).toBe("100");
+    expect(revealed.rules).toEqual([{ ...original[0], label: "Standard rate" }]);
+    expect(original[0].label).toBe(""); // no mutation
+  });
+
+  it("does not overwrite existing advanced rule names or transaction shares", () => {
+    const original = [{ id: "r1", label: "Online", percentageRate: "3", fixedFee: "", salesMix: "100", transactionMix: "100" }];
+    const revealed = prepareAdvancedRateDraft(original, "75", "100", "Standard rate");
+    expect(revealed.transactionShare).toBe("75");
+    expect(revealed.rules).toEqual(original);
   });
 
   it("one-tap bypasses a manually empty date but still requires fee inputs", () => {
