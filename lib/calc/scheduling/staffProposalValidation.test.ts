@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {assertStaffShiftPlan,formatStaffShiftWithBreak} from "./staffProposalValidation";
+import {assertStaffShiftPlan,formatStaffApprovalRuleValue,formatStaffShiftWithBreak} from "./staffProposalValidation";
 const s={employee_id:"maria",date:"2026-10-26",start:"06:30",end:"12:00",break_minutes:30};
 describe("staff approval scheduling validation",()=>{
  it("permits a prep shift before opening and nonoverlapping shifts",()=>{
@@ -21,7 +21,6 @@ describe("staff approval scheduling validation",()=>{
  });
 });
 
-import {formatStaffApprovalRuleValue} from "./staffProposalValidation";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
