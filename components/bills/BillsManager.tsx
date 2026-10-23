@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Link } from "@/i18n/navigation";
+import { useLocale } from "next-intl";
 import PlainIcon from "@/components/icons/PlainIcon";
-import Money from "@/components/shared/Money";
 import { saveRecurringCost, deleteRecurringCost } from "@/lib/actions/expenses";
 import type { RecurringCostRow } from "@/lib/data/getRecurringCosts";
 import type { ExpenseCategoryCode } from "@/lib/constants";
@@ -135,6 +135,8 @@ export default function BillsManager({
   labels: BillFormLabels & { addHint: string; missing: string; edit: string; addAnother: string; totalMonthly: string; variableCostHint: string };
   initialCategory?: ExpenseCategoryCode | null;
 }) {
+  const locale = useLocale();
+  const money = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
   const firstOtherBill = bills.find((bill) => bill.categoryCode === OTHER_CATEGORY);
   const initialOpenKey = initialCategory === OTHER_CATEGORY ? firstOtherBill?.id ?? NEW_OTHER_KEY : initialCategory;
   const [openKey, setOpenKey] = useState<string | null>(initialOpenKey);
@@ -159,7 +161,7 @@ export default function BillsManager({
       <section className="rounded-card-lg bg-good-tint p-4">
         <span className="block text-sm font-semibold text-ink-muted">{labels.totalMonthly}</span>
         <strong className="mt-1 block font-headline text-3xl text-ink">
-          <Money cents={totalMonthlyCents} />
+          {money.format(totalMonthlyCents / 100)}
         </strong>
       </section>
       {SINGLE_SLOT_CATEGORIES.map((category) => {
@@ -172,7 +174,7 @@ export default function BillsManager({
               <span className="flex-1 text-start text-base font-bold">{categoryLabels[category]}</span>
               {existing ? (
                 <span className="text-base font-bold">
-                  <Money cents={existing.amountCents} />
+                  {money.format(existing.amountCents / 100)}
                 </span>
               ) : (
                 <span className="rounded-full bg-warn-tint px-2.5 py-1 text-xs font-bold text-warn">{labels.missing}</span>
@@ -205,7 +207,7 @@ export default function BillsManager({
               <PlainIcon code={OTHER_CATEGORY} size={32} color="currentColor" />
               <span className="min-w-0 flex-1 truncate text-start text-base font-bold">{bill.label}</span>
               <span className="text-base font-bold">
-                <Money cents={bill.amountCents} />
+                {money.format(bill.amountCents / 100)}
               </span>
             </button>
             {isOpen && (
