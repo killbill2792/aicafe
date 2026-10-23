@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.staff_schedule_deliveries (
  business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
  proposal_id uuid NOT NULL,
  employee_id uuid NOT NULL,
- recipient_e164 text NOT NULL CHECK(recipient_e164 ~ '^\\+[1-9][0-9]{1,14}$'),
+ recipient_e164 text NOT NULL CHECK(recipient_e164 ~ '^\+[1-9][0-9]{1,14}$'),
  status text NOT NULL DEFAULT 'prepared'
    CHECK(status IN ('prepared','sending','sent','failed','delivered')),
  meta_message_id text,
