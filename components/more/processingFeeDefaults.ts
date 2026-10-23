@@ -103,7 +103,7 @@ export function selectedFeeCoverageForSalesDays(
     .filter((row) => Number(row.net_sales_cents) > 0)
     .map((row) => ({
       date: row.business_date,
-      status: selected.get(row.business_date) ?? "missing" as const,
+      status: selected.get(row.business_date) ?? "missing",
     }))
     .sort((a, b) => b.date.localeCompare(a.date));
 }
