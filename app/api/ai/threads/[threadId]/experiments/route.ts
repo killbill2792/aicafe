@@ -62,7 +62,9 @@ export async function POST(request:Request,{params}:Params){
   const {threadId}=await params;
   const input=parseInput(action,await readBoundedJson(request));
   const {scope:base}=await context(threadId);
-  await assertCafeAiAccess(base.businessId);
+  // Historical reports are read-only; all paid simulation and state transitions
+  // still require an active entitlement before touching model or proposal state.
+  if(input.action!=="report")await assertCafeAiAccess(base.businessId);
   const scope={...base,locale:input.action==="propose"?input.locale:base.locale};
   const repo=new SupabaseLoopRepository();
   switch(input.action){
@@ -97,6 +99,9 @@ export async function POST(request:Request,{params}:Params){
        if(error)throw error;
        return conversationJson({report:data??null});
      }
+     // A not-yet-stored report can run a monitor and write new results.
+     // Expired cafés may view completed reports, but cannot start that work.
+     await assertCafeAiAccess(base.businessId);
      const db=createAdminSupabaseClient();
      const {data,error}=await db.from("businesses").select("timezone")
        .eq("id",scope.businessId).single();
