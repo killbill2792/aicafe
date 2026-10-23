@@ -3,7 +3,7 @@ import {z} from "zod";
 import {shiftInput,restoreShiftInput} from "@/lib/calc/scheduling/scheduleValidators";
 import {revalidatePath} from "next/cache";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
-import {getCafeProfile} from "@/lib/data/getCafeProfile";
+import {normalizeOpenHours} from "@/lib/business/openHours";
 import {staffReadScope} from "@/lib/scheduling/staffScope.server";
 import {DEFAULT_TEAM_RULES} from "@/lib/calc/scheduling/teamRuleDefaults";
 import {DEMO_BUSINESS_ID} from "@/lib/constants";
@@ -28,11 +28,12 @@ export async function getWeekSchedule(raw:unknown){
     .eq("business_id",owner.businessId).eq("active",true).order("display_name"),
   owner.supabase.from("scheduled_shifts").select("*").eq("business_id",owner.businessId)
     .gte("local_date",dates[0]).lte("local_date",dates[6]).is("deleted_at",null).order("start_local"),
-  getCafeProfile(),getTeamRules(),
+  owner.supabase.from("locations").select("open_hours").eq("business_id",owner.businessId)
+   .order("name").limit(1).maybeSingle(),getTeamRules(),
   owner.supabase.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to")
    .eq("business_id",owner.businessId).lte("effective_from",dates[6])
  ]);
- if(people.error||shifts.error||availability.error||!ruleResult.ok)return {ok:false as const,error:"storage_unavailable"};
+ if(people.error||shifts.error||profile.error||availability.error||!ruleResult.ok)return {ok:false as const,error:"storage_unavailable"};
  const team=(people.data??[]).map(p=>({
    id:p.id as string,name:p.display_name as string,role:p.role as string|null,
    wageCents: p.wage_period==="hour" ? ((p.wage_amount_cents as number|null)??(p.default_hourly_wage_cents as number|null))
@@ -41,6 +42,7 @@ export async function getWeekSchedule(raw:unknown){
    availableDays:p.available_days as number[]|null,colorIndex:p.color_index as number|null,
    phone:p.phone_e164 as string|null
  }));
+ const openHours=normalizeOpenHours(profile.data?.open_hours);
  const averages=roleWageAverages(team),defaultWage=businessWageEstimate(team);
  const mapped=(shifts.data??[]).map(s=>{
    const person=team.find(p=>p.id===s.employee_id);
@@ -51,11 +53,11 @@ export async function getWeekSchedule(raw:unknown){
      id:s.id as string,status:s.status as string,source:s.source as string,breakSource:s.break_source as string,
      employeeName:person?.name??"Unknown"};
  });
- const total=aggregateCosts(mapped),gaps=coverageGaps(dates,mapped,profile.openHours,
+ const total=aggregateCosts(mapped),gaps=coverageGaps(dates,mapped,openHours,
    ruleResult.data.coverage_enabled?ruleResult.data.min_headcount:0);
  return {ok:true as const,data:{
-   dates,team,shifts:mapped,total,gaps,openHours:profile.openHours,
-   currency:profile.currency,rules:ruleResult.data,
+   dates,team,shifts:mapped,total,gaps,openHours,
+   currency:owner.currency,rules:ruleResult.data,
    availability:availability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone
  }};
 }
