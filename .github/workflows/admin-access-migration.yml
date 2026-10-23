@@ -1,0 +1,31 @@
+name: Admin Access Migration Replay
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/migrations/20261023000088_admin_dashboard.sql"
+      - "supabase/migrations/20261023000089_admin_analytics.sql"
+      - "supabase/migrations/20261023000090_free_access_codes.sql"
+      - "scripts/admin-access-migration-smoke.sql"
+      - ".github/workflows/admin-access-migration.yml"
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  disposable-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: {version: latest}
+      - name: Start disposable Supabase
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+          supabase start
+      - name: Replay all ordered migrations
+        run: supabase db reset --local --yes
+      - name: Verify access-code functions, trigger and privilege boundaries
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/admin-access-migration-smoke.sql
+      - name: Stop disposable database
+        if: always()
+        run: supabase stop --no-backup
