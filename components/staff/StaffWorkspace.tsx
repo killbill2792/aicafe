@@ -15,8 +15,8 @@ type Data=Extract<Awaited<ReturnType<typeof import("@/lib/actions/schedule").get
 const fmt=(c:number|null,currency:string)=>c==null?"—":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(c/100);
 const hours=(n:number)=>Number((n/60).toFixed(1));
 type Alert={id:string;employee_id:string;rule_key:string;message:string;created_at:string};
-export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null}:{
- initial:Data;tab?:string;locale?:string;initialAlerts?:Alert[];alertError?:string|null
+export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null,teamExtras=null}:{
+ initial:Data;tab?:string;locale?:string;initialAlerts?:Alert[];alertError?:string|null;teamExtras?:React.ReactNode
 }){
  const router=useRouter();const t=useTranslations("StaffSchedule");
  const roleLabel=(v:string)=>({Barista:t("roleBarista"),Manager:t("roleManager"),Baker:t("roleBaker"),Cashier:t("roleCashier")}[v]??v);
