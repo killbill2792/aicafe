@@ -5,6 +5,9 @@ on:
     paths:
       - "supabase/migrations/20261023000082_owner_approved_menu_price_cas.sql"
       - "supabase/migrations/20261008000031_pricing_evidence.sql"
+      - "supabase/migrations/20261023000083_approval_lifecycle_atomicity.sql"
+      - "supabase/migrations/20261020000074_supervisor_execution_loop.sql"
+      - "scripts/test-approval-lifecycle-db.mjs"
       - "scripts/test-approval-price-cas-db.mjs"
       - ".github/workflows/approval-price-cas-db.yml"
 permissions:
@@ -30,3 +33,24 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/test-approval-price-cas-db.mjs
+
+  lifecycle:
+    name: Revisioned approval edit/stale transactions
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/test-approval-lifecycle-db.mjs
