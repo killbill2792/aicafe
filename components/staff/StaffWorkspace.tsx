@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useState,useTransition} from "react";
 import {useRouter} from "next/navigation";
+import OwnerScheduleSendPanel from "./OwnerScheduleSendPanel";
 import {useTranslations} from "next-intl";
 import {dismissStaffRuleAlert} from "@/lib/actions/ruleAlerts";
 import DayTimeline from "./DayTimeline";
@@ -36,11 +37,12 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const uncheckedDays=uncheckedCoverageDays(data.dates,data.openHours,data.rules.coverage_enabled);
  const [screen,setScreen]=useState(tab),[sheet,setSheet]=useState<"person"|"shift"|null>(null);
  const [busy,startTransition]=useTransition(),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const [savingConsent,setSavingConsent]=useState(false),[consentError,setConsentError]=useState(false);
  const [dismissed,setDismissed]=useState<string[]>([]);
  const [repeatWeekly,setRepeatWeekly]=useState(false),[fillsGap,setFillsGap]=useState(false),[breakOverridden,setBreakOverridden]=useState(false);
  const [inlineName,setInlineName]=useState(""),[inlineRole,setInlineRole]=useState("Barista");
  const [name,setName]=useState(""),[role,setRole]=useState("Barista"),[wage,setWage]=useState<number|null>(null);
- const [phone,setPhone]=useState(""),[salaryPeriod,setSalaryPeriod]=useState<string|null>(null),[minWeeklyMinutes,setMinWeeklyMinutes]=useState<number|null>(null),
+ const [phone,setPhone]=useState(""),[whatsAppOptIn,setWhatsAppOptIn]=useState(false),[salaryPeriod,setSalaryPeriod]=useState<string|null>(null),[minWeeklyMinutes,setMinWeeklyMinutes]=useState<number|null>(null),
   [maxWeeklyMinutes,setMaxWeeklyMinutes]=useState<number|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
  const [chosen,setChosen]=useState(data.team[0]?.id??""),[date,setDate]=useState(data.dates[0]);
  const [start,setStart]=useState("07:00"),[end,setEnd]=useState("15:00"),[breakMin,setBreakMin]=useState(30);
@@ -56,10 +58,10 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setSheet(null);router.refresh();
  });
  const openPerson=(person?:Data["team"][number])=>{
-  setAvailabilityDirty(false);
+  setAvailabilityDirty(false);setConsentError(false);
   setPersonEditing(person?.id??null);setName(person?.name??"");setRole(person?.role??"Barista");
   setWage(person?.wageCents??null);setSalaryPeriod(person?.wagePeriod&&person.wagePeriod!=="hour"?person.wagePeriod:null);
-  setPhone(person?.phone??"");
+  setPhone(person?.phone??"");setWhatsAppOptIn(person?.whatsappOptIn??false);
   setMinWeeklyMinutes(person?.minWeeklyMinutes??null);setMaxWeeklyMinutes(person?.maxWeeklyMinutes??null);
   if(person){
    const days=person.availableDays??[0,1,2,3,4,5,6];
@@ -71,6 +73,25 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    }));
   }else setAvailability(allDays());
   setSheet("person");
+ };
+ // An explicit owner action persists immediately; don't toggle the visible
+ // consent checkbox until the protected PATCH completes successfully.
+ const saveConsent=async(next:boolean)=>{
+  if(!personEditing||savingConsent||busy||data.readOnly)return;
+  setSavingConsent(true);setConsentError(false);setError("");
+  try{
+   const response=await fetch("/api/staff/schedule-delivery",{
+    method:"PATCH",credentials:"same-origin",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({employeeId:personEditing,whatsappOptIn:next})
+   });
+   if(!response.ok)throw new Error("consent");
+   setWhatsAppOptIn(next);
+   setData({...data,team:data.team.map(person=>person.id===personEditing?
+     {...person,whatsappOptIn:next}:person)});
+   router.refresh();
+  }catch{setConsentError(true);}
+  finally{setSavingConsent(false);}
  };
  const mutateAvailability=(day:number,update:{start:string|null;end:string|null}|null)=>{
   setAvailabilityDirty(true);
@@ -270,7 +291,15 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+14155551234"
          className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3" dir="ltr"/>
       </label>
-      <button disabled={busy||!name.trim()} onClick={()=>run(()=>{
+      {personEditing?<label className="mt-3 flex min-h-12 items-center gap-3 rounded-xl border border-line p-3">
+        <input type="checkbox" checked={whatsAppOptIn}
+          disabled={savingConsent||busy||data.readOnly}
+          onChange={event=>void saveConsent(event.target.checked)}
+          className="size-6 shrink-0 accent-accent"/>
+        <span className="text-[17px]">{t("deliveryConsent")}</span>
+       </label>:<p className="mt-3 text-sm text-muted">{t("deliveryConsentAfterCreate")}</p>}
+       {personEditing&&consentError&&<p role="alert" className="mt-2 text-neg">{t("deliveryConsentError")}</p>}
+       <button disabled={busy||savingConsent||!name.trim()} onClick={()=>run(()=>{
        const fields={name,role:role||null,wageCents:salaryPeriod?null:wage,availability:personEditing&&!availabilityDirty?null:availability,
         minWeeklyMinutes,maxWeeklyMinutes,phone:phone.trim()||null};
        return personEditing?updatePerson({id:personEditing,...fields}):addPerson(fields);

@@ -10,7 +10,7 @@ type RuleValues=Record<string,unknown>&{owner_set:string[];custom:{id:string;rul
 const groups=[
  {title:"breaks",items:[["meal_break_enabled","mealBreak"],["meal_break_minutes","mealMinutes"],["meal_break_after_minutes","mealAfter"],["rest_break_enabled","paidRest"],["rest_break_minutes","restMinutes"],["rest_break_every_minutes","restEvery"]]},
  {title:"overtime",items:[["weekly_ot_enabled","weeklyOvertime"],["weekly_ot_after_minutes","weeklyAfter"],["ot_multiplier_bp","multiplier"],["daily_ot_enabled","dailyOvertime"],["daily_ot_after_minutes","dailyAfter"]]},
- {title:"shifts",items:[["max_shift_enabled","longestShift"],["max_shift_minutes","longestMinutes"],["min_shift_enabled","shortestShift"],["min_shift_minutes","shortestMinutes"],["min_rest_enabled","betweenShifts"],["min_rest_minutes","betweenMinutes"]]},
+ {title:"shifts",items:[["max_shift_enabled","longestShift"],["max_shift_minutes","longestMinutes"],["min_shift_enabled","shortestShift"],["min_shift_minutes","shortestMinutes"],["min_rest_enabled","betweenShifts"],["min_rest_minutes","betweenMinutes"],["prep_minutes_before_open","prepBeforeOpen"],["prep_minutes_after_close","prepAfterClose"]]},
  {title:"coverage",items:[["coverage_enabled","minimumCoverage"],["min_headcount","peopleWhileOpen"]]}
 ] as const;
 const bounds:Record<string,[number,number,number]>={
@@ -18,7 +18,8 @@ const bounds:Record<string,[number,number,number]>={
  rest_break_minutes:[0,60,5],rest_break_every_minutes:[60,1440,30],
  weekly_ot_after_minutes:[0,10080,60],ot_multiplier_bp:[10000,50000,500],
  daily_ot_after_minutes:[0,1440,30],max_shift_minutes:[30,1440,30],
- min_shift_minutes:[0,1440,30],min_rest_minutes:[0,1440,30],min_headcount:[1,30,1]
+ min_shift_minutes:[0,1440,30],min_rest_minutes:[0,1440,30],min_headcount:[1,30,1],
+ prep_minutes_before_open:[0,240,15],prep_minutes_after_close:[0,240,15]
 };
 export default function RulesWorkspace({initial,week,readOnly=false}:{initial:RuleValues;week:string;readOnly?:boolean}){
  const t=useTranslations("StaffSchedule");const router=useRouter();
