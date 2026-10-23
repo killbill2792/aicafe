@@ -9,6 +9,7 @@ import { salesTools } from "./sales";
 import {draftScheduleTools} from "./draftSchedule";
 import {newItemPriceTools} from "./newItemPrice";
 import {proposalTools} from "./proposals";
+import {memoryTools,type CafeMemoryPort} from "./memory";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import {summarizePeakHours,summarizeEmployeeSales,summarizePayrollFacts} from "@/lib/calc/posFactSummaries";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
@@ -27,6 +28,8 @@ export type AgentToolContext = {
   timezone?:string;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;
+  /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
+  memory?: CafeMemoryPort;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>};
 };
 const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
@@ -76,6 +79,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   // Backend-only: do not register proposal creation until a real approval surface is available.
   if(name==="propose_initiative")throw new Error("initiative_approval_surface_not_available");
   if(isInitiativeTool(name))return executeInitiativeTool(name,raw,ctx);
+  // Flag-gated extra tool: only offered to the model when CHAT_MEMORY is on.
+  if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
