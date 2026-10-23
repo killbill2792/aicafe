@@ -156,6 +156,39 @@ export const SOURCE_SURFACES = {
     releaseMonitorInitiative:{restricted:"Service-role fenced monitor lease release; not a model business read"},
     readMetricDay:{restricted:"Owner-private initiative readMetricDay access; not an unrestricted P1 model tool"},
   },
+  "lib/data/staffAlertActions.server.ts": {
+    dismissStaffRuleAlert:{restricted:"Owner-only rule alert acknowledgement writes; not a P1 generic model capability"},
+  },
+  "lib/data/staffPeople.server.ts": {
+    addPerson:{restricted:"Owner-scope create with atomic availability; not a read-only model source"},
+    updatePerson:{restricted:"Owner-only atomic profile/availability mutation; not a read-only model source"},
+    setPersonActive:{restricted:"Owner-only deactivate/restore; not a model write capability"},
+  },
+  "lib/data/staffReadScope.server.ts": {
+    staffReadScope:{restricted:"Internal active-business membership and IANA timezone guard, never exposed as a generic tool"},
+    mondayOfLocalDate:{restricted:"Pure local civil-week helper, not a tenant reader"},
+  },
+  "lib/data/staffRuleAlerts.server.ts": {
+    syncStaffRuleAlerts:{restricted:"Owner-only idempotent timecard rules scanner that writes alerts; not a generic P1 reader"},
+    notifyStaffOfRuleAlert:{restricted:"No-op WhatsApp placeholder; no notification is sent"},
+  },
+  "lib/data/staffRules.server.ts": {
+    getTeamRules:{restricted:"Owner-scoped labor rules and custom rule read; only exposed through strict scheduling tool"},
+    updateTeamRules:{restricted:"Owner-only labor-rule setting mutation; not a model write capability"},
+    addCustomRule:{restricted:"Owner-only natural-language rule insert, not a model write capability"},
+    removeCustomRule:{restricted:"Owner-only custom rule deactivation, not a model write capability"},
+  },
+  "lib/data/staffSchedule.server.ts": {
+    getWeekSchedule:{restricted:"Owner-scoped dated shift projection; model access through strict get_week_schedule only"},
+    getCoverageGaps:{restricted:"Derived coverage projection, model access through strict get_coverage_gaps only"},
+    getTeam:{restricted:"Owner-scoped team and shift projection, model access through strict get_team only"},
+    getShiftCost:{restricted:"Typed deterministic wage estimate input, model access through strict get_shift_cost only"},
+    upsertShift:{restricted:"Owner-only dated shift write; no direct model mutation"},
+    removeShift:{restricted:"Owner-only soft-delete; no direct model mutation"},
+    restoreShift:{restricted:"Owner-only id-only server-trusted shift restoration; no direct model mutation"},
+    copyWeek:{restricted:"Owner-only copy with business membership and week validation; no direct model mutation"},
+    sendSchedule:{restricted:"Owner-only read/copy-ready message assembly; does not send messages"},
+  },
   "lib/data/pantry.server.ts": {
     listPantry:{restricted:"Owner-scoped pantry and supplier cost inventory; no direct agent read contract"},
     addFromStarter:{restricted:"Writes starter ingredients; requires explicit owner action and tenant checks"},
