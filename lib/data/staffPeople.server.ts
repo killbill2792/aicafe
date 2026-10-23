@@ -3,12 +3,13 @@ import {personFields,updatePersonFields,setPersonActiveInput} from "@/lib/calc/s
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 
 async function writePerson(id:string|null,input:unknown){
- const p=personFields.safeParse(input);
+ const p=id?updatePersonFields.safeParse({...((input&&typeof input==="object")?input as Record<string,unknown>:{}),id}):
+   personFields.safeParse(input);
  if(!p.success)return {ok:false as const,error:"invalid_input"};
  const owner=await requireSchedulingOwner();
  if(!owner)return {ok:false as const,error:"unauthorized"};
  const {data,error}=await owner.supabase.rpc("staff_write_person",{
-  p_business_id:owner.businessId,p_id:id,p_payload:p.data
+  p_business_id:owner.businessId,p_id:id,p_payload:id?Object.fromEntries(Object.entries(p.data).filter(([key])=>key!=="id")):p.data
  });
  if(error||typeof data!=="string")return {ok:false as const,error:error?.code==="P0002"?"not_found":"storage_unavailable"};
  return {ok:true as const,id:data};

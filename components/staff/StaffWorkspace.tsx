@@ -34,7 +34,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const [chosen,setChosen]=useState(data.team[0]?.id??""),[date,setDate]=useState(data.dates[0]);
  const [start,setStart]=useState("07:00"),[end,setEnd]=useState("15:00"),[breakMin,setBreakMin]=useState(30);
  const [editing,setEditing]=useState<string|null>(null),
- [availability,setAvailability]=useState<{day:number;start:string|null;end:string|null}[]>([]);
+ [availability,setAvailability]=useState<{day:number;start:string|null;end:string|null}[]>([]),
+ [availabilityDirty,setAvailabilityDirty]=useState(false);
  const [undo,setUndo]=useState<{id:string;type:"person"|"shift";message:string}|null>(null);
  useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),6000);return ()=>clearTimeout(timer);},[undo]);
  const allDays=()=>Array.from({length:7},(_,day)=>({day,start:null,end:null}));
@@ -44,6 +45,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setSheet(null);router.refresh();
  });
  const openPerson=(person?:Data["team"][number])=>{
+  setAvailabilityDirty(false);
   setPersonEditing(person?.id??null);setName(person?.name??"");setRole(person?.role??"Barista");
   setWage(person?.wageCents??null);setSalaryPeriod(person?.wagePeriod&&person.wagePeriod!=="hour"?person.wagePeriod:null);
   setPhone(person?.phone??"");
@@ -51,8 +53,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   if(person){
    const days=person.availableDays??[0,1,2,3,4,5,6];
    setAvailability(days.map(day=>{
-    const candidate=data.availability.filter(a=>a.employee_id===person.id&&a.day_of_week===day&&
-      a.effective_from<=data.dates[6]&&(a.effective_to===null||a.effective_to>=data.dates[0]))
+    const candidate=data.profileAvailability.filter(a=>a.employee_id===person.id&&a.day_of_week===day)
      .sort((a,b)=>b.effective_from.localeCompare(a.effective_from))[0];
     return {day,start:candidate?String(candidate.start_local).slice(0,5):null,
       end:candidate?String(candidate.end_local).slice(0,5):null};
@@ -61,6 +62,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setSheet("person");
  };
  const mutateAvailability=(day:number,update:{start:string|null;end:string|null}|null)=>{
+  setAvailabilityDirty(true);
   setAvailability(current=>update===null?current.filter(d=>d.day!==day):
    [...current.filter(d=>d.day!==day),{day,...update}].sort((a,b)=>a.day-b.day));
  };
@@ -252,7 +254,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
          className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3" dir="ltr"/>
       </label>
       <button disabled={busy||!name.trim()} onClick={()=>run(()=>{
-       const fields={name,role:role||null,wageCents:salaryPeriod?null:wage,availability,
+       const fields={name,role:role||null,wageCents:salaryPeriod?null:wage,availability:personEditing&&!availabilityDirty?null:availability,
         minWeeklyMinutes,maxWeeklyMinutes,phone:phone.trim()||null};
        return personEditing?updatePerson({id:personEditing,...fields}):addPerson(fields);
       })} className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">

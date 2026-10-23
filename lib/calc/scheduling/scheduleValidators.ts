@@ -19,7 +19,10 @@ export const personFields=z.strictObject({
   p.minWeeklyMinutes<=p.maxWeeklyMinutes,"Invalid weekly range");
 
 
-export const updatePersonFields=z.strictObject({id:z.string().uuid(),...personFields.shape});
+export const updatePersonFields=z.strictObject({id:z.string().uuid(),...personFields.shape,
+ availability:personFields.shape.availability.nullable()
+}).refine(p=>p.minWeeklyMinutes===null||p.maxWeeklyMinutes===null||
+ p.minWeeklyMinutes<=p.maxWeeklyMinutes,"Invalid weekly range");
 export const restoreShiftInput=z.strictObject({id:z.string().uuid()});
 export const setPersonActiveInput=z.strictObject({id:z.string().uuid(),active:z.boolean()});
 export const shiftInput=z.strictObject({
