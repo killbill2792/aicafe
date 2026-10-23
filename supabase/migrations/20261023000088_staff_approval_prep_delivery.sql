@@ -332,3 +332,135 @@ REVOKE ALL ON FUNCTION public.supervisor_commit_staff_proposal(
  uuid,uuid,uuid,uuid,integer) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.supervisor_commit_staff_proposal(
  uuid,uuid,uuid,uuid,integer) TO service_role;
+
+
+-- Step 3: owner-initiated external app compose. Never an automated send.
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS preferred_schedule_channel text
+  NOT NULL DEFAULT 'whatsapp' CHECK (preferred_schedule_channel IN ('whatsapp','sms'));
+ALTER TABLE public.staff_schedule_deliveries ADD COLUMN IF NOT EXISTS plan_revision_id uuid;
+ALTER TABLE public.staff_schedule_deliveries ADD COLUMN IF NOT EXISTS channel text
+  NOT NULL DEFAULT 'whatsapp' CHECK(channel IN ('whatsapp','sms'));
+ALTER TABLE public.staff_schedule_deliveries ADD COLUMN IF NOT EXISTS sent_by uuid
+  REFERENCES auth.users(id);
+ALTER TABLE public.staff_schedule_deliveries ADD COLUMN IF NOT EXISTS sent_at timestamptz;
+ALTER TABLE public.staff_schedule_deliveries ALTER COLUMN proposal_id DROP NOT NULL;
+ALTER TABLE public.staff_schedule_deliveries
+  DROP CONSTRAINT IF EXISTS staff_schedule_deliveries_status_check;
+ALTER TABLE public.staff_schedule_deliveries ADD CONSTRAINT staff_schedule_deliveries_status_check
+  CHECK (status IN ('prepared','sending','sent','failed','delivered','sent_by_owner'));
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='staff_schedule_deliveries_source_check') THEN
+    ALTER TABLE public.staff_schedule_deliveries ADD CONSTRAINT staff_schedule_deliveries_source_check
+      CHECK ((proposal_id IS NULL) <> (plan_revision_id IS NULL));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='staff_schedule_deliveries_plan_fk') THEN
+    ALTER TABLE public.staff_schedule_deliveries ADD CONSTRAINT staff_schedule_deliveries_plan_fk
+      FOREIGN KEY (business_id,plan_revision_id)
+        REFERENCES public.scheduling_plan_revisions(business_id,id) ON DELETE CASCADE;
+  END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS staff_schedule_deliveries_plan_unique
+  ON public.staff_schedule_deliveries(business_id,plan_revision_id,employee_id)
+  WHERE plan_revision_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS staff_schedule_deliveries_owner_recent
+  ON public.staff_schedule_deliveries(business_id,sent_at DESC)
+  WHERE status='sent_by_owner';
+-- Privileged, atomic ledger transition. The browser supplies neither recipient,
+-- message text nor actor. Validate a COMMITTED proposal or APPROVED/PUBLISHED plan
+-- and the current employee's consent/phone under row locks, then record tap.
+CREATE OR REPLACE FUNCTION public.staff_mark_owner_delivery(
+ p_business_id uuid,p_owner_user_id uuid,p_employee_id uuid,
+ p_channel text,p_proposal_id uuid DEFAULT NULL,p_plan_revision_id uuid DEFAULT NULL
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE
+ v_employee public.employees%rowtype;
+ v_proposal public.supervisor_proposals%rowtype;
+ v_revision public.scheduling_plan_revisions%rowtype;
+ v_series public.scheduling_plan_series%rowtype;
+ v_delivery public.staff_schedule_deliveries%rowtype;
+ v_week date;v_operation text;
+BEGIN
+ IF auth.role() IS DISTINCT FROM 'service_role' THEN
+   RAISE EXCEPTION 'service_role_only' USING ERRCODE='42501'; END IF;
+ IF p_channel NOT IN ('whatsapp','sms')
+   OR (p_proposal_id IS NULL)=(p_plan_revision_id IS NULL)
+   OR NOT EXISTS(SELECT 1 FROM public.memberships m
+     JOIN public.businesses b ON b.id=m.business_id
+     WHERE m.business_id=p_business_id AND m.user_id=p_owner_user_id
+       AND m.role='owner' AND b.is_demo=false) THEN
+   RAISE EXCEPTION 'delivery_unauthorized' USING ERRCODE='42501'; END IF;
+ PERFORM pg_advisory_xact_lock(hashtextextended(
+   'owner-delivery:'||p_business_id::text||':'||
+   coalesce(p_proposal_id,p_plan_revision_id)::text||':'||p_employee_id::text,0));
+ SELECT * INTO v_employee FROM public.employees WHERE business_id=p_business_id
+   AND id=p_employee_id AND active FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'staff_not_found' USING ERRCODE='P0002'; END IF;
+ IF v_employee.phone_e164 IS NULL
+   OR v_employee.phone_e164 !~ '^\+[1-9][0-9]{1,14}$'
+   OR (p_channel='whatsapp' AND v_employee.whatsapp_opt_in IS NOT TRUE) THEN
+   RAISE EXCEPTION 'recipient_not_eligible' USING ERRCODE='P0001'; END IF;
+ IF p_proposal_id IS NOT NULL THEN
+   SELECT * INTO v_proposal FROM public.supervisor_proposals
+      WHERE id=p_proposal_id AND business_id=p_business_id
+        AND status='committed' AND capability_id IN (
+          'olivia.staff_propose_schedule.v1','olivia.staff_propose_send_schedule.v1')
+      FOR SHARE;
+   IF NOT FOUND THEN RAISE EXCEPTION 'schedule_not_approved' USING ERRCODE='P0001'; END IF;
+   v_operation:=v_proposal.canonical_effect_payload->>'operation';
+   v_week:=(v_proposal.canonical_effect_payload->'payload'->>'week_start')::date;
+   IF v_operation='propose_schedule' THEN
+     IF NOT EXISTS(SELECT 1 FROM public.scheduled_shifts s
+       WHERE s.business_id=p_business_id AND s.proposal_id=p_proposal_id
+         AND s.employee_id=p_employee_id AND s.deleted_at IS NULL
+         AND s.local_date BETWEEN v_week AND v_week+6)
+     THEN RAISE EXCEPTION 'schedule_changed' USING ERRCODE='P0001'; END IF;
+   ELSIF NOT EXISTS(SELECT 1 FROM public.scheduled_shifts s
+       WHERE s.business_id=p_business_id AND s.employee_id=p_employee_id
+         AND s.deleted_at IS NULL AND s.local_date BETWEEN v_week AND v_week+6
+         AND s.updated_at <= v_proposal.committed_at)
+   THEN RAISE EXCEPTION 'schedule_changed' USING ERRCODE='P0001'; END IF;
+   SELECT * INTO v_delivery FROM public.staff_schedule_deliveries
+     WHERE business_id=p_business_id AND proposal_id=p_proposal_id
+       AND employee_id=p_employee_id FOR UPDATE;
+ ELSE
+   SELECT * INTO v_revision FROM public.scheduling_plan_revisions
+     WHERE business_id=p_business_id AND id=p_plan_revision_id
+       AND status IN ('approved','published') FOR SHARE;
+   IF NOT FOUND THEN RAISE EXCEPTION 'schedule_not_approved' USING ERRCODE='P0001'; END IF;
+   SELECT * INTO v_series FROM public.scheduling_plan_series
+     WHERE business_id=p_business_id AND id=v_revision.series_id FOR SHARE;
+   IF NOT FOUND OR NOT (
+       (v_revision.status='approved' AND v_series.current_revision=v_revision.revision)
+       OR (v_revision.status='published' AND v_series.published_revision=v_revision.revision))
+   THEN RAISE EXCEPTION 'schedule_superseded' USING ERRCODE='P0001'; END IF;
+   IF NOT EXISTS(SELECT 1 FROM public.scheduling_plan_assignments a
+       WHERE a.business_id=p_business_id AND a.plan_revision_id=p_plan_revision_id
+         AND a.employee_id=p_employee_id)
+   THEN RAISE EXCEPTION 'staff_not_scheduled' USING ERRCODE='P0001'; END IF;
+   SELECT * INTO v_delivery FROM public.staff_schedule_deliveries
+     WHERE business_id=p_business_id AND plan_revision_id=p_plan_revision_id
+       AND employee_id=p_employee_id FOR UPDATE;
+ END IF;
+ IF v_delivery.id IS NOT NULL THEN
+   IF v_delivery.status='sent_by_owner' THEN
+     RETURN jsonb_build_object('state','already_opened','channel',v_delivery.channel,
+       'at',v_delivery.sent_at); END IF;
+   IF v_delivery.status<>'prepared' THEN
+     RAISE EXCEPTION 'delivery_conflict' USING ERRCODE='P0001'; END IF;
+   UPDATE public.staff_schedule_deliveries
+     SET status='sent_by_owner',channel=p_channel,recipient_e164=v_employee.phone_e164,
+       sent_at=now(),sent_by=p_owner_user_id,updated_at=now()
+     WHERE id=v_delivery.id;
+ ELSE
+   INSERT INTO public.staff_schedule_deliveries(business_id,proposal_id,plan_revision_id,
+     employee_id,recipient_e164,status,channel,sent_at,sent_by)
+   VALUES(p_business_id,p_proposal_id,p_plan_revision_id,p_employee_id,
+     v_employee.phone_e164,'sent_by_owner',p_channel,now(),p_owner_user_id);
+ END IF;
+ RETURN jsonb_build_object('state','opened','channel',p_channel);
+END $$;
+REVOKE ALL ON FUNCTION public.staff_mark_owner_delivery(
+ uuid,uuid,uuid,text,uuid,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.staff_mark_owner_delivery(
+ uuid,uuid,uuid,text,uuid,uuid) TO service_role;
