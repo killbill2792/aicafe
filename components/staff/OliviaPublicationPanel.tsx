@@ -1,6 +1,7 @@
 "use client";
 
 import {useRef,useState,useTransition} from "react";
+import OwnerScheduleSendPanel from "./OwnerScheduleSendPanel";
 import {useLocale,useTranslations} from "next-intl";
 import {stableCreateRequestKey,type PendingCreate}
   from "@/lib/scheduling/idempotencyClient";
@@ -101,6 +102,8 @@ export default function OliviaPublicationPanel({week,latest,publishedRevision,
         className="min-h-12 rounded-full bg-accent px-4 font-bold text-on-accent disabled:opacity-50">
         {t("publishSchedule")}
       </button>}
+    {latest?.status==="approved"||publishedRevision!==null?
+      <OwnerScheduleSendPanel week={week} locale={locale==="es"?"es":locale==="ar"?"ar":"en"}/>:null}
     {error&&<p role="alert" className="text-sm text-warn">{error}</p>}
     {notice&&<p role="status" className="text-sm">{notice}</p>}
     <div className="border-t border-line pt-3">

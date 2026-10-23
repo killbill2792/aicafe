@@ -2695,5 +2695,28 @@
     "prepareScheduleMessages": "Prepare schedule messages",
     "scheduleNotSent": "Not sent. Copy these messages and share them manually.",
     "inactivePerson": "Inactive"
+  },
+  "OwnerScheduleDelivery": {
+    "heading": "Send approved schedules",
+    "manualNotice": "I can't send staff messages directly. Tap a button to open WhatsApp or your SMS app with the message ready. You must press Send yourself. 'Opened' records this tap, not confirmed delivery.",
+    "loading": "Loading approved schedule…",
+    "notApproved": "Approve the schedule before sending. No messages have been sent.",
+    "loadError": "Could not load approved messages.",
+    "ledgerError": "Messaging app opened, but the delivery ledger could not record the action. Check before trying again.",
+    "preferenceError": "Could not save preferred channel.",
+    "week": "Week",
+    "noShifts": "No assigned shifts.",
+    "noPhone": "No valid phone number",
+    "noOptIn": "Not opted in to WhatsApp",
+    "sendWhatsApp": "Send on WhatsApp",
+    "sendSms": "Send by text",
+    "whatsApp": "WhatsApp",
+    "sms": "SMS",
+    "preferred": "Preferred channel",
+    "opened": "Opened by owner — not confirmed sent",
+    "sendAll": "Send all (one by one)",
+    "next": "Next person",
+    "skip": "Skip",
+    "listDone": "Finished opening list. Check each app to send."
   }
 }

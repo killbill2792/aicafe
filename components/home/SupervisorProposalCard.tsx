@@ -4,6 +4,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {formatCents} from "@/lib/calc";
+import OwnerScheduleSendPanel from "@/components/staff/OwnerScheduleSendPanel";
 import {menuPriceDelta,priceInputCents,priceEditString} from "@/lib/calc/menuPriceProposal";
 type Locale="en"|"es"|"ar";
 export type ProposalView={proposalId:string;revision:number;state:string;capabilityId?:string;

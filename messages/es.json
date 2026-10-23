@@ -2695,5 +2695,28 @@
     "prepareScheduleMessages": "Preparar mensajes del horario",
     "scheduleNotSent": "No enviados. Copia los mensajes y compártelos manualmente.",
     "inactivePerson": "Inactivo"
+  },
+  "OwnerScheduleDelivery": {
+    "heading": "Enviar horarios aprobados",
+    "manualNotice": "No puedo enviar mensajes directamente. Toca un botón para abrir WhatsApp o SMS con el texto listo. Tú debes pulsar Enviar. «Abierto» no confirma la entrega.",
+    "loading": "Cargando horario aprobado…",
+    "notApproved": "Aprueba el horario antes de enviar. No se han enviado mensajes.",
+    "loadError": "No se pudo cargar el horario.",
+    "ledgerError": "Se abrió la aplicación, pero no se pudo registrar la acción. Comprueba antes de reintentar.",
+    "preferenceError": "No se pudo guardar el canal preferido.",
+    "week": "Semana",
+    "noShifts": "No hay turnos asignados.",
+    "noPhone": "No hay teléfono válido",
+    "noOptIn": "No aceptó recibir WhatsApp",
+    "sendWhatsApp": "Enviar por WhatsApp",
+    "sendSms": "Enviar por SMS",
+    "whatsApp": "WhatsApp",
+    "sms": "SMS",
+    "preferred": "Canal preferido",
+    "opened": "Abierto por el dueño; envío no confirmado",
+    "sendAll": "Enviar todos (uno por uno)",
+    "next": "Siguiente persona",
+    "skip": "Omitir",
+    "listDone": "Lista abierta. Envía cada mensaje desde la aplicación."
   }
 }
