@@ -74,7 +74,7 @@ type TurnParams = {
   flags: ChatExperienceFlags; emit: Emit; job: AgentJob | null; jobs: JobsModule | null;
 };
 /** One owner turn: tools → loop → persist → usage. Emits done/error and never throws. */
-async function runOneTurn(p: TurnParams): Promise<{ replyId: string } | { errorCode: string }> {
+async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwnerMessageIds: string[] } | { errorCode: string }> {
   const { scope, threadId: id, owner, emit, flags, job, jobs } = p;
   let logged = false;
   const startedAt = Date.now();
@@ -155,7 +155,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string } | { errorC
     emit("done", { reply, status: result.status, endReason: result.endReason,
       unverified: result.unverified, usage: result.usage,
       ...(job ? { jobId: job.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] } : {}) });
-    return { replyId: reply.id };
+    return { replyId: reply.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] };
   } catch (error) {
     if(!logged)console.info("agent_turn",{turn:"agent",endReason:"error",status:"unavailable",
       modelCalls:0,toolCalls:0,tools:[],latencyMs:Date.now()-startedAt,unverifiedCount:0});
@@ -239,7 +239,8 @@ export async function POST(request: Request, context: RouteContext) {
           let next: AgentJob | null = null;
           try {
             next = (await jobs.finishAgentJob(job.id, "replyId" in outcome
-              ? { status: "done", replyMessageId: outcome.replyId }
+              ? { status: "done", replyMessageId: outcome.replyId,
+                ...(outcome.absorbedOwnerMessageIds.length ? { absorbedOwnerMessageIds: outcome.absorbedOwnerMessageIds } : {}) }
               : { status: "failed", errorCode: outcome.errorCode })).continuation;
           } catch { console.error("agent_job_finish_failed"); } // stale timeout will fail it in 180s
           job = null;

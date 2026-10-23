@@ -6,7 +6,7 @@ import { toAgentJob, type AgentJob, type AgentJobStartMode, type AgentJobStep } 
 import type { OwnerFollowUp } from "./loop.server";
 
 /** Server side of background chat turns (CHAT_JOBS). All writes go through the
- * service-role-only RPCs in migration 20261023000085; owners can only read. */
+ * service-role-only RPCs in migration 20261023000086; owners can only read. */
 export async function startAgentJob(scope: ConversationScope, threadId: string, ownerMessageId: string):
   Promise<{ mode: AgentJobStartMode; job: AgentJob }> {
   const { data, error } = await createAdminSupabaseClient().rpc("ai_agent_job_start", {
@@ -36,11 +36,12 @@ export async function takeAgentJobInbox(jobId: string, max: number): Promise<Own
 
 /** Exactly-once finish (the RPC ignores a second finish). Retried once because a job
  * stuck in "running" would block the thread until the 180s stale timeout. */
-export async function finishAgentJob(jobId: string, outcome: { status: "done"; replyMessageId: string } |
+export async function finishAgentJob(jobId: string, outcome: { status: "done"; replyMessageId: string; absorbedOwnerMessageIds?: string[] } |
   { status: "failed"; errorCode: string }): Promise<{ continuation: AgentJob | null }> {
   const params = { p_job_id: jobId, p_status: outcome.status,
     p_reply_message_id: outcome.status === "done" ? outcome.replyMessageId : null,
-    p_error_code: outcome.status === "failed" ? outcome.errorCode : null };
+    p_error_code: outcome.status === "failed" ? outcome.errorCode : null,
+    p_absorbed_ids: outcome.status === "done" ? outcome.absorbedOwnerMessageIds ?? [] : [] };
   for (let attempt = 0; ; attempt++) {
     const { data, error } = await createAdminSupabaseClient().rpc("ai_agent_job_finish", params);
     if (!error) {

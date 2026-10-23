@@ -151,7 +151,8 @@ begin
    where id = p_job_id and status = 'running';
 end $$;
 
--- Hand the loop up to p_limit queued owner messages (oldest first), exactly once.
+-- Peek at up to p_limit queued owner messages (oldest first). Do not consume yet:
+-- only IDs included in a successfully persisted reply are acknowledged at finish.
 create or replace function public.ai_agent_job_take_inbox(p_job_id uuid, p_limit integer)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -169,7 +170,7 @@ begin
            order by m.created_at, m.id
            limit greatest(0, least(coalesce(p_limit, 0), 10))) m;
   update public.ai_agent_jobs
-     set consumed = consumed || fresh, heartbeat_at = now(), updated_at = now()
+     set heartbeat_at = now(), updated_at = now()
    where id = j.id;
   return coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'text', m.text_content)
                      order by m.created_at, m.id)
@@ -179,7 +180,8 @@ end $$;
 -- Finish a turn exactly once. If owner messages arrived too late to be read, start one
 -- continuation turn for them atomically and return it (the server runs it next).
 create or replace function public.ai_agent_job_finish(
-  p_job_id uuid, p_status text, p_reply_message_id uuid, p_error_code text
+  p_job_id uuid, p_status text, p_reply_message_id uuid, p_error_code text,
+  p_absorbed_ids uuid[]
 ) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -197,8 +199,17 @@ begin
   if j.status <> 'running' then
     return jsonb_build_object('job', to_jsonb(j), 'continuation', null);
   end if;
+  -- Only IDs observed by a completed model response and persisted to the reply
+  -- are acknowledged. A timed-out inbox RPC or model failure cannot claim them.
+  if p_status = 'done' and (
+      cardinality(coalesce(p_absorbed_ids, '{}'::uuid[])) > 5 or
+      not (coalesce(p_absorbed_ids, '{}'::uuid[]) <@ j.inbox)
+  ) then raise exception 'invalid_absorbed_ids'; end if;
   update public.ai_agent_jobs
-     set status = p_status,
+     set consumed = case when p_status = 'done'
+                         then coalesce(p_absorbed_ids, '{}'::uuid[])
+                         else '{}'::uuid[] end,
+         status = p_status,
          reply_message_id = case when p_status = 'done' then p_reply_message_id end,
          error_code = case when p_status = 'failed' then coalesce(p_error_code, 'agent_turn_failed') end,
          finished_at = now(), heartbeat_at = now(), updated_at = now()
@@ -222,8 +233,8 @@ end $$;
 revoke all on function public.ai_agent_job_start(uuid, uuid, uuid, uuid) from public, anon, authenticated;
 revoke all on function public.ai_agent_job_progress(uuid, jsonb) from public, anon, authenticated;
 revoke all on function public.ai_agent_job_take_inbox(uuid, integer) from public, anon, authenticated;
-revoke all on function public.ai_agent_job_finish(uuid, text, uuid, text) from public, anon, authenticated;
+revoke all on function public.ai_agent_job_finish(uuid, text, uuid, text, uuid[]) from public, anon, authenticated;
 grant execute on function public.ai_agent_job_start(uuid, uuid, uuid, uuid) to service_role;
 grant execute on function public.ai_agent_job_progress(uuid, jsonb) to service_role;
 grant execute on function public.ai_agent_job_take_inbox(uuid, integer) to service_role;
-grant execute on function public.ai_agent_job_finish(uuid, text, uuid, text) to service_role;
+grant execute on function public.ai_agent_job_finish(uuid, text, uuid, text, uuid[]) to service_role;

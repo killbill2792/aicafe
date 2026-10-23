@@ -77,7 +77,12 @@ export function useAgentJobWatcher(threadId: string | null, active: boolean, onS
           if (latest) notifyOnce(latest);
         }
         return latest;
-      } catch { return undefined; /* a failed lookup must never stop retries */ }
+      } catch {
+        // Realtime reads and stale-deadline reads need the same bounded retry
+        // as the initial lookup. One network failure must not silence recovery.
+        if (!finished && !controller.signal.aborted) startPolling();
+        return undefined;
+      }
     };
     const scheduleWatchdog = (job: AgentJob) => {
       if (watchdog) clearTimeout(watchdog);

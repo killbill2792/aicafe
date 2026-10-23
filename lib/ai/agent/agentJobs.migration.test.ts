@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 /** Static checks only (no database here); mirrors lib/ai/conversations/migration.test.ts. */
-const sql = readFileSync(new URL("../../../supabase/migrations/20261023000085_agent_jobs.sql", import.meta.url), "utf8");
+const sql = readFileSync(new URL("../../../supabase/migrations/20261023000086_agent_jobs.sql", import.meta.url), "utf8");
 
 describe("agent jobs migration contract", () => {
   it("scopes every job to one owner, café and conversation", () => {
@@ -27,6 +27,17 @@ describe("agent jobs migration contract", () => {
     }
     expect(sql.match(/security definer/gu)?.length).toBe(4);
     expect(sql.match(/set search_path = public/gu)?.length).toBe(4);
+  });
+  it("acknowledges follow-ups only at successful finish so timed-out inbox reads remain queued", () => {
+    const take = sql.split("create or replace function public.ai_agent_job_take_inbox")[1]
+      ?.split("create or replace function public.ai_agent_job_finish")[0];
+    const finish = sql.split("create or replace function public.ai_agent_job_finish")[1];
+    expect(take).toBeDefined();
+    expect(take).not.toMatch(/set consumed\s*=/u);
+    expect(finish).toContain("p_absorbed_ids uuid[]");
+    expect(finish).toContain("set consumed = case when p_status = 'done'");
+    expect(finish).toContain("not (coalesce(p_absorbed_ids, '{}'::uuid[]) <@ j.inbox)");
+    expect(finish).toContain("not (m.id = any(j.consumed))");
   });
   it("publishes job changes for live progress only if Realtime exists", () => {
     expect(sql).toContain("supabase_realtime");

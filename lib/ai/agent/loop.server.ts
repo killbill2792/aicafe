@@ -77,6 +77,8 @@ export async function runAgentTurn(args: {
     ...(args.memoryFacts ? [{ role: "developer", content: args.memoryFacts }] : []),
     ...(args.history ?? []), { role: "user", content: args.ownerText }];
   const absorbed: OwnerFollowUp[] = [];
+  // Mark inbox messages answered only when a model response has completed.
+  const deliveredIds = new Set<string>();
   // Reads queued owner messages into the conversation before the next model step.
   const readFollowUps = async (): Promise<number> => {
     if (!args.takeFollowUps || absorbed.length >= 5 || now() >= workDeadline) return 0;
@@ -145,6 +147,10 @@ export async function runAgentTurn(args: {
       }
       if (!completed) throw new Error("provider_incomplete");
       input.push(...output);
+      // A tool-only response is not an answer. Keep those follow-ups unclaimed
+      // until a completed text response can be persisted.
+      if (!calls.length && text.length > callTextStart)
+        for (const message of absorbed) deliveredIds.add(message.id);
       return calls;
     } catch (error) {
       const discardChars = text.length - callTextStart;
@@ -250,6 +256,8 @@ export async function runAgentTurn(args: {
               }
             }
             if (!completed) throw new Error("provider_incomplete");
+            if (text.length > finalTextStart)
+              for (const message of absorbed) deliveredIds.add(message.id);
           } catch (error) {
             const discardChars = text.length - finalTextStart;
             if (discardChars > 0) {
@@ -270,5 +278,5 @@ export async function runAgentTurn(args: {
     evidence:compactEvidence(results.map(r=>r.result)),
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
     results: results.map(r => r.result), usage,
-    ...(absorbed.length ? { absorbedOwnerMessageIds: absorbed.map(m => m.id) } : {}) };
+    ...(deliveredIds.size ? { absorbedOwnerMessageIds: [...deliveredIds] } : {}) };
 }

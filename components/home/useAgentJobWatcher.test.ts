@@ -124,6 +124,32 @@ describe("useAgentJobWatcher resume and recovery", () => {
     expect(onSettled).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps polling when a stale-deadline recheck fails with Realtime subscribed", async () => {
+    hooks.configured = true;
+    const running = baseJob();
+    const done = { ...running, status: "done" as const };
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      calls++;
+      if (calls === 3) throw new Error("temporary outage");
+      return Response.json({ job: calls > 3 ? done : running });
+    }));
+    const onSettled = settle();
+    useAgentJobWatcher(thread, true, onSettled);
+    await vi.advanceTimersByTimeAsync(0);
+    hooks.realtimeStatus?.("SUBSCRIBED");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(2);
+    await vi.advanceTimersByTimeAsync(AGENT_JOB_STALE_MS + 1);
+    expect(calls).toBe(3);
+    await vi.advanceTimersByTimeAsync(JOB_POLL_MS);
+    expect(calls).toBe(4);
+    expect(lastSeenJob()?.status).toBe("done");
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(JOB_WATCH_MAX_MS);
+    expect(onSettled).toHaveBeenCalledTimes(1);
+  });
+
   it("enforces the 240s limit with a healthy but silent Realtime socket", async () => {
     hooks.configured = true;
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ job: baseJob() })));

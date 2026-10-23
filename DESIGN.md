@@ -20,7 +20,7 @@
 | Idempotency | `clientMessageId` unique per thread, `getExistingSupervisorReply` replay | job row unique per owner message; `ai_agent_job_start` returns `attached` for duplicates |
 | Approval cards | `proposal_card` blocks only from trusted tool results; `SupervisorProposalCard` (3 s poll prior art) | `memory_card` block built the same way; `MemoryCard.tsx` |
 | Memory store | `ai_team_rules` + `TeamRulesService` (draft → approve/reject, version check, RLS) | `getRule(id)` + `GET /api/ai/rules/[id]`; active rules loaded into context; `remember_cafe_fact` tool creates drafts only |
-| Background work | — | `ai_agent_jobs` table + 4 service-role RPCs (migration `20261023000085`), `after()` keep-alive, `GET /api/ai/threads/[id]/jobs`, `useAgentJobWatcher` (Realtime + poll fallback) |
+| Background work | — | `ai_agent_jobs` table + 4 service-role RPCs (migration `20261023000086`), `after()` keep-alive, `GET /api/ai/threads/[id]/jobs`, `useAgentJobWatcher` (Realtime + poll fallback) |
 | Copy | `messages/{en,es,ar}.json` | `ChatExperience` and `MemoryCard` namespaces (same keys in all three, tested) |
 
 Tool names are **unchanged**: the 22 names asserted in `agent.test.ts` remain the default list. `remember_cafe_fact` is passed through `extraTools`, and only when `CHAT_MEMORY` is on. No `checkNumbers` logic was touched.

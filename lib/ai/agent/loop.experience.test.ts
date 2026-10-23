@@ -136,6 +136,35 @@ describe("mid-run follow-ups (CHAT_JOBS)", () => {
       expect(result.absorbedOwnerMessageIds).toBeUndefined();
     } finally { vi.useRealTimers(); }
   });
+  it("does not acknowledge inbox messages if every model response after reading them fails", async () => {
+    const failed = { type: "response.failed" };
+    const { provider, requests } = recording([
+      [call("get_menu_items", '{"query":null,"limit":null}', "c1"), completed],
+      [failed],
+      [failed],
+    ]);
+    const box = inbox([[{ id: "88888888-8888-4888-8888-888888888888", text: "and oat milk?" }]]);
+    const result = await runAgentTurn({ ownerText: "Latte price?", context, provider,
+      takeFollowUps: box.take });
+    expect(requests).toHaveLength(3);
+    expect(result.absorbedOwnerMessageIds).toBeUndefined();
+    expect(result.endReason).toBe("provider_error");
+  });
+
+  it("does not claim follow-ups from a tool-only model response when no final answer completes", async () => {
+    const failed = { type: "response.failed" };
+    const { provider, requests } = recording([
+      [call("get_menu_items", '{"query":null,"limit":null}', "c1"), completed],
+      [call("get_menu_items", '{"query":null,"limit":null}', "c2"), completed],
+      [failed],
+      [failed],
+    ]);
+    const box = inbox([[{ id: "99999999-9999-4999-8999-999999999999", text: "any oat milk?" }]]);
+    const result = await runAgentTurn({ ownerText: "Latte?", context, provider, takeFollowUps: box.take });
+    expect(requests).toHaveLength(4);
+    expect(result.absorbedOwnerMessageIds).toBeUndefined();
+  });
+
   it("caps absorbed follow-ups at five per turn", async () => {
     const many = Array.from({ length: 5 }, (_, i) => ({ id: `3333333${i}-3333-4333-8333-333333333333`, text: "more " + i }));
     const { requests, provider } = recording([[text("A."), completed], [text("B."), completed]]);
