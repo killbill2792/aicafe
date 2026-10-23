@@ -57,7 +57,7 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
   chosenIds.length?allRows((a,b)=>db.from("pantry_stock_purchases").select("ingredient_id,purchase_date,quantity_base")
     .eq("business_id",businessId).in("ingredient_id",chosenIds).gte("purchase_date",input.from).lte("purchase_date",input.to)
     .order("id").range(a,b),8000):Promise.resolve([]),
-  allRows((a,b)=>db.from("order_lines").select("id,menu_item_id,quantity,modifiers,voided,orders!inner(business_id,business_date,closed_at,pos_order_id)")
+  allRows((a,b)=>db.from("order_lines").select("id,menu_item_id,quantity,modifiers,voided,orders!inner(business_id,business_date,closed_at,pos_order_id,location_id)")
     .eq("orders.business_id",businessId).gte("orders.business_date",input.from).lte("orders.business_date",input.to)
     .like("orders.pos_order_id","toast:%").order("id").range(a,b),20000),
  ]);
@@ -90,7 +90,7 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
  // Every recorded option must resolve through a stable Toast modifier id or an
  // unambiguous product-level ingredient match. Anything else remains unknown.
  const salesRows:UsageSale[]=sales.filter(s=>!s.voided).map(s=>{
-  const order=s.orders as unknown as {closed_at:string;business_date:string};
+  const order=s.orders as unknown as {closed_at:string;business_date:string;location_id:string|null};
   const savedMods=Array.isArray(s.modifiers)?s.modifiers as Array<{posModifierId?:string;name?:string}>:[];
   const optionRows=addonsByItem.get(s.menu_item_id??"")??[];
   const normalized=savedMods.map((m,index)=>{
@@ -114,7 +114,7 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
    return {posModifierId:key||"unmapped:"+s.id+":"+index,name:m.name??""};
   });
   return {menuItemId:s.menu_item_id,quantity:Number(s.quantity),businessDate:order.business_date,
-   closedAt:order.closed_at,modifiers:normalized};
+   closedAt:order.closed_at,locationId:order.location_id,modifiers:normalized};
  });
  const rows=calculateUsage({ingredients:selected.map(i=>({id:i.id,name:i.name,unit:i.base_unit as UsageIngredient["unit"]})),
   recipes:recipes.map(r=>({menuItemId:r.menu_item_id,ingredientId:r.ingredient_id,quantity:Number(r.quantity)} satisfies UsageRecipe)),
