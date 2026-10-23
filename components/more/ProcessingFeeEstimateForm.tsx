@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useLocale } from "next-intl";
-import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, requiresAverageTicket, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, requiresAverageTicket, showAverageTicketField, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
@@ -501,7 +501,7 @@ export default function ProcessingFeeEstimateForm({
           </p>
         )}
 
-        {(advanced || needsAverageTicket) && (
+        {showAverageTicketField(advanced, activeRules, sourceSummary.untrustedFeeDays) && (
           <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
             <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} ${labels.info}`}>{labels.averageTicket}</FieldTitle>
             <div className="flex items-center gap-2">
