@@ -106,6 +106,7 @@
     "statementMissingDate": "Date",
     "statementMissingCategory": "Category",
     "statementSaveError": "Could not save the statement. Check the lines and try again.",
+    "statementMissingCancel": "Cancel",
     "statementMissingConfirm": "Add line",
     "title": "Add a cost",
     "placeholder": "Photo of receipt, bank statement upload, voice entry and manual entry are coming in the next milestone.",
