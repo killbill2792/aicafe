@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useLocale } from "next-intl";
-import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, requiresAverageTicket, showAverageTicketField, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, requiresAverageTicket, showAverageTicketField, untrustedDaysFromEffectiveDate, requiredRateMixErrors, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
@@ -83,7 +83,7 @@ type SourceSummary = {
   actualProviders: string[];
   actualFeeCents: number;
   trustedOrderDays: number;
-  untrustedFeeDays: number;
+  untrustedFeeDates: string[];
 };
 
 function percentFromBps(value: number): string {
@@ -218,6 +218,8 @@ export default function ProcessingFeeEstimateForm({
   }
 
   function save(coverMissing = false) {
+    const submittedEffectiveFrom = coverMissing ? missingCoverageSaveOptions(shownDays, today).effectiveFrom : effectiveFrom;
+    const relevantFeeDays = untrustedDaysFromEffectiveDate(sourceSummary.untrustedFeeDates, submittedEffectiveFrom);
     const submittingRules = activeRateDrafts(rules, advanced);
     const errors = validateRequiredFeeFields({
       processorLabel, effectiveFrom, cardSalesShare: processedSalesShare,
@@ -234,10 +236,12 @@ export default function ProcessingFeeEstimateForm({
           if (!value.trim() || (name !== "label" && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > (name === "percentageRate" || name === "fixedFee" ? 50 : 100)))) invalid(rule.id + "-" + name, labels.requiredRule);
         }
       }
-      if (submittingRules.reduce((sum, rule) => sum + (bpsFromPercent(rule.salesMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-salesMix", labels.invalidMix);
-      if (submittingRules.reduce((sum, rule) => sum + (bpsFromPercent(rule.transactionMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-transactionMix", labels.invalidMix);
+
+      const mixErrors = requiredRateMixErrors(submittingRules, processedSalesShare, processedTransactionShare);
+      if (mixErrors.salesMix) invalid(submittingRules[0].id + "-salesMix", labels.invalidMix);
+      if (mixErrors.transactionMix) invalid(submittingRules[0].id + "-transactionMix", labels.invalidMix);
     }
-    if (requiresAverageTicket(submittingRules, sourceSummary.untrustedFeeDays) && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
+    if (requiresAverageTicket(submittingRules, relevantFeeDays, advanced ? processedTransactionShare : processedSalesShare) && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       setError(labels.incompleteWarning);
@@ -295,8 +299,7 @@ export default function ProcessingFeeEstimateForm({
       return;
     }
 
-    const hasFixedFee = parsedRules.some((rule) => (rule?.fixedFeeCents ?? 0) > 0);
-    const needsAverageTicket = hasFixedFee && sourceSummary.untrustedFeeDays > 0;
+    const needsAverageTicket = requiresAverageTicket(ruleDrafts, relevantFeeDays, advanced ? processedTransactionShare : processedSalesShare);
     const averageProcessedTicketCents = needsAverageTicket ? centsFromDollars(averageTicket, true) : null;
     if (needsAverageTicket && averageProcessedTicketCents === null) {
       setError(labels.incompleteWarning);
@@ -306,7 +309,7 @@ export default function ProcessingFeeEstimateForm({
     startTransition(async () => {
       const result = await saveOwnerProcessingFeeEstimatePlan({
         processorLabel: processorLabel.trim(),
-        effectiveFrom: coverMissing ? missingCoverageSaveOptions(shownDays, today).effectiveFrom : effectiveFrom,
+        effectiveFrom: submittedEffectiveFrom,
         processedSalesShareBps: salesShareBps,
         processedTransactionShareBps: transactionShareBps,
         averageProcessedTicketCents,
@@ -337,7 +340,9 @@ export default function ProcessingFeeEstimateForm({
   };
   const activeRules = activeRateDrafts(rules, advanced);
   const firstFixedFee = Number(firstRule.fixedFee || 0);
-  const needsAverageTicket = requiresAverageTicket(activeRules, sourceSummary.untrustedFeeDays);
+  const effectiveDayCount = untrustedDaysFromEffectiveDate(sourceSummary.untrustedFeeDates, effectiveFrom);
+  const oneTapDayCount = untrustedDaysFromEffectiveDate(sourceSummary.untrustedFeeDates, firstUncoveredSalesDay(shownDays, today));
+  const needsAverageTicket = requiresAverageTicket(activeRules, effectiveDayCount, advanced ? processedTransactionShare : processedSalesShare);
   const completeActualCoverage =
     shownCoverage.salesDays > 0 && shownCoverage.actualDays === shownCoverage.salesDays && shownCoverage.missingDays === 0;
 
@@ -501,7 +506,7 @@ export default function ProcessingFeeEstimateForm({
           </p>
         )}
 
-        {showAverageTicketField(advanced, activeRules, sourceSummary.untrustedFeeDays) && (
+        {showAverageTicketField(advanced, activeRules, Math.max(effectiveDayCount, oneTapDayCount), advanced ? processedTransactionShare : processedSalesShare) && (
           <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
             <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} ${labels.info}`}>{labels.averageTicket}</FieldTitle>
             <div className="flex items-center gap-2">
