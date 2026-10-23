@@ -31,12 +31,13 @@ VALUES (:'proposal_id',:'business',:'owner',:'thread_id',gen_random_uuid(),
   'preview',jsonb_build_array(jsonb_build_object('label','prep_minutes_before_open','before','0','after','30')),
   'payload',jsonb_build_object('rule','prep_minutes_before_open','boolean_value',null,'number_value',30)),
  repeat('a',64),'{}','{"durationDays":1,"metricScope":"staff"}','en');
-DO $$
-BEGIN
- IF EXISTS(SELECT 1 FROM public.team_rules WHERE business_id=current_setting('test.approval.business',true)::uuid)
- THEN RAISE EXCEPTION 'inert card unexpectedly wrote staff data'; END IF;
-END $$;
 SELECT set_config('test.approval.business',:'business',true);
+SELECT set_config('test.approval.proposal',:'proposal_id',true);
+DO $
+BEGIN
+ IF EXISTS(SELECT 1 FROM public.team_rules WHERE business_id=current_setting('test.approval.business')::uuid)
+ THEN RAISE EXCEPTION 'inert card unexpectedly wrote staff data'; END IF;
+END $;
 -- A manager, foreign café and other thread cannot approve this private card.
 DO $$
 DECLARE denied boolean;
@@ -46,7 +47,7 @@ BEGIN
  PERFORM public.supervisor_transition_proposal(
  current_setting('test.approval.business')::uuid,
  (SELECT user_id FROM public.memberships WHERE business_id=current_setting('test.approval.business')::uuid AND role='manager'),
- (SELECT id FROM public.supervisor_proposals LIMIT 1),1,'approve',NULL);
+ current_setting('test.approval.proposal')::uuid,1,'approve',NULL);
  EXCEPTION WHEN OTHERS THEN denied:=true;
  END;
  IF NOT denied THEN RAISE EXCEPTION 'manager bypassed approval'; END IF;

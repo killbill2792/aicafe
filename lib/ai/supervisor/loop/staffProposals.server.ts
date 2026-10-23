@@ -169,9 +169,9 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const d=input as z.infer<typeof staffProposalInputs.propose_send_schedule>;
    ensure(isoDay(d.week_start)===1,"Select a Monday");
    const week=shifts.filter(x=>x.local_date>=d.week_start&&x.local_date<=add(d.week_start,6));
-   const eligible=people.filter(p=>p.active&&p.phone_e164&&p.whatsapp_opt_in&&week.some(s=>s.employee_id===p.id));
+   const eligible=people.filter(p=>p.active&&week.some(s=>s.employee_id===p.id));
    ensure(week.length>0,"No shifts scheduled for this week");
-   ensure(eligible.length>0,"No opted-in staff member with a phone number for this week");
+
    item(copy.week+" "+d.week_start,copy.notPrepared,
      copy.preparedNotSent+": "+eligible.map(p=>p.display_name).join(", ")+
      "\n"+week.filter(s=>eligible.some(p=>p.id===s.employee_id))
