@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { Link } from "@/i18n/navigation";
 import PlainIcon from "@/components/icons/PlainIcon";
 import Money from "@/components/shared/Money";
 import { saveRecurringCost, deleteRecurringCost } from "@/lib/actions/expenses";
@@ -14,7 +15,7 @@ const OTHER_CATEGORY: ExpenseCategoryCode = "other";
 // Sentinel key (not a real bill id) for the blank "add another Other bill" form.
 const NEW_OTHER_KEY = "__new_other__";
 
-type BillFormLabels = { amountLabel: string; dueDayLabel: string; labelLabel: string; labelPlaceholder: string; save: string; delete: string };
+type BillFormLabels = { amountLabel: string; amountHint: string; dueDayLabel: string; dueDayOptional: string; labelLabel: string; labelPlaceholder: string; save: string; delete: string; confirmRemove: string; saveError: string };
 
 function BillForm({
   existing,
@@ -23,7 +24,9 @@ function BillForm({
   showLabelField,
   onDone,
   labels,
+  amountInputRef,
 }: {
+  amountInputRef?: React.Ref<HTMLInputElement>;
   existing: RecurringCostRow | null;
   category: ExpenseCategoryCode;
   defaultLabel: string;
@@ -33,7 +36,8 @@ function BillForm({
 }) {
   const [label, setLabel] = useState(existing?.label ?? "");
   const [amount, setAmount] = useState(existing ? String(existing.amountCents / 100) : "");
-  const [dueDay, setDueDay] = useState(existing?.dueDay ? String(existing.dueDay) : "1");
+  const [dueDay, setDueDay] = useState(existing?.dueDay ? String(existing.dueDay) : "");
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const finalLabel = showLabelField ? label.trim() : defaultLabel;
@@ -44,7 +48,7 @@ function BillForm({
   function handleSave() {
     if (!canSave || amountCents === null) return;
     startTransition(async () => {
-      await saveRecurringCost({
+      const result = await saveRecurringCost({
         id: existing?.id,
         category,
         label: finalLabel,
@@ -52,15 +56,17 @@ function BillForm({
         frequency: "monthly",
         dueDay: Number(dueDay) || undefined,
       });
-      onDone();
+      if (result.ok) onDone();
+      else setError(result.error);
     });
   }
 
   function handleDelete() {
-    if (!existing) return;
+    if (!existing || !window.confirm(labels.confirmRemove)) return;
     startTransition(async () => {
-      await deleteRecurringCost(existing.id);
-      onDone();
+      const result = await deleteRecurringCost(existing.id);
+      if (result.ok) onDone();
+      else setError(result.error);
     });
   }
 
@@ -81,6 +87,7 @@ function BillForm({
       <label className="flex items-center justify-between gap-2 text-sm font-semibold">
         {labels.amountLabel}
         <input
+          ref={amountInputRef}
           type="number"
           inputMode="decimal"
           min={0}
@@ -90,8 +97,9 @@ function BillForm({
           className="h-11 w-28 rounded-xl border border-line px-2.5 text-end text-base"
         />
       </label>
+      <p className="text-xs text-ink-muted">{labels.amountHint}</p>
       <label className="flex items-center justify-between gap-2 text-sm font-semibold">
-        {labels.dueDayLabel}
+        <span>{labels.dueDayLabel} <span className="font-normal text-ink-muted">{labels.dueDayOptional}</span></span>
         <input
           type="number"
           min={1}
@@ -101,6 +109,7 @@ function BillForm({
           className="h-11 w-20 rounded-xl border border-line px-2.5 text-end text-base"
         />
       </label>
+      {error && <p role="alert" className="text-sm text-warn">{error || labels.saveError}</p>}
       <div className="flex gap-2">
         <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="h-11 flex-1 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40">
           {labels.save}
@@ -123,10 +132,17 @@ export default function BillsManager({
 }: {
   bills: RecurringCostRow[];
   categoryLabels: Record<ExpenseCategoryCode, string>;
-  labels: BillFormLabels & { addHint: string; edit: string; addAnother: string; totalMonthly: string };
+  labels: BillFormLabels & { addHint: string; missing: string; edit: string; addAnother: string; totalMonthly: string; variableCostHint: string };
   initialCategory?: ExpenseCategoryCode | null;
 }) {
   const [openKey, setOpenKey] = useState<string | null>(initialCategory);
+  const targetRef = useRef<HTMLDivElement | null>(null);
+  const amountRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (!initialCategory || !SINGLE_SLOT_CATEGORIES.includes(initialCategory)) return;
+    targetRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
+    amountRef.current?.focus({ preventScroll: true });
+  }, [initialCategory]);
   const byCategory = new Map(bills.filter((b) => SINGLE_SLOT_CATEGORIES.includes(b.categoryCode)).map((b) => [b.categoryCode, b]));
   const otherBills = bills.filter((b) => b.categoryCode === OTHER_CATEGORY);
 
@@ -148,7 +164,7 @@ export default function BillsManager({
         const existing = byCategory.get(category) ?? null;
         const isOpen = openKey === category;
         return (
-          <div key={category} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
+          <div key={category} ref={initialCategory === category ? targetRef : undefined} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
             <button type="button" onClick={() => toggle(category)} className="flex items-center gap-3">
               <PlainIcon code={category} size={32} color="currentColor" />
               <span className="flex-1 text-start text-base font-bold">{categoryLabels[category]}</span>
@@ -157,12 +173,13 @@ export default function BillsManager({
                   <Money cents={existing.amountCents} />
                 </span>
               ) : (
-                <span className="text-sm font-semibold text-ink-muted">{labels.addHint}</span>
+                <span className="rounded-full bg-warn-tint px-2.5 py-1 text-xs font-bold text-warn">{labels.missing}</span>
               )}
             </button>
             {isOpen && (
               <BillForm
                 existing={existing}
+                amountInputRef={initialCategory === category ? amountRef : undefined}
                 category={category}
                 defaultLabel={categoryLabels[category]}
                 showLabelField={false}
@@ -224,6 +241,7 @@ export default function BillsManager({
           {labels.addAnother}
         </button>
       )}
+      <Link href="/add-cost" className="mt-2 text-sm text-ink-muted underline underline-offset-2">{labels.variableCostHint}</Link>
     </div>
   );
 }
