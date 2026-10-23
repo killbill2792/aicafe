@@ -7,7 +7,13 @@ vi.mock("@/lib/supabase/admin",()=>{
   note:null,active:true,created_at:"2026-10-23"};
  const history={code_id:"c2",business_id:"b1",redeemed_by:null,
   redeemed_at:"2026-10-23",access_end:"2027-01-23"};
- function query(table:string){
+ type Query={
+  order:(field:string)=>Query;
+  range:(from:number,to:number)=>Promise<{data:unknown[];error:null;count:number}>;
+  limit:(count:number)=>Promise<{data:unknown[];error:null}>;
+  in:(field:string,ids:string[])=>Promise<{data:unknown[];error:null}>;
+ };
+ function query(table:string):Query{
   return {
    order:(_field:string)=>query(table),
    range:async(from:number,to:number)=>{
