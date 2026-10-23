@@ -16,11 +16,16 @@ export type PosOrderLine = {
   modifiers: { posModifierId: string; name: string }[];
   voided: boolean;
   voidedBy: string | null;
+  category?: string | null;
 };
 
 export type PosOrder = {
   posOrderId: string;
   posLocationId: string | null;
+  posEmployeeId?: string | null;
+  diningOption?: string | null;
+  sourceChannel?: string | null;
+  guestCount?: number | null;
   closedAt: string; // ISO timestamp
   grossSalesCents: number;
   discountsCents: number;

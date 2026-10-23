@@ -365,12 +365,24 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
     return { ok: false, imported: 0, errorCode: "finalize_failed" };
   }
 
-  const { data: groupRows } = await supabase.from("csv_sales_import_groups").select("business_date, item_name, menu_item_id, source_row_count, conflict_reason").eq("job_id", jobId);
+  const { data: groupRows } = await supabase.from("csv_sales_import_groups").select("business_date, item_name, category, menu_item_id, source_row_count, conflict_reason").eq("job_id", jobId);
   const groups = groupRows ?? [];
   const promotedGroups = groups.filter((g) => g.conflict_reason !== "toast_covers_date");
   const affectedDates = [...new Set(promotedGroups.map((g) => g.business_date as string))];
   const skippedToastConflictDates = [...new Set(groups.filter((g) => g.conflict_reason === "toast_covers_date").map((g) => g.business_date as string))];
 
+  // Preserve staged category on canonical CSV lines; never invent customer facts.
+  for(const g of promotedGroups) {
+    const key=`csv-${g.business_date}-${g.item_name}${g.category?'|'+g.category:''}`.slice(0,120);
+    const {data:order,error:lookupError}=await supabase.from("orders").select("id")
+      .eq("business_id",businessId).eq("pos_order_id",key).maybeSingle();
+    if(lookupError)throw lookupError;
+    if(order) {
+      const {error:lineError}=await supabase.from("order_lines")
+        .update({category:g.category??null}).eq("order_id",order.id).eq("name",g.item_name);
+      if(lineError)throw lineError;
+    }
+  }
   const unmatchedCounts = new Map<string, number>();
   for (const g of groups) {
     if (!g.menu_item_id && g.conflict_reason !== "toast_covers_date") {
@@ -401,6 +413,10 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
     }
     await recomputeDailyRollup(supabase, businessId, date, { salesDataStatus: "actual" });
   }
+
+  const {data:businessRow,error:tzError}=await supabase.from("businesses").select("timezone").eq("id",businessId).single();
+  if(tzError)throw tzError;
+  await rebuildSalesFactRollups(supabase,businessId,affectedDates,businessRow.timezone);
 
   const unmatchedItems = [...unmatchedCounts.entries()].map(([name, rows]) => ({ name, rows }));
   const rejectedRows = (job.summary as SalesImportSummary | null)?.rejectedRows ?? [];
