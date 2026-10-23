@@ -10,23 +10,24 @@ const guid="00000000-0000-4000-8000-000000000001";
 const employeeGuid="00000000-0000-4000-8000-000000000002";
 const linkedGuid="00000000-0000-4000-8000-000000000003";
 const p={businessId:guid,locationId:guid,restaurantGuid:guid,businessDate:"2026-08-22",checksum:"a".repeat(64),confirmPromotion:true as const};
-function fixture(changed=false){
+function fixture(changed=false,rosterGuids:string[]=[employeeGuid]){
  const fields:Record<string,unknown[]>={};
  const writes:Record<string,unknown>[]=[];
  const from=(table:string)=>{
   const filters:Record<string,unknown>={};
   const chain={
    select:()=>chain,eq:(key:string,value:unknown)=>{(fields[table]??=[]).push([key,value]);filters[key]=value;return chain;},
+   in:(key:string,values:string[])=>{(fields[table]??=[]).push([key,values]);filters[key]=values;return chain;},
    update:(value:Record<string,unknown>)=>{if(table==="orders")writes.push(value);return chain;},
    then:(resolve:(value:{data:unknown[];error:null})=>unknown)=>{
     const data=table==="employees"?[]:table==="toast_employee_directory"?
-      [{employee_guid:employeeGuid,linked_employee_id:linkedGuid,deleted:true}]:
+      (filters.employee_guid as string[]).map(employee_guid=>({employee_guid,linked_employee_id:linkedGuid,deleted:true})):
       table==="orders"?[{net_sales_cents:100}]:[];
     return Promise.resolve({data,error:null}).then(resolve);
    },
    single:async()=> {
     if(table==="toast_pilot_days")return {data:changed||filters.snapshot_sha256!==p.checksum||filters.state!=="promoted"?
-      null:{orders_snapshot:[{posOrderId:`toast:${guid}:${guid}`,posEmployeeId:employeeGuid,lines:[]}]},error:null};
+      null:{orders_snapshot:rosterGuids.map(posEmployeeId=>({posOrderId:`toast:${guid}:${guid}`,posEmployeeId,lines:[]}))},error:null};
     if(table==="orders")return {data:{id:guid},error:null};
     if(table==="businesses")return {data:{timezone:"America/Los_Angeles"},error:null};
     return {data:null,error:null};
@@ -50,6 +51,16 @@ describe("guarded Toast fact enrichment",()=>{
   expect(fields.toast_employee_directory).not.toContainEqual(["deleted",false]);
   expect(writes).toMatchObject([{employee_id:linkedGuid}]);
   expect(mocks.rebuild).toHaveBeenCalledTimes(1);
+ });
+ it("queries approved historical links in bounded batches beyond a 1,000-person roster",async()=>{
+   const ids=Array.from({length:1205},(_,i)=>`00000000-0000-4000-8000-${String(i).padStart(12,"0")}`);
+   const {db,fields,writes}=fixture(false,ids);
+   await promoteVerifiedToastDay(db,p);
+   const batches=(fields.toast_employee_directory??[]).filter(v=>Array.isArray(v)&&v[0]==="employee_guid") as [string,string[]][];
+   expect(batches).toHaveLength(13);
+   expect(batches.every(b=>b[1].length<=100)).toBe(true);
+   expect(writes).toHaveLength(1205);
+   expect(writes.every(x=>x.employee_id===linkedGuid)).toBe(true);
  });
  it("rejects restaged or changed snapshots before touching canonical enrichment",async()=>{
   const {db,writes}=fixture(true);

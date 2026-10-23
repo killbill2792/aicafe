@@ -2,7 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {recomputeDailyRollup} from "@/lib/pos/rollup";
 import {rebuildSalesFactRollups} from "@/lib/pos/salesFactRollups";
-import {ToastApiError} from "./client";
+import {ToastApiError,GUID} from "./client";
 import {z} from "zod";
 export const promoteSchema=z.object({
  businessId:z.uuid(),locationId:z.uuid(),restaurantGuid:z.uuid(),
@@ -31,18 +31,32 @@ export async function promoteVerifiedToastDay(
       .eq("business_date",p.businessDate).eq("snapshot_sha256",p.checksum)
       .eq("state","promoted").single();
    if(pilotError||!pilot||!Array.isArray(pilot.orders_snapshot))throw new Error("Missing verified Toast snapshot");
-   const {data:staff,error:staffError}=await db.from("employees")
-      .select("id,pos_team_member_id").eq("business_id",p.businessId);
-   if(staffError)throw staffError;
-   const byPos=new Map((staff??[]).map(e=>[e.pos_team_member_id,e.id]));
-   // Guarded Toast employees are linked through the owner-approved directory,
-   // not by rewriting the canonical employee's POS identity.
-   const {data:directory,error:directoryError}=await db.from("toast_employee_directory")
-      .select("employee_guid,linked_employee_id").eq("business_id",p.businessId)
-      .eq("restaurant_guid",p.restaurantGuid); // Historic approved links remain valid after roster deletion
-   if(directoryError)throw directoryError;
-   const approved=new Map((directory??[]).filter(e=>e.linked_employee_id)
-     .map(e=>[e.employee_guid,e.linked_employee_id]));
+   // Look up only IDs present in the *promoted* snapshot. Both the approved
+   // roster (including deleted historical staff) and legacy POS IDs can exceed
+   // PostgREST's default 1,000-row cap if fetched without pagination.
+   const employeeGuids=[...new Set(pilot.orders_snapshot.flatMap((raw:unknown)=>{
+      if(!raw||typeof raw!=="object")return [];
+      const id=(raw as Record<string,unknown>).posEmployeeId;
+      return typeof id==="string"&&GUID.safeParse(id).success?[id]:[];
+   }))];
+   const approved=new Map<string,string>();
+   const byPos=new Map<string,string>();
+   for(let index=0;index<employeeGuids.length;index+=100){
+      const guids=employeeGuids.slice(index,index+100);
+      const prefixed=guids.map(guid=>`toast:${p.restaurantGuid}:${guid}`);
+      const [{data:directory,error:directoryError},{data:staff,error:staffError}]=await Promise.all([
+         db.from("toast_employee_directory").select("employee_guid,linked_employee_id")
+           .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+           .in("employee_guid",guids),
+         db.from("employees").select("id,pos_team_member_id")
+           .eq("business_id",p.businessId).in("pos_team_member_id",prefixed),
+      ]);
+      if(directoryError||staffError)throw directoryError??staffError;
+      for(const entry of directory??[])if(entry.linked_employee_id)
+         approved.set(entry.employee_guid,entry.linked_employee_id);
+      for(const entry of staff??[])if(entry.pos_team_member_id)
+         byPos.set(entry.pos_team_member_id,entry.id);
+   }
    for(const raw of pilot.orders_snapshot){
       if(!raw||typeof raw!=="object")throw new Error("Invalid Toast order snapshot");
       const rec=raw as Record<string,unknown>;
