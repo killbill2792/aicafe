@@ -49,7 +49,7 @@ export function validateRequiredFeeFields(
     return value.trim() !== "" && Number.isFinite(number) && number >= 0 && number <= 100;
   };
   if (!values.processorLabel.trim()) errors.processor = messages.requiredProcessor;
-  if (!values.coverMissing && (!/^\\d{4}-\\d{2}-\\d{2}$/.test(values.effectiveFrom) || Number.isNaN(Date.parse(values.effectiveFrom)))) {
+  if (!values.coverMissing && (!/^\d{4}-\d{2}-\d{2}$/.test(values.effectiveFrom) || Number.isNaN(Date.parse(values.effectiveFrom)))) {
     errors.effectiveFrom = messages.requiredEffectiveDate;
   }
   if (!percent(values.cardSalesShare)) errors.cardShare = messages.requiredCardShare;
