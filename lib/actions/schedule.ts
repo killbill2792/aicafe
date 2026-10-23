@@ -1,5 +1,6 @@
 "use server";
 import {z} from "zod";
+import {shiftInput,restoreShiftInput} from "@/lib/calc/scheduling/scheduleValidators";
 import {revalidatePath} from "next/cache";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 import {getCafeProfile} from "@/lib/data/getCafeProfile";
@@ -11,11 +12,7 @@ import {coverageGaps} from "@/lib/calc/scheduling/coverageGaps";
 import {shiftCost,roleWageAverages,aggregateCosts,elapsedMinutes,type CostShift} from "@/lib/calc/scheduling/shiftCost";
 const iso=z.iso.date(),hhmm=z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 const weekInput=z.strictObject({weekStart:iso});
-const shiftInput=z.strictObject({
- id:z.string().uuid().optional(),employeeId:z.string().uuid(),date:iso,
- start:hhmm,end:hhmm,breakMinutes:z.number().int().min(0).max(240).optional(),
- repeatWeekly:z.boolean().optional()
-});
+
 const monday=(date:string)=>{const d=new Date(date+"T12:00:00Z");return d.getUTCDay()===1;};
 const plusDays=(date:string,n:number)=>new Date(Date.parse(date+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
 export async function getWeekSchedule(raw:unknown){
@@ -122,7 +119,7 @@ export async function removeShift(raw:unknown){
  revalidatePath("/staff");return {ok:true as const,id:data.id as string};
 }
 export async function restoreShift(raw:unknown){
- const parsed=z.strictObject({id:z.string().uuid()}).safeParse(raw);
+ const parsed=restoreShiftInput.safeParse(raw);
  if(!parsed.success)return {ok:false as const,error:"invalid_input"};
  const owner=await requireSchedulingOwner();if(!owner)return {ok:false as const,error:"unauthorized"};
  const {data,error}=await owner.supabase.from("scheduled_shifts").update({deleted_at:null})
