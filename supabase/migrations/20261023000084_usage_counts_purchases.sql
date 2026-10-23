@@ -75,12 +75,13 @@ begin
   'staffId',l.external_employee_id::text
  ) order by l.clock_in,l.external_time_entry_id),'[]'::jsonb) into v_staff
  from public.toast_labor_entries l
+ join public.businesses b on b.id=l.business_id
  left join public.toast_employee_directory e
   on e.business_id=l.business_id and e.restaurant_guid=l.restaurant_guid
   and e.employee_guid=l.external_employee_id and e.deleted=false
  where l.business_id=p_business_id and not l.deleted
-  and l.clock_in < (p_to+1)::timestamptz
-  and coalesce(l.clock_out,now()) >= p_from::timestamptz;
+  and l.clock_in < ((p_to+1)::timestamp at time zone b.timezone)
+  and coalesce(l.clock_out,now()) >= (p_from::timestamp at time zone b.timezone);
  return jsonb_build_object('covered',v_covered,'staff',v_staff,
   'modifierMappings',coalesce((select jsonb_agg(jsonb_build_object(
    'posModifierId',c.provider_guid::text,'recipeId',c.linked_modifier_recipe_id::text))
