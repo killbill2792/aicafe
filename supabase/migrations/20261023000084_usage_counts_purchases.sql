@@ -81,7 +81,11 @@ begin
  where l.business_id=p_business_id and not l.deleted
   and l.clock_in < (p_to+1)::timestamptz
   and coalesce(l.clock_out,now()) >= p_from::timestamptz;
- return jsonb_build_object('covered',v_covered,'staff',v_staff);
+ return jsonb_build_object('covered',v_covered,'staff',v_staff,
+  'modifierMappings',coalesce((select jsonb_agg(jsonb_build_object(
+   'posModifierId',c.provider_guid::text,'recipeId',c.linked_modifier_recipe_id::text))
+   from public.toast_catalog_facts c where c.business_id=p_business_id
+   and c.kind='modifier' and c.linked_modifier_recipe_id is not null),'[]'::jsonb));
 end $$;
 revoke all on function public.pantry_usage_toast_evidence(uuid,date,date)
  from public,anon,authenticated;
