@@ -9,7 +9,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { recomputeDailyRollup } from "@/lib/pos/rollup";
 import { rebuildSalesFactRollups } from "@/lib/pos/salesFactRollups";
-import { readStagedSalesGroups, readCsvFeeOrders } from "@/lib/pos/csv/finalizeReads";
+import { readStagedSalesGroups, readCsvFeeOrders, csvPromotedOrderId } from "@/lib/pos/csv/finalizeReads";
 import { matchCatalogItem } from "@/lib/pos/catalogMatching";
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { NEW_EMPLOYEE } from "@/lib/constants";
@@ -376,7 +376,7 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
 
   // Preserve staged category on canonical CSV lines; never invent customer facts.
   for(const g of promotedGroups) {
-    const key=`csv-${g.business_date}-${g.item_name}${g.category?'|'+g.category:''}`.slice(0,120);
+    const key=csvPromotedOrderId(g.business_date,g.item_name,g.category);
     const {data:order,error:lookupError}=await supabase.from("orders").select("id")
       .eq("business_id",businessId).eq("pos_order_id",key).maybeSingle();
     if(lookupError)throw lookupError;

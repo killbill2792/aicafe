@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {readStagedSalesGroups,readCsvFeeOrders} from "./finalizeReads";
+import {readStagedSalesGroups,readCsvFeeOrders,csvPromotedOrderId} from "./finalizeReads";
 
 function fakeTable(
  name:string,
@@ -27,6 +27,20 @@ function fakeTable(
  return {db,requests};
 }
 describe("CSV finalizer reads all evidence before claiming completion",()=>{
+ it("matches SQL LEFT character truncation for emoji near the 120-character cutoff",()=>{
+   const prefix="csv-2026-08-22-";
+   const item="a".repeat(103)+"💛"+"b".repeat(40);
+   const key=csvPromotedOrderId("2026-08-22",item,null);
+   expect(Array.from(key)).toHaveLength(120);
+   expect(key).toBe(prefix+"a".repeat(103)+"💛"+"b");
+   expect(key.length).toBe(121);
+   expect(key).not.toBe((prefix+item).slice(0,120));
+ });
+ it("distinguishes SQL NULL and empty-string CSV categories",()=>{
+   expect(csvPromotedOrderId("2026-08-22","Tea",null)).toBe("csv-2026-08-22-Tea");
+   expect(csvPromotedOrderId("2026-08-22","Tea","")).toBe("csv-2026-08-22-Tea|");
+   expect(csvPromotedOrderId("2026-08-22","Tea","Hot")).toBe("csv-2026-08-22-Tea|Hot");
+ });
  it("fetches all 1,205 staged groups with scoped, ordered pagination",async()=>{
    const rows=Array.from({length:1205},(_,i)=>({
      business_date:"2026-08-22",item_name:"Latte-"+i,

@@ -32,3 +32,11 @@ export function readCsvFeeOrders(db: SupabaseClient, businessId: string, busines
       processing_fee_status:string|null;
     }>>;
 }
+
+/** Match SQL finalizer's LEFT(text,120) semantics exactly: PostgreSQL
+ * counts Unicode characters, not JavaScript UTF-16 code units. Empty string
+ * category is distinct from NULL and must still emit the pipe separator. */
+export function csvPromotedOrderId(date:string,itemName:string,category:string|null):string {
+  const text="csv-"+date+"-"+itemName+(category===null?"":"|"+category);
+  return Array.from(text).slice(0,120).join("");
+}
