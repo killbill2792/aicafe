@@ -162,6 +162,7 @@ export default function ProcessingFeeEstimateForm({
   const errorText = (key: string) => fieldErrors[key] ? <span role="alert" className="text-xs font-normal text-red-700">{fieldErrors[key]}</span> : null;
   const [isPending, startTransition] = useTransition();
   const [processorLabel, setProcessorLabel] = useState(plan?.processorLabel ?? providerLabel(sourceSummary.connectedProvider));
+  const [otherSelected, setOtherSelected] = useState(Boolean(plan?.processorLabel && !["Toast","Square","Clover"].some((name) => name.toLowerCase() === plan.processorLabel.toLowerCase())));
   const [effectiveFrom, setEffectiveFrom] = useState(firstUncoveredSalesDay(coverageDays, today));
   const [processedSalesShare, setProcessedSalesShare] = useState(() => { const value = initialCardSalesShareBps(plan?.processedSalesShareBps ?? null, sourceSummary.processorCount); return value === null ? "" : percentFromBps(value); });
   const [processedTransactionShare, setProcessedTransactionShare] = useState(
@@ -309,7 +310,7 @@ export default function ProcessingFeeEstimateForm({
 
   const shownCoverage = savedSummary ?? coverage;
   const connected = providerLabel(sourceSummary.connectedProvider);
-  const processorChoice = ["Toast", "Square", "Clover"].find((value) => value.toLowerCase() === processorLabel.toLowerCase()) ?? (processorLabel ? "Other" : "");
+  const processorChoice = ["Toast", "Square", "Clover"].find((value) => value.toLowerCase() === processorLabel.toLowerCase()) ?? (otherSelected ? "Other" : "");
   const firstRule = rules[0] ?? {
     id: "rule-1",
     label: "",
@@ -392,7 +393,7 @@ export default function ProcessingFeeEstimateForm({
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
           <FieldTitle help={labels.processorHelp} helpLabel={`${labels.processor} info`}>{labels.processor}</FieldTitle>
-          <select value={processorChoice} aria-invalid={Boolean(fieldErrors.processor)} ref={(node) => { inputRefs.current.processor = node; }} onChange={(event) => setProcessorLabel(event.target.value === "Other" ? "" : event.target.value)} className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor")}>
+          <select value={processorChoice} aria-invalid={Boolean(fieldErrors.processor)} ref={(node) => { inputRefs.current.processor = node; }} onChange={(event) => { setOtherSelected(event.target.value === "Other"); setProcessorLabel(event.target.value === "Other" ? "" : event.target.value); }} className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor")}>
             <option value="">{labels.selectProcessor}</option><option value="Toast">Toast</option><option value="Square">Square</option><option value="Clover">Clover</option><option value="Other">{labels.otherProcessor}</option>
           </select>
           {processorChoice === "Other" && <input
@@ -400,7 +401,8 @@ export default function ProcessingFeeEstimateForm({
             onChange={(event) => setProcessorLabel(event.target.value)}
             maxLength={80}
             placeholder={labels.otherProcessor}
-            className="min-h-12 rounded-xl border border-line px-3 text-base"
+            aria-invalid={Boolean(fieldErrors.processor)}
+            className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor") }
           />}
           {errorText("processor")}
         </label>
@@ -671,7 +673,7 @@ export default function ProcessingFeeEstimateForm({
       {showEstimate && (
         <button
           type="button"
-          onClick={save}
+          onClick={() => save()}
           disabled={isPending}
           className="min-h-14 rounded-full bg-accent px-5 text-base font-bold text-on-accent disabled:opacity-40"
         >
