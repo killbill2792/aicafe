@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useLocale } from "next-intl";
 import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
@@ -65,7 +65,7 @@ type Labels = {
   useRateForDays: string; daysCovered: string; selectProcessor: string; otherProcessor: string;
   requiredProcessor: string; requiredEffectiveDate: string; requiredCardShare: string;
   requiredRate: string; requiredRule: string; requiredAverageTicket: string;
-  invalidMix: string; uploadFeeReport: string; info: string; noNewCoverage: string; missingButton: string;
+  invalidMix: string; uploadFeeReport: string; info: string; noNewCoverage: string; missingButton: string; showDayBreakdown: string;
 };
 
 type RuleDraft = {
@@ -157,10 +157,18 @@ export default function ProcessingFeeEstimateForm({
   const fmt = (number: number) => new Intl.NumberFormat(locale).format(number);
   const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
   const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
+  const focusAfterReveal = useRef<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
   const borderError = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
   const errorText = (key: string) => fieldErrors[key] ? <span role="alert" className="text-xs font-normal text-red-700">{fieldErrors[key]}</span> : null;
   const [isPending, startTransition] = useTransition();
+  useEffect(() => {
+    const key = focusAfterReveal.current;
+    if (key && inputRefs.current[key]) {
+      inputRefs.current[key]?.focus();
+      focusAfterReveal.current = null;
+    }
+  }, [fieldErrors]);
   const [processorLabel, setProcessorLabel] = useState(plan?.processorLabel ?? providerLabel(sourceSummary.connectedProvider));
   const [otherSelected, setOtherSelected] = useState(() => {
     const name = plan?.processorLabel ?? sourceSummary.connectedProvider;
@@ -207,6 +215,18 @@ export default function ProcessingFeeEstimateForm({
     setRules((current) => (current.length > 1 ? current.filter((rule) => rule.id !== id) : current));
   }
 
+  function expandAdvanced() {
+    if (!advanced) {
+      // The simple rate already has all the information the advanced rule needs.
+      // Reveal optional controls without silently turning valid simple inputs invalid.
+      setProcessedTransactionShare((share) => share.trim() ? share : processedSalesShare);
+      setRules((current) => current.map((rule, index) =>
+        index === 0 && !rule.label.trim() ? { ...rule, label: labels.standardRate } : rule,
+      ));
+    }
+    setAdvanced((value) => !value);
+  }
+
   function save(coverMissing = false) {
     const errors = validateRequiredFeeFields({
       processorLabel, effectiveFrom, cardSalesShare: processedSalesShare,
@@ -230,8 +250,17 @@ export default function ProcessingFeeEstimateForm({
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       setError(labels.incompleteWarning);
-      if (Object.keys(errors).some((key) => key.includes("-") || key === "averageTicket" || key === "transactionShare")) setAdvanced(true);
-      requestAnimationFrame(() => inputRefs.current[Object.keys(errors)[0]]?.focus());
+      const first = Object.keys(errors)[0];
+      if (!advanced && (first === "averageTicket" || first === "transactionShare" || first.includes("-"))) {
+        setProcessedTransactionShare((share) => share.trim() ? share : processedSalesShare);
+        setRules((current) => current.map((rule, index) =>
+          index === 0 && !rule.label.trim() ? { ...rule, label: labels.standardRate } : rule,
+        ));
+        setAdvanced(true);
+        focusAfterReveal.current = first;
+      } else {
+        requestAnimationFrame(() => inputRefs.current[first]?.focus());
+      }
       return;
     }
     setError(null);
@@ -491,7 +520,7 @@ export default function ProcessingFeeEstimateForm({
 
         <button
           type="button"
-          onClick={() => { if (!advanced && !processedTransactionShare.trim()) setProcessedTransactionShare(processedSalesShare); setAdvanced((value) => !value); }}
+          onClick={expandAdvanced}
           aria-expanded={advanced}
           className="min-h-12 rounded-full border border-line px-4 text-sm font-bold text-ink"
         >
@@ -665,7 +694,11 @@ export default function ProcessingFeeEstimateForm({
             <strong className="text-xl text-warn">{fmt(shownCoverage.missingDays)}</strong>
           </div>
         </div>
-        <div className="mt-4 divide-y divide-line" aria-label={labels.coverageTitle}>
+        <details className="mt-4 border-t border-line pt-3">
+          <summary className="min-h-12 cursor-pointer py-3 text-sm font-bold text-ink">
+            {labels.showDayBreakdown}
+          </summary>
+          <div className="divide-y divide-line" aria-label={labels.coverageTitle}>
           {shownDays.map((day) => (
             <div key={day.date} className="flex min-h-12 items-center justify-between gap-3 py-2 text-sm">
               <time dateTime={day.date}>{new Intl.DateTimeFormat(locale, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day.date + "T12:00:00Z"))}</time>
@@ -674,7 +707,8 @@ export default function ProcessingFeeEstimateForm({
                 : <span className="text-ink-muted">{day.status === "actual" ? labels.coverageActual : labels.coverageEstimated}</span>}
             </div>
           ))}
-        </div>
+          </div>
+        </details>
       </section>
 
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
