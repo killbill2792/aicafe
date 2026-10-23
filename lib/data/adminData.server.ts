@@ -31,13 +31,23 @@ async function summarizeCafe(admin:ReturnType<typeof db>,business:CafeRow){
     lastSale:latest.data?.[0]?.business_date??null,
     staffCount:staff.count??null, menuCount:menu.count??null, access };
 }
-export async function listCafes(){
+export async function listCafes(page=0){
   await requireAdmin();
+  const safePage=Number.isInteger(page)&&page>=0&&page<=9999?page:0;
+  const pageSize=25;
   const admin=db();
-  const {data:businesses,error}=await admin.from("businesses")
-    .select("id,name,created_at,is_demo").order("created_at",{ascending:false}).limit(200);
+  const {data:businesses,error,count}=await admin.from("businesses")
+    .select("id,name,created_at,is_demo",{count:"exact"})
+    .order("created_at",{ascending:false}).order("id",{ascending:false})
+    .range(safePage*pageSize,(safePage+1)*pageSize-1);
   check(error);
-  return Promise.all((businesses??[]).map(b=>summarizeCafe(admin,b)));
+  const cafes:Awaited<ReturnType<typeof summarizeCafe>>[]=[];
+  // Avoid opening hundreds of database requests in one simultaneous fan-out.
+  for(let i=0;i<(businesses??[]).length;i+=8){
+    const batch=(businesses??[]).slice(i,i+8);
+    cafes.push(...await Promise.all(batch.map(b=>summarizeCafe(admin,b))));
+  }
+  return {cafes,page:safePage,pageSize,total:count??0};
 }
 export async function getCafe(id:string){
   await requireAdmin();
