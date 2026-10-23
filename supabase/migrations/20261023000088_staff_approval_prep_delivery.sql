@@ -350,6 +350,7 @@ BEGIN
    WHERE s.business_id=p_business_id AND s.local_date BETWEEN v_week AND v_week+6
       AND s.deleted_at IS NULL AND e2.active
       AND e2.phone_e164 IS NOT NULL AND e2.whatsapp_opt_in IS TRUE
+       AND e2.phone_e164 ~ '^\+[1-9][0-9]{1,14}$'
    ON CONFLICT (business_id,proposal_id,employee_id) DO NOTHING;
  ELSE
    RAISE EXCEPTION 'unrecognized_staff_operation' USING ERRCODE='22023';
