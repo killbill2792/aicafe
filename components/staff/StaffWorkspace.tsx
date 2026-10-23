@@ -4,6 +4,7 @@ import {useRouter} from "next/navigation";
 import {useTranslations} from "next-intl";
 import {dismissStaffRuleAlert} from "@/lib/actions/ruleAlerts";
 import DayTimeline from "./DayTimeline";
+import StaffDialog from "./StaffDialog";
 import WeekGrid from "./WeekGrid";
 import ShiftPreview from "./ShiftPreview";
 import {dayTotals,personTotals,bestFreePerson,availabilityStatus,totalOvertimeMinutes,previewShift,type DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
@@ -220,12 +221,11 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   </>}
   {undo&&<div role="status" className="fixed inset-x-4 bottom-36 z-30 flex items-center justify-between rounded-xl bg-fg p-4 text-bg shadow-lg"><span>{undo.message}</span><button onClick={undoRemove} className="min-h-12 px-3 font-bold">{t("undo")}</button></div>}
   {error&&<p role="alert" className="rounded-xl bg-neg-soft p-3 text-neg">{error}</p>}
-  {notice&&<div role="dialog" className="fixed inset-4 z-50 overflow-auto rounded-2xl bg-surface p-5 shadow-2xl"><h2>{t("readyCopy")}</h2><pre className="whitespace-pre-wrap">{notice}</pre><button onClick={()=>navigator.clipboard.writeText(notice)} className="my-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent">{t("copy")}</button><button onClick={()=>setNotice("")} className="ms-3 min-h-12">{t("close")}</button></div>}
-  {sheet&&<div className="fixed inset-0 z-40 flex items-end justify-center bg-black/50" onClick={()=>setSheet(null)}>
-   <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface p-5 pb-8" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true">
-    <div className="mx-auto mb-3 h-1 w-12 rounded bg-line"/>{fillsGap&&sheet==="shift"&&<p className="text-sm font-bold text-pos">{t("fillsGap")}</p>}<h2 className="font-headline text-xl font-bold">{sheet==="person"?(personEditing?t("editPerson"):t("addPerson")):(editing?t("editShift"):t("addShiftDate",{date:dayLabel(date)}))}</h2>
+  {notice&&<StaffDialog headingId="staff-copy-heading" layout="center" onClose={()=>setNotice("")}><h2 id="staff-copy-heading">{t("readyCopy")}</h2><pre className="whitespace-pre-wrap">{notice}</pre><button onClick={()=>navigator.clipboard.writeText(notice)} className="my-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent">{t("copy")}</button><button onClick={()=>setNotice("")} className="ms-3 min-h-12">{t("close")}</button></StaffDialog>}
+  {sheet&&<StaffDialog headingId="staff-sheet-heading" onClose={()=>setSheet(null)}>
+    <div className="mx-auto mb-3 h-1 w-12 rounded bg-line"/>{fillsGap&&sheet==="shift"&&<p className="text-sm font-bold text-pos">{t("fillsGap")}</p>}<h2 id="staff-sheet-heading" className="font-headline text-xl font-bold">{sheet==="person"?(personEditing?t("editPerson"):t("addPerson")):(editing?t("editShift"):t("addShiftDate",{date:dayLabel(date)}))}</h2>
     {sheet==="person"?<>
-      <label className="mt-3 block font-semibold">{t("name")}<input value={name} onChange={e=>setName(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"/></label>
+      <label className="mt-3 block font-semibold">{t("name")}<input autoFocus={sheet==="person"} value={name} onChange={e=>setName(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"/></label>
       <div className="mt-3 flex flex-wrap gap-2">{["Barista","Manager","Baker","Cashier"].map(r=><button key={r} aria-pressed={role===r} onClick={()=>setRole(r)} className="min-h-12 rounded-full border border-line px-3">{roleLabel(r)}</button>)}</div>
       <p className="mt-4 text-muted">{t("optional")}</p>
       {salaryPeriod?<p className="mt-3 rounded-xl bg-surface2 p-3 text-muted">{t("salaryManaged")}</p>:
@@ -311,6 +311,6 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       {editing&&<button className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}
     </>}
     <button onClick={()=>setSheet(null)} className="mt-3 min-h-12 w-full">{t("cancel")}</button>
-   </div></div>}
+   </StaffDialog>}
  </div>;
 }
