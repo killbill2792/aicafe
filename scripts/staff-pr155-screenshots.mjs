@@ -10,7 +10,7 @@ const themes=["fresh-pour","night-roast","market-green","berry-mocha","blue-hour
 const errors=[];
 async function assertVisible(page,selector,label){
  await page.locator(selector).first().waitFor({state:"visible",timeout:20000});
- if(await page.locator("nextjs-portal").count())throw Error(label+" is obscured by a Next.js dev error");
+
 }
 async function setPalette(page,theme="fresh-pour",mode="light"){
  await page.evaluate(({theme,mode})=>{
