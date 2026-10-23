@@ -166,6 +166,7 @@
     "missing": "Falta",
     "confirmRemove": "¿Quitar esta cuenta?",
     "saveError": "No se pudo guardar la cuenta.",
+    "removeError": "No se pudo quitar esta cuenta. Inténtalo de nuevo.",
     "variableCostHint": "Los gastos que cambian cada mes se registran en Dinero › Agregar un gasto",
     "title": "Cuentas mensuales",
     "subtitle": "Se registran una vez, se usan cada mes",
