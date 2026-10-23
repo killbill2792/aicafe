@@ -123,6 +123,15 @@ export function copyMondayToWeekdays(hours: WeeklyHoursInput): WeeklyHoursInput 
 }
 
 /** Keyboard navigation starts at the first/last result and never references a missing option. */
+export function matchingTimezoneOptions(
+  options: { value: string; label: string }[], search: string, locale: string,
+): { value: string; label: string }[] {
+  const query = search.trim().toLocaleLowerCase(locale);
+  return options.filter((option) =>
+    !query || option.label.toLocaleLowerCase(locale).includes(query) || option.value.toLowerCase().includes(query),
+  ).slice(0, 40);
+}
+
 export function moveTimezoneActiveIndex(current: number, direction: -1 | 1, count: number): number {
   if (count === 0) return -1;
   if (current < 0) return direction === 1 ? 0 : count - 1;
