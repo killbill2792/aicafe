@@ -38,7 +38,7 @@ describe("cross-turn usage numeric evidence lifecycle",()=>{
   const changed=usageEvidenceRefresh([read(row)],prior);
   const removedId=usageGroupEvidenceId("milk","day",second.key);
   expect(changed[0].items).toEqual(expect.arrayContaining([{id:removedId,quantity:null}]));
-  expect((changed[0].items as Array<{id:string;quantity:number|null}>))
+  expect((changed[0].items as Array<{id:string;quantity:number|null}>)
    .find(x=>x.id===groupId)?.quantity).toBe(346);
   expect(checkNumbers("155 ml", "",changed,"en",prior)).toHaveLength(1);
   expect(checkNumbers(claim,"",changed,"en",prior)).toEqual([]);
