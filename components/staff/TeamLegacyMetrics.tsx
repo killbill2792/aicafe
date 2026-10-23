@@ -1,4 +1,5 @@
 import {getTranslations,getLocale} from "next-intl/server";
+import {isSupabaseConfigured} from "@/lib/supabase/client";
 import {getSnapshot} from "@/lib/data/getSnapshot";
 import {buildStaffViewModel} from "@/lib/viewmodels/staffViewModel";
 import {getPayrollCostSettings} from "@/lib/data/getPayrollCostSettings";
@@ -10,6 +11,7 @@ import StaffCostBars,{shortWeekday} from "@/components/staff/StaffCostBars";
 /** Retain the legacy, actual-timecard analytics below the scheduling workspace.
  * Scheduled wages above are not mixed into the historical actuals here. */
 export default async function TeamLegacyMetrics(){
+ if(!isSupabaseConfigured())return null;
  const [snapshot,payroll,t,locale]=await Promise.all([
   getSnapshot(),getPayrollCostSettings(),getTranslations("Staff"),getLocale()
  ]);

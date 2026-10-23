@@ -29,7 +29,7 @@ for(const width of [390,1280]){
  await page.goto(base+"/en/staff?fixture=1&week=2026-10-26",{waitUntil:"networkidle"});
  await assertVisible(page,"h1",suffix+" schedule");
  await setPalette(page);
- const timeline=await page.locator("[aria-label='Week days']").count();
+ const timeline=await page.locator("[aria-label='Days this week']").count();
  if(timeline!==1)throw Error("week day strip missing at "+width);
  await page.screenshot({path:join(output,"schedule-"+suffix+".png"),fullPage:true});
  await page.getByRole("button",{name:"Team",exact:true}).click();
@@ -41,7 +41,7 @@ for(const width of [390,1280]){
  await page.screenshot({path:join(output,"rules-"+suffix+".png"),fullPage:true});
  if(width===390){
   await page.goto(base+"/en/staff?fixture=1&week=2026-10-26",{waitUntil:"networkidle"});
-  await page.getByRole("button",{name:"Add shift",exact:true}).first().click();
+  await page.locator("header button[aria-label]").first().click();
   await page.getByRole("dialog").first().waitFor({state:"visible"});
   await page.screenshot({path:join(output,"shift-edit-mobile.png"),fullPage:true});
   await page.getByRole("button",{name:"Cancel",exact:true}).first().click();
