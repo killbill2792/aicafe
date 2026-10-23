@@ -35,3 +35,29 @@ begin
  if not has_function_privilege('service_role','public.redeem_free_access_code(uuid,text,uuid)','EXECUTE')
  then raise exception 'service role cannot redeem codes'; end if;
 end $admin_access_check$;
+
+-- Exercise the INSERT trigger against real rows, not just its source text.
+-- Roll back all disposable cafés and their automatically generated access rows.
+begin;
+do $new_cafe_entitlement_check$
+declare
+  new_business uuid;
+  access_mode text;
+  expiry date;
+  zone text;
+  expected_date date;
+begin
+  foreach zone in array array['America/Los_Angeles','Pacific/Kiritimati','Asia/Dubai'] loop
+    new_business := gen_random_uuid();
+    insert into public.businesses(id,name,timezone,is_demo)
+      values(new_business,'Admin access migration smoke',zone,false);
+    select mode,access_end into access_mode,expiry
+      from public.cafe_access where business_id=new_business;
+    expected_date := (now() at time zone zone)::date - 1;
+    if access_mode is distinct from 'code' or expiry is distinct from expected_date then
+      raise exception 'new café in % must start expired: mode %, end %, expected %',
+        zone,access_mode,expiry,expected_date;
+    end if;
+  end loop;
+end $new_cafe_entitlement_check$;
+rollback;
