@@ -2383,6 +2383,75 @@
       "conflict": "Actualizado en otra sesión"
     }
   },
+  "ChatExperience": {
+    "ack": "Entendido, estoy en ello.",
+    "answering": "Escribiendo tu respuesta.",
+    "continuing": "Ahora respondo tu mensaje más reciente.",
+    "followUpQueued": "Añadí tu mensaje. Lo incluyo en esta respuesta.",
+    "followUpRead": "Leí tu nuevo mensaje.",
+    "resumed": "Sigo con tu última pregunta. Puedes salir de esta página; la respuesta estará aquí.",
+    "tools": {
+      "get_profit": "Revisé tu ganancia",
+      "get_sales": "Revisé tus ventas",
+      "get_menu_items": "Revisé tu menú",
+      "get_staff": "Revisé tu equipo",
+      "get_schedule": "Revisé el horario",
+      "get_labor": "Revisé el costo de personal",
+      "get_business_hours": "Revisé tu horario de apertura",
+      "get_expenses": "Revisé tus gastos",
+      "get_bills": "Revisé tus facturas",
+      "get_break_even": "Revisé tu punto de equilibrio",
+      "get_cost_summary": "Revisé tus costos",
+      "get_product_costs": "Revisé el costo de productos",
+      "get_ingredient_costs": "Revisé el costo de ingredientes",
+      "get_inventory": "Revisé tu inventario",
+      "get_item_sales": "Revisé las ventas por producto",
+      "get_price_recommendation": "Calculé un precio",
+      "draft_week_schedule": "Preparé un horario semanal",
+      "suggest_new_item_price": "Calculé un precio para el nuevo producto",
+      "propose_price_change": "Preparé un cambio de precio para que lo apruebes",
+      "get_initiatives": "Revisé tus planes",
+      "get_initiative_status": "Revisé cómo va tu plan",
+      "record_checkin": "Anoté tu seguimiento",
+      "remember_cafe_fact": "Preparé una nota para que la apruebes"
+    },
+    "agents": {
+      "supervisor": "Revisé los datos de tu café",
+      "alex": "Revisé ventas y menú",
+      "olivia": "Revisé equipo y horarios",
+      "maya": "Revisé suministros",
+      "leo": "Revisé las finanzas"
+    },
+    "failures": {
+      "agent_turn_failed": "Algo falló y me detuve. Toca Reintentar.",
+      "timeout": "Tardó demasiado y se detuvo. Toca Reintentar.",
+      "agent_busy": "Sigo con tus mensajes anteriores. Envía esto de nuevo en un momento.",
+      "reply_storage_failed": "La respuesta estaba lista pero no se guardó. Toca Reintentar.",
+      "reply_too_long": "La respuesta era demasiado larga para guardarla. Pide una más corta.",
+      "owner_usage_limit_reached": "Llegaste al límite de chat de hoy. Se renueva mañana.",
+      "agent_request_failed": "No pude conectar con el servidor. Revisa tu conexión y toca Reintentar.",
+      "agent_stream_incomplete": "La conexión se cortó antes de terminar. Toca Reintentar.",
+      "attempts_exhausted": "Lo intenté varias veces y no pude terminar. Prueba a preguntarlo de otra forma."
+    }
+  },
+  "MemoryCard": {
+    "title": "¿Lo recuerdo?",
+    "loading": "Cargando…",
+    "approve": "Recordar",
+    "reject": "Ahora no",
+    "saved": "Guardado",
+    "notSaved": "No guardado",
+    "paused": "En pausa",
+    "error": "No funcionó. Inténtalo de nuevo.",
+    "conflict": "Esta nota cambió. Recarga el chat.",
+    "agents": {
+      "supervisor": "Para todo el equipo",
+      "alex": "Para Alex (ventas y menú)",
+      "olivia": "Para Olivia (equipo y horarios)",
+      "maya": "Para Maya (suministros)",
+      "leo": "Para Leo (finanzas)"
+    }
+  },
   "StaffSchedule": {
     "schedule": "Horario",
     "team": "Equipo",

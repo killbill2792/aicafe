@@ -7,6 +7,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ ruleId: string }> };
 
+/** Read one rule so the chat's memory card can show the draft and its version. */
+export async function GET(_request: Request, context: RouteContext) {
+  try {
+    const { ruleId } = await context.params;
+    const id = parseInput(ruleIdInput, ruleId);
+    const service = await authenticatedTeamRulesService();
+    return conversationJson({ rule: await service.getRule(id) });
+  } catch (error) {
+    if (error instanceof RuleNotFound) return conversationJson({ error: "rule_not_found" }, 404);
+    return conversationError(error);
+  }
+}
+
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     requireSameOrigin(request);
