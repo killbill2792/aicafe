@@ -65,3 +65,22 @@ export function validateRequiredFeeFields(
 export function isFeeFieldInvalid(errors: Record<string, string>, key: string): boolean {
   return Boolean(errors[key]);
 }
+
+
+/**
+ * Opening advanced options must not invalidate an otherwise complete simple rate.
+ * Keep the existing rate amounts/mixes; fill only defaults hidden by simple mode.
+ */
+export function prepareAdvancedRateDraft<T extends { label: string }>(
+  rules: T[],
+  transactionShare: string,
+  cardShare: string,
+  standardRate: string,
+): { rules: T[]; transactionShare: string } {
+  return {
+    rules: rules.map((rule, index) => index === 0 && !rule.label.trim()
+      ? { ...rule, label: standardRate }
+      : rule),
+    transactionShare: transactionShare.trim() ? transactionShare : cardShare,
+  };
+}
