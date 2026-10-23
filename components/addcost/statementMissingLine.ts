@@ -19,7 +19,7 @@ export function makeMissingStatementLine(
   const [year, month, day] = input.date.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
   if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) return null;
-  const nextId = Math.max(-1, ...current.map((line) => line.i)) + 1;
+  const nextId = current.reduce((max, line) => Math.max(max, line.i), -1) + 1;
   const sumCents = balance.sumCents - amountCents;
   return {
     line: { i: nextId, description, date: input.date, amountCents, category: input.category, reason, confidence: 1 },
