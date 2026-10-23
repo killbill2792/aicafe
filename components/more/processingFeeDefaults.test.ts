@@ -12,6 +12,7 @@ import {
   knownProcessorCount,
   untrustedEstimateDayCount,
   requiresAverageTicket,
+  showAverageTicketField,
 } from "./processingFeeDefaults";
 
 describe("processing fee redesign defaults", () => {
@@ -137,6 +138,25 @@ describe("processing fee redesign defaults", () => {
     expect(requiresAverageTicket(activeRateDrafts(allRules, false), 3)).toBe(false);
     expect(requiresAverageTicket(activeRateDrafts(allRules, true), 3)).toBe(true);
     expect(requiresAverageTicket(activeRateDrafts(allRules, true), 0)).toBe(false);
+  });
+
+  it("reveals required ticket in simple mode without changing submitted rules", () => {
+    const all = [
+      { id: "standard", fixedFee: "0.15" },
+      { id: "hidden", fixedFee: "0.30" },
+    ];
+    const simple = activeRateDrafts(all, false);
+    expect(showAverageTicketField(false, simple, 2)).toBe(true);
+    expect(requiresAverageTicket(simple, 2)).toBe(true);
+    expect(simple).toEqual([all[0]]);
+    // Entering a ticket cannot make the hidden second rule part of the submission.
+    expect(activeRateDrafts(all, false)).toEqual([all[0]]);
+    expect(showAverageTicketField(true, activeRateDrafts(all, true), 0)).toBe(true);
+  });
+
+  it("keeps a hidden fixed-fee-only rule entirely out of a simple-mode ticket requirement", () => {
+    const all = [{ fixedFee: "0" }, { fixedFee: "0.30" }];
+    expect(showAverageTicketField(false, activeRateDrafts(all, false), 4)).toBe(false);
   });
 
   it("one-tap bypasses a manually empty date but still requires fee inputs", () => {
