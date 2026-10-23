@@ -32,6 +32,30 @@ describe("Redesign 03 screen contracts", () => {
     expect(statement).toContain('makeMissingStatementLine(state.lines, state.balanceCheck');
   });
 
+  it("closes the recovery form without inventing a transaction", () => {
+    const statement = source("components/addcost/StatementUploader.tsx");
+    expect(statement).toContain('setMissingLine(false); setMissingDescription(""); setMissingAmount(""); setMissingDate("");');
+    expect(statement).toContain('{labels.missingCancel}');
+    expect(statement).toContain('disabled={isSavingOrSaved || missingLine || saveLock.current}');
+  });
+
+  it("locks every editable statement action while saving, even before React re-renders", () => {
+    const statement = source("components/addcost/StatementUploader.tsx");
+    expect(statement).toContain('const saveLock = useRef(false)');
+    expect(statement).toContain('saveLock.current = true;');
+    expect(statement).toContain('if (!state?.ok || missingLine || isSavingOrSaved || saveLock.current) return;');
+    expect(statement).toContain('if (!state?.ok || saveLock.current || isSavingOrSaved) return;');
+    expect(statement).toContain('if (!state?.ok || !state.balanceCheck || saveLock.current || isSavingOrSaved) return;');
+    expect(statement).toContain('disabled={isSavingOrSaved || saveLock.current}');
+  });
+
+  it("keeps recovery fields at the minimum 48px touch and 17px text sizes", () => {
+    const statement = source("components/addcost/StatementUploader.tsx");
+    expect(statement).not.toContain('className="h-11 rounded-xl border border-line px-3"');
+    expect(statement).toContain('min-h-12 rounded-xl border border-line px-3 text-[17px]');
+    expect(statement).toContain('min-h-12 rounded-full bg-accent px-4 text-[17px]');
+  });
+
   it("shows a preselected ingredients category that would otherwise be hidden", () => {
     expect(source("components/addcost/TypeExpenseForm.tsx")).toContain('c !== "ingredients" || initialCategory === "ingredients"');
   });
