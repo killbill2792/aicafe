@@ -2388,7 +2388,11 @@
     "usageEndCount": "يلزم جرد النهاية ليوم",
     "usageCoverage": "يلزم سجل مبيعات Toast كامل",
     "usageRecipeMissing": "تحقق من الوصفة أو ربط الإضافات",
-    "usageUnavailable": "الاستخدام غير متاح، تحقق من اتصال Toast وبيانات الجرد"
+    "usageUnavailable": "الاستخدام غير متاح، تحقق من اتصال Toast وبيانات الجرد",
+    "usageErrorInvalidQuantity": "أدخل كمية صحيحة. يجب أن تكون كمية الشراء أكبر من صفر، ويمكن أن يكون الجرد صفراً.",
+    "usageErrorInvalidUnit": "اختر وحدة متوافقة مع هذا المكوّن.",
+    "usageErrorIngredientNotFound": "لم يعد هذا المكوّن متاحاً في هذا المقهى. اختر مكوّناً آخر.",
+    "usageErrorSaveFailed": "تعذّر حفظ سجل المخزون. يُرجى المحاولة مجدداً."
   },
   "SupervisorProposalCard": {
     "title": "اقتراح تغيير السعر",
