@@ -3,7 +3,7 @@ import { debitCentsFromInput, reconcileStatementDebit } from "./statementReconci
 
 describe("missing statement debit calculations", () => {
   it.each([
-    ["1", 100], ["12.3", 1230], ["0.01", 1], ["15.00", 1500], ["1.99", 199],
+    ["1", 100], ["0001.20", 120], ["12.3", 1230], ["0.01", 1], ["15.00", 1500], ["1.99", 199],
   ])("parses %s into exact integer cents", (input, cents) => {
     expect(debitCentsFromInput(input)).toBe(cents);
   });
