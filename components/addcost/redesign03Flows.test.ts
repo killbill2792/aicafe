@@ -56,6 +56,15 @@ describe("Redesign 03 screen contracts", () => {
     expect(statement).toContain('min-h-12 rounded-full bg-accent px-4 text-[17px]');
   });
 
+  it("does not apply stale overlapping bank uploads and permits a retry", () => {
+    const statement = source("components/addcost/StatementUploader.tsx");
+    expect(statement).toContain('if (saveLock.current || isSavingOrSaved || readLock.current) return;');
+    expect(statement).toContain('readLock.current = true;');
+    expect(statement).toContain('readLock.current = false;');
+    expect(statement).toContain('onClick={() => setState(null)}');
+    expect(statement).toContain('{labels.tryAgain}');
+  });
+
   it("shows a preselected ingredients category that would otherwise be hidden", () => {
     expect(source("components/addcost/TypeExpenseForm.tsx")).toContain('c !== "ingredients" || initialCategory === "ingredients"');
   });
