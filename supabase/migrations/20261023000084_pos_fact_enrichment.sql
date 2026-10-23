@@ -52,11 +52,11 @@ declare t text;
 begin
   foreach t in array array['hourly_sales_rollup','employee_sales_rollup','employee_pay_period_facts'] loop
     execute format('alter table public.%I enable row level security',t);
-    if not exists (select 1 from pg_policies where schemaname='public' and tablename=t and policyname='members read') then
-      execute format('create policy "members read" on public.%I for select using (public.is_member(business_id))',t);
+    if not exists (select 1 from pg_policies where schemaname='public' and tablename=t and policyname='owners read') then
+      execute format('create policy "owners read" on public.%I for select using (public.scheduling_is_owner(business_id))',t);
     end if;
-    if not exists (select 1 from pg_policies where schemaname='public' and tablename=t and policyname='members write') then
-      execute format('create policy "members write" on public.%I for all using (public.is_member(business_id)) with check (public.is_member(business_id))',t);
+    if not exists (select 1 from pg_policies where schemaname='public' and tablename=t and policyname='owners write') then
+      execute format('create policy "owners write" on public.%I for all using (public.scheduling_is_owner(business_id)) with check (public.scheduling_is_owner(business_id))',t);
     end if;
   end loop;
 end $$;
@@ -77,7 +77,7 @@ begin
   if p_business_id is null or p_business_date is null then
     raise exception 'Business and date required';
   end if;
-  if auth.role() is distinct from 'service_role' and not public.is_member(p_business_id) then
+  if auth.role() is distinct from 'service_role' and not public.scheduling_is_owner(p_business_id) then
     raise exception 'Not authorized to rebuild sales facts';
   end if;
   select b.timezone into v_timezone from public.businesses b where b.id = p_business_id;

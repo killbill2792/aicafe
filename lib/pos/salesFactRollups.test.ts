@@ -25,6 +25,12 @@ describe("atomic POS sales fact rebuilding",()=>{
   expect(sql).toContain("pg_advisory_xact_lock");
   expect(sql).toContain("sum(o.net_sales_cents)");
   expect(sql).toContain("security invoker");
+  // Canonical payroll and employee sales are owner-scoped, not writable by
+  // arbitrary café members. Service-role ingestion continues to bypass RLS.
+  expect(sql).toContain('create policy "owners read"');
+  expect(sql).toContain('create policy "owners write"');
+  expect(sql).toContain('public.scheduling_is_owner(business_id)');
+  expect(sql).toContain('not public.scheduling_is_owner(p_business_id)');
   expect(sql).toContain("pos_order_id not like 'csv-%'");
  });
 });
