@@ -16,7 +16,7 @@ describe("staff owner-send SQL invariants",()=>{
  });
  it("requires a single approved source and keeps owner records tenant-scoped",()=>{
   expect(migration).toMatch(/CHECK \(\(proposal_id IS NULL\) <> \(plan_revision_id IS NULL\)\)/);
-  expect(migration).toMatch(/business_id=p_business_id AND id=p_employee_id/);
+  expect(migration).toMatch(/business_id=p_business_id\s+AND id=p_employee_id/);
   expect(migration).toMatch(/preferred_schedule_channel/);
  });
 });
