@@ -8,6 +8,8 @@ import {
   prepareAdvancedRateDraft,
   selectedFeeCoverageForSalesDays,
   isRealIsoDay,
+  activeRateDrafts,
+  knownProcessorCount,
 } from "./processingFeeDefaults";
 
 describe("processing fee redesign defaults", () => {
@@ -91,6 +93,29 @@ describe("processing fee redesign defaults", () => {
     expect(isRealIsoDay("2026-02-30")).toBe(false);
     expect(isRealIsoDay("2024-02-29")).toBe(true);
     expect(isRealIsoDay("2025-02-29")).toBe(false);
+  });
+
+  it("ignores retained hidden advanced fixed fees when submitting simple mode", () => {
+    const rules = [
+      { id: "first", label: "Rate", percentageRate: "2.6", fixedFee: "0", salesMix: "100", transactionMix: "100" },
+      { id: "hidden", label: "Special", percentageRate: "1", fixedFee: "0.30", salesMix: "0", transactionMix: "0" },
+    ];
+    expect(activeRateDrafts(rules, false)).toEqual([rules[0]]);
+    expect(activeRateDrafts(rules, false).some((rule) => Number(rule.fixedFee) > 0)).toBe(false);
+    expect(activeRateDrafts(rules, true)).toHaveLength(2);
+    expect(rules).toHaveLength(2); // preserve advanced draft for later editing
+  });
+
+  it("counts connected processors but does not double-count manual uploads or duplicate connections", () => {
+    const active = [{ provider: "Toast" }, { provider: "toast" }];
+    const facts = [
+      { provider: "manual", source_type: "manual_actual" },
+      { provider: "toast", source_type: "connected_pos_actual" },
+    ];
+    expect(knownProcessorCount(active, facts)).toBe(1);
+    expect(knownProcessorCount([], facts)).toBe(1);
+    expect(knownProcessorCount([], [{ provider: "manual", source_type: "manual_actual" }])).toBe(0);
+    expect(knownProcessorCount([{ provider: "toast" }, { provider: "square" }], facts)).toBe(2);
   });
 
   it("one-tap bypasses a manually empty date but still requires fee inputs", () => {
