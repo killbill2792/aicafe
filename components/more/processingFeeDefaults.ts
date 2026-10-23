@@ -124,6 +124,11 @@ export function requiresAverageTicket(
   return untrustedFeeDays > 0 && activeRules.some((rule) => Number(rule.fixedFee) > 0);
 }
 
+/** A required simple-mode ticket input is visible without enabling advanced rules. */
+export function showAverageTicketField(advanced: boolean, activeRules: readonly { fixedFee: string }[], untrustedFeeDays: number): boolean {
+  return advanced || requiresAverageTicket(activeRules, untrustedFeeDays);
+}
+
 /** A POS connection or provider-attributed connected actual is evidence of a processor.
  * An uploaded/manual actual is not evidence of an additional card processor.
  */
