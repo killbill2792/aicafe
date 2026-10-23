@@ -2702,7 +2702,7 @@
     "heading": "Enviar horarios aprobados",
     "manualNotice": "No puedo enviar mensajes directamente. Toca un botón para abrir WhatsApp o SMS con el texto listo. Tú debes pulsar Enviar. «Abierto» no confirma la entrega.",
     "loading": "Cargando horario aprobado…",
-    "notApproved": "Aprueba el horario antes de enviar. No se han enviado mensajes.",
+    "notApproved": "El horario aprobado cambió. Solicita una nueva aprobación antes de enviar.",
     "loadError": "No se pudo cargar el horario.",
     "ledgerError": "Se abrió la aplicación, pero no se pudo registrar la acción. Comprueba antes de reintentar.",
     "preferenceError": "No se pudo guardar el canal preferido.",

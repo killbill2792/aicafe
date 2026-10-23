@@ -29,10 +29,6 @@ export async function scheduleDeliveryContext(){
  if(error||!user)throw new DeliveryReadError("unauthorized");
  return {...owner,userId:user.id};
 }
-function checked<T>(data:T|null,error:{message:string}|null):T{
- if(error||data===null)throw new DeliveryReadError("storage_unavailable");
- return data;
-}
 function localClock(iso:string,zone:string,locale:"en"|"es"|"ar"){
  const date=new Date(iso);
  const parts=new Intl.DateTimeFormat("en-CA",{timeZone:zone,year:"numeric",
@@ -82,9 +78,6 @@ export async function readApprovedScheduleDelivery(source:unknown,
  }
  let shifts:Array<{employee_id:string;date:string;start:string;end:string}>=[];
  if(proposalId){
-  const {data:prop,error:propErr}=await db.from("supervisor_proposals")
-    .select("capability_id,committed_at").eq("id",proposalId).eq("business_id",owner.businessId).single();
-  if(propErr||!prop)throw new DeliveryReadError("storage_unavailable");
   // Read the immutable approval snapshot AND the complete current roster.
   // The same server-side equality is rechecked under a table lock in the
   // ledger RPC, so a stale preview cannot authorize a changed schedule.

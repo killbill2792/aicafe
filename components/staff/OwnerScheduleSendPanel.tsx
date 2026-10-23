@@ -48,11 +48,15 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
    const result=await fetch(endpoint,{method:"POST",credentials:"same-origin",keepalive:true,
      headers:{"content-type":"application/json"},
      body:JSON.stringify({...proposalId?{proposalId}:{week},employeeId:person.id,channel})});
-   if(!result.ok)throw Error("ledger");
+   if(!result.ok){
+     if(result.status===409){setNotApproved(true);setData(null);}
+     throw Error("ledger");
+   }
    const resultJson=await result.json() as {state:string;channel:OwnerChannel;at?:string};
    setData(value=>value?{...value,recipients:value.recipients.map(row=>row.id===person.id?
      {...row,ledgerStatus:"sent_by_owner",lastChannel:resultJson.channel,sentAt:resultJson.at??new Date().toISOString()}:row)}:value);
-  }catch{setError("ledger");}finally{setBusy(null);}
+   return true;
+  }catch{setError("ledger");return false;}finally{setBusy(null);}
  }
  const method=(person:Recipient,channel:OwnerChannel)=>{
   const status=eligibleForChannel(person.phone,person.optedIn,channel);
@@ -60,12 +64,21 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
   // Render a deterministic href on the server; choose the iOS SMS separator
   // only in the actual click, avoiding an SSR hydration mismatch.
   const href=composeScheduleLink(person.phone!,person.message,channel);
-  return <a href={href} target="_blank" rel="noopener noreferrer"
+  return <a href={href} target={channel==="whatsapp"?"_blank":undefined} rel="noopener noreferrer"
+    aria-disabled={busy!==null}
     className="inline-flex min-h-12 items-center justify-center rounded-xl border border-accent px-4 text-[17px] font-semibold text-accent-text"
-    onClick={event=>{
-      if(channel==="sms" && /iPad|iPhone|iPod/.test(navigator.userAgent))
-        event.currentTarget.href=composeScheduleLink(person.phone!,person.message,"sms",true);
-      void record(person,channel);
+    onClick={async event=>{
+      // External navigation must follow the authoritative database check.
+      // Pre-open on the gesture; some browsers block windows opened after await.
+      event.preventDefault();
+      if(busy!==null)return;
+      const popup=channel==="whatsapp"?window.open("about:blank","_blank"):null;
+      if(popup)popup.opener=null;
+      if(!await record(person,channel)){popup?.close();return;}
+      const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+      const destination=composeScheduleLink(person.phone!,person.message,channel,isIOS);
+      if(popup){popup.location.replace(destination);}
+      else window.location.assign(destination);
       if(batch.length&&batch[position]===person.id)setPosition(index=>index+1);
     }}>{channel==="whatsapp"?t.sendWhatsApp:t.sendSms}</a>;
  };

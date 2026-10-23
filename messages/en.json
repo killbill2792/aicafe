@@ -2702,7 +2702,7 @@
     "heading": "Send approved schedules",
     "manualNotice": "I can't send staff messages directly. Tap a button to open WhatsApp or your SMS app with the message ready. You must press Send yourself. 'Opened' records this tap, not confirmed delivery.",
     "loading": "Loading approved schedule…",
-    "notApproved": "Approve the schedule before sending. No messages have been sent.",
+    "notApproved": "Approved schedule changed. Request a new approval before sending.",
     "loadError": "Could not load approved messages.",
     "ledgerError": "Messaging app opened, but the delivery ledger could not record the action. Check before trying again.",
     "preferenceError": "Could not save preferred channel.",
