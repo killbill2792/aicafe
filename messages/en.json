@@ -2359,6 +2359,24 @@
     "editQuantityForSize": "Edit {ingredient} in {size}",
     "invalidQuantity": "Enter an amount greater than zero in a valid unit."
   },
+  "StaffApprovalCard": {
+    "title": "Staff change for approval",
+    "reviewNotice": "Nothing changes until you approve. Review each person, day and time.",
+    "before": "Before",
+    "after": "After",
+    "pending": "Awaiting approval",
+    "applying": "Applying",
+    "applied": "Approved and saved",
+    "cancelled": "Declined",
+    "stale": "Outdated",
+    "failed": "Action needs attention",
+    "approve": "Approve",
+    "decline": "Decline",
+    "retry": "Retry",
+    "staleDetails": "Staff or schedule data changed. Ask for a fresh approval card.",
+    "error": "Could not apply this staff change. No partial staff changes were saved. Check and retry.",
+    "preparedOnly": "Approval prepares staff schedule messages only. No WhatsApp messages are sent."
+  },
   "SupervisorProposalCard": {
     "title": "Price change proposal",
     "proposedBy": "Proposed by Alex",

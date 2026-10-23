@@ -2359,6 +2359,24 @@
     "editQuantityForSize": "Editar {ingredient} en {size}",
     "invalidQuantity": "Introduce una cantidad mayor que cero y una unidad válida."
   },
+  "StaffApprovalCard": {
+    "title": "Aprobar cambio de personal",
+    "reviewNotice": "Nada cambia hasta que apruebes. Revisa cada persona, día y hora.",
+    "before": "Antes",
+    "after": "Después",
+    "pending": "Pendiente de aprobación",
+    "applying": "Aplicando",
+    "applied": "Aprobado y guardado",
+    "cancelled": "Rechazado",
+    "stale": "Desactualizado",
+    "failed": "Se necesita atención",
+    "approve": "Aprobar",
+    "decline": "Rechazar",
+    "retry": "Reintentar",
+    "staleDetails": "Los datos de personal u horarios cambiaron. Solicita una nueva tarjeta.",
+    "error": "No se pudo aplicar el cambio. No se guardaron cambios parciales. Revisa e inténtalo de nuevo.",
+    "preparedOnly": "La aprobación solo prepara los mensajes de horarios. No envía mensajes de WhatsApp."
+  },
   "SupervisorProposalCard": {
     "title": "Propuesta de cambio de precio",
     "proposedBy": "Propuesto por Alex",
