@@ -92,6 +92,7 @@ export default async function ProcessingFeesPage() {
           info: t("info"),
           noNewCoverage: t("noNewCoverage"),
           missingButton: t("missingButton"),
+          showDayBreakdown: t("showDayBreakdown"),
         }}
       />
     </PageShell>
