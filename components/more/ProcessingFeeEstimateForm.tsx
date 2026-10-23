@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useLocale } from "next-intl";
-import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
+import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, requiresAverageTicket, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
@@ -245,7 +245,7 @@ export default function ProcessingFeeEstimateForm({
       if (submittingRules.reduce((sum, rule) => sum + (bpsFromPercent(rule.salesMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-salesMix", labels.invalidMix);
       if (submittingRules.reduce((sum, rule) => sum + (bpsFromPercent(rule.transactionMix) ?? 0),0) !== 10_000) invalid(rules[0].id + "-transactionMix", labels.invalidMix);
     }
-    if (submittingRules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.untrustedFeeDays > 0 && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
+    if (requiresAverageTicket(submittingRules, sourceSummary.untrustedFeeDays) && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       setError(labels.incompleteWarning);
@@ -357,7 +357,7 @@ export default function ProcessingFeeEstimateForm({
   };
   const activeRules = activeRateDrafts(rules, advanced);
   const firstFixedFee = Number(firstRule.fixedFee || 0);
-  const needsAverageTicket = activeRules.some((rule) => Number(rule.fixedFee) > 0) && sourceSummary.untrustedFeeDays > 0;
+  const needsAverageTicket = requiresAverageTicket(activeRules, sourceSummary.untrustedFeeDays);
   const completeActualCoverage =
     shownCoverage.salesDays > 0 && shownCoverage.actualDays === shownCoverage.salesDays && shownCoverage.missingDays === 0;
 
