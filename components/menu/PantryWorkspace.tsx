@@ -36,6 +36,10 @@ export default function PantryWorkspace({items,starters,labels:t,variance}:{item
  const fmt=(pattern:string,values:Record<string,string|number>)=>Object.entries(values).reduce((text,[key,value])=>text.replaceAll("{"+key+"}",String(value)),pattern);
  return <div className="mx-auto w-full max-w-5xl text-ink">
  <div className="mb-4 flex items-center justify-between gap-3"><h1 className="font-headline text-3xl font-extrabold">{t.title}</h1><button type="button" onClick={()=>{setError("");setDialog("starter");}} aria-label={t.add} className="flex size-12 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent"><Plus/></button></div>
+ <form method="get" className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-card p-3">
+ <label className="min-w-0 flex-1">{t.usageStart}<input type="date" name="from" defaultValue={variance?.from??""} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2"/></label>
+ <label className="min-w-0 flex-1">{t.usageEnd}<input type="date" name="to" defaultValue={variance?.to??""} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2"/></label>
+ <button type="submit" className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent">{t.usageApply}</button></form>
  <section className="mb-5 rounded-2xl border border-line bg-card p-4">
  <h2 className="font-headline text-xl font-bold">{t.usageTitle}</h2><p className="text-ink-muted">{t.usagePeriod} {variance?.from??"—"} – {variance?.to??"—"}</p>
  <div className="mt-3 grid gap-2 sm:grid-cols-2">{variance?.rows.map(row=><div key={row.ingredientId} className="rounded-xl border border-line p-3">
