@@ -181,3 +181,8 @@ export function untrustedEstimateDayCount(
 ): number {
   return coverageDays.filter((day) => day.status !== "actual" && !trustedOrderDates.has(day.date)).length;
 }
+
+/** The server schema accepts at most eight distinct rate rules. */
+export function canAddRateRule(count: number): boolean {
+  return count >= 0 && count < 8;
+}
