@@ -49,6 +49,14 @@ describe("café profile redesign", () => {
     expect(currencyForCountry("ES")).toBe("EUR");
     expect(currencyForCountry("GB")).toBe("GBP");
     expect(currencyForCountry("SA")).toBe("SAR");
+    expect(currencyForCountry("BG")).toBe("EUR");
+    expect(currencyForCountry("HR")).toBe("EUR");
+    expect(currencyForCountry("CD")).toBe("CDF");
+    expect(currencyForCountry("CW")).toBe("XCG");
+    expect(currencyForCountry("SX")).toBe("XCG");
+    expect(currencyForCountry("BQ")).toBe("USD");
+    expect(currencyForCountry("UM")).toBe("USD");
+    expect(currencyForCountry("TF")).toBe("EUR");
   });
 
   it("localizes U.S. state names without changing stored values", () => {
