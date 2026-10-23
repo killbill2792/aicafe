@@ -4,7 +4,8 @@ import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { packBaseQuantity, toBaseUnitQuantity, type BaseUnit, type RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
-import { calculateUsage, type UsageIngredient, type UsageRecipe, type UsageModifier, type UsageSale, type UsageCount, type UsagePurchase, type UsageStaff, type UsageRow } from "@/lib/calc/usageVariance";
+import { calculateUsage, type UsageIngredient, type UsageRecipe, type UsageSale, type UsageCount, type UsagePurchase, type UsageStaff, type UsageRow } from "@/lib/calc/usageVariance";
+import {scopedToastModifierId,scopedToastModifierRecipes,sizedMilkReplacementQuantity} from "@/lib/calc/usageModifierResolution";
 
 const iso=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>!Number.isNaN(Date.parse(s+"T00:00:00Z")));
 const readInput=z.strictObject({
@@ -46,7 +47,7 @@ async function allRows<T>(load:(first:number,last:number)=>PromiseLike<{data:T[]
 export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null}>{
  const input=readInput.parse(raw);
  const {db,businessId}=await scope();
- const {data:ingredients,error:ie}=await db.from("ingredients").select("id,name,base_unit")
+ const {data:ingredients,error:ie}=await db.from("ingredients").select("id,name,base_unit,category")
   .eq("business_id",businessId).order("name").limit(1000);
  if(ie||!ingredients)throw new Error("usage_ingredients_unavailable");
  const selected=ingredients.filter(i=>!input.ingredient||
@@ -71,20 +72,16 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
  ]);
  if(evidence.error||modifiers.error||addons.error||conversions.error||counts.error||!modifiers.data||!addons.data||!conversions.data||!counts.data)
   throw new Error("usage_data_unavailable");
- const e=evidence.data as {covered?:boolean;staff?:UsageStaff[];modifierMappings?:Array<{posModifierId:string;recipeId:string}>}|null;
- const mappedMods=new Map<string,UsageModifier>();
- const recipeMods=new Map(modifiers.data.map(m=>[m.id,m]));
- const matchRecipe=(recipe:typeof modifiers.data[number],key:string)=>{
-  mappedMods.set(key,{posModifierId:key,ingredientId:recipe.ingredient_id,quantityDelta:Number(recipe.quantity_delta),
-   replacesIngredientId:recipe.replaces_ingredient_id});
- };
- for(const m of modifiers.data)if(m.pos_modifier_id){
-  matchRecipe(m,m.pos_modifier_id);
-  if(m.pos_modifier_id.startsWith("toast:"))matchRecipe(m,m.pos_modifier_id.split(":").at(-1)!);
- }
- for(const mapping of e?.modifierMappings??[]){
-  const record=recipeMods.get(mapping.recipeId);
-  if(record)matchRecipe(record,mapping.posModifierId);
+ const e=evidence.data as {covered?:boolean;staff?:UsageStaff[];
+  modifierMappings?:Array<{restaurantGuid:string;posModifierId:string;recipeId:string}>}|null;
+ const mappedMods=scopedToastModifierRecipes(e?.modifierMappings??[],modifiers.data.map(m=>({
+  id:m.id,ingredientId:m.ingredient_id,quantityDelta:Number(m.quantity_delta),
+  replacesIngredientId:m.replaces_ingredient_id,posModifierId:m.pos_modifier_id
+ })));
+ const recipesByItem=new Map<string,typeof recipes>();
+ for(const r of recipes){
+  const lines=recipesByItem.get(r.menu_item_id)??[];
+  lines.push(r);recipesByItem.set(r.menu_item_id,lines);
  }
  const ingredientById=new Map(ingredients.map(i=>[i.id,i]));
  const conversionByIngredient=new Map<string,Array<{unit:"shot"|"pump";baseUnitsPerUnit:number}>>();
@@ -98,23 +95,39 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
  // Every recorded option must resolve through a stable Toast modifier id or an
  // unambiguous product-level ingredient match. Anything else remains unknown.
  const salesRows:UsageSale[]=sales.filter(s=>!s.voided).map(s=>{
-  const order=s.orders as unknown as {closed_at:string;business_date:string;location_id:string|null};
+  const order=s.orders as unknown as {
+   closed_at:string;business_date:string;location_id:string|null;pos_order_id:string;
+  };
+  // The persisted Toast order ID carries the restaurant identity, whereas
+  // an individual option GUID has no business-wide uniqueness guarantee.
+  const restaurantGuid=order.pos_order_id.match(/^toast:([0-9a-f-]{36}):/i)?.[1]??null;
+  const sizeRecipe=recipesByItem.get(s.menu_item_id??"")??[];
   const savedMods=Array.isArray(s.modifiers)?s.modifiers as Array<{posModifierId?:string;name?:string}>:[];
   const optionRows=addonsByItem.get(s.menu_item_id??"")??[];
   const normalized=savedMods.map((m,index)=>{
    const key=String(m.posModifierId??"");
-   if(mappedMods.has(key))return {posModifierId:key,name:m.name??""};
+   const scoped=scopedToastModifierId(restaurantGuid,key);
+   if(scoped&&mappedMods.has(scoped))return {posModifierId:scoped,name:m.name??""};
    const matches=optionRows.filter(a=>a.enabled&&
     ingredientById.get(a.ingredient_id)?.name.toLowerCase()===String(m.name??"").trim().toLowerCase());
    if(matches.length===1){
     const match=matches[0],ingredient=ingredientById.get(match.ingredient_id)!;
-    const qty=toBaseUnitQuantity(match.display_unit as RecipeDisplayUnit,Number(match.display_quantity),
-      ingredient.base_unit as BaseUnit,conversionByIngredient.get(match.ingredient_id)??[]);
     const defaultMilk=optionRows.find(a=>a.kind==="milk"&&a.is_default);
-    if(qty!==null&&(match.kind!=="milk"||defaultMilk)){
+    const recipeMilk=sizeRecipe.filter(line=>ingredientById.get(line.ingredient_id)?.category==="milk");
+    const sourceMilkId=defaultMilk&&sizeRecipe.some(line=>line.ingredient_id===defaultMilk.ingredient_id)
+      ?defaultMilk.ingredient_id:recipeMilk.length===1?recipeMilk[0].ingredient_id:null;
+    const sourceMilk=sourceMilkId?ingredientById.get(sourceMilkId):null;
+    const qty=match.kind==="milk"
+      ?sourceMilk&&sourceMilkId?sizedMilkReplacementQuantity(
+         sizeRecipe.map(line=>({ingredientId:line.ingredient_id,quantity:Number(line.quantity)})),
+         sourceMilkId,sourceMilk.base_unit,ingredient.base_unit):null
+      :toBaseUnitQuantity(match.display_unit as RecipeDisplayUnit,Number(match.display_quantity),
+        ingredient.base_unit as BaseUnit,conversionByIngredient.get(match.ingredient_id)??[]);
+    // Missing sold-size milk portions remain unverified, not a placeholder 1 ml.
+    if(qty!==null&&(match.kind!=="milk"||sourceMilkId)){
      const synthetic="addon:"+s.id+":"+index;
      mappedMods.set(synthetic,{posModifierId:synthetic,ingredientId:match.ingredient_id,
-      quantityDelta:qty,replacesIngredientId:match.kind==="milk"?defaultMilk!.ingredient_id:null});
+      quantityDelta:qty,replacesIngredientId:match.kind==="milk"?sourceMilkId:null});
      return {posModifierId:synthetic,name:m.name??""};
     }
    }
