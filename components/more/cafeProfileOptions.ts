@@ -123,6 +123,13 @@ export function copyMondayToWeekdays(hours: WeeklyHoursInput): WeeklyHoursInput 
 }
 
 /** Keyboard navigation starts at the first/last result and never references a missing option. */
+/** Distinguish an untouched empty profile from a deliberately cleared timezone search. */
+export function resolvedProfileTimezone(
+  chosen: string, touched: boolean, saved: string, browser: string,
+): string {
+  return chosen || (!touched && !saved ? browser : "");
+}
+
 export function matchingTimezoneOptions(
   options: { value: string; label: string }[], search: string, locale: string,
 ): { value: string; label: string }[] {
