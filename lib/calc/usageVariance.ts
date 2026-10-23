@@ -88,7 +88,7 @@ export function calculateUsage(input:{
   return {
    ingredientId:i.id,name:i.name,unit:i.unit,expected,actual:validActual,differencePct,
    status:usageStatus(differencePct),missing,
-   groups:[...(groups.get(i.id)??new Map()).entries()].map(([key,g])=>({key,label:g.label,
+   groups:expected===null?[]:[...(groups.get(i.id)??new Map()).entries()].map(([key,g])=>({key,label:g.label,
      staff:g.staff,expected:g.expected,actual:null as null,expectedOnly:true as const}))
      .sort((a,b)=>a.key.localeCompare(b.key)),
   };
