@@ -456,7 +456,8 @@ BEGIN
  IF v_employee.phone_e164 IS DISTINCT FROM p_expected_phone
  THEN RAISE EXCEPTION 'recipient_changed' USING ERRCODE='P0001'; END IF;
  IF v_employee.phone_e164 IS NULL
-   OR v_employee.phone_e164 !~ '^\+[1-9][0-9]{1,14}   OR (p_channel='whatsapp' AND v_employee.whatsapp_opt_in IS NOT TRUE) THEN
+   OR v_employee.phone_e164 !~ '^\+[1-9][0-9]{1,14}$'
+   OR (p_channel='whatsapp' AND v_employee.whatsapp_opt_in IS NOT TRUE) THEN
    RAISE EXCEPTION 'recipient_not_eligible' USING ERRCODE='P0001'; END IF;
  IF p_proposal_id IS NOT NULL THEN
    LOCK TABLE public.scheduled_shifts IN SHARE MODE;
