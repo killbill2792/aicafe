@@ -122,6 +122,22 @@ export function copyMondayToWeekdays(hours: WeeklyHoursInput): WeeklyHoursInput 
   };
 }
 
+/** Keyboard navigation starts at the first/last result and never references a missing option. */
+export function moveTimezoneActiveIndex(current: number, direction: -1 | 1, count: number): number {
+  if (count === 0) return -1;
+  if (current < 0) return direction === 1 ? 0 : count - 1;
+  return Math.max(0, Math.min(count - 1, current + direction));
+}
+
+/** Keep the virtual-focus option inside the popup viewport without scrolling the page. */
+export function timezoneOptionScrollTop(
+  scrollTop: number, viewportHeight: number, optionTop: number, optionHeight: number,
+): number {
+  if (optionTop < scrollTop) return optionTop;
+  const optionBottom = optionTop + optionHeight;
+  return optionBottom > scrollTop + viewportHeight ? optionBottom - viewportHeight : scrollTop;
+}
+
 export function shouldFocusHours(focus: string | string[] | undefined): boolean {
   return focus === "hours";
 }
