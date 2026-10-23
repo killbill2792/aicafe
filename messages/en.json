@@ -1283,7 +1283,8 @@
     "requiredRule": "Complete this rate detail",
     "requiredAverageTicket": "Enter an average processed payment",
     "invalidMix": "Rates must total 100%",
-    "info": "Information"
+    "info": "Information",
+    "noNewCoverage": "The rate was saved, but some days still need more fee details."
   },
   "Economics": {
     "title": "Profit goal simulator",
