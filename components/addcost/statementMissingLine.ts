@@ -2,7 +2,6 @@ import type { ReviewLine } from "@/lib/actions/expenses";
 import type { ExpenseCategoryCode } from "@/lib/constants";
 import { debitCentsFromInput, reconcileStatementDebit, type StatementBalance } from "@/lib/calc/statementReconciliation";
 
-
 export type MissingStatementInput = { description: string; amount: string; date: string; category: ExpenseCategoryCode };
 
 /** Missing statement transactions are debits. Use cents and reconcile the original balance check. */
