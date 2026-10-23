@@ -6,7 +6,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const db = () => createAdminSupabaseClient();
 function check(error: {message:string}|null) { if(error) throw error; }
 type CafeRow={id:string;name:string;created_at:string;is_demo:boolean};
-/** Shared per-café projection; detail lookup must not depend on a capped list. */
+/** Shared per-café projection; details work for any café, not only the first 200. */
 async function summarizeCafe(admin:ReturnType<typeof db>,business:CafeRow){
   const id=business.id;
   const [members,threads,pos,sales,staff,menu,access] = await Promise.all([
@@ -25,7 +25,12 @@ async function summarizeCafe(admin:ReturnType<typeof db>,business:CafeRow){
     const {data,error}=await admin.auth.admin.getUserById(m.user_id);
     check(error);
     return data.user?.email??"Unknown";
-  }
+  }));
+  return { ...business, owners:emails, lastActive:threads.data?.[0]?.last_message_at??null,
+    pos:pos.data?.[0]??null, firstSale:sales.data?.[0]?.business_date??null,
+    lastSale:latest.data?.[0]?.business_date??null,
+    staffCount:staff.count??null, menuCount:menu.count??null, access };
+}
 export async function listCafes(){
   await requireAdmin();
   const admin=db();
