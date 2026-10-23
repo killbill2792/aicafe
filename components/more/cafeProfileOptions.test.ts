@@ -3,10 +3,19 @@ import en from "../../messages/en.json";
 import es from "../../messages/es.json";
 import ar from "../../messages/ar.json";
 import { openHoursToWeeklyInput, weeklyInputToOpenHours } from "@/lib/business/openHours";
-import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, moveTimezoneActiveIndex, shouldFocusHours, timezoneOptionScrollTop, timezoneOptions, usStateOptions, US_STATES, validateProfile } from "./cafeProfileOptions";
+import { copyMondayToWeekdays, countryOptions, currencyForCountry, currencyOptions, matchingTimezoneOptions, moveTimezoneActiveIndex, shouldFocusHours, timezoneOptionScrollTop, timezoneOptions, usStateOptions, US_STATES, validateProfile } from "./cafeProfileOptions";
 
 describe("café profile redesign", () => {
-  it("keeps combobox keyboard focus within available options", () => {
+  it("filters the displayed timezone text, including the browser's automatic default", () => {
+    const options = timezoneOptions("en", "America/Los_Angeles");
+    const browserLabel = options.find((option) => option.value === "America/Los_Angeles")?.label ?? "";
+    const matches = matchingTimezoneOptions(options, browserLabel, "en");
+    expect(matches.some((option) => option.value === "America/Los_Angeles")).toBe(true);
+    expect(matches.some((option) => option.value === "America/New_York")).toBe(false);
+    expect(matchingTimezoneOptions(options, "", "en")).toHaveLength(40);
+  });
+
+  it("keeps combobox keyboard focus within available options () => {
     expect(moveTimezoneActiveIndex(-1, 1, 40)).toBe(0);
     expect(moveTimezoneActiveIndex(-1, -1, 40)).toBe(39);
     expect(moveTimezoneActiveIndex(0, -1, 40)).toBe(0);
