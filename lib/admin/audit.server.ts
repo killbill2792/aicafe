@@ -2,6 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
+import { estimateSupervisorCostMicros } from "@/lib/ai/conversations/usage.server";
 import type { ConversationMessage, ConversationScope } from "@/lib/ai/conversations/contracts";
 import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 
@@ -31,11 +32,15 @@ export type TurnAudit = {
 export function estimatedTurnCost(turn: AgentTurn | undefined): number | null {
   if (!turn) return null;
   // Provider pricing changes. Only show a cost if BOTH actual rates were explicitly set.
-  const input = Number(process.env.ADMIN_MODEL_INPUT_USD_PER_MILLION);
-  const output = Number(process.env.ADMIN_MODEL_OUTPUT_USD_PER_MILLION);
-  if (!process.env.ADMIN_MODEL_INPUT_USD_PER_MILLION || !process.env.ADMIN_MODEL_OUTPUT_USD_PER_MILLION ||
-      !Number.isFinite(input) || !Number.isFinite(output) || input < 0 || output < 0) return null;
-  return Math.round(((turn.usage.inputTokens * input + turn.usage.outputTokens * output) / 1_000_000) * 1_000_000) / 1_000_000;
+  // Reuse the existing supervisor model prices, unless an explicit *pair* of
+  // admin-specific prices was set. Missing or invalid prices remain NULL.
+  const customInput=process.env.ADMIN_MODEL_INPUT_USD_PER_MILLION;
+  const customOutput=process.env.ADMIN_MODEL_OUTPUT_USD_PER_MILLION;
+  const adminOverride=customInput!==undefined || customOutput!==undefined;
+  const micros=estimateSupervisorCostMicros(turn.usage.inputTokens,turn.usage.outputTokens,
+    adminOverride ? customInput : process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS,
+    adminOverride ? customOutput : process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS);
+  return micros===null?null:micros/1_000_000;
 }
 async function writeTurnAudit(a: TurnAudit): Promise<void> {
   const db = createAdminSupabaseClient();
