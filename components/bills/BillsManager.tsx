@@ -109,7 +109,7 @@ function BillForm({
           className="h-11 w-20 rounded-xl border border-line px-2.5 text-end text-base"
         />
       </label>
-      {error && <p role="alert" className="text-sm text-warn">{error || labels.saveError}</p>}
+      {error && <p role="alert" className="text-sm text-warn">{labels.saveError}</p>}
       <div className="flex gap-2">
         <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="h-11 flex-1 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40">
           {labels.save}
@@ -140,8 +140,7 @@ export default function BillsManager({
   const amountRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (!initialCategory || !SINGLE_SLOT_CATEGORIES.includes(initialCategory)) return;
-    setOpenKey(initialCategory);
-    targetRef.current?.scrollIntoView({ block: "center", behavior: "instant" });
+    targetRef.current?.scrollIntoView({ block: "center", behavior: "auto" });
     amountRef.current?.focus({ preventScroll: true });
   }, [initialCategory]);
   const byCategory = new Map(bills.filter((b) => SINGLE_SLOT_CATEGORIES.includes(b.categoryCode)).map((b) => [b.categoryCode, b]));
