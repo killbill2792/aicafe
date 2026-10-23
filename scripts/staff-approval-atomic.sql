@@ -258,7 +258,8 @@ BEGIN
      WHERE business_id=current_setting('test.approval.business')::uuid
       AND local_date=(SELECT week_start FROM public.staff_schedule_handoff_snapshots
        WHERE proposal_id=(SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64))) LIMIT 1),
-    'whatsapp',(SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)),NULL);
+    'whatsapp','+14155550123',
+    (SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)),NULL);
  EXCEPTION WHEN SQLSTATE 'P0001' THEN blocked:=true;
  END;
  IF NOT blocked OR EXISTS(SELECT 1 FROM public.staff_schedule_deliveries

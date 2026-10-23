@@ -427,7 +427,7 @@ CREATE INDEX IF NOT EXISTS staff_schedule_deliveries_owner_recent
 -- and the current employee's consent/phone under row locks, then record tap.
 CREATE OR REPLACE FUNCTION public.staff_mark_owner_delivery(
  p_business_id uuid,p_owner_user_id uuid,p_employee_id uuid,
- p_channel text,p_proposal_id uuid DEFAULT NULL,p_plan_revision_id uuid DEFAULT NULL
+ p_channel text,p_expected_phone text,p_proposal_id uuid DEFAULT NULL,p_plan_revision_id uuid DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE
  v_employee public.employees%rowtype;
@@ -453,8 +453,10 @@ BEGIN
  SELECT * INTO v_employee FROM public.employees WHERE business_id=p_business_id
    AND id=p_employee_id AND active FOR SHARE;
  IF NOT FOUND THEN RAISE EXCEPTION 'staff_not_found' USING ERRCODE='P0002'; END IF;
+ IF v_employee.phone_e164 IS DISTINCT FROM p_expected_phone
+ THEN RAISE EXCEPTION 'recipient_changed' USING ERRCODE='P0001'; END IF;
  IF v_employee.phone_e164 IS NULL
-   OR v_employee.phone_e164 !~ '^\+[1-9][0-9]{1,14}$'
+   OR v_employee.phone_e164 !~ '^\+[1-9][0-9]{1,14}
    OR (p_channel='whatsapp' AND v_employee.whatsapp_opt_in IS NOT TRUE) THEN
    RAISE EXCEPTION 'recipient_not_eligible' USING ERRCODE='P0001'; END IF;
  IF p_proposal_id IS NOT NULL THEN
@@ -516,6 +518,71 @@ BEGIN
  RETURN jsonb_build_object('state','opened','channel',p_channel);
 END $$;
 REVOKE ALL ON FUNCTION public.staff_mark_owner_delivery(
- uuid,uuid,uuid,text,uuid,uuid) FROM PUBLIC,anon,authenticated;
+ uuid,uuid,uuid,text,text,uuid,uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.staff_mark_owner_delivery(
- uuid,uuid,uuid,text,uuid,uuid) TO service_role;
+ uuid,uuid,uuid,text,text,uuid,uuid) TO service_role;
+
+   OR (p_channel='whatsapp' AND v_employee.whatsapp_opt_in IS NOT TRUE) THEN
+   RAISE EXCEPTION 'recipient_not_eligible' USING ERRCODE='P0001'; END IF;
+ IF p_proposal_id IS NOT NULL THEN
+   LOCK TABLE public.scheduled_shifts IN SHARE MODE;
+   SELECT * INTO v_proposal FROM public.supervisor_proposals
+      WHERE id=p_proposal_id AND business_id=p_business_id
+        AND status='committed' AND capability_id IN (
+          'olivia.staff_propose_schedule.v1','olivia.staff_propose_send_schedule.v1')
+      FOR SHARE;
+   IF NOT FOUND THEN RAISE EXCEPTION 'schedule_not_approved' USING ERRCODE='P0001'; END IF;
+   v_operation:=v_proposal.canonical_effect_payload->>'operation';
+   v_week:=(v_proposal.canonical_effect_payload->'payload'->>'week_start')::date;
+   SELECT * INTO v_snapshot FROM public.staff_schedule_handoff_snapshots
+     WHERE business_id=p_business_id AND proposal_id=p_proposal_id FOR SHARE;
+   IF NOT FOUND OR v_snapshot.week_start<>v_week
+      OR v_snapshot.shifts IS DISTINCT FROM public.staff_handoff_week_shifts(p_business_id,v_week)
+   THEN RAISE EXCEPTION 'schedule_changed' USING ERRCODE='P0001'; END IF;
+   IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(v_snapshot.shifts) s
+       WHERE (s->>'employee_id')::uuid=p_employee_id)
+   THEN RAISE EXCEPTION 'staff_not_scheduled' USING ERRCODE='P0001'; END IF;
+   SELECT * INTO v_delivery FROM public.staff_schedule_deliveries
+     WHERE business_id=p_business_id AND proposal_id=p_proposal_id
+       AND employee_id=p_employee_id FOR UPDATE;
+ ELSE
+   SELECT * INTO v_revision FROM public.scheduling_plan_revisions
+     WHERE business_id=p_business_id AND id=p_plan_revision_id
+       AND status IN ('approved','published') FOR SHARE;
+   IF NOT FOUND THEN RAISE EXCEPTION 'schedule_not_approved' USING ERRCODE='P0001'; END IF;
+   SELECT * INTO v_series FROM public.scheduling_plan_series
+     WHERE business_id=p_business_id AND id=v_revision.series_id FOR SHARE;
+   IF NOT FOUND OR NOT (
+       (v_revision.status='approved' AND v_series.current_revision=v_revision.revision)
+       OR (v_revision.status='published' AND v_series.published_revision=v_revision.revision))
+   THEN RAISE EXCEPTION 'schedule_superseded' USING ERRCODE='P0001'; END IF;
+   IF NOT EXISTS(SELECT 1 FROM public.scheduling_plan_assignments a
+       WHERE a.business_id=p_business_id AND a.plan_revision_id=p_plan_revision_id
+         AND a.employee_id=p_employee_id)
+   THEN RAISE EXCEPTION 'staff_not_scheduled' USING ERRCODE='P0001'; END IF;
+   SELECT * INTO v_delivery FROM public.staff_schedule_deliveries
+     WHERE business_id=p_business_id AND plan_revision_id=p_plan_revision_id
+       AND employee_id=p_employee_id FOR UPDATE;
+ END IF;
+ IF v_delivery.id IS NOT NULL THEN
+   IF v_delivery.status='sent_by_owner' THEN
+     RETURN jsonb_build_object('state','already_opened','channel',v_delivery.channel,
+       'at',v_delivery.sent_at); END IF;
+   IF v_delivery.status<>'prepared' THEN
+     RAISE EXCEPTION 'delivery_conflict' USING ERRCODE='P0001'; END IF;
+   UPDATE public.staff_schedule_deliveries
+     SET status='sent_by_owner',channel=p_channel,recipient_e164=v_employee.phone_e164,
+       sent_at=now(),sent_by=p_owner_user_id,updated_at=now()
+     WHERE id=v_delivery.id;
+ ELSE
+   INSERT INTO public.staff_schedule_deliveries(business_id,proposal_id,plan_revision_id,
+     employee_id,recipient_e164,status,channel,sent_at,sent_by)
+   VALUES(p_business_id,p_proposal_id,p_plan_revision_id,p_employee_id,
+     v_employee.phone_e164,'sent_by_owner',p_channel,now(),p_owner_user_id);
+ END IF;
+ RETURN jsonb_build_object('state','opened','channel',p_channel);
+END $$;
+REVOKE ALL ON FUNCTION public.staff_mark_owner_delivery(
+ uuid,uuid,uuid,text,text,uuid,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.staff_mark_owner_delivery(
+ uuid,uuid,uuid,text,text,uuid,uuid) TO service_role;

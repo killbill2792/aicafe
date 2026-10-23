@@ -33,7 +33,8 @@ describe("owner schedule compose API",()=>{
  });
  it("records the owner-chosen channel instead of claiming actual delivery",async()=>{
   const payload={proposalId:"11111111-1111-4111-8111-111111111111",
-    employeeId:"22222222-2222-4222-8222-222222222222",channel:"whatsapp"};
+    employeeId:"22222222-2222-4222-8222-222222222222",channel:"whatsapp",
+    expectedPhone:"+14155550123"};
   const result=await POST(req("POST",payload));
   expect(result.status).toBe(200);
   expect(await result.json()).toEqual({state:"opened",channel:"whatsapp"});

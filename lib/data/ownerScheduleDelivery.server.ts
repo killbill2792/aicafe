@@ -139,18 +139,20 @@ export async function readApprovedScheduleDelivery(source:unknown,
 }
 export async function markOwnerScheduleDelivery(raw:unknown){
  const params=z.strictObject({proposalId:uuid.optional(),week:weekInput.optional(),
-   employeeId:uuid,channel:z.enum(["whatsapp","sms"])}).parse(raw);
+   employeeId:uuid,channel:z.enum(["whatsapp","sms"]),expectedPhone:z.string().regex(/^\+[1-9]\d{1,14}$/)}).parse(raw);
  const owner=await scheduleDeliveryContext();
  // Resolve source on every write (including approval status/tenant) before SQL CAS.
  const schedule=await readApprovedScheduleDelivery({
    ...(params.proposalId?{proposalId:params.proposalId}:{week:params.week}),
  },"en",owner);
  const person=schedule.recipients.find(x=>x.id===params.employeeId);
- if(!person||eligibleForChannel(person.phone,person.optedIn,params.channel)!=="ready")
+ if(!person||person.phone!==params.expectedPhone||
+   eligibleForChannel(person.phone,person.optedIn,params.channel)!=="ready")
   throw new DeliveryReadError("recipient_not_eligible");
  const {data,error}=await createAdminSupabaseClient().rpc("staff_mark_owner_delivery",{
    p_business_id:owner.businessId,p_owner_user_id:owner.userId,p_employee_id:params.employeeId,
-   p_channel:params.channel,p_proposal_id:schedule.source.proposalId??null,
+   p_channel:params.channel,p_expected_phone:params.expectedPhone,
+   p_proposal_id:schedule.source.proposalId??null,
    p_plan_revision_id:schedule.source.planRevisionId??null,
  });
  if(error)throw new DeliveryReadError("delivery_conflict");
