@@ -135,11 +135,13 @@ export default function BillsManager({
   labels: BillFormLabels & { addHint: string; missing: string; edit: string; addAnother: string; totalMonthly: string; variableCostHint: string };
   initialCategory?: ExpenseCategoryCode | null;
 }) {
-  const [openKey, setOpenKey] = useState<string | null>(initialCategory);
+  const firstOtherBill = bills.find((bill) => bill.categoryCode === OTHER_CATEGORY);
+  const initialOpenKey = initialCategory === OTHER_CATEGORY ? firstOtherBill?.id ?? NEW_OTHER_KEY : initialCategory;
+  const [openKey, setOpenKey] = useState<string | null>(initialOpenKey);
   const targetRef = useRef<HTMLDivElement | null>(null);
   const amountRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
-    if (!initialCategory || !SINGLE_SLOT_CATEGORIES.includes(initialCategory)) return;
+    if (!initialCategory) return;
     targetRef.current?.scrollIntoView({ block: "center", behavior: "auto" });
     amountRef.current?.focus({ preventScroll: true });
   }, [initialCategory]);
@@ -198,7 +200,7 @@ export default function BillsManager({
       {otherBills.map((bill) => {
         const isOpen = openKey === bill.id;
         return (
-          <div key={bill.id} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
+          <div key={bill.id} ref={initialCategory === OTHER_CATEGORY && bill.id === initialOpenKey ? targetRef : undefined} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
             <button type="button" onClick={() => toggle(bill.id)} className="flex items-center gap-3">
               <PlainIcon code={OTHER_CATEGORY} size={32} color="currentColor" />
               <span className="min-w-0 flex-1 truncate text-start text-base font-bold">{bill.label}</span>
@@ -209,6 +211,7 @@ export default function BillsManager({
             {isOpen && (
               <BillForm
                 existing={bill}
+                amountInputRef={initialCategory === OTHER_CATEGORY && bill.id === initialOpenKey ? amountRef : undefined}
                 category={OTHER_CATEGORY}
                 defaultLabel={bill.label}
                 showLabelField
@@ -221,8 +224,9 @@ export default function BillsManager({
       })}
 
       {openKey === NEW_OTHER_KEY ? (
-        <div className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
+        <div ref={initialCategory === OTHER_CATEGORY ? targetRef : undefined} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
           <BillForm
+            amountInputRef={initialCategory === OTHER_CATEGORY ? amountRef : undefined}
             existing={null}
             category={OTHER_CATEGORY}
             defaultLabel=""
