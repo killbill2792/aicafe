@@ -90,6 +90,7 @@ export default async function ProcessingFeesPage() {
           invalidMix: t("invalidMix"),
           uploadFeeReport: t("uploadFeeReport"),
           info: t("info"),
+          noNewCoverage: t("noNewCoverage"),
         }}
       />
     </PageShell>
