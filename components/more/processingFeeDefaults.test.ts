@@ -10,6 +10,7 @@ import {
   isRealIsoDay,
   activeRateDrafts,
   knownProcessorCount,
+  untrustedEstimateDayCount,
 } from "./processingFeeDefaults";
 
 describe("processing fee redesign defaults", () => {
@@ -116,6 +117,18 @@ describe("processing fee redesign defaults", () => {
     expect(knownProcessorCount([], facts)).toBe(1);
     expect(knownProcessorCount([], [{ provider: "manual", source_type: "manual_actual" }])).toBe(0);
     expect(knownProcessorCount([{ provider: "toast" }, { provider: "square" }], facts)).toBe(2);
+  });
+
+  it("requires average ticket only for non-actual days missing trusted order counts", () => {
+    const days = [
+      { date: "2026-10-01", status: "actual" as const },
+      { date: "2026-10-02", status: "actual" as const },
+      { date: "2026-10-03", status: "missing" as const },
+      { date: "2026-10-04", status: "estimated" as const },
+    ];
+    expect(untrustedEstimateDayCount(days, new Set(["2026-10-03", "2026-10-04"]))).toBe(0);
+    expect(untrustedEstimateDayCount(days, new Set(["2026-10-03"]))).toBe(1);
+    expect(untrustedEstimateDayCount(days, new Set())).toBe(2);
   });
 
   it("one-tap bypasses a manually empty date but still requires fee inputs", () => {
