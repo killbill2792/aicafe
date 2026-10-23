@@ -58,7 +58,7 @@ export function calculateUsage(input:{
    if(!Number.isFinite(qty)||qty<0){salesMissing=true;continue;}
    let key="all",label="All";
    if(input.groupBy==="day"){key=sale.businessDate;label=key;}
-   if(input.groupBy==="shift"){key=staffIds.join("|")||"unassigned";label=crew.join(", ")||"No matched Toast time entry";}
+   if(input.groupBy==="shift"){key=clocked.map(s=>s.id).sort().join("|")||"unassigned:"+sale.businessDate;label=crew.join(", ")||"No matched Toast time entry";}
    if(input.groupBy==="staff"){ // Shared expected usage, not proof who prepared the sale.
     const members=clocked.length?clocked:[{staffId:"unassigned",staff:"No matched Toast time entry"}];
     for(const s of members)add(id,qty*sale.quantity/members.length,s.staffId,s.staff,[s.staff]);
