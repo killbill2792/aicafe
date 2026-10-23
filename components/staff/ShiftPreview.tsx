@@ -3,13 +3,13 @@ import {useTranslations} from "next-intl";
 import {previewShift,type PersonForSchedule,type DetailedShift,type ScheduleGap,type AvailabilityEntry} from "@/lib/calc/scheduling/schedulePresentation";
 import type {RuleSettings} from "@/lib/calc/scheduling/ruleChecks";
 const fmt=(c:number|null,currency:string)=>c==null?"Unknown":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(c/100);
-export default function ShiftPreview({personId,date,start,end,breakMinutes,editingId,team,shifts,gaps,availability,rules,currency}:{
+export default function ShiftPreview({personId,date,start,end,breakMinutes,editingId,team,shifts,gaps,availability,rules,currency,timezone}:{
  personId:string;date:string;start:string;end:string;breakMinutes:number;editingId:string|null;
  team:PersonForSchedule[];shifts:DetailedShift[];gaps:ScheduleGap[];availability:AvailabilityEntry[];
- rules:RuleSettings;currency:string
+ rules:RuleSettings;currency:string;timezone:string
 }){
  const t=useTranslations("StaffSchedule");
- const result=previewShift({employeeId:personId,date,start,end,breakMinutes,editingId},team,shifts,gaps,availability,rules);
+ const result=previewShift({employeeId:personId,date,start,end,breakMinutes,editingId},team,shifts,gaps,availability,rules,timezone);
  if(!result)return <p role="alert" className="mt-4 rounded-xl bg-warn-soft p-3 text-warn-text">{t("shiftTimeError")}</p>;
  const checks=[
   [result.covered,"Fills a coverage gap","Coverage gap remains"],

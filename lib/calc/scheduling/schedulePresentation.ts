@@ -1,6 +1,7 @@
+import {fromZonedTime} from "date-fns-tz";
 import type {OpenHours} from "@/lib/business/openHours";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
-import {minuteOfDay,elapsedMinutes,shiftCost,roleWageAverages,aggregateCosts,type CostShift,type CostLine} from "./shiftCost";
+import {minuteOfDay,shiftCost,roleWageAverages,aggregateCosts,type CostShift,type CostLine} from "./shiftCost";
 import {checkShiftLength,checkScheduledWeeklyBounds,type RuleSettings} from "./ruleChecks";
 
 export type PersonForSchedule={id:string;name:string;role:string|null;wageCents:number|null;
@@ -21,10 +22,11 @@ export function dayTimeline(date:string,shifts:DetailedShift[],gaps:ScheduleGap[
  const dayShifts=shifts.filter(s=>s.date===date);
  const openings=hours?.[OPEN_HOURS_DAY_KEYS[dateDay(date)]]??[];
  const intervals=openings.map(([start,end])=>span(start,end));
- const times=[300,1020,...intervals.flatMap(s=>[s.start,s.end]),
+ const times=[...intervals.flatMap(s=>[s.start,s.end]),
   ...dayShifts.flatMap(s=>{const d=span(s.start,s.end);return [d.start,d.end]})];
- const first=Math.floor(Math.min(...times)/60)*60;
- const last=Math.max(first+60,Math.ceil(Math.max(...times)/60)*60);
+ const timeline=times.length?times:[300,1020];
+ const first=Math.floor(Math.min(...timeline)/60)*60;
+ const last=Math.max(first+60,Math.ceil(Math.max(...timeline)/60)*60);
  const band=(a:number,b:number)=>({left:Math.max(0,percent(a,first,last)),
    width:Math.max(0,percent(b,first,last)-percent(a,first,last))});
  const ticks=[] as {at:number;label:string}[];
@@ -86,7 +88,7 @@ export function bestFreePerson(people:PersonForSchedule[],date:string,start:stri
 }
 export function previewShift(input:{employeeId:string;date:string;start:string;end:string;breakMinutes:number;editingId:string|null},
  people:PersonForSchedule[],shifts:DetailedShift[],gaps:ScheduleGap[],
- windows:AvailabilityEntry[],rules:RuleSettings){
+ windows:AvailabilityEntry[],rules:RuleSettings,timezone="UTC"){
  const person=people.find(p=>p.id===input.employeeId);
  if(!person)return null;
  const originals=shifts.filter(s=>s.id!==input.editingId);
@@ -111,10 +113,13 @@ export function previewShift(input:{employeeId:string;date:string;start:string;e
  const overlap=availabilityStatus(person,input.date,input.start,input.end,originals,windows);
  const overtime=rules.weekly_ot_enabled&&oldMinutes+next.paidMinutes>rules.weekly_ot_after_minutes;
  const adjacent=originals.filter(s=>s.employeeId===person.id).map(s=>{
-   const startMs=Date.parse(s.date+"T"+s.start+":00Z");
-   const endMs=startMs+elapsedMinutes(s.start,s.end,s.overnight)*60000;
-   const targetStart=Date.parse(input.date+"T"+input.start+":00Z");
-   const targetEnd=targetStart+next.minutes*60000;
+   const midnight=(date:string,time:string)=>fromZonedTime(date+"T"+time+":00",timezone).getTime();
+   const endDate=(date:string,overnight:boolean)=>
+     overnight?new Date(Date.parse(date+"T12:00:00Z")+86400000).toISOString().slice(0,10):date;
+   const startMs=midnight(s.date,s.start);
+   const endMs=midnight(endDate(s.date,Boolean(s.overnight)),s.end);
+   const targetStart=midnight(input.date,input.start);
+   const targetEnd=midnight(endDate(input.date,overnight),input.end);
    const separation=targetStart>=endMs?(targetStart-endMs)/60000:
     startMs>=targetEnd?(startMs-targetEnd)/60000:Number.POSITIVE_INFINITY;
    return separation;

@@ -89,11 +89,11 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   const person=bestFreePerson(data.team,gap.date,gap.start,gap.end,data.shifts,data.availability);
   openShift(gap.date,undefined,person?.id);
   setStart(gap.start);setEnd(gap.end);
-  setBreakMin(data.rules.meal_break_enabled?data.rules.meal_break_minutes:0);
+  setBreakMin(0);
   setFillsGap(true);
  };
  const proposed=sheet==="shift"?previewShift({employeeId:chosen,date,start,end,breakMinutes:breakMin,editingId:editing},
-  data.team,data.shifts,data.gaps,data.availability,data.rules):null;
+  data.team,data.shifts,data.gaps,data.availability,data.rules,data.timezone):null;
  const previewBlock:DetailedShift|null=proposed?{...proposed.next,id:editing??"preview",
   employeeName:data.team.find(p=>p.id===chosen)?.name??t("team"),status:"draft"}:null;
  const dayLabel=(d:string)=>new Intl.DateTimeFormat(locale,{weekday:"short",day:"numeric",timeZone:"UTC"}).format(new Date(d+"T12:00:00Z"));
@@ -283,7 +283,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       </div>
       <ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={breakMin}
        editingId={editing} team={data.team} shifts={data.shifts} gaps={data.gaps}
-       availability={data.availability} rules={data.rules} currency={data.currency}/>
+       availability={data.availability} rules={data.rules} currency={data.currency} timezone={data.timezone}/>
       <button disabled={busy||!chosen} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakMin,repeatWeekly}))}
        className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">{t("saveShift")}</button>
       {editing&&<button className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}
