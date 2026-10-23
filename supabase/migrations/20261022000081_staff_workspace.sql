@@ -15,7 +15,8 @@ BEGIN
         OR min_weekly_minutes <= max_weekly_minutes);
   END IF;
 END $$;
-ALTER TABLE public.staff_schedules ALTER COLUMN hourly_wage_cents DROP NOT NULL;
+-- Recurrences use dated scheduled_shifts; legacy payroll schedules keep their
+-- NOT NULL wage invariant so attendance materialization cannot import null pay.
 
 CREATE TABLE public.team_rules (
   business_id uuid PRIMARY KEY REFERENCES public.businesses(id) ON DELETE CASCADE,

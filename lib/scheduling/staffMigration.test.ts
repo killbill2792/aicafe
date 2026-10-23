@@ -37,5 +37,6 @@ describe("staff workspace SQL deployment safety",()=>{
    expect(sql).toContain("IF NOT EXISTS (SELECT 1 FROM pg_constraint");
    expect(sql).not.toMatch(/\bTRUNCATE\b|\bDROP\s+TABLE\b/i);
    expect(sql).toContain("deleted_at");
+   expect(sql).not.toMatch(/staff_schedules ALTER COLUMN hourly_wage_cents DROP NOT NULL/);
  });
 });
