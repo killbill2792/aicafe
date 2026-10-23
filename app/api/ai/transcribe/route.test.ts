@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only",()=>({}));
-const settings = vi.hoisted(() => ({ denied: false, calls: 0 }));
+const settings = vi.hoisted(() => ({ denied: false, expired: false, calls: 0, checks: 0 }));
 vi.mock("@/lib/ai/conversations/auth.server", () => ({
   ConversationApiError: class ConversationApiError extends Error {
     constructor(public status: number, public code: string) { super(code); }
@@ -9,6 +9,16 @@ vi.mock("@/lib/ai/conversations/auth.server", () => ({
   authenticatedConversationContext: async () => {
     if (settings.denied) throw new Error("owner required");
     return { scope: { ownerUserId: "test-owner", businessId: "test-cafe" } };
+  },
+}));
+vi.mock("@/lib/access/access.server",()=>({
+  assertCafeAiAccess:async(id:string)=>{
+    expect(id).toBe("test-cafe");
+    settings.checks++;
+    if(settings.expired){
+      const {ConversationApiError}=await import("@/lib/ai/conversations/auth.server");
+      throw new ConversationApiError(403,"access_expired");
+    }
   },
 }));
 import { POST } from "./route";
@@ -33,7 +43,7 @@ const providerError=(status:number,code:string,message="sensitive provider messa
   });
 
 beforeEach(() => {
-  settings.denied = false; settings.calls = 0;
+  settings.denied = false; settings.expired=false;settings.checks=0;settings.calls = 0;
   process.env.OPENAI_API_KEY = "test-server-key";
   delete process.env.SUPERVISOR_TRANSCRIPTION_MODEL;
   provider=async(url,init)=>{
@@ -55,6 +65,14 @@ afterEach(() => {
 });
 
 describe("private bounded Supervisor dictation", () => {
+  it("denies expired or paused café before reading audio or spending provider credits",async()=>{
+    settings.expired=true;
+    const response=await POST(audioRequest());
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({error:"access_expired"});
+    expect(settings.checks).toBe(1);
+    expect(settings.calls).toBe(0);
+  });
   it("uses the dedicated default gpt-transcribe model and returns editable transcript", async () => {
     const response = await POST(audioRequest());
     expect(response.status).toBe(200);

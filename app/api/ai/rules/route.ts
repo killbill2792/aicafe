@@ -1,3 +1,4 @@
+import {requireOwnerAccessScope} from "@/lib/access/access.server";
 import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
 import { createRuleInput, rulePageInput } from "@/lib/ai/policies/contracts";
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
@@ -21,6 +22,8 @@ export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
     const input = parseInput(createRuleInput, await readBoundedJson(request));
+    const {access}=await requireOwnerAccessScope();
+    if(!access.active)return conversationJson({error:"access_expired"},403);
     const service = await authenticatedTeamRulesService();
     const rule = await service.createDraft(input.agentId, input.instruction);
     return conversationJson({ rule }, 201);

@@ -1,5 +1,6 @@
 import {z} from "zod";
 import {formatInTimeZone} from "date-fns-tz";
+import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {authenticatedConversationContext} from "@/lib/ai/conversations/auth.server";
 import {conversationError,conversationJson,parseInput,readBoundedJson,requireSameOrigin}
   from "@/lib/ai/conversations/http.server";
@@ -61,6 +62,7 @@ export async function POST(request:Request,{params}:Params){
   const {threadId}=await params;
   const input=parseInput(action,await readBoundedJson(request));
   const {scope:base}=await context(threadId);
+  await assertCafeAiAccess(base.businessId);
   const scope={...base,locale:input.action==="propose"?input.locale:base.locale};
   const repo=new SupabaseLoopRepository();
   switch(input.action){

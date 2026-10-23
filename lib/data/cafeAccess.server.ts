@@ -36,7 +36,9 @@ export function accessCodeHash(raw:string):string{
 export async function redeemCafeFreeCode(businessId:string,ownerId:string,code:string):
  Promise<{status:string;access_end?:string}>{
  const {data,error}=await createAdminSupabaseClient().rpc("redeem_free_access_code",{
-  p_business_id:businessId,p_code_hash:accessCodeHash(code),p_owner_id:ownerId,
+  p_business_id:businessId,
+  p_code_hash:createHash("sha256").update(normalizeCode(code),"utf8").digest("hex"),
+  p_owner_id:ownerId,
  });
  if(error)throw error;
  return data as {status:string;access_end?:string};

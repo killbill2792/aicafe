@@ -41,6 +41,9 @@ export const SOURCE_SURFACES = {
     accessCodeHash:{restricted:"One-way code hashing and validation, no model access"},
     redeemCafeFreeCode:{restricted:"Service-role atomic code redemption, not a model tool"},
   },
+  "lib/data/adminCodeRedemptions.server.ts":{
+    getCodeRedemptionPage:{restricted:"Admin-only paginated code redemption details; not model-visible"},
+  },
   "lib/data/adminCodes.server.ts":{
     getAdminCodeConsole:{restricted:"Server-admin cross-tenant code ledger, never public"},
     insertFreeAccessCode:{restricted:"Privileged new code write, not a model tool"},

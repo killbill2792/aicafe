@@ -1,7 +1,8 @@
 "use client";
 import {useState} from "react";
 import {useRouter} from "next/navigation";
-type Code={id:string;code_hint:string;duration_months:number|null;fixed_end_date:string|null;max_cafes:number;note:string|null;active:boolean;created_at:string};
+import Link from "next/link";
+type Code={id:string;code_hint:string;duration_months:number|null;fixed_end_date:string|null;max_cafes:number;redeemed_cafes:number;note:string|null;active:boolean;created_at:string};
 type Redemption={code_id:string;business_id:string;redeemed_by:string|null;redeemed_at:string;access_end:string;ownerEmail:string};
 type Access={business_id:string;mode:string;code_id:string|null;access_end:string|null};
 type Cafe={id:string;name:string};
@@ -47,9 +48,9 @@ export default function CodeConsole({codes,redemptions,access,cafes}:{codes:Code
   </form>
   <div className="overflow-x-auto rounded border bg-white"><table className="w-full text-left text-sm">
    <thead><tr className="bg-slate-100">{["Code hint","Grant","Limit","Redeemed cafés","Note","Active"].map(x=><th key={x} className="p-3">{x}</th>)}</tr></thead>
-   <tbody>{codes.map(c=><tr className="border-t" key={c.id}><td className="p-3">{c.code_hint}</td>
+   <tbody>{codes.map(c=><tr className="border-t" key={c.id}><td className="p-3"><Link href={"/admin/codes/"+c.id} className="underline">{c.code_hint}</Link></td>
     <td className="p-3">{c.duration_months?c.duration_months+" months":"Until "+c.fixed_end_date}</td><td className="p-3">{c.max_cafes}</td>
-    <td className="p-3">{new Set(redemptions.filter(r=>r.code_id===c.id).map(r=>r.business_id)).size}</td><td className="p-3">{c.note??"—"}</td>
+    <td className="p-3">{c.redeemed_cafes}</td><td className="p-3">{c.note??"—"}</td>
     <td className="p-3"><button disabled={busy} className="underline" onClick={()=>void action({action:"toggle",id:c.id,active:!c.active})}>{c.active?"Deactivate":"Activate"}</button></td></tr>)}</tbody>
   </table></div>
   <h2 className="text-xl font-bold">Redemptions</h2>

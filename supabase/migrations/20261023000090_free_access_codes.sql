@@ -110,10 +110,13 @@ begin
  on conflict (code_id,business_id) do update
  set redeemed_by=excluded.redeemed_by,redeemed_at=now(),
      access_end=greatest(public.free_access_redemptions.access_end,excluded.access_end);
- -- Owners' explicit redemption changes unlimited grandfathering to a timed grant;
- -- no café loses access automatically during the migration.
- update public.cafe_access set mode='code',code_id=v_code.id,access_end=v_end,updated_at=now()
- where business_id=p_business_id;
+ -- A grandfathered café remains unlimited until an ADMIN explicitly changes
+ -- its mode. Redeeming a promotional code must not silently remove the guarantee.
+ if v_access.mode <> 'grandfathered' then
+   update public.cafe_access
+      set mode='code',code_id=v_code.id,access_end=v_end,updated_at=now()
+    where business_id=p_business_id;
+ end if;
  return jsonb_build_object('status','ok','access_end',v_end);
 end $$;
 revoke all on function public.redeem_free_access_code(uuid,text,uuid) from public,anon,authenticated;
@@ -170,3 +173,14 @@ update public.agent_turn_steps set
  input_summary=null,output_summary=null,
  error=case when error is not null then 'step_failed' else null end
 where input_summary is not null or output_summary is not null or error is not null;
+
+-- This aggregate deliberately covers ALL historical redemptions, not the
+-- latest 500 ledger rows rendered by the admin console.
+create or replace function public.admin_code_redemption_counts()
+returns jsonb language sql stable security invoker set search_path=public as $$
+ select coalesce(jsonb_object_agg(code_id,cafe_count),'{}'::jsonb)
+ from (select code_id::text as code_id,count(*)::integer as cafe_count
+       from public.free_access_redemptions group by code_id) as all_redemptions;
+$$;
+revoke all on function public.admin_code_redemption_counts() from public,anon,authenticated;
+grant execute on function public.admin_code_redemption_counts() to service_role;
