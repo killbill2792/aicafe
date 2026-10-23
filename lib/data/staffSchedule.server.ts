@@ -20,20 +20,23 @@ export async function getWeekSchedule(raw:unknown){
  const dates=Array.from({length:7},(_,i)=>plusDays(p.data.weekStart,i));
  if(!owner.supabase||owner.businessId===DEMO_BUSINESS_ID)return {ok:true as const,data:{
   dates,weekStart:p.data.weekStart,team:[],shifts:[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
-  gaps:[],openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],readOnly:true,timezone:owner.timezone
+  gaps:[],openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],profileAvailability:[],readOnly:true,timezone:owner.timezone
  }};
- const [people,shifts,profile,ruleResult,availability]=await Promise.all([
+ const [people,shifts,profile,ruleResult,availability,profileAvailability]=await Promise.all([
   owner.supabase.from("employees").select("id,display_name,role,active,default_hourly_wage_cents,wage_amount_cents,wage_period,available_days,min_weekly_minutes,max_weekly_minutes,phone_e164,color_index")
-    .eq("business_id",owner.businessId).eq("active",true).order("display_name"),
+    .eq("business_id",owner.businessId).order("display_name"),
   owner.supabase.from("scheduled_shifts").select("*").eq("business_id",owner.businessId)
     .gte("local_date",dates[0]).lte("local_date",dates[6]).is("deleted_at",null).order("start_local"),
   owner.supabase.from("locations").select("open_hours").eq("business_id",owner.businessId)
    .order("name").limit(1).maybeSingle(),getTeamRules(),
   owner.supabase.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to")
-   .eq("business_id",owner.businessId).lte("effective_from",dates[6])
+   .eq("business_id",owner.businessId).lte("effective_from",dates[6]),
+  owner.supabase.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to")
+   .eq("business_id",owner.businessId).lte("effective_from",owner.today)
+   .or(`effective_to.is.null,effective_to.gte.${owner.today}`)
  ]);
- if(people.error||shifts.error||profile.error||availability.error||!ruleResult.ok)return {ok:false as const,error:"storage_unavailable"};
- const team=(people.data??[]).map(p=>({
+ if(people.error||shifts.error||profile.error||availability.error||profileAvailability.error||!ruleResult.ok)return {ok:false as const,error:"storage_unavailable"};
+ const allEmployees=(people.data??[]).map(p=>({active:p.active as boolean,
    id:p.id as string,name:p.display_name as string,role:p.role as string|null,
    wageCents: p.wage_period==="hour" ? ((p.wage_amount_cents as number|null)??(p.default_hourly_wage_cents as number|null))
     : p.default_hourly_wage_cents as number|null,
@@ -42,10 +45,12 @@ export async function getWeekSchedule(raw:unknown){
    phone:p.phone_e164 as string|null,wagePeriod:p.wage_period as "hour"|"month"|"year",
    salaryAmountCents:p.wage_period==="hour"?null:p.wage_amount_cents as number|null
  }));
+ const team=allEmployees.filter(p=>p.active);
  const openHours=normalizeOpenHours(profile.data?.open_hours);
- const averages=roleWageAverages(team),defaultWage=businessWageEstimate(team);
+ // A retired person's retained shifts remain priced with their actual compensation.
+ const averages=roleWageAverages(allEmployees),defaultWage=businessWageEstimate(allEmployees);
  const mapped=(shifts.data??[]).map(s=>{
-   const person=team.find(p=>p.id===s.employee_id);
+   const person=allEmployees.find(p=>p.id===s.employee_id);
    const input:CostShift={employeeId:s.employee_id,date:s.local_date,start:String(s.start_local).slice(0,5),
       end:String(s.end_local).slice(0,5),overnight:s.overnight,
       breakMinutes:s.break_minutes,wageCents:person?.wageCents??null,role:person?.role};
@@ -58,7 +63,7 @@ export async function getWeekSchedule(raw:unknown){
  return {ok:true as const,data:{
    dates,team,shifts:mapped,total,gaps,openHours,
    currency:owner.currency,rules:ruleResult.data,
-   availability:availability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone
+   availability:availability.data??[],profileAvailability:profileAvailability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone
  }};
 }
 export async function getCoverageGaps(raw:unknown){
