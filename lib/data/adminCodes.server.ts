@@ -41,10 +41,15 @@ export async function getAdminCodeConsole(page=0,cafePage=0){
    .map(c=>[c.id,c.code_hint] as const));
  const totals=(counts??{}) as Record<string,number>;
  const ownerIds=[...new Set(history.map(r=>r.redeemed_by).filter((x):x is string=>!!x))];
- const emails:readonly (readonly [string,string])[]=await Promise.all(ownerIds.map(async id=>{
-  const {data}=await db.auth.admin.getUserById(id);
-  return [id,data.user?.email??"Unknown"] as const;
- }));
+ const emails:Array<readonly [string,string]>=[];
+ // Avoid a burst of up to 500 concurrent Auth Admin lookups.
+ for(let i=0;i<ownerIds.length;i+=20){
+  const batchEmails=await Promise.all(ownerIds.slice(i,i+20).map(async id=>{
+   const {data}=await db.auth.admin.getUserById(id);
+   return [id,data.user?.email??"Unknown"] as const;
+  }));
+  emails.push(...batchEmails);
+ }
  const emailById=Object.fromEntries(emails);
  return {page:safePage,perPage,codeTotal:codeTotal??codes?.length??0,
   cafePage:safeCafePage,cafePerPage,cafeTotal:cafeTotal??cafeRows.length,
