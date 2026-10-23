@@ -37,7 +37,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const uncheckedDays=uncheckedCoverageDays(data.dates,data.openHours,data.rules.coverage_enabled);
  const [screen,setScreen]=useState(tab),[sheet,setSheet]=useState<"person"|"shift"|null>(null);
  const [busy,startTransition]=useTransition(),[error,setError]=useState(""),[notice,setNotice]=useState("");
- const [savingConsent,setSavingConsent]=useState(false);
+ const [savingConsent,setSavingConsent]=useState(false),[consentError,setConsentError]=useState(false);
  const [dismissed,setDismissed]=useState<string[]>([]);
  const [repeatWeekly,setRepeatWeekly]=useState(false),[fillsGap,setFillsGap]=useState(false),[breakOverridden,setBreakOverridden]=useState(false);
  const [inlineName,setInlineName]=useState(""),[inlineRole,setInlineRole]=useState("Barista");
@@ -58,7 +58,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setSheet(null);router.refresh();
  });
  const openPerson=(person?:Data["team"][number])=>{
-  setAvailabilityDirty(false);
+  setAvailabilityDirty(false);setConsentError(false);
   setPersonEditing(person?.id??null);setName(person?.name??"");setRole(person?.role??"Barista");
   setWage(person?.wageCents??null);setSalaryPeriod(person?.wagePeriod&&person.wagePeriod!=="hour"?person.wagePeriod:null);
   setPhone(person?.phone??"");setWhatsAppOptIn(person?.whatsappOptIn??false);
@@ -78,7 +78,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  // consent checkbox until the protected PATCH completes successfully.
  const saveConsent=async(next:boolean)=>{
   if(!personEditing||savingConsent||busy||data.readOnly)return;
-  setSavingConsent(true);setError("");
+  setSavingConsent(true);setConsentError(false);setError("");
   try{
    const response=await fetch("/api/staff/schedule-delivery",{
     method:"PATCH",credentials:"same-origin",
@@ -90,7 +90,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    setData({...data,team:data.team.map(person=>person.id===personEditing?
      {...person,whatsappOptIn:next}:person)});
    router.refresh();
-  }catch{setError(t("deliveryConsentError"));}
+  }catch{setConsentError(true);}
   finally{setSavingConsent(false);}
  };
  const mutateAvailability=(day:number,update:{start:string|null;end:string|null}|null)=>{
@@ -298,6 +298,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
           className="size-6 shrink-0 accent-accent"/>
         <span className="text-[17px]">{t("deliveryConsent")}</span>
        </label>:<p className="mt-3 text-sm text-muted">{t("deliveryConsentAfterCreate")}</p>}
+       {personEditing&&consentError&&<p role="alert" className="mt-2 text-neg">{t("deliveryConsentError")}</p>}
        <button disabled={busy||savingConsent||!name.trim()} onClick={()=>run(()=>{
        const fields={name,role:role||null,wageCents:salaryPeriod?null:wage,availability:personEditing&&!availabilityDirty?null:availability,
         minWeeklyMinutes,maxWeeklyMinutes,phone:phone.trim()||null};
