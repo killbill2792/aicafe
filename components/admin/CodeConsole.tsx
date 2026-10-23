@@ -29,6 +29,12 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
   finally{setBusy(false);}
  }
  const pageUrl=(codeIndex:number,cafeIndex:number)=>"/admin/codes?page="+codeIndex+"&cafePage="+cafeIndex;
+ const accessLabel=(id:string)=>{
+  const state=access.find(a=>a.business_id===id);
+  if(!state||state.mode==="grandfathered")return "Grandfathered";
+  if(state.mode==="paused")return "Paused";
+  return state.access_end??"Unknown";
+ };
  return <section className="space-y-7">
   <div><h1 className="text-2xl font-bold">Free access codes</h1><p className="text-sm text-slate-600">No payments. Codes are stored as hashes; copy a new code when it is created.</p></div>
   {error&&<p role="alert" className="rounded border border-red-400 p-3 text-red-700">{error}</p>}
@@ -64,7 +70,7 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
     <td className="p-3">{r.cafeName}</td><td className="p-3">{r.ownerEmail}</td>
     <td className="p-3">{r.codeHint}</td>
     <td className="p-3">{r.redeemed_at.slice(0,10)}</td><td className="p-3">{r.access_end}</td>
-    <td className="p-3">{access.find(a=>a.business_id===r.business_id)?.access_end??"Grandfathered"}</td></tr>)}</tbody>
+    <td className="p-3">{accessLabel(r.business_id)}</td></tr>)}</tbody>
   </table></div>
   <h2 className="text-xl font-bold">Café access control</h2>
   <p className="text-[17px]">{cafeTotal} cafés · page {cafePage+1} of {Math.max(1,Math.ceil(cafeTotal/cafePerPage))}</p>
