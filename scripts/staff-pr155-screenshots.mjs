@@ -44,7 +44,12 @@ for(const width of [390,1280]){
   await page.locator("header button[aria-label]").first().click();
   await page.getByRole("dialog").first().waitFor({state:"visible"});
   await page.screenshot({path:join(output,"shift-edit-mobile.png"),fullPage:true});
-  await page.getByRole("button",{name:"Cancel",exact:true}).first().click();
+  const focusInside=await page.evaluate(()=>document.activeElement?.closest("dialog")!==null);
+  if(!focusInside)throw Error("The editing sheet did not receive keyboard focus");
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").first().waitFor({state:"hidden"});
+  const focusRestored=await page.locator("header button[aria-label]").first().evaluate(el=>el===document.activeElement);
+  if(!focusRestored)throw Error("Dialog did not restore focus to Add shift control");
   const seen=new Set();
   for(const theme of themes){
    for(const mode of ["light","dark"]){

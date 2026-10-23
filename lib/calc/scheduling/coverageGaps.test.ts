@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {coverageGaps} from "./coverageGaps";
+import {coverageGaps,coverageVerification,uncheckedCoverageDays} from "./coverageGaps";
 import type {OpenHours} from "@/lib/business/openHours";
 const open:OpenHours={sun:[],mon:[["07:00","10:00"]],tue:[],wed:[],thu:[],fri:[],sat:[]};
 describe("distinct-person coverage",()=>{
@@ -25,6 +25,13 @@ describe("distinct-person coverage",()=>{
     overnight:false,breakMinutes:0,wageCents:null}];
   expect(coverageGaps(["2026-10-26"],shifts,{mon:[["22:00","02:00"]]},1))
    .toEqual([{date:"2026-10-26",start:"22:00",end:"00:00",headcount:0,needed:1}]);
+ });
+ it("never infers checked coverage from missing hours or a disabled rule",()=>{
+  expect(coverageVerification("2026-10-26",null,true)).toBe("unknown");
+  expect(coverageVerification("2026-10-26",{tue:[["07:00","16:00"]]},true)).toBe("unknown");
+  expect(coverageVerification("2026-10-26",{mon:[]},true)).toBe("closed");
+  expect(coverageVerification("2026-10-26",{mon:[["07:00","16:00"]]},false)).toBe("disabled");
+  expect(uncheckedCoverageDays(["2026-10-26","2026-10-27"],{mon:[["07:00","16:00"]]},true)).toEqual(["2026-10-27"]);
  });
  it("can read an overnight shift originating outside the requested week",()=>{
   const shifts=[{employeeId:"amy",date:"2026-10-25",start:"22:00",end:"02:00",

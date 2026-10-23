@@ -1,7 +1,7 @@
 import {describe,it,expect} from "vitest";
 import {shiftCost,aggregateCosts,paidMinutes,businessWageEstimate,costCompleteness} from "./shiftCost";
 import {coverageGaps} from "./coverageGaps";
-import {checkScheduledWeeklyBounds,checkTimecardRules} from "./ruleChecks";
+import {automaticUnpaidBreakMinutes,checkScheduledWeeklyBounds,checkTimecardRules} from "./ruleChecks";
 const rules={meal_break_enabled:true,meal_break_minutes:30,meal_break_after_minutes:300,
  rest_break_enabled:true,rest_break_minutes:10,rest_break_every_minutes:240,
  weekly_ot_enabled:true,weekly_ot_after_minutes:2400,daily_ot_enabled:false,
@@ -42,6 +42,13 @@ describe("staff schedule truth",()=>{
      {employeeId:"2",date:"2026-11-01",start:"07:00",end:"13:30",breakMinutes:0,wageCents:1800}];
    expect(coverageGaps(["2026-10-28","2026-11-01"],shifts,{wed:open.wed.map(([start,end]):[string,string]=>[start,end]),sun:open.sun.map(([start,end]):[string,string]=>[start,end])},2))
      .toMatchObject([{start:"14:30",end:"16:00"},{start:"13:30",end:"15:00"}]);
+ });
+ it("derives automatic unpaid breaks only when the owner's configured rule applies",()=>{
+   const custom={...rules,meal_break_after_minutes:360,meal_break_minutes:45};
+   expect(automaticUnpaidBreakMinutes("09:00","14:00",custom)).toBe(0);
+   expect(automaticUnpaidBreakMinutes("09:00","15:30",custom)).toBe(45);
+   expect(automaticUnpaidBreakMinutes("22:00","05:00",custom)).toBe(45);
+   expect(automaticUnpaidBreakMinutes("09:00","15:30",{...custom,meal_break_enabled:false})).toBe(0);
  });
  it("only applies entered weekly limits",()=>{
    expect(checkScheduledWeeklyBounds(2400,null,null)).toEqual({belowMinimum:false,aboveMaximum:false});
