@@ -126,7 +126,7 @@ function BillForm({
           className="min-h-12 w-20 rounded-xl border border-line px-2.5 text-end text-[17px]"
         />
       </label>
-      {error && <p role="alert" className="text-[17px] text-warn">{labels.saveError}</p>}
+      {error && <p role="alert" className="text-[17px] text-warn">{error}</p>}
       <div className="flex gap-2">
         <button type="button" onClick={handleSave} disabled={isPending || !canSave || actionLock.current} className="min-h-12 flex-1 rounded-full bg-accent text-[17px] font-bold text-on-accent disabled:opacity-40">
           {labels.save}
