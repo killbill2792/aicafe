@@ -13,6 +13,7 @@ type Surface = {capabilities:readonly SupportedId[]} |
   {restricted:string};
 export const SOURCE_SURFACES = {
   "lib/data/usageVariance.server.ts":{
+    readUsageBusinessDate:{restricted:"Owner-scoped cafe timezone for stock and reporting date defaults"},
     readUsageVariance:{restricted:"Owner-bound expected/actual usage reconciliation, not a generic P1 source"},
     saveUsageEntry:{restricted:"Explicit owner stock/purchase write, not an AI capability"},
   },
