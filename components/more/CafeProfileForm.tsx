@@ -222,24 +222,57 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
 
   return (
     <div className="flex flex-col gap-4">
+      {hoursNotSet && (
+        <div role="status" className="self-start rounded-full bg-warn-tint px-3 py-1.5 text-xs font-bold text-warn">{labels.hoursBadge}</div>
+      )}
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
         <h2 className="text-lg font-bold text-ink">{labels.businessDetails}</h2>
-        <Field label={labels.cafeName}>
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-base" />
+        <Field label={labels.cafeName} error={fieldErrors.name}>
+          <input value={name} ref={(node) => { fieldRefs.current.name = node; }} aria-invalid={Boolean(fieldErrors.name)} onChange={(e) => { setName(e.target.value); clearFieldError("name"); }} maxLength={80} className={"min-h-12 rounded-xl border border-line px-3 text-base" + invalidClass("name")} />
         </Field>
         <Field label={labels.locationName}>
           <input value={locationName} onChange={(e) => setLocationName(e.target.value)} maxLength={80} className="min-h-12 rounded-xl border border-line px-3 text-base" />
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label={labels.openedOn}>
-            <input type="date" value={openedOn} onChange={(e) => setOpenedOn(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-base" />
+          <Field label={labels.openedOn} error={fieldErrors.openedOn}>
+            <input type="date" value={openedOn} ref={(node) => { fieldRefs.current.openedOn = node; }} aria-invalid={Boolean(fieldErrors.openedOn)} onChange={(e) => { setOpenedOn(e.target.value); clearFieldError("openedOn"); }} className={"min-h-12 rounded-xl border border-line px-3 text-base" + invalidClass("openedOn")} />
           </Field>
-          <Field label={labels.currency}>
-            <input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} className="min-h-12 rounded-xl border border-line px-3 text-base uppercase" />
+          <Field label={labels.currency} error={fieldErrors.currency}>
+            <select value={currency} ref={(node) => { fieldRefs.current.currency = node; }} aria-invalid={Boolean(fieldErrors.currency)}
+              onChange={(e) => { setCurrency(e.target.value); clearFieldError("currency"); }}
+              className={"min-h-12 min-w-0 rounded-xl border border-line bg-card px-3 text-base" + invalidClass("currency")}>
+              <option value="">{labels.chooseCurrency}</option>
+              {currencies.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
           </Field>
         </div>
-        <Field label={labels.timezone} hint={labels.timezoneHint}>
-          <input value={timezone} onChange={(e) => setTimezone(e.target.value)} maxLength={100} placeholder="America/Los_Angeles" className="min-h-12 rounded-xl border border-line px-3 text-base" />
+        <Field label={labels.timezone} hint={labels.timezoneHint} error={fieldErrors.timezone}>
+          <div className="relative" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setTimezoneExpanded(false); }}>
+            <input type="text" role="combobox" aria-autocomplete="list" aria-controls="cafe-timezone-options" aria-expanded={timezoneExpanded}
+              aria-activedescendant={timezoneExpanded && timezoneResults[timezoneActive] ? "cafe-timezone-" + timezoneActive : undefined}
+              aria-invalid={Boolean(fieldErrors.timezone)} ref={(node) => { fieldRefs.current.timezone = node; }}
+              value={timezoneSearch} placeholder={labels.timezoneSearch}
+              onFocus={() => setTimezoneExpanded(true)}
+              onChange={(e) => { setTimezoneSearch(e.target.value); setTimezone(""); setTimezoneExpanded(true); setTimezoneActive(0); clearFieldError("timezone"); }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { setTimezoneExpanded(false); return; }
+                if (e.key === "ArrowDown") { e.preventDefault(); setTimezoneExpanded(true); setTimezoneActive((index) => Math.min(index + 1, timezoneResults.length - 1)); }
+                if (e.key === "ArrowUp") { e.preventDefault(); setTimezoneActive((index) => Math.max(0, index - 1)); }
+                if (e.key === "Enter" && timezoneExpanded && timezoneResults[timezoneActive]) { e.preventDefault(); chooseTimezone(timezoneResults[timezoneActive].value); }
+              }}
+              className={"min-h-12 w-full rounded-xl border border-line bg-card px-3 text-base text-start" + invalidClass("timezone")} />
+            {timezoneExpanded && (
+              <div id="cafe-timezone-options" role="listbox" className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-line bg-card shadow-lg">
+                {timezoneResults.length ? timezoneResults.map((option, index) => (
+                  <button id={"cafe-timezone-" + index} key={option.value} type="button" role="option" aria-selected={timezone === option.value}
+                    onMouseDown={(e) => e.preventDefault()} onClick={() => chooseTimezone(option.value)}
+                    className={"block min-h-11 w-full px-3 py-2 text-start text-sm hover:bg-paper " + (index === timezoneActive ? "bg-paper font-semibold" : "")}>
+                    {option.label}
+                  </button>
+                )) : <p className="p-3 text-sm text-ink-muted">{labels.timezoneEmpty}</p>}
+              </div>
+            )}
+          </div>
         </Field>
       </section>
 
