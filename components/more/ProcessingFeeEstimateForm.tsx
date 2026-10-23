@@ -174,7 +174,7 @@ export default function ProcessingFeeEstimateForm({
   const [averageTicket, setAverageTicket] = useState(dollarsFromCents(plan?.averageProcessedTicketCents ?? null));
   const [rules, setRules] = useState<RuleDraft[]>(() => initialRules(plan));
   const [advanced, setAdvanced] = useState(
-    Boolean(plan && (plan.rules.length > 1 || plan.processedSalesShareBps !== plan.processedTransactionShareBps || plan.rules.some((rule) => rule.salesMixBps !== 10_000 || rule.transactionMixBps !== 10_000))),
+    Boolean(plan && (plan.rules.length > 1 || plan.averageProcessedTicketCents !== null || plan.processedSalesShareBps !== plan.processedTransactionShareBps || plan.rules.some((rule) => rule.salesMixBps !== 10_000 || rule.transactionMixBps !== 10_000))),
   );
   const [error, setError] = useState<string | null>(null);
   const [savedSummary, setSavedSummary] = useState<typeof coverage | null>(null);
@@ -230,7 +230,7 @@ export default function ProcessingFeeEstimateForm({
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       setError(labels.incompleteWarning);
-      if (Object.keys(errors).some((key) => key.includes("-"))) setAdvanced(true);
+      if (Object.keys(errors).some((key) => key.includes("-") || key === "averageTicket" || key === "transactionShare")) setAdvanced(true);
       requestAnimationFrame(() => inputRefs.current[Object.keys(errors)[0]]?.focus());
       return;
     }
@@ -444,7 +444,7 @@ export default function ProcessingFeeEstimateForm({
           {errorText("cardShare")}
         </label>
 
-        <div className="rounded-2xl bg-paper p-3">
+        {!advanced && <div className="rounded-2xl bg-paper p-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
               <FieldTitle help={labels.percentageRateHelp} helpLabel={`${labels.percentageRate} ${labels.info}`}>
@@ -480,7 +480,7 @@ export default function ProcessingFeeEstimateForm({
               {errorText("fixedFee")}
             </label>
           </div>
-        </div>
+        </div>}
 
         {firstFixedFee > 0 && sourceSummary.trustedOrderDays > 0 && !needsAverageTicket && (
           <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">
@@ -488,29 +488,9 @@ export default function ProcessingFeeEstimateForm({
           </p>
         )}
 
-        {needsAverageTicket && !advanced && (
-          <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-            <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} ${labels.info}`}>{labels.averageTicket}</FieldTitle>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-ink-muted">{currency.formatToParts(0).find((part) => part.type === "currency")?.value}</span>
-              <input
-                inputMode="decimal"
-                value={averageTicket}
-                ref={(node) => { inputRefs.current.averageTicket = node; }}
-                aria-invalid={isFeeFieldInvalid(fieldErrors, "averageTicket")}
-                onChange={(event) => setAverageTicket(event.target.value)}
-                placeholder="12.00"
-                className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("averageTicket")}
-              />
-            </div>
-            <span className="text-xs font-normal text-ink-muted">{labels.averageTicketHint}</span>
-            {errorText("averageTicket")}
-          </label>
-        )}
-
         <button
           type="button"
-          onClick={() => setAdvanced((value) => !value)}
+          onClick={() => { if (!advanced && !processedTransactionShare.trim()) setProcessedTransactionShare(processedSalesShare); setAdvanced((value) => !value); }}
           aria-expanded={advanced}
           className="min-h-12 rounded-full border border-line px-4 text-sm font-bold text-ink"
         >
