@@ -13,6 +13,8 @@ import {
   untrustedEstimateDayCount,
   requiresAverageTicket,
   showAverageTicketField,
+  untrustedDaysFromEffectiveDate,
+  requiredRateMixErrors,
 } from "./processingFeeDefaults";
 
 describe("processing fee redesign defaults", () => {
@@ -135,9 +137,9 @@ describe("processing fee redesign defaults", () => {
 
   it("uses the exact same active-rule ticket requirement in UI and save", () => {
     const allRules = [{ fixedFee: "0" }, { fixedFee: "0.25" }];
-    expect(requiresAverageTicket(activeRateDrafts(allRules, false), 3)).toBe(false);
-    expect(requiresAverageTicket(activeRateDrafts(allRules, true), 3)).toBe(true);
-    expect(requiresAverageTicket(activeRateDrafts(allRules, true), 0)).toBe(false);
+    expect(requiresAverageTicket(activeRateDrafts(allRules, false), 3, "100")).toBe(false);
+    expect(requiresAverageTicket(activeRateDrafts(allRules, true), 3, "100")).toBe(true);
+    expect(requiresAverageTicket(activeRateDrafts(allRules, true), 0, "100")).toBe(false);
   });
 
   it("reveals required ticket in simple mode without changing submitted rules", () => {
@@ -146,8 +148,8 @@ describe("processing fee redesign defaults", () => {
       { id: "hidden", fixedFee: "0.30" },
     ];
     const simple = activeRateDrafts(all, false);
-    expect(showAverageTicketField(false, simple, 2)).toBe(true);
-    expect(requiresAverageTicket(simple, 2)).toBe(true);
+    expect(showAverageTicketField(false, simple, 2, "100")).toBe(true);
+    expect(requiresAverageTicket(simple, 2, "100")).toBe(true);
     expect(simple).toEqual([all[0]]);
     // Entering a ticket cannot make the hidden second rule part of the submission.
     expect(activeRateDrafts(all, false)).toEqual([all[0]]);
@@ -157,6 +159,34 @@ describe("processing fee redesign defaults", () => {
   it("keeps a hidden fixed-fee-only rule entirely out of a simple-mode ticket requirement", () => {
     const all = [{ fixedFee: "0" }, { fixedFee: "0.30" }];
     expect(showAverageTicketField(false, activeRateDrafts(all, false), 4)).toBe(false);
+  });
+
+  it("does not require a ticket for dates before the selected plan, but one-tap backdating does", () => {
+    const dates = ["2026-08-01", "2026-08-13", "2026-10-12"];
+    expect(untrustedDaysFromEffectiveDate(dates, "2026-10-23")).toBe(0);
+    expect(untrustedDaysFromEffectiveDate(dates, "2026-10-10")).toBe(1);
+    expect(untrustedDaysFromEffectiveDate(dates, "2026-08-01")).toBe(3);
+    expect(untrustedDaysFromEffectiveDate(dates, "invalid")).toBe(0);
+  });
+
+  it("does not require an average ticket for 0% processed transactions", () => {
+    const rules = [{ fixedFee: "0.35" }];
+    expect(requiresAverageTicket(rules, 4, "0")).toBe(false);
+    expect(requiresAverageTicket(rules, 4, "100")).toBe(true);
+    expect(showAverageTicketField(false, rules, 4, "0")).toBe(false);
+  });
+
+  it("uses the same conditional mix totals as the server validator", () => {
+    const single = [{ salesMix: "0", transactionMix: "0", fixedFee: "0" }];
+    expect(requiredRateMixErrors(single, "0", "0")).toEqual({ salesMix: false, transactionMix: false });
+    expect(requiredRateMixErrors(single, "100", "0")).toEqual({ salesMix: true, transactionMix: false });
+    expect(requiredRateMixErrors(single, "0", "100")).toEqual({ salesMix: false, transactionMix: false });
+    expect(requiredRateMixErrors([{ ...single[0], fixedFee: "0.2" }], "0", "100")).toEqual({ salesMix: false, transactionMix: true });
+    const mixed = [
+      { salesMix: "60", transactionMix: "40", fixedFee: "0.2" },
+      { salesMix: "40", transactionMix: "60", fixedFee: "0.1" },
+    ];
+    expect(requiredRateMixErrors(mixed, "100", "100")).toEqual({ salesMix: false, transactionMix: false });
   });
 
   it("one-tap bypasses a manually empty date but still requires fee inputs", () => {
