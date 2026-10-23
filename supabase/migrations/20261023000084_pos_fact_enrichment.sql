@@ -60,3 +60,63 @@ begin
     end if;
   end loop;
 end $$;
+
+-- The requested data-only-if-absent DDL above is unchanged. One additive RPC
+-- is required to rebuild the two existing rollup tables transactionally.
+-- Defining the routine does not recalculate or write any production fact.
+-- Read-only source: canonical orders. RLS stays effective (SECURITY INVOKER).
+create or replace function public.pos_rebuild_sales_fact_rollups_v1(
+  p_business_id uuid,
+  p_business_date date
+) returns void
+language plpgsql security invoker set search_path = public
+as $$
+declare
+  v_timezone text;
+begin
+  if p_business_id is null or p_business_date is null then
+    raise exception 'Business and date required';
+  end if;
+  if auth.role() is distinct from 'service_role' and not public.is_member(p_business_id) then
+    raise exception 'Not authorized to rebuild sales facts';
+  end if;
+  select b.timezone into v_timezone from public.businesses b where b.id = p_business_id;
+  if v_timezone is null then
+    raise exception 'Business timezone unavailable';
+  end if;
+
+  -- A single Postgres transaction covers both tables. The advisory lock
+  -- serializes even concurrent guarded Toast promotions for the same date.
+  perform pg_advisory_xact_lock(hashtextextended(
+    'pos-sales-rollup:' || p_business_id::text || ':' || p_business_date::text, 0
+  ));
+
+  delete from public.hourly_sales_rollup
+    where business_id = p_business_id and business_date = p_business_date;
+  insert into public.hourly_sales_rollup (
+    business_id, location_id, business_date, hour_local, net_sales_cents, orders_count
+  )
+  select o.business_id, o.location_id, o.business_date,
+    extract(hour from o.closed_at at time zone v_timezone)::smallint,
+    sum(o.net_sales_cents)::bigint, count(*)::integer
+  from public.orders o
+  where o.business_id = p_business_id and o.business_date = p_business_date
+    and o.pos_order_id not like 'csv-%'
+  group by o.business_id, o.location_id, o.business_date,
+    extract(hour from o.closed_at at time zone v_timezone)::smallint;
+
+  delete from public.employee_sales_rollup
+    where business_id = p_business_id and business_date = p_business_date;
+  insert into public.employee_sales_rollup (
+    business_id, employee_id, business_date, net_sales_cents, orders_count
+  )
+  select o.business_id, o.employee_id, o.business_date,
+    sum(o.net_sales_cents)::bigint, count(*)::integer
+  from public.orders o
+  join public.employees e on e.id = o.employee_id and e.business_id = o.business_id
+  where o.business_id = p_business_id and o.business_date = p_business_date
+  group by o.business_id, o.employee_id, o.business_date;
+end;
+$$;
+revoke all on function public.pos_rebuild_sales_fact_rollups_v1(uuid,date) from public, anon;
+grant execute on function public.pos_rebuild_sales_fact_rollups_v1(uuid,date) to authenticated, service_role;

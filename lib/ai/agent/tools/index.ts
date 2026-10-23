@@ -9,6 +9,7 @@ import {draftScheduleTools} from "./draftSchedule";
 import {newItemPriceTools} from "./newItemPrice";
 import {proposalTools} from "./proposals";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
+import {summarizePeakHours,summarizeEmployeeSales,summarizePayrollFacts} from "@/lib/calc/posFactSummaries";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { CafeStatePeriod } from "@/lib/operating/types";
 import en from "@/messages/en.json";
@@ -39,7 +40,7 @@ const posReadTools={
 const schemas = { ...posReadTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
   ...staffTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools } as const;
 export type AgentToolName = keyof typeof schemas;
-export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name in staffTools||name in hoursTools||name in draftScheduleTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
+export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in hoursTools||name in draftScheduleTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period.",
@@ -90,12 +91,21 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_ingredient_costs")return suppliesTools.get_ingredient_costs.execute(raw,ctx);
   if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw);
   if(name==="get_peak_hours"||name==="get_employee_sales"||name==="get_payroll_facts"){
-    const period=posPeriodSchema.parse(raw);if(period.from>period.to)throw new Error("Invalid reporting range");
-    const reader=name==="get_peak_hours"?ctx.tools.getPeakHours?.(period):name==="get_employee_sales"?ctx.tools.getEmployeeSales?.(period):ctx.tools.getPayrollFacts?.(period);
-    if(!reader)return {source:name,period,agentId:"alex",missing:["posFactsReaderUnavailable"]};
-    const slice=await reader;
-    return {source:name,period,agentId:name==="get_payroll_facts"?"olivia":"alex",
-      missing:slice.quality.missingInputs,...(slice.available?slice.value:{data:null})};
+    const period=posPeriodSchema.parse(raw);
+    if(period.from>period.to)throw new Error("Invalid reporting range");
+    if(name==="get_peak_hours"){
+      const slice=await ctx.tools.getPeakHours?.(period);
+      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
+      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,...summarizePeakHours(slice.value)};
+    }
+    if(name==="get_employee_sales"){
+      const slice=await ctx.tools.getEmployeeSales?.(period);
+      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
+      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,...summarizeEmployeeSales(slice.value)};
+    }
+    const slice=await ctx.tools.getPayrollFacts?.(period);
+    if(!slice?.available)return {source:name,period,agentId:"olivia",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
+    return {source:name,period,agentId:"olivia",missing:slice.quality.missingInputs,...summarizePayrollFacts(slice.value)};
   }
   if(name==="get_item_sales")return salesTools.get_item_sales.execute(raw,ctx);
   if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
