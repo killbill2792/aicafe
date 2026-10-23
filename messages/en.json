@@ -2551,6 +2551,8 @@
     "breakManual": "Break set by you",
     "breakDisabled": "Automatic meal breaks are off",
     "noOverlap": "No other shift overlaps",
-    "overlapWarning": "Double-booked with another shift"
+    "overlapWarning": "Double-booked with another shift",
+    "prepareScheduleMessages": "Prepare schedule messages",
+    "scheduleNotSent": "Not sent. Copy these messages and share them manually."
   }
 }

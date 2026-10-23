@@ -1,4 +1,5 @@
 import "server-only";
+import {prepareScheduleCopy} from "@/lib/calc/scheduling/scheduleMessages";
 import {z} from "zod";
 import {shiftInput,restoreShiftInput} from "@/lib/calc/scheduling/scheduleValidators";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
@@ -165,12 +166,9 @@ export async function sendSchedule(raw:unknown){
  const p=weekInput.safeParse(raw);if(!p.success||!monday(p.data.weekStart))return {ok:false as const,error:"invalid_week"};
  const owner=await requireSchedulingOwner();if(!owner)return {ok:false as const,error:"unauthorized"};
  const schedule=await getWeekSchedule(p.data);if(!schedule.ok)return schedule;
- const messages=schedule.data.team.map(person=>({
-   name:person.name,phone:person.phone,text:person.name+" — "+schedule.data.shifts
-    .filter(s=>s.employeeId===person.id).map(s=>s.date+" "+s.start+"–"+s.end).join("; ")
- })).filter(x=>x.text.endsWith(" — ")===false);
+ const messages=prepareScheduleCopy(schedule.data.team,schedule.data.shifts);
  // Generating copy-ready messages is NOT delivery. Never claim a sent schedule
  // or mutate a shift until an actual staff delivery channel confirms it.
  // WhatsApp transport is intentionally not connected: owner gets copy-ready text instead.
- return {ok:true as const,data:{messages,channel:"copy" as const}};
+ return {ok:true as const,data:{messages,channel:"copy" as const,sent:false as const}};
 }

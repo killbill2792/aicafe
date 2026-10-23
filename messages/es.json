@@ -2551,6 +2551,8 @@
     "breakManual": "Descanso definido por ti",
     "breakDisabled": "Descansos automáticos desactivados",
     "noOverlap": "Sin turnos superpuestos",
-    "overlapWarning": "Se superpone con otro turno"
+    "overlapWarning": "Se superpone con otro turno",
+    "prepareScheduleMessages": "Preparar mensajes del horario",
+    "scheduleNotSent": "No enviados. Copia los mensajes y compártelos manualmente."
   }
 }

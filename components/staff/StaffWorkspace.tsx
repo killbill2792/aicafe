@@ -189,7 +189,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     </div></section>}
    <div className="fixed inset-x-0 bottom-16 z-20 flex gap-2 border-t border-line bg-surface p-3 lg:bottom-0">
     <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl border border-accent text-accent-text" onClick={()=>run(()=>copyWeek({fromWeekStart:new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10),toWeekStart:data.weekStart}))}>{t("copyLastWeek")}</button>
-    <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={()=>startTransition(async()=>{const r=await sendSchedule({weekStart:data.weekStart});if(!r.ok){setError(r.error);return;}setNotice(r.data.messages.map(m=>m.text).join("\n"));})}>{t("sendTeam")}</button>
+    <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={()=>startTransition(async()=>{const r=await sendSchedule({weekStart:data.weekStart});if(!r.ok){setError(r.error);return;}setNotice(r.data.messages.map(m=>m.text).join("\n"));})}>{t("prepareScheduleMessages")}</button>
    </div>
   </>:<>
    <section className="rounded-[20px] border border-line bg-surface p-4"><h2 className="text-lg font-bold">{t("addSomeone")}</h2>
@@ -222,7 +222,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   </>}
   {undo&&<div role="status" className="fixed inset-x-4 bottom-36 z-30 flex items-center justify-between rounded-xl bg-fg p-4 text-bg shadow-lg"><span>{undo.message}</span><button onClick={undoRemove} className="min-h-12 px-3 font-bold">{t("undo")}</button></div>}
   {error&&<p role="alert" className="rounded-xl bg-neg-soft p-3 text-neg">{error}</p>}
-  {notice&&<StaffDialog headingId="staff-copy-heading" layout="center" onClose={()=>setNotice("")}><h2 id="staff-copy-heading">{t("readyCopy")}</h2><pre className="whitespace-pre-wrap">{notice}</pre><button onClick={()=>navigator.clipboard.writeText(notice)} className="my-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent">{t("copy")}</button><button onClick={()=>setNotice("")} className="ms-3 min-h-12">{t("close")}</button></StaffDialog>}
+  {notice&&<StaffDialog headingId="staff-copy-heading" layout="center" onClose={()=>setNotice("")}><h2 id="staff-copy-heading">{t("readyCopy")}</h2><p role="status" className="mt-2 text-muted">{t("scheduleNotSent")}</p><pre className="whitespace-pre-wrap">{notice}</pre><button onClick={()=>navigator.clipboard.writeText(notice)} className="my-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent">{t("copy")}</button><button onClick={()=>setNotice("")} className="ms-3 min-h-12">{t("close")}</button></StaffDialog>}
   {sheet&&<StaffDialog headingId="staff-sheet-heading" onClose={()=>setSheet(null)}>
     <div className="mx-auto mb-3 h-1 w-12 rounded bg-line"/>{fillsGap&&sheet==="shift"&&<p className="text-sm font-bold text-pos">{t("fillsGap")}</p>}<h2 id="staff-sheet-heading" className="font-headline text-xl font-bold">{sheet==="person"?(personEditing?t("editPerson"):t("addPerson")):(editing?t("editShift"):t("addShiftDate",{date:dayLabel(date)}))}</h2>
     {sheet==="person"?<>

@@ -2551,6 +2551,8 @@
     "breakManual": "استراحة حددتها أنت",
     "breakDisabled": "استراحات الطعام التلقائية معطّلة",
     "noOverlap": "لا توجد مناوبة متداخلة",
-    "overlapWarning": "تعارض مع مناوبة أخرى"
+    "overlapWarning": "تعارض مع مناوبة أخرى",
+    "prepareScheduleMessages": "تحضير رسائل الجدول",
+    "scheduleNotSent": "لم تُرسل. انسخ هذه الرسائل وشاركها يدويًا."
   }
 }
