@@ -2378,7 +2378,9 @@
     "usageUnit": "Unit",
     "usageDate": "Date",
     "usageSaved": "Saved",
-    "usageCountNote": "Count the closing stock on the day before the period begins and on the final day. Record received purchases by date."
+    "usageCountNote": "Count the closing stock on the day before the period begins and on the final day. Record received purchases by date.",
+    "usageShifts": "Shift breakdown",
+    "usageExpectedOnly": "Expected only, based on Toast time entries; not actual consumption"
   },
   "SupervisorProposalCard": {
     "title": "Price change proposal",
