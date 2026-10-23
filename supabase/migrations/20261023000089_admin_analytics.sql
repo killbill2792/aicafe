@@ -109,3 +109,52 @@ select jsonb_build_object(
 ) $$;
 revoke all on function public.admin_pattern_rollup() from public, anon, authenticated;
 grant execute on function public.admin_pattern_rollup() to service_role;
+
+-- Proactive sources are intentionally kept separate: a generated in-app update
+-- is not evidence of push delivery, and provider acceptance does not mean opened.
+create or replace function public.admin_proactive_rollup(p_cafe uuid default null)
+returns jsonb language sql stable security invoker set search_path=public as $$
+select jsonb_build_object(
+ 'cafes',(select coalesce(jsonb_agg(to_jsonb(x) order by x.in_app_created + x.outbound_sent desc),'[]'::jsonb) from (
+   select b.id as business_id,b.name,
+     coalesce(u.created,0) as in_app_created,
+     coalesce(u.opened,0) as in_app_opened,
+     coalesce(u.acted,0) as in_app_acted,
+     coalesce(u.dismissed,0) as in_app_dismissed,
+     coalesce(d.sent,0) as outbound_sent,
+     coalesce(d.failed,0) as outbound_failed,
+     coalesce(d.pending,0) as outbound_pending
+   from (select business_id from public.team_updates
+         union select business_id from public.ai_delivery_attempts) business
+   join public.businesses b on b.id=business.business_id
+   left join (
+     select business_id,count(*) as created,
+       count(*) filter (where status in ('seen','acted','dismissed')) as opened,
+       count(*) filter (where status='acted') as acted,
+       count(*) filter (where status='dismissed') as dismissed
+     from public.team_updates group by business_id
+   ) u on u.business_id=business.business_id
+   left join (
+     select business_id,
+       count(*) filter (where state='sent') as sent,
+       count(*) filter (where state='failed') as failed,
+       count(*) filter (where state='reserved') as pending
+     from public.ai_delivery_attempts group by business_id
+   ) d on d.business_id=business.business_id
+   where p_cafe is null or business.business_id=p_cafe
+ ) x),
+ 'recent_updates',(select coalesce(jsonb_agg(to_jsonb(x) order by x.created_at desc),'[]'::jsonb) from (
+   select id,business_id,domain,kind,severity,text,status,notified_at,created_at
+   from public.team_updates
+   where p_cafe is null or business_id=p_cafe
+   order by created_at desc,id desc limit 100
+ ) x),
+ 'recent_deliveries',(select coalesce(jsonb_agg(to_jsonb(x) order by x.created_at desc),'[]'::jsonb) from (
+   select id,business_id,task_id,state,task_status,created_at,sent_at,failure_code
+   from public.ai_delivery_attempts
+   where p_cafe is null or business_id=p_cafe
+   order by created_at desc,id desc limit 100
+ ) x)
+) $$;
+revoke all on function public.admin_proactive_rollup(uuid) from public, anon, authenticated;
+grant execute on function public.admin_proactive_rollup(uuid) to service_role;
