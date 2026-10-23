@@ -104,11 +104,11 @@ export default function StatementUploader({
         const result = await saveCategorizedLines("statement", state.lines);
         if (result.ok) {
           setSaveStatus("saved");
-        setTimeout(() => {
+          setTimeout(() => {
           // next-intl would add a second locale prefix to an already localized return path.
           if (returnTo && /^\/(?:en|es|ar)(?:\/|[?#]|$)/.test(safeReturnTo)) window.location.assign(safeReturnTo);
           else router.push(safeReturnTo);
-        }, 900);
+          }, 900);
         } else {
           setSaveStatus("error");
           saveLock.current = false;
@@ -158,13 +158,13 @@ export default function StatementUploader({
           <label className="flex flex-col gap-1 text-[17px] font-semibold">{labels.missingDescription}
             <input type="text" value={missingDescription} onChange={(e) => setMissingDescription(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
           </label>
-          <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingAmount}
+          <label className="flex flex-col gap-1 text-[17px] font-semibold">{labels.missingAmount}
             <input type="number" min="0.01" step="0.01" value={missingAmount} onChange={(e) => setMissingAmount(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
           </label>
-          <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingDate}
+          <label className="flex flex-col gap-1 text-[17px] font-semibold">{labels.missingDate}
             <input type="date" value={missingDate} onChange={(e) => setMissingDate(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
           </label>
-          <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingCategory}
+          <label className="flex flex-col gap-1 text-[17px] font-semibold">{labels.missingCategory}
             <select value={missingCategory} onChange={(e) => setMissingCategory(e.target.value as ExpenseCategoryCode)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]">
               {EXPENSE_CATEGORY_CODES.map((code) => <option key={code} value={code}>{categoryLabels[code]}</option>)}
             </select>
