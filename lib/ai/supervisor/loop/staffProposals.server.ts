@@ -1,5 +1,8 @@
 import "server-only";
 import {z} from "zod";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 import {parseAvailabilityText} from "@/lib/calc/scheduling/parseAvailabilityText";
@@ -21,7 +24,11 @@ const effectSchema=z.strictObject({
 type Person={id:string;display_name:string;role:string|null;active:boolean;
  wage_period:string;wage_amount_cents:number|null;phone_e164:string|null;whatsapp_opt_in:boolean};
 type Shift={id:string;employee_id:string;local_date:string;start_local:string;end_local:string;break_minutes:number;status:string;deleted_at:string|null};
-const DAY=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const dayNames={
+ en:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],
+ es:["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"],
+ ar:["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"],
+};
 const when=(x:{date:string;start:string;end:string})=>x.date+" "+x.start+"–"+x.end;
 const isoDay=(d:string)=>new Date(d+"T12:00:00Z").getUTCDay();
 const add=(d:string,n:number)=>new Date(Date.parse(d+"T12:00:00Z")+86400000*n).toISOString().slice(0,10);
@@ -40,11 +47,21 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
  const user=await owner.supabase.auth.getUser();
  if(user.error||user.data.user?.id!==scope.ownerUserId)throw new Error("Owner session changed");
  const input=staffProposalInputs[name].parse(raw);
+ const copy=({en,es,ar} as const)[scope.locale].StaffApprovalCard;
+ const days=dayNames[scope.locale];
+ const relevantWeek=name==="propose_schedule"||name==="propose_send_schedule"
+   ?(input as {week_start:string}).week_start:null;
+ const changeDate=name==="propose_shift_change"
+   ?(input as {shift:{date:string}}).shift.date:null;
+ const from=relevantWeek?add(relevantWeek,-1):changeDate?add(changeDate,-1):null;
+ const to=relevantWeek?add(relevantWeek,7):changeDate?add(changeDate,1):null;
  const beforeToken=await readToken(scope);
  const db=createAdminSupabaseClient();
  const [peopleResult,shiftsResult,rulesResult,availabilityResult,exceptionsResult,locationResult]=await Promise.all([
   db.from("employees").select("id,display_name,role,active,wage_period,wage_amount_cents,phone_e164,whatsapp_opt_in").eq("business_id",scope.businessId).limit(501),
-  db.from("scheduled_shifts").select("id,employee_id,local_date,start_local,end_local,break_minutes,status,deleted_at").eq("business_id",scope.businessId).is("deleted_at",null).limit(501),
+  from&&to?db.from("scheduled_shifts").select("id,employee_id,local_date,start_local,end_local,break_minutes,status,deleted_at")
+    .eq("business_id",scope.businessId).is("deleted_at",null).gte("local_date",from).lte("local_date",to).limit(501)
+    :Promise.resolve({data:[],error:null}),
   db.from("team_rules").select("*").eq("business_id",scope.businessId).maybeSingle(),
   db.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to,source").eq("business_id",scope.businessId).limit(501),
   db.from("staff_availability_exceptions").select("employee_id,local_date,exception_type").eq("business_id",scope.businessId).limit(501),
@@ -78,8 +95,8 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
     active(s.employee_id);ensure(s.date>=d.week_start&&s.date<=last,"Shift must fall in the selected week");
     // Overlaps, duplicates and breaks are checked in the pure planner above.
    }
-   item("Week "+d.week_start,old.map(s=>shown(s.employee_id)+" "+fmtShift(s)).join("\n")||"No draft shifts",
-     d.shifts.map(s=>shown(s.employee_id)+" "+when(s)).join("\n")||"No shifts");
+   item(copy.week+" "+d.week_start,old.map(s=>shown(s.employee_id)+" "+fmtShift(s)).join("\n")||copy.noDraftShifts,
+     d.shifts.map(s=>shown(s.employee_id)+" "+when(s)).join("\n")||copy.noShift);
    payload={week_start:d.week_start,shifts:d.shifts};break;
   }
   case "propose_shift_change":{
@@ -93,21 +110,21 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    assertStaffShiftPlan([d.shift,...shifts.filter(x=>x.id!==d.shift_id&&x.employee_id===d.shift.employee_id).map(x=>({
      employee_id:x.employee_id,date:x.local_date,start:x.start_local.slice(0,5),
      end:x.end_local.slice(0,5),break_minutes:x.break_minutes}))]);
-   item(person.display_name,old?fmtShift(old)+" ("+old.break_minutes+"m break)":"No shift",
-     d.remove?"Removed":when(d.shift)+" ("+d.shift.break_minutes+"m break)");
+   item(person.display_name,old?fmtShift(old)+" ("+old.break_minutes+" "+copy.breakMinutes+")":copy.noShift,
+     d.remove?copy.removed:when(d.shift)+" ("+d.shift.break_minutes+" "+copy.breakMinutes+")");
    payload={shift_id:d.shift_id,shift:d.shift,remove:d.remove};break;
   }
   case "propose_add_staff":{
    const d=input as z.infer<typeof staffProposalInputs.propose_add_staff>;
    ensure(!people.some(p=>p.active&&p.display_name.toLowerCase()===d.name.toLowerCase()),"Staff name already in use");
-   item(d.name,"Not on team",d.name+" · "+(d.role??"No role")+" · "+d.wage_cents+"¢/hour · "+(d.phone??"No phone"));
+   item(d.name,copy.notOnTeam,d.name+" · "+(d.role??copy.noRole)+" · "+d.wage_cents+" "+copy.perHour+" · "+(d.phone??copy.noPhone));
    payload=d;break;
   }
   case "propose_staff_change":{
    const d=input as z.infer<typeof staffProposalInputs.propose_staff_change>,p=active(d.employee_id);
    ensure(p.wage_period==="hour","Salary workers require manual review");
-   item(p.display_name,p.display_name+" · "+(p.role??"No role")+" · "+display(p.wage_amount_cents)+"¢/hour · "+(p.phone_e164??"No phone")+" · "+(p.active?"Active":"Inactive"),
-     d.name+" · "+(d.role??"No role")+" · "+d.wage_cents+"¢/hour · "+(d.phone??"No phone")+" · "+(d.active?"Active":"Inactive"));
+   item(p.display_name,p.display_name+" · "+(p.role??copy.noRole)+" · "+display(p.wage_amount_cents)+" "+copy.perHour+" · "+(p.phone_e164??copy.noPhone)+" · "+(p.active?copy.active:copy.inactive),
+     d.name+" · "+(d.role??copy.noRole)+" · "+d.wage_cents+" "+copy.perHour+" · "+(d.phone??copy.noPhone)+" · "+(d.active?copy.active:copy.inactive));
    payload=d;break;
   }
   case "propose_availability_change":{
@@ -117,13 +134,13 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const matched=people.filter(p=>p.active&&p.display_name.trim().toLocaleLowerCase()===parsed.personName.trim().toLocaleLowerCase());
    ensure(matched.length===1,"Staff name not found or ambiguous");
    const p=matched[0];const rows=(availabilityResult.data??[]).filter(x=>x.employee_id===p.id);
-   const old=rows.map(x=>DAY[x.day_of_week]+" "+String(x.start_local).slice(0,5)+"–"+String(x.end_local).slice(0,5)).join(", ")||"No recurring availability";
+   const old=rows.map(x=>days[x.day_of_week]+" "+String(x.start_local).slice(0,5)+"–"+String(x.end_local).slice(0,5)).join(", ")||copy.noAvailability;
    const windows=parsed.availability.map(x=>({day:x.day,start:x.start,end:x.end}));
    ensure(windows.every(x=>x.start!==null&&x.end!==null),"Incomplete availability window");
-   const next=parsed.offDates?.length?"Off "+parsed.offDates.join(", "):
-     windows.map(x=>DAY[x.day]+" "+x.start+"–"+x.end).join(", ")||"Unavailable all days";
+   const next=parsed.offDates?.length?copy.off+" "+parsed.offDates.join(", "):
+     windows.map(x=>days[x.day]+" "+x.start+"–"+x.end).join(", ")||copy.noAvailability;
    item(p.display_name,parsed.offDates?.length?
-     (exceptionsResult.data??[]).filter(x=>x.employee_id===p.id).map(x=>x.local_date+" "+x.exception_type).join(", ")||"No dated exceptions":old,next);
+     (exceptionsResult.data??[]).filter(x=>x.employee_id===p.id).map(x=>x.local_date+" "+x.exception_type).join(", ")||copy.noExceptions:old,next);
    payload={employee_id:p.id,availability:windows,off_dates:parsed.offDates??[],effective_from:localDate};break;
   }
   case "propose_rule_change":{
@@ -148,8 +165,8 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const week=shifts.filter(x=>x.local_date>=d.week_start&&x.local_date<=add(d.week_start,6));
    const eligible=people.filter(p=>p.active&&p.phone_e164&&p.whatsapp_opt_in&&week.some(s=>s.employee_id===p.id));
    ensure(week.length>0,"No shifts scheduled for this week");
-   item("Week "+d.week_start,"Not prepared",
-     "Prepare only (no messages sent): "+eligible.map(p=>p.display_name).join(", ")+
+   item(copy.week+" "+d.week_start,copy.notPrepared,
+     copy.preparedNotSent+": "+eligible.map(p=>p.display_name).join(", ")+
      "\n"+week.filter(s=>eligible.some(p=>p.id===s.employee_id))
        .map(s=>shown(s.employee_id)+" "+fmtShift(s)).join("\n"));
    payload={week_start:d.week_start};break;
