@@ -5,14 +5,15 @@ describe("free access SQL security contract",()=>{
  it("has non-duplicated, completed SQL functions",()=>{
    const functions=[...sql.matchAll(/create or replace function public\.([a-z_]+)\(/g)].map(m=>m[1]);
    expect(functions).toHaveLength(5);
-   expect(new Set(functions).size).toBe(4);
+   expect(new Set(functions).size).toBe(5);
    expect((sql.match(/\$\$/g)??[])).toHaveLength(8);
+   expect((sql.match(/\$cafe_init\$/g)??[])).toHaveLength(2);
    expect(sql).toContain("if p_code_hash !~ '^[a-f0-9]{64}$' or p_business_id is null");
    expect(sql).not.toMatch(/end \$\$;[\s\S]*\n or p_business_id is null/);
  });
  it("grandfathers existing cafes but expires new cafes until code redemption",()=>{
    expect(sql.indexOf("select id,'grandfathered'")).toBeLessThan(sql.indexOf("create trigger initialize_cafe_access"));
-   expect(sql).toContain("values(new.id,'code',current_date - 1)");
+   expect(sql).toContain("(now() at time zone coalesce(nullif(new.timezone,''),'UTC'))::date - 1");
    expect(sql).toContain("return jsonb_build_object('status','already_redeemed')");
  });
  it("prevents direct authenticated Supabase rule approval after expiry",()=>{
