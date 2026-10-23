@@ -7,6 +7,7 @@ import {
   isFeeFieldInvalid,
   prepareAdvancedRateDraft,
   selectedFeeCoverageForSalesDays,
+  isRealIsoDay,
 } from "./processingFeeDefaults";
 
 describe("processing fee redesign defaults", () => {
@@ -83,6 +84,13 @@ describe("processing fee redesign defaults", () => {
     const revealed = prepareAdvancedRateDraft(original, "75", "100", "Standard rate");
     expect(revealed.transactionShare).toBe("75");
     expect(revealed.rules).toEqual(original);
+  });
+
+  it("rejects nonexistent dates rather than silently rolling them into March", () => {
+    expect(isRealIsoDay("2026-02-28")).toBe(true);
+    expect(isRealIsoDay("2026-02-30")).toBe(false);
+    expect(isRealIsoDay("2024-02-29")).toBe(true);
+    expect(isRealIsoDay("2025-02-29")).toBe(false);
   });
 
   it("one-tap bypasses a manually empty date but still requires fee inputs", () => {
