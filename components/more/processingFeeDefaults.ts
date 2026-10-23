@@ -153,8 +153,8 @@ export function requiredRateMixErrors(
 }
 
 /** A required simple-mode ticket input is visible without enabling advanced rules. */
-export function showAverageTicketField(advanced: boolean, activeRules: readonly { fixedFee: string }[], untrustedFeeDays: number): boolean {
-  return advanced || requiresAverageTicket(activeRules, untrustedFeeDays);
+export function showAverageTicketField(advanced: boolean, activeRules: readonly { fixedFee: string }[], untrustedFeeDays: number, transactionShare: string): boolean {
+  return advanced || requiresAverageTicket(activeRules, untrustedFeeDays, transactionShare);
 }
 
 /** A POS connection or provider-attributed connected actual is evidence of a processor.
