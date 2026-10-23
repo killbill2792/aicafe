@@ -8,8 +8,10 @@ export default async function ConversationsPage({searchParams}:{searchParams:Pro
   const {turns,total,pageSize}=await listConversations({...q,failed:q.failed==="1",slow:q.slow==="1",down:q.down==="1"},page);
   const pageUrl=(index:number)=>{
     const params=new URLSearchParams();
-    for(const key of ["cafe","from","to","failed","slow","down"] as const)
-      if(q[key])params.set(key,q[key]);
+    for(const key of ["cafe","from","to","failed","slow","down"] as const){
+      const value=q[key];
+      if(value)params.set(key,value);
+    }
     params.set("page",String(index));
     return "/admin/conversations?"+params.toString();
   };
