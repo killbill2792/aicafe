@@ -116,6 +116,14 @@ export function activeRateDrafts<T>(rules: readonly T[], advanced: boolean): T[]
   return advanced ? [...rules] : rules.slice(0, 1);
 }
 
+/** Only the currently submitted rules may require a fallback ticket assumption. */
+export function requiresAverageTicket(
+  activeRules: readonly { fixedFee: string }[],
+  untrustedFeeDays: number,
+): boolean {
+  return untrustedFeeDays > 0 && activeRules.some((rule) => Number(rule.fixedFee) > 0);
+}
+
 /** A POS connection or provider-attributed connected actual is evidence of a processor.
  * An uploaded/manual actual is not evidence of an additional card processor.
  */
