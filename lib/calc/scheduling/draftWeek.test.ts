@@ -112,6 +112,32 @@ describe("pure scheduling draft",()=>{
   ]);
   expect(day.unfilled).toEqual([]);
  });
+ it("retains evening recurrences inside approved overnight availability",()=>{
+  const d=data();d.employees=d.employees.map(e=>e.id==="expensive"?
+    {...e,available_days:[1]}:e);
+  d.schedules=[{employee_id:"expensive",day_of_week:1,start_time:"18:00",
+    end_time:"23:00",unpaid_break_minutes:30,effective_from:"2026-01-01",effective_to:null}];
+  d.availability=[{employee_id:"expensive",day_of_week:1,start_local:"17:00",
+    end_local:"02:00",confirmation:"owner_confirmed",source:"owner_direct",
+    effective_from:"2026-10-23",effective_to:null}];
+  const monday=draftWeek(d,"2026-10-26").days[0];
+  expect(monday.shifts).toContainEqual(expect.objectContaining({
+    name:"expensive",origin:"recurring",start:"18:00",end:"23:00",paidHours:4.5
+  }));
+ });
+ it("preserves the approved overnight spill into next-day recurring work",()=>{
+  const d=data();d.employees=d.employees.map(e=>e.id==="expensive"?
+    {...e,available_days:[1]}:e);
+  d.schedules=[{employee_id:"expensive",day_of_week:2,start_time:"01:00",
+    end_time:"02:00",unpaid_break_minutes:0,effective_from:"2026-01-01",effective_to:null}];
+  d.availability=[{employee_id:"expensive",day_of_week:1,start_local:"17:00",
+    end_local:"02:00",confirmation:"owner_confirmed",source:"owner_direct",
+    effective_from:"2026-10-23",effective_to:null}];
+  const tuesday=draftWeek(d,"2026-10-26").days[1];
+  expect(tuesday.shifts).toContainEqual(expect.objectContaining({
+    name:"expensive",origin:"recurring",start:"01:00",end:"02:00",paidHours:1
+  }));
+ });
  it("keeps recurring shifts and selects cheapest available for uncovered hours",()=>{
   const r=draftWeek(data(),"2026-10-26");
   expect(r.days[0].shifts[0]).toMatchObject({name:"expensive",origin:"recurring"});

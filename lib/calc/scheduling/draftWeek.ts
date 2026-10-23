@@ -111,10 +111,20 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
      v.employee_id===r.employee_id&&v.source==="owner_direct"&&
      v.confirmation==="owner_confirmed"&&active(v,date));
    if(ownerDays!==undefined&&ownerDays!==null&&hasOwnerConfirmedRestriction){
-    const allowed=ownerDays.includes(weekday)?inputs.availability
-      .filter(v=>v.employee_id===r.employee_id&&v.day_of_week===weekday&&v.source==="owner_direct"&&
-        v.confirmation==="owner_confirmed"&&active(v,date))
-      .map(v=>({start:minute(v.start_local),end:minute(v.end_local)})):[];
+    const confirmed=(v:DraftAvailability)=>v.employee_id===r.employee_id&&
+      v.source==="owner_direct"&&v.confirmation==="owner_confirmed";
+    const previousDate=addDays(date,-1),previousWeekday=(weekday+6)%7;
+    // Current-day overnight windows cover start→midnight; the next date
+    // inherits midnight→end from yesterday's confirmed overnight window.
+    const sameDay=ownerDays.includes(weekday)?inputs.availability
+      .filter(v=>confirmed(v)&&v.day_of_week===weekday&&active(v,date))
+      .map(v=>({start:minute(v.start_local),
+        end:minute(v.end_local)<minute(v.start_local)?1440:minute(v.end_local)})):[];
+    const spillover=ownerDays.includes(previousWeekday)?inputs.availability
+      .filter(v=>confirmed(v)&&v.day_of_week===previousWeekday&&active(v,previousDate)&&
+        minute(v.end_local)<minute(v.start_local))
+      .map(v=>({start:0,end:minute(v.end_local)})):[];
+    const allowed=[...sameDay,...spillover].filter(v=>v.start<v.end);
     const clipped=portions.flatMap(p=>allowed.map(v=>({
      start:Math.max(p.start,v.start),end:Math.min(p.end,v.end)
     })).filter(v=>v.start<v.end)).sort((x,y)=>x.start-y.start||x.end-y.end);
