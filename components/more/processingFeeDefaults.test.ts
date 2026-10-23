@@ -153,12 +153,12 @@ describe("processing fee redesign defaults", () => {
     expect(simple).toEqual([all[0]]);
     // Entering a ticket cannot make the hidden second rule part of the submission.
     expect(activeRateDrafts(all, false)).toEqual([all[0]]);
-    expect(showAverageTicketField(true, activeRateDrafts(all, true), 0)).toBe(true);
+    expect(showAverageTicketField(true, activeRateDrafts(all, true), 0, "100")).toBe(true);
   });
 
   it("keeps a hidden fixed-fee-only rule entirely out of a simple-mode ticket requirement", () => {
     const all = [{ fixedFee: "0" }, { fixedFee: "0.30" }];
-    expect(showAverageTicketField(false, activeRateDrafts(all, false), 4)).toBe(false);
+    expect(showAverageTicketField(false, activeRateDrafts(all, false), 4, "100")).toBe(false);
   });
 
   it("does not require a ticket for dates before the selected plan, but one-tap backdating does", () => {
