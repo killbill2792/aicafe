@@ -57,7 +57,7 @@ export function sumTheoreticalIngredientsCents<T>(
 }
 
 
-export type ProductCostSource = "recipe" | "owner_total";
+export type ProductCostSource = "recipe" | "owner_total" | "combo";
 
 export type ProductCostResolution = {
   status: RecipeCostStatus;

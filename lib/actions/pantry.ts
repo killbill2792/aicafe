@@ -9,6 +9,9 @@ import {
   applyTemplate as applySizedRecipe,
   swapIngredient as replaceIngredient,
   scaleRecipeToSize as rescaleItemRecipe,
+  saveProductRecipes as persistProductRecipes,
+  createPantryIngredient as insertCustomPantry,
+  updatePantryIngredient as editCustomPantry,
 } from "@/lib/data/pantry.server";
 import type { RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
 
@@ -49,4 +52,15 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
   const result = await rescaleItemRecipe(fromItemId, toItemId);
   if (result.ok) invalidatePantry();
   return result;
+}
+
+export async function saveProductRecipes(input: Parameters<typeof persistProductRecipes>[0]):Promise<Awaited<ReturnType<typeof persistProductRecipes>>>{
+ const result=await persistProductRecipes(input);if(result.ok)invalidatePantry();return result;
+}
+
+export async function createPantryIngredient(input:Parameters<typeof insertCustomPantry>[0]):Promise<Awaited<ReturnType<typeof insertCustomPantry>>>{
+ const result=await insertCustomPantry(input);if(result.ok)invalidatePantry();return result;
+}
+export async function updatePantryIngredient(input:Parameters<typeof editCustomPantry>[0]):Promise<Awaited<ReturnType<typeof editCustomPantry>>>{
+ const result=await editCustomPantry(input);if(result.ok)invalidatePantry();return result;
 }

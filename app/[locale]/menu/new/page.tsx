@@ -4,16 +4,17 @@ import { getMenuGroupOptions } from "@/lib/actions/menuItems";
 import BackHeader from "@/components/shared/BackHeader";
 import NewMenuItemForm from "@/components/menu/NewMenuItemForm";
 import PageShell from "@/components/shared/PageShell";
+import { getMenuItemsForEdit } from "@/lib/data/getMenuItemsForEdit";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewMenuItemPage() {
   await requireOwnBusiness();
-  const [menuGroupOptions, t, common] = await Promise.all([getMenuGroupOptions(), getTranslations("ManageMenu"), getTranslations("Common")]);
+  const [menuGroupOptions, t, common, menuItems] = await Promise.all([getMenuGroupOptions(), getTranslations("ManageMenu"), getTranslations("Common"), getMenuItemsForEdit()]);
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
       <BackHeader title={t("addDrink")} backHref="/menu" backLabel={common("back")} />
-      <NewMenuItemForm menuGroupOptions={menuGroupOptions} />
+      <NewMenuItemForm menuGroupOptions={menuGroupOptions} comboChoices={menuItems.items.map(item=>({id:item.id,name:item.name,sizeLabel:item.sizeLabel,priceCents:item.priceCents,costCents:item.ingredientsCostCents,estimated:item.ownerTotalCostStatus==="estimated"||item.costStatus!=="READY",menuGroup:item.menuGroup}))} />
     </PageShell>
   );
 }

@@ -76,6 +76,12 @@ export const SOURCE_SURFACES = {
   "lib/data/getCafeProfile.ts": {
     getCafeProfile:{capabilities:["business.profile"]},
   },
+  "lib/data/getUnpricedProductSizes.ts": {
+    getUnpricedProductSizes:{restricted:"Owner-authenticated product size drafts; excludes prices and is not model-exposed evidence"},
+  },
+  "lib/data/comboCosts.server.ts": {
+    readMenuComboCostComponents:{restricted:"Internal tenant scoped combo composition, not a canonical model exposed read"},
+  },
   "lib/data/getMenuItemsForEdit.ts": {
     getMenuItemsForEdit:{capabilities:["menu.recipe","menu.ingredients"]},
   },
@@ -134,7 +140,11 @@ export const SOURCE_SURFACES = {
     previewPriceImpact:{restricted:"Owner-requested hypothetical margin preview; not an authorized agent source"},
     applyTemplate:{restricted:"Replaces size-family recipes; requires explicit owner action"},
     swapIngredient:{restricted:"Mutates all matching recipe sizes; not a model-readable source"},
+    prepareIngredientSwap:{restricted:"Prepares owner-scoped atomic pantry recipe CAS changes; not an AI write or a model-readable source"},
     scaleRecipeToSize:{restricted:"Mutates a target recipe; not a model-readable source"},
+    saveProductRecipes:{restricted:"Owner-directed atomic all-size recipe replacement; never a model-write capability"},
+    createPantryIngredient:{restricted:"Owner-created pantry name and unit write; requires active business authorization"},
+    updatePantryIngredient:{restricted:"Owner-created ingredient metadata mutation; not a model-readable capability"},
   },
   "lib/data/getPricingInputs.ts": {
     getPricingInputs:{restricted:"Raw pricing inputs may include cost internals; read through canonical pricing recommendation"},
