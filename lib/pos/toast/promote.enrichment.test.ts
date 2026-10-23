@@ -20,7 +20,7 @@ function fixture(changed=false){
    update:(value:Record<string,unknown>)=>{if(table==="orders")writes.push(value);return chain;},
    then:(resolve:(value:{data:unknown[];error:null})=>unknown)=>{
     const data=table==="employees"?[]:table==="toast_employee_directory"?
-      [{employee_guid:employeeGuid,linked_employee_id:linkedGuid}]:
+      [{employee_guid:employeeGuid,linked_employee_id:linkedGuid,deleted:true}]:
       table==="orders"?[{net_sales_cents:100}]:[];
     return Promise.resolve({data,error:null}).then(resolve);
    },
@@ -47,6 +47,7 @@ describe("guarded Toast fact enrichment",()=>{
   expect(fields.toast_pilot_days).toContainEqual(["state","promoted"]);
   expect(fields.toast_employee_directory).toContainEqual(["business_id",p.businessId]);
   expect(fields.toast_employee_directory).toContainEqual(["restaurant_guid",p.restaurantGuid]);
+  expect(fields.toast_employee_directory).not.toContainEqual(["deleted",false]);
   expect(writes).toMatchObject([{employee_id:linkedGuid}]);
   expect(mocks.rebuild).toHaveBeenCalledTimes(1);
  });

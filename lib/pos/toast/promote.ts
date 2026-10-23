@@ -39,7 +39,7 @@ export async function promoteVerifiedToastDay(
    // not by rewriting the canonical employee's POS identity.
    const {data:directory,error:directoryError}=await db.from("toast_employee_directory")
       .select("employee_guid,linked_employee_id").eq("business_id",p.businessId)
-      .eq("restaurant_guid",p.restaurantGuid).eq("deleted",false);
+      .eq("restaurant_guid",p.restaurantGuid); // Historic approved links remain valid after roster deletion
    if(directoryError)throw directoryError;
    const approved=new Map((directory??[]).filter(e=>e.linked_employee_id)
      .map(e=>[e.employee_guid,e.linked_employee_id]));
