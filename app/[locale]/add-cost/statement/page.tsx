@@ -43,6 +43,7 @@ export default async function StatementUploadPage({ searchParams }: { searchPara
           missingDate: t("statementMissingDate"),
           missingCategory: t("statementMissingCategory"),
           missingConfirm: t("statementMissingConfirm"),
+          missingCancel: t("statementMissingCancel"),
           saveError: t("statementSaveError"),
         }}
       />
