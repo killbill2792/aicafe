@@ -2106,6 +2106,26 @@
     "days": "Ventas diarias",
     "missing": "Datos faltantes"
   },
+  "Initiatives": {
+    "checkinDefault": "Comparte el resultado.",
+    "checkin": "Revisión de {title} del {date}.",
+    "evaluation": "Progreso de {title} al {date}:",
+    "status": {
+      "on_track": "Va bien",
+      "off_track": "Necesita atención",
+      "met": "Objetivo alcanzado",
+      "missed": "Objetivo no alcanzado",
+      "insufficient_data": "No hay suficientes datos fiables"
+    },
+    "recommendation": {
+      "keep": "Seguir observando",
+      "revert": "Considera revertir el cambio",
+      "adjust": "Revisar y ajustar",
+      "extend": "Considera ampliar el plazo",
+      "none": "Se necesitan más datos"
+    },
+    "confirmChange": "¿Hiciste el cambio el {date}?"
+  },
   "Ui": {
     "theme": "Tema",
     "themeDescription": "Elige cómo se ve tu cafetería.",

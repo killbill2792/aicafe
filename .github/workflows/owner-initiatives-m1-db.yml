@@ -1,0 +1,37 @@
+name: M1 Owner Initiatives PostgreSQL RLS
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20261022000078_owner_initiatives.sql'
+      - 'scripts/test-initiatives-rls.mjs'
+      - '.github/workflows/owner-initiatives-m1-db.yml'
+permissions:
+  contents: read
+jobs:
+  rls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node scripts/test-initiatives-rls.mjs
