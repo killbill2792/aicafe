@@ -2383,7 +2383,12 @@
     "usageExpectedOnly": "Solo esperado, según fichajes de Toast; no es consumo real",
     "usageStart": "Desde",
     "usageEnd": "Hasta",
-    "usageApply": "Aplicar"
+    "usageApply": "Aplicar",
+    "usageStartCount": "Falta conteo inicial para",
+    "usageEndCount": "Falta conteo final para",
+    "usageCoverage": "Falta historial completo de ventas de Toast",
+    "usageRecipeMissing": "Revise la receta o los modificadores registrados",
+    "usageUnavailable": "Uso no disponible; compruebe Toast y los conteos"
   },
   "SupervisorProposalCard": {
     "title": "Propuesta de cambio de precio",
