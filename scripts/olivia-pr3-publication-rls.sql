@@ -236,5 +236,80 @@ BEGIN
     RAISE EXCEPTION 'Olivia revision cap not enforced in PostgreSQL';
   END IF;
 END $$;
+-- A previously imported actual timecard must survive every Olivia publish
+-- attempt byte-for-byte. It is attendance, not a proposed/published shift.
+INSERT INTO public.timecards
+ (business_id,employee_id,pos_timecard_id,clock_in,clock_out,
+  hourly_wage_cents,breaks,source_type,source_provider)
+VALUES(:'business',:'employee','csv-olivia-post-pr3-fixture',
+ '2099-01-20T18:00:00Z','2099-01-20T22:00:00Z',1800,
+ '[{"start":"2099-01-20T20:00:00Z","end":"2099-01-20T20:15:00Z"}]'::jsonb,
+ 'imported','CSV') RETURNING id AS original_timecard \gset
+SELECT set_config('test.olivia3_timecard',:'original_timecard',true);
+-- A legacy recurring commitment stays authoritative for predicted timecards.
+-- Olivia must refuse a second official plan without changing that source or
+-- creating attendance, even if the proposed shift happens at another hour.
+INSERT INTO public.staff_schedules
+ (business_id,employee_id,day_of_week,start_time,end_time,
+  hourly_wage_cents,effective_from,effective_to,active)
+VALUES(:'business',:'employee',1,'08:00','12:00',1800,
+ '2099-02-01','2099-02-07',true) RETURNING id AS legacy_schedule \gset
+INSERT INTO public.scheduling_plan_series
+ (business_id,horizon_start,current_revision,created_by)
+VALUES(:'business','2099-02-02',1,:'owner') RETURNING id AS legacy_series \gset
+INSERT INTO public.scheduling_plan_revisions
+ (business_id,series_id,revision,status,source_digest,planner_input,scenario,
+  created_by,approved_by,approved_at)
+VALUES(:'business',:'legacy_series',1,'approved',repeat('a',64),
+ '{"horizonStart":"2099-02-02"}',
+ '{"objective":"balanced","completeCoverage":true,"hardConstraintsSatisfied":true,"legalReview":"verified_profile","shifts":[]}',
+ :'owner',:'owner',now()) RETURNING id AS legacy_revision \gset
+INSERT INTO public.scheduling_plan_assignments
+ (business_id,plan_revision_id,employee_id,location_id,
+  starts_at,ends_at,paid_minutes,breaks,pinned)
+VALUES(:'business',:'legacy_revision',:'employee',:'location',
+ '2099-02-02T20:00:00Z','2099-02-02T22:00:00Z',120,'[]',false);
+SELECT set_config('test.olivia3_legacy_series',:'legacy_series',true);
+SELECT set_config('test.olivia3_legacy_revision',:'legacy_revision',true);
+SELECT set_config('test.olivia3_legacy_schedule',:'legacy_schedule',true);
+DO $$
+DECLARE
+ b uuid:=current_setting('test.olivia3_biz')::uuid;
+ actor uuid:=current_setting('test.olivia3_owner')::uuid;
+ r uuid:=current_setting('test.olivia3_legacy_revision')::uuid;
+ original_token text:=current_setting('test.olivia3_token');
+ fresh_token text;
+ response jsonb;
+ original_attendance jsonb;
+BEGIN
+ SELECT to_jsonb(t) INTO original_attendance FROM public.timecards t
+   WHERE t.id=current_setting('test.olivia3_timecard')::uuid;
+ SELECT public.scheduling_pr3_source_token_internal(b) INTO fresh_token;
+ IF fresh_token=original_token THEN
+   RAISE EXCEPTION 'legacy scheduling source change was not fingerprinted';
+ END IF;
+ SELECT public.scheduling_pr3_publish(b,actor,r,1,repeat('a',64),
+   original_token,gen_random_uuid()) INTO response;
+ IF response->>'error'<>'source_changed' THEN
+   RAISE EXCEPTION 'stale token bypassed legacy source change: %',response;
+ END IF;
+ SELECT public.scheduling_pr3_publish(b,actor,r,1,repeat('a',64),
+   fresh_token,gen_random_uuid()) INTO response;
+ IF response->>'error'<>'legacy_conflict' THEN
+   RAISE EXCEPTION 'legacy recurring schedule publication was not blocked: %',response;
+ END IF;
+ IF (SELECT published_revision FROM public.scheduling_plan_series
+      WHERE id=current_setting('test.olivia3_legacy_series')::uuid) IS NOT NULL
+    OR (SELECT count(*) FROM public.staff_schedules
+      WHERE id=current_setting('test.olivia3_legacy_schedule')::uuid)<>1
+    OR (SELECT count(*) FROM public.timecards WHERE business_id=b)<>1
+    OR (SELECT to_jsonb(t) FROM public.timecards t
+        WHERE t.id=current_setting('test.olivia3_timecard')::uuid)
+        IS DISTINCT FROM original_attendance
+    OR (SELECT count(*) FROM public.scheduling_plan_audit
+      WHERE business_id=b AND revision_id=r AND event='published')<>0 THEN
+   RAISE EXCEPTION 'legacy publication blocker mutated schedule or attendance';
+ END IF;
+END $$;
 ROLLBACK;
 \echo Olivia PR3 disposable approval/publication/RLS tests passed

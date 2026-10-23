@@ -78,11 +78,13 @@ export async function saveOliviaEditedDraft(
   if(base.source_digest!==edit.expectedSourceDigest)
     return {ok:false,error:"source_changed"};
   const baseline=base.scenario as PlannerScenario;
-  if(baseline.objective!==edit.objective || !Array.isArray(baseline.shifts))
+  // Saved JSONB break objects may use a different property order than the
+  // client Zod schema. Validate and normalize both versions before comparing
+  // immutable pinned commitments; a raw JSON.stringify gives false conflicts.
+  const savedShifts=z.array(shiftSchema).max(200).safeParse(baseline.shifts);
+  if(baseline.objective!==edit.objective || !savedShifts.success)
     return {ok:false,error:"invalid_input"};
-  // Pinned shifts are commitments, not a client-controlled visual marker.
-  // A caller must never unpin, delete, reassign, or move a saved pinned shift.
-  const originalPinned=baseline.shifts.filter(s=>s.pinned);
+  const originalPinned=savedShifts.data.filter(s=>s.pinned);
   if(originalPinned.some(original=>!edit.shifts.some(candidate=>
     candidate.pinned===true && candidate.employeeId===original.employeeId &&
     candidate.locationId===original.locationId &&

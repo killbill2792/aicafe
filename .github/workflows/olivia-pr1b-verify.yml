@@ -78,6 +78,12 @@ jobs:
         run: python3 scripts/olivia-pr1b-coverage-concurrency.py
       - name: Concurrent qualification creates and assignments
         run: python3 scripts/olivia-pr1b-qualification-concurrency.py
+      - name: Olivia PR3 real concurrent owner approval and publication
+        run: python3 scripts/olivia-pr3-concurrency.py
+      - name: Olivia PR3 five-employee owner lifecycle and immutable actual labor
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/olivia-pr3-five-worker-acceptance.sql
+      - name: Olivia PR3 read-only migration and authority preflight
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/olivia-pr3-staging-preflight.sql
       - name: Stop disposable database
         if: always()
         run: supabase stop --no-backup
