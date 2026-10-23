@@ -63,6 +63,10 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
  const method=(person:Recipient,channel:OwnerChannel)=>{
   const status=eligibleForChannel(person.phone,person.optedIn,channel);
   if(status!=="ready")return <span className="text-sm text-ink-muted">{status==="no_phone"?t.noPhone:t.noOptIn}</span>;
+  // One receipt per staff member and approved source. The other channel cannot
+  // be opened after a receipt exists without misrepresenting its audit trail.
+  if(person.ledgerStatus==="sent_by_owner"&&person.lastChannel&&person.lastChannel!==channel)
+    return <span className="text-sm text-ink-muted">{t.opened} · {person.lastChannel==="sms"?t.sms:t.whatsApp}</span>;
   // Render a deterministic href on the server; choose the iOS SMS separator
   // only in the actual click, avoiding an SSR hydration mismatch.
   const href=composeScheduleLink(person.phone!,person.message,channel);

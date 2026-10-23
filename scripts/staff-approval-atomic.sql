@@ -323,6 +323,28 @@ BEGIN
  THEN RAISE EXCEPTION 'owner handoff replay was not idempotent'; END IF;
 END $ledger$;
 
+-- Attempting to switch channels after one owner-open receipt must not silently
+-- return the original receipt and open a second app with a falsely logged channel.
+DO $crosschannel$
+DECLARE blocked boolean:=false;
+BEGIN
+ BEGIN
+  PERFORM public.staff_mark_owner_delivery(
+    current_setting('test.approval.business')::uuid,
+    (SELECT owner_user_id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)),
+    (SELECT employee_id FROM public.staff_schedule_deliveries
+      WHERE proposal_id=(SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)) LIMIT 1),
+    'whatsapp','+14155550123',
+    (SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64)),NULL);
+ EXCEPTION WHEN SQLSTATE 'P0001' THEN blocked:=true;
+ END;
+ IF NOT blocked OR NOT EXISTS(SELECT 1 FROM public.staff_schedule_deliveries
+   WHERE proposal_id=(SELECT id FROM public.supervisor_proposals WHERE effect_hash=repeat('f',64))
+    AND status='sent_by_owner' AND channel='sms')
+ THEN RAISE EXCEPTION 'owner receipt accepted mismatched channel'; END IF;
+END $crosschannel$;
+
+
 -- Replacement is authoritative across BOTH previously attested source types.
 SELECT gen_random_uuid() AS override_id,gen_random_uuid() AS dayoff_id \gset
 SELECT set_config('request.jwt.claim.sub',:'owner',true);

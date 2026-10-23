@@ -30,5 +30,6 @@ describe("staff owner-send SQL invariants",()=>{
    expect(migration).toMatch(/tsrange\(a.local_date\+a.start_local/);
    expect(migration).toMatch(/overlapping_staff_shifts/);
    expect(migration).toMatch(/v_employee.phone_e164 IS DISTINCT FROM p_expected_phone/);
+   expect(migration).toMatch(/v_delivery.channel IS DISTINCT FROM p_channel/);
  });
 });

@@ -511,6 +511,11 @@ BEGIN
  END IF;
  IF v_delivery.id IS NOT NULL THEN
    IF v_delivery.status='sent_by_owner' THEN
+     -- This row is a single immutable handoff receipt. Never claim a second
+     -- channel opened when the ledger actually records the first channel.
+     IF v_delivery.channel IS DISTINCT FROM p_channel THEN
+       RAISE EXCEPTION 'delivery_channel_conflict' USING ERRCODE='P0001';
+     END IF;
      RETURN jsonb_build_object('state','already_opened','channel',v_delivery.channel,
        'at',v_delivery.sent_at); END IF;
    IF v_delivery.status<>'prepared' THEN
