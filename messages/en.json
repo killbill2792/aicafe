@@ -134,7 +134,11 @@
     "voiceTranscriptLabel": "We heard",
     "aiUnavailableTitle": "Currently unavailable",
     "aiUnavailableReceiptBody": "Reading receipt photos isn't turned on for this café yet. You can still add this cost by typing it in.",
-    "aiUnavailableVoiceBody": "Voice entry isn't turned on for this café yet. You can still add this cost by typing it in."
+    "aiUnavailableVoiceBody": "Voice entry isn't turned on for this café yet. You can still add this cost by typing it in.",
+    "voiceUnavailable": "Voice entry is unavailable right now. Try again later or type it in instead.",
+    "voiceNoTranscript": "Didn't catch that. Try again.",
+    "voiceAuthRequired": "Sign in to use voice entry.",
+    "voiceParseFailed": "Couldn't understand that. Try again or type it in instead."
   },
   "Categories": {
     "rent": "Rent",
