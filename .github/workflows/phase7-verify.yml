@@ -2,6 +2,18 @@ name: Phase 7 Proactive Team Verification
 on:
   push:
     branches: [chatgpt/supervisor-phase7-team-alerts-whatsapp]
+    paths:
+      - 'app/**/operations/**'
+      - 'app/api/ai/notifications/**'
+      - 'app/api/cron/team-alerts/**'
+      - 'components/operations/OwnerWhatsAppAlerts.tsx'
+      - 'lib/ai/notifications/**'
+      - 'scripts/test-ai-notifications-migration.mjs'
+      - '.github/workflows/phase7-verify.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest

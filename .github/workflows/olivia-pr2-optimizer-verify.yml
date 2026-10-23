@@ -2,11 +2,14 @@ name: Olivia PR 2 Pure Optimizer Verification
 on:
   pull_request:
     paths:
-      - "lib/calc/scheduling/**"
+      - "lib/calc/scheduling/planner*.ts"
       - "lib/metrics/p1SourceManifest.ts"
-      - "PROGRESS.md"
       - ".github/workflows/olivia-pr2-optimizer-verify.yml"
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pure-optimizer:
     runs-on: ubuntu-latest

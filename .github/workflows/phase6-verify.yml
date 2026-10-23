@@ -2,6 +2,16 @@ name: Phase 6 Supervisor Verification
 on:
   push:
     branches: [chatgpt/supervisor-phase6-voice-attachments]
+    paths:
+      - 'app/**/page.tsx'
+      - 'app/api/ai/threads/**'
+      - 'components/home/SupervisorChatComposer.tsx'
+      - 'lib/ai/conversations/attachments*'
+      - '.github/workflows/phase6-verify.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest

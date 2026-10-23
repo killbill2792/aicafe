@@ -3,6 +3,17 @@ on:
   push:
     branches:
       - chatgpt/fix-supervisor-chat-activation
+    paths:
+      - 'app/**/page.tsx'
+      - 'components/home/SupervisorHomePanel.tsx'
+      - 'components/home/SupervisorChatComposer.tsx'
+      - 'lib/ai/conversations/enabled.server*'
+      - 'lib/ai/conversations/readiness*'
+      - '.github/workflows/supervisor-chat-activation-verify.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest

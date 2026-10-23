@@ -2,6 +2,17 @@ name: Phase 8 Supplier Evidence Verification
 on:
   push:
     branches: [chatgpt/supervisor-phase8-supplier-evidence]
+    paths:
+      - 'app/**/operations/**'
+      - 'app/api/ai/suppliers/**'
+      - 'components/operations/SupplierEvidenceManager.tsx'
+      - 'lib/ai/suppliers/**'
+      - 'lib/calc/supplierQuotes*'
+      - '.github/workflows/phase8-verify.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest

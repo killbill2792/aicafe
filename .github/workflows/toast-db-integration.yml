@@ -7,6 +7,10 @@ on:
       - 'scripts/toast-db-integration.sql'
       - '.github/workflows/toast-db-integration.yml'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   isolated-supabase:
     runs-on: ubuntu-latest

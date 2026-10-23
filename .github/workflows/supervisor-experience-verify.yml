@@ -2,19 +2,43 @@ name: Supervisor Experience Verification
 on:
   push:
     branches: [chatgpt/supervisor-experience-responses-20261010]
-  pull_request:
     paths:
-      - 'app/api/ai/**'
-      - 'app/[locale]/page.tsx'
+      - 'app/api/ai/threads/**'
+      - 'app/api/ai/transcribe/**'
+      - 'app/api/ai/usage/**'
+      - 'app/\[locale\]/page.tsx'
       - 'components/shared/AddCostFab.tsx'
       - 'components/home/SupervisorFabOverlap.test.ts'
       - 'components/home/**'
-      - 'lib/ai/**'
-      - 'messages/**'
+      - 'lib/ai/agent/**'
+      - 'lib/ai/conversations/**'
+      - 'lib/ai/operatingBrain.ts'
+      - 'lib/ai/cafeTools.server.ts'
+      - 'lib/ai/tools.ts'
+      - 'supabase/migrations/*ai_usage*'
+      - '.github/workflows/supervisor-experience-verify.yml'
+  pull_request:
+    paths:
+      - 'app/api/ai/threads/**'
+      - 'app/api/ai/transcribe/**'
+      - 'app/api/ai/usage/**'
+      - 'app/\[locale\]/page.tsx'
+      - 'components/shared/AddCostFab.tsx'
+      - 'components/home/SupervisorFabOverlap.test.ts'
+      - 'components/home/**'
+      - 'lib/ai/agent/**'
+      - 'lib/ai/conversations/**'
+      - 'lib/ai/operatingBrain.ts'
+      - 'lib/ai/cafeTools.server.ts'
+      - 'lib/ai/tools.ts'
       - 'supabase/migrations/*ai_usage*'
       - '.github/workflows/supervisor-experience-verify.yml'
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest

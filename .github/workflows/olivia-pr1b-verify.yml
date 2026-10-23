@@ -2,18 +2,31 @@ name: Olivia PR 1B Availability UI Verification
 on:
   pull_request:
     paths:
-      - "components/staff/**"
+      - "components/staff/Availability*.tsx"
+      - "components/staff/StaffCoverageEditor.tsx"
+      - "components/staff/StaffQualificationsEditor.tsx"
+      - "components/staff/ManageStaffPanel.tsx"
+      - "components/staff/StaffWorkspace.tsx"
+      - "components/staff/StaffDialog.tsx"
       - "app/**/more/manage-staff/**"
-      - "lib/scheduling/**"
+      - "lib/scheduling/availability*"
+      - "lib/scheduling/coverageIdentity*"
+      - "lib/scheduling/foundation*"
+      - "lib/scheduling/qualificationCode*"
       - "lib/actions/schedulingFoundation.ts"
-      - "lib/calc/scheduling/**"
-      - "messages/**"
+      - "lib/calc/scheduling/availability*"
+      - "lib/calc/scheduling/coverageGaps*"
+      - "lib/calc/scheduling/scheduleValidators*"
       - "supabase/migrations/20261014000061_olivia_availability_batch.sql"
       - "supabase/migrations/20261014000062_olivia_coverage_concurrency.sql"
       - "supabase/migrations/20261014000063_olivia_qualification_concurrency.sql"
       - "scripts/olivia-pr1b-*"
       - ".github/workflows/olivia-pr1b-verify.yml"
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   checks:
     runs-on: ubuntu-latest
