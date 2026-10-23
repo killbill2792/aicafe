@@ -109,7 +109,9 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
    // restriction that can clip or remove a recurring baseline.
    const hasOwnerConfirmedRestriction=inputs.availability.some(v=>
      v.employee_id===r.employee_id&&v.source==="owner_direct"&&
-     v.confirmation==="owner_confirmed"&&active(v,date));
+     v.confirmation==="owner_confirmed"&&
+     (active(v,date)||(v.day_of_week===(weekday+6)%7&&active(v,previous)&&
+       minute(v.end_local)<minute(v.start_local))));
    if(ownerDays!==undefined&&ownerDays!==null&&hasOwnerConfirmedRestriction){
     const confirmed=(v:DraftAvailability)=>v.employee_id===r.employee_id&&
       v.source==="owner_direct"&&v.confirmation==="owner_confirmed";
