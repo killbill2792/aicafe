@@ -1,1 +1,1 @@
-{"crons":[{"path":"/api/cron/team-alerts","schedule":"0 16 * * *"},{"path":"/api/cron/supervisor-experiments","schedule":"30 16 * * *"}]}
+{"crons":[{"path":"/api/cron/team-alerts","schedule":"0 16 * * *"},{"path":"/api/cron/supervisor-experiments","schedule":"30 16 * * *"},{"path":"/api/cron/initiatives-monitor","schedule":"0 17 * * *"}]}

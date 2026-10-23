@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { initiativeToolDefinitions,isInitiativeTool,executeInitiativeTool } from "./initiatives";
 import { staffTools } from "./staff";
 import {scheduleReadTools} from "./scheduleReads";
 import { hoursTools } from "./hours";
@@ -23,6 +24,7 @@ export type AgentToolContext = {
   tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
   timezone?:string;
   asOf: string; locale: AgentLocale;
+  threadId?:string;ownerMessageId?:string;
 };
 const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
@@ -36,7 +38,7 @@ const descriptions: Record<string, string> = {
   get_sales: "Read covered daily sales in a current calendar period.",
   get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
 };
-export const agentToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
+const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
   const { $schema: _schema, ...parameters } = z.toJSONSchema("schema" in schemas[name] ? schemas[name].schema as z.ZodType : schemas[name], { target: "draft-07" });
   void _schema;
   // Empty strict Zod objects omit required in JSON Schema; OpenAI needs it explicitly.
@@ -46,6 +48,8 @@ export const agentToolDefinitions = (Object.keys(schemas) as AgentToolName[]).ma
     description: "description" in schemas[name] ? schemas[name].description : descriptions[name],
     strict: true as const, parameters:{...parameters,required} };
 });
+export const agentToolDefinitions=[...baseToolDefinitions,
+  ...initiativeToolDefinitions.filter(tool=>tool.name!=="propose_initiative")];
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
@@ -60,6 +64,9 @@ function absent(source: string, period: CafeStatePeriod | null, missing: string[
     missing: missing.length ? missing : ["sourceUnavailable"] };
 }
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
+  // Backend-only: do not register proposal creation until a real approval surface is available.
+  if(name==="propose_initiative")throw new Error("initiative_approval_surface_not_available");
+  if(isInitiativeTool(name))return executeInitiativeTool(name,raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);

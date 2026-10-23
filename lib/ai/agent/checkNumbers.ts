@@ -1,5 +1,6 @@
 import type { AgentLocale, AgentToolResult } from "./tools";
 import { menuPriceDifferenceCents } from "@/lib/calc/agentPriceDifferences";
+import { metricCatalog,metricKeySchema } from "@/lib/calc/metrics/catalog";
 import { sumCents } from "@/lib/calc/money";
 
 export type MenuPrice = {id:string;name:string;priceCents:number};
@@ -23,6 +24,68 @@ const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalU
   "timecardCount","onClockCount"]);
 const trustedCountKey=(key:string)=>COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
   COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,""));
+
+/** Initiative detail has generic "current / baseline / target / value" fields.
+ * They are not evidence until their metric identity, catalog unit and
+ * completeness are validated. Never scan arbitrary objects for numeric facts.
+ */
+function appendInitiativeNumericEvidence(
+  result:AgentToolResult,
+  values:NumericEvidence["values"],invalidatedKeys:string[],
+):void {
+  if(result.source!=="owner_initiatives"||!result.metricDetail||
+    typeof result.metricDetail!=="object"||Array.isArray(result.metricDetail)||
+    !result.initiative||typeof result.initiative!=="object"||
+    Array.isArray(result.initiative))return;
+  const detail=result.metricDetail as Record<string,unknown>;
+  const initiative=result.initiative as Record<string,unknown>;
+  const keyParsed=metricKeySchema.safeParse(detail.metricKey);
+  if(!keyParsed.success||detail.source!=="computed"||
+    typeof initiative.id!=="string"||typeof detail.id!=="string"||
+    !detail.params||typeof detail.params!=="object"||
+    !metricCatalog[keyParsed.data].paramsSchema.safeParse(detail.params).success)return;
+  const unit=metricCatalog[keyParsed.data].unit;
+  if(detail.unit!==unit||unit==="microcents_per_base_unit")return;
+  const metricRoot="initiative:"+initiative.id+"/metric:"+detail.id+"/key:"+keyParsed.data+"/";
+  // Relative improvement targets are themselves percentages, not an
+  // implicit dollar/count threshold. Treat the owner's approved spec as
+  // typed percentage evidence, separate from the computed test target.
+  const relativeKey=metricRoot+"relativeChangeBps";
+  invalidatedKeys.push(relativeKey);
+  if(detail.targetKind==="relative_pct"&&
+    typeof detail.target==="number"&&Number.isFinite(detail.target))
+    values.push({key:relativeKey,value:detail.target*100,unit:"bps"});
+  const keyFor=(field:string,date?:string)=>
+    metricRoot+(date?"day:"+date+"/":"")+field+
+      (unit==="count"?"/count":unit==="cents"?"Cents":unit==="bps"?"Bps":"Ratio");
+  const add=(field:string,raw:unknown,covered=true,date?:string)=>{
+    const key=keyFor(field,date);
+    invalidatedKeys.push(key);
+    if(!covered||typeof raw!=="number"||!Number.isFinite(raw))return;
+    values.push({key,value:raw,unit});
+  };
+  const evaluation=result.metricEvaluation;
+  const ev=evaluation&&typeof evaluation==="object"&&!Array.isArray(evaluation)?
+    evaluation as Record<string,unknown>:null;
+  const covered=ev?.coverage!==undefined&&typeof ev.coverage==="number"&&
+    ev.coverage>=0.8;
+  // A stated absolute goal threshold is verified even before evaluation.
+  // A relative-pct spec is not a currency or count; its computed comparison
+  // target becomes numeric evidence only when an evaluation exists.
+  add("current",ev?.current,covered);
+  add("baseline",ev?.baseline,covered);
+  add("target",ev?.target??(detail.targetKind==="absolute"?detail.target:null),
+    ev?covered:detail.targetKind==="absolute");
+  const obs=result.observation;
+  if(obs&&typeof obs==="object"&&!Array.isArray(obs)){
+    const row=obs as Record<string,unknown>;
+    if(row.metricId===detail.id&&typeof row.date==="string"&&
+      /^\d{4}-\d{2}-\d{2}$/u.test(row.date)){
+      add("observation",row.value,typeof row.coverage==="number"&&
+        row.coverage>=0.8,row.date);
+    }
+  }
+}
 
 /** Collect the complete current observations first. Apply the persistence cap
  * only after collection, prioritizing recent reads and high-value prices. */
@@ -72,6 +135,7 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       values.push({key:valueKey,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
     };
     walk(r,"",0,rootScope);
+    appendInitiativeNumericEvidence(r,values,invalidatedKeys);
     const times=[...observedHours([r]),...observedShifts([r])].slice(0,60);
     let timeScope:TimeScope|undefined;
     if(r.source==="locations.open_hours"){
@@ -662,6 +726,17 @@ function datedFinancialScope(text:string,start:number,end:number):{date:string|n
 function evidenceSupportsDatedMoney(evidence:readonly NumericEvidence[],
   date:string,cents:number,metric:string):boolean {
   return evidence.some(entry=>{
+    // Initiative observations carry their *validated* metric identity
+    // alongside the date. Money from item margin or per-hour sales cannot
+    // prove TOTAL daily sales just because the cent amounts happen to match.
+    if(entry.tool==="owner_initiatives"){
+      const allowedKey=metric==="sales"?"net_sales":
+        metric==="labor"?"labor_cost":metric==="profit"?"net_profit":null;
+      return allowedKey!==null&&entry.values.some(v=>
+        v.unit==="cents"&&Math.abs(v.value-cents)<=1&&
+        v.key.includes("/key:"+allowedKey+"/day:"+date+"/")&&
+        v.key.endsWith("/observationCents"));
+    }
     const correctSource=metric==="sales"?entry.tool==="daily_rollups"||entry.tool==="item_sales":
       metric==="labor"?entry.tool==="labor_and_attendance":
       metric==="expenses"?entry.tool==="expenses":entry.tool==="profitability";

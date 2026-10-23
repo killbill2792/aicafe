@@ -64,7 +64,8 @@ export async function POST(request: Request, context: RouteContext) {
               content: m.text ?? (m.blocks ?? []).flatMap(b => b && typeof b === "object" && "text" in b ?
                 [String(b.text)] : []).join(" ") })).filter(m => m.content);
           const result = await runAgentTurn({ ownerText: input.text, history,
-            context: { tools, asOf: identity.asOf, locale: input.locale,timezone:identity.timezone },
+            context: { tools, asOf: identity.asOf, locale: input.locale,timezone:identity.timezone,
+              threadId:id,ownerMessageId:owner.id },
             previousEvidence,onTool:(name,agentId)=>emit("tool",{name,agentId}),
             onDelta: delta => emit("delta", { text: delta }),
             onReset: discardChars => emit("reset", { discardChars }) });
