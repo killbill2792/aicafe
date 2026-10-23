@@ -2,8 +2,8 @@
 export type UsageIngredient={id:string;name:string;unit:"g"|"ml"|"each"};
 export type UsageRecipe={menuItemId:string;ingredientId:string;quantity:number};
 export type UsageModifier={posModifierId:string;ingredientId:string|null;quantityDelta:number;replacesIngredientId:string|null};
-export type UsageSale={menuItemId:string|null;quantity:number;businessDate:string;closedAt:string;modifiers:Array<{posModifierId:string;name:string}>};
-export type UsageStaff={id:string;staffId:string;staff:string;clockIn:string;clockOut:string|null};
+export type UsageSale={menuItemId:string|null;quantity:number;businessDate:string;closedAt:string;locationId:string|null;modifiers:Array<{posModifierId:string;name:string}>};
+export type UsageStaff={id:string;staffId:string;staff:string;locationId:string;clockIn:string;clockOut:string|null};
 export type UsageCount={ingredientId:string;date:string;quantity:number};
 export type UsagePurchase={ingredientId:string;date:string;quantity:number};
 export type UsageGroupBy="day"|"shift"|"staff"|null;
@@ -50,17 +50,19 @@ export function calculateUsage(input:{
    if(m.replacesIngredientId)lineTotals.delete(m.replacesIngredientId);
    if(m.ingredientId)lineTotals.set(m.ingredientId,(lineTotals.get(m.ingredientId)??0)+m.quantityDelta);
   }
-  const clocked=staff.filter(s=>Date.parse(s.clockIn)<=Date.parse(sale.closedAt) &&
+  const clocked=staff.filter(s=>sale.locationId!==null && s.locationId===sale.locationId &&
+   Date.parse(s.clockIn)<=Date.parse(sale.closedAt) &&
    (s.clockOut===null||Date.parse(sale.closedAt)<Date.parse(s.clockOut)));
   const crew=clocked.map(s=>s.staff).sort();
   for(const [id,qty] of lineTotals){
    if(!Number.isFinite(qty)||qty<0){salesMissing=true;continue;}
    let key="all",label="All";
    if(input.groupBy==="day"){key=sale.businessDate;label=key;}
-   if(input.groupBy==="shift"){key=clocked.map(s=>s.id).sort().join("|")||"unassigned:"+sale.businessDate;label=crew.join(", ")||"No matched Toast time entry";}
+   if(input.groupBy==="shift"){key=(sale.locationId??"unknown")+":"+(clocked.map(s=>s.id).sort().join("|")||"unassigned:"+sale.businessDate);label=crew.join(", ")||"No matched Toast time entry";}
    if(input.groupBy==="staff"){ // Shared expected usage, not proof who prepared the sale.
     const members=clocked.length?clocked:[{staffId:"unassigned",staff:"No matched Toast time entry"}];
-    for(const s of members)add(id,qty*sale.quantity/members.length,s.staffId,s.staff,[s.staff]);
+    for(const s of members)add(id,qty*sale.quantity/members.length,
+     (sale.locationId??"unknown")+":"+s.staffId,s.staff,[s.staff]);
     continue;
    }
    add(id,qty*sale.quantity,key,label,crew);
