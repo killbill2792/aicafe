@@ -15,3 +15,9 @@ export function assertStaffShiftPlan(shifts:readonly ProposedStaffShift[]):void{
   existing.push({start,end});byEmployee.set(s.employee_id,existing);
  }
 }
+
+/** Owner approval previews must not display raw booleans or internal enums. */
+export function formatStaffApprovalRuleValue(value:unknown,labels:{ruleEnabled:string;ruleDisabled:string}){
+ if(typeof value==="boolean")return value?labels.ruleEnabled:labels.ruleDisabled;
+ return value===null||value===undefined?"—":String(value);
+}

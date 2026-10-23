@@ -20,3 +20,22 @@ describe("staff approval scheduling validation",()=>{
    {...s,start:"01:00",end:"05:00",date:"2026-10-27"}])).toThrow(/Overlapping/);
  });
 });
+
+import {formatStaffApprovalRuleValue} from "./staffProposalValidation";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
+describe("localized staff rule approval values",()=>{
+ it.each([en,es,ar])("never renders raw true or false for boolean rules",(catalog)=>{
+  const copy=catalog.StaffApprovalCard;
+  expect(formatStaffApprovalRuleValue(true,copy)).toBe(copy.ruleEnabled);
+  expect(formatStaffApprovalRuleValue(false,copy)).toBe(copy.ruleDisabled);
+  expect(formatStaffApprovalRuleValue(true,copy)).not.toBe("true");
+  expect(formatStaffApprovalRuleValue(false,copy)).not.toBe("false");
+ });
+ it("leaves numeric values and missing values meaningful",()=>{
+  const copy=en.StaffApprovalCard;
+  expect(formatStaffApprovalRuleValue(0,copy)).toBe("0");
+  expect(formatStaffApprovalRuleValue(null,copy)).toBe("—");
+ });
+});
