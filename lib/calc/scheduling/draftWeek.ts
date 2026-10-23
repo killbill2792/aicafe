@@ -3,7 +3,7 @@ import { OPEN_HOURS_DAY_KEYS } from "@/lib/business/openHours";
 
 export type DraftEmployee={id:string;display_name:string;default_hourly_wage_cents:number|null;wage_period:string|null;wage_amount_cents:number|null;available_days?:number[]|null};
 export type DraftRecurring={employee_id:string;day_of_week:number;start_time:string;end_time:string;effective_from:string;effective_to:string|null;unpaid_break_minutes:number|null};
-export type DraftAvailability={employee_id:string;day_of_week:number;start_local:string;end_local:string;confirmation:string;effective_from:string;effective_to:string|null};
+export type DraftAvailability={employee_id:string;day_of_week:number;start_local:string;end_local:string;confirmation:string;source?:string|null;effective_from:string;effective_to:string|null};
 export type DraftPreference={employee_id:string;max_weekly_minutes:number|null;effective_from:string;effective_to:string|null};
 export type SchedulingDraftInputs={employees:DraftEmployee[];schedules:DraftRecurring[];availability:DraftAvailability[];preferences:DraftPreference[];
   openHours:OpenHours|null;prepMinutesBeforeOpen?:number;prepMinutesAfterClose?:number;unavailableDates?:Array<{employeeId:string;date:string;start?:string|null;end?:string|null;overnight?:boolean}>;timezone:string;timezoneDefaultedToUtc?:boolean;city:string|null;region:string|null;countryCode:string|null;missing?:string[]};
@@ -103,11 +103,16 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
    if(a>=b){estimated.push("overnightRecurringShiftNotDrafted");continue;}
    let portions=availableWindows(a,b,masksByPerson.get(r.employee_id)??[]);
    const ownerDays=people.get(r.employee_id)!.available_days;
-   // Once the owner replaces availability, old recurring baselines must
-   // obey those confirmed weekdays and time windows too.
-   if(ownerDays!==undefined&&ownerDays!==null){
+   // Staff-profile availability can be unconfirmed; available_days alone
+   // must not erase an otherwise valid legacy recurrence or its unpaid break.
+   // Only ACTIVE, confirmed owner-direct windows establish an authoritative
+   // restriction that can clip or remove a recurring baseline.
+   const hasOwnerConfirmedRestriction=inputs.availability.some(v=>
+     v.employee_id===r.employee_id&&v.source==="owner_direct"&&
+     v.confirmation==="owner_confirmed"&&active(v,date));
+   if(ownerDays!==undefined&&ownerDays!==null&&hasOwnerConfirmedRestriction){
     const allowed=ownerDays.includes(weekday)?inputs.availability
-      .filter(v=>v.employee_id===r.employee_id&&v.day_of_week===weekday&&
+      .filter(v=>v.employee_id===r.employee_id&&v.day_of_week===weekday&&v.source==="owner_direct"&&
         v.confirmation==="owner_confirmed"&&active(v,date))
       .map(v=>({start:minute(v.start_local),end:minute(v.end_local)})):[];
     const clipped=portions.flatMap(p=>allowed.map(v=>({

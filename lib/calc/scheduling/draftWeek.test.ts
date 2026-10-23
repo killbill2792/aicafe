@@ -76,8 +76,20 @@ describe("pure scheduling draft",()=>{
   expect(day.unfilled).toEqual([{start:"09:00",end:"10:00",hours:1}]);
   expect(day.shifts).toEqual([expect.objectContaining({name:"cheap",start:"10:00",end:"12:00"})]);
  });
+ it("does not erase legacy recurrences for unconfirmed profile-entered availability",()=>{
+  const d=data();d.employees=d.employees.map(e=>e.id==="expensive"?
+    {...e,available_days:[3,5]}:e);
+  d.schedules=[{employee_id:"expensive",day_of_week:1,start_time:"08:00",
+    end_time:"17:00",unpaid_break_minutes:30,effective_from:"2026-01-01",effective_to:null}];
+  d.availability=d.availability.map(v=>v.employee_id==="expensive"?
+    {...v,confirmation:"unconfirmed",source:"owner_direct"}:v);
+  const monday=draftWeek(d,"2026-10-26").days[0];
+  const recurring=monday.shifts.find(s=>s.name==="expensive");
+  expect(recurring).toMatchObject({origin:"recurring",start:"08:00",end:"17:00",paidHours:8.5});
+ });
  it("an approved Mon/Wed/Fri restriction excludes retained Tuesday recurring shifts",()=>{
   const d=data();d.employees=d.employees.map(e=>e.id==="expensive"?{...e,available_days:[3,5]}:e);
+  d.availability=d.availability.map(v=>v.employee_id==="expensive"?{...v,source:"owner_direct"}:v);
   const day=draftWeek(d,"2026-10-26").days[0];
   expect(day.shifts.some(s=>s.name==="expensive")).toBe(false);
   expect(day.shifts).toContainEqual(expect.objectContaining({
@@ -88,6 +100,7 @@ describe("pure scheduling draft",()=>{
  });
  it("a confirmed narrower window clips an existing recurring baseline",()=>{
   const d=data();d.employees=d.employees.map(e=>e.id==="expensive"?{...e,available_days:[1]}:e);
+  d.availability=d.availability.map(v=>v.employee_id==="expensive"?{...v,source:"owner_direct"}:v);
   d.schedules=[{employee_id:"expensive",day_of_week:1,start_time:"09:00",
     end_time:"17:00",unpaid_break_minutes:30,effective_from:"2026-01-01",effective_to:null}];
   d.openHours={mon:[["09:00","17:00"]]};
