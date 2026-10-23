@@ -19,7 +19,18 @@ const rules: {topic:string;terms:RegExp}[] = [
   {topic:"expenses",terms:/(expenses?|rent|bill|cost breakdown|overhead|utilities|gastos|alquiler|factura|تكاليف|المصاريف|الفواتير|الايجار)/u},
   {topic:"sales",terms:/(sales|revenue|transactions?|orders?|ventas|ingresos|pedidos|المبيعات|الايرادات|الطلبات)/u},
 ];
+/** Normalize both question input and rule patterns, including Arabic hamza
+ * decomposition/harakat and Spanish diacritics. Pattern punctuation is ASCII
+ * and survives NFKD, so regex boundaries/alternatives remain intact. */
+function normalizeTopicText(value:string):string {
+  return value.normalize("NFKD")
+    .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u06d6-\u06ed]/g,"")
+    .toLowerCase();
+}
+const matchingRules=rules.map(({topic,terms})=>({
+  topic,terms:new RegExp(normalizeTopicText(terms.source),terms.flags),
+}));
 export function classifyOwnerQuestion(question:string):string {
-  const normalized=question.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
-  return rules.find(rule=>rule.terms.test(normalized))?.topic??"other";
+  const normalized=normalizeTopicText(question);
+  return matchingRules.find(rule=>rule.terms.test(normalized))?.topic??"other";
 }
