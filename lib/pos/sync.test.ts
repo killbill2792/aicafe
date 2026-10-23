@@ -2,6 +2,7 @@ import {describe,it,expect,vi,afterEach} from "vitest";
 vi.mock("server-only",()=>({}));
 const spies=vi.hoisted(()=>({recompute:vi.fn(),eligible:vi.fn()}));
 vi.mock("./rollup",()=>({recomputeDailyRollup:spies.recompute}));
+vi.mock("./salesFactRollups",()=>({rebuildSalesFactRollups:vi.fn()}));
 vi.mock("./syncCatalog",()=>({syncCanonicalCatalog:vi.fn()}));
 vi.mock("./processingFees",()=>({
   connectedActualFactFromOrders:()=>null,

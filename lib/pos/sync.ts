@@ -3,6 +3,7 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PosAdapter } from "./types";
 import { recomputeDailyRollup } from "./rollup";
+import { rebuildSalesFactRollups } from "./salesFactRollups";
 import { squareCoveredSalesDates } from "./squareCoveredDates";
 import { syncCanonicalCatalog } from "./syncCatalog";
 import { connectedActualFactFromOrders, setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "./processingFees";
@@ -68,6 +69,10 @@ export async function syncPosData(
           processing_fee_status: order.processingFeeStatus,
           processing_fee_provider: adapter.provider,
           net_sales_cents: order.netSalesCents,
+          employee_id:order.posEmployeeId?employeeIdByPos.get(order.posEmployeeId)??employeeIdByPos.get(`toast:${order.posLocationId}:${order.posEmployeeId}`)??null:null,
+          dining_option:order.diningOption??null,
+          source_channel:order.sourceChannel??null,
+          guest_count:order.guestCount??null,
         },
         { onConflict: "business_id,pos_order_id" },
       )
@@ -89,6 +94,7 @@ export async function syncPosData(
           modifiers: line.modifiers,
           voided: line.voided,
           voided_by: line.voidedBy,
+          category:line.category??null,
         })),
       );
     }
@@ -239,5 +245,6 @@ export async function syncPosData(
       actualDates.has(date)?{salesDataStatus:"actual"}:{});
   }
 
+  await rebuildSalesFactRollups(supabase,businessId,[...affectedDates],timezone);
   return { ordersSynced: orders.length, timecardsSynced: timecards.length, affectedDates: [...affectedDates] };
 }

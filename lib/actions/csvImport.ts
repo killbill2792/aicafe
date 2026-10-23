@@ -8,6 +8,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { recomputeDailyRollup } from "@/lib/pos/rollup";
+import { rebuildSalesFactRollups } from "@/lib/pos/salesFactRollups";
+import { readStagedSalesGroups, readCsvFeeOrders, csvPromotedOrderId } from "@/lib/pos/csv/finalizeReads";
 import { matchCatalogItem } from "@/lib/pos/catalogMatching";
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { NEW_EMPLOYEE } from "@/lib/constants";
@@ -365,12 +367,25 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
     return { ok: false, imported: 0, errorCode: "finalize_failed" };
   }
 
-  const { data: groupRows } = await supabase.from("csv_sales_import_groups").select("business_date, item_name, menu_item_id, source_row_count, conflict_reason").eq("job_id", jobId);
-  const groups = groupRows ?? [];
+  // Fail closed if any page is unavailable: SQL may have promoted more than
+  // 1,000 groups and finalization must not mark missing categories as complete.
+  const groups = await readStagedSalesGroups(supabase, businessId, jobId);
   const promotedGroups = groups.filter((g) => g.conflict_reason !== "toast_covers_date");
   const affectedDates = [...new Set(promotedGroups.map((g) => g.business_date as string))];
   const skippedToastConflictDates = [...new Set(groups.filter((g) => g.conflict_reason === "toast_covers_date").map((g) => g.business_date as string))];
 
+  // Preserve staged category on canonical CSV lines; never invent customer facts.
+  for(const g of promotedGroups) {
+    const key=csvPromotedOrderId(g.business_date,g.item_name,g.category);
+    const {data:order,error:lookupError}=await supabase.from("orders").select("id")
+      .eq("business_id",businessId).eq("pos_order_id",key).maybeSingle();
+    if(lookupError)throw lookupError;
+    if(order) {
+      const {error:lineError}=await supabase.from("order_lines")
+        .update({category:g.category??null}).eq("order_id",order.id).eq("name",g.item_name);
+      if(lineError)throw lineError;
+    }
+  }
   const unmatchedCounts = new Map<string, number>();
   for (const g of groups) {
     if (!g.menu_item_id && g.conflict_reason !== "toast_covers_date") {
@@ -379,18 +394,12 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
   }
 
   for (const date of affectedDates) {
-    const { data: feeOrders, error: feeOrdersError } = await supabase
-      .from("orders")
-      .select("processing_fee_cents, processing_fee_status")
-      .eq("business_id", businessId)
-      .eq("business_date", date)
-      .eq("processing_fee_provider", "csv");
-    if (feeOrdersError) throw feeOrdersError;
-    if ((feeOrders ?? []).length > 0 && (feeOrders ?? []).every((order) => order.processing_fee_status === "actual")) {
+    const feeOrders = await readCsvFeeOrders(supabase, businessId, date);
+    if (feeOrders.length > 0 && feeOrders.every((order) => order.processing_fee_status === "actual")) {
       await upsertProcessingFeeDailyFact(supabase, {
         businessId,
         businessDate: date,
-        amountCents: (feeOrders ?? []).reduce((sum, order) => sum + Number(order.processing_fee_cents), 0),
+        amountCents: feeOrders.reduce((sum, order) => sum + Number(order.processing_fee_cents), 0),
         status: "actual",
         sourceType: "manual_actual",
         provider: "csv",
@@ -401,6 +410,10 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
     }
     await recomputeDailyRollup(supabase, businessId, date, { salesDataStatus: "actual" });
   }
+
+  const {data:businessRow,error:tzError}=await supabase.from("businesses").select("timezone").eq("id",businessId).single();
+  if(tzError)throw tzError;
+  await rebuildSalesFactRollups(supabase,businessId,affectedDates,businessRow.timezone);
 
   const unmatchedItems = [...unmatchedCounts.entries()].map(([name, rows]) => ({ name, rows }));
   const rejectedRows = (job.summary as SalesImportSummary | null)?.rejectedRows ?? [];

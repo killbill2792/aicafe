@@ -12,6 +12,9 @@ import type { SupportedId } from "./p1Catalog";
 type Surface = {capabilities:readonly SupportedId[]} |
   {restricted:string};
 export const SOURCE_SURFACES = {
+  "lib/data/posFactReaders.server.ts":{
+    posFactReaders:{restricted:"Bounded owner-scoped POS fact projections; not a P1 general metric selector until the canonical-values project assigns a source policy"},
+  },
   "lib/data/schedulingDraftInputs.server.ts":{
     readSchedulingDraftInputs:{restricted:"Owner-authenticated, business-scoped agent-only scheduling draft reader (employees, wages, availability, preferences, location); not a P1 generic selector"},
   },
