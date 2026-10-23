@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { useLocale } from "next-intl";
 import { reviewStatementCsv } from "@/lib/actions/statementReview";
@@ -40,6 +40,7 @@ export default function StatementUploader({
     missingDate: string;
     missingCategory: string;
     missingConfirm: string;
+    missingCancel: string;
     saveError: string;
   };
 }) {
@@ -55,11 +56,15 @@ export default function StatementUploader({
   const [missingDate, setMissingDate] = useState("");
   const [missingCategory, setMissingCategory] = useState<ExpenseCategoryCode>("other");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // Synchronous guard: two clicks before React commits state must not create parallel saves.
+  const saveLock = useRef(false);
+  const isSavingOrSaved = saveStatus === "saving" || saveStatus === "saved";
   const missingCandidate = state?.ok && state.balanceCheck ? makeMissingStatementLine(state.lines, state.balanceCheck, {
     description: missingDescription, amount: missingAmount, date: missingDate, category: missingCategory,
   }, labels.addMissingLine) : null;
 
   function handleFile(file: File) {
+    if (saveLock.current || isSavingOrSaved) return;
     startTransition(async () => {
       const text = await readUploadedFileAsCsvText(file);
       const result = await reviewStatementCsv(text);
@@ -70,12 +75,12 @@ export default function StatementUploader({
   }
 
   function updateCategory(i: number, category: ExpenseCategoryCode | "exclude") {
-    if (!state?.ok) return;
+    if (!state?.ok || saveLock.current || isSavingOrSaved) return;
     setState({ ...state, lines: state.lines.map((l) => (l.i === i ? { ...l, correctedCategory: category === "exclude" ? undefined : category, category: category === "exclude" ? "exclude" : l.category } : l)) });
   }
 
   function addMissingLine() {
-    if (!state?.ok || !state.balanceCheck) return;
+    if (!state?.ok || !state.balanceCheck || saveLock.current || isSavingOrSaved) return;
     const added = makeMissingStatementLine(state.lines, state.balanceCheck, {
       description: missingDescription,
       amount: missingAmount,
@@ -91,19 +96,26 @@ export default function StatementUploader({
   }
 
   function handleSaveAll() {
-    if (!state?.ok) return;
+    if (!state?.ok || missingLine || isSavingOrSaved || saveLock.current) return;
+    saveLock.current = true;
     setSaveStatus("saving");
     startTransition(async () => {
-      const result = await saveCategorizedLines("statement", state.lines);
-      if (result.ok) {
-        setSaveStatus("saved");
+      try {
+        const result = await saveCategorizedLines("statement", state.lines);
+        if (result.ok) {
+          setSaveStatus("saved");
         setTimeout(() => {
           // next-intl would add a second locale prefix to an already localized return path.
           if (returnTo && /^\/(?:en|es|ar)(?:\/|[?#]|$)/.test(safeReturnTo)) window.location.assign(safeReturnTo);
           else router.push(safeReturnTo);
         }, 900);
-      } else {
+        } else {
+          setSaveStatus("error");
+          saveLock.current = false;
+        }
+      } catch {
         setSaveStatus("error");
+        saveLock.current = false;
       }
     });
   }
@@ -138,26 +150,29 @@ export default function StatementUploader({
         </div>
       )}
       {state.balanceCheck && !state.balanceCheck.ok && (
-        <button type="button" onClick={() => setMissingLine(true)} className="rounded-full border border-warn px-4 py-3 text-sm font-bold text-warn">{labels.addMissingLine}</button>
+        <button type="button" onClick={() => { if (!saveLock.current && !isSavingOrSaved) setMissingLine(true); }} disabled={isSavingOrSaved || saveLock.current} className="min-h-12 rounded-full border border-warn px-4 py-3 text-[17px] font-bold text-warn disabled:opacity-40">{labels.addMissingLine}</button>
       )}
       {missingLine && (
         <div className="flex flex-col gap-3 rounded-card-lg border border-warn bg-card p-4">
-          <p className="text-sm text-ink-muted">{labels.missingLineHint}</p>
-          <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingDescription}
-            <input type="text" value={missingDescription} onChange={(e) => setMissingDescription(e.target.value)} className="h-11 rounded-xl border border-line px-3" />
+          <p className="text-[17px] text-ink-muted">{labels.missingLineHint}</p>
+          <label className="flex flex-col gap-1 text-[17px] font-semibold">{labels.missingDescription}
+            <input type="text" value={missingDescription} onChange={(e) => setMissingDescription(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
           </label>
           <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingAmount}
-            <input type="number" min="0.01" step="0.01" value={missingAmount} onChange={(e) => setMissingAmount(e.target.value)} className="h-11 rounded-xl border border-line px-3" />
+            <input type="number" min="0.01" step="0.01" value={missingAmount} onChange={(e) => setMissingAmount(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
           </label>
           <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingDate}
-            <input type="date" value={missingDate} onChange={(e) => setMissingDate(e.target.value)} className="h-11 rounded-xl border border-line px-3" />
+            <input type="date" value={missingDate} onChange={(e) => setMissingDate(e.target.value)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]" />
           </label>
           <label className="flex flex-col gap-1 text-sm font-semibold">{labels.missingCategory}
-            <select value={missingCategory} onChange={(e) => setMissingCategory(e.target.value as ExpenseCategoryCode)} className="h-11 rounded-xl border border-line px-3">
+            <select value={missingCategory} onChange={(e) => setMissingCategory(e.target.value as ExpenseCategoryCode)} className="min-h-12 rounded-xl border border-line px-3 text-[17px]">
               {EXPENSE_CATEGORY_CODES.map((code) => <option key={code} value={code}>{categoryLabels[code]}</option>)}
             </select>
           </label>
-          <button type="button" onClick={addMissingLine} disabled={!missingCandidate} className="h-11 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40">{labels.missingConfirm}</button>
+          <div className="flex flex-wrap gap-3">
+            <button type="button" onClick={addMissingLine} disabled={!missingCandidate || isSavingOrSaved || saveLock.current} className="min-h-12 flex-1 rounded-full bg-accent px-4 text-[17px] font-bold text-on-accent disabled:opacity-40">{labels.missingConfirm}</button>
+            <button type="button" onClick={() => { if (!saveLock.current && !isSavingOrSaved) { setMissingLine(false); setMissingDescription(""); setMissingAmount(""); setMissingDate(""); } }} disabled={isSavingOrSaved || saveLock.current} className="min-h-12 flex-1 rounded-full border border-line px-4 text-[17px] font-bold text-ink disabled:opacity-40">{labels.missingCancel}</button>
+          </div>
         </div>
       )}
       <div className="flex flex-col gap-2 rounded-card-lg bg-card p-2">
@@ -179,7 +194,8 @@ export default function StatementUploader({
                 <select
                   value={isExcluded ? "exclude" : category}
                   onChange={(e) => updateCategory(line.i, e.target.value as ExpenseCategoryCode | "exclude")}
-                  className="rounded-full border border-line bg-card px-2.5 py-1 text-[13px] font-semibold"
+                  disabled={isSavingOrSaved || saveLock.current}
+                  className="min-h-12 rounded-full border border-line bg-card px-2.5 py-1 text-[17px] font-semibold disabled:opacity-40"
                 >
                   {EXPENSE_CATEGORY_CODES.map((c) => (
                     <option key={c} value={c}>
@@ -197,7 +213,7 @@ export default function StatementUploader({
       <button
         type="button"
         onClick={handleSaveAll}
-        disabled={saveStatus === "saving" || saveStatus === "saved" || missingLine}
+        disabled={isSavingOrSaved || missingLine || saveLock.current}
         className="h-14 rounded-full bg-accent text-lg font-bold text-on-accent disabled:opacity-40"
       >
         {saveStatus === "saved" ? labels.saved : labels.saveAll}
