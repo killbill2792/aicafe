@@ -20,6 +20,23 @@ describe("shared numeric tokenizer",()=>{
   expect(tokenizeNumbers("$1,274.25","en")[0]?.value).toBe(127425);
   expect(tokenizeNumbers("1.274,25 €","es")[0]?.value).toBe(127425);
  });
+ it.each([
+   ["10–20%","en",1000,2000],
+   ["10%-20%","en",1000,2000],
+   ["10,5–20,5 %","es",1050,2050],
+   ["١٠–٢٠٪","ar",1000,2000],
+ ] as const)("keeps both endpoints of %s in percentage units", (source,locale,low,high)=>{
+   const tokens=tokenizeNumbers(source,locale);
+   expect(tokens.map(t=>t.kind)).toEqual(["percent","percent"]);
+   expect(tokens.map(t=>t.unit)).toEqual(["bps","bps"]);
+   expect(tokens.map(t=>t.value)).toEqual([low,high]);
+   expect(tokens[0].end).toBeLessThanOrEqual(tokens[1].start);
+ });
+ it("does not allow a count to replace a percent-range endpoint",()=>{
+   const tokens=tokenizeNumbers("Margin 10–20% after 10 orders","en");
+   expect(tokens.filter(t=>t.kind==="percent")).toHaveLength(2);
+   expect(tokens.filter(t=>t.kind==="count").map(t=>t.value)).toEqual([10]);
+ });
  it("never overlaps, including malformed randomized prose",()=>{
   let seed=47;
   const chars="0:31, .$٧٪١-5a| ١٢";
