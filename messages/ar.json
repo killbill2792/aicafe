@@ -2913,7 +2913,8 @@
     "draftHideReview": "إخفاء المراجعة",
     "draftRetryApproval": "إعادة محاولة الموافقة",
     "draftApplying": "جارٍ حفظ قرارك…",
-    "draftPartialCost": "المعروف: {known}؛ {count} أجور غير معروفة"
+    "draftPartialCost": "المعروف: {known}؛ {count} أجور غير معروفة",
+    "draftBaseWageNote": "يشمل الأجور الأساسية فقط، ولا يشمل إضافات العمل الإضافي أو ضرائب الرواتب."
   },
   "FreeAccess": {
     "pricing": "الباقات والأسعار",
