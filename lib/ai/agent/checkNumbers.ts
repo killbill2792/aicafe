@@ -372,7 +372,7 @@ function isCalendarNumber(text: string, start: number, end: number, value: numbe
   return false;
 }
 function candidates(text:string,locale:AgentLocale):Array<UnverifiedNumber & {value:number;wholePercent:boolean}>{
- return tokenizeNumbers(text,locale).filter(t=>["money","percent","count","decimal","range"].includes(t.kind)&&t.value!==null)
+ return tokenizeNumbers(text,locale).filter(t=>["money","percent","count","decimal","range","duration"].includes(t.kind)&&t.value!==null)
   .filter(t=>!isCalendarNumber(text,t.start,t.end,t.value!,"number"))
   .map(t=>({start:t.start,end:t.end,text:text.slice(t.start,t.end),
     value:t.value!,kind:t.kind==="money"?"money":t.kind==="percent"?"percent":"number",
