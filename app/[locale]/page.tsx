@@ -1,6 +1,5 @@
 import {readUsageVariance} from "@/lib/data/usageVariance.server";
 import {usageWeekEnding} from "@/lib/calc/usageDates";
-import { TrendingDown, TrendingUp } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import { Link } from "@/i18n/navigation";
@@ -19,17 +18,14 @@ import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import CostRecoveryStrip from "@/components/home/CostRecoveryStrip";
 
-import {
-  AlertsTeaserCard,
-  BreakEvenTeaserCard,
-  MenuTeaserCard,
-  ProfitCostsCard,
-  StaffTeaserCard,
-} from "@/components/home/SectionCards";
 import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
 import {getCafeAccess} from "@/lib/access/access.server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
-import HomeTaskSections, { type HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";\nimport { homeAttentionHref, type HomeAttentionItem } from "@/components/home/homeAttention";\nimport { getOpenAlerts } from "@/lib/data/getAlerts";\nimport { describeAlert } from "@/components/alerts/alertContent";\nimport { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
+import HomeTaskSections, { type HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
+import { homeAttentionHref, type HomeAttentionItem } from "@/components/home/homeAttention";
+import { getOpenAlerts } from "@/lib/data/getAlerts";
+import { describeAlert } from "@/components/alerts/alertContent";
+import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
 import { formatCents } from "@/lib/calc";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
 
@@ -63,7 +59,7 @@ function operatingTaskHref(task: OperatingTask): string {
     if (task.entityId) query.set("employee", task.entityId);
     const shiftDate = task.payload.shiftDate ?? task.payload.businessDate;
     if (typeof shiftDate === "string") query.set("date", shiftDate);
-    return `/more/manage-staff${query.size ? `?${query}` : ""}`;
+    return `/staff?tab=schedule${query.size ? `&${query}` : ""}`;
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
@@ -94,18 +90,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const usagePeriod=usageWeekEnding(snapshot.todayDateStr);
   const usageOver=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to}).then(r=>r.rows.filter(x=>x.status==="over")).catch(()=>[]);
   const vm = buildHomeViewModel(snapshot, period);
-  // Today is already the active viewmodel on the default Home period. Avoid recomputing
-  // expensive cost-recovery projections just to render the compact snapshot.
-  const todayVm = period === "today" ? vm : buildHomeViewModel(snapshot, "today");
-  const profitVm = buildProfitAndCostsViewModel(snapshot, period);
-  const glance = buildTodayGlanceViewModel(snapshot);
-  const [t, tCommon, tOperations, tCategories, tChat, tExperiment, tAlerts, tReconnect] = await Promise.all([
+  const [t, tOperations, tCategories, tChat, tExperiment, tAlerts, tReconnect] = await Promise.all([
     getTranslations("Home"),
-    getTranslations("Common"),
     getTranslations("Operations"),
     getTranslations("Categories"),
     getTranslations("SupervisorChat"),
-    getTranslations("SupervisorExperiment"),\n    getTranslations("Alerts"),\n    getTranslations("Reconnect"),
+    getTranslations("SupervisorExperiment"),
+    getTranslations("Alerts"),
+    getTranslations("Reconnect"),
   ]);
   const tAccess=await getTranslations("FreeAccess");
   const posStatus = await getPosConnectionStatus();
