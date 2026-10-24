@@ -413,7 +413,8 @@
     "sourceUnknown": "Origen de ventas no disponible",
     "sourceSingle": "De {source}",
     "sourceMixed": "De {sources}",
-    "sourceJoin": " y "
+    "sourceJoin": " y ",
+    "seePlan": "Ver el plan"
   },
   "Menu": {
     "title": "Menú",
@@ -821,10 +822,10 @@
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
-    "subtitle": "Diseñado para un café nuevo",
+    "subtitle": "Lo que necesitas vender cada día",
     "everyDay": "Cada día necesitas vender",
     "drinksToCover": "bebidas para cubrir todo",
-    "aboutPerHour": "Unas {count} por hora en un día de 12 horas",
+    "aboutPerHour": "Unas {count} por hora",
     "whereFrom": "De dónde viene ese número",
     "rentBillsRow": "Renta, cuentas, seguro, préstamo",
     "plannedStaffRow": "Personal planeado",
@@ -842,7 +843,16 @@
     "addMissingCosts": "Agregar costos faltantes",
     "addSalesData": "Agregar datos de ventas",
     "missingProductCostsReason": "Algunos productos vendidos todavía no tienen un costo de producto utilizable. Agrega la receta detallada o ingresa el costo total de preparación para esos tamaños.",
-    "addProductCosts": "Agregar costos de productos"
+    "addProductCosts": "Agregar costos de productos",
+    "planTitle": "Plan y metas",
+    "planSubtitle": "Planifica los próximos pasos de tu cafetería",
+    "planBreakEven": "Punto de equilibrio",
+    "planProfitGoal": "Meta de ganancia",
+    "planWhatIf": "¿Qué pasaría si…?",
+    "setCafeHours": "Configurar el horario del café",
+    "closedToday": "El café está cerrado hoy según su horario",
+    "missingPieces": "Datos que faltan",
+    "simulationOnly": "Son solo estimaciones. No se guarda ni cambia nada en tu cafetería hasta que realices los cambios."
   },
   "Onboarding": {
     "step1Title": "Conecta tu caja registradora",
@@ -1162,7 +1172,33 @@
     "delaysRecovery": "A este ritmo, eso atrasa cubrir todas tus cuentas unos {days} días.",
     "speedsUpRecovery": "A este ritmo, eso adelanta cubrir todas tus cuentas unos {days} días.",
     "delayUnknown": "Aún no hay suficientes datos de ventas para estimar el efecto en la recuperación de costos.",
-    "footer": "Solo estimaciones, basadas en tus últimos 28 días de ventas — no es una garantía. Nada aquí se guarda hasta que decidas actualizar el costo de verdad."
+    "footer": "Solo estimaciones, basadas en tus últimos 28 días de ventas — no es una garantía. Nada aquí se guarda hasta que decidas actualizar el costo de verdad.",
+    "changeType": "¿Qué cambiarías?",
+    "kindPrice": "Precio de la bebida",
+    "kindIngredient": "Costo de ingredientes",
+    "kindStaff": "Horas de personal",
+    "newPrice": "Nuevo precio de venta",
+    "staffHours": "Menos horas de personal al día",
+    "effectBreakEven": "Ventas mensuales para cubrir costos",
+    "effectProfit": "Cambio en la ganancia mensual",
+    "baselineUnknown": "Completa las ventas, facturas y costos antes de calcular el efecto.",
+    "noItemSales": "Elige una bebida con ventas y costos registrados.",
+    "wageAssumption": "Se supone un salario de $19,50 por hora más costos patronales, y se reducen esas horas en cada día de apertura previsto.",
+    "priceAssumption": "Ejemplo basado en 28 días de ventas, con volúmenes y comisiones constantes.",
+    "presetPrice": "Subir precios 25 centavos",
+    "presetStaff": "Una persona menos de 2 a 5 de la tarde",
+    "presetMilk": "La leche sube $1 por galón (unos 4 centavos por bebida)",
+    "allPricesExplanation": "Opción: aumenta 25 centavos el precio de cada producto del menú; no se guardan precios.",
+    "milkExplanation": "Opción: la leche sube $1 por galón, suponiendo 150 ml de leche por bebida.",
+    "staffUnknown": "Agrega los costos de personal antes de estimar el efecto de cambiar sus horas.",
+    "coverageAssumption": "Estimación basada en {salesDays} días de apertura con ventas registradas y {openDays} días de apertura previstos este mes.",
+    "hoursNotSetAssumption": "Falta configurar parte del horario. Se supone que el café abre esos días; completa el horario para mejorar el cálculo.",
+    "uncoveredSalesDates": "Faltan datos confirmados de ventas de algunos días de apertura del período. Completa las fechas que faltan antes de estimar cambios.",
+    "uploadSales": "Subir ventas",
+    "closedDaySales": "Hay ventas registradas en días que ahora figuran como cerrados. Las cantidades históricas no permiten estimar con seguridad las ventas futuras. Revisa el horario del café antes de calcular.",
+    "setCafeHours": "Configurar el horario del café",
+    "insufficientOperatingSalesDays": "Registra al menos 7 días de ventas con el café abierto para estimar cambios en precios o costos de ingredientes.",
+    "breakEvenUnknown": "No disponible hasta completar las ventas y los costos."
   },
   "Reconnect": {
     "banner": "No pudimos obtener las ventas de hoy de tu caja registradora. Toca para reconectar.",
@@ -1459,7 +1495,7 @@
     "currentMarginMissing": "Esperando suficientes datos completos del negocio",
     "actual": "Basado en datos reales",
     "estimated": "Incluye datos estimados",
-    "targetMargin": "Margen de ganancia a probar",
+    "targetMargin": "Quiero conservar",
     "targetMarginHint": "Ingresa el margen operativo que quieres explorar. Esta simulación no se guarda como configuración del negocio.",
     "run": "Ejecutar simulación",
     "simulationOnly": "Solo simulación — no se cambian precios del menú",
@@ -1480,7 +1516,8 @@
     "change": "Cambio",
     "unavailableItem": "Necesita precio actual",
     "invalid": "Ingresa una meta entre 0% y 80%.",
-    "targetNotFeasible": "Esta meta no es viable con la estructura de costos actual usando solo precios."
+    "targetNotFeasible": "Esta meta no es viable con la estructura de costos actual usando solo precios.",
+    "targetMarginSuffix": "% de las ventas"
   },
   "SupervisorOwnerHelp": {
     "incompleteByDomain": "No se pudo confirmar la parte de {domain} de tu solicitud.",

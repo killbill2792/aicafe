@@ -413,7 +413,8 @@
     "sourceUnknown": "Sales source unavailable",
     "sourceSingle": "From {source}",
     "sourceMixed": "From {sources}",
-    "sourceJoin": " and "
+    "sourceJoin": " and ",
+    "seePlan": "See the plan"
   },
   "Menu": {
     "title": "Menu",
@@ -821,10 +822,10 @@
   },
   "BreakEven": {
     "title": "Break-even plan",
-    "subtitle": "Built for a new café",
+    "subtitle": "What you need to sell each day",
     "everyDay": "Every day you need to sell",
     "drinksToCover": "drinks to cover everything",
-    "aboutPerHour": "About {count} an hour over a 12-hour day",
+    "aboutPerHour": "About {count} an hour",
     "whereFrom": "Where that number comes from",
     "rentBillsRow": "Rent, bills, insurance, loan",
     "plannedStaffRow": "Planned staff",
@@ -842,7 +843,16 @@
     "addMissingCosts": "Add missing costs",
     "addSalesData": "Add sales data",
     "missingProductCostsReason": "Some sold menu items still do not have a usable product cost. Add the detailed recipe or enter the total cost to make for those sizes.",
-    "addProductCosts": "Add product costs"
+    "addProductCosts": "Add product costs",
+    "planTitle": "Plan & goals",
+    "planSubtitle": "Make a plan for your café",
+    "planBreakEven": "Break-even",
+    "planProfitGoal": "Profit goal",
+    "planWhatIf": "What if",
+    "setCafeHours": "Set café hours",
+    "closedToday": "Closed today according to your café hours",
+    "missingPieces": "What needs to be added",
+    "simulationOnly": "These are estimates only. Nothing is saved or changed in your café until you make the changes yourself."
   },
   "Onboarding": {
     "step1Title": "Connect your register",
@@ -1162,7 +1172,33 @@
     "delaysRecovery": "At this pace, that pushes covering all your bills back by about {days} days.",
     "speedsUpRecovery": "At this pace, that gets you to covering all your bills about {days} days sooner.",
     "delayUnknown": "Not enough sales data yet to estimate the effect on cost recovery.",
-    "footer": "Estimates only, based on your last 28 days of sales — not a guarantee. Nothing here is saved until you decide to actually update the cost."
+    "footer": "Estimates only, based on your last 28 days of sales — not a guarantee. Nothing here is saved until you decide to actually update the cost.",
+    "changeType": "What would you change?",
+    "kindPrice": "Drink price",
+    "kindIngredient": "Ingredient cost",
+    "kindStaff": "Staff hours",
+    "newPrice": "New selling price",
+    "staffHours": "Fewer staff hours per day",
+    "effectBreakEven": "Monthly break-even sales",
+    "effectProfit": "Monthly profit change",
+    "baselineUnknown": "Complete sales, bills and cost information before calculating the effect.",
+    "noItemSales": "Select a drink with recorded sales and product costs.",
+    "wageAssumption": "Staff estimate assumes $19.50/hour plus employer costs and removes these hours on every scheduled open day.",
+    "priceAssumption": "Illustration uses 28-day sales, unchanged volumes and card fees.",
+    "presetPrice": "Raise prices 25¢",
+    "presetStaff": "One less person 2–5 PM",
+    "presetMilk": "Milk rises $1/gallon (≈4¢ per drink)",
+    "allPricesExplanation": "Preset: raises every menu item's selling price by 25¢; no prices are saved.",
+    "milkExplanation": "Preset: a $1/gallon milk increase, assuming 150 mL of milk in every drink.",
+    "staffUnknown": "Add staff costs before estimating a change in staff hours.",
+    "coverageAssumption": "Estimated using {salesDays} recorded operating days and {openDays} scheduled open days this month.",
+    "hoursNotSetAssumption": "Some café hours are not set. This estimate assumes those days are open; set café hours to make the month more accurate.",
+    "uncoveredSalesDates": "Some open days in this sales period have no confirmed sales data. Complete the missing dates before estimating changes.",
+    "uploadSales": "Upload sales",
+    "closedDaySales": "Some sales were recorded on days your café is now scheduled as closed. The historic item counts cannot safely predict future open-day sales. Check café hours before running this estimate.",
+    "setCafeHours": "Set café hours",
+    "insufficientOperatingSalesDays": "Record at least 7 open sales days to estimate changes to drink prices or ingredient costs.",
+    "breakEvenUnknown": "Not available until sales and costs are complete."
   },
   "Reconnect": {
     "banner": "We couldn't get today's sales from your register. Tap to reconnect.",
@@ -1459,7 +1495,7 @@
     "currentMarginMissing": "Waiting for enough complete business data",
     "actual": "Based on actual inputs",
     "estimated": "Includes estimated inputs",
-    "targetMargin": "Profit margin to test",
+    "targetMargin": "I want to keep",
     "targetMarginHint": "Enter the operating margin you want to explore. This simulation does not become a saved business setting.",
     "run": "Run simulation",
     "simulationOnly": "Simulation only — no menu prices are changed",
@@ -1480,7 +1516,8 @@
     "change": "Change",
     "unavailableItem": "Needs current price",
     "invalid": "Enter a target from 0% to 80%.",
-    "targetNotFeasible": "This target is not feasible from the current cost structure through pricing alone."
+    "targetNotFeasible": "This target is not feasible from the current cost structure through pricing alone.",
+    "targetMarginSuffix": "% of sales"
   },
   "SupervisorOwnerHelp": {
     "incompleteByDomain": "The {domain} part of your request could not be confirmed.",

@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { formatCents } from "@/lib/calc";
+import { useEffect, useMemo, useState } from "react";
+import { useLocale } from "next-intl";
+import { Link } from "@/i18n/navigation";
+import { profitGoalBlockers } from "./profitGoalBlockers";
 import { simulateProfitGoal } from "@/lib/calc/profitGoalSimulator";
 import type { ProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
 
@@ -11,8 +13,8 @@ type Labels = {
   actual: string;
   estimated: string;
   targetMargin: string;
+  targetMarginSuffix: string;
   targetMarginHint: string;
-  run: string;
   simulationOnly: string;
   assumption: string;
   readyMeetsTarget: string;
@@ -32,11 +34,11 @@ type Labels = {
   unavailableItem: string;
   invalid: string;
   targetNotFeasible: string;
+  fixSales: string;
+  fixFees: string;
+  fixCosts: string;
+  fixOperating: string;
 };
-
-function pct(value: number): string {
-  return `${(value * 100).toFixed(1).replace(/\.0$/, "")}%`;
-}
 
 export default function ProfitGoalSimulator({
   data,
@@ -46,44 +48,33 @@ export default function ProfitGoalSimulator({
   labels: Labels;
 }) {
   const [draftTarget, setDraftTarget] = useState("15");
+  const locale = useLocale();
   const [target, setTarget] = useState(15);
-  const [hasRun, setHasRun] = useState(false);
-  const [runCount, setRunCount] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const resultRef = useRef<HTMLDivElement>(null);
+  const parsed = draftTarget.trim() ? Number(draftTarget) : Number.NaN;
+  const error = !Number.isFinite(parsed) || parsed < 0 || parsed > 80 ? labels.invalid : null;
+  useEffect(() => {
+    if (error) return;
+    const timer = setTimeout(() => setTarget(parsed), 250);
+    return () => clearTimeout(timer);
+  }, [parsed, error]);
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
+  const fmt = (cents: number) => currency.format(cents / 100);
+  const pct = (value: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value);
+  const typedPct = (value: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value / 100);
+  const blockers = profitGoalBlockers(data);
+  const blockerText = { sales: labels.unavailableSales, fees: labels.unavailableFees,
+    costs: labels.unavailableCosts, operating: labels.unavailableOperating };
+  const blockerActions = { sales: labels.fixSales, fees: labels.fixFees,
+    costs: labels.fixCosts, operating: labels.fixOperating };
 
   const simulation = useMemo(() => {
-    if (!hasRun || !data.economics || !data.canSimulate) return null;
+    if (error || !data.economics || !data.canSimulate) return null;
     return simulateProfitGoal({
       economics: data.economics,
       targetOperatingMargin: target / 100,
       items: data.items,
     });
-  }, [data, target, hasRun, runCount]);
-
-  function run() {
-    setError(null);
-    const parsed = draftTarget.trim() === "" ? Number.NaN : Number(draftTarget);
-    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 80) {
-      setError(labels.invalid);
-      return;
-    }
-    setTarget(parsed);
-    setHasRun(true);
-    setRunCount((count) => count + 1);
-    window.requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
-  }
-
-  const unavailableText =
-    data.unavailableReason === "NOT_ENOUGH_SALES"
-      ? labels.unavailableSales
-      : data.unavailableReason === "MISSING_PROCESSING_FEES"
-        ? labels.unavailableFees
-        : data.unavailableReason === "MISSING_PRODUCT_COSTS"
-          ? labels.unavailableCosts
-          : data.unavailableReason === "MISSING_OPERATING_COSTS"
-            ? labels.unavailableOperating
-            : null;
+  }, [data, target, error]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -119,23 +110,24 @@ export default function ProfitGoalSimulator({
                 onChange={(event) => setDraftTarget(event.target.value)}
                 className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
               />
-              <span className="font-bold text-ink-muted">%</span>
+              <span className="font-bold text-ink-muted">{labels.targetMarginSuffix}</span>
             </div>
             <span className="text-xs font-normal leading-snug text-ink-muted">{labels.targetMarginHint}</span>
           </label>
-          <button
-            type="button"
-            onClick={run}
-            className="mt-3 min-h-12 rounded-full bg-accent px-5 text-sm font-bold text-on-accent"
-          >
-            {labels.run}
-          </button>
+
         </div>
       </section>
 
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
-      <div ref={resultRef} aria-live="polite">
-      {hasRun && unavailableText && <p className="rounded-xl bg-paper p-4 text-sm leading-snug text-ink-muted">{unavailableText}</p>}
+      <div aria-live="polite">
+      {blockers.map((blocker) => (
+        <div key={blocker.kind} className="rounded-xl bg-paper p-4 text-[17px] leading-snug text-ink-muted">
+          <p>{blockerText[blocker.kind]}</p>
+          <Link href={blocker.href} className="mt-3 inline-flex min-h-12 items-center rounded-full bg-accent px-4 text-[17px] font-bold text-on-accent no-underline">
+            {blockerActions[blocker.kind]}
+          </Link>
+        </div>
+      ))}
 
       {simulation?.kind === "unavailable" && (
         <p className="rounded-xl bg-warn-tint p-4 text-sm font-semibold leading-snug text-warn">
@@ -146,13 +138,13 @@ export default function ProfitGoalSimulator({
       {simulation?.kind === "ready" && (
         <>
           <section className="rounded-card-lg bg-card p-4">
-            <span className="text-sm font-semibold text-ink-muted">{labels.targetTested.replace("{target}", `${target}%`)}</span>
+            <span className="text-sm font-semibold text-ink-muted">{labels.targetTested.replace("{target}", typedPct(target))}</span>
             <p className="mt-2 text-base font-bold leading-snug text-ink">
               {simulation.revenueMultiplier <= 1.000001
                 ? labels.readyMeetsTarget
                 : labels.readyNeedsIncrease
-                    .replace("{target}", `${target}%`)
-                    .replace("{increase}", `${simulation.requiredPriceIncreasePercent.toFixed(1)}%`)}
+                    .replace("{target}", typedPct(target))
+                    .replace("{increase}", typedPct(simulation.requiredPriceIncreasePercent))}
             </p>
             {simulation.largeChange && (
               <p className="mt-2 rounded-xl bg-warn-tint p-3 text-sm font-semibold leading-snug text-warn">
@@ -179,17 +171,17 @@ export default function ProfitGoalSimulator({
                     <tr key={item.id} className="border-b border-line last:border-0">
                       <td className="py-3 pe-3 font-bold text-ink">{item.name}</td>
                       <td className="px-2 py-3 text-end text-ink-muted">
-                        {item.productCostCents === null ? "—" : formatCents(item.productCostCents)}
+                        {item.productCostCents === null ? "—" : fmt(item.productCostCents)}
                       </td>
                       <td className="px-2 py-3 text-end text-ink-muted">
                         {item.productCostPercent === null ? "—" : pct(item.productCostPercent)}
                       </td>
-                      <td className="px-2 py-3 text-end text-ink">{formatCents(item.currentPriceCents)}</td>
+                      <td className="px-2 py-3 text-end text-ink">{fmt(item.currentPriceCents)}</td>
                       <td className="px-2 py-3 text-end font-bold text-good">
-                        {item.simulatedPriceCents === null ? labels.unavailableItem : formatCents(item.simulatedPriceCents)}
+                        {item.simulatedPriceCents === null ? labels.unavailableItem : fmt(item.simulatedPriceCents)}
                       </td>
                       <td className="py-3 ps-2 text-end font-semibold text-ink">
-                        {item.changeCents === null || item.changeCents === 0 ? "—" : `+${formatCents(item.changeCents)}`}
+                        {item.changeCents === null || item.changeCents === 0 ? "—" : `+${fmt(item.changeCents)}`}
                       </td>
                     </tr>
                   ))}
