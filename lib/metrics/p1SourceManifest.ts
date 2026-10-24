@@ -113,6 +113,7 @@ export const SOURCE_SURFACES = {
   },
   "lib/data/getUploadHistory.ts":{
     getUploadHistory:{restricted:"Private uploaded statement/receipt history needs safe evidence redaction"},
+    getUploadReview:{restricted:"Tenant-scoped, owner-only upload details and wage-review identifiers; never an agent-readable financial source"},
   },
   "lib/data/materializeSchedule.ts":{
     ensureScheduledShiftsThroughDate:{restricted:"Materialization writes timecards; P1 never invokes this effect"},
