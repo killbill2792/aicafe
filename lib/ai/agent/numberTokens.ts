@@ -5,7 +5,7 @@ export type NumberTokenKind="money"|"percent"|"count"|"decimal"|"clock"|"clockRa
 export type NumberToken={start:number;end:number;kind:NumberTokenKind;value:number|null;unit:string|null};
 const D="[0-9٠-٩۰-۹]";
 const currency="(?:US\\$|[$€£]|USD|EUR|GBP|ر\\.س|د\\.إ|دولارات?|ريال|درهم|dollars?|euros?|pesos?|dólares?)";
-const num="(?:"+D+"{1,3}(?:[,.٬ \\u00a0\\u202f]"+D+"{3})+(?:[.,٫]"+D+"+)?|"+D+"+(?:[.,٫]"+D+"+)?)";
+const num="(?:"+D+"{1,3}(?:[,.٬\\u00a0\\u202f]"+D+"{3})+(?:[.,٫]"+D+"+)?|"+D+"{1,3}(?: "+D+"{3})+,[0-9٠-٩۰-۹]+|"+D+"+(?:[.,٫]"+D+"+)?)";
 const amount="(?:\\(\\s*[-−+]?"+currency+"\\s*"+num+"\\s*\\)|[-−+]?\\s*(?:"+currency+"\\s*[-−+]?\\s*)?"+num+"(?:[ \\u00a0\\u202f]*"+currency+")?)";
 const clock="(?:"+D+"{1,2}:"+D+"{2}(?::"+D+"{2})?(?:\\s*(?:a\\.?m\\.?|p\\.?m\\.?|ص|م|صباحًا|مساءً))?|"+D+"{1,2}\\s*(?:a\\.?m\\.?|p\\.?m\\.?|ص|م)|"+D+"{1,2}\\s*h(?:"+D+"{2})?)";
 const months="(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|ene(?:ro)?|feb(?:rero)?|marzo|abr(?:il)?|mayo|junio|julio|ago(?:sto)?|septiembre|setiembre|octubre|noviembre|diciembre|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر)";
@@ -16,7 +16,7 @@ const join="(?:\\s*(?:[–—-]|\\bto\\b|\\ba\\b|إلى)\\s*)";
 const normal=(s:string)=>s.replace(/[٠-٩]/g,c=>String(c.charCodeAt(0)-0x660)).replace(/[۰-۹]/g,c=>String(c.charCodeAt(0)-0x6f0));
 /** Mixed punctuation uses its rightmost decimal mark; otherwise use the locale. */
 export function numericValue(raw:string,locale:NumberLocale):number {
- let s=normal(raw).replace(/٬/g,",").replace(/٫/g,".").replace(/[\s\u00a0\u202f]/g,"");
+ let s=normal(raw).replace(/٬/g,"").replace(/٫/g,".").replace(/[\s\u00a0\u202f]/g,"");
  const dot=s.lastIndexOf("."),comma=s.lastIndexOf(",");
  if(dot>=0&&comma>=0)s=dot>comma?s.replace(/,/g,""):s.replace(/\./g,"").replace(",",".");
  else if(comma>=0){const count=s.match(/,/g)?.length??0;s=count>1||(locale==="en"&&s.length-comma-1===3)?s.replace(/,/g,""):s.replace(",",".");}
