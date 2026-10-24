@@ -94,7 +94,7 @@ describe("Toast setup destination states",()=>{
  it("shows clear unavailability with connection status, without an uploads redirect",()=>{
   const html=page(false);
   expect(html).toContain("Toast setup is currently unavailable");
-  expect(html).toContain("Not connected");
+  expect(html).toContain("Saving"); // No false connection claim before the status request completes.
   expect(html).not.toContain('href="/more/uploads"');
   expect(html).not.toContain('>Test Connection</button>');
  });
@@ -104,7 +104,7 @@ describe("Toast setup destination states",()=>{
    "Restaurant GUID","Save","Test Connection"])
     expect(html).toContain(label);
   expect(html).toContain('type="password"');
-  expect(html).toContain("Not connected");
+  expect(html).toContain("Saving");
   expect(html).not.toContain("<span>API URL</span>");
   expect(html).not.toContain("Toast setup is currently unavailable");
   // Test Connection is present but disabled until a configuration exists.
