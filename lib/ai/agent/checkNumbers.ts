@@ -922,7 +922,7 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
 }
 function proposedDuration(text:string,start:number,end:number):boolean{
  const before=text.slice(Math.max(0,start-55),start),after=text.slice(end,end+25);
- return /^\s*(?:days?|weeks?|días?|semanas?|أيام|ايام|أسابيع|اسابيع)(?!\p{L})/iu.test(after)&&
+ return (/^\s*(?:days?|weeks?|días?|semanas?|أيام|ايام|أسابيع|اسابيع)(?!\p{L})/iu.test(after)||\n  /\b(?:days?|weeks?|días?|semanas?)$/iu.test(text.slice(start,end))||\n  /(?:أيام|ايام|أسابيع|اسابيع)$/u.test(text.slice(start,end)))&&
   /(?:\b(?:for|over|por|durante)\b|(?:لمدة|خلال))\s*$/iu.test(before)&&
   /(?:\b(?:try|test|plan|propose|recommend|suggest|run a trial|prueba|probar|propongo|recomiendo|sugiero)\b|(?:نجرب|اقترح|جرب|جرّب|أوصي))/iu.test(before);
 }
