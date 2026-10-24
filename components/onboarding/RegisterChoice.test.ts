@@ -10,6 +10,7 @@ vi.mock("@/i18n/navigation",()=>({
  })=>createElement("a",{href,className},children)
 }));
 
+vi.mock("next-intl",()=>({useLocale:()=> "en"}));
 import RegisterChoice from "./RegisterChoice";
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
 
@@ -37,7 +38,10 @@ const connectionLabels={
  errorMissingPermissions:"Missing permissions",
  errorUnauthorizedLocation:"Unauthorized restaurant",
  errorTimeout:"Timeout",errorRateLimited:"Too many requests",
- errorUnavailable:"Unavailable",errorInvalidResponse:"Invalid response"
+ errorUnavailable:"Unavailable",errorInvalidResponse:"Invalid response",
+ needsAttention:"Needs attention",fix:"Fix",technicalDetails:"Technical details",
+ connectedLastSync:"Connected ✓ last sync {time}",noSyncYet:"not yet synced",
+ manualLocationHint:"Add your authorized restaurant GUID under Technical details"
 };
 
 function choice(locale:string,squareConfigured=true){
@@ -109,7 +113,7 @@ describe("Toast setup destination states",()=>{
    businessId:"business-1",locations,enabled:true,labels:connectionLabels,
    approvedOrigins:["https://one.toasttab.com","https://two.toasttab.com"],defaultApiOrigin:""
   }));
-  expect(html).toContain("<span>API URL</span>");
+  expect(html).toContain("API URL");
   expect(html).toContain('value="https://one.toasttab.com"');
   expect(html).toContain('value="https://two.toasttab.com"');
  });

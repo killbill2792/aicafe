@@ -111,6 +111,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
   </div>
   {connection?.lastErrorCategory&&<p role="alert" className="text-sm text-warn">
    {errors[connection.lastErrorCategory]??labels.errorUnavailable}</p>}
+  {!enabled&&<p role="status" className="text-base text-ink-muted">{labels.notEnabled}</p>}
   {enabled&&<>
    <div id="toast-keys" className="flex flex-col gap-3 scroll-mt-6">
     <label className="flex flex-col gap-1 text-base font-semibold text-ink">

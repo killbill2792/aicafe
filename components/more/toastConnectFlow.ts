@@ -38,6 +38,6 @@ export function latestToastSync(locations:{
 }[]|undefined):string|null {
  const timestamps=(locations??[]).flatMap(row=>
   [row.last_order_fetch_at,row.last_time_entry_fetch_at,row.last_schedule_fetch_at,row.last_menu_fetch_at])
-  .filter((value):value is string=>Boolean(value)&&Number.isFinite(Date.parse(value)));
+  .filter((value):value is string=>value!==null&&Number.isFinite(Date.parse(value)));
  return timestamps.sort((a,b)=>Date.parse(b)-Date.parse(a))[0]??null;
 }
