@@ -736,3 +736,18 @@ create table public.toast_void_reason_directory(
 alter table public.toast_void_reason_directory enable row level security;
 revoke all on public.toast_void_reason_directory from public,anon,authenticated;
 grant select,insert,update,delete on public.toast_void_reason_directory to service_role;
+
+-- Individual phase failures never block the remainder of a leased tick.
+create table public.toast_sync_phase_errors(
+ business_id uuid not null,restaurant_guid uuid not null,
+ phase text not null check(phase in (
+  'restaurant_info','cost_refresh','resume','daily','modified_scan',
+  'repull','reconcile','backfill','optional','cleanup')),
+ last_error_category text not null,last_failed_at timestamptz not null,
+ primary key(business_id,restaurant_guid,phase),
+ foreign key(business_id,restaurant_guid)
+  references public.toast_location_mappings(business_id,restaurant_guid)
+);
+alter table public.toast_sync_phase_errors enable row level security;
+revoke all on public.toast_sync_phase_errors from public,anon,authenticated;
+grant select,insert,update,delete on public.toast_sync_phase_errors to service_role;
