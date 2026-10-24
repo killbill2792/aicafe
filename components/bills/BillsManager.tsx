@@ -15,7 +15,7 @@ const OTHER_CATEGORY: ExpenseCategoryCode = "other";
 // Sentinel key (not a real bill id) for the blank "add another Other bill" form.
 const NEW_OTHER_KEY = "__new_other__";
 
-type BillFormLabels = { amountLabel: string; amountHint: string; dueDayLabel: string; dueDayOptional: string; labelLabel: string; labelPlaceholder: string; save: string; delete: string; confirmRemove: string; saveError: string; removeError: string };
+type BillFormLabels = { amountLabel: string; amountHint: string; dueDayLabel: string; dueDayOptional: string; labelLabel: string; labelPlaceholder: string; save: string; delete: string; confirmRemove: string; saveError: string; removeError: string; amountKindLabel: string; amountActual: string; amountEstimate: string; estimateBadge: string };
 
 function BillForm({
   existing,
@@ -37,6 +37,7 @@ function BillForm({
   const [label, setLabel] = useState(existing?.label ?? "");
   const [amount, setAmount] = useState(existing ? String(existing.amountCents / 100) : "");
   const [dueDay, setDueDay] = useState(existing?.dueDay ? String(existing.dueDay) : "");
+  const [isEstimate, setIsEstimate] = useState(existing?.isEstimate ?? false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const actionLock = useRef(false);
@@ -57,6 +58,7 @@ function BillForm({
           category,
           label: finalLabel,
           amountCents,
+          isEstimate,
           frequency: "monthly",
           dueDay: Number(dueDay) || undefined,
         });
@@ -115,6 +117,13 @@ function BillForm({
         />
       </label>
       <p className="text-[13px] text-ink-muted">{labels.amountHint}</p>
+      <label className="flex flex-col gap-1 text-[17px] font-semibold">
+        {labels.amountKindLabel}
+        <select value={isEstimate ? "estimate" : "actual"} onChange={(e) => setIsEstimate(e.target.value === "estimate")} className="min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]">
+          <option value="actual">{labels.amountActual}</option>
+          <option value="estimate">{labels.amountEstimate}</option>
+        </select>
+      </label>
       <label className="flex items-center justify-between gap-2 text-sm font-semibold">
         <span>{labels.dueDayLabel} <span className="font-normal text-ink-muted">{labels.dueDayOptional}</span></span>
         <input
@@ -190,8 +199,9 @@ export default function BillsManager({
               <PlainIcon code={category} size={32} color="currentColor" />
               <span className="flex-1 text-start text-[17px] font-bold">{categoryLabels[category]}</span>
               {existing ? (
-                <span className="text-[17px] font-bold">
+                <span className="flex flex-wrap items-center justify-end gap-2 text-[17px] font-bold">
                   {money.format(existing.amountCents / 100)}
+                  {existing.isEstimate && <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[13px] font-semibold text-warn">{labels.estimateBadge}</span>}
                 </span>
               ) : (
                 <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[13px] font-bold text-warn">{labels.missing}</span>
@@ -223,8 +233,9 @@ export default function BillsManager({
             <button type="button" onClick={() => toggle(bill.id)} className="flex items-center gap-3">
               <PlainIcon code={OTHER_CATEGORY} size={32} color="currentColor" />
               <span className="min-w-0 flex-1 truncate text-start text-[17px] font-bold">{bill.label}</span>
-              <span className="text-[17px] font-bold">
+              <span className="flex flex-wrap items-center justify-end gap-2 text-[17px] font-bold">
                 {money.format(bill.amountCents / 100)}
+                {bill.isEstimate && <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[13px] font-semibold text-warn">{labels.estimateBadge}</span>}
               </span>
             </button>
             {isOpen && (
