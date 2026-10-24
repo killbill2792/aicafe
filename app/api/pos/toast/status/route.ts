@@ -72,7 +72,7 @@ export async function GET(request:Request){
   }),
   analytics:{connected:Boolean(a.data),verified:Boolean(a.data?.verified_at)},
   firstImportCheck:check.data?.answered_at?"answered":
-    (s.data??[]).filter(x=>x.import_state==="imported"&&x.coverage_complete).length>=7?"due":"hidden",
+    new Set((s.data??[]).filter(x=>x.import_state==="imported"&&x.coverage_complete).map(x=>x.business_date)).size>=7?"due":"hidden",
   timeZone:m.data[0].toast_time_zone,startDate:m.data[0].toast_start_date??null,
   restaurantGuids:m.data.map(x=>x.restaurant_guid)
  };
