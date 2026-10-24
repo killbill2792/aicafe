@@ -236,6 +236,23 @@ begin
  if auth.role()<>'service_role' then raise exception 'service role only';end if;
  perform public.toast_record_day_error(p_run_id,p_business_id,p_restaurant_guid,
   p_business_date,p_category,true,false);
+ -- Legacy explicit day-failure RPC means the location's *coverage proof* is
+ -- invalid, even if its last canonical orders remain safely retained.
+ -- The new importer NEVER calls this RPC for an unsuccessful re-pull; it uses
+ -- toast_record_day_error instead, which preserves a good imported day and
+ -- its existing report status. Without this distinction, a later sibling-
+ -- location import would incorrectly re-certify a business-wide total.
+ update public.toast_day_status set coverage_complete=false,
+  recon_state='owner_flagged',last_error_category=p_category
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+  and business_date=p_business_date and import_state='imported';
+ -- A failed location can invalidate only a day that Toast actually imported.
+ -- A CSV/Square-only day must keep its independent sales_data_status.
+ update public.daily_rollups dr set sales_data_status='missing'
+ where dr.business_id=p_business_id and dr.business_date=p_business_date
+  and exists(select 1 from public.toast_day_status d
+   where d.business_id=dr.business_id and d.business_date=dr.business_date
+    and d.import_state='imported');
 end $safefail$;
 
 -- Reuse an active identical backfill; completed runs may be requested again.
