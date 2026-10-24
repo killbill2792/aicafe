@@ -128,7 +128,12 @@
     "ownerError": "Unable to save right now. Try again.",
     "ownerInvalidDate": "Choose a valid date no later than yesterday.",
     "ownerStatusUnavailable": "Sync details are unavailable. Try again.",
-    "noAmount": "—"
+    "noAmount": "—",
+    "ownerReasonOwner": "Flagged by owner",
+    "ownerReasonMismatch": "Totals did not match",
+    "ownerReasonTimeout": "Toast Analytics took too long",
+    "ownerReasonCoverage": "Import needs checking",
+    "ownerReasonOther": "Sync needs checking"
   },
   "LocaleLayout": {
     "title": "Café Profit"
