@@ -22,7 +22,7 @@ async function ownBusinessContext() {
 
   const { data: memberships, error } = await supabase
     .from("memberships")
-    .select("business_id, businesses(is_demo, timezone, payroll_tax_rate)")
+    .select("business_id, role, businesses(is_demo, timezone, payroll_tax_rate)")
     .eq("user_id", user.id);
   if (error) throw error;
 
@@ -32,7 +32,7 @@ async function ownBusinessContext() {
       | { is_demo: boolean; timezone: string; payroll_tax_rate: number }[]
       | null;
     const business = Array.isArray(raw) ? raw[0] : raw;
-    return business?.is_demo === false;
+    return membership.role === "owner" && business?.is_demo === false;
   });
   if (!own || own.business_id === DEMO_BUSINESS_ID) return null;
 
