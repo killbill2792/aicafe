@@ -47,14 +47,23 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
   }
   assertProposalScope(scope,p);
   if(isStaffCapabilityId(p.capabilityId)){
-    const effect=supervisorLoopRegistry.get(p.capabilityId).parseEffect(p.canonicalEffectPayload) as
-      {preview:Array<{label:string;before:string;after:string}>;expectedToken:string};
+    const effect=p.capabilityVersion===1?p.canonicalEffectPayload as
+      {preview:Array<{label:string;before:string;after:string}>;expectedToken:string}:
+      supervisorLoopRegistry.get(p.capabilityId).parseEffect(p.canonicalEffectPayload) as
+      {preview:Array<{field:string;label:string;before:unknown;after:unknown}>;expectedToken:string;
+       dependencyScope:import("@/lib/ai/supervisor/loop/staffProposals.server").StaffDependencyScope};
     const data={...card(p),preview:effect.preview};
+    // Existing v1 cards remain visible but read-only; never let old all-café
+    // revisions be retried under the new v2 SQL contract.
+    if(p.capabilityVersion===1)return {...data,state:p.status==="committed"?"applied":"stale"};
     if(p.status==="draft"){
-      try{if(await readStaffProposalToken(scope)!==effect.expectedToken)return {...data,state:"stale"};}
-      catch{return {...data,state:"failed"};}
+      try{
+        if(await readStaffProposalToken(scope,(
+          effect as {dependencyScope:import("@/lib/ai/supervisor/loop/staffProposals.server").StaffDependencyScope}
+        ).dependencyScope)!==effect.expectedToken)return {...data,state:"stale"};
+      }catch{return {...data,state:"stale"};}
     }
-    return {...data,state:p.status==="approved"?"failed":data.state};
+    return {...data,state:p.status==="approved"?"applying":data.state};
   }
   if(p.capabilityId!==menuPriceChangeCapabilityId)return null;
   const effect=supervisorLoopRegistry.get(menuPriceChangeCapabilityId).parseEffect(p.canonicalEffectPayload);
@@ -101,6 +110,7 @@ export async function POST(request:Request,{params}:Params){
     if(!staff&&p.capabilityId!==menuPriceChangeCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
     if(staff){
+      if(p.capabilityVersion===1)return conversationJson({state:"stale",proposal:await view(scope,repo,p)},409);
       if(input.action==="edit")return conversationJson({error:"staff_edits_require_new_proposal"},422);
       if(p.revision!==input.revision||!["draft","approved"].includes(p.status))
         return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);

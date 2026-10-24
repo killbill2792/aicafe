@@ -44,7 +44,10 @@ export function formatCardValue(value:CardValue,locale:CardLocale,currency:strin
   style:"currency",currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100);
  switch(value.kind){
   case "money":return money(value.cents);
-  case "moneyRate":return money(value.cents)+"/"+t["per"+value.per.charAt(0).toUpperCase()+value.per.slice(1) as keyof typeof t];
+  case "moneyRate":{
+   const unit={hour:t.perHour,day:t.perDay,week:t.perWeek,month:t.perMonth,item:t.perItem}[value.per];
+   return money(value.cents)+"/"+unit;
+  }
   case "percent":return new Intl.NumberFormat(locale,{maximumFractionDigits:2}).format(value.bps/100)+"%";
   case "count":return new Intl.NumberFormat(locale).format(value.n)+(value.unit?" "+value.unit:"");
   case "duration":return new Intl.NumberFormat(locale).format(value.minutes)+" "+t.minutes;
