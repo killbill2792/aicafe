@@ -214,6 +214,30 @@ function inlineMarkdown(
   return nodes;
 }
 
+
+type TableCell={text:string;start:number};
+function tableCells(line:SourceLine):TableCell[]{
+ const text=line.text;const found:TableCell[]=[];let from=0,code=false,escape=false;
+ for(let i=0;i<text.length;i++){
+   if(escape){escape=false;continue;}
+   if(text[i]==="\\"){escape=true;continue;}
+   if(text[i]==="`"){code=!code;continue;}
+   if(text[i]==="|"&&!code){found.push({text:text.slice(from,i),start:line.start+from});from=i+1;}
+ }
+ found.push({text:text.slice(from),start:line.start+from});
+ if(text.trimStart().startsWith("|"))found.shift();
+ if(text.trimEnd().endsWith("|"))found.pop();
+ return found.map(c=>({text:c.text.trim(),start:c.start+c.text.length-c.text.trimStart().length}));
+}
+function tableHeader(lines:SourceLine[],index:number){
+ if(index+1>=lines.length)return null;
+ const head=tableCells(lines[index]),sep=tableCells(lines[index+1]);
+ if(!head.length||head.every(c=>!c.text)||head.length!==sep.length||
+   !sep.every(c=>/^:?-{3,}:?$/.test(c.text)))return null;
+ const align=sep.map(c=>c.text.startsWith(":")&&c.text.endsWith(":")?"center":c.text.endsWith(":")?"end":"start");
+ return {head,align};
+}
+
 export function SourceLegend({sources,labels,legendLabel="Number sources"}:{
  sources:readonly ("owner"|"estimate"|"unchecked")[];labels:ProvenanceLabels;legendLabel?:string;
 }){
@@ -241,6 +265,27 @@ export function ChatMarkdown({text,unverified=[],label,labels,showLegend=true,le
   let index = 0;
   while (index < lines.length) {
     if (!lines[index].text.trim()) { index++; continue; }
+
+    const table=tableHeader(lines,index);
+    if(table){
+      const firstLine=index; index+=2;
+      const rows:TableCell[][]=[];
+      while(index<lines.length&&lines[index].text.trim()&&!tableHeader(lines,index)){
+        if(!lines[index].text.includes("|")&&table.head.length>1)break;
+        const cells=tableCells(lines[index]);
+        rows.push(Array.from({length:table.head.length},(_,i)=>cells[i]??{text:"",start:lines[index].start+lines[index].text.length}));
+        index++;
+      }
+      const alignment=(i:number)=>table.align[i]==="center"?"text-center":table.align[i]==="end"?"text-end":"text-start";
+      blocks.push(<div key={firstLine} role="region" aria-label="Response table" tabIndex={0}
+        className="max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+        <table dir="auto" className="w-full min-w-max border-collapse text-[17px]">
+         <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-3 py-2 font-semibold ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged)}</th>)}</tr></thead>
+         <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-3 py-2 ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged)}</td>)}</tr>)}</tbody>
+        </table>
+      </div>);
+      continue;
+    }
     const first = listMarker(lines[index]);
     if (first) {
       const ordered = first.ordered;
@@ -273,7 +318,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,showLegend=true,le
     }
     const start = index;
     const rows: ReactNode[] = [];
-    while (index < lines.length && lines[index].text.trim() && !listMarker(lines[index])) {
+    while (index < lines.length && lines[index].text.trim() && !listMarker(lines[index]) && !tableHeader(lines,index)) {
       if (rows.length) rows.push("\n");
       const line = lines[index];
       rows.push(...inlineMarkdown(line.text, line.start, spans, copy, badged));
