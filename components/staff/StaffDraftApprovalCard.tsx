@@ -113,8 +113,9 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
         onClick={()=>proposal?.state==="pending"?void update("cancel"):onClose()}>{t("close")}</button>
     </div>
     {!proposal&&<button type="button" disabled={busy} onClick={()=>void draft()}
-      className="mt-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent disabled:opacity-50" role="status">
+      className="mt-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent disabled:opacity-50">
       {busy?t("draftWorking"):t("draftThisWeek")}</button>}
+    {busy&&<p role="status" className="mt-2 text-muted">{t("draftWorking")}</p>}
     {proposal&&<>
       <p role="status" className="mt-3 font-semibold">{t("draftSummary",{
         shifts:num(preview.totals.shiftCount),hours:num(preview.totals.paidMinutes/60,1),
