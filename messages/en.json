@@ -163,6 +163,10 @@
     "other": "Other"
   },
   "Bills": {
+    "amountKindLabel": "Amount type",
+    "amountActual": "Actual amount",
+    "amountEstimate": "Estimate (monthly average)",
+    "estimateBadge": "Estimate",
     "amountHint": "Changes each month? Enter an average",
     "dueDayOptional": "(optional)",
     "missing": "Missing",
