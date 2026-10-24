@@ -35,8 +35,11 @@ export const moneyTools={
         filterCategory=selected.value.categoryCode;
       }
       return {source:"expenses",period:p,agentId:"leo",
-        missing:[...recorded.quality.missingInputs,...categories.quality.missingInputs],
-        recordedActualTotalCents:recorded.available?recorded.value.totalCents:null,
+        missing:[...recorded.quality.missingInputs,...categories.quality.missingInputs,
+          ...(filterCategory?["categoryRecordedActualTotalUnavailable"]:[])],
+        // The recorded expense total covers ALL categories. Never present it as
+        // the selected category's spend.
+        recordedActualTotalCents:filterCategory?null:recorded.available?recorded.value.totalCents:null,
         categories:categories.available?categories.value.filter(c=>filterCategory===null||filterCategory===c.categoryCode).slice(0,15).map(v=>({
           label:v.label,categoryCode:v.categoryCode,amountCents:v.isMissing?null:v.amountCents,
           isEstimate:v.isEstimate,isMissing:v.isMissing})):null};
