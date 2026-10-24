@@ -73,6 +73,29 @@ for(const locale of ["es","ar"]){
  await page.screenshot({path:join(output,"schedule-"+locale+"-390.png"),fullPage:true});
  await page.close();
 }
+// Step 12 acceptance: Team person editor at 390×844, 1440×900 and Arabic RTL.
+for(const [locale,width,height] of [["en",390,844],["en",1440,900],["ar",390,844]]){
+ const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
+ page.on("pageerror",err=>errors.push(String(err)));
+ await page.goto(base+"/"+locale+"/staff?tab=team&fixture=1&week=2026-10-26",{waitUntil:"networkidle"});
+ await assertVisible(page,"input[aria-label]",locale+" team person");
+ await setPalette(page);
+ await page.locator("button.border-dashed").first().click();
+ const dialog=page.locator('dialog[aria-labelledby="staff-sheet-heading"]');
+ await dialog.waitFor({state:"visible"});
+ if(locale==="ar"&&await dialog.evaluate(el=>getComputedStyle(el).direction)!=="rtl")
+  throw Error("Arabic person editor did not inherit RTL");
+ await dialog.locator("input").first().fill("Fixture Person");
+ const wage=dialog.locator("#staff-hourly-wage");
+ await wage.fill("invalid");
+ await dialog.locator("#staff-wage-error").waitFor({state:"visible"});
+ await wage.fill("18.73");
+ await dialog.locator("#staff-wage-error").waitFor({state:"hidden"});
+ await dialog.locator('input[type="time"]').nth(0).fill("06:15");
+ await dialog.locator('input[type="time"]').nth(1).fill("12:37");
+ await page.screenshot({path:join(output,"team-person-"+locale+"-"+width+".png"),fullPage:true});
+ await page.close();
+}
 await browser.close();
 if(errors.length)throw Error("Client runtime errors: "+errors.join("\n"));
-console.log("Captured Schedule, Team, Rules at 390/1280, shift editing, 8 themes in light/dark, and es/ar at 390.");
+console.log("Captured Schedule/Team/Rules, Team person at 390/1440 and ar RTL, shift editing, 8 themes and es/ar.");

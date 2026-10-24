@@ -53,7 +53,7 @@ describe("Staff person typed fields",()=>{
    expect(teamAvailabilitySummary(timed,locale,words[locale])).toContain("–");
    expect(teamAvailabilitySummary(Array.from({length:7},(_,day)=>({day,start:null,end:null})),locale,words[locale])).toBe(words[locale].anyTime);
   }
- }); 
+ });
  it("round trips exact 24-hour and multi-window days without false any-time labels",()=>{
   const saved=[
    {day_of_week:1,start_local:"00:00:00",end_local:"12:00:00"},
