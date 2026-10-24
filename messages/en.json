@@ -1029,7 +1029,12 @@
     "voidsAmount": "Voided amount",
     "voidsNoData": "No recorded void data is available for this period.",
     "voidsReadError": "Voids data isn't available right now.",
-    "voidsPeopleUnavailable": "The connected sales data does not identify who voided each item."
+    "voidsPeopleUnavailable": "The connected sales data does not identify who voided each item.",
+    "impactPartialHint": "Known estimates only; some alerts have no amount.",
+    "voidsUnknown": "Not enough recorded data",
+    "voidsMissingHistory": "A reliable three-month average is unavailable because at least one month has no recorded sales days.",
+    "voidsCoverageNote": "Totals use recorded sales days only. Missing days are not treated as zero.",
+    "voidsAlertMonth": "{month} (alert month)"
   },
   "DeleteAccount": {
     "title": "Delete account",
