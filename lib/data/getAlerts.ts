@@ -38,13 +38,20 @@ export async function getOpenAlerts(): Promise<AlertRow[]> {
     .in("status", ["new", "seen"])
     .order("created_at", { ascending: false });
 
-  return (data ?? []).map((a) => ({
+  const alerts: AlertRow[] = (data ?? []).map((a) => ({
     id: a.id,
     kind: a.kind as AlertKind,
     impactCents: a.impact_cents,
     payload: (a.payload as Record<string, unknown>) ?? {},
     status: a.status as AlertRow["status"],
     createdAt: a.created_at,
+  }));
+  // The stored impact is the amount when a void alert first fired. Display current
+  // recorded totals instead so list, headline, and daily details never disagree.
+  return Promise.all(alerts.map(async (alert) => {
+    if (alert.kind !== "voids") return alert;
+    const review = await readVoidsReview(supabase, businessId, alert.payload.monthKey);
+    return { ...alert, impactCents: review.ok ? review.summary.thisMonthCents : null };
   }));
 }
 
