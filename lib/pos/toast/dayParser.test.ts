@@ -60,6 +60,13 @@ describe("Toast daily parser / trustworthy void facts",()=>{
   const x=parse({...order,checks:[{...check,taxAmount:1.005}]});
   expect(x.warnings.subcent_rounding).toBe(1);
  });
+ it("keeps nullable monetary fields parseable but warns rather than silently certifying zeros",()=>{
+  const x=parse({...order,checks:[{...check,amount:null,taxAmount:null,
+    selections:[{...check.selections[0],price:null,quantity:null}]}]});
+  expect(x.normalized?.netSalesCents).toBe(0);
+  expect(x.warnings).toMatchObject({missing_check_amount:1,missing_tax_amount:1,
+    missing_selection_price:1,missing_quantity:1});
+ });
  it("excludes test and excess-food transactions",()=>{
   for(const flag of ["createdInTestMode","excessFood"]){
    const x=parse({...order,[flag]:true});
