@@ -33,6 +33,10 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f scripts/toast-db-integration.sql
+      - name: Exercise Toast PR1 atomic import and RLS
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/toast-pr1-sql-integration.sql
       - name: Stop disposable Supabase
         if: always()
         run: supabase stop --no-backup

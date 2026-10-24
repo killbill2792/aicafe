@@ -47,7 +47,7 @@ export default async function MoneyPage({
     const range = periodCalendarRange(snapshot, period);
     const orders = await readAllPosRows<SalesOrderEvidence>((first, last) => db.from("orders")
       .select("pos_order_id, processing_fee_provider")
-      .eq("business_id", businessId).gte("business_date", range.start)
+      .eq("business_id", businessId).eq("toast_excluded",false).is("superseded_by",null).gte("business_date", range.start)
       .lte("business_date", range.end).order("id").range(first, last), "money sales sources");
     salesSources = salesSourcesForOrders(orders);
     // Toast credentials have no authenticated RLS grants. Only read a verified

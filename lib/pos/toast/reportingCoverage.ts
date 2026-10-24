@@ -25,3 +25,23 @@ export async function unverifiedToastSalesDates(
   throw new Error("Toast canonical source coverage unavailable");
  return new Set(canonical.data.map((row:{business_date:string})=>row.business_date));
 }
+
+/** Imported Toast days are visible even before external reconciliation. Missing
+ * days are excluded; mismatches are visible with an explicit quality flag.
+ * A failed status read is NOT proof that Toast sales are safe to report. */
+export type ToastDayFlag={date:string;status:"imported"|"missing"|"failed";needsLook:boolean};
+export async function toastDayFlags(
+ db:SupabaseClient,businessId:string,from:string,to:string
+):Promise<ToastDayFlag[]> {
+ const {data,error}=await db.from("toast_day_status")
+  .select("business_date,import_state,recon_state")
+  .eq("business_id",businessId).gte("business_date",from).lte("business_date",to)
+  .order("business_date").limit(373);
+ if(error||!Array.isArray(data)||data.length>=373)
+  throw new Error("Toast day status unavailable");
+ return data.map(row=>({
+  date:row.business_date,
+  status:row.import_state as ToastDayFlag["status"],
+  needsLook:["mismatch","owner_flagged"].includes(row.recon_state)
+ }));
+}

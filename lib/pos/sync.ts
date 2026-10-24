@@ -224,6 +224,7 @@ export async function syncPosData(
       .select("processing_fee_cents, processing_fee_status")
       .eq("business_id", businessId)
       .eq("business_date", date)
+      .eq("toast_excluded", false).is("superseded_by", null)
       .eq("processing_fee_provider", adapter.provider);
     if (feeOrdersError) throw feeOrdersError;
     const connectedFact = connectedActualFactFromOrders((feeOrders ?? []).map((order) => ({
