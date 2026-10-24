@@ -162,6 +162,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
               </>
             )}
           </div>
+          <Link href="/more/plan" className="mt-3 inline-flex min-h-12 items-center text-[17px] font-bold text-staff underline">{t("seePlan")}</Link>
           {vm.breakEvenUsesEstimates && (
             <span className="rounded-full bg-paper px-2.5 py-1 text-xs font-bold text-ink-muted">{t("estimateLower")}</span>
           )}

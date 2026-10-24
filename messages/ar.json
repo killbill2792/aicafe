@@ -392,7 +392,8 @@
     "sourceUnknown": "مصدر المبيعات غير متاح",
     "sourceSingle": "من {source}",
     "sourceMixed": "من {sources}",
-    "sourceJoin": " و "
+    "sourceJoin": " و ",
+    "seePlan": "عرض الخطة"
   },
   "Menu": {
     "title": "القائمة",
@@ -791,10 +792,10 @@
   },
   "BreakEven": {
     "title": "خطة نقطة التعادل",
-    "subtitle": "مُعدّة لمقهى جديد",
+    "subtitle": "ما تحتاج إلى بيعه كل يوم",
     "everyDay": "كل يوم تحتاج إلى بيع",
     "drinksToCover": "مشروبًا لتغطية كل شيء",
-    "aboutPerHour": "حوالي {count} في الساعة على مدار يوم من 12 ساعة",
+    "aboutPerHour": "حوالي {count} في الساعة",
     "whereFrom": "من أين يأتي هذا الرقم",
     "rentBillsRow": "الإيجار والفواتير والتأمين والقرض",
     "plannedStaffRow": "الموظفون المخطط لهم",
@@ -812,7 +813,15 @@
     "addMissingCosts": "إضافة التكاليف المفقودة",
     "addSalesData": "إضافة بيانات المبيعات",
     "missingProductCostsReason": "بعض عناصر القائمة المباعة لا تزال بلا تكلفة منتج قابلة للاستخدام. أضف الوصفة التفصيلية أو أدخل إجمالي تكلفة التحضير لهذه الأحجام.",
-    "addProductCosts": "إضافة تكاليف المنتجات"
+    "addProductCosts": "إضافة تكاليف المنتجات",
+    "planTitle": "الخطة والأهداف",
+    "planSubtitle": "خطّط للخطوات التالية لمقهاك",
+    "planBreakEven": "نقطة التعادل",
+    "planProfitGoal": "هدف الربح",
+    "planWhatIf": "ماذا لو؟",
+    "setCafeHours": "تحديد ساعات عمل المقهى",
+    "closedToday": "المقهى مغلق اليوم وفقًا لساعات العمل",
+    "missingPieces": "البيانات المطلوبة"
   },
   "Onboarding": {
     "step1Title": "اربط جهاز البيع الخاص بك",

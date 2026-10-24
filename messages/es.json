@@ -392,7 +392,8 @@
     "sourceUnknown": "Origen de ventas no disponible",
     "sourceSingle": "De {source}",
     "sourceMixed": "De {sources}",
-    "sourceJoin": " y "
+    "sourceJoin": " y ",
+    "seePlan": "Ver el plan"
   },
   "Menu": {
     "title": "Menú",
@@ -791,10 +792,10 @@
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
-    "subtitle": "Diseñado para un café nuevo",
+    "subtitle": "Lo que necesitas vender cada día",
     "everyDay": "Cada día necesitas vender",
     "drinksToCover": "bebidas para cubrir todo",
-    "aboutPerHour": "Unas {count} por hora en un día de 12 horas",
+    "aboutPerHour": "Unas {count} por hora",
     "whereFrom": "De dónde viene ese número",
     "rentBillsRow": "Renta, cuentas, seguro, préstamo",
     "plannedStaffRow": "Personal planeado",
@@ -812,7 +813,15 @@
     "addMissingCosts": "Agregar costos faltantes",
     "addSalesData": "Agregar datos de ventas",
     "missingProductCostsReason": "Algunos productos vendidos todavía no tienen un costo de producto utilizable. Agrega la receta detallada o ingresa el costo total de preparación para esos tamaños.",
-    "addProductCosts": "Agregar costos de productos"
+    "addProductCosts": "Agregar costos de productos",
+    "planTitle": "Plan y metas",
+    "planSubtitle": "Planifica los próximos pasos de tu cafetería",
+    "planBreakEven": "Punto de equilibrio",
+    "planProfitGoal": "Meta de ganancia",
+    "planWhatIf": "¿Qué pasaría si…?",
+    "setCafeHours": "Configurar el horario del café",
+    "closedToday": "El café está cerrado hoy según su horario",
+    "missingPieces": "Datos que faltan"
   },
   "Onboarding": {
     "step1Title": "Conecta tu caja registradora",

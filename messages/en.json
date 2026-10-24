@@ -392,7 +392,8 @@
     "sourceUnknown": "Sales source unavailable",
     "sourceSingle": "From {source}",
     "sourceMixed": "From {sources}",
-    "sourceJoin": " and "
+    "sourceJoin": " and ",
+    "seePlan": "See the plan"
   },
   "Menu": {
     "title": "Menu",
@@ -791,10 +792,10 @@
   },
   "BreakEven": {
     "title": "Break-even plan",
-    "subtitle": "Built for a new café",
+    "subtitle": "What you need to sell each day",
     "everyDay": "Every day you need to sell",
     "drinksToCover": "drinks to cover everything",
-    "aboutPerHour": "About {count} an hour over a 12-hour day",
+    "aboutPerHour": "About {count} an hour",
     "whereFrom": "Where that number comes from",
     "rentBillsRow": "Rent, bills, insurance, loan",
     "plannedStaffRow": "Planned staff",
@@ -812,7 +813,15 @@
     "addMissingCosts": "Add missing costs",
     "addSalesData": "Add sales data",
     "missingProductCostsReason": "Some sold menu items still do not have a usable product cost. Add the detailed recipe or enter the total cost to make for those sizes.",
-    "addProductCosts": "Add product costs"
+    "addProductCosts": "Add product costs",
+    "planTitle": "Plan & goals",
+    "planSubtitle": "Make a plan for your café",
+    "planBreakEven": "Break-even",
+    "planProfitGoal": "Profit goal",
+    "planWhatIf": "What if",
+    "setCafeHours": "Set café hours",
+    "closedToday": "Closed today according to your café hours",
+    "missingPieces": "What needs to be added"
   },
   "Onboarding": {
     "step1Title": "Connect your register",
