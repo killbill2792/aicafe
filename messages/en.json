@@ -2903,12 +2903,17 @@
     "draftReview": "Review",
     "draftDiscard": "Discard",
     "draftFutureWeek": "Choose a future week beginning Monday before drafting.",
-    "draftNames": "Two staff members have the same name. Update their names to draft safely.",
     "draftMissing": "Add café hours, availability, or missing staff information first.",
     "draftUnavailable": "Olivia could not prepare this week. Try again.",
     "draftStale": "Your schedule changed. Draft the week again.",
     "draftActionError": "Could not save your choice. Review the proposal again.",
-    "draftEditRequiresRefresh": "Draft changed. Generate a new approval card before saving."
+    "draftEditRequiresRefresh": "Draft changed. Generate a new approval card before saving.",
+    "draftInvalidShift": "Check the shift, break and overlap before saving.",
+    "draftBreakMinutes": "Unpaid break (minutes)",
+    "draftHideReview": "Hide review",
+    "draftRetryApproval": "Retry approval",
+    "draftApplying": "Saving your decision…",
+    "draftPartialCost": "Known {known}; {count} wages unknown"
   },
   "FreeAccess": {
     "pricing": "Plans and pricing",
