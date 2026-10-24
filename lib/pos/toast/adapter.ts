@@ -170,12 +170,12 @@ export type ToastAdapter=PosAdapter&{
 };
 /** Read-only adapter. DO NOT use its modified-order scan as proof of closed-date coverage.
  * Automatic canonical import stays disabled until CSV overlap/reconciliation is solved. */
-export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;restaurantGuid:string}):ToastAdapter {
+export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;restaurantGuid:string;deadlineAt?:number}):ToastAdapter {
   if(!params)throw new PosNotConnectedError("toast");
   const {db,businessId,restaurantGuid}=params;
   if(!GUID.safeParse(restaurantGuid).success)throw new ToastApiError("unauthorized_location");
   const client=createToastClient(db,businessId);
-  const request=<T>(path:string,schema:z.ZodType<T>)=>client.request(path,restaurantGuid,schema);
+  const request=<T>(path:string,schema:z.ZodType<T>)=>client.request(path,restaurantGuid,schema,{deadlineAt:params.deadlineAt});
   async function statePage(range:Range,page:number):Promise<{facts:ToastOrderFact[];hasMore:boolean}> {
     if(!Number.isSafeInteger(page)||page<1||page>1000)throw new ToastApiError("invalid_response");
     const search=query(range);
