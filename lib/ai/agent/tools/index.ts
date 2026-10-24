@@ -9,9 +9,14 @@ import { salesTools } from "./sales";
 import {draftScheduleTools} from "./draftSchedule";
 import {newItemPriceTools} from "./newItemPrice";
 import {proposalTools} from "./proposals";
+import {priceExperimentTools} from "./priceExperiment";
+import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
+import {ToolError} from "../toolErrors";
+import {requestedPeriod as calcRequestedPeriod} from "@/lib/calc/periods";
+import {resolveCoveredSalesWindow} from "./coverage";
 import {summarizePeakHours,summarizeEmployeeSales,summarizePayrollFacts} from "@/lib/calc/posFactSummaries";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { CafeStatePeriod } from "@/lib/operating/types";
@@ -31,10 +36,12 @@ export type AgentToolContext = {
   threadId?:string;ownerMessageId?:string;
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
+  menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
+    proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>};
 };
-const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
+const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]),ownerInputs:ownerInputsSchema.nullable().optional() });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
 const posPeriodSchema=z.strictObject({from:z.iso.date(),to:z.iso.date()});
@@ -44,7 +51,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 const schemas = { ...posReadTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools,...staffProposalTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools,...priceExperimentTools,...staffProposalTools } as const;
 export type AgentToolName = keyof typeof schemas;
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
@@ -67,26 +74,23 @@ export const agentToolDefinitions=[...baseToolDefinitions,
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
-export function requestedPeriod(choice: "today" | "week" | "month", asOf: string): CafeStatePeriod {
-  const start = choice === "today" ? asOf
-    : choice === "month" ? asOf.slice(0, 7) + "-01"
-    : new Date(Date.parse(asOf + "T12:00:00Z") - 6 * 86400000).toISOString().slice(0, 10);
-  return { from: start, to: asOf };
-}
+export const requestedPeriod=calcRequestedPeriod;
+
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
   return { source, period, agentId:source==="profitability"?"leo":"alex",
     missing: missing.length ? missing : ["sourceUnavailable"] };
 }
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
   // Backend-only: do not register proposal creation until a real approval surface is available.
-  if(name==="propose_initiative")throw new Error("initiative_approval_surface_not_available");
+  if(name==="propose_initiative")throw new ToolError("not_supported");
   if(isInitiativeTool(name))return executeInitiativeTool(name,raw,ctx);
   // Flag-gated extra tool: only offered to the model when CHAT_MEMORY is on.
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
-  if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
+  if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
+  if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);
   if(Object.hasOwn(staffProposalTools,name))return staffProposalTools[name as keyof typeof staffProposalTools].execute(raw,ctx);
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
   if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
@@ -131,27 +135,45 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const filtered = slice.value.filter(item => item.active &&
       (!input.query || item.name.toLocaleLowerCase(ctx.locale).includes(input.query.toLocaleLowerCase(ctx.locale))));
     const limit = input.limit ?? 8;
+    const visible=filtered.slice(0,limit);
+    const facts:Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>=
+      ctx.menuPriceEvidence?await ctx.menuPriceEvidence(visible):{};
     return { source: "menu_items", period: null, agentId:"alex",
       missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : [])],
-      items: filtered.slice(0, limit).map(item => ({
-        id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,
+      items: visible.map(item => ({
+        id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,unit:"cents",
+        priceSource:facts[item.id]?.priceSource??"initial",realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
+        priceCheck:facts[item.id]?.priceCheck??"ok",
+        pricePeriod:facts[item.id]?.pricePeriod??null,
+        priceEvidenceStatus:facts[item.id]?.priceEvidenceStatus??"unknown",
       })) };
   }
-  const { period: choice } = periodSchema.parse(raw);
-  const period = requestedPeriod(choice, ctx.asOf);
+  const { period: choice,ownerInputs } = periodSchema.parse(raw);
+  const requested = requestedPeriod(choice, ctx.asOf);
+  const selection=await resolveCoveredSalesWindow(ctx,requested);
+  const period=selection.period;
   if (name === "get_profit") {
     const slice = await ctx.tools.getProfitability(period);
-    if (!slice.available) return absent("profitability", period, slice.quality.missingInputs);
-    return { source: "profitability", period, agentId:"leo", missing: slice.quality.missingInputs,
-      estimated: slice.quality.estimatedInputs,
-      netSalesCents: slice.value.netSalesCents, totalCostsCents: slice.value.totalCostsCents,
+    const ownerSales=ownerInputs?.netSalesCents!=null?
+      ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
+    if (!slice.available) return {source:"profitability",period,agentId:"leo",
+      coverageLabel:selection.label,unit:"cents",ownerInputs:ownerInputs??null,
+      netSalesCents:ownerSales,netSalesProvenance:ownerSales!==null?"ownerProvided":null,
+      totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
+      missing:[...slice.quality.missingInputs,...(ownerSales!==null?["costsUnverified"]:[])]};
+    const conflict=ownerConflict(slice.value.netSalesCents,ownerSales);
+    return { source: "profitability", period, coverageLabel:selection.label,agentId:"leo",
+      missing:[...slice.quality.missingInputs,...(conflict?["ownerValueConflict"]:[])],
+      ownerSalesConflict:conflict?{recordedCents:slice.value.netSalesCents,ownerCents:ownerSales}:null,
+      needsOwnerChoice:conflict,estimated: slice.quality.estimatedInputs,
+      netSalesCents: slice.value.netSalesCents, totalCostsCents: slice.value.totalCostsCents, unit:"cents",ownerInputs,
       ownerProfitCents: slice.value.ownerProfitCents, operatingMargin: slice.value.operatingMargin,
       coveredSalesDays: slice.value.coveredSalesDays, expectedSalesDays: slice.value.expectedSalesDays };
   }
-  if (name !== "get_sales") throw new Error("unknown_tool");
+  if (name !== "get_sales") throw new ToolError("not_supported");
   const slice = await ctx.tools.getSalesTrend(period);
-  if (!slice.available) return absent("daily_rollups", period, slice.quality.missingInputs);
-  return { source: "daily_rollups", period, agentId:"alex", missing: slice.quality.missingInputs,
-    netSalesCents: netSalesCentsForPeriod(slice.value),
+  if (!slice.available) return {...absent("daily_rollups", period, slice.quality.missingInputs),coverageLabel:selection.label};
+  return { source: "daily_rollups", period, coverageLabel:selection.label,agentId:"alex", missing: slice.quality.missingInputs,
+    netSalesCents: netSalesCentsForPeriod(slice.value),unit:"cents",
     days: slice.value.slice(-7).map(day => ({ date: day.date, netSalesCents: day.netSalesCents })) };
 }

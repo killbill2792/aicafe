@@ -12,7 +12,7 @@ describe("new unsaved item pricing",()=>{
  it("missing sales gives unknown costs and price, not a zero cost",()=>{
   const r=calculateNewItemPrice({...fixture(),units30d:null});
   expect(r.missing).toContain("itemSales30d");expect(r.laborPerItemCents).toBeNull();
-  expect(r.fullCostCents).toBeNull();expect(r.suggestedPriceCents).toBeNull();
+  expect(r.fullCostCents).toBeNull();expect(r.suggestedPriceCents).toBeGreaterThan(0);expect(r.result.tier).toBe("floor_only");
  });
  it("respects owner margin and labels packaging assumption",()=>{
   const r=calculateNewItemPrice({...fixture(),targetMarginPercent:60,packagingCents:null});

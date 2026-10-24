@@ -50,6 +50,13 @@ describe("database-safe agent persistence payload", () => {
         productName:"Latte",oldPriceCents:450,newPriceCents:500}]});
     expect(actual.reply.blocks).toContainEqual({type:"proposal_card",proposalId:id});
     expect(actual.reply.blocks.length).toBe(2);
+    const experiment=agentReplyPayload({...turn("Please approve the seven-day test."),
+      results:[{source:"price_experiment_proposal",period:null,missing:[],draft:true,saved:false,
+        proposalId:id,revision:1,productName:"Latte",oldPriceCents:450,newPriceCents:460}]});
+    expect(experiment.reply.blocks).toContainEqual({type:"experiment_card",proposalId:id});
+    expect(agentReplyPayload({...turn("Unverified"),
+      results:[{source:"price_experiment_proposal",period:null,missing:["validation"],draft:true,
+        saved:false,proposalId:id}]}).reply.blocks).toHaveLength(1);
     expect(agentReplyPayload({...turn("No proposal"),
       results:[{source:"price_change_proposal",period:null,missing:["notReady"],
         draft:true,saved:false,proposalId:id}]}).reply.blocks).toHaveLength(1);

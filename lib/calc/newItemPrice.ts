@@ -1,6 +1,6 @@
 import { baselinePriceCents } from "./pricingBaseline";
-import { applyRounding } from "./pricingRounding";
 import { COFFEE_SHOP_PROFILE } from "@/lib/pricing/profiles";
+import {calcResult} from "./result";
 
 export type NewItemPriceInput = {
   ingredientCostCents:number; packagingCents:number|null; targetMarginPercent:number|null;
@@ -24,9 +24,18 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
   if(input.targetMarginPercent===null)estimated.push("defaultTargetMargin");
   const costPlusPriceCents=fullCostCents===null?null:Math.round(fullCostCents/(1-targetMarginPercent/100));
   const ingredientBenchmarkCents=Math.round(baselinePriceCents(input.ingredientCostCents,COFFEE_SHOP_PROFILE.targetProductCostPercent));
-  const rawPrice=Math.max(costPlusPriceCents??0,ingredientBenchmarkCents);
+  const rawPrice=input.targetMarginPercent===null?ingredientBenchmarkCents:Math.max(costPlusPriceCents??0,ingredientBenchmarkCents);
   // Do not present a benchmark as full-cost pricing when labor/overhead are missing.
-  const suggestedPriceCents=fullCostCents===null?null:Math.max(COFFEE_SHOP_PROFILE.roundingRule.incrementCents,applyRounding(rawPrice,COFFEE_SHOP_PROFILE.roundingRule));
+  const suggestedPriceCents=Math.max(COFFEE_SHOP_PROFILE.roundingRule.incrementCents,Math.ceil(rawPrice/25)*25);
+  const rawFloorCents=Math.round(input.ingredientCostCents/0.35);
+  const rawTargetCents=Math.round(input.ingredientCostCents/0.30);
+  const rawHighCents=Math.ceil(input.ingredientCostCents/0.25);
+  const floorCents=Math.ceil(rawFloorCents/25)*25;
+  const highCents=Math.ceil(rawHighCents/25)*25;
+  const result=calcResult({value:suggestedPriceCents,floor:floorCents,
+    range:{low:floorCents,high:highCents},tier:fullCostCents!==null&&input.packagingCents!==null?"full":units!==null?"partial":"floor_only",
+    inputs:[{name:"unitCostCents",value:input.ingredientCostCents,provenance:"ownerProvided"},
+      {name:"targetCostRatio",value:0.30,provenance:"estimate"}],missing});
   const prices=input.menuPricesCents.filter(v=>Number.isSafeInteger(v)&&v>0).sort((a,b)=>a-b);
   const median=prices.length?(prices.length%2?prices[(prices.length-1)/2]:
     Math.round((prices[prices.length/2-1]+prices[prices.length/2])/2)):null;
@@ -38,6 +47,30 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
     profitPerItemCents:suggestedPriceCents===null||fullCostCents===null?null:suggestedPriceCents-fullCostCents,
     marginPercent:suggestedPriceCents===null||fullCostCents===null?null:
       Math.round((suggestedPriceCents-fullCostCents)/suggestedPriceCents*10000)/100,
-    missing,estimated,
+    missing,estimated,result,rawFloorCents,rawTargetCents,rawHighCents,floorCents,highCents,
+  };
+}
+
+/** Partial overhead is a known-cost floor, NEVER the café's complete break-even. */
+export function contributionCoverage(input:{
+  priceCents:number|null;unitCostCents:number;packagingCents:number|null;
+  laborCents:number|null;billsCents:number|null;days:number;
+}){
+  if(!Number.isSafeInteger(input.days)||input.days<1)throw new Error("Invalid covered days");
+  const contributionCents=input.priceCents===null?null:
+    input.priceCents-input.unitCostCents-(input.packagingCents??0);
+  const known=(input.laborCents??0)+(input.billsCents??0);
+  const knownAny=input.laborCents!==null||input.billsCents!==null;
+  const complete=input.laborCents!==null&&input.billsCents!==null;
+  const knownOverheadPerDayCents=knownAny?Math.round(known/input.days):null;
+  const drinks=contributionCents!==null&&contributionCents>0&&knownOverheadPerDayCents!==null?
+    Math.ceil(knownOverheadPerDayCents/contributionCents):null;
+  return {
+    contributionCents,
+    overheadCoverage:complete?"complete" as const:knownAny?"partial" as const:"unknown" as const,
+    knownOverheadPerDayCents,
+    drinksPerDayToCoverKnownOverhead:drinks,
+    overheadPerDayCents:complete?knownOverheadPerDayCents:null,
+    drinksPerDayToCoverOverhead:complete?drinks:null,
   };
 }
