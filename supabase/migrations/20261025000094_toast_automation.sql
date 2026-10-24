@@ -229,3 +229,100 @@ begin
  perform public.toast_record_day_error(p_run_id,p_business_id,p_restaurant_guid,
   p_business_date,p_category,true,false);
 end $safefail$;
+
+-- Reuse an active identical backfill; completed runs may be requested again.
+create unique index toast_one_active_backfill_range on public.toast_sync_runs(
+ business_id,restaurant_guid,requested_from,requested_to)
+ where kind='backfill' and state in ('queued','running','paused_rate_limited');
+
+create or replace function public.toast_queue_backfill(
+ p_business_id uuid,p_restaurant_guid uuid,p_from date,p_to date)
+returns uuid language plpgsql security definer set search_path=public as $queue$
+declare v_prior date;v_id uuid;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if p_from<'2015-12-02'::date or p_to<p_from or p_to-p_from>=400
+  or p_to>=current_date then raise exception 'invalid backfill range';end if;
+ select m.toast_start_date into v_prior
+ from public.toast_location_mappings m
+ where m.business_id=p_business_id and m.restaurant_guid=p_restaurant_guid
+ and m.verified_at is not null for update;
+ if not found then raise exception 'unverified Toast location';end if;
+ if v_prior is not null and p_from<v_prior then
+  update public.toast_location_mappings set toast_start_date=p_from
+   where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+  -- The stored business-wide total was computed before this location became
+  -- applicable. Invalidate EVERY affected previously actual date atomically.
+  update public.daily_rollups dr set sales_data_status='missing'
+  where dr.business_id=p_business_id and dr.business_date>=p_from
+   and dr.business_date<v_prior and dr.sales_data_status='actual'
+   and exists(
+    select 1 from public.toast_location_mappings m
+    left join public.toast_day_status d on d.business_id=m.business_id
+     and d.restaurant_guid=m.restaurant_guid and d.business_date=dr.business_date
+    where m.business_id=dr.business_id and m.verified_at is not null
+     and dr.business_date>=coalesce(m.toast_start_date,dr.business_date)
+     and (d.import_state is distinct from 'imported'
+      or not coalesce(d.coverage_complete,false))
+   );
+ end if;
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+  requested_from,requested_to,days_total,cursor)
+ values(p_business_id,p_restaurant_guid,'backfill',p_from,p_to,p_to-p_from+1,'{}'::jsonb)
+ on conflict(business_id,restaurant_guid,requested_from,requested_to)
+  where kind='backfill' and state in ('queued','running','paused_rate_limited')
+ do update set last_error_category=public.toast_sync_runs.last_error_category
+ returning id into v_id;
+ return v_id;
+end $queue$;
+
+-- P1: transient re-import failures also retain an imported day's error category.
+create or replace function public.toast_checkpoint_day(
+ p_run_id uuid,p_business_id uuid,p_restaurant_guid uuid,p_business_date date,
+ p_page integer,p_category text,p_retry_at timestamptz default null)
+returns void language plpgsql security definer set search_path=public as $checkpoint$
+begin
+ if auth.role()<>'service_role' or p_page not between 1 and 300
+ then raise exception 'invalid Toast checkpoint';end if;
+ update public.toast_sync_runs set state='paused_rate_limited',
+ last_error_category=p_category,
+ resume_at=case when p_category='timeout' then now()
+  when p_category='rate_limited' then greatest(now(),coalesce(p_retry_at,now()+interval '1 minute'))
+  else now()+make_interval(mins=>case coalesce((cursor->>'backoff_attempt')::integer,0)
+   when 0 then 1 when 1 then 5 when 2 then 15 else 60 end) end,
+ cursor=jsonb_build_object('business_date',p_business_date,'page',p_page,
+  'backoff_attempt',case when p_category='timeout' then 0
+   else least(coalesce((cursor->>'backoff_attempt')::integer,0)+1,4) end),
+ rate_limited_count=rate_limited_count+case when p_category='rate_limited' then 1 else 0 end
+ where id=p_run_id and business_id=p_business_id and restaurant_guid=p_restaurant_guid
+ and state in ('queued','running','paused_rate_limited');
+ if not found then raise exception 'invalid Toast run';end if;
+ update public.toast_day_status set last_error_category=p_category
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+  and business_date=p_business_date;
+end $checkpoint$;
+
+-- A D-1 cron job can be queued only once, even across concurrent invocations.
+create unique index toast_daily_once on public.toast_sync_runs(
+ business_id,restaurant_guid,requested_from)
+ where kind='daily';
+
+create function public.toast_queue_daily(p_business_id uuid,p_restaurant_guid uuid,p_date date)
+returns uuid language plpgsql security definer set search_path=public as $daily$
+declare result uuid;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if not exists(select 1 from public.toast_location_mappings
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+  and verified_at is not null) then raise exception 'unverified location';end if;
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+  requested_from,requested_to,days_total)
+ values(p_business_id,p_restaurant_guid,'daily',p_date,p_date,1)
+ on conflict(business_id,restaurant_guid,requested_from)
+  where kind='daily' do update
+ set last_error_category=public.toast_sync_runs.last_error_category
+ returning id into result;
+ return result;
+end $daily$;
+revoke all on function public.toast_queue_daily(uuid,uuid,date) from public,anon,authenticated;
+grant execute on function public.toast_queue_daily(uuid,uuid,date) to service_role;
