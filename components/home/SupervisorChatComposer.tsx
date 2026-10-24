@@ -15,7 +15,7 @@ import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/rea
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
 import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
   hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
-import { ChatMarkdown } from "./ChatMarkdown";
+import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
 import SupervisorProposalCard from "./SupervisorProposalCard";
 import MemoryCard from "./MemoryCard";
@@ -24,7 +24,7 @@ import { useAgentJobWatcher } from "./useAgentJobWatcher";
 import { answeredOwnerMessageIds, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
 import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
-import { groupReplyBlocks } from "./supervisorReplyPresentation";
+import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
@@ -44,7 +44,7 @@ export type SupervisorChatCopy = {
   emptyHeading: string; emptyIntro: string; historyTitle: string; closeHistory: string;
   startNewChat: string; reviewHint: string; taskOpen: string;
   needsYou: string; handled: string; watching: string;
-  answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string;
+  answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string; provenanceOwner:string;provenanceEstimate:string;provenanceUnchecked:string;provenanceBreakEven:string;provenanceSalesGap:string;provenanceLegend:string;provenanceOverhead:string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
   feedbackUp: string; feedbackDown: string; feedbackSaved: string; feedbackError: string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
@@ -86,7 +86,7 @@ function progressStatusText(copy: SupervisorChatCopy, status: SupervisorProgress
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; unverified?: { start: number; end: number }[] }) {
+function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; unverified?: {start:number;end:number;source?:'owner'|'estimate'|'unchecked';detail?:string}[] }) {
   if (!record(block)) return null;
   if(block.type==="proposal_card"&&typeof block.proposalId==="string"&&threadId)
     return <SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/>;
@@ -97,7 +97,7 @@ function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block:
       ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
           <AlertCircle aria-hidden="true" size={18} className="mt-1 shrink-0" />{block.text}
         </p>
-      : <ChatMarkdown text={block.text} unverified={unverified} label={copy.unverified} />;
+      : <ChatMarkdown text={block.text} unverified={unverified} labels={{owner:copy.provenanceOwner,estimate:copy.provenanceEstimate,unchecked:copy.provenanceUnchecked,breakEvenSales:copy.provenanceBreakEven,salesGap:copy.provenanceSalesGap,dailyOverhead:copy.provenanceOverhead}} showLegend={false} />;
   }
   if (block.type === "task_card" && typeof block.title === "string" && typeof block.agent === "string" &&
     typeof block.status === "string" && typeof block.href === "string" &&
@@ -130,6 +130,16 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
   if (message.role === "owner") return <article className="ms-auto w-fit max-w-[80%] rounded-[22px] rounded-ee-md bg-accent-soft px-4 py-3 text-[17px] text-ink shadow-sm">
     <p className="whitespace-pre-wrap break-words">{message.text}</p>
   </article>;
+  const originalBlocks=message.blocks??[];
+  const groups=groupReplyBlocks(originalBlocks);
+  const rawMetadata=message.grounding?.agentMetadata;
+  const metadata=record(rawMetadata)?rawMetadata:null;
+  const rawSpans=Array.isArray(metadata?.unverified)?metadata.unverified.filter(record):[];
+  const legendSources=rawSpans.map(v=>
+    v.source==="owner"||v.source==="estimate"?v.source:"unchecked" as const);
+  const provenanceLabels={owner:copy.provenanceOwner,estimate:copy.provenanceEstimate,
+    unchecked:copy.provenanceUnchecked,breakEvenSales:copy.provenanceBreakEven,
+    salesGap:copy.provenanceSalesGap,dailyOverhead:copy.provenanceOverhead};
   return <article className="w-full space-y-3">
     <div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted">
       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good">
@@ -138,23 +148,23 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
       {copy.supervisor}
     </div>
     <div className="w-full space-y-3 ps-1">
-      {groupReplyBlocks(message.blocks ?? []).map((group,i)=>{
+      {groups.map((group,i)=>{
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
         const candidate=ownerQuestionSchema.safeParse(group.block);
         if (candidate.success) return <ReplyBlock key={i} block={{type:"text",text:candidate.data.title[locale]}} copy={copy} locale={locale}/>;
-        const possibleMetadata = message.grounding?.agentMetadata;
-        const metadata = record(possibleMetadata) ? possibleMetadata : null;
-        const rawSpans = Array.isArray(metadata?.unverified) ? metadata.unverified : [];
-        const spans = rawSpans.filter(record)
-          .filter(v => v.blockIndex === i && typeof v.start === "number" && typeof v.end === "number")
-          .map(v => ({ start: Number(v.start), end: Number(v.end) }));
+        const originalIndex=originalReplyBlockIndex(originalBlocks,group.block);
+        const spans = rawSpans
+          .filter(v => v.blockIndex === originalIndex && typeof v.start === "number" && typeof v.end === "number")
+          .map(v=>({start:Number(v.start),end:Number(v.end),
+            source:(v.source==="owner"||v.source==="estimate"?v.source:"unchecked") as "owner"|"estimate"|"unchecked",
+            detail:typeof v.detail==="string"?v.detail:undefined}));
         return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} threadId={message.threadId} unverified={spans}/>;
       })}
+      <SourceLegend sources={legendSources} labels={provenanceLabels} legendLabel={copy.provenanceLegend}/>
     </div>
   </article>;
 }
-
 function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:SupervisorChatCopy}) {
   const [rating,setRating]=useState<"up"|"down"|null>(null);
   const [saving,setSaving]=useState(false);

@@ -109,4 +109,24 @@ describe("database-safe agent persistence payload", () => {
   it("rejects answers beyond the 30-block storage capacity instead of truncating silently", () => {
     expect(() => agentReplyPayload(turn("x".repeat(36001)))).toThrow("agent_reply_too_long");
   });
+  it("keeps a rejected day count and its unit in one persisted block",()=>{
+    const prefix="a ".repeat(595);
+    const claim="Payroll recorded for 90 days.";
+    const text=prefix+claim+" more words ".repeat(40);
+    const start=text.indexOf("90 days");
+    const result=agentReplyPayload({...turn(text),unverified:[{
+      text:"90",start,end:start+2,kind:"number"
+    }],provenance:[{
+      text:"90 days",start,end:start+7,kind:"number",source:"unchecked"
+    }]});
+    const blocks=result.reply.blocks.filter(b=>b.type==="text").map(b=>b.text);
+    expect(blocks.length).toBeGreaterThan(1);
+    expect(blocks.some(b=>b.includes("90 days"))).toBe(true);
+    expect(result.metadata.unverified).toEqual(expect.arrayContaining([
+      expect.objectContaining({text:"90 days",source:"unchecked",start:expect.any(Number),
+        end:expect.any(Number),blockIndex:expect.any(Number)}),
+    ]));
+    expect(result.metadata.unverified.filter(v=>v.source==="unchecked")).toHaveLength(1);
+  });
+
 });

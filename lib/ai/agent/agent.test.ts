@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkNumbers, compactEvidence } from "./checkNumbers";
+import { checkNumbers, compactEvidence, numberProvenance } from "./checkNumbers";
 import { statusFromResults } from "./status";
 import { executeAgentTool, agentToolDefinitions, type AgentToolContext, requestedPeriod } from "./tools";
 
@@ -1295,4 +1295,291 @@ describe("Codex: explicit result boundary and symbolic cents",()=>{
    expect(checkNumbers("$6 - $5.50 = $11.50.","",[observed],"en")
      .map(v=>v.text)).toEqual(["$11.50"]);
  });
+});
+
+describe("numeric source classifications",()=>{
+  it("marks the owner figure blue and calculation estimate amber, but not recorded fixed costs",()=>{
+    const statement="net sales Oct 1-22 = $11,000, ingredients+packaging 20%";
+    const reply="Sales $11,000; variable rate 20%; fixed costs $707.24; break-even $884.05.";
+    const result={source:"break_even",period:null,missing:[],
+      estimate:{dailyCostsToCoverCents:70724},
+      ownerNetSalesCents:1100000,ownerIngredientPackagingBps:2000,
+      ownerComparison:{dailyBreakEvenSalesCents:88405},
+      numberEstimates:[{value:88405,unit:"cents",detail:"breakEvenSales"}]};
+    const annotations=numberProvenance(reply,statement,[result],"en");
+    expect(annotations.find(v=>v.text==="$11,000")?.source).toBe("owner");
+    expect(annotations.find(v=>v.text==="20%")?.source).toBe("owner");
+    expect(annotations.find(v=>v.text==="$884.05")?.source).toBe("estimate");
+    expect(annotations.find(v=>v.text==="$707.24")).toBeUndefined();
+  });
+  it("does not mark date ranges, day counts, or clock times; still checks nearby unsupported orders",()=>{
+    const reply="Oct 1-22: 9 orders, 8 days; at 8am.";
+    const v=numberProvenance(reply,"8 days",[],"en");
+    expect(v.map(x=>x.text)).toContain("9");
+    expect(v.map(x=>x.text)).not.toContain("1");
+    expect(v.map(x=>x.text)).not.toContain("22");
+    expect(v.map(x=>x.text)).not.toContain("8");
+  });
+});
+
+describe("Codex P1 source-specific checks",()=>{
+  it("keeps unsupported opening hours but ignores incidental clock tokens",()=>{
+    const business="We open Monday at 8:00 AM.";
+    const flagged=checkNumbers(business,"",[],"en");
+    expect(flagged.length).toBeGreaterThan(0);
+    const marked=numberProvenance(business,"",[],"en");
+    expect(marked.some(x=>x.source==="unchecked"&&flagged.some(f=>f.start===x.start&&f.end===x.end))).toBe(true);
+    expect(numberProvenance("We received 9 orders at 8:00 AM.","",[],"en")
+      .some(x=>x.text.includes("8:00"))).toBe(false);
+  });
+  it("does not mislabel another product's price with the owner's provenance",()=>{
+    const owner="Latte costs $5.";
+    const evidence=[{source:"menu_items",period:null,missing:[],items:[
+      {id:"1",name:"Latte",priceCents:500},{id:"2",name:"Mocha",priceCents:600}
+    ]}];
+    const reply="Mocha costs $5.";
+    expect(checkNumbers(reply,owner,evidence,"en").map(x=>x.text)).toContain("$5");
+    expect(numberProvenance(reply,owner,evidence,"en").find(x=>x.text==="$5")?.source).toBe("unchecked");
+  });
+  it("does not turn dated sales mismatch into owner provenance",()=>{
+    const owner="Sales on October 1 were $5.";
+    const reply="Sales on October 2 were $5.";
+    const flagged=checkNumbers(reply,owner,[],"en");
+    expect(flagged.length).toBeGreaterThan(0);
+    const provenance=numberProvenance(reply,owner,[],"en");
+    expect(provenance.some(x=>x.source==="unchecked"&&flagged.some(f=>f.start===x.start&&f.end===x.end))).toBe(true);
+  });
+});
+
+describe("no checker warning may disappear during provenance decoration",()=>{
+  const cases=[
+    {text:"Payroll is recorded for 90 days.",owner:"",results:[],locale:"en" as const},
+    {text:"We've had 90 days of labor data.",owner:"",results:[],locale:"en" as const},
+    {text:"We open Monday at 8:00 AM.",owner:"",results:[],locale:"en" as const},
+    {text:"El turno empieza a las 9:00 AM.",owner:"",results:[],locale:"es" as const},
+    {text:"تبدأ المناوبة الساعة 8:00 AM.",owner:"",results:[],locale:"ar" as const},
+    {text:"Mocha costs $5.",owner:"Latte costs $5.",results:[
+      {source:"menu_items",period:null,missing:[],items:[{id:"a",name:"Latte",priceCents:500},
+        {id:"b",name:"Mocha",priceCents:600}]}],locale:"en" as const},
+    {text:"Sales on October 2 were $5.",owner:"Sales on October 1 were $5.",results:[],locale:"en" as const},
+  ];
+  for(const testCase of cases){
+    it("retains every unsupported numeric span for "+testCase.text,()=>{
+      const checked=checkNumbers(testCase.text,testCase.owner,testCase.results,testCase.locale);
+      const marked=numberProvenance(testCase.text,testCase.owner,testCase.results,testCase.locale);
+      expect(checked.length).toBeGreaterThan(0);
+      for(const claim of checked){
+        const annotation=marked.find(v=>v.start===claim.start&&v.source==="unchecked");
+        expect(annotation).toBeDefined();
+        expect(annotation?.end).toBeGreaterThanOrEqual(claim.end);
+      }
+    });
+  }
+  it("keeps numeric day units attached but does not decorate owner-backed or proposed durations",()=>{
+    const claim="Payroll is recorded for 90 days.";
+    const annotated=numberProvenance(claim,"",[],"en");
+    expect(annotated.find(v=>v.text==="90 days")).toMatchObject({source:"unchecked"});
+    expect(numberProvenance("There are 8 days.","There are 8 days.",[],"en")
+      .some(v=>v.text==="8 days")).toBe(false);
+    expect(numberProvenance("I suggest trying it for 8 days.","",[],"en")
+      .some(v=>v.text==="8 days")).toBe(false);
+  });
+});
+
+describe("calendar range exemptions are owned by the checker",()=>{
+ it("does not reject Oct 1-22 while still rejecting an adjacent unsupported count",()=>{
+   const reply="Oct 1-22: we recorded 9 orders.";
+   const rejected=checkNumbers(reply,"",[],"en");
+   expect(rejected.map(v=>v.text)).toEqual(["9"]);
+   const annotated=numberProvenance(reply,"",[],"en");
+   expect(annotated.map(v=>v.text)).toEqual(["9"]);
+   expect(annotated[0].source).toBe("unchecked");
+ });
+ it("does not mistake a Spanish month range or Arabic month range for count evidence",()=>{
+   const cases=[
+     ["Del 1-22 de octubre se registraron 9 pedidos.","es"],
+     ["من ١-٢٢ أكتوبر سجلنا ٩ طلبات.","ar"],
+   ] as const;
+   for(const [text,locale] of cases){
+     const annotated=numberProvenance(text,"",[],locale);
+     expect(annotated.map(v=>v.text)).toEqual(locale==="es"?["9"]:["٩"]);
+   }
+ });
+});
+
+describe("saved estimate provenance",()=>{
+  it("retains modeled break-even label and detail across turns",()=>{
+    const result={source:"break_even",period:null,missing:[],
+      ownerComparison:{dailyBreakEvenSalesCents:12988,dailyShortfallCents:2988},
+      numberEstimates:[
+        {value:12988,unit:"cents",detail:"breakEvenSales"},
+        {value:2988,unit:"cents",detail:"salesGap"},
+      ]};
+    const evidence=compactEvidence([result]);
+    expect(evidence.flatMap(e=>e.values)).toEqual(expect.arrayContaining([
+      expect.objectContaining({value:12988,provenance:"estimate",detail:"breakEvenSales"}),
+      expect.objectContaining({value:2988,provenance:"estimate",detail:"salesGap"}),
+    ]));
+    const next=numberProvenance("Break-even $129.88 and gap $29.88.","",[],"en",evidence);
+    expect(next).toEqual(expect.arrayContaining([
+      expect.objectContaining({text:"$129.88",source:"estimate",detail:"breakEvenSales"}),
+      expect.objectContaining({text:"$29.88",source:"estimate",detail:"salesGap"}),
+    ]));
+  });
+  it("does not retain the old estimate mark after an updated cost calculation",()=>{
+    const old=compactEvidence([{source:"break_even",period:null,missing:[],
+      ownerComparison:{dailyBreakEvenSalesCents:12988},
+      numberEstimates:[{value:12988,unit:"cents",detail:"breakEvenSales"}]}]);
+    const updated={source:"break_even",period:null,missing:[],
+      ownerComparison:{dailyBreakEvenSalesCents:15000},
+      numberEstimates:[{value:15000,unit:"cents",detail:"breakEvenSales"}]};
+    const a=numberProvenance("Break-even was $129.88; break-even is now $150.00.","",[updated],"en",old);
+    expect(a.find(v=>v.text==="$129.88")?.source).not.toBe("estimate");
+    expect(a.find(v=>v.text==="$150.00")?.source).toBe("estimate");
+  });
+});
+
+describe("Codex adversarial provenance matrix: identity, history and amounts",()=>{
+  it("uses local metric clauses when overhead precedes an amount-first break-even",()=>{
+    const results=[{source:"break_even",period:null,missing:[],
+      ownerComparison:{dailyFixedCostsCents:10000,dailyBreakEvenSalesCents:12988},
+      numberEstimates:[
+        {value:10000,unit:"cents",detail:"dailyOverhead"},
+        {value:12988,unit:"cents",detail:"breakEvenSales"},
+      ]}];
+    for(const evidence of [[],compactEvidence(results)]){
+      const current=evidence.length?[]:results;
+      for(const reply of [
+        "Daily overhead is $100, $129.88 is your break-even.",
+        "Daily overhead is $100 and break-even is $129.88.",
+        "Break-even is $129.88 and daily overhead is $100.",
+      ]){
+        expect(checkNumbers(reply,"",current,"en",evidence)).toEqual([]);
+        const marked=numberProvenance(reply,"",current,"en",evidence);
+        expect(marked).toHaveLength(2);
+        for(const [amount,detail] of [
+          ["$100","dailyOverhead"],["$129.88","breakEvenSales"],
+        ] as const){
+          expect(marked.find(m=>m.text===amount)).toMatchObject({source:"estimate",detail});
+        }
+      }
+    }
+  });
+  it("keeps metric attribution when the estimate name follows the number",()=>{
+    const model={source:"break_even",period:null,missing:[],
+      ownerComparison:{dailyBreakEvenSalesCents:12988},
+      numberEstimates:[{value:12988,unit:"cents",detail:"breakEvenSales"}]};
+    const saved=compactEvidence([model]);
+    const phrases=[
+      ["$129.88 is your break-even.","en"],
+      ["129.88 is your break-even.","en"],
+      ["$129.88 equals your break-even.","en"],
+      ["$129.88 son tus ventas de equilibrio.","es"],
+      ["129,88 son tus ventas de equilibrio.","es"],
+      ["$129.88 هي مبيعات التعادل.","ar"],
+    ] as const;
+    for(const [reply,locale] of phrases){
+      for(const useSaved of [false,true]){
+        const current=useSaved?[]:[model];
+        const previous=useSaved?saved:[];
+        expect(checkNumbers(reply,"",current,locale,previous)).toEqual([]);
+        expect(numberProvenance(reply,"",current,locale,previous)).toEqual([
+          expect.objectContaining({source:"estimate",detail:"breakEvenSales",start:0}),
+        ]);
+      }
+    }
+    const unrelated="Mocha costs $6. $129.88 is your break-even.";
+    const prices=[{source:"menu_items",period:null,missing:[],items:[
+      {id:"mocha",name:"Mocha",priceCents:600},
+    ]}];
+    const marks=numberProvenance(unrelated,"",[...prices,model],"en");
+    expect(marks.filter(mark=>mark.source==="estimate")).toHaveLength(1);
+    expect(marks[0]?.start).toBe(unrelated.indexOf("$129.88"));
+  });
+
+  it("does not resurrect estimates from an earlier call within the same agent turn",()=>{
+    const earlier={source:"break_even",period:null,missing:[],
+      ownerComparison:{dailyBreakEvenSalesCents:12988},
+      numberEstimates:[{value:12988,unit:"cents",detail:"breakEvenSales"}]};
+    const invalid={source:"break_even",period:null,missing:["invalidContributionMargin"],
+      ownerComparison:{dailyFixedCostsCents:null,dailyBreakEvenSalesCents:null,dailyShortfallCents:null}};
+    const reply="Break-even is $129.88.";
+    expect(checkNumbers(reply,"",[earlier,invalid],"en").map(x=>x.text)).toContain("$129.88");
+    expect(numberProvenance(reply,"",[earlier,invalid],"en").find(x=>x.text==="$129.88")?.source)
+      .toBe("unchecked");
+  });
+
+  const estimate=(amount:number,detail:"breakEvenSales"|"salesGap"|"dailyOverhead")=>({
+    value:amount,unit:"cents",detail,
+  });
+  it("does not label a supported product price as an unrelated break-even estimate",()=>{
+    const results=[
+      {source:"menu_items",period:null,missing:[],items:[{id:"m",name:"Mocha",priceCents:600}]},
+      {source:"break_even",period:null,missing:[],
+        ownerComparison:{dailyBreakEvenSalesCents:600},
+        numberEstimates:[estimate(600,"breakEvenSales")]},
+    ];
+    const reply="Mocha costs $6. Break-even is $6.";
+    expect(checkNumbers(reply,"",results,"en")).toEqual([]);
+    const marks=numberProvenance(reply,"",results,"en");
+    expect(marks.filter(m=>m.source==="estimate")).toEqual([
+      expect.objectContaining({text:"$6",detail:"breakEvenSales",start:reply.lastIndexOf("$6")}),
+    ]);
+    expect(marks.some(m=>m.start===reply.indexOf("$6")&&m.source==="estimate")).toBe(false);
+    const saved=compactEvidence(results);
+    const followUp=numberProvenance(reply,"",[],"en",saved);
+    expect(followUp.filter(m=>m.source==="estimate")).toHaveLength(1);
+    expect(followUp[0]?.start).toBe(reply.lastIndexOf("$6"));
+  });
+  it("decorates a currency-less monetary break-even, never an ordinary drink count",()=>{
+    const result={source:"break_even",period:null,missing:[],
+      ownerComparison:{dailyBreakEvenSalesCents:12988},
+      numberEstimates:[estimate(12988,"breakEvenSales")]};
+    const text="Break-even sales are 129.88 per day.";
+    expect(checkNumbers(text,"",[result],"en")).toEqual([]);
+    expect(numberProvenance(text,"",[result],"en")).toEqual([
+      expect.objectContaining({text:"129.88",source:"estimate",detail:"breakEvenSales"}),
+    ]);
+    const count="We sold 129.88 drinks.";
+    expect(numberProvenance(count,"",[result],"en")
+      .some(v=>v.source==="estimate")).toBe(false);
+  });
+  it("keeps estimated daily overhead labeled through persistence and removes it on refresh",()=>{
+    const old={source:"break_even",period:null,missing:[],estimated:["expense:rent"],
+      ownerComparison:{dailyFixedCostsCents:10000,dailyBreakEvenSalesCents:12500},
+      numberEstimates:[estimate(10000,"dailyOverhead"),estimate(12500,"breakEvenSales")]};
+    const saved=compactEvidence([old]);
+    expect(saved.flatMap(e=>e.values)).toEqual(expect.arrayContaining([
+      expect.objectContaining({key:"dailyFixedCostsCents",value:10000,
+        provenance:"estimate",detail:"dailyOverhead"}),
+    ]));
+    for(const [locale,text] of [
+      ["en","Daily overhead is $100."],
+      ["es","Los gastos fijos diarios son $100."],
+      ["ar","التكاليف الثابتة اليومية $100."],
+    ] as const){
+      expect(numberProvenance(text,"",[],locale,saved)).toEqual([
+        expect.objectContaining({text:"$100",source:"estimate",detail:"dailyOverhead"}),
+      ]);
+    }
+    const fresh={source:"break_even",period:null,missing:[],
+      ownerComparison:{dailyFixedCostsCents:10000,dailyBreakEvenSalesCents:12500},
+      numberEstimates:[estimate(12500,"breakEvenSales")]};
+    expect(numberProvenance("Daily overhead $100.","",[fresh],"en",saved)
+      .some(v=>v.source==="estimate")).toBe(false);
+  });
+  it("invalidates a previously saved model when a new contribution margin is impossible",()=>{
+    const old={source:"break_even",period:null,missing:[],
+      ownerComparison:{dailyFixedCostsCents:10000,dailyBreakEvenSalesCents:12988},
+      numberEstimates:[estimate(12988,"breakEvenSales")]};
+    const invalid={source:"break_even",period:null,missing:["invalidContributionMargin"],
+      ownerComparison:{dailyFixedCostsCents:null,dailyBreakEvenSalesCents:null,dailyShortfallCents:null}};
+    const saved=compactEvidence([old]);
+    const invalidation=compactEvidence([invalid]);
+    expect(invalidation.flatMap(e=>e.invalidatedKeys??[])).toContain("dailyBreakEvenSalesCents");
+    const reply="Your break-even is $129.88.";
+    expect(checkNumbers(reply,"",[invalid],"en",saved).map(v=>v.text)).toContain("$129.88");
+    expect(numberProvenance(reply,"",[invalid],"en",saved).find(v=>v.text==="$129.88")?.source)
+      .toBe("unchecked");
+  });
 });

@@ -60,7 +60,7 @@ export function splitAgentText(text: string, unverified: readonly Span[] = []) {
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function agentReplyPayload(turn: AgentTurn) {
   if (!turn.text.trim()) throw new AgentEmptyReplyError();
-  const blocks = splitAgentText(turn.text, turn.unverified);
+  const blocks = splitAgentText(turn.text, turn.provenance??turn.unverified);
   const proposalIds=[...new Set(turn.results.flatMap(result=>
     (result.source==="price_change_proposal"||result.source==="staff_proposal")&&result.draft===true&&
       result.saved===false&&result.missing.length===0&&
@@ -77,7 +77,7 @@ export function agentReplyPayload(turn: AgentTurn) {
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
     ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId}))] };
-  const unverified = turn.unverified.flatMap(item => {
+  const unverified = (turn.provenance??turn.unverified).flatMap(item => {
     const rows: Array<typeof item & {blockIndex:number}> = [];
     let offset = 0;
     for (let i = 0; i < blocks.length; i++) {
