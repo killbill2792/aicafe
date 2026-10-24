@@ -34,7 +34,7 @@ export async function toastDayFlags(
  db:SupabaseClient,businessId:string,from:string,to:string
 ):Promise<ToastDayFlag[]> {
  const {data,error}=await db.from("toast_day_status")
-  .select("business_date,import_state,recon_state")
+  .select("business_date,import_state,recon_state,last_error_category")
   .eq("business_id",businessId).gte("business_date",from).lte("business_date",to)
   .order("business_date").limit(373);
  if(error||!Array.isArray(data)||data.length>=373)
@@ -42,6 +42,6 @@ export async function toastDayFlags(
  return data.map(row=>({
   date:row.business_date,
   status:row.import_state as ToastDayFlag["status"],
-  needsLook:["mismatch","owner_flagged"].includes(row.recon_state)
+  needsLook:["mismatch","owner_flagged"].includes(row.recon_state)||Boolean(row.last_error_category)
  }));
 }
