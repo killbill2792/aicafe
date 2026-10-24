@@ -24,6 +24,7 @@ describe("Alex item sales and deterministic pricing",()=>{
     };
     const result=await salesTools.get_price_recommendation.execute({
       itemId:"11111111-1111-4111-8111-111111111111"},ctx({
+      getMenuCatalog:async()=>({available:true,value:[{id:"11111111-1111-4111-8111-111111111111",name:"Latte",active:true,category:"drink",priceCents:550}],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
       getPricingRecommendation:async()=>({available:true,value:recommendation,
         quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
     }));

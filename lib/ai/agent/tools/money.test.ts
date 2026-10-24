@@ -10,7 +10,7 @@ function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
 }
 describe("Leo scoped money reads",()=>{
   it("does not call recurring bills recorded expenses",async()=>{
-    const r=await moneyTools.get_expenses.execute({period:"month"},ctx({
+    const r=await moneyTools.get_expenses.execute({period:"month",category:null},ctx({
       getRecordedExpenses:async()=>({available:true,value:{totalCents:2500},quality:q}),
       getExpenseSummary:async()=>({available:true,value:[
         {label:"Rent",categoryCode:"rent",amountCents:45000,isEstimate:true,isMissing:false}],quality:q}),
