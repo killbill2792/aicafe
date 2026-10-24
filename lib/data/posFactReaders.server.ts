@@ -1,5 +1,5 @@
 import "server-only";
-import { unverifiedToastSalesDates } from "@/lib/pos/toast/reportingCoverage";
+import { toastDayFlags, unverifiedToastSalesDates } from "@/lib/pos/toast/reportingCoverage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 
@@ -48,16 +48,28 @@ function missingDays(p:CafeStatePeriod,dates:string[],key:string){
  return new Set(dates).size<expected?[key]:[];
 }
 export function posFactReaders(db:SupabaseClient,businessId:string){
- async function blockedToastDates(period:CafeStatePeriod):Promise<Set<string>|null>{
-  if(process.env.TOAST_PILOT_IMPORT_ENABLED!=="true")return new Set();
-  try{return await unverifiedToastSalesDates(db,businessId,period.from,period.to);}
-  catch{return null;} // Fail closed. A missing verification response is never proof.
+ async function toastCoverage(period:CafeStatePeriod):
+   Promise<{blocked:Set<string>;quality:string[]}|null>{
+  if(process.env.TOAST_AUTO_IMPORT_ENABLED!=="true")
+    return {blocked:new Set(),quality:[]};
+  try {
+    const [flags,legacy]=await Promise.all([
+      toastDayFlags(db,businessId,period.from,period.to),
+      unverifiedToastSalesDates(db,businessId,period.from,period.to)
+    ]);
+    const imported=new Set(flags.filter(f=>f.status==="imported").map(f=>f.date));
+    const blocked=new Set([...legacy].filter(d=>!imported.has(d)));
+    for(const f of flags)if(f.status!=="imported")blocked.add(f.date);
+    const quality=flags.filter(f=>f.needsLook).map(f=>"toastDayNeedsLook:"+f.date);
+    return {blocked,quality};
+  }catch{return null;} // A failed status read must not silently certify Toast.
  }
  return {
   async peakHours(period:CafeStatePeriod):Promise<KnownSlice<PeakHourFacts>>{
    checkPeriod(period);
-   const blocked=await blockedToastDates(period);
-   if(blocked===null)return missing("toastSalesVerificationUnavailable");
+   const coverage=await toastCoverage(period);
+   const blocked=coverage?.blocked;
+   if(!blocked)return missing("toastSalesVerificationUnavailable");
    const found=await readPages<{business_date:string;hour_local:number;location_id:string|null;net_sales_cents:unknown;orders_count:unknown}>((start,end)=>
      db.from("hourly_sales_rollup").select("business_date,hour_local,location_id,net_sales_cents,orders_count")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
@@ -71,13 +83,14 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
     if(!hours.length)return missing("toastSalesAwaitingIndependentReview");
     return known({hours},[...missingDays(period,hours.map(r=>r.date),"hourlySalesDatesNotObserved"),
-      ...(blocked.size?["toastSalesAwaitingIndependentReview"]:[])]);
+      ...coverage!.quality,...(blocked.size?["toastSalesAwaitingIndependentReview"]:[])]);
    }catch{return missing("unsafeHourlySalesFacts");}
   },
   async employeeSales(period:CafeStatePeriod):Promise<KnownSlice<EmployeeSalesFacts>>{
    checkPeriod(period);
-   const blocked=await blockedToastDates(period);
-   if(blocked===null)return missing("toastSalesVerificationUnavailable");
+   const coverage=await toastCoverage(period);
+   const blocked=coverage?.blocked;
+   if(!blocked)return missing("toastSalesVerificationUnavailable");
    const found=await readPages<{business_date:string;employee_id:string;net_sales_cents:unknown;orders_count:unknown}>((start,end)=>
      db.from("employee_sales_rollup").select("business_date,employee_id,net_sales_cents,orders_count")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
@@ -90,7 +103,7 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
     if(!employees.length)return missing("toastSalesAwaitingIndependentReview");
     return known({employees},[...missingDays(period,employees.map(r=>r.date),"employeeSalesDatesNotObserved"),
-      ...(blocked.size?["toastSalesAwaitingIndependentReview"]:[])]);
+      ...coverage!.quality,...(blocked.size?["toastSalesAwaitingIndependentReview"]:[])]);
    }catch{return missing("unsafeEmployeeSalesFacts");}
   },
   async payrollFacts(period:CafeStatePeriod):Promise<KnownSlice<PayrollFacts>>{
