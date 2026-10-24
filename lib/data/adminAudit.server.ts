@@ -71,7 +71,7 @@ async function writeTurnAudit(a: TurnAudit): Promise<void> {
     started_at: new Date(a.startedAt).toISOString(),
     ended_at: new Date(a.endedAt).toISOString(),
     duration_ms: Math.max(0, a.endedAt - a.startedAt),
-    model: a.turn ? configuredSupervisorModel() : null,
+    model: a.turn ? a.turn.usage.model??configuredSupervisorModel() : null,
     input_tokens: a.turn?.usage.inputTokens ?? null,
     output_tokens: a.turn?.usage.outputTokens ?? null,
     cost_usd: estimatedTurnCost(a.turn),
