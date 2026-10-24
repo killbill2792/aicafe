@@ -4,19 +4,24 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import BackHeader from "@/components/shared/BackHeader";
 import { Link } from "@/i18n/navigation";
 import PageShell from "@/components/shared/PageShell";
+import { isAiConfigured } from "@/lib/ai/types";
+import { addCostChoiceSuffix } from "@/components/addcost/routeParams";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
-export default async function AddCostPage() {
+export default async function AddCostPage({ searchParams }: { searchParams: Promise<{ category?: string; returnTo?: string }> }) {
   await requireOwnBusiness();
+  const { category, returnTo } = await searchParams;
+  const suffix = addCostChoiceSuffix(category, returnTo);
+  const aiEnabled = isAiConfigured();
   const t = await getTranslations("AddCost");
   const tCommon = await getTranslations("Common");
 
   const options = [
-    { href: "/add-cost/receipt", Icon: Camera, label: t("optionPhoto"), hint: t("optionPhotoHint") },
+    ...(aiEnabled ? [{ href: "/add-cost/receipt", Icon: Camera, label: t("optionPhoto"), hint: t("optionPhotoHint") }] : []),
     { href: "/add-cost/statement", Icon: FileText, label: t("optionStatement"), hint: t("optionStatementHint") },
-    { href: "/add-cost/voice", Icon: Mic, label: t("optionVoice"), hint: t("optionVoiceHint") },
+    ...(aiEnabled ? [{ href: "/add-cost/voice", Icon: Mic, label: t("optionVoice"), hint: t("optionVoiceHint") }] : []),
     { href: "/add-cost/type", Icon: Keyboard, label: t("optionType"), hint: t("optionTypeHint") },
   ];
 
@@ -27,7 +32,7 @@ export default async function AddCostPage() {
         {options.map(({ href, Icon, label, hint }) => (
           <Link
             key={href}
-            href={href}
+            href={`${href}${suffix}`}
             className="flex flex-col items-start gap-3 rounded-card-lg bg-card p-5 text-ink no-underline"
           >
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-good-tint text-good">
