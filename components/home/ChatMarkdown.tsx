@@ -161,11 +161,11 @@ function listMarker(line: SourceLine): ListMarker | null {
  * delimiters have been interpreted. Both verified and regular text share the
  * same block parser; labels cannot switch lists back to raw source text. */
 function annotatedText(
-  text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>,
+  text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>, locale: "en"|"es"|"ar" = "en",
 ): ReactNode[] {
   const end=absoluteStart+text.length, out:ReactNode[]=[];
   let cursor=absoluteStart;
-  const tokens=tokenizeNumbers(text,"en");
+  const tokens=tokenizeNumbers(text,locale);
   for(const token of tokens){
     const from=absoluteStart+token.start,to=absoluteStart+token.end;
     const matching=spans.filter(span=>span.start<to&&span.end>from);
@@ -194,11 +194,11 @@ function inlineMarkdown(
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
     if (match.index > cursor) {
-      nodes.push(...annotatedText(text.slice(cursor, match.index), absoluteStart + cursor, spans, labels, badged));
+      nodes.push(...annotatedText(text.slice(cursor, match.index), absoluteStart + cursor, spans, labels, badged,locale));
     }
     const delimiter = match[4] !== undefined || match[5] !== undefined ? 2 : match[2]!==undefined ? 1 : 1;
     const content = match[2] ?? match[4] ?? match[5] ?? match[6] ?? match[7] ?? match[8];
-    const inner = annotatedText(content, absoluteStart + match.index + delimiter, spans, labels, badged);
+    const inner = annotatedText(content, absoluteStart + match.index + delimiter, spans, labels, badged,locale);
     const key = absoluteStart + match.index;
     nodes.push(match[2] !== undefined
       ? <a key={key} href={match[3]} target="_blank" rel="noopener noreferrer" className="underline text-accent-text">{inner}</a>
@@ -209,7 +209,7 @@ function inlineMarkdown(
         : <em key={key}>{inner}</em>);
     cursor = match.index + match[0].length;
   }
-  if (cursor < text.length) nodes.push(...annotatedText(text.slice(cursor), absoluteStart + cursor, spans, labels, badged));
+  if (cursor < text.length) nodes.push(...annotatedText(text.slice(cursor), absoluteStart + cursor, spans, labels, badged,locale));
   return nodes;
 }
 
@@ -247,8 +247,8 @@ export function SourceLegend({sources,labels,legendLabel="Number sources"}:{
   </span>)}
  </p>:null;
 }
-export function ChatMarkdown({text,unverified=[],label,labels,showLegend=true,legendLabel}:{
- text:string;unverified?:readonly Verification[];label?:string;labels?:ProvenanceLabels;
+export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLegend=true,legendLabel}:{
+ text:string;unverified?:readonly Verification[];label?:string;labels?:ProvenanceLabels;locale?:"en"|"es"|"ar";
  showLegend?:boolean;legendLabel?:string;
 }) {
  const copy=labels??{owner:"You told me",estimate:"Estimate",unchecked:label??"Not checked against your records"};
@@ -279,7 +279,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,showLegend=true,le
       blocks.push(<div key={firstLine} role="region" aria-label="Response table" tabIndex={0}
         className="max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
         <table dir="auto" className="w-full min-w-max border-collapse text-[17px]">
-         <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-3 py-2 font-semibold ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged)}</th>)}</tr></thead>
+         <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-3 py-2 font-semibold ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</th>)}</tr></thead>
          <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-3 py-2 ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged)}</td>)}</tr>)}</tbody>
         </table>
       </div>);
@@ -304,7 +304,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,showLegend=true,le
           }
           break;
         }
-        const item = inlineMarkdown(marker.content, marker.contentStart, spans, copy, badged);
+        const item = inlineMarkdown(marker.content, marker.contentStart, spans, copy, badged,locale);
         entries.push(ordered
           ? <li key={index} value={marker.number} className="ps-1">{item}</li>
           : <li key={index} className="ps-1">{item}</li>);
@@ -320,7 +320,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,showLegend=true,le
     while (index < lines.length && lines[index].text.trim() && !listMarker(lines[index]) && !tableHeader(lines,index)) {
       if (rows.length) rows.push("\n");
       const line = lines[index];
-      rows.push(...inlineMarkdown(line.text, line.start, spans, copy, badged));
+      rows.push(...inlineMarkdown(line.text, line.start, spans, copy, badged,locale));
       index++;
     }
     if (index === start) index++;
