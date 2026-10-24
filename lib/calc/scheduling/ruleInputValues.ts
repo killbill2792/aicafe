@@ -22,7 +22,7 @@ export function wholeRuleValue(value: string, min: number, max: number): number 
  return Number.isSafeInteger(result) && result >= min && result <= max ? result : null;
 }
 export function multiplierToBasisPoints(value: string): number | null {
- const text = normalizeDigits(value.trim()).replace(",", ".");
+ const text = normalizeDigits(value.trim()).replace(/[,.٫]/g, character => character === "," || character === "٫" ? "." : character);
  if (!/^(?:\d+)(?:\.\d{1,4})?$/.test(text)) return null;
  const result = Math.round(Number(text) * 10_000);
  return Number.isSafeInteger(result) && result >= 10_000 && result <= 50_000 ? result : null;
