@@ -309,6 +309,8 @@ export default function SupervisorChatComposer({
   const [liveNote, setLiveNote] = useState<string | null>(null);
   const [failureCode, setFailureCode] = useState<string | null>(null);
   const [queuedOwner, setQueuedOwner] = useState<{ id: string; text: string; clientMessageId: string }[]>([]);
+  // Only client display state; no pending clarification stored or sent to the API.
+  const [chosenClarify, setChosenClarify] = useState<Record<string,string>>({});
   const [reloadVersion, setReloadVersion] = useState(0);
   const watcher = useAgentJobWatcher(threadId, enabled && !sending, (job) => {
     setReloadVersion((v) => v + 1);
@@ -875,9 +877,10 @@ export default function SupervisorChatComposer({
       </button>}
       {displayedMessages.map((message,messageIndex) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
         <SupervisorMessage message={message} copy={copy} locale={locale}
-          clarifyState={clarifyCardState(clarifyVisibilityMessages,messageIndex).state}
-          clarifyChoice={clarifyCardState(clarifyVisibilityMessages,messageIndex).choice}
-          onClarify={value=>{void sendText(value);}}
+          clarifyState={chosenClarify[message.id]&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state==="skipped"?
+            "chosen":clarifyCardState(clarifyVisibilityMessages,messageIndex).state}
+          clarifyChoice={chosenClarify[message.id]??clarifyCardState(clarifyVisibilityMessages,messageIndex).choice}
+          onClarify={value=>{setChosenClarify(old=>({...old,[message.id]:value}));void sendText(value);}}
           disabled={sending||!enabled||!canUseAi||
           (message.role==="supervisor"&&message.id!==activeQuestionMessageId&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state!=="active")}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{

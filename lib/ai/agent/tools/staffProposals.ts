@@ -75,7 +75,7 @@ export const staffProposalTools=Object.fromEntries(
        const mentioned=people.filter(p=>normalizedName(p.name)&&wording.includes(normalizedName(p.name)));
        const groups=new Map<string,typeof people>();
        for(const p of mentioned){const key=normalizedName(p.name);groups.set(key,[...(groups.get(key)??[]),p]);}
-       for(const [key,group] of groups)if(group.length>1&&!ctx.resolveState.chosenIds.size){
+       for(const [key,group] of groups)if(group.length>1){
          const matched=resolveEntity("staff",key,people,{
            nameOf:p=>p.name,idOf:p=>p.id,describe:p=>p.role??"Team"});
          if(matched.status==="ambiguous")return {...choicePayload(matched,"staff_proposal",null),agentId:"olivia",missing:["ownerChoiceRequired"]};

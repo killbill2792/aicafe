@@ -37,17 +37,21 @@ export const scheduleReadTools={
      if(matched.status!=="resolved")return {...choicePayload(matched,"employees+scheduled_shifts",null),agentId:"olivia"};
      selected=[matched.value];
    }
-   const people=selected.slice(0,30),shifts=result.data.shifts.slice(0,30);
+   const scoped=input.name?result.data.shifts.filter(shift=>selected.some(person=>
+     person.id===shift.employeeId)):result.data.shifts;
+   const people=selected.slice(0,30),shifts=scoped.slice(0,30);
    return {source:"employees+scheduled_shifts",period:{from:ws,to:new Date(Date.parse(ws+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
-    agentId:"olivia",missing:[...(result.data.team.length>30?["morePeople"]:[]),
-     ...(result.data.shifts.length>30?["moreShifts"]:[]),
-     ...missingWageInputs(result.data.totals)],estimated:result.data.totals.estimated,
+    agentId:"olivia",missing:[...(selected.length>30?["morePeople"]:[]),
+     ...(scoped.length>30?["moreShifts"]:[]),
+     ...(!input.name?missingWageInputs(result.data.totals):[])],estimated:result.data.totals.estimated,
     people:people.map(p=>({id:p.id,name:p.name,role:p.role,minWeeklyMinutes:p.minWeeklyMinutes,
       maxWeeklyMinutes:p.maxWeeklyMinutes,hasKnownWage:p.wageCents!==null})),
     shifts:shifts.map(s=>({employeeId:s.employeeId,date:s.date,paidMinutes:s.paidMinutes,
       costCents:s.costCents,estimated:s.estimated})),
-    weeklyPaidMinutes:result.data.totals.paidMinutes,knownWagesCents:result.data.totals.knownCostCents,
-    missingWageCount:result.data.totals.unknownCount};
+    // Whole-team totals are not the selected employee's totals.
+    weeklyPaidMinutes:input.name?null:result.data.totals.paidMinutes,
+    knownWagesCents:input.name?null:result.data.totals.knownCostCents,
+    missingWageCount:input.name?null:result.data.totals.unknownCount};
   }
  },
  get_week_schedule:{

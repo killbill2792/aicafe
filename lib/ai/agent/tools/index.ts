@@ -112,8 +112,10 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_usage_variance")return suppliesTools.get_usage_variance.execute(raw,ctx);
   if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw);
   if(name==="get_peak_hours"||name==="get_employee_sales"||name==="get_payroll_facts"){
-    const period=posPeriodSchema.parse(raw);
-    if(period.from>period.to)throw new Error("Invalid reporting range");
+    const input=posPeriodSchema.parse(raw);
+    const checked=resolvePeriod(input,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
+    if(checked.status!=="resolved")return periodChoicePayload(name,checked);
+    const period={from:checked.value.from,to:checked.value.to};
     if(name==="get_peak_hours"){
       const slice=await ctx.tools.getPeakHours?.(period);
       if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
