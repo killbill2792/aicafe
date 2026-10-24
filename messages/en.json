@@ -318,7 +318,8 @@
     "costsIncomplete": "Some costs are not verified yet",
     "attentionMatchUnavailable": "Item matching needs review",
     "attentionAlertsUnavailable": "Your alerts need review",
-    "attentionCheckAlerts": "Review alerts"
+    "attentionCheckAlerts": "Review alerts",
+    "attentionRegisterSetupUnavailable": "Your register connection needs attention. Upload sales to keep your numbers current."
   },
   "Money": {
     "title": "Money",
