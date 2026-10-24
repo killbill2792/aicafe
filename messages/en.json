@@ -140,7 +140,9 @@
     "ownerAnalytics_clientId": "Analytics client ID",
     "ownerAnalytics_clientSecret": "Analytics secret",
     "ownerAnalyticsConnect": "Connect Analytics",
-    "ownerAnalyticsDisconnect": "Disconnect Analytics"
+    "ownerAnalyticsDisconnect": "Disconnect Analytics",
+    "ownerRefreshStatus": "Retry loading status",
+    "ownerImportDisabled": "Sales importing is not active yet. You can connect Toast, but importing and re-pulling are unavailable until access is enabled."
   },
   "LocaleLayout": {
     "title": "Café Profit"
