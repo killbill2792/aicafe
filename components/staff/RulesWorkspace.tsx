@@ -32,14 +32,14 @@ function NumberField({value,onCommit,label,min,max,disabled,locale,twoParts=fals
  const commit=()=>{if(current===null){setError(true);return;}setError(false);if(current!==value)onCommit(current)};
  const field=(part:"hours"|"minutes"|"single",v:string,change:(s:string)=>void)=><input
   aria-label={part==="single"?label:label+" "+t(part==="hours"?"hoursInput":"minutesInput")}
-  aria-invalid={error} aria-describedby={error?"rule-number-error-"+label.replace(/\\s+/g,"-"):undefined}
+  aria-invalid={error} aria-describedby={error?fieldId:undefined}
   inputMode="numeric" type="text" value={v} disabled={disabled}
   onChange={e=>{change(e.target.value);setError(false)}}
   className={`min-h-12 w-16 rounded-xl border bg-surface px-2 text-center text-base ${error?"border-neg":"border-line"}`}/>;
  return <span className="inline-flex flex-wrap items-center gap-1 align-middle" dir={locale==="ar"?"rtl":"ltr"}
   onBlur={event=>{if(event.relatedTarget instanceof Node&&event.currentTarget.contains(event.relatedTarget))return;commit()}}>
   {twoParts?<>{field("hours",hours,setHours)}<span>{t("hoursUnit")}</span>{field("minutes",minutes,setMinutes)}<span>{t("minutesUnit")}</span></>:field("single",entry,setEntry)}
-  {error&&<span role="alert" id={"rule-number-error-"+label.replace(/\\s+/g,"-")} className="w-full text-sm text-neg">{t("invalidNumber")}</span>}
+  {error&&<span role="alert" id={fieldId} className="w-full text-sm text-neg">{t("invalidNumber")}</span>}
  </span>;
 }
 export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{initial:RuleValues;week:string;readOnly?:boolean;payroll:PayrollCostSettings}){
