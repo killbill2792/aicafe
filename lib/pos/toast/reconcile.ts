@@ -5,7 +5,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {createToastClient,GUID,ToastApiError} from "./client";
 import {createToastAnalyticsClient} from "./analyticsClient";
 import {toastMoneyCents} from "./adapter";
-import {compareToastAnalytics,checkToastPaymentBalance} from "@/lib/calc/toastReconciliation";
+import {compareToastAnalytics,checkToastPaymentBalance,checkToastSelectionBalance} from "@/lib/calc/toastReconciliation";
 import {parseToastDayPage} from "./dayParser";
 type Location={businessId:string;restaurantGuid:string;locationId:string;
  timeZone:string;closeoutHour:number};
@@ -69,8 +69,20 @@ export function internalOrderProof(rows:unknown[],p:Location,day:string,
     else if(balance==="mismatch")reasons.push("check_payment_mismatch");
     const selections=Array.isArray(check.selections)?
      check.selections as Record<string,unknown>[]:[];
-    if(selections.some(sel=>!sel.voided&&typeof sel.price!=="number"))
-     reasons.push("unknown_selection_amount");
+    const selectionPrices=selections.filter(sel=>!sel.voided&&!sel.deferred&&
+     sel.selectionType!=="HOUSE_ACCOUNT_PAY_BALANCE")
+     .map(sel=>typeof sel.price==="number"?toastMoneyCents(sel.price):null);
+    const chargePrices=charges.map(sc=>typeof sc.chargeAmount==="number"?
+     toastMoneyCents(sc.chargeAmount):null);
+    const discounts=Array.isArray(check.appliedDiscounts)?
+     check.appliedDiscounts as Record<string,unknown>[]:[];
+    const discountPrices=discounts.map(d=>typeof d.discountAmount==="number"?
+     toastMoneyCents(d.discountAmount):null);
+    const selectionBalance=checkToastSelectionBalance(
+     typeof check.amount==="number"?toastMoneyCents(check.amount):null,
+     selectionPrices,chargePrices,discountPrices);
+    if(selectionBalance==="unknown")reasons.push("unknown_selection_amount");
+    else if(selectionBalance==="mismatch")reasons.push("check_selection_mismatch");
    }
   }
  }
