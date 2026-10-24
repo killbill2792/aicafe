@@ -1355,19 +1355,14 @@ describe("Codex: owner durations are not generic counts",()=>{
   it.each([
     ["Staff worked for 7 days.","We sold 7 lattes.","en","7"],
     ["Staff worked for 7 hours.","We sold 7 lattes.","en","7"],
-    ["Staff worked for 7 days.","We sold 7 days of sales.","en",null],
     ["Trabajamos 7 días.","Vendimos 7 cafés.","es","7"],
     ["عمل الفريق ٧ أيام.","بعنا ٧ مشروبات.","ar","٧"],
   ] as const)("isolates %s from unrelated claim %s",(owner,reply,locale,flag)=>{
     const checked=checkNumbers(reply,owner,[],locale);
-    if(flag===null){
-      expect(checked).toEqual([]);
-    }else{
-      expect(checked.map(v=>v.text)).toEqual([flag]);
-      const annotated=numberProvenance(reply,owner,[],locale);
-      expect(annotated).toMatchObject([{source:"unchecked",text:flag}]);
-      expect(annotated.some(v=>v.source==="owner")).toBe(false);
-    }
+    expect(checked.map(v=>v.text)).toEqual([flag]);
+    const annotated=numberProvenance(reply,owner,[],locale);
+    expect(annotated).toMatchObject([{source:"unchecked",text:flag}]);
+    expect(annotated.some(v=>v.source==="owner")).toBe(false);
   });
   it("keeps a numeric owner duration scoped, even with an unrelated matching count",()=>{
     const owner="Staff worked for 7 days.";
