@@ -31,7 +31,7 @@ describe("Staff rule typed time and overtime settings",()=>{
   }
   expect(multiplierToBasisPoints("1.5")).toBe(15000);
   expect(multiplierToBasisPoints("2")).toBe(20000);
-  expect(multiplierToBasisPoints("١٫٥".replace("٫","."))).toBe(15000);
+  expect(multiplierToBasisPoints("١٫٥")).toBe(15000);
   expect(multiplierToBasisPoints("1,875")).toBe(18750);
   for(const invalid of ["","0.9","5.0001","1.23456","Infinity","NaN","-1","2.5e1"]){
    expect(multiplierToBasisPoints(invalid)).toBeNull();
