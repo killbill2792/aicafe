@@ -161,7 +161,7 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
       amount=s.taxInclusion==="INCLUDED"?original-cents(s.tax,w):original;
       basis="receiptLinePrice";
     }
-    const voidDay=date8(s.voidBusinessDate)||date8(c.voidBusinessDate)||date8(o.voidBusinessDate)||day;
+    const voidDay:string=date8(s.voidBusinessDate)??date8(c.voidBusinessDate)??date8(o.voidBusinessDate)??day;
     if(voidDay===day&&!s.voidBusinessDate&&!c.voidBusinessDate&&!o.voidBusinessDate)warn(w,"void_date_fallback");
     voids.push({selection_guid:s.guid,order_guid:o.guid,check_guid:c.guid??null,
       order_business_date:day,void_business_date:voidDay,
