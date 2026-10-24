@@ -127,7 +127,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
  }catch(err){
   const category=err instanceof ToastApiError?err.category:"unavailable";
   const fatal=["authentication","missing_permissions","missing_scope_or_location",
-   "unauthorized_location","invalid_host","not_configured","invalid_response"].includes(category);
+   "unauthorized_location","invalid_host","not_configured"].includes(category);
   const args={p_run_id:p.runId,p_business_id:p.businessId,
    p_restaurant_guid:p.restaurantGuid,p_business_date:p.businessDate};
   // Never leave a non-429 error in 'running': resume the exact page or fail closed.
