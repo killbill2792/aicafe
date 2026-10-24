@@ -6,3 +6,13 @@ export function subscribeToastConnectionChanges(target:EventTarget,onChange:()=>
  target.addEventListener(TOAST_CONNECTION_CHANGED,onChange);
  return ()=>target.removeEventListener(TOAST_CONNECTION_CHANGED,onChange);
 }
+
+/** A credential change or explicit retry supersedes any slower in-flight read. */
+export function createToastStatusRequestGate(){
+ let current=0;
+ return {
+  begin:()=>++current,
+  isCurrent:(request:number)=>request===current,
+  invalidate:()=>{current++;}
+ };
+}
