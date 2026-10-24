@@ -169,6 +169,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const coveredBills = new Set(alerts.filter(a => a.kind === "missing_bill").map(a => String(a.payload.categoryCode ?? "")));
   const missingFeeDays = daysForPeriod(snapshot, period).filter(day => day.netSalesCents > 0 && day.cardFeesStatus === "missing").length;
   const items: HomeAttentionItem[] = [
+    ...(posStatus && posStatus.status!=="active" ? [{
+      id:"reconnect",title:tReconnect("banner"),actionLabel:tReconnect("action"),
+      href:homeAttentionHref({kind:"reconnect" as const,provider:posStatus.provider}),impactCents:null
+    }]:[]),
     ...(vm.isGettingStarted ? gettingStartedAttention({
       connectRegister: t("gettingStartedConnectRegister"), uploadSales: t("gettingStartedUploadSales"),
       addBills: t("gettingStartedAddBills"), addStaff: t("gettingStartedAddStaff"),
@@ -197,10 +201,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     ...(usageOver.length>0 ? [{
       id:"pantry",title:t("usageOverAlert"),actionLabel:t("usageReview"),
       href:homeAttentionHref({kind:"pantry" as const}),impactCents:null
-    }]:[]),
-    ...(posStatus && posStatus.status!=="active" ? [{
-      id:"reconnect",title:tReconnect("banner"),actionLabel:tReconnect("action"),
-      href:homeAttentionHref({kind:"reconnect" as const,provider:posStatus.provider}),impactCents:null
     }]:[]),
     ...alertItems,
     ...team.needsYou.filter(task=>!(task.kind==="data_quality" && coveredBills.has(String(task.payload.categoryCode))) &&
