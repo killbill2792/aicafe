@@ -7,7 +7,7 @@ import {parseToastDayPage,type ToastParsedOrder,type ToastUnparsed,type ToastVoi
 import {recomputeDailyRollup} from "../rollup";
 
 const daySchema=z.iso.date();
-type Params={businessId:string;locationId:string;restaurantGuid:string;businessDate:string;runId:string};
+type Params={businessId:string;locationId:string;restaurantGuid:string;businessDate:string;runId:string;deadlineAt?:number};
 type StoredPage={page:number;payload:unknown[]};
 const sum=(values:number[])=>values.reduce((a,b)=>a+b,0);
 function tally(w:Record<string,number>,next:Record<string,number>){
@@ -28,10 +28,11 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
  const client=createToastClient(db,p.businessId);
  const pageSchema=z.array(z.unknown());
  const pages:StoredPage[]=[];
- const deadlineAt=Date.now()+240000;
+ const deadlineAt=p.deadlineAt??Date.now()+240000;
  let page=1;
  try{
   for(;page<=300;page++){
+   if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
    const {data:staged,error:se}=await db.from("toast_day_pages").select("payload")
      .eq("run_id",p.runId).eq("business_date",p.businessDate).eq("page",page).maybeSingle();
    if(se)throw new ToastApiError("unavailable");
@@ -55,6 +56,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
     p_run_id:p.runId,p_category:"too_large"});
    throw new ToastApiError("invalid_response");
   }
+  if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
   const byGuid=new Map<string,ToastParsedOrder>();
   const unparsed:ToastUnparsed[]=[];
   for(const item of pages){
@@ -86,6 +88,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    voids,refund_facts:orders.flatMap(x=>x.refundFacts),
    parsed_order_guids:orders.map(x=>x.guid),unparsed
   };
+  if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
   const {data:result,error}=await db.rpc("toast_import_day",{
    p_business_id:p.businessId,p_location_id:p.locationId,
    p_restaurant_guid:p.restaurantGuid,p_business_date:p.businessDate,
@@ -107,11 +110,17 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
   return {orders:summary.order_count,unparsed:summary.unparsed_count,
    netSalesCents:summary.net_sales_cents,checksum:summary.snapshot_sha256,result};
  }catch(err){
-  if(err instanceof ToastApiError&&err.category==="rate_limited"){
-   await db.rpc("toast_pause_day_run",{p_run_id:p.runId,p_business_id:p.businessId,
-    p_restaurant_guid:p.restaurantGuid,p_business_date:p.businessDate,p_page:page,
-    p_resume_at:err.retryAt});
-  }
+  const category=err instanceof ToastApiError?err.category:"unavailable";
+  const fatal=["authentication","missing_permissions","missing_scope_or_location",
+   "unauthorized_location","invalid_host","not_configured","invalid_response"].includes(category);
+  const args={p_run_id:p.runId,p_business_id:p.businessId,
+   p_restaurant_guid:p.restaurantGuid,p_business_date:p.businessDate};
+  // Never leave a non-429 error in 'running': resume the exact page or fail closed.
+  const saved=fatal
+   ?await db.rpc("toast_mark_day_failed",{...args,p_category:category})
+   :await db.rpc("toast_checkpoint_day",{...args,p_page:Math.min(page,300),
+      p_category:category,p_retry_at:err instanceof ToastApiError?err.retryAt:null});
+  if(saved.error)throw new ToastApiError("unavailable");
   throw err;
  }
 }

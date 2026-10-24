@@ -1,3 +1,4 @@
+import {refreshToastRestaurantInfo} from "@/lib/pos/toast/restaurantInfo";
 import {NextResponse} from "next/server";
 import {z} from "zod";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
@@ -34,11 +35,7 @@ export async function POST(request:Request){
   try {
     for(const mapping of mappings) {
       const guid=mapping.restaurant_guid;
-      const info=await client.request("/restaurants/v1/restaurants/"+guid,guid,
-        z.object({guid:GUID,general:z.object({timeZone:z.string().min(1),
-          closeoutHour:z.number().int().min(0).max(12),name:z.string().nullish()})}),
-        {allowUnverified:true});
-      if(info.guid.toLowerCase()!==guid.toLowerCase())throw new ToastApiError("unauthorized_location");
+      await refreshToastRestaurantInfo(db,businessId,guid,{allowUnverified:true});
       // Standard access needs only orders and restaurant identity. Optional
       // scopes are probed independently; a 403 must not disconnect sales.
       await client.request(query("/orders/v2/ordersBulk")+"&pageSize=1&page=1",guid,z.array(z.unknown()),{allowUnverified:true});
@@ -54,11 +51,7 @@ export async function POST(request:Request){
           else throw err;
         }
       }
-      const {error:infoError}=await db.from("toast_location_mappings").update({
-        toast_time_zone:info.general.timeZone,closeout_hour:info.general.closeoutHour,
-        info_refreshed_at:new Date().toISOString()
-      }).eq("business_id",businessId).eq("restaurant_guid",guid);
-      if(infoError)throw new ToastApiError("unavailable");
+
     }
     const at=new Date().toISOString();
     for(const mapping of mappings) {

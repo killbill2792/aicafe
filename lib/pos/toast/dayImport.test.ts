@@ -60,7 +60,7 @@ function fakeDatabase(daysTotal=1){
    if(name==="toast_stage_day_page"){
     stored.set(args.p_business_date+":"+args.p_page,args.p_payload as unknown[]);
     run.state="running";
-   }else if(name==="toast_pause_day_run"){
+   }else if(name==="toast_checkpoint_day"){
     run.state="paused_rate_limited";
     run.cursor={business_date:args.p_business_date,page:args.p_page};
    }else if(name==="toast_import_day"){
@@ -94,7 +94,7 @@ describe("resumable Toast day importer",()=>{
   await importToastBusinessDay(f.db,params(d));
   expect(mocked.request.mock.calls.filter(call=>String(call[0]).includes("page=1"))).toHaveLength(1);
   expect(f.imports[0].p_summary.order_count).toBe(101);
-  expect(f.operations).toContain("toast_pause_day_run");
+  expect(f.operations).toContain("toast_checkpoint_day");
   expect(mocked.recompute).toHaveBeenCalledWith(f.db,business,d,{salesDataStatus:"missing"});
  });
  it("deduplicates 251 provider records from three pages by latest modifiedDate",async()=>{
@@ -129,5 +129,37 @@ describe("resumable Toast day importer",()=>{
   expect(f.imports[0].p_summary.net_sales_cents).toBe(1000);
   expect(mocked.recompute).toHaveBeenCalledWith(f.db,business,"2026-10-16",
     {salesDataStatus:"missing"});
+ });
+});
+
+describe("run error lifecycle",()=>{
+ it.each(["timeout","unavailable","rate_limited"] as const)(
+  "%s checkpoints its exact page and stays resumable",async category=>{
+   const f=fakeDatabase();mocked.request.mockRejectedValue(
+     new ToastApiError(category,category==="rate_limited"?429:undefined,
+       category==="rate_limited"?"2026-10-17T10:00:00Z":undefined));
+   await expect(importToastBusinessDay(f.db,params("2026-10-16"))).rejects.toMatchObject({category});
+   expect(f.run.state).toBe("paused_rate_limited");
+   expect(f.run.cursor).toMatchObject({business_date:"2026-10-16",page:1});
+   expect(f.operations).toContain("toast_checkpoint_day");
+  });
+ it.each(["authentication","missing_scope_or_location","unauthorized_location"] as const)(
+  "%s is permanent, not indefinitely retried",async category=>{
+   const f=fakeDatabase();mocked.request.mockRejectedValue(new ToastApiError(category));
+   await expect(importToastBusinessDay(f.db,params("2026-10-16"))).rejects.toMatchObject({category});
+   expect(f.operations).toContain("toast_mark_day_failed");
+  });
+ it("passes a single scheduler deadline down to every page",async()=>{
+  const f=fakeDatabase();mocked.request.mockResolvedValue([]);
+  const deadlineAt=Date.now()+120000;
+  await importToastBusinessDay(f.db,{...params("2026-10-16"),deadlineAt});
+  expect(mocked.request.mock.calls[0][3]).toMatchObject({deadlineAt});
+ });
+ it("does not start a provider call when the shared tick deadline passed",async()=>{
+  const f=fakeDatabase();
+  await expect(importToastBusinessDay(f.db,{...params("2026-10-16"),deadlineAt:Date.now()-1}))
+   .rejects.toMatchObject({category:"timeout"});
+  expect(mocked.request).not.toHaveBeenCalled();
+  expect(f.operations).toContain("toast_checkpoint_day");
  });
 });

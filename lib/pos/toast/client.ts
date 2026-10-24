@@ -214,11 +214,11 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     }
     throw new ToastApiError("unavailable");
   }
-  async function fetchRestaurantInfo(restaurantGuid:string,allowUnverified=false) {
+  async function fetchRestaurantInfo(restaurantGuid:string,allowUnverified=false,deadlineAt?:number) {
     return request("/restaurants/v1/restaurants/"+restaurantGuid,restaurantGuid,
       z.object({guid:GUID,general:z.object({timeZone:z.string().min(1),
       closeoutHour:z.number().int().min(0).max(12),
-      name:z.string().nullish()})}),{allowUnverified});
+      name:z.string().nullish()})}),{allowUnverified,deadlineAt});
   }
   return {request,fetchRestaurantInfo};
 }
