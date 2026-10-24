@@ -34,7 +34,13 @@ export async function GET(request:Request){
  const needing=(s.data??[]).filter(x=>x.import_state==="failed"||
   ["mismatch","analytics_timeout","coverage_invalid"].includes(x.recon_state)||
   Boolean(x.last_error_category)||flags.has(x.restaurant_guid+":"+x.business_date));
- const recentDates=[...new Set((s.data??[]).map(x=>x.business_date))].slice(0,14);
+ const completeDates=[...new Set((s.data??[]).map(x=>x.business_date))].filter(date=>
+  m.data.every(loc=>(s.data??[]).some(row=>row.business_date===date&&
+   row.restaurant_guid===loc.restaurant_guid&&row.import_state==="imported"&&row.coverage_complete)));
+ const mostRecent=()=>new Intl.DateTimeFormat("en-CA",{timeZone:m.data[0].toast_time_zone,
+  year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+ const base=Date.parse(mostRecent()+"T12:00:00Z");
+ const recentDates=Array.from({length:14},(_,i)=>new Date(base-(i+1)*86400000).toISOString().slice(0,10));
  const response={
   connection:state,errorCategory:c.data?.last_error_category??null,
   lastGoodSyncAt:good,stale:state==="connected"&&!good||Boolean(health.data?.some(x=>x.stale)),
@@ -47,21 +53,24 @@ export async function GET(request:Request){
    toastCents:x.toast_net_sales_cents,deltaCents:x.delta_net_cents,
    reason:flags.has(x.restaurant_guid+":"+x.business_date)?"owner_flag":
     x.last_error_category??x.recon_state})),
+  firstImportRows:completeDates.slice(0,7).map(date=>{
+   const rows=(s.data??[]).filter(x=>x.business_date===date);
+   return {date,oursCents:rows.some(x=>x.net_sales_cents==null)?null:
+     rows.reduce((n,x)=>n+x.net_sales_cents,0),
+    toastCents:rows.some(x=>x.toast_net_sales_cents==null)?null:
+     rows.reduce((n,x)=>n+x.toast_net_sales_cents,0)};
+  }),
   recent:recentDates.map(date=>{
    const rows=(s.data??[]).filter(x=>x.business_date===date);
    const problem=rows.some(x=>needing.includes(x));
-   return {date,netSalesCents:rows.some(x=>x.net_sales_cents==null)?null:
+   return {date,netSalesCents:rows.length<m.data.length||rows.some(x=>x.net_sales_cents==null)?null:
     rows.reduce((n,x)=>n+x.net_sales_cents,0),
-    orders:rows.some(x=>x.order_count==null)?null:rows.reduce((n,x)=>n+x.order_count,0),
-    status:problem?"needs_look":rows.some(x=>x.import_state!=="imported")?"missing":
+    orders:rows.length<m.data.length||rows.some(x=>x.order_count==null)?null:rows.reduce((n,x)=>n+x.order_count,0),
+    status:problem?"needs_look":rows.length<m.data.length||rows.some(x=>x.import_state!=="imported")?"missing":
       rows.every(x=>["matched","checked_internal"].includes(x.recon_state))?"checked":"checking"};
   }),
   analytics:{connected:Boolean(a.data),verified:Boolean(a.data?.verified_at)},
-  firstImportCheck:check.data?.answered_at?"answered":
-    [...new Set((s.data??[]).map(x=>x.business_date))].filter(date=>
-      m.data.every(loc=>(s.data??[]).some(row=>row.business_date===date&&
-      row.restaurant_guid===loc.restaurant_guid&&row.import_state==="imported"&&row.coverage_complete))
-    ).length>=7?"due":"hidden",
+  firstImportCheck:check.data?.answered_at?"answered":completeDates.length>=7?"due":"hidden",
   timeZone:m.data[0].toast_time_zone,startDate:m.data[0].toast_start_date??null,
   restaurantGuids:m.data.map(x=>x.restaurant_guid)
  };
