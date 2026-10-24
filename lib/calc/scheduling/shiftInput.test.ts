@@ -12,7 +12,9 @@ describe("shift input validation",()=>{
   expect(scheduledShiftMinutes("","17:00")).toBeNull();
  });
  it("does not silently coerce invalid unpaid breaks to zero",()=>{
-  expect(parseUnpaidBreakMinutes("31",480)).toBe(31);
+  expect(parseUnpaidBreakMinutes("31",480)).toBe(31); 
+  expect(parseUnpaidBreakMinutes("٣١",480)).toBe(31); 
+  expect(parseUnpaidBreakMinutes("۳۱",480)).toBe(31);
   for(const bad of ["","-1","2.5","241","0010.5"])expect(parseUnpaidBreakMinutes(bad,480)).toBeNull();
   expect(parseUnpaidBreakMinutes("60",60)).toBeNull();
   expect(parseUnpaidBreakMinutes("0",null)).toBeNull();

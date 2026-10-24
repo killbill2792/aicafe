@@ -3,7 +3,7 @@ export const STAFF_RULE_KEYS=["meal","rest_break","weekly_overtime","daily_overt
 export type StaffRuleKey=(typeof STAFF_RULE_KEYS)[number];
 export const isStaffRuleKey=(key:unknown):key is StaffRuleKey=>STAFF_RULE_KEYS.some(x=>x===key);
 type Shift={start:string;end:string;minutes:number;breakMinutes:number;paidMinutes:number};
-type Rules={meal_break_minutes:number;weekly_ot_after_minutes:number;daily_ot_after_minutes:number};
+type Rules={meal_break_minutes:number;weekly_ot_after_minutes:number;daily_ot_after_minutes:number;weekly_ot_enabled?:boolean;daily_ot_enabled?:boolean};
 type Change={start:string;end:string;breakMinutes:number};
 /** Only suggestions justified by a matching SCHEDULED shift; historical timecards are never mutated.
  * If the schedule cannot prove a safe change, require manual owner review instead. */
@@ -20,6 +20,9 @@ export function suggestedRuleShiftChange(
  // Paid rest-break evidence and short-rest adjacency cannot be represented as an unpaid
  // shift break; never invent a fix for them.
  if(key==="rest_break"||key==="short_rest")return null;
+ if((key==="daily_overtime"&&rules.daily_ot_enabled===false)||
+  (key==="weekly_overtime"&&rules.weekly_ot_enabled===false)||
+  shift.end<shift.start)return null;
  const excess=(key==="daily_overtime"?dayPaid-rules.daily_ot_after_minutes:
   weekPaid-rules.weekly_ot_after_minutes);
  const maxReduction=span-shift.breakMinutes-1;

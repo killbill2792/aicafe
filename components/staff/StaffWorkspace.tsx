@@ -390,9 +390,9 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         <div className="flex-1"><strong>{t("unpaidBreak",{minutes:appliedBreak})}</strong><p className="text-sm text-muted">{breakOverridden?t("breakManual"):data.rules.meal_break_enabled?
    t("autoBreak",{hours:data.rules.meal_break_after_minutes/60}):t("breakDisabled")}</p></div>
         <label className="flex items-center gap-2 text-start">{t("breakMinutesLabel")}
-          <input type="number" step="1" min="0" max="240" inputMode="numeric" disabled={data.readOnly}
+          <input type="text" inputMode="numeric" disabled={data.readOnly}
            aria-invalid={invalidBreak} aria-describedby={invalidBreak?"staff-break-error":undefined}
-           value={breakOverridden?breakInput:String(appliedBreak)}
+           value={breakOverridden?breakInput:new Intl.NumberFormat(locale,{useGrouping:false}).format(appliedBreak)}
            onChange={event=>{setBreakOverridden(true);setBreakInput(event.target.value);}}
            className={`min-h-12 w-24 rounded-xl border bg-surface px-2 ${invalidBreak?"border-neg":"border-line"}`}/>
          </label></div>
