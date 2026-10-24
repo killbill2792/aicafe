@@ -1,3 +1,4 @@
+import { modelFamily } from "@/lib/ai/conversations/modelFamily";
 /** Pure per-response OpenAI token accounting. Costs are integer millionths of
  * USD (micros) for telemetry; business money still uses integer cents.
  * Rates are effective USD per million tokens configured for this model/tier.
@@ -81,5 +82,5 @@ export function standardModelTokenRates(model:string,serviceTier:unknown,
     "gpt-6-sol":{input:"2.00",cachedInput:"0.20",output:"10.00"},
     "gpt-6-astra":{input:"10.00",cachedInput:"1.00",output:"50.00"},
   };
-  return rates[model]??null;
+  return rates[modelFamily(model)]??null;
 }
