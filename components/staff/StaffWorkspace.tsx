@@ -47,8 +47,6 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   const wage=parseHourlyWage(wageInput),minHours=parseWeeklyHours(minHoursInput),maxHours=parseWeeklyHours(maxHoursInput);
   const invalidWage=wage===undefined,invalidMin=minHours===undefined,invalidMax=maxHours===undefined;
   const invalidRange=minHours!=null&&maxHours!=null&&minHours>maxHours;
-  const invalidAvailability=!isValidTeamAvailability(availability);
-  const personInvalid=invalidWage||invalidMin||invalidMax||invalidRange||invalidAvailability;
  const [phone,setPhone]=useState(""),[whatsAppOptIn,setWhatsAppOptIn]=useState(false),[salaryPeriod,setSalaryPeriod]=useState<string|null>(null),[minWeeklyMinutes,setMinWeeklyMinutes]=useState<number|null>(null),
   [maxWeeklyMinutes,setMaxWeeklyMinutes]=useState<number|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
  const [chosen,setChosen]=useState(data.team[0]?.id??""),[date,setDate]=useState(data.dates[0]);
