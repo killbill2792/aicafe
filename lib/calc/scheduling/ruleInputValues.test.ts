@@ -57,6 +57,7 @@ describe("Staff rule typed time and overtime settings",()=>{
   }
   expect(onboarding).not.toContain("setPayrollTaxRate(");
   expect(action).toContain("payroll_tax_rate: rate");
+  expect(action).toContain('membership.role === "owner"');
   expect(action).toContain('staff_tax_status !== "actual"');
  });
 });
