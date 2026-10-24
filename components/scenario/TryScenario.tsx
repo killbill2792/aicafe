@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { simulatePlanChange, type PlanScenarioBase, type PlanScenarioItem } from "@/lib/calc/planGoals";
+import { scenarioHistoryBlocker } from "./scenarioHistoryBlocker";
 
 const WAGE_CENTS = 1950;
 export default function TryScenario({ items, base, hoursComplete = true, salesCoverageGaps = false, closedDaySales = false }: {
@@ -21,6 +22,7 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
   const [staffAfternoonOnly, setStaffAfternoonOnly] = useState(false);
   const [presetKind, setPresetKind] = useState<"allPrices" | "milk" | null>(null);
   const money = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
+  const historyBlocker = scenarioHistoryBlocker(kind, { salesCoverageGaps, closedDaySales });
   const invalid = !Number.isFinite(Number(value)) || value.trim() === "" || Number(value) < 0 || Number(value) > 100000;
   const result = useMemo(() => base && !invalid ? simulatePlanChange({
     base, type: kind, item: picked, items, preset: presetKind,
@@ -80,12 +82,12 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
       <button type="button" onClick={() => preset("staff", 0)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetStaff")}</button>
       <button type="button" onClick={() => preset("ingredient", 100)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetMilk")}</button>
     </div>
-    {closedDaySales ? <div className="rounded-xl bg-surface p-4 text-[17px]">
+    {historyBlocker === "closedDaySales" ? <div className="rounded-xl bg-surface p-4 text-[17px]">
       <p>{t("closedDaySales")}</p>
       <Link href="/more/cafe-profile?focus=hours" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
         {t("setCafeHours")}
       </Link>
-    </div> : salesCoverageGaps ? <div className="rounded-xl bg-surface p-4 text-[17px]">
+    </div> : historyBlocker === "salesCoverageGaps" ? <div className="rounded-xl bg-surface p-4 text-[17px]">
       <p>{t("uncoveredSalesDates")}</p>
       <Link href="/more/uploads/sales" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
         {t("uploadSales")}
