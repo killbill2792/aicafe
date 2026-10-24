@@ -227,3 +227,33 @@ end $answer$;
 revoke all on function public.toast_answer_first_import_check(uuid,text,date[],text)
  from public,anon,authenticated;
 grant execute on function public.toast_answer_first_import_check(uuid,text,date[],text) to service_role;
+
+
+create function public.toast_set_day_owner_flag(
+ p_business_id uuid,p_restaurant_guid uuid,p_date date,p_flag boolean,p_note text)
+returns void language plpgsql security definer set search_path=public as $flag$
+declare v_zone text;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if length(coalesce(p_note,''))>2000 then raise exception 'note too long';end if;
+ select toast_time_zone into v_zone from public.toast_location_mappings
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+ and verified_at is not null for update;
+ if not found or v_zone is null then raise exception 'unverified location';end if;
+ if p_date>= (now() at time zone v_zone)::date then raise exception 'future day';end if;
+ if p_flag then
+  insert into public.toast_day_owner_flags(
+   business_id,restaurant_guid,business_date,flagged_at,note,cleared_at)
+  values(p_business_id,p_restaurant_guid,p_date,now(),p_note,null)
+  on conflict(business_id,restaurant_guid,business_date) do update
+  set flagged_at=excluded.flagged_at,note=excluded.note,cleared_at=null;
+ else
+  update public.toast_day_owner_flags set cleared_at=now()
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+   and business_date=p_date and cleared_at is null;
+ end if;
+ perform public.toast_certify_day_voids(p_business_id,p_date);
+end $flag$;
+revoke all on function public.toast_set_day_owner_flag(uuid,uuid,date,boolean,text)
+ from public,anon,authenticated;
+grant execute on function public.toast_set_day_owner_flag(uuid,uuid,date,boolean,text) to service_role;
