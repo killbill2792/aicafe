@@ -1,131 +1,84 @@
 "use client";
-
 import { useMemo, useState } from "react";
-import { useTranslations } from "next-intl";
-import { formatCents, roundHalfUpToCent, scenarioDelayDays, scenarioExtraCostCents } from "@/lib/calc";
-import type { ScenarioItem } from "@/lib/viewmodels/scenarioViewModel";
+import { useLocale, useTranslations } from "next-intl";
+import { simulatePlanChange, type PlanScenarioBase, type PlanScenarioItem } from "@/lib/calc/planGoals";
 
-// Round to a whole cent before dividing — dividing a fractional-cent value (e.g. 1.5) straight
-// into toFixed(2) hits a classic floating-point snag (0.015.toFixed(2) is "0.01", not "0.02" —
-// 0.015 isn't exactly representable in binary), which would prefill this input with a different
-// number than the matching dropdown label (formatCents rounds first, same as this now does).
-function costInput(cents: number): string {
-  return (roundHalfUpToCent(cents) / 100).toFixed(2);
-}
-
-export default function TryScenario({ items, avgDailyContributionCents }: { items: ScenarioItem[]; avgDailyContributionCents: number }) {
+const WAGE_CENTS = 1950;
+export default function TryScenario({ items, base }: { items: PlanScenarioItem[]; base: PlanScenarioBase | null }) {
   const t = useTranslations("Scenario");
-  const [itemId, setItemId] = useState(items[0]?.id ?? "");
-  // Starts at the picked drink's own current ingredient cost — a $0 change — rather than $0.00,
-  // which used to make the calculator show "you'd save money" before anyone had touched anything
-  // and look broken/pointless. Type a different number to see an actual scenario.
-  const [priceInput, setPriceInput] = useState(costInput(items[0]?.ingredientsCentsToday ?? 0));
-  const [days, setDays] = useState(7);
+  const locale = useLocale();
+  const [kind, setKind] = useState<"price" | "ingredient" | "staff">("price");
+  const [id, setId] = useState(items.find(item => item.costStatus === "READY" && item.quantitySoldLast28Days > 0)?.id ?? "");
+  const picked = items.find(item => item.id === id) ?? null;
+  const [value, setValue] = useState("0");
+  const [staffHours, setStaffHours] = useState("3");
+  const money = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
+  const digits = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
+  const invalid = !Number.isFinite(Number(value)) || value.trim() === "" || Number(value) < 0 || Number(value) > 100000;
+  const result = useMemo(() => base && !invalid ? simulatePlanChange({
+    base, type: kind, item: picked,
+    newValueCents: Math.round(Number(value) * 100),
+    staffHoursPerDay: kind === "staff" ? Number(staffHours) : 0,
+    assumedHourlyWageCents: WAGE_CENTS,
+  }) : null, [base, invalid, kind, picked, staffHours, value]);
 
-  const item = items.find((i) => i.id === itemId) ?? items[0];
-  const newPriceCents = Math.round((Number(priceInput) || 0) * 100);
-
-  function handlePickItem(id: string) {
-    setItemId(id);
-    const picked = items.find((i) => i.id === id);
-    if (picked) setPriceInput(costInput(picked.ingredientsCentsToday));
+  function pickType(next: "price" | "ingredient" | "staff") {
+    setKind(next);
+    setValue(((next === "price" ? picked?.priceCents : picked?.ingredientsCentsToday) ?? 0) / 100 + "");
+  }
+  function pickItem(next: string) {
+    setId(next);
+    const item = items.find(entry => entry.id === next);
+    setValue(((kind === "price" ? item?.priceCents : item?.ingredientsCentsToday) ?? 0) / 100 + "");
+  }
+  function preset(type: "price" | "ingredient" | "staff", deltaCents: number) {
+    pickType(type);
+    if (type === "staff") setStaffHours("3");
+    else setValue(((type === "price" ? picked?.priceCents : picked?.ingredientsCentsToday) ?? 0) / 100 + deltaCents / 100 + "");
   }
 
-  const result = useMemo(() => {
-    if (!item) return null;
-    const deltaCentsPerDrink = newPriceCents - item.ingredientsCentsToday;
-    const extraCostCents = scenarioExtraCostCents(deltaCentsPerDrink, item.avgDrinksPerDay, days);
-    const delayDays = scenarioDelayDays(extraCostCents, avgDailyContributionCents);
-    return { deltaCentsPerDrink, extraCostCents, delayDays };
-  }, [item, newPriceCents, days, avgDailyContributionCents]);
-
-  if (!item || !result) {
-    return <p className="text-[15px] text-ink-muted">{t("noItems")}</p>;
-  }
-
-  const costs = result.extraCostCents > 0;
-  const saves = result.extraCostCents < 0;
-
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-[15px] leading-snug text-ink-muted">{t("explainer")}</p>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[15px] font-semibold">{t("pickDrink")}</span>
-        <select
-          value={item.id}
-          onChange={(e) => handlePickItem(e.target.value)}
-          className="h-12 w-full min-w-0 rounded-xl border border-line bg-card px-3 text-base"
-        >
-          {items.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name} · {t("currentIngredients", { amount: formatCents(i.ingredientsCentsToday) })}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[15px] font-semibold">{t("newIngredientCost")}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-bold text-ink-muted">$</span>
-          <input
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="0.01"
-            value={priceInput}
-            onChange={(e) => setPriceInput(e.target.value)}
-            className="h-12 w-28 rounded-xl border border-line bg-card px-3 text-base"
-          />
-          <button
-            type="button"
-            onClick={() => setPriceInput("0.00")}
-            className="h-12 rounded-xl bg-surface px-3 text-sm font-semibold text-ink-muted"
-          >
-            {t("makeFree")}
-          </button>
-        </div>
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[15px] font-semibold">{t("forHowManyDays")}</span>
-        <input
-          type="number"
-          inputMode="numeric"
-          min="1"
-          max="90"
-          value={days}
-          onChange={(e) => setDays(Math.max(1, Math.min(90, Number(e.target.value) || 1)))}
-          className="h-12 w-28 rounded-xl border border-line bg-card px-3 text-base"
-        />
-      </label>
-
-      {item.avgDrinksPerDay === 0 ? (
-        // extraCostCents is always 0 with no sales history to multiply a per-drink delta by —
-        // showing that as "no change" would look identical to the calculator being broken no
-        // matter what's typed. Say why instead of a silently-misleading $0.00.
-        <div className="flex flex-col gap-2 rounded-2xl bg-surface p-4">
-          <p className="text-[15px] leading-snug text-ink-muted">{t("noSalesDataForItem", { name: item.name })}</p>
-        </div>
-      ) : (
-        <div className={`flex flex-col gap-2 rounded-2xl p-4 ${costs ? "bg-warn-tint" : saves ? "bg-good-tint" : "bg-surface"}`}>
-          <div className="flex items-center justify-between">
-            <span className="text-[15px] font-semibold">{t("totalImpact", { days })}</span>
-            <span className={`text-xl font-bold ${costs ? "text-warn" : saves ? "text-good" : "text-ink"}`}>
-              {result.extraCostCents === 0 ? formatCents(0) : formatCents(Math.abs(result.extraCostCents))}
-              {costs ? ` ${t("moreCost")}` : saves ? ` ${t("saved")}` : ""}
-            </span>
-          </div>
-          <p className="text-[15px] leading-snug text-ink-muted">
-            {result.extraCostCents === 0
-              ? t("noChangeNote")
-              : Number.isFinite(result.delayDays)
-                ? t(costs ? "delaysRecovery" : "speedsUpRecovery", { days: Math.abs(result.delayDays).toFixed(1) })
-                : t("delayUnknown")}
-          </p>
-        </div>
-      )}
+  return <div className="flex flex-col gap-4">
+    <label className="flex flex-col gap-2 text-[17px] font-semibold">
+      {t("changeType")}
+      <select className="min-h-12 rounded-xl border border-line bg-card px-3" value={kind}
+        onChange={event => pickType(event.target.value as typeof kind)}>
+        <option value="price">{t("kindPrice")}</option><option value="ingredient">{t("kindIngredient")}</option>
+        <option value="staff">{t("kindStaff")}</option>
+      </select>
+    </label>
+    {kind !== "staff" && <label className="flex flex-col gap-2 text-[17px] font-semibold">
+      {t("pickDrink")}
+      <select className="min-h-12 rounded-xl border border-line bg-card px-3" value={id} onChange={event => pickItem(event.target.value)}>
+        {items.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
+    </label>}
+    {kind === "staff" ? <label className="flex flex-col gap-2 text-[17px] font-semibold">
+      {t("staffHours")}<input className="min-h-12 rounded-xl border border-line bg-card px-3" type="number" min="0" max="24" step="0.5"
+        value={staffHours} onChange={event => setStaffHours(event.target.value)} />
+    </label> : <label className="flex flex-col gap-2 text-[17px] font-semibold">
+      {kind === "price" ? t("newPrice") : t("newIngredientCost")}
+      <input className="min-h-12 rounded-xl border border-line bg-card px-3" type="number" min="0" step="0.01"
+        value={value} onChange={event => setValue(event.target.value)} />
+    </label>}
+    <div className="flex flex-wrap gap-2">
+      <button type="button" onClick={() => preset("price", 25)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetPrice")}</button>
+      <button type="button" onClick={() => preset("staff", 0)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetStaff")}</button>
+      <button type="button" onClick={() => preset("ingredient", 4)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetMilk")}</button>
     </div>
-  );
+    {!base ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p> :
+      kind !== "staff" && (!picked || picked.costStatus !== "READY" || picked.quantitySoldLast28Days <= 0) ?
+        <p className="rounded-xl bg-surface p-4 text-[17px]">{t("noItemSales")}</p> :
+      result ? <section aria-live="polite" className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl bg-surface p-4">
+          <p className="text-[17px]">{t("effectBreakEven")}</p>
+          <strong className="block text-2xl">{money.format(result.monthlyBreakEvenCents / 100)}</strong>
+          <p className="text-[15px]">{money.format(result.breakEvenChangeCents / 100)}</p>
+        </div>
+        <div className="rounded-2xl bg-surface p-4">
+          <p className="text-[17px]">{t("effectProfit")}</p>
+          <strong className="block text-2xl">{money.format(result.monthlyProfitChangeCents / 100)}</strong>
+        </div>
+      </section> : <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p>}
+    <p className="text-[15px] text-ink-muted">{kind === "staff" ? t("wageAssumption") : t("priceAssumption")}</p>
+  </div>;
 }

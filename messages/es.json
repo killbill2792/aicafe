@@ -1119,7 +1119,22 @@
     "delaysRecovery": "A este ritmo, eso atrasa cubrir todas tus cuentas unos {days} días.",
     "speedsUpRecovery": "A este ritmo, eso adelanta cubrir todas tus cuentas unos {days} días.",
     "delayUnknown": "Aún no hay suficientes datos de ventas para estimar el efecto en la recuperación de costos.",
-    "footer": "Solo estimaciones, basadas en tus últimos 28 días de ventas — no es una garantía. Nada aquí se guarda hasta que decidas actualizar el costo de verdad."
+    "footer": "Solo estimaciones, basadas en tus últimos 28 días de ventas — no es una garantía. Nada aquí se guarda hasta que decidas actualizar el costo de verdad.",
+    "changeType": "¿Qué cambiarías?",
+    "kindPrice": "Precio de la bebida",
+    "kindIngredient": "Costo de ingredientes",
+    "kindStaff": "Horas de personal",
+    "newPrice": "Nuevo precio de venta",
+    "staffHours": "Menos horas de personal al día",
+    "effectBreakEven": "Ventas mensuales para cubrir costos",
+    "effectProfit": "Cambio en la ganancia mensual",
+    "baselineUnknown": "Completa las ventas, facturas y costos antes de calcular el efecto.",
+    "noItemSales": "Elige una bebida con ventas y costos registrados.",
+    "wageAssumption": "La estimación supone $19,50 por hora más costos patronales.",
+    "priceAssumption": "Ejemplo basado en 28 días de ventas, con volúmenes y comisiones constantes.",
+    "presetPrice": "Subir precios 25 centavos",
+    "presetStaff": "Una persona menos de 2 a 5 de la tarde",
+    "presetMilk": "La leche sube $1 por galón (unos 4 centavos por bebida)"
   },
   "Reconnect": {
     "banner": "No pudimos obtener las ventas de hoy de tu caja registradora. Toca para reconectar.",

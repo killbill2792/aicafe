@@ -1119,7 +1119,22 @@
     "delaysRecovery": "At this pace, that pushes covering all your bills back by about {days} days.",
     "speedsUpRecovery": "At this pace, that gets you to covering all your bills about {days} days sooner.",
     "delayUnknown": "Not enough sales data yet to estimate the effect on cost recovery.",
-    "footer": "Estimates only, based on your last 28 days of sales — not a guarantee. Nothing here is saved until you decide to actually update the cost."
+    "footer": "Estimates only, based on your last 28 days of sales — not a guarantee. Nothing here is saved until you decide to actually update the cost.",
+    "changeType": "What would you change?",
+    "kindPrice": "Drink price",
+    "kindIngredient": "Ingredient cost",
+    "kindStaff": "Staff hours",
+    "newPrice": "New selling price",
+    "staffHours": "Fewer staff hours per day",
+    "effectBreakEven": "Monthly break-even sales",
+    "effectProfit": "Monthly profit change",
+    "baselineUnknown": "Complete sales, bills and cost information before calculating the effect.",
+    "noItemSales": "Select a drink with recorded sales and product costs.",
+    "wageAssumption": "Staff estimate assumes $19.50/hour plus employer costs.",
+    "priceAssumption": "Illustration uses 28-day sales, unchanged volumes and card fees.",
+    "presetPrice": "Raise prices 25¢",
+    "presetStaff": "One less person 2–5 PM",
+    "presetMilk": "Milk rises $1/gallon (≈4¢ per drink)"
   },
   "Reconnect": {
     "banner": "We couldn't get today's sales from your register. Tap to reconnect.",

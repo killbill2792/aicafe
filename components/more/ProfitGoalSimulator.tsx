@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocale } from "next-intl";
 import { formatCents } from "@/lib/calc";
 import { simulateProfitGoal } from "@/lib/calc/profitGoalSimulator";
 import type { ProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
@@ -12,7 +13,6 @@ type Labels = {
   estimated: string;
   targetMargin: string;
   targetMarginHint: string;
-  run: string;
   simulationOnly: string;
   assumption: string;
   readyMeetsTarget: string;
@@ -32,6 +32,10 @@ type Labels = {
   unavailableItem: string;
   invalid: string;
   targetNotFeasible: string;
+  fixSales?: string;
+  fixFees?: string;
+  fixCosts?: string;
+  fixOperating?: string;
 };
 
 function pct(value: number): string {
@@ -46,33 +50,26 @@ export default function ProfitGoalSimulator({
   labels: Labels;
 }) {
   const [draftTarget, setDraftTarget] = useState("15");
+  const locale = useLocale();
   const [target, setTarget] = useState(15);
-  const [hasRun, setHasRun] = useState(false);
-  const [runCount, setRunCount] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const resultRef = useRef<HTMLDivElement>(null);
+  const parsed = draftTarget.trim() ? Number(draftTarget) : Number.NaN;
+  const error = !Number.isFinite(parsed) || parsed < 0 || parsed > 80 ? labels.invalid : null;
+  useEffect(() => {
+    if (error) return;
+    const timer = setTimeout(() => setTarget(parsed), 250);
+    return () => clearTimeout(timer);
+  }, [parsed, error]);
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
+  const fmt = (cents: number) => currency.format(cents / 100);
 
   const simulation = useMemo(() => {
-    if (!hasRun || !data.economics || !data.canSimulate) return null;
+    if (error || !data.economics || !data.canSimulate) return null;
     return simulateProfitGoal({
       economics: data.economics,
       targetOperatingMargin: target / 100,
       items: data.items,
     });
-  }, [data, target, hasRun, runCount]);
-
-  function run() {
-    setError(null);
-    const parsed = draftTarget.trim() === "" ? Number.NaN : Number(draftTarget);
-    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 80) {
-      setError(labels.invalid);
-      return;
-    }
-    setTarget(parsed);
-    setHasRun(true);
-    setRunCount((count) => count + 1);
-    window.requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
-  }
+  }, [data, target, error]);
 
   const unavailableText =
     data.unavailableReason === "NOT_ENOUGH_SALES"
@@ -123,19 +120,21 @@ export default function ProfitGoalSimulator({
             </div>
             <span className="text-xs font-normal leading-snug text-ink-muted">{labels.targetMarginHint}</span>
           </label>
-          <button
-            type="button"
-            onClick={run}
-            className="mt-3 min-h-12 rounded-full bg-accent px-5 text-sm font-bold text-on-accent"
-          >
-            {labels.run}
-          </button>
+
         </div>
       </section>
 
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
-      <div ref={resultRef} aria-live="polite">
-      {hasRun && unavailableText && <p className="rounded-xl bg-paper p-4 text-sm leading-snug text-ink-muted">{unavailableText}</p>}
+      <div aria-live="polite">
+      {unavailableText && <div className="rounded-xl bg-paper p-4 text-[17px] leading-snug text-ink-muted"><p>{unavailableText}</p>
+  <a href={data.unavailableReason === "NOT_ENOUGH_SALES" ? "/more/uploads/sales" :
+    data.unavailableReason === "MISSING_PROCESSING_FEES" ? "/more/processing-fees" :
+    data.unavailableReason === "MISSING_PRODUCT_COSTS" ? "/menu" : "/more/bills"}
+    className="mt-3 inline-flex min-h-12 items-center rounded-full bg-accent px-4 text-[17px] font-bold text-on-accent no-underline">
+    {data.unavailableReason === "NOT_ENOUGH_SALES" ? labels.fixSales :
+      data.unavailableReason === "MISSING_PROCESSING_FEES" ? labels.fixFees :
+      data.unavailableReason === "MISSING_PRODUCT_COSTS" ? labels.fixCosts : labels.fixOperating}
+  </a></div>}
 
       {simulation?.kind === "unavailable" && (
         <p className="rounded-xl bg-warn-tint p-4 text-sm font-semibold leading-snug text-warn">
