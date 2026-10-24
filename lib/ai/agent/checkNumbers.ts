@@ -504,21 +504,27 @@ function clockSpansFromTokens(text:string,locale:AgentLocale="en"):ClockSpan[]{
   .map(t=>Object.assign([text.slice(t.start,t.end)] as unknown as RegExpMatchArray,{index:t.start}));
 }
 function canonicalClock(clock:ClockSpan):string|null {
-  const matched=ascii(clock[0]).match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*)|h(\d{2})?)?$/iu);
+  const raw=ascii(clock[0]).replace(/a\\.m\\./giu,"AM").replace(/p\\.m\\./giu,"PM");
+  const matched=raw.match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*)|h(\d{2})?)?$/iu);
   if(!matched)return null;
   let hour=Number(matched[1]);
   if(matched[3]){
-    const evening=/^(?:PM|مساء)/iu.test(matched[3]);
+    const evening=/^(?:PM|م|مساء)/iu.test(matched[3]);
     hour=(hour%12)+(evening?12:0);
   }
   if(hour>23||Number(matched[2]??matched[4]??"00")>59)return null;
   return String(hour).padStart(2,"0")+":"+(matched[2]??matched[4]??"00");
 }
 
+/** Mask meridiem abbreviations without shifting source offsets. */
+function sentenceBoundary(prefix:string):number{
+ const masked=prefix.replace(/(?:a\\.m\\.|p\\.m\\.)/giu,"    ");
+ return Math.max(masked.lastIndexOf("\\n"),masked.lastIndexOf("."),
+  masked.lastIndexOf("!"),masked.lastIndexOf("?"),masked.lastIndexOf(";"))+1;
+}
 function timeRole(text:string, clock:ClockSpan):TimeRole|null {
   const prefix=text.slice(0,clock.index);
-  const sentenceStart=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),
-    prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
+  const sentenceStart=sentenceBoundary(prefix);
   const phrase=text.slice(sentenceStart,clock.index);
   // In an opening-hours range the second endpoint is closing time, even
   // though "open" remains the closest action verb: "open from 8 to 5".
@@ -546,8 +552,7 @@ function timeRole(text:string, clock:ClockSpan):TimeRole|null {
 }
 function mentionedWeekdays(text:string,clock:ClockSpan,clocks:ClockSpan[]):string[] {
   const prefix=text.slice(0,clock.index);
-  const sentenceStart=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),prefix.lastIndexOf("!"),
-    prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
+  const sentenceStart=sentenceBoundary(prefix);
   const suffix=text.slice(clockEnd(clock));
   const nextStop=suffix.search(/[.!?;\n]/u);
   const sentenceEnd=nextStop<0?text.length:clockEnd(clock)+nextStop;
