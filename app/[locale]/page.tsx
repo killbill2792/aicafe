@@ -19,7 +19,7 @@ import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
 import {getCafeAccess} from "@/lib/access/access.server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import HomeTaskSections, { type HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
-import { homeAttentionHref, type HomeAttentionItem } from "@/components/home/homeAttention";
+import { homeAttentionHref, homeShiftHref, type HomeAttentionItem } from "@/components/home/homeAttention";
 import { getOpenAlerts } from "@/lib/data/getAlerts";
 import { describeAlert } from "@/components/alerts/alertContent";
 import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
@@ -52,11 +52,8 @@ function operatingTaskHref(task: OperatingTask): string {
   }
   if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
   if (task.kind === "staff_coverage") {
-    const query = new URLSearchParams();
-    if (task.entityId) query.set("employee", task.entityId);
     const shiftDate = task.payload.shiftDate ?? task.payload.businessDate;
-    if (typeof shiftDate === "string") query.set("date", shiftDate);
-    return `/staff?tab=schedule${query.size ? `&${query}` : ""}`;
+    return homeShiftHref(task.entityId, typeof shiftDate === "string" ? shiftDate : null);
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
@@ -158,8 +155,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   ]);
   const alertItems: HomeAttentionItem[] = alerts.map(alert => {
     const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
+    // The legacy manage-staff redirect opens Team, not Schedule. Link directly
+    // to Schedule so the meal-break fix is reachable before Step 13 merges.
+    const href = alert.kind === "meal_break"
+      ? homeShiftHref(String(alert.payload.employeeId ?? ""), String(alert.payload.date ?? ""))
+      : description.actionHref;
     return { id: "alert:" + alert.id, title: description.title, actionLabel: description.actionLabel,
-      href: homeAttentionHref({ kind: "alert", href: description.actionHref }), impactCents: alert.impactCents };
+      href: homeAttentionHref({ kind: "alert", href }), impactCents: alert.impactCents };
   });
   // Alerts for a missing bill and unmatched catalog items describe the same work.
   const coveredBills = new Set(alerts.filter(a => a.kind === "missing_bill").map(a => String(a.payload.categoryCode ?? "")));
@@ -178,7 +180,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       id: "bill:" + line.categoryCode, title: t("missingCostBannerText", {category: tCategories(line.categoryCode)}),
       actionLabel: t("missingCostBannerAction"), href: homeAttentionHref({kind:"bill" as const,category:line.categoryCode}), impactCents: null
     })),
-    ...(vm.coverage.actualDays < vm.coverage.expectedDays ? [{
+    ...(!vm.isGettingStarted && vm.coverage.actualDays < vm.coverage.expectedDays ? [{
       id:"missing-sales", title:t("attentionSalesMissing",{count:vm.coverage.expectedDays-vm.coverage.actualDays}),
       actionLabel:posStatus?.provider==="toast" && posStatus.status==="active" ? t("attentionSyncToast") : t("attentionUploadSales"),
       href:homeAttentionHref({kind:"missing_sales" as const,toastConnected:posStatus?.provider==="toast" && posStatus.status==="active"}),impactCents:null
