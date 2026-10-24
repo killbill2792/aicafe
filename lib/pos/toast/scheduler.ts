@@ -107,13 +107,22 @@ async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt
    if(rows.length>100)throw new ToastApiError("invalid_response");
    for(const o of rows){
     if(typeof o!=="object"||o===null)throw new ToastApiError("invalid_response");
-    const date=(o as {businessDate?:unknown}).businessDate;
-    if(typeof date!=="number"||!Number.isInteger(date))throw new ToastApiError("invalid_response");
-    const txt=String(date);
-    if(!/^20\d{6}$/.test(txt))throw new ToastApiError("invalid_response");
-    const iso=txt.slice(0,4)+"-"+txt.slice(4,6)+"-"+txt.slice(6);
-    if(Number.isNaN(Date.parse(iso+"T12:00:00Z")))throw new ToastApiError("invalid_response");
-    discovered.add(iso);
+    const row=o as {businessDate?:unknown;openedDate?:unknown};
+    const txt=typeof row.businessDate==="number"&&Number.isInteger(row.businessDate)
+     ?String(row.businessDate):"";
+    let day:string;
+    if(/^20\\d{6}$/.test(txt)){
+     day=txt.slice(0,4)+"-"+txt.slice(4,6)+"-"+txt.slice(6);
+     if(Number.isNaN(Date.parse(day+"T12:00:00Z")))
+      throw new ToastApiError("invalid_response");
+    }else if(typeof row.openedDate==="string"&&Number.isFinite(Date.parse(
+      row.openedDate.replace(/([+-]\\d{2})(\\d{2})$/,"$1:$2")))){
+     const opened=new Date(row.openedDate.replace(/([+-]\\d{2})(\\d{2})$/,"$1:$2"));
+     const localOpened=localClock(opened,m.toast_time_zone);
+     day=localOpened.minutes<m.closeout_hour*60
+      ?addCalendarDays(localOpened.today,-1):localOpened.today;
+    }else throw new ToastApiError("invalid_response");
+    if(day<clock.today)discovered.add(day);
    }
    if(rows.length<100)break;
    if(page===300)throw new ToastApiError("invalid_response");
