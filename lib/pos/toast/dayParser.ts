@@ -134,10 +134,13 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
   if(active){includedChecks++;if(c.paymentStatus==="OPEN"||c.paymentStatus==="PAID")openChecks++;}
   known(w,c.paymentStatus,["OPEN","PAID","CLOSED", "VOIDED"]);
   if(active){
+   if(c.amount==null)warn(w,"missing_check_amount");
+   if(c.taxAmount==null)warn(w,"missing_tax_amount");
    before+=cents(c.amount,w);tax+=cents(c.taxAmount,w);
    discounts+=addDiscounts(c.appliedDiscounts,true,w);
    for(const sc of c.appliedServiceCharges??[]){
     const value=cents(sc.chargeAmount,w);
+    if(sc.chargeAmount==null)warn(w,"missing_service_charge_amount");
     if(sc.serviceChargeCategory==="FUNDRAISING_CAMPAIGN")before-=value;
     else if(sc.gratuity)gratuity+=value;
     else services+=value;
@@ -169,9 +172,13 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
    known(w,s.taxInclusion,["INCLUDED","NOT_INCLUDED","INHERITED"]);
    known(w,s.selectionType,["NONE","HOUSE_ACCOUNT_PAY_BALANCE","GIFT_CARD","OPEN_ITEM","COMBO","MODIFIER"]);
    const deferred=Boolean(s.deferred||s.selectionType==="HOUSE_ACCOUNT_PAY_BALANCE");
-   if(deferred&&!s.voided)before-=cents(s.price,w);
+   if(deferred&&!s.voided){
+     if(s.price==null)warn(w,"missing_deferred_price");
+     before-=cents(s.price,w);
+   }
    if(s.voided&&!isVoid)warn(w,"unknown_shape");
-   if(s.quantity!=null&&s.quantity<=0)warn(w,"nonpositive_quantity");
+   if(s.quantity==null)warn(w,"missing_quantity");
+   else if(s.quantity<=0)warn(w,"nonpositive_quantity");
    if(!s.voided&&!deferred){
     discounts+=addDiscounts((s.appliedDiscounts??[]).map(d=>({
       ...d,
@@ -180,6 +187,7 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
    }
    // Voided selections are retained with zero net and never count as sold.
    if(!deferred){
+    if(!s.voided&&s.price==null)warn(w,"missing_selection_price");
     lines.push({posItemId:s.item?.guid?"toast:"+restaurantGuid+":"+s.item.guid:null,
       name:s.displayName?.trim()||"Menu item",quantity:s.quantity??0,
       netSalesCents:s.voided?0:cents(s.price,w)-cents(s.refundDetails?.refundAmount,w),
@@ -195,6 +203,7 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
    known(w,p.paymentStatus,["OPEN","PAID","CLOSED","AUTHORIZED","CAPTURED","VOIDED","DENIED","CANCELLED","ERROR","ERROR_NETWORK"]);
    const invalid=p.voided||["VOIDED","DENIED","CANCELLED","ERROR","ERROR_NETWORK"].includes(p.paymentStatus??"");
    if(invalid)continue;
+   if(p.refund&&p.refund.refundAmount==null)warn(w,"missing_refund_amount");
    const amount=cents(p.refund?.refundAmount,w);
    refunds+=amount;
    tips+=cents(p.tipAmount,w)-cents(p.refund?.tipRefundAmount,w);
