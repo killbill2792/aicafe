@@ -38,7 +38,7 @@ create table public.toast_day_status(
  imported_at timestamptz,net_sales_cents bigint,gross_sales_cents bigint,
  discounts_cents bigint,refunds_cents bigint,tax_cents bigint,tip_cents bigint,
  order_count integer,open_check_count integer,service_charges_cents bigint,
- gratuity_cents bigint,tip_cents bigint,
+ gratuity_cents bigint,
  toast_net_sales_cents bigint,toast_orders_count integer,toast_discount_cents bigint,
  toast_refund_cents bigint,delta_net_cents bigint,delta_orders integer,
  recon_source text check(recon_source in ('toast_analytics','internal')),
