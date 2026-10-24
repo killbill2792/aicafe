@@ -189,20 +189,22 @@ function inlineMarkdown(
   const nodes: ReactNode[] = [];
   // No model-authored HTML or links: React escapes literal source text. Inline
   // code is rendered as text and is never reparsed as emphasis.
-  const pattern = /(\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_|`([^`\n]+)`)/g;
+  const pattern = /(\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_|`([^`\n]+)`)/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
     if (match.index > cursor) {
       nodes.push(...annotatedText(text.slice(cursor, match.index), absoluteStart + cursor, spans, labels, badged));
     }
-    const delimiter = match[2] !== undefined || match[3] !== undefined ? 2 : 1;
-    const content = match[2] ?? match[3] ?? match[4] ?? match[5] ?? match[6];
+    const delimiter = match[4] !== undefined || match[5] !== undefined ? 2 : match[2]!==undefined ? 1 : 1;
+    const content = match[2] ?? match[4] ?? match[5] ?? match[6] ?? match[7] ?? match[8];
     const inner = annotatedText(content, absoluteStart + match.index + delimiter, spans, labels, badged);
     const key = absoluteStart + match.index;
-    nodes.push(match[2] !== undefined || match[3] !== undefined
+    nodes.push(match[2] !== undefined
+      ? <a key={key} href={match[3]} target="_blank" rel="noopener noreferrer" className="underline text-accent-text">{inner}</a>
+      : match[4] !== undefined || match[5] !== undefined
       ? <strong key={key} className="font-bold">{inner}</strong>
-      : match[6] !== undefined
+      : match[8] !== undefined
         ? <code key={key} className="rounded bg-surface2 px-1">{inner}</code>
         : <em key={key}>{inner}</em>);
     cursor = match.index + match[0].length;
