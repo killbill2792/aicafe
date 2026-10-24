@@ -32,6 +32,14 @@ describe("shared numeric tokenizer",()=>{
    expect(tokens.map(t=>t.value)).toEqual([low,high]);
    expect(tokens[0].end).toBeLessThanOrEqual(tokens[1].start);
  });
+ it("keeps sentence punctuation out of bare AM/PM time tokens",()=>{
+   const text="We open at 8:00 AM.";
+   const tokens=tokenizeNumbers(text,"en");
+   expect(tokens.filter(t=>t.kind==="clock").map(t=>text.slice(t.start,t.end)))
+     .toEqual(["8:00 AM"]);
+   expect(tokenizeNumbers("We open at 7:30 a.m.","en").filter(t=>t.kind==="clock"))
+     .toHaveLength(1);
+ });
  it("does not allow a count to replace a percent-range endpoint",()=>{
    const tokens=tokenizeNumbers("Margin 10–20% after 10 orders","en");
    expect(tokens.filter(t=>t.kind==="percent")).toHaveLength(2);
