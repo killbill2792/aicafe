@@ -2,23 +2,31 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "@/i18n/navigation";
-import { setPayrollTaxRate } from "@/lib/actions/onboarding";
+import { savePayrollCostAssumption } from "@/lib/actions/payrollCosts";
 
 export default function PayrollTaxForm({
   initialPercent,
   labels,
 }: {
   initialPercent: number;
-  labels: { label: string; hint: string; continueLabel: string };
+  labels: { label: string; hint: string; continueLabel: string; invalid: string; saveFailed: string };
 }) {
   const router = useRouter();
   const [percent, setPercent] = useState(String(initialPercent));
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState("");
+  const rate = percent.trim() ? Number(percent) : Number.NaN;
+  const valid = Number.isFinite(rate) && rate >= 0 && rate <= 100;
 
   function handleContinue() {
+    if (!valid) { setError(labels.invalid); return; }
+    setError("");
     startTransition(async () => {
-      await setPayrollTaxRate(Number(percent) || 12);
-      router.push("/onboarding?step=4");
+      try {
+        const result = await savePayrollCostAssumption({ employerCostPercent: rate });
+        if (result.ok) router.push("/onboarding?step=4");
+        else setError(labels.saveFailed);
+      } catch { setError(labels.saveFailed); }
     });
   }
 
@@ -31,13 +39,16 @@ export default function PayrollTaxForm({
             type="number"
             inputMode="decimal"
             value={percent}
-            onChange={(e) => setPercent(e.target.value)}
-            className="h-12 w-20 rounded-xl border border-line px-2 text-end text-lg font-bold"
+            onChange={(e) => { setPercent(e.target.value); setError(""); }}
+            aria-invalid={!!error}
+            aria-describedby={error ? "onboarding-payroll-error" : undefined}
+            className={`h-12 w-20 rounded-xl border px-2 text-end text-lg font-bold ${error ? "border-neg" : "border-line"}`}
           />
           <span className="text-lg font-bold">%</span>
         </div>
       </label>
       <p className="text-sm text-ink-muted">{labels.hint}</p>
+      {error && <p id="onboarding-payroll-error" role="alert" className="text-neg">{error}</p>}
       <button type="button" onClick={handleContinue} disabled={isPending} className="h-14 rounded-full bg-accent text-lg font-bold text-on-accent">
         {labels.continueLabel}
       </button>
