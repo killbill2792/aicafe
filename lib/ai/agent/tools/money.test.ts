@@ -14,7 +14,7 @@ describe("Leo scoped money reads",()=>{
       getRecordedExpenses:async()=>({available:true,value:{totalCents:150000},quality:q}),
       getExpenseSummary:async()=>({available:true,value:[
         {label:"Rent",categoryCode:"rent",amountCents:50000,isEstimate:true,isMissing:false},
-        {label:"Utilities",categoryCode:"utilities",amountCents:10000,isEstimate:false,isMissing:false}],quality:q}),
+        {label:"Utilities",categoryCode:"utilities_power",amountCents:10000,isEstimate:false,isMissing:false}],quality:q}),
     }));
     expect(r.recordedActualTotalCents).toBeNull();
     expect(r.missing).toContain("categoryRecordedActualTotalUnavailable");
@@ -24,11 +24,11 @@ describe("Leo scoped money reads",()=>{
     const r=await moneyTools.get_expenses.execute({period:"month",category:"Supplies"},ctx({
       getRecordedExpenses:async()=>({available:true,value:{totalCents:120000},quality:q}),
       getExpenseSummary:async()=>({available:true,value:[
-        {label:"Supplies",categoryCode:"drink",amountCents:20000,isEstimate:false,isMissing:false},
-        {label:"Supplies",categoryCode:"paper",amountCents:15000,isEstimate:false,isMissing:false}],quality:q}),
+        {label:"Supplies",categoryCode:"supplies",amountCents:20000,isEstimate:false,isMissing:false},
+        {label:"Supplies",categoryCode:"other",amountCents:15000,isEstimate:false,isMissing:false}],quality:q}),
     }));
     expect(r.needsOwnerChoice).toBe(true);
-    expect((r.candidates as Array<{id:string}>).map(c=>c.id)).toEqual(["drink","paper"]);
+    expect((r.candidates as Array<{id:string}>).map(c=>c.id)).toEqual(["supplies","other"]);
   });
 
   it("does not call recurring bills recorded expenses",async()=>{
