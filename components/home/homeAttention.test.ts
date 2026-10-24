@@ -11,7 +11,11 @@ describe("Home attention", () => {
     expect(homeAttentionHref({kind:"unmatched"})).toBe("/menu/import-review");
     expect(homeAttentionHref({kind:"pantry"})).toBe("/menu/pantry");
     expect(homeAttentionHref({kind:"reconnect",provider:"toast"})).toBe("/more/toast");
-    expect(homeAttentionHref({kind:"reconnect",provider:"square"})).toBe("/more");
+    expect(homeAttentionHref({kind:"reconnect",provider:"square",locale:"es",squareConfigured:true}))
+      .toBe("/api/pos/square/connect?locale=es");
+    expect(homeAttentionHref({kind:"reconnect",provider:"square",locale:"ar",squareConfigured:false}))
+      .toBe("/more/uploads/sales");
+    expect(homeAttentionHref({kind:"reconnect",provider:"clover"})).toBe("/more/uploads/sales");
     expect(homeAttentionHref({kind:"alert",href:"/more/alerts/one#voids-review"})).toBe("/more/alerts/one#voids-review");
     expect(homeAttentionHref({kind:"price",href:"/menu/item/one"})).toBe("/menu/item/one");
     expect(homeAttentionHref({kind:"staff",href:"/staff?tab=schedule&date=2026-10-23&employee=abc"})).toBe("/staff?tab=schedule&date=2026-10-23&employee=abc");
