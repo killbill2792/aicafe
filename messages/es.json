@@ -163,6 +163,10 @@
     "other": "Otro"
   },
   "Bills": {
+    "amountKindLabel": "Tipo de importe",
+    "amountActual": "Importe real",
+    "amountEstimate": "Estimación (promedio mensual)",
+    "estimateBadge": "Estimación",
     "amountHint": "¿Cambia cada mes? Introduce un promedio",
     "dueDayOptional": "(opcional)",
     "missing": "Falta",
