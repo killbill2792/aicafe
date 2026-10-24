@@ -7,7 +7,7 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
 
-import type { Period } from "@/lib/viewmodels/period";
+import { daysForPeriod, type Period } from "@/lib/viewmodels/period";
 
 import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
@@ -24,7 +24,7 @@ import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
 import { formatCents } from "@/lib/calc";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
 
-import GettingStartedCard from "@/components/home/GettingStartedCard";
+import { gettingStartedAttention } from "@/components/home/GettingStartedCard";
 
 import PageShell from "@/components/shared/PageShell";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
@@ -153,7 +153,17 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   });
   // Alerts for a missing bill and unmatched catalog items describe the same work.
   const coveredBills = new Set(alerts.filter(a => a.kind === "missing_bill").map(a => String(a.payload.categoryCode ?? "")));
+  const missingFeeDays = daysForPeriod(snapshot, period).filter(day => day.netSalesCents > 0 && day.cardFeesStatus === "missing").length;
   const items: HomeAttentionItem[] = [
+    ...(vm.isGettingStarted ? gettingStartedAttention({
+      connectRegister: t("gettingStartedConnectRegister"), uploadSales: t("gettingStartedUploadSales"),
+      addBills: t("gettingStartedAddBills"), addStaff: t("gettingStartedAddStaff"),
+      actionLabel: t("attentionFix"),
+    }) : []),
+    ...(missingFeeDays > 0 ? [{
+      id:"fees",title:t("attentionFeesMissing",{count:missingFeeDays}),actionLabel:t("attentionAddFees"),
+      href:homeAttentionHref({kind:"fees" as const}),impactCents:null
+    }] : []),
     ...vm.missingCategories.filter(line => !coveredBills.has(line.categoryCode)).map(line => ({
       id: "bill:" + line.categoryCode, title: t("missingCostBannerText", {category: tCategories(line.categoryCode)}),
       actionLabel: t("missingCostBannerAction"), href: homeAttentionHref({kind:"bill" as const,category:line.categoryCode}), impactCents: null
@@ -220,11 +230,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         labels={Object.fromEntries(vm.buckets.map(b=>[b.code,labelFor(b.code)]))}
         coveredLabel={(label,date)=>t("coveredOn",{label,date})} locale={locale}/>
     </section>
-    {vm.isGettingStarted && <GettingStartedCard labels={{
-      title:t("gettingStartedTitle"),body:t("gettingStartedBody"),
-      connectRegister:t("gettingStartedConnectRegister"),uploadSales:t("gettingStartedUploadSales"),
-      addBills:t("gettingStartedAddBills"),addStaff:t("gettingStartedAddStaff")
-    }}/>}
     <HomeTaskSections items={items} title={t("needsAttention")} empty={t("attentionEmpty")} seeAll={t("taskSeeAll")}/>
     <SupervisorHomePanel
       initialThreadId={initialThread} initialProposalId={initialExperiment}
