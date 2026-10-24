@@ -63,6 +63,11 @@ export async function POST(request:Request){
       state:"verified",last_verified_at:at,last_error_category:null,scopes_available:scopesAvailable
     }).eq("business_id",businessId);
     if(updated)throw new ToastApiError("unavailable");
+    for(const mapping of mappings){
+      const {error:retryError}=await db.rpc("toast_requeue_failed",{
+        p_business_id:businessId,p_restaurant_guid:mapping.restaurant_guid});
+      if(retryError)throw new ToastApiError("unavailable");
+    }
     return json(200,{state:"verified",locationsVerified:mappings.length,scopesAvailable});
   } catch(err){
     const category=err instanceof ToastApiError?err.category:"unavailable";
