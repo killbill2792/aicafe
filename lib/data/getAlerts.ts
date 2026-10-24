@@ -118,7 +118,16 @@ async function readVoidsReview(
     .order("business_date", { ascending: true });
   if (error || !data) return { ok: false };
   return { ok: true, summary: summarizeVoidsRollups(
-    data.map((r) => ({business_date:r.business_date,voids_cents:Number(r.voids_cents),sales_data_status:r.sales_data_status})),
+    // Existing rollups do not store void-amount completeness. In particular,
+    // CSV sales mark sales_data_status=actual but deliberately discard voids.
+    // NEVER derive voidsCoverage="complete" from the sales status or a zero value.
+    data.map((r) => ({
+      business_date: r.business_date,
+      voids_cents: Number(r.voids_cents),
+      sales_data_status: r.sales_data_status,
+      voidsCoverage: "unknown" as const,
+    })),
     monthKey,
+    endDate,
   ) };
 }
