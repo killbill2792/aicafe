@@ -394,3 +394,30 @@ begin
 end $cleanup$;
 revoke all on function public.toast_cleanup_abandoned_pages() from public,anon,authenticated;
 grant execute on function public.toast_cleanup_abandoned_pages() to service_role;
+
+-- Cache optional menu/labor refresh stamps without editing canonical recipes or wages.
+create table public.toast_optional_sync_state(
+ business_id uuid not null,restaurant_guid uuid not null,
+ menu_last_updated text,menu_checked_local_day date,
+ roster_local_day date,labor_local_day date,jobs_local_day date,
+ primary key(business_id,restaurant_guid),
+ foreign key(business_id,restaurant_guid)
+ references public.toast_location_mappings(business_id,restaurant_guid));
+alter table public.toast_optional_sync_state enable row level security;
+revoke all on public.toast_optional_sync_state from public,anon,authenticated;
+grant select,insert,update,delete on public.toast_optional_sync_state to service_role;
+alter table public.toast_catalog_facts add column
+ price_known boolean generated always as (
+  price_cents is not null and pricing_strategy in ('BASE_PRICE','MENU_SPECIFIC_PRICE')
+ ) stored;
+
+create table public.toast_job_directory(
+ business_id uuid not null,restaurant_guid uuid not null,
+ job_guid uuid not null,name text,deleted boolean not null default false,
+ fetched_at timestamptz not null default now(),
+ primary key(business_id,restaurant_guid,job_guid),
+ foreign key(business_id,restaurant_guid)
+ references public.toast_location_mappings(business_id,restaurant_guid));
+alter table public.toast_job_directory enable row level security;
+revoke all on public.toast_job_directory from public,anon,authenticated;
+grant select,insert,update,delete on public.toast_job_directory to service_role;
