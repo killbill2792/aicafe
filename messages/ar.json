@@ -792,7 +792,8 @@
     "offToday": "لا توجد ساعات مسجلة اليوم",
     "now": "الآن",
     "payrollCostsSummary": "تكاليف صاحب العمل: {percent}٪ فوق الأجور (احتياطي)",
-    "payrollCostsEdit": "التعديل في القواعد والتكاليف"
+    "payrollCostsEdit": "التعديل في القواعد والتكاليف",
+    "payrollSaveFailed": "تعذر حفظ تكاليف صاحب العمل. حاول مجددًا."
   },
   "More": {
     "toastConnect": "ربط Toast",
@@ -2913,7 +2914,7 @@
     "whileOpen": "شخص أثناء ساعات العمل",
     "prepTiming": "التحضير والإنهاء",
     "invalidNumber": "أدخل قيمة صحيحة ضمن الحدود المسموحة.",
-    "rulesSummary": "استراحة الطعام بعد {meal} ساعة · الإضافي بعد {overtime} ساعة",
+    "rulesSummary": "استراحة الطعام بعد {mealHours} س {mealMinutes} د · الإضافي الأسبوعي بعد {otHours} س {otMinutes} د",
     "after": "بعد",
     "every": "كل",
     "applyRule": "تطبيق القاعدة",
