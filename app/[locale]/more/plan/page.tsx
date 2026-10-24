@@ -122,6 +122,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         daysInMonth: snapshot.daysInMonth,
         salesDaysCovered: coveredPlanOperatingDays(days, snapshot.business.openHours),
         operatingDaysInMonth: countPlanOperatingDays(snapshot.business.openHours, snapshot.monthKey),
+        monthKey: snapshot.monthKey, openHours: snapshot.business.openHours,
         payrollTaxRate: snapshot.business.payrollTaxRate,
       } : null} />
       <p className="text-[17px] leading-snug text-ink-muted">{t("simulationOnly")}</p>

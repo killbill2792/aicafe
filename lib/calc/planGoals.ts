@@ -84,6 +84,57 @@ export function hasCompletePlanHours(openHours: OpenHours | null | undefined): b
   return !!openHours && OPEN_HOURS_DAY_KEYS.every(key => Object.prototype.hasOwnProperty.call(openHours, key));
 }
 
+/** Hours which can realistically be removed from this month's open shifts.
+ * The 2–5 PM preset only counts time the shop actually opens during that slot.
+ * Unknown weekdays follow Money's "open unless explicitly closed" convention. */
+export function monthlyReducibleStaffHours(params: {
+  monthKey: string;
+  openHours: OpenHours | null | undefined;
+  hoursPerOpenDay: number;
+  afternoonOnly?: boolean;
+}): number | null {
+  const { monthKey, openHours, hoursPerOpenDay, afternoonOnly = false } = params;
+  if (!/^\d{4}-\d{2}$/.test(monthKey) || !Number.isFinite(hoursPerOpenDay) ||
+      hoursPerOpenDay < 0 || hoursPerOpenDay > 24) return null;
+  const [year, month] = monthKey.split("-").map(Number);
+  if (!Number.isInteger(year) || year < 1 || !Number.isInteger(month) || month < 1 || month > 12) return null;
+  const calendarDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  let totalMinutes = 0;
+  for (let day = 1; day <= calendarDays; day++) {
+    const date = `${monthKey}-${String(day).padStart(2, "0")}`;
+    if (regularHoursStateForDate(openHours, date) === "closed") continue;
+    const key = OPEN_HOURS_DAY_KEYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+    const intervals = openHours?.[key];
+    if (!intervals || intervals.length === 0) {
+      totalMinutes += Math.min(hoursPerOpenDay * 60, afternoonOnly ? 180 : 720);
+      continue;
+    }
+    const ranges = intervals.map(([open, close]) => {
+      const [oh, om] = open.split(":").map(Number);
+      const [ch, cm] = close.split(":").map(Number);
+      const from = oh * 60 + om;
+      let to = ch * 60 + cm;
+      if (to <= from) to += 1440;
+      return [from, to] as const;
+    }).sort((a, b) => a[0] - b[0]);
+    let unionMinutes = 0, start = ranges[0][0], end = ranges[0][1];
+    for (const [nextStart, nextEnd] of ranges.slice(1)) {
+      if (nextStart <= end) end = Math.max(end, nextEnd);
+      else {
+        unionMinutes += afternoonOnly
+          ? Math.max(0, Math.min(1020, end) - Math.max(840, start))
+          : end - start;
+        start = nextStart; end = nextEnd;
+      }
+    }
+    unionMinutes += afternoonOnly
+      ? Math.max(0, Math.min(1020, end) - Math.max(840, start))
+      : end - start;
+    totalMinutes += Math.min(hoursPerOpenDay * 60, unionMinutes);
+  }
+  return totalMinutes / 60;
+}
+
 export type PlanScenarioBase = {
   monthlyBillsCents: number;
   monthlyStaffCents: number;
@@ -95,6 +146,8 @@ export type PlanScenarioBase = {
   salesDaysCovered: number;
   /** Café's scheduled open days in this month, matching Money's staff projection. */
   operatingDaysInMonth: number;
+  monthKey: string;
+  openHours: OpenHours | null | undefined;
   payrollTaxRate: number;
 };
 export type PlanScenarioItem = {
@@ -116,6 +169,8 @@ export function simulatePlanChange(input: {
   item: PlanScenarioItem | null;
   newValueCents: number;
   staffHoursPerDay: number;
+  /** True only for the explicit one-less-person 2–5 PM preset. */
+  staffAfternoonOnly?: boolean;
   assumedHourlyWageCents: number;
   preset?: "allPrices" | "milk" | null;
   items?: readonly PlanScenarioItem[];
@@ -142,9 +197,13 @@ export function simulatePlanChange(input: {
   if (type === "staff") {
     // Round only once after the full month's hours and employer costs are applied.
     // Rounding the daily fractional-cent wage first accumulates false savings.
+    const eligibleHours = monthlyReducibleStaffHours({
+      monthKey: base.monthKey, openHours: base.openHours,
+      hoursPerOpenDay: staffHoursPerDay, afternoonOnly: input.staffAfternoonOnly,
+    });
+    if (eligibleHours === null) return null;
     const monthlySaving = Math.min(staff, Math.round(
-      staffHoursPerDay * assumedHourlyWageCents *
-      (1 + base.payrollTaxRate) * base.operatingDaysInMonth,
+      eligibleHours * assumedHourlyWageCents * (1 + base.payrollTaxRate),
     ));
     staff -= monthlySaving;
     profitDelta = monthlySaving;

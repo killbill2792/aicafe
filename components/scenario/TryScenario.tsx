@@ -18,6 +18,7 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
   const picked = items.find(item => item.id === id) ?? null;
   const [value, setValue] = useState(() => String((firstDrink?.priceCents ?? 0) / 100));
   const [staffHours, setStaffHours] = useState("0");
+  const [staffAfternoonOnly, setStaffAfternoonOnly] = useState(false);
   const [presetKind, setPresetKind] = useState<"allPrices" | "milk" | null>(null);
   const money = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
   const invalid = !Number.isFinite(Number(value)) || value.trim() === "" || Number(value) < 0 || Number(value) > 100000;
@@ -25,12 +26,14 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
     base, type: kind, item: picked, items, preset: presetKind,
     newValueCents: Math.round(Number(value) * 100),
     staffHoursPerDay: kind === "staff" ? Number(staffHours) : 0,
+    staffAfternoonOnly,
     assumedHourlyWageCents: WAGE_CENTS,
-  }) : null, [base, invalid, kind, picked, items, presetKind, staffHours, value]);
+  }) : null, [base, invalid, kind, picked, items, presetKind, staffHours, staffAfternoonOnly, value]);
 
   function pickType(next: "price" | "ingredient" | "staff") {
     setKind(next);
     setPresetKind(null);
+    setStaffAfternoonOnly(false);
     setValue(((next === "price" ? picked?.priceCents : picked?.ingredientsCentsToday) ?? 0) / 100 + "");
   }
   function pickItem(next: string) {
@@ -41,7 +44,7 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
   }
   function preset(type: "price" | "ingredient" | "staff", deltaCents: number) {
     pickType(type);
-    if (type === "staff") setStaffHours("3");
+    if (type === "staff") { setStaffHours("3"); setStaffAfternoonOnly(true); }
     else {
       setPresetKind(type === "price" ? "allPrices" : "milk");
       setValue(String(deltaCents / 100));
@@ -66,7 +69,7 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
     {presetKind && <p className="rounded-xl bg-surface p-3 text-[17px]">{t(presetKind === "allPrices" ? "allPricesExplanation" : "milkExplanation")}</p>}
     {kind === "staff" ? <label className="flex flex-col gap-2 text-[17px] font-semibold">
       {t("staffHours")}<input className="min-h-12 rounded-xl border border-line bg-card px-3" type="number" min="0" max="24" step="0.5"
-        value={staffHours} onChange={event => setStaffHours(event.target.value)} />
+        value={staffHours} onChange={event => { setStaffHours(event.target.value); setStaffAfternoonOnly(false); }} />
     </label> : !presetKind && <label className="flex flex-col gap-2 text-[17px] font-semibold">
       {kind === "price" ? t("newPrice") : t("newIngredientCost")}
       <input className="min-h-12 rounded-xl border border-line bg-card px-3" type="number" min="0" step="0.01"

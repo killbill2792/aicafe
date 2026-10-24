@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countPlanOperatingDays, coveredPlanOperatingDays, hasCompletePlanHours, hasUncoveredPlanOperatingDates, weekdayHourlyTarget, simulatePlanChange } from "./planGoals";
+import { countPlanOperatingDays, coveredPlanOperatingDays, hasCompletePlanHours, hasUncoveredPlanOperatingDates, monthlyReducibleStaffHours, weekdayHourlyTarget, simulatePlanChange } from "./planGoals";
 import { calculateBreakEvenSales } from "./breakEvenSales";
 
 const base = {
@@ -9,6 +9,8 @@ const base = {
   observedIngredientCents: 300000,
   observedProcessingFeesCents: 30000,
   daysInMonth: 30,
+  monthKey: "2026-04",
+  openHours: null,
   salesDaysCovered: 28,
   operatingDaysInMonth: 30,
   payrollTaxRate: 0.12,
@@ -99,7 +101,8 @@ describe("Plan goals", () => {
     expect(monthDays).toBe(22);
     expect(countPlanOperatingDays(null, "2026-10")).toBe(31);
     expect(countPlanOperatingDays({ sat: [], sun: [], fri: [] }, "2026-10")).toBe(17);
-    const staff = simulatePlanChange({ base: { ...base, daysInMonth: 31, operatingDaysInMonth: monthDays },
+    const staff = simulatePlanChange({ base: { ...base, daysInMonth: 31, monthKey: "2026-10",
+        openHours: { sat: [], sun: [] }, operatingDaysInMonth: monthDays },
       type: "staff", item: null, newValueCents: 0, staffHoursPerDay: 3, assumedHourlyWageCents: 1950 });
     const dailySaving = Math.round(3 * 1950 * 1.12);
     expect(staff?.monthlyProfitChangeCents).toBe(dailySaving * monthDays);
@@ -119,9 +122,25 @@ describe("Plan goals", () => {
       assumedHourlyWageCents: 1950 });
     expect(unavailable).toBeNull();
   });
+  it("never claims 2–5 PM staffing savings on morning-only shifts", () => {
+    const morning = { mon: [["06:00", "12:00"]] as [string,string][], tue: [["06:00", "12:00"]] as [string,string][],
+      wed: [["06:00", "12:00"]] as [string,string][], thu: [["06:00", "12:00"]] as [string,string][],
+      fri: [["06:00", "12:00"]] as [string,string][], sat: [] as [string,string][], sun: [] as [string,string][] };
+    expect(monthlyReducibleStaffHours({ monthKey: "2026-10", openHours: morning, hoursPerOpenDay: 3, afternoonOnly: true })).toBe(0);
+    const noSavings = simulatePlanChange({ base: { ...base, daysInMonth: 31, monthKey: "2026-10",
+      openHours: morning, operatingDaysInMonth: 22 },
+      type: "staff", item: null, newValueCents: 0, staffHoursPerDay: 3,
+      staffAfternoonOnly: true, assumedHourlyWageCents: 1950 });
+    expect(noSavings?.monthlyProfitChangeCents).toBe(0);
+    const afternoon = { ...morning, fri: [["15:00", "16:00"]] as [string,string][] };
+    // October 2026 has five Fridays, just one eligible hour each.
+    expect(monthlyReducibleStaffHours({ monthKey: "2026-10", openHours: afternoon, hoursPerOpenDay: 3, afternoonOnly: true })).toBe(5);
+    expect(monthlyReducibleStaffHours({ monthKey: "2026-10", openHours: morning, hoursPerOpenDay: 12 })).toBe(132);
+  });
   it("rounds partial-hour loaded staff costs once at the month total", () => {
     const fractional = simulatePlanChange({
-      base: { ...base, operatingDaysInMonth: 22, payrollTaxRate: 0.123 },
+      base: { ...base, daysInMonth: 31, monthKey: "2026-10",
+        openHours: { sat: [], sun: [] }, operatingDaysInMonth: 22, payrollTaxRate: 0.123 },
       type: "staff", item: null, newValueCents: 0, staffHoursPerDay: 0.5,
       assumedHourlyWageCents: 1999,
     });
