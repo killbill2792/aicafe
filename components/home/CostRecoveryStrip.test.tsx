@@ -51,7 +51,8 @@ describe("Home cost recovery line", () => {
     expect(html).toContain("إيجار");
     expect(html).not.toContain("Oct 2");
     const empty = renderToStaticMarkup(createElement(CostRecoveryStrip,{
-      buckets:[], ...copy, coveredLabel:(label,date)=>`${label} ✓ ${date}`,
+      buckets:[], ...copy, dataComplete:false, incompleteLabel:"غير مكتمل",
+      coveredLabel:(label,date)=>`${label} ✓ ${date}`,
     }));
     expect(empty).toContain("أضف الفواتير");
     expect(empty).not.toContain("0%");
