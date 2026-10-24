@@ -8,6 +8,10 @@ on:
       - '.github/workflows/owner-initiatives-m1-db.yml'
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rls:
     runs-on: ubuntu-latest

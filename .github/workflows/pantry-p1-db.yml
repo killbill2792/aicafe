@@ -8,6 +8,10 @@ on:
       - ".github/workflows/pantry-p1-db.yml"
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   postgres:
     runs-on: ubuntu-latest

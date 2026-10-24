@@ -6,11 +6,14 @@ on:
       - "app/**/staff/**"
       - "components/staff/**"
       - "lib/calc/scheduling/**"
-      - "messages/**"
       - "scripts/staff-pr155-screenshots.mjs"
       - ".github/workflows/staff-pr155-screenshots.yml"
   workflow_dispatch:
 permissions: { contents: read }
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   visual:
     runs-on: ubuntu-latest

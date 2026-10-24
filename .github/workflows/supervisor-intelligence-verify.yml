@@ -3,16 +3,39 @@ on:
   push:
     branches:
       - chatgpt/supervisor-finance-sales-voice-20261010
+    paths:
+      - 'lib/ai/conversations/voiceClient*'
+      - 'lib/ai/conversations/dictationState*'
+      - 'lib/ai/conversations/attachments*'
+      - 'lib/ai/conversations/context*'
+      - 'lib/ai/conversations/dateRange*'
+      - 'lib/ai/conversations/periodComparison*'
+      - 'lib/ai/supervisorFacts.server*'
+      - 'lib/ai/supervisorReads.server*'
+      - 'app/api/ai/transcribe/**'
+      - 'app/api/ai/threads/**'
+      - 'components/home/SupervisorChatComposer.tsx'
+      - '.github/workflows/supervisor-intelligence-verify.yml'
   pull_request:
     paths:
-      - 'lib/ai/**'
-      - 'lib/ai/conversations/**'
-      - 'app/api/ai/**'
+      - 'lib/ai/conversations/voiceClient*'
+      - 'lib/ai/conversations/dictationState*'
+      - 'lib/ai/conversations/attachments*'
+      - 'lib/ai/conversations/context*'
+      - 'lib/ai/conversations/dateRange*'
+      - 'lib/ai/conversations/periodComparison*'
+      - 'lib/ai/supervisorFacts.server*'
+      - 'lib/ai/supervisorReads.server*'
+      - 'app/api/ai/transcribe/**'
+      - 'app/api/ai/threads/**'
       - 'components/home/SupervisorChatComposer.tsx'
-      - 'messages/**'
       - '.github/workflows/supervisor-intelligence-verify.yml'
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest

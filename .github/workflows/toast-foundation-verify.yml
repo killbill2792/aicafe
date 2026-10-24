@@ -7,6 +7,10 @@ on:
       - 'supabase/migrations/20261012000040_toast_secure_access.sql'
       - 'docs/toast-implementation-pr1.md'
       - '.github/workflows/toast-foundation-verify.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest

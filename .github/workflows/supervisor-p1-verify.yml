@@ -6,15 +6,19 @@ on:
       - "lib/metrics/**"
       - "lib/ai/tools.ts"
       - "lib/ai/cafeTools.server.ts"
-      - "lib/ai/conversations/**"
+      - "lib/ai/conversations/toolRegistry*"
+      - "lib/ai/conversations/grounding.ts"
       - "lib/data/**"
       - "lib/operating/**"
       - ".github/workflows/supervisor-p1-verify.yml"
-      - "PROGRESS.md"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   p1:

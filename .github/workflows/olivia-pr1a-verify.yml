@@ -12,6 +12,10 @@ on:
       - "scripts/olivia-pr1a-create-concurrency.sh"
       - ".github/workflows/olivia-pr1a-verify.yml"
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   checks:
     runs-on: ubuntu-latest
