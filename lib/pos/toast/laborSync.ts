@@ -40,7 +40,7 @@ export async function syncToastLaborReadOnly(db:SupabaseClient,p:LocationParams,
  .eq("restaurant_guid",p.restaurantGuid).maybeSingle();
  if(error||!mapping?.verified_at||mapping.location_id!==p.locationId)
    throw new ToastApiError("unauthorized_location");
- const adapter=createToastAdapter({db,businessId:p.businessId,restaurantGuid:p.restaurantGuid});
+ const adapter=createToastAdapter({db,businessId:p.businessId,restaurantGuid:p.restaurantGuid,deadlineAt:p.deadlineAt});
  if(kind==="attendance"){
    const rows=mode==="modified"?await adapter.fetchAttendanceChanges(range):
      await adapter.fetchAttendanceFacts(range);
