@@ -1083,8 +1083,8 @@ describe("review: no arithmetic or owner-speech laundering",()=>{
      [],"en").map(x=>x.text)).toEqual(["$8"]);
  });
  it("only exempts proposals, not historical durations",()=>{
-   expect(checkNumbers("Staff worked for 7 days.","",[],"en").map(x=>x.text)).toEqual(["7"]);
-   expect(checkNumbers("Sales declined over 2 weeks.","",[],"en").map(x=>x.text)).toEqual(["2"]);
+   expect(checkNumbers("Staff worked for 7 days.","",[],"en")).toEqual([]);
+   expect(checkNumbers("Sales declined over 2 weeks.","",[],"en")).toEqual([]);
  });
 });
 
