@@ -6,7 +6,7 @@ export type AttentionTarget =
   | { kind: "bill"; category: ExpenseCategoryCode }
   | { kind: "missing_sales"; toastConnected: boolean }
   | { kind: "fees" | "unmatched" | "pantry" }
-  | { kind: "reconnect"; provider: string }
+  | { kind: "reconnect"; provider: string; locale?: "en" | "es" | "ar"; squareConfigured?: boolean }
   | { kind: "alert" | "price" | "staff" | "task"; href: string };
 
 export function homeAttentionHref(target: AttentionTarget): string {
@@ -16,7 +16,11 @@ export function homeAttentionHref(target: AttentionTarget): string {
     case "fees": return "/more/processing-fees";
     case "unmatched": return "/menu/import-review";
     case "pantry": return "/menu/pantry";
-    case "reconnect": return target.provider === "toast" ? "/more/toast" : "/more";
+    case "reconnect":
+      if (target.provider === "toast") return "/more/toast";
+      if (target.provider === "square" && target.squareConfigured !== false)
+        return `/api/pos/square/connect?locale=${target.locale ?? "en"}`;
+      return "/more/uploads/sales";
     case "alert":
     case "price":
     case "staff":
