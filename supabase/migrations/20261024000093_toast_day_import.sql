@@ -226,10 +226,16 @@ begin
  and pos_order_id not like 'toast:%'
  and coalesce((select toast_start_date from public.toast_location_mappings
       where business_id=p_business_id and restaurant_guid=p_restaurant_guid),p_business_date)<=p_business_date;
- -- Do not delete previously known void evidence while some orders are unparsed.
+ -- Incomplete pages preserve the unparsed orders' prior void facts, but
+ -- *replace* facts for successfully parsed orders, including orders no longer voided.
  if (p_summary->>'unparsed_count')::integer=0 then
   delete from public.toast_void_facts where business_id=p_business_id
    and location_id=p_location_id and order_business_date=p_business_date;
+ else
+  delete from public.toast_void_facts where business_id=p_business_id
+   and location_id=p_location_id and order_business_date=p_business_date
+   and order_guid in (select value::uuid from jsonb_array_elements_text(
+     coalesce(p_summary->'parsed_order_guids','[]'::jsonb)));
  end if;
  insert into public.toast_void_facts(business_id,location_id,selection_guid,order_guid,
   check_guid,order_business_date,void_business_date,voided_at,amount_cents,
@@ -250,6 +256,11 @@ begin
  if (p_summary->>'unparsed_count')::integer=0 then
   delete from public.toast_refund_facts where business_id=p_business_id
    and restaurant_guid=p_restaurant_guid and order_business_date=p_business_date;
+ else
+  delete from public.toast_refund_facts where business_id=p_business_id
+   and restaurant_guid=p_restaurant_guid and order_business_date=p_business_date
+   and order_guid in (select value::uuid from jsonb_array_elements_text(
+     coalesce(p_summary->'parsed_order_guids','[]'::jsonb)));
  end if;
  insert into public.toast_refund_facts(business_id,restaurant_guid,order_guid,payment_guid,
   order_business_date,refund_business_date,amount_cents)
@@ -338,6 +349,7 @@ begin
  update public.toast_sync_runs set state='completed',days_done=greatest(days_done,1),
   orders_unparsed=orders_unparsed+(p_summary->>'unparsed_count')::integer,finished_at=now()
  where id=p_run_id;
+ delete from public.toast_day_pages where run_id=p_run_id and business_date=p_business_date;
  return jsonb_build_object('orders',v_count,'net_sales_cents',v_net);
 end $$;
 do $$
