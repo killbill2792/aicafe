@@ -45,9 +45,9 @@ export default async function MorePage() {
   ]);
   const badges = buildMoreBadges(evidence);
   const number = new Intl.NumberFormat(locale);
-  const amount = badges.monthlyBillsCents === null ? null :
+  const amount = badges.monthlyBills === null ? null :
     new Intl.NumberFormat(locale, { style: "currency", currency: evidence.currency || "USD" })
-      .format(badges.monthlyBillsCents / 100);
+      .format(badges.monthlyBills.amountCents / 100);
   const hoursBadge: FixBadge | undefined = badges.hoursNotSet
     ? { label: t("hoursNotSet"), href: "/more/cafe-profile?focus=hours", warning: true } : undefined;
   const toastBadge: FixBadge | undefined = badges.toast
@@ -61,7 +61,9 @@ export default async function MorePage() {
       href: "/more/processing-fees", warning: true } : undefined;
   const billsBadge: FixBadge | undefined = badges.rentMissing
     ? { label: t("rentMissing"), href: "/more/bills?category=rent", warning: true }
-    : amount !== null ? { label: t("monthlyAmount", { amount }), href: "/more/bills" } : undefined;
+    : amount !== null && badges.monthlyBills !== null
+      ? { label: t(badges.monthlyBills.includesEstimates ? "monthlyAmountEstimated" : "monthlyAmount", { amount }), href: "/more/bills" }
+      : undefined;
   const alertsBadge: FixBadge | undefined = badges.alerts !== null
     ? { label: number.format(badges.alerts), href: "/more/alerts", warning: badges.alerts > 0 } : undefined;
   const languageNames = { en: t("english"), es: t("spanish"), ar: t("arabic") };

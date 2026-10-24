@@ -32,11 +32,29 @@ describe("More attention badges", () => {
     const rent={id:"r",categoryCode:"rent" as const,label:"Rent",amountCents:100000,frequency:"monthly" as const,dueDay:null,isEstimate:false};
     const water={...rent,id:"w",categoryCode:"water" as const,amountCents:1200,frequency:"weekly" as const};
     expect(buildMoreBadges({bills:[]}).rentMissing).toBe(true);
-    expect(buildMoreBadges({bills:[rent,water]}).monthlyBillsCents).toBe(105200);
+    expect(buildMoreBadges({bills:[rent,water]}).monthlyBills)
+      .toEqual({ amountCents: 105200, includesEstimates: false });
     expect(buildMoreBadges({bills:[rent]}).rentMissing).toBe(false);
-    expect(buildMoreBadges({}).monthlyBillsCents).toBeNull();
+    expect(buildMoreBadges({}).monthlyBills).toBeNull();
     expect(buildMoreBadges({}).rentMissing).toBe(false); // query unavailable, not missing rent
-    expect(buildMoreBadges({bills:[{...rent,amountCents:0}]}).monthlyBillsCents).toBe(0);
+    expect(buildMoreBadges({bills:[{...rent,amountCents:0}]}).monthlyBills)
+      .toEqual({ amountCents: 0, includesEstimates: false });
+  });
+  it("keeps estimated versus actual provenance alongside the total, even when mixed", () => {
+    const actual={id:"rent",categoryCode:"rent" as const,label:"Rent",amountCents:200000,
+      frequency:"monthly" as const,dueDay:null,isEstimate:false};
+    const estimate={id:"water",categoryCode:"water" as const,label:"Water",amountCents:6000,
+      frequency:"monthly" as const,dueDay:null,isEstimate:true};
+    expect(buildMoreBadges({bills:[actual,estimate]}).monthlyBills)
+      .toEqual({amountCents:206000,includesEstimates:true});
+    expect(buildMoreBadges({bills:[estimate]}).monthlyBills)
+      .toEqual({amountCents:6000,includesEstimates:true});
+    expect(buildMoreBadges({bills:[actual]}).monthlyBills)
+      .toEqual({amountCents:200000,includesEstimates:false});
+    expect(buildMoreBadges({bills:[{...estimate,amountCents:0}]}).monthlyBills)
+      .toEqual({amountCents:0,includesEstimates:true});
+    expect(buildMoreBadges({bills:[]}).monthlyBills)
+      .toEqual({amountCents:0,includesEstimates:false});
   });
   it("shows alert count including zero, not unknown as zero", () => {
     expect(buildMoreBadges({alertCount:0}).alerts).toBe(0);
@@ -57,8 +75,17 @@ describe("More navigation", () => {
   });
   it.each(["en","es","ar"])("has all new More strings in %s",(lang)=>{
     const t=JSON.parse(readFileSync(`messages/${lang}.json`,"utf8")).More;
-    for(const key of ["yourCafe","yourData","planGoals","settings","language","appearance","staffSchedule","hoursNotSet","connected","needsAttention","uploadsNeedReview","feesDaysMissing","rentMissing","monthlyAmount","signedInAs"])
+    for(const key of ["yourCafe","yourData","planGoals","settings","language","appearance","staffSchedule","hoursNotSet","connected","needsAttention","uploadsNeedReview","feesDaysMissing","rentMissing","monthlyAmount","monthlyAmountEstimated","signedInAs"])
       expect(t[key]).toBeTruthy();
+  });
+  it("renders mixed estimate totals with a distinct translated label",()=>{
+    expect(page).toContain('badges.monthlyBills.includesEstimates ? "monthlyAmountEstimated" : "monthlyAmount"');
+    for(const lang of ["en","es","ar"]){
+      const t=JSON.parse(readFileSync(`messages/${lang}.json`,"utf8")).More;
+      expect(t.monthlyAmountEstimated).toContain("{amount}");
+      expect(t.monthlyAmountEstimated).not.toBe(t.monthlyAmount);
+      expect(t.monthlyAmountEstimated.toLowerCase()).toMatch(lang==="en"?/estimat/:lang==="es"?/estimac/:/تقدير/);
+    }
   });
   it("removes Money and Menu header language controls",()=>{
     for(const name of ["money","menu"])

@@ -840,7 +840,8 @@
     "uploadsNeedReview": "{count} need review",
     "feesDaysMissing": "{count} days missing",
     "rentMissing": "Rent missing",
-    "monthlyAmount": "{amount} a month"
+    "monthlyAmount": "{amount} a month",
+    "monthlyAmountEstimated": "{amount} a month (includes estimates)"
   },
   "BreakEven": {
     "title": "Break-even plan",

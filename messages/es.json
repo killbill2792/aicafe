@@ -840,7 +840,8 @@
     "uploadsNeedReview": "{count} por revisar",
     "feesDaysMissing": "{count} días sin comisiones",
     "rentMissing": "Falta el alquiler",
-    "monthlyAmount": "{amount} al mes"
+    "monthlyAmount": "{amount} al mes",
+    "monthlyAmountEstimated": "{amount} al mes (incluye estimaciones)"
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",

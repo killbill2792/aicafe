@@ -27,7 +27,12 @@ export function buildMoreBadges(input: MoreBadgeInputs) {
     missingFeeDays: input.missingFeeDays ?? null,
     rentMissing: input.bills === undefined ? false :
       !input.bills.some((row) => row.categoryCode === "rent"),
-    monthlyBillsCents: input.bills === undefined ? null : totalMonthlyRecurringCostsCents(input.bills),
+    // Keep estimate provenance attached to the amount; the More UI must not
+    // accidentally present a mixed actual/estimated total as fully confirmed.
+    monthlyBills: input.bills === undefined ? null : {
+      amountCents: totalMonthlyRecurringCostsCents(input.bills),
+      includesEstimates: input.bills.some((bill) => bill.isEstimate),
+    },
     alerts: input.alertCount ?? null,
   };
 }

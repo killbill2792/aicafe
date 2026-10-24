@@ -840,7 +840,8 @@
     "uploadsNeedReview": "{count} ملفات تحتاج إلى مراجعة",
     "feesDaysMissing": "{count} أيام بلا رسوم مسجلة",
     "rentMissing": "الإيجار غير مسجل",
-    "monthlyAmount": "{amount} شهريًا"
+    "monthlyAmount": "{amount} شهريًا",
+    "monthlyAmountEstimated": "{amount} شهريًا (يشمل تقديرات)"
   },
   "BreakEven": {
     "title": "خطة نقطة التعادل",
