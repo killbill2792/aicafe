@@ -1431,7 +1431,7 @@
     "currentMarginMissing": "Esperando suficientes datos completos del negocio",
     "actual": "Basado en datos reales",
     "estimated": "Incluye datos estimados",
-    "targetMargin": "Margen de ganancia a probar",
+    "targetMargin": "Quiero conservar",
     "targetMarginHint": "Ingresa el margen operativo que quieres explorar. Esta simulación no se guarda como configuración del negocio.",
     "run": "Ejecutar simulación",
     "simulationOnly": "Solo simulación — no se cambian precios del menú",
@@ -1452,7 +1452,8 @@
     "change": "Cambio",
     "unavailableItem": "Necesita precio actual",
     "invalid": "Ingresa una meta entre 0% y 80%.",
-    "targetNotFeasible": "Esta meta no es viable con la estructura de costos actual usando solo precios."
+    "targetNotFeasible": "Esta meta no es viable con la estructura de costos actual usando solo precios.",
+    "targetMarginSuffix": "% de las ventas"
   },
   "SupervisorOwnerHelp": {
     "incompleteByDomain": "No se pudo confirmar la parte de {domain} de tu solicitud.",
