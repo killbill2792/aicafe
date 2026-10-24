@@ -187,3 +187,43 @@ begin
 end $cert$;
 revoke all on function public.toast_certify_day_voids(uuid,date) from public,anon,authenticated;
 grant execute on function public.toast_certify_day_voids(uuid,date) to service_role;
+
+
+-- Keep the first answer, flags, and visibility guard in one transaction.
+create function public.toast_answer_first_import_check(
+ p_business_id uuid,p_answer text,p_days date[],p_note text)
+returns void language plpgsql security definer set search_path=public as $answer$
+declare d date; loc record; n integer;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if p_answer not in ('looks_right','something_off')
+  or cardinality(p_days)>100 or length(coalesce(p_note,''))>2000
+  or (p_answer='something_off' and cardinality(p_days)=0)
+  or (p_answer='looks_right' and cardinality(p_days)<>0)
+ then raise exception 'invalid answer';end if;
+ select count(distinct business_date) into n from public.toast_day_status
+ where business_id=p_business_id and import_state='imported' and coverage_complete;
+ if n<7 then raise exception 'not ready';end if;
+ insert into public.toast_first_import_check(business_id,answered_at,answer,flagged_dates,note)
+ values(p_business_id,now(),p_answer,p_days,p_note)
+ on conflict(business_id) do update set
+ answered_at=excluded.answered_at,answer=excluded.answer,
+ flagged_dates=excluded.flagged_dates,note=excluded.note
+ where toast_first_import_check.answered_at is null;
+ if not found then raise exception 'already answered';end if;
+ foreach d in array p_days loop
+  for loc in select distinct s.restaurant_guid from public.toast_day_status s
+   where s.business_id=p_business_id and s.business_date=d
+    and s.import_state='imported' and s.coverage_complete loop
+   insert into public.toast_day_owner_flags(business_id,restaurant_guid,business_date,note)
+   values(p_business_id,loc.restaurant_guid,d,p_note)
+   on conflict(business_id,restaurant_guid,business_date) do update
+   set flagged_at=now(),cleared_at=null,note=excluded.note;
+  end loop;
+  if not found then raise exception 'unimported flagged date';end if;
+  perform public.toast_certify_day_voids(p_business_id,d);
+ end loop;
+end $answer$;
+revoke all on function public.toast_answer_first_import_check(uuid,text,date[],text)
+ from public,anon,authenticated;
+grant execute on function public.toast_answer_first_import_check(uuid,text,date[],text) to service_role;
