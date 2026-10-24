@@ -112,15 +112,44 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
  if(je)throw new ToastApiError("unavailable");
  let reportId=job?.report_request_guid as string|null;
  let requested=job?.requested_at as string|null;
- if(!reportId||job?.state==="missing"){
-  reportId=await client.requestDay(p.restaurantGuid,day);
-  requested=new Date().toISOString();
-  const {error}=await db.from("toast_analytics_jobs").upsert({
+ if(job?.state==="missing")return;
+ if(requested&&Date.now()-Date.parse(requested)>48*3600000){
+  const {error:expired}=await db.from("toast_analytics_jobs").upsert({
    business_id:p.businessId,restaurant_guid:p.restaurantGuid,business_date:day,
-   report_request_guid:reportId,requested_at:requested,
+   report_request_guid:reportId,requested_at:requested,state:"missing",
+   checked_at:new Date().toISOString(),last_error_category:"analytics_timeout"
+  },{onConflict:"business_id,restaurant_guid,business_date"});
+  if(expired)throw new ToastApiError("unavailable");
+  await writeReconciliation(db,p,day,{
+   analytics_state:"missing",recon_state:"owner_flagged",
+   warnings:{...status.warnings,analytics_timeout:1}
+  });
+  return;
+ }
+ if(!reportId){
+  requested??=new Date().toISOString();
+  const {error:pendingError}=await db.from("toast_analytics_jobs").upsert({
+   business_id:p.businessId,restaurant_guid:p.restaurantGuid,business_date:day,
+   report_request_guid:null,requested_at:requested,
    state:"pending",checked_at:null,last_error_category:null
   },{onConflict:"business_id,restaurant_guid,business_date"});
-  if(error)throw new ToastApiError("unavailable");
+  if(pendingError)throw new ToastApiError("unavailable");
+  try{
+   reportId=await client.requestDay(p.restaurantGuid,day);
+  }catch(e){
+   if(e instanceof ToastApiError&&e.category==="unavailable"){
+    // A provider 202 without a GUID is pending, not a new day failure.
+    await writeReconciliation(db,p,day,{analytics_state:"pending",
+     recon_state:"pending"});
+    return;
+   }
+   throw e;
+  }
+  const {error:save}=await db.from("toast_analytics_jobs").update({
+   report_request_guid:reportId
+  }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+   .eq("business_date",day);
+  if(save)throw new ToastApiError("unavailable");
  }
  const result=await client.getDay(reportId);
  if(result.pending){
