@@ -476,7 +476,7 @@ $menu$;
 -- Non-Toast writers (CSV, Square, re-sync) must not re-activate a replaced
 -- source on INSERT or UPDATE after the Toast day was imported.
 create or replace function public.toast_supersede_non_toast_order()
-returns trigger language plpgsql security invoker set search_path=public as $supersede$
+returns trigger language plpgsql security definer set search_path=public as $supersede$
 begin
  if new.pos_order_id not like 'toast:%' and exists (
   select 1 from public.toast_day_status d
@@ -501,7 +501,7 @@ create trigger toast_supersede_late_order
 -- the shared daily row after the Toast import. The trigger applies only to
 -- dates with an actual Toast import, leaving unrelated POS days unchanged.
 create or replace function public.toast_guard_daily_sales_coverage()
-returns trigger language plpgsql security invoker set search_path=public as $guard$
+returns trigger language plpgsql security definer set search_path=public as $guard$
 begin
  if new.sales_data_status='actual' and exists (
   select 1 from public.toast_day_status d where d.business_id=new.business_id
