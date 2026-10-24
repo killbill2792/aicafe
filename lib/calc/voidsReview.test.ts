@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeVoidsRollups, type VoidsRollup } from "./voidsReview";
+import { isUnusualVoids, summarizeVoidsRollups, type VoidsRollup } from "./voidsReview";
 
 const day = (
   date: string, cents: number, voidsCoverage: "complete" | "unknown" = "unknown",
@@ -20,6 +20,7 @@ describe("void amount coverage is independent of sales data coverage", () => {
   it("does not treat CSV actual-sales rollups with discarded voids as $0", () => {
     const csv = [day("2026-07-01", 0), day("2026-08-01", 0),
       day("2026-09-01", 0), day("2026-10-01", 0)];
+    expect(isUnusualVoids(summarizeVoidsRollups(csv, "2026-10", "2026-10-01"))).toBe(false);
     expect(summarizeVoidsRollups(csv, "2026-10", "2026-10-01")).toEqual({
       monthKey: "2026-10", thisMonthCents: null,
       previousThreeMonthAverageCents: null, days: [],
@@ -60,6 +61,8 @@ describe("void amount coverage is independent of sales data coverage", () => {
     rows.find(row => row.business_date === "2026-10-02")!.voids_cents = 25;
     expect(summarizeVoidsRollups(rows, "2026-10", "2026-10-02"))
       .toMatchObject({ thisMonthCents: 100, previousThreeMonthAverageCents: 101 });
+    rows.find(row => row.business_date === "2026-10-01")!.voids_cents = 15000;
+    expect(isUnusualVoids(summarizeVoidsRollups(rows, "2026-10", "2026-10-02"))).toBe(true);
   });
 
   it("refuses partial historical months and an uncovered current day", () => {
