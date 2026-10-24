@@ -92,7 +92,23 @@ export async function matchUploadedItem(matchId: string, formData: FormData): Pr
   if (updated) { logQueryError("matchUploadedItem:update",updated); return; }
   const {error: confirmed} = await supabase.from("pos_catalog_matches").update({status:"confirmed"})
     .eq("id",match.id).eq("business_id",businessId).eq("status","needs_review");
-  if (confirmed) logQueryError("matchUploadedItem:confirm",confirmed);
+  if (confirmed) { logQueryError("matchUploadedItem:confirm",confirmed); return; }
+  // Link already-imported CSV sales to this item. Never change quantity, revenue or fees.
+  const {data:groups,error:groupsError} = await supabase.from("csv_sales_import_groups")
+    .select("job_id").eq("business_id",businessId).eq("item_name",match.imported_name).is("menu_item_id",null);
+  if (!groupsError && groups?.length) {
+    const jobIds = [...new Set(groups.map(g=>g.job_id))];
+    const {error:groupUpdateError} = await supabase.from("csv_sales_import_groups").update({menu_item_id:item.id})
+      .eq("business_id",businessId).eq("item_name",match.imported_name).in("job_id",jobIds).is("menu_item_id",null);
+    if (groupUpdateError) logQueryError("matchUploadedItem:groups",groupUpdateError);
+    const {data:orders,error:ordersError} = await supabase.from("orders").select("id")
+      .eq("business_id",businessId).like("pos_order_id","csv-%");
+    if (!ordersError && orders?.length) {
+      const {error:lineError} = await supabase.from("order_lines").update({menu_item_id:item.id})
+        .in("order_id",orders.map(o=>o.id)).eq("name",match.imported_name).is("menu_item_id",null);
+      if (lineError) logQueryError("matchUploadedItem:orderLines",lineError);
+    }
+  }
   revalidatePath("/menu");
   revalidatePath("/menu/import-review");
 }
