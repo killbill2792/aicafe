@@ -27,10 +27,10 @@ export function reviewStaffDraft(
   const projected=shifts.map((s,index)=>{
     const person=people.find(p=>p.id===s.employee_id);
     if(!person)throw new Error("draft_person_not_found");
-    const trustedWage=wageRates&&Object.hasOwn(wageRates,person.id);
+    const trustedWage=wageRates!==undefined&&Object.hasOwn(wageRates,person.id);
     const cost=shiftCost({employeeId:person.id,date:s.date,start:s.start,end:s.end,
       breakMinutes:s.break_minutes,overnight:s.end<s.start,
-      wageCents:trustedWage?wageRates[person.id]:person.wageCents,role:person.role},
+      wageCents:trustedWage?wageRates?.[person.id]??null:person.wageCents,role:person.role},
       trustedWage?null:person.role?roleAverages.get(person.role.toLowerCase())??null:null,
       trustedWage?null:businessAverage);
     return {...cost,id:"olivia-"+index,employeeName:person.name,status:"draft"} satisfies DetailedShift;
