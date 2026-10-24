@@ -7,3 +7,12 @@ export function canRepullToastDay(enabled:boolean,busy:boolean,day:string,yester
  return enabled&&!busy&&Boolean(yesterday)&&day<=yesterday&&
   !queuedRanges.some(range=>range.from<=day&&range.to>=day);
 }
+
+/** A committed write must never be reported as failed just because the
+ * follow-up status GET failed. The GET independently displays its retry UI.
+ */
+export async function commitToastOwnerAction(write:()=>Promise<void>,refresh:()=>Promise<void>){
+ await write();
+ try{await refresh();return {refreshAvailable:true};}
+ catch{return {refreshAvailable:false};}
+}
