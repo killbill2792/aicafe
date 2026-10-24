@@ -12,6 +12,11 @@ import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import PageShell from "@/components/shared/PageShell";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { formatShiftTime } from "@/lib/alerts/shiftTime";
+import { formatCents } from "@/lib/calc/money";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { formatInTimeZone } from "date-fns-tz";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -28,6 +33,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
   const tCategories = await getTranslations("Categories");
   const categoryLabels = Object.fromEntries(EXPENSE_CATEGORY_CODES.map((c) => [c, tCategories(c)])) as Record<ExpenseCategoryCode, string>;
   const content = describeAlert(alert, t, (code) => categoryLabels[code as ExpenseCategoryCode] ?? code);
+  const voids = alert.kind === "voids" ? await readVoidsReview(snapshot.business.timezone) : null;
 
   if (alert.status === "new") {
     await setAlertStatus(alert.id, "seen");
@@ -58,6 +64,20 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
         <p className="text-sm text-ink-muted">{t("mealBreakImpactBasis")}</p>
       </section>}
 
+      {alert.kind === "voids" && <section id="voids-review" className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+        <h2 className="text-lg font-bold">{t("voidsReviewTitle")}</h2>
+        {voids?.ok ? <>
+          <Detail label={t("voidsThisMonth")} value={formatCents(voids.thisMonth, locale)} />
+          <Detail label={t("voidsAverage")} value={formatCents(voids.average, locale)} />
+          <h3 className="font-semibold">{t("voidsByDay")}</h3>
+          {voids.days.length === 0 ? <p className="text-sm text-ink-muted">{t("voidsNoData")}</p> :
+            <div className="flex flex-col gap-2">{voids.days.map((day) =>
+              <Detail key={day.date} label={formatBusinessDate(day.date, locale)} value={formatCents(day.cents, locale)} />
+            )}</div>}
+          <p className="text-sm text-ink-muted">{t("voidsPeopleUnavailable")}</p>
+        </> : <p className="text-sm text-ink-muted">{t("voidsReadError")}</p>}
+      </section>}
+
       <div className="rounded-2xl bg-warn-tint p-4 text-sm leading-snug text-warn-text">{t("neverAccusatoryNote")}</div>
 
       <a href={content.actionHref} className="flex h-14 items-center justify-center rounded-full bg-accent text-lg font-bold text-on-accent">
@@ -78,5 +98,37 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) { return <div className="flex justify-between gap-3 text-[17px]"><span className="text-ink-muted">{label}</span><strong className="text-end">{value}</strong></div>; }
+function Detail({ label, value }: { label: string; value: string; key?: string }) { return <div className="flex justify-between gap-3 text-[17px]"><span className="text-ink-muted">{label}</span><strong className="text-end">{value}</strong></div>; }
 function qualifyingBreakText(value: unknown, fallback: string, timezone: string, locale: string) { if (!Array.isArray(value)) return fallback; const found = value.find((entry) => entry && typeof entry === "object" && "start" in entry && "end" in entry && (new Date(String(entry.end)).getTime() - new Date(String(entry.start)).getTime()) >= 30 * 60_000); return found ? `${formatShiftTime(found.start, timezone, locale)}–${formatShiftTime(found.end, timezone, locale)}` : fallback; }
+
+/** Read-only, business-scoped rollups. Missing dates are not represented as recorded zeroes. */
+async function readVoidsReview(timezone: string): Promise<
+  { ok: true; thisMonth: number; average: number; days: { date: string; cents: number }[] } | { ok: false }
+> {
+  if (!isSupabaseConfigured()) return { ok: false };
+  const today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
+  const [year, month] = today.slice(0, 7).split("-").map(Number);
+  const priorStart = new Date(Date.UTC(year, month - 4, 1)).toISOString().slice(0, 10);
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const db = await createServerSupabaseClient();
+  const { data: { user } } = await db.auth.getUser();
+  if (!user) return { ok: false };
+  const businessId = await getActiveBusinessId(user.id);
+  const { data, error } = await db.from("daily_rollups")
+    .select("business_date, voids_cents")
+    .eq("business_id", businessId)
+    .gte("business_date", priorStart)
+    .lte("business_date", today)
+    .order("business_date", { ascending: true });
+  if (error || !data) return { ok: false };
+  const days = data.filter((row) => row.business_date >= monthStart)
+    .map((row) => ({ date: row.business_date, cents: Number(row.voids_cents) }));
+  const thisMonth = days.reduce((sum, day) => sum + day.cents, 0);
+  const prior = data.filter((row) => row.business_date < monthStart);
+  return { ok: true, thisMonth, average: prior.reduce((sum, row) => sum + Number(row.voids_cents), 0) / 3, days };
+}
+
+function formatBusinessDate(day: string, locale: string): string {
+  // Noon UTC avoids date shifts for negative timezone offsets.
+  return new Intl.DateTimeFormat(locale, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
+}
