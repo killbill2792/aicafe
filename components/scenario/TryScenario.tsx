@@ -69,7 +69,7 @@ export default function TryScenario({ items, base }: { items: PlanScenarioItem[]
     <div className="flex flex-wrap gap-2">
       <button type="button" onClick={() => preset("price", 25)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetPrice")}</button>
       <button type="button" onClick={() => preset("staff", 0)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetStaff")}</button>
-      <button type="button" onClick={() => preset("ingredient", 4)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetMilk")}</button>
+      <button type="button" onClick={() => preset("ingredient", 100)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetMilk")}</button>
     </div>
     {!base ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p> :
       kind !== "staff" && !presetKind && (!picked || picked.costStatus !== "READY" || picked.quantitySoldLast28Days <= 0) ?
