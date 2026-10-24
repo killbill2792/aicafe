@@ -6,7 +6,7 @@ import {createServerSupabaseClient} from "@/lib/supabase/server";
 import PageShell from "@/components/shared/PageShell";
 import BackHeader from "@/components/shared/BackHeader";
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
-import ToastSetupActions from "@/components/more/ToastSetupActions";
+import ToastOwnerDashboard from "@/components/more/ToastOwnerDashboard";
 import {trustedToastOrigin} from "@/lib/pos/toast/client";
 export const dynamic="force-dynamic";
 export default async function ToastConnectionPage() {
@@ -69,39 +69,7 @@ export default async function ToastConnectionPage() {
           connectedLastSync:t.raw("connectedLastSync"),noSyncYet:t("noSyncYet"),
           manualLocationHint:t("manualLocationHint"),chooseApiUrl:t("chooseApiUrl"),
         }}/>
-      <ToastSetupActions businessId={businessId}
-        restaurantGuids={[]}
-        enabled={setupReady}
-        pilotEnabled={setupReady &&
-          process.env.TOAST_PILOT_IMPORT_ENABLED==="true"}
-        reviewLabels={{
-          title:t("reviewTitle"),sourceRoster:t("sourceRoster"),sourceMenu:t("sourceMenu"),
-          refreshStaff:t("refreshStaff"),refreshMenu:t("refreshMenu"),
-          ownerEmployee:t("ownerEmployee"),ownerProduct:t("ownerProduct"),
-          ownerModifier:t("ownerModifier"),unmatched:t("unmatched"),
-          mapped:t("mapped"),approval:t("approval"),mappingWarning:t("mappingWarning"),
-          approve:t("approveMapping"),archived:t("archived"),
-          missingWage:t("missingWage"),attendanceReview:t("attendanceReview"),
-          noRecords:t("noRecords"),emptyChoice:t("emptyChoice"),
-          unknownPrice:t("unknownPrice"),priceCents:t("priceCents"),
-          unverified:t("unverified"),pending:t("pending"),error:t("error"),
-          success:t("success"),disabled:t("notEnabled"),matchNames:t("matchNames")
-        }}
-        labels={{
-          webhookSetup:t("webhookSetup"),createWebhook:t("createWebhook"),
-          webhookUrl:t("webhookUrl"),webhookSecret:t("webhookSecret"),
-          saveWebhookSecret:t("saveWebhookSecret"),webhookInactive:t("webhookInactive"),
-          syncPreferences:t("syncPreferences"),syncKind:t("syncKind"),
-          kindLabels:{orders:t("kindOrders"),attendance:t("kindAttendance"),schedules:t("kindSchedules"),
-            catalog:t("kindCatalog"),roster:t("kindRoster")},
-          everyMinutes:t("everyMinutes"),enablePolling:t("enablePolling"),
-          disablePolling:t("disablePolling"),pendingActivation:t("pendingActivation"),
-          corrections:t("corrections"),recovery:t("recovery"),
-          pending:t("pending"),error:t("error"),success:t("success"),
-          technicalDetails:t("technicalDetails"),daysMissing:t("daysMissing"),
-          syncAgain:t("syncAgain"),noMissingDays:t("noMissingDays"),
-          syncUnavailable:t("syncUnavailable"),statusUnavailable:t("statusUnavailable"),dayStaged:t("dayStaged")
-        }}/>
+      <ToastOwnerDashboard businessId={businessId} currency="USD"/>
       </>}
     </PageShell>
   );
