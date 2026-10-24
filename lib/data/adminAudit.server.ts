@@ -4,7 +4,6 @@ import "server-only";
 import { after } from "next/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { classifyOwnerQuestion, TOPIC_VERSION } from "@/lib/admin/topics";
-import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import { estimateSupervisorCostMicros } from "@/lib/ai/conversations/usage.server";
 import type { ConversationMessage, ConversationScope } from "@/lib/ai/conversations/contracts";
 import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
