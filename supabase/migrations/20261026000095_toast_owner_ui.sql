@@ -201,8 +201,20 @@ begin
   or (p_answer='something_off' and cardinality(p_days)=0)
   or (p_answer='looks_right' and cardinality(p_days)<>0)
  then raise exception 'invalid answer';end if;
- select count(distinct business_date) into n from public.toast_day_status
- where business_id=p_business_id and import_state='imported' and coverage_complete;
+ select count(*) into n from (
+  select distinct s.business_date from public.toast_day_status s
+  where s.business_id=p_business_id and s.import_state='imported'
+   and s.coverage_complete
+   and not exists(
+    select 1 from public.toast_location_mappings m
+    left join public.toast_day_status ds on ds.business_id=m.business_id
+     and ds.restaurant_guid=m.restaurant_guid and ds.business_date=s.business_date
+    where m.business_id=p_business_id and m.verified_at is not null
+     and s.business_date>=coalesce(m.toast_start_date,s.business_date)
+     and (ds.import_state is distinct from 'imported' or
+          not coalesce(ds.coverage_complete,false))
+   )
+ ) fully_complete;
  if n<7 then raise exception 'not ready';end if;
  insert into public.toast_first_import_check(business_id,answered_at,answer,flagged_dates,note)
  values(p_business_id,now(),p_answer,p_days,p_note)
