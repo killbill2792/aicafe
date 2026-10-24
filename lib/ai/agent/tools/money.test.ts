@@ -1,5 +1,6 @@
 import { describe,expect,it } from "vitest";
 import { moneyTools } from "./money";
+import {newResolveState} from "../resolve";
 import type { AgentToolContext } from "./index";
 const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,quality:{...q,missingInputs:["missingSource"]}};
