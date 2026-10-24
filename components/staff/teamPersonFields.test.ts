@@ -14,6 +14,7 @@ describe("Staff person typed fields",()=>{
   expect(parseWeeklyHours("25")).toBe(1500);
   expect(parseWeeklyHours("25.5")).toBe(1530);
   expect(parseWeeklyHours("٢٥٫٥")).toBe(1530);
+  expect(weeklyHoursInput(1530,"ar")).toContain("٢٥");
   for(const locale of ["en","es","ar"])for(const minutes of [1,59,61,1500,10079]){
    expect(parseWeeklyHours(weeklyHoursInput(minutes,locale))).toBe(minutes);
   }
