@@ -41,7 +41,7 @@ jobs:
         run: |
           git worktree add --detach "$RUNNER_TEMP/redesign16-base" "$BASE_SHA"
           npm ci
-          npm install --no-save --package-lock=false playwright@1.58.2
+          npm install --no-save --package-lock=false playwright@1.58.2 pngjs@7.0.0
           (cd "$RUNNER_TEMP/redesign16-base" && npm ci)
       - name: Capture baseline from local fixture only
         run: |
