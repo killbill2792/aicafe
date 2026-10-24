@@ -2903,12 +2903,17 @@
     "draftReview": "Revisar",
     "draftDiscard": "Descartar",
     "draftFutureWeek": "Elige una semana futura que empiece el lunes.",
-    "draftNames": "Dos personas tienen el mismo nombre. Distingue sus nombres para crear un borrador seguro.",
     "draftMissing": "Completa primero el horario de apertura, la disponibilidad o los datos del equipo.",
     "draftUnavailable": "Olivia no pudo preparar la semana. Inténtalo de nuevo.",
     "draftStale": "El horario ha cambiado. Crea otro borrador.",
     "draftActionError": "No se pudo guardar tu decisión. Revisa la propuesta de nuevo.",
-    "draftEditRequiresRefresh": "El borrador cambió. Genera una nueva tarjeta de aprobación antes de guardar."
+    "draftEditRequiresRefresh": "El borrador cambió. Genera una nueva tarjeta de aprobación antes de guardar.",
+    "draftInvalidShift": "Comprueba el turno, el descanso y posibles solapamientos antes de guardar.",
+    "draftBreakMinutes": "Descanso no remunerado (minutos)",
+    "draftHideReview": "Ocultar revisión",
+    "draftRetryApproval": "Reintentar aprobación",
+    "draftApplying": "Guardando tu decisión…",
+    "draftPartialCost": "Conocido: {known}; {count} salarios sin definir"
   },
   "FreeAccess": {
     "pricing": "Planes y precios",
