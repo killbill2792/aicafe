@@ -282,7 +282,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
               aria-invalid={Boolean(fieldErrors.timezone)} ref={(node) => { fieldRefs.current.timezone = node; }}
               value={shownTimezoneSearch} placeholder={labels.timezoneSearch}
               onFocus={() => { setTimezoneExpanded(true); setTimezoneActive(-1); }}
-              onClick={() => { if (!timezoneExpanded) { setTimezoneExpanded(true); setTimezoneActive(-1); } }
+              onClick={() => { if (!timezoneExpanded) { setTimezoneExpanded(true); setTimezoneActive(-1); } }}
               onChange={(e) => { setTimezoneTouched(true); setTimezoneSearch(e.target.value); setTimezone(""); setTimezoneExpanded(true); setTimezoneActive(-1); clearFieldError("timezone"); }}
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
