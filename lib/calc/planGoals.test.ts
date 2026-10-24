@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countPlanOperatingDays, weekdayHourlyTarget, simulatePlanChange } from "./planGoals";
+import { countPlanOperatingDays, hasCompletePlanHours, weekdayHourlyTarget, simulatePlanChange } from "./planGoals";
 import { calculateBreakEvenSales } from "./breakEvenSales";
 
 const base = {
@@ -76,6 +76,19 @@ describe("Plan goals", () => {
     expect(staff?.monthlyProfitChangeCents).toBe(dailySaving * monthDays);
     expect(staff?.monthlyProfitChangeCents).not.toBe(dailySaving * 31);
     expect(staff?.breakEvenChangeCents).toBeLessThan(0);
+  });
+  it("does not invent an effect for a café closed all month and flags incomplete hours", () => {
+    expect(hasCompletePlanHours(null)).toBe(false);
+    expect(hasCompletePlanHours({ sun: [] })).toBe(false);
+    expect(hasCompletePlanHours({
+      sun: [], mon: [["07:00", "15:00"]], tue: [["07:00", "15:00"]],
+      wed: [["07:00", "15:00"]], thu: [["07:00", "15:00"]],
+      fri: [["07:00", "15:00"]], sat: [],
+    })).toBe(true);
+    const unavailable = simulatePlanChange({ base: { ...base, operatingDaysInMonth: 0 },
+      type: "price", item, newValueCents: 525, staffHoursPerDay: 0,
+      assumedHourlyWageCents: 1950 });
+    expect(unavailable).toBeNull();
   });
   it("does not project profit for too little observed sales coverage", () => {
     expect(simulatePlanChange({ base: { ...base, salesDaysCovered: 0 },

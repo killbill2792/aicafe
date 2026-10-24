@@ -8,7 +8,7 @@ import ProfitGoalSimulator from "@/components/more/ProfitGoalSimulator";
 import TryScenario from "@/components/scenario/TryScenario";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { sumCents, summarizeResolvedSoldProductCosts } from "@/lib/calc";
-import { countPlanOperatingDays, weekdayHourlyTarget } from "@/lib/calc/planGoals";
+import { countPlanOperatingDays, hasCompletePlanHours, weekdayHourlyTarget } from "@/lib/calc/planGoals";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { getProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
 import { isBillCategory, missingCostDestination } from "@/lib/expenses/expectedCosts";
@@ -106,7 +106,12 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       fixCosts: money("addProductCosts"), fixOperating: money("addBills"),
     }} />}
     {tab === "what-if" && snapshot && <section className="rounded-card-lg bg-card p-5">
-      <TryScenario items={(snapshot.breakEvenProductCosts ?? snapshot.menuItems).map(item => ({
+      {!hasCompletePlanHours(snapshot.business.openHours) && <Link href="/more/cafe-profile?focus=hours"
+        className="mb-3 inline-flex min-h-12 items-center text-[17px] font-bold text-staff underline">
+        {t("setCafeHours")}
+      </Link>}
+      <TryScenario hoursComplete={hasCompletePlanHours(snapshot.business.openHours)}
+        items={(snapshot.breakEvenProductCosts ?? snapshot.menuItems).map(item => ({
         id: item.id, name: item.name, priceCents: item.priceCents, costStatus: item.costStatus, category: item.category, active: item.active,
         ingredientsCentsToday: item.ingredientsCentsToday, quantitySoldLast28Days: item.quantitySoldLast28Days,
       }))} base={recovery?.breakEven.kind === "ready" && !drinks?.unavailableReason ? {

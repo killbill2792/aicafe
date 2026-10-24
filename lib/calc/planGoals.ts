@@ -46,6 +46,11 @@ export function countPlanOperatingDays(openHours: OpenHours | null | undefined, 
   return count;
 }
 
+/** A partial or absent week schedule cannot prove how many days the café normally opens. */
+export function hasCompletePlanHours(openHours: OpenHours | null | undefined): boolean {
+  return !!openHours && OPEN_HOURS_DAY_KEYS.every(key => Object.prototype.hasOwnProperty.call(openHours, key));
+}
+
 export type PlanScenarioBase = {
   monthlyBillsCents: number;
   monthlyStaffCents: number;
@@ -86,7 +91,7 @@ export function simulatePlanChange(input: {
   if (!Number.isFinite(base.observedSalesCents) || base.observedSalesCents <= 0 ||
       !Number.isSafeInteger(base.daysInMonth) || base.daysInMonth < 1 || base.daysInMonth > 31 ||
       !Number.isSafeInteger(base.salesDaysCovered) || base.salesDaysCovered < 7 || base.salesDaysCovered > 28 ||
-      !Number.isSafeInteger(base.operatingDaysInMonth) || base.operatingDaysInMonth < 0 ||
+      !Number.isSafeInteger(base.operatingDaysInMonth) || base.operatingDaysInMonth < 1 ||
       base.operatingDaysInMonth > base.daysInMonth ||
       !Number.isFinite(base.payrollTaxRate) || base.payrollTaxRate < 0 ||
       !Number.isSafeInteger(newValueCents) || newValueCents < 0 ||

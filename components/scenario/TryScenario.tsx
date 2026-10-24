@@ -4,7 +4,9 @@ import { useLocale, useTranslations } from "next-intl";
 import { simulatePlanChange, type PlanScenarioBase, type PlanScenarioItem } from "@/lib/calc/planGoals";
 
 const WAGE_CENTS = 1950;
-export default function TryScenario({ items, base }: { items: PlanScenarioItem[]; base: PlanScenarioBase | null }) {
+export default function TryScenario({ items, base, hoursComplete = true }: {
+  items: PlanScenarioItem[]; base: PlanScenarioBase | null; hoursComplete?: boolean;
+}) {
   const t = useTranslations("Scenario");
   const locale = useLocale();
   const [kind, setKind] = useState<"price" | "ingredient" | "staff">("price");
@@ -88,6 +90,11 @@ export default function TryScenario({ items, base }: { items: PlanScenarioItem[]
           <strong className="block text-2xl">{money.format(result.monthlyProfitChangeCents / 100)}</strong>
         </div>
       </section> : <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p>}
+    {base && <p className="text-[17px] text-ink-muted">{t("coverageAssumption", {
+      salesDays: new Intl.NumberFormat(locale).format(base.salesDaysCovered),
+      openDays: new Intl.NumberFormat(locale).format(base.operatingDaysInMonth),
+    })}</p>}
+    {!hoursComplete && <p className="text-[17px] text-ink-muted">{t("hoursNotSetAssumption")}</p>}
     <p className="text-[15px] text-ink-muted">{kind === "staff" ? t("wageAssumption") : t("priceAssumption")}</p>
   </div>;
 }
