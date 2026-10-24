@@ -14,6 +14,7 @@ import { formatShiftTime } from "@/lib/alerts/shiftTime";
 import { formatCents } from "@/lib/calc/money";
 import { getVoidsReview } from "@/lib/data/getVoidsReview";
 import { Link } from "@/i18n/navigation";
+import { formatInTimeZone } from "date-fns-tz";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -31,6 +32,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
   const categoryLabels = Object.fromEntries(EXPENSE_CATEGORY_CODES.map((c) => [c, tCategories(c)])) as Record<ExpenseCategoryCode, string>;
   const content = describeAlert(alert, t, (code) => categoryLabels[code as ExpenseCategoryCode] ?? code);
   const voids = alert.kind === "voids" ? await getVoidsReview(snapshot.business.timezone, alert.payload.monthKey) : null;
+  const displayedImpact = alert.kind === "voids" ? (voids?.ok ? voids.summary.thisMonthCents : null) : alert.impactCents;
 
   if (alert.status === "new") {
     await setAlertStatus(alert.id, "seen");
@@ -44,8 +46,8 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-warn-tint text-warn">
           <PlainIcon code={content.icon as ExpenseIconCode} size={26} color="rgb(var(--c-warn-text))" />
         </span>
-        {alert.impactCents !== null && (
-          <><span className="text-sm font-bold text-warn">{t("potentialImpact")}</span><span className="font-headline text-[44px] font-bold leading-none text-warn">{formatCents(alert.impactCents, locale)}</span></>
+        {displayedImpact !== null && (
+          <><span className="text-sm font-bold text-warn">{t("potentialImpact")}</span><span className="font-headline text-[44px] font-bold leading-none text-warn">{formatCents(displayedImpact, locale)}</span></>
         )}
         <p className="text-base leading-snug text-ink">{content.subtitle}</p>
       </section>
@@ -65,7 +67,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
         <h2 className="text-lg font-bold">{t("voidsReviewTitle")}</h2>
         {voids?.ok ? <>
           <Detail
-            label={voids.summary.monthKey === new Intl.DateTimeFormat("en-CA", { timeZone: snapshot.business.timezone, year: "numeric", month: "2-digit" }).format(new Date()).slice(0, 7)
+            label={voids.summary.monthKey === formatInTimeZone(new Date(), snapshot.business.timezone, "yyyy-MM")
               ? t("voidsThisMonth")
               : t("voidsAlertMonth", { month: formatBusinessMonth(voids.summary.monthKey, locale) })}
             value={voids.summary.thisMonthCents === null ? t("voidsUnknown") : formatCents(voids.summary.thisMonthCents, locale)}
