@@ -20,9 +20,10 @@ vi.mock("next/cache",()=>({revalidatePath:()=>{}}));
 vi.mock("@/lib/data/getActiveBusinessId",()=>({getActiveBusinessId:async()=>state.businessId}));
 vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({
  auth:{getUser:async()=>({data:{user:{id:"33333333-3333-4333-8333-333333333333"}}})},
- from:(table:string)=>({
-   select:()=>({eq:()=>({eq:()=>({maybeSingle:async()=>({data:table==="memberships"?{role:"owner"}:{currency:state.currency,is_demo:false}})})})}),
- }),
+ from:(table:string)=>{
+   const filters={eq:()=>filters,maybeSingle:async()=>({data:table==="memberships"?{role:"owner"}:{currency:state.currency,is_demo:false}})};
+   return {select:()=>filters};
+ },
 })}));
 vi.mock("@/lib/data/proposalPrices.server",()=>({ownerMenuPrice:async()=>state.current}));
 vi.mock("./sales.server",()=>({readPriceExperimentSalesDays:async()=>[]}));

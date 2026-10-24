@@ -66,7 +66,7 @@ describe("recorded Responses streaming fixtures", () => {
     const result = await runAgentTurn({ownerText:"Menu?",context,provider});
     expect(requests).toHaveLength(3);
     expect(requests[2].tool_choice).toBe("none");
-    expect(JSON.stringify(requests[2].input)).toContain('"error":"validation"');
+    expect((requests[2].input as Array<{output?:string}>).filter(x=>x.output).map(x=>JSON.parse(x.output!)).every(x=>x.error==="validation")).toBe(true);
     expect(JSON.stringify(requests[2].input)).toContain("reason");
     const input = requests[2].input;
     expect(Array.isArray(input)).toBe(true);

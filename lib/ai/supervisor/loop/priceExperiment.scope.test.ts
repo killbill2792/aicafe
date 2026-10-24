@@ -5,7 +5,10 @@ const authState=vi.hoisted(()=>({businessId:"a0000000-0000-4000-8000-00000000099
 vi.mock("@/lib/data/getActiveBusinessId",()=>({getActiveBusinessId:async()=>authState.businessId}));
 vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({
  auth:{getUser:async()=>({data:{user:{id:"owner"}}})},
- from:(table:string)=>({select:()=>({eq:()=>({eq:()=>({maybeSingle:async()=>({data:table==="memberships"?{role:"owner"}:{currency:"USD",is_demo:false}})})})})}),
+ from:(table:string)=>{
+  const filters={eq:()=>filters,maybeSingle:async()=>({data:table==="memberships"?{role:"owner"}:{currency:"USD",is_demo:false}})};
+  return {select:()=>filters};
+ },
 })}));
 vi.mock("./sales.server",()=>({readPriceExperimentBaselineUnits:vi.fn(async()=>70),readPriceExperimentSalesDays:vi.fn(async()=>[])}));
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
