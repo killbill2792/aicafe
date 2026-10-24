@@ -619,3 +619,43 @@ select m.business_id,m.restaurant_guid,
 from public.toast_location_mappings m join public.businesses b on b.id=m.business_id;
 revoke all on public.toast_sync_health_v from public,anon,authenticated;
 grant select on public.toast_sync_health_v to service_role;
+
+-- A changed Toast closeout configuration invalidates prior date attribution.
+-- It must not leave stale business-wide sales or voids marked actual/complete.
+create function public.toast_invalidate_on_closeout_change()
+returns trigger language plpgsql security definer set search_path=public as $mapping$
+declare first_day date;last_day date;
+begin
+ if old.toast_time_zone is not distinct from new.toast_time_zone
+  and old.closeout_hour is not distinct from new.closeout_hour then return new;end if;
+ select min(business_date),max(business_date) into first_day,last_day
+ from public.toast_day_status
+ where business_id=new.business_id and restaurant_guid=new.restaurant_guid
+  and import_state='imported';
+ if first_day is null then return new;end if;
+ update public.toast_day_status set recon_state='pending',coverage_complete=false,
+  last_error_category='closeout_changed'
+ where business_id=new.business_id and restaurant_guid=new.restaurant_guid
+  and business_date between first_day and last_day;
+ update public.daily_rollups set sales_data_status='missing',
+  voids_status='unknown',voids_source=null
+ where business_id=new.business_id and business_date between first_day and last_day;
+ -- A long history is queued as bounded chunks. Existing facts remain visible
+ -- but cannot be certified until new Toast business-date grouping is pulled.
+ for first_day in select gs::date from generate_series(first_day,last_day,
+  interval '400 days') gs loop
+  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+   requested_from,requested_to,days_total)
+  values(new.business_id,new.restaurant_guid,'backfill',first_day,
+   least(first_day+399,last_day),least(first_day+399,last_day)-first_day+1)
+  on conflict(business_id,restaurant_guid,requested_from,requested_to)
+   where kind='backfill' and state in ('queued','running','paused_rate_limited')
+  do nothing;
+ end loop;
+ return new;
+end $mapping$;
+create trigger toast_closeout_configuration_changed
+ after update of toast_time_zone,closeout_hour on public.toast_location_mappings
+ for each row execute function public.toast_invalidate_on_closeout_change();
+revoke all on function public.toast_invalidate_on_closeout_change()
+ from public,anon,authenticated;
