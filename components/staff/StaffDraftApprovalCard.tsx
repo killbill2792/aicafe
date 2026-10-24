@@ -6,9 +6,11 @@ import {draftStaffWeekInPlace,reviseStaffWeekDraft} from "@/lib/actions/staffDra
 import {reviewStaffDraft,type StaffDraftInputShift} from "@/lib/calc/scheduling/staffDraftReview";
 import type {PersonForSchedule,AvailabilityEntry,DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
 import type {RuleSettings} from "@/lib/calc/scheduling/ruleChecks";
+import type {OpenHours} from "@/lib/business/openHours";
 import StaffDialog from "./StaffDialog";
 
-type Data={team:PersonForSchedule[];rules:RuleSettings;availability:AvailabilityEntry[];
+type Data={team:PersonForSchedule[];rules:RuleSettings&{coverage_enabled:boolean;min_headcount:number};
+  availability:AvailabilityEntry[];dates:string[];openHours:OpenHours|null;
   timezone:string;adjacentShifts:DetailedShift[];currency:string};
 type Proposal={proposalId:string;revision:number;state:string};
 export default function StaffDraftApprovalCard({week,locale,data,onClose,onApplied}:{
@@ -23,8 +25,10 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
   const [warning,setWarning]=useState(false);
   const [rates,setRates]=useState<Record<string,number|null>>({});
   const threadRequest=useRef<string|null>(null),draftRequest=useRef<string|null>(null);
+  const coverage=data.rules.coverage_enabled?{dates:data.dates,
+    openHours:data.openHours,minHeadcount:data.rules.min_headcount}:undefined;
   const preview=reviewStaffDraft(rows,data.team,data.rules,data.availability,
-    data.timezone,data.adjacentShifts,rates);
+    data.timezone,data.adjacentShifts,rates,coverage);
   const money=(cents:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:data.currency}).format(cents/100);
   const num=(n:number,maximumFractionDigits=0)=>new Intl.NumberFormat(locale,{maximumFractionDigits}).format(n);
   const localTime=(date:string,clock:string)=>new Intl.DateTimeFormat(locale,{
@@ -79,7 +83,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     if(!proposal||busy)return;
     if(!changed.length){void update("cancel");return;}
     try{reviewStaffDraft(changed,data.team,data.rules,data.availability,
-      data.timezone,data.adjacentShifts,rates);}catch{setError(t("draftInvalidShift"));return;}
+      data.timezone,data.adjacentShifts,rates,coverage);}catch{setError(t("draftInvalidShift"));return;}
     setBusy(true);setError("");
     const previous=proposal;let oldCancelled=false;
     try{
@@ -125,6 +129,9 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
         cost:preview.totals.unknownCount?t("draftPartialCost",{known:money(preview.totals.knownCostCents),count:num(preview.totals.unknownCount)}):money(preview.totals.knownCostCents),
         issues:num(preview.totals.ruleIssues)})}</p>
       {(warning||preview.totals.estimatedCount>0)&&<p className="mt-2 text-muted">{t("draftEstimateNote")}</p>}
+      {preview.totals.coverageGaps>0&&<p role="status"
+        className="mt-2 rounded-xl bg-warn-soft p-3 text-warn-text">
+        {t("draftCoverageGaps",{count:num(preview.totals.coverageGaps)})}</p>}
       <p className="mt-2 text-muted">{t("draftBaseWageNote")}</p>
       <p className="mt-2 text-muted">{t("draftNotSaved")}</p>
       <div className="mt-3 flex flex-wrap gap-2">
