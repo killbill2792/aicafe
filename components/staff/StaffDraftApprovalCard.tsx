@@ -2,7 +2,7 @@
 import {useState} from "react";
 import {useTranslations} from "next-intl";
 import {useRouter} from "next/navigation";
-import {draftStaffWeekInPlace} from "@/lib/actions/staffDraftInPlace";
+import {draftStaffWeekInPlace,reviseStaffWeekDraft} from "@/lib/actions/staffDraftInPlace";
 import {reviewStaffDraft,type StaffDraftInputShift} from "@/lib/calc/scheduling/staffDraftReview";
 import type {PersonForSchedule,AvailabilityEntry,DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
 import type {RuleSettings} from "@/lib/calc/scheduling/ruleChecks";
@@ -50,7 +50,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     finally{setBusy(false);}
   }
   async function update(action:"approve"|"cancel"){
-    if(!proposal||busy)return;
+    if(!proposal||busy||!changed.length)return;
     setBusy(true);setError("");
     try{
       const response=await fetch("/api/ai/threads/"+encodeURIComponent(threadId)+"/proposals",{
@@ -66,13 +66,29 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     }catch{setError(t("draftActionError"));}
     finally{setBusy(false);}
   }
+  async function replaceDraft(changed:StaffDraftInputShift[]){
+    if(!proposal||busy)return;
+    setBusy(true);setError("");
+    try{
+      const previous=proposal;
+      const cancelled=await fetch("/api/ai/threads/"+encodeURIComponent(threadId)+"/proposals",{
+        method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},
+        body:JSON.stringify({action:"cancel",proposalId:previous.proposalId,revision:previous.revision})});
+      if(!cancelled.ok)throw Error("cancel");
+      setProposal(null);
+      const result=await reviseStaffWeekDraft({week,threadId,requestKey:crypto.randomUUID(),
+        locale:locale==="ar"?"ar":locale==="es"?"es":"en",shifts:changed});
+      if(!result.ok)throw Error("revise");
+      setRows(changed);setProposal({proposalId:result.proposalId,revision:result.revision,state:"pending"});
+    }catch{setError(t("draftEditRequiresRefresh"));setProposal(null);}
+    finally{setBusy(false);}
+  }
   const saveEdit=()=>{
     if(editing===null||!draftEdited)return;
     const changed=rows.map((row,i)=>i===editing?draftEdited:row);
     // Proposal edits require a fresh, server-validated proposal. Never approve an
     // outdated effect while showing different draft rows.
-    setRows(changed);setEditing(null);setProposal(null);
-    setError(t("draftEditRequiresRefresh"));
+    setEditing(null);void replaceDraft(changed);
   };
   return <section className="rounded-2xl border border-line bg-surface p-4" aria-label={t("draftHeading")}>
     <div className="flex items-center justify-between gap-2">
@@ -101,7 +117,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
         {preview.shifts.map((s,i)=><div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 border-dashed border-line p-3">
           <span>{s.name} · {new Intl.DateTimeFormat(locale,{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(s.date+"T12:00:00Z"))} · {s.start}–{s.end}</span>
           <div><button type="button" className="min-h-12 px-3 underline" onClick={()=>{setEditing(i);setDraftEdited(rows[i]);}}>{t("edit")}</button>
-          <button type="button" className="min-h-12 px-3 text-neg" onClick={()=>{setRows(x=>x.filter((_,j)=>i!==j));setProposal(null);setError(t("draftEditRequiresRefresh"));}}>{t("remove")}</button></div>
+          <button type="button" className="min-h-12 px-3 text-neg" onClick={()=>void replaceDraft(rows.filter((_,j)=>i!==j))}>{t("remove")}</button></div>
         </div>)}
       </div>}
     </>}
