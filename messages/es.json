@@ -316,7 +316,9 @@
     "attentionFeesMissing": "Faltan comisiones de procesamiento de {count} días",
     "attentionAddFees": "Agregar comisiones",
     "costsIncomplete": "Aún faltan costos por verificar",
-    "attentionMatchUnavailable": "Hay que revisar la asociación de artículos"
+    "attentionMatchUnavailable": "Hay que revisar la asociación de artículos",
+    "attentionAlertsUnavailable": "Hay que revisar las alertas",
+    "attentionCheckAlerts": "Revisar alertas"
   },
   "Money": {
     "title": "Dinero",
