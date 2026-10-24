@@ -18,7 +18,7 @@ const unavailable=(source:string,period:{from:string;to:string}|null,missing:str
   ({source,period,agentId:"leo",missing:missing.length?missing:["sourceUnavailable"]});
 export const moneyTools={
   get_expenses:{
-    agentId:"leo",schema:period.extend({category:z.string().max(100).nullable()}),description:"Recorded actual expenses separately from recurring category estimates."
+    agentId:"leo",schema:period.extend({category:z.string().max(100).nullable()}),description:"Recorded actual expenses separately from recurring category estimates.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=period.extend({category:z.string().max(100).nullable()}).parse(raw);
       const chosen=resolvePeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
