@@ -364,7 +364,20 @@ begin
   values(p_business_id,p_restaurant_guid,'repull_modified',d,d,p_local_day,1)
   on conflict(business_id,restaurant_guid,requested_from,scan_local_day)
    where kind='repull_modified' do nothing;
-  if found then added:=added+1;end if;
+  if found then
+   added:=added+1;
+   -- A queued late edit makes previous reconciliation/void certification stale
+   -- even before the complete-day re-pull commits. Never demote prior sales.
+   update public.toast_day_status set recon_state='pending',
+    last_recon_attempt_at=null
+   where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+    and business_date=d and import_state='imported';
+   update public.daily_rollups set voids_status='unknown',voids_source=null
+   where business_id=p_business_id and (
+    business_date=d or business_date in (
+     select f.void_business_date from public.toast_void_facts f
+     where f.business_id=p_business_id and f.order_business_date=d));
+  end if;
  end loop;
  insert into public.toast_repull_scan_state(
   business_id,restaurant_guid,last_local_day,last_window_end,updated_at)
@@ -450,8 +463,9 @@ begin
  inserted:=public.toast_commit_repull_scan(p_business_id,p_restaurant_guid,
   p_local_day,p_days,p_window_end);
  -- A proven modified-date window covers all days fully contained in it.
- for d in select gs::date from generate_series(p_window_start::date,
-  p_window_end::date-1,'1 day'::interval) gs loop
+ for d in select gs::date from generate_series(
+  (p_window_start+interval '2 days')::date,
+  (p_window_end-interval '2 days')::date,'1 day'::interval) gs loop
   if d<p_local_day then
    insert into public.toast_void_repull_coverage(
     business_id,restaurant_guid,business_date,scanned_at,last_window_end)
@@ -658,4 +672,23 @@ create trigger toast_closeout_configuration_changed
  after update of toast_time_zone,closeout_hour on public.toast_location_mappings
  for each row execute function public.toast_invalidate_on_closeout_change();
 revoke all on function public.toast_invalidate_on_closeout_change()
+ from public,anon,authenticated;
+
+-- A fresh imported business day invalidates an older ERA report ID.
+-- This trigger runs inside the exact same transaction as toast_import_day.
+create function public.toast_invalidate_era_report_on_import()
+returns trigger language plpgsql security definer set search_path=public as $erareset$
+begin
+ if new.import_state='imported' then
+  update public.toast_analytics_jobs set report_request_guid=null,
+   requested_at=null,checked_at=null,state='pending',last_error_category=null
+  where business_id=new.business_id and restaurant_guid=new.restaurant_guid
+   and business_date=new.business_date;
+ end if;
+ return new;
+end $erareset$;
+create trigger toast_era_report_stale_after_import
+ after insert or update of imported_at on public.toast_day_status
+ for each row execute function public.toast_invalidate_era_report_on_import();
+revoke all on function public.toast_invalidate_era_report_on_import()
  from public,anon,authenticated;
