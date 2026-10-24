@@ -6,6 +6,7 @@ import { Link } from "@/i18n/navigation";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
+import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 
 import { daysForPeriod, type Period } from "@/lib/viewmodels/period";
@@ -55,7 +56,7 @@ function operatingTaskHref(task: OperatingTask): string {
     if (task.entityId) query.set("employee", task.entityId);
     const shiftDate = task.payload.shiftDate ?? task.payload.businessDate;
     if (typeof shiftDate === "string") query.set("date", shiftDate);
-    return `/more/manage-staff${query.size ? `?${query}` : ""}`;
+    return `/staff?tab=schedule${query.size ? `&${query}` : ""}`;
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
@@ -86,6 +87,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const usagePeriod=usageWeekEnding(snapshot.todayDateStr);
   const usageOver=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to}).then(r=>r.rows.filter(x=>x.status==="over")).catch(()=>[]);
   const vm = buildHomeViewModel(snapshot, period);
+  // Money and Supervisor agree on known costs and their evidence. Home must not
+  // bypass that canonical completeness gate when showing owner profit.
+  const moneyVm = buildProfitAndCostsViewModel(snapshot, period);
   const [t, tOperations, tCategories, tChat, tExperiment, tAlerts, tReconnect] = await Promise.all([
     getTranslations("Home"),
     getTranslations("Operations"),
@@ -146,7 +150,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     return { id: task.id, agentId: task.agentId, agentName: agentNames[task.agentId], title, href: operatingTaskHref(task) };
   };
 
-  const [alerts, unmatched] = await Promise.all([getOpenAlerts(), getCatalogMatchReview()]);
+  const [alerts, unmatched] = await Promise.all([
+    getOpenAlerts(),
+    // Matching is a secondary Home signal. A temporary match-query failure must
+    // not take down the owner’s key numbers and chat; the review link remains visible.
+    getCatalogMatchReview().catch(() => null),
+  ]);
   const alertItems: HomeAttentionItem[] = alerts.map(alert => {
     const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
     return { id: "alert:" + alert.id, title: description.title, actionLabel: description.actionLabel,
@@ -171,10 +180,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     })),
     ...(vm.coverage.actualDays < vm.coverage.expectedDays ? [{
       id:"missing-sales", title:t("attentionSalesMissing",{count:vm.coverage.expectedDays-vm.coverage.actualDays}),
-      actionLabel:posStatus?.provider==="toast" ? t("attentionSyncToast") : t("attentionUploadSales"),
-      href:homeAttentionHref({kind:"missing_sales" as const,toastConnected:posStatus?.provider==="toast"}),impactCents:null
+      actionLabel:posStatus?.provider==="toast" && posStatus.status==="active" ? t("attentionSyncToast") : t("attentionUploadSales"),
+      href:homeAttentionHref({kind:"missing_sales" as const,toastConnected:posStatus?.provider==="toast" && posStatus.status==="active"}),impactCents:null
     }] : []),
-    ...(unmatched.length>0 && !alerts.some(a=>a.kind==="unmatched_sales_items") ? [{
+    ...(unmatched === null ? [{
+      id:"match-unavailable",title:t("attentionMatchUnavailable"),actionLabel:t("attentionMatch"),
+      href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
+    }] : unmatched.length>0 && !alerts.some(a=>a.kind==="unmatched_sales_items") ? [{
       id:"unmatched",title:t("attentionUnmatched",{count:unmatched.length}),actionLabel:t("attentionMatch"),
       href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
     }]:[]),
@@ -194,11 +206,15 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         typeof task.payload.estimatedAmountCents==="number" ? task.payload.estimatedAmountCents : null})),
   ];
   const number = (value:number) => new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(value);
-  const pctChange = vm.changeVsLastPeriodPct;
+  // Compare owner profit only when both periods have independently proven costs.
+  const pctChange = moneyVm.changes.some(change => change.key === "ownerProfit")
+    ? vm.changeVsLastPeriodPct : null;
   const percentage = (value:number) => number(Math.round(value*100));
   const money = (cents:number) => formatCents(cents,locale);
-  const hasPartial = vm.coverage.actualDays < vm.coverage.expectedDays;
-  const hasEstimatedCosts = vm.isEstimate || daysForPeriod(snapshot, period).some(day =>
+  const costCompleteness = moneyVm.businessCosts.completeness;
+  const hasPartial = vm.coverage.actualDays < vm.coverage.expectedDays || costCompleteness === "partial";
+  const canShowProfit = costCompleteness === "complete" && moneyVm.ownerProfitDisplay.kind !== "unavailable";
+  const hasEstimatedCosts = moneyVm.businessCosts.estimatedInputs.length > 0 || daysForPeriod(snapshot, period).some(day =>
     day.cardFeesStatus === "estimated" || day.staffTaxStatus === "estimated");
   const changeLabel = pctChange===null ? null : t("changeVsLastPeriod",{
     pct:number(Math.abs(Math.round(pctChange))),direction:pctChange>=0?t("more"):t("less")});
@@ -212,16 +228,17 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <div className="mt-3 grid grid-cols-3 gap-2">
         <div className="min-w-0 rounded-2xl bg-paper p-3">
           <p className="text-[15px] font-bold text-ink-muted">{t("sales")}</p>
-          <p className="break-words font-headline text-xl font-bold text-ink">{hasPartial&&vm.coverage.actualDays===0?"—":money(vm.salesCents)}</p>
+          <p className="break-words font-headline text-xl font-bold text-ink">{vm.coverage.actualDays===0?"—":money(moneyVm.salesCents)}</p>
         </div>
         <div className="min-w-0 rounded-2xl bg-paper p-3">
-          <p className="text-[15px] font-bold text-ink-muted">{t("totalCosts")}</p>
-          <p className="break-words font-headline text-xl font-bold text-warn">{money(vm.totalCostsCents)}</p>
+          <p className="text-[15px] font-bold text-ink-muted">{t(costCompleteness === "complete" ? "totalCosts" : "knownCosts")}</p>
+          <p className="break-words font-headline text-xl font-bold text-warn">{costCompleteness === "unavailable" ? "—" : money(moneyVm.totalCostsCents)}</p>
         </div>
         <div className="min-w-0 rounded-2xl bg-paper p-3">
           <p className="text-[15px] font-bold text-ink-muted">{t("youKeep")}</p>
-          <p className="break-words font-headline text-xl font-bold text-ink">{vm.ownerProfitDisplay.kind==="unavailable"?"—":money(vm.ownerProfitDisplay.ownerProfitCents)}</p>
-          {vm.ownerProfitDisplay.kind!=="unavailable"&&vm.salesCents>0&&<p className="text-[13px] text-ink-muted">{t("ofSales",{pct:percentage(vm.keepRatio)})}</p>}
+          <p className="break-words font-headline text-xl font-bold text-ink">{canShowProfit ? money(moneyVm.ownerProfitCents) : "—"}</p>
+          {canShowProfit && moneyVm.salesCents>0 && <p className="text-[13px] text-ink-muted">{t("ofSales",{pct:percentage(vm.keepRatio)})}</p>}
+          {!canShowProfit && vm.coverage.actualDays>0 && <p className="text-[13px] text-ink-muted">{t("costsIncomplete")}</p>}
           {changeLabel&&<p className="mt-1 text-[13px] leading-tight text-ink-muted">{changeLabel}</p>}
         </div>
       </div>
