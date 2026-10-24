@@ -96,6 +96,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   ]);
   const tAccess=await getTranslations("FreeAccess");
   const posStatus = await getPosConnectionStatus();
+  // Square cannot complete OAuth without the redirect URI, even if an app ID and secret exist.
+  const squareReconnectReady = isSquareConfigured() && Boolean(process.env.SQUARE_REDIRECT_URI);
   const derivedTeam = buildOperationsTeamViewModel(snapshot, menu);
   const persistedTasks = await syncAndGetOperatingTasks([...derivedTeam.needsYou, ...derivedTeam.handled, ...derivedTeam.watching]);
   const team = projectOperatingTasks(persistedTasks.tasks);
@@ -176,11 +178,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     }] : []),
     ...(posStatus && posStatus.status!=="active" ? [{
       id:"reconnect",
-      title:posStatus.provider==="square" && !isSquareConfigured() ? t("attentionRegisterSetupUnavailable") : tReconnect("banner"),
-      actionLabel:posStatus.provider==="toast" || posStatus.provider==="square" && isSquareConfigured()
+      title:posStatus.provider==="square" && !squareReconnectReady ? t("attentionRegisterSetupUnavailable") : tReconnect("banner"),
+      actionLabel:posStatus.provider==="toast" || posStatus.provider==="square" && squareReconnectReady
         ? tReconnect("action") : t("attentionUploadSales"),
       href:homeAttentionHref({kind:"reconnect" as const,provider:posStatus.provider,
-        locale, squareConfigured:isSquareConfigured()}),impactCents:null
+        locale, squareConfigured:squareReconnectReady}),impactCents:null
     }]:[]),
     ...(vm.isGettingStarted ? gettingStartedAttention({
       connectRegister: t("gettingStartedConnectRegister"), uploadSales: t("gettingStartedUploadSales"),
