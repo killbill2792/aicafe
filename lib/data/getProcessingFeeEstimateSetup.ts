@@ -1,4 +1,5 @@
 import "server-only";
+import { knownProcessorCount, selectedFeeCoverageForSalesDays, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
@@ -16,12 +17,16 @@ import {
 export type ProcessingFeeEstimateSetup = {
   today: string;
   plan: OwnerConfirmedProcessingFeePlan | null;
+  coverageDays: FeeCoverageDay[];
   coverage: { salesDays: number; actualDays: number; estimatedDays: number; missingDays: number };
   sourceSummary: {
     connectedProvider: string | null;
+    processorCount: number;
     actualProviders: string[];
     actualFeeCents: number;
+    currency: string;
     trustedOrderDays: number;
+    untrustedFeeDates: string[];
   };
 };
 
@@ -30,8 +35,9 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
     return {
       today: formatInTimeZone(new Date(), "America/Los_Angeles", "yyyy-MM-dd"),
       plan: null,
+      coverageDays: [],
       coverage: { salesDays: 0, actualDays: 0, estimatedDays: 0, missingDays: 0 },
-      sourceSummary: { connectedProvider: null, actualProviders: [], actualFeeCents: 0, trustedOrderDays: 0 },
+      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, currency: "USD", trustedOrderDays: 0, untrustedFeeDates: [] },
     };
   }
 
@@ -43,31 +49,33 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
     return {
       today: formatInTimeZone(new Date(), "America/Los_Angeles", "yyyy-MM-dd"),
       plan: null,
+      coverageDays: [],
       coverage: { salesDays: 0, actualDays: 0, estimatedDays: 0, missingDays: 0 },
-      sourceSummary: { connectedProvider: null, actualProviders: [], actualFeeCents: 0, trustedOrderDays: 0 },
+      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, currency: "USD", trustedOrderDays: 0, untrustedFeeDates: [] },
     };
   }
 
   const { data: memberships, error: membershipError } = await supabase
     .from("memberships")
-    .select("business_id, businesses(is_demo, timezone)")
+    .select("business_id, businesses(is_demo, timezone, currency)")
     .eq("user_id", user.id);
   if (membershipError) throw membershipError;
   const own = (memberships ?? []).find((membership) => {
     const raw = membership.businesses as unknown as
-      | { is_demo: boolean; timezone: string }
-      | { is_demo: boolean; timezone: string }[]
+      | { is_demo: boolean; timezone: string; currency: string }
+      | { is_demo: boolean; timezone: string; currency: string }[]
       | null;
     const business = Array.isArray(raw) ? raw[0] : raw;
     return business?.is_demo === false;
   });
   if (!own) throw new Error("Own café not found.");
   const rawBusiness = own.businesses as unknown as
-    | { is_demo: boolean; timezone: string }
-    | { is_demo: boolean; timezone: string }[];
+    | { is_demo: boolean; timezone: string; currency: string }
+    | { is_demo: boolean; timezone: string; currency: string }[];
   const business = Array.isArray(rawBusiness) ? rawBusiness[0] : rawBusiness;
   const businessId = own.business_id;
   const timezone = business?.timezone ?? "America/Los_Angeles";
+  const currency = business?.currency || "USD";
   const today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
   const fromDate = formatInTimeZone(subDays(new Date(`${today}T12:00:00Z`), 89), "UTC", "yyyy-MM-dd");
 
@@ -104,11 +112,12 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
   if (ordersResult.error) throw ordersResult.error;
 
   const salesDays = (rollupsResult.data ?? []).filter((row) => Number(row.net_sales_cents) > 0);
+  const coverageDays = selectedFeeCoverageForSalesDays(salesDays, factsResult.data ?? []);
   const coverage = {
-    salesDays: salesDays.length,
-    actualDays: salesDays.filter((row) => row.card_fees_status === "actual").length,
-    estimatedDays: salesDays.filter((row) => row.card_fees_status === "estimated").length,
-    missingDays: salesDays.filter((row) => row.card_fees_status === "missing").length,
+    salesDays: coverageDays.length,
+    actualDays: coverageDays.filter((day) => day.status === "actual").length,
+    estimatedDays: coverageDays.filter((day) => day.status === "estimated").length,
+    missingDays: coverageDays.filter((day) => day.status === "missing").length,
   };
 
   const ordersByDate = new Map<string, ProcessingFeeOrderEvidence[]>();
@@ -122,12 +131,14 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
     ordersByDate.set(order.business_date, rows);
   }
 
-  const trustedOrderDays = salesDays.filter((row) =>
-    trustedOrderCountForProcessingFeeEstimate(
+  const trustedOrderDates = new Set(salesDays
+    .filter((row) => trustedOrderCountForProcessingFeeEstimate(
       ordersByDate.get(row.business_date) ?? [],
       Number(row.net_sales_cents),
-    ) !== null
-  ).length;
+    ) !== null)
+    .map((row) => row.business_date));
+  const trustedOrderDays = trustedOrderDates.size;
+  const untrustedFeeDates = coverageDays.filter((day) => day.status !== "actual" && !trustedOrderDates.has(day.date)).map((day) => day.date);
 
   const actualFacts = (factsResult.data ?? []).filter((fact) => fact.status === "actual");
   const actualProviders = [...new Set(actualFacts.map((fact) => String(fact.provider)).filter(Boolean))].sort();
@@ -135,15 +146,21 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
     (connectionsResult.data ?? []).find((connection) => connection.provider !== "demo" && connection.provider !== "csv")?.provider ??
     null;
 
+  const processorCount = knownProcessorCount(connectionsResult.data ?? [], factsResult.data ?? []);
+
   return {
     today,
+    coverageDays,
     plan: ownerConfirmedPlanForDate(plans, today) ?? plans.at(-1) ?? null,
     coverage,
     sourceSummary: {
       connectedProvider,
+      processorCount,
       actualProviders,
       actualFeeCents: actualFacts.reduce((sum, fact) => sum + Number(fact.amount_cents), 0),
+      currency,
       trustedOrderDays,
+      untrustedFeeDates,
     },
   };
 }

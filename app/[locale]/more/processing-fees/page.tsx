@@ -22,6 +22,7 @@ export default async function ProcessingFeesPage() {
         plan={setup.plan}
         today={setup.today}
         coverage={setup.coverage}
+        coverageDays={setup.coverageDays}
         sourceSummary={setup.sourceSummary}
         labels={{
           assumptionBanner: t("assumptionBanner"),
@@ -76,6 +77,22 @@ export default async function ProcessingFeesPage() {
           coverageMissing: t("coverageMissing"),
           coverageSalesDays: t("coverageSalesDays"),
           incompleteWarning: t("incompleteWarning"),
+          useRateForDays: t("useRateForDays"),
+          daysCovered: t("daysCovered"),
+          selectProcessor: t("selectProcessor"),
+          otherProcessor: t("otherProcessor"),
+          requiredProcessor: t("requiredProcessor"),
+          requiredEffectiveDate: t("requiredEffectiveDate"),
+          requiredCardShare: t("requiredCardShare"),
+          requiredRate: t("requiredRate"),
+          requiredRule: t("requiredRule"),
+          requiredAverageTicket: t("requiredAverageTicket"),
+          invalidMix: t("invalidMix"),
+          uploadFeeReport: t("uploadFeeReport"),
+          info: t("info"),
+          noNewCoverage: t("noNewCoverage"),
+          missingButton: t("missingButton"),
+          showDayBreakdown: t("showDayBreakdown"),
         }}
       />
     </PageShell>

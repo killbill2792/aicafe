@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import { useLocale } from "next-intl";
+import { firstUncoveredSalesDay, initialCardSalesShareBps, missingCoverageSaveOptions, prepareAdvancedRateDraft, activeRateDrafts, requiresAverageTicket, showAverageTicketField, untrustedDaysFromEffectiveDate, requiredRateMixErrors, canAddRateRule, validateRequiredFeeFields, isFeeFieldInvalid, type FeeCoverageDay } from "@/components/more/processingFeeDefaults";
 import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
-import { formatCents } from "@/lib/calc";
 import type { OwnerConfirmedProcessingFeePlan } from "@/lib/pos/processingFeeEstimate";
 import InfoPopover from "@/components/shared/InfoPopover";
 
@@ -61,6 +62,10 @@ type Labels = {
   coverageMissing: string;
   coverageSalesDays: string;
   incompleteWarning: string;
+  useRateForDays: string; daysCovered: string; selectProcessor: string; otherProcessor: string;
+  requiredProcessor: string; requiredEffectiveDate: string; requiredCardShare: string;
+  requiredRate: string; requiredRule: string; requiredAverageTicket: string;
+  invalidMix: string; uploadFeeReport: string; info: string; noNewCoverage: string; missingButton: string; showDayBreakdown: string;
 };
 
 type RuleDraft = {
@@ -74,9 +79,12 @@ type RuleDraft = {
 
 type SourceSummary = {
   connectedProvider: string | null;
+  processorCount: number;
   actualProviders: string[];
   actualFeeCents: number;
+  currency: string;
   trustedOrderDays: number;
+  untrustedFeeDates: string[];
 };
 
 function percentFromBps(value: number): string {
@@ -135,30 +143,46 @@ export default function ProcessingFeeEstimateForm({
   plan,
   today,
   coverage,
+  coverageDays,
   sourceSummary,
   labels,
 }: {
   plan: OwnerConfirmedProcessingFeePlan | null;
   today: string;
   coverage: { salesDays: number; actualDays: number; estimatedDays: number; missingDays: number };
+  coverageDays: FeeCoverageDay[];
   sourceSummary: SourceSummary;
   labels: Labels;
 }) {
   const router = useRouter();
+  const locale = useLocale();
+  const fmt = (number: number) => new Intl.NumberFormat(locale).format(number);
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: sourceSummary.currency || "USD" });
+  const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
+  const borderError = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
+  const errorText = (key: string) => fieldErrors[key] ? <span role="alert" className="text-xs font-normal text-red-700">{fieldErrors[key]}</span> : null;
   const [isPending, startTransition] = useTransition();
   const [processorLabel, setProcessorLabel] = useState(plan?.processorLabel ?? providerLabel(sourceSummary.connectedProvider));
-  const [effectiveFrom, setEffectiveFrom] = useState(plan?.effectiveFrom ?? today);
-  const [processedSalesShare, setProcessedSalesShare] = useState(plan ? percentFromBps(plan.processedSalesShareBps) : "");
+  const [otherSelected, setOtherSelected] = useState(() => {
+    const name = plan?.processorLabel ?? sourceSummary.connectedProvider;
+    return Boolean(name && !["Toast", "Square", "Clover"].some((provider) => provider.toLowerCase() === name.toLowerCase()));
+  });
+  const [effectiveFrom, setEffectiveFrom] = useState(firstUncoveredSalesDay(coverageDays, today));
+  const [processedSalesShare, setProcessedSalesShare] = useState(() => { const value = initialCardSalesShareBps(plan?.processedSalesShareBps ?? null, sourceSummary.processorCount); return value === null ? "" : percentFromBps(value); });
   const [processedTransactionShare, setProcessedTransactionShare] = useState(
     plan ? percentFromBps(plan.processedTransactionShareBps) : "",
   );
   const [averageTicket, setAverageTicket] = useState(dollarsFromCents(plan?.averageProcessedTicketCents ?? null));
   const [rules, setRules] = useState<RuleDraft[]>(() => initialRules(plan));
   const [advanced, setAdvanced] = useState(
-    Boolean(plan && (plan.rules.length > 1 || plan.processedSalesShareBps !== plan.processedTransactionShareBps)),
+    Boolean(plan && (plan.rules.length > 1 || plan.averageProcessedTicketCents !== null || plan.processedSalesShareBps !== plan.processedTransactionShareBps || plan.rules.some((rule) => rule.salesMixBps !== 10_000 || rule.transactionMixBps !== 10_000))),
   );
   const [error, setError] = useState<string | null>(null);
   const [savedSummary, setSavedSummary] = useState<typeof coverage | null>(null);
+  const [savedDraftSignature, setSavedDraftSignature] = useState<string | null>(null);
+  const [savedDays, setSavedDays] = useState<FeeCoverageDay[] | null>(null);
+  const [coveredCount, setCoveredCount] = useState<number | null>(null);
   const initialCompleteActualCoverage =
     coverage.salesDays > 0 && coverage.actualDays === coverage.salesDays && coverage.missingDays === 0;
   const [showEstimate, setShowEstimate] = useState(!initialCompleteActualCoverage);
@@ -169,7 +193,7 @@ export default function ProcessingFeeEstimateForm({
 
   function addRule() {
     setAdvanced(true);
-    setRules((current) => [
+    setRules((current) => canAddRateRule(current.length) ? [
       ...current,
       {
         id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `rule-${Date.now()}`,
@@ -179,16 +203,56 @@ export default function ProcessingFeeEstimateForm({
         salesMix: "",
         transactionMix: "",
       },
-    ]);
+    ] : current);
   }
 
   function removeRule(id: string) {
     setRules((current) => (current.length > 1 ? current.filter((rule) => rule.id !== id) : current));
   }
 
-  function save() {
+  function expandAdvanced() {
+    if (!advanced) {
+      const defaults = prepareAdvancedRateDraft(rules, processedTransactionShare, processedSalesShare, labels.standardRate);
+      setProcessedTransactionShare(defaults.transactionShare);
+      setRules(defaults.rules);
+    }
+    setAdvanced((value) => !value);
+  }
+
+  function save(coverMissing = false) {
+    const submittedEffectiveFrom = coverMissing ? missingCoverageSaveOptions(shownDays, today).effectiveFrom : effectiveFrom;
+    const relevantFeeDays = untrustedDaysFromEffectiveDate(sourceSummary.untrustedFeeDates, submittedEffectiveFrom);
+    const submittingRules = activeRateDrafts(rules, advanced);
+    const errors = validateRequiredFeeFields({
+      processorLabel, effectiveFrom, cardSalesShare: processedSalesShare,
+      percentageRate: firstRule.percentageRate, fixedFee: firstRule.fixedFee,
+      advanced, coverMissing,
+    }, labels);
+    const invalid = (key: string, message: string) => { errors[key] = message; };
+    if (advanced) {
+      if (!processedTransactionShare.trim() || bpsFromPercent(processedTransactionShare) === null) invalid("transactionShare", labels.requiredRule);
+      for (const rule of submittingRules) {
+        for (const name of ["label","percentageRate","fixedFee","salesMix","transactionMix"] as const) {
+          const value = rule[name];
+          if (name === "fixedFee" && !value.trim()) continue;
+          if (!value.trim() || (name !== "label" && (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > (name === "percentageRate" || name === "fixedFee" ? 50 : 100)))) invalid(rule.id + "-" + name, labels.requiredRule);
+        }
+      }
+
+      const mixErrors = requiredRateMixErrors(submittingRules, processedSalesShare, processedTransactionShare);
+      if (mixErrors.salesMix) invalid(submittingRules[0].id + "-salesMix", labels.invalidMix);
+      if (mixErrors.transactionMix) invalid(submittingRules[0].id + "-transactionMix", labels.invalidMix);
+    }
+    if (requiresAverageTicket(submittingRules, relevantFeeDays, advanced ? processedTransactionShare : processedSalesShare) && centsFromDollars(averageTicket,true) === null) invalid("averageTicket", labels.requiredAverageTicket);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) {
+      setError(labels.incompleteWarning);
+      // Validation may focus or highlight a field, but must never change which rules will be saved.
+      requestAnimationFrame(() => inputRefs.current[Object.keys(errors)[0]]?.focus());
+      return;
+    }
     setError(null);
-    setSavedSummary(null);
+    setCoveredCount(null);
 
     const salesShareBps = bpsFromPercent(processedSalesShare);
     const transactionShareBps = advanced ? bpsFromPercent(processedTransactionShare) : salesShareBps;
@@ -198,10 +262,10 @@ export default function ProcessingFeeEstimateForm({
     }
 
     const ruleDrafts = advanced
-      ? rules
+      ? submittingRules
       : [{
           ...firstRule,
-          label: labels.standardRate,
+          label: firstRule.label.trim() || labels.standardRate,
           salesMix: "100",
           transactionMix: "100",
         }];
@@ -237,8 +301,7 @@ export default function ProcessingFeeEstimateForm({
       return;
     }
 
-    const hasFixedFee = parsedRules.some((rule) => (rule?.fixedFeeCents ?? 0) > 0);
-    const needsAverageTicket = hasFixedFee && sourceSummary.trustedOrderDays < coverage.salesDays;
+    const needsAverageTicket = requiresAverageTicket(ruleDrafts, relevantFeeDays, advanced ? processedTransactionShare : processedSalesShare);
     const averageProcessedTicketCents = needsAverageTicket ? centsFromDollars(averageTicket, true) : null;
     if (needsAverageTicket && averageProcessedTicketCents === null) {
       setError(labels.incompleteWarning);
@@ -248,7 +311,7 @@ export default function ProcessingFeeEstimateForm({
     startTransition(async () => {
       const result = await saveOwnerProcessingFeeEstimatePlan({
         processorLabel: processorLabel.trim(),
-        effectiveFrom,
+        effectiveFrom: submittedEffectiveFrom,
         processedSalesShareBps: salesShareBps,
         processedTransactionShareBps: transactionShareBps,
         averageProcessedTicketCents,
@@ -259,12 +322,22 @@ export default function ProcessingFeeEstimateForm({
         return;
       }
       setSavedSummary(result.summary);
+      setSavedDraftSignature(draftSignature);
+      setSavedDays(result.coverageDays);
+      if (coverMissing) setCoveredCount(Math.max(0, shownCoverage.missingDays - result.summary.missingDays));
       router.refresh();
     });
   }
 
+  // Green saved confirmation only describes the form that was actually submitted.
+  const draftSignature = JSON.stringify({
+    processorLabel, effectiveFrom, processedSalesShare, processedTransactionShare,
+    averageTicket, rules, advanced,
+  });
   const shownCoverage = savedSummary ?? coverage;
+  const shownDays = savedDays ?? coverageDays;
   const connected = providerLabel(sourceSummary.connectedProvider);
+  const processorChoice = ["Toast", "Square", "Clover"].find((value) => value.toLowerCase() === processorLabel.toLowerCase()) ?? (otherSelected ? "Other" : "");
   const firstRule = rules[0] ?? {
     id: "rule-1",
     label: "",
@@ -273,8 +346,11 @@ export default function ProcessingFeeEstimateForm({
     salesMix: "100",
     transactionMix: "100",
   };
+  const activeRules = activeRateDrafts(rules, advanced);
   const firstFixedFee = Number(firstRule.fixedFee || 0);
-  const needsAverageTicket = firstFixedFee > 0 && sourceSummary.trustedOrderDays < coverage.salesDays;
+  const effectiveDayCount = untrustedDaysFromEffectiveDate(sourceSummary.untrustedFeeDates, effectiveFrom);
+  const oneTapDayCount = untrustedDaysFromEffectiveDate(sourceSummary.untrustedFeeDates, firstUncoveredSalesDay(shownDays, today));
+  const needsAverageTicket = requiresAverageTicket(activeRules, effectiveDayCount, advanced ? processedTransactionShare : processedSalesShare);
   const completeActualCoverage =
     shownCoverage.salesDays > 0 && shownCoverage.actualDays === shownCoverage.salesDays && shownCoverage.missingDays === 0;
 
@@ -298,8 +374,8 @@ export default function ProcessingFeeEstimateForm({
           )}
           <span className="rounded-full bg-paper px-3 py-1.5 text-xs font-bold text-ink">
             {labels.actualCoverage
-              .replace("{actual}", String(shownCoverage.actualDays))
-              .replace("{sales}", String(shownCoverage.salesDays))}
+              .replace("{actual}", fmt(shownCoverage.actualDays))
+              .replace("{sales}", fmt(shownCoverage.salesDays))}
           </span>
         </div>
 
@@ -307,13 +383,15 @@ export default function ProcessingFeeEstimateForm({
           <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">{labels.completeActualCoverage}</p>
         ) : shownCoverage.missingDays > 0 ? (
           <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">
-            {labels.missingCoverage.replace("{count}", String(shownCoverage.missingDays))}
+            {labels.missingCoverage.replace("{count}", fmt(shownCoverage.missingDays))}
           </p>
         ) : null}
 
+        {shownCoverage.missingDays > 0 && <button type="button" disabled={isPending} onClick={() => save(true)} className="min-h-12 rounded-full bg-accent px-4 text-sm font-bold text-on-accent disabled:opacity-40">{labels.useRateForDays.replace("{count}", fmt(shownCoverage.missingDays))}</button>}
+        {coveredCount !== null && <p role="status" className={`text-sm font-bold ${coveredCount ? "text-good" : "text-warn"}`}>{coveredCount ? labels.daysCovered.replace("{count}", fmt(coveredCount)) : labels.noNewCoverage}</p>}
         {sourceSummary.actualFeeCents > 0 && (
           <p className="text-sm text-ink-muted">
-            {formatCents(sourceSummary.actualFeeCents)} · {labels.coverageActual}
+            {currency.format(sourceSummary.actualFeeCents / 100)} · {labels.coverageActual}
           </p>
         )}
 
@@ -322,7 +400,7 @@ export default function ProcessingFeeEstimateForm({
           className="flex min-h-12 items-center justify-center gap-2 rounded-full border border-line px-4 text-sm font-bold text-ink no-underline"
         >
           <Upload aria-hidden="true" size={18} />
-          {labels.uploadActual}
+          {labels.uploadFeeReport}
         </Link>
       </section>
 
@@ -344,100 +422,121 @@ export default function ProcessingFeeEstimateForm({
         </div>
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-          <FieldTitle help={labels.processorHelp} helpLabel={`${labels.processor} info`}>{labels.processor}</FieldTitle>
-          <input
+          <FieldTitle help={labels.processorHelp} helpLabel={`${labels.processor} ${labels.info}`}>{labels.processor}</FieldTitle>
+          <select value={processorChoice} aria-invalid={isFeeFieldInvalid(fieldErrors, "processor")} ref={(node) => { inputRefs.current.processor = node; }} onChange={(event) => { setOtherSelected(event.target.value === "Other"); setProcessorLabel(event.target.value === "Other" ? "" : event.target.value); }} className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor")}>
+            <option value="">{labels.selectProcessor}</option><option value="Toast">Toast</option><option value="Square">Square</option><option value="Clover">Clover</option><option value="Other">{labels.otherProcessor}</option>
+          </select>
+          {processorChoice === "Other" && <input
             value={processorLabel}
             onChange={(event) => setProcessorLabel(event.target.value)}
             maxLength={80}
-            placeholder={labels.processorPlaceholder}
-            className="min-h-12 rounded-xl border border-line px-3 text-base"
-          />
+            placeholder={labels.otherProcessor}
+            ref={(node) => { inputRefs.current.processor = node; }}
+            aria-invalid={isFeeFieldInvalid(fieldErrors, "processor")}
+            className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("processor") }
+          />}
+          {errorText("processor")}
         </label>
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-          <FieldTitle help={labels.effectiveFromHelp} helpLabel={`${labels.effectiveFrom} info`}>{labels.effectiveFrom}</FieldTitle>
+          <FieldTitle help={labels.effectiveFromHelp} helpLabel={`${labels.effectiveFrom} ${labels.info}`}>{labels.effectiveFrom}</FieldTitle>
           <input
             type="date"
+            aria-invalid={isFeeFieldInvalid(fieldErrors, "effectiveFrom")}
+            ref={(node) => { inputRefs.current.effectiveFrom = node; }}
             value={effectiveFrom}
             onChange={(event) => setEffectiveFrom(event.target.value)}
-            className="min-h-12 rounded-xl border border-line px-3 text-base"
+            className={"min-h-12 rounded-xl border border-line px-3 text-base" + borderError("effectiveFrom")}
           />
+          {errorText("effectiveFrom")}
         </label>
 
         <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-          <FieldTitle help={labels.processedSalesShareHelp} helpLabel={`${labels.processedSalesShare} info`}>
+          <FieldTitle help={labels.processedSalesShareHelp} helpLabel={`${labels.processedSalesShare} ${labels.info}`}>
             {labels.processedSalesShare}
           </FieldTitle>
           <div className="flex items-center gap-2">
             <input
               inputMode="decimal"
               value={processedSalesShare}
+              aria-invalid={isFeeFieldInvalid(fieldErrors, "cardShare")}
+              ref={(node) => { inputRefs.current.cardShare = node; }}
               onChange={(event) => setProcessedSalesShare(event.target.value)}
-              className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
+              className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("cardShare")}
             />
             <span className="font-bold text-ink-muted">%</span>
           </div>
           <span className="text-xs font-normal text-ink-muted">{labels.processedSalesShareHint}</span>
+          {errorText("cardShare")}
         </label>
 
-        <div className="rounded-2xl bg-paper p-3">
+        {!advanced && <div className="rounded-2xl bg-paper p-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-              <FieldTitle help={labels.percentageRateHelp} helpLabel={`${labels.percentageRate} info`}>
+              <FieldTitle help={labels.percentageRateHelp} helpLabel={`${labels.percentageRate} ${labels.info}`}>
                 {labels.percentageRate}
               </FieldTitle>
               <div className="flex items-center gap-2">
                 <input
                   inputMode="decimal"
                   value={firstRule.percentageRate}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, "percentageRate")}
+                  ref={(node) => { inputRefs.current.percentageRate = node; }}
                   onChange={(event) => updateRule(firstRule.id, "percentageRate", event.target.value)}
-                  className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base"
+                  className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base" + borderError("percentageRate")}
                 />
                 <span className="font-bold text-ink-muted">%</span>
               </div>
+              {errorText("percentageRate")}
             </label>
 
             <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-              <FieldTitle help={labels.fixedFeeHelp} helpLabel={`${labels.fixedFee} info`}>{labels.fixedFee}</FieldTitle>
+              <FieldTitle help={labels.fixedFeeHelp} helpLabel={`${labels.fixedFee} ${labels.info}`}>{labels.fixedFee}</FieldTitle>
               <div className="flex items-center gap-2">
-                <span className="font-bold text-ink-muted">$</span>
+                <span className="font-bold text-ink-muted">{currency.formatToParts(0).find((part) => part.type === "currency")?.value}</span>
                 <input
                   inputMode="decimal"
                   value={firstRule.fixedFee}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, "fixedFee")}
+                  ref={(node) => { inputRefs.current.fixedFee = node; }}
                   onChange={(event) => updateRule(firstRule.id, "fixedFee", event.target.value)}
-                  className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base"
+                  className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base" + borderError("fixedFee")}
                 />
               </div>
+              {errorText("fixedFee")}
             </label>
           </div>
-        </div>
+        </div>}
 
         {firstFixedFee > 0 && sourceSummary.trustedOrderDays > 0 && !needsAverageTicket && (
           <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">
-            {labels.orderCountsAutomatic.replace("{count}", String(sourceSummary.trustedOrderDays))}
+            {labels.orderCountsAutomatic.replace("{count}", fmt(sourceSummary.trustedOrderDays))}
           </p>
         )}
 
-        {needsAverageTicket && !advanced && (
+        {showAverageTicketField(advanced, activeRules, Math.max(effectiveDayCount, oneTapDayCount), advanced ? processedTransactionShare : processedSalesShare) && (
           <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-            <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} info`}>{labels.averageTicket}</FieldTitle>
+            <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} ${labels.info}`}>{labels.averageTicket}</FieldTitle>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-ink-muted">$</span>
+              <span className="font-bold text-ink-muted">{currency.formatToParts(0).find((part) => part.type === "currency")?.value}</span>
               <input
                 inputMode="decimal"
                 value={averageTicket}
+                ref={(node) => { inputRefs.current.averageTicket = node; }}
+                aria-invalid={isFeeFieldInvalid(fieldErrors, "averageTicket")}
                 onChange={(event) => setAverageTicket(event.target.value)}
                 placeholder="12.00"
-                className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
+                className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("averageTicket")}
               />
             </div>
             <span className="text-xs font-normal text-ink-muted">{labels.averageTicketHint}</span>
+            {errorText("averageTicket")}
           </label>
         )}
 
         <button
           type="button"
-          onClick={() => setAdvanced((value) => !value)}
+          onClick={expandAdvanced}
           aria-expanded={advanced}
           className="min-h-12 rounded-full border border-line px-4 text-sm font-bold text-ink"
         >
@@ -455,40 +554,30 @@ export default function ProcessingFeeEstimateForm({
           </div>
 
           <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-            <FieldTitle help={labels.processedTransactionShareHelp} helpLabel={`${labels.processedTransactionShare} info`}>
+            <FieldTitle help={labels.processedTransactionShareHelp} helpLabel={`${labels.processedTransactionShare} ${labels.info}`}>
               {labels.processedTransactionShare}
             </FieldTitle>
             <div className="flex items-center gap-2">
               <input
                 inputMode="decimal"
+                ref={(node) => { inputRefs.current.transactionShare = node; }}
+                aria-invalid={isFeeFieldInvalid(fieldErrors, "transactionShare")}
                 value={processedTransactionShare}
                 onChange={(event) => setProcessedTransactionShare(event.target.value)}
-                className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
+                className={"min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base" + borderError("transactionShare")}
               />
               <span className="font-bold text-ink-muted">%</span>
             </div>
             <span className="text-xs font-normal text-ink-muted">{labels.processedTransactionShareHint}</span>
+            {errorText("transactionShare")}
           </label>
 
-          <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-            <FieldTitle help={labels.averageTicketHelp} helpLabel={`${labels.averageTicket} info`}>{labels.averageTicket}</FieldTitle>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-ink-muted">$</span>
-              <input
-                inputMode="decimal"
-                value={averageTicket}
-                onChange={(event) => setAverageTicket(event.target.value)}
-                placeholder="12.00"
-                className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
-              />
-            </div>
-            <span className="text-xs font-normal text-ink-muted">{labels.averageTicketHint}</span>
-          </label>
+
 
           {rules.map((rule, index) => (
             <div key={rule.id} className="flex flex-col gap-3 rounded-2xl bg-paper p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-ink">#{index + 1}</span>
+                <span className="text-sm font-bold text-ink">#{fmt(index + 1)}</span>
                 {rules.length > 1 && (
                   <button type="button" onClick={() => removeRule(rule.id)} className="min-h-10 rounded-full px-3 text-sm font-bold text-warn">
                     {labels.remove}
@@ -500,71 +589,86 @@ export default function ProcessingFeeEstimateForm({
                 {labels.ruleLabel}
                 <input
                   value={rule.label}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, rule.id + "-label")}
+                  ref={(node) => { inputRefs.current[rule.id + "-label"] = node; }}
                   onChange={(event) => updateRule(rule.id, "label", event.target.value)}
                   placeholder={labels.ruleLabelPlaceholder}
-                  className="min-h-11 rounded-lg border border-line bg-card px-3"
+                  className={"min-h-11 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-label")}
                 />
+                {errorText(rule.id + "-label")}
               </label>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-                  <FieldTitle help={labels.percentageRateHelp} helpLabel={`${labels.percentageRate} info`}>
+                  <FieldTitle help={labels.percentageRateHelp} helpLabel={`${labels.percentageRate} ${labels.info}`}>
                     {labels.percentageRate}
                   </FieldTitle>
                   <div className="flex items-center gap-2">
                     <input
                       inputMode="decimal"
                       value={rule.percentageRate}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, rule.id + "-percentageRate")}
+                  ref={(node) => { inputRefs.current[rule.id + "-percentageRate"] = node; }}
                       onChange={(event) => updateRule(rule.id, "percentageRate", event.target.value)}
-                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3"
+                      className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-percentageRate")}
                     />
                     <span className="font-bold text-ink-muted">%</span>
                   </div>
+                {errorText(rule.id + "-percentageRate")}
                 </label>
 
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-                  <FieldTitle help={labels.fixedFeeHelp} helpLabel={`${labels.fixedFee} info`}>{labels.fixedFee}</FieldTitle>
+                  <FieldTitle help={labels.fixedFeeHelp} helpLabel={`${labels.fixedFee} ${labels.info}`}>{labels.fixedFee}</FieldTitle>
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-ink-muted">$</span>
+                    <span className="font-bold text-ink-muted">{currency.formatToParts(0).find((part) => part.type === "currency")?.value}</span>
                     <input
                       inputMode="decimal"
                       value={rule.fixedFee}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, rule.id + "-fixedFee")}
+                  ref={(node) => { inputRefs.current[rule.id + "-fixedFee"] = node; }}
                       onChange={(event) => updateRule(rule.id, "fixedFee", event.target.value)}
-                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3"
+                      className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-fixedFee")}
                     />
                   </div>
+                {errorText(rule.id + "-fixedFee")}
                 </label>
 
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-                  <FieldTitle help={labels.salesMixHelp} helpLabel={`${labels.salesMix} info`}>{labels.salesMix}</FieldTitle>
+                  <FieldTitle help={labels.salesMixHelp} helpLabel={`${labels.salesMix} ${labels.info}`}>{labels.salesMix}</FieldTitle>
                   <div className="flex items-center gap-2">
                     <input
                       inputMode="decimal"
                       value={rule.salesMix}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, rule.id + "-salesMix")}
+                  ref={(node) => { inputRefs.current[rule.id + "-salesMix"] = node; }}
                       onChange={(event) => updateRule(rule.id, "salesMix", event.target.value)}
-                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3"
+                      className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-salesMix")}
                     />
                     <span className="font-bold text-ink-muted">%</span>
                   </div>
+                {errorText(rule.id + "-salesMix")}
                 </label>
 
                 <label className="flex flex-col gap-1 text-sm font-semibold text-ink">
-                  <FieldTitle help={labels.transactionMixHelp} helpLabel={`${labels.transactionMix} info`}>{labels.transactionMix}</FieldTitle>
+                  <FieldTitle help={labels.transactionMixHelp} helpLabel={`${labels.transactionMix} ${labels.info}`}>{labels.transactionMix}</FieldTitle>
                   <div className="flex items-center gap-2">
                     <input
                       inputMode="decimal"
                       value={rule.transactionMix}
+                  aria-invalid={isFeeFieldInvalid(fieldErrors, rule.id + "-transactionMix")}
+                  ref={(node) => { inputRefs.current[rule.id + "-transactionMix"] = node; }}
                       onChange={(event) => updateRule(rule.id, "transactionMix", event.target.value)}
-                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3"
+                      className={"min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3" + borderError(rule.id + "-transactionMix")}
                     />
                     <span className="font-bold text-ink-muted">%</span>
                   </div>
+                {errorText(rule.id + "-transactionMix")}
                 </label>
               </div>
             </div>
           ))}
 
-          <button type="button" onClick={addRule} className="min-h-12 rounded-full border border-line px-4 text-sm font-bold text-ink">
+          <button type="button" onClick={addRule} disabled={!canAddRateRule(rules.length)} className="min-h-12 rounded-full border border-line px-4 text-sm font-bold text-ink disabled:opacity-40">
             {labels.addRule}
           </button>
         </section>
@@ -575,30 +679,45 @@ export default function ProcessingFeeEstimateForm({
         <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
           <div className="rounded-xl bg-paper p-3">
             <span className="block text-ink-muted">{labels.coverageSalesDays}</span>
-            <strong className="text-xl text-ink">{shownCoverage.salesDays}</strong>
+            <strong className="text-xl text-ink">{fmt(shownCoverage.salesDays)}</strong>
           </div>
           <div className="rounded-xl bg-paper p-3">
             <span className="block text-ink-muted">{labels.coverageActual}</span>
-            <strong className="text-xl text-good">{shownCoverage.actualDays}</strong>
+            <strong className="text-xl text-good">{fmt(shownCoverage.actualDays)}</strong>
           </div>
           <div className="rounded-xl bg-paper p-3">
             <span className="block text-ink-muted">{labels.coverageEstimated}</span>
-            <strong className="text-xl text-ink">{shownCoverage.estimatedDays}</strong>
+            <strong className="text-xl text-ink">{fmt(shownCoverage.estimatedDays)}</strong>
           </div>
           <div className="rounded-xl bg-paper p-3">
             <span className="block text-ink-muted">{labels.coverageMissing}</span>
-            <strong className="text-xl text-warn">{shownCoverage.missingDays}</strong>
+            <strong className="text-xl text-warn">{fmt(shownCoverage.missingDays)}</strong>
           </div>
         </div>
+        <details className="mt-4 border-t border-line pt-3">
+          <summary className="min-h-12 cursor-pointer py-3 text-sm font-bold text-ink">
+            {labels.showDayBreakdown}
+          </summary>
+          <div className="divide-y divide-line" aria-label={labels.coverageTitle}>
+          {shownDays.map((day) => (
+            <div key={day.date} className="flex min-h-12 items-center justify-between gap-3 py-2 text-sm">
+              <time dateTime={day.date}>{new Intl.DateTimeFormat(locale, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day.date + "T12:00:00Z"))}</time>
+              {day.status === "missing"
+                ? <button type="button" disabled={isPending} onClick={() => save(true)} className="min-h-12 rounded-full border border-warn px-3 py-2 font-bold text-warn">{labels.missingButton}</button>
+                : <span className="text-ink-muted">{day.status === "actual" ? labels.coverageActual : labels.coverageEstimated}</span>}
+            </div>
+          ))}
+          </div>
+        </details>
       </section>
 
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
-      {savedSummary && <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">{labels.saved}</p>}
+      {savedSummary && savedDraftSignature === draftSignature && <p role="status" className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">{labels.saved}</p>}
 
       {showEstimate && (
         <button
           type="button"
-          onClick={save}
+          onClick={() => save()}
           disabled={isPending}
           className="min-h-14 rounded-full bg-accent px-5 text-base font-bold text-on-accent disabled:opacity-40"
         >
