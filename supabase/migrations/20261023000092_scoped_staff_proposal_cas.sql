@@ -51,12 +51,18 @@ BEGIN
    INTO rows FROM public.scheduled_shifts s WHERE s.business_id=p_business_id
     AND s.deleted_at IS NULL AND s.local_date BETWEEN week AND week+6;
    snapshot:=snapshot||jsonb_build_object('shifts',rows);
-   IF kind='schedule' THEN
-    SELECT coalesce(jsonb_agg(jsonb_build_object('id',e.id,'active',e.active) ORDER BY e.id),'[]'::jsonb)
-    INTO rows FROM public.employees e WHERE e.business_id=p_business_id AND e.id IN
-      (SELECT (value #>> '{}')::uuid FROM jsonb_array_elements(coalesce(p_scope->'staffIds','[]'::jsonb)));
-    snapshot:=snapshot||jsonb_build_object('employees',rows);
-   END IF;
+   -- Include the employees who appear in the week, plus new assignees.
+   -- Recipient consent/phone or active changes invalidate send handoffs.
+   SELECT coalesce(jsonb_agg(jsonb_build_object('id',e.id,'active',e.active,
+     'phone',e.phone_e164,'opt_in',e.whatsapp_opt_in) ORDER BY e.id),'[]'::jsonb)
+   INTO rows FROM public.employees e WHERE e.business_id=p_business_id
+    AND (e.id IN (SELECT s.employee_id FROM public.scheduled_shifts s
+      WHERE s.business_id=p_business_id AND s.deleted_at IS NULL
+        AND s.local_date BETWEEN week AND week+6)
+     OR e.id IN (SELECT (value #>> '{}')::uuid FROM jsonb_array_elements(
+       coalesce(p_scope->'staffIds','[]'::jsonb))));
+   snapshot:=snapshot||jsonb_build_object('employees',rows);
+
  ELSIF kind='availability' THEN
    SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY s.id),'[]'::jsonb)
    INTO rows FROM public.staff_availability_rules s WHERE s.business_id=p_business_id AND s.employee_id=emp;

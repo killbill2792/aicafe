@@ -80,6 +80,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       applied:staffCopy.applied,cancelled:staffCopy.cancelled,stale:staffCopy.stale,
       failed:staffCopy.stale,conflict:staffCopy.stale};
     const pending=value.state==="pending"&&!busy;
+    const retry=value.state==="conflict"&&!busy;
     const button="min-h-12 min-w-12 rounded-xl px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
     return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={staffCopy.title}
       className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
@@ -98,9 +99,9 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true)&&
         <OwnerScheduleSendPanel key={proposalId} proposalId={proposalId} locale={locale}/>}
 
-      {pending&&<div className="mt-4 flex flex-wrap gap-2">
+      {(pending||retry)&&<div className="mt-4 flex flex-wrap gap-2">
         <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}
-          onClick={()=>void invoke("approve")}>{staffCopy.approve}</button>
+          onClick={()=>void invoke("approve")}>{retry?staffCopy.retry:staffCopy.approve}</button>
         {pending&&<button type="button" disabled={busy} className={button+" border border-line"}
           onClick={()=>void invoke("cancel")}>{staffCopy.decline}</button>}
       </div>}

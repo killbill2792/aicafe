@@ -61,7 +61,7 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
         ).dependencyScope)!==effect.expectedToken)return {...data,state:"stale"};
       }catch{return {...data,state:"stale"};}
     }
-    return {...data,state:p.status==="approved"?"applying":data.state};
+    return {...data,state:p.status==="approved"?"conflict":data.state};
   }
   if(p.capabilityId!==menuPriceChangeCapabilityId)return null;
   const effect=supervisorLoopRegistry.get(menuPriceChangeCapabilityId).parseEffect(p.canonicalEffectPayload);
@@ -134,9 +134,10 @@ export async function POST(request:Request,{params}:Params){
           return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
         if(latest.status==="stale")
           return conversationJson({state:"stale",proposal:await view(scope,repo,latest)},409);
+        if(latest.status==="approved")
+          return conversationJson({state:"conflict",proposal:await view(scope,repo,latest)},409);
         return conversationJson({error:"staff_approval_failed",
-          proposal:await view(scope,repo,latest)},latest.revision!==p.revision&&
-            latest.status!=="approved"?409:500);
+          proposal:await view(scope,repo,latest)},409);
       }
     }
     if(p.revision!==input.revision||p.status!=="draft")
