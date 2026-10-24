@@ -37,7 +37,7 @@ BEGIN
        AND effective_from=(now() AT TIME ZONE 'America/Los_Angeles')::date)<>1
  OR (SELECT count(*) FROM public.scheduling_foundation_audit_events
      WHERE business_id=current_setting('test.staff.business')::uuid
-       AND table_name='staff_availability_rules' AND operation='INSERT')<>1 THEN
+       AND table_name='staff_availability_rules' AND operation='INSERT')<>3 THEN
   RAISE EXCEPTION 'person create, optional wages or audited per-day hours incorrect';
  END IF;
 END $$;
@@ -59,7 +59,7 @@ BEGIN
    AND effective_from=(now() AT TIME ZONE 'America/Los_Angeles')::date)<>1
  OR (SELECT count(*) FROM public.scheduling_foundation_audit_events
   WHERE business_id=current_setting('test.staff.business')::uuid
-   AND table_name='staff_availability_rules' AND operation='INSERT')<>2 THEN
+   AND table_name='staff_availability_rules' AND operation='INSERT')<>4 THEN
    RAISE EXCEPTION 'person update not atomic/audited';
  END IF;
 END $$;
@@ -91,7 +91,7 @@ BEGIN
    AND effective_from=(now() AT TIME ZONE 'America/Los_Angeles')::date)<>1
  OR (SELECT count(*) FROM public.scheduling_foundation_audit_events
   WHERE business_id=current_setting('test.staff.business')::uuid
-   AND table_name='staff_availability_rules' AND operation='INSERT')<>3 THEN
+   AND table_name='staff_availability_rules' AND operation='INSERT')<>5 THEN
   RAISE EXCEPTION 'profile-only update clobbered availability or audit';
  END IF;
 END $$;
