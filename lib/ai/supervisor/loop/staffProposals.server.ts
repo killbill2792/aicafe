@@ -100,7 +100,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
      const before=old.filter(x=>x.local_date===date).map(x=>shown(x.employee_id)+" "+formatStaffShiftWithBreak({
        date:x.local_date,start:x.start_local.slice(0,5),end:x.end_local.slice(0,5),break_minutes:x.break_minutes},copy.breakMinutes)).sort().join("\n");
      const after=d.shifts.filter(x=>x.date===date).map(x=>shown(x.employee_id)+" "+formatStaffShiftWithBreak(x,copy.breakMinutes)).sort().join("\n");
-     item("schedule",copy.week+" "+date,before?text(before):null,after?text(after):null);
+     item("schedule:"+date,copy.week+" "+date,before?text(before):null,after?text(after):null);
    }
    payload={week_start:d.week_start,shifts:d.shifts};break;
   }
@@ -164,13 +164,13 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
       for(const date of parsed.offDates){
         const existing=exceptions.filter(x=>x.employee_id===p.id&&x.local_date===date)
            .map(x=>absenceLabels[x.exception_type]??copy.exceptionOther).sort().join(", ");
-        item("availability",date,existing?text(existing):null,text(copy.off));
+        item("availability:"+date,date,existing?text(existing):null,text(copy.off));
       }
     }else{
       for(const day of [...new Set([...rows.map(x=>x.day_of_week),...windows.map(x=>x.day)])].sort()){
         const oldTimes=rows.filter(x=>x.day_of_week===day).map(x=>String(x.start_local).slice(0,5)+"–"+String(x.end_local).slice(0,5)).sort().join(", ");
         const newTimes=windows.filter(x=>x.day===day).map(x=>x.start+"–"+x.end).sort().join(", ");
-        item("availability",days[day],oldTimes?text(oldTimes):null,newTimes?text(newTimes):null);
+        item("availability:"+String(day),days[day],oldTimes?text(oldTimes):null,newTimes?text(newTimes):null);
       }
     }
    payload={employee_id:p.id,availability:windows,off_dates:parsed.offDates??[],effective_from:localDate};break;
