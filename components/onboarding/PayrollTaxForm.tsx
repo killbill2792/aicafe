@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { savePayrollCostAssumption } from "@/lib/actions/payrollCosts";
+import { employerCostPercentFromInput } from "@/lib/calc/scheduling/ruleInputValues";
+import {useLocale} from "next-intl";
 
 export default function PayrollTaxForm({
   initialPercent,
@@ -12,11 +14,12 @@ export default function PayrollTaxForm({
   labels: { label: string; hint: string; continueLabel: string; invalid: string; saveFailed: string };
 }) {
   const router = useRouter();
-  const [percent, setPercent] = useState(String(initialPercent));
+  const locale = useLocale();
+  const [percent, setPercent] = useState(new Intl.NumberFormat(locale,{useGrouping:false,maximumFractionDigits:4}).format(initialPercent));
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
-  const rate = percent.trim() ? Number(percent) : Number.NaN;
-  const valid = Number.isFinite(rate) && rate >= 0 && rate <= 100;
+  const rate = employerCostPercentFromInput(percent);
+  const valid = rate !== null;
 
   function handleContinue() {
     if (!valid) { setError(labels.invalid); return; }
@@ -36,7 +39,7 @@ export default function PayrollTaxForm({
         <span className="text-base font-semibold">{labels.label}</span>
         <div className="flex items-center gap-1">
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
             value={percent}
             onChange={(e) => { setPercent(e.target.value); setError(""); }}
