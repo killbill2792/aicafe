@@ -1,8 +1,8 @@
 "use client";
-import {useEffect,useState} from "react";
+import {useCallback,useEffect,useRef,useState} from "react";
 import {useLocale,useTranslations} from "next-intl";
 import {statusSchema} from "@/lib/pos/toast/statusSchema";
-import {subscribeToastConnectionChanges} from "./toastConnectionEvents";
+import {subscribeToastConnectionChanges,createToastStatusRequestGate} from "./toastConnectionEvents";
 import {canStartToastImport,canRepullToastDay} from "./toastOwnerActionState";
 import type {z} from "zod";
 type Snapshot=z.infer<typeof statusSchema>;
@@ -19,6 +19,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  const [analyticsBusy,setAnalyticsBusy]=useState(false);
  const [lastLoadedAt,setLastLoadedAt]=useState<number|null>(null);
  const [reloadKey,setReloadKey]=useState(0);
+ const statusGate=useRef(createToastStatusRequestGate());
  const money=new Intl.NumberFormat(locale,{style:"currency",currency});
  const number=new Intl.NumberFormat(locale);
  async function configureAnalytics(action:"connect"|"disconnect"){
@@ -37,24 +38,29 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  const fmt=(n:number|null)=>n==null?t("noAmount"):money.format(n/100);
  const day=(d:string)=>new Intl.DateTimeFormat(locale,{timeZone:"UTC",dateStyle:"medium"})
   .format(new Date(d+"T12:00:00Z"));
- async function load(){
-  const response=await fetch("/api/pos/toast/status?businessId="+encodeURIComponent(businessId),{cache:"no-store"});
-  if(!response.ok)throw Error("unavailable");
-  const parsed=statusSchema.safeParse(await response.json());
-  if(!parsed.success)throw Error("invalid_status");
-  setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());
-  if(!start)setStart(parsed.data.startDate??dateShift(localDate(parsed.data.timeZone,Date.now()),-84));
- }
- useEffect(()=>{let active=true;const refresh=async()=>{
-  try{const response=await fetch("/api/pos/toast/status?businessId="+encodeURIComponent(businessId),{cache:"no-store"});
+ const load=useCallback(async()=>{
+  const request=statusGate.current.begin();
+  try{
+   const response=await fetch("/api/pos/toast/status?businessId="+encodeURIComponent(businessId),{cache:"no-store"});
    if(!response.ok)throw Error("unavailable");
    const parsed=statusSchema.safeParse(await response.json());
    if(!parsed.success)throw Error("invalid_status");
-   if(active){setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());setStart(old=>old||parsed.data.startDate||
-    dateShift(localDate(parsed.data.timeZone,Date.now()),-84));}
-  }catch{if(active){setData(null);setBad(true);}}
- };const unsubscribe=subscribeToastConnectionChanges(window,()=>{void refresh();});
- void refresh();return()=>{active=false;unsubscribe();};},[businessId,reloadKey]);
+   if(!statusGate.current.isCurrent(request))return;
+   setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());
+   setStart(old=>old||parsed.data.startDate||dateShift(localDate(parsed.data.timeZone,Date.now()),-84));
+  }catch(error){
+   // A stale request must not replace a newly verified connection with an error.
+   if(!statusGate.current.isCurrent(request))return;
+   setData(null);setBad(true);
+   throw error;
+  }
+ },[businessId]);
+ useEffect(()=>{
+  const refresh=()=>{void load().catch(()=>{/* The retry control is now visible. */});};
+  const unsubscribe=subscribeToastConnectionChanges(window,refresh);
+  refresh();
+  return()=>{unsubscribe();statusGate.current.invalidate();};
+ },[load,reloadKey]);
  async function post(url:string,payload:unknown){
   if(busy)return false;setBusy(true);setMessage("");
   try{const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
