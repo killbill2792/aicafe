@@ -4,7 +4,7 @@ import {formatInTimeZone} from "date-fns-tz";
 import {importToastBusinessDay} from "./dayImport";
 import {refreshToastRestaurantInfo} from "./restaurantInfo";
 import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
-import {retryPendingToastRollups} from "./rollupRefreshWorker";
+import {retryToastRollupRefreshes} from "./rollupRetries";
 import {z} from "zod";
 
 type Mapping={business_id:string;location_id:string;restaurant_guid:string;
@@ -166,7 +166,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     await refreshToastRestaurantInfo(db,m.business_id,m.restaurant_guid,{deadlineAt});
    mustFinish(deadlineAt);
    // A committed import's failed cost refresh is never another order import.
-   await retryPendingToastRollups(db,{businessId:m.business_id,limit:5,deadlineAt});
+   await retryToastRollupRefreshes(db,deadlineAt,5);
    // Resume paused/running runs first. A day after toast_import_day is derived
    // from requested_from+days_done, NOT from the cleared JSON cursor.
    const {data:pending,error:pErr}=await db.from("toast_sync_runs")
