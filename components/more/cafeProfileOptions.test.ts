@@ -24,7 +24,7 @@ describe("café profile redesign", () => {
     expect(matchingTimezoneOptions(options, "", "en")).toHaveLength(40);
   });
 
-  it("keeps combobox keyboard focus within available options () => {
+  it("keeps combobox keyboard focus within available options", () => {
     expect(moveTimezoneActiveIndex(-1, 1, 40)).toBe(0);
     expect(moveTimezoneActiveIndex(-1, -1, 40)).toBe(39);
     expect(moveTimezoneActiveIndex(0, -1, 40)).toBe(0);
@@ -42,7 +42,7 @@ describe("café profile redesign", () => {
     expect(timezoneOptionScrollTop(0, 256, 0, 48)).toBe(0);
   });
 
-  it("timezone picker displays plain labels but retains IANA storage values () => {
+  it("timezone picker displays plain labels but retains IANA storage values", () => {
     const options = timezoneOptions("en", "America/Los_Angeles");
     const losAngeles = options.find((item) => item.value === "America/Los_Angeles");
     expect(losAngeles).toBeDefined();
