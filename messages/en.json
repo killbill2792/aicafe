@@ -792,7 +792,8 @@
     "offToday": "No hours recorded today",
     "now": "Now",
     "payrollCostsSummary": "Employer costs: {percent}% on top of wages (fallback)",
-    "payrollCostsEdit": "Edit in Rules & costs"
+    "payrollCostsEdit": "Edit in Rules & costs",
+    "payrollSaveFailed": "Could not save employer costs. Try again."
   },
   "More": {
     "toastConnect": "Connect Toast",
@@ -2913,7 +2914,7 @@
     "whileOpen": "person(s) while open",
     "prepTiming": "Opening and closing",
     "invalidNumber": "Enter a valid amount within the allowed range.",
-    "rulesSummary": "Meal break after {meal} h · Overtime after {overtime} h",
+    "rulesSummary": "Meal break after {mealHours} h {mealMinutes} min · Weekly overtime after {otHours} h {otMinutes} min",
     "after": "after",
     "every": "every",
     "applyRule": "Use rule",
