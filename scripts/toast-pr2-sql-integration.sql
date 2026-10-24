@@ -299,9 +299,9 @@ begin
  insert into public.daily_rollups(business_id,business_date,net_sales_cents,
   orders_count,drinks_count,ingredients_cents,staff_wages_cents,
   staff_tax_cents,card_fees_cents,voids_cents,sales_data_status)
- select b,d::date,0,0,0,0,0,0,0,0,'actual'
+ select b,recovery_days.day_value::date,0,0,0,0,0,0,0,0,'actual'
  from generate_series('2026-10-01'::timestamp,'2026-10-06'::timestamp,
-  interval '1 day') d
+  interval '1 day') as recovery_days(day_value)
  on conflict(business_id,business_date) do update
   set sales_data_status='actual';
 
