@@ -189,6 +189,32 @@ revoke all on function public.toast_certify_day_voids(uuid,date) from public,ano
 grant execute on function public.toast_certify_day_voids(uuid,date) to service_role;
 
 
+-- The authoritative closeout-date eligibility rule used by reconciliation,
+-- owner status and the first-import approval path.
+create function public.toast_is_complete_business_day(
+ p_business_id uuid,p_date date)
+returns boolean language plpgsql security definer set search_path=public as $complete$
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ return exists(
+  select 1 from public.toast_location_mappings m
+  where m.business_id=p_business_id and m.verified_at is not null
+   and (m.toast_start_date is null or p_date>=m.toast_start_date)
+ ) and not exists(
+  select 1 from public.toast_location_mappings m
+  left join public.toast_day_status s on s.business_id=m.business_id
+   and s.restaurant_guid=m.restaurant_guid and s.business_date=p_date
+  where m.business_id=p_business_id and m.verified_at is not null
+   and (m.toast_start_date is null or p_date>=m.toast_start_date)
+   and (s.import_state is distinct from 'imported'
+    or not coalesce(s.coverage_complete,false))
+ );
+end $complete$;
+revoke all on function public.toast_is_complete_business_day(uuid,date)
+ from public,anon,authenticated;
+grant execute on function public.toast_is_complete_business_day(uuid,date)
+ to service_role;
+
 -- Keep the first answer, flags, and visibility guard in one transaction.
 create function public.toast_answer_first_import_check(
  p_business_id uuid,p_answer text,p_days date[],p_note text)
@@ -201,20 +227,9 @@ begin
   or (p_answer='something_off' and cardinality(p_days)=0)
   or (p_answer='looks_right' and cardinality(p_days)<>0)
  then raise exception 'invalid answer';end if;
- select count(*) into n from (
-  select distinct s.business_date from public.toast_day_status s
-  where s.business_id=p_business_id and s.import_state='imported'
-   and s.coverage_complete
-   and not exists(
-    select 1 from public.toast_location_mappings m
-    left join public.toast_day_status ds on ds.business_id=m.business_id
-     and ds.restaurant_guid=m.restaurant_guid and ds.business_date=s.business_date
-    where m.business_id=p_business_id and m.verified_at is not null
-     and s.business_date>=coalesce(m.toast_start_date,s.business_date)
-     and (ds.import_state is distinct from 'imported' or
-          not coalesce(ds.coverage_complete,false))
-   )
- ) fully_complete;
+ select count(distinct s.business_date) into n
+ from public.toast_day_status s where s.business_id=p_business_id
+  and public.toast_is_complete_business_day(p_business_id,s.business_date);
  if n<7 then raise exception 'not ready';end if;
  insert into public.toast_first_import_check(business_id,answered_at,answer,flagged_dates,note)
  values(p_business_id,now(),p_answer,p_days,p_note)
@@ -224,15 +239,17 @@ begin
  where toast_first_import_check.answered_at is null;
  if not found then raise exception 'already answered';end if;
  foreach d in array p_days loop
-  for loc in select distinct s.restaurant_guid from public.toast_day_status s
-   where s.business_id=p_business_id and s.business_date=d
-    and s.import_state='imported' and s.coverage_complete loop
+  -- Recheck inside the same transaction; HTTP validation is not a data proof.
+  if not public.toast_is_complete_business_day(p_business_id,d)
+   then raise exception 'invalid flagged date';end if;
+  for loc in select m.restaurant_guid from public.toast_location_mappings m
+   where m.business_id=p_business_id and m.verified_at is not null
+    and (m.toast_start_date is null or d>=m.toast_start_date) loop
    insert into public.toast_day_owner_flags(business_id,restaurant_guid,business_date,note)
    values(p_business_id,loc.restaurant_guid,d,p_note)
    on conflict(business_id,restaurant_guid,business_date) do update
    set flagged_at=now(),cleared_at=null,note=excluded.note;
   end loop;
-  if not found then raise exception 'unimported flagged date';end if;
   perform public.toast_certify_day_voids(p_business_id,d);
  end loop;
 end $answer$;
