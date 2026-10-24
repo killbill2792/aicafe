@@ -13,5 +13,6 @@ describe("money evidence contracts",()=>{
  it("does not let catalog import provenance override an owner's manual price",()=>{
   expect(priceSource("owner_manual","csv")).toBe("owner_manual");
   expect(priceSource(null,"csv")).toBe("imported_avg");
+  expect(priceSource("initial","csv")).toBe("imported_avg");
  });
 });
