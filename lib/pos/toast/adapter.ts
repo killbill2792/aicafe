@@ -70,9 +70,9 @@ function timestamp(value:string):string {
 /** Toast financial values use decimal DOLLARS; canonical AI CAFE uses integer cents. */
 export function toastMoneyCents(value:number):number {
   if(!Number.isFinite(value))throw new ToastApiError("invalid_response");
-  const cents=Math.round(value*100);
-  if(!Number.isSafeInteger(cents)||Math.abs(value*100-cents)>1e-7)
-    throw new ToastApiError("invalid_response");
+  // Round half away from zero; sub-cent provider values must not abort a day.
+  const cents=Math.sign(value)*Math.round(Math.abs(value)*100+1e-9);
+  if(!Number.isSafeInteger(cents))throw new ToastApiError("invalid_response");
   return cents;
 }
 const cents=(v:number|null|undefined)=>toastMoneyCents(v??0);
