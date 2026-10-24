@@ -1,0 +1,70 @@
+import {describe,expect,it,vi} from "vitest";
+vi.mock("server-only",()=>({}));
+import {parseToastDayPage,parseToastBusinessOrder,toastCents} from "./dayParser";
+const restaurant="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const orderGuid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const selectionGuid="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const day="2026-10-16";
+const check={guid:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",paymentStatus:"PAID",
+ amount:10,taxAmount:0.75,selections:[{guid:selectionGuid,quantity:1,price:10,
+ displayName:"Tea"}],payments:[]};
+const order={guid:orderGuid,businessDate:20261016,openedDate:"2026-10-17T01:30:00.000-0700",
+ modifiedDate:"2026-10-17T08:35:00.000+0000",checks:[check]};
+const parse=(o:unknown)=>parseToastBusinessOrder(o,restaurant,day,"America/Los_Angeles",4);
+describe("Toast daily parser / trustworthy void facts",()=>{
+ it("includes PAID/OPEN checks without close dates and trusts businessDate across midnight",()=>{
+  const x=parse({...order,checks:[check,{...check,guid:null,paymentStatus:"OPEN",amount:5}]});
+  expect(x.normalized?.netSalesCents).toBe(1500);
+  expect(x.openChecks).toBe(2);
+  expect(x.includedChecks).toBe(2);
+ });
+ it("isolates malformed orders without throwing out valid page mates",()=>{
+  const page=parseToastDayPage([order,{...order,guid:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+   checks:[{...check,amount:"abc"}]}],restaurant,day,"America/Los_Angeles",4);
+  expect(page.orders).toHaveLength(1);
+  expect(page.unparsed).toHaveLength(1);
+  expect(page.unparsed[0].error_path).toContain("checks.0.amount");
+ });
+ it("subtracts payment refunds once and not a second time from check net",()=>{
+  const x=parse({...order,checks:[{...check,payments:[{paymentStatus:"CAPTURED",
+   guid:"ffffffff-ffff-4fff-8fff-ffffffffffff",
+   refund:{refundAmount:4.5,tipRefundAmount:0.5,refundBusinessDate:20261017},tipAmount:2}]}]});
+  expect(x.normalized?.netSalesCents).toBe(550);
+  expect(x.normalized?.tipCents).toBe(150);
+  expect(x.refundFacts[0].refund_business_date).toBe("2026-10-17");
+ });
+ it("captures voids from selections, checks and orders without altering sales",()=>{
+  const voided={...check,selections:[{...check.selections[0],voided:true,
+   preDiscountPrice:6,voidBusinessDate:20261017}]};
+  const x=parse({...order,checks:[voided]});
+  expect(x.normalized?.netSalesCents).toBe(1000);
+  expect(x.normalized?.lines[0].netSalesCents).toBe(0);
+  expect(x.voids).toMatchObject([{amount_cents:600,level:"selection",void_business_date:"2026-10-17"}]);
+  const y=parse({...order,checks:[{...check,voided:true}]});
+  expect(y.normalized).toBeNull();
+  expect(y.voids).toMatchObject([{amount_cents:1000,level:"check"}]);
+  const z=parse({...order,voided:true});
+  expect(z.normalized).toBeNull();
+  expect(z.voids).toMatchObject([{amount_cents:1000,level:"order"}]);
+ });
+ it("deleted merged checks are not voids, and missing void amount cannot imply zero",()=>{
+  const a=parse({...order,deleted:true,checks:[{...check,voided:true}]});
+  expect(a.voids).toHaveLength(0);
+  const b=parse({...order,checks:[{...check,selections:[{
+   guid:selectionGuid,displayName:"Tea",quantity:1,voided:true}]}]});
+  expect(b.voids[0]).toMatchObject({amount_basis:"amount_missing",amount_cents:null});
+ });
+ it("rounds half away from zero and records subcent warnings",()=>{
+  expect(toastCents(1.005)).toBe(101);
+  expect(toastCents(-1.005)).toBe(-101);
+  const x=parse({...order,checks:[{...check,taxAmount:1.005}]});
+  expect(x.warnings.subcent_rounding).toBe(1);
+ });
+ it("excludes test and excess-food transactions",()=>{
+  for(const flag of ["createdInTestMode","excessFood"]){
+   const x=parse({...order,[flag]:true});
+   expect(x.normalized).toBeNull();
+   expect(x.voids).toHaveLength(0);
+  }
+ });
+});
