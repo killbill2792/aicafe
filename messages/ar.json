@@ -2905,7 +2905,8 @@
     "noAvailableDays": "لم تُحدد أيام",
     "everyDay": "كل يوم",
     "confirmRemovePerson": "هل تريد إزالة {name} من الفريق؟ سيصبح ملفه غير نشط.",
-    "confirmRemove": "نعم، إزالة الموظف"
+    "confirmRemove": "نعم، إزالة الموظف",
+    "noWageAction": "الأجر غير محدد"
   },
   "FreeAccess": {
     "pricing": "الباقات والأسعار",
