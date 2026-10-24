@@ -80,9 +80,13 @@ for(const [locale,width,height] of [["en",390,844],["en",1440,900],["ar",390,844
  await page.goto(base+"/"+locale+"/staff?tab=team&fixture=1&week=2026-10-26",{waitUntil:"networkidle"});
  await assertVisible(page,"input[aria-label]",locale+" team person");
  await setPalette(page);
- await page.locator("button.border-dashed").first().click();
  const dialog=page.locator('dialog[aria-labelledby="staff-sheet-heading"]');
- await dialog.waitFor({state:"visible"});
+ // The route can return before React has hydrated on a busy CI runner.
+ for(let attempt=0;attempt<8&&!await dialog.isVisible();attempt++){
+  await page.locator("button.border-dashed").first().click();
+  if(!await dialog.isVisible())await page.waitForTimeout(1200);
+ }
+ await dialog.waitFor({state:"visible",timeout:15000});
  if(locale==="ar"&&await dialog.evaluate(el=>getComputedStyle(el).direction)!=="rtl")
   throw Error("Arabic person editor did not inherit RTL");
  await dialog.locator("input").first().fill("Fixture Person");

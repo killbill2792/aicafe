@@ -18,9 +18,13 @@ try {
     if(attempt===7)throw Error("before-state Staff fixture never loaded");
     await page.waitForTimeout(1500);
    }
-   await page.locator("button.border-dashed").first().click();
    const dialog=page.locator('dialog[aria-labelledby="staff-sheet-heading"]');
+   for(let attempt=0;attempt<8&&!await dialog.isVisible();attempt++){
+    await page.locator("button.border-dashed").first().click();
+    if(!await dialog.isVisible())await page.waitForTimeout(1200);
+   }
    await dialog.waitFor({state:"visible",timeout:15000});
+   if(await dialog.locator("#staff-hourly-wage").count())throw Error("Before screenshot still shows PR178 typed wage form");
    await page.screenshot({path:join(folder,"team-person-before-en-"+width+".png"),fullPage:true});
   } finally {await page.close();}
  }
