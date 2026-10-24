@@ -12,13 +12,18 @@ SELECT set_config('request.jwt.claim.role','service_role',true);
 INSERT INTO public.businesses(id,name,is_demo)
 VALUES('cccccccc-cccc-4ccc-8ccc-cccccccccccc','Toast PR3 test',false);
 INSERT INTO public.locations(id,business_id,name) VALUES
-('cccccccc-cccc-4ccc-8ccc-cccccccc0001','cccccccc-cccc-4ccc-8ccc-cccccccccccc','Main');
+('cccccccc-cccc-4ccc-8ccc-cccccccc0001','cccccccc-cccc-4ccc-8ccc-cccccccccccc','Main'),
+('cccccccc-cccc-4ccc-8ccc-cccccccc0003','cccccccc-cccc-4ccc-8ccc-cccccccccccc','Later location');
 SELECT public.toast_save_configuration('cccccccc-cccc-4ccc-8ccc-cccccccccccc',
 'https://ws-api.toasttab.com','test','secret',
 '[{"location_id":"cccccccc-cccc-4ccc-8ccc-cccccccc0001",
-"restaurant_guid":"cccccccc-cccc-4ccc-8ccc-cccccccc0002"}]'::jsonb);
+"restaurant_guid":"cccccccc-cccc-4ccc-8ccc-cccccccc0002"},
+{"location_id":"cccccccc-cccc-4ccc-8ccc-cccccccc0003",
+"restaurant_guid":"cccccccc-cccc-4ccc-8ccc-cccccccc0004"}]'::jsonb);
 UPDATE public.toast_location_mappings SET verified_at=now(),
-toast_time_zone='America/Los_Angeles',closeout_hour=4
+toast_time_zone='America/Los_Angeles',closeout_hour=4,
+ toast_start_date=case when restaurant_guid='cccccccc-cccc-4ccc-8ccc-cccccccc0002'
+ then '2026-10-01'::date else '2026-10-10'::date end
 WHERE business_id='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 DO $test$
 DECLARE b uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -47,5 +52,31 @@ BEGIN
  PERFORM pg_temp.assert((SELECT days_needing_look=1 FROM
  public.toast_sync_health_v WHERE business_id=b AND restaurant_guid=g),
  'owner flagged matched day remains visible');
+ -- Before the second location starts, one location proves the whole business day.
+ PERFORM pg_temp.assert(public.toast_is_complete_business_day(b,'2026-10-01'),
+  'pre-start second location must not invalidate first location');
+ INSERT INTO public.toast_day_status(business_id,restaurant_guid,business_date,
+  import_state,coverage_complete,recon_state)
+ SELECT b,g,gs::date,'imported',true,'matched'
+ FROM generate_series('2026-10-02'::date,'2026-10-07'::date,interval '1 day') gs;
+ PERFORM pg_temp.assert((select count(distinct business_date)=7 from public.toast_day_status
+  where business_id=b and import_state='imported' and coverage_complete),
+  'seven imported days exist before answering');
+ PERFORM pg_temp.assert(not public.toast_is_complete_business_day(b,'2026-10-10'),
+  'second location becomes required at its actual start date');
+ PERFORM public.toast_answer_first_import_check(b,'something_off',
+  array['2026-10-05'::date],'Review Oct 5');
+ PERFORM pg_temp.assert((select answered_at is not null and answer='something_off'
+   from public.toast_first_import_check where business_id=b),
+  'one-time check saves an answer');
+ PERFORM pg_temp.assert((select count(*)=1 from public.toast_day_owner_flags
+   where business_id=b and business_date='2026-10-05' and cleared_at is null),
+  'owner flags only the date-eligible restaurant');
+ BEGIN
+  PERFORM public.toast_answer_first_import_check(b,'looks_right',array[]::date[],null);
+  RAISE EXCEPTION 'duplicate first-import answer succeeded';
+ EXCEPTION WHEN OTHERS THEN
+  IF sqlerrm='duplicate first-import answer succeeded' THEN RAISE;END IF;
+ END;
 END $test$;
 ROLLBACK;
