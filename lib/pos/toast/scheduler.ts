@@ -6,6 +6,7 @@ import {refreshToastRestaurantInfo} from "./restaurantInfo";
 import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
 import {retryToastRollupRefreshes} from "./rollupRetries";
 import {z} from "zod";
+import {syncToastOptionalSources} from "./optionalSync";
 
 type Mapping={business_id:string;location_id:string;restaurant_guid:string;
  toast_time_zone:string;closeout_hour:number;info_refreshed_at:string|null;
@@ -14,6 +15,7 @@ type Run={id:string;kind:string;state:string;requested_from:string|null;
  requested_to:string|null;days_done:number;days_total:number;
  cursor:Record<string,unknown>|null;resume_at:string|null};
 export const TICK_MS=240000;
+const DAY=86400000;
 function mustFinish(deadlineAt:number){
  if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
 }
@@ -179,6 +181,9 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     if(Date.now()>=deadlineAt)break;
     processed+=await runDue(db,m,run,deadlineAt);
    }
+   if(Date.now()<deadlineAt)
+    await syncToastOptionalSources(db,m,now,deadlineAt);
+   if(Date.now()<deadlineAt)await db.rpc("toast_cleanup_abandoned_pages");
   }catch{errors++;}
   finally{
    // Never leak the nonce or delete a different worker's lease.
