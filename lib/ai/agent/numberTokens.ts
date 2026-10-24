@@ -63,7 +63,7 @@ export function tokenizeNumbers(text:string,locale:NumberLocale):NumberToken[]{
  scan("(?:\\+?\\d{1,3}[-. ]){2,}\\d{3,4}(?!\\d)","phone/id",82);
  scan("(?:gpt[-\\w.]*\\d[\\w.-]*|[A-Za-z]{1,8}[-_]\\d[\\w.-]*)","phone/id",82);
  scan(D+"+(?:st|nd|rd|th|º|ª|°|er|do|ro|to)","ordinal",80);
- for(const m of text.matchAll(expr("(?:\\(\\s*[-−+]?"+currency+"\\s*"+num+"\\s*\\)|[-−+]?\\s*(?:"+currency+"\\s*)?"+num+"(?:[ \\u00a0\\u202f]*(?:[%٪]|"+currency+"))?)"))){
+ for(const m of text.matchAll(expr("(?:\\(\\s*[-−+]?"+currency+"\\s*[-−+]?"+num+"\\s*\\)|[-−+]?\\s*(?:"+currency+"\\s*[-−+]?\\s*)?"+num+"(?:[ \\u00a0\\u202f]*(?:[%٪]|"+currency+"))?)"))){
   const start=m.index,end=start+m[0].length,raw=m[0];
   const money=expr(currency).test(raw),percent=/[%٪]\s*$/u.test(raw),n=amountValue(raw,locale);
   if(n===null)continue;
