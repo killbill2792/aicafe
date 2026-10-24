@@ -1027,13 +1027,13 @@
     "voidsByDay": "Anulaciones por día",
     "voidsDay": "Fecha",
     "voidsAmount": "Importe anulado",
-    "voidsNoData": "No hay datos registrados de anulaciones para este período.",
+    "voidsNoData": "No hay importes de anulaciones confirmados para este período.",
     "voidsReadError": "Los datos de anulaciones no están disponibles ahora.",
     "voidsPeopleUnavailable": "Los datos de ventas conectados no indican quién anuló cada artículo.",
     "impactPartialHint": "Solo estimaciones conocidas; algunas alertas no tienen importe.",
-    "voidsUnknown": "No hay suficientes datos registrados",
-    "voidsMissingHistory": "No se puede calcular un promedio fiable de tres meses porque al menos uno no tiene días de ventas registrados.",
-    "voidsCoverageNote": "Los totales solo incluyen días con ventas registradas. Los días sin datos no se cuentan como cero.",
+    "voidsUnknown": "No disponible: faltan datos confirmados de anulaciones",
+    "voidsMissingHistory": "Para calcular el promedio de tres meses se necesitan datos de anulaciones confirmados de cada día. Las ventas registradas por sí solas no bastan.",
+    "voidsCoverageNote": "Solo se muestran los importes positivos de anulaciones registrados. Las ventas importadas no permiten confirmar los días sin anulaciones ni los totales completos.",
     "voidsAlertMonth": "{month} (mes de la alerta)"
   },
   "DeleteAccount": {
