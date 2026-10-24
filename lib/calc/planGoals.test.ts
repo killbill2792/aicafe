@@ -94,6 +94,12 @@ describe("Plan goals", () => {
     expect(coveredPlanOperatingDays([
       { date: "2026-10-09" }, { date: "2026-10-10" }, { date: "2026-10-12" },
     ], monFri)).toBe(2);
+    // The POS item-quantity RPC ends at today, even if yesterday was the last
+    // confirmed rollup. A missing current open day must not be invisible.
+    expect(hasUncoveredPlanOperatingDates([{ date: "2026-10-12" }],
+      monFri, "2026-10-13")).toBe(true);
+    expect(hasUncoveredPlanOperatingDates([{ date: "2026-10-09" }],
+      monFri, "2026-10-11")).toBe(false);
   });
   it("uses the same café operating-day rule as Money for staff changes", () => {
     // October 2026 has 22 Monday-to-Friday operating days.

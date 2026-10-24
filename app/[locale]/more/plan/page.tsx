@@ -111,7 +111,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         {t("setCafeHours")}
       </Link>}
       <TryScenario hoursComplete={hasCompletePlanHours(snapshot.business.openHours)}
-        salesCoverageGaps={hasUncoveredPlanOperatingDates(days, snapshot.business.openHours)}
+        salesCoverageGaps={hasUncoveredPlanOperatingDates(days, snapshot.business.openHours, snapshot.todayDateStr)}
         items={(snapshot.breakEvenProductCosts ?? snapshot.menuItems).map(item => ({
         id: item.id, name: item.name, priceCents: item.priceCents, costStatus: item.costStatus, category: item.category, active: item.active,
         ingredientsCentsToday: item.ingredientsCentsToday, quantitySoldLast28Days: item.quantitySoldLast28Days,

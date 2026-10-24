@@ -63,12 +63,14 @@ export function coveredPlanOperatingDays(
 export function hasUncoveredPlanOperatingDates(
   days: readonly { date: string }[],
   openHours: OpenHours | null | undefined,
+  /** Same inclusive end date passed to the item-quantity RPC. */
+  asOfDate?: string,
 ): boolean {
   if (days.length === 0) return false;
   const covered = new Set(days.map(day => day.date));
   const sorted = [...covered].sort();
   const start = sorted[0];
-  const end = sorted[sorted.length - 1];
+  const end = asOfDate ?? sorted[sorted.length - 1];
   let cursor = Date.parse(start + "T12:00:00Z");
   const last = Date.parse(end + "T12:00:00Z");
   if (!Number.isFinite(cursor) || !Number.isFinite(last)) return true;
