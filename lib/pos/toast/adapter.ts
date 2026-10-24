@@ -3,7 +3,7 @@ import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {PosAdapter,PosOrder,PosCatalogItem,PosEmployee,PosTimecard} from "../types";
 import {PosNotConnectedError} from "../types";
-import {createToastClient,GUID,ToastApiError} from "./client";
+import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
 type Range={since:Date;until:Date};
 type Discount={nonTaxDiscountAmount?:number|null};
 type Selection={salesCategory?:{name?:string|null}|null;displayName?:string|null;item?:{guid:string}|null;quantity:number;price:number;
@@ -212,8 +212,8 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
   }
   const query=(range:Range)=>{
     validRange(range);
-    return "startDate="+encodeURIComponent(range.since.toISOString())+
-      "&endDate="+encodeURIComponent(range.until.toISOString());
+    return "startDate="+toToastTimestamp(range.since)+
+      "&endDate="+toToastTimestamp(range.until);
   };
   async function fetchAttendance(range:Range,mode:"historical"|"modified"):Promise<ToastAttendanceFact[]> {
     const params=mode==="modified"
