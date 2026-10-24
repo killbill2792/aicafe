@@ -11,6 +11,11 @@ import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 
+const wageRates=(employees:Array<{id:string;wage_period:string|null;
+  wage_amount_cents:number|null;default_hourly_wage_cents:number|null}>)=>
+  Object.fromEntries(employees.map(person=>[person.id,
+    person.wage_period==="hour" ? person.wage_amount_cents??person.default_hourly_wage_cents : null]));
+
 const input=z.strictObject({week:z.iso.date(),threadId:z.uuid(),requestKey:z.uuid(),
   locale:z.enum(["en","es","ar"])});
 /** Owner-click draft: authoritative scheduling inputs, inert approval ledger; no shift writes. */
@@ -48,7 +53,8 @@ export async function draftStaffWeekInPlace(raw:unknown){
       staffCapabilityId("propose_schedule"),proposed.data,parsed.data.requestKey);
     return {ok:true as const,proposalId:proposal.id,revision:proposal.revision,
       shifts:proposed.data.shifts,
-      costIsPartial:result.totals.costIsPartial,estimated:result.estimated.length>0};
+      costIsPartial:result.totals.costIsPartial,estimated:result.estimated.length>0,
+      wageRates:wageRates(slice.value.employees)};
   }catch{return {ok:false as const,error:"unavailable"};}
 }
 
@@ -78,6 +84,7 @@ export async function reviseStaffWeekDraft(raw:unknown){
       locale:parsed.data.locale},supervisorLoopRegistry,new SupabaseLoopRepository(),
       staffCapabilityId("propose_schedule"),{week_start:parsed.data.week,
         shifts:parsed.data.shifts},parsed.data.requestKey);
-    return {ok:true as const,proposalId:proposal.id,revision:proposal.revision};
+    return {ok:true as const,proposalId:proposal.id,revision:proposal.revision,
+      wageRates:wageRates(slice.value.employees)};
   }catch{return {ok:false as const,error:"unavailable"};}
 }
