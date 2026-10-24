@@ -299,8 +299,30 @@ begin
  values(p_business_id,p_restaurant_guid,'backfill',p_from,p_to,p_to-p_from+1,'{}'::jsonb)
  on conflict(business_id,restaurant_guid,requested_from,requested_to)
   where kind='backfill' and state in ('queued','running','paused_rate_limited')
- do update set last_error_category=public.toast_sync_runs.last_error_category
+ do update set
+  -- A newly eligible earlier start date invalidates coverage. Reset the
+  -- existing run in this very transaction; preserving days_done would skip
+  -- dates that now need fresh Toast proof. Ordinary retries keep progress.
+  days_done=case when v_prior is not null and p_from<v_prior
+   then 0 else public.toast_sync_runs.days_done end,
+  state=case when v_prior is not null and p_from<v_prior
+   then 'queued' else public.toast_sync_runs.state end,
+  cursor=case when v_prior is not null and p_from<v_prior
+   then '{}'::jsonb else public.toast_sync_runs.cursor end,
+  resume_at=case when v_prior is not null and p_from<v_prior
+   then null else public.toast_sync_runs.resume_at end,
+  started_at=case when v_prior is not null and p_from<v_prior
+   then null else public.toast_sync_runs.started_at end,
+  finished_at=case when v_prior is not null and p_from<v_prior
+   then null else public.toast_sync_runs.finished_at end,
+  invalid_days=case when v_prior is not null and p_from<v_prior
+   then 0 else public.toast_sync_runs.invalid_days end,
+  last_error_category=case when v_prior is not null and p_from<v_prior
+   then null else public.toast_sync_runs.last_error_category end
  returning id into v_id;
+ if v_prior is not null and p_from<v_prior then
+  delete from public.toast_day_pages where run_id=v_id;
+ end if;
  return v_id;
 end $queue$;
 
@@ -694,7 +716,7 @@ grant select on public.toast_sync_health_v to service_role;
 -- It must not leave stale business-wide sales or voids marked actual/complete.
 create function public.toast_invalidate_on_closeout_change()
 returns trigger language plpgsql security definer set search_path=public as $mapping$
-declare first_day date;last_day date;
+declare first_day date;last_day date;recovery_day date;recovery_id uuid;
 begin
  if old.toast_time_zone is not distinct from new.toast_time_zone
   and old.closeout_hour is not distinct from new.closeout_hour then return new;end if;
@@ -713,17 +735,31 @@ begin
   and exists(select 1 from public.toast_day_status d
    where d.business_id=new.business_id and d.business_date=daily_rollups.business_date
     and d.import_state='imported');
- -- A long history is queued as bounded chunks. Existing facts remain visible
- -- but cannot be certified until new Toast business-date grouping is pulled.
- for first_day in select gs::date from generate_series(first_day,last_day,
-  interval '400 days') gs loop
+ -- Any void proof from the OLD closeout configuration is invalid too,
+ -- including dates beyond the shorter modifiedDate scan window.
+ delete from public.toast_void_repull_coverage
+ where business_id=new.business_id and restaurant_guid=new.restaurant_guid
+  and business_date between first_day and last_day;
+ -- Each chunk is at most 400 business dates. A reused active run MUST start
+ -- over from its first date, never retain cursor/days_done after invalidation.
+ -- This, the coverage demotion, and staged-page deletion are ONE transaction.
+ for recovery_day in select gs::date from generate_series(
+   first_day::timestamp,last_day::timestamp,interval '400 days') gs loop
   insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
-   requested_from,requested_to,days_total)
-  values(new.business_id,new.restaurant_guid,'backfill',first_day,
-   least(first_day+399,last_day),least(first_day+399,last_day)-first_day+1)
+   requested_from,requested_to,days_total,cursor)
+  values(new.business_id,new.restaurant_guid,'backfill',recovery_day,
+   least(recovery_day+399,last_day),
+   least(recovery_day+399,last_day)-recovery_day+1,'{}'::jsonb)
   on conflict(business_id,restaurant_guid,requested_from,requested_to)
    where kind='backfill' and state in ('queued','running','paused_rate_limited')
-  do nothing;
+  do update set state='queued',days_done=0,cursor='{}'::jsonb,
+   resume_at=null,started_at=null,finished_at=null,
+   invalid_days=0,last_error_category=null,
+   orders_seen=0,orders_unparsed=0,api_calls=0,rate_limited_count=0
+  returning id into recovery_id;
+  -- PR1 stages pages with ON CONFLICT DO NOTHING. Old pages are unsafe
+  -- under a changed time-zone or business-day closeout definition.
+  delete from public.toast_day_pages where run_id=recovery_id;
  end loop;
  return new;
 end $mapping$;
