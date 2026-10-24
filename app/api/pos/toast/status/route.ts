@@ -2,7 +2,7 @@ import {NextResponse} from "next/server";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
 import {GUID} from "@/lib/pos/toast/client";
 export const dynamic="force-dynamic";
-import {statusSchema} from "@/lib/pos/toast/statusSchema";
+import {statusSchema,toastOwnerDbRows} from "@/lib/pos/toast/statusSchema";
 import {readAllPages} from "@/lib/pos/toast/readAllPages";
 import {dayCoverage,dayTotals,applicableLocations} from "@/lib/pos/toast/ownerCoverage";
 const send=(status:number,body:unknown)=>NextResponse.json(body,{status,headers:{"Cache-Control":"no-store"}});
@@ -37,7 +37,14 @@ export async function GET(request:Request){
  const [c,m,runRows,statusRows,flagRows,a,check]=fetched;
  if([c,m,a,check].some(x=>x.error))return send(503,{error:"status_unavailable"});
  if(!m.data?.length)return send(404,{error:"not_found"});
- const r={data:runRows},s={data:statusRows},f={data:flagRows};
+ const validated=toastOwnerDbRows.safeParse({
+  mappings:m.data,runs:runRows,days:statusRows,flags:flagRows
+ });
+ if(!validated.success)return send(503,{error:"status_unavailable"});
+ const {mappings,runs,days,flags:activeFlags}=validated.data;
+ const r={data:runs},s={data:days},f={data:activeFlags};
+ if(mappings.some(x=>x.verified_at)&&!mappings[0].toast_time_zone)
+  return send(503,{error:"status_unavailable"});
  const health=await db.from("toast_sync_health_v").select("last_good_sync_at,stale").eq("business_id",id.data);
  if(health.error)return send(503,{error:"status_unavailable"});
  const good=(health.data??[]).map(h=>h.last_good_sync_at).filter(Boolean).sort().at(-1)??null;
@@ -60,7 +67,7 @@ export async function GET(request:Request){
     oursCents:null,toastCents:null,deltaCents:null,reason:"owner_flag"});
  }
  const completeDates=[...new Set(s.data.map(x=>x.business_date))].filter(date=>
-  dayCoverage(m.data,s.data,date).complete);
+  dayCoverage(mappings,s.data,date).complete);
  const mostRecent=()=>new Intl.DateTimeFormat("en-CA",{timeZone:m.data[0].toast_time_zone,
   year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
  const base=Date.parse(mostRecent()+"T12:00:00Z");
@@ -77,13 +84,13 @@ export async function GET(request:Request){
   needsLook,
   firstImportRows:completeDates.slice(0,7).map(date=>{
    const selected=dayCoverage(m.data,s.data,date).rows;
-   return {date,oursCents:dayTotals(m.data,s.data,date).netSalesCents,
+   return {date,oursCents:dayTotals(mappings,s.data,date).netSalesCents,
     toastCents:!a.data?.verified_at||selected.some(x=>x?.toast_net_sales_cents==null)?null:
      selected.reduce((n,x)=>n+(x?.toast_net_sales_cents??0),0)};
   }),
   recent:recentDates.map(date=>{
    const totals=dayTotals(m.data,s.data,date);
-   const eligible=applicableLocations(m.data,date);
+   const eligible=applicableLocations(mappings,date);
    const problem=needsLook.some(x=>x.date===date&&eligible.some(m=>m.restaurant_guid===x.restaurantGuid));
    return {date,netSalesCents:totals.netSalesCents,orders:totals.orders,
     status:problem?"needs_look":!totals.complete?"missing":totals.checked?"checked":"checking"};
