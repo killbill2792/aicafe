@@ -276,7 +276,10 @@ begin
   tax_cents,tip_cents,order_count,open_check_count,service_charges_cents,
   gratuity_cents,unparsed_count,warnings,orders_snapshot_sha256,last_import_run_id)
  values(p_business_id,p_restaurant_guid,p_business_date,'imported',
-  case when (p_summary->>'unparsed_count')::integer>0 then 'mismatch' else 'pending' end,
+  case when (p_summary->>'unparsed_count')::integer>0 or coalesce((p_summary->'warnings'->>'missing_check_amount')::integer,0)>0
+    or coalesce((p_summary->'warnings'->>'missing_deferred_price')::integer,0)>0
+    or coalesce((p_summary->'warnings'->>'missing_refund_amount')::integer,0)>0
+   then 'mismatch' else 'pending' end,
   now(),v_net,(p_summary->>'gross_sales_cents')::bigint,
   (p_summary->>'discounts_cents')::bigint,(p_summary->>'refunds_cents')::bigint,
   (p_summary->>'tax_cents')::bigint,(p_summary->>'tip_cents')::bigint,
@@ -306,7 +309,10 @@ begin
     join public.orders x on x.id=l.order_id where x.business_id=p_business_id
      and x.business_date=p_business_date and not x.toast_excluded
      and x.superseded_by is null and not l.voided),0)::integer,
-   0,0,0,0,0,case when (p_summary->>'unparsed_count')::integer=0 then 'actual' else 'missing' end
+   0,0,0,0,0,case when (p_summary->>'unparsed_count')::integer=0 and not (coalesce((p_summary->'warnings'->>'missing_check_amount')::integer,0)>0
+    or coalesce((p_summary->'warnings'->>'missing_deferred_price')::integer,0)>0
+    or coalesce((p_summary->'warnings'->>'missing_refund_amount')::integer,0)>0)
+    then 'actual' else 'missing' end
  from public.orders o where o.business_id=p_business_id
    and o.business_date=p_business_date and not o.toast_excluded
    and o.superseded_by is null
