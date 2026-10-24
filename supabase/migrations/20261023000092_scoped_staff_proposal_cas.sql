@@ -77,7 +77,8 @@ BEGIN
  END IF;
  RETURN md5(jsonb_build_object('scope',p_scope,'rows',snapshot,
    'cafe_date',(now() AT TIME ZONE (SELECT timezone FROM public.businesses WHERE id=p_business_id))::date,
-   'timezone',(SELECT timezone FROM public.businesses WHERE id=p_business_id))::text);
+   'timezone',(SELECT timezone FROM public.businesses WHERE id=p_business_id),
+   'currency',(SELECT currency FROM public.businesses WHERE id=p_business_id))::text);
 END $$;
 REVOKE ALL ON FUNCTION public.supervisor_staff_scoped_token(uuid,jsonb) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.supervisor_staff_scoped_token(uuid,jsonb) TO service_role;

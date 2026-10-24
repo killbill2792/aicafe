@@ -43,6 +43,8 @@ const effectSchema=z.strictObject({
  operation:z.enum(["propose_schedule","propose_shift_change","propose_add_staff",
   "propose_staff_change","propose_availability_change","propose_rule_change","propose_send_schedule"]),
  expectedToken:z.string().regex(/^[a-f0-9]{32}$/),scopeVersion:z.literal(2),
+ currency:z.string().regex(/^[A-Z]{3}$/),
+ subjectName:z.string().max(120).nullable(),
  dependencyScope:staffDependencySchema,preview:z.array(line).min(1).max(100),
  payload:z.record(z.string(),z.unknown()),
 });
@@ -64,7 +66,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    ?(input as {shift:{date:string}}).shift.date:null;
  const from=relevantWeek?add(relevantWeek,-1):changeDate?add(changeDate,-1):null;
  const to=relevantWeek?add(relevantWeek,7):changeDate?add(changeDate,1):null;
- const {people,shifts,rules,availability,exceptions,timezone}=
+ const {people,shifts,rules,availability,exceptions,timezone,currency}=
   await readStaffProposalSources(scope,from,to);
  const active=(id:string)=>{const p=people.find(p=>p.id===id&&p.active);ensure(p,"Active staff member not found");return p;};
  const preview:DiffField[]=[];
@@ -74,6 +76,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
  const text=(value:string):CardValue=>({kind:"text",text:value});
  const missing=(reason:"noWage"|"noRole"|"noPhone"):CardValue=>({kind:"missing",reason});
  let payload:Record<string,unknown>={};
+ let subjectName:string|null=null;
  const parts=new Intl.DateTimeFormat("en-US",{timeZone:timezone,
    year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
  const part=(kind:string)=>parts.find(p=>p.type===kind)?.value??"";
@@ -106,7 +109,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
   }
   case "propose_shift_change":{
    const d=input as z.infer<typeof staffProposalInputs.propose_shift_change>;
-   const person=active(d.shift.employee_id);const old=d.shift_id?shifts.find(s=>s.id===d.shift_id):null;
+   const person=active(d.shift.employee_id);subjectName=person.display_name;const old=d.shift_id?shifts.find(s=>s.id===d.shift_id):null;
    ensure(!d.shift_id||old,"Shift no longer exists");
    ensure(!old||old.status==="draft","A sent shift cannot be changed");
    ensure(!old||(old.employee_id===person.id&&old.local_date===d.shift.date),"Cannot change a shift's identity");
@@ -123,6 +126,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
   case "propose_add_staff":{
    const d=input as z.infer<typeof staffProposalInputs.propose_add_staff>;
    ensure(!people.some(p=>p.active&&p.display_name.toLowerCase()===d.name.toLowerCase()),"Staff name already in use");
+   subjectName=d.name;
    item("name","Name",null,text(d.name));
    item("role","Role",null,d.role?text(d.role):missing("noRole"));
    item("wage","Hourly wage",null,{kind:"moneyRate",cents:d.wage_cents,per:"hour"});
@@ -135,6 +139,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const p=people.find(p=>p.id===d.employee_id);
    ensure(p,"Staff member not found");
    ensure(p.wage_period==="hour","Salary workers require manual review");
+   subjectName=p.display_name;
    item("name","Name",text(p.display_name),text(d.name));
    item("role","Role",p.role?text(p.role):missing("noRole"),d.role?text(d.role):missing("noRole"));
    item("wage","Hourly wage",p.wage_amount_cents===null?missing("noWage"):
@@ -149,7 +154,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    ensure(parsed,"Use an unambiguous staff name, weekdays, and times");
    const matched=people.filter(p=>p.active&&p.display_name.trim().toLocaleLowerCase()===parsed.personName.trim().toLocaleLowerCase());
    ensure(matched.length===1,"Staff name not found or ambiguous");
-   const p=matched[0];const rows=availability.filter(x=>x.employee_id===p.id);
+   const p=matched[0];subjectName=p.display_name;const rows=availability.filter(x=>x.employee_id===p.id);
    const old=rows.map(x=>days[x.day_of_week]+" "+String(x.start_local).slice(0,5)+"–"+String(x.end_local).slice(0,5)).join(", ")||copy.noAvailability;
    const windows=parsed.availability.map(x=>({day:x.day,start:x.start,end:x.end}));
    ensure(windows.every(x=>x.start!==null&&x.end!==null),"Incomplete availability window");
@@ -195,7 +200,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
      typeof value==="number"?(d.rule==="ot_multiplier_bp"?{kind:"percent",bps:value}:
        d.rule.endsWith("_minutes")?{kind:"duration",minutes:value}:{kind:"count",n:value}):
        text(formatStaffApprovalRuleValue(value,copy));
-   item("rule",translatedRules[ruleLabels[d.rule]]??copy.ruleFallback,typed(prior),typed(v));
+   item("rule:"+d.rule,translatedRules[ruleLabels[d.rule]]??copy.ruleFallback,typed(prior),typed(v));
    payload={rule:d.rule,boolean_value:d.boolean_value,number_value:d.number_value};break;
   }
   case "propose_send_schedule":{
@@ -219,7 +224,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
      availability:reread.availability,exceptions:reread.exceptions}),
    "Staff data changed while preparing preview; try again");
  ensure(preview.length>0,"No changes to propose");
- return {effect:{operation:name,scopeVersion:2,dependencyScope,expectedToken:beforeToken,preview,payload},
+ return {effect:{operation:name,scopeVersion:2,dependencyScope,expectedToken:beforeToken,currency,subjectName,preview,payload},
    baseline:{source:"staff_schedule",status:"actual"},monitorSpec:{durationDays:1,metricScope:"staff"}};
 }
 export const staffCapabilities=names.map(name=>registerLoopCapability({

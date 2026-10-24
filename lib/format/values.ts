@@ -34,8 +34,40 @@ export function diffFields(before:readonly FieldValue[],after:readonly FieldValu
 }
 export type CardLocale="en"|"es"|"ar";
 const messages={en,es,ar} as const;
+const ruleTranslationKeys:Record<string,string>={
+ meal_break_enabled:"mealBreak",meal_break_minutes:"mealMinutes",
+ meal_break_after_minutes:"mealAfter",rest_break_enabled:"paidRest",
+ rest_break_minutes:"restMinutes",rest_break_every_minutes:"restEvery",
+ weekly_ot_enabled:"weeklyOvertime",weekly_ot_after_minutes:"weeklyAfter",
+ ot_multiplier_bp:"multiplier",daily_ot_enabled:"dailyOvertime",
+ daily_ot_after_minutes:"dailyAfter",max_shift_enabled:"longestShift",
+ max_shift_minutes:"longestMinutes",min_shift_enabled:"shortestShift",
+ min_shift_minutes:"shortestMinutes",min_rest_enabled:"betweenShifts",
+ min_rest_minutes:"betweenMinutes",coverage_enabled:"minimumCoverage",
+ min_headcount:"peopleWhileOpen",prep_minutes_before_open:"prepBeforeOpen",
+ prep_minutes_after_close:"prepAfterClose",
+};
+const weekdayKeys=["sun","mon","tue","wed","thu","fri","sat"] as const;
 export function formatCardField(field:string,label:string,locale:CardLocale):string{
- const labels=messages[locale].CardValues as Record<string,string>;
+ const catalog=messages[locale];
+ if(field.startsWith("rule:")){
+  const key=ruleTranslationKeys[field.slice(5)];
+  return key?(catalog.StaffSchedule as Record<string,string>)[key]??label:label;
+ }
+ if(field.startsWith("schedule:"))
+  return catalog.StaffApprovalCard.week+" "+field.slice("schedule:".length);
+ if(field.startsWith("availability:")){
+  const suffix=field.slice("availability:".length);
+  const day=Number(suffix);
+  if(/^\\d$/.test(suffix)&&day>=0&&day<=6)
+   return catalog.SchedulingAvailability[weekdayKeys[day]];
+  return suffix; // date-specific absence, not the generic availability label
+ }
+ // Contextual labels must not be flattened to "Rule" or "Shift":
+ // owners must see which rule and whose shift the card changes.
+ if(field==="rule"||field==="shift"||field==="schedule"||field==="availability")
+  return label;
+ const labels=catalog.CardValues as Record<string,string>;
  const key="field"+field.charAt(0).toUpperCase()+field.slice(1);
  return labels[key]??label;
 }

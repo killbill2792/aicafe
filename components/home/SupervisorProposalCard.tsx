@@ -11,7 +11,7 @@ type Locale="en"|"es"|"ar";
 export type ProposalView={proposalId:string;revision:number;state:string;capabilityId?:string;
   productName?:string;oldPriceCents?:number;newPriceCents?:number;
   preview?:ApprovalPreviewRow[];currency?:string;
-  currentPriceCents?:number|null;editedByOwner?:boolean};
+  currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null};
 const dict={en,es,ar} as const;
 export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   threadId:string;proposalId:string;locale:Locale;
@@ -91,6 +91,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
           {statuses[value.state]??staffCopy.failed}
         </span>
       </div>
+      {value.subjectName&&<p className="mt-2 break-words text-lg font-bold">{value.subjectName}</p>}
       <p className="mt-2 text-[17px] text-ink-muted">{staffCopy.reviewNotice}</p>
       <BeforeAfterRows rows={value.preview??[]} locale={locale} currency={value.currency??"USD"}/>
       {value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true&&value.state!=="applied"&&
