@@ -360,7 +360,7 @@ revoke execute on function public.toast_promote_reconciled_day(uuid,uuid,uuid,da
 -- superseded rows. Replace its projection, retaining its permission contract.
 create or replace function public.pos_rebuild_sales_fact_rollups_v1(
  p_business_id uuid,p_business_date date)
-returns void language plpgsql security invoker set search_path=public as $
+returns void language plpgsql security invoker set search_path=public as $rollup$
 declare v_timezone text;
 begin
  if p_business_id is null or p_business_date is null then raise exception 'Missing day';end if;
@@ -387,7 +387,7 @@ begin
  where o.business_id=p_business_id and o.business_date=p_business_date
   and not o.toast_excluded and o.superseded_by is null
  group by o.business_id,o.employee_id,o.business_date;
-end $;
+end $rollup$;
 
 create view public.toast_sync_health_v with (security_invoker=true) as
 select m.business_id,m.restaurant_guid,
