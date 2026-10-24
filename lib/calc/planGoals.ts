@@ -107,8 +107,12 @@ export function simulatePlanChange(input: {
   let sales = base.observedSalesCents, ingredients = base.observedIngredientCents;
   let staff = base.monthlyStaffCents, profitDelta = 0;
   if (type === "staff") {
-    const dailySaving = Math.round(staffHoursPerDay * assumedHourlyWageCents * (1 + base.payrollTaxRate));
-    const monthlySaving = Math.min(staff, Math.round(dailySaving * base.operatingDaysInMonth));
+    // Round only once after the full month's hours and employer costs are applied.
+    // Rounding the daily fractional-cent wage first accumulates false savings.
+    const monthlySaving = Math.min(staff, Math.round(
+      staffHoursPerDay * assumedHourlyWageCents *
+      (1 + base.payrollTaxRate) * base.operatingDaysInMonth,
+    ));
     staff -= monthlySaving;
     profitDelta = monthlySaving;
   } else {

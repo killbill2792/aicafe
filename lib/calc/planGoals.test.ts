@@ -90,6 +90,16 @@ describe("Plan goals", () => {
       assumedHourlyWageCents: 1950 });
     expect(unavailable).toBeNull();
   });
+  it("rounds partial-hour loaded staff costs once at the month total", () => {
+    const fractional = simulatePlanChange({
+      base: { ...base, operatingDaysInMonth: 22, payrollTaxRate: 0.123 },
+      type: "staff", item: null, newValueCents: 0, staffHoursPerDay: 0.5,
+      assumedHourlyWageCents: 1999,
+    });
+    expect(fractional?.monthlyProfitChangeCents).toBe(
+      Math.round(0.5 * 1999 * 1.123 * 22),
+    );
+  });
   it("does not project profit for too little observed sales coverage", () => {
     expect(simulatePlanChange({ base: { ...base, salesDaysCovered: 0 },
       type: "price", item, newValueCents: 525, staffHoursPerDay: 0,
