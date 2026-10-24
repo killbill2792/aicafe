@@ -1,6 +1,6 @@
 import type { getTranslations } from "next-intl/server";
 import type { AlertRow } from "@/lib/data/getAlerts";
-import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
+import { RUNNING_COST_CODES } from "@/lib/constants";
 
 type T = Awaited<ReturnType<typeof getTranslations<"Alerts">>>;
 
@@ -19,7 +19,7 @@ export function describeAlert(alert: AlertRow, t: T, categoryLabel: (code: strin
     case "missing_bill": {
       const code = String(alert.payload.categoryCode ?? "");
       // Never put an unrecognized category code into an icon, translation or target URL.
-      const knownCode = EXPENSE_CATEGORY_CODES.find((value) => value === code);
+      const knownCode = RUNNING_COST_CODES.find((value) => value === code);
       if (!knownCode) break;
       return {
         icon: knownCode,
