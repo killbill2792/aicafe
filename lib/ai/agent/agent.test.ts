@@ -90,7 +90,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       "get_staff","get_schedule","get_labor","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
       "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
-      "get_item_sales","get_price_recommendation","draft_week_schedule","suggest_new_item_price","propose_price_change",
+      "get_item_sales","get_price_recommendation","draft_week_schedule","suggest_new_item_price","propose_price_change","propose_price_experiment",
       "propose_schedule","propose_shift_change","propose_add_staff","propose_staff_change",
       "propose_availability_change","propose_rule_change","propose_send_schedule",
       "get_initiatives","get_initiative_status","record_checkin"]);
@@ -120,7 +120,8 @@ describe("numbers, statuses, and strict tool contracts", () => {
       },
     };
     const result = await executeAgentTool("get_menu_items",{query:"latte",limit:25},context);
-    expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450}]);
+    expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450,
+      unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"ok"}]);
     expect(result.agentId).toBe("alex");
     await expect(executeAgentTool("get_menu_items",{businessId:"other"},context)).rejects.toThrow();
     await expect(executeAgentTool("get_menu_items",{query:null,limit:26},context)).rejects.toThrow();

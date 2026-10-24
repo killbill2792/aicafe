@@ -17,7 +17,13 @@ vi.mock("@/lib/menu/priceHistory",()=>({setCanonicalMenuPrice:async(_client:unkn
   state.saves++;state.saveArgs=input;return true;
 }}));
 vi.mock("next/cache",()=>({revalidatePath:()=>{}}));
-vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({})}));
+vi.mock("@/lib/data/getActiveBusinessId",()=>({getActiveBusinessId:async()=>state.businessId}));
+vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({
+ auth:{getUser:async()=>({data:{user:{id:"33333333-3333-4333-8333-333333333333"}}})},
+ from:(table:string)=>({
+   select:()=>({eq:()=>({eq:()=>({maybeSingle:async()=>({data:table==="memberships"?{role:"owner"}:{currency:state.currency,is_demo:false}})})})}),
+ }),
+})}));
 vi.mock("@/lib/data/proposalPrices.server",()=>({ownerMenuPrice:async()=>state.current}));
 vi.mock("./sales.server",()=>({readPriceExperimentSalesDays:async()=>[]}));
 import {menuPriceChangeCapability,StaleProposalError,menuPriceChangeCapabilityId} from "./menuPriceChange.server";

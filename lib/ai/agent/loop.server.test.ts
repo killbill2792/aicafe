@@ -50,7 +50,8 @@ describe("recorded Responses streaming fixtures", () => {
     expect(result.usage.toolCalls).toBe(1);
     expect(result.status.status).toBe("complete");
     expect(result.results).toEqual([{ source: "menu_items", period: null, agentId:"alex", missing: [], items: [
-      { id: "item-1", name: "Latte", category: "drink", priceCents: 450 },
+      { id: "item-1", name: "Latte", category: "drink", priceCents: 450,
+        unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"ok" },
     ] }]);
     expect(result.unverified).toEqual([]);
   });
@@ -65,8 +66,8 @@ describe("recorded Responses streaming fixtures", () => {
     const result = await runAgentTurn({ownerText:"Menu?",context,provider});
     expect(requests).toHaveLength(3);
     expect(requests[2].tool_choice).toBe("none");
-    expect(JSON.stringify(requests[2].input)).toContain("invalid_arguments");
-    expect(JSON.stringify(requests[2].input)).toContain("issues");
+    expect(JSON.stringify(requests[2].input)).toContain('"error":"validation"');
+    expect(JSON.stringify(requests[2].input)).toContain("reason");
     const input = requests[2].input;
     expect(Array.isArray(input)).toBe(true);
     if (!Array.isArray(input)) throw new Error("expected message array");
