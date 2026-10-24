@@ -88,10 +88,9 @@ export async function GET(request:Request){
   queuedRanges:(r.data??[]).filter(x=>["queued","running","paused_rate_limited"].includes(x.state)&&x.requested_from&&x.requested_to).map(x=>({from:x.requested_from,to:x.requested_to})),
   needsLook,
   firstImportRows:completeDates.slice(0,7).map(date=>{
-   const selected=dayCoverage(mappings,s.data,date).rows;
-   return {date,oursCents:dayTotals(mappings,s.data,date).netSalesCents,
-    toastCents:!a.data?.verified_at||selected.some(x=>x?.toast_net_sales_cents==null)?null:
-     selected.reduce((n,x)=>n+(x?.toast_net_sales_cents??0),0)};
+   const totals=dayTotals(mappings,s.data,date);
+   return {date,oursCents:totals.netSalesCents,
+    toastCents:a.data?.verified_at?totals.toastNetSalesCents:null};
   }),
   recent:recentDates.map(date=>{
    const totals=dayTotals(mappings,s.data,date);
