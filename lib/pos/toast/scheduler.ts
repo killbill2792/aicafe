@@ -7,6 +7,7 @@ import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
 import {retryToastRollupRefreshes} from "./rollupRetries";
 import {z} from "zod";
 import {syncToastOptionalSources} from "./optionalSync";
+import {reconcileToastDays} from "./reconcile";
 
 type Mapping={business_id:string;location_id:string;restaurant_guid:string;
  toast_time_zone:string;closeout_hour:number;info_refreshed_at:string|null;
@@ -176,8 +177,33 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     processed+=await runDue(db,m,run,deadlineAt);
    }
    const closed=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
-   if(closed)await queueDaily(db,m,closed);
+   if(closed&&Date.now()<deadlineAt){
+    await queueDaily(db,m,closed);
+    const {data:daily,error:dailyErr}=await db.from("toast_sync_runs")
+     .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
+     .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid)
+     .eq("kind","daily").eq("requested_from",closed).maybeSingle();
+    if(dailyErr)throw new ToastApiError("unavailable");
+    if(daily&&shouldResume(daily as Run,Date.now()))
+     processed+=await runDue(db,m,daily as Run,deadlineAt);
+   }
    if(Date.now()<deadlineAt)await scanModifiedDates(db,m,now,deadlineAt);
+   if(Date.now()<deadlineAt){
+    const {data:rePull,error:rePullErr}=await db.from("toast_sync_runs")
+     .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
+     .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid)
+     .eq("kind","repull_modified").eq("state","queued").order("requested_from").limit(50);
+    if(rePullErr)throw new ToastApiError("unavailable");
+    for(const run of (rePull??[]) as Run[]){
+     if(Date.now()>=deadlineAt)break;
+     processed+=await runDue(db,m,run,deadlineAt);
+    }
+   }
+   if(Date.now()<deadlineAt)await reconcileToastDays(db,{
+    businessId:m.business_id,restaurantGuid:m.restaurant_guid,
+    locationId:m.location_id,timeZone:m.toast_time_zone,
+    closeoutHour:m.closeout_hour
+   },deadlineAt);
    if(Date.now()<deadlineAt)await queueFirstBackfill(db,m,now);
    const {data:next,error:nextErr}=await db.from("toast_sync_runs")
     .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
