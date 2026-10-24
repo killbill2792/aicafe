@@ -35,7 +35,7 @@ export function homeShiftHref(employeeId?: string | null, date?: string | null):
     // The current Staff screen selects weeks via ?week=; Step 13 will also
     // honor date/employee directly. Supply both so neither version loses the
     // owner's intended scheduling week.
-    if (/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       const parsed = new Date(date + "T12:00:00Z");
       if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0,10) === date) {
         const monday = new Date(parsed.getTime() - ((parsed.getUTCDay() + 6) % 7) * 86_400_000);
