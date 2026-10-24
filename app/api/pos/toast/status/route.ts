@@ -37,7 +37,6 @@ export async function GET(request:Request){
  }catch{return send(503,{error:"status_unavailable"});}
  const [c,m,runRows,statusRows,flagRows,a,check,business]=fetched;
  if([c,m,a,check,business].some(x=>x.error))return send(503,{error:"status_unavailable"});
- if(!m.data?.length)return send(404,{error:"not_found"});
  const validated=toastOwnerDbRows.safeParse({
   mappings:m.data,runs:runRows,days:statusRows,flags:flagRows
  });
@@ -53,7 +52,7 @@ export async function GET(request:Request){
  const health=await db.from("toast_sync_health_v").select("last_good_sync_at,stale").eq("business_id",id.data);
  if(health.error)return send(503,{error:"status_unavailable"});
  const good=(health.data??[]).map(h=>h.last_good_sync_at).filter(Boolean).sort().at(-1)??null;
- const state=c.data?.state==="verified"&&m.data.every(x=>x.verified_at)?"connected":
+ const state=c.data?.state==="verified"&&m.data.length>0&&m.data.every(x=>x.verified_at)?"connected":
   !c.data?"not_connected":"needs_attention";
  const active=(r.data??[]).filter(x=>x.kind==="backfill"&&["queued","running","paused_rate_limited"].includes(x.state));
  const flags=new Set((f.data??[]).map(x=>x.restaurant_guid+":"+x.business_date));
