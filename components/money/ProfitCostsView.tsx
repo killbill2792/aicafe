@@ -1,3 +1,4 @@
+import { missingCostHref, type SalesSource } from "./moneyActions";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { getTranslations, getLocale } from "next-intl/server";
 import Money from "@/components/shared/Money";
@@ -59,7 +60,7 @@ function HealthRow({ label, pct, band, note, bandLabel }: { label: string; pct: 
   );
 }
 
-export default async function ProfitCostsView({ snapshot, period }: { snapshot: BusinessSnapshot; period: Period }) {
+export default async function ProfitCostsView({ snapshot, period, salesSources }: { snapshot: BusinessSnapshot; period: Period; salesSources: SalesSource[] }) {
   const t = await getTranslations("Money");
   const tCommon = await getTranslations("Common");
   const bandLabel: Record<HealthBand, string> = { healthy: t("bandHealthy"), watch: t("bandWatch"), high: t("bandHigh") };
@@ -85,11 +86,17 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
   // summary box fall back to a neutral, non-alarming presentation rather than a precise red loss.
   const tone = vm.ownerProfitDisplay.kind === "unavailable" ? "neutral" : vm.ownerProfitDisplay.tone;
 
+  const sourceNames: Record<SalesSource, string> = { toast: "Toast", square: "Square", upload: t("sourceUploads"), unknown: t("sourceUnknown") };
+  const sourceLabel = salesSources.length === 1
+    ? salesSources[0] === "unknown" ? t("sourceUnknown") : t("sourceSingle", { source: sourceNames[salesSources[0]] })
+    : t("sourceMixed", { sources: salesSources.map((source) => sourceNames[source]).join(t("sourceJoin")) });
+  const firstMissing = snapshot.runningCostLines.find((line) => line.isMissing && line.isExpected);
+
   const changeLabels: Record<string, string> = {
     sales: t("sales"),
     ingredients: t("ingredients"),
     staff: t("staff"),
-    ownerProfit: t("ownerProfit"),
+    ownerProfit: t("youKeep"),
   };
 
   return (
@@ -119,7 +126,7 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
         <div className="flex items-center justify-between border-b-2 border-ink py-3.5">
           <div className="flex flex-col gap-0.5">
             <span className="text-[17px] font-extrabold">{t("sales")}</span>
-            <span className="text-xs text-ink-muted">{t("fromSquare")}</span>
+            <span className="text-xs text-ink-muted">{sourceLabel}</span>
           </div>
           <span className="text-xl font-extrabold">
             <Money cents={vm.salesCents} />
@@ -145,6 +152,7 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
               estimate={line.isEstimate}
               estimateLabel={t("estimateLower")}
               addLabel={t("add")}
+              href={missingCostHref(line.categoryCode)}
               last={i === vm.runningCostLines.length - 1}
             />
           ))}
@@ -162,7 +170,7 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
         {costLimitation && <p className="mb-3 text-sm text-ink-muted">{costLimitation}</p>}
         <div className={`mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl px-3.5 py-3 ${tone === "good" ? "bg-good-tint" : tone === "warn" ? "bg-warn-tint" : "bg-surface"}`}>
           <span className={`flex items-center gap-1.5 text-[17px] font-extrabold ${tone === "good" ? "text-fg" : profitToneTextClass(tone)}`}>
-            {t("ownerProfit")}
+            {t("youKeep")}
             {vm.ownerProfitDisplay.kind === "partial" && <EstimatePill label={t("partialPill")} />}
           </span>
           {vm.ownerProfitDisplay.kind === "unavailable" ? (
@@ -175,7 +183,10 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
         </div>
       </section>
 
-      <p className="mx-1 text-sm text-ink-muted">{t("costsEntered", { entered: vm.costsEnteredCount, total: vm.costsTotalCount })}</p>
+      <div className="mx-1 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-ink-muted">{t("costsEntered", { entered: vm.costsEnteredCount, total: vm.costsTotalCount })}</p>
+        {firstMissing && <Link href={missingCostHref(firstMissing.categoryCode)} className="inline-flex min-h-12 items-center rounded-full border border-line px-4 text-base font-bold">{t("add")}</Link>}
+      </div>
 
       <section className="flex flex-col gap-3.5 rounded-card-lg bg-card p-[18px]">
         <div className="flex flex-col gap-0.5">
@@ -229,6 +240,7 @@ function Row({
   estimate,
   estimateLabel,
   addLabel,
+  href,
   last,
 }: {
   name: string;
@@ -236,6 +248,7 @@ function Row({
   estimate?: boolean;
   estimateLabel?: string;
   addLabel?: string;
+  href?: string;
   last?: boolean;
 }) {
   return (
@@ -243,7 +256,7 @@ function Row({
       <span className={`flex-1 text-[15px] ${cents === null ? "font-semibold text-warn" : ""}`}>{name}</span>
       {estimate && <EstimatePill label={estimateLabel ?? "Estimate"} />}
       {cents === null ? (
-        <Link href="/add-cost" className="flex h-[34px] items-center rounded-2xl bg-warn-text px-3 text-[13px] font-bold text-on-warn">
+        <Link href={href ?? "/add-cost"} className="flex min-h-12 items-center rounded-2xl bg-warn-text px-3 text-[13px] font-bold text-on-warn">
           {addLabel ?? "Add"}
         </Link>
       ) : (

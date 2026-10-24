@@ -286,7 +286,7 @@
   "Money": {
     "title": "Money",
     "placeholder": "Cost recovery and profit & costs will show up here.",
-    "recoveryTab": "Break-even",
+    "recoveryTab": "Bills paid back",
     "profitTab": "Profit & costs",
     "sinceCovered": "Since it was covered",
     "thisMonthsBills": "This month's bills",
@@ -381,7 +381,18 @@
     "breakEvenNeedProcessingFees": "Processing-fee data is still missing. Add actual fees or confirm an estimate first.",
     "breakEvenUnavailable": "The current cost mix cannot produce a reliable break-even target.",
     "ingredientsAtBreakEven": "Ingredients at break-even",
-    "processingFeesAtBreakEven": "Processing fees at break-even"
+    "processingFeesAtBreakEven": "Processing fees at break-even",
+    "uploadSales": "Upload sales",
+    "syncToast": "Sync Toast",
+    "addBills": "Add bills",
+    "addProductCosts": "Add product costs",
+    "fixFees": "Fix fees",
+    "uploadSalesForDay": "Upload sales for this day",
+    "sourceUploads": "uploads",
+    "sourceUnknown": "Sales source unavailable",
+    "sourceSingle": "From {source}",
+    "sourceMixed": "From {sources}",
+    "sourceJoin": " and "
   },
   "Menu": {
     "title": "Menu",

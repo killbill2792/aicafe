@@ -286,7 +286,7 @@
   "Money": {
     "title": "Dinero",
     "placeholder": "Aquí verás la recuperación de costos y las ganancias y gastos.",
-    "recoveryTab": "Punto de equilibrio",
+    "recoveryTab": "Facturas pagadas",
     "profitTab": "Ganancias y gastos",
     "sinceCovered": "Desde que se cubrió",
     "thisMonthsBills": "Las cuentas de este mes",
@@ -381,7 +381,18 @@
     "breakEvenNeedProcessingFees": "Aún faltan comisiones de procesamiento. Agrega datos reales o confirma una estimación.",
     "breakEvenUnavailable": "La mezcla de costos actual no permite calcular un punto de equilibrio confiable.",
     "ingredientsAtBreakEven": "Ingredientes en el punto de equilibrio",
-    "processingFeesAtBreakEven": "Comisiones de procesamiento en el punto de equilibrio"
+    "processingFeesAtBreakEven": "Comisiones de procesamiento en el punto de equilibrio",
+    "uploadSales": "Subir ventas",
+    "syncToast": "Sincronizar Toast",
+    "addBills": "Agregar facturas",
+    "addProductCosts": "Agregar costos de productos",
+    "fixFees": "Corregir comisiones",
+    "uploadSalesForDay": "Subir las ventas de este día",
+    "sourceUploads": "archivos subidos",
+    "sourceUnknown": "Origen de ventas no disponible",
+    "sourceSingle": "De {source}",
+    "sourceMixed": "De {sources}",
+    "sourceJoin": " y "
   },
   "Menu": {
     "title": "Menú",

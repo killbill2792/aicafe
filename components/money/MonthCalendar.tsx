@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import Money from "@/components/shared/Money";
+import { Link } from "@/i18n/navigation";
 import EstimatePill from "@/components/shared/EstimatePill";
 import PlainIcon from "@/components/icons/PlainIcon";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
@@ -21,6 +22,8 @@ export type MonthCalendarLabels = {
   legendClosed: string;
   legendUpcoming: string;
   noData: string;
+  syncToast: string;
+  uploadSalesForDay: string;
   closedDay: string;
   /** Contains a literal "%BUCKET%" placeholder, filled in client-side per covered bucket. */
   milestoneTemplate: string;
@@ -42,6 +45,7 @@ export type MonthCalendarLabels = {
 
 export default function MonthCalendar({
   monthLabel,
+  toastConnected,
   calMonthKey,
   canGoNext,
   weekdayLabels,
@@ -53,6 +57,7 @@ export default function MonthCalendar({
   coverageSignal,
 }: {
   monthLabel: string;
+  toastConnected: boolean;
   calMonthKey: string;
   canGoNext: boolean;
   weekdayLabels: string[];
@@ -209,7 +214,13 @@ export default function MonthCalendar({
             {new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${selectedDetail.date}T00:00:00`))}
           </span>
           {!selectedDetail.hasData ? (
-            <span className="text-sm text-ink-muted">{selectedDetail.isClosed ? labels.closedDay : labels.noData}</span>
+            <div className="flex flex-col gap-2">
+              <span className="text-sm text-ink-muted">{selectedDetail.isClosed ? labels.closedDay : labels.noData}</span>
+              {!selectedDetail.isClosed && <div className="flex flex-wrap gap-2">
+                {toastConnected && <Link href="/more/toast" className="inline-flex min-h-12 items-center rounded-full border border-line px-4 text-base font-bold">{labels.syncToast}</Link>}
+                <Link href="/more/uploads/sales" className="inline-flex min-h-12 items-center rounded-full border border-line px-4 text-base font-bold">{labels.uploadSalesForDay}</Link>
+              </div>}
+            </div>
           ) : (
             <>
               <DetailRow label={labels.sales} cents={selectedDetail.salesCents} />
