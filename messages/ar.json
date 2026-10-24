@@ -316,7 +316,9 @@
     "attentionFeesMissing": "رسوم معالجة المدفوعات مفقودة منذ {count} أيام",
     "attentionAddFees": "إضافة الرسوم",
     "costsIncomplete": "بعض التكاليف لم تُتحقق بعد",
-    "attentionMatchUnavailable": "تحتاج مطابقة الأصناف إلى مراجعة"
+    "attentionMatchUnavailable": "تحتاج مطابقة الأصناف إلى مراجعة",
+    "attentionAlertsUnavailable": "تحتاج التنبيهات إلى المراجعة",
+    "attentionCheckAlerts": "مراجعة التنبيهات"
   },
   "Money": {
     "title": "المال",
