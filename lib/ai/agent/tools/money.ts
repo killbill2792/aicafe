@@ -7,7 +7,7 @@ import {money,percent,count} from "../explain";
 import {safeSumCents} from "@/lib/calc/explainMath";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 
-const period=z.strictObject({period:z.union([z.enum(["today","week","month","last_week","last_month","ytd"]),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
+const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const empty=z.strictObject({});
 // Nullable for the Responses strict-tool schema. Omitted fields keep existing callers working.
 const breakEvenInput=z.strictObject({

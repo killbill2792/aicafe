@@ -101,11 +101,20 @@ export function ownerChoiceGuard(state: ResolveState|undefined, targetId:string)
   return null;
 }
 export function observeToolResult(state:ResolveState|undefined,result:Record<string,unknown>):void{
-  if(!state||!Array.isArray(result.missing)||result.missing.length)return;
-  if(result.needsOwnerChoice===true&&Array.isArray(result.candidates)) {
+  if(!state||!Array.isArray(result.missing)||typeof result.error==="string")return;
+  // A safe tool can refuse a write with ownerChoiceRequired. That refusal must
+  // still supply candidates for ask_owner, even when no earlier read occurred.
+  const validChoice=result.needsOwnerChoice===true&&
+    (result.missing.length===0||result.missing.includes("ownerChoiceRequired"));
+  if(validChoice&&Array.isArray(result.candidates)) {
     const candidates=result.candidates.filter((v):v is ChoiceCandidate=>
       Boolean(v)&&typeof v==="object"&&typeof v.id==="string"&&typeof v.label==="string"&&typeof v.detail==="string").slice(0,4);
-    if(candidates.length>1)state.ambiguous.push(candidates);
+    if(candidates.length>1){
+      state.ambiguous.push(candidates);
+      for(const candidate of candidates)if(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(candidate.id))
+        state.seenIds.add(candidate.id.toLowerCase());
+    }
   }
   const visit=(value:unknown,depth:number)=>{
     if(depth>5||!value||typeof value!=="object")return;
@@ -116,7 +125,7 @@ export function observeToolResult(state:ResolveState|undefined,result:Record<str
       else visit(v,depth+1);
     }
   };
-  visit(result,0);
+  if(result.missing.length===0)visit(result,0);
 }
 
 /** Periods share the same owner-choice wire contract as named records. */

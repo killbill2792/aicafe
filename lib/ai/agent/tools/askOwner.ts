@@ -19,9 +19,11 @@ export const askOwnerTools={ask_owner:{
     return {source:"ask_owner",period:null,missing:["duplicateLabels"],error:"duplicateLabels"};
   if(input.options.some(o=>uuid.test(o.value)&&!state.seenIds.has(o.value.toLowerCase())))
     return {source:"ask_owner",period:null,missing:["inventedOptionId"],error:"unverifiedOptionId"};
-  if(state.ambiguous.length&&!input.options.every(o=>
-    state.ambiguous.some(group=>group.some(candidate=>candidate.id===o.value||candidate.label===o.label))))
-    return {source:"ask_owner",period:null,missing:["unverifiedOption"],error:"notFromTool"};
+  // Every displayed (label, value) pair must come from one single tool group;
+  // a correct UUID with a spoofed label can otherwise mislead an owner.
+  const exact=state.ambiguous.some(group=>input.options.every(o=>
+    group.some(candidate=>candidate.id===o.value&&candidate.label===o.label)));
+  if(!exact)return {source:"ask_owner",period:null,missing:["unverifiedOption"],error:"notFromTool"};
   state.asked=true;
   return {source:"ask_owner",period:null,missing:[],question:input.question,options:input.options,allowOther:input.allowOther};
  }

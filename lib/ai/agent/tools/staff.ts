@@ -6,7 +6,7 @@ import {money} from "../explain";
 
 const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
-const period = z.strictObject({ period: z.union([z.enum(["today","week","month","last_week","last_month","ytd"]),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]) });
+const period = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]) });
 const missing = (source: string, period: {from:string;to:string}|null, reasons: string[]): AgentToolResult => ({
   source, period, agentId:"olivia", missing: reasons.length ? reasons : ["sourceUnavailable"],
 });

@@ -6,7 +6,7 @@ import {estimatedItemRevenueCents} from "@/lib/calc/itemSalesRevenue";
 import {safeDifferenceCents} from "@/lib/calc/explainMath";
 import {money,count} from "../explain";
 
-const period=z.strictObject({period:z.union([z.enum(["today","week","month","last_week","last_month","ytd"]),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
+const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const item=z.strictObject({itemId:z.uuid()});
 export const salesTools={
   get_item_sales:{
