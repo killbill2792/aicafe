@@ -4,10 +4,12 @@ import { Link } from "@/i18n/navigation";
 export default function RegisterChoice({
   locale,
   squareConfigured,
+  toastEnabled,
   labels,
 }: {
   locale: string;
   squareConfigured: boolean;
+  toastEnabled: boolean;
   labels: {
     connectSquare: string;
     squareNotConfigured: string;
@@ -31,7 +33,7 @@ export default function RegisterChoice({
       {!squareConfigured && <p className="px-2 text-sm text-warn">{labels.squareNotConfigured}</p>}
 
       <div className="grid grid-cols-3 gap-2">
-        <RegisterTile Icon={Store} label={labels.useToast} href="/more/toast" />
+        {toastEnabled&&<RegisterTile Icon={Store} label={labels.useToast} href="/more/toast" />}
         <RegisterTile Icon={Coffee} label={labels.useClover} href="/more/uploads" />
         <RegisterTile Icon={FileSpreadsheet} label={labels.useOther} href="/more/uploads" />
       </div>
