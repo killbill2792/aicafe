@@ -95,8 +95,9 @@ async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt
  const days=Number.isInteger(configured)?Math.min(30,Math.max(1,configured)):7;
  const client=createToastClient(db,m.business_id);
  const end=now.getTime();
+ const firstWindowStart=end-days*DAY;
  const discovered=new Set<string>();
- for(let windowStart=end-days*DAY;windowStart<end;){
+ for(let windowStart=firstWindowStart;windowStart<end;){
   mustFinish(deadlineAt);
   const windowEnd=Math.min(end,windowStart+7*DAY);
   for(let page=1;page<=300;page++){
@@ -131,9 +132,10 @@ async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt
  }
  // Scan marker and all affected whole-day runs commit together. A crash before
  // this RPC simply scans again; a crash after it resumes the queued day runs.
- const {error:queued}=await db.rpc("toast_commit_repull_scan",{
+ const {error:queued}=await db.rpc("toast_commit_repull_scan_window",{
   p_business_id:m.business_id,p_restaurant_guid:m.restaurant_guid,
   p_local_day:clock.today,p_days:[...discovered].sort(),
+  p_window_start:new Date(firstWindowStart).toISOString(),
   p_window_end:now.toISOString()
  });
  if(queued)throw new ToastApiError("unavailable");
