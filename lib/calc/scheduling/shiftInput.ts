@@ -6,7 +6,10 @@ export function scheduledShiftMinutes(start:string,end:string):number|null {
  return (minutes(end)-minutes(start)+1440)%1440;
 }
 export function parseUnpaidBreakMinutes(text:string,shiftMinutes:number|null):number|null {
- const normalized=text.trim().replace(/[\u0660-\u0669\u06f0-\u06f9]/g,character=>{\n  const code=character.charCodeAt(0);return String(code>=0x6f0?code-0x6f0:code-0x660);\n });\n if(shiftMinutes===null||!/^\d{1,3}$/.test(normalized))return null;
+ const normalized=text.trim().replace(/[\u0660-\u0669\u06f0-\u06f9]/g,character=>{
+  const code=character.charCodeAt(0);return String(code>=0x6f0?code-0x6f0:code-0x660);
+ });
+ if(shiftMinutes===null||!/^\d{1,3}$/.test(normalized))return null;
  const minutes=Number(normalized);
  return minutes<=240&&minutes<shiftMinutes?minutes:null;
 }
