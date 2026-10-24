@@ -312,7 +312,9 @@
     "attentionUploadSales": "Subir ventas",
     "attentionUnmatched": "Hay {count} artículos por relacionar",
     "attentionMatch": "Relacionar",
-    "attentionFix": "Resolver"
+    "attentionFix": "Resolver",
+    "attentionFeesMissing": "Faltan comisiones de procesamiento de {count} días",
+    "attentionAddFees": "Agregar comisiones"
   },
   "Money": {
     "title": "Dinero",
