@@ -127,7 +127,7 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
     if (!await backfillUploadedSales(supabase, businessId, match.imported_name, csvItemId)) return;
   }
 
-  const { error: confirmError } = await supabase.from("pos_catalog_matches").update({ status: "confirmed" }).eq("id", match.id).eq("business_id", businessId);
+  const { error: confirmError } = await supabase.from("pos_catalog_matches").update({ status: "confirmed" }).eq("id", match.id).eq("business_id", businessId).eq("status", "needs_review");
   if (confirmError) logQueryError("resolveCatalogMatch:confirm", confirmError);
 
   revalidatePath("/menu"); revalidatePath("/menu/import-review");
