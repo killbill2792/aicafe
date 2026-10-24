@@ -1,5 +1,6 @@
 "use client";
 import {useState,useTransition} from "react";
+import {partsToMinutes,minutesToParts,wholeRuleValue,multiplierToBasisPoints,basisPointsToMultiplier} from "@/lib/calc/scheduling/ruleInputValues";
 import {useRouter} from "next/navigation";
 import {useLocale,useTranslations} from "next-intl";
 import PayrollCostCard from "./PayrollCostCard";
@@ -20,22 +21,31 @@ const ranges:Record<string,[number,number]>={
  min_rest_minutes:[0,1440],min_headcount:[1,30],prep_minutes_before_open:[0,240],prep_minutes_after_close:[0,240]
 };
 function NumberField({value,onCommit,label,min,max,disabled,locale,twoParts=false}:{value:number;onCommit:(v:number)=>void;label:string;min:number;max:number;disabled:boolean;locale:string;twoParts?:boolean}){
- const [entry,setEntry]=useState(String(value)),[minutes,setMinutes]=useState(String(value%60)),[error,setError]=useState(false);
- const parts=twoParts?{hours:String(Math.floor(value/60)),minutes:String(value%60)}:null;
- const [hours,setHours]=useState(parts?.hours??"");
- const current=twoParts?Number(hours)*60+Number(minutes):Number(entry);
- const valid=(twoParts?(/^\d+$/.test(hours)&&/^\d+$/.test(minutes)&&Number(minutes)<60):/^\d+$/.test(entry))&&Number.isSafeInteger(current)&&current>=min&&current<=max;
- const commit=()=>{if(!valid){setError(true);return;}setError(false);if(current!==value)onCommit(current)};
- const field=(part:"hours"|"minutes"|"single",v:string,change:(s:string)=>void)=><input aria-label={part==="single"?label:label+" "+part} aria-invalid={error} inputMode="numeric" type="text" value={v} disabled={disabled} onChange={e=>{change(e.target.value);setError(false)}} onBlur={commit} className={`min-h-12 w-16 rounded-xl border bg-surface px-2 text-center text-base ${error?"border-neg":"border-line"}`}/>;
- return <span className="inline-flex flex-wrap items-center gap-1 align-middle" dir={locale==="ar"?"rtl":"ltr"}>
-  {twoParts?<>{field("hours",hours,setHours)}<span>{locale==="ar"?"س":locale==="es"?"h":"h"}</span>{field("minutes",minutes,setMinutes)}<span>{locale==="ar"?"د":locale==="es"?"min":"min"}</span></>:field("single",entry,setEntry)}
-  {error&&<span role="alert" className="w-full text-sm text-neg">{locale==="ar"?"أدخل قيمة صحيحة ضمن الحدود.":locale==="es"?"Introduce un valor válido dentro de los límites.":"Enter a valid value within the allowed range."}</span>}
- </span>
+ const t=useTranslations("StaffSchedule");
+ const format=(n:number)=>new Intl.NumberFormat(locale,{useGrouping:false}).format(n);
+ const split=minutesToParts(value);
+ const [entry,setEntry]=useState(format(value));
+ const [hours,setHours]=useState(format(split.hours));
+ const [minutes,setMinutes]=useState(format(split.minutes));
+ const [error,setError]=useState(false);
+ const current=twoParts?partsToMinutes(hours,minutes,min,max):wholeRuleValue(entry,min,max);
+ const commit=()=>{if(current===null){setError(true);return;}setError(false);if(current!==value)onCommit(current)};
+ const field=(part:"hours"|"minutes"|"single",v:string,change:(s:string)=>void)=><input
+  aria-label={part==="single"?label:label+" "+t(part==="hours"?"hoursInput":"minutesInput")}
+  aria-invalid={error} aria-describedby={error?"rule-number-error-"+label.replace(/\\s+/g,"-"):undefined}
+  inputMode="numeric" type="text" value={v} disabled={disabled}
+  onChange={e=>{change(e.target.value);setError(false)}}
+  className={`min-h-12 w-16 rounded-xl border bg-surface px-2 text-center text-base ${error?"border-neg":"border-line"}`}/>;
+ return <span className="inline-flex flex-wrap items-center gap-1 align-middle" dir={locale==="ar"?"rtl":"ltr"}
+  onBlur={event=>{if(event.relatedTarget instanceof Node&&event.currentTarget.contains(event.relatedTarget))return;commit()}}>
+  {twoParts?<>{field("hours",hours,setHours)}<span>{t("hoursUnit")}</span>{field("minutes",minutes,setMinutes)}<span>{t("minutesUnit")}</span></>:field("single",entry,setEntry)}
+  {error&&<span role="alert" id={"rule-number-error-"+label.replace(/\\s+/g,"-")} className="w-full text-sm text-neg">{t("invalidNumber")}</span>}
+ </span>;
 }
 export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{initial:RuleValues;week:string;readOnly?:boolean;payroll:PayrollCostSettings}){
  const t=useTranslations("StaffSchedule");const locale=useLocale();const staffT=useTranslations("Staff");const router=useRouter();
  const [values,setValues]=useState(initial),[draft,setDraft]=useState(""),[pending,transition]=useTransition();
- const [custom,setCustom]=useState(false),[customValue,setCustomValue]=useState(String(Number(values.ot_multiplier_bp)/10000)),[multiplierError,setMultiplierError]=useState(false);
+ const [custom,setCustom]=useState(false),[customValue,setCustomValue]=useState(basisPointsToMultiplier(Number(values.ot_multiplier_bp))),[multiplierError,setMultiplierError]=useState(false);
  const [message,setMessage]=useState(""),[undo,setUndo]=useState<{key:string;value:number|boolean}|null>(null);
  const change=(key:string,value:number|boolean)=>{
    if(readOnly)return;
@@ -61,18 +71,18 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
        <label className="flex min-h-12 items-center gap-2 font-semibold"><input type="checkbox" className="size-5" checked={Boolean(values[enabled])} disabled={pending||readOnly} onChange={e=>change(enabled,e.target.checked)}/>{t(label)}</label>
        <span className="text-base">{t(sentence)}</span>
        <NumberField key={first+String(values[first])} value={Number(values[first])} onCommit={v=>change(first,v)} label={t(label)} min={ranges[first][0]} max={ranges[first][1]} disabled={pending||readOnly} locale={locale} twoParts={first!=="meal_break_minutes"&&first!=="rest_break_minutes"}/>
-       {second&&<><span>{t("afterOrEvery")}</span><NumberField key={second+String(values[second])} value={Number(values[second])} onCommit={v=>change(second,v)} label={t(label)} min={ranges[second][0]} max={ranges[second][1]} disabled={pending||readOnly} locale={locale} twoParts/></>}
+       {second&&<><span>{t(second==="meal_break_after_minutes"?"after":"every")}</span><NumberField key={second+String(values[second])} value={Number(values[second])} onCommit={v=>change(second,v)} label={t(label)} min={ranges[second][0]} max={ranges[second][1]} disabled={pending||readOnly} locale={locale} twoParts/></>}
       </div>
       <p className="text-sm text-muted">{values.owner_set.includes(first)?t("yours"):t("defaultRule")}</p>
     </div>)}
     {group.title==="overtime"&&<div className="flex flex-wrap items-center gap-3 border-t border-line py-3">
      <label className="font-semibold" htmlFor="ot-rate">{t("overtimePays")}</label>
-     <select id="ot-rate" value={[15000,20000].includes(Number(values.ot_multiplier_bp))?String(values.ot_multiplier_bp):"custom"} disabled={pending||readOnly}
-      onChange={e=>{if(e.target.value!=="custom")change("ot_multiplier_bp",Number(e.target.value));else setCustom(true)}}
+     <select id="ot-rate" value={custom||![15000,20000].includes(Number(values.ot_multiplier_bp))?"custom":String(values.ot_multiplier_bp)} disabled={pending||readOnly}
+      onChange={e=>{if(e.target.value!=="custom"){setCustom(false);setCustomValue(basisPointsToMultiplier(Number(e.target.value)));change("ot_multiplier_bp",Number(e.target.value));}else{setCustom(true);setCustomValue(basisPointsToMultiplier(Number(values.ot_multiplier_bp)));}}}
       className="min-h-12 rounded-xl border border-line bg-surface px-3"><option value="15000">1.5×</option><option value="20000">2×</option><option value="custom">{t("customMultiplier")}</option></select>
      {(custom||![15000,20000].includes(Number(values.ot_multiplier_bp)))&&<label className="flex items-center gap-2">{t("customMultiplier")}
       <input aria-label={t("customMultiplier")} type="text" inputMode="decimal" value={customValue} onChange={e=>{setCustomValue(e.target.value);setMultiplierError(false)}}
-      onBlur={()=>{const n=Number(customValue);if(!customValue.trim()||!Number.isFinite(n)||n<1||n>5||!Number.isInteger(n*10000)){setMultiplierError(true);return}setMultiplierError(false);change("ot_multiplier_bp",Math.round(n*10000));}}
+      onBlur={()=>{const n=multiplierToBasisPoints(customValue);if(n===null){setMultiplierError(true);return}setMultiplierError(false);if(n!==values.ot_multiplier_bp)change("ot_multiplier_bp",n);}}
       disabled={pending||readOnly} aria-invalid={multiplierError} className={`min-h-12 w-24 rounded-xl border px-3 ${multiplierError?"border-neg":"border-line"}`}/>×</label>}
      {multiplierError&&<span role="alert" className="text-neg">{t("invalidMultiplier")}</span>}
     </div>}
