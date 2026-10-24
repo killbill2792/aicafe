@@ -1,3 +1,10 @@
+import { periodCalendarRange } from "@/lib/viewmodels/period";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { readAllPosRows } from "@/lib/pos/pagedReads";
+import { salesSourcesForOrders, type SalesOrderEvidence } from "@/components/money/moneyActions";
 import { Receipt } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
@@ -25,13 +32,37 @@ export default async function MoneyPage({
 }: {
   searchParams: Promise<{ period?: string; view?: string; calMonth?: string }>;
 }) {
-  await requireOwnBusiness();
+  const user = await requireOwnBusiness();
   const { period: periodParam, view: viewParam, calMonth: calMonthParam } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "month";
   const view = viewParam === "profit" ? "profit" : "recovery";
 
   const snapshot = await getSnapshot(period);
   const t = await getTranslations("Money");
+  let toastConnected = false;
+  let salesSources: ReturnType<typeof salesSourcesForOrders> = ["unknown"];
+  if (user && isSupabaseConfigured()) {
+    const db = await createServerSupabaseClient();
+    const businessId = await getActiveBusinessId(user.id);
+    const range = periodCalendarRange(snapshot, period);
+    const orders = await readAllPosRows<SalesOrderEvidence>((first, last) => db.from("orders")
+      .select("pos_order_id, processing_fee_provider")
+      .eq("business_id", businessId).gte("business_date", range.start)
+      .lte("business_date", range.end).order("id").range(first, last), "money sales sources");
+    salesSources = salesSourcesForOrders(orders);
+    // Toast credentials have no authenticated RLS grants. Only read a verified
+    // state after the user's active-business membership has been checked.
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY && businessId === snapshot.business.id) {
+      const admin = createAdminSupabaseClient();
+      const { data: credentials } = await admin.from("toast_api_credentials")
+        .select("state").eq("business_id", businessId).maybeSingle();
+      if (credentials?.state === "verified") {
+        const { data: location } = await admin.from("toast_location_mappings")
+          .select("verified_at").eq("business_id", businessId).not("verified_at", "is", null).limit(1);
+        toastConnected = Boolean(location?.length);
+      }
+    }
+  }
   // Never past the current calendar month — "previous months" navigation only goes backward.
   const calMonthKey = isValidMonthKey(calMonthParam) && calMonthParam <= snapshot.monthKey ? calMonthParam : snapshot.monthKey;
 
@@ -55,9 +86,9 @@ export default async function MoneyPage({
       {view === "profit" && <PeriodSwitch current={period} />}
 
       {view === "recovery" ? (
-        <CostRecoveryView snapshot={snapshot} calMonthKey={calMonthKey} />
+        <CostRecoveryView snapshot={snapshot} calMonthKey={calMonthKey} toastConnected={toastConnected} />
       ) : (
-        <ProfitCostsView snapshot={snapshot} period={period} />
+        <ProfitCostsView snapshot={snapshot} period={period} salesSources={salesSources} />
       )}
 
       <AddCostFab />
