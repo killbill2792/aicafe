@@ -2914,7 +2914,8 @@
     "draftRetryApproval": "Reintentar aprobación",
     "draftApplying": "Guardando tu decisión…",
     "draftPartialCost": "Conocido: {known}; {count} salarios sin definir",
-    "draftBaseWageNote": "Solo incluye los salarios base. No se incluyen recargos por horas extra ni impuestos de nómina."
+    "draftBaseWageNote": "Solo incluye los salarios base. No se incluyen recargos por horas extra ni impuestos de nómina.",
+    "draftCoverageGaps": "Quedan {count} periodos sin la cobertura de personal necesaria. Revisa antes de aprobar."
   },
   "FreeAccess": {
     "pricing": "Planes y precios",
