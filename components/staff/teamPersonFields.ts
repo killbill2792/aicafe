@@ -40,7 +40,7 @@ export function isValidTeamAvailability(days:TeamAvailability[]):boolean {
 }
 
 export type AvailabilityWords={anyTime:string;off:string;none:string;everyDay:string};
-const weekdays=[1,2,3,4,5,6,0] as const;
+const weekdays:number[]=[1,2,3,4,5,6,0];
 const dayDate=(day:number)=>new Date(Date.UTC(2026,9,25+day));
 const dayName=(day:number,locale:string)=>new Intl.DateTimeFormat(locale,{weekday:"short",timeZone:"UTC"}).format(dayDate(day));
 function clockLabel(value:string,locale:string):string {
