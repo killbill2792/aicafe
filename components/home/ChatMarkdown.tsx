@@ -278,9 +278,9 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
       const alignment=(i:number)=>table.align[i]==="center"?"text-center":table.align[i]==="end"?"text-end":"text-start";
       blocks.push(<div key={firstLine} role="region" aria-label="Response table" tabIndex={0}
         className="max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-        <table dir="auto" className="w-full min-w-max border-collapse text-[17px]">
+        <table dir={locale==="ar"?"rtl":"auto"} className="w-full min-w-max border-collapse text-[17px]">
          <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-3 py-2 font-semibold ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</th>)}</tr></thead>
-         <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-3 py-2 ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged)}</td>)}</tr>)}</tbody>
+         <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-3 py-2 ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</td>)}</tr>)}</tbody>
         </table>
       </div>);
       continue;
