@@ -1352,8 +1352,12 @@ describe("Codex P1 source-specific checks",()=>{
 });
 
 describe("no checker warning may disappear during provenance decoration",()=>{
+  it("exempts duration tokens without hiding adjacent unsupported counts",()=>{
+    const reply="We\'ve had 90 days of labor data, with 99 sales."; 
+    expect(checkNumbers(reply,"",[],"en").map(v=>v.text)).toEqual(["99"]);
+    expect(numberProvenance(reply,"",[],"en").map(v=>v.text)).toEqual(["99"]);
+  });
   const cases=[
-    {text:"We've had 90 days of labor data.",owner:"",results:[],locale:"en" as const},
     {text:"Mocha costs $5.",owner:"Latte costs $5.",results:[
       {source:"menu_items",period:null,missing:[],items:[{id:"a",name:"Latte",priceCents:500},
         {id:"b",name:"Mocha",priceCents:600}]}],locale:"en" as const},
