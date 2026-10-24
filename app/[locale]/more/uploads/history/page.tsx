@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
+import { redirect } from "@/i18n/navigation";
 
-// Keep old bookmarks working; the history now lives under the uploads hub.
-export default function UploadHistoryPage() {
-  redirect("/more/uploads#upload-history");
+export default async function UploadHistoryPage({params}: {params:Promise<{locale:string}>}) {
+  const {locale} = await params;
+  redirect({href:"/more/uploads#upload-history",locale});
 }
