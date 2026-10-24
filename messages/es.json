@@ -1156,7 +1156,8 @@
     "uploadSales": "Subir ventas",
     "closedDaySales": "Hay ventas registradas en días que ahora figuran como cerrados. Las cantidades históricas no permiten estimar con seguridad las ventas futuras. Revisa el horario del café antes de calcular.",
     "setCafeHours": "Configurar el horario del café",
-    "insufficientOperatingSalesDays": "Registra al menos 7 días de ventas con el café abierto para estimar cambios en precios o costos de ingredientes."
+    "insufficientOperatingSalesDays": "Registra al menos 7 días de ventas con el café abierto para estimar cambios en precios o costos de ingredientes.",
+    "breakEvenUnknown": "No disponible hasta completar las ventas y los costos."
   },
   "Reconnect": {
     "banner": "No pudimos obtener las ventas de hoy de tu caja registradora. Toca para reconectar.",

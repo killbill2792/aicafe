@@ -5,6 +5,7 @@ import { calculateBreakEvenSales } from "./breakEvenSales";
 const base = {
   monthlyBillsCents: 300000,
   monthlyStaffCents: 300000,
+  breakEvenAvailable: true,
   observedSalesCents: 1000000,
   observedIngredientCents: 300000,
   observedProcessingFeesCents: 30000,
@@ -163,6 +164,20 @@ describe("Plan goals", () => {
     expect(fractional?.monthlyProfitChangeCents).toBe(
       Math.round(0.5 * 1999 * 1.123 * 22),
     );
+  });
+  it("estimates staffed-month profit without claiming an unknown monthly break-even", () => {
+    const incomplete = { ...base, salesDaysCovered: 0, observedSalesCents: 0,
+      breakEvenAvailable: false, observedIngredientCents: 0, observedProcessingFeesCents: 0 };
+    const staffing = simulatePlanChange({ base: incomplete, type: "staff",
+      item: null, newValueCents: 0, staffHoursPerDay: 2, assumedHourlyWageCents: 1950 });
+    expect(staffing?.monthlyProfitChangeCents).toBeGreaterThan(0);
+    expect(staffing?.monthlyBreakEvenCents).toBeNull();
+    expect(staffing?.breakEvenChangeCents).toBeNull();
+    expect(simulatePlanChange({ base: incomplete, type: "price", item,
+      newValueCents: 550, staffHoursPerDay: 0, assumedHourlyWageCents: 1950 })).toBeNull();
+    expect(simulatePlanChange({ base: { ...incomplete, monthlyStaffCents: 0 },
+      type: "staff", item: null, newValueCents: 0,
+      staffHoursPerDay: 2, assumedHourlyWageCents: 1950 })).toBeNull();
   });
   it("keeps staffed-month savings available with fewer than seven operating sales dates", () => {
     const missingOpenDays = { ...base, salesDaysCovered: 5 };

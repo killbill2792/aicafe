@@ -116,8 +116,9 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         items={(snapshot.breakEvenProductCosts ?? snapshot.menuItems).map(item => ({
         id: item.id, name: item.name, priceCents: item.priceCents, costStatus: item.costStatus, category: item.category, active: item.active,
         ingredientsCentsToday: item.ingredientsCentsToday, quantitySoldLast28Days: item.quantitySoldLast28Days,
-      }))} base={recovery?.breakEven.kind === "ready" && !drinks?.unavailableReason ? {
+      }))} base={recovery ? {
         monthlyBillsCents: recovery.monthlyBillsCents, monthlyStaffCents: recovery.monthlyStaffCents,
+        breakEvenAvailable: recovery.breakEven.kind === "ready",
         observedSalesCents: sumCents(days, d => d.netSalesCents), observedIngredientCents: costs!.totalCostCents,
         observedProcessingFeesCents: sumCents(days, d => d.cardFeesCents),
         daysInMonth: snapshot.daysInMonth,

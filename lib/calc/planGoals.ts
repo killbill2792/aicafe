@@ -151,6 +151,8 @@ export function monthlyReducibleStaffHours(params: {
 export type PlanScenarioBase = {
   monthlyBillsCents: number;
   monthlyStaffCents: number;
+  /** Only Money's ready result permits a numeric monthly break-even estimate. */
+  breakEvenAvailable: boolean;
   observedSalesCents: number;
   observedIngredientCents: number;
   observedProcessingFeesCents: number;
@@ -189,10 +191,10 @@ export function simulatePlanChange(input: {
   items?: readonly PlanScenarioItem[];
 }) {
   const { base, type, item, newValueCents, staffHoursPerDay, assumedHourlyWageCents } = input;
-  if (!Number.isFinite(base.observedSalesCents) || base.observedSalesCents <= 0 ||
+  if (!Number.isFinite(base.observedSalesCents) || base.observedSalesCents < 0 ||
       !Number.isSafeInteger(base.daysInMonth) || base.daysInMonth < 1 || base.daysInMonth > 31 ||
       !Number.isSafeInteger(base.salesDaysCovered) || base.salesDaysCovered < 0 || base.salesDaysCovered > 28 ||
-      (type !== "staff" && base.salesDaysCovered < 7) ||
+      (type !== "staff" && (base.salesDaysCovered < 7 || base.observedSalesCents <= 0 || !base.breakEvenAvailable)) ||
       !Number.isSafeInteger(base.operatingDaysInMonth) || base.operatingDaysInMonth < 1 ||
       base.operatingDaysInMonth > base.daysInMonth ||
       !Number.isFinite(base.payrollTaxRate) || base.payrollTaxRate < 0 ||
@@ -204,8 +206,8 @@ export function simulatePlanChange(input: {
     if ((input.preset === "allPrices" && type !== "price") ||
         (input.preset === "milk" && type !== "ingredient") || !input.items?.length) return null;
   } else if (type !== "staff" && (!item || item.costStatus !== "READY" || item.quantitySoldLast28Days <= 0)) return null;
-  const old = calculateBreakEvenSales(base);
-  if (old.kind !== "ready") return null;
+  const old = base.breakEvenAvailable ? calculateBreakEvenSales(base) : null;
+  if (type !== "staff" && old?.kind !== "ready") return null;
   let sales = base.observedSalesCents, ingredients = base.observedIngredientCents;
   let staff = base.monthlyStaffCents, profitDelta = 0;
   if (type === "staff") {
@@ -249,6 +251,15 @@ export function simulatePlanChange(input: {
     );
   }
   if (sales <= 0 || ingredients < 0 || !Number.isSafeInteger(profitDelta)) return null;
+  if (old?.kind !== "ready") {
+    // Payroll saving can be estimated from recorded labor even when sales,
+    // product costs or processing fees have not established break-even.
+    return type === "staff" ? {
+      monthlyBreakEvenCents: null,
+      breakEvenChangeCents: null,
+      monthlyProfitChangeCents: profitDelta,
+    } : null;
+  }
   const next = calculateBreakEvenSales({ ...base, monthlyStaffCents: staff,
     observedSalesCents: sales, observedIngredientCents: ingredients });
   if (next.kind !== "ready") return null;

@@ -107,8 +107,11 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
       result ? <section aria-live="polite" className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl bg-surface p-4">
           <p className="text-[17px]">{t("effectBreakEven")}</p>
-          <strong className="block text-2xl">{money.format(result.monthlyBreakEvenCents / 100)}</strong>
-          <p className="text-[15px]">{money.format(result.breakEvenChangeCents / 100)}</p>
+          {result.monthlyBreakEvenCents === null
+            ? <p className="text-[17px] text-ink-muted">{t("breakEvenUnknown")}</p>
+            : <strong className="block text-2xl">{money.format(result.monthlyBreakEvenCents / 100)}</strong>}
+          {result.breakEvenChangeCents !== null &&
+            <p className="text-[15px]">{money.format(result.breakEvenChangeCents / 100)}</p>}
         </div>
         <div className="rounded-2xl bg-surface p-4">
           <p className="text-[17px]">{t("effectProfit")}</p>
