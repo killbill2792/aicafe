@@ -1,6 +1,8 @@
 "use client";
 import {useEffect,useState} from "react";
 import {approvedToastLink} from "./ownerMapping";
+import {Link} from "@/i18n/navigation";
+import {useLocale} from "next-intl";
 type Roster={employee_guid:string;display_name:string;deleted:boolean;linked_employee_id:string|null};
 type Catalog={kind:"item"|"modifier";provider_guid:string;name:string;category:string|null;
  price_cents:number|null;linked_menu_item_id:string|null;linked_modifier_recipe_id:string|null};
@@ -17,13 +19,14 @@ export type ToastReviewLabels={
  mapped:string;approval:string;mappingWarning:string;approve:string;archived:string;
  missingWage:string;attendanceReview:string;noRecords:string;emptyChoice:string;
  unknownPrice:string;priceCents:string;unverified:string;pending:string;error:string;
- success:string;disabled:string
+ success:string;disabled:string;matchNames:string
 };
 /** No guesses: sources are displayed beside real owner-managed canonical candidates.
  * No source price, wage or name is ever written to their canonical records here. */
 export default function ToastOperationalReview({
  businessId,restaurantGuid,enabled,labels
 }:{businessId:string;restaurantGuid:string;enabled:boolean;labels:ToastReviewLabels}){
+ const locale=useLocale();
  const [review,setReview]=useState<Review|null>(null);
  const [chosen,setChosen]=useState<Record<string,string>>({});
  const [working,setWorking]=useState(false),[error,setError]=useState("");
@@ -80,7 +83,7 @@ export default function ToastOperationalReview({
   }));
   if(kind==="item")return review.canonicalItems.filter(r=>r.is_active).map(r=>({
    id:r.id,name:r.name,description:r.price_cents==null?labels.unknownPrice:
-    labels.priceCents+": "+String(r.price_cents)
+    labels.priceCents+": "+new Intl.NumberFormat(locale).format(r.price_cents)
   }));
   return review.canonicalModifiers.map(r=>({id:r.id,name:r.name,description:""}));
  }
@@ -92,7 +95,7 @@ export default function ToastOperationalReview({
   const choice=choices.find(c=>c.id===chosen[key]);
   return <div key={key} className="flex flex-col gap-2 rounded-xl border border-line p-3">
    <div className="text-sm font-semibold text-ink">{source.name}
-    {source.archived&&<span className="ml-2 text-ink-muted">({labels.archived})</span>}
+    {source.archived&&<span className="ms-2 text-ink-muted">({labels.archived})</span>}
    </div>
    {source.description&&<p className="text-xs text-ink-muted">{source.description}</p>}
    {source.linkedId?<p className="text-sm text-ink-muted">{labels.mapped}: {
@@ -121,6 +124,9 @@ export default function ToastOperationalReview({
   <h2 className="text-lg font-bold text-ink">{labels.title}</h2>
   <p className="text-sm text-ink-muted">{labels.mappingWarning}</p>
   <p className="text-sm text-ink-muted">{labels.unverified}</p>
+  {enabled&&<Link href="/menu/import-review"
+   className="inline-flex min-h-12 items-center justify-center rounded-full bg-accent px-5 font-semibold text-on-accent">
+   {labels.matchNames}</Link>}
   {!enabled&&<p role="status" className="text-sm text-warn">{labels.disabled}</p>}
   {enabled&&<div className="flex flex-wrap gap-2">
    <button type="button" disabled={working}
@@ -136,25 +142,25 @@ export default function ToastOperationalReview({
   </div>}
   {!review&&!error&&<p role="status" className="text-sm text-ink-muted">{labels.pending}</p>}
   {review&&<>
-   <h3 className="text-base font-bold text-ink">{labels.sourceRoster} ({review.roster.length})</h3>
+   <h3 className="text-base font-bold text-ink">{labels.sourceRoster} ({new Intl.NumberFormat(locale).format(review.roster.length)})</h3>
    {review.roster.length?review.roster.map(r=>mappingRow({
     kind:"employee",guid:r.employee_guid,name:r.display_name,
     description:labels.unmatched,linkedId:r.linked_employee_id,archived:r.deleted
    })):<p className="text-sm text-ink-muted">{labels.noRecords}</p>}
-   <h3 className="text-base font-bold text-ink">{labels.sourceMenu} ({review.catalog.length})</h3>
+   <h3 className="text-base font-bold text-ink">{labels.sourceMenu} ({new Intl.NumberFormat(locale).format(review.catalog.length)})</h3>
    {review.catalog.length?review.catalog.map(r=>mappingRow({
     kind:r.kind,guid:r.provider_guid,name:r.name,
     description:(r.category??"")+(r.price_cents==null?
-      " • "+labels.unknownPrice:" • "+labels.priceCents+": "+String(r.price_cents)),
+      " • "+labels.unknownPrice:" • "+labels.priceCents+": "+new Intl.NumberFormat(locale).format(r.price_cents)),
     linkedId:r.kind==="item"?r.linked_menu_item_id:r.linked_modifier_recipe_id,
     archived:false
    })):<p className="text-sm text-ink-muted">{labels.noRecords}</p>}
    <h3 className="text-base font-bold text-ink">{labels.attendanceReview}</h3>
    <p className="text-sm text-ink-muted">{labels.missingWage}: {
-    review.attendance.filter(r=>r.wage_status==="missing").length
+    new Intl.NumberFormat(locale).format(review.attendance.filter(r=>r.wage_status==="missing").length)
    }</p>
    <p className="text-sm text-ink-muted">{labels.attendanceReview}: {
-    review.attendance.filter(r=>r.reconciliation_status!=="matched").length
+    new Intl.NumberFormat(locale).format(review.attendance.filter(r=>r.reconciliation_status!=="matched").length)
    }</p>
   </>}
   {working&&<p role="status" className="text-sm">{labels.pending}</p>}

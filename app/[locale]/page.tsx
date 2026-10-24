@@ -190,7 +190,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   return (
     <PageShell wide className="flex flex-col gap-3 px-3 pb-4 pt-3 md:px-4 md:pt-4">
-      {posStatus && posStatus.status !== "active" && <ReconnectBanner />}
+      {posStatus && posStatus.status !== "active" && <ReconnectBanner provider={posStatus.provider} />}
 
       <div className="flex flex-col gap-4">
         {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px] leading-relaxed">

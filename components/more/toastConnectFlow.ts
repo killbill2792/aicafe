@@ -26,3 +26,18 @@ export async function saveThenVerifyToastConnection(
    return {saved:true,verified:false,error:"unavailable"};
  }
 }
+
+/** One truthful owner-facing status regardless of backend diagnostic state. */
+export function toastStatus(state:string|null|undefined,hasSyncFailure=false):"notConnected"|"connected"|"needsAttention" {
+ if(!state||state==="not_connected"||state==="disconnected")return "notConnected";
+ return state==="verified"&&!hasSyncFailure?"connected":"needsAttention";
+}
+export function latestToastSync(locations:{
+ last_order_fetch_at:string|null;last_time_entry_fetch_at:string|null;
+ last_schedule_fetch_at:string|null;last_menu_fetch_at:string|null
+}[]|undefined):string|null {
+ const timestamps=(locations??[]).flatMap(row=>
+  [row.last_order_fetch_at,row.last_time_entry_fetch_at,row.last_schedule_fetch_at,row.last_menu_fetch_at])
+  .filter((value):value is string=>value!==null&&Number.isFinite(Date.parse(value)));
+ return timestamps.sort((a,b)=>Date.parse(b)-Date.parse(a))[0]??null;
+}
