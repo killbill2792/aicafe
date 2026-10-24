@@ -16,7 +16,7 @@ export default async function ToastConnectionPage() {
   const businessId=await getActiveBusinessId(user.id);
   const {data:member}=await db.from("memberships").select("role")
     .eq("business_id",businessId).eq("user_id",user.id).maybeSingle();
-  const {data:business}=await db.from("businesses").select("is_demo").eq("id",businessId).maybeSingle();
+  const {data:business}=await db.from("businesses").select("is_demo,currency").eq("id",businessId).maybeSingle();
   if(member?.role!=="owner"||!business||business.is_demo)notFound();
   const {data:locations,error}=await db.from("locations")
     .select("id,name").eq("business_id",businessId).order("name");
@@ -69,7 +69,7 @@ export default async function ToastConnectionPage() {
           connectedLastSync:t.raw("connectedLastSync"),noSyncYet:t("noSyncYet"),
           manualLocationHint:t("manualLocationHint"),chooseApiUrl:t("chooseApiUrl"),
         }}/>
-      <ToastOwnerDashboard businessId={businessId} currency="USD"/>
+      <ToastOwnerDashboard businessId={businessId} currency={business.currency??"USD"}/>
       </>}
     </PageShell>
   );
