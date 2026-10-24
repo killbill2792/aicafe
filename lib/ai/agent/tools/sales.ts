@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {resolvePeriod} from "@/lib/calc/periods";
-import {resolveEntity,choicePayload} from "../resolve";
+import {resolveEntity,choicePayload,periodChoicePayload} from "../resolve";
 import type { AgentToolContext, AgentToolResult } from "./index";
 
 const period=z.strictObject({period:z.union([z.enum(["today","week","month","last_week","last_month","ytd"]),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
@@ -10,7 +10,7 @@ export const salesTools={
     agentId:"alex",schema:period,description:"Covered item quantities sold, not inferred from generic sales totals.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const resolved=resolvePeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
-      if(resolved.status!=="resolved")return {source:"item_sales",period:null,missing:resolved.status==="ambiguous"?[]:resolved.missing,needsOwnerChoice:resolved.status==="ambiguous",candidates:resolved.status==="ambiguous"?resolved.candidates:[]};
+      if(resolved.status!=="resolved")return periodChoicePayload("item_sales",resolved);
       const p={from:resolved.value.from,to:resolved.value.to};
       if(!ctx.tools.getProductSales)return {source:"item_sales",period:p,agentId:"alex",missing:["itemSalesReaderUnavailable"]};
       const s=await ctx.tools.getProductSales(p);

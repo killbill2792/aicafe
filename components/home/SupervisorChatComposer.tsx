@@ -793,6 +793,12 @@ export default function SupervisorChatComposer({
   // owner turn can occur anywhere in history, not only at the end of a thread.
   const displayedMessages: ConversationMessage[] = visibleConversationMessages(
     messages, optimisticOwner, threadId, new Date().toISOString());
+  const clarifyVisibilityMessages:ConversationMessage[]=[
+    ...displayedMessages,...queuedOwner.map(o=>({
+      ...o,threadId:threadId??"",role:"owner" as const,contentType:"text" as const,
+      blocks:null,grounding:null,createdAt:new Date().toISOString(),
+    })),
+  ];
   const activeQuestionMessageId=activeOwnerQuestionMessageId(displayedMessages);
   const answeredOwnerIds = answeredOwnerMessageIds(messages);
   const inFlightOwnerIds = inFlightOwnerMessageIds(watcher.job);
@@ -859,11 +865,11 @@ export default function SupervisorChatComposer({
       </button>}
       {displayedMessages.map((message,messageIndex) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
         <SupervisorMessage message={message} copy={copy} locale={locale}
-          clarifyState={clarifyCardState(displayedMessages,messageIndex).state}
-          clarifyChoice={clarifyCardState(displayedMessages,messageIndex).choice}
+          clarifyState={clarifyCardState(clarifyVisibilityMessages,messageIndex).state}
+          clarifyChoice={clarifyCardState(clarifyVisibilityMessages,messageIndex).choice}
           onClarify={value=>{void sendText(value);}}
           disabled={sending||!enabled||!canUseAi||
-          (message.role==="supervisor"&&message.id!==activeQuestionMessageId&&clarifyCardState(displayedMessages,messageIndex).state!=="active")}
+          (message.role==="supervisor"&&message.id!==activeQuestionMessageId&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state!=="active")}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{
             if(sending||!enabled||!canUseAi||origin.id!==activeQuestionMessageId)return;
             const question=ownerQuestionSchema.safeParse((origin.blocks??[]).find(b=>

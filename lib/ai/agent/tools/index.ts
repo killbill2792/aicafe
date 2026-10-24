@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
-import {resolveEntity,choicePayload,ownerChoiceGuard} from "../resolve";
+import {resolveEntity,choicePayload,ownerChoiceGuard,periodChoicePayload} from "../resolve";
 import {resolvePeriod} from "@/lib/calc/periods";
 import { initiativeToolDefinitions,isInitiativeTool,executeInitiativeTool } from "./initiatives";
 import { staffTools } from "./staff";
@@ -150,8 +150,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   }
   const {period:choice}=periodSchema.parse(raw);
   const resolved=resolvePeriod(choice,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
-  if(resolved.status!=="resolved")return {source:name,period:null,missing:resolved.status==="ambiguous"?[]:resolved.missing,
-    needsOwnerChoice:resolved.status==="ambiguous",candidates:resolved.status==="ambiguous"?resolved.candidates:[]};
+  if(resolved.status!=="resolved")return periodChoicePayload(name,resolved);
   const period={from:resolved.value.from,to:resolved.value.to};
   if (name === "get_profit") {
     const slice = await ctx.tools.getProfitability(period);

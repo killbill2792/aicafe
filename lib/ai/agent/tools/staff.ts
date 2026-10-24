@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {resolvePeriod} from "@/lib/calc/periods";
+import {periodChoicePayload} from "../resolve";
 
 const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
@@ -42,7 +43,7 @@ export const staffTools = {
     agentId:"olivia",schema:period,description:"Labor-day costs, including estimated inputs, and recorded attendance for a current period.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const resolved=resolvePeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
-      if(resolved.status!=="resolved")return {source:"labor_and_attendance",period:null,missing:resolved.status==="ambiguous"?[]:resolved.missing,needsOwnerChoice:resolved.status==="ambiguous",candidates:resolved.status==="ambiguous"?resolved.candidates:[]};
+      if(resolved.status!=="resolved")return periodChoicePayload("labor_and_attendance",resolved);
       const p={from:resolved.value.from,to:resolved.value.to};
       if(!ctx.tools.getLaborMetrics||!ctx.tools.getStaffAttendance||!ctx.timezone)
         return missing("labor_and_attendance",p,["laborReaderOrTimezoneUnavailable"]);

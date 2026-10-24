@@ -14,6 +14,7 @@ export const askOwnerTools={ask_owner:{
   const input=askOwnerSchema.parse(raw);
   const state=ctx.resolveState;
   if(!state||state.asked)return {source:"ask_owner",period:null,missing:["alreadyAsked"],error:"askOwnerLimit"};
+  if(!state.ambiguous.length)return {source:"ask_owner",period:null,missing:["noAmbiguity"],error:"noRecordedAmbiguity"};
   if(new Set(input.options.map(o=>o.label.trim().toLocaleLowerCase())).size!==input.options.length)
     return {source:"ask_owner",period:null,missing:["duplicateLabels"],error:"duplicateLabels"};
   if(input.options.some(o=>uuid.test(o.value)&&!state.seenIds.has(o.value.toLowerCase())))
