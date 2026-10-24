@@ -114,7 +114,8 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <p className="font-semibold"><bdi>{day(row.date)}</bdi></p>
     <p className="text-ink-muted">{t("ownerOurs")}: <bdi>{fmt(row.oursCents)}</bdi> · {t("ownerToast")}: <bdi>{fmt(row.toastCents)}</bdi></p>
     <p>{t("ownerDifference")}: <bdi>{fmt(row.deltaCents)}</bdi></p>
-    <p className="text-warn">{t("ownerReviewReason")}: {row.reason.replaceAll("_"," ")}</p>
+    <p className="text-warn">{t("ownerReviewReason")}: {row.reason==="owner_flag"?t("ownerReasonOwner"):row.reason==="mismatch"?t("ownerReasonMismatch"):
+     row.reason==="analytics_timeout"?t("ownerReasonTimeout"):row.reason==="coverage_invalid"?t("ownerReasonCoverage"):t("ownerReasonOther")}</p>
     <div className="mt-2 flex flex-wrap gap-2">
      <button disabled={busy||row.date>yesterday} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date})}>{t("ownerRepull")}</button>
@@ -130,7 +131,8 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <span className="min-w-24 flex-1"><bdi>{day(row.date)}</bdi></span>
     <span><bdi>{fmt(row.netSalesCents)}</bdi></span>
     <span>{t("ownerOrders",{count:number.format(row.orders??0)})}</span>
-    <span className="text-ink-muted">{t("ownerState_"+row.status)}</span>
+    <span className="text-ink-muted">{row.status==="checked"?t("ownerState_checked"):row.status==="checking"?t("ownerState_checking"):
+     row.status==="missing"?t("ownerState_missing"):t("ownerState_needs_look")}</span>
    </div>)}
   </section>
   <section className="rounded-card-lg bg-card p-5">
