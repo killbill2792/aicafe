@@ -70,13 +70,13 @@ export function agentReplyPayload(turn: AgentTurn) {
   const experimentIds=[...new Set(turn.results.flatMap(result=>
     result.source==="price_experiment_proposal"&&result.draft===true&&result.saved===false&&
     result.missing.length===0&&typeof result.proposalId==="string"&&UUID.test(result.proposalId)
-      ?[result.proposalId]:[]))].slice(0,Math.max(0,30-blocks.length-proposalIds.length-experimentIds.length));
+      ?[result.proposalId]:[]))].slice(0,Math.max(0,30-blocks.length-proposalIds.length));
   // Memory cards come only from the memory tool's own draft result (never model text).
   const memoryRuleIds=[...new Set(turn.results.flatMap(result=>
     result.source==="memory_proposal"&&result.draft===true&&
       result.saved===false&&result.missing.length===0&&
       typeof result.ruleId==="string"&&UUID.test(result.ruleId)
-      ?[result.ruleId]:[]))].slice(0,Math.max(0,30-blocks.length-proposalIds.length));
+      ?[result.ruleId]:[]))].slice(0,Math.max(0,30-blocks.length-proposalIds.length-experimentIds.length));
   const status = persistedAgentStatus(turn);
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
