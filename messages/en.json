@@ -1055,7 +1055,8 @@
     "voidsUnknown": "Unavailable — void coverage not confirmed",
     "voidsMissingHistory": "A three-month average needs independently confirmed void records for every day. Recorded sales alone do not establish this.",
     "voidsCoverageNote": "Only positive void amounts recorded in the rollups are shown. Sales uploads cannot confirm zero-void days or complete totals.",
-    "voidsAlertMonth": "{month} (alert month)"
+    "voidsAlertMonth": "{month} (alert month)",
+    "demoReadOnly": "Demo café alerts are read-only and shared by everyone."
   },
   "DeleteAccount": {
     "title": "Delete account",
