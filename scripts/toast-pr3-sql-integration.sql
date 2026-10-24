@@ -8,6 +8,9 @@ SELECT pg_temp.assert(NOT has_table_privilege('anon',
  'public.toast_first_import_check','SELECT'),'anonymous check read blocked');
 SELECT pg_temp.assert(NOT has_function_privilege('authenticated',
  'public.toast_requeue_failed(uuid,uuid)','EXECUTE'),'retry service-only');
+SELECT pg_temp.assert(NOT has_table_privilege('authenticated',
+ 'public.toast_owner_attention_counts_v','SELECT'),
+ 'browser cannot access service-role owner attention counts');
 SELECT set_config('request.jwt.claim.role','service_role',true);
 INSERT INTO public.businesses(id,name,is_demo)
 VALUES('cccccccc-cccc-4ccc-8ccc-cccccccccccc','Toast PR3 test',false);
@@ -72,6 +75,11 @@ BEGIN
  PERFORM pg_temp.assert((select count(*)=1 from public.toast_day_owner_flags
    where business_id=b and business_date='2026-10-05' and cleared_at is null),
   'owner flags only the date-eligible restaurant');
+ INSERT INTO public.toast_day_owner_flags(business_id,restaurant_guid,business_date)
+ VALUES(b,g,'2026-10-11'),(b,'cccccccc-cccc-4ccc-8ccc-cccccccc0004','2026-10-11');
+ PERFORM pg_temp.assert((select days_needing_look=3
+  from public.toast_owner_attention_counts_v where business_id=b),
+  'More badge counts flagged business dates once even for two locations');
  BEGIN
   PERFORM public.toast_answer_first_import_check(b,'looks_right',array[]::date[],null);
   RAISE EXCEPTION 'duplicate first-import answer succeeded';
