@@ -7,7 +7,8 @@ import PageShell from "@/components/shared/PageShell";
 
 export const dynamic = "force-dynamic";
 
-export default async function CafeProfilePage() {
+export default async function CafeProfilePage({ searchParams }: { searchParams: Promise<{ focus?: string }> }) {
+  const focusHours = (await searchParams).focus === "hours";
   const user = await requireOwnBusiness();
   const [profile, t, tCommon] = await Promise.all([
     getCafeProfile(),
@@ -19,10 +20,11 @@ export default async function CafeProfilePage() {
     <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
       {user?.email && (
-        <p className="px-1 text-sm text-ink-muted">{t("signedInAs", { email: user.email })}</p>
+        <p className="px-1 text-[17px] text-ink-muted">{t("signedInAs", { email: user.email })}</p>
       )}
       <CafeProfileForm
         profile={profile}
+        focusHours={focusHours}
         labels={{
           businessDetails: t("businessDetails"),
           cafeName: t("cafeName"),
@@ -55,6 +57,22 @@ export default async function CafeProfilePage() {
           save: t("save"),
           saving: t("saving"),
           saved: t("saved"),
+          locationOptional: t("locationOptional"),
+          hoursBadge: t("hoursBadge"),
+          copyWeekdays: t("copyWeekdays"),
+          timezoneSearch: t("timezoneSearch"),
+          timezoneEmpty: t("timezoneEmpty"),
+          chooseCountry: t("chooseCountry"),
+          chooseCurrency: t("chooseCurrency"),
+          chooseState: t("chooseState"),
+          usStates: t.raw("usStates") as Record<string, string>,
+          invalidName: t("invalidName"),
+          invalidTimezone: t("invalidTimezone"),
+          invalidCurrency: t("invalidCurrency"),
+          invalidCountry: t("invalidCountry"),
+          invalidDate: t("invalidDate"),
+          invalidHours: t("invalidHours"),
+          invalidSummary: t("invalidSummary"),
         }}
       />
     </PageShell>
