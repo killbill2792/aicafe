@@ -16,7 +16,10 @@ describe("staff schedule links",()=>{
   const people=[{id:"alice"},{id:"bob"}];
   const shifts=[{id:"a",employeeId:"alice",date:dates[0],start:"06:15"},{id:"b",employeeId:"bob",date:dates[0],start:"07:15"}];
   expect(resolveDatedStaffShift(dates,people,shifts,dates[0],"alice")?.shift?.id).toBe("a");
-  expect(resolveDatedStaffShift(dates,people,shifts,dates[0],"alice","08:00")?.shift).toBeUndefined();
+  expect(resolveDatedStaffShift(dates,people,shifts,dates[0],"alice","07:00")?.shift?.id).toBe("a");
+  expect(resolveDatedStaffShift(dates,people,shifts,dates[0],"alice","13:00")?.shift).toBeUndefined();
+  const split=[...shifts,{id:"a2",employeeId:"alice",date:dates[0],start:"14:00"}];
+  expect(resolveDatedStaffShift(dates,people,split,dates[0],"alice","07:00")?.shift).toBeUndefined();
   expect(resolveDatedStaffShift(dates,people,shifts,dates[1],"alice")?.shift).toBeUndefined();
   expect(resolveDatedStaffShift(dates,people,shifts,"2026-10-28","alice")).toBeNull();
   expect(resolveDatedStaffShift(dates,people,shifts,dates[0],"ghost")).toBeNull();

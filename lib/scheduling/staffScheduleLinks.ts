@@ -33,6 +33,14 @@ export function resolveDatedStaffShift<P extends {id:string},S extends {id:strin
  if(!validScheduleDate(date)||!dates.includes(date)||typeof employee!=="string")return null;
  const person=team.find(p=>p.id===employee);
  if(!person)return null;
- const shift=shifts.find(s=>s.employeeId===person.id&&s.date===date&&(!clock||s.start===clock));
+ const candidates=shifts.filter(s=>s.employeeId===person.id&&s.date===date);
+ let shift=candidates.find(s=>!clock||s.start===clock);
+ // Clock-in can differ slightly from scheduled start. A single nearby shift is
+ // unambiguous; never guess among split shifts or distant timecards.
+ if(!shift&&clock&&candidates.length===1){
+  const minutes=(value:string)=>Number(value.slice(0,2))*60+Number(value.slice(3));
+  const distance=Math.abs(minutes(clock)-minutes(candidates[0].start));
+  if(distance<=120||1440-distance<=120)shift=candidates[0];
+ }
  return {date,person,shift};
 }
