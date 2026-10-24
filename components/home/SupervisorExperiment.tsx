@@ -48,7 +48,7 @@ export default function SupervisorExperiment({threadId,locale,copy,canUseAi=true
    if(payload.action==="propose"&&state.proposals?.[0]?.id)setSelectedProposalId(state.proposals[0].id);
   }catch{setError(true);}finally{setBusy(false);}
  };
- const p=proposals.find(value=>value.id===(selectedProposalId||initialProposalId))??proposals[0],delta=Number(cents);
+ const p=proposals.find(value=>value.id===(selectedProposalId||initialProposalId))??(initialProposalId?undefined:proposals[0]),delta=Number(cents);
  const status=(value:string)=>value==="draft"?copy.statusDraft:
    value==="approved"?copy.statusApproved:value==="manual_pending"?copy.statusManual:
    value==="executing"?copy.statusExecuting:

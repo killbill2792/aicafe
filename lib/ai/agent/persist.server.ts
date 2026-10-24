@@ -67,6 +67,10 @@ export function agentReplyPayload(turn: AgentTurn) {
       typeof result.proposalId==="string"&&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.proposalId)
       ?[result.proposalId]:[]))].slice(0,30-blocks.length);
+  const experimentIds=[...new Set(turn.results.flatMap(result=>
+    result.source==="price_experiment_proposal"&&result.draft===true&&result.saved===false&&
+    result.missing.length===0&&typeof result.proposalId==="string"&&UUID.test(result.proposalId)
+      ?[result.proposalId]:[]))].slice(0,Math.max(0,30-blocks.length-proposalIds.length-experimentIds.length));
   // Memory cards come only from the memory tool's own draft result (never model text).
   const memoryRuleIds=[...new Set(turn.results.flatMap(result=>
     result.source==="memory_proposal"&&result.draft===true&&
@@ -76,6 +80,7 @@ export function agentReplyPayload(turn: AgentTurn) {
   const status = persistedAgentStatus(turn);
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
+    ...experimentIds.map(proposalId=>({type:"experiment_card" as const,proposalId})),
     ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId}))] };
   const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
   const unverified = annotations.flatMap(item => {

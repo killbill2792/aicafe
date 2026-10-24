@@ -24,6 +24,9 @@ import { useAgentJobWatcher } from "./useAgentJobWatcher";
 import { answeredOwnerMessageIds, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
 import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
@@ -90,6 +93,9 @@ function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block:
   if (!record(block)) return null;
   if(block.type==="proposal_card"&&typeof block.proposalId==="string"&&threadId)
     return <SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/>;
+  if(block.type==="experiment_card"&&typeof block.proposalId==="string"&&threadId)
+    return <SupervisorExperiment threadId={threadId} locale={locale}
+      copy={{en,es,ar}[locale].SupervisorExperiment} initialProposalId={block.proposalId}/>;
   if(block.type==="memory_card"&&typeof block.ruleId==="string")
     return <MemoryCard ruleId={block.ruleId} locale={locale}/>;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
