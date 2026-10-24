@@ -221,7 +221,8 @@ begin
  -- Retain non-Toast data for rollback, but prevent double counted sales.
  update public.orders set superseded_by='toast'
  where business_id=p_business_id and business_date=p_business_date
- and location_id=p_location_id
+ and (location_id=p_location_id or (location_id is null and
+  (select count(*) from public.locations where business_id=p_business_id)=1))
  and pos_order_id not like 'toast:%'
  and coalesce((select toast_start_date from public.toast_location_mappings
       where business_id=p_business_id and restaurant_guid=p_restaurant_guid),p_business_date)<=p_business_date;
@@ -313,6 +314,18 @@ begin
  set net_sales_cents=excluded.net_sales_cents,orders_count=excluded.orders_count,
   drinks_count=excluded.drinks_count,sales_data_status=excluded.sales_data_status;
  perform public.pos_rebuild_sales_fact_rollups_v1(p_business_id,p_business_date);
+ -- Unknown-location non-Toast rows at a multi-location café cannot be
+ -- automatically attributed to Toast. Do not claim verified aggregate sales.
+ if exists(select 1 from public.orders where business_id=p_business_id
+  and business_date=p_business_date and location_id is null
+  and pos_order_id not like 'toast:%' and superseded_by is null) then
+  update public.daily_rollups set sales_data_status='missing'
+   where business_id=p_business_id and business_date=p_business_date;
+  update public.toast_day_status set recon_state='mismatch',
+   warnings=warnings||'{"unallocated_source_overlap":1}'::jsonb
+   where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+    and business_date=p_business_date;
+ end if;
  -- IMPORTANT: completeness remains UNKNOWN until PR2's late-edit re-pull + reconciliation.
  update public.daily_rollups set voids_status='unknown',voids_source=null
  where business_id=p_business_id and business_date=p_business_date;
@@ -373,7 +386,8 @@ end $;
 create view public.toast_sync_health_v with (security_invoker=true) as
 select m.business_id,m.restaurant_guid,
  (select max(r.finished_at) from public.toast_sync_runs r where r.business_id=m.business_id
-   and r.restaurant_guid=m.restaurant_guid and r.state='completed') as last_good_sync_at,
+   and r.restaurant_guid=m.restaurant_guid and r.state='completed'
+   and r.orders_unparsed=0) as last_good_sync_at,
  (select min(s.business_date) from public.toast_day_status s where s.business_id=m.business_id
    and s.restaurant_guid=m.restaurant_guid and s.import_state='missing') as oldest_missing_day,
  (select count(*) from public.toast_day_status s where s.business_id=m.business_id
