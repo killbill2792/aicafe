@@ -13,9 +13,10 @@ async function verifyOwner(scope:StaffSourceScope){
  if(user.error||user.data.user?.id!==scope.ownerUserId)throw new Error("Owner session changed");
  return owner;
 }
-export async function readStaffProposalToken(scope:StaffSourceScope){
+export async function readStaffProposalToken(scope:StaffSourceScope,dependencyScope?:import("@/lib/ai/supervisor/loop/staffProposals.server").StaffDependencyScope){
  await verifyOwner(scope);
- const {data,error}=await createAdminSupabaseClient().rpc("supervisor_staff_source_token",{p_business_id:scope.businessId});
+ const {data,error}=await createAdminSupabaseClient().rpc(dependencyScope?"supervisor_staff_scoped_token":"supervisor_staff_source_token",dependencyScope?
+  {p_business_id:scope.businessId,p_scope:dependencyScope}:{p_business_id:scope.businessId});
  if(error||typeof data!=="string"||!/^[a-f0-9]{32}$/.test(data))throw new Error("Staff revision unavailable; apply migration 091");
  return data;
 }

@@ -80,7 +80,6 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       applied:staffCopy.applied,cancelled:staffCopy.cancelled,stale:staffCopy.stale,
       failed:staffCopy.stale,conflict:staffCopy.stale};
     const pending=value.state==="pending"&&!busy;
-    const retry=false;
     const button="min-h-12 min-w-12 rounded-xl px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
     return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={staffCopy.title}
       className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
@@ -91,18 +90,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         </span>
       </div>
       <p className="mt-2 text-[17px] text-ink-muted">{staffCopy.reviewNotice}</p>
-      <div className="mt-3 space-y-3">
-        {(value.preview??[]).map((line,index)=><div key={index}
-          className="min-w-0 rounded-xl border border-line p-3">
-          <p className="font-bold text-[17px]">{line.label}</p>
-          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="min-w-0"><p className="text-sm font-semibold text-ink-muted">{staffCopy.before}</p>
-              <p className="whitespace-pre-wrap break-words text-[17px]">{line.before}</p></div>
-            <div className="min-w-0"><p className="text-sm font-semibold text-ink-muted">{staffCopy.after}</p>
-              <p className="whitespace-pre-wrap break-words text-[17px]">{line.after}</p></div>
-          </div>
-        </div>)}
-      </div>
+      <BeforeAfterRows rows={value.preview??[]} locale={locale} currency={value.currency??"USD"}/>
       {value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true&&value.state!=="applied"&&
         <p className="mt-3 text-[17px]">{staffCopy.preparedOnly}</p>}
       {value.state==="applied"&&(
@@ -112,7 +100,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
 
       {pending&&<div className="mt-4 flex flex-wrap gap-2">
         <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}
-          onClick={()=>void invoke("approve")}>{retry?staffCopy.retry:staffCopy.approve}</button>
+          onClick={()=>void invoke("approve")}>{staffCopy.approve}</button>
         {pending&&<button type="button" disabled={busy} className={button+" border border-line"}
           onClick={()=>void invoke("cancel")}>{staffCopy.decline}</button>}
       </div>}
