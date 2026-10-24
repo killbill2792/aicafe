@@ -39,7 +39,7 @@ async function backfillUploadedSales(
     if (error) throw error;
     return true;
   } catch (error) {
-    logQueryError("backfillUploadedSales", error);
+    logQueryError("backfillUploadedSales", { message: error instanceof Error ? error.message : "Unable to backfill CSV sales" });
     return false;
   }
 }
