@@ -202,6 +202,9 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    <WeekGrid dates={data.dates} people={data.displayTeam} shifts={data.shifts} gaps={data.gaps}
     openHours={data.openHours} currency={data.currency} readOnly={data.readOnly} coverageEnabled={data.rules.coverage_enabled}
     onEdit={(d,id)=>openShift(d,id)} onAdd={(d,id)=>openShift(d,undefined,id)}/>
+    {draftOpen&&<StaffDraftApprovalCard key={data.weekStart} week={data.weekStart}
+     locale={locale} data={data} onClose={()=>setDraftOpen(false)}
+     onApplied={()=>{setDraftOpen(false);router.refresh();}}/>}
    {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">
     <h2 className="font-headline text-xl font-bold">{t("noShifts")}</h2><p className="my-2 text-muted">{t("emptyHelp")}</p>
     <div className="grid gap-2 sm:grid-cols-3">
