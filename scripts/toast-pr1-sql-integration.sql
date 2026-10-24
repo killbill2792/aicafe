@@ -242,4 +242,61 @@ SELECT pg_temp.assert((SELECT toast_excluded AND net_sales_cents=1000 FROM publi
  WHERE pos_order_id='toast:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa1234'),
  'partial re-pull retires known void while retaining audit amount');
 
+
+-- A genuinely small, *measurable* bad-order share stays reportable; a large
+-- share remains missing. Unknown first-time malformed order amounts fail closed.
+DO $thresholds$
+declare b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ loc_a uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001';
+ loc_b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0002';
+ rest_a uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+ rest_b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff02';
+ run_a uuid;run_b uuid;bad_guid uuid;d date;good_count int;i integer;
+ orders_json jsonb;summary_json jsonb;unparsed_json jsonb;new_guid uuid;
+begin
+ for d,good_count in
+  select '2026-10-21'::date,50 union all select '2026-10-22'::date,1
+ loop
+  run_a:=gen_random_uuid();run_b:=gen_random_uuid();bad_guid:=gen_random_uuid();
+  insert into public.toast_sync_runs(id,business_id,restaurant_guid,kind)
+   values(run_a,b,rest_a,'daily'),(run_b,b,rest_b,'daily');
+  -- Store one prior canonical order: its value is known, unlike an entirely
+  -- new malformed order, and is the conservative estimate for the bad share.
+  insert into public.orders(business_id,location_id,pos_order_id,closed_at,
+   business_date,gross_sales_cents,net_sales_cents)
+  values(b,loc_a,'toast:'||rest_a::text||':'||bad_guid::text,d::timestamptz,
+   d,100,100);
+  perform public.toast_import_day(b,loc_b,rest_b,d,
+   '[]'::jsonb,pg_temp.empty_toast_summary(),run_b);
+  orders_json:='[]'::jsonb;
+  for i in 1..good_count loop
+   new_guid:=gen_random_uuid();
+   orders_json:=orders_json||jsonb_build_array(jsonb_build_object(
+    'posOrderId','toast:'||rest_a::text||':'||new_guid::text,
+    'closedAt',d::text||'T12:00:00Z',
+    'grossSalesCents',1000,'netSalesCents',1000,
+    'discountsCents',0,'refundsCents',0,'taxCents',0,'tipCents',0,
+    'lines','[]'::jsonb));
+  end loop;
+  unparsed_json:=jsonb_build_array(jsonb_build_object(
+    'order_guid',bad_guid,'business_date',d,'error_path','checks.0.amount',
+    'raw_sha256',repeat('d',64)));
+  summary_json:=jsonb_build_object('net_sales_cents',good_count*1000,
+   'order_count',good_count,'gross_sales_cents',good_count*1000,
+   'discounts_cents',0,'refunds_cents',0,'tax_cents',0,'tip_cents',0,
+   'open_check_count',0,'service_charges_cents',0,'gratuity_cents',0,
+   'unparsed_count',1,'warnings',jsonb_build_object('unparsed_orders',1),
+   'voids','[]'::jsonb,'refund_facts','[]'::jsonb,'unparsed',unparsed_json,
+   'parsed_order_guids','[]'::jsonb,'snapshot_sha256','threshold');
+  perform public.toast_import_day(b,loc_a,rest_a,d,orders_json,summary_json,run_a);
+  perform pg_temp.assert((select sales_data_status=
+    case when good_count=50 then 'actual' else 'missing' end
+   from public.daily_rollups where business_id=b and business_date=d),
+   'unparsed count and known-cents 2% threshold must both be honored');
+  perform pg_temp.assert((select recon_state='mismatch' from public.toast_day_status
+   where business_id=b and restaurant_guid=rest_a and business_date=d),
+   'small discrepancy has needsLook quality, not silently matched');
+ end loop;
+end $thresholds$;
+
 ROLLBACK;
