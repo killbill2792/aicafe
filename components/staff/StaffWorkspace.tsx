@@ -400,14 +400,14 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        {invalidBreak&&<p id="staff-break-error" role="alert" className="text-neg">{t("breakError")}</p>}
         <label className="flex min-h-14 items-center justify-between gap-3 border-t border-line">
         <span>{t("repeatEvery",{day:weekday(date,true)})}</span><input type="checkbox"
-         checked={repeatWeekly} onChange={e=>setRepeatWeekly(e.target.checked)} className="size-6 accent-accent"/></label>
+         checked={repeatWeekly} disabled={data.readOnly||ruleReview} onChange={e=>setRepeatWeekly(e.target.checked)} className="size-6 accent-accent"/></label>
       </div>
       {!invalidShift&&<ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={appliedBreak}
        editingId={editing} team={data.team} shifts={data.shifts} gaps={data.gaps}
        availability={data.availability} boundaryShifts={data.adjacentShifts} coverageChecked={coverageVerification(date,data.openHours,data.rules.coverage_enabled)==="checked"} rules={data.rules} currency={data.currency} timezone={data.timezone}/>}
-      <button disabled={busy||!chosen||data.readOnly||invalidShift||!proposed||(ruleReview&&(!deepShift||chosen!==deepPerson?.id))} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakOverridden?parsedBreak??undefined:undefined,repeatWeekly}))}
+      <button disabled={busy||!chosen||data.readOnly||invalidShift||!proposed||(ruleReview&&(!deepShift||chosen!==deepPerson?.id))} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakOverridden?parsedBreak??undefined:undefined,repeatWeekly:ruleReview?false:repeatWeekly}))}
        className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">{t("saveShift")}</button>
-      {editing&&<button disabled={busy||data.readOnly} className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}
+      {editing&&!ruleReview&&<button disabled={busy||data.readOnly} className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}
     </>}
     <button onClick={()=>setSheet(null)} className="mt-3 min-h-12 w-full">{t("cancel")}</button>
    </StaffDialog>}
