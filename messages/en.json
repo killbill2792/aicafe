@@ -909,7 +909,9 @@
     "rentMissing": "Rent missing",
     "monthlyAmount": "{amount} a month",
     "monthlyAmountEstimated": "{amount} a month (includes estimates)",
-    "toastDaysLook": "{count} days need a look"
+    "toastDaysLook": "{count} days need a look",
+    "notConnected": "Connect your register",
+    "connectedSince": "Connected · synced {time}"
   },
   "BreakEven": {
     "title": "Break-even plan",
