@@ -126,7 +126,7 @@ async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt
     const date=(o as {businessDate?:unknown}).businessDate;
     if(typeof date!=="number"||!Number.isInteger(date))throw new ToastApiError("invalid_response");
     const txt=String(date);
-    if(!/^20\\d{6}$/.test(txt))throw new ToastApiError("invalid_response");
+    if(!/^20\d{6}$/.test(txt))throw new ToastApiError("invalid_response");
     const iso=txt.slice(0,4)+"-"+txt.slice(4,6)+"-"+txt.slice(6);
     if(Number.isNaN(Date.parse(iso+"T12:00:00Z")))throw new ToastApiError("invalid_response");
     discovered.add(iso);
