@@ -24,7 +24,7 @@ function NumberField({value,onCommit,label,min,max,disabled,locale,twoParts=fals
  const parts=twoParts?{hours:String(Math.floor(value/60)),minutes:String(value%60)}:null;
  const [hours,setHours]=useState(parts?.hours??"");
  const current=twoParts?Number(hours)*60+Number(minutes):Number(entry);
- const valid=(twoParts?(/^\\d+$/.test(hours)&&/^\\d+$/.test(minutes)&&Number(minutes)<60):/^\\d+$/.test(entry))&&Number.isSafeInteger(current)&&current>=min&&current<=max;
+ const valid=(twoParts?(/^\d+$/.test(hours)&&/^\d+$/.test(minutes)&&Number(minutes)<60):/^\d+$/.test(entry))&&Number.isSafeInteger(current)&&current>=min&&current<=max;
  const commit=()=>{if(!valid){setError(true);return;}setError(false);if(current!==value)onCommit(current)};
  const field=(part:"hours"|"minutes"|"single",v:string,change:(s:string)=>void)=><input aria-label={part==="single"?label:label+" "+part} aria-invalid={error} inputMode="numeric" type="text" value={v} disabled={disabled} onChange={e=>{change(e.target.value);setError(false)}} onBlur={commit} className={`min-h-12 w-16 rounded-xl border bg-surface px-2 text-center text-base ${error?"border-neg":"border-line"}`}/>;
  return <span className="inline-flex flex-wrap items-center gap-1 align-middle" dir={locale==="ar"?"rtl":"ltr"}>
