@@ -223,8 +223,8 @@ begin
  where business_id=p_business_id and business_date=p_business_date
  and (location_id=p_location_id or location_id is null)
  and pos_order_id not like 'toast:%'
- and (select toast_start_date from public.toast_location_mappings
-      where business_id=p_business_id and restaurant_guid=p_restaurant_guid)<=p_business_date;
+ and coalesce((select toast_start_date from public.toast_location_mappings
+      where business_id=p_business_id and restaurant_guid=p_restaurant_guid),p_business_date)<=p_business_date;
  delete from public.toast_void_facts where business_id=p_business_id
   and location_id=p_location_id and order_business_date=p_business_date;
  insert into public.toast_void_facts(business_id,location_id,selection_guid,order_guid,
@@ -280,6 +280,27 @@ begin
   gratuity_cents=excluded.gratuity_cents,unparsed_count=excluded.unparsed_count,
   warnings=excluded.warnings,orders_snapshot_sha256=excluded.orders_snapshot_sha256,
   last_import_run_id=excluded.last_import_run_id;
+ -- The sales numbers and the import-state update share this transaction; avoid
+ -- putting verified Toast sales in orders while showing stale daily totals.
+ -- Preserve existing payroll, recipe and fee costs until the ordinary rollup
+ -- recomputation runs, and never certify missing void coverage from import alone.
+ insert into public.daily_rollups(business_id,business_date,net_sales_cents,
+  orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,
+  card_fees_cents,voids_cents,sales_data_status)
+ select p_business_id,p_business_date,
+   coalesce(sum(o.net_sales_cents),0)::bigint,count(*)::integer,
+   coalesce((select sum(l.quantity) from public.order_lines l
+    join public.orders x on x.id=l.order_id where x.business_id=p_business_id
+     and x.business_date=p_business_date and not x.toast_excluded
+     and x.superseded_by is null and not l.voided),0)::integer,
+   0,0,0,0,0,'actual'
+ from public.orders o where o.business_id=p_business_id
+   and o.business_date=p_business_date and not o.toast_excluded
+   and o.superseded_by is null
+ on conflict(business_id,business_date) do update
+ set net_sales_cents=excluded.net_sales_cents,orders_count=excluded.orders_count,
+  drinks_count=excluded.drinks_count,sales_data_status='actual';
+ perform public.pos_rebuild_sales_fact_rollups_v1(p_business_id,p_business_date);
  -- IMPORTANT: completeness remains UNKNOWN until PR2's late-edit re-pull + reconciliation.
  update public.daily_rollups set voids_status='unknown',voids_source=null
  where business_id=p_business_id and business_date=p_business_date;
