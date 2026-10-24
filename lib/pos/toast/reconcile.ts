@@ -5,6 +5,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {createToastClient,GUID,ToastApiError} from "./client";
 import {createToastAnalyticsClient} from "./analyticsClient";
 import {toastMoneyCents} from "./adapter";
+import {compareToastAnalytics,checkToastPaymentBalance} from "@/lib/calc/toastReconciliation";
 import {parseToastDayPage} from "./dayParser";
 type Location={businessId:string;restaurantGuid:string;locationId:string;
  timeZone:string;closeoutHour:number};
@@ -60,14 +61,12 @@ export function internalOrderProof(rows:unknown[],p:Location,day:string,
      check.appliedServiceCharges as Record<string,unknown>[]:[];
     const gratuity=sum(charges.filter(c=>c.gratuity===true&&typeof c.chargeAmount==="number")
      .map(c=>toastMoneyCents(Number(c.chargeAmount))));
-    if(typeof check.amount!=="number"||typeof check.taxAmount!=="number"||
-     eligible.some(p=>typeof p.amount!=="number"))
-      reasons.push("unknown_check_payment_amount");
-    else{
-     const expected=toastMoneyCents(check.amount)+toastMoneyCents(check.taxAmount)+gratuity;
-     const paymentsTotal=sum(eligible.map(p=>toastMoneyCents(Number(p.amount))));
-     if(Math.abs(expected-paymentsTotal)>1)reasons.push("check_payment_mismatch");
-    }
+    const balance=checkToastPaymentBalance(
+     typeof check.amount==="number"?toastMoneyCents(check.amount):null,
+     typeof check.taxAmount==="number"?toastMoneyCents(check.taxAmount):null,
+     gratuity,eligible.map(p=>typeof p.amount==="number"?toastMoneyCents(p.amount):null));
+    if(balance==="unknown")reasons.push("unknown_check_payment_amount");
+    else if(balance==="mismatch")reasons.push("check_payment_mismatch");
     const selections=Array.isArray(check.selections)?
      check.selections as Record<string,unknown>[]:[];
     if(selections.some(sel=>!sel.voided&&typeof sel.price!=="number"))
@@ -130,7 +129,7 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
  const row=match[0];
  const net=toastMoneyCents(row.netSalesAmount),discount=toastMoneyCents(row.discountAmount);
  const refunds=toastMoneyCents(row.refundAmount);
- const delta=net-status.net_sales_cents,ordersDelta=row.ordersCount-status.order_count;
+
  const {data:voids,error:ve}=await db.from("toast_void_facts")
   .select("order_guid,amount_cents").eq("business_id",p.businessId)
   .eq("location_id",p.locationId).eq("order_business_date",day);
@@ -141,19 +140,25 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
  const maxTolerance=Number(process.env.TOAST_RECON_TOLERANCE_CENTS??5);
  const tolerance=Number.isInteger(maxTolerance)&&maxTolerance>=0&&maxTolerance<=100?
   maxTolerance:5;
- const matched=Math.abs(delta)<=tolerance&&ordersDelta===0&&
-  row.voidOrdersCount===distinct;
+ const comparison=compareToastAnalytics({
+  importedNetSalesCents:status.net_sales_cents,analyticsNetSalesCents:net,
+  importedOrderCount:status.order_count,analyticsOrderCount:row.ordersCount,
+  importedDiscountCents:status.discounts_cents,analyticsDiscountCents:discount,
+  importedRefundCents:status.refunds_cents,analyticsRefundCents:refunds,
+  importedVoidOrderCount:distinct,analyticsVoidOrderCount:row.voidOrdersCount,
+  toleranceCents:tolerance
+ });
  await writeReconciliation(db,p,day,{
-  recon_state:matched?"matched":"mismatch",recon_source:"toast_analytics",
+  recon_state:comparison.matched?"matched":"mismatch",recon_source:"toast_analytics",
   analytics_state:"available",reconciled_at:new Date().toISOString(),
   toast_net_sales_cents:net,toast_orders_count:row.ordersCount,
   toast_discount_cents:discount,toast_refund_cents:refunds,
-  delta_net_cents:delta,delta_orders:ordersDelta,
-  delta_discount_cents:discount-status.discounts_cents,
-  delta_refund_cents:refunds-status.refunds_cents,
-  delta_void_orders:row.voidOrdersCount-distinct,
+  delta_net_cents:comparison.deltaNetCents,delta_orders:comparison.deltaOrders,
+  delta_discount_cents:comparison.deltaDiscountCents,
+  delta_refund_cents:comparison.deltaRefundCents,
+  delta_void_orders:comparison.deltaVoidOrders,
   void_amount_gap_cents:amountGap,
-  warnings:{...status.warnings,...(!matched?{reconciliation_mismatch:1}:{})}
+  warnings:{...status.warnings,...(!comparison.matched?{reconciliation_mismatch:1}:{})}
  });
  const {error:save}=await db.from("toast_analytics_jobs").update({
   state:"available",checked_at:new Date().toISOString(),last_error_category:null
