@@ -2898,8 +2898,8 @@
     "deliveryConsentError": "Could not save WhatsApp consent.",
     "deliveryConsentAfterCreate": "WhatsApp consent defaults off. After adding this person, open their profile to record their opt-in.",
     "rulesAndCosts": "Rules & costs",
-    "mealSentence": "Meal break (min) after",
-    "restSentence": "Paid rest (min) every",
+    "mealSentence": "Meal break:",
+    "restSentence": "Paid rest:",
     "weeklySentence": "Weekly overtime after",
     "dailySentence": "Daily overtime after",
     "longestSentence": "Longest shift",
@@ -2913,7 +2913,14 @@
     "whileOpen": "person(s) while open",
     "prepTiming": "Opening and closing",
     "invalidNumber": "Enter a valid amount within the allowed range.",
-    "rulesSummary": "Meal break after {meal} h · Overtime after {overtime} h"
+    "rulesSummary": "Meal break after {meal} h · Overtime after {overtime} h",
+    "after": "after",
+    "every": "every",
+    "applyRule": "Use rule",
+    "hoursUnit": "h",
+    "minutesUnit": "min",
+    "hoursInput": "hours",
+    "minutesInput": "minutes"
   },
   "FreeAccess": {
     "pricing": "Plans and pricing",
