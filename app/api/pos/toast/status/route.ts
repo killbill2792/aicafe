@@ -52,7 +52,7 @@ export async function GET(request:Request){
  const health=await db.from("toast_sync_health_v").select("last_good_sync_at,stale").eq("business_id",id.data);
  if(health.error)return send(503,{error:"status_unavailable"});
  const good=(health.data??[]).map(h=>h.last_good_sync_at).filter(Boolean).sort().at(-1)??null;
- const state=c.data?.state==="verified"&&m.data.length>0&&m.data.every(x=>x.verified_at)?"connected":
+ const state=c.data?.state==="verified"&&mappings.length>0&&mappings.every(x=>x.verified_at)?"connected":
   !c.data?"not_connected":"needs_attention";
  const active=(r.data??[]).filter(x=>x.kind==="backfill"&&["queued","running","paused_rate_limited"].includes(x.state));
  const flags=new Set((f.data??[]).map(x=>x.restaurant_guid+":"+x.business_date));
@@ -100,8 +100,8 @@ export async function GET(request:Request){
   }),
   analytics:{connected:Boolean(a.data),verified:Boolean(a.data?.verified_at)},
   firstImportCheck:check.data?.answered_at?"answered":completeDates.length>=7?"due":"hidden",
-  timeZone:zone,startDate:[...m.data.map(x=>x.toast_start_date).filter((x):x is string=>Boolean(x))].sort()[0]??null,
-  restaurantGuids:m.data.map(x=>x.restaurant_guid)
+  timeZone:zone,startDate:[...mappings.map(x=>x.toast_start_date).filter((x):x is string=>Boolean(x))].sort()[0]??null,
+  restaurantGuids:mappings.map(x=>x.restaurant_guid)
  };
  const checked=statusSchema.safeParse(response);
  return checked.success?send(200,checked.data):send(503,{error:"status_unavailable"});
