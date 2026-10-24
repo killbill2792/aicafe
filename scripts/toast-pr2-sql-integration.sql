@@ -151,12 +151,12 @@ UPDATE public.toast_day_status SET recon_state='checked_internal'
 WHERE business_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
  AND business_date='2026-10-06' AND import_state='imported';
 INSERT INTO public.toast_void_repull_coverage(
- business_id,restaurant_guid,business_date,scanned_at,last_window_end)
+ business_id,restaurant_guid,business_date,scanned_at,last_window_end,scan_local_day)
 VALUES
  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001','2026-10-06',now(),now()),
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001','2026-10-06',now(),now(),'2026-10-07'),
  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002','2026-10-06',now(),now());
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002','2026-10-06',now(),now(),'2026-10-07');
 INSERT INTO public.toast_void_facts(
  business_id,location_id,selection_guid,order_guid,order_business_date,
  void_business_date,amount_basis,amount_cents,level)
