@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {draftWeek,nextMonday,businessLocalDate,type SchedulingDraftInputs} from "./draftWeek";
+import {draftWeek,draftWeekWithStaffIds,nextMonday,businessLocalDate,type SchedulingDraftInputs} from "./draftWeek";
 const employee=(id:string,wage:number|null)=>({id,display_name:id,default_hourly_wage_cents:wage,wage_period:"hour",wage_amount_cents:wage});
 const data=():SchedulingDraftInputs=>({
  employees:[employee("expensive",2500),employee("cheap",1200)],
@@ -8,6 +8,24 @@ const data=():SchedulingDraftInputs=>({
  preferences:[],openHours:{mon:[["09:00","12:00"]]},timezone:"America/Los_Angeles",city:null,region:null,countryCode:null
 });
 describe("pure scheduling draft",()=>{
+ it("keeps canonical IDs for owner approval but never exposes them in AI drafts",()=>{
+  const d=data();
+  d.employees=[
+    {...employee("first",1800),display_name:"Alex"},
+    {...employee("second",2300),display_name:"Alex"}
+  ];
+  d.schedules=[{employee_id:"second",day_of_week:1,start_time:"09:00",end_time:"10:00",
+    unpaid_break_minutes:15,effective_from:"2026-01-01",effective_to:null}];
+  d.availability=[];
+  const trusted=draftWeekWithStaffIds(d,"2026-10-26").days[0].shifts;
+  const publicShifts=draftWeek(d,"2026-10-26").days[0].shifts;
+  expect(trusted).toHaveLength(1);
+  expect(trusted[0].employeeId).toBe("second");
+  expect(trusted[0].paidHours).toBe(0.75);
+  expect(publicShifts).toHaveLength(1);
+  expect(Object.hasOwn(publicShifts[0],"employeeId")).toBe(false);
+ });
+
  it("permits preparation before opening and cleanup after closing while retaining service coverage",()=>{
   const d=data();d.schedules=[];d.prepMinutesBeforeOpen=30;d.prepMinutesAfterClose=15;
   d.availability=d.availability.map(x=>({...x,start_local:"08:30",end_local:"12:15"}));

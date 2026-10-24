@@ -39,7 +39,7 @@ function mergeSuggested(shifts:DraftShift[]):DraftShift[]{
  }
  return result;
 }
-export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
+function buildDraftWeek(inputs:SchedulingDraftInputs,weekStart:string){
  const missing=[...(inputs.missing??[])],estimated:string[]=[];
  if(!inputs.openHours)missing.push("businessHoursNotSet");
  if(!inputs.employees.length)missing.push("noActiveStaff");
@@ -206,7 +206,7 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
  });
  const allShifts=days.flatMap(d=>d.shifts);
  const unknownWageNames=[...new Set(allShifts.filter(s=>s.costCents===null).map(s=>s.name))];
- return {source:"schedule_draft" as const,draft:true,saved:false,weekStart,weekEnd:addDays(weekStart,6),days:days.map(d=>({...d,shifts:d.shifts.map(({employeeId:_,...shift})=>shift)})),
+ return {source:"schedule_draft" as const,draft:true,saved:false,weekStart,weekEnd:addDays(weekStart,6),days,
   totals:{hours:allShifts.reduce((s,x)=>s+x.paidHours,0),knownCostCents:allShifts.reduce((s,x)=>s+(x.costCents??0),0),
     costIsPartial:allShifts.some(x=>x.costCents===null),unknownWageNames},
   perPerson:inputs.employees.filter(e=>minutesByPerson.has(e.id)).map(e=>{
@@ -215,4 +215,15 @@ export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
       costCents:shifts.some(s=>s.costCents===null)?null:shifts.reduce((total,s)=>total+(s.costCents??0),0)};
   }),
   missing:[...new Set(missing)],estimated:[...new Set(estimated)]};
+}
+
+/** Trusted owner-only draft includes canonical employee IDs for approval.
+ * The agent-facing draftWeek result intentionally excludes identifiers. */
+export function draftWeekWithStaffIds(inputs:SchedulingDraftInputs,weekStart:string){
+ return buildDraftWeek(inputs,weekStart);
+}
+export function draftWeek(inputs:SchedulingDraftInputs,weekStart:string){
+ const result=buildDraftWeek(inputs,weekStart);
+ return {...result,days:result.days.map(day=>({...day,
+  shifts:day.shifts.map(({employeeId:_,...shift})=>shift)}))};
 }

@@ -14,6 +14,7 @@ import {uncheckedCoverageDays,coverageVerification} from "@/lib/calc/scheduling/
 import {automaticUnpaidBreakMinutes} from "@/lib/calc/scheduling/ruleChecks";
 import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import Link from "next/link";
+import StaffDraftApprovalCard from "./StaffDraftApprovalCard";
 import {addPerson,updatePerson,setPersonActive} from "@/lib/actions/teamWorkspace";
 import {upsertShift,removeShift,restoreShift,copyWeek,sendSchedule} from "@/lib/actions/schedule";
 type Data=Extract<Awaited<ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>>,{ok:true}>["data"];
@@ -31,6 +32,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    fmt(value.knownCostCents,data.currency);
  };
  const roleLabel=(v:string)=>({Barista:t("roleBarista"),Manager:t("roleManager"),Baker:t("roleBaker"),Cashier:t("roleCashier")}[v]??v);
+ const [draftOpen,setDraftOpen]=useState(false);
  const [version,setVersion]=useState({initial,local:initial});
  const data=version.initial===initial?version.local:initial;
  const setData=(value:Data)=>setVersion({initial,local:value});
@@ -200,14 +202,17 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    <WeekGrid dates={data.dates} people={data.displayTeam} shifts={data.shifts} gaps={data.gaps}
     openHours={data.openHours} currency={data.currency} readOnly={data.readOnly} coverageEnabled={data.rules.coverage_enabled}
     onEdit={(d,id)=>openShift(d,id)} onAdd={(d,id)=>openShift(d,undefined,id)}/>
-   {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">
+    {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">
     <h2 className="font-headline text-xl font-bold">{t("noShifts")}</h2><p className="my-2 text-muted">{t("emptyHelp")}</p>
     <div className="grid gap-2 sm:grid-cols-3">
      <button disabled={data.readOnly||busy} className="min-h-12 rounded-xl border border-accent px-3 text-accent-text"
       onClick={()=>run(()=>copyWeek({fromWeekStart:new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10),toWeekStart:data.weekStart}))}>{t("copyLastWeek")}</button>
-     <Link href={`/${locale}`} className="flex min-h-12 items-center justify-center rounded-xl border border-line px-3 text-accent-text" title={t("approvalComing")}>{t("askOlivia")}</Link>
+     <button type="button" disabled={data.readOnly||draftOpen} onClick={()=>setDraftOpen(true)} className="min-h-12 rounded-xl border border-line px-3 text-accent-text">{t("draftThisWeek")}</button>
      <button disabled={data.readOnly} className="min-h-12 rounded-xl bg-accent px-3 text-on-accent" onClick={()=>openShift(data.dates[0])}>{t("addShift")}</button>
     </div></section>}
+    {draftOpen&&<StaffDraftApprovalCard key={data.weekStart} week={data.weekStart}
+     locale={locale} data={data} onClose={()=>setDraftOpen(false)}
+     onApplied={()=>{setDraftOpen(false);router.refresh();}}/>}
    <div className="fixed inset-x-0 bottom-16 z-20 flex gap-2 border-t border-line bg-surface p-3 lg:bottom-0">
     <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl border border-accent text-accent-text" onClick={()=>run(()=>copyWeek({fromWeekStart:new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10),toWeekStart:data.weekStart}))}>{t("copyLastWeek")}</button>
     <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={()=>startTransition(async()=>{const r=await sendSchedule({weekStart:data.weekStart});if(!r.ok){setError(r.error);return;}setNotice(r.data.messages.map(m=>m.text).join("\n"));})}>{t("prepareScheduleMessages")}</button>
