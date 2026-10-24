@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("@/i18n/navigation", () => ({
   Link: ({ href, children }: { href: string; children: unknown }) =>
-    createElement("a", { href }, children as React.ReactNode),
+    createElement("a", { href, "data-intl-link": "true" }, children as React.ReactNode),
 }));
 
 import HomeTaskSections from "./HomeTaskSections";
@@ -27,6 +27,7 @@ describe("Home Needs your attention", () => {
     }));
     expect(html).toContain('href="/api/pos/square/connect?locale=ar"');
     expect(html).toContain(">Reconnect</a>");
+    expect(html).not.toContain("data-intl-link");
   });
 
   it("shows at most five one-action rows and sends overflow to Operations", () => {
