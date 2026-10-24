@@ -84,6 +84,7 @@ describe("database-safe agent persistence payload", () => {
         return begin <= start && start < begin + b.length;
       })).join("").length,
       kind:"money",
+      source:"unchecked",
       blockIndex: blocks.findIndex((b,i) => {
         const begin=blocks.slice(0,i).join("").length;
         return begin<=start && start<begin+b.length;
