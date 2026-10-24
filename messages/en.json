@@ -302,7 +302,17 @@
     "businessOverviewTitle": "Business overview",
     "businessOverviewIntro": "Your trusted profit, costs, recovery, staff, menu, break-even, and alerts.",
     "usageOverAlert": "Weekly ingredient usage is over 10% above expected",
-    "usageReview": "Review pantry usage"
+    "usageReview": "Review pantry usage",
+    "keyNumbers": "Key numbers",
+    "needsAttention": "Needs your attention",
+    "attentionEmpty": "Nothing needs you right now",
+    "attentionHandled": "See what the team handled",
+    "attentionSalesMissing": "Sales missing for {count} days",
+    "attentionSyncToast": "Sync Toast",
+    "attentionUploadSales": "Upload sales",
+    "attentionUnmatched": "{count} items need matching",
+    "attentionMatch": "Match items",
+    "attentionFix": "Fix"
   },
   "Money": {
     "title": "Money",
