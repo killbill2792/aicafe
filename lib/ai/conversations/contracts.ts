@@ -63,6 +63,7 @@ export type EvidenceReference = {
 };
 
 export type SupervisorReplyBlock =
+  | {type:"clarify";question:string;options:{label:string;value:string}[];allowOther:boolean}
   | OwnerQuestion
   | { type: "proposal_card"; proposalId: string }
   | { type: "memory_card"; ruleId: string }
@@ -94,6 +95,7 @@ export const evidenceReferenceSchema = z.strictObject({
 const textBlockSchema = z.strictObject({
   type: z.literal("text"), text: z.string().min(1).max(1200),
 });
+export const clarifyBlockSchema=z.strictObject({type:z.literal("clarify"),question:z.string().min(1).max(200),options:z.array(z.strictObject({label:z.string().min(1).max(60),value:z.string().min(1).max(100)})).min(2).max(4),allowOther:z.boolean()});
 const proposalCardSchema=z.strictObject({type:z.literal("proposal_card"),proposalId:z.uuid()});
 // Draft café fact (ai_team_rules row) the owner can approve; created only by the memory tool.
 const memoryCardSchema=z.strictObject({type:z.literal("memory_card"),ruleId:z.uuid()});
@@ -139,5 +141,5 @@ export const groundedReplySchema = z.strictObject({
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.discriminatedUnion("type",
     [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, percentBlockSchema,
-      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,memoryCardSchema])).min(1).max(30),
+      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,memoryCardSchema,clarifyBlockSchema])).min(1).max(30),
 });

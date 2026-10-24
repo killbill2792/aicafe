@@ -1,4 +1,7 @@
 import { z } from "zod";
+import {askOwnerTools} from "./askOwner";
+import {resolveEntity,choicePayload,ownerChoiceGuard} from "../resolve";
+import {resolvePeriod} from "@/lib/calc/periods";
 import { initiativeToolDefinitions,isInitiativeTool,executeInitiativeTool } from "./initiatives";
 import { staffTools } from "./staff";
 import {scheduleReadTools} from "./scheduleReads";
@@ -27,6 +30,7 @@ export type AgentToolResult = {
 export type AgentToolContext = {
   tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
   timezone?:string;
+  resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
@@ -34,7 +38,7 @@ export type AgentToolContext = {
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>};
 };
-const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
+const periodSchema = z.strictObject({ period: z.union([z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]) });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
 const posPeriodSchema=z.strictObject({from:z.iso.date(),to:z.iso.date()});
@@ -43,7 +47,7 @@ const posReadTools={
   get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
-const schemas = { ...posReadTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
+export const schemas = { ...askOwnerTools, ...posReadTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
   ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools,...staffProposalTools } as const;
 export type AgentToolName = keyof typeof schemas;
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
@@ -84,6 +88,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   // Flag-gated extra tool: only offered to the model when CHAT_MEMORY is on.
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
+  if(name==="ask_owner")return askOwnerTools.ask_owner.execute(raw,ctx);
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
@@ -128,8 +133,14 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const input = menuSchema.parse(raw);
     const slice = await ctx.tools.getMenuCatalog();
     if (!slice.available) return absent("menu_items", null, slice.quality.missingInputs);
-    const filtered = slice.value.filter(item => item.active &&
-      (!input.query || item.name.toLocaleLowerCase(ctx.locale).includes(input.query.toLocaleLowerCase(ctx.locale))));
+    const active=slice.value.filter(item=>item.active);
+    let filtered=active;
+    if(input.query){
+      const resolved=resolveEntity("product",input.query,active,{nameOf:i=>i.name,idOf:i=>i.id,
+        describe:i=>i.category+" · "+(i.priceCents/100).toFixed(2)});
+      if(resolved.status!=="resolved")return {...choicePayload(resolved,"menu_items",null),agentId:"alex"};
+      filtered=[resolved.value];
+    }
     const limit = input.limit ?? 8;
     return { source: "menu_items", period: null, agentId:"alex",
       missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : [])],
@@ -137,8 +148,11 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,
       })) };
   }
-  const { period: choice } = periodSchema.parse(raw);
-  const period = requestedPeriod(choice, ctx.asOf);
+  const {period:choice}=periodSchema.parse(raw);
+  const resolved=resolvePeriod(choice,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
+  if(resolved.status!=="resolved")return {source:name,period:null,missing:resolved.status==="ambiguous"?[]:resolved.missing,
+    needsOwnerChoice:resolved.status==="ambiguous",candidates:resolved.status==="ambiguous"?resolved.candidates:[]};
+  const period={from:resolved.value.from,to:resolved.value.to};
   if (name === "get_profit") {
     const slice = await ctx.tools.getProfitability(period);
     if (!slice.available) return absent("profitability", period, slice.quality.missingInputs);

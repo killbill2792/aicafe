@@ -61,6 +61,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function agentReplyPayload(turn: AgentTurn) {
   if (!turn.text.trim()) throw new AgentEmptyReplyError();
   const blocks = splitAgentText(turn.text, turn.provenance??turn.unverified);
+  const clarify=turn.results.find(r=>r.source==="ask_owner"&&r.missing.length===0);
   const proposalIds=[...new Set(turn.results.flatMap(result=>
     (result.source==="price_change_proposal"||result.source==="staff_proposal")&&result.draft===true&&
       result.saved===false&&result.missing.length===0&&
@@ -76,7 +77,8 @@ export function agentReplyPayload(turn: AgentTurn) {
   const status = persistedAgentStatus(turn);
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
-    ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId}))] };
+    ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId})),
+    ...(clarify&&typeof clarify.question==="string"&&Array.isArray(clarify.options)?[{type:"clarify" as const,question:clarify.question,options:clarify.options as {label:string;value:string}[],allowOther:clarify.allowOther===true}]:[])] };
   const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
   const unverified = annotations.flatMap(item => {
     const rows: Array<typeof item & {blockIndex:number}> = [];

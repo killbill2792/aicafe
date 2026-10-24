@@ -5,6 +5,7 @@ import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
+import {newResolveState,observeToolResult} from "./resolve";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -24,8 +25,8 @@ export type OwnerFollowUp = { id: string; text: string };
 export function agentInstructions(style: boolean): string {
   return SYSTEM_PROMPT + "\n" + (style ? STYLE_RULES + "\n" : "") + agentLabelsPrompt;
 }
-export function agentPromptCacheKey(style: boolean): string { return style ? "cafe-agent-v2" : "cafe-agent-v1"; }
-export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. Ask one specific clarifying question naturally when needed. On incomplete evidence explain what is known and missing. A proposal is not a completed action; say 'I've drafted this for your approval.' No JSON envelope.";
+export function agentPromptCacheKey(style: boolean): string { return style ? "cafe-agent-v4" : "cafe-agent-v3"; }
+export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. When a tool result says needsOwnerChoice or multiple products, people, categories, or periods fit and affect numbers or proposals, call ask_owner with 2–4 real candidate names and stop. Never guess silently. If one candidate clearly fits, do not ask. Never ask in plain text when ask_owner fits. On incomplete evidence explain what is known and missing. A proposal is not a completed action; say 'I've drafted this for your approval.' No JSON envelope.";
 
 export async function* openAIProvider(params: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<Event> {
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -109,10 +110,13 @@ export async function runAgentTurn(args: {
     if (fresh.length) args.onFollowUp?.(fresh.length);
     return fresh.length;
   };
+  const resolveState=newResolveState(args.ownerText,args.history);
+  args.context.resolveState=resolveState;
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
   const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0 };
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
+  let askedQuestion:string|null=null;
   const model = configuredSupervisorModel();
   const audit = (step: AgentAuditStep) => { try { args.onAuditStep?.(step); } catch { /* audit is non-critical */ } };
   const request = (final: boolean) => ({
@@ -241,7 +245,13 @@ export async function runAgentTurn(args: {
             toolName: tool.name, inputSummary: "Draft request", outputSummary: "Awaiting owner approval", durationMs: 0 });
         }
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
+        observeToolResult(resolveState,result);
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
+        if(tool.name==="ask_owner"&&result.missing.length===0&&typeof result.question==="string"){
+          askedQuestion=result.question;finished=true;
+          for(const skipped of calls.slice(index+1))input.push({type:"function_call_output",call_id:skipped.call_id,output:JSON.stringify({error:"ask_owner_ends_turn"})});
+          break;
+        }
         if (now() >= workDeadline || failures >= 2) {
           endReason = now() >= workDeadline ? "timeout" : "tool_errors";
           // Respond to all calls already returned in this response before the next request.
@@ -254,6 +264,7 @@ export async function runAgentTurn(args: {
           break;
         }
       }
+      if(askedQuestion){if(!text.trim())text=askedQuestion;break;}
       if (endReason !== "complete") break;
       if (round === 4 || usage.toolCalls >= 8) { endReason = "budget"; break; }
     }

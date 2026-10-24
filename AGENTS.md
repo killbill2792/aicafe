@@ -42,9 +42,7 @@ One conversational agent, like a good chat assistant. NOT a supervisor/router, N
   "unverified" chip. Never delete the sentence, never swap in placeholder text, never call a second LLM to review.
 - **Status** is computed from tool results only: `complete` if every tool used returned `missing:[]`, otherwise
   `partial` with the specific missing inputs listed. A recovered tool error does not downgrade the answer.
-- **Clarifications** are ordinary assistant messages: one specific question, in the owner's language, with optional
-  `quick_replies` (chips built from real ids returned by tools). The owner's reply is just the next user message.
-  No special `owner_question` card, no `requires_owner_input` state machine, no generic fallback question.
+- **Clarifications** use the `ask_owner` tool, which renders a `clarify` card (question + 2–4 options built from real tool data + optional Other). The owner's answer is just the next user message. There is no server-side pending state. The `owner_question` card and state machine stay banned.
 - **Actions:** `propose_*` tools create an inert proposal and render an approval card (preview + Approve/Decline).
   Only the approval endpoint, called by the owner's click, commits. POS price changes stay manual.
 - **Rich blocks:** tools may return `display` hints (`metric`, `chart`, `table`). The UI renders them with the
