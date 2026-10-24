@@ -28,8 +28,8 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
   const rawPrice=Math.max(costPlusPriceCents??0,ingredientBenchmarkCents);
   // Do not present a benchmark as full-cost pricing when labor/overhead are missing.
   const suggestedPriceCents=Math.max(COFFEE_SHOP_PROFILE.roundingRule.incrementCents,Math.ceil(rawPrice/25)*25);
-  const rawFloorCents=Math.ceil(input.ingredientCostCents/0.35);
-  const rawTargetCents=Math.ceil(input.ingredientCostCents/0.30);
+  const rawFloorCents=Math.round(input.ingredientCostCents/0.35);
+  const rawTargetCents=Math.round(input.ingredientCostCents/0.30);
   const rawHighCents=Math.ceil(input.ingredientCostCents/0.25);
   const floorCents=Math.ceil(rawFloorCents/25)*25;
   const highCents=Math.ceil(rawHighCents/25)*25;

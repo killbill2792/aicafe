@@ -4,7 +4,7 @@ describe("partial price recommendation",()=>{
  const base={ingredientCostCents:145,packagingCents:null,targetMarginPercent:null,labor30dCents:null,monthlyBillsCents:null,units30d:null,menuPricesCents:[300,400,500,700]};
  it("always produces a rounded floor and price range",()=>{
   const result=calculateNewItemPrice(base);
-  expect(result).toMatchObject({rawFloorCents:415,rawTargetCents:484,rawHighCents:580,floorCents:425,highCents:600,result:{tier:"floor_only",floor:425,range:{low:425,high:600}}});
+  expect(result).toMatchObject({rawFloorCents:414,rawTargetCents:483,rawHighCents:580,floorCents:425,highCents:600,result:{tier:"floor_only",floor:425,range:{low:425,high:600}}});
   expect(result.suggestedPriceCents).not.toBeNull();
  });
  it("upgrades tiers with usage and overhead evidence",()=>{

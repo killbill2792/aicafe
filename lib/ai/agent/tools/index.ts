@@ -39,7 +39,7 @@ export type AgentToolContext = {
     proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>};
 };
-const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]),ownerInputs:ownerInputsSchema.nullable() });
+const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]),ownerInputs:ownerInputsSchema.nullable().optional() });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
 const posPeriodSchema=z.strictObject({from:z.iso.date(),to:z.iso.date()});

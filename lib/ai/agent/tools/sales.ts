@@ -4,7 +4,7 @@ import type { AgentToolContext, AgentToolResult } from "./index";
 import {ownerInputsSchema} from "./ownerInputs";
 
 const period=z.strictObject({period:z.enum(["today","week","month"])});
-const item=z.strictObject({itemId:z.uuid(),ownerInputs:ownerInputsSchema.nullable()});
+const item=z.strictObject({itemId:z.uuid(),ownerInputs:ownerInputsSchema.nullable().optional()});
 export const salesTools={
   get_item_sales:{
     agentId:"alex",schema:period,description:"Covered item quantities sold, not inferred from generic sales totals.",

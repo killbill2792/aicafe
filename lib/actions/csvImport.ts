@@ -12,7 +12,7 @@ import { rebuildSalesFactRollups } from "@/lib/pos/salesFactRollups";
 import { readStagedSalesGroups, readCsvFeeOrders, csvPromotedOrderId } from "@/lib/pos/csv/finalizeReads";
 import { matchCatalogItem } from "@/lib/pos/catalogMatching";
 import {inferMenuItemCategory} from "@/lib/menu/inferCategory";
-import {recordInitialMenuPrice} from "@/lib/menu/priceHistory";
+
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { NEW_EMPLOYEE } from "@/lib/constants";
 import { toCents } from "@/lib/pos/csv/csvUtils";
@@ -216,7 +216,12 @@ async function resolveMenuItemIds(
       const { data: created } = await supabase.from("menu_items").insert({ business_id: businessId, pos_item_id: posItemId, name, base_name: name, price_cents: priceCents, category: inferMenuItemCategory(name), catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() }).select("id").single();
       if (created){
         menuItemIdByName.set(name.toLowerCase(), created.id);
-        if(priceCents!==null)await recordInitialMenuPrice(supabase,{businessId,menuItemId:created.id,priceCents,sourceProvider:"csv import estimate"});
+        if(priceCents!==null){
+          const {error:historyError}=await supabase.from("menu_price_history").insert({business_id:businessId,
+            menu_item_id:created.id,old_price_cents:null,new_price_cents:priceCents,
+            source_type:"imported",source_provider:"csv import estimated average"});
+          if(historyError)throw historyError;
+        }
       }
     } else {
       await supabase.from("pos_catalog_matches").upsert({ business_id: businessId, provider: "csv", pos_item_id: posItemId, imported_name: name, imported_price_cents: priceCents, suggested_menu_item_id: match.candidateId, match_score: match.score, status: "needs_review" }, { onConflict: "business_id,provider,pos_item_id" });

@@ -6,7 +6,7 @@ import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
 const schema=z.strictObject({
  ingredient_cost_cents:z.number().int().positive(),category:z.enum(["drink","food"]),
  packaging_cents:z.number().int().nonnegative().nullable(),
- target_margin_percent:z.number().min(0).max(60).nullable(),item_name:z.string().trim().max(120).nullable(),ownerInputs:ownerInputsSchema.nullable()
+ target_margin_percent:z.number().min(0).max(60).nullable(),item_name:z.string().trim().max(120).nullable(),ownerInputs:ownerInputsSchema.nullable().optional()
 });
 export const newItemPriceTools={suggest_new_item_price:{
  agentId:"alex",schema,description:"Suggest a price for a new or unsaved item from its ingredient cost, the café's real labor and overhead per item sold, target margin and own menu range. Location is context only: never invent competitor or local prices.",
