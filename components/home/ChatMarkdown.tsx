@@ -184,7 +184,7 @@ function annotatedText(
 }
 
 function inlineMarkdown(
-  text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>,
+  text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>, locale:"en"|"es"|"ar"="en",
 ): ReactNode[] {
   const nodes: ReactNode[] = [];
   // No model-authored HTML or links: React escapes literal source text. Inline
