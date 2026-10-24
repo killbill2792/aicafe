@@ -14,6 +14,23 @@ export class ToastApiError extends Error {
 export const GUID=z.uuid();
 const tokenSchema=z.object({token:z.object({accessToken:z.string().min(1),expiresIn:z.number().positive()})});
 const wait=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+/** Toast requires a numeric timezone offset without the ISO colon; query-string
+ * plus signs must be percent-encoded. The existing UTC-offset convention is safe. */
+export function toToastTimestamp(date:Date,offsetMinutes=0):string {
+ if(!Number.isFinite(date.getTime())||!Number.isInteger(offsetMinutes)||Math.abs(offsetMinutes)>14*60)
+   throw new ToastApiError("invalid_response");
+ const shifted=new Date(date.getTime()+offsetMinutes*60000);
+ const hh=String(Math.floor(Math.abs(offsetMinutes)/60)).padStart(2,"0");
+ const mm=String(Math.abs(offsetMinutes)%60).padStart(2,"0");
+ return encodeURIComponent(shifted.toISOString().slice(0,-1)+(offsetMinutes<0?"-":"+")+hh+mm);
+}
+const lastRequestAt=new Map<string,number>();
+async function throttle(bucket:string,gapMs:number,deadlineAt?:number) {
+ const now=Date.now(),until=Math.max(now,lastRequestAt.get(bucket)??0)+gapMs;
+ if(deadlineAt&&until>=deadlineAt)throw new ToastApiError("rate_limited",429,new Date(until).toISOString());
+ lastRequestAt.set(bucket,until);
+ if(until>now)await wait(until-now);
+}
 
 /** HTTPS, explicit operator-controlled hostnames, no redirects or arbitrary server-side URLs. */
 export function trustedToastOrigin(input:string,allowed=process.env.TOAST_ALLOWED_API_HOSTS??""):string {
@@ -141,6 +158,10 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     let bearer=await token();
     for(let attempt=0,authRetry=false;attempt<5;attempt++) {
       if(opts.deadlineAt&&Date.now()>=opts.deadlineAt)throw new ToastApiError("timeout");
+      const bucket=path.startsWith("/orders/v2/ordersBulk")?"bulk":
+        path.startsWith("/menus")?"menus":"other";
+      await throttle(businessId+":"+guid.data+":"+bucket,
+        bucket==="bulk"?250:bucket==="menus"?1000:100,opts.deadlineAt);
       let res:Response;
       try {
         res=await fetch(origin+path,{method:"GET",redirect:"error",signal:AbortSignal.timeout(path.startsWith("/orders/v2/ordersBulk")?30000:12000),
@@ -178,6 +199,14 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
       if(res.status>=500&&attempt<4){await wait(500*2**attempt+Math.random()*200);continue;}
       if(res.status===403)throw new ToastApiError("missing_scope_or_location",403);
       if(!res.ok)throw failure(res.status,path.startsWith("/restaurants/v1/")?"restaurant":"resource");
+      const remaining=Number(res.headers.get("x-toast-ratelimit-remaining"));
+      const reset=Number(res.headers.get("x-toast-ratelimit-reset"));
+      if(res.headers.has("x-toast-ratelimit-remaining")&&remaining<3&&Number.isFinite(reset)&&reset*1000>Date.now()) {
+        const next=reset*1000;
+        if(next>Date.now()+60000||opts.deadlineAt&&next>=opts.deadlineAt)
+          throw new ToastApiError("rate_limited",429,new Date(next).toISOString());
+        await wait(Math.max(0,next-Date.now()));
+      }
       const raw=await res.json().catch(()=>{throw new ToastApiError("invalid_response");});
       const parsed=schema.safeParse(raw);
       if(!parsed.success)throw new ToastApiError("invalid_response");
@@ -185,5 +214,11 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     }
     throw new ToastApiError("unavailable");
   }
-  return {request};
+  async function fetchRestaurantInfo(restaurantGuid:string,allowUnverified=false) {
+    return request("/restaurants/v1/restaurants/"+restaurantGuid,restaurantGuid,
+      z.object({guid:GUID,general:z.object({timeZone:z.string().min(1),
+      closeoutHour:z.number().int().min(0).max(12),
+      name:z.string().nullish()})}),{allowUnverified});
+  }
+  return {request,fetchRestaurantInfo};
 }
