@@ -87,4 +87,20 @@ BEGIN
   IF sqlerrm='duplicate first-import answer succeeded' THEN RAISE;END IF;
  END;
 END $test$;
+-- In UTC afternoon, a +14-hour café's valid "yesterday" is today's UTC date.
+SET LOCAL TIME ZONE 'UTC';
+DO $local_range$
+DECLARE b uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+ g uuid:='cccccccc-cccc-4ccc-8ccc-cccccccc0004';
+ today_local date:=(now() at time zone 'Pacific/Kiritimati')::date;
+ run_id uuid;
+BEGIN
+ UPDATE public.toast_location_mappings SET toast_time_zone='Pacific/Kiritimati'
+ WHERE business_id=b AND restaurant_guid=g;
+ IF today_local>current_date THEN
+  SELECT public.toast_queue_backfill(b,g,current_date,current_date) INTO run_id;
+  PERFORM pg_temp.assert(run_id IS NOT NULL,
+   'local yesterday accepted even when it equals UTC today');
+ END IF;
+END $local_range$;
 ROLLBACK;
