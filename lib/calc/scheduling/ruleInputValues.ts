@@ -30,3 +30,10 @@ export function multiplierToBasisPoints(value: string): number | null {
 export function basisPointsToMultiplier(value: number): string {
  return String(value / 10_000);
 }
+
+export function employerCostPercentFromInput(value: string): number | null {
+ const normalized = normalizeDigits(value.trim()).replace(/[,.٫]/g, character => character === "," || character === "٫" ? "." : character);
+ if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
+ const percent = Number(normalized);
+ return Number.isFinite(percent) && percent >= 0 && percent <= 100 ? percent : null;
+}
