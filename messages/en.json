@@ -82,7 +82,8 @@
     "daysMissing": "Days missing from Toast",
     "syncAgain": "Sync again",
     "noMissingDays": "No days currently flagged for review",
-    "syncUnavailable": "Sync could not be started. Try again during an approved pilot."
+    "syncUnavailable": "Sync could not be started. Try again during an approved pilot.",
+    "dayStaged": "Toast data fetched for review. Sales figures are not confirmed yet."
   },
   "LocaleLayout": {
     "title": "Café Profit"

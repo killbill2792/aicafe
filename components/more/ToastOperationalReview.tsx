@@ -142,25 +142,25 @@ export default function ToastOperationalReview({
   </div>}
   {!review&&!error&&<p role="status" className="text-sm text-ink-muted">{labels.pending}</p>}
   {review&&<>
-   <h3 className="text-base font-bold text-ink">{labels.sourceRoster} ({review.roster.length})</h3>
+   <h3 className="text-base font-bold text-ink">{labels.sourceRoster} ({new Intl.NumberFormat(locale).format(review.roster.length)})</h3>
    {review.roster.length?review.roster.map(r=>mappingRow({
     kind:"employee",guid:r.employee_guid,name:r.display_name,
     description:labels.unmatched,linkedId:r.linked_employee_id,archived:r.deleted
    })):<p className="text-sm text-ink-muted">{labels.noRecords}</p>}
-   <h3 className="text-base font-bold text-ink">{labels.sourceMenu} ({review.catalog.length})</h3>
+   <h3 className="text-base font-bold text-ink">{labels.sourceMenu} ({new Intl.NumberFormat(locale).format(review.catalog.length)})</h3>
    {review.catalog.length?review.catalog.map(r=>mappingRow({
     kind:r.kind,guid:r.provider_guid,name:r.name,
     description:(r.category??"")+(r.price_cents==null?
-      " • "+labels.unknownPrice:" • "+labels.priceCents+": "+String(r.price_cents)),
+      " • "+labels.unknownPrice:" • "+labels.priceCents+": "+new Intl.NumberFormat(locale).format(r.price_cents)),
     linkedId:r.kind==="item"?r.linked_menu_item_id:r.linked_modifier_recipe_id,
     archived:false
    })):<p className="text-sm text-ink-muted">{labels.noRecords}</p>}
    <h3 className="text-base font-bold text-ink">{labels.attendanceReview}</h3>
    <p className="text-sm text-ink-muted">{labels.missingWage}: {
-    review.attendance.filter(r=>r.wage_status==="missing").length
+    new Intl.NumberFormat(locale).format(review.attendance.filter(r=>r.wage_status==="missing").length)
    }</p>
    <p className="text-sm text-ink-muted">{labels.attendanceReview}: {
-    review.attendance.filter(r=>r.reconciliation_status!=="matched").length
+    new Intl.NumberFormat(locale).format(review.attendance.filter(r=>r.reconciliation_status!=="matched").length)
    }</p>
   </>}
   {working&&<p role="status" className="text-sm">{labels.pending}</p>}

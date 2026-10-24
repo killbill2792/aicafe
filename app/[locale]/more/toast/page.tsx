@@ -66,7 +66,7 @@ export default async function ToastConnectionPage() {
           errorRateLimited:t("errorRateLimited"),errorUnavailable:t("errorUnavailable"),
           errorInvalidResponse:t("errorInvalidResponse"),
           needsAttention:t("needsAttention"),fix:t("fix"),technicalDetails:t("technicalDetails"),
-          connectedLastSync:t("connectedLastSync"),noSyncYet:t("noSyncYet"),
+          connectedLastSync:t.raw("connectedLastSync"),noSyncYet:t("noSyncYet"),
           manualLocationHint:t("manualLocationHint"),
         }}/>
       <ToastSetupActions businessId={businessId}
@@ -98,7 +98,7 @@ export default async function ToastConnectionPage() {
           pending:t("pending"),error:t("error"),success:t("success"),
           technicalDetails:t("technicalDetails"),daysMissing:t("daysMissing"),
           syncAgain:t("syncAgain"),noMissingDays:t("noMissingDays"),
-          syncUnavailable:t("syncUnavailable")
+          syncUnavailable:t("syncUnavailable"),dayStaged:t("dayStaged")
         }}/>
       </>}
     </PageShell>

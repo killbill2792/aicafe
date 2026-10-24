@@ -8,7 +8,8 @@ const subscriptions=z.object({subscriptions:z.array(z.object({
 const preferences=z.object({
  preferences:z.array(z.object({kind:z.string(),restaurant_guid:z.string().uuid(),
   enabled:z.boolean(),interval_minutes:z.number(),last_failure_category:z.string().nullable()})),
- recovery:z.array(z.object({restaurant_guid:z.string(),state:z.string(),kind:z.string()})),
+ recovery:z.array(z.object({restaurant_guid:z.string(),state:z.string(),kind:z.string(),
+  missing_since:z.string().nullable().optional(),missing_until:z.string().nullable().optional()})),
  unresolvedCorrections:z.array(z.object({restaurant_guid:z.string(),business_date:z.string()})),
  schedulerActive:z.boolean().optional()
 });

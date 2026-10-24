@@ -103,7 +103,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
   <div className="flex flex-wrap items-center justify-between gap-3">
    <p role="status" className="text-base font-semibold text-ink">
     {status==="notConnected"?labels.notConnected:
-     status==="connected"?"✓ "+labels.connectedLastSync.replace("{time}",lastSync?time(lastSync):labels.noSyncYet):
+     status==="connected"?labels.connectedLastSync.replace("{time}",lastSync?time(lastSync):labels.noSyncYet):
       labels.needsAttention}
    </p>
    {status==="needsAttention"&&<a href="#toast-keys"
@@ -171,3 +171,4 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
   </>}
   {message&&<p role="status" className="rounded-xl bg-paper p-3 text-sm text-ink">{message}</p>}
  </section>;
+}

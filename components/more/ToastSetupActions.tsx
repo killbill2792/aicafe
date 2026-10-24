@@ -1,12 +1,13 @@
 "use client";
 import {useEffect,useState} from "react";
+import {useLocale} from "next-intl";
 import {loadToastOwnerSetupState,type ToastOwnerSetupStatus,type ToastWebhookSubscription}
  from "./toastSetupState";
 import ToastOperationalReview, {type ToastReviewLabels} from "./ToastOperationalReview";
 type Labels={
  webhookSetup:string;createWebhook:string;webhookUrl:string;webhookSecret:string;
  saveWebhookSecret:string;webhookInactive:string;syncPreferences:string;syncKind:string;
- everyMinutes:string;technicalDetails:string;daysMissing:string;syncAgain:string;noMissingDays:string;syncUnavailable:string;enablePolling:string;disablePolling:string;pendingActivation:string;
+ everyMinutes:string;technicalDetails:string;daysMissing:string;syncAgain:string;noMissingDays:string;syncUnavailable:string;dayStaged:string;enablePolling:string;disablePolling:string;pendingActivation:string;
  corrections:string;recovery:string;pending:string;error:string;success:string
 };
 export default function ToastSetupActions({businessId,restaurantGuids,enabled,pilotEnabled,labels,reviewLabels}:{
@@ -34,7 +35,7 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
    return true;
   }catch{
    // No old verification/disabled flag may survive a failed status refresh.
-   setVerifiedRestaurants([]);setSubscriptions([]);setStatus(null);setLocationMappings([]);setLocationMappings([]);
+   setVerifiedRestaurants([]);setSubscriptions([]);setStatus(null);setLocationMappings([]);
    return false;
   }
  }
@@ -48,7 +49,7 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
     setStatus(snapshot.status);
   }).catch(()=>{
     if(cancelled)return;
-    setVerifiedRestaurants([]);setSubscriptions([]);setStatus(null);
+    setVerifiedRestaurants([]);setSubscriptions([]);setStatus(null);setLocationMappings([]);
   });
   return ()=>{cancelled=true;};
  },[businessId]);
@@ -59,10 +60,10 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
    const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(payload)});
    const result=await response.json() as {error?:string;subscriptionId?:string};
-   if(!response.ok){setMessage(labels.error+": "+(result.error??"unavailable"));return;}
+   if(!response.ok){setMessage(labels.error);return;}
    if(result.subscriptionId)setSelection(result.subscriptionId);
    setSecret("");const loaded=await reload();
-   setMessage(loaded?labels.success:labels.error+": status unavailable");
+   setMessage(loaded?labels.success:labels.error);
   }catch{setMessage(labels.error);}
   finally{setBusy(false);}
  }
@@ -74,7 +75,7 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
     headers:{"Content-Type":"application/json"},body:JSON.stringify({businessId,restaurantGuid,
      locationId:locationMappings.find(l=>l.restaurant_guid===restaurantGuid)?.location_id,businessDate:date})});
    if(!response.ok)throw new Error("unavailable");
-   await reload();setMessage(labels.success);
+   const loaded=await reload();setMessage(loaded?labels.dayStaged:labels.syncUnavailable);
   }catch{setMessage(labels.syncUnavailable);}
   finally{setDayPending(null);}
  }
@@ -84,6 +85,11 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
  const missingDays=[...new Map((status?.unresolvedCorrections??[])
   .filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d.business_date)).map(d=>[d.restaurant_guid+":"+d.business_date,d])).values()]
   .sort((a,b)=>b.business_date.localeCompare(a.business_date));
+ const gaps=(status?.recovery??[]).filter(g=>g.missing_since||g.missing_until);
+ const locale=useLocale();
+ function localDay(day:string){
+  return new Date(day+"T12:00:00Z").toLocaleDateString(locale,{timeZone:"UTC",year:"numeric",month:"short",day:"numeric"});
+ }
  return <section className="flex flex-col gap-4 rounded-card-lg bg-card p-4">
   <details className="rounded-xl border border-line p-3">
   <summary className="cursor-pointer text-base font-semibold">{labels.technicalDetails}</summary>
@@ -132,17 +138,21 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
   </div></details>
   <div className="flex flex-col gap-3">
    <h2 className="text-lg font-bold text-ink">{labels.daysMissing}</h2>
-   {missingDays.length?missingDays.map(day=><div key={day.restaurant_guid+day.business_date}
+   {missingDays.map(day=><div key={day.restaurant_guid+day.business_date}
     className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3">
-    <span className="text-base text-ink">{day.business_date}</span>
+    <span className="text-base text-ink">{localDay(day.business_date)}</span>
     <button type="button" disabled={Boolean(dayPending)||!pilotEnabled||
      !locationMappings.some(l=>l.restaurant_guid===day.restaurant_guid)}
      onClick={()=>void syncDay(day.restaurant_guid,day.business_date)}
      className="min-h-12 rounded-full border border-line px-4 font-semibold disabled:opacity-40">
      {labels.syncAgain}</button>
-   </div>):<p className="text-base text-ink-muted">{labels.noMissingDays}</p>}
-   {(status?.recovery.length??0)>0&&<p className="text-sm text-ink-muted">
-    {labels.recovery}: {status?.recovery.length}</p>}
+   </div>)}
+   {gaps.map((g,i)=><div key={g.restaurant_guid+":"+g.kind+":"+i}
+    className="rounded-xl border border-line p-3 text-base text-ink">
+    <p>{labels.recovery}: {g.missing_since?.slice(0,10)??"?"} – {g.missing_until?.slice(0,10)??"?"}</p>
+    <p className="text-sm text-ink-muted">{labels.syncUnavailable}</p>
+   </div>)}
+   {!missingDays.length&&!gaps.length&&<p className="text-base text-ink-muted">{labels.noMissingDays}</p>}
   </div>
   {selected&&<ToastOperationalReview key={businessId+":"+selected}
     businessId={businessId} restaurantGuid={selected}

@@ -40,7 +40,7 @@ describe("Toast single-action credential save and verification",()=>{
 describe("owner connection status",()=>{
  it.each([["not_connected","notConnected"],["verified","connected"],["configured","needsAttention"],
   ["missing_permissions","needsAttention"],["needs_reconnect","needsAttention"],
-  ["sync_failed","needsAttention"],["stale","needsAttention"]])("maps %s to %s",(state,expected)=>{
+  ["sync_failed","needsAttention"],["stale","needsAttention"],["disconnected","notConnected"],["unknown","needsAttention"]])("maps %s to %s",(state,expected)=>{
   expect(toastStatus(state)).toBe(expected);
  });
  it("uses the newest successful fetch",()=>{

@@ -82,7 +82,8 @@
     "daysMissing": "Días sin datos de Toast",
     "syncAgain": "Sincronizar de nuevo",
     "noMissingDays": "No hay días pendientes de revisión",
-    "syncUnavailable": "No se pudo iniciar la sincronización. Inténtalo durante una prueba autorizada."
+    "syncUnavailable": "No se pudo iniciar la sincronización. Inténtalo durante una prueba autorizada.",
+    "dayStaged": "Se obtuvieron datos de Toast para revisarlos. Las cifras de ventas aún no están confirmadas."
   },
   "LocaleLayout": {
     "title": "Café Profit"
