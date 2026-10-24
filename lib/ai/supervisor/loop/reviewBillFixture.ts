@@ -3,6 +3,7 @@ import {registerLoopCapability} from "./engine";
 /** Deliberately unrelated specialist: proves no platform switch/route change
  * is required to register a reviewed-recurring-bill effect contract. */
 export const billReviewFixtureCapability=registerLoopCapability({
+ dependencyScope:(effect)=>({version:1,effect}),
   id:"leo.recurring_bill_review.v1",version:1,
   inputSchema:z.strictObject({billId:z.string().min(1),vendor:z.string().min(1)}),
   effectSchema:z.strictObject({billId:z.string().min(1),reviewed:z.literal(true)}),
