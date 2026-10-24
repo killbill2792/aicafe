@@ -120,6 +120,7 @@ function formatBusinessMonth(value: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { year:"numeric", month:"long", timeZone:"UTC" }).format(new Date(`${value}-01T12:00:00Z`));
 }
 function formatHours(value: unknown, locale: string): string {
+  if (value === null || value === undefined || value === "") return "—";
   const hours = Number(value);
   return Number.isFinite(hours) && hours >= 0
     ? new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(hours)
