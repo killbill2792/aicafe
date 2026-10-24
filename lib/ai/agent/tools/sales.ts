@@ -2,6 +2,7 @@ import { z } from "zod";
 import { requestedPeriod } from "./period";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {ownerInputsSchema} from "./ownerInputs";
+import {resolveCoveredSalesWindow} from "./coverage";
 
 const period=z.strictObject({period:z.enum(["today","week","month"])});
 const item=z.strictObject({itemId:z.uuid(),ownerInputs:ownerInputsSchema.nullable().optional()});
@@ -9,12 +10,13 @@ export const salesTools={
   get_item_sales:{
     agentId:"alex",schema:period,description:"Covered item quantities sold, not inferred from generic sales totals.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const p=requestedPeriod(period.parse(raw).period,ctx.asOf);
+      const selection=await resolveCoveredSalesWindow(ctx,requestedPeriod(period.parse(raw).period,ctx.asOf));
+      const p=selection.period;
       if(!ctx.tools.getProductSales)return {source:"item_sales",period:p,agentId:"alex",missing:["itemSalesReaderUnavailable"]};
       const s=await ctx.tools.getProductSales(p);
       if(!s.available)return {source:"item_sales",period:p,agentId:"alex",missing:s.quality.missingInputs,items:null};
       const sorted=[...s.value].sort((a,b)=>b.units-a.units);
-      return {source:"item_sales",period:p,agentId:"alex",
+      return {source:"item_sales",period:p,coverageLabel:selection.label,agentId:"alex",
         missing:[...s.quality.missingInputs,...(sorted.length>15?["itemSalesTruncated"]:[])],
         itemCount:sorted.length,items:sorted.slice(0,15)};
     },

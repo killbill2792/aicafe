@@ -3,6 +3,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 import {calculateNewItemPrice} from "@/lib/calc/newItemPrice";
 import {requestedPeriod,prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
+import {resolveCoveredSalesWindow} from "./coverage";
 const schema=z.strictObject({
  ingredient_cost_cents:z.number().int().positive(),category:z.enum(["drink","food"]),
  packaging_cents:z.number().int().nonnegative().nullable(),
@@ -11,8 +12,10 @@ const schema=z.strictObject({
 export const newItemPriceTools={suggest_new_item_price:{
  agentId:"alex",schema,description:"Suggest a price for a new or unsaved item from its ingredient cost, the café's real labor and overhead per item sold, target margin and own menu range. Location is context only: never invent competitor or local prices.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-  const v=schema.parse(raw),owner=v.ownerInputs,
-    period=(owner?.salesPeriod?ownerPeriod(owner.salesPeriod,ctx.asOf):null)??requestedPeriod("month",ctx.asOf);
+  const v=schema.parse(raw),owner=v.ownerInputs;
+  const ownerWindow=owner?.salesPeriod?ownerPeriod(owner.salesPeriod,ctx.asOf):null;
+  const coverage=ownerWindow?{period:ownerWindow,label:null}:await resolveCoveredSalesWindow(ctx,requestedPeriod("month",ctx.asOf));
+  const period=coverage.period;
   const sitePromise=ctx.tools.getSchedulingDraftInputs?.().catch(()=>undefined);
   const [labor,sales,bills,menu,site]=await Promise.all([
    ctx.tools.getLaborMetrics?.(period),ctx.tools.getProductSales?.(period),
@@ -43,7 +46,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     Math.round(((laborForPeriod??0)+(billsForPeriod??0))/periodDays(period)):null;
   const drinksPerDayToCoverOverhead=overheadPerDayCents!==null&&contributionCents>0?
     Math.ceil(overheadPerDayCents/contributionCents):null;
-  return {source:"new_item_price",period,unit:"cents",contributionCents,overheadPerDayCents,drinksPerDayToCoverOverhead,
+  return {source:"new_item_price",period,coverageLabel:coverage.label,unit:"cents",contributionCents,overheadPerDayCents,drinksPerDayToCoverOverhead,
    explain:[...(owner?.laborCents!=null?[{kind:"prorate",name:"labor",value:laborForPeriod,provenance:"ownerProvided"}]:[]),
      {kind:"input",name:"unitCost",value:v.ingredient_cost_cents,provenance:"ownerProvided"},
      {kind:"input",name:"productCostRatio",value:0.30,provenance:"estimate"}],

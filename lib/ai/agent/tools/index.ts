@@ -16,6 +16,7 @@ import {memoryTools,type CafeMemoryPort} from "./memory";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import {ToolError} from "../toolErrors";
 import {requestedPeriod as calcRequestedPeriod} from "@/lib/calc/periods";
+import {resolveCoveredSalesWindow} from "./coverage";
 import {summarizePeakHours,summarizeEmployeeSales,summarizePayrollFacts} from "@/lib/calc/posFactSummaries";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { CafeStatePeriod } from "@/lib/operating/types";
@@ -146,20 +147,22 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       })) };
   }
   const { period: choice,ownerInputs } = periodSchema.parse(raw);
-  const period = requestedPeriod(choice, ctx.asOf);
+  const requested = requestedPeriod(choice, ctx.asOf);
+  const selection=await resolveCoveredSalesWindow(ctx,requested);
+  const period=selection.period;
   if (name === "get_profit") {
     const slice = await ctx.tools.getProfitability(period);
-    if (!slice.available) return absent("profitability", period, slice.quality.missingInputs);
-    return { source: "profitability", period, agentId:"leo", missing: slice.quality.missingInputs,
+    if (!slice.available) return {...absent("profitability", period, slice.quality.missingInputs),coverageLabel:selection.label};
+    return { source: "profitability", period, coverageLabel:selection.label,agentId:"leo", missing: slice.quality.missingInputs,
       estimated: slice.quality.estimatedInputs,
       netSalesCents: slice.value.netSalesCents, totalCostsCents: slice.value.totalCostsCents, unit:"cents",ownerInputs,
       ownerProfitCents: slice.value.ownerProfitCents, operatingMargin: slice.value.operatingMargin,
       coveredSalesDays: slice.value.coveredSalesDays, expectedSalesDays: slice.value.expectedSalesDays };
   }
-  if (name !== "get_sales") throw new Error("unknown_tool");
+  if (name !== "get_sales") throw new ToolError("not_supported");
   const slice = await ctx.tools.getSalesTrend(period);
-  if (!slice.available) return absent("daily_rollups", period, slice.quality.missingInputs);
-  return { source: "daily_rollups", period, agentId:"alex", missing: slice.quality.missingInputs,
+  if (!slice.available) return {...absent("daily_rollups", period, slice.quality.missingInputs),coverageLabel:selection.label};
+  return { source: "daily_rollups", period, coverageLabel:selection.label,agentId:"alex", missing: slice.quality.missingInputs,
     netSalesCents: netSalesCentsForPeriod(slice.value),unit:"cents",
     days: slice.value.slice(-7).map(day => ({ date: day.date, netSalesCents: day.netSalesCents })) };
 }
