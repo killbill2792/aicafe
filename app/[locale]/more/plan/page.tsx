@@ -100,6 +100,8 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       currentPrice: economics("currentPrice"), simulatedPrice: economics("simulatedPrice"),
       change: economics("change"), unavailableItem: economics("unavailableItem"),
       invalid: economics("invalid"), targetNotFeasible: economics("targetNotFeasible"),
+      fixSales: money("uploadSales"), fixFees: money("fixFees"),
+      fixCosts: money("addProductCosts"), fixOperating: money("addBills"),
     }} />}
     {tab === "what-if" && snapshot && <section className="rounded-card-lg bg-card p-5">
       <TryScenario items={snapshot.menuItems.map(item => ({
