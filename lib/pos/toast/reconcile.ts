@@ -163,7 +163,7 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
     .eq("business_date",day);
    if(error)throw new ToastApiError("unavailable");
    await writeReconciliation(db,p,day,{analytics_state:"missing",
-    recon_state:"owner_flagged",warnings:{...status.warnings,analytics_timeout:1}});
+    recon_state:"analytics_timeout",warnings:{...status.warnings,analytics_timeout:1}});
   }else await writeReconciliation(db,p,day,{analytics_state:"pending",recon_state:"pending"});
   return;
  }
