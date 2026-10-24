@@ -269,3 +269,83 @@ end $flag$;
 revoke all on function public.toast_set_day_owner_flag(uuid,uuid,date,boolean,text)
  from public,anon,authenticated;
 grant execute on function public.toast_set_day_owner_flag(uuid,uuid,date,boolean,text) to service_role;
+
+-- Track the first applicable Toast date atomically with queuing.
+create or replace function public.toast_queue_backfill(
+ p_business_id uuid,p_restaurant_guid uuid,p_from date,p_to date)
+returns uuid language plpgsql security definer set search_path=public as $queue$
+declare v_prior date;v_id uuid;v_new_start date;v_expanded boolean;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if p_from<'2015-12-02'::date or p_to<p_from or p_to-p_from>=400
+  or p_to>=current_date then raise exception 'invalid backfill range';end if;
+ select m.toast_start_date into v_prior
+ from public.toast_location_mappings m
+ where m.business_id=p_business_id and m.restaurant_guid=p_restaurant_guid
+ and m.verified_at is not null for update;
+ if not found then raise exception 'unverified Toast location';end if;
+ v_new_start:=case when v_prior is null then least(p_from,
+   coalesce((select min(requested_from) from public.toast_sync_runs r
+    where r.business_id=p_business_id and r.restaurant_guid=p_restaurant_guid
+     and r.kind='backfill'),p_from)) else least(v_prior,p_from) end;
+ v_expanded:=v_prior is null or v_new_start<v_prior;
+ if v_expanded then
+  update public.toast_location_mappings set toast_start_date=v_new_start
+   where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+  -- The stored business-wide total was computed before this location became
+  -- applicable. Invalidate EVERY affected previously actual date atomically.
+  update public.daily_rollups dr set sales_data_status='missing'
+  where dr.business_id=p_business_id and dr.business_date>=v_new_start
+   and (v_prior is null or dr.business_date<v_prior) and dr.sales_data_status='actual'
+   and exists(select 1 from public.toast_day_status already
+    where already.business_id=dr.business_id and already.business_date=dr.business_date
+     and already.import_state='imported')
+   and exists(
+    select 1 from public.toast_location_mappings m
+    left join public.toast_day_status d on d.business_id=m.business_id
+     and d.restaurant_guid=m.restaurant_guid and d.business_date=dr.business_date
+    where m.business_id=dr.business_id and m.verified_at is not null
+     and dr.business_date>=coalesce(m.toast_start_date,dr.business_date)
+     and (d.import_state is distinct from 'imported'
+      or not coalesce(d.coverage_complete,false))
+   );
+ end if;
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+  requested_from,requested_to,days_total,cursor)
+ values(p_business_id,p_restaurant_guid,'backfill',p_from,p_to,p_to-p_from+1,'{}'::jsonb)
+ on conflict(business_id,restaurant_guid,requested_from,requested_to)
+  where kind='backfill' and state in ('queued','running','paused_rate_limited')
+ do update set
+  -- A newly eligible earlier start date invalidates coverage. Reset the
+  -- existing run in this very transaction; preserving days_done would skip
+  -- dates that now need fresh Toast proof. Ordinary retries keep progress.
+  days_done=case when v_expanded
+   then 0 else public.toast_sync_runs.days_done end,
+  state=case when v_expanded
+   then 'queued' else public.toast_sync_runs.state end,
+  cursor=case when v_expanded
+   then '{}'::jsonb else public.toast_sync_runs.cursor end,
+  resume_at=case when v_expanded
+   then null else public.toast_sync_runs.resume_at end,
+  started_at=case when v_expanded
+   then null else public.toast_sync_runs.started_at end,
+  finished_at=case when v_expanded
+   then null else public.toast_sync_runs.finished_at end,
+  invalid_days=case when v_expanded
+   then 0 else public.toast_sync_runs.invalid_days end,
+  orders_seen=case when v_expanded
+   then 0 else public.toast_sync_runs.orders_seen end,
+  orders_unparsed=case when v_expanded
+   then 0 else public.toast_sync_runs.orders_unparsed end,
+  api_calls=case when v_expanded
+   then 0 else public.toast_sync_runs.api_calls end,
+  rate_limited_count=case when v_expanded
+   then 0 else public.toast_sync_runs.rate_limited_count end,
+  last_error_category=case when v_expanded
+   then null else public.toast_sync_runs.last_error_category end
+ returning id into v_id;
+ if v_expanded then
+  delete from public.toast_day_pages where run_id=v_id;
+ end if;
+ return v_id;
+end $queue$;
