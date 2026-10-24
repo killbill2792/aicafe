@@ -314,7 +314,9 @@
     "attentionMatch": "Match items",
     "attentionFix": "Fix",
     "attentionFeesMissing": "Processing fees missing for {count} days",
-    "attentionAddFees": "Add fees"
+    "attentionAddFees": "Add fees",
+    "costsIncomplete": "Some costs are not verified yet",
+    "attentionMatchUnavailable": "Item matching needs review"
   },
   "Money": {
     "title": "Money",
