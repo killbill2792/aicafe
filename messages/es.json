@@ -1839,7 +1839,6 @@
     "deletedDraftRecreate": "Otro propietario eliminó un registro de tu borrador. Si confirmas que deseas volver a aplicarlo, se creará un registro nuevo."
   },
   "OliviaPlanning": {
-    "status": "Estado del plan",
     "location": "ID de ubicación",
     "paidMinutes": "Minutos pagados",
     "officialVersion": "Versión oficial publicada",
