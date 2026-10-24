@@ -524,3 +524,66 @@ begin
 end $cert$;
 revoke all on function public.toast_certify_day_voids(uuid,date) from public,anon,authenticated;
 grant execute on function public.toast_certify_day_voids(uuid,date) to service_role;
+
+-- RMS Pro has separate read-only credentials, not the Standard API secret.
+create table public.toast_analytics_credentials(
+ business_id uuid primary key references public.businesses(id),
+ management_group_guid uuid not null,api_origin text not null,
+ client_id text not null,client_secret_enc text not null,
+ bearer_token_enc text,bearer_expires_at timestamptz,
+ verified_at timestamptz,last_error_category text,
+ updated_at timestamptz not null default now());
+alter table public.toast_analytics_credentials enable row level security;
+revoke all on public.toast_analytics_credentials from public,anon,authenticated;
+grant select,insert,update,delete on public.toast_analytics_credentials to service_role;
+
+create table public.toast_analytics_jobs(
+ business_id uuid not null,restaurant_guid uuid not null,business_date date not null,
+ report_request_guid uuid,requested_at timestamptz,
+ state text not null default 'pending' check(state in ('pending','available','missing')),
+ checked_at timestamptz,last_error_category text,
+ primary key(business_id,restaurant_guid,business_date),
+ foreign key(business_id,restaurant_guid)
+ references public.toast_location_mappings(business_id,restaurant_guid));
+alter table public.toast_analytics_jobs enable row level security;
+revoke all on public.toast_analytics_jobs from public,anon,authenticated;
+grant select,insert,update,delete on public.toast_analytics_jobs to service_role;
+
+alter table public.toast_day_status
+ add column analytics_state text check(analytics_state in ('pending','available','missing')),
+ add column delta_discount_cents bigint,
+ add column delta_refund_cents bigint,
+ add column delta_void_orders bigint,
+ add column void_amount_gap_cents bigint,
+ add column last_recon_attempt_at timestamptz;
+
+-- Rate limits are enforced across isolated Vercel invocations.
+create table public.toast_analytics_rate_calls(
+ id bigint generated always as identity primary key,
+ business_id uuid not null references public.businesses(id),
+ requested_at timestamptz not null default clock_timestamp(),
+ kind text not null check(kind in ('post','get')));
+alter table public.toast_analytics_rate_calls enable row level security;
+revoke all on public.toast_analytics_rate_calls from public,anon,authenticated;
+grant select,insert,update,delete on public.toast_analytics_rate_calls to service_role;
+create index toast_era_requests_clock on public.toast_analytics_rate_calls(
+ business_id,kind,requested_at);
+create function public.toast_claim_era_request(p_business_id uuid,p_kind text)
+returns boolean language plpgsql security definer set search_path=public as $era$
+declare n integer;one_second integer;instant timestamptz:=clock_timestamp();
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if p_kind not in ('get','post') then raise exception 'invalid operation';end if;
+ perform pg_advisory_xact_lock(hashtextextended('toast-era:'||p_business_id::text,0));
+ select count(*),count(*) filter(where requested_at>instant-interval '1 second')
+ into n,one_second from public.toast_analytics_rate_calls
+ where business_id=p_business_id and kind=p_kind
+  and requested_at>instant-interval '1 minute';
+ if p_kind='get' and (n>=30 or one_second>=5) then return false;end if;
+ if p_kind='post' and n>=10 then return false;end if;
+ insert into public.toast_analytics_rate_calls(business_id,kind,requested_at)
+ values(p_business_id,p_kind,instant);
+ return true;
+end $era$;
+revoke all on function public.toast_claim_era_request(uuid,text) from public,anon,authenticated;
+grant execute on function public.toast_claim_era_request(uuid,text) to service_role;
