@@ -117,7 +117,7 @@ describe("provenance footnotes",()=>{
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"90 days".length,source:"unchecked"}]}));
    expect(html.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
-   expect(html).toMatch(/90 days<span class="relative inline-block h-\\[6px\\]/);
+   expect(html).toContain('90 days<span class="relative inline-block h-[6px]');
    expect(html).not.toContain('role="note"');
  });
  it("warns on rejected business clocks, never on supported or incidental clocks",()=>{
@@ -126,7 +126,7 @@ describe("provenance footnotes",()=>{
    const rejected=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"8:00 AM".length,source:"unchecked"}]}));
    expect(rejected.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
-   expect(rejected).toMatch(/8:00 AM<span class="relative inline-block h-\\[6px\\]/);
+   expect(rejected).toContain('8:00 AM<span class="relative inline-block h-[6px]');
    const supported=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"8:00 AM".length,source:"owner"}]}));
    expect(supported).not.toContain('aria-label="You told me"');
