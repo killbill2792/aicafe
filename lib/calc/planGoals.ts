@@ -34,7 +34,7 @@ export function weekdayHourlyTarget(drinks: number, openHours: OpenHours | null 
 /** Match Money's operating-day convention: only explicitly closed weekdays are excluded.
  * Unset hours must not silently assume the café is closed. */
 export function countPlanOperatingDays(openHours: OpenHours | null | undefined, monthKey: string): number {
-  if (!/^\\d{4}-\\d{2}$/.test(monthKey)) return 0;
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) return 0;
   const [year, month] = monthKey.split("-").map(Number);
   if (!Number.isInteger(year) || year < 1 || !Number.isInteger(month) || month < 1 || month > 12) return 0;
   const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
