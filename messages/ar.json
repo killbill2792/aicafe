@@ -163,6 +163,10 @@
     "other": "أخرى"
   },
   "Bills": {
+    "amountKindLabel": "نوع المبلغ",
+    "amountActual": "المبلغ الفعلي",
+    "amountEstimate": "تقدير (المتوسط الشهري)",
+    "estimateBadge": "تقديري",
     "amountHint": "هل يتغير المبلغ كل شهر؟ أدخل المتوسط",
     "dueDayOptional": "(اختياري)",
     "missing": "غير مُدخل",
