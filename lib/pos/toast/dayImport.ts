@@ -97,6 +97,9 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
   // post-commit cost failure through the page-import checkpoint handler.
   const imported={orders:summary.order_count,unparsed:summary.unparsed_count,
    netSalesCents:summary.net_sales_cents,checksum:summary.snapshot_sha256,result};
+  // SQL queued a generation-bound cost refresh in the same transaction.
+  // The global 240s budget also bounds this derivative; never start it late.
+  if(Date.now()>=deadlineAt)return {...imported,costsPending:true};
   let generation:string|null=null;
   try{
    const {data:job,error:queueError}=await db.from("toast_rollup_refresh_jobs")
