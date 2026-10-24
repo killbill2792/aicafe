@@ -8,6 +8,17 @@ function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
     getMenuCatalog:async()=>unavailable,...extra}};
 }
 describe("Maya read-only costs and unavailable inventory",()=>{
+  it("asks which ingredient when the search returns several matching records",async()=>{
+    const result=await suppliesTools.get_ingredient_costs.execute({query:"Milk",limit:12},ctx({
+      getIngredientCosts:async()=>({available:true,quality:{
+        level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]},
+        value:{items:[{id:"whole",name:"Milk",baseUnit:"ml",costPerBaseUnitMicros:1000,effectiveFrom:"2026-10-01"},
+         {id:"oat",name:"Oat Milk",baseUnit:"ml",costPerBaseUnitMicros:1200,effectiveFrom:"2026-10-01"}]}}),
+    }));
+    expect(result.needsOwnerChoice).toBe(true);
+    expect((result.candidates as Array<{id:string}>).map(c=>c.id)).toEqual(["whole","oat"]);
+  });
+
   it("keeps missing recipe cost unknown instead of free",async()=>{
     const r=await suppliesTools.get_product_costs.execute({itemId:"11111111-1111-4111-8111-111111111111"},ctx({
       getProductEconomics:async()=>({available:true,quality:{level:"high",missingInputs:["recipeMissing"],estimatedInputs:[],staleInputs:[]},

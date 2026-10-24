@@ -51,6 +51,27 @@ const posReadTools={
 export const schemas = { ...askOwnerTools, ...posReadTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
   ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools,...staffProposalTools } as const;
 export type AgentToolName = keyof typeof schemas;
+/** Input fields backed by the shared entity/period resolver. A new tool whose
+ * strict schema accepts a target must declare the corresponding field here;
+ * creation inputs have explicit exemptions below. */
+export const resolverCoverage:Partial<Record<AgentToolName,readonly string[]>>={
+  get_profit:["period"],get_sales:["period"],get_menu_items:["query"],
+  get_labor:["period"],get_team:["name"],get_shift_cost:["employee_id"],
+  get_expenses:["period","category"],get_cost_summary:["period"],
+  get_item_sales:["period","query"],get_price_recommendation:["itemId"],
+  get_ingredient_costs:["query"],get_product_costs:["itemId"],
+  propose_price_change:["product_id"],propose_staff_change:["employee_id"],
+  propose_schedule:["shifts.employee_id"],propose_shift_change:["shift.employee_id"],
+  get_peak_hours:["from","to"],get_employee_sales:["from","to"],
+  get_payroll_facts:["from","to"],
+  propose_availability_change:["instruction"]
+};
+export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>={
+  // These fields describe NEW values, not names or IDs of existing records.
+  propose_add_staff:["name"],propose_staff_change:["name"],
+  suggest_new_item_price:["category"]
+};
+
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",

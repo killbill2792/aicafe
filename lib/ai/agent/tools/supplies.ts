@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {projectUsageTool} from "@/lib/calc/usageToolProjection";
 import type { AgentToolContext, AgentToolResult } from "./index";
+import {resolveEntity,choicePayload} from "../resolve";
 
 const item=z.strictObject({itemId:z.uuid()});
 const ingredients=z.strictObject({query:z.string().max(80).nullable(),limit:z.number().int().min(1).max(20).nullable()});
@@ -20,6 +21,17 @@ export const suppliesTools={
     agentId:"maya",schema:item,description:"Known current menu-item product/recipe costs, by menu item id.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const {itemId}=item.parse(raw);
+      if(ctx.resolveState){
+        const menu=await ctx.tools.getMenuCatalog();
+        if(!menu.available)return {source:"product_costs",period:null,agentId:"maya",
+          missing:menu.quality.missingInputs.length?menu.quality.missingInputs:["menuReaderUnavailable"]};
+        const found=menu.value.find(row=>row.active&&row.id===itemId);
+        if(!found)return {source:"product_costs",period:null,agentId:"maya",missing:["notFound"]};
+        const choice=resolveEntity("product",found.name,menu.value.filter(row=>row.active),{
+          nameOf:r=>r.name,idOf:r=>r.id,describe:r=>r.category+" · "+(r.priceCents/100).toFixed(2)});
+        if(choice.status==="ambiguous"&&!ctx.resolveState.chosenIds.has(itemId.toLowerCase()))
+          return {...choicePayload(choice,"product_costs",null),agentId:"maya"};
+      }
       if(!ctx.tools.getProductEconomics)return {source:"product_costs",period:null,agentId:"maya",missing:["productCostReaderUnavailable"]};
       const s=await ctx.tools.getProductEconomics(itemId);
       if(!s.available)return {source:"product_costs",period:null,agentId:"maya",missing:s.quality.missingInputs};
@@ -37,8 +49,17 @@ export const suppliesTools={
       const {query,limit}=ingredients.parse(raw);
       if(!ctx.tools.getIngredientCosts)return {source:"ingredient_prices",period:null,agentId:"maya",missing:["ingredientReaderUnavailable"]};
       const s=await ctx.tools.getIngredientCosts(ctx.asOf,query,limit??12);
-      return {source:"ingredient_prices",period:null,agentId:"maya",missing:s.quality.missingInputs,
-        items:s.available?s.value.items:null};
+      if(!s.available)return {source:"ingredient_prices",period:null,agentId:"maya",
+        missing:s.quality.missingInputs,items:null};
+      let items=s.value.items;
+      if(query){
+        const found=resolveEntity("ingredient",query,items,{
+          nameOf:i=>i.name,idOf:i=>i.id,describe:i=>i.baseUnit});
+        if(found.status!=="resolved")return {...choicePayload(found,"ingredient_prices",null),agentId:"maya"};
+        items=[found.value];
+      }
+      return {source:"ingredient_prices",period:null,agentId:"maya",
+        missing:s.quality.missingInputs,items};
     },
   },
   get_inventory:{
