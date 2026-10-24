@@ -87,12 +87,13 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    <h2 className="text-xl font-bold">{t("ownerFirstCheck")}</h2>
    <p className="text-ink-muted">{t("ownerFirstCheckHint")}</p>
    <div className="my-3 flex flex-col gap-2">
-    {data.recent.slice(0,7).map(row=><label key={row.date}
+    {data.firstImportRows.map(row=><label key={row.date}
      className="flex min-h-12 items-center gap-3 border-b border-line py-2">
       <input type="checkbox" checked={selected.includes(row.date)} onChange={e=>setSelected(old=>
        e.target.checked?[...old,row.date]:old.filter(x=>x!==row.date))}/>
       <span className="flex-1"><bdi>{day(row.date)}</bdi></span>
-      <span><bdi>{fmt(row.netSalesCents)}</bdi></span>
+      <span><bdi>{fmt(row.oursCents)}</bdi></span>
+      <span><bdi>{fmt(row.toastCents)}</bdi></span>
      </label>)}
    </div>
    {!data.analytics.verified&&<p className="text-ink-muted">{t("ownerCompareWeb")}</p>}
