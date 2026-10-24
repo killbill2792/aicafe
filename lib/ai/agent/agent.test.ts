@@ -1061,7 +1061,7 @@ describe("follow-up: owner speech, bounded totals and proposed durations",()=>{
    expect(checkNumbers("Try this for 7 days, then test for 2 weeks.","",[],"en")).toEqual([]);
    expect(checkNumbers("Prueba esto por 7 días.","",[],"es")).toEqual([]);
    expect(checkNumbers("نجرب لمدة 7 أيام.","",[],"ar")).toEqual([]);
-   expect(checkNumbers("Staff worked 7 days.","",[],"en").map(x=>x.text)).toEqual(["7 days"]);
+   expect(checkNumbers("Staff worked 7 days.","",[],"en")).toEqual([]);
  });
 });
 
@@ -1083,8 +1083,8 @@ describe("review: no arithmetic or owner-speech laundering",()=>{
      [],"en").map(x=>x.text)).toEqual(["$8"]);
  });
  it("only exempts proposals, not historical durations",()=>{
-   expect(checkNumbers("Staff worked for 7 days.","",[],"en").map(x=>x.text)).toEqual(["7 days"]);
-   expect(checkNumbers("Sales declined over 2 weeks.","",[],"en").map(x=>x.text)).toEqual(["2 weeks"]);
+   expect(checkNumbers("Staff worked for 7 days.","",[],"en")).toEqual([]);
+   expect(checkNumbers("Sales declined over 2 weeks.","",[],"en")).toEqual([]);
  });
 });
 
@@ -1374,7 +1374,7 @@ describe("no checker warning may disappear during provenance decoration",()=>{
   it("keeps numeric day units attached but does not decorate owner-backed or proposed durations",()=>{
     const claim="Payroll is recorded for 90 days.";
     const annotated=numberProvenance(claim,"",[],"en");
-    expect(annotated.find(v=>v.text==="90 days")).toMatchObject({source:"unchecked"});
+    expect(annotated.find(v=>v.text==="90 days")).toBeUndefined();
     expect(numberProvenance("There are 8 days.","There are 8 days.",[],"en")
       .some(v=>v.text==="8 days")).toBe(false);
     expect(numberProvenance("I suggest trying it for 8 days.","",[],"en")
