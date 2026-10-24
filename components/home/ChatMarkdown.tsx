@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 
 type Verification = { start:number;end:number;source?:"owner"|"estimate"|"unchecked";detail?:string };
 export type ProvenanceLabels={owner:string;estimate:string;unchecked:string;breakEvenSales?:string;salesGap?:string;dailyOverhead?:string};
-const tones={owner:"bg-blue-600",estimate:"bg-amber-600",unchecked:"bg-gray-500"} as const;
+const tones={owner:"bg-chart-staff",estimate:"bg-warn",unchecked:"border border-ink bg-transparent"} as const;
 type DotEvent="hover-start"|"hover-end"|"focus-start"|"focus-end"|"tooltip-focus-start"|"tooltip-focus-end"|"click"|"escape";
 type DotInteraction={hovered:boolean;focused:boolean;tooltipFocused?:boolean;pinned:boolean;dismissed:boolean};
 const dotInitial:DotInteraction={hovered:false,focused:false,tooltipFocused:false,pinned:false,dismissed:false};
@@ -218,7 +218,7 @@ export function SourceLegend({sources,labels,legendLabel="Number sources"}:{
  sources:readonly ("owner"|"estimate"|"unchecked")[];labels:ProvenanceLabels;legendLabel?:string;
 }){
  const used=(["owner","estimate","unchecked"] as const).filter(source=>sources.includes(source));
- return used.length>0?<p className="flex flex-wrap gap-x-3 gap-y-1 text-[17px] leading-relaxed text-ink-muted" aria-label={legendLabel}>
+ return used.length>0?<p className="flex flex-wrap gap-x-3 gap-y-1 text-[14px] leading-relaxed text-ink-muted" aria-label={legendLabel}>
   {used.map(source=><span key={source} className="inline-flex items-center gap-1">
    <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${tones[source]}`}/>{labels[source]}
   </span>)}
