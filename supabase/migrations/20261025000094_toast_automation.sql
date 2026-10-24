@@ -487,6 +487,17 @@ begin
   if d>=p_local_day then continue;end if;
   v_begin:=(d::timestamp+make_interval(hours=>v_closeout)) at time zone v_zone;
   v_end:=((d+1)::timestamp+make_interval(hours=>v_closeout)) at time zone v_zone;
+  -- An ambiguous fallback closeout (e.g. 01:00 twice) must use its FIRST
+  -- UTC occurrence, otherwise a scan missing the first repeated hour could
+  -- falsely certify a complete business day.
+  if (v_begin-interval '1 hour') at time zone v_zone =
+     (d::timestamp+make_interval(hours=>v_closeout)) then
+   v_begin:=v_begin-interval '1 hour';
+  end if;
+  if (v_end-interval '1 hour') at time zone v_zone =
+     ((d+1)::timestamp+make_interval(hours=>v_closeout)) then
+   v_end:=v_end-interval '1 hour';
+  end if;
   if v_begin>=p_window_start and v_end<=p_window_end then
    insert into public.toast_void_repull_coverage(
     business_id,restaurant_guid,business_date,scanned_at,last_window_end,scan_local_day)
