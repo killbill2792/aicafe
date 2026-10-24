@@ -48,7 +48,8 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
       const result=await draftStaffWeekInPlace({week,threadId:id,
         requestKey:draftRequest.current??(draftRequest.current=crypto.randomUUID()),
         locale:locale==="ar"?"ar":locale==="es"?"es":"en"});
-      if(!result.ok){setError(t(result.error==="week"?"draftFutureWeek":
+      if(!result.ok){if(result.error!=="unavailable")draftRequest.current=null;
+        setError(t(result.error==="week"?"draftFutureWeek":
         result.error==="names"?"draftNames":result.error==="missing"?"draftMissing":"draftUnavailable"));return;}
       draftRequest.current=null;setRates(result.wageRates);
       setRows(result.shifts);setProposal({proposalId:result.proposalId,revision:result.revision,state:"pending"});
@@ -137,7 +138,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
       {review&&<div className="mt-4 space-y-2">
         {preview.shifts.map((s,i)=><div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 border-dashed border-line p-3">
           <span>{s.name} · {new Intl.DateTimeFormat(locale,{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(s.date+"T12:00:00Z"))} · {localTime(s.date,s.start)}–{localTime(s.date,s.end)}</span>
-          <div><button type="button" className="min-h-12 px-3 underline" disabled={busy||proposal.state!=="pending"} onClick={()=>{setEditing(i);setDraftEdited(rows[i]);}}>{t("edit")}</button>
+          <div><button type="button" className="min-h-12 px-3 underline" disabled={busy||proposal.state!=="pending"} onClick={()=>{setError("");setEditing(i);setDraftEdited(rows[i]);}}>{t("edit")}</button>
           <button type="button" className="min-h-12 px-3 text-neg" disabled={busy||proposal.state!=="pending"} onClick={()=>void replaceDraft(rows.filter((_,j)=>i!==j))}>{t("remove")}</button></div>
         </div>)}
       </div>}
@@ -145,6 +146,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     {error&&<p role="alert" className="mt-3 text-neg">{error}</p>}
     {editing!==null&&draftEdited&&<StaffDialog headingId="olivia-draft-shift-heading" onClose={()=>setEditing(null)}>
       <h3 id="olivia-draft-shift-heading" className="text-xl font-bold">{t("editShift")}</h3>
+      {error&&<p role="alert" className="mt-2 text-neg">{error}</p>}
       <label className="mt-3 block">{t("who")}
         <select value={draftEdited.employee_id}
           onChange={e=>setDraftEdited({...draftEdited,employee_id:e.target.value})}
