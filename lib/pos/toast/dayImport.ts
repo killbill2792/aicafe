@@ -51,9 +51,6 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    if(payload.length<100)break;
   }
   if(page>300){
-   await db.rpc("toast_mark_day_failed",{p_business_id:p.businessId,
-    p_restaurant_guid:p.restaurantGuid,p_business_date:p.businessDate,
-    p_run_id:p.runId,p_category:"too_large"});
    throw new ToastApiError("invalid_response");
   }
   if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
@@ -134,9 +131,11 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    "unauthorized_location","invalid_host","not_configured"].includes(category);
   const args={p_run_id:p.runId,p_business_id:p.businessId,
    p_restaurant_guid:p.restaurantGuid,p_business_date:p.businessDate};
-  // Never leave a non-429 error in 'running': resume the exact page or fail closed.
-  const saved=fatal
-   ?await db.rpc("toast_mark_day_failed",{...args,p_category:category})
+  // This RPC locks the day to protect any previously imported, good snapshot.
+  // A bad shape is day-local: skip it without ending a multi-day backfill.
+  const saved=fatal||category==="invalid_response"
+   ?await db.rpc("toast_record_day_error",{...args,p_category:category,
+      p_run_fatal:fatal,p_skip:!fatal})
    :await db.rpc("toast_checkpoint_day",{...args,p_page:Math.min(page,300),
       p_category:category,p_retry_at:err instanceof ToastApiError?err.retryAt:null});
   if(saved.error)throw new ToastApiError("unavailable");
