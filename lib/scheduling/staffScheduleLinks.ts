@@ -17,3 +17,10 @@ export function staffScheduleHref(input:{date?:unknown;employee?:unknown}):strin
  if(typeof input.employee==="string"&&input.employee.trim())query.set("employee",input.employee);
  return "/staff?"+query.toString();
 }
+
+/** Legacy Staff URLs retain employee/date and explicit Schedule tabs. */
+export function staffManageRedirectQuery(input:{employee?:string;date?:string;tab?:string}){
+ return {tab:validScheduleDate(input.date)||input.tab==="schedule"?"schedule" as const:"team" as const,
+  ...(input.employee?{employee:input.employee}:{}),
+  ...(validScheduleDate(input.date)?{date:input.date}:{})};
+}
