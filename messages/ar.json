@@ -128,7 +128,12 @@
     "ownerError": "تعذر الحفظ حاليًا. حاول مجددًا.",
     "ownerInvalidDate": "اختر تاريخًا صالحًا لا يتجاوز يوم أمس.",
     "ownerStatusUnavailable": "تفاصيل المزامنة غير متاحة. حاول مجددًا.",
-    "noAmount": "—"
+    "noAmount": "—",
+    "ownerReasonOwner": "وضع المالك علامة",
+    "ownerReasonMismatch": "الإجماليات غير متطابقة",
+    "ownerReasonTimeout": "تأخرت تحليلات Toast",
+    "ownerReasonCoverage": "يجب مراجعة الاستيراد",
+    "ownerReasonOther": "يجب مراجعة المزامنة"
   },
   "LocaleLayout": {
     "title": "Café Profit"
