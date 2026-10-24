@@ -1,9 +1,10 @@
 import {NextResponse} from "next/server";
-import {z} from "zod";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
 import {GUID} from "@/lib/pos/toast/client";
 export const dynamic="force-dynamic";
 import {statusSchema} from "@/lib/pos/toast/statusSchema";
+import {readAllPages} from "@/lib/pos/toast/readAllPages";
+import {dayCoverage,dayTotals,applicableLocations} from "@/lib/pos/toast/ownerCoverage";
 const send=(status:number,body:unknown)=>NextResponse.json(body,{status,headers:{"Cache-Control":"no-store"}});
 export async function GET(request:Request){
  if(process.env.TOAST_SETUP_ENABLED!=="true")return send(404,{error:"not_found"});
@@ -11,19 +12,32 @@ export async function GET(request:Request){
  if(!id.success)return send(404,{error:"not_found"});
  const db=await authorizeToastOwner(id.data);
  if(!db)return send(404,{error:"not_found"});
- const [c,m,r,s,f,a,check]=await Promise.all([
-  db.from("toast_api_credentials").select("state,last_error_category").eq("business_id",id.data).maybeSingle(),
-  db.from("toast_location_mappings").select("restaurant_guid,verified_at,toast_time_zone,toast_start_date").eq("business_id",id.data),
-  db.from("toast_sync_runs").select("kind,state,days_done,days_total,resume_at,requested_from,requested_to").eq("business_id",id.data).limit(1000),
-  db.from("toast_day_status").select("business_date,restaurant_guid,import_state,recon_state,net_sales_cents,toast_net_sales_cents,delta_net_cents,order_count,last_error_category,coverage_complete").eq("business_id",id.data).order("business_date",{ascending:false}).limit(500),
-  db.from("toast_day_owner_flags").select("business_date,restaurant_guid,cleared_at").eq("business_id",id.data).is("cleared_at",null).limit(500),
-  db.from("toast_analytics_credentials").select("verified_at").eq("business_id",id.data).maybeSingle(),
-  db.from("toast_first_import_check").select("answered_at").eq("business_id",id.data).maybeSingle(),
- ]);
- if([c,m,r,s,f,a,check].some(x=>x.error))return send(503,{error:"status_unavailable"});
+ // All historical reads are ordered by a unique, stable compound key.
+ // Never infer completeness from Supabase's default 1,000-row limit.
+ let fetched;
+ try{
+  fetched=await Promise.all([
+   db.from("toast_api_credentials").select("state,last_error_category").eq("business_id",id.data).maybeSingle(),
+   db.from("toast_location_mappings").select("restaurant_guid,verified_at,toast_time_zone,toast_start_date").eq("business_id",id.data),
+   readAllPages((start,end)=>db.from("toast_sync_runs")
+    .select("id,kind,state,days_done,days_total,resume_at,requested_from,requested_to")
+    .eq("business_id",id.data).order("id").range(start,end)),
+   readAllPages((start,end)=>db.from("toast_day_status")
+    .select("business_date,restaurant_guid,import_state,recon_state,net_sales_cents,toast_net_sales_cents,delta_net_cents,order_count,last_error_category,coverage_complete")
+    .eq("business_id",id.data).order("business_date",{ascending:false})
+    .order("restaurant_guid").range(start,end)),
+   readAllPages((start,end)=>db.from("toast_day_owner_flags")
+    .select("business_date,restaurant_guid,cleared_at").eq("business_id",id.data)
+    .is("cleared_at",null).order("business_date",{ascending:false})
+    .order("restaurant_guid").range(start,end)),
+   db.from("toast_analytics_credentials").select("verified_at").eq("business_id",id.data).maybeSingle(),
+   db.from("toast_first_import_check").select("answered_at").eq("business_id",id.data).maybeSingle(),
+  ]);
+ }catch{return send(503,{error:"status_unavailable"});}
+ const [c,m,runRows,statusRows,flagRows,a,check]=fetched;
+ if([c,m,a,check].some(x=>x.error))return send(503,{error:"status_unavailable"});
  if(!m.data?.length)return send(404,{error:"not_found"});
- if((r.data??[]).length>=1000||(s.data??[]).length>=500||(f.data??[]).length>=500)
-  return send(503,{error:"status_unavailable"});
+ const r={data:runRows},s={data:statusRows},f={data:flagRows};
  const health=await db.from("toast_sync_health_v").select("last_good_sync_at,stale").eq("business_id",id.data);
  if(health.error)return send(503,{error:"status_unavailable"});
  const good=(health.data??[]).map(h=>h.last_good_sync_at).filter(Boolean).sort().at(-1)??null;
@@ -34,9 +48,19 @@ export async function GET(request:Request){
  const needing=(s.data??[]).filter(x=>x.import_state==="failed"||
   ["mismatch","analytics_timeout","coverage_invalid"].includes(x.recon_state)||
   Boolean(x.last_error_category)||flags.has(x.restaurant_guid+":"+x.business_date));
- const completeDates=[...new Set((s.data??[]).map(x=>x.business_date))].filter(date=>
-  m.data.every(loc=>(s.data??[]).some(row=>row.business_date===date&&
-   row.restaurant_guid===loc.restaurant_guid&&row.import_state==="imported"&&row.coverage_complete)));
+ // Owner flags can precede an import, and must remain visible even with NO status row.
+ const needsLook=needing.map(x=>({date:x.business_date,restaurantGuid:x.restaurant_guid,
+  oursCents:x.net_sales_cents,toastCents:x.toast_net_sales_cents,deltaCents:x.delta_net_cents,
+  reason:flags.has(x.restaurant_guid+":"+x.business_date)?"owner_flag":
+   x.last_error_category??x.recon_state}));
+ for(const flag of f.data){
+  if(!needing.some(x=>x.business_date===flag.business_date&&
+    x.restaurant_guid===flag.restaurant_guid))
+   needsLook.push({date:flag.business_date,restaurantGuid:flag.restaurant_guid,
+    oursCents:null,toastCents:null,deltaCents:null,reason:"owner_flag"});
+ }
+ const completeDates=[...new Set(s.data.map(x=>x.business_date))].filter(date=>
+  dayCoverage(m.data,s.data,date).complete);
  const mostRecent=()=>new Intl.DateTimeFormat("en-CA",{timeZone:m.data[0].toast_time_zone,
   year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
  const base=Date.parse(mostRecent()+"T12:00:00Z");
@@ -50,29 +74,23 @@ export async function GET(request:Request){
    resumeAt:active.map(x=>x.resume_at).filter((x):x is string=>Boolean(x)).sort()[0]??null},
   failedRuns:(r.data??[]).filter(x=>x.state==="failed").length,
   queuedRanges:(r.data??[]).filter(x=>["queued","running","paused_rate_limited"].includes(x.state)&&x.requested_from&&x.requested_to).map(x=>({from:x.requested_from,to:x.requested_to})),
-  needsLook:needing.map(x=>({date:x.business_date,restaurantGuid:x.restaurant_guid,oursCents:x.net_sales_cents,
-   toastCents:x.toast_net_sales_cents,deltaCents:x.delta_net_cents,
-   reason:flags.has(x.restaurant_guid+":"+x.business_date)?"owner_flag":
-    x.last_error_category??x.recon_state})),
+  needsLook,
   firstImportRows:completeDates.slice(0,7).map(date=>{
-   const rows=(s.data??[]).filter(x=>x.business_date===date);
-   return {date,oursCents:rows.some(x=>x.net_sales_cents==null)?null:
-     rows.reduce((n,x)=>n+x.net_sales_cents,0),
-    toastCents:rows.some(x=>x.toast_net_sales_cents==null)?null:
-     rows.reduce((n,x)=>n+x.toast_net_sales_cents,0)};
+   const selected=dayCoverage(m.data,s.data,date).rows;
+   return {date,oursCents:dayTotals(m.data,s.data,date).netSalesCents,
+    toastCents:!a.data?.verified_at||selected.some(x=>x?.toast_net_sales_cents==null)?null:
+     selected.reduce((n,x)=>n+(x?.toast_net_sales_cents??0),0)};
   }),
   recent:recentDates.map(date=>{
-   const rows=(s.data??[]).filter(x=>x.business_date===date);
-   const problem=rows.some(x=>needing.includes(x));
-   return {date,netSalesCents:rows.length<m.data.length||rows.some(x=>x.net_sales_cents==null)?null:
-    rows.reduce((n,x)=>n+x.net_sales_cents,0),
-    orders:rows.length<m.data.length||rows.some(x=>x.order_count==null)?null:rows.reduce((n,x)=>n+x.order_count,0),
-    status:problem?"needs_look":rows.length<m.data.length||rows.some(x=>x.import_state!=="imported")?"missing":
-      rows.every(x=>["matched","checked_internal"].includes(x.recon_state))?"checked":"checking"};
+   const totals=dayTotals(m.data,s.data,date);
+   const eligible=applicableLocations(m.data,date);
+   const problem=needsLook.some(x=>x.date===date&&eligible.some(m=>m.restaurant_guid===x.restaurantGuid));
+   return {date,netSalesCents:totals.netSalesCents,orders:totals.orders,
+    status:problem?"needs_look":!totals.complete?"missing":totals.checked?"checked":"checking"};
   }),
   analytics:{connected:Boolean(a.data),verified:Boolean(a.data?.verified_at)},
   firstImportCheck:check.data?.answered_at?"answered":completeDates.length>=7?"due":"hidden",
-  timeZone:m.data[0].toast_time_zone,startDate:m.data[0].toast_start_date??null,
+  timeZone:m.data[0].toast_time_zone,startDate:[...m.data.map(x=>x.toast_start_date).filter((x):x is string=>Boolean(x))].sort()[0]??null,
   restaurantGuids:m.data.map(x=>x.restaurant_guid)
  };
  const checked=statusSchema.safeParse(response);
