@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {parseHourlyWage,parseWeeklyHours,isValidTeamAvailability,teamAvailabilitySummary,formatTeamClock,weeklyHoursInput} from "./teamPersonFields";
+import {parseHourlyWage,parseWeeklyHours,isValidTeamAvailability,teamAvailabilitySummary,formatTeamClock,weeklyHoursInput,storedTeamAvailability,hasComplexTeamAvailability,staffChangeSucceeded} from "./teamPersonFields";
 
 describe("Staff person typed fields",()=>{
  it("parses wages as exact integer cents, without a stepper",()=>{
@@ -53,5 +53,28 @@ describe("Staff person typed fields",()=>{
    expect(teamAvailabilitySummary(timed,locale,words[locale])).toContain("–");
    expect(teamAvailabilitySummary(Array.from({length:7},(_,day)=>({day,start:null,end:null})),locale,words[locale])).toBe(words[locale].anyTime);
   }
+ }); 
+ it("round trips exact 24-hour and multi-window days without false any-time labels",()=>{
+  const saved=[
+   {day_of_week:1,start_local:"00:00:00",end_local:"12:00:00"},
+   {day_of_week:1,start_local:"12:00:00",end_local:"00:00:00"},
+   {day_of_week:2,start_local:"06:15:00",end_local:"11:00:00"},
+   {day_of_week:2,start_local:"14:00:00",end_local:"19:00:00"}
+  ];
+  const rows=storedTeamAvailability([1,2,3],saved);
+  expect(rows).toEqual([{day:1,start:null,end:null},
+   {day:2,start:"06:15",end:"11:00"},{day:2,start:"14:00",end:"19:00"},
+   {day:3,start:null,end:null}]);
+  expect(hasComplexTeamAvailability(rows)).toBe(true);
+  expect(hasComplexTeamAvailability(storedTeamAvailability([1],saved))).toBe(false);
+  const summary=teamAvailabilitySummary(rows,"en",{anyTime:"Any time",off:"Off",none:"None",everyDay:"Every day"});
+  expect(summary).toContain("6:15–11");
+  expect(summary).toContain("14–19");
+  expect(summary).not.toBe("Any time");
+ });
+ it("handles both rejected and returned staff write errors",async()=>{
+  expect(await staffChangeSucceeded(async()=>({ok:false}))).toBe(false);
+  expect(await staffChangeSucceeded(async()=>{throw Error("network");})).toBe(false);
+  expect(await staffChangeSucceeded(async()=>({ok:true}))).toBe(true);
  });
 });

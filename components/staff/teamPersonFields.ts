@@ -1,5 +1,26 @@
 /** Pure input and summary helpers for the Staff › Team person sheet. No floating-point money. */
 export type TeamAvailability = {day:number;start:string|null;end:string|null};
+export type StoredTeamWindow = {day_of_week:number;start_local:string;end_local:string};
+/** A pair of exact touching halves is [00:00,24:00), including the last minute. */
+export function storedTeamAvailability(availableDays:number[]|null,windows:StoredTeamWindow[]):TeamAvailability[] {
+ const days=availableDays??[0,1,2,3,4,5,6];
+ return days.flatMap(day=>{
+  const rows=windows.filter(w=>w.day_of_week===day).map(w=>({
+   day,start:String(w.start_local).slice(0,5),end:String(w.end_local).slice(0,5)
+  }));
+  if(rows.length===0)return [{day,start:null,end:null}];
+  const first=rows.some(w=>w.start==="00:00"&&w.end==="12:00");
+  const second=rows.some(w=>w.start==="12:00"&&w.end==="00:00");
+  return rows.length===2&&first&&second?[{day,start:null,end:null}]:rows;
+ });
+}
+export function hasComplexTeamAvailability(rows:TeamAvailability[]):boolean {
+ return new Set(rows.map(r=>r.day)).size!==rows.length;
+}
+/** Error/result boundary for staff writes; the UI always shows a localized failure. */
+export async function staffChangeSucceeded(fn:()=>Promise<{ok:boolean}>):Promise<boolean> {
+ try{return (await fn()).ok;}catch{return false;}
+}
 /** Locale defaults vary by runtime; Arabic employee numbers use Arabic-Indic digits consistently. */
 export const teamNumberLocale=(locale?:string)=>locale==="ar"?"ar-u-nu-arab":locale;
 
@@ -65,21 +86,23 @@ function dayGroups(days:number[],locale:string):string {
 }
 /** Describes stored owner availability, never infers it from scheduled shifts. */
 export function teamAvailabilitySummary(days:TeamAvailability[],locale:string,words:AvailabilityWords):string {
- const rows=new Map(days.filter(d=>Number.isInteger(d.day)&&d.day>=0&&d.day<=6).map(d=>[d.day,d]));
- const active=weekdays.filter(day=>rows.has(day));
+ const rows=days.filter(d=>Number.isInteger(d.day)&&d.day>=0&&d.day<=6);
+ const byDay=new Map(weekdays.map(day=>[day,rows.filter(r=>r.day===day)]));
+ const active=weekdays.filter(day=>byDay.get(day)!.length>0);
  if(!active.length)return words.none;
- const entries=active.map(day=>rows.get(day)!);
- const allDay=entries.every(row=>row.start===null&&row.end===null);
+ const entries=active.map(day=>byDay.get(day)!);
+ const allDay=entries.every(group=>group.length===1&&group[0].start===null&&group[0].end===null);
  if(active.length===7&&allDay)return words.anyTime;
- const sameWindow=entries.every(row=>row.start===entries[0].start&&row.end===entries[0].end);
+ const sameWindow=entries.every(group=>group.length===1&&
+  group[0].start===entries[0][0].start&&group[0].end===entries[0][0].end);
  const description=active.length===7?words.everyDay:dayGroups(active,locale);
- if(sameWindow&&entries[0].start&&entries[0].end) {
-  return description+" "+formatTeamClock(entries[0].start,locale)+"–"+formatTeamClock(entries[0].end,locale);
+ if(sameWindow&&entries[0][0].start&&entries[0][0].end) {
+  return description+" "+formatTeamClock(entries[0][0].start,locale)+"–"+formatTeamClock(entries[0][0].end,locale);
  }
  if(allDay){
-  const off=weekdays.filter(day=>!rows.has(day));
+  const off=weekdays.filter(day=>!byDay.get(day)!.length);
   return description+(off.length?" · "+words.off+" "+off.map(day=>dayName(day,locale)).join(", "):"");
  }
- return entries.map(row=>dayName(row.day,locale)+(row.start&&row.end?
-  " "+formatTeamClock(row.start,locale)+"–"+formatTeamClock(row.end,locale):" · "+words.anyTime)).join(" · ");
+ return active.map(day=>dayName(day,locale)+" "+byDay.get(day)!.map(row=>row.start&&row.end?
+  formatTeamClock(row.start,locale)+"–"+formatTeamClock(row.end,locale):words.anyTime).join(" + ")).join(" · ");
 }
