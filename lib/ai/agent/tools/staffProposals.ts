@@ -78,8 +78,7 @@ export const staffProposalTools=Object.fromEntries(
        for(const [key,group] of groups)if(group.length>1&&!ctx.resolveState.chosenIds.size){
          const matched=resolveEntity("staff",key,people,{
            nameOf:p=>p.name,idOf:p=>p.id,describe:p=>p.role??"Team"});
-         if(matched.status==="ambiguous")return {source:"staff_proposal",period:null,agentId:"olivia",
-           ...choicePayload(matched,"staff_proposal",null),missing:["ownerChoiceRequired"]};
+         if(matched.status==="ambiguous")return {...choicePayload(matched,"staff_proposal",null),agentId:"olivia",missing:["ownerChoiceRequired"]};
        }
      }
    }
