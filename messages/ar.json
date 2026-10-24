@@ -622,7 +622,15 @@
     "aggregateCostImportedEstimateActive": "يُستخدم التقدير المستورد",
     "costSourceImported": "مستورد",
     "costSourceEstimate": "تقدير",
-    "costSourceCombo": "مكونات المجموعة"
+    "costSourceCombo": "مكونات المجموعة",
+    "matchItems": "مطابقة الأصناف",
+    "itemsNeedMatching": "{count} أصناف تحتاج إلى مطابقة",
+    "pickExistingItem": "اختيار صنف موجود في القائمة",
+    "selectMenuItem": "اختر صنفًا من القائمة",
+    "addToMenu": "إضافة إلى القائمة",
+    "skipForNow": "تخطي الآن",
+    "skipTemporary": "سيظل هذا الصنف في قائمة المراجعة. لن يُحفظ هذا التخطي.",
+    "allMatchItems": "عرض جميع الأصناف التي تحتاج إلى مطابقة"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
@@ -867,7 +875,8 @@
     "historyLink": "سجل التحميلات",
     "historyLinkHint": "اطّلع على ما فعله كل تحميل سابق",
     "processingFeesLink": "رسوم معالجة الدفع",
-    "processingFeesLinkHint": "من نقطة البيع أو معالج الدفع"
+    "processingFeesLinkHint": "من نقطة البيع أو معالج الدفع",
+    "lastUpload": "آخر رفع: {date}"
   },
   "UploadHistory": {
     "title": "سجل التحميلات",
@@ -883,7 +892,9 @@
     "statusProcessing": "قيد المعالجة",
     "statusFailed": "فشل — لم يتم استيراد أي شيء",
     "unmatchedInline": "لم يطابق قائمتك: {names}",
-    "kindProcessingFees": "رسوم معالجة الدفع"
+    "kindProcessingFees": "رسوم معالجة الدفع",
+    "salesGroupsLine": "تم استيراد {groups} مجموعات مبيعات من {rowsInFile} صفوف في الملف",
+    "feeDatesLine": "تم استيراد رسوم معالجة {dates} أيام من {rowsInFile} صفوف في الملف"
   },
   "CsvImport": {
     "salesTitle": "استيراد تقرير المبيعات",
@@ -2560,7 +2571,8 @@
     "usageErrorInvalidQuantity": "أدخل كمية صحيحة. يجب أن تكون كمية الشراء أكبر من صفر، ويمكن أن يكون الجرد صفراً.",
     "usageErrorInvalidUnit": "اختر وحدة متوافقة مع هذا المكوّن.",
     "usageErrorIngredientNotFound": "لم يعد هذا المكوّن متاحاً في هذا المقهى. اختر مكوّناً آخر.",
-    "usageErrorSaveFailed": "تعذّر حفظ سجل المخزون. يُرجى المحاولة مجدداً."
+    "usageErrorSaveFailed": "تعذّر حفظ سجل المخزون. يُرجى المحاولة مجدداً.",
+    "usageConnectToast": "ربط Toast"
   },
   "SupervisorProposalCard": {
     "title": "اقتراح تغيير السعر",
@@ -2928,5 +2940,19 @@
     "messageGreeting": "مرحبًا {name}،",
     "messageWeek": "هذا جدول مناوباتك لأسبوع {week}:",
     "messageClosing": "يرجى مراجعة مناوباتك."
+  },
+  "UploadReview": {
+    "title": "مراجعة الملف المرفوع",
+    "noSummary": "ملخص الاستيراد غير متاح بعد.",
+    "importedExplanation": "السجلات المستوردة وتفاصيل المراجعة المحفوظة لهذا الملف.",
+    "skippedTitle": "الصفوف التي لم تُستورد",
+    "summaryOnly": "لم تُحفظ الصفوف المرفوضة الأصلية. هذه هي الأسباب المسجّلة وعدد الصفوف لكل سبب.",
+    "otherReason": "لم يُستورد",
+    "rowCount": "{count} صفوف",
+    "matchItems": "مطابقة الأصناف",
+    "hourlyWage": "الأجر بالساعة",
+    "newIngredients": "مكوّنات جديدة أُضيفت",
+    "invalidRows": "لم يُستورد {count} صفًا غير صالح.",
+    "reupload": "رفع الملف مجددًا"
   }
 }

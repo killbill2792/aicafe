@@ -126,6 +126,18 @@ export async function getSavedMapping(kind: Kind): Promise<AnyMapping | null> {
   return (data?.column_mapping as AnyMapping) ?? null;
 }
 
+/** Read-only lookup for the saved upload link after an import completes. */
+export async function getSalesImportUploadId(jobId: string): Promise<string | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(jobId)) return null;
+  const ctx = await context();
+  if (!ctx) return null;
+  const { data, error } = await ctx.supabase.from("csv_import_jobs")
+    .select("upload_id").eq("business_id", ctx.businessId).eq("kind", "sales")
+    .eq("id", jobId).maybeSingle();
+  if (error) return null;
+  return data?.upload_id ?? null;
+}
+
 export async function saveMapping(kind: Kind, mapping: AnyMapping, sourceLabel?: string): Promise<{ ok: boolean; errorCode?: ImportErrorCode }> {
   const ctx = await context();
   if (!ctx) return { ok: false, errorCode: "not_signed_in" };

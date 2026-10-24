@@ -622,7 +622,15 @@
     "aggregateCostImportedEstimateActive": "Using imported estimate",
     "costSourceImported": "Imported",
     "costSourceEstimate": "Estimate",
-    "costSourceCombo": "Combo ingredients"
+    "costSourceCombo": "Combo ingredients",
+    "matchItems": "Match items",
+    "itemsNeedMatching": "{count} items need matching",
+    "pickExistingItem": "Pick an existing menu item",
+    "selectMenuItem": "Select a menu item",
+    "addToMenu": "Add to menu",
+    "skipForNow": "Skip for now",
+    "skipTemporary": "This item stays in the review list. Skipping here isn't saved.",
+    "allMatchItems": "Show all items needing matches"
   },
   "ManageMenu": {
     "title": "Manage menu",
@@ -867,7 +875,8 @@
     "historyLink": "Upload history",
     "historyLinkHint": "See what every past upload actually did",
     "processingFeesLink": "Processing fees",
-    "processingFeesLinkHint": "From your POS or payment processor"
+    "processingFeesLinkHint": "From your POS or payment processor",
+    "lastUpload": "Last upload {date}"
   },
   "UploadHistory": {
     "title": "Upload history",
@@ -883,7 +892,9 @@
     "statusProcessing": "Processing",
     "statusFailed": "Failed — nothing was imported",
     "unmatchedInline": "Didn't match your menu: {names}",
-    "kindProcessingFees": "Processing fees"
+    "kindProcessingFees": "Processing fees",
+    "salesGroupsLine": "{groups} sales groups imported from {rowsInFile} file rows",
+    "feeDatesLine": "Processing fees for {dates} dates imported from {rowsInFile} file rows"
   },
   "CsvImport": {
     "salesTitle": "Import sales report",
@@ -2560,7 +2571,8 @@
     "usageErrorInvalidQuantity": "Enter a valid quantity. Purchases must be greater than zero; a stock count may be zero.",
     "usageErrorInvalidUnit": "Choose a unit compatible with this ingredient.",
     "usageErrorIngredientNotFound": "This ingredient is no longer available in this café. Select another ingredient.",
-    "usageErrorSaveFailed": "Couldn't save this stock entry. Please retry."
+    "usageErrorSaveFailed": "Couldn't save this stock entry. Please retry.",
+    "usageConnectToast": "Connect Toast"
   },
   "SupervisorProposalCard": {
     "title": "Price change proposal",
@@ -2928,5 +2940,19 @@
     "messageGreeting": "Hi {name},",
     "messageWeek": "Here is your schedule for the week of {week}:",
     "messageClosing": "Please check your shifts."
+  },
+  "UploadReview": {
+    "title": "Upload review",
+    "noSummary": "Import summary is not available yet.",
+    "importedExplanation": "Imported records and saved review details from this upload.",
+    "skippedTitle": "Rows not imported",
+    "summaryOnly": "The original rejected rows were not saved. These are the recorded reasons and number of rows for each reason.",
+    "otherReason": "Not imported",
+    "rowCount": "{count} rows",
+    "matchItems": "Match items",
+    "hourlyWage": "Hourly wage",
+    "newIngredients": "New ingredients added",
+    "invalidRows": "{count} invalid rows weren't imported.",
+    "reupload": "Re-upload"
   }
 }
