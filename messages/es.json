@@ -128,7 +128,12 @@
     "ownerError": "No se pudo guardar. Inténtalo otra vez.",
     "ownerInvalidDate": "Elige una fecha válida no posterior a ayer.",
     "ownerStatusUnavailable": "No están disponibles los datos de sincronización. Inténtalo otra vez.",
-    "noAmount": "—"
+    "noAmount": "—",
+    "ownerReasonOwner": "Marcado por el propietario",
+    "ownerReasonMismatch": "Los totales no coinciden",
+    "ownerReasonTimeout": "Toast Analytics tardó demasiado",
+    "ownerReasonCoverage": "Hay que revisar la importación",
+    "ownerReasonOther": "Hay que revisar la sincronización"
   },
   "LocaleLayout": {
     "title": "Café Profit"
