@@ -41,3 +41,14 @@ describe("Toast owner setup status/reload mapping",()=>{
   await expect(loadToastOwnerSetupState(uri,request as typeof fetch)).rejects.toThrow();
  });
 });
+
+it("never treats unverified restaurant locations as authorized",async()=>{
+ const request=vi.fn().mockImplementation(async(path:string)=>{
+  if(path.includes("subscriptions"))return good({subscriptions:[]});
+  if(path.includes("sync-preferences"))return good({preferences:[],recovery:[],unresolvedCorrections:[]});
+  return good({locations:[{location_id:id,restaurant_guid:uri,verified_at:null}]});
+ });
+ const s=await loadToastOwnerSetupState(id,request as typeof fetch);
+ expect(s.restaurantGuids).toEqual([]);
+ expect(s.locationMappings).toEqual([]);
+});

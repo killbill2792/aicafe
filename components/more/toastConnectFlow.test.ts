@@ -1,5 +1,5 @@
 import {describe,expect,it,vi} from "vitest";
-import {saveThenVerifyToastConnection} from "./toastConnectFlow";
+import {saveThenVerifyToastConnection,toastStatus,latestToastSync} from "./toastConnectFlow";
 const config={businessId:"business-1",apiUrl:"https://approved.toasttab.com",
  clientId:"id",clientSecret:"keep-me-secret",
  locations:[{location_id:"l",restaurant_guid:"r"}]};
@@ -34,5 +34,18 @@ describe("Toast single-action credential save and verification",()=>{
     .mockRejectedValueOnce(new Error("offline"));
   expect(await saveThenVerifyToastConnection(config,down as typeof fetch))
     .toEqual({saved:true,verified:false,error:"unavailable"});
+ });
+});
+
+describe("owner connection status",()=>{
+ it.each([["not_connected","notConnected"],["verified","connected"],["configured","needsAttention"],
+  ["missing_permissions","needsAttention"],["needs_reconnect","needsAttention"],
+  ["sync_failed","needsAttention"],["stale","needsAttention"]])("maps %s to %s",(state,expected)=>{
+  expect(toastStatus(state)).toBe(expected);
+ });
+ it("uses the newest successful fetch",()=>{
+  expect(latestToastSync([{last_order_fetch_at:"2026-10-11T00:00:00Z",
+   last_time_entry_fetch_at:"2026-10-12T00:00:00Z",last_schedule_fetch_at:null,last_menu_fetch_at:null}]))
+   .toBe("2026-10-12T00:00:00Z");
  });
 });

@@ -69,7 +69,20 @@
     "errorTimeout": "Toast did not respond in time",
     "errorRateLimited": "Toast asked us to try again later",
     "errorUnavailable": "Toast is temporarily unavailable",
-    "errorInvalidResponse": "Toast returned data we could not verify"
+    "errorInvalidResponse": "Toast returned data we could not verify",
+    "needsAttention": "Needs attention",
+    "fix": "Fix",
+    "technicalDetails": "Technical details",
+    "connectedLastSync": "Connected ✓ last sync {time}",
+    "noSyncYet": "not yet synced",
+    "manualLocationHint": "Before connecting, add your authorized restaurant ID under Technical details. Automatic lookup needs a backend update.",
+    "notEnabledPlain": "Toast isn't turned on for your café yet",
+    "askToEnable": "Ask to turn on Toast. Contact your café support team.",
+    "matchNames": "Match Toast names",
+    "daysMissing": "Days missing from Toast",
+    "syncAgain": "Sync again",
+    "noMissingDays": "No days currently flagged for review",
+    "syncUnavailable": "Sync could not be started. Try again during an approved pilot."
   },
   "LocaleLayout": {
     "title": "Café Profit"

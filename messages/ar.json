@@ -69,7 +69,20 @@
     "errorTimeout": "لم يستجب Toast في الوقت المطلوب",
     "errorRateLimited": "طلب Toast إعادة المحاولة لاحقًا",
     "errorUnavailable": "خدمة Toast غير متاحة مؤقتًا",
-    "errorInvalidResponse": "أعاد Toast بيانات لم نتمكن من التحقق منها"
+    "errorInvalidResponse": "أعاد Toast بيانات لم نتمكن من التحقق منها",
+    "needsAttention": "يحتاج إلى تدخل",
+    "fix": "إصلاح",
+    "technicalDetails": "التفاصيل التقنية",
+    "connectedLastSync": "متصل ✓ آخر مزامنة {time}",
+    "noSyncYet": "لم تتم المزامنة بعد",
+    "manualLocationHint": "قبل الاتصال، أضف معرّف المطعم المصرّح به ضمن التفاصيل التقنية. يتطلب البحث التلقائي تحديثاً للخادم.",
+    "notEnabledPlain": "لم يتم تفعيل Toast لمقهاك بعد",
+    "askToEnable": "اطلب تفعيل Toast من فريق دعم مقهاك.",
+    "matchNames": "مطابقة أسماء Toast",
+    "daysMissing": "أيام تفتقد بيانات Toast",
+    "syncAgain": "إعادة المزامنة",
+    "noMissingDays": "لا توجد أيام معلّمة للمراجعة حالياً",
+    "syncUnavailable": "تعذر بدء المزامنة. حاول مجدداً خلال تجربة معتمدة."
   },
   "LocaleLayout": {
     "title": "Café Profit"

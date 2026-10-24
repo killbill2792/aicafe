@@ -6,7 +6,7 @@ import ToastOperationalReview, {type ToastReviewLabels} from "./ToastOperational
 type Labels={
  webhookSetup:string;createWebhook:string;webhookUrl:string;webhookSecret:string;
  saveWebhookSecret:string;webhookInactive:string;syncPreferences:string;syncKind:string;
- everyMinutes:string;enablePolling:string;disablePolling:string;pendingActivation:string;
+ everyMinutes:string;technicalDetails:string;daysMissing:string;syncAgain:string;noMissingDays:string;syncUnavailable:string;enablePolling:string;disablePolling:string;pendingActivation:string;
  corrections:string;recovery:string;pending:string;error:string;success:string
 };
 export default function ToastSetupActions({businessId,restaurantGuids,enabled,pilotEnabled,labels,reviewLabels}:{
@@ -19,19 +19,22 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
  const [restaurant,setRestaurant]=useState("");
  const [secret,setSecret]=useState("");
  const [status,setStatus]=useState<ToastOwnerSetupStatus|null>(null);
+ const [locationMappings,setLocationMappings]=useState<{restaurant_guid:string;location_id:string}[]>([]);
  const [kind,setKind]=useState("orders");
- const [minutes,setMinutes]=useState(60);
+
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
+ const [dayPending,setDayPending]=useState<string|null>(null);
  async function reload(){
   try{
    const snapshot=await loadToastOwnerSetupState(businessId);
    setVerifiedRestaurants(snapshot.restaurantGuids);
    setSubscriptions(snapshot.subscriptions);
+   setLocationMappings(snapshot.locationMappings);
    setStatus(snapshot.status);
    return true;
   }catch{
    // No old verification/disabled flag may survive a failed status refresh.
-   setVerifiedRestaurants([]);setSubscriptions([]);setStatus(null);
+   setVerifiedRestaurants([]);setSubscriptions([]);setStatus(null);setLocationMappings([]);setLocationMappings([]);
    return false;
   }
  }
@@ -41,6 +44,7 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
     if(cancelled)return;
     setVerifiedRestaurants(snapshot.restaurantGuids);
     setSubscriptions(snapshot.subscriptions);
+    setLocationMappings(snapshot.locationMappings);
     setStatus(snapshot.status);
   }).catch(()=>{
     if(cancelled)return;
@@ -62,10 +66,28 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
   }catch{setMessage(labels.error);}
   finally{setBusy(false);}
  }
+ async function syncDay(restaurantGuid:string,date:string){
+  if(busy||dayPending)return;
+  setDayPending(restaurantGuid+":"+date);setMessage("");
+  try{
+   const response=await fetch("/api/pos/toast/pilot",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({businessId,restaurantGuid,
+     locationId:locationMappings.find(l=>l.restaurant_guid===restaurantGuid)?.location_id,businessDate:date})});
+   if(!response.ok)throw new Error("unavailable");
+   await reload();setMessage(labels.success);
+  }catch{setMessage(labels.syncUnavailable);}
+  finally{setDayPending(null);}
+ }
  const web= subscriptions.find(s=>s.id===selection)??subscriptions[0];
  const selected=verifiedRestaurants.includes(restaurant)?restaurant:verifiedRestaurants[0]??"";
  const preference=status?.preferences.find(p=>p.restaurant_guid===selected&&p.kind===kind);
+ const missingDays=[...new Map((status?.unresolvedCorrections??[])
+  .filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d.business_date)).map(d=>[d.restaurant_guid+":"+d.business_date,d])).values()]
+  .sort((a,b)=>b.business_date.localeCompare(a.business_date));
  return <section className="flex flex-col gap-4 rounded-card-lg bg-card p-4">
+  <details className="rounded-xl border border-line p-3">
+  <summary className="cursor-pointer text-base font-semibold">{labels.technicalDetails}</summary>
+  <div className="mt-4 flex flex-col gap-3">
   <h2 className="text-lg font-bold text-ink">{labels.webhookSetup}</h2>
   <p className="text-sm text-ink-muted">{labels.webhookInactive}</p>
   {web?.webhookUrl&&<label className="flex flex-col gap-1 text-sm text-ink">
@@ -100,22 +122,28 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
     className="min-h-11 rounded-xl border border-line p-2">
     {["orders","attendance","schedules","catalog","roster"].map(k=><option key={k} value={k}>{k}</option>)}
    </select></label>
-  <label className="flex flex-col gap-1 text-sm">{labels.everyMinutes}
-   <input type="number" min={15} max={1440} value={minutes}
-    onChange={e=>setMinutes(Number(e.target.value))}
-    className="min-h-11 rounded-xl border border-line p-2"/>
-  </label>
-  {enabled&&selected&&<button type="button" disabled={busy||minutes<15||minutes>1440}
+  {enabled&&selected&&<button type="button" disabled={busy}
    onClick={()=>void post("/api/pos/toast/sync-preferences",
-    {businessId,restaurantGuid:selected,kind,intervalMinutes:minutes,
+    {businessId,restaurantGuid:selected,kind,intervalMinutes:preference?.interval_minutes??60,
       enabled:!preference?.enabled})}
    className="min-h-11 rounded-full border border-line p-3 disabled:opacity-40">
    {preference?.enabled?labels.disablePolling:labels.enablePolling}
   </button>}
-  {status&&<div className="text-sm text-ink-muted">
-    <p>{labels.recovery}: {status.recovery.length}</p>
-    <p>{labels.corrections}: {status.unresolvedCorrections.length}</p>
-  </div>}
+  </div></details>
+  <div className="flex flex-col gap-3">
+   <h2 className="text-lg font-bold text-ink">{labels.daysMissing}</h2>
+   {missingDays.length?missingDays.map(day=><div key={day.restaurant_guid+day.business_date}
+    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3">
+    <span className="text-base text-ink">{day.business_date}</span>
+    <button type="button" disabled={Boolean(dayPending)||!pilotEnabled||
+     !locationMappings.some(l=>l.restaurant_guid===day.restaurant_guid)}
+     onClick={()=>void syncDay(day.restaurant_guid,day.business_date)}
+     className="min-h-12 rounded-full border border-line px-4 font-semibold disabled:opacity-40">
+     {labels.syncAgain}</button>
+   </div>):<p className="text-base text-ink-muted">{labels.noMissingDays}</p>}
+   {(status?.recovery.length??0)>0&&<p className="text-sm text-ink-muted">
+    {labels.recovery}: {status?.recovery.length}</p>}
+  </div>
   {selected&&<ToastOperationalReview key={businessId+":"+selected}
     businessId={businessId} restaurantGuid={selected}
     enabled={pilotEnabled} labels={reviewLabels}/>}

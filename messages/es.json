@@ -69,7 +69,20 @@
     "errorTimeout": "Toast no respondió a tiempo",
     "errorRateLimited": "Toast pidió reintentar más tarde",
     "errorUnavailable": "Toast no está disponible temporalmente",
-    "errorInvalidResponse": "Toast devolvió datos que no pudimos verificar"
+    "errorInvalidResponse": "Toast devolvió datos que no pudimos verificar",
+    "needsAttention": "Necesita atención",
+    "fix": "Solucionar",
+    "technicalDetails": "Detalles técnicos",
+    "connectedLastSync": "Conectado ✓ última sincronización {time}",
+    "noSyncYet": "aún sin sincronizar",
+    "manualLocationHint": "Antes de conectar, añade el identificador del restaurante autorizado en Detalles técnicos. La búsqueda automática necesita una actualización del servidor.",
+    "notEnabledPlain": "Toast aún no está activado para tu cafetería",
+    "askToEnable": "Pide que activen Toast. Comunícate con el equipo de soporte de tu cafetería.",
+    "matchNames": "Relacionar nombres de Toast",
+    "daysMissing": "Días sin datos de Toast",
+    "syncAgain": "Sincronizar de nuevo",
+    "noMissingDays": "No hay días pendientes de revisión",
+    "syncUnavailable": "No se pudo iniciar la sincronización. Inténtalo durante una prueba autorizada."
   },
   "LocaleLayout": {
     "title": "Café Profit"

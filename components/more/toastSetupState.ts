@@ -1,6 +1,6 @@
 import {z} from "zod";
 const connection=z.object({locations:z.array(z.object({
- restaurant_guid:z.string().uuid(),verified_at:z.string().nullable()
+ restaurant_guid:z.string().uuid(),location_id:z.string().uuid().optional(),verified_at:z.string().nullable()
 }))});
 const subscriptions=z.object({subscriptions:z.array(z.object({
  id:z.string().uuid(),enabled:z.boolean(),webhookUrl:z.string().nullable().optional()
@@ -16,6 +16,7 @@ export type ToastOwnerSetupStatus=z.infer<typeof preferences>;
 export type ToastWebhookSubscription=z.infer<typeof subscriptions>["subscriptions"][number];
 export type ToastOwnerSetupSnapshot={
  restaurantGuids:string[];
+ locationMappings:{restaurant_guid:string;location_id:string}[];
  subscriptions:ToastWebhookSubscription[];
  status:ToastOwnerSetupStatus;
 };
@@ -38,7 +39,9 @@ export async function loadToastOwnerSetupState(
  const connections=connection.parse(connected);
  const subs=subscriptions.parse(webhooks);
  const status=preferences.parse(settings);
- return {restaurantGuids:[...new Set(connections.locations
+ return {locationMappings:connections.locations.filter(l=>l.verified_at!==null&&l.location_id)
+   .map(l=>({restaurant_guid:l.restaurant_guid,location_id:l.location_id!})),
+  restaurantGuids:[...new Set(connections.locations
    .filter(l=>l.verified_at!==null).map(l=>l.restaurant_guid))],
   subscriptions:subs.subscriptions,status};
 }
