@@ -11,7 +11,7 @@ export const statusSchema=z.object({
  backfill:z.object({daysDone:z.number().int(),daysTotal:z.number().int(),
   state:z.string().nullable(),resumeAt:z.string().nullable()}),
  failedRuns:z.number().int(),
- needsLook:z.array(z.object({date:day,oursCents:money.nullable(),toastCents:money.nullable(),
+ needsLook:z.array(z.object({date:day,restaurantGuid:GUID,oursCents:money.nullable(),toastCents:money.nullable(),
   deltaCents:money.nullable(),reason:z.string()})),
  recent:z.array(z.object({date:day,netSalesCents:money.nullable(),orders:z.number().int().nullable(),
   status:z.enum(["checked","checking","needs_look","missing"])})),
@@ -38,6 +38,8 @@ export async function GET(request:Request){
  ]);
  if([c,m,r,s,f,a,check].some(x=>x.error))return send(503,{error:"status_unavailable"});
  if(!m.data?.length)return send(404,{error:"not_found"});
+ if((r.data??[]).length>=1000||(s.data??[]).length>=500||(f.data??[]).length>=500)
+  return send(503,{error:"status_unavailable"});
  const health=await db.from("toast_sync_health_v").select("last_good_sync_at,stale").eq("business_id",id.data);
  if(health.error)return send(503,{error:"status_unavailable"});
  const good=(health.data??[]).map(h=>h.last_good_sync_at).filter(Boolean).sort().at(-1)??null;
@@ -57,7 +59,7 @@ export async function GET(request:Request){
    state:active.some(x=>x.state==="paused_rate_limited")?"paused_rate_limited":active[0]?.state??null,
    resumeAt:active.map(x=>x.resume_at).filter((x):x is string=>Boolean(x)).sort()[0]??null},
   failedRuns:(r.data??[]).filter(x=>x.state==="failed").length,
-  needsLook:needing.map(x=>({date:x.business_date,oursCents:x.net_sales_cents,
+  needsLook:needing.map(x=>({date:x.business_date,restaurantGuid:x.restaurant_guid,oursCents:x.net_sales_cents,
    toastCents:x.toast_net_sales_cents,deltaCents:x.delta_net_cents,
    reason:flags.has(x.restaurant_guid+":"+x.business_date)?"owner_flag":
     x.last_error_category??x.recon_state})),
@@ -72,7 +74,10 @@ export async function GET(request:Request){
   }),
   analytics:{connected:Boolean(a.data),verified:Boolean(a.data?.verified_at)},
   firstImportCheck:check.data?.answered_at?"answered":
-    new Set((s.data??[]).filter(x=>x.import_state==="imported"&&x.coverage_complete).map(x=>x.business_date)).size>=7?"due":"hidden",
+    [...new Set((s.data??[]).map(x=>x.business_date))].filter(date=>
+      m.data.every(loc=>(s.data??[]).some(row=>row.business_date===date&&
+      row.restaurant_guid===loc.restaurant_guid&&row.import_state==="imported"&&row.coverage_complete))
+    ).length>=7?"due":"hidden",
   timeZone:m.data[0].toast_time_zone,startDate:m.data[0].toast_start_date??null,
   restaurantGuids:m.data.map(x=>x.restaurant_guid)
  };
