@@ -85,6 +85,14 @@ or `/progress` polling. Block tests that fake retries by reusing a call ID inste
 a new call ID for the same logical tool arguments, or tests with vacuous assertions
 (e.g. length >= 0). Verify the tool-call/output pairing, all budget boundaries,
 database-compatible status values, and honest missing-data behavior before review.
+When fixing review comments, fix all P1s in one round, then stop and say it is ready to merge. Don't fix P2s unless the owner asks.
+
+## Review guidelines
+- First review of a PR: review the whole PR once and report everything you find in that one review. Don't save issues for later reviews.
+- Post P1s as inline comments. P1 means it would hurt a real café owner today: wrong money or numbers, lost or corrupted data, security or privacy leaks, broken migrations, crashes, or a main flow that stops working.
+- Put every P2 and lower in one "P2 list" in the review summary, not as inline comments.
+- Later reviews of the same PR: only review lines changed since your last review. Only raise a new P1 if those new lines caused it. Don't raise issues that were in code you already reviewed.
+- Ignore scale edge cases (hundreds or thousands of cafés), rare keyboard or screen-reader paths, test wording, and style, unless they cause a P1.
 
 ## Where things are
 See [docs/README.md](docs/README.md) for current docs and retired historical designs.
