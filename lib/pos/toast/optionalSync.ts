@@ -3,7 +3,6 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {fromZonedTime} from "date-fns-tz";
 import {z} from "zod";
 import {createToastClient,GUID,ToastApiError} from "./client";
-import {createToastAdapter} from "./adapter";
 import {stageToastCatalog,stageToastRoster} from "./operationalStaging";
 import {syncToastLaborReadOnly} from "./laborSync";
 import {addCalendarDays,localClock} from "./scheduleDates";
@@ -11,6 +10,8 @@ import {addCalendarDays,localClock} from "./scheduleDates";
 type Location={business_id:string;restaurant_guid:string;location_id:string;
  toast_time_zone:string;closeout_hour:number};
 const dateSchema=z.object({restaurantGuid:GUID,lastUpdated:z.string().min(1)});
+const reasonSchema=z.array(z.object({guid:GUID,name:z.string().nullish(),
+ entityType:z.string().nullish()}).passthrough()).max(300);
 const jobSchema=z.array(z.object({guid:GUID,name:z.string().nullish(),
  deleted:z.boolean().nullish()}).passthrough()).max(5000);
 const missingScope=(e:unknown)=>e instanceof ToastApiError&&
@@ -24,7 +25,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
  const scopes=(credentials?.scopes_available??{}) as Record<string,boolean>;
  const local=localClock(now,p.toast_time_zone);
  const {data:state,error:se}=await db.from("toast_optional_sync_state")
-  .select("menu_last_updated,menu_checked_local_day,roster_local_day,labor_local_day,jobs_local_day")
+  .select("menu_last_updated,menu_checked_local_day,roster_local_day,labor_local_day,jobs_local_day,void_reasons_local_day")
   .eq("business_id",p.business_id).eq("restaurant_guid",p.restaurant_guid).maybeSingle();
  if(se)throw new ToastApiError("unavailable");
  const key={business_id:p.business_id,restaurant_guid:p.restaurant_guid};
@@ -49,8 +50,6 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
   }catch(e){if(!missingScope(e))throw e;}
  }
  if(scopes.labor!==false&&Date.now()<deadlineAt){
-  const adapter=createToastAdapter({db,businessId:p.business_id,
-   restaurantGuid:p.restaurant_guid,deadlineAt});
   if(state?.roster_local_day!==local.today){
    try{await stageToastRoster(db,scope);await update({roster_local_day:local.today});}
    catch(e){if(!missingScope(e))throw e;}
@@ -86,7 +85,25 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     labor="staged";
    }catch(e){if(!missingScope(e))throw e;}
   }
-  void adapter;
+ }
+ if(scopes.config!==false&&state?.void_reasons_local_day!==local.today&&
+  Date.now()<deadlineAt){
+  try{
+   const reasons=await createToastClient(db,p.business_id).request(
+    "/config/v2/voidReasons",p.restaurant_guid,reasonSchema,{deadlineAt});
+   if(reasons.length>=300)throw new ToastApiError("invalid_response");
+   for(let offset=0;offset<reasons.length;offset+=100){
+    const rows=reasons.slice(offset,offset+100).map(r=>({
+     ...key,reason_guid:r.guid,name:r.name??null,
+     entity_type:r.entityType??null,fetched_at:now.toISOString()
+    }));
+    const {error}=await db.from("toast_void_reason_directory").upsert(rows,{
+     onConflict:"business_id,restaurant_guid,reason_guid"
+    });
+    if(error)throw new ToastApiError("unavailable");
+   }
+   await update({void_reasons_local_day:local.today});
+  }catch(e){if(!missingScope(e))throw e;}
  }
  return {menu,labor};
 }
