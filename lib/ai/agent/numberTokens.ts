@@ -54,11 +54,17 @@ export function tokenizeNumbers(text:string,locale:NumberLocale):NumberToken[]{
  scan(clock,"clock",100);
  scan(num+"\\s*"+durationUnit+"(?!\\p{L})","duration",95,
    s=>amountValue(s.replace(expr(durationUnit),""),locale),"duration");
- for(const m of text.matchAll(expr("("+amount+")"+join+"("+amount+")"))){
-  const split=m[0].lastIndexOf(m[2]),money=expr(currency).test(m[0]);
+ // A range can put its unit on only one endpoint ("10–20%", "$5–7").
+ // Propagate the explicit unit to both endpoints before overlap resolution;
+ // counts must never stand in for margin percentages or money.
+ for(const m of text.matchAll(expr("("+amount+"(?:[ \\u00a0\\u202f]*[%٪])?)"+join+"("+amount+"(?:[ \\u00a0\\u202f]*[%٪])?)"))){
+  const split=m[0].lastIndexOf(m[2]);
+  const money=expr(currency).test(m[0]),percent=!money&&/[%٪]/u.test(m[0]);
+  const kind:NumberTokenKind=money?"money":percent?"percent":"range";
+  const unit=money?"cents":percent?"bps":null;
   const first=amountValue(m[1],locale),second=amountValue(m[2],locale);
-  add(m.index,m.index+m[1].length,money?"money":"range",first===null?null:money?Math.round(first*100):first,money?"cents":null,85);
-  add(m.index+split,m.index+split+m[2].length,money?"money":"range",second===null?null:money?Math.round(second*100):second,money?"cents":null,85);
+  add(m.index,m.index+m[1].length,kind,first===null?null:money||percent?Math.round(first*100):first,unit,85);
+  add(m.index+split,m.index+split+m[2].length,kind,second===null?null:money||percent?Math.round(second*100):second,unit,85);
  }
  scan("(?:\\+?\\d{1,3}[-. ]){2,}\\d{3,4}(?!\\d)","phone/id",82);
  scan("(?:gpt[-\\w.]*\\d[\\w.-]*|[A-Za-z]{1,8}[-_]\\d[\\w.-]*)","phone/id",82);
