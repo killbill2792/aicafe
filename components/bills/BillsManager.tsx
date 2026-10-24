@@ -264,7 +264,7 @@ export default function BillsManager({
           {labels.addAnother}
         </button>
       )}
-      <Link href="/add-cost" className="mt-2 text-sm text-ink-muted underline underline-offset-2">{labels.variableCostHint}</Link>
+      <Link href="/add-cost" className="mt-2 flex min-h-12 items-center rounded-lg px-2 text-start text-[17px] text-ink-muted underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2">{labels.variableCostHint}</Link>
     </div>
   );
 }
