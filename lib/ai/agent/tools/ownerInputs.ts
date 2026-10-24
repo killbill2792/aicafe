@@ -1,5 +1,5 @@
 import {z} from "zod";
-import {calendarMonth,prorate,type CalcPeriod} from "@/lib/calc/periods";
+import {calendarMonth,prorate,dateOffset,type CalcPeriod} from "@/lib/calc/periods";
 const cents=z.number().int().safe().nonnegative();
 const period=z.union([
  z.strictObject({from:z.iso.date(),to:z.iso.date()}),
@@ -19,9 +19,7 @@ export const emptyOwnerInputs:OwnerInputs={
 export function ownerPeriod(value:OwnerInputs["salesPeriod"],asOf:string):CalcPeriod|null{
  if(!value)return null;
  if("days" in value){
-  const end=new Date(asOf+"T00:00:00Z");
-  end.setUTCDate(end.getUTCDate()-value.days+1);
-  return {from:end.toISOString().slice(0,10),to:asOf};
+  return {from:dateOffset(asOf,-value.days+1),to:asOf};
  }
  if(value.from>value.to)throw new Error("Invalid owner period");
  return value;

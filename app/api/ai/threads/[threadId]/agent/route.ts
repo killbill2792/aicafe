@@ -10,6 +10,7 @@ import { addOwnerMessageInput, threadIdInput, type ConversationMessage, type Con
 import { conversationError, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
 import { getExistingSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
+import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
 import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
@@ -129,11 +130,12 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
           newPriceCents:effect.newPriceCents};
       },
       proposePriceExperiment:async({productId,newPriceCents,increaseCents,days})=>{
+        if(days!==7)throw new ToolError("not_supported","This experiment currently supports a seven-day trial.");
         const catalog=await tools.getMenuCatalog();
         const item=catalog.available?catalog.value.find(x=>x.id===productId&&x.active):null;
-        if(!item)throw new Error("Product not found in the scoped café menu");
+        if(!item)throw new ToolError("not_found");
         const increase=increaseCents??(newPriceCents===null?null:newPriceCents-item.priceCents);
-        if(increase===null||increase<=0)throw new Error("Experiment must increase the current price");
+        if(increase===null||increase<=0)throw new ToolError("validation","Enter a positive price increase.");
         const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,productId,increase,days}));
         const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},supervisorLoopRegistry,
           new SupabaseLoopRepository(),priceExperimentCapabilityId,{productId,increaseCents:increase},key);
