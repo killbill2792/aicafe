@@ -115,11 +115,11 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     {!proposal&&<button type="button" disabled={busy} onClick={()=>void draft()}
       className="mt-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent disabled:opacity-50">
       {busy?t("draftWorking"):t("draftThisWeek")}</button>}
-    {busy&&<p role="status" className="mt-2 text-muted">{t("draftWorking")}</p>}
+    {busy&&<p role="status" className="mt-2 text-muted">{t(proposal?"draftApplying":"draftWorking")}</p>}
     {proposal&&<>
       <p role="status" className="mt-3 font-semibold">{t("draftSummary",{
         shifts:num(preview.totals.shiftCount),hours:num(preview.totals.paidMinutes/60,1),
-        cost:preview.totals.unknownCount?t("draftUnknownCost"):money(preview.totals.knownCostCents),
+        cost:preview.totals.unknownCount?t("draftPartialCost",{known:money(preview.totals.knownCostCents),count:num(preview.totals.unknownCount)}):money(preview.totals.knownCostCents),
         issues:num(preview.totals.ruleIssues)})}</p>
       {(warning||preview.totals.estimatedCount>0)&&<p className="mt-2 text-muted">{t("draftEstimateNote")}</p>}
       <p className="mt-2 text-muted">{t("draftNotSaved")}</p>
