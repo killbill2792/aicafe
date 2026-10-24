@@ -4,7 +4,7 @@ export type StoredTeamWindow = {day_of_week:number;start_local:string;end_local:
 /** A pair of exact touching halves is [00:00,24:00), including the last minute. */
 export function storedTeamAvailability(availableDays:number[]|null,windows:StoredTeamWindow[]):TeamAvailability[] {
  const days=availableDays??[0,1,2,3,4,5,6];
- return days.flatMap(day=>{
+ return days.flatMap<TeamAvailability>(day=>{
   const rows=windows.filter(w=>w.day_of_week===day).map(w=>({
    day,start:String(w.start_local).slice(0,5),end:String(w.end_local).slice(0,5)
   }));

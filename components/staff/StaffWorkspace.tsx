@@ -57,7 +57,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const invalidAvailability=!isValidTeamAvailability(availability);
  const personInvalid=(!salaryPeriod&&invalidWage)||invalidMin||invalidMax||invalidRange||invalidAvailability||(!["Barista","Manager","Baker","Cashier"].includes(role)&&!role.trim());
  const [undo,setUndo]=useState<{id:string;type:"person"|"shift";message:string}|null>(null);
- useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),6000);return ()=>clearTimeout(timer);},[undo]);
+ useEffect(()=>{if(!undo||busy)return;const timer=setTimeout(()=>setUndo(null),6000);return ()=>clearTimeout(timer);},[undo,busy]);
  const allDays=()=>Array.from({length:7},(_,day)=>({day,start:null,end:null}));
  const running=useRef(false);
  const run=(fn:()=>Promise<{ok:boolean;error?:string}>)=>{
@@ -241,7 +241,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     </div></section>}
    <div className="fixed inset-x-0 bottom-16 z-20 flex gap-2 border-t border-line bg-surface p-3 lg:bottom-0">
     <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl border border-accent text-accent-text" onClick={()=>run(()=>copyWeek({fromWeekStart:new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10),toWeekStart:data.weekStart}))}>{t("copyLastWeek")}</button>
-    <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={()=>startTransition(async()=>{const r=await sendSchedule({weekStart:data.weekStart});if(!r.ok){setError(r.error);return;}setNotice(r.data.messages.map(m=>m.text).join("\n"));})}>{t("prepareScheduleMessages")}</button>
+    <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={()=>run(async()=>{const r=await sendSchedule({weekStart:data.weekStart});if(r.ok)setNotice(r.data.messages.map(m=>m.text).join("\n"));return r;})}>{t("prepareScheduleMessages")}</button>
    </div>
   </>:<>
    <section className="rounded-[20px] border border-line bg-surface p-4"><h2 className="text-lg font-bold">{t("addSomeone")}</h2>
