@@ -113,7 +113,7 @@ export async function persistAgentReply(scope: ConversationScope, owner: Convers
 export function agentUsageIncrements(turn: AgentTurn) {
   const calls = turn.usage.toolCalls;
   return Array.from({ length: Math.max(1, Math.ceil(calls / 5)) }, (_, index) => ({
-    model: turn.usage.model??configuredSupervisorModel(),
+    model: turn.usage.model??"unknown",
     modelCallCount: index === 0 ? turn.usage.modelCalls : 0,
     toolCallCount: Math.min(5, calls - index * 5),
     inputTokens: index === 0 ? turn.usage.inputTokens : 0,
