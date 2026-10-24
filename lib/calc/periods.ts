@@ -18,9 +18,12 @@ const names=["january","february","march","april","may","june","july","august","
 export function resolvePeriod(input:PeriodInput, options:{
   asOf:string;timezone:string;coverage?:{from:string;to:string}|null
 }):PeriodResolution {
-  const asOf=ymd.test(options.asOf)?options.asOf:new Intl.DateTimeFormat("en-CA",{
-    timeZone:options.timezone,year:"numeric",month:"2-digit",day:"2-digit",
-  }).format(new Date(options.asOf));
+  const asOf=ymd.test(options.asOf)?options.asOf:(()=>{
+    const parts=new Intl.DateTimeFormat("en-US",{timeZone:options.timezone,
+      year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(options.asOf));
+    const field=(kind:string)=>parts.find(p=>p.type===kind)?.value??"";
+    return field("year")+"-"+field("month")+"-"+field("day");
+  })();
   if(!parseDate(asOf))return {status:"none",suggestions:[],missing:["invalidAsOf"]};
   if(input&&typeof input==="object"&&"from" in input&&"to" in input){
     if(!parseDate(input.from)||!parseDate(input.to)||input.from>input.to)return {status:"none",suggestions:[],missing:["invalidPeriod"]};
