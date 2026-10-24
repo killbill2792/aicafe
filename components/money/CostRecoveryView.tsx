@@ -1,3 +1,5 @@
+import { Link } from "@/i18n/navigation";
+import { breakEvenAction } from "./moneyActions";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import FillIcon from "@/components/icons/FillIcon";
@@ -92,7 +94,7 @@ function BucketRow({
   );
 }
 
-export default async function CostRecoveryView({ snapshot, calMonthKey }: { snapshot: BusinessSnapshot; calMonthKey: string }) {
+export default async function CostRecoveryView({ snapshot, calMonthKey, toastConnected }: { snapshot: BusinessSnapshot; calMonthKey: string; toastConnected: boolean }) {
   const t = await getTranslations("Money");
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");
@@ -136,6 +138,9 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
               : t("breakEvenUnavailable")
       : null;
 
+  const recoveryAction = vm.breakEven.kind === "unavailable"
+    ? breakEvenAction(vm.breakEven.reason, toastConnected, snapshot.runningCostLines) : null;
+
   return (
     <div className="flex flex-col gap-3.5">
       <section className="rounded-card-lg bg-card p-5">
@@ -153,6 +158,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
               <>
                 <div className="mt-1 font-headline text-3xl font-bold text-ink">—</div>
                 <p className="mt-2 text-sm leading-snug text-ink-muted">{breakEvenUnavailable}</p>
+                {recoveryAction && <Link href={recoveryAction.href} className="mt-3 inline-flex min-h-12 items-center rounded-full bg-ink px-4 text-base font-bold text-card no-underline">{t(recoveryAction.labelKey)}</Link>}
               </>
             )}
           </div>
@@ -201,6 +207,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
       </section>
 
       <MonthCalendar
+        toastConnected={toastConnected}
         monthLabel={monthLabel}
         calMonthKey={calMonthKey}
         canGoNext={!isCurrentMonth}
@@ -219,6 +226,8 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
           legendClosed: t("calendarLegendClosed"),
           legendUpcoming: t("calendarLegendUpcoming"),
           noData: t("calendarNoData"),
+          syncToast: t("syncToast"),
+          uploadSalesForDay: t("uploadSalesForDay"),
           closedDay: t("calendarClosed"),
           milestoneTemplate: t("calendarMilestone"),
           sales: t("sales"),
