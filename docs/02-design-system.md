@@ -77,6 +77,7 @@ EmptyState and PersonaAvatar.
 - Body: Inter (400–700). Body minimum 17px.
 - Arabic headings and body: IBM Plex Sans Arabic.
 - Secondary labels at least 13px; no all-caps new labels.
+- Chat metadata (source legends and answer feedback) uses secondary-label text of at least 13px. Caveat sentences stay at least 17px.
 
 ## Layout
 - Mobile first, 360–430px wide. Single column, max content width 480px (`max-w-app`).
