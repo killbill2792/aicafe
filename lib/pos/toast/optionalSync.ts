@@ -34,6 +34,13 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
    .upsert({...key,...values},{onConflict:"business_id,restaurant_guid"});
   if(error)throw new ToastApiError("unavailable");
  };
+ const phaseFailures:string[]=[];
+ const recordFailure=(e:unknown)=>{
+  // A scope being absent is an expected, nonfatal skip. Other failures are
+  // recorded while the remaining optional source families still get a chance.
+  if(!missingScope(e))
+   phaseFailures.push(e instanceof ToastApiError?e.category:"unavailable");
+ };
  let menu="scope_missing",labor="scope_missing";
  const scope={businessId:p.business_id,restaurantGuid:p.restaurant_guid,deadlineAt};
  if(scopes.menus!==false&&state?.menu_checked_local_day!==local.today){
@@ -47,12 +54,12 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     menu="updated";
    }else menu="unchanged";
    await update({menu_last_updated:meta.lastUpdated,menu_checked_local_day:local.today});
-  }catch(e){if(!missingScope(e))throw e;}
+  }catch(e){recordFailure(e);}
  }
  if(scopes.labor!==false&&Date.now()<deadlineAt){
   if(state?.roster_local_day!==local.today){
    try{await stageToastRoster(db,scope);await update({roster_local_day:local.today});}
-   catch(e){if(!missingScope(e))throw e;}
+   catch(e){recordFailure(e);}
   }
   if(state?.jobs_local_day!==local.today&&Date.now()<deadlineAt){
    try{
@@ -66,7 +73,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
      if(error)throw new ToastApiError("unavailable");
     }
     await update({jobs_local_day:local.today});
-   }catch(e){if(!missingScope(e))throw e;}
+   }catch(e){recordFailure(e);}
   }
   if(state?.labor_local_day!==local.today&&Date.now()<deadlineAt){
    try{
@@ -83,7 +90,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
       {since:new Date(now.getTime()-7*86400000),until:now},"attendance","modified");
     await update({labor_local_day:local.today});
     labor="staged";
-   }catch(e){if(!missingScope(e))throw e;}
+   }catch(e){recordFailure(e);}
   }
  }
  if(scopes.config!==false&&state?.void_reasons_local_day!==local.today&&
@@ -103,7 +110,8 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     if(error)throw new ToastApiError("unavailable");
    }
    await update({void_reasons_local_day:local.today});
-  }catch(e){if(!missingScope(e))throw e;}
+  }catch(e){recordFailure(e);}
  }
+ if(phaseFailures.length)throw new ToastApiError(phaseFailures[0]);
  return {menu,labor};
 }
