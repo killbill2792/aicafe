@@ -88,7 +88,8 @@
     "kindAttendance": "Asistencia",
     "kindSchedules": "Turnos",
     "kindCatalog": "Menú",
-    "kindRoster": "Personal"
+    "kindRoster": "Personal",
+    "statusUnavailable": "No se puede consultar el estado de Toast ahora. Vuelve a comprobar la conexión."
   },
   "LocaleLayout": {
     "title": "Café Profit"

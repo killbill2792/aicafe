@@ -46,7 +46,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
  useEffect(()=>{
   let cancelled=false;
   fetch("/api/pos/toast?businessId="+encodeURIComponent(businessId),{cache:"no-store"})
-   .then(r=>r.ok?r.json():null).then((data:State|null)=>{
+   .then(r=>{if(!r.ok)throw new Error("unavailable");return r.json();}).then((data:State|null)=>{
     if(cancelled||!data)return;
     setConnection(data);setLoadFailed(false);
     setApiUrl(data.apiOrigin&&approvedOrigins.includes(data.apiOrigin)?data.apiOrigin:defaultApiOrigin);

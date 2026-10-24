@@ -88,7 +88,8 @@
     "kindAttendance": "Attendance",
     "kindSchedules": "Schedules",
     "kindCatalog": "Menu",
-    "kindRoster": "Staff"
+    "kindRoster": "Staff",
+    "statusUnavailable": "Can't load Toast status right now. Try checking the connection again."
   },
   "LocaleLayout": {
     "title": "Café Profit"

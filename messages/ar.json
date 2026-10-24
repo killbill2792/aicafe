@@ -88,7 +88,8 @@
     "kindAttendance": "الحضور",
     "kindSchedules": "الجداول",
     "kindCatalog": "القائمة",
-    "kindRoster": "الموظفون"
+    "kindRoster": "الموظفون",
+    "statusUnavailable": "تعذّر تحميل حالة Toast الآن. حاول التحقق من الاتصال مجدداً."
   },
   "LocaleLayout": {
     "title": "Café Profit"

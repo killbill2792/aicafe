@@ -11,7 +11,9 @@ vi.mock("@/i18n/navigation",()=>({
 }));
 
 vi.mock("next-intl",()=>({useLocale:()=> "en"}));
+vi.mock("next-intl/server",()=>({getTranslations:async()=> (key:string)=>key}));
 import RegisterChoice from "./RegisterChoice";
+import ReconnectBanner from "@/components/shared/ReconnectBanner";
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
 
 const labels={
@@ -116,5 +118,13 @@ describe("Toast setup destination states",()=>{
   expect(html).toContain("API URL");
   expect(html).toContain('value="https://one.toasttab.com"');
   expect(html).toContain('value="https://two.toasttab.com"');
+ });
+});
+
+describe("reconnect banner",()=>{
+ it("links the owner to Toast setup rather than onboarding",async()=>{
+  const html=renderToStaticMarkup(await ReconnectBanner());
+  expect(html).toContain('href="/more/toast"');
+  expect(html).not.toContain('href="/onboarding"');
  });
 });

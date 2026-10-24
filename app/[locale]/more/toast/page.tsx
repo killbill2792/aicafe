@@ -100,7 +100,7 @@ export default async function ToastConnectionPage() {
           pending:t("pending"),error:t("error"),success:t("success"),
           technicalDetails:t("technicalDetails"),daysMissing:t("daysMissing"),
           syncAgain:t("syncAgain"),noMissingDays:t("noMissingDays"),
-          syncUnavailable:t("syncUnavailable"),dayStaged:t("dayStaged")
+          syncUnavailable:t("syncUnavailable"),statusUnavailable:t("statusUnavailable"),dayStaged:t("dayStaged")
         }}/>
       </>}
     </PageShell>
