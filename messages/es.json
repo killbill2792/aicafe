@@ -314,7 +314,9 @@
     "attentionMatch": "Relacionar",
     "attentionFix": "Resolver",
     "attentionFeesMissing": "Faltan comisiones de procesamiento de {count} días",
-    "attentionAddFees": "Agregar comisiones"
+    "attentionAddFees": "Agregar comisiones",
+    "costsIncomplete": "Aún faltan costos por verificar",
+    "attentionMatchUnavailable": "Hay que revisar la asociación de artículos"
   },
   "Money": {
     "title": "Dinero",
