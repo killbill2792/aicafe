@@ -76,7 +76,7 @@ describe("provenance footnotes",()=>{
      {start:0,end:7,source:"owner"}]}));
    expect(html).toContain('aria-label="You told me"');
    expect(html).toContain('aria-expanded="false"');
-   expect(html).toContain("bg-blue-600");
+   expect(html).toContain("bg-chart-staff");
    expect(html).toContain("$11,000");
    expect(html).not.toContain("Not checked against your records");
  });
@@ -86,9 +86,9 @@ describe("provenance footnotes",()=>{
      {start:0,end:4,source:"estimate",detail:"Ingredient percentage"},
      {start:12,end:19,source:"owner"}]}));
    expect(html).toContain("Ingredient percentage");
-   expect(html).toContain("bg-amber-600");
-   expect(html).toContain("bg-blue-600");
-   expect(html).not.toContain("bg-gray-500");
+   expect(html).toContain("bg-warn");
+   expect(html).toContain("bg-chart-staff");
+   expect(html).not.toContain("border border-ink bg-transparent");
    expect(html.match(/aria-label="Number sources"/g)).toHaveLength(1);
  });
  it("has no legend for dates and unlabeled day counts",()=>{
@@ -142,9 +142,9 @@ describe("reply-wide provenance legend",()=>{
      createElement(SourceLegend,{sources:["owner","estimate"],labels,legendLabel:"Fuentes de los números"})
    ));
    expect(html.match(/aria-label="Fuentes de los números"/g)).toHaveLength(1);
-   expect(html).not.toContain("bg-gray-500");
-   expect(html).toContain("bg-blue-600");
-   expect(html).toContain("bg-amber-600");
+   expect(html).not.toContain("border border-ink bg-transparent");
+   expect(html).toContain("bg-chart-staff");
+   expect(html).toContain("bg-warn");
  });
  it("omits legend completely if no spans are displayed",()=>{
    const html=renderToStaticMarkup(createElement(SourceLegend,{
