@@ -896,7 +896,8 @@
     "feesDaysMissing": "{count} أيام بلا رسوم مسجلة",
     "rentMissing": "الإيجار غير مسجل",
     "monthlyAmount": "{amount} شهريًا",
-    "monthlyAmountEstimated": "{amount} شهريًا (يشمل تقديرات)"
+    "monthlyAmountEstimated": "{amount} شهريًا (يشمل تقديرات)",
+    "toastDaysLook": "{count} يومًا يحتاج إلى مراجعة"
   },
   "BreakEven": {
     "title": "خطة نقطة التعادل",
