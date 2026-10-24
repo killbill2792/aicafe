@@ -40,6 +40,8 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       {error && <p className="rounded-2xl bg-warn-tint p-3.5 text-sm text-warn">{errorMessage(t, error)}</p>}
 
       {step === 1 && (
+        <div className={process.env.TOAST_SETUP_ENABLED==="true" && Boolean(process.env.TOAST_ALLOWED_API_HOSTS?.trim())
+          ? "" : "[&_a[href$='/more/toast']]:hidden"}>
         <RegisterChoice
           locale={locale}
           squareConfigured={isSquareConfigured()}
@@ -53,6 +55,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
             skip: t("skipForNow"),
           }}
         />
+        </div>
       )}
 
       {step === 2 && businessId && (

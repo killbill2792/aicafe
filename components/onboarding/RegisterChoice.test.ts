@@ -10,7 +10,10 @@ vi.mock("@/i18n/navigation",()=>({
  })=>createElement("a",{href,className},children)
 }));
 
+vi.mock("next-intl",()=>({useLocale:()=> "en"}));
+vi.mock("next-intl/server",()=>({getTranslations:async()=> (key:string)=>key}));
 import RegisterChoice from "./RegisterChoice";
+import ReconnectBanner, {reconnectHref} from "@/components/shared/ReconnectBanner";
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
 
 const labels={
@@ -37,7 +40,11 @@ const connectionLabels={
  errorMissingPermissions:"Missing permissions",
  errorUnauthorizedLocation:"Unauthorized restaurant",
  errorTimeout:"Timeout",errorRateLimited:"Too many requests",
- errorUnavailable:"Unavailable",errorInvalidResponse:"Invalid response"
+ errorUnavailable:"Unavailable",errorInvalidResponse:"Invalid response",
+ needsAttention:"Needs attention",fix:"Fix",technicalDetails:"Technical details",
+ connectedLastSync:"Connected ✓ last sync {time}",noSyncYet:"not yet synced",
+ manualLocationHint:"Add your authorized restaurant GUID under Technical details",
+ chooseApiUrl:"Choose API URL under Technical details"
 };
 
 function choice(locale:string,squareConfigured=true){
@@ -88,7 +95,7 @@ describe("Toast setup destination states",()=>{
  it("shows clear unavailability with connection status, without an uploads redirect",()=>{
   const html=page(false);
   expect(html).toContain("Toast setup is currently unavailable");
-  expect(html).toContain("Not connected");
+  expect(html).toContain("Saving"); // No false connection claim before the status request completes.
   expect(html).not.toContain('href="/more/uploads"');
   expect(html).not.toContain('>Test Connection</button>');
  });
@@ -98,7 +105,7 @@ describe("Toast setup destination states",()=>{
    "Restaurant GUID","Save","Test Connection"])
     expect(html).toContain(label);
   expect(html).toContain('type="password"');
-  expect(html).toContain("Not connected");
+  expect(html).toContain("Saving");
   expect(html).not.toContain("<span>API URL</span>");
   expect(html).not.toContain("Toast setup is currently unavailable");
   // Test Connection is present but disabled until a configuration exists.
@@ -109,8 +116,24 @@ describe("Toast setup destination states",()=>{
    businessId:"business-1",locations,enabled:true,labels:connectionLabels,
    approvedOrigins:["https://one.toasttab.com","https://two.toasttab.com"],defaultApiOrigin:""
   }));
-  expect(html).toContain("<span>API URL</span>");
+  expect(html).toContain("API URL");
   expect(html).toContain('value="https://one.toasttab.com"');
   expect(html).toContain('value="https://two.toasttab.com"');
+ });
+});
+
+describe("reconnect banner",()=>{
+ it("routes Toast owner to Toast connection setup",async()=>{
+  const html=renderToStaticMarkup(await ReconnectBanner({provider:"toast"}));
+  expect(html).toContain('href="/more/toast"');
+  expect(html).not.toContain('href="/onboarding"');
+ });
+ it("retains Square's working onboarding-based reconnect path",async()=>{
+  const html=renderToStaticMarkup(await ReconnectBanner({provider:"square"}));
+  expect(html).toContain('href="/onboarding"');
+  expect(html).not.toContain('href="/more/toast"');
+ });
+ it("does not route an unknown POS provider to Toast",()=>{
+  expect(reconnectHref("unrecognized")).toBe("/onboarding");
  });
 });

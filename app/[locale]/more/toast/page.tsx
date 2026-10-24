@@ -40,6 +40,10 @@ export default async function ToastConnectionPage() {
     <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more"
         backLabel={common("back")}/>
+      {!setupReady ? <section className="rounded-card-lg bg-card p-5 text-ink">
+        <p className="text-lg font-semibold">{t("notEnabledPlain")}</p>
+        <p className="mt-3 text-base">{t("askToEnable")}</p>
+      </section> : <>
       <ToastConnectionForm
         businessId={businessId}
         locations={locations??[]}
@@ -61,6 +65,9 @@ export default async function ToastConnectionPage() {
           errorUnauthorizedLocation:t("errorUnauthorizedLocation"),errorTimeout:t("errorTimeout"),
           errorRateLimited:t("errorRateLimited"),errorUnavailable:t("errorUnavailable"),
           errorInvalidResponse:t("errorInvalidResponse"),
+          needsAttention:t("needsAttention"),fix:t("fix"),technicalDetails:t("technicalDetails"),
+          connectedLastSync:t.raw("connectedLastSync"),noSyncYet:t("noSyncYet"),
+          manualLocationHint:t("manualLocationHint"),chooseApiUrl:t("chooseApiUrl"),
         }}/>
       <ToastSetupActions businessId={businessId}
         restaurantGuids={[]}
@@ -78,18 +85,24 @@ export default async function ToastConnectionPage() {
           noRecords:t("noRecords"),emptyChoice:t("emptyChoice"),
           unknownPrice:t("unknownPrice"),priceCents:t("priceCents"),
           unverified:t("unverified"),pending:t("pending"),error:t("error"),
-          success:t("success"),disabled:t("notEnabled")
+          success:t("success"),disabled:t("notEnabled"),matchNames:t("matchNames")
         }}
         labels={{
           webhookSetup:t("webhookSetup"),createWebhook:t("createWebhook"),
           webhookUrl:t("webhookUrl"),webhookSecret:t("webhookSecret"),
           saveWebhookSecret:t("saveWebhookSecret"),webhookInactive:t("webhookInactive"),
           syncPreferences:t("syncPreferences"),syncKind:t("syncKind"),
+          kindLabels:{orders:t("kindOrders"),attendance:t("kindAttendance"),schedules:t("kindSchedules"),
+            catalog:t("kindCatalog"),roster:t("kindRoster")},
           everyMinutes:t("everyMinutes"),enablePolling:t("enablePolling"),
           disablePolling:t("disablePolling"),pendingActivation:t("pendingActivation"),
           corrections:t("corrections"),recovery:t("recovery"),
-          pending:t("pending"),error:t("error"),success:t("success")
+          pending:t("pending"),error:t("error"),success:t("success"),
+          technicalDetails:t("technicalDetails"),daysMissing:t("daysMissing"),
+          syncAgain:t("syncAgain"),noMissingDays:t("noMissingDays"),
+          syncUnavailable:t("syncUnavailable"),statusUnavailable:t("statusUnavailable"),dayStaged:t("dayStaged")
         }}/>
+      </>}
     </PageShell>
   );
 }

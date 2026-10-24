@@ -41,3 +41,28 @@ describe("Toast owner setup status/reload mapping",()=>{
   await expect(loadToastOwnerSetupState(uri,request as typeof fetch)).rejects.toThrow();
  });
 });
+
+it("never treats unverified restaurant locations as authorized",async()=>{
+ const request=vi.fn().mockImplementation(async(path:string)=>{
+  if(path.includes("subscriptions"))return good({subscriptions:[]});
+  if(path.includes("sync-preferences"))return good({preferences:[],recovery:[],unresolvedCorrections:[]});
+  return good({locations:[{location_id:id,restaurant_guid:uri,verified_at:null}]});
+ });
+ const s=await loadToastOwnerSetupState(id,request as typeof fetch);
+ expect(s.restaurantGuids).toEqual([]);
+ expect(s.locationMappings).toEqual([]);
+});
+
+it("retains recovery date boundaries for the missing-days list",async()=>{
+ const request=vi.fn().mockImplementation(async(path:string)=>{
+  if(path.includes("subscriptions"))return good({subscriptions:[]});
+  if(path.includes("sync-preferences"))return good({
+   preferences:[],unresolvedCorrections:[],
+   recovery:[{restaurant_guid:uri,kind:"orders",state:"backfilling",
+    missing_since:"2026-10-01",missing_until:"2026-10-04"}]});
+  return good({locations:[{location_id:id,restaurant_guid:uri,verified_at:"2026-10-10T00:00:00Z"}]});
+ });
+ const result=await loadToastOwnerSetupState(id,request as typeof fetch);
+ expect(result.status.recovery[0].missing_until).toBe("2026-10-04");
+ expect(result.locationMappings).toEqual([{location_id:id,restaurant_guid:uri}]);
+});
