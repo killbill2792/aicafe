@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown, UsersRound, ArrowDown } from "lucide-react";
-import { AgentAvatar, agentVisuals } from "@/components/operations/AITeamCard";
+import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown } from "lucide-react";
+import { AgentAvatar } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
-import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { nextDictationStage } from "@/lib/ai/conversations/dictationState";
@@ -50,13 +49,6 @@ export type SupervisorChatCopy = {
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
 type Locale = "en" | "es" | "ar";
-export type SupervisorHomeSnapshot = {
-  title: string; stats: { label: string; value: string }[];
-  caption: string | null; hasSales: boolean;
-  sections: { title: string; empty: string; href: string;
-    items: HomeTaskPreviewItem[]; count: number }[];
-  seeAll: string;
-};
 async function jsonFrom<T>(response: Response): Promise<T> {
   if (!response.ok) throw new Error("conversation_request_failed");
   return response.json() as Promise<T>;
@@ -198,45 +190,11 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
     {error&&<p role="alert">{copy.feedbackError}</p>}
   </div>;
 }
-function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
-  return <div className="w-full space-y-4 text-start">
-    <section aria-label={snapshot.title}>
-      <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-ink-muted">{snapshot.title}</h3>
-      <div className="grid grid-cols-2 gap-2">
-        {snapshot.stats.map((stat) => <div key={stat.label}
-          className="rounded-2xl border border-line bg-surface p-3 shadow-sm">
-          <p className="text-[13px] font-semibold text-ink-muted">{stat.label}</p>
-          <p className="mt-1 break-words text-xl font-extrabold text-ink">{stat.value}</p>
-        </div>)}
-      </div>
-      {snapshot.caption && <p className="mt-2 text-sm text-ink-muted">{snapshot.caption}</p>}
-    </section>
-    {snapshot.sections.map((section) => <section key={section.href}>
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-extrabold uppercase tracking-wide text-ink-muted">
-          {section.title} <span className="text-ink">{section.count}</span>
-        </h3>
-        <Link href={section.href} className="text-sm font-bold text-good underline">{snapshot.seeAll}</Link>
-      </div>
-      {section.items.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        {section.items.map((task) => <Link key={task.id} href={task.href}
-          className="flex min-h-16 items-center gap-2 rounded-2xl border border-line bg-surface p-3 text-ink no-underline hover:bg-surface2">
-          <AgentAvatar agentId={task.agentId} size="task" />
-          <span className="min-w-0 flex-1">
-            <span className={`block text-sm font-bold ${agentVisuals[task.agentId].accent}`}>{task.agentName}</span>
-            <span className="block text-[15px] font-semibold">{task.title}</span>
-          </span>
-        </Link>)}
-      </div> : <p className="mt-1 text-sm text-ink-muted">{section.empty}</p>}
-    </section>)}
-  </div>;
-}
-
 export default function SupervisorChatComposer({
-  enabled, canUseAi=true, locale, copy, snapshot, languageSwitch, onActivityChange, experimentCopy, initialThreadId, initialProposalId,
+  enabled, canUseAi=true, locale, copy, languageSwitch, onActivityChange, experimentCopy, initialThreadId, initialProposalId,
 }: {
   enabled: boolean; canUseAi?: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
-  locale: Locale; copy: SupervisorChatCopy; snapshot?: SupervisorHomeSnapshot;
+  locale: Locale; copy: SupervisorChatCopy;
   experimentCopy?: ExperimentCopy;
   initialThreadId?:string;initialProposalId?:string;
   languageSwitch?: React.ReactNode;
@@ -248,7 +206,6 @@ export default function SupervisorChatComposer({
   const [optimisticOwner, setOptimisticOwner] = useState<{ id: string; text: string; clientMessageId: string } | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [snapshotExpanded, setSnapshotExpanded] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -656,7 +613,6 @@ export default function SupervisorChatComposer({
     openingThread.current = Boolean(id); pinned.current = true;
     setShowNewMessage(false);
     setThreadTitle(threads.find((thread) => thread.id === id)?.title ?? null);
-    setSnapshotExpanded(false);
     setDraft(""); setMediaNotice(""); setError(false); setHistoryOpen(false);
     setFailureCode(null); setQueuedOwner([]);
     retryId.current = null; threadRequestId.current = null;
@@ -825,23 +781,6 @@ export default function SupervisorChatComposer({
         </div>
         <h2 className="font-headline text-2xl font-bold text-ink">{copy.emptyHeading}</h2>
         <p className="max-w-md text-[17px] leading-relaxed text-ink-muted">{copy.emptyIntro}</p>
-        {snapshot && <section className="w-full rounded-xl bg-surface2 p-3 text-start">
-          <div className="flex flex-wrap gap-x-5 gap-y-2">
-            {snapshot.stats.slice(0,3).map(stat=><span key={stat.label} className="text-[14px] text-ink">
-              <span className="text-ink-muted">{stat.label}: </span><strong>{stat.value}</strong>
-            </span>)}
-            <span className="text-[14px] text-ink">
-              <span className="text-ink-muted">{snapshot.sections[0]?.title}: </span>
-              <strong>{snapshot.sections[0]?.count ?? 0}</strong>
-            </span>
-          </div>
-          <button type="button" onClick={()=>setSnapshotExpanded(v=>!v)}
-            aria-expanded={snapshotExpanded} className="mt-1 inline-flex min-h-12 items-center gap-1 text-sm font-bold text-good">
-            {snapshotExpanded ? copy.snapshotCollapse : copy.snapshotExpand}
-            <ChevronDown size={16} className={snapshotExpanded ? "rotate-180" : ""} aria-hidden="true" />
-          </button>
-          {snapshotExpanded && <HomeSnapshot snapshot={snapshot} />}
-        </section>}
         {!enabled && <p className="text-[16px] text-ink-muted">{copy.unavailable}</p>}
       </div>}
       {nextOffset !== null && <button type="button" onClick={() => void loadOlder()} disabled={loading}
