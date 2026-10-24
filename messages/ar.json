@@ -746,6 +746,7 @@
     "anHour": "في الساعة",
     "todaySoFar": "اليوم حتى الآن",
     "onShiftNow": "في الدوام الآن",
+    "matchNames": "مطابقة الأسماء",
     "noOneOnShift": "لا يوجد أحد مجدولاً أو مسجلاً في الدوام الآن.",
     "staffRole": "موظف",
     "sinceShort": "منذ الساعة {time}",
