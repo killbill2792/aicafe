@@ -61,10 +61,10 @@ export async function syncStaffRuleAlerts(){
  const alerts=alertRows.map(row=>{
   const card=timecards.get(row.timecard_id);
   // A stale/mismatched timecard must never point the owner at another person's shift.
-  const valid=card?.employee_id===row.employee_id&&card.clock_out;
-  return {...row,workDate:valid?formatInTimeZone(card.clock_in,scope.timezone,"yyyy-MM-dd"):null,
-   workStart:valid?formatInTimeZone(card.clock_in,scope.timezone,"HH:mm"):null,
-   workEnd:valid?formatInTimeZone(card.clock_out!,scope.timezone,"HH:mm"):null};
+  const valid=card&&card.employee_id===row.employee_id&&card.clock_out?card:null;
+  return {...row,workDate:valid?formatInTimeZone(valid.clock_in,scope.timezone,"yyyy-MM-dd"):null,
+   workStart:valid?formatInTimeZone(valid.clock_in,scope.timezone,"HH:mm"):null,
+   workEnd:valid?formatInTimeZone(valid.clock_out!,scope.timezone,"HH:mm"):null};
  });
  return {ok:true as const,alerts,readOnly:false};
 }
