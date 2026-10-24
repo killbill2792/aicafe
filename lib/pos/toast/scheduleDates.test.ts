@@ -11,10 +11,10 @@ describe("Toast cron local calendar boundaries: acceptance 13",()=>{
    "America/Los_Angeles",4)).toBe("2026-10-31");
  });
  it("does not double-fire after the spring-forward clock transition",()=>{
-  expect(eligibleClosedDay(new Date("2027-03-08T11:59:00Z"),
+  expect(eligibleClosedDay(new Date("2027-03-14T11:59:00Z"),
    "America/Los_Angeles",4)).toBeNull();
-  expect(eligibleClosedDay(new Date("2027-03-08T12:00:00Z"),
-   "America/Los_Angeles",4)).toBe("2027-03-07");
+  expect(eligibleClosedDay(new Date("2027-03-14T12:00:00Z"),
+   "America/Los_Angeles",4)).toBe("2027-03-13");
  });
 });
 describe("multi-day resume never trusts erased SQL cursor",()=>{
