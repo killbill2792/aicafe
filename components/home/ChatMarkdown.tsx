@@ -169,7 +169,11 @@ function annotatedText(
   for(const token of tokens){
     const from=absoluteStart+token.start,to=absoluteStart+token.end;
     const matching=spans.filter(span=>span.start<to&&span.end>from);
-    if(!matching.length||badged.has(from)||["clock","clockRange","date","dateRange","duration","ordinal","phone/id"].includes(token.kind))continue;
+    // Calendar/time-shaped tokens stay undecorated only when the checker has
+    // NOT explicitly rejected them. Grounding always overrides cosmetics.
+    const unchecked=matching.some(span=>(span.source??"unchecked")==="unchecked");
+    const cosmeticOnly=["clock","clockRange","date","dateRange","duration","ordinal","phone/id"].includes(token.kind);
+    if(!matching.length||badged.has(from)||(cosmeticOnly&&!unchecked))continue;
     if(from>cursor)out.push(text.slice(cursor-absoluteStart,from-absoluteStart).replace(/\\\|/g,"|"));
     if(from<cursor)continue;
     const span=matching.find(v=>v.source==="unchecked")??matching[0];
