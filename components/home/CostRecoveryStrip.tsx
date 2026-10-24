@@ -9,16 +9,18 @@ function shortDate(iso: string, locale: string) {
 
 /** One recovery status, not a second dashboard covering every cost category. */
 export default function CostRecoveryStrip({
-  buckets, labels, coveredLabel, locale = "en", emptyLabel,
+  buckets, labels, coveredLabel, locale = "en", emptyLabel, dataComplete = true, incompleteLabel,
 }: {
   buckets: BucketResult[];
   labels: Record<string, string>;
   coveredLabel: (label: string, date: string) => string;
   locale?: string;
   emptyLabel: string;
+  dataComplete?: boolean;
+  incompleteLabel?: string;
 }) {
   const current = buckets.find(bucket => bucket.pctCovered < 100) ?? buckets[buckets.length-1];
-  const caption = !current ? emptyLabel :
+  const caption = !dataComplete ? (incompleteLabel ?? emptyLabel) : !current ? emptyLabel :
     current.pctCovered >= 100 && current.coveredOn
       ? coveredLabel(labels[current.code] ?? current.code, shortDate(current.coveredOn, locale))
       : `${labels[current.code] ?? current.code} ${new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(Math.round(current.pctCovered))}%`;
