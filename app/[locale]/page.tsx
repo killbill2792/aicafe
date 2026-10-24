@@ -7,12 +7,7 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
 
-
-
-
-
 import type { Period } from "@/lib/viewmodels/period";
-
 
 import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
@@ -59,7 +54,7 @@ function operatingTaskHref(task: OperatingTask): string {
     if (task.entityId) query.set("employee", task.entityId);
     const shiftDate = task.payload.shiftDate ?? task.payload.businessDate;
     if (typeof shiftDate === "string") query.set("date", shiftDate);
-    return `/staff?tab=schedule${query.size ? `&${query}` : ""}`;
+    return `/more/manage-staff${query.size ? `?${query}` : ""}`;
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
@@ -149,7 +144,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
     return { id: task.id, agentId: task.agentId, agentName: agentNames[task.agentId], title, href: operatingTaskHref(task) };
   };
-
 
   const [alerts, unmatched] = await Promise.all([getOpenAlerts(), getCatalogMatchReview()]);
   const alertItems: HomeAttentionItem[] = alerts.map(alert => {
