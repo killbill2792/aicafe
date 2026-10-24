@@ -182,7 +182,14 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     <h2 className="text-lg font-bold">{t("ruleAlerts")} · {initialAlerts.filter(a=>!dismissed.includes(a.id)).length}</h2>
     {initialAlerts.filter(a=>!dismissed.includes(a.id)).map(a=><div key={a.id} className="flex items-start gap-3 border-t border-line py-3">
       <span aria-hidden="true">⚠</span><div className="min-w-0 flex-1"><p className="font-semibold">{t(({meal:"ruleMeal",rest_break:"ruleRestBreak",weekly_overtime:"ruleWeeklyOT",daily_overtime:"ruleDailyOT",short_rest:"ruleShortRest"} as Record<string,"ruleMeal"|"ruleRestBreak"|"ruleWeeklyOT"|"ruleDailyOT"|"ruleShortRest">)[a.rule_key]??"ruleMeal")}</p></div>
-      <button disabled={busy} className="min-h-12 rounded-lg border border-line px-3" onClick={()=>{setDismissed(ids=>[...ids,a.id]);run(()=>dismissStaffRuleAlert({id:a.id}));}}>{t("dismiss")}</button>
+      <div className="flex shrink-0 flex-col gap-2">
+       {validScheduleDate(a.workDate)&&isStaffRuleKey(a.rule_key)&&<Link className="flex min-h-12 items-center justify-center rounded-lg bg-accent px-3 font-bold text-on-accent"
+        href={staffScheduleHref({date:a.workDate,employee:a.employee_id})+"&fix="+encodeURIComponent(a.rule_key)+(a.workStart?"&clock="+encodeURIComponent(a.workStart):"")}>{t("fix")}</Link>}
+       <button disabled={busy} className="min-h-12 rounded-lg border border-line px-3"
+        onClick={()=>startTransition(async()=>{const result=await dismissStaffRuleAlert({id:a.id});
+         if(result.ok){setDismissed(ids=>[...ids,a.id]);router.refresh();}
+         else setError(t("dismissFailed"));})}>{t("notAnIssue")}</button>
+      </div>
     </div>)}
    </section>}
    <div className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-surface p-3">
@@ -338,7 +345,10 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        {personEditing?t("saveChanges"):t("addNamed",{name:name.trim()})}</button>
       {personEditing&&(!confirmRemoval?<button type="button" disabled={busy} onClick={()=>setConfirmRemoval(true)} className="mt-2 min-h-12 w-full text-neg">{t("removePerson")}</button>:<div className="mt-2 rounded-xl border border-neg p-3"><p>{t("confirmRemovePerson",{name})}</p><div className="mt-2 flex gap-2"><button type="button" disabled={busy} onClick={removePerson} className="min-h-12 flex-1 rounded-xl bg-neg px-3 text-white">{t("confirmRemove")}</button><button type="button" onClick={()=>setConfirmRemoval(false)} className="min-h-12 flex-1 rounded-xl border border-line px-3">{t("cancel")}</button></div></div>)}
     </>:<>
-      <div className="mt-3"><h3 className="font-bold">{t("who")}</h3><div className="mt-2 flex flex-wrap gap-2">{data.team.map(p=>{
+      {ruleReview&&<p role="status" className="mt-3 rounded-xl bg-warn-soft p-3 text-warn-text">{t("recordedWarning")}
+       {!suggested&&<span className="block">{t("manualRuleReview")}</span>}
+       {!deepShift&&<span className="block">{t("noMatchingShift")}</span>}</p>}
+       <div className="mt-3"><h3 className="font-bold">{t("who")}</h3><div className="mt-2 flex flex-wrap gap-2">{data.team.map(p=>{
        const status=availabilityStatus(p,date,start,end,[...data.shifts.filter(s=>s.id!==editing),...data.adjacentShifts],data.availability);
        return <button key={p.id} type="button" aria-pressed={chosen===p.id} onClick={()=>setChosen(p.id)}
         className={`flex min-h-12 items-center gap-2 rounded-full border px-2 py-1 font-bold ${chosen===p.id?"border-accent-text bg-accent-soft text-accent-text":"border-line bg-surface"}`}>
