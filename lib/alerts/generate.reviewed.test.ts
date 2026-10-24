@@ -51,6 +51,17 @@ describe("generated alert lifecycle and owner intent", () => {
     expect(blocksGeneratedAlert("resolved", { dispositionSource: "system" })).toBe(false);
   });
 
+  it("fails closed on a dedupe read error without crashing the page or creating duplicates", async () => {
+    const q = {
+      select: () => q,
+      eq: () => q,
+      then: (fn: (value: { data: null; error: Error }) => unknown) =>
+        Promise.resolve({ data: null, error: new Error("transient read failure") }).then(fn),
+    };
+    const db = { from: () => q } as unknown as SupabaseClient;
+    expect(await hasOpenAlert(db, "cafe", "missing_bill", "2026-10-rent", true)).toBe(true);
+  });
+
   it("CSV import deduplication remains open-only even for owner-resolved and dismissed rows", async () => {
     const { db, q } = fakeClient();
     expect(await hasOpenAlert(db, "cafe", "unmatched_sales_items", "rent")).toBe(false);
