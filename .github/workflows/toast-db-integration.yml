@@ -6,6 +6,7 @@ on:
       - 'supabase/migrations/20261012000051_toast_stabilization.sql'
       - 'scripts/toast-db-integration.sql'
       - 'scripts/toast-pr2-sql-integration.sql'
+      - 'scripts/toast-pr3-sql-integration.sql'
       - '.github/workflows/toast-db-integration.yml'
   workflow_dispatch:
 concurrency:
@@ -42,6 +43,10 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f scripts/toast-pr2-sql-integration.sql
+      - name: Exercise Toast PR3 owner flags and failed-run recovery
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \\
+            -v ON_ERROR_STOP=1 -f scripts/toast-pr3-sql-integration.sql
       - name: Stop disposable Supabase
         if: always()
         run: supabase stop --no-backup
