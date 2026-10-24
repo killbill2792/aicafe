@@ -7,7 +7,6 @@ import {buildStaffViewModel} from "@/lib/viewmodels/staffViewModel";
 import {getPayrollCostSettings} from "@/lib/data/getPayrollCostSettings";
 import {formatInTimeZone} from "date-fns-tz";
 import Money from "@/components/shared/Money";
-import PayrollCostCard from "@/components/staff/PayrollCostCard";
 import StaffCostBars,{shortWeekday} from "@/components/staff/StaffCostBars";
 
 /** Retain the legacy, actual-timecard analytics below the scheduling workspace.
@@ -29,15 +28,11 @@ export default async function TeamLegacyMetrics(){
     <span>{s.name} · {clock(s.clockInIso)}</span><strong><Money cents={s.todayCostCents}/></strong>
    </p>)}
   </section>
-  <PayrollCostCard settings={payroll} labels={{
-   title:t("payrollCostsTitle"),body:t("payrollCostsBody"),field:t("payrollCostsField"),
-   hint:t("payrollCostsHint"),source:t("payrollSource"),
-   ownerSource:t("payrollSourceOwner"),estimateSource:t("payrollSourceEstimate"),
-   quickbooksSource:t("payrollSourceQuickBooks"),importedSource:t("payrollSourceImported"),
-   connectedSource:t("payrollSourceConnected"),actualUsing:t("payrollActualUsing"),
-   fallbackNote:t("payrollFallbackNote"),save:t("payrollSave"),
-   saving:t("payrollSaving"),saved:t("payrollSaved"),invalid:t("payrollInvalid")
-  }}/>
+  <section className="rounded-card-lg bg-card p-4">
+   <h2 className="text-lg font-bold">{t("payrollCostsTitle")}</h2>
+   <p className="mt-2 text-ink-muted">{t("payrollCostsSummary",{percent:new Intl.NumberFormat(locale,{maximumFractionDigits:2}).format(payroll.employerCostRate*100)})}</p>
+   <Link href="/staff/rules" className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text underline">{t("payrollCostsEdit")}</Link>
+  </section>
   <section className="rounded-card-lg bg-card p-4">
    <h2 className="text-lg font-bold">{t("costPerSalesDollar")}</h2>
    <p className="text-sm text-ink-muted">{t("healthyLine",{cents:vm.healthyCostPerSalesDollarCents})}</p>
