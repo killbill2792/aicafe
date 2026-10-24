@@ -790,7 +790,9 @@
     "sourceImported": "بيانات دوام مستوردة",
     "sourceAiCafe": "تسجيل دوام AI Cafe",
     "offToday": "لا توجد ساعات مسجلة اليوم",
-    "now": "الآن"
+    "now": "الآن",
+    "payrollCostsSummary": "تكاليف صاحب العمل: {percent}٪ فوق الأجور (احتياطي)",
+    "payrollCostsEdit": "التعديل في القواعد والتكاليف"
   },
   "More": {
     "toastConnect": "ربط Toast",
@@ -880,7 +882,9 @@
     "errorGeneric": "حدث خطأ ما. حاول مرة أخرى.",
     "error_square_not_configured": "Square غير متصل في هذه البيئة بعد.",
     "error_invalid_state": "انتهت صلاحية رابط الاتصال هذا. حاول مرة أخرى.",
-    "error_connection_failed": "تعذّر الاتصال بـ Square. حاول مرة أخرى."
+    "error_connection_failed": "تعذّر الاتصال بـ Square. حاول مرة أخرى.",
+    "payrollTaxInvalid": "أدخل نسبة بين ٠٪ و١٠٠٪.",
+    "payrollTaxSaveFailed": "تعذر حفظ تكاليف صاحب العمل. حاول مجددًا."
   },
   "Uploads": {
     "title": "الملفات المرفوعة",
@@ -2816,7 +2820,7 @@
     "restEvery": "استراحة كل (دقيقة)",
     "weeklyOvertime": "الإضافي الأسبوعي",
     "weeklyAfter": "الأسبوعي بعد (دقيقة)",
-    "multiplier": "مضاعف الإضافي (نقاط أساس)",
+    "multiplier": "أجر الساعات الإضافية",
     "dailyOvertime": "الإضافي اليومي",
     "dailyAfter": "اليومي بعد (دقيقة)",
     "shifts": "المناوبات",
@@ -2892,7 +2896,24 @@
     "prepAfterClose": "وقت التنظيف بعد الإغلاق (دقائق)",
     "deliveryConsent": "وافق الموظف على تلقي الجداول عبر واتساب",
     "deliveryConsentError": "تعذر حفظ الموافقة على واتساب.",
-    "deliveryConsentAfterCreate": "الموافقة على واتساب غير مفعّلة افتراضيًا. بعد إضافة الموظف، افتح ملفه لتسجيل موافقته."
+    "deliveryConsentAfterCreate": "الموافقة على واتساب غير مفعّلة افتراضيًا. بعد إضافة الموظف، افتح ملفه لتسجيل موافقته.",
+    "rulesAndCosts": "القواعد والتكاليف",
+    "mealSentence": "استراحة الطعام (دقيقة) بعد",
+    "restSentence": "استراحة مدفوعة (دقيقة) كل",
+    "weeklySentence": "العمل الإضافي الأسبوعي بعد",
+    "dailySentence": "العمل الإضافي اليومي بعد",
+    "longestSentence": "أطول مناوبة",
+    "shortestSentence": "أقصر مناوبة",
+    "betweenSentence": "الراحة بين المناوبات",
+    "afterOrEvery": "بعد / كل",
+    "overtimePays": "أجر العمل الإضافي",
+    "customMultiplier": "مخصص",
+    "invalidMultiplier": "أدخل معاملًا بين ١ و٥ (حتى أربع منازل عشرية).",
+    "atLeast": "على الأقل",
+    "whileOpen": "شخص أثناء ساعات العمل",
+    "prepTiming": "التحضير والإنهاء",
+    "invalidNumber": "أدخل قيمة صحيحة ضمن الحدود المسموحة.",
+    "rulesSummary": "استراحة الطعام بعد {meal} ساعة · الإضافي بعد {overtime} ساعة"
   },
   "FreeAccess": {
     "pricing": "الباقات والأسعار",
