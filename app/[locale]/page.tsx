@@ -81,7 +81,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const { period: periodParam,thread:initialThread,experiment:initialExperiment } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
-  const [snapshot, menu] = await Promise.all([getSnapshot(), getMenuControlCenter()]);
+  // Match Money’s selected-period evidence; the default month snapshot cannot prove Today or Week ingredient coverage.
+  const [snapshot, menu] = await Promise.all([getSnapshot(period), getMenuControlCenter()]);
   const usagePeriod=usageWeekEnding(snapshot.todayDateStr);
   const usageOver=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to}).then(r=>r.rows.filter(x=>x.status==="over")).catch(()=>[]);
   const vm = buildHomeViewModel(snapshot, period);
