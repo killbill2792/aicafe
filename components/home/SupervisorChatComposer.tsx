@@ -926,7 +926,7 @@ export default function SupervisorChatComposer({
           aria-pressed={dictation === "listening"}
           disabled={!enabled || !canUseAi || sending || uploading || dictation === "recognizing"}
           className={dictation === "listening"
-            ? "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-600 text-white ring-2 ring-red-200 animate-pulse motion-reduce:animate-none"
+            ? "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neg text-paper ring-2 ring-neg-soft animate-pulse motion-reduce:animate-none"
             : "flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-good hover:bg-pos-soft disabled:opacity-40"}>
           {dictation === "listening" ? <Square size={20} fill="currentColor" aria-hidden="true" />
             : dictation === "recognizing" ? <LoaderCircle size={21} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
