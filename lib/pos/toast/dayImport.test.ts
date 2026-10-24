@@ -32,6 +32,7 @@ type ImportCall={p_orders:Array<{posOrderId:string;netSalesCents:number}>;p_summ
 }};
 function fakeDatabase(daysTotal=1){
  const stored=new Map<string,unknown[]>();
+ const pendingCosts=new Map<string,string>();
  const imports:ImportCall[]=[];
  const operations:string[]=[];
  const run={state:"queued",daysDone:0,daysTotal,cursor:{} as Record<string,unknown>};
@@ -50,6 +51,8 @@ function fakeDatabase(daysTotal=1){
      if(table==="toast_day_pages")return {data:stored.has(filters.business_date+":"+filters.page)?
       {payload:stored.get(filters.business_date+":"+filters.page)}:null,error:null};
      if(table==="daily_rollups")return {data:{sales_data_status:"missing"},error:null};
+     if(table==="toast_rollup_refresh_jobs")return {data:pendingCosts.has(String(filters.business_date))?
+      {generation:pendingCosts.get(String(filters.business_date))}:null,error:null};
      throw new Error("unexpected table "+table);
     }
    };
@@ -66,15 +69,19 @@ function fakeDatabase(daysTotal=1){
    }else if(name==="toast_mark_day_failed"){
     run.state="failed";
    }else if(name==="toast_import_day"){
+    pendingCosts.set(String(args.p_business_date),"00000000-0000-4000-8000-000000000001");
     imports.push(args as unknown as ImportCall);
     run.daysDone++;
     run.state=run.daysTotal>0&&run.daysDone>=run.daysTotal?"completed":"running";
     run.cursor={};
+   }else if(name==="toast_ack_rollup_refresh"){
+    pendingCosts.delete(String(args.p_business_date));
+    return {data:true,error:null};
    }
    return {data:{ok:true},error:null};
   }
  };
- return {db:db as unknown as SupabaseClient,stored,imports,operations,run};
+ return {db:db as unknown as SupabaseClient,stored,pendingCosts,imports,operations,run};
 }
 beforeEach(()=>{mocked.request.mockReset();mocked.recompute.mockReset();
  mocked.recompute.mockResolvedValue(undefined);});
@@ -163,5 +170,32 @@ describe("run error lifecycle",()=>{
    .rejects.toMatchObject({category:"timeout"});
   expect(mocked.request).not.toHaveBeenCalled();
   expect(f.operations).toContain("toast_checkpoint_day");
+ });
+});
+
+describe("post-import cost retry isolation (review P1)",()=>{
+ it("does not replay a committed day if its cost recompute fails",async()=>{
+  const f=fakeDatabase(2);mocked.request.mockResolvedValue([]);
+  mocked.recompute.mockRejectedValueOnce(new Error("cost connection dropped"));
+  const first=await importToastBusinessDay(f.db,params("2026-10-16"));
+  expect(first.costsPending).toBe(true);
+  expect(f.pendingCosts.has("2026-10-16")).toBe(true);
+  expect(f.run).toMatchObject({state:"running",daysDone:1,cursor:{}});
+  expect(f.operations).not.toContain("toast_checkpoint_day");
+  expect(f.operations).not.toContain("toast_mark_day_failed");
+  const second=await importToastBusinessDay(f.db,params("2026-10-17"));
+  expect(second.costsPending).toBe(false);
+  expect(f.run).toMatchObject({state:"completed",daysDone:2});
+  expect(f.imports).toHaveLength(2);
+  expect(f.pendingCosts.has("2026-10-16")).toBe(true);
+  expect(f.pendingCosts.has("2026-10-17")).toBe(false);
+ });
+ it("does not re-import after post-commit rollup read fails",async()=>{
+  const f=fakeDatabase();mocked.request.mockResolvedValue([]);
+  // The cost read is separate from the committed day SQL.
+  const post=await importToastBusinessDay(f.db,params("2026-10-16"));
+  expect(post.costsPending).toBe(false);
+  expect(f.imports).toHaveLength(1);
+  expect(f.operations).toContain("toast_ack_rollup_refresh");
  });
 });
