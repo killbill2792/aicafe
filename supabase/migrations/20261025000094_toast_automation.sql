@@ -317,6 +317,14 @@ begin
    then null else public.toast_sync_runs.finished_at end,
   invalid_days=case when v_prior is not null and p_from<v_prior
    then 0 else public.toast_sync_runs.invalid_days end,
+  orders_seen=case when v_prior is not null and p_from<v_prior
+   then 0 else public.toast_sync_runs.orders_seen end,
+  orders_unparsed=case when v_prior is not null and p_from<v_prior
+   then 0 else public.toast_sync_runs.orders_unparsed end,
+  api_calls=case when v_prior is not null and p_from<v_prior
+   then 0 else public.toast_sync_runs.api_calls end,
+  rate_limited_count=case when v_prior is not null and p_from<v_prior
+   then 0 else public.toast_sync_runs.rate_limited_count end,
   last_error_category=case when v_prior is not null and p_from<v_prior
    then null else public.toast_sync_runs.last_error_category end
  returning id into v_id;
