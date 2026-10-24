@@ -4,6 +4,7 @@ import {formatInTimeZone} from "date-fns-tz";
 import {z} from "zod";
 import type {PosOrder} from "../types";
 import {GUID,ToastApiError} from "./client";
+import {toastMoneyCents} from "./adapter";
 
 // A single malformed order must not discard its 99 valid page-mates. Passthrough
 // accepts newly added Toast fields while validating the money we actually use.
@@ -65,12 +66,7 @@ export type ToastDayPage={orders:ToastParsedOrder[];unparsed:ToastUnparsed[];
  warnings:Record<string,number>};
 
 function warn(w:Record<string,number>,key:string){w[key]=(w[key]??0)+1;}
-export function toastCents(value:number):number {
- if(!Number.isFinite(value))throw new ToastApiError("invalid_response");
- const cents=Math.sign(value)*Math.round(Math.abs(value)*100+1e-9);
- if(!Number.isSafeInteger(cents))throw new ToastApiError("invalid_response");
- return cents;
-}
+export const toastCents=toastMoneyCents;
 function cents(value:number|null|undefined,w:Record<string,number>):number{
  if(value==null)return 0;
  const c=toastCents(value);
