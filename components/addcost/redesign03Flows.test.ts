@@ -22,6 +22,11 @@ describe("Redesign 03 screen contracts", () => {
     expect(bills).toContain('role="alert" className="text-[17px] text-warn">{error}</p>');
   });
 
+  it("makes the Bills Add cost link a full-size keyboard-accessible touch target", () => {
+    const bills = source("components/bills/BillsManager.tsx");
+    expect(bills).toMatch(/<Link href="\/add-cost" className="[^"]*min-h-12[^"]*text-\[17px\][^"]*focus-visible:outline-2[^"]*">\{labels\.variableCostHint\}<\/Link>/);
+  });
+
   it("does not expose unavailable AI entry methods", () => {
     const choices = source("app/[locale]/add-cost/page.tsx");
     expect(choices).toContain('const aiEnabled = isAiConfigured()');
