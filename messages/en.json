@@ -75,7 +75,7 @@
     "technicalDetails": "Technical details",
     "connectedLastSync": "Connected ✓ last sync {time}",
     "noSyncYet": "not yet synced",
-    "manualLocationHint": "Before connecting, add your authorized restaurant ID under Technical details. Automatic lookup needs a backend update.",
+    "manualLocationHint": "Toast includes your restaurant ID in the Standard API credentials confirmation email. Enter it under Technical details before connecting.",
     "notEnabledPlain": "Toast isn't turned on for your café yet",
     "askToEnable": "Ask to turn on Toast. Contact your café support team.",
     "matchNames": "Match Toast names",
@@ -89,7 +89,8 @@
     "kindSchedules": "Schedules",
     "kindCatalog": "Menu",
     "kindRoster": "Staff",
-    "statusUnavailable": "Can't load Toast status right now. Try checking the connection again."
+    "statusUnavailable": "Can't load Toast status right now. Try checking the connection again.",
+    "chooseApiUrl": "Choose your Toast API access URL under Technical details before connecting."
   },
   "LocaleLayout": {
     "title": "Café Profit"

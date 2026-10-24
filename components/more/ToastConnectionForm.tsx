@@ -20,7 +20,7 @@ type Labels={
  errorAuthentication:string;errorMissingPermissions:string;errorUnauthorizedLocation:string;
  errorTimeout:string;errorRateLimited:string;errorUnavailable:string;errorInvalidResponse:string;
  needsAttention:string;fix:string;technicalDetails:string;connectedLastSync:string;
- noSyncYet:string;manualLocationHint:string;
+ noSyncYet:string;manualLocationHint:string;chooseApiUrl:string;
 };
 export default function ToastConnectionForm({businessId,locations,enabled,approvedOrigins,defaultApiOrigin,labels}:{
  businessId:string;locations:Location[];enabled:boolean;
@@ -60,7 +60,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
   rate_limited:labels.errorRateLimited,unavailable:labels.errorUnavailable,
   invalid_response:labels.errorInvalidResponse
  };
- const status=toastStatus(connection?.state,Boolean(connection?.syncLocations?.some(row=>row.last_failure_category)));
+ const status=toastStatus(connection?.state,Boolean(connection?.lastErrorCategory||connection?.syncLocations?.some(row=>row.last_failure_category)));
  const lastSync=latestToastSync(connection?.syncLocations);
  function time(value:string){
   return new Date(value).toLocaleString(locale);
@@ -140,7 +140,9 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
      {labels.test}
     </button>
    </div>
-   {!Object.values(mapping).some(Boolean)&&<p className="text-sm text-ink-muted">{labels.manualLocationHint}</p>}
+   {!locations.length?<p className="text-sm text-warn">{labels.noLocations}</p>:
+    !Object.values(mapping).some(Boolean)&&<p className="text-sm text-ink-muted">{labels.manualLocationHint}</p>}
+   {!approvedOrigins.includes(apiUrl)&&<p className="text-sm text-ink-muted">{labels.chooseApiUrl}</p>}
    <details className="rounded-xl border border-line p-3">
     <summary className="cursor-pointer text-base font-semibold text-ink">{labels.technicalDetails}</summary>
     <div className="mt-4 flex flex-col gap-4">

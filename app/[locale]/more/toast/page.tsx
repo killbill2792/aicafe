@@ -67,7 +67,7 @@ export default async function ToastConnectionPage() {
           errorInvalidResponse:t("errorInvalidResponse"),
           needsAttention:t("needsAttention"),fix:t("fix"),technicalDetails:t("technicalDetails"),
           connectedLastSync:t.raw("connectedLastSync"),noSyncYet:t("noSyncYet"),
-          manualLocationHint:t("manualLocationHint"),
+          manualLocationHint:t("manualLocationHint"),chooseApiUrl:t("chooseApiUrl"),
         }}/>
       <ToastSetupActions businessId={businessId}
         restaurantGuids={[]}

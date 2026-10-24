@@ -43,7 +43,8 @@ const connectionLabels={
  errorUnavailable:"Unavailable",errorInvalidResponse:"Invalid response",
  needsAttention:"Needs attention",fix:"Fix",technicalDetails:"Technical details",
  connectedLastSync:"Connected ✓ last sync {time}",noSyncYet:"not yet synced",
- manualLocationHint:"Add your authorized restaurant GUID under Technical details"
+ manualLocationHint:"Add your authorized restaurant GUID under Technical details",
+ chooseApiUrl:"Choose API URL under Technical details"
 };
 
 function choice(locale:string,squareConfigured=true){
