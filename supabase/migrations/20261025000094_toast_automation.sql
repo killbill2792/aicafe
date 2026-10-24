@@ -587,3 +587,33 @@ begin
 end $era$;
 revoke all on function public.toast_claim_era_request(uuid,text) from public,anon,authenticated;
 grant execute on function public.toast_claim_era_request(uuid,text) to service_role;
+
+-- Health is only read by the service role. The stale threshold is 36 hours,
+-- and a mismatch between Toast closeout zone and café reporting zone is visible.
+create or replace view public.toast_sync_health_v with (security_invoker=true) as
+select m.business_id,m.restaurant_guid,
+ (select max(r.finished_at) from public.toast_sync_runs r
+  where r.business_id=m.business_id and r.restaurant_guid=m.restaurant_guid
+   and r.state='completed' and r.orders_unparsed=0) as last_good_sync_at,
+ (select min(s.business_date) from public.toast_day_status s
+  where s.business_id=m.business_id and s.restaurant_guid=m.restaurant_guid
+  and s.import_state='missing') as oldest_missing_day,
+ (select count(*) from public.toast_day_status s
+  where s.business_id=m.business_id and s.restaurant_guid=m.restaurant_guid
+   and (s.import_state='failed' or s.recon_state in ('mismatch','owner_flagged'))) as days_needing_look,
+ (select r.state from public.toast_sync_runs r
+  where r.business_id=m.business_id and r.restaurant_guid=m.restaurant_guid
+  order by r.started_at desc nulls last limit 1) as current_run_state,
+ not exists(
+  select 1 from public.toast_sync_runs r
+   where r.business_id=m.business_id and r.restaurant_guid=m.restaurant_guid
+   and r.state='completed' and r.orders_unparsed=0
+   and r.finished_at>=now()-interval '36 hours') as stale,
+ case when m.toast_time_zone is not null
+    and m.toast_time_zone is distinct from b.timezone
+  then jsonb_build_object('time_zone_mismatch',true,
+   'toast_time_zone',m.toast_time_zone,'reporting_time_zone',b.timezone)
+  else '{}'::jsonb end as warnings
+from public.toast_location_mappings m join public.businesses b on b.id=m.business_id;
+revoke all on public.toast_sync_health_v from public,anon,authenticated;
+grant select on public.toast_sync_health_v to service_role;
