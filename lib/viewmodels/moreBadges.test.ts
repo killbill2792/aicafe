@@ -35,6 +35,8 @@ describe("More attention badges", () => {
     expect(buildMoreBadges({bills:[rent,water]}).monthlyBillsCents).toBe(105200);
     expect(buildMoreBadges({bills:[rent]}).rentMissing).toBe(false);
     expect(buildMoreBadges({}).monthlyBillsCents).toBeNull();
+    expect(buildMoreBadges({}).rentMissing).toBe(false); // query unavailable, not missing rent
+    expect(buildMoreBadges({bills:[{...rent,amountCents:0}]}).monthlyBillsCents).toBe(0);
   });
   it("shows alert count including zero, not unknown as zero", () => {
     expect(buildMoreBadges({alertCount:0}).alerts).toBe(0);

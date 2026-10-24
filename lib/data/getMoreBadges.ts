@@ -1,13 +1,17 @@
 import "server-only";
+import { subDays } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import { normalizeOpenHours } from "@/lib/business/openHours";
+import { selectedFeeCoverageForSalesDays } from "@/components/more/processingFeeDefaults";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
-import { getProcessingFeeEstimateSetup } from "@/lib/data/getProcessingFeeEstimateSetup";
-import { getRecurringCosts } from "@/lib/data/getRecurringCosts";
 import { getUploadHistory } from "@/lib/data/getUploadHistory";
+import type { RecurringCostRow } from "@/lib/data/getRecurringCosts";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { MoreBadgeInputs } from "@/lib/viewmodels/moreBadges";
+
+type CafeDb = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 
 async function readToastState(businessId: string): Promise<MoreBadgeInputs["toast"]> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return undefined;
@@ -29,17 +33,40 @@ async function readToastState(businessId: string): Promise<MoreBadgeInputs["toas
   };
 }
 
-/** Read-only, scoped to the user's real café. Unavailable sources have no badge. */
+async function readMissingFeeDays(db: CafeDb, businessId: string, timezone: string): Promise<number | undefined> {
+  // Match ProcessingFees' rolling 90-day, positive-sales-day coverage calculation,
+  // without loading unrelated order/credential data or selecting a different café.
+  let today: string;
+  let fromDate: string;
+  try {
+    today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
+    fromDate = formatInTimeZone(subDays(new Date(`${today}T12:00:00Z`), 89), "UTC", "yyyy-MM-dd");
+  } catch {
+    return undefined;
+  }
+  const [sales, facts] = await Promise.all([
+    db.from("daily_rollups").select("business_date,net_sales_cents")
+      .eq("business_id", businessId).gte("business_date", fromDate).lte("business_date", today),
+    db.from("processing_fee_daily_facts").select("business_date,status")
+      .eq("business_id", businessId).gte("business_date", fromDate).lte("business_date", today),
+  ]);
+  if (sales.error || facts.error) return undefined;
+  return selectedFeeCoverageForSalesDays(sales.data ?? [], facts.data ?? [])
+    .filter((day) => day.status === "missing").length;
+}
+
+/** Read-only, scoped to the user's selected real café. Unavailable sources have no badge. */
 export async function getMoreBadgeInputs(userId: string | undefined): Promise<MoreBadgeInputs> {
   if (!userId || !isSupabaseConfigured()) return {};
   const db = await createServerSupabaseClient();
   const businessId = await getActiveBusinessId(userId);
   const { data: membership, error: membershipError } = await db.from("memberships")
-    .select("role, businesses(is_demo,currency)").eq("business_id", businessId)
+    .select("role, businesses(is_demo,currency,timezone)").eq("business_id", businessId)
     .eq("user_id", userId).maybeSingle();
   if (membershipError || !membership) return {};
   const raw = membership.businesses as unknown as
-    {is_demo: boolean;currency: string} | {is_demo: boolean;currency: string}[] | null;
+    {is_demo: boolean; currency: string; timezone: string} |
+    {is_demo: boolean; currency: string; timezone: string}[] | null;
   const business = Array.isArray(raw) ? raw[0] : raw;
   if (!business || business.is_demo) return {};
 
@@ -47,8 +74,10 @@ export async function getMoreBadgeInputs(userId: string | undefined): Promise<Mo
     db.from("locations").select("open_hours").eq("business_id", businessId)
       .order("name").limit(1).maybeSingle(),
     getUploadHistory(),
-    getProcessingFeeEstimateSetup(),
-    getRecurringCosts(),
+    readMissingFeeDays(db, businessId, business.timezone),
+    db.from("recurring_costs")
+      .select("id,category_code,label,amount_cents,frequency,due_day,is_estimate")
+      .eq("business_id", businessId).is("active_to", null),
     db.from("alerts").select("id", { head: true, count: "exact" })
       .eq("business_id", businessId).in("status", ["new", "seen"]),
     membership.role === "owner" ? readToastState(businessId) : Promise.resolve(undefined),
@@ -58,8 +87,17 @@ export async function getMoreBadgeInputs(userId: string | undefined): Promise<Mo
   if (hours.status === "fulfilled" && !hours.value.error)
     result.openHours = normalizeOpenHours(hours.value.data?.open_hours);
   if (uploads.status === "fulfilled") result.uploads = uploads.value;
-  if (fees.status === "fulfilled") result.missingFeeDays = fees.value.coverage.missingDays;
-  if (bills.status === "fulfilled") result.bills = bills.value;
+  if (fees.status === "fulfilled") result.missingFeeDays = fees.value;
+  // The regular Bills loader currently hides query errors by returning [].
+  // A separate error-aware read prevents a failed DB query from claiming "Rent missing".
+  if (bills.status === "fulfilled" && !bills.value.error) {
+    result.bills = (bills.value.data ?? []).map((row): RecurringCostRow => ({
+      id: row.id, categoryCode: row.category_code as RecurringCostRow["categoryCode"],
+      label: row.label, amountCents: row.amount_cents,
+      frequency: row.frequency as RecurringCostRow["frequency"],
+      dueDay: row.due_day, isEstimate: row.is_estimate,
+    }));
+  }
   if (alerts.status === "fulfilled" && !alerts.value.error)
     result.alertCount = alerts.value.count;
   if (toast.status === "fulfilled") result.toast = toast.value;
