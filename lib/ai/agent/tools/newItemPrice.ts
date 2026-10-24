@@ -1,7 +1,7 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {calculateNewItemPrice} from "@/lib/calc/newItemPrice";
-import {requestedPeriod,prorate,calendarMonth,periodDays} from "@/lib/calc/periods";
+import {requestedPeriod,prorate,periodDays} from "@/lib/calc/periods";
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
 const schema=z.strictObject({
  ingredient_cost_cents:z.number().int().positive(),category:z.enum(["drink","food"]),

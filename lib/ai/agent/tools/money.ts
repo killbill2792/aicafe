@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
-import {prorate,requestedPeriod as normalizedPeriod,calendarMonth} from "@/lib/calc/periods";
+import {prorate} from "@/lib/calc/periods";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 
 const period=z.strictObject({period:z.enum(["today","week","month"])});

@@ -1,5 +1,4 @@
 import { baselinePriceCents } from "./pricingBaseline";
-import { applyRounding } from "./pricingRounding";
 import { COFFEE_SHOP_PROFILE } from "@/lib/pricing/profiles";
 import {calcResult} from "./result";
 
