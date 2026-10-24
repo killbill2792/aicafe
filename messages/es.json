@@ -1444,6 +1444,13 @@
   },
   "SupervisorChat": {
     "unverified": "Sin verificar",
+    "provenanceOwner": "Tú me lo dijiste",
+    "provenanceEstimate": "Estimación",
+    "provenanceUnchecked": "No comprobado con tus registros",
+    "provenanceBreakEven": "Ventas de equilibrio con tu porcentaje de ingredientes y envases",
+    "provenanceSalesGap": "Diferencia respecto a tus ventas diarias declaradas",
+    "provenanceLegend": "Fuentes de los números",
+    "provenanceOverhead": "Los costes fijos diarios incluyen gastos operativos o impuestos sobre nóminas estimados",
     "ownerInputDismiss": "Ahora no",
     "ownerInputConfirm": "Continuar",
     "ownerInputOther": "Responder de otra forma",

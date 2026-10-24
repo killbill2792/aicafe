@@ -1,9 +1,17 @@
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
+import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 
 const period=z.strictObject({period:z.enum(["today","week","month"])});
 const empty=z.strictObject({});
+// Nullable for the Responses strict-tool schema. Omitted fields keep existing callers working.
+const breakEvenInput=z.strictObject({
+  ownerIngredientPackagingPercent:z.number().min(0).max(99.99).nullable().optional(),
+  ownerProcessingFeePercent:z.number().min(0).max(99.99).nullable().optional(),
+  ownerNetSalesCents:z.number().int().nonnegative().nullable().optional(),
+  ownerSalesDays:z.number().int().positive().nullable().optional(),
+});
 const unavailable=(source:string,period:{from:string;to:string}|null,missing:string[]):AgentToolResult=>
   ({source,period,agentId:"leo",missing:missing.length?missing:["sourceUnavailable"]});
 export const moneyTools={
@@ -32,13 +40,106 @@ export const moneyTools={
     },
   },
   get_break_even:{
-    agentId:"leo",schema:empty,description:"Deterministic drinks-to-break-even estimate and prerequisite quality.",
+    agentId:"leo",schema:breakEvenInput,description:"Read recorded daily fixed costs and calculate break-even sales using the owner's ingredient+packaging percentage and their net sales/days when they supply them. Do not demand imported sales when the owner supplies net sales. Pass null for unknown owner inputs; never invent them. If processing-fee rate is unknown, still calculate but explicitly say this estimate excludes processing fees.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      empty.parse(raw);
-      if(!ctx.tools.getBreakEven)return unavailable("break_even",null,["breakEvenReaderUnavailable"]);
-      const s=await ctx.tools.getBreakEven();
-      return {source:"break_even",period:null,agentId:"leo",missing:s.quality.missingInputs,
-        estimate:s.available?s.value:null};
+      const owner=breakEvenInput.parse(raw);
+      const ownerPercent=owner.ownerIngredientPackagingPercent;
+      const ownerBps=percentToBasisPoints(ownerPercent);
+      const s=ctx.tools.getBreakEven?await ctx.tools.getBreakEven():null;
+      let dailyFixedCostsCents=s?.available?s.value.dailyCostsToCoverCents:null;
+      let costSource:"break_even"|"business_costs"="break_even";
+      let fixedCostMissing:string[]=[];
+      let fixedCostEstimates:string[]=[];
+      // A successful break-even reader can still lack fixed cost coverage.
+      // Owner-supplied sales replace POS sales, not unrecorded labor or bills.
+      if(ownerBps!==null&&s?.available){
+        const fixedMissing=s.quality.missingInputs.filter(key=>
+          /(?:staff|labor|expense|bill|operating|runningCost|fixedCost)/iu.test(key));
+        fixedCostEstimates=s.quality.estimatedInputs.filter(key=>
+          /(?:staff|labor|expense|bill|operating|runningCost|fixedCost)/iu.test(key));
+        if(fixedMissing.length){
+          fixedCostMissing=fixedMissing;
+          dailyFixedCostsCents=null;
+        }
+      }
+      // Sales coverage is irrelevant when sales and the variable-cost rate
+      // come from the owner. Fixed labor and operating-expense coverage are not.
+      if(ownerBps!==null&&ctx.tools.getBusinessCostSummary){
+        const costs=await ctx.tools.getBusinessCostSummary(requestedPeriod("month",ctx.asOf));
+        const coverage=costs.coverage;
+        // A non-missing fixed input can still be an assumption (estimated bill
+        // or staff tax). Do not present that daily overhead as fully recorded.
+        fixedCostEstimates=costs.estimatedInputs.filter(key=>
+          /^(?:expense:|staffTax:|priorMonthRunningCostEstimate)/u.test(key));
+        const operatingMissing=coverage.missingOperatingCategories.map(c=>"operatingExpense:"+c.code);
+        fixedCostMissing=[
+          ...(!costs.observed.loadedStaff?["staffCostsUnobserved"]:[]),
+          ...(coverage.expectedDays<=0||coverage.laborDays<coverage.expectedDays?["laborDaysIncomplete"]:[]),
+          ...(!costs.observed.runningCosts?["operatingCostsUnobserved"]:[]),
+          ...operatingMissing,
+          ...costs.missingInputs.filter(key=>!/(?:sales|ingredient|productCost|cardFee|processingFee|itemSales)/i.test(key)),
+        ];
+        fixedCostMissing=[...new Set(fixedCostMissing)];
+        // An incomplete fixed-cost subtotal must not be divided by all days.
+        dailyFixedCostsCents=null;
+        if(costs.completeness!=="unavailable"&&fixedCostMissing.length===0&&coverage.expectedDays>0){
+          dailyFixedCostsCents=recordedDailyFixedCosts({
+            runningCostsCents:costs.components.runningCostsCents,
+            loadedStaffCents:costs.components.loadedStaffCents,
+            expectedDays:coverage.expectedDays,
+          });
+          if(dailyFixedCostsCents!==null)costSource="business_costs";
+          else fixedCostMissing.push("recordedFixedCostsInvalid");
+        }
+        if(dailyFixedCostsCents===null&&fixedCostMissing.length===0)
+          fixedCostMissing.push("recordedFixedCostsUnavailable");
+      }
+      const comparison=dailyFixedCostsCents!==null&&ownerBps!==null
+        ? ownerReportedDailyBreakEven({
+            dailyFixedCostsCents,
+            ingredientPackagingBps:ownerBps,
+            processingFeeBps:percentToBasisPoints(owner.ownerProcessingFeePercent),
+            netSalesCents:owner.ownerNetSalesCents,
+            salesDays:owner.ownerSalesDays,
+          }):null;
+      const ownerFiguresProvided=owner.ownerNetSalesCents!=null||
+        owner.ownerSalesDays!=null||owner.ownerProcessingFeePercent!=null;
+      const modelMissing=[
+        ...(ownerFiguresProvided&&ownerBps===null?["ownerIngredientPackagingRateMissing"]:[]),
+        ...(owner.ownerNetSalesCents!=null&&owner.ownerSalesDays==null?["ownerSalesDaysMissing"]:[]),
+        ...(ownerBps!==null&&dailyFixedCostsCents!==null&&!comparison?["invalidContributionMargin"]:[]),
+      ];
+      const missing=[...new Set([
+        ...(comparison?(comparison.processingFeesIncluded?[]:["processingFeeRateUnknown:estimateExcludesProcessingFees"]):
+          fixedCostMissing.length?fixedCostMissing:s?.quality.missingInputs??["recordedFixedCostsUnavailable"]),
+        ...modelMissing,
+      ])];
+      return {source:"break_even",period:null,agentId:"leo",
+        missing,
+        ...(fixedCostEstimates.length?{estimated:fixedCostEstimates}:{}),
+        estimate:s?.available?s.value:null,
+        // Null-valued metric keys intentionally invalidate old numeric evidence
+        // when an explicit recalculation is impossible or changes assumptions.
+        ...(ownerBps!==null||ownerFiguresProvided?{
+          ownerComparison:comparison??{
+            dailyFixedCostsCents:null,
+            dailyBreakEvenSalesCents:null,dailyShortfallCents:null,
+          },
+        }:{}),
+        ...(comparison ? {
+          ownerIngredientPackagingBps:ownerBps,
+          ownerNetSalesCents:owner.ownerNetSalesCents??null,ownerSalesDays:owner.ownerSalesDays??null,
+          ownerCostSource:costSource,
+          // Mark modeled results as estimates, not raw recorded facts.
+          numberEstimates:[
+            {value:comparison.dailyBreakEvenSalesCents,unit:"cents",detail:"breakEvenSales"},
+            ...(comparison.dailyShortfallCents===null?[]:[{value:comparison.dailyShortfallCents,
+              unit:"cents",detail:"salesGap"}]),
+            ...(fixedCostEstimates.length?[{value:comparison.dailyFixedCostsCents,
+              unit:"cents",detail:"dailyOverhead"}]:[]),
+          ],
+        }:{}),
+      };
     },
   },
   get_cost_summary:{

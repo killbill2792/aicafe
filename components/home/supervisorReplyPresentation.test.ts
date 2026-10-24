@@ -2,7 +2,7 @@ import {describe,expect,it} from "vitest";
 import React from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import type {SupervisorReplyBlock,EvidenceReference} from "@/lib/ai/conversations/contracts";
-import {groupReplyBlocks,sourceLabel,uniqueSources} from "./supervisorReplyPresentation";
+import {groupReplyBlocks,originalReplyBlockIndex,sourceLabel,uniqueSources} from "./supervisorReplyPresentation";
 import FactSummary from "./FactSummary";
 const source=(kind:EvidenceReference["source"]):EvidenceReference=>({
   source:kind,identifier:"test",asOf:"2026-10-12",
@@ -52,5 +52,20 @@ describe("Supervisor fact presentation",()=>{
     expect(sourceLabel("staff_timecards","en")).toBe("Staff records");
     expect(sourceLabel("staff_timecards","es")).toBe("Registros del personal");
     expect(sourceLabel("staff_timecards","ar")).toBe("سجلات الموظفين");
+  });
+});
+
+describe("persisted provenance block index mapping",()=>{
+  it("matches original text block after grouped fact cards",()=>{
+    const before={type:"text",text:"Earlier message"};
+    const after={type:"text",text:"Payroll is recorded for 90 days."};
+    const blocks=[before,...facts,after];
+    const groups=groupReplyBlocks(blocks);
+    expect(groups).toHaveLength(3);
+    expect(groups[1].kind).toBe("facts");
+    expect(groups[2].kind).toBe("single");
+    if(groups[2].kind!=="single")throw Error("expected text");
+    expect(originalReplyBlockIndex(blocks,groups[2].block)).toBe(5);
+    expect(originalReplyBlockIndex(blocks,{})).toBe(-1);
   });
 });

@@ -2,7 +2,7 @@ import { ZodError } from "zod";
 import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import { agentToolDefinitions, agentLabelsPrompt, agentForTool, executeAgentTool, type AgentToolContext, type AgentToolResult } from "./tools";
 import { statusFromResults } from "./status";
-import { checkNumbers,compactEvidence,type NumericEvidence } from "./checkNumbers";
+import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
 
@@ -13,7 +13,7 @@ export type AgentProvider = (params: Record<string, unknown>, signal: AbortSigna
 export type AgentAuditStep = { kind: "model_call" | "tool_call" | "approval_card" | "memory"; toolName?: string;
   inputSummary?: string; outputSummary?: string; durationMs: number; error?: string };
 export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType<typeof statusFromResults>;
-  unverified: ReturnType<typeof checkNumbers>; results: AgentToolResult[]; evidence?: NumericEvidence[]; tools?:string[]; agentIds?:string[];
+  unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; evidence?: NumericEvidence[]; tools?:string[]; agentIds?:string[];
   usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number };
   /** Owner messages sent while this turn ran and read by the model before a later step. */
   absorbedOwnerMessageIds?: string[] };
@@ -309,11 +309,14 @@ export async function runAgentTurn(args: {
   } finally { controller.abort(); }
   usage.latencyMs = now() - started;
   const status = statusFromResults(results);
+  const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),
+    args.ownerText,...absorbed.map(m=>m.text)].join("\n");
   const toolResults=results.map(r=>r.result);
   const verificationResults=usageEvidenceRefresh(toolResults,args.previousEvidence);
+  const unverified=checkNumbers(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence);
   return { text, endReason, status,
-    unverified: checkNumbers(text, [ ...(args.history ?? []).filter(message => message.role === "user").map(message => message.content),
-      args.ownerText, ...absorbed.map(m => m.text) ].join("\n"), verificationResults, args.context.locale,args.previousEvidence),
+    unverified,
+    provenance:numberProvenance(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence,unverified),
     evidence:compactEvidence(verificationResults),
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
     results:toolResults, usage,

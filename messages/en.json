@@ -1444,6 +1444,13 @@
   },
   "SupervisorChat": {
     "unverified": "Unverified",
+    "provenanceOwner": "You told me",
+    "provenanceEstimate": "Estimate",
+    "provenanceUnchecked": "Not checked against your records",
+    "provenanceBreakEven": "Break-even sales using your ingredient and packaging percentage",
+    "provenanceSalesGap": "Gap versus your reported daily sales",
+    "provenanceLegend": "Number sources",
+    "provenanceOverhead": "Daily fixed costs include estimated operating expenses or payroll taxes",
     "ownerInputDismiss": "Not now",
     "ownerInputConfirm": "Continue",
     "ownerInputOther": "Answer another way",
