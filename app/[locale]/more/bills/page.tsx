@@ -32,6 +32,10 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
         labels={{
           amountLabel: t("amountLabel"),
           amountHint: t("amountHint"),
+          amountKindLabel: t("amountKindLabel"),
+          amountActual: t("amountActual"),
+          amountEstimate: t("amountEstimate"),
+          estimateBadge: t("estimateBadge"),
           dueDayOptional: t("dueDayOptional"),
           missing: t("missing"),
           confirmRemove: t("confirmRemove"),
