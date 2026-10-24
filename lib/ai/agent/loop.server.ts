@@ -1,4 +1,6 @@
 import { ZodError } from "zod";
+import {safeToolError,TOOL_REASONS} from "./toolErrors";
+import {createHash} from "node:crypto";
 import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import { agentToolDefinitions, agentLabelsPrompt, agentForTool, executeAgentTool, type AgentToolContext, type AgentToolResult } from "./tools";
 import { statusFromResults } from "./status";
@@ -24,8 +26,8 @@ export type OwnerFollowUp = { id: string; text: string };
 export function agentInstructions(style: boolean): string {
   return SYSTEM_PROMPT + "\n" + (style ? STYLE_RULES + "\n" : "") + agentLabelsPrompt;
 }
-export function agentPromptCacheKey(style: boolean): string { return style ? "cafe-agent-v2" : "cafe-agent-v1"; }
-export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. Ask one specific clarifying question naturally when needed. On incomplete evidence explain what is known and missing. A proposal is not a completed action; say 'I've drafted this for your approval.' No JSON envelope.";
+export function agentPromptCacheKey(style: boolean): string { return style ? "cafe-agent-v4" : "cafe-agent-v3"; }
+export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. Ask one specific clarifying question naturally when needed. Compute with what you have. Missing inputs narrow an answer; they do not block it. Label owner numbers You told me and estimates Estimate. Ask at most one useful question. Imported or estimated prices are about, not verified list prices; disclose priceCheck differs. Tool values are integer cents, never dollars. If a tool returns an error code, tell the owner its specific safe reason and next step; never say a tool is unavailable unless the code is not_supported. A proposal is not a completed action; say 'I've drafted this for your approval.' No JSON envelope.";
 
 export async function* openAIProvider(params: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<Event> {
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -64,6 +66,8 @@ export async function runAgentTurn(args: {
   /** CHAT_MEMORY: owner-approved café facts, already capped and formatted. Sent as
    * the first input item (stable per café, so it also caches) — never in instructions. */
   memoryFacts?: string | null;
+  /** Approved scope for privacy-safe error audit. */
+  businessId?:string;requestId?:string;
   /** Extra strict tool definitions enabled by a flag (e.g. the memory tool). */
   extraTools?: readonly unknown[];
   /** CHAT_JOBS: returns up to `max` owner follow-ups not yet read (each exactly once).
@@ -219,11 +223,15 @@ export async function runAgentTurn(args: {
           failures = 0;
         } catch (error) {
           failures++;
-          const detail = error instanceof ZodError ? {
-            error: "invalid_arguments", issues: error.issues.map(issue => ({ path: issue.path, code: issue.code }))
-          } : error instanceof SyntaxError ? { error: "invalid_json" }
-            : { error: now() >= workDeadline ? "deadline_exceeded" : "tool_unavailable" };
-          result = { source: tool.name, period: null, missing: [String(detail.error)], ...detail };
+          const mapped = error instanceof ZodError || error instanceof SyntaxError ?
+            {code:"validation" as const,reason:TOOL_REASONS.validation}:safeToolError(error,now() >= workDeadline);
+          const detail={error:mapped.code,reason:mapped.reason};
+          if(mapped.code!=="validation")console.error("agent_tool_failure",{
+            tool:tool.name,code:mapped.code,
+            cafeHash:createHash("sha256").update(args.businessId??"unknown").digest("hex").slice(0,12),
+            requestId:args.requestId??"none",
+          });
+          result = { source: tool.name, period: null, missing: [detail.error], ...detail };
           toolError = String(detail.error);
         } finally { clearTimeout(toolTimer); }
         let argumentKeys: string[] = [];

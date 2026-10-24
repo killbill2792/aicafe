@@ -1,6 +1,7 @@
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
+import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -125,13 +126,25 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
           productName:effect.productName,oldPriceCents:effect.oldPriceCents,
           newPriceCents:effect.newPriceCents};
       },
+      proposePriceExperiment:async({productId,newPriceCents,increaseCents,days})=>{
+        const catalog=await tools.getMenuCatalog();
+        const item=catalog.available?catalog.value.find(x=>x.id===productId&&x.active):null;
+        if(!item)throw new Error("Product not found in the scoped café menu");
+        const increase=increaseCents??(newPriceCents===null?null:newPriceCents-item.priceCents);
+        if(increase===null||increase<=0)throw new Error("Experiment must increase the current price");
+        const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,productId,increase,days}));
+        const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},supervisorLoopRegistry,
+          new SupabaseLoopRepository(),priceExperimentCapabilityId,{productId,increaseCents:increase},key);
+        const effect=proposal.canonicalEffectPayload as {productName:string;oldPriceCents:number;newPriceCents:number};
+        return {proposalId:proposal.id,revision:proposal.revision,productName:effect.productName,oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents};
+      },
       proposeStaff:async({name,input})=>{
         const requestKey=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,name,input}));
         const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},
           supervisorLoopRegistry,new SupabaseLoopRepository(),staffCapabilityId(name),input,requestKey);
         return {proposalId:proposal.id,revision:proposal.revision,capabilityId:proposal.capabilityId};
       }} };
-    const result = await runAgentTurn({ ownerText: p.ownerText, history, context,
+    const result = await runAgentTurn({ ownerText: p.ownerText, history, context,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       previousEvidence,
       onTool:(name,agentId)=>{

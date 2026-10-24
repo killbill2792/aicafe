@@ -9,6 +9,8 @@ import { salesTools } from "./sales";
 import {draftScheduleTools} from "./draftSchedule";
 import {newItemPriceTools} from "./newItemPrice";
 import {proposalTools} from "./proposals";
+import {priceExperimentTools} from "./priceExperiment";
+import {ownerInputsSchema} from "./ownerInputs";
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
@@ -32,9 +34,10 @@ export type AgentToolContext = {
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
+    proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>};
 };
-const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
+const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]),ownerInputs:ownerInputsSchema.nullable() });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
 const posPeriodSchema=z.strictObject({from:z.iso.date(),to:z.iso.date()});
@@ -44,7 +47,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 const schemas = { ...posReadTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools,...staffProposalTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools,...priceExperimentTools,...staffProposalTools } as const;
 export type AgentToolName = keyof typeof schemas;
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
@@ -87,6 +90,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
+  if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);
   if(Object.hasOwn(staffProposalTools,name))return staffProposalTools[name as keyof typeof staffProposalTools].execute(raw,ctx);
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
   if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
@@ -137,14 +141,14 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,
       })) };
   }
-  const { period: choice } = periodSchema.parse(raw);
+  const { period: choice,ownerInputs } = periodSchema.parse(raw);
   const period = requestedPeriod(choice, ctx.asOf);
   if (name === "get_profit") {
     const slice = await ctx.tools.getProfitability(period);
     if (!slice.available) return absent("profitability", period, slice.quality.missingInputs);
     return { source: "profitability", period, agentId:"leo", missing: slice.quality.missingInputs,
       estimated: slice.quality.estimatedInputs,
-      netSalesCents: slice.value.netSalesCents, totalCostsCents: slice.value.totalCostsCents,
+      netSalesCents: slice.value.netSalesCents, totalCostsCents: slice.value.totalCostsCents, unit:"cents",ownerInputs,
       ownerProfitCents: slice.value.ownerProfitCents, operatingMargin: slice.value.operatingMargin,
       coveredSalesDays: slice.value.coveredSalesDays, expectedSalesDays: slice.value.expectedSalesDays };
   }
@@ -152,6 +156,6 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   const slice = await ctx.tools.getSalesTrend(period);
   if (!slice.available) return absent("daily_rollups", period, slice.quality.missingInputs);
   return { source: "daily_rollups", period, agentId:"alex", missing: slice.quality.missingInputs,
-    netSalesCents: netSalesCentsForPeriod(slice.value),
+    netSalesCents: netSalesCentsForPeriod(slice.value),unit:"cents",
     days: slice.value.slice(-7).map(day => ({ date: day.date, netSalesCents: day.netSalesCents })) };
 }

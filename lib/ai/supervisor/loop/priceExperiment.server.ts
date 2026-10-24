@@ -4,7 +4,9 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
-import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
+import {ToolError} from "@/lib/ai/agent/toolErrors";
+import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
+import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {evaluatePriceExperiment,simulatePriceExperiment,priceExperimentEstimatedUplift,
   type PriceExperimentBaseline,type PriceExperimentDay} from "@/lib/calc/priceExperiment";
 import {readPriceExperimentBaselineUnits,readPriceExperimentSalesDays} from "./sales.server";
@@ -27,18 +29,22 @@ export const priceExperimentCapability=registerLoopCapability({
   effectSchema:baseline,
   simulate:async(scope,input)=>{
     // Existing canonical UI read model has recipe-cost quality + covered item sales.
-    const authorized=await authorizedOwnerP1();
-    if(authorized.identity.businessId!==scope.businessId||authorized.identity.currency!=="USD")
-      throw new Error("Price experiment outside authenticated café scope");
+    const client=await createServerSupabaseClient();
+    const {data:{user}}=await client.auth.getUser();
+    if(!user||user.id!==scope.ownerUserId)throw new ToolError("unauthorized");
+    if(await getActiveBusinessId(user.id)!==scope.businessId)throw new ToolError("scope_mismatch");
+    const {data:membership}=await client.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle();
+    const {data:business}=await client.from("businesses").select("currency,is_demo").eq("id",scope.businessId).maybeSingle();
+    if(membership?.role!=="owner"||business?.currency!=="USD"||business?.is_demo)throw new ToolError("unauthorized");
     const matches=(await getMenuControlCenter()).filter(x=>x.active&&x.id===input.productId);
-    if(matches.length!==1)throw new Error("Active product unavailable in authorized café");
+    if(matches.length!==1)throw new ToolError("not_found");
     const item=matches[0];
     const verifiedUnits=await readPriceExperimentBaselineUnits(scope.businessId,item.id);
     const result=simulatePriceExperiment({productId:item.id,productName:item.name,
       currentPriceCents:item.priceCents,increaseCents:input.increaseCents,
       ingredientCostCents:item.pricing?.productCostCents??null,
       units7Days:verifiedUnits});
-    if(!result)throw new Error("Price experiment requires actual, covered sales and recipe cost");
+    if(!result)throw new ToolError("validation","This experiment needs covered sales and a known recipe cost. Add those facts and try again.");
     const {beforeContributionCents,afterContributionCents,
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,...effect}=result;
     return {effect,baseline:{beforeContributionCents,afterContributionCents,

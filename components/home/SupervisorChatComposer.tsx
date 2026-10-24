@@ -180,15 +180,15 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
       setRating(value);
     }catch{setError(true);}finally{setSaving(false);}
   }
-  return <div className="ps-1 text-[17px] leading-relaxed text-ink-muted">
+  return <div className="ps-1 text-[14px] leading-relaxed text-ink-muted">
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" onClick={()=>void send("up")} disabled={saving}
-        aria-pressed={rating==="up"} className="inline-flex min-h-12 items-center gap-2 rounded-lg border border-line px-3 text-[17px]">
-        <ThumbsUp size={18} aria-hidden="true"/><span>{copy.feedbackUp}</span>
+        aria-pressed={rating==="up"} className={`inline-flex min-h-12 items-center gap-1.5 rounded-lg px-2 text-[14px] hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${rating==="up"?"bg-surface2 text-ink":""}`}>
+        <ThumbsUp size={16} aria-hidden="true"/><span>{copy.feedbackUp}</span>
       </button>
       <button type="button" onClick={()=>void send("down")} disabled={saving}
-        aria-pressed={rating==="down"} className="inline-flex min-h-12 items-center gap-2 rounded-lg border border-line px-3 text-[17px]">
-        <ThumbsDown size={18} aria-hidden="true"/><span>{copy.feedbackDown}</span>
+        aria-pressed={rating==="down"} className={`inline-flex min-h-12 items-center gap-1.5 rounded-lg px-2 text-[14px] hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${rating==="down"?"bg-surface2 text-ink":""}`}>
+        <ThumbsDown size={16} aria-hidden="true"/><span>{copy.feedbackDown}</span>
       </button>
       {rating&&<span role="status">{copy.feedbackSaved}</span>}
     </div>

@@ -11,6 +11,8 @@ import { recomputeDailyRollup } from "@/lib/pos/rollup";
 import { rebuildSalesFactRollups } from "@/lib/pos/salesFactRollups";
 import { readStagedSalesGroups, readCsvFeeOrders, csvPromotedOrderId } from "@/lib/pos/csv/finalizeReads";
 import { matchCatalogItem } from "@/lib/pos/catalogMatching";
+import {inferMenuItemCategory} from "@/lib/menu/inferCategory";
+import {recordInitialMenuPrice} from "@/lib/menu/priceHistory";
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { NEW_EMPLOYEE } from "@/lib/constants";
 import { toCents } from "@/lib/pos/csv/csvUtils";
@@ -199,16 +201,23 @@ async function resolveMenuItemIds(
   const unmatchedRowsByName = new Map<string, number>();
 
   for (const name of [...new Set(groups.map((g) => g.item))]) {
-    const sample = groups.find((g) => g.item === name)!;
-    const priceCents = sample.quantity > 0 ? Math.round(sample.netSalesCents / sample.quantity) : null;
+    const observations=groups.filter(g=>g.item===name&&g.quantity>0)
+      .map(g=>Math.round(g.netSalesCents/g.quantity)).filter(v=>Number.isSafeInteger(v)&&v>0)
+      .sort((a,b)=>a-b);
+    const middle=Math.floor(observations.length/2);
+    const priceCents=observations.length===0?null:observations.length%2?observations[middle]:
+      Math.round((observations[middle-1]+observations[middle])/2);
     const posItemId = `csv-item-${csvSlug(name)}`.slice(0, 120);
     const match = matchCatalogItem({ posItemId, name, priceCents, category: null }, candidates);
     if (match.status === "matched" && match.candidateId) {
       menuItemIdByName.set(name.toLowerCase(), match.candidateId);
       await supabase.from("menu_items").update({ pos_item_id: posItemId, catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() }).eq("id", match.candidateId).eq("business_id", businessId);
     } else if (match.status === "new") {
-      const { data: created } = await supabase.from("menu_items").insert({ business_id: businessId, pos_item_id: posItemId, name, base_name: name, price_cents: priceCents, category: "ESPRESSO_DRINK", catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() }).select("id").single();
-      if (created) menuItemIdByName.set(name.toLowerCase(), created.id);
+      const { data: created } = await supabase.from("menu_items").insert({ business_id: businessId, pos_item_id: posItemId, name, base_name: name, price_cents: priceCents, category: inferMenuItemCategory(name), catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() }).select("id").single();
+      if (created){
+        menuItemIdByName.set(name.toLowerCase(), created.id);
+        if(priceCents!==null)await recordInitialMenuPrice(supabase,{businessId,menuItemId:created.id,priceCents,sourceProvider:"csv import estimate"});
+      }
     } else {
       await supabase.from("pos_catalog_matches").upsert({ business_id: businessId, provider: "csv", pos_item_id: posItemId, imported_name: name, imported_price_cents: priceCents, suggested_menu_item_id: match.candidateId, match_score: match.score, status: "needs_review" }, { onConflict: "business_id,provider,pos_item_id" });
       const rows = groups.filter((g) => g.item === name).reduce((s, g) => s + g.sourceRowCount, 0);
