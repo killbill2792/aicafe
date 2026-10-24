@@ -3,7 +3,7 @@ import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {decryptToken,encryptToken} from "@/lib/security/tokenCrypto";
 
-export type ToastFailure = "invalid_host"|"authentication"|"missing_permissions"|"unauthorized_location"|"rate_limited"|"timeout"|"unavailable"|"invalid_response"|"not_configured";
+export type ToastFailure = "invalid_host"|"authentication"|"missing_permissions"|"missing_scope_or_location"|"unauthorized_location"|"rate_limited"|"timeout"|"unavailable"|"invalid_response"|"not_configured";
 export class ToastApiError extends Error {
   constructor(public readonly category:ToastFailure, public readonly status?:number, public readonly retryAt?:string) {
     super("Toast request failed: "+category);
@@ -45,7 +45,7 @@ export function toastRetryAt(response:Response,now=Date.now()):string {
 }
 type Credential={api_origin:string;client_id:string;client_secret_enc:string;
   bearer_token_enc:string|null;bearer_expires_at:string|null;retry_after:string|null};
-const MIN_VALIDITY_MS=120000;
+const MIN_VALIDITY_MS=600000;
 const inflight=new Map<string,Promise<string>>();
 /** Persisted encrypted tokens + a nonce lease across isolated Vercel invocations. */
 export function createToastClient(db:SupabaseClient,businessId:string) {
@@ -126,7 +126,7 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     try{return await refresh;}finally{inflight.delete(businessId);}
   }
   async function request<T>(path:string,restaurantGuid:string,schema:z.ZodType<T>,
-     opts:{allowUnverified?:boolean}={}):Promise<T> {
+     opts:{allowUnverified?:boolean;deadlineAt?:number}={}):Promise<T> {
     const guid=GUID.safeParse(restaurantGuid);
     if(!guid.success||!path.startsWith("/")||path.startsWith("//")||path.includes("..")||path.includes("://")||
       path.includes("#")||path.includes("\\"))
@@ -139,14 +139,16 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     if(credentials.retry_after&&Date.parse(credentials.retry_after)>Date.now())
       throw new ToastApiError("rate_limited",429,credentials.retry_after);
     let bearer=await token();
-    for(let attempt=0;attempt<4;attempt++) {
+    for(let attempt=0,authRetry=false;attempt<5;attempt++) {
+      if(opts.deadlineAt&&Date.now()>=opts.deadlineAt)throw new ToastApiError("timeout");
       let res:Response;
       try {
-        res=await fetch(origin+path,{method:"GET",redirect:"error",signal:AbortSignal.timeout(12000),
+        res=await fetch(origin+path,{method:"GET",redirect:"error",signal:AbortSignal.timeout(path.startsWith("/orders/v2/ordersBulk")?30000:12000),
           headers:{"Authorization":"Bearer "+bearer,"Toast-Restaurant-External-ID":guid.data,
             "Accept":"application/json"}});
-      }catch {if(attempt<2){await wait(300*2**attempt);continue;}throw new ToastApiError("timeout");}
-      if(res.status===401&&attempt===0){
+      }catch {if(attempt<4){await wait(500*2**attempt+Math.random()*200);continue;}throw new ToastApiError("unavailable");}
+      if(res.status===401&&!authRetry){
+        authRetry=true;
         const latest=await row();
         if(latest.bearer_token_enc&&decryptToken(latest.bearer_token_enc)!==bearer) {
           // Another instance replaced the token. Never invalidate that replacement,
@@ -167,11 +169,14 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
         const {error:saveError}=await db.from("toast_api_credentials")
           .update({retry_after:retryAt}).eq("business_id",businessId);
         if(saveError)throw new ToastApiError("unavailable");
-        // Never sleep past an externally instructed reset then retry early.
-        // Jobs can safely resume after retryAt; no lengthy blocking serverless function.
+        const ms=Date.parse(retryAt)-Date.now();
+        if(ms<=60000&&(!opts.deadlineAt||Date.now()+ms<opts.deadlineAt)){
+          await wait(Math.max(0,ms));continue;
+        }
         throw new ToastApiError("rate_limited",429,retryAt);
       }
-      if(res.status>=500&&attempt<3){await wait(300*2**attempt);continue;}
+      if(res.status>=500&&attempt<4){await wait(500*2**attempt+Math.random()*200);continue;}
+      if(res.status===403)throw new ToastApiError("missing_scope_or_location",403);
       if(!res.ok)throw failure(res.status,path.startsWith("/restaurants/v1/")?"restaurant":"resource");
       const raw=await res.json().catch(()=>{throw new ToastApiError("invalid_response");});
       const parsed=schema.safeParse(raw);
