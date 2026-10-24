@@ -9,6 +9,21 @@ function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
     getMenuCatalog:async()=>unavailable,...extra}};
 }
 describe("Leo scoped money reads",()=>{
+  it("allows only the category selected in the previous trusted clarification",async()=>{
+    const state=newResolveState("Supplies — supplies",[
+      {role:"assistant",content:"Asked: Which category? Options: Supplies — supplies (supplies); Supplies — other (other)"}]);
+    const c=ctx({
+      getRecordedExpenses:async()=>({available:true,value:{totalCents:120000},quality:q}),
+      getExpenseSummary:async()=>({available:true,value:[
+        {label:"Supplies",categoryCode:"supplies",amountCents:20000,isEstimate:false,isMissing:false},
+        {label:"Supplies",categoryCode:"other",amountCents:15000,isEstimate:false,isMissing:false}],quality:q}),
+    });
+    c.resolveState=state;
+    const response=await moneyTools.get_expenses.execute({period:"month",category:"supplies"},c);
+    expect(response.needsOwnerChoice).toBeUndefined();
+    expect(response.categories).toEqual([expect.objectContaining({categoryCode:"supplies"})]);
+    expect(response.recordedActualTotalCents).toBeNull();
+  });
   it("never presents the all-category actual total as a selected category's spending",async()=>{
     const r=await moneyTools.get_expenses.execute({period:"month",category:"Rent"},ctx({
       getRecordedExpenses:async()=>({available:true,value:{totalCents:150000},quality:q}),

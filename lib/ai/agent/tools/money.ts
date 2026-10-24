@@ -30,9 +30,15 @@ export const moneyTools={
       const [recorded,categories]=await Promise.all([ctx.tools.getRecordedExpenses(p),ctx.tools.getExpenseSummary(p)]);
       let filterCategory:string|null=null;
       if(input.category&&categories.available){
-        const selected=resolveEntity("category",input.category,categories.value,{nameOf:c=>c.label,idOf:c=>c.categoryCode,describe:c=>c.categoryCode});
-        if(selected.status!=="resolved")return {...choicePayload(selected,"expenses",p),agentId:"leo"};
-        filterCategory=selected.value.categoryCode;
+        const chosen=categories.value.find(item=>item.categoryCode.toLowerCase()===input.category?.toLowerCase()&&
+          ctx.resolveState?.chosenIds.has(item.categoryCode.toLowerCase()));
+        if(chosen)filterCategory=chosen.categoryCode;
+        else {
+          const selected=resolveEntity("category",input.category,categories.value,{
+            nameOf:c=>c.label,idOf:c=>c.categoryCode,describe:c=>c.categoryCode});
+          if(selected.status!=="resolved")return {...choicePayload(selected,"expenses",p),agentId:"leo"};
+          filterCategory=selected.value.categoryCode;
+        }
       }
       return {source:"expenses",period:p,agentId:"leo",
         missing:[...recorded.quality.missingInputs,...categories.quality.missingInputs,

@@ -78,8 +78,10 @@ export function newResolveState(ownerText: string, history: readonly {role:strin
   const chosenIds=new Set<string>();
   if(lastAsk){
     const text=normalizedName(ownerText);
-    for(const match of lastAsk.content.matchAll(/([^;:]+?)\s*\(([0-9a-f]{8}-[0-9a-f-]{27,})\)/giu))
-      if(normalizedName(match[1].replace(/^.*Options:\s*/u,""))===text)chosenIds.add(match[2].toLowerCase());
+    for(const match of lastAsk.content.matchAll(/([^;:]+?)\s*\(([^();]{1,100})\)(?:;|$)/giu)){
+      const label=normalizedName(match[1].replace(/^.*Options:\s*/u,""));
+      if(label===text)chosenIds.add(match[2].trim().toLowerCase());
+    }
   }
   return {ownerText,priorChoice:lastAsk?ownerText:null,seenIds:new Set(),chosenIds,ambiguous:[],asked:false};
 }

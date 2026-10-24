@@ -5,6 +5,13 @@ const rows=[{id:hot,name:"Latte",category:"Hot"},{id:iced,name:"Latte",category:
 {id:"33333333-3333-4333-8333-333333333333",name:"Café",category:"Coffee"}];
 const props={nameOf:(r:typeof rows[number])=>r.name,idOf:(r:typeof rows[number])=>r.id,describe:(r:typeof rows[number])=>r.category};
 describe("safe entity resolution",()=>{
+ it("maps a selected category code from a trusted previous clarification",()=>{
+    const state=newResolveState("Supplies — other",[
+      {role:"assistant",content:"Asked: Which supplies? Options: Supplies — supplies (supplies); Supplies — other (other)"}]);
+    expect([...state.chosenIds]).toEqual(["other"]);
+    expect(newResolveState("Other message",[
+      {role:"assistant",content:"Asked: Which supplies? Options: Supplies — supplies (supplies); Supplies — other (other)"}]).chosenIds.size).toBe(0);
+ });
  it("does not treat a human-readable category code as disambiguation",()=>{
    const categories=[{id:"supplies",name:"Supplies"},{id:"other",name:"Supplies"}];
    const r=resolveEntity("category","Supplies",categories,{
