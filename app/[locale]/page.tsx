@@ -7,18 +7,18 @@ import { Link } from "@/i18n/navigation";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
-import { missingCostDestination } from "@/lib/expenses/expectedCosts";
-import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
-import { buildTodayGlanceViewModel } from "@/lib/viewmodels/todayGlance";
-import { hasEstimatedTodayCosts } from "@/lib/viewmodels/homeSnapshotQuality";
-import { profitToneBgClass, profitToneTextClass } from "@/lib/viewmodels/profitTone";
+
+
+
+
+
 import type { Period } from "@/lib/viewmodels/period";
-import Money from "@/components/shared/Money";
-import EstimatePill from "@/components/shared/EstimatePill";
+
+
 import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import CostRecoveryStrip from "@/components/home/CostRecoveryStrip";
-import { todayGlanceCopy } from "@/components/shared/todayGlanceCopy";
+
 import {
   AlertsTeaserCard,
   BreakEvenTeaserCard,
@@ -29,12 +29,12 @@ import {
 import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
 import {getCafeAccess} from "@/lib/access/access.server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
-import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
+import HomeTaskSections, { type HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";\nimport { homeAttentionHref, type HomeAttentionItem } from "@/components/home/homeAttention";\nimport { getOpenAlerts } from "@/lib/data/getAlerts";\nimport { describeAlert } from "@/components/alerts/alertContent";\nimport { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
 import { formatCents } from "@/lib/calc";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
-import ReconnectBanner from "@/components/shared/ReconnectBanner";
+
 import GettingStartedCard from "@/components/home/GettingStartedCard";
-import MarginGoalCard from "@/components/home/MarginGoalCard";
+
 import PageShell from "@/components/shared/PageShell";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
@@ -99,13 +99,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const todayVm = period === "today" ? vm : buildHomeViewModel(snapshot, "today");
   const profitVm = buildProfitAndCostsViewModel(snapshot, period);
   const glance = buildTodayGlanceViewModel(snapshot);
-  const [t, tCommon, tOperations, tCategories, tChat, tExperiment] = await Promise.all([
+  const [t, tCommon, tOperations, tCategories, tChat, tExperiment, tAlerts, tReconnect] = await Promise.all([
     getTranslations("Home"),
     getTranslations("Common"),
     getTranslations("Operations"),
     getTranslations("Categories"),
     getTranslations("SupervisorChat"),
-    getTranslations("SupervisorExperiment"),
+    getTranslations("SupervisorExperiment"),\n    getTranslations("Alerts"),\n    getTranslations("Reconnect"),
   ]);
   const tAccess=await getTranslations("FreeAccess");
   const posStatus = await getPosConnectionStatus();
@@ -113,19 +113,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const persistedTasks = await syncAndGetOperatingTasks([...derivedTeam.needsYou, ...derivedTeam.handled, ...derivedTeam.watching]);
   const team = projectOperatingTasks(persistedTasks.tasks);
 
-  const changeUp = vm.changeVsLastPeriodPct !== null && vm.changeVsLastPeriodPct >= 0;
-  const heroTone = vm.ownerProfitDisplay.kind === "unavailable" ? "neutral" : vm.ownerProfitDisplay.tone;
-  const labelFor = (code: string) => (code === "yours" ? t("yours") : snapshot.runningCostLines.find((l) => l.categoryCode === code)?.label ?? code);
-  const glanceCopy = todayGlanceCopy(glance, t, tCommon, labelFor);
-  const coverageNote =
-    vm.coverage.actualDays < vm.coverage.expectedDays
-      ? period === "today"
-        ? tCommon("noSalesToday")
-        : period === "week"
-          ? tCommon("salesCoverageWeek", { actual: vm.coverage.actualDays, expected: vm.coverage.expectedDays })
-          : tCommon("salesCoverageMonth", { actual: vm.coverage.actualDays, expected: vm.coverage.expectedDays })
-      : null;
-
+  const labelFor = (code: string) => (code === "yours" ? t("yours") : snapshot.runningCostLines.find(l => l.categoryCode === code)?.label ?? code);
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
@@ -170,62 +158,95 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     return { id: task.id, agentId: task.agentId, agentName: agentNames[task.agentId], title, href: operatingTaskHref(task) };
   };
 
-  const needsYouPreview = [...team.needsYou]
-    .sort((a, b) => {
-      const aRank = a.status === "needs_owner" ? 0 : 1;
-      const bRank = b.status === "needs_owner" ? 0 : 1;
-      return aRank - bRank || newestTaskTime(b) - newestTaskTime(a);
-    })
-    .slice(0, 2)
-    .map(taskPreview);
-  const handledPreview = [...team.handled].sort((a, b) => newestTaskTime(b) - newestTaskTime(a)).slice(0, 2).map(taskPreview);
-  const watchingPreview = [...team.watching].sort((a, b) => newestTaskTime(b) - newestTaskTime(a)).slice(0, 2).map(taskPreview);
 
-  const todayOwnerProfit =
-    todayVm.ownerProfitDisplay.kind === "unavailable"
-      ? t("ownerProfitWaitingShort")
-      : formatCents(todayVm.ownerProfitDisplay.ownerProfitCents);
-  const todayEstimateSuffix = hasEstimatedTodayCosts(snapshot) ? ` · ${t("estimatePill")}` : "";
-  const todayPartialSuffix = todayVm.ownerProfitDisplay.kind === "partial" ? ` · ${t("partialPill")}` : "";
-
-  return (
-    <PageShell wide className="flex flex-col gap-3 px-3 pb-4 pt-3 md:px-4 md:pt-4">
-      {posStatus && posStatus.status !== "active" && <ReconnectBanner provider={posStatus.provider} />}
-
-      <div className="flex flex-col gap-4">
-        {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px] leading-relaxed">
-          {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
-          {" "}<Link className="inline-flex min-h-12 items-center underline" href="/pricing">{tAccess("haveCode")}</Link>
-        </p>}
-        <SupervisorHomePanel
-          initialThreadId={initialThread}
-          initialProposalId={initialExperiment}
+  const [alerts, unmatched] = await Promise.all([getOpenAlerts(), getCatalogMatchReview()]);
+  const alertItems: HomeAttentionItem[] = alerts.map(alert => {
+    const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
+    return { id: "alert:" + alert.id, title: description.title, actionLabel: description.actionLabel,
+      href: homeAttentionHref({ kind: "alert", href: description.actionHref }), impactCents: alert.impactCents };
+  });
+  // Alerts for a missing bill and unmatched catalog items describe the same work.
+  const coveredBills = new Set(alerts.filter(a => a.kind === "missing_bill").map(a => String(a.payload.categoryCode ?? "")));
+  const items: HomeAttentionItem[] = [
+    ...vm.missingCategories.filter(line => !coveredBills.has(line.categoryCode)).map(line => ({
+      id: "bill:" + line.categoryCode, title: t("missingCostBannerText", {category: tCategories(line.categoryCode)}),
+      actionLabel: t("missingCostBannerAction"), href: homeAttentionHref({kind:"bill" as const,category:line.categoryCode}), impactCents: null
+    })),
+    ...(vm.coverage.actualDays < vm.coverage.expectedDays ? [{
+      id:"missing-sales", title:t("attentionSalesMissing",{count:vm.coverage.expectedDays-vm.coverage.actualDays}),
+      actionLabel:posStatus?.provider==="toast" ? t("attentionSyncToast") : t("attentionUploadSales"),
+      href:homeAttentionHref({kind:"missing_sales" as const,toastConnected:posStatus?.provider==="toast"}),impactCents:null
+    }] : []),
+    ...(unmatched.length>0 && !alerts.some(a=>a.kind==="unmatched_sales_items") ? [{
+      id:"unmatched",title:t("attentionUnmatched",{count:unmatched.length}),actionLabel:t("attentionMatch"),
+      href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
+    }]:[]),
+    ...(usageOver.length>0 ? [{
+      id:"pantry",title:t("usageOverAlert"),actionLabel:t("usageReview"),
+      href:homeAttentionHref({kind:"pantry" as const}),impactCents:null
+    }]:[]),
+    ...(posStatus && posStatus.status!=="active" ? [{
+      id:"reconnect",title:tReconnect("banner"),actionLabel:tReconnect("action"),
+      href:homeAttentionHref({kind:"reconnect" as const,provider:posStatus.provider}),impactCents:null
+    }]:[]),
+    ...alertItems,
+    ...team.needsYou.filter(task=>!(task.kind==="data_quality" && coveredBills.has(String(task.payload.categoryCode))) &&
+      !(task.kind==="data_quality" && vm.missingCategories.some(line=>line.categoryCode===task.payload.categoryCode)))
+      .map(task=>({...taskPreview(task),actionLabel:t("attentionFix"),impactCents:
+        typeof task.payload.impactCents==="number" ? task.payload.impactCents :
+        typeof task.payload.estimatedAmountCents==="number" ? task.payload.estimatedAmountCents : null})),
+  ];
+  const number = (value:number) => new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(value);
+  const pctChange = vm.changeVsLastPeriodPct;
+  const percentage = (value:number) => number(Math.round(value*100));
+  const money = (cents:number) => formatCents(cents,locale);
+  const hasPartial = vm.coverage.actualDays < vm.coverage.expectedDays;
+  const changeLabel = pctChange===null ? null : t("changeVsLastPeriod",{
+    pct:number(Math.abs(Math.round(pctChange))),direction:pctChange>=0?t("more"):t("less")});
+  return <PageShell wide className="flex flex-col gap-4 px-3 pb-4 pt-3 md:px-4 md:pt-4">
+    {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px]">
+      {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
+      {" "}<Link href="/pricing" className="underline">{tAccess("haveCode")}</Link>
+    </p>}
+    <section aria-label={t("keyNumbers")} className="rounded-card-lg bg-card p-4">
+      <PeriodSwitch current={period}/>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="min-w-0 rounded-2xl bg-paper p-3">
+          <p className="text-[15px] font-bold text-ink-muted">{t("sales")}</p>
+          <p className="break-words font-headline text-xl font-bold text-ink">{hasPartial&&vm.coverage.actualDays===0?"—":money(vm.salesCents)}</p>
+        </div>
+        <div className="min-w-0 rounded-2xl bg-paper p-3">
+          <p className="text-[15px] font-bold text-ink-muted">{t("totalCosts")}</p>
+          <p className="break-words font-headline text-xl font-bold text-warn">{money(vm.totalCostsCents)}</p>
+        </div>
+        <div className="min-w-0 rounded-2xl bg-paper p-3">
+          <p className="text-[15px] font-bold text-ink-muted">{t("youKeep")}</p>
+          <p className="break-words font-headline text-xl font-bold text-ink">{vm.ownerProfitDisplay.kind==="unavailable"?"—":money(vm.ownerProfitDisplay.ownerProfitCents)}</p>
+          {vm.ownerProfitDisplay.kind!=="unavailable"&&vm.salesCents>0&&<p className="text-[13px] text-ink-muted">{t("ofSales",{pct:percentage(vm.keepRatio)})}</p>}
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[15px] text-ink-muted">
+        {changeLabel&&<span>{changeLabel}</span>}
+        {hasPartial&&<span className="rounded-full bg-warn-tint px-2 py-1 font-bold text-warn">{t("partialPill")}</span>}
+        {vm.isEstimate&&<span className="rounded-full bg-surface2 px-2 py-1">{t("estimatePill")}</span>}
+      </div>
+      <CostRecoveryStrip buckets={vm.recovery.buckets}
+        labels={Object.fromEntries(vm.buckets.map(b=>[b.code,labelFor(b.code)]))}
+        coveredLabel={(label,date)=>t("coveredOn",{label,date})} locale={locale}/>
+    </section>
+    {vm.isGettingStarted && <GettingStartedCard labels={{
+      title:t("gettingStartedTitle"),body:t("gettingStartedBody"),
+      connectRegister:t("gettingStartedConnectRegister"),uploadSales:t("gettingStartedUploadSales"),
+      addBills:t("gettingStartedAddBills"),addStaff:t("gettingStartedAddStaff")
+    }}/>}
+    <HomeTaskSections items={items} title={t("needsAttention")} empty={t("attentionEmpty")} seeAll={t("taskSeeAll")}/>
+    <SupervisorHomePanel
+      initialThreadId={initialThread} initialProposalId={initialExperiment}
           experimentCopy={{open:tExperiment("open"),close:tExperiment("close"),product:tExperiment("product"),increase:tExperiment("increase"),preview:tExperiment("preview"),propose:tExperiment("propose"),approve:tExperiment("approve"),apply:tExperiment("apply"),done:tExperiment("done"),report:tExperiment("report"),waiting:tExperiment("waiting"),loading:tExperiment("loading"),error:tExperiment("error"),condition:tExperiment("condition"),confirmNote:tExperiment("confirmNote"),reportNote:tExperiment("reportNote"),selectProposal:tExperiment("selectProposal"),statusDraft:tExperiment("statusDraft"),statusApproved:tExperiment("statusApproved"),statusManual:tExperiment("statusManual"),statusMonitoring:tExperiment("statusMonitoring"),statusExecuting:tExperiment("statusExecuting"),statusRejected:tExperiment("statusRejected"),statusInProgress:tExperiment("statusInProgress"),statusComplete:tExperiment("statusComplete"),statusInsufficient:tExperiment("statusInsufficient")}}
           locale={locale}
-          languageSwitch={<LanguageSwitch href="/" compact />}
-          chatEnabled={chatReadiness.enabled}
-          canUseAi={cafeAccess?.active ?? true}
-          chatUnavailableReason={chatReadiness.reason}
-          snapshot={{
-            title: t("todaySnapshotTitle"),
-            hasSales: snapshot.todayHasData,
-            stats: [
-              { label: t("glanceSales"), value: snapshot.todayHasData ? formatCents(glance.salesCents) : tCommon("noSalesToday") },
-              { label: `${t("ownerProfit")}${todayEstimateSuffix}${todayPartialSuffix}`, value: todayOwnerProfit },
-              { label: t("glanceOrders"), value: snapshot.todayHasData ? String(glance.ordersCount) : "—" },
-              { label: `${t("totalCosts")}${todayEstimateSuffix}`, value: formatCents(todayVm.totalCostsCents) },
-            ],
-            caption: glanceCopy.caption,
-            seeAll: t("taskSeeAll"),
-            sections: [
-              { title: tOperations("needsYou"), empty: tOperations("needsYouEmpty"),
-                href: "/operations?status=needs_you", items: needsYouPreview, count: team.needsYou.length },
-              { title: tOperations("handled"), empty: tOperations("handledEmpty"),
-                href: "/operations?status=handled", items: handledPreview, count: team.handled.length },
-              { title: tOperations("watching"), empty: tOperations("watchingEmpty"),
-                href: "/operations?status=watching", items: watchingPreview, count: team.watching.length },
-            ],
-          }}
+      languageSwitch={<LanguageSwitch href="/" compact />}
+      chatEnabled={chatReadiness.enabled} canUseAi={cafeAccess?.active??true}
+      chatUnavailableReason={chatReadiness.reason}
           chatCopy={{
             newMessage: tChat("newMessage"),
             live: tChat("chatLive"),
@@ -315,155 +336,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             ],
           }}
         />
-
-      </div>
-
-      {vm.isGettingStarted && (
-        <GettingStartedCard
-          labels={{
-            title: t("gettingStartedTitle"),
-            body: t("gettingStartedBody"),
-            connectRegister: t("gettingStartedConnectRegister"),
-            uploadSales: t("gettingStartedUploadSales"),
-            addBills: t("gettingStartedAddBills"),
-            addStaff: t("gettingStartedAddStaff"),
-          }}
-        />
-      )}
-
-
-      <section className="mt-1 flex flex-col gap-3.5" aria-labelledby="business-overview-title">
-        <div className="px-1">
-          <h2 id="business-overview-title" className="font-headline text-3xl font-bold text-ink">{t("businessOverviewTitle")}</h2>
-          <p className="mt-1 text-[17px] text-ink-muted">{t("businessOverviewIntro")}</p>
-        </div>
-
-        <PeriodSwitch current={period} />
-
-        {coverageNote && <p className="mx-1 text-sm text-ink-muted">{coverageNote}</p>}
-
-        <section className={`flex flex-col gap-2.5 rounded-card-lg p-[22px] ${profitToneBgClass(heroTone)} ${heroTone === "good" ? "text-on-pos" : heroTone === "warn" ? "text-on-warn" : "text-bg"}`}>
-          <div className="flex items-center justify-between">
-            <span className="text-[17px] font-semibold">{t("ownerProfit")}</span>
-            <div className="flex items-center gap-1.5">
-              {vm.isEstimate && <EstimatePill tone="dark" label={t("estimatePill")} />}
-              {vm.ownerProfitDisplay.kind === "partial" && <EstimatePill tone="dark" label={t("partialPill")} />}
-            </div>
-          </div>
-          {vm.ownerProfitDisplay.kind === "unavailable" ? (
-            <div className="text-2xl font-bold">{t("ownerProfitWaiting")}</div>
-          ) : (
-            <div className="font-headline text-money-md font-bold">
-              <Money cents={vm.ownerProfitDisplay.ownerProfitCents} />
-            </div>
-          )}
-          {vm.changeVsLastPeriodPct !== null && (
-            <div className="flex items-center gap-2 text-[15px] font-semibold">
-              {changeUp ? <TrendingUp aria-hidden="true" size={18} /> : <TrendingDown aria-hidden="true" size={18} />}
-              <span>{t("changeVsLastPeriod", { pct: Math.abs(Math.round(vm.changeVsLastPeriodPct)), direction: changeUp ? t("more") : t("less") })}</span>
-            </div>
-          )}
-        </section>
-
-        <div className="flex flex-wrap gap-2">
-          <div className="flex min-w-[104px] flex-1 flex-col gap-1 rounded-2xl bg-card p-3.5">
-            <span className="text-[13px] font-semibold text-ink-muted">{t("sales")}</span>
-            <span className="break-words text-xl font-extrabold">{formatCents(vm.salesCents)}</span>
-            <span className="text-xs text-ink-muted">100%</span>
-          </div>
-          <div className="flex min-w-[104px] flex-1 flex-col gap-1 rounded-2xl bg-card p-3.5">
-            <span className="text-[13px] font-semibold text-ink-muted">{t("totalCosts")}</span>
-            <span className="break-words text-xl font-extrabold text-warn">{formatCents(vm.totalCostsCents)}</span>
-            <span className="text-xs text-ink-muted">{t("ofSales", { pct: Math.round(vm.costsRatio * 100) })}</span>
-          </div>
-          <div className="flex min-w-[104px] flex-1 flex-col gap-1 rounded-2xl bg-card p-3.5">
-            <span className="text-[13px] font-semibold text-ink-muted">{t("youKeep")}</span>
-            {vm.ownerProfitDisplay.kind === "unavailable" ? (
-              <span className="text-sm font-semibold text-ink-muted">{t("ownerProfitWaitingShort")}</span>
-            ) : (
-              <>
-                <span className={`break-words text-xl font-extrabold ${profitToneTextClass(vm.ownerProfitDisplay.tone)}`}>
-                  {formatCents(vm.ownerProfitDisplay.ownerProfitCents)}
-                </span>
-                <span className="text-xs text-ink-muted">{t("ofSales", { pct: Math.round(vm.keepRatio * 100) })}</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        <MarginGoalCard
-          currentMargin={vm.operatingMargin}
-          currentMarginQuality={vm.operatingMarginQuality}
-          labels={{
-            title: t("marginGoalTitle"),
-            current: t("currentOperatingMargin"),
-            unavailable: t("marginUnavailable"),
-            currentActual: t("marginBasedOnCurrentData"),
-            currentEstimated: t("marginIncludesEstimates"),
-            edit: t("tryProfitGoal"),
-            explanation: t("marginExplanation"),
-          }}
-        />
-
-        {vm.missingCategories.length > 0 && (
-          <Link
-            href={missingCostDestination(vm.missingCategories[0].categoryCode)}
-            className="flex items-center justify-between gap-2 rounded-2xl bg-warn-tint p-3.5 text-[15px] font-medium text-warn no-underline"
-          >
-            <span>{t("missingCostBannerText", { category: vm.missingCategories[0].label })}</span>
-            <span className="shrink-0 font-bold underline">{t("missingCostBannerAction")}</span>
-          </Link>
-        )}
-
-        <CostRecoveryStrip
-          buckets={vm.recovery.buckets}
-          labels={Object.fromEntries(vm.buckets.map((b) => [b.code, snapshot.runningCostLines.find((l) => l.categoryCode === b.code)?.label ?? b.code]))}
-          coveredLabel={(label, date) => t("coveredOn", { label, date })}
-        />
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <ProfitCostsCard
-            step={1}
-            title={t("profitAndCosts")}
-            ingredientsCents={profitVm.ingredientsCents}
-            staffCents={profitVm.wagesCents + profitVm.staffTaxCents}
-            runningCents={profitVm.totalCostsCents - profitVm.ingredientsCents - profitVm.wagesCents - profitVm.staffTaxCents}
-            profitCents={profitVm.ownerProfitCents}
-            labels={{ ingredients: t("ingredients"), staff: t("staff"), running: t("running"), profit: t("profit") }}
-          />
-
-          <StaffTeaserCard step={2} title={t("staffSection")} perMinuteCents={vm.staffCostPerMinuteNow} perMinuteLabel={t("perMinuteNow")} />
-
-          <MenuTeaserCard
-            step={3}
-            title={t("menuSection")}
-            bestLabel={t("bestEarner")}
-            worstLabel={t("keepsLeast")}
-            best={vm.bestItem ? { name: vm.bestItem.name, keptCents: vm.bestItem.priceCents - vm.bestItem.ingredientsCentsToday, description: t("keepsAfterIngredients", { amount: formatCents(vm.bestItem.priceCents - vm.bestItem.ingredientsCentsToday) }) } : null}
-            worst={vm.worstItem ? { name: vm.worstItem.name, keptCents: vm.worstItem.priceCents - vm.worstItem.ingredientsCentsToday, description: t("keepsAfterIngredients", { amount: formatCents(vm.worstItem.priceCents - vm.worstItem.ingredientsCentsToday) }) } : null}
-          />
-
-          <BreakEvenTeaserCard
-            step={4}
-            title={t("breakEvenSection")}
-            neededLabel={t("needDrinks", { count: Number.isFinite(vm.drinksNeeded) ? vm.drinksNeeded : "—" })}
-            averageLabel={t("youAverage", { count: vm.avgDrinksPerDay })}
-            progressPct={(vm.avgDrinksPerDay / Math.max(1, vm.drinksNeeded)) * 100}
-            unavailableLabel={vm.breakEvenUnavailableReason === "missing_costs" ? t("breakEvenMissingCosts", { categories: vm.missingCategories.map((line) => line.label).join(", ") }) : vm.breakEvenUnavailableReason === "missing_sales" ? t("breakEvenMissingSales") : undefined}
-          />
-
-          {usageOver.length>0&&<Link href="/menu/pantry" className="block rounded-2xl border border-line bg-warn-soft p-4 text-warn"><p className="font-bold">{t("usageOverAlert")}</p><p>{usageOver.map(x=>x.name).join(", ")}</p><p className="underline">{t("usageReview")}</p></Link>}
-          <AlertsTeaserCard
-            step={5}
-            title={t("alertsSection")}
-            countLabel={t("newAlerts", { count: vm.alerts.count })}
-            leakingCents={vm.alerts.leakingCents}
-            leakingLabel={t("leakingThisMonth")}
-          />
-        </div>
-      </section>
-
-      {/* Home keeps the Supervisor composer unobstructed on mobile. Other pages retain the FAB. */}
-    </PageShell>
-  );
+    <Link href="/operations?status=handled" className="min-h-12 self-start text-[17px] font-semibold text-good underline">{t("attentionHandled")}</Link>
+  </PageShell>;
 }
