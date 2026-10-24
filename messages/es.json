@@ -792,7 +792,8 @@
     "offToday": "Sin horas registradas hoy",
     "now": "Ahora",
     "payrollCostsSummary": "Costos del empleador: {percent}% sobre el salario (respaldo)",
-    "payrollCostsEdit": "Editar en Reglas y costos"
+    "payrollCostsEdit": "Editar en Reglas y costos",
+    "payrollSaveFailed": "No se pudieron guardar los costos del empleador. Inténtalo de nuevo."
   },
   "More": {
     "toastConnect": "Conectar Toast",
@@ -2913,7 +2914,7 @@
     "whileOpen": "persona(s) mientras esté abierto",
     "prepTiming": "Apertura y cierre",
     "invalidNumber": "Introduce una cantidad válida dentro de los límites.",
-    "rulesSummary": "Comida después de {meal} h · Extras después de {overtime} h",
+    "rulesSummary": "Comida después de {mealHours} h {mealMinutes} min · Extras semanales después de {otHours} h {otMinutes} min",
     "after": "después de",
     "every": "cada",
     "applyRule": "Aplicar regla",
