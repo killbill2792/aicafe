@@ -46,7 +46,7 @@ export default async function UploadReviewPage({params}: {params: Promise<{uploa
     <BackHeader title={h("title")} subtitle={title} backHref="/more/uploads#upload-history" backLabel={c("back")}/>
     <section className="rounded-card-lg bg-card p-5">
       <h1 className="font-headline text-2xl font-bold">{title}</h1><p className="mt-1 text-sm text-ink-muted">{date(upload.createdAt)}</p>
-      <p className="mt-3 text-base font-semibold">{summary ? t("rowsLine",{imported:num(imported),rowsInFile:num(summary.rowsInFile)}) : h("noSummary")}</p>
+      <p className="mt-3 text-base font-semibold">{summary ? sales ? t("salesGroupsLine",{groups:num(sales.imported),rowsInFile:num(summary.rowsInFile)}) : fees ? t("feeDatesLine",{dates:num(fees.importedDates),rowsInFile:num(summary.rowsInFile)}) : t("rowsLine",{imported:num(imported),rowsInFile:num(summary.rowsInFile)}) : h("noSummary")}</p>
       {(sales?.dateFrom && sales.dateTo || labor?.dateFrom && labor.dateTo || fees?.dateFrom && fees.dateTo) && <p className="text-sm text-ink-muted">{t("dateRangeLine",{dateFrom:(sales?.dateFrom ?? labor?.dateFrom ?? fees?.dateFrom)!,dateTo:(sales?.dateTo ?? labor?.dateTo ?? fees?.dateTo)!})}</p>}
       <p className="mt-1 text-xs text-ink-muted">{h("importedExplanation")}</p>
     </section>

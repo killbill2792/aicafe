@@ -871,7 +871,9 @@
     "statusProcessing": "Processing",
     "statusFailed": "Failed — nothing was imported",
     "unmatchedInline": "Didn't match your menu: {names}",
-    "kindProcessingFees": "Processing fees"
+    "kindProcessingFees": "Processing fees",
+    "salesGroupsLine": "{groups} sales groups imported from {rowsInFile} file rows",
+    "feeDatesLine": "Processing fees for {dates} dates imported from {rowsInFile} file rows"
   },
   "CsvImport": {
     "salesTitle": "Import sales report",

@@ -871,7 +871,9 @@
     "statusProcessing": "Procesando",
     "statusFailed": "Falló — no se importó nada",
     "unmatchedInline": "No coincidió con tu menú: {names}",
-    "kindProcessingFees": "Comisiones de procesamiento"
+    "kindProcessingFees": "Comisiones de procesamiento",
+    "salesGroupsLine": "Se importaron {groups} grupos de ventas de {rowsInFile} filas del archivo",
+    "feeDatesLine": "Se importaron comisiones de {dates} fechas de {rowsInFile} filas del archivo"
   },
   "CsvImport": {
     "salesTitle": "Importar reporte de ventas",

@@ -871,7 +871,9 @@
     "statusProcessing": "قيد المعالجة",
     "statusFailed": "فشل — لم يتم استيراد أي شيء",
     "unmatchedInline": "لم يطابق قائمتك: {names}",
-    "kindProcessingFees": "رسوم معالجة الدفع"
+    "kindProcessingFees": "رسوم معالجة الدفع",
+    "salesGroupsLine": "تم استيراد {groups} مجموعات مبيعات من {rowsInFile} صفوف في الملف",
+    "feeDatesLine": "تم استيراد رسوم معالجة {dates} أيام من {rowsInFile} صفوف في الملف"
   },
   "CsvImport": {
     "salesTitle": "استيراد تقرير المبيعات",

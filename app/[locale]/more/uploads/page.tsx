@@ -47,7 +47,11 @@ export default async function UploadsPage() {
             <Icon aria-hidden="true" size={20} className="shrink-0 text-ink-muted"/>
             <span className="flex min-w-0 flex-1 flex-col"><span className="font-semibold">{kindName(upload.kind)}</span>
               <span className="text-xs text-ink-muted">{formatDate(upload.createdAt)}</span>
-              {upload.summary && <span className="text-sm text-ink-muted">{h("rowsLine", {imported: new Intl.NumberFormat(locale).format("imported" in upload.summary ? upload.summary.imported : "importedDates" in upload.summary ? upload.summary.importedDates : 0), rowsInFile: new Intl.NumberFormat(locale).format(upload.summary.rowsInFile)})}</span>}
+              {upload.summary && <span className="text-sm text-ink-muted">{upload.kind === "sales_csv"
+                ? h("salesGroupsLine", {groups:new Intl.NumberFormat(locale).format("imported" in upload.summary ? upload.summary.imported : 0), rowsInFile:new Intl.NumberFormat(locale).format(upload.summary.rowsInFile)})
+                : upload.kind === "processing_fees_csv"
+                  ? h("feeDatesLine", {dates:new Intl.NumberFormat(locale).format("importedDates" in upload.summary ? upload.summary.importedDates : 0), rowsInFile:new Intl.NumberFormat(locale).format(upload.summary.rowsInFile)})
+                  : h("rowsLine", {imported:new Intl.NumberFormat(locale).format("imported" in upload.summary ? upload.summary.imported : 0), rowsInFile:new Intl.NumberFormat(locale).format(upload.summary.rowsInFile)})}</span>}
             </span><span className="text-xs font-semibold text-warn">{statusName(upload.status)}</span>
             <ChevronRight aria-hidden="true" size={18} className="shrink-0 rtl:rotate-180"/>
           </Link>;
