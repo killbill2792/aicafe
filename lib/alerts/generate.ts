@@ -1,11 +1,11 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { mealBreakStatus, missingBillAlert, voidsAlert } from "@/lib/calc";
+import { mealBreakStatus, missingBillAlert } from "@/lib/calc";
 import { RUNNING_COST_CODES } from "@/lib/constants";
 import { staleGeneratedAlertIds } from "./reconcile";
 import { formatInTimeZone } from "date-fns-tz";
 import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
-import { summarizeVoidsRollups } from "@/lib/calc/voidsReview";
+import { summarizeVoidsRollups, isUnusualVoids } from "@/lib/calc/voidsReview";
 
 /**
  * Generates alert rows from real data (docs/05-calculations.md "Alert rules"). Only 3 of the 6
@@ -112,10 +112,7 @@ async function generateVoidsAlert(supabase: SupabaseClient, businessId: string, 
     voidsCoverage: "unknown" as const,
   })), monthKey, today);
 
-  const hasVerifiedComparison =
-    summary.thisMonthCents !== null && summary.previousThreeMonthAverageCents !== null;
-  const fires = hasVerifiedComparison &&
-    voidsAlert(summary.thisMonthCents!, summary.previousThreeMonthAverageCents!);
+  const fires = isUnusualVoids(summary);
 
   // Resolve stale prior-month alerts and current false positives from missing coverage.
   // Owner-resolved/dismissed history stays immutable under resolveStaleGeneratedAlerts.
