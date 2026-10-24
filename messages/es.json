@@ -2905,7 +2905,8 @@
     "noAvailableDays": "Sin días seleccionados",
     "everyDay": "Todos los días",
     "confirmRemovePerson": "¿Quitar a {name} del equipo? Su perfil quedará inactivo.",
-    "confirmRemove": "Sí, quitar persona"
+    "confirmRemove": "Sí, quitar persona",
+    "noWageAction": "Sin salario definido"
   },
   "FreeAccess": {
     "pricing": "Planes y precios",
