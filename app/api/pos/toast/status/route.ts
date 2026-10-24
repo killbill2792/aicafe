@@ -14,7 +14,7 @@ export async function GET(request:Request){
  const [c,m,r,s,f,a,check]=await Promise.all([
   db.from("toast_api_credentials").select("state,last_error_category").eq("business_id",id.data).maybeSingle(),
   db.from("toast_location_mappings").select("restaurant_guid,verified_at,toast_time_zone,toast_start_date").eq("business_id",id.data),
-  db.from("toast_sync_runs").select("kind,state,days_done,days_total,resume_at").eq("business_id",id.data).limit(1000),
+  db.from("toast_sync_runs").select("kind,state,days_done,days_total,resume_at,requested_from,requested_to").eq("business_id",id.data).limit(1000),
   db.from("toast_day_status").select("business_date,restaurant_guid,import_state,recon_state,net_sales_cents,toast_net_sales_cents,delta_net_cents,order_count,last_error_category,coverage_complete").eq("business_id",id.data).order("business_date",{ascending:false}).limit(500),
   db.from("toast_day_owner_flags").select("business_date,restaurant_guid,cleared_at").eq("business_id",id.data).is("cleared_at",null).limit(500),
   db.from("toast_analytics_credentials").select("verified_at").eq("business_id",id.data).maybeSingle(),
@@ -49,6 +49,7 @@ export async function GET(request:Request){
    state:active.some(x=>x.state==="paused_rate_limited")?"paused_rate_limited":active[0]?.state??null,
    resumeAt:active.map(x=>x.resume_at).filter((x):x is string=>Boolean(x)).sort()[0]??null},
   failedRuns:(r.data??[]).filter(x=>x.state==="failed").length,
+  queuedRanges:(r.data??[]).filter(x=>["queued","running","paused_rate_limited"].includes(x.state)&&x.requested_from&&x.requested_to).map(x=>({from:x.requested_from,to:x.requested_to})),
   needsLook:needing.map(x=>({date:x.business_date,restaurantGuid:x.restaurant_guid,oursCents:x.net_sales_cents,
    toastCents:x.toast_net_sales_cents,deltaCents:x.delta_net_cents,
    reason:flags.has(x.restaurant_guid+":"+x.business_date)?"owner_flag":
