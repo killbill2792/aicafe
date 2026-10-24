@@ -2906,7 +2906,10 @@
     "everyDay": "Every day",
     "confirmRemovePerson": "Remove {name} from your team? Their profile will become inactive.",
     "confirmRemove": "Yes, remove person",
-    "noWageAction": "No wage set"
+    "noWageAction": "No wage set",
+    "salaryManagedBadge": "Salary managed separately",
+    "wagePerHour": "{amount} per hour",
+    "teamHoursShort": "{hours} h"
   },
   "FreeAccess": {
     "pricing": "Plans and pricing",
