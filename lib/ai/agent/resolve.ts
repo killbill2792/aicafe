@@ -53,15 +53,21 @@ export type ResolveState = {
   ownerText: string;
   priorChoice: string | null;
   seenIds: Set<string>;
+  chosenIds: Set<string>;
   ambiguous: ChoiceCandidate[][];
   asked: boolean;
 };
 export function newResolveState(ownerText: string, history: readonly {role:string;content:string}[] = []): ResolveState {
   const last=history.at(-1);
   const previous=history.at(-2);
-  return {ownerText,priorChoice:last?.role==="assistant"&&last.content.includes("Asked:")?ownerText:
-    previous?.role==="assistant"&&previous.content.includes("Asked:")?ownerText:null,
-    seenIds:new Set(),ambiguous:[],asked:false};
+  const lastAsk=[last,previous].find(message=>message?.role==="assistant"&&message.content.includes("Asked:"));
+  const chosenIds=new Set<string>();
+  if(lastAsk){
+    const text=normalizedName(ownerText);
+    for(const match of lastAsk.content.matchAll(/([^;:]+?)\s*\(([0-9a-f]{8}-[0-9a-f-]{27,})\)/giu))
+      if(normalizedName(match[1].replace(/^.*Options:\s*/u,""))===text)chosenIds.add(match[2].toLowerCase());
+  }
+  return {ownerText,priorChoice:lastAsk?ownerText:null,seenIds:new Set(),chosenIds,ambiguous:[],asked:false};
 }
 export function choicePayload(result: EntityResolution<unknown>, source: string, period: {from:string;to:string}|null) {
   return result.status==="ambiguous"
@@ -71,6 +77,7 @@ export function choicePayload(result: EntityResolution<unknown>, source: string,
 /** Reject a proposal when a result named several targets and the owner did not identify one. */
 export function ownerChoiceGuard(state: ResolveState|undefined, targetId:string) {
   if(!state)return null;
+  if(state.chosenIds.has(targetId.toLowerCase()))return null;
   const owner = normalizedName(state.ownerText);
   for(const candidates of state.ambiguous) {
     if(!candidates.some(candidate=>candidate.id===targetId))continue;
