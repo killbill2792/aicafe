@@ -296,7 +296,9 @@ begin
  insert into public.toast_day_status(
   business_id,restaurant_guid,business_date,import_state,
   coverage_complete,imported_at)
- values(b,south,'2026-10-05','imported',true,now())
+ select b,south,day::date,'imported',true,now() from
+  generate_series('2026-10-02'::timestamp,'2026-10-05'::timestamp,
+   interval '1 day') as south_dates(day)
  on conflict(business_id,restaurant_guid,business_date) do update
   set import_state='imported',coverage_complete=true,imported_at=now();
  update public.toast_day_status set coverage_complete=true,
@@ -369,13 +371,13 @@ begin
  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
  requested_from,requested_to,days_total,days_done,state,cursor,
  orders_seen,orders_unparsed,api_calls,rate_limited_count,invalid_days)
- values(b,south,'backfill','2026-10-04','2026-10-06',3,2,
-  'running','{"business_date":"2026-10-06","page":2}'::jsonb,
+ values(b,south,'backfill','2026-10-01','2026-10-06',6,2,
+  'running','{"business_date":"2026-10-03","page":2}'::jsonb,
   10,2,6,1,1)
  returning id into r;
  insert into public.toast_day_pages(run_id,business_date,page,payload)
- values(r,'2026-10-06',1,'[]'::jsonb);
- select public.toast_queue_backfill(b,south,'2026-10-04','2026-10-06') into reused;
+ values(r,'2026-10-03',1,'[]'::jsonb);
+ select public.toast_queue_backfill(b,south,'2026-10-01','2026-10-06') into reused;
  perform pg_temp.assert(reused=r,'earlier start-date recovers identical active run');
  perform pg_temp.assert((select days_done=0 and state='queued'
   and cursor='{}'::jsonb and orders_seen=0 and orders_unparsed=0
@@ -385,7 +387,7 @@ begin
  perform pg_temp.assert(not exists(select 1 from public.toast_day_pages
   where run_id=r),'earlier Toast start discards previously staged pages');
  perform pg_temp.assert((select sales_data_status='missing'
-  from public.daily_rollups where business_id=b and business_date='2026-10-04'),
+  from public.daily_rollups where business_id=b and business_date='2026-10-01'),
   'newly applicable second location must demote previously complete Toast business total');
 end $start_date_recovery$;
 
