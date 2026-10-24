@@ -11,10 +11,13 @@ const base={guid:"00000000-0000-4000-8000-000000000002",
     appliedDiscounts:[],modifiers:[],refundDetails:null}],
   payments:[{tipAmount:2,refundStatus:"NONE",refund:null}]}]};
 describe("Toast read-only normalization",()=>{
- it("converts dollar doubles to exact cents and rejects unrepresentable money",()=>{
+ it("converts dollars to cents and rounds sub-cent values away from zero",()=>{
    expect(toastMoneyCents(11.05)).toBe(1105);
    expect(toastMoneyCents(0.29)).toBe(29);
-   expect(()=>toastMoneyCents(0.001)).toThrow(ToastApiError);
+   expect(toastMoneyCents(0.001)).toBe(0);
+   expect(toastMoneyCents(1.005)).toBe(101);
+   expect(toastMoneyCents(-1.005)).toBe(-101);
+   expect(()=>toastMoneyCents(Number.POSITIVE_INFINITY)).toThrow(ToastApiError);
  });
  it("does not double-subtract discounts or include tax/tips in net sales",()=>{
    expect(normalizeToastOrder(base,restaurant)).toMatchObject({

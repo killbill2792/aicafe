@@ -107,7 +107,7 @@ async function generateVoidsAlert(supabase: SupabaseClient, businessId: string, 
   const threeMonthsAgo = new Date(Date.UTC(year, month - 4, 1)).toISOString().slice(0, 10);
 
   const { data, error } = await supabase.from("daily_rollups")
-    .select("business_date, voids_cents, sales_data_status")
+    .select("business_date, voids_cents, sales_data_status, voids_status")
     .eq("business_id", businessId).gte("business_date", threeMonthsAgo)
     .lte("business_date", today).order("business_date", { ascending: true });
   // A failed read cannot prove a spike, and sales coverage never proves void coverage.
@@ -116,9 +116,8 @@ async function generateVoidsAlert(supabase: SupabaseClient, businessId: string, 
     business_date: row.business_date,
     voids_cents: Number(row.voids_cents),
     sales_data_status: row.sales_data_status,
-    // The persisted rollup has no void-specific provenance or completeness field.
-    // Even a successful connected-POS sales sync or CSV import cannot certify zero voids.
-    voidsCoverage: "unknown" as const,
+    // Only PR2-verified complete Toast void days may trigger a void alert.
+    voidsCoverage: row.voids_status === "complete" ? "complete" as const : "unknown" as const,
   })), monthKey, today);
 
   const fires = isUnusualVoids(summary);

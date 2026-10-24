@@ -104,6 +104,9 @@ export const SOURCE_SURFACES = {
   "lib/data/getPosConnectionStatus.ts":{
     getPosConnectionStatus:{restricted:"Provider connection/sync metadata require separate owner-only contract"},
   },
+  "lib/data/getMoreBadges.ts":{
+    getMoreBadgeInputs:{restricted:"Owner-session and active-café-scoped Settings badges (hours, verified Toast, fees, bills, alerts, uploads); private read-only UI evidence, never a model-facing metric"},
+  },
   "lib/data/getProcessingFeeEstimateSetup.ts":{
     getProcessingFeeEstimateSetup:{restricted:"Private processing-fee assumption settings need provenance"},
   },

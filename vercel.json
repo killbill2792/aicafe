@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/admin-question-patterns",
       "schedule": "15 2 * * *"
+    },
+    {
+      "path": "/api/cron/toast-sync",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

@@ -13,9 +13,10 @@ async function verifyOwner(scope:StaffSourceScope){
  if(user.error||user.data.user?.id!==scope.ownerUserId)throw new Error("Owner session changed");
  return owner;
 }
-export async function readStaffProposalToken(scope:StaffSourceScope){
+export async function readStaffProposalToken(scope:StaffSourceScope,dependencyScope?:import("@/lib/ai/supervisor/loop/staffProposals.server").StaffDependencyScope){
  await verifyOwner(scope);
- const {data,error}=await createAdminSupabaseClient().rpc("supervisor_staff_source_token",{p_business_id:scope.businessId});
+ const {data,error}=await createAdminSupabaseClient().rpc(dependencyScope?"supervisor_staff_scoped_token":"supervisor_staff_source_token",dependencyScope?
+  {p_business_id:scope.businessId,p_scope:dependencyScope}:{p_business_id:scope.businessId});
  if(error||typeof data!=="string"||!/^[a-f0-9]{32}$/.test(data))throw new Error("Staff revision unavailable; apply migration 091");
  return data;
 }
@@ -39,13 +40,13 @@ export async function readStaffProposalSources(scope:StaffSourceScope,from:strin
   throw new Error("Too many staff records to preview safely");
  const people=(peopleResult.data??[]) as StaffProposalPerson[],shifts=(shiftsResult.data??[]) as StaffProposalShift[];
 
- const cafeZone=await db.from("businesses").select("timezone")
+ const cafeZone=await db.from("businesses").select("timezone,currency")
    .eq("id",scope.businessId).single();
- if(cafeZone.error||!cafeZone.data?.timezone)throw new Error("Café timezone unavailable");
+ if(cafeZone.error||!cafeZone.data?.timezone||!cafeZone.data.currency||!/^[A-Z]{3}$/.test(cafeZone.data.currency))throw new Error("Café locale/currency unavailable");
 
  return {people,shifts,
   rules:(rulesResult.data??null) as Record<string,unknown>|null,
   availability:(availabilityResult.data??[]) as Array<{employee_id:string;day_of_week:number;start_local:string;end_local:string}>,
   exceptions:(exceptionsResult.data??[]) as Array<{employee_id:string;local_date:string;exception_type:string;start_local:string|null;end_local:string|null;max_minutes:number|null}>,
-  timezone:cafeZone.data!.timezone as string};
+  timezone:cafeZone.data!.timezone as string,currency:cafeZone.data!.currency as string};
 }

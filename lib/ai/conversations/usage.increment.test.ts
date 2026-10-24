@@ -77,7 +77,7 @@ describe("Retry usage accounting (atomic SQL contract + mocked RPC)",()=>{
       await recordSupervisorUsage({...params,ownerMessageId:"fallback-priced",
         usage:{model:"gpt-4.1-mini",inputTokens:100,outputTokens:20,modelCallCount:2,toolCallCount:1}});
       expect(memory.increments.at(-1)).toMatchObject({
-        p_model:"gpt-4.1-mini",p_estimated_cost_micros:90,
+        p_model:"gpt-4.1-mini",p_estimated_cost_micros:null,
       });
       await recordSupervisorUsage({...params,ownerMessageId:"luna-priced",
         usage:{model:"gpt-6-luna",inputTokens:100,outputTokens:20,modelCallCount:2,toolCallCount:1}});

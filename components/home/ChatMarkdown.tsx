@@ -1,9 +1,10 @@
+import { tokenizeNumbers } from "@/lib/ai/agent/numberTokens";
 import { useEffect, useReducer, useRef, useState, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
 
 type Verification = { start:number;end:number;source?:"owner"|"estimate"|"unchecked";detail?:string };
 export type ProvenanceLabels={owner:string;estimate:string;unchecked:string;breakEvenSales?:string;salesGap?:string;dailyOverhead?:string};
-const tones={owner:"bg-blue-600",estimate:"bg-amber-600",unchecked:"bg-gray-500"} as const;
+const tones={owner:"bg-chart-staff",estimate:"bg-warn",unchecked:"border border-ink bg-transparent"} as const;
 type DotEvent="hover-start"|"hover-end"|"focus-start"|"focus-end"|"tooltip-focus-start"|"tooltip-focus-end"|"click"|"escape";
 type DotInteraction={hovered:boolean;focused:boolean;tooltipFocused?:boolean;pinned:boolean;dismissed:boolean};
 const dotInitial:DotInteraction={hovered:false,focused:false,tooltipFocused:false,pinned:false,dismissed:false};
@@ -160,72 +161,98 @@ function listMarker(line: SourceLine): ListMarker | null {
  * delimiters have been interpreted. Both verified and regular text share the
  * same block parser; labels cannot switch lists back to raw source text. */
 function annotatedText(
-  text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>,
+  text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>, locale: "en"|"es"|"ar" = "en",
 ): ReactNode[] {
-  const end = absoluteStart + text.length;
-  const out: ReactNode[] = [];
-  let cursor = absoluteStart;
-  for (const span of spans) {
-    if (span.end <= cursor || span.start >= end) continue;
-    const from = Math.max(cursor, span.start);
-    const to = Math.min(end, span.end);
-    if (from > cursor) out.push(text.slice(cursor - absoluteStart, from - absoluteStart));
-    if (from < to) {
-      const source=span.source??"unchecked";
-      const detail=span.detail==="breakEvenSales"?labels.breakEvenSales:span.detail==="salesGap"?labels.salesGap:span.detail==="dailyOverhead"?labels.dailyOverhead:span.detail;
-      const explanation=detail?labels[source]+": "+detail:labels[source];
-      out.push(<span key={from} className="whitespace-nowrap">
-        {text.slice(from-absoluteStart,to-absoluteStart)}
-        {!badged.has(span.start)&&<SourceDot tone={source} label={explanation}/>}
-      </span>);
-    }
-    if (from < to) badged.add(span.start);
-    cursor = Math.max(cursor, to);
+  const end=absoluteStart+text.length, out:ReactNode[]=[];
+  let cursor=absoluteStart;
+  const tokens=tokenizeNumbers(text,locale);
+  for(const token of tokens){
+    const from=absoluteStart+token.start,to=absoluteStart+token.end;
+    const matching=spans.filter(span=>span.start<to&&span.end>from);
+    // Calendar/time-shaped tokens stay undecorated only when the checker has
+    // NOT explicitly rejected them. Grounding always overrides cosmetics.
+    const unchecked=matching.some(span=>(span.source??"unchecked")==="unchecked");
+    const cosmeticOnly=["clock","clockRange","date","dateRange","duration","ordinal","phone/id"].includes(token.kind);
+    if(!matching.length||badged.has(from)||(cosmeticOnly&&!unchecked))continue;
+    if(from>cursor)out.push(text.slice(cursor-absoluteStart,from-absoluteStart).replace(/\\\|/g,"|"));
+    if(from<cursor)continue;
+    const span=matching.find(v=>v.source==="unchecked")??matching[0];
+    const source=span.source??"unchecked";
+    const detail=span.detail==="breakEvenSales"?labels.breakEvenSales:span.detail==="salesGap"?labels.salesGap:span.detail==="dailyOverhead"?labels.dailyOverhead:span.detail;
+    const explanation=detail?labels[source]+": "+detail:labels[source];
+    out.push(<span key={from} className="whitespace-nowrap">{text.slice(token.start,token.end)}<SourceDot tone={source} label={explanation}/></span>);
+    badged.add(from);cursor=to;
   }
-  if (cursor < end) out.push(text.slice(cursor - absoluteStart));
+  if(cursor<end)out.push(text.slice(cursor-absoluteStart).replace(/\\\|/g,"|"));
   return out;
 }
 
 function inlineMarkdown(
-  text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>,
+  text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>, locale:"en"|"es"|"ar"="en",
 ): ReactNode[] {
   const nodes: ReactNode[] = [];
   // No model-authored HTML or links: React escapes literal source text. Inline
   // code is rendered as text and is never reparsed as emphasis.
-  const pattern = /(\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_|`([^`\n]+)`)/g;
+  const pattern = /(\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_|`([^`\n]+)`)/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
     if (match.index > cursor) {
-      nodes.push(...annotatedText(text.slice(cursor, match.index), absoluteStart + cursor, spans, labels, badged));
+      nodes.push(...annotatedText(text.slice(cursor, match.index), absoluteStart + cursor, spans, labels, badged,locale));
     }
-    const delimiter = match[2] !== undefined || match[3] !== undefined ? 2 : 1;
-    const content = match[2] ?? match[3] ?? match[4] ?? match[5] ?? match[6];
-    const inner = annotatedText(content, absoluteStart + match.index + delimiter, spans, labels, badged);
+    const delimiter = match[4] !== undefined || match[5] !== undefined ? 2 : match[2]!==undefined ? 1 : 1;
+    const content = match[2] ?? match[4] ?? match[5] ?? match[6] ?? match[7] ?? match[8];
+    const inner = annotatedText(content, absoluteStart + match.index + delimiter, spans, labels, badged,locale);
     const key = absoluteStart + match.index;
-    nodes.push(match[2] !== undefined || match[3] !== undefined
+    nodes.push(match[2] !== undefined
+      ? <a key={key} href={match[3]} target="_blank" rel="noopener noreferrer" className="underline text-accent-text">{inner}</a>
+      : match[4] !== undefined || match[5] !== undefined
       ? <strong key={key} className="font-bold">{inner}</strong>
-      : match[6] !== undefined
+      : match[8] !== undefined
         ? <code key={key} className="rounded bg-surface2 px-1">{inner}</code>
         : <em key={key}>{inner}</em>);
     cursor = match.index + match[0].length;
   }
-  if (cursor < text.length) nodes.push(...annotatedText(text.slice(cursor), absoluteStart + cursor, spans, labels, badged));
+  if (cursor < text.length) nodes.push(...annotatedText(text.slice(cursor), absoluteStart + cursor, spans, labels, badged,locale));
   return nodes;
+}
+
+
+type TableCell={text:string;start:number};
+function tableCells(line:SourceLine):TableCell[]{
+ const text=line.text;const found:TableCell[]=[];let from=0,code=false,escape=false;
+ for(let i=0;i<text.length;i++){
+   if(escape){escape=false;continue;}
+   if(text[i]==="\\"){escape=true;continue;}
+   if(text[i]==="`"){code=!code;continue;}
+   if(text[i]==="|"&&!code){found.push({text:text.slice(from,i),start:line.start+from});from=i+1;}
+ }
+ found.push({text:text.slice(from),start:line.start+from});
+ if(text.trimStart().startsWith("|"))found.shift();
+ if(text.trimEnd().endsWith("|"))found.pop();
+ return found.map(c=>({text:c.text.trim(),start:c.start+c.text.length-c.text.trimStart().length}));
+}
+function tableHeader(lines:SourceLine[],index:number){
+ if(index+1>=lines.length)return null;
+ const head=tableCells(lines[index]),sep=tableCells(lines[index+1]);
+ if(!head.length||head.every(c=>!c.text)||head.length!==sep.length||
+   !sep.every(c=>/^:?-{3,}:?$/.test(c.text)))return null;
+ const align=sep.map(c=>c.text.startsWith(":")&&c.text.endsWith(":")?"center":c.text.endsWith(":")?"end":"start");
+ return {head,align};
 }
 
 export function SourceLegend({sources,labels,legendLabel="Number sources"}:{
  sources:readonly ("owner"|"estimate"|"unchecked")[];labels:ProvenanceLabels;legendLabel?:string;
 }){
  const used=(["owner","estimate","unchecked"] as const).filter(source=>sources.includes(source));
- return used.length>0?<p className="flex flex-wrap gap-x-3 gap-y-1 text-[17px] leading-relaxed text-ink-muted" aria-label={legendLabel}>
+ return used.length>0?<p className="flex flex-wrap gap-x-3 gap-y-1 text-[14px] leading-relaxed text-ink-muted" aria-label={legendLabel}>
   {used.map(source=><span key={source} className="inline-flex items-center gap-1">
    <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${tones[source]}`}/>{labels[source]}
   </span>)}
  </p>:null;
 }
-export function ChatMarkdown({text,unverified=[],label,labels,showLegend=true,legendLabel}:{
- text:string;unverified?:readonly Verification[];label?:string;labels?:ProvenanceLabels;
+export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLegend=true,legendLabel}:{
+ text:string;unverified?:readonly Verification[];label?:string;labels?:ProvenanceLabels;locale?:"en"|"es"|"ar";
  showLegend?:boolean;legendLabel?:string;
 }) {
  const copy=labels??{owner:"You told me",estimate:"Estimate",unchecked:label??"Not checked against your records"};
@@ -241,6 +268,27 @@ export function ChatMarkdown({text,unverified=[],label,labels,showLegend=true,le
   let index = 0;
   while (index < lines.length) {
     if (!lines[index].text.trim()) { index++; continue; }
+
+    const table=tableHeader(lines,index);
+    if(table){
+      const firstLine=index; index+=2;
+      const rows:TableCell[][]=[];
+      while(index<lines.length&&lines[index].text.trim()&&!tableHeader(lines,index)){
+        if(!lines[index].text.includes("|")&&table.head.length>1)break;
+        const cells=tableCells(lines[index]);
+        rows.push(Array.from({length:table.head.length},(_,i)=>cells[i]??{text:"",start:lines[index].start+lines[index].text.length}));
+        index++;
+      }
+      const alignment=(i:number)=>table.align[i]==="center"?"text-center":table.align[i]==="end"?"text-end":"text-start";
+      blocks.push(<div key={firstLine} role="region" aria-label="Response table" tabIndex={0}
+        className="max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+        <table dir={locale==="ar"?"rtl":"auto"} className="w-full min-w-max border-collapse text-[17px]">
+         <thead><tr>{table.head.map((cell,i)=><th key={i} scope="col" className={`border-b border-line bg-surface2 px-3 py-2 font-semibold ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</th>)}</tr></thead>
+         <tbody>{rows.map((cells,j)=><tr key={j}>{cells.map((cell,i)=><td key={i} className={`border-b border-line px-3 py-2 ${alignment(i)}`}>{inlineMarkdown(cell.text,cell.start,spans,copy,badged,locale)}</td>)}</tr>)}</tbody>
+        </table>
+      </div>);
+      continue;
+    }
     const first = listMarker(lines[index]);
     if (first) {
       const ordered = first.ordered;
@@ -260,7 +308,7 @@ export function ChatMarkdown({text,unverified=[],label,labels,showLegend=true,le
           }
           break;
         }
-        const item = inlineMarkdown(marker.content, marker.contentStart, spans, copy, badged);
+        const item = inlineMarkdown(marker.content, marker.contentStart, spans, copy, badged,locale);
         entries.push(ordered
           ? <li key={index} value={marker.number} className="ps-1">{item}</li>
           : <li key={index} className="ps-1">{item}</li>);
@@ -273,10 +321,10 @@ export function ChatMarkdown({text,unverified=[],label,labels,showLegend=true,le
     }
     const start = index;
     const rows: ReactNode[] = [];
-    while (index < lines.length && lines[index].text.trim() && !listMarker(lines[index])) {
+    while (index < lines.length && lines[index].text.trim() && !listMarker(lines[index]) && !tableHeader(lines,index)) {
       if (rows.length) rows.push("\n");
       const line = lines[index];
-      rows.push(...inlineMarkdown(line.text, line.start, spans, copy, badged));
+      rows.push(...inlineMarkdown(line.text, line.start, spans, copy, badged,locale));
       index++;
     }
     if (index === start) index++;

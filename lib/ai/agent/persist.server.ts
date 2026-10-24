@@ -1,7 +1,6 @@
 import "server-only";
 import { persistGroundedSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
 import { recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
-import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import type { ConversationMessage, ConversationScope, GroundedSupervisorReply } from "@/lib/ai/conversations/contracts";
 import type { AgentTurn } from "./loop.server";
 
@@ -113,7 +112,7 @@ export async function persistAgentReply(scope: ConversationScope, owner: Convers
 export function agentUsageIncrements(turn: AgentTurn) {
   const calls = turn.usage.toolCalls;
   return Array.from({ length: Math.max(1, Math.ceil(calls / 5)) }, (_, index) => ({
-    model: configuredSupervisorModel(),
+    model: turn.usage.model??"unknown",
     modelCallCount: index === 0 ? turn.usage.modelCalls : 0,
     toolCallCount: Math.min(5, calls - index * 5),
     inputTokens: index === 0 ? turn.usage.inputTokens : 0,

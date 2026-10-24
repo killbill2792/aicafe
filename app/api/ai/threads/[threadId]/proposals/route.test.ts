@@ -71,6 +71,7 @@ vi.mock("@/lib/ai/supervisor/loop/menuPriceChange.server",()=>({
   },
 }));
 vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({
+  priceExperimentCapabilityId:"alex.drink_price_experiment.v1",
   supervisorLoopRegistry:{get:()=>({
     version:1,parseEffect:(raw:unknown)=>raw,
     simulate:async(_scope:unknown,input:{productId:string;newPriceCents:number})=>({

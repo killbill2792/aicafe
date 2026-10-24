@@ -14,7 +14,7 @@ export type AgentAuditStep = { kind: "model_call" | "tool_call" | "approval_card
   inputSummary?: string; outputSummary?: string; durationMs: number; error?: string };
 export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType<typeof statusFromResults>;
   unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; evidence?: NumericEvidence[]; tools?:string[]; agentIds?:string[];
-  usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number };
+  usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number; model?:string };
   /** Owner messages sent while this turn ran and read by the model before a later step. */
   absorbedOwnerMessageIds?: string[] };
 /** A message the owner sent while the turn was running. */
@@ -33,7 +33,10 @@ export async function* openAIProvider(params: Record<string, unknown>, signal: A
       "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
-  if (!response.ok || !response.body) throw new Error("provider_unavailable");
+  if (!response.ok || !response.body) {
+    console.error("supervisor_provider_error",{model:String(params.model??"unknown"),status:response.status});
+    throw new Error("provider_error");
+  }
   const reader = response.body.getReader(), decoder = new TextDecoder();
   let buffer = "";
   try {
@@ -111,7 +114,7 @@ export async function runAgentTurn(args: {
   };
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
   const startedTools: string[] = [];
-  const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0 };
+  const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0, model: undefined as string|undefined };
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
   const model = configuredSupervisorModel();
   const audit = (step: AgentAuditStep) => { try { args.onAuditStep?.(step); } catch { /* audit is non-critical */ } };
@@ -144,6 +147,8 @@ export async function runAgentTurn(args: {
           if (item.type === "function_call") calls.push(item as ToolCall);
         }
         if (event.type === "response.completed") {
+          const actual=(event.response as {model?:unknown}|undefined)?.model;
+          if(typeof actual==="string"&&actual.trim())usage.model=actual;
           completed = true;
           const u = (event.response as { usage?: { input_tokens?: number; output_tokens?: number;
             input_tokens_details?: { cached_tokens?: number } } } | undefined)?.usage;
@@ -281,6 +286,8 @@ export async function runAgentTurn(args: {
                 text += event.delta; args.onDelta?.(event.delta);
               }
               if (event.type === "response.completed") {
+                const actual=(event.response as {model?:unknown}|undefined)?.model;
+                if(typeof actual==="string"&&actual.trim())usage.model=actual;
                 completed = true;
                 const u = (event.response as {usage?:{input_tokens?:number;output_tokens?:number;input_tokens_details?:{cached_tokens?:number}}}|undefined)?.usage;
                 usage.inputTokens += u?.input_tokens ?? 0; usage.outputTokens += u?.output_tokens ?? 0;

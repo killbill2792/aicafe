@@ -11,7 +11,6 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import type { Period } from "@/lib/viewmodels/period";
 import { Link } from "@/i18n/navigation";
-import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import AddCostFab from "@/components/shared/AddCostFab";
 import MoneyViewSwitch from "@/components/money/MoneyViewSwitch";
@@ -47,7 +46,7 @@ export default async function MoneyPage({
     const range = periodCalendarRange(snapshot, period);
     const orders = await readAllPosRows<SalesOrderEvidence>((first, last) => db.from("orders")
       .select("pos_order_id, processing_fee_provider")
-      .eq("business_id", businessId).gte("business_date", range.start)
+      .eq("business_id", businessId).eq("toast_excluded",false).is("superseded_by",null).gte("business_date", range.start)
       .lte("business_date", range.end).order("id").range(first, last), "money sales sources");
     salesSources = salesSourcesForOrders(orders);
     // Toast credentials have no authenticated RLS grants. Only read a verified
@@ -77,7 +76,6 @@ export default async function MoneyPage({
           <Link href="/more/bills" className="flex min-h-12 items-center gap-1.5 rounded-full border border-line px-3.5 text-sm font-bold text-ink no-underline">
             <Receipt aria-hidden="true" size={17} /> {t("manageBills")}
           </Link>
-          <LanguageSwitch href="/money" />
         </div>
       </header>
 

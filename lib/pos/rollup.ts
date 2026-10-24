@@ -25,13 +25,14 @@ export async function recomputeDailyRollup(
 
   const orders = await readAllPosRows((first,last)=>supabase
     .from("orders")
-    .select("id, net_sales_cents, pos_order_id, processing_fee_provider")
+    .select("id, net_sales_cents, pos_order_id, processing_fee_provider, toast_excluded, superseded_by")
     .eq("business_id", businessId)
     .eq("business_date", businessDate)
     .order("id").range(first,last),"daily orders");
 
-  const orderIds = orders.map((o) => o.id);
-  const netSalesCents = orders.reduce((s, o) => s + o.net_sales_cents, 0);
+  const effectiveOrders = orders.filter(o => !o.toast_excluded && !o.superseded_by);
+  const orderIds = effectiveOrders.map((o) => o.id);
+  const netSalesCents = effectiveOrders.reduce((s, o) => s + o.net_sales_cents, 0);
   const ordersCount = orderIds.length;
 
   // Keep the owner-confirmed fallback current before selecting the canonical fee fact. Synthetic
@@ -42,7 +43,7 @@ export async function recomputeDailyRollup(
     businessId,
     businessDate,
     netSalesCents,
-    orders: orders.map((order) => ({
+    orders: effectiveOrders.map((order) => ({
       posOrderId: order.pos_order_id,
       netSalesCents: Number(order.net_sales_cents),
       processingFeeProvider: order.processing_fee_provider,
@@ -72,6 +73,8 @@ export async function recomputeDailyRollup(
   const nonVoidedLines = lines.filter((l) => !l.voided);
   const voidedLines = lines.filter((l) => l.voided);
   const drinksCount = nonVoidedLines.reduce((s, l) => s + Number(l.quantity), 0);
+  // Only Toast reconciliation can certify complete void amounts. Ordinary rollups
+  // must not replace a previously certified void total with voided-line net=0.
   const voidsCents = voidedLines.reduce((s, l) => s + l.net_sales_cents, 0);
 
   // Theoretical ingredient cost: recipe cost per menu item × quantity sold, at this date's prices.
@@ -137,7 +140,7 @@ export async function recomputeDailyRollup(
   );
   const { data: existingRollup, error: existingRollupError } = await supabase
     .from("daily_rollups")
-    .select("staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status")
+    .select("staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status, voids_status, voids_cents")
     .eq("business_id", businessId)
     .eq("business_date", businessDate)
     .maybeSingle();
@@ -174,7 +177,7 @@ export async function recomputeDailyRollup(
       sales_data_status: salesDataStatus,
       card_fees_cents: selectedProcessingFee.amountCents,
       card_fees_status: selectedProcessingFee.status,
-      voids_cents: voidsCents,
+      voids_cents: existingRollup?.voids_status === "complete" ? existingRollup.voids_cents : voidsCents,
     };
   // Read-only preview uses the same sales, recipe and payroll calculations.
   // Never insert or update a fact (including fee estimates) in dry-run mode.
