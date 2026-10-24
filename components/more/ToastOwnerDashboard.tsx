@@ -99,6 +99,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  }
  if(bad)return <section role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">
   <p>{t("ownerStatusUnavailable")}</p>
+  {message&&<p role="status" className="mt-2">{message}</p>}
   <button type="button" className="mt-3 min-h-12 rounded-full border border-warn px-5"
    onClick={()=>setReloadKey(k=>k+1)}>{t("ownerRefreshStatus")}</button>
  </section>;
