@@ -5,7 +5,7 @@ import { totalMonthlyRecurringCostsCents } from "@/lib/expenses/recurringMonthly
 
 export type MoreBadgeInputs = {
   openHours?: OpenHours | null;
-  toast?: { state: string | null; hasError: boolean; verifiedLocation: boolean } | null;
+  toast?: { state: string | null; hasError: boolean; verifiedLocation: boolean; daysNeedLook?:number;lastGoodSyncAt?:string|null } | null;
   uploads?: Pick<UploadHistoryRow, "id" | "status">[];
   missingFeeDays?: number | null;
   bills?: RecurringCostRow[];
@@ -20,7 +20,9 @@ export function buildMoreBadges(input: MoreBadgeInputs) {
       input.openHours === null || OPEN_HOURS_DAY_KEYS.some((key) =>
         !Object.prototype.hasOwnProperty.call(input.openHours, key)),
     toast: input.toast === undefined || input.toast === null ? null :
-      input.toast.state === "verified" && !input.toast.hasError && input.toast.verifiedLocation
+      input.toast.daysNeedLook && input.toast.daysNeedLook > 0
+        ? "daysNeedLook" as const : input.toast.state === "not_connected" ? "notConnected" as const :
+        input.toast.state === "verified" && !input.toast.hasError && input.toast.verifiedLocation
         ? "connected" as const : "needsAttention" as const,
     uploadsNeedingReview: input.uploads === undefined ? null : review.length,
     firstUploadToReview: review[0]?.id ?? null,
