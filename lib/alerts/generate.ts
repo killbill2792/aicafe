@@ -30,13 +30,16 @@ export async function generateAlerts(supabase: SupabaseClient, businessId: strin
 /** Exported for `lib/actions/csvImport.ts`'s `unmatched_sales_items` alert, which is created right
  * at the moment an import finds the problem rather than in the batch pass below (it's tied to one
  * specific upload event, not something recomputable from steady-state data). */
-export async function hasOpenAlert(supabase: SupabaseClient, businessId: string, kind: string, dedupeKey: string): Promise<boolean> {
-  const { data } = await supabase
-    .from("alerts")
-    .select("id, payload")
-    .eq("business_id", businessId)
-    .eq("kind", kind)
-    .in("status", ["new", "seen"]);
+export async function hasOpenAlert(
+  supabase: SupabaseClient, businessId: string, kind: string, dedupeKey: string,
+  includeReviewed = false,
+): Promise<boolean> {
+  // Import alerts retain their existing open-only retry semantics. Generated monthly/shift
+  // alerts must also see resolved/dismissed rows, so Done cannot immediately reappear.
+  let query = supabase.from("alerts").select("id, payload")
+    .eq("business_id", businessId).eq("kind", kind);
+  if (!includeReviewed) query = query.in("status", ["new", "seen"]);
+  const { data } = await query;
   return (data ?? []).some((a) => (a.payload as { dedupeKey?: string })?.dedupeKey === dedupeKey);
 }
 
@@ -73,7 +76,7 @@ async function generateMissingBillAlerts(supabase: SupabaseClient, businessId: s
 
     const dedupeKey = `${monthKey}-${code}`;
     validKeys.add(dedupeKey);
-    if (await hasOpenAlert(supabase, businessId, "missing_bill", dedupeKey)) continue;
+    if (await hasOpenAlert(supabase, businessId, "missing_bill", dedupeKey, true)) continue;
 
     await supabase.from("alerts").insert({
       business_id: businessId,
@@ -104,7 +107,7 @@ async function generateVoidsAlert(supabase: SupabaseClient, businessId: string, 
   if (!voidsAlert(voidsThisMonthCents, avgVoidsPrevious3MonthsCents)) return 0;
 
   const dedupeKey = monthKey;
-  if (await hasOpenAlert(supabase, businessId, "voids", dedupeKey)) return 0;
+  if (await hasOpenAlert(supabase, businessId, "voids", dedupeKey, true)) return 0;
 
   await supabase.from("alerts").insert({
     business_id: businessId,
@@ -134,7 +137,7 @@ async function generateMealBreakAlerts(supabase: SupabaseClient, businessId: str
 
     const dedupeKey = tc.id;
     validKeys.add(dedupeKey);
-    if (await hasOpenAlert(supabase, businessId, "meal_break", dedupeKey)) continue;
+    if (await hasOpenAlert(supabase, businessId, "meal_break", dedupeKey, true)) continue;
 
     const employee = tc.employees as unknown as { display_name: string } | { display_name: string }[] | null;
     const employeeName = Array.isArray(employee) ? employee[0]?.display_name : employee?.display_name;
