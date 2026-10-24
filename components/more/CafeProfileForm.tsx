@@ -374,7 +374,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
             const day = hours[key];
             return (
               <div key={key} className="grid grid-cols-[4.5rem_1fr] gap-2 rounded-xl bg-paper p-3 sm:grid-cols-[5rem_8rem_1fr] sm:items-center">
-                <span className="font-bold text-ink">{dayLabels[key]}</span>
+                <span className="text-[17px] font-bold text-ink">{dayLabels[key]}</span>
                 <select
                   aria-label={dayLabels[key] + ": " + labels.regularHours}
                   value={day.mode}
@@ -402,7 +402,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
                     </label>
                   </div>
                 )}
-                {fieldErrors["hours-" + key] && <p role="alert" className="col-span-2 text-sm font-normal text-neg sm:col-span-3">{fieldErrors["hours-" + key]}</p>}
+                {fieldErrors["hours-" + key] && <p role="alert" className="col-span-2 text-[17px] font-normal text-neg sm:col-span-3">{fieldErrors["hours-" + key]}</p>}
               </div>
             );
           })}
@@ -426,7 +426,7 @@ function Field({ label, hint, error, children, asDiv = false }: { label: string;
       <span>{label}</span>
       {children}
       {hint && <span className="text-sm font-normal text-ink-muted">{hint}</span>}
-      {error && <span role="alert" className="text-sm font-normal text-neg">{error}</span>}
+      {error && <span role="alert" className="text-[17px] font-normal text-neg">{error}</span>}
     </>
   );
   const className = "flex flex-col gap-1 text-[17px] font-semibold text-ink";
