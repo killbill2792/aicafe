@@ -6,6 +6,7 @@ import { Link } from "@/i18n/navigation";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
+import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 
 import { daysForPeriod, type Period } from "@/lib/viewmodels/period";
 
