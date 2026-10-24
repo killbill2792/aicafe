@@ -2913,7 +2913,8 @@
     "draftHideReview": "Hide review",
     "draftRetryApproval": "Retry approval",
     "draftApplying": "Saving your decision…",
-    "draftPartialCost": "Known {known}; {count} wages unknown"
+    "draftPartialCost": "Known {known}; {count} wages unknown",
+    "draftBaseWageNote": "Base wages only. Overtime premiums and payroll taxes are not included."
   },
   "FreeAccess": {
     "pricing": "Plans and pricing",
