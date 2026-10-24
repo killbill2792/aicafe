@@ -621,7 +621,15 @@
     "aggregateCostImportedEstimateActive": "Usando estimación importada",
     "costSourceImported": "Importado",
     "costSourceEstimate": "Estimación",
-    "costSourceCombo": "Ingredientes del combo"
+    "costSourceCombo": "Ingredientes del combo",
+    "matchItems": "Vincular artículos",
+    "itemsNeedMatching": "{count} artículos pendientes de vincular",
+    "pickExistingItem": "Elegir un artículo existente del menú",
+    "selectMenuItem": "Seleccionar un artículo del menú",
+    "addToMenu": "Añadir al menú",
+    "skipForNow": "Omitir por ahora",
+    "skipTemporary": "Este artículo seguirá en la lista de revisión. La omisión no se guarda.",
+    "allMatchItems": "Ver todos los artículos pendientes"
   },
   "ManageMenu": {
     "title": "Gestionar menú",
@@ -857,7 +865,8 @@
     "historyLink": "Historial de subidas",
     "historyLinkHint": "Ve qué hizo cada subida anterior",
     "processingFeesLink": "Comisiones de procesamiento",
-    "processingFeesLinkHint": "De tu caja o procesador de pagos"
+    "processingFeesLinkHint": "De tu caja o procesador de pagos",
+    "lastUpload": "Última carga: {date}"
   },
   "UploadHistory": {
     "title": "Historial de subidas",
@@ -873,7 +882,9 @@
     "statusProcessing": "Procesando",
     "statusFailed": "Falló — no se importó nada",
     "unmatchedInline": "No coincidió con tu menú: {names}",
-    "kindProcessingFees": "Comisiones de procesamiento"
+    "kindProcessingFees": "Comisiones de procesamiento",
+    "salesGroupsLine": "Se importaron {groups} grupos de ventas de {rowsInFile} filas del archivo",
+    "feeDatesLine": "Se importaron comisiones de {dates} fechas de {rowsInFile} filas del archivo"
   },
   "CsvImport": {
     "salesTitle": "Importar reporte de ventas",
@@ -2531,7 +2542,8 @@
     "usageErrorInvalidQuantity": "Introduzca una cantidad válida. Las compras deben ser mayores que cero; un conteo puede ser cero.",
     "usageErrorInvalidUnit": "Elija una unidad compatible con este ingrediente.",
     "usageErrorIngredientNotFound": "Este ingrediente ya no está disponible en esta cafetería. Elija otro.",
-    "usageErrorSaveFailed": "No se pudo guardar el registro de inventario. Vuelva a intentarlo."
+    "usageErrorSaveFailed": "No se pudo guardar el registro de inventario. Vuelva a intentarlo.",
+    "usageConnectToast": "Conectar Toast"
   },
   "SupervisorProposalCard": {
     "title": "Propuesta de cambio de precio",
@@ -2899,5 +2911,19 @@
     "messageGreeting": "Hola {name},",
     "messageWeek": "Tu horario para la semana del {week}:",
     "messageClosing": "Por favor, revisa tus turnos."
+  },
+  "UploadReview": {
+    "title": "Revisar carga",
+    "noSummary": "El resumen de importación aún no está disponible.",
+    "importedExplanation": "Registros importados y detalles de revisión guardados para esta carga.",
+    "skippedTitle": "Filas no importadas",
+    "summaryOnly": "No se guardaron las filas originales rechazadas. Estos son los motivos registrados y la cantidad de filas de cada uno.",
+    "otherReason": "No importada",
+    "rowCount": "{count} filas",
+    "matchItems": "Vincular artículos",
+    "hourlyWage": "Salario por hora",
+    "newIngredients": "Ingredientes nuevos añadidos",
+    "invalidRows": "No se importaron {count} filas no válidas.",
+    "reupload": "Volver a cargar"
   }
 }
