@@ -1055,7 +1055,8 @@
     "voidsUnknown": "No disponible: faltan datos confirmados de anulaciones",
     "voidsMissingHistory": "Para calcular el promedio de tres meses se necesitan datos de anulaciones confirmados de cada día. Las ventas registradas por sí solas no bastan.",
     "voidsCoverageNote": "Solo se muestran los importes positivos de anulaciones registrados. Las ventas importadas no permiten confirmar los días sin anulaciones ni los totales completos.",
-    "voidsAlertMonth": "{month} (mes de la alerta)"
+    "voidsAlertMonth": "{month} (mes de la alerta)",
+    "demoReadOnly": "Las alertas del café de demostración son de solo lectura y se comparten entre todos."
   },
   "DeleteAccount": {
     "title": "Eliminar cuenta",
