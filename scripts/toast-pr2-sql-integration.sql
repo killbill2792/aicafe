@@ -113,8 +113,15 @@ declare b uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 begin
  -- Duplicate active requests return the same run ID, not a second import.
  select public.toast_queue_backfill(b,g,'2026-10-05','2026-10-06') into r;
+ update public.toast_sync_runs set days_done=1,state='paused_rate_limited',
+  cursor='{"business_date":"2026-10-06","page":3}'::jsonb,
+  resume_at=now()+interval '5 minutes' where id=r;
  select public.toast_queue_backfill(b,g,'2026-10-05','2026-10-06') into again;
  perform pg_temp.assert(r=again,'same active location/range backfill deduplicated');
+ perform pg_temp.assert((select days_done=1 and state='paused_rate_limited'
+  and cursor->>'business_date'='2026-10-06' and (cursor->>'page')::integer=3
+  from public.toast_sync_runs where id=r),
+  'ordinary duplicate without invalidation must preserve checkpoint and progress');
 end $p1$;
 
 DO $bad_day$
