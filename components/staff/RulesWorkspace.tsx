@@ -51,12 +51,20 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
  const change=(key:string,value:number|boolean)=>{
    if(readOnly)return;
    const before=values[key] as number|boolean;
+   const ownerSet=values.owner_set;
    setValues(prev=>({...prev,[key]:value,owner_set:[...new Set([...prev.owner_set,key])]}));
    setUndo({key,value:before});
    transition(async()=>{
-     const res=await updateTeamRules({[key]:value});
-     if(!res.ok){setValues(prev=>({...prev,[key]:before}));setUndo(null);setMessage(t("saveFailed"));}
-     else {setMessage(t("saved"));router.refresh();}
+     try{
+       const res=await updateTeamRules({[key]:value});
+       if(!res.ok)throw new Error("save_failed");
+       setMessage(t("saved"));
+       router.refresh();
+     }catch{
+       setValues(prev=>({...prev,[key]:before,owner_set:ownerSet}));
+       setUndo(null);
+       setMessage(t("saveFailed"));
+     }
    });
  };
  const refresh=async()=>{router.refresh();};
@@ -98,7 +106,7 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
     <h2 className="text-xl font-bold">{t("prepTiming")}</h2>
     {(["prep_minutes_before_open","prep_minutes_after_close"] as const).map(key=><div key={key} className="flex flex-wrap items-center gap-2 py-2">{t(key==="prep_minutes_before_open"?"prepBeforeOpen":"prepAfterClose")}<NumberField key={key+String(values[key])} value={Number(values[key])} min={0} max={240} label={t(key==="prep_minutes_before_open"?"prepBeforeOpen":"prepAfterClose")} disabled={pending||readOnly} locale={locale} onCommit={v=>change(key,v)} twoParts/></div>)}
    </section>
-   <PayrollCostCard settings={payroll} labels={{
+   <PayrollCostCard settings={payroll} readOnly={readOnly} labels={{
 title:staffT("payrollCostsTitle"),body:staffT("payrollCostsBody"),field:staffT("payrollCostsField"),hint:staffT("payrollCostsHint"),source:staffT("payrollSource"),ownerSource:staffT("payrollSourceOwner"),estimateSource:staffT("payrollSourceEstimate"),quickbooksSource:staffT("payrollSourceQuickBooks"),importedSource:staffT("payrollSourceImported"),connectedSource:staffT("payrollSourceConnected"),actualUsing:staffT("payrollActualUsing"),fallbackNote:staffT("payrollFallbackNote"),save:staffT("payrollSave"),saving:staffT("payrollSaving"),saved:staffT("payrollSaved"),invalid:staffT("payrollInvalid"),saveFailed:staffT("payrollSaveFailed")
 }}/>
    <section className="rounded-[20px] border border-line bg-surface p-4">
