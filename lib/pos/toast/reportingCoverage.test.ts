@@ -1,7 +1,7 @@
 import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {unverifiedToastSalesDates} from "./reportingCoverage";
+import {unverifiedToastSalesDates,toastDayFlags} from "./reportingCoverage";
 function reader(rpcDays:string[],canonicalDays:string[],failure?:string){
  const rpc=vi.fn().mockResolvedValue(failure==="rpc"
   ?{data:null,error:{message:"down"}}
@@ -42,5 +42,28 @@ describe("Toast reporting guard preserves independently verified non-Toast sales
   const {db}=reader(["2026-10-10"],Array(1000).fill("2026-10-10"));
   await expect(unverifiedToastSalesDates(db,"business","2026-10-10","2026-10-11"))
    .rejects.toThrow("unavailable");
+ });
+});
+
+describe("P1 imported day errors remain visible in reports",()=>{
+ it("reports the prior imported day as imported and needing look after a failed re-pull",async()=>{
+  const rows=[{business_date:"2026-10-16",import_state:"imported",
+   recon_state:"matched",last_error_category:"invalid_response"}];
+  const chain:Record<string,unknown>={};
+  for(const method of ["select","eq","gte","lte","order"])
+   chain[method]=()=>chain;
+  chain.limit=async()=>({data:rows,error:null});
+  const db={from:()=>chain} as unknown as SupabaseClient;
+  const flags=await toastDayFlags(db,"business","2026-10-16","2026-10-16");
+  expect(flags).toEqual([{date:"2026-10-16",status:"imported",needsLook:true}]);
+ });
+ it("keeps a recovered imported day free of stale errors",async()=>{
+  const chain:Record<string,unknown>={};
+  for(const method of ["select","eq","gte","lte","order"])
+   chain[method]=()=>chain;
+  chain.limit=async()=>({data:[{business_date:"2026-10-16",import_state:"imported",
+   recon_state:"matched",last_error_category:null}],error:null});
+  const db={from:()=>chain} as unknown as SupabaseClient;
+  expect((await toastDayFlags(db,"business","2026-10-16","2026-10-16"))[0].needsLook).toBe(false);
  });
 });

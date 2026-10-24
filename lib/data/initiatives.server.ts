@@ -323,6 +323,7 @@ export async function readMetricDay(businessId:string,date:string,
   if(opts.hours){
     const [orders,timecards,timezone]=await Promise.all([
       db.from("orders").select("closed_at,net_sales_cents").eq("business_id",businessId)
+        .eq("toast_excluded",false).is("superseded_by",null)
         .eq("business_date",date).limit(1001),
       db.from("timecards").select("clock_in,clock_out,hourly_wage_cents,breaks,source_type,source_provider")
         .eq("business_id",businessId)
@@ -356,7 +357,8 @@ export async function readMetricDay(businessId:string,date:string,
       const unlinked=await db.from("order_lines")
         .select("id,orders!inner(business_id,business_date)",{count:"exact",head:true})
         .is("menu_item_id",null).eq("voided",false)
-        .eq("orders.business_id",businessId).eq("orders.business_date",date);
+        .eq("orders.business_id",businessId).eq("orders.business_date",date)
+        .eq("orders.toast_excluded",false).is("orders.superseded_by",null);
       input.itemCoverageInvalidated=Boolean(!unlinked.error&&
         unlinked.count!==null&&unlinked.count!==undefined&&unlinked.count>0);
     }else{
@@ -366,6 +368,7 @@ export async function readMetricDay(businessId:string,date:string,
       const linePage=(from:number,to:number)=>db.from("order_lines")
         .select("id,order_id,menu_item_id,quantity,net_sales_cents,modifiers,orders!inner(business_id,business_date)")
         .eq("orders.business_id",businessId).eq("orders.business_date",date)
+        .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
         .eq("voided",false).order("id",{ascending:true}).range(from,to);
       const first=await linePage(0,499);
       if(first.error)throw first.error;
@@ -396,6 +399,7 @@ export async function readMetricDay(businessId:string,date:string,
           // Revenue attribution must ALSO reconcile every exact order total.
           const orderPage=(from:number,to:number)=>db.from("orders")
             .select("id,net_sales_cents").eq("business_id",businessId)
+            .eq("toast_excluded",false).is("superseded_by",null)
             .eq("business_date",date).order("id",{ascending:true}).range(from,to);
           const firstOrders=await orderPage(0,499);
           if(firstOrders.error)throw firstOrders.error;
