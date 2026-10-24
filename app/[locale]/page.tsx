@@ -270,6 +270,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       chatEnabled={chatReadiness.enabled} canUseAi={cafeAccess?.active??true}
       chatUnavailableReason={chatReadiness.reason}
           chatCopy={{
+        clarifyOther:tChat("clarifyOther"),clarifySend:tChat("clarifySend"),
+        clarifyYouChose:tChat("clarifyYouChose"),clarifySkipped:tChat("clarifySkipped"),
+        clarifyOtherPlaceholder:tChat("clarifyOtherPlaceholder"),
+        howIGotThis:tChat("howIGotThis"),explainYouToldMe:tChat("explainYouToldMe"),
+        explainEstimate:tChat("explainEstimate"),explainSold:tChat("explainSold"),
+        explainMultiply:tChat("explainMultiply"),explainSum:tChat("explainSum"),
+        explainDivide:tChat("explainDivide"),explainRatio:tChat("explainRatio"),
+        explainProrate:tChat("explainProrate"),explainSubtract:tChat("explainSubtract"),
             newMessage: tChat("newMessage"),
             live: tChat("chatLive"),
             threads: tChat("chatThreads"),

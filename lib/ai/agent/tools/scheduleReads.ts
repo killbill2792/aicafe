@@ -5,7 +5,11 @@ import {staffReadScope,mondayOfLocalDate} from "@/lib/scheduling/staffScope.serv
 import {uncheckedCoverageDays} from "@/lib/calc/scheduling/coverageGaps";
 import {missingWageInputs} from "@/lib/calc/scheduling/shiftCost";
 import type {AgentToolContext,AgentToolResult} from "./index";
+import {resolveEntity,choicePayload,ownerChoiceGuard,normalizedName} from "../resolve";
+import {money} from "../explain";
+import {shiftCost} from "@/lib/calc/scheduling/shiftCost";
 const week=z.strictObject({week_start:z.iso.date().nullable()});
+const namedWeek=week.extend({name:z.string().max(100).nullable()});
 const none=z.strictObject({});
 const estimate=z.strictObject({
  employee_id:z.string().uuid(),date:z.iso.date(),
@@ -23,23 +27,33 @@ async function localWeek(requested:string|null,ctx:AgentToolContext){
 }
 export const scheduleReadTools={
  get_team:{
-  agentId:"olivia",schema:week,
+  agentId:"olivia",schema:namedWeek,
   description:"Read active team, individual weekly hours and wage estimate flags. Pass week_start as YYYY-MM-DD Monday or null for this business week.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-   const input=week.parse(raw),ws=await localWeek(input.week_start,ctx);
+   const input=namedWeek.parse(raw),ws=await localWeek(input.week_start,ctx);
    const result=await getTeam({weekStart:ws});
    if(!result.ok)return fail("staff_week",null,result.error);
-   const people=result.data.team.slice(0,30),shifts=result.data.shifts.slice(0,30);
+   let selected=result.data.team;
+   if(input.name){
+     const matched=resolveEntity("employee",input.name,selected,{nameOf:person=>person.name,idOf:person=>person.id,describe:person=>person.role??"Team"});
+     if(matched.status!=="resolved")return {...choicePayload(matched,"employees+scheduled_shifts",null),agentId:"olivia"};
+     selected=[matched.value];
+   }
+   const scoped=input.name?result.data.shifts.filter(shift=>selected.some(person=>
+     person.id===shift.employeeId)):result.data.shifts;
+   const people=selected.slice(0,30),shifts=scoped.slice(0,30);
    return {source:"employees+scheduled_shifts",period:{from:ws,to:new Date(Date.parse(ws+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
-    agentId:"olivia",missing:[...(result.data.team.length>30?["morePeople"]:[]),
-     ...(result.data.shifts.length>30?["moreShifts"]:[]),
-     ...missingWageInputs(result.data.totals)],estimated:result.data.totals.estimated,
+    agentId:"olivia",missing:[...(selected.length>30?["morePeople"]:[]),
+     ...(scoped.length>30?["moreShifts"]:[]),
+     ...(!input.name?missingWageInputs(result.data.totals):[])],estimated:result.data.totals.estimated,
     people:people.map(p=>({id:p.id,name:p.name,role:p.role,minWeeklyMinutes:p.minWeeklyMinutes,
       maxWeeklyMinutes:p.maxWeeklyMinutes,hasKnownWage:p.wageCents!==null})),
     shifts:shifts.map(s=>({employeeId:s.employeeId,date:s.date,paidMinutes:s.paidMinutes,
       costCents:s.costCents,estimated:s.estimated})),
-    weeklyPaidMinutes:result.data.totals.paidMinutes,knownWagesCents:result.data.totals.knownCostCents,
-    missingWageCount:result.data.totals.unknownCount};
+    // Whole-team totals are not the selected employee's totals.
+    weeklyPaidMinutes:input.name?null:result.data.totals.paidMinutes,
+    knownWagesCents:input.name?null:result.data.totals.knownCostCents,
+    missingWageCount:input.name?null:result.data.totals.unknownCount};
   }
  },
  get_week_schedule:{
@@ -92,15 +106,39 @@ export const scheduleReadTools={
  get_shift_cost:{
   agentId:"olivia",schema:estimate,
   description:"Calculate an uncommitted shift's paid minutes and wages from the same deterministic cost engine used by the shift sheet; missing wage is estimated or unknown.",
-  execute:async(raw:unknown):Promise<AgentToolResult>=>{
+  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const p=estimate.parse(raw);
+   const team=ctx.resolveState?await getTeam({weekStart:mondayOfLocalDate(ctx.asOf)}):null;
+   if(team&&!team.ok)return fail("shift_cost",null,"staffIdentityUnavailable");
+   const person=team?.ok?team.data.team.find(person=>person.id===p.employee_id):undefined;
+   if(team?.ok&&!person)return fail("shift_cost",null,"staffNotFound");
+   if(person&&team?.ok){
+     const resolved=resolveEntity("staff",person.name,team.data.team,{
+       nameOf:row=>row.name,idOf:row=>row.id,describe:row=>row.role??"Team"});
+     if(resolved.status==="ambiguous"&&!ctx.resolveState?.chosenIds.has(p.employee_id.toLowerCase())&&
+       !resolved.candidates.some(c=>c.id===p.employee_id&&
+         normalizedName(ctx.resolveState?.ownerText??"").includes(normalizedName(c.label))))
+       return {source:"shift_cost",period:null,agentId:"olivia",
+         missing:["ownerChoiceRequired"],needsOwnerChoice:true,candidates:resolved.candidates};
+   }
+   const guard=ownerChoiceGuard(ctx.resolveState,p.employee_id);
+   if(guard)return {source:"shift_cost",period:null,agentId:"olivia",...guard};
    const res=await getShiftCost({employeeId:p.employee_id,date:p.date,start:p.start,end:p.end,
     breakMinutes:p.break_minutes??undefined});
    if(!res.ok)return fail("shift_cost",null,res.error);
+   const modeled=person&&p.break_minutes!==null&&person.wageCents!==null?
+     shiftCost({employeeId:person.id,date:p.date,start:p.start,end:p.end,
+       breakMinutes:p.break_minutes,wageCents:person.wageCents}):null;
+   const canExplain=res.data.costCents!==null&&modeled?.costCents===res.data.costCents;
    return {source:"employees+shiftCost",period:{from:p.date,to:p.date},
     agentId:"olivia",missing:res.data.unknown?["wageAndEstimateMissing"]:[],
     estimated:res.data.estimated,unknown:res.data.unknown,
-    employeeId:res.data.employeeId,paidMinutes:res.data.paidMinutes,costCents:res.data.costCents};
+    employeeId:res.data.employeeId,paidMinutes:res.data.paidMinutes,costCents:res.data.costCents,
+    explain:canExplain?[{label:person!.name,inputs:[
+      {name:"paidTime",value:{kind:"duration" as const,minutes:res.data.paidMinutes}},
+      {name:"hourlyWage",value:{kind:"moneyRate" as const,cents:person!.wageCents!,per:"hour" as const}}],
+      formula:"prorate",result:money(res.data.costCents!),period:{from:p.date,to:p.date},
+      source:"get_shift_cost",provenance:res.data.estimated?"estimate":"recorded"}]:[]};
   }
  }
 } as const;

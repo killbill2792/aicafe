@@ -1731,7 +1731,22 @@
     "feedbackUp": "Respuesta útil",
     "feedbackDown": "No fue útil",
     "feedbackSaved": "Opinión guardada",
-    "feedbackError": "No se pudo guardar. Inténtalo otra vez."
+    "feedbackError": "No se pudo guardar. Inténtalo otra vez.",
+    "clarifyOther": "Otra opción…",
+    "clarifySend": "Enviar",
+    "clarifyYouChose": "Elegiste: {choice}",
+    "clarifySkipped": "Omitido",
+    "clarifyOtherPlaceholder": "Escribe tu respuesta",
+    "howIGotThis": "Cómo lo calculé",
+    "explainYouToldMe": "Me dijiste",
+    "explainEstimate": "Estimación",
+    "explainSold": "vendidos",
+    "explainMultiply": "por",
+    "explainSum": "más",
+    "explainDivide": "dividido entre",
+    "explainRatio": "proporción",
+    "explainProrate": "prorrateado",
+    "explainSubtract": "menos"
   },
   "TeamRules": {
     "title": "Reglas y aprobaciones del equipo",
@@ -2685,7 +2700,9 @@
       "stale": "Precio cambiado",
       "failed": "No se aplicó",
       "conflict": "Actualizado en otra sesión"
-    }
+    },
+    "manualPending": "Actualización manual pendiente",
+    "manualInstructions": "La aprobación no cambia el TPV. Actualiza el precio manualmente en el TPV antes de iniciar la prueba."
   },
   "ChatExperience": {
     "ack": "Entendido, estoy en ello.",
@@ -2986,7 +3003,7 @@
     "notOnTeam": "No está en el equipo",
     "noRole": "Sin puesto",
     "noPhone": "Sin teléfono",
-    "perHour": "¢/hora",
+    "perHour": "por hora",
     "active": "Activo",
     "inactive": "Inactivo",
     "noAvailability": "Sin disponibilidad recurrente",
@@ -3043,5 +3060,30 @@
     "newIngredients": "Ingredientes nuevos añadidos",
     "invalidRows": "No se importaron {count} filas no válidas.",
     "reupload": "Volver a cargar"
+  },
+  "CardValues": {
+    "perHour": "hora",
+    "perDay": "día",
+    "perWeek": "semana",
+    "perMonth": "mes",
+    "perItem": "artículo",
+    "noWage": "Sin salario",
+    "noRole": "Sin puesto",
+    "noPhone": "Sin teléfono",
+    "none": "No establecido",
+    "yes": "Sí",
+    "no": "No",
+    "minutes": "min",
+    "fieldPrice": "Precio",
+    "fieldDuration": "Duración",
+    "fieldName": "Nombre",
+    "fieldRole": "Puesto",
+    "fieldWage": "Salario por hora",
+    "fieldPhone": "Teléfono",
+    "fieldActive": "Activo",
+    "fieldShift": "Turno",
+    "fieldSchedule": "Horario",
+    "fieldAvailability": "Disponibilidad",
+    "fieldRule": "Regla"
   }
 }
