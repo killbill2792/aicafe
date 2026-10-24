@@ -807,7 +807,7 @@ const WORD_NUMBERS:Record<AgentLocale,Record<string,number>>={
   ar:{"صفر":0,"واحد":1,"واحدة":1,"اثنين":2,"اثنان":2,"اثنتان":2,"اثنتين":2,"ثلاثة":3,"ثلاث":3,"أربعة":4,"اربعة":4,"خمسة":5,"ستة":6,"سبعة":7,"ثمانية":8,"ثمان":8,"تسعة":9,"عشرة":10,"عشر":10,"عشرون":20,"ثلاثون":30,"أربعون":40,"اربعون":40,"خمسون":50,"ستون":60,"سبعون":70,"ثمانون":80,"تسعون":90}
 };
 type SpokenWord={word:string;start:number;end:number;group:number};
-type SpokenValue={value:number;kind:Kind};
+type SpokenValue={value:number;kind:Kind;durationUnit:ReturnType<typeof durationUnitFamily>};
 function ownerWordTokens(text:string,locale:AgentLocale):SpokenWord[]{
   const words:SpokenWord[]=[];
   let group=0,lastEnd=0;
@@ -924,8 +924,11 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
     if(unsupportedAdjacent||(explicitQuantity&&attachedMoney)){i=next;continue;}
     const money=!explicitQuantity&&(attachedMoney||monetaryContext.test(before)||monetaryContext.test(after.slice(0,30)));
     const signed=negative?-1:1;
-    result.push({value:signed*(attachedPercent?value:money?value:value/100),
-      kind:attachedPercent?"percent":money?"money":"number"});
+    const kind:Kind=attachedPercent?"percent":money?"money":"number";
+    // Spoken "seven days" is duration evidence, never evidence of 7 sales.
+    const nextWord=after.trimStart().match(/^[\p{L}\p{M}]+/u)?.[0]??"";
+    result.push({value:signed*(attachedPercent?value:money?value:value/100),kind,
+      durationUnit:kind==="number"?durationUnitFamily(nextWord):null});
     i=next;
   }
   return result;
@@ -1053,8 +1056,10 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   for(const item of itemPrices)allowed.money.add(item.priceCents);
   const menuPrices=itemPrices;
   const ownerNumbers=candidates(ownerText,locale);
-  ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
-  for(const spoken of spokenOwnerValues(ownerText,locale))allowed[spoken.kind].add(spoken.value);
+  // Time units are scoped evidence, never generic quantity allowances.
+  ownerNumbers.forEach(v=>{if(!v.durationUnit)allowed[v.kind].add(v.value);});
+  const ownerSpoken=spokenOwnerValues(ownerText,locale);
+  for(const spoken of ownerSpoken)if(!spoken.durationUnit)allowed[spoken.kind].add(spoken.value);
   // Only reconciled, typed numeric evidence authorizes an amount.
   // Re-adding raw current-turn estimates here would resurrect a prior result
   // that a later tool result explicitly invalidated in this same turn.
@@ -1064,7 +1069,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   // Explicit owner-provided quantities are not prices. Infer dollars only from
   // a nearby monetary / menu-price statement, never from "sold 9 drinks".
   for(const v of ownerNumbers){
-    if(v.kind!=="number")continue;
+    if(v.kind!=="number"||v.durationUnit)continue;
     const before=ownerText.slice(Math.max(0,v.start-90),v.start);
     const after=ownerText.slice(v.end,v.end+24);
     if(/^\s*(?:drinks?|orders?|people|staff|items?|cups?|units?|hours?|days?|coffees?)\b/iu.test(after))continue;
@@ -1134,7 +1139,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     if(v.kind==="number"&&proposedDuration(text,v.start,v.end))return false;
     if(v.durationUnit){
       // Matching a latte count of 7 cannot verify "staff worked 7 days".
-      const fromOwner=ownerNumbers.some(o=>o.durationUnit===v.durationUnit&&o.value===v.value);
+      const fromOwner=ownerNumbers.some(o=>o.durationUnit===v.durationUnit&&o.value===v.value)||
+        ownerSpoken.some(o=>o.kind==="number"&&o.durationUnit===v.durationUnit&&o.value===v.value);
       const unitKey:Record<NonNullable<typeof v.durationUnit>,RegExp>={
         hour:/hours?|hrs?|horas?/iu,minute:/minutes?|mins?|minutos?/iu,
         day:/days?|días?/iu,week:/weeks?|semanas?/iu,month:/months?|meses?/iu,
@@ -1274,8 +1280,10 @@ export function numberProvenance(text:string,ownerText:string,results:readonly A
      ?estimates.find(x=>x.detail===metric&&x.unit==="cents"&&
        Math.abs(x.value-cents)<=1):undefined;
    if(e){annotated.push({...withUnit(v),source:"estimate",detail:e.detail});continue;}
-   const owner=supplied.some(x=>x.kind===v.kind&&x.value===v.value)||
-      spoken.some(x=>x.kind===v.kind&&x.value===v.value);
+   const owner=supplied.some(x=>x.kind===v.kind&&x.value===v.value&&
+     x.durationUnit===v.durationUnit)||
+      spoken.some(x=>x.kind===v.kind&&x.value===v.value&&
+        x.durationUnit===v.durationUnit);
    if(owner){annotated.push({...withUnit(v),source:"owner"});}
  }
  // Guard against parser divergence: every rejected span must survive. There
