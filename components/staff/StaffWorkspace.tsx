@@ -14,7 +14,7 @@ import {uncheckedCoverageDays,coverageVerification} from "@/lib/calc/scheduling/
 import {automaticUnpaidBreakMinutes} from "@/lib/calc/scheduling/ruleChecks";
 import {scheduledShiftMinutes,parseUnpaidBreakMinutes,validShiftClock} from "@/lib/calc/scheduling/shiftInput";
 import {suggestedRuleShiftChange,type StaffRuleKey,isStaffRuleKey} from "@/lib/calc/scheduling/ruleFixPreview";
-import {staffScheduleHref,validScheduleDate} from "@/lib/scheduling/staffScheduleLinks";
+import {staffScheduleHref,validScheduleDate,resolveDatedStaffShift} from "@/lib/scheduling/staffScheduleLinks";
 import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import Link from "next/link";
 import {parseHourlyWage,parseWeeklyHours,weeklyHoursInput,isValidTeamAvailability,teamAvailabilitySummary} from "./teamPersonFields";
@@ -40,9 +40,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const data=version.initial===initial?version.local:initial;
  const setData=(value:Data)=>setVersion({initial,local:value});
  const uncheckedDays=uncheckedCoverageDays(data.dates,data.openHours,data.rules.coverage_enabled);
- const deepDate=focusDate&&data.dates.includes(focusDate)?focusDate:undefined;
- const deepPerson=deepDate?data.team.find(p=>p.id===focusEmployee):undefined;
- const deepShift=deepPerson?data.shifts.find(s=>s.date===deepDate&&s.employeeId===deepPerson.id&&(!focusRule||!focusClock||s.start===focusClock)):undefined;
+ const linked=resolveDatedStaffShift(data.dates,data.team,data.shifts,focusDate,focusEmployee,focusRule?focusClock:undefined);
+ const deepDate=linked?.date,deepPerson=linked?.person,deepShift=linked?.shift;
  const suggested=focusRule&&deepShift?suggestedRuleShiftChange(focusRule,deepShift,data.rules,
   data.shifts.filter(s=>s.date===deepDate&&s.employeeId===deepPerson?.id).reduce((sum,s)=>sum+s.paidMinutes,0),
   personTotals(deepPerson!.id,data.shifts).paidMinutes):null;
@@ -188,9 +187,11 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        {validScheduleDate(a.workDate)&&isStaffRuleKey(a.rule_key)?<Link className="flex min-h-12 items-center justify-center rounded-lg bg-accent px-3 font-bold text-on-accent"
         href={staffScheduleHref({date:a.workDate,employee:a.employee_id})+"&fix="+encodeURIComponent(a.rule_key)+(a.workStart?"&clock="+encodeURIComponent(a.workStart):"")}>{t("fix")}</Link>:<button type="button" disabled className="min-h-12 rounded-lg border border-line px-3 opacity-60" title={t("manualRuleReview")}>{t("fix")}</button>}
        <button disabled={busy} className="min-h-12 rounded-lg border border-line px-3"
-        onClick={()=>startTransition(async()=>{const result=await dismissStaffRuleAlert({id:a.id});
+        onClick={()=>startTransition(async()=>{try{
+         const result=await dismissStaffRuleAlert({id:a.id});
          if(result.ok){setDismissed(ids=>[...ids,a.id]);router.refresh();}
-         else setError(t("dismissFailed"));})}>{t("notAnIssue")}</button>
+         else setError(t("dismissFailed"));
+        }catch{setError(t("dismissFailed"));}})}>{t("notAnIssue")}</button>
       </div>
     </div>)}
    </section>}
@@ -406,7 +407,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        availability={data.availability} boundaryShifts={data.adjacentShifts} coverageChecked={coverageVerification(date,data.openHours,data.rules.coverage_enabled)==="checked"} rules={data.rules} currency={data.currency} timezone={data.timezone}/>}
       <button disabled={busy||!chosen||data.readOnly||invalidShift||!proposed||(ruleReview&&!deepShift)} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakOverridden?parsedBreak??undefined:undefined,repeatWeekly}))}
        className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">{t("saveShift")}</button>
-      {editing&&<button className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}
+      {editing&&<button disabled={busy||data.readOnly} className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}
     </>}
     <button onClick={()=>setSheet(null)} className="mt-3 min-h-12 w-full">{t("cancel")}</button>
    </StaffDialog>}

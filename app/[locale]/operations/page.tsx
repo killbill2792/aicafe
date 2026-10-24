@@ -35,6 +35,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   const selectedStatus = parseStatus(status);
   const statusQuery = status === "needs_you" || status === "handled" || status === "watching" ? status : undefined;
   const ownerCanSubscribe = await authenticatedConversationContext().then(() => true).catch(() => false);
+  const tStaffRules=await getTranslations("StaffSchedule");
   const names: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const scoped = (tasks: OperatingTask[]) => selectedAgent ? tasks.filter((task) => task.agentId === selectedAgent) : tasks;
   const lists = { needs_you: scoped(team.needsYou), handled: scoped(team.handled), watching: scoped(team.watching) };
@@ -45,6 +46,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-28 pt-6">
     <header><p className="text-sm font-semibold text-ink-muted">{t("eyebrow")}</p><h1 className="font-headline text-3xl font-bold text-ink">{t("title")}</h1><p className="mt-1 text-[17px] text-ink-muted">{selectedAgent ? t("focusedOn", { name: names[selectedAgent], role: copy.roles[selectedAgent] }) : t("intro")}</p></header>
     <AITeamCard team={team} copy={copy} selectedAgent={selectedAgent} selectedStatus={statusQuery} />
+    <Link href="/staff/rules" className="flex min-h-12 items-center self-start rounded-xl border border-line px-4 text-accent-text underline">{tStaffRules("rulesCard")}</Link>
 
     {ownerCanSubscribe && <section id="team-rules" className="flex flex-col gap-3" aria-labelledby="selected-agent-rules">
       <div className="flex items-center gap-3 px-1">

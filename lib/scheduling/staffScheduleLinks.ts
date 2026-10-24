@@ -24,3 +24,15 @@ export function staffManageRedirectQuery(input:{employee?:string;date?:string;ta
   ...(input.employee?{employee:input.employee}:{}),
   ...(validScheduleDate(input.date)?{date:input.date}:{})};
 }
+
+/** Resolve only the requested member's dated shift. Do not guess a different shift
+ * when a timecard's start time does not match the schedule. */
+export function resolveDatedStaffShift<P extends {id:string},S extends {id:string;employeeId:string;date:string;start:string}>(
+ dates:readonly string[],team:readonly P[],shifts:readonly S[],date:unknown,employee:unknown,clock?:string
+):{date:string;person:P;shift:S|undefined}|null{
+ if(!validScheduleDate(date)||!dates.includes(date)||typeof employee!=="string")return null;
+ const person=team.find(p=>p.id===employee);
+ if(!person)return null;
+ const shift=shifts.find(s=>s.employeeId===person.id&&s.date===date&&(!clock||s.start===clock));
+ return {date,person,shift};
+}
