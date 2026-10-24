@@ -15,6 +15,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  const [selected,setSelected]=useState<string[]>([]);
  const [analytics,setAnalytics]=useState({apiUrl:"",managementGroupGuid:"",clientId:"",clientSecret:""});
  const [analyticsBusy,setAnalyticsBusy]=useState(false);
+ const [lastLoadedAt,setLastLoadedAt]=useState<number|null>(null);
  const money=new Intl.NumberFormat(locale,{style:"currency",currency});
  const number=new Intl.NumberFormat(locale);
  async function configureAnalytics(action:"connect"|"disconnect"){
@@ -38,7 +39,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   if(!response.ok)throw Error("unavailable");
   const parsed=statusSchema.safeParse(await response.json());
   if(!parsed.success)throw Error("invalid_status");
-  setData(parsed.data);setBad(false);
+  setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());
   if(!start)setStart(parsed.data.startDate??dateShift(localDate(parsed.data.timeZone),-84));
  }
  useEffect(()=>{let active=true;const refresh=async()=>{
@@ -46,7 +47,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    if(!response.ok)throw Error("unavailable");
    const parsed=statusSchema.safeParse(await response.json());
    if(!parsed.success)throw Error("invalid_status");
-   if(active){setData(parsed.data);setBad(false);setStart(old=>old||parsed.data.startDate||
+   if(active){setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());setStart(old=>old||parsed.data.startDate||
     dateShift(localDate(parsed.data.timeZone),-84));}
   }catch{if(active){setData(null);setBad(true);}}
  };void refresh();return()=>{active=false;};},[businessId]);
@@ -74,8 +75,8 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  if(bad)return <p role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">{t("ownerStatusUnavailable")}</p>;
  if(!data)return <p role="status" className="text-ink-muted">{t("pending")}</p>;
  const yesterday=dateShift(localDate(data.timeZone),-1);
- const relative=data.lastGoodSyncAt?new Intl.RelativeTimeFormat(locale,{numeric:"auto"}).format(
-  -Math.max(0,Math.round((Date.now()-Date.parse(data.lastGoodSyncAt))/3600000)),"hour"):t("noSyncYet");
+ const relative=data.lastGoodSyncAt&&lastLoadedAt?new Intl.RelativeTimeFormat(locale,{numeric:"auto"}).format(
+  -Math.max(0,Math.round((lastLoadedAt-Date.parse(data.lastGoodSyncAt))/3600000)),"hour"):t("noSyncYet");
  return <div className="flex flex-col gap-4" dir={locale==="ar"?"rtl":"ltr"}>
   <section className="rounded-card-lg bg-card p-5">
    <h2 className="text-xl font-bold text-ink">{t("ownerImportFrom")}</h2>
