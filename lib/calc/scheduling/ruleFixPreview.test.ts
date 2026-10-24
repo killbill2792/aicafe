@@ -9,7 +9,7 @@ describe("owner-preview rule suggestions",()=>{
  it("only trims scheduled overtime when the current schedule exceeds a limit",()=>{
   expect(suggestedRuleShiftChange("daily_overtime",shift,rules,600,600)).toEqual({start:"07:15",end:"15:15",breakMinutes:0});
   expect(suggestedRuleShiftChange("weekly_overtime",shift,rules,600,2460)).toEqual({start:"07:15",end:"16:15",breakMinutes:0});
-  expect(suggestedRuleShiftChange("weekly_overtime",shift,rules,600,2300)).toBeNull(); 
+  expect(suggestedRuleShiftChange("weekly_overtime",shift,rules,600,2300)).toBeNull();
   expect(suggestedRuleShiftChange("weekly_overtime",shift,{...rules,weekly_ot_enabled:false},600,2460)).toBeNull();
  });
  it("does not make up a paid rest fix or shorten an unrelated timecard",()=>{
