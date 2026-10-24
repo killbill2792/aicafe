@@ -59,7 +59,7 @@ export function formatCardField(field:string,label:string,locale:CardLocale):str
  if(field.startsWith("availability:")){
   const suffix=field.slice("availability:".length);
   const day=Number(suffix);
-  if(/^\\d$/.test(suffix)&&day>=0&&day<=6)
+  if(/^\d$/.test(suffix)&&day>=0&&day<=6)
    return catalog.SchedulingAvailability[weekdayKeys[day]];
   return suffix; // date-specific absence, not the generic availability label
  }

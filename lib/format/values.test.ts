@@ -1,6 +1,16 @@
 import {describe,expect,it} from "vitest";
-import {diffFields,formatCardValue} from "./values";
+import {diffFields,formatCardValue,formatCardField} from "./values";
 describe("approval card values",()=>{
+ it("retains target context and localizes specific rule and weekday labels",()=>{
+  expect(formatCardField("shift","Amy","en")).toBe("Amy");
+  expect(formatCardField("rule:weekly_ot_enabled","Overtime","en")).not.toBe("Rule");
+  expect(formatCardField("rule:weekly_ot_enabled","Overtime","es")).not.toBe("Regla");
+  expect(formatCardField("availability:1","Monday","ar")).not.toBe("1");
+  expect(formatCardField("schedule:2026-11-02","Week","en")).toContain("2026-11-02");
+ });
+ it("uses the café currency instead of a hardcoded US dollar",()=>{
+  expect(formatCardValue({kind:"moneyRate",cents:1800,per:"hour"},"en","EUR")).toBe("€18.00/hour");
+ });
  it("only emits changed wages with correct per-hour money",()=>{
   const rows=diffFields([{field:"name",label:"Name",value:{kind:"text",text:"Amy"}},
     {field:"wage",label:"Hourly wage",value:{kind:"moneyRate",cents:1800,per:"hour"}}],
