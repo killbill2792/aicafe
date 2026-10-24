@@ -22,6 +22,27 @@ describe("Redesign 03 screen contracts", () => {
     expect(bills).toContain('role="alert" className="text-[17px] text-warn">{error}</p>');
   });
 
+  it("preserves the actual/estimate classification when editing and reviewing bills", () => {
+    const bills = source("components/bills/BillsManager.tsx");
+    const action = source("lib/actions/expenses.ts");
+    const reader = source("lib/data/getRecurringCosts.ts");
+    expect(bills).toContain("useState(existing?.isEstimate ?? false)");
+    expect(bills).toContain('value={isEstimate ? "estimate" : "actual"}');
+    expect(bills).toContain('onChange={(e) => setIsEstimate(e.target.value === "estimate")}');
+    expect(bills).toContain('          isEstimate,');
+    expect(bills).toContain('{existing.isEstimate &&');
+    expect(bills).toContain('{bill.isEstimate &&');
+    expect(bills).toContain('{labels.estimateBadge}');
+    expect(action).toContain('is_estimate: parsed.data.isEstimate ?? false');
+    expect(reader).toContain("isEstimate: r.is_estimate");
+    const page = source("app/[locale]/more/bills/page.tsx");
+    const onboarding = source("app/[locale]/onboarding/page.tsx");
+    for (const label of ["amountKindLabel", "amountActual", "amountEstimate", "estimateBadge"]) {
+      expect(page).toContain(label + ': t("' + label + '")');
+      expect(onboarding).toContain(label + ': tBills("' + label + '")');
+    }
+  });
+
   it("makes the Bills Add cost link a full-size keyboard-accessible touch target", () => {
     const bills = source("components/bills/BillsManager.tsx");
     expect(bills).toMatch(/<Link href="\/add-cost" className="[^"]*min-h-12[^"]*text-\[17px\][^"]*focus-visible:outline-2[^"]*">\{labels\.variableCostHint\}<\/Link>/);
