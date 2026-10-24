@@ -51,7 +51,7 @@ export default async function MorePage() {
   const hoursBadge: FixBadge | undefined = badges.hoursNotSet
     ? { label: t("hoursNotSet"), href: "/more/cafe-profile?focus=hours", warning: true } : undefined;
   const toastBadge: FixBadge | undefined = badges.toast
-    ? { label: t(badges.toast), href: "/more/toast", warning: badges.toast !== "connected" } : undefined;
+    ? { label: badges.toast === "daysNeedLook" ? t("toastDaysLook",{count:evidence.toast?.daysNeedLook??0}) : t(badges.toast), href: "/more/toast", warning: !["connected","notConnected"].includes(badges.toast) } : undefined;
   const uploadBadge: FixBadge | undefined = badges.uploadsNeedingReview
     ? { label: t("uploadsNeedReview", { count: number.format(badges.uploadsNeedingReview) }),
       href: badges.firstUploadToReview ? `/more/uploads/${badges.firstUploadToReview}` : "/more/uploads#upload-history",
