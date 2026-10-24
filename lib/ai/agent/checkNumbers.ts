@@ -501,7 +501,7 @@ const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
 // turns a 5 PM closing claim into the wrong 05:00 morning assertion.
 function clockSpansFromTokens(text:string,locale:AgentLocale="en"):ClockSpan[]{
  return tokenizeNumbers(text,locale).filter(t=>t.kind==="clock"||t.kind==="clockRange")
-  .map(t=>Object.assign([text.slice(t.start,t.end)] as unknown as RegExpMatchArray,{index:t.start}));
+  .map(t=>Object.assign([text.slice(t.start,t.end).replace(/\.$/u,"")] as unknown as RegExpMatchArray,{index:t.start}));
 }
 function canonicalClock(clock:ClockSpan):string|null {
   const raw=ascii(clock[0]).replace(/a\\.m\\./giu,"AM").replace(/p\\.m\\./giu,"PM");
