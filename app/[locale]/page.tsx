@@ -26,6 +26,7 @@ import { describeAlert } from "@/components/alerts/alertContent";
 import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
 import { formatCents } from "@/lib/calc";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
+import { isSquareConfigured } from "@/lib/pos/square/oauth";
 
 import { gettingStartedAttention } from "@/components/home/GettingStartedCard";
 
@@ -174,8 +175,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       href:"/more/alerts",impactCents:null
     }] : []),
     ...(posStatus && posStatus.status!=="active" ? [{
-      id:"reconnect",title:tReconnect("banner"),actionLabel:tReconnect("action"),
-      href:homeAttentionHref({kind:"reconnect" as const,provider:posStatus.provider}),impactCents:null
+      id:"reconnect",
+      title:posStatus.provider==="square" && !isSquareConfigured() ? t("attentionRegisterSetupUnavailable") : tReconnect("banner"),
+      actionLabel:posStatus.provider==="toast" || posStatus.provider==="square" && isSquareConfigured()
+        ? tReconnect("action") : t("attentionUploadSales"),
+      href:homeAttentionHref({kind:"reconnect" as const,provider:posStatus.provider,
+        locale, squareConfigured:isSquareConfigured()}),impactCents:null
     }]:[]),
     ...(vm.isGettingStarted ? gettingStartedAttention({
       connectRegister: t("gettingStartedConnectRegister"), uploadSales: t("gettingStartedUploadSales"),
