@@ -77,7 +77,8 @@ export function agentReplyPayload(turn: AgentTurn) {
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
     ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId}))] };
-  const unverified = (turn.provenance??turn.unverified).flatMap(item => {
+  const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
+  const unverified = annotations.flatMap(item => {
     const rows: Array<typeof item & {blockIndex:number}> = [];
     let offset = 0;
     for (let i = 0; i < blocks.length; i++) {
