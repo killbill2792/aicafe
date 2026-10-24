@@ -286,7 +286,7 @@
   "Money": {
     "title": "المال",
     "placeholder": "سيظهر هنا استرداد التكاليف والأرباح والمصاريف.",
-    "recoveryTab": "نقطة التعادل",
+    "recoveryTab": "الفواتير المسددة",
     "profitTab": "الأرباح والمصاريف",
     "sinceCovered": "منذ أن تمت تغطيتها",
     "thisMonthsBills": "فواتير هذا الشهر",
@@ -381,7 +381,18 @@
     "breakEvenNeedProcessingFees": "بيانات رسوم المعالجة ما زالت ناقصة. أضف الرسوم الفعلية أو أكد تقديرًا.",
     "breakEvenUnavailable": "مزيج التكاليف الحالي لا يسمح بحساب نقطة تعادل موثوقة.",
     "ingredientsAtBreakEven": "المكونات عند نقطة التعادل",
-    "processingFeesAtBreakEven": "رسوم المعالجة عند نقطة التعادل"
+    "processingFeesAtBreakEven": "رسوم المعالجة عند نقطة التعادل",
+    "uploadSales": "رفع المبيعات",
+    "syncToast": "مزامنة Toast",
+    "addBills": "إضافة الفواتير",
+    "addProductCosts": "إضافة تكاليف المنتجات",
+    "fixFees": "تصحيح الرسوم",
+    "uploadSalesForDay": "رفع مبيعات هذا اليوم",
+    "sourceUploads": "الملفات المرفوعة",
+    "sourceUnknown": "مصدر المبيعات غير متاح",
+    "sourceSingle": "من {source}",
+    "sourceMixed": "من {sources}",
+    "sourceJoin": " و "
   },
   "Menu": {
     "title": "القائمة",
