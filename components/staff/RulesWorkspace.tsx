@@ -2,7 +2,6 @@
 import {useState,useTransition} from "react";
 import {useRouter} from "next/navigation";
 import {useLocale,useTranslations} from "next-intl";
-import {getPayrollLabels} from "@/components/staff/payrollLabels";
 import PayrollCostCard from "./PayrollCostCard";
 import type {PayrollCostSettings} from "@/lib/data/getPayrollCostSettings";
 import {Link} from "@/i18n/navigation";
@@ -87,7 +86,9 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
     <h2 className="text-xl font-bold">{t("prepTiming")}</h2>
     {(["prep_minutes_before_open","prep_minutes_after_close"] as const).map(key=><div key={key} className="flex flex-wrap items-center gap-2 py-2">{t(key==="prep_minutes_before_open"?"prepBeforeOpen":"prepAfterClose")}<NumberField key={key+String(values[key])} value={Number(values[key])} min={0} max={240} label={t(key==="prep_minutes_before_open"?"prepBeforeOpen":"prepAfterClose")} disabled={pending||readOnly} locale={locale} onCommit={v=>change(key,v)} twoParts/></div>)}
    </section>
-   <PayrollCostCard settings={payroll} labels={getPayrollLabels(staffT)}/>
+   <PayrollCostCard settings={payroll} labels={{
+title:staffT("payrollCostsTitle"),body:staffT("payrollCostsBody"),field:staffT("payrollCostsField"),hint:staffT("payrollCostsHint"),source:staffT("payrollSource"),ownerSource:staffT("payrollSourceOwner"),estimateSource:staffT("payrollSourceEstimate"),quickbooksSource:staffT("payrollSourceQuickBooks"),importedSource:staffT("payrollSourceImported"),connectedSource:staffT("payrollSourceConnected"),actualUsing:staffT("payrollActualUsing"),fallbackNote:staffT("payrollFallbackNote"),save:staffT("payrollSave"),saving:staffT("payrollSaving"),saved:staffT("payrollSaved"),invalid:staffT("payrollInvalid")
+}}/>
    <section className="rounded-[20px] border border-line bg-surface p-4">
     <h2 className="text-xl font-bold">{t("yourRules")}</h2>
     <p className="my-2 text-muted">{t("writeYourRules")}</p>
