@@ -371,12 +371,22 @@ function isCalendarNumber(text: string, start: number, end: number, value: numbe
     return monthBefore.test(before) || monthAfter.test(after);
   return false;
 }
-function candidates(text:string,locale:AgentLocale):Array<UnverifiedNumber & {value:number;wholePercent:boolean}>{
- return tokenizeNumbers(text,locale).filter(t=>["money","percent","count","decimal","range"].includes(t.kind)&&t.value!==null)
-  .filter(t=>!isCalendarNumber(text,t.start,t.end,t.value!,"number"))
+/** Keep calendar durations separate from arbitrary sales/item counts. */
+function durationUnitFamily(text:string):"hour"|"minute"|"day"|"week"|"month"|null{
+ if(/(?:hours?|hrs?|horas?|ساعات?|ساعة)/iu.test(text))return "hour";
+ if(/(?:minutes?|mins?|minutos?|دقائق?|دقيقة)/iu.test(text))return "minute";
+ if(/(?:days?|días?|أيام|ايام)/iu.test(text))return "day";
+ if(/(?:weeks?|semanas?|أسابيع|اسابيع)/iu.test(text))return "week";
+ if(/(?:months?|meses?|أشهر|شهور)/iu.test(text))return "month";
+ return null;
+}
+function candidates(text:string,locale:AgentLocale):Array<UnverifiedNumber & {value:number;wholePercent:boolean;durationUnit:ReturnType<typeof durationUnitFamily>}>{
+ return tokenizeNumbers(text,locale).filter(t=>["money","percent","count","decimal","range","duration"].includes(t.kind)&&t.value!==null)
+  .filter(t=>t.kind==="duration"||!isCalendarNumber(text,t.start,t.end,t.value!,"number"))
   .map(t=>({start:t.start,end:t.end,text:text.slice(t.start,t.end),
     value:t.value!,kind:t.kind==="money"?"money":t.kind==="percent"?"percent":"number",
-    wholePercent:t.kind==="percent"&&!/[.,٫٬]/u.test(text.slice(t.start,t.end))}));
+    wholePercent:t.kind==="percent"&&!/[.,٫٬]/u.test(text.slice(t.start,t.end)),
+    durationUnit:t.kind==="duration"?durationUnitFamily(text.slice(t.start,t.end)):null}));
 }
 /** Only actual list positions are exempt, not sentence-ending business counts. */
 function isListMarker(text: string, start: number, end: number, value: number): boolean {
@@ -1122,6 +1132,17 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const rejectedQuantities=candidates(text, locale).filter(v => {
     if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
     if(v.kind==="number"&&proposedDuration(text,v.start,v.end))return false;
+    if(v.durationUnit){
+      // Matching a latte count of 7 cannot verify "staff worked 7 days".
+      const fromOwner=ownerNumbers.some(o=>o.durationUnit===v.durationUnit&&o.value===v.value);
+      const unitKey:Record<NonNullable<typeof v.durationUnit>,RegExp>={
+        hour:/hours?|hrs?|horas?/iu,minute:/minutes?|mins?|minutos?/iu,
+        day:/days?|días?/iu,week:/weeks?|semanas?/iu,month:/months?|meses?/iu,
+      };
+      const fromTools=evidence.some(entry=>entry.values.some(value=>
+        value.unit==="count"&&unitKey[v.durationUnit!].test(value.key)&&value.value===v.value));
+      return !(fromOwner||fromTools);
+    }
     // Named price and comparison claims are identity-sensitive. Validate
     // them BEFORE checking whether some unrelated raw amount happens to match.
     const moneyLike=v.kind==="money"||
