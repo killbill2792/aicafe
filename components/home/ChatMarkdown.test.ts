@@ -253,3 +253,41 @@ describe("keyboard access to long provenance explanations",()=>{
     expect(html).toContain("overflow-y-auto");
   });
 });
+
+
+describe("GFM response tables",()=>{
+ const render=(text:string,locale:"en"|"es"|"ar"="en",unverified:ReadonlyArray<{start:number;end:number}>=[])=>
+   renderToStaticMarkup(createElement(ChatMarkdown,{text,locale,unverified}));
+ it("renders optional pipes, alignment, header-only and paragraph adjacency",()=>{
+   const html=render("Intro\nItem | Value\n:--- | ---:\nLatte | $7");
+   expect(html).toContain("<table");
+   expect(html).toContain('scope="col"');
+   expect(html).toContain("text-end");
+   expect(html).toContain('role="region"');
+   expect(html).toContain("overflow-x-auto");
+   expect(render("| Head |\n| :---: |")).toContain("<table");
+ });
+ it("does not render malformed tables",()=>{
+   expect(render("Item | Value\nOne | Two")).not.toContain("<table");
+ });
+ it("handles ragged rows and consecutive tables",()=>{
+   const html=render("A | B\n--- | ---\n1\n2 | 3 | 4\nC | D\n--- | ---\n5 | 6");
+   expect(html.match(/<table/g)).toHaveLength(2);
+   expect(html).toContain("3");
+   expect(html).not.toContain(">4<");
+ });
+ it("preserves escaped pipes, code pipes, inline emphasis and safe links",()=>{
+   const html=render("| Name | Link |\n| --- | --- |\n| red\\\\|blue and `a|b` | **Bold** [go](https://example.com) |");
+   expect(html).toContain("red|blue");
+   expect(html).toContain("a|b");
+   expect(html).toContain("<strong");
+   expect(html).toContain("https://example.com");
+ });
+ it("renders Arabic RTL and places one dot after whole monetary token",()=>{
+   const text="الصنف | المبلغ\n--- | ---:\nقهوة | $1,274.25";
+   const start=text.indexOf("$");
+   const html=render(text,"ar",[{start,end:start+9}]);
+   expect(html).toContain('dir="rtl"');
+   expect(html.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
+ });
+});
