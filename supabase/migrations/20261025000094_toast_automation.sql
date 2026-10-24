@@ -751,3 +751,19 @@ create table public.toast_sync_phase_errors(
 alter table public.toast_sync_phase_errors enable row level security;
 revoke all on public.toast_sync_phase_errors from public,anon,authenticated;
 grant select,insert,update,delete on public.toast_sync_phase_errors to service_role;
+
+-- On a successful new import, clear any previous re-pull failure for that day.
+-- A failure remains owner-visible until data has really been re-imported.
+create function public.toast_clear_recovered_day_error()
+returns trigger language plpgsql security definer set search_path=public as $recovered$
+begin
+ if new.import_state='imported' and new.imported_at is not null then
+  new.last_error_category=null;
+ end if;
+ return new;
+end $recovered$;
+create trigger toast_import_clears_old_error
+ before insert or update of imported_at on public.toast_day_status
+ for each row execute function public.toast_clear_recovered_day_error();
+revoke all on function public.toast_clear_recovered_day_error()
+ from public,anon,authenticated;
