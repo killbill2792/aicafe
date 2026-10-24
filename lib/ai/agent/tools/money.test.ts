@@ -9,6 +9,28 @@ function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
     getMenuCatalog:async()=>unavailable,...extra}};
 }
 describe("Leo scoped money reads",()=>{
+  it("never presents the all-category actual total as a selected category's spending",async()=>{
+    const r=await moneyTools.get_expenses.execute({period:"month",category:"Rent"},ctx({
+      getRecordedExpenses:async()=>({available:true,value:{totalCents:150000},quality:q}),
+      getExpenseSummary:async()=>({available:true,value:[
+        {label:"Rent",categoryCode:"rent",amountCents:50000,isEstimate:true,isMissing:false},
+        {label:"Utilities",categoryCode:"utilities",amountCents:10000,isEstimate:false,isMissing:false}],quality:q}),
+    }));
+    expect(r.recordedActualTotalCents).toBeNull();
+    expect(r.missing).toContain("categoryRecordedActualTotalUnavailable");
+    expect(r.categories).toEqual([expect.objectContaining({categoryCode:"rent",amountCents:50000})]);
+  });
+  it("asks when multiple categories have an identical owner-facing name",async()=>{
+    const r=await moneyTools.get_expenses.execute({period:"month",category:"Supplies"},ctx({
+      getRecordedExpenses:async()=>({available:true,value:{totalCents:120000},quality:q}),
+      getExpenseSummary:async()=>({available:true,value:[
+        {label:"Supplies",categoryCode:"drink",amountCents:20000,isEstimate:false,isMissing:false},
+        {label:"Supplies",categoryCode:"paper",amountCents:15000,isEstimate:false,isMissing:false}],quality:q}),
+    }));
+    expect(r.needsOwnerChoice).toBe(true);
+    expect((r.candidates as Array<{id:string}>).map(c=>c.id)).toEqual(["drink","paper"]);
+  });
+
   it("does not call recurring bills recorded expenses",async()=>{
     const r=await moneyTools.get_expenses.execute({period:"month",category:null},ctx({
       getRecordedExpenses:async()=>({available:true,value:{totalCents:2500},quality:q}),

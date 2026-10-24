@@ -30,4 +30,23 @@ describe("safe entity resolution",()=>{
    const chosen=newResolveState("Latte — Iced",[{role:"assistant",content:"Asked: Which? Options: Latte — Hot ("+hot+"); Latte — Iced ("+iced+")"}]);
    expect(chosen.chosenIds.has(iced)).toBe(true);
  });
+  it("asks about overlapping Latte names and duplicate Maria staff",()=>{
+    const overlapping=[rows[0],{id:"44444444-4444-4444-8444-444444444444",name:"Iced Latte",category:"Iced"}];
+    const product=resolveEntity("product","Latte",overlapping,props);
+    expect(product.status).toBe("ambiguous");
+    if(product.status==="ambiguous")expect(product.candidates.map(c=>c.id)).toEqual([hot,overlapping[1].id]);
+    const team=[{id:hot,name:"Maria",role:"Barista"},{id:iced,name:"Maria",role:"Manager"}];
+    const staff=resolveEntity("employee","Maria",team,{nameOf:r=>r.name,idOf:r=>r.id,describe:r=>r.role});
+    expect(staff.status).toBe("ambiguous");
+    if(staff.status==="ambiguous")expect(staff.candidates.map(c=>c.label)).toEqual(["Maria — Barista","Maria — Manager"]);
+  });
+  it("records refused proposal candidates without treating the write as successful",()=>{
+    const state=newResolveState("change latte price");
+    const candidates=[{id:hot,label:"Latte — Hot",detail:"Hot"},{id:iced,label:"Latte — Iced",detail:"Iced"}];
+    observeToolResult(state,{source:"price_change_proposal",missing:["ownerChoiceRequired"],
+      needsOwnerChoice:true,candidates});
+    expect(state.ambiguous).toEqual([candidates]);
+    expect(state.seenIds.has(hot)).toBe(true);
+    expect(ownerChoiceGuard(state,hot)?.missing).toEqual(["ownerChoiceRequired"]);
+  });
 });

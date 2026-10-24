@@ -20,4 +20,13 @@ describe("trusted explanation selection",()=>{
  it("does not trust model-provided math without exact tool evidence",()=>{
   expect(acceptedExplainLines([line],[], "Latte: $56,000.00",[],"en")).toEqual([]);
  });
+ it("does not attach a calculation with coincidentally equal money from another tool",()=>{
+  const wrongSource=[{tool:"expenses",values:evidence[0].values}];
+  expect(acceptedExplainLines([line],wrongSource,"Latte: $56,000.00",[],"en")).toEqual([]);
+ });
+ it("rejects a different period and numeric substring inside a larger amount",()=>{
+  const other:ExplainLine={...line,period:{from:"2025-08-22",to:"2025-09-04"}};
+  expect(acceptedExplainLines([other],evidence,"Latte: $56,000.00",[],"en")).toEqual([]);
+  expect(acceptedExplainLines([line],evidence,"Latte: $156,000.00",[],"en")).toEqual([]);
+ });
 });

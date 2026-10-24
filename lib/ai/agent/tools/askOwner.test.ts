@@ -36,4 +36,17 @@ describe("ask_owner tool",()=>{
   const ctx={resolveState:newResolveState("hello")} as AgentToolContext;
   expect((await askOwnerTools.ask_owner.execute({question:"Which?",options,allowOther:true},ctx)).missing).toContain("noAmbiguity");
  });
+ it("requires the exact candidate label paired with its real ID",async()=>{
+   const ctx=context();
+   const wrongLabel=await askOwnerTools.ask_owner.execute({question:"Which?",options:[
+     {label:"Iced Latte",value:hot},options[1]],allowOther:true},ctx);
+   expect(wrongLabel.missing).toContain("unverifiedOption");
+   const another=context();
+   observeToolResult(another.resolveState,{source:"employees",missing:[],needsOwnerChoice:true,
+     candidates:[{id:"33333333-3333-4333-8333-333333333333",label:"Maria A",detail:"Barista"},
+       {id:"44444444-4444-4444-8444-444444444444",label:"Maria B",detail:"Manager"}]});
+   const mixed=await askOwnerTools.ask_owner.execute({question:"Which?",options:[
+     options[0],{label:"Maria B",value:"44444444-4444-4444-8444-444444444444"}],allowOther:false},another);
+   expect(mixed.missing).toContain("unverifiedOption");
+ });
 });
