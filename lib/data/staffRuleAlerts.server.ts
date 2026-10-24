@@ -1,5 +1,5 @@
 import "server-only";
-import {fromZonedTime} from "date-fns-tz";
+import {formatInTimeZone,fromZonedTime} from "date-fns-tz";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 import {staffReadScope,mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
 import {getTeamRules} from "@/lib/data/staffRules.server";
@@ -46,11 +46,28 @@ export async function syncStaffRuleAlerts(){
   if(insert.error)return {ok:false as const,error:"alert_storage_unavailable"};
  }
  const result=await owner.supabase.from("staff_rule_alerts")
-  .select("id,employee_id,rule_key,message,created_at")
+  .select("id,employee_id,timecard_id,rule_key,message,created_at")
   .eq("business_id",owner.businessId).eq("status","new")
   .order("created_at",{ascending:false}).limit(40);
  if(result.error)return {ok:false as const,error:"alert_storage_unavailable"};
- return {ok:true as const,alerts:result.data??[],readOnly:false};
+ // A rule alert is based on an ACTUAL recorded timecard, not a scheduled shift.
+ // Never guess its date from alert.created_at (the alert may be generated days later).
+ const alertRows=result.data??[];
+ const cardIds=[...new Set(alertRows.map(row=>row.timecard_id))];
+ const cards=cardIds.length?await owner.supabase.from("timecards")
+  .select("id,employee_id,clock_in,clock_out").eq("business_id",owner.businessId).in("id",cardIds):null;
+ // Keep the warnings visible even if their source timecards are unavailable;
+ // only the matching Fix deep link must fail closed.
+ const timecards=new Map((cards?.error?[]:cards?.data??[]).map(card=>[card.id,card]));
+ const alerts=alertRows.map(row=>{
+  const card=timecards.get(row.timecard_id);
+  // A stale/mismatched timecard must never point the owner at another person's shift.
+  const valid=card&&card.employee_id===row.employee_id&&card.clock_out?card:null;
+  return {...row,workDate:valid?formatInTimeZone(valid.clock_in,scope.timezone,"yyyy-MM-dd"):null,
+   workStart:valid?formatInTimeZone(valid.clock_in,scope.timezone,"HH:mm"):null,
+   workEnd:valid?formatInTimeZone(valid.clock_out!,scope.timezone,"HH:mm"):null};
+ });
+ return {ok:true as const,alerts,readOnly:false};
 }
 /** TODO W1: plug in worker-authenticated WhatsApp transport after recipient consent.
  * This function deliberately sends nothing and changes no delivery status. */

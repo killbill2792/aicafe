@@ -1,6 +1,7 @@
 import type { getTranslations } from "next-intl/server";
 import type { AlertRow } from "@/lib/data/getAlerts";
 import { RUNNING_COST_CODES } from "@/lib/constants";
+import {staffScheduleHref} from "@/lib/scheduling/staffScheduleLinks";
 
 type T = Awaited<ReturnType<typeof getTranslations<"Alerts">>>;
 
@@ -46,7 +47,7 @@ export function describeAlert(alert: AlertRow, t: T, categoryLabel: (code: strin
         title: t("mealBreakTitle", { name }),
         subtitle: t("mealBreakSubtitle"),
         tone: "warn",
-        actionHref: `/more/manage-staff?date=${encodeURIComponent(String(alert.payload.date ?? ""))}&employee=${encodeURIComponent(String(alert.payload.employeeId ?? ""))}#employee-${encodeURIComponent(String(alert.payload.employeeId ?? ""))}`,
+        actionHref: staffScheduleHref({date:typeof alert.payload.date==="string"?alert.payload.date:undefined,employee:typeof alert.payload.employeeId==="string"?alert.payload.employeeId:undefined}),
         actionLabel: t("mealBreakAction", { name }),
       };
     }

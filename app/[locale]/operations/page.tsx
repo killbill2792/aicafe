@@ -19,6 +19,7 @@ import OwnerWhatsAppAlerts from "@/components/operations/OwnerWhatsAppAlerts";
 import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
+import {staffScheduleHref} from "@/lib/scheduling/staffScheduleLinks";
 
 export const dynamic = "force-dynamic";
 type InboxStatus = "needs_you" | "handled" | "watching";
@@ -34,6 +35,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   const selectedStatus = parseStatus(status);
   const statusQuery = status === "needs_you" || status === "handled" || status === "watching" ? status : undefined;
   const ownerCanSubscribe = await authenticatedConversationContext().then(() => true).catch(() => false);
+  const tStaffRules=await getTranslations("StaffSchedule");
   const names: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const scoped = (tasks: OperatingTask[]) => selectedAgent ? tasks.filter((task) => task.agentId === selectedAgent) : tasks;
   const lists = { needs_you: scoped(team.needsYou), handled: scoped(team.handled), watching: scoped(team.watching) };
@@ -44,6 +46,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-28 pt-6">
     <header><p className="text-sm font-semibold text-ink-muted">{t("eyebrow")}</p><h1 className="font-headline text-3xl font-bold text-ink">{t("title")}</h1><p className="mt-1 text-[17px] text-ink-muted">{selectedAgent ? t("focusedOn", { name: names[selectedAgent], role: copy.roles[selectedAgent] }) : t("intro")}</p></header>
     <AITeamCard team={team} copy={copy} selectedAgent={selectedAgent} selectedStatus={statusQuery} />
+    <Link href="/staff/rules" className="flex min-h-12 items-center self-start rounded-xl border border-line px-4 text-accent-text underline">{tStaffRules("rulesCard")}</Link>
 
     {ownerCanSubscribe && <section id="team-rules" className="flex flex-col gap-3" aria-labelledby="selected-agent-rules">
       <div className="flex items-center gap-3 px-1">
@@ -96,10 +99,8 @@ function taskHref(task: OperatingTask): string {
   }
   if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
   if (task.kind === "staff_coverage") {
-    const query = new URLSearchParams();
-    if (task.entityId) query.set("employee", task.entityId);
-    if (typeof task.payload.businessDate === "string") query.set("date", task.payload.businessDate);
-    return `/more/manage-staff${query.size ? `?${query}` : ""}`;
+    const shiftDate=task.payload.shiftDate??task.payload.businessDate;
+    return staffScheduleHref({employee:task.entityId,date:typeof shiftDate==="string"?shiftDate:undefined});
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
