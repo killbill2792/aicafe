@@ -75,20 +75,15 @@ export function internalOrderProof(rows:unknown[],p:Location,day:string,
      check.selections as Record<string,unknown>[]:[];
     // Deferred gift cards and house-account payments ARE included in the
     // guest check amount even though they are excluded from NET SALES.
-    // Selection.price is already net of item-level discounts; only check
-    // level discounts are subtracted here.
+    // Toast selection.price is net of all applied discounts, including check-level.
     const selectionPrices=selections.filter(sel=>!sel.voided&&!sel.deleted)
      .map(sel=>typeof sel.price==="number"?toastMoneyCents(sel.price):null);
     const chargePrices=charges.filter(sc=>sc.gratuity!==true)
      .map(sc=>typeof sc.chargeAmount==="number"?
       toastMoneyCents(sc.chargeAmount):null);
-    const discounts=Array.isArray(check.appliedDiscounts)?
-     check.appliedDiscounts as Record<string,unknown>[]:[];
-    const discountPrices=discounts.map(d=>typeof d.nonTaxDiscountAmount==="number"
-      ?toastMoneyCents(d.nonTaxDiscountAmount):null);
     const selectionBalance=checkToastSelectionBalance(
      typeof check.amount==="number"?toastMoneyCents(check.amount):null,
-     selectionPrices,chargePrices,discountPrices);
+     selectionPrices,chargePrices);
     if(selectionBalance==="unknown")reasons.push("unknown_selection_amount");
     else if(selectionBalance==="mismatch")reasons.push("check_selection_mismatch");
    }
@@ -129,7 +124,7 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   },{onConflict:"business_id,restaurant_guid,business_date"});
   if(expired)throw new ToastApiError("unavailable");
   await writeReconciliation(db,p,day,{
-   analytics_state:"missing",recon_state:"owner_flagged",
+   analytics_state:"missing",recon_state:"analytics_timeout",
    warnings:{...status.warnings,analytics_timeout:1}
   });
   return;
@@ -242,8 +237,10 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
  const {data:days,error:de}=await db.from("toast_day_status")
   .select("business_date,import_state,recon_state,orders_snapshot_sha256,net_sales_cents,order_count,discounts_cents,refunds_cents,unparsed_count,warnings,imported_at,last_recon_attempt_at")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
-  .eq("import_state","imported").in("recon_state",["pending","mismatch","owner_flagged"])
-  .order("business_date").limit(60);
+  .eq("import_state","imported").in("recon_state",["pending","mismatch","analytics_timeout"])
+  .or(`last_recon_attempt_at.is.null,last_recon_attempt_at.lt.${new Date(Date.now()-9*60000).toISOString()}`)
+  .order("last_recon_attempt_at",{ascending:true,nullsFirst:true})
+  .order("business_date",{ascending:false}).limit(60);
  if(de)throw new ToastApiError("unavailable");
  let attempted=0;
  for(const item of days??[]){
