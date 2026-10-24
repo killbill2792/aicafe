@@ -2898,8 +2898,8 @@
     "deliveryConsentError": "No se pudo guardar el consentimiento para WhatsApp.",
     "deliveryConsentAfterCreate": "La aceptación de WhatsApp está desactivada por defecto. Después de añadir a esta persona, abre su perfil para registrar su consentimiento.",
     "rulesAndCosts": "Reglas y costos",
-    "mealSentence": "Descanso para comer (min) después de",
-    "restSentence": "Descanso pagado (min) cada",
+    "mealSentence": "Descanso para comer:",
+    "restSentence": "Descanso pagado:",
     "weeklySentence": "Horas extra semanales después de",
     "dailySentence": "Horas extra diarias después de",
     "longestSentence": "Turno más largo",
@@ -2913,7 +2913,14 @@
     "whileOpen": "persona(s) mientras esté abierto",
     "prepTiming": "Apertura y cierre",
     "invalidNumber": "Introduce una cantidad válida dentro de los límites.",
-    "rulesSummary": "Comida después de {meal} h · Extras después de {overtime} h"
+    "rulesSummary": "Comida después de {meal} h · Extras después de {overtime} h",
+    "after": "después de",
+    "every": "cada",
+    "applyRule": "Aplicar regla",
+    "hoursUnit": "h",
+    "minutesUnit": "min",
+    "hoursInput": "horas",
+    "minutesInput": "minutos"
   },
   "FreeAccess": {
     "pricing": "Planes y precios",
