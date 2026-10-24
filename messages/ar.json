@@ -2906,7 +2906,10 @@
     "everyDay": "كل يوم",
     "confirmRemovePerson": "هل تريد إزالة {name} من الفريق؟ سيصبح ملفه غير نشط.",
     "confirmRemove": "نعم، إزالة الموظف",
-    "noWageAction": "الأجر غير محدد"
+    "noWageAction": "الأجر غير محدد",
+    "salaryManagedBadge": "الراتب يُدار بشكل منفصل",
+    "wagePerHour": "{amount} للساعة",
+    "teamHoursShort": "{hours} ساعة"
   },
   "FreeAccess": {
     "pricing": "الباقات والأسعار",
