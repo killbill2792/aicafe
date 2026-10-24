@@ -2914,7 +2914,8 @@
     "draftRetryApproval": "Retry approval",
     "draftApplying": "Saving your decision…",
     "draftPartialCost": "Known {known}; {count} wages unknown",
-    "draftBaseWageNote": "Base wages only. Overtime premiums and payroll taxes are not included."
+    "draftBaseWageNote": "Base wages only. Overtime premiums and payroll taxes are not included.",
+    "draftCoverageGaps": "{count} opening-hour coverage gaps remain. Review before approval."
   },
   "FreeAccess": {
     "pricing": "Plans and pricing",
