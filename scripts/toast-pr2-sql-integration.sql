@@ -261,4 +261,121 @@ begin
   'once all repulls finish, the independently reconciled day can certify');
 end $pending_repull$;
 
+
+-- Recovery P1: changing a location's closeout mid-backfill invalidates ALL
+-- previously imported dates and must restart an already-partial identical run.
+-- October 1 is outside the seven-day modifiedDate scan as of October 24.
+DO $closeout_recovery$
+declare
+ b uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+ north uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001';
+ south uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002';
+ north_location uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbba001';
+ r uuid; d date;
+ v_summary jsonb:='{"net_sales_cents":0,"order_count":0,"gross_sales_cents":0,
+ "discounts_cents":0,"refunds_cents":0,"tax_cents":0,"tip_cents":0,
+ "open_check_count":0,"service_charges_cents":0,"gratuity_cents":0,
+ "unparsed_count":0,"warnings":{},"voids":[],"refund_facts":[],
+ "unparsed":[],"parsed_order_guids":[],"snapshot_sha256":"recovered"}'::jsonb;
+begin
+ -- Existing day 5/6 fixtures are preserved. Give all eligible locations
+ -- complete coverage for the range before invalidating its date grouping.
+ insert into public.toast_day_status(
+  business_id,restaurant_guid,business_date,import_state,
+  coverage_complete,imported_at)
+ select b,north,day::date,'imported',true,now() from
+  generate_series('2026-10-01'::timestamp,'2026-10-04'::timestamp,
+   interval '1 day') day;
+ insert into public.toast_day_status(
+  business_id,restaurant_guid,business_date,import_state,
+  coverage_complete,imported_at)
+ values(b,south,'2026-10-05','imported',true,now())
+ on conflict(business_id,restaurant_guid,business_date) do update
+  set import_state='imported',coverage_complete=true,imported_at=now();
+ update public.toast_day_status set coverage_complete=true,
+  import_state='imported',last_error_category=null
+ where business_id=b and restaurant_guid=north
+  and business_date between '2026-10-05' and '2026-10-06';
+ insert into public.daily_rollups(business_id,business_date,net_sales_cents,
+  orders_count,drinks_count,ingredients_cents,staff_wages_cents,
+  staff_tax_cents,card_fees_cents,voids_cents,sales_data_status)
+ select b,d::date,0,0,0,0,0,0,0,0,'actual'
+ from generate_series('2026-10-01'::timestamp,'2026-10-06'::timestamp,
+  interval '1 day') d
+ on conflict(business_id,business_date) do update
+  set sales_data_status='actual';
+
+ insert into public.toast_sync_runs(business_id,restaurant_guid,
+  kind,requested_from,requested_to,days_total,days_done,
+  state,cursor,resume_at)
+ values(b,north,'backfill','2026-10-01','2026-10-06',6,4,
+  'paused_rate_limited','{"business_date":"2026-10-05","page":2}'::jsonb,
+  now()+interval '5 minutes') returning id into r;
+ insert into public.toast_day_pages(run_id,business_date,page,payload)
+ values(r,'2026-10-05',1,'[]'::jsonb);
+ update public.toast_location_mappings set closeout_hour=5
+ where business_id=b and restaurant_guid=north;
+
+ perform pg_temp.assert((select days_done=0 and state='queued'
+  and cursor='{}'::jsonb and resume_at is null and finished_at is null
+  from public.toast_sync_runs where id=r),
+  'closeout change MUST reset an active matching backfill, not keep stale days_done');
+ perform pg_temp.assert(not exists(select 1 from public.toast_day_pages
+  where run_id=r),'closeout change MUST discard old staged page snapshots');
+ perform pg_temp.assert((select count(*)=6 from public.toast_day_status
+  where business_id=b and restaurant_guid=north
+   and business_date between '2026-10-01' and '2026-10-06'
+   and coverage_complete=false),
+   'closeout invalidates every date, including October 1 outside modified-date scan');
+ perform pg_temp.assert((select count(*)=6 from public.daily_rollups
+  where business_id=b and business_date between '2026-10-01' and '2026-10-06'
+   and sales_data_status='missing'),'report coverage must stay incomplete while recovery is queued');
+
+ -- The restored run processes ALL six dates, not just the old pending two.
+ for d in select gs::date from generate_series('2026-10-01'::timestamp,
+  '2026-10-06'::timestamp,interval '1 day') gs loop
+  perform public.toast_import_day(b,north_location,north,d,'[]'::jsonb,v_summary,r);
+ end loop;
+ perform pg_temp.assert((select state='completed' and days_done=6
+   from public.toast_sync_runs where id=r),
+   'same recovery run commits six days exactly once');
+ perform pg_temp.assert((select count(*)=6 from public.toast_day_status
+  where business_id=b and restaurant_guid=north
+   and business_date between '2026-10-01' and '2026-10-06'
+   and coverage_complete and import_state='imported'
+   and last_import_run_id=r),
+   'every invalidated old and new day was actually re-imported');
+ perform pg_temp.assert((select count(*)=6 from public.daily_rollups
+  where business_id=b and business_date between '2026-10-01' and '2026-10-06'
+   and sales_data_status='actual'),
+   'after all applicable locations prove data, NONE of the six dates stays missing');
+end $closeout_recovery$;
+
+-- A normal duplicate backfill does not reset progress; a start-date move
+-- backwards MUST reset even when the identical range is already in progress.
+DO $start_date_recovery$
+declare
+ b uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+ south uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002';
+ r uuid;reused uuid;
+begin
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+ requested_from,requested_to,days_total,days_done,state,cursor)
+ values(b,south,'backfill','2026-10-04','2026-10-06',3,2,
+  'running','{"business_date":"2026-10-06","page":2}'::jsonb)
+ returning id into r;
+ insert into public.toast_day_pages(run_id,business_date,page,payload)
+ values(r,'2026-10-06',1,'[]'::jsonb);
+ select public.toast_queue_backfill(b,south,'2026-10-04','2026-10-06') into reused;
+ perform pg_temp.assert(reused=r,'earlier start-date recovers identical active run');
+ perform pg_temp.assert((select days_done=0 and state='queued'
+  and cursor='{}'::jsonb from public.toast_sync_runs where id=r),
+  'earlier Toast start resets stale backfill progress');
+ perform pg_temp.assert(not exists(select 1 from public.toast_day_pages
+  where run_id=r),'earlier Toast start discards previously staged pages');
+ perform pg_temp.assert((select sales_data_status='missing'
+  from public.daily_rollups where business_id=b and business_date='2026-10-04'),
+  'newly applicable second location must demote previously complete Toast business total');
+end $start_date_recovery$;
+
 ROLLBACK;
