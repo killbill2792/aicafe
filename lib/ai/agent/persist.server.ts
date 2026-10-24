@@ -4,6 +4,7 @@ import { recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import type { ConversationMessage, ConversationScope, GroundedSupervisorReply } from "@/lib/ai/conversations/contracts";
 import type { AgentTurn } from "./loop.server";
+import {explainLineSchema} from "./explain";
 
 export class AgentReplyTooLongError extends Error { constructor() { super("agent_reply_too_long"); } }
 export class AgentReplyStorageError extends Error { constructor() { super("agent_reply_storage_failed"); } }
@@ -77,11 +78,18 @@ export function agentReplyPayload(turn: AgentTurn) {
       result.saved===false&&result.missing.length===0&&
       typeof result.ruleId==="string"&&UUID.test(result.ruleId)
       ?[result.ruleId]:[]))].slice(0,Math.max(0,29-blocks.length-proposalIds.length));
+  const explanation=clarify?[]:(turn.explain??[]).flatMap(item=>{
+    const parsed=explainLineSchema.safeParse(item);
+    return parsed.success?[parsed.data]:[];
+  }).slice(0,20);
+  const reserved=Number(Boolean(clarify))+Number(explanation.length>0);
+  const safeExplain=blocks.length+proposalIds.length+memoryRuleIds.length+reserved<=30?explanation:[];
   const status = persistedAgentStatus(turn);
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks:[...blocks,
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
     ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId})),
-    ...(clarify&&typeof clarify.question==="string"&&Array.isArray(clarify.options)?[{type:"clarify" as const,question:clarify.question,options:clarify.options as {label:string;value:string}[],allowOther:clarify.allowOther===true}]:[])] };
+    ...(clarify&&typeof clarify.question==="string"&&Array.isArray(clarify.options)?[{type:"clarify" as const,question:clarify.question,options:clarify.options as {label:string;value:string}[],allowOther:clarify.allowOther===true}]:[]),
+    ...(safeExplain.length?[{type:"how" as const,lines:safeExplain}]:[])] };
   const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
   const unverified = annotations.flatMap(item => {
     const rows: Array<typeof item & {blockIndex:number}> = [];
@@ -98,7 +106,7 @@ export function agentReplyPayload(turn: AgentTurn) {
     return rows;
   });
   return { reply, metadata: {
-    unverified, endReason: turn.endReason, evidence:turn.evidence??[],agentIds:turn.agentIds??[],
+    unverified, endReason: turn.endReason, evidence:turn.evidence??[],explain:safeExplain,agentIds:turn.agentIds??[],
     sources: turn.results.map(r => ({ source:r.source, period:r.period, missing:r.missing })),
     usage: { ...turn.usage },
     // Owner messages answered inside this reply (CHAT_JOBS mid-run follow-ups).

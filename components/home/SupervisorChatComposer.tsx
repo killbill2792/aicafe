@@ -20,6 +20,8 @@ import FactSummary from "./FactSummary";
 import SupervisorProposalCard from "./SupervisorProposalCard";
 import MemoryCard from "./MemoryCard";
 import ClarifyCard from "./ClarifyCard";
+import HowIGotThis from "./HowIGotThis";
+import {explainLineSchema} from "@/lib/ai/agent/explain";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress from "./ChatJobProgress";
 import { useAgentJobWatcher } from "./useAgentJobWatcher";
@@ -50,6 +52,7 @@ export type SupervisorChatCopy = {
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
   clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;
   howIGotThis:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
+  explainMultiply:string;explainSum:string;explainDivide:string;explainRatio:string;explainProrate:string;explainSubtract:string;
   feedbackUp: string; feedbackDown: string; feedbackSaved: string; feedbackError: string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
@@ -157,6 +160,13 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, 
       {groups.map((group,i)=>{
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
+        if(record(group.block)&&group.block.type==="how"&&Array.isArray(group.block.lines)){
+          const lines=group.block.lines.slice(0,20).flatMap(line=>{
+            const parsed=explainLineSchema.safeParse(line);
+            return parsed.success?[parsed.data]:[];
+          });
+          return lines.length?<HowIGotThis key={i} lines={lines} locale={locale} copy={copy}/>:null;
+        }
         const clarify=clarifyBlockSchema.safeParse(group.block);
         if(clarify.success)return <ClarifyCard key={i} block={clarify.data} locale={locale} copy={copy}
           state={clarifyState} choice={clarifyChoice} disabled={disabled} onSend={onClarify}/>;

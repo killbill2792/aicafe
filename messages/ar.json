@@ -1700,7 +1700,13 @@
     "howIGotThis": "كيف حسبت ذلك",
     "explainYouToldMe": "أخبرتني",
     "explainEstimate": "تقدير",
-    "explainSold": "تم بيعها"
+    "explainSold": "تم بيعها",
+    "explainMultiply": "ضرب",
+    "explainSum": "زائد",
+    "explainDivide": "مقسوم على",
+    "explainRatio": "النسبة",
+    "explainProrate": "حصة نسبية",
+    "explainSubtract": "ناقص"
   },
   "TeamRules": {
     "title": "قواعد الفريق والموافقات",

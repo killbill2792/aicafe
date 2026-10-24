@@ -6,6 +6,7 @@ import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } fr
 import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
 import {newResolveState,observeToolResult} from "./resolve";
+import {acceptedExplainLines,type ExplainLine} from "./explain";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -14,7 +15,7 @@ export type AgentProvider = (params: Record<string, unknown>, signal: AbortSigna
 export type AgentAuditStep = { kind: "model_call" | "tool_call" | "approval_card" | "memory"; toolName?: string;
   inputSummary?: string; outputSummary?: string; durationMs: number; error?: string };
 export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType<typeof statusFromResults>;
-  unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; evidence?: NumericEvidence[]; tools?:string[]; agentIds?:string[];
+  unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; evidence?: NumericEvidence[]; explain?:ExplainLine[]; tools?:string[]; agentIds?:string[];
   usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number };
   /** Owner messages sent while this turn ran and read by the model before a later step. */
   absorbedOwnerMessageIds?: string[] };
@@ -325,10 +326,15 @@ export async function runAgentTurn(args: {
   const toolResults=results.map(r=>r.result);
   const verificationResults=usageEvidenceRefresh(toolResults,args.previousEvidence);
   const unverified=checkNumbers(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence);
+  const evidence=compactEvidence(verificationResults);
+  const candidates=toolResults.flatMap(result=>Array.isArray(result.explain)?
+    result.explain.slice(0,12).filter((line):line is ExplainLine=>
+      Boolean(line)&&typeof line==="object"&&"source" in line&&typeof line.source==="string") :[]);
+  const explain=askedQuestion?[]:acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale);
   return { text, endReason, status,
     unverified,
     provenance:numberProvenance(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence,unverified),
-    evidence:compactEvidence(verificationResults),
+    evidence,explain,
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
     results:toolResults, usage,
     ...(deliveredIds.size ? { absorbedOwnerMessageIds: [...deliveredIds] } : {}) };

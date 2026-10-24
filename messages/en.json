@@ -1700,7 +1700,13 @@
     "howIGotThis": "How I got this",
     "explainYouToldMe": "You told me",
     "explainEstimate": "Estimate",
-    "explainSold": "sold"
+    "explainSold": "sold",
+    "explainMultiply": "times",
+    "explainSum": "plus",
+    "explainDivide": "divided by",
+    "explainRatio": "ratio",
+    "explainProrate": "prorated",
+    "explainSubtract": "minus"
   },
   "TeamRules": {
     "title": "Team rules & approvals",
