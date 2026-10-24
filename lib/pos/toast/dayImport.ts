@@ -4,6 +4,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
 import {createToastClient,GUID,ToastApiError} from "./client";
 import {parseToastDayPage,type ToastParsedOrder,type ToastUnparsed,type ToastVoidFact} from "./dayParser";
+import {recomputeDailyRollup} from "../rollup";
 
 const daySchema=z.iso.date();
 type Params={businessId:string;locationId:string;restaurantGuid:string;businessDate:string;runId:string};
@@ -27,6 +28,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
  const client=createToastClient(db,p.businessId);
  const pageSchema=z.array(z.unknown());
  const pages:StoredPage[]=[];
+ const deadlineAt=Date.now()+240000;
  let page=1;
  try{
   for(;page<=300;page++){
@@ -35,7 +37,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    if(se)throw new ToastApiError("unavailable");
    const payload=staged?.payload??await client.request(
      "/orders/v2/ordersBulk?businessDate="+p.businessDate.replaceAll("-","")+"&pageSize=100&page="+page,
-     p.restaurantGuid,pageSchema,{deadlineAt:Date.now()+240000});
+     p.restaurantGuid,pageSchema,{deadlineAt});
    if(payload.length>100)throw new ToastApiError("invalid_response");
    if(!staged){
     const {error:saved}=await db.rpc("toast_stage_day_page",{
@@ -90,6 +92,18 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    p_orders:normalized,p_summary:summary,p_run_id:p.runId
   });
   if(error)throw new ToastApiError("unavailable");
+  // The SQL transaction fixes canonical revenue and coverage first. Rebuild
+  // ingredient, labor and processing-fee costs from the same active orders.
+  // Explicit status is mandatory: recompute's inference from nonzero revenue
+  // must not promote an incomplete day from 'missing' to 'actual'.
+  const {data:rollup,error:rollupError}=await db.from("daily_rollups")
+    .select("sales_data_status").eq("business_id",p.businessId)
+    .eq("business_date",p.businessDate).maybeSingle();
+  if(rollupError||!rollup||!["actual","missing"].includes(rollup.sales_data_status))
+    throw new ToastApiError("unavailable");
+  await recomputeDailyRollup(db,p.businessId,p.businessDate,{
+    salesDataStatus:rollup.sales_data_status as "actual"|"missing"
+  });
   return {orders:summary.order_count,unparsed:summary.unparsed_count,
    netSalesCents:summary.net_sales_cents,checksum:summary.snapshot_sha256,result};
  }catch(err){
