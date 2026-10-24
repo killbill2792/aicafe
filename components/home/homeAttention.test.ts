@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeAttentionHref, prioritizeHomeAttention, type HomeAttentionItem } from "./homeAttention";
+import { homeAttentionHref, homeShiftHref, prioritizeHomeAttention, type HomeAttentionItem } from "./homeAttention";
 
 describe("Home attention", () => {
   it("routes each actionable source to the correct fix", () => {
@@ -17,6 +17,12 @@ describe("Home attention", () => {
     expect(homeAttentionHref({kind:"staff",href:"/staff?tab=schedule&date=2026-10-23&employee=abc"})).toBe("/staff?tab=schedule&date=2026-10-23&employee=abc");
     expect(homeAttentionHref({kind:"task",href:"/operations?status=needs_you"})).toBe("/operations?status=needs_you");
     expect(homeAttentionHref({kind:"alert",href:"https://example.org/"})).toBe("/operations");
+  });
+
+  it("preserves employee and date context when linking to the live schedule", () => {
+    expect(homeShiftHref("employee 42", "2026-10-23")).toBe(
+      "/staff?tab=schedule&employee=employee+42&date=2026-10-23");
+    expect(homeShiftHref()).toBe("/staff?tab=schedule");
   });
 
   it("sorts by known monetary impact, caps at 5, preserves stable unknown order and deduplicates", () => {
