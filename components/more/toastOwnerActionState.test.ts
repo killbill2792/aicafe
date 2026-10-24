@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from "vitest";
-import {canStartToastImport,canRepullToastDay,commitToastOwnerAction} from "./toastOwnerActionState";
+import {canStartToastImport,canRepullToastDay,commitToastOwnerAction,queueToastBackfillChunks,PartialToastQueueError} from "./toastOwnerActionState";
 describe("owner sees only actionable Toast import controls",()=>{
  it("setup enabled without auto-import does not allow the owner to launch a dead-end import",()=>{
   expect(canStartToastImport(false,false,"2026-10-01","2026-10-23")).toBe(false);
@@ -36,5 +36,30 @@ describe("a status read cannot turn a committed Toast action into a false failur
   const refresh=vi.fn();
   await expect(commitToastOwnerAction(write,refresh)).rejects.toThrow("save rejected");
   expect(refresh).not.toHaveBeenCalled();
+ });
+});
+
+const addDay=(d:string,n:number)=>new Date(Date.parse(d+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
+describe("backfill chunks across real calendar and month boundaries",()=>{
+ it("queues at most 400 days in each request, with no date gaps",async()=>{
+  const queue=vi.fn().mockResolvedValue(undefined);
+  const end=addDay("2024-01-01",800);
+  expect(await queueToastBackfillChunks("2024-01-01",end,queue,addDay)).toBe(3);
+  expect(queue.mock.calls).toEqual([
+   ["2024-01-01",addDay("2024-01-01",399)],
+   [addDay("2024-01-01",400),addDay("2024-01-01",799)],
+   [end,end]
+  ]);
+ });
+ it("identifies the first unqueued date after a later request fails",async()=>{
+  const queue=vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("offline"));
+  try{
+   await queueToastBackfillChunks("2024-01-01",addDay("2024-01-01",800),queue,addDay);
+   throw new Error("expected a partial failure");
+  }catch(error){
+   expect(error).toBeInstanceOf(PartialToastQueueError);
+   expect((error as PartialToastQueueError).queuedChunks).toBe(1);
+   expect((error as PartialToastQueueError).resumeFrom).toBe(addDay("2024-01-01",400));
+  }
  });
 });
