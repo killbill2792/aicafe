@@ -34,7 +34,7 @@ import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
 import { syncAndGetOperatingTasks } from "@/lib/data/operatingTasks";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
-import type { ExpenseCategoryCode } from "@/lib/constants";
+import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import type { AgentId, OperatingTask } from "@/lib/operating/tasks";
 
 // Personalized, session-dependent — never statically prerendered.
@@ -65,11 +65,6 @@ function operatingTaskHref(task: OperatingTask): string {
     return `/operations?status=${status}&agent=maya`;
   }
   return "/operations";
-}
-
-function newestTaskTime(task: OperatingTask): number {
-  const timestamp = Date.parse(task.resolvedAt ?? task.createdAt);
-  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string; thread?: string; experiment?: string }> }) {
@@ -104,7 +99,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const persistedTasks = await syncAndGetOperatingTasks([...derivedTeam.needsYou, ...derivedTeam.handled, ...derivedTeam.watching]);
   const team = projectOperatingTasks(persistedTasks.tasks);
 
-  const labelFor = (code: string) => (code === "yours" ? t("yours") : snapshot.runningCostLines.find(l => l.categoryCode === code)?.label ?? code);
+  const labelFor = (code: string) => code === "yours" ? t("yours") :
+    EXPENSE_CATEGORY_CODES.includes(code as ExpenseCategoryCode)
+      ? tCategories(code as ExpenseCategoryCode)
+      : snapshot.runningCostLines.find(l => l.categoryCode === code)?.label ?? code;
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
