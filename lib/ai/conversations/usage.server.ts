@@ -1,3 +1,5 @@
+import { standardModelTokenRates } from "@/lib/calc/supervisorTokenCost";
+import {modelFamily} from "@/lib/ai/conversations/modelFamily";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -57,7 +59,11 @@ export async function recordSupervisorUsage(params: {
   const outputRate = fallbackUsed
     ? process.env.SUPERVISOR_FALLBACK_OUTPUT_USD_PER_MILLION_TOKENS
     : primaryUsed ? process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS : undefined;
-  const cost = estimateSupervisorCostMicros(usage.inputTokens, usage.outputTokens,inputRate,outputRate);
+  const family=modelFamily(usage.model);
+  if(!family)console.error("unpriced_model",{model:usage.model});
+  const standard=family?standardModelTokenRates(usage.model,null,usage.inputTokens):null;
+  const cost=family?estimateSupervisorCostMicros(usage.inputTokens,usage.outputTokens,
+    inputRate??standard?.input,outputRate??standard?.output):null;
   const admin = createAdminSupabaseClient();
   // Atomic additive write: failed attempt plus Retry never discard previously incurred usage.
   const { error } = await admin.rpc("record_supervisor_usage_increment", {

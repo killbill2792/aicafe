@@ -63,7 +63,18 @@ export async function POST(request:Request){
       state:"verified",last_verified_at:at,last_error_category:null,scopes_available:scopesAvailable
     }).eq("business_id",businessId);
     if(updated)throw new ToastApiError("unavailable");
-    return json(200,{state:"verified",locationsVerified:mappings.length,scopesAvailable});
+    // Credential verification succeeded and is now durable. A separate queue
+    // failure must NEVER revert its status or revoke a newly verified location.
+    let recoveryPending=false;
+    for(const mapping of mappings){
+      try{
+        const {error:retryError}=await db.rpc("toast_requeue_failed",{
+          p_business_id:businessId,p_restaurant_guid:mapping.restaurant_guid});
+        if(retryError)recoveryPending=true;
+      }catch{recoveryPending=true;}
+    }
+    return json(200,{state:"verified",locationsVerified:mappings.length,
+      scopesAvailable,recoveryPending});
   } catch(err){
     const category=err instanceof ToastApiError?err.category:"unavailable";
     const outcome=verificationFailure(Boolean(previouslyVerified),category);

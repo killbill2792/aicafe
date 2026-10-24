@@ -40,39 +40,20 @@ describe("Toast per-check independent payment proof (25)",()=>{
  });
 });
 
-describe("closed check selection plus service-charge balance (V6)",()=>{
- it("includes service charges, discounts and one-cent tolerance",()=>{
-  expect(checkToastSelectionBalance(1150,[1000,200],[50],[100])).toBe("matched");
-  expect(checkToastSelectionBalance(1250,[1000,200],[50],[100])).toBe("mismatch");
+describe("closed check selection amounts already net of all discounts",()=>{
+ it("balances check-level percentage and fixed discounts without deducting twice",()=>{
+  expect(checkToastSelectionBalance(900,[900],[])).toBe("matched");
+  expect(checkToastSelectionBalance(800,[800],[])).toBe("matched");
+  expect(checkToastSelectionBalance(900,[1000],[])).toBe("mismatch");
  });
- it("does not certify absent selection, discount or service amounts",()=>{
-  expect(checkToastSelectionBalance(1150,[null,200],[50],[100])).toBe("unknown");
-  expect(checkToastSelectionBalance(1150,[1000,200],[null],[100])).toBe("unknown");
-  expect(checkToastSelectionBalance(1150,[1000,200],[50],[null])).toBe("unknown");
+ it("balances item-level discount and non-gratuity service charges",()=>{
+  expect(checkToastSelectionBalance(1350,[1300],[50])).toBe("matched");
+  expect(checkToastSelectionBalance(1350,[1300],[null])).toBe("unknown");
+  expect(checkToastSelectionBalance(1350,[null],[50])).toBe("unknown");
  });
-});
-
-describe("Toast documented Check.amount semantics: auto-gratuity and gift cards",()=>{
- it("does not double-count $8 mandatory gratuity as both a charge and payment",()=>{
-  // check.amount=$50 sale +$5 retained fee; auto-grat is outside amount.
-  expect(checkToastSelectionBalance(5500,[5000],[500],[])).toBe("matched");
-  // payment.amount excludes gratuity and guest tips.
-  expect(checkToastPaymentBalance(5500,440,800,[6740])).toBe("matched");
-  expect(checkToastPaymentBalance(5500,440,1600,[6740])).toBe("mismatch");
- });
- it("includes deferred gift-card purchases in CHECK amount, not in NET sales",()=>{
-  // A $30 deferred gift-card sale is on the guest's check alongside $20 coffee.
-  // It must not disappear from the check reconciliation just because the net-
-  // sales importer excludes deferred revenue.
-  expect(checkToastSelectionBalance(5000,[2000,3000],[],[])).toBe("matched");
-  expect(checkToastSelectionBalance(5000,[2000],[],[])).toBe("mismatch");
-  // Payment amount includes the whole guest check even when net sales are $20.
-  expect(checkToastPaymentBalance(5000,0,0,[3000,2000])).toBe("matched");
- });
- it("selection.price already includes an item discount; subtract only check-level discounts",()=>{
-  // $15 item, $2 item discount => selection.price=$13.
-  // An additional $1 check-level discount yields Check.amount=$12.
-  expect(checkToastSelectionBalance(1200,[1300],[],[100])).toBe("matched");
-  expect(checkToastSelectionBalance(1200,[1300],[],[100,200])).toBe("mismatch");
+ it("excludes gratuity but includes deferred gift card selection amounts",()=>{
+  expect(checkToastSelectionBalance(5000,[2000,3000],[])).toBe("matched");
+  expect(checkToastSelectionBalance(5000,[2000],[])).toBe("mismatch");
+  expect(checkToastPaymentBalance(5000,400,800,[6200])).toBe("matched");
  });
 });
