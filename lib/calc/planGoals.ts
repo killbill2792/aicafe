@@ -250,7 +250,10 @@ export function simulatePlanChange(input: {
       base.operatingDaysInMonth / base.salesDaysCovered,
     );
   }
-  if (sales <= 0 || ingredients < 0 || !Number.isSafeInteger(profitDelta)) return null;
+  // Sales and ingredient ratios are required to simulate menu changes, but
+  // payroll savings are meaningful even with no imported sales records.
+  if (!Number.isSafeInteger(profitDelta) ||
+      (type !== "staff" && (sales <= 0 || ingredients < 0))) return null;
   if (old?.kind !== "ready") {
     // Payroll saving can be estimated from recorded labor even when sales,
     // product costs or processing fees have not established break-even.
