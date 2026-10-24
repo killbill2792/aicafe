@@ -1,8 +1,8 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mealBreakStatus, missingBillAlert } from "@/lib/calc";
-import { RUNNING_COST_CODES } from "@/lib/constants";
-import { staleGeneratedAlertIds } from "./reconcile";
+import { DEMO_BUSINESS_ID, RUNNING_COST_CODES } from "@/lib/constants";
+import { blocksGeneratedAlert, staleGeneratedAlertIds } from "./reconcile";
 import { formatInTimeZone } from "date-fns-tz";
 import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
 import { summarizeVoidsRollups, isUnusualVoids } from "@/lib/calc/voidsReview";
@@ -19,6 +19,8 @@ import { summarizeVoidsRollups, isUnusualVoids } from "@/lib/calc/voidsReview";
  * Idempotent: re-running never creates a second open alert for the same underlying thing.
  */
 export async function generateAlerts(supabase: SupabaseClient, businessId: string): Promise<{ created: number }> {
+  // The demo tenant is shared by unrelated users. Reading is fine; generation is not.
+  if (businessId === DEMO_BUSINESS_ID) return { created: 0 };
   const { data: business } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
   const timezone = business?.timezone ?? "America/Los_Angeles";
   let created = 0;
@@ -35,13 +37,19 @@ export async function hasOpenAlert(
   supabase: SupabaseClient, businessId: string, kind: string, dedupeKey: string,
   includeReviewed = false,
 ): Promise<boolean> {
-  // Import alerts retain their existing open-only retry semantics. Generated monthly/shift
-  // alerts must also see resolved/dismissed rows, so Done cannot immediately reappear.
-  let query = supabase.from("alerts").select("id, payload")
+  // CSV imports retain open-only retries. Generated incidents suppress owner decisions,
+  // but not automatic reconciliation when a corrected problem becomes actionable again.
+  let query = supabase.from("alerts").select("id, payload, status")
     .eq("business_id", businessId).eq("kind", kind);
   if (!includeReviewed) query = query.in("status", ["new", "seen"]);
-  const { data } = await query;
-  return (data ?? []).some((a) => (a.payload as { dedupeKey?: string })?.dedupeKey === dedupeKey);
+  const { data, error } = await query;
+  // Do not create duplicate alerts when the deduplication read fails.
+  if (error) throw error;
+  return (data ?? []).some((a) => {
+    const payload = a.payload as Record<string, unknown> | null;
+    return payload?.dedupeKey === dedupeKey &&
+      (!includeReviewed || blocksGeneratedAlert(a.status as "new" | "seen" | "resolved" | "dismissed", payload));
+  });
 }
 
 async function generateMissingBillAlerts(supabase: SupabaseClient, businessId: string, timezone: string): Promise<number> {
