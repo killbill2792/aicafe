@@ -95,20 +95,35 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    p_orders:normalized,p_summary:summary,p_run_id:p.runId
   });
   if(error)throw new ToastApiError("unavailable");
-  // The SQL transaction fixes canonical revenue and coverage first. Rebuild
-  // ingredient, labor and processing-fee costs from the same active orders.
-  // Explicit status is mandatory: recompute's inference from nonzero revenue
-  // must not promote an incomplete day from 'missing' to 'actual'.
-  const {data:rollup,error:rollupError}=await db.from("daily_rollups")
+  // SQL has already committed the complete business day and advanced days_done.
+  // A trigger queued cost refresh in the SAME transaction. Never route a
+  // post-commit cost failure through the page-import checkpoint handler.
+  const imported={orders:summary.order_count,unparsed:summary.unparsed_count,
+   netSalesCents:summary.net_sales_cents,checksum:summary.snapshot_sha256,result};
+  let generation:string|null=null;
+  try{
+   const {data:job,error:queueError}=await db.from("toast_rollup_refresh_jobs")
+    .select("generation").eq("business_id",p.businessId)
+    .eq("business_date",p.businessDate).maybeSingle();
+   if(queueError||!job?.generation)return {...imported,costsPending:true};
+   generation=job.generation;
+   const {data:rollup,error:rollupError}=await db.from("daily_rollups")
     .select("sales_data_status").eq("business_id",p.businessId)
     .eq("business_date",p.businessDate).maybeSingle();
-  if(rollupError||!rollup||!["actual","missing"].includes(rollup.sales_data_status))
+   if(rollupError||!rollup||!["actual","missing"].includes(rollup.sales_data_status))
     throw new ToastApiError("unavailable");
-  await recomputeDailyRollup(db,p.businessId,p.businessDate,{
+   await recomputeDailyRollup(db,p.businessId,p.businessDate,{
     salesDataStatus:rollup.sales_data_status as "actual"|"missing"
-  });
-  return {orders:summary.order_count,unparsed:summary.unparsed_count,
-   netSalesCents:summary.net_sales_cents,checksum:summary.snapshot_sha256,result};
+   });
+   const {data:ack,error:ackError}=await db.rpc("toast_ack_rollup_refresh",{
+    p_business_id:p.businessId,p_business_date:p.businessDate,p_generation:generation});
+   return {...imported,costsPending:Boolean(ackError||ack!==true)};
+  }catch{
+   if(generation)await db.rpc("toast_defer_rollup_refresh",{
+    p_business_id:p.businessId,p_business_date:p.businessDate,
+    p_generation:generation,p_category:"unavailable"}).catch(()=>null);
+   return {...imported,costsPending:true};
+  }
  }catch(err){
   const category=err instanceof ToastApiError?err.category:"unavailable";
   const fatal=["authentication","missing_permissions","missing_scope_or_location",
