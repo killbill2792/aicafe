@@ -47,7 +47,7 @@ function makeDB(){
   if(table==="toast_sync_runs"){
    if(filters.kind==="backfill" && !filters.state)
     return backfillQueued?[{id:"backfill-placeholder"}]:[];
-   return runs.filter(r=>Object.entries(filters).every(([k,v])=>r[k as keyof Run]===v));
+   return runs.filter(r=>Object.entries(filters).every(([k,v])=>k==="business_id"?v===b:k==="restaurant_guid"?v===g:r[k as keyof Run]===v));
   }
   return [];
  };
