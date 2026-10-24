@@ -3,18 +3,17 @@ import FillIcon from "@/components/icons/FillIcon";
 import type { BucketResult } from "@/lib/calc";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 
-function shortDate(iso: string) {
-  const [, month, day] = iso.split("-");
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${monthNames[Number(month) - 1]} ${Number(day)}`;
+function shortDate(iso: string, locale: string) {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale, {month:"short", day:"numeric", timeZone:"UTC"}).format(new Date(Date.UTC(year,month-1,day)));
 }
 
 export default function CostRecoveryStrip({
   buckets,
   labels,
-  coveredLabel,
+  coveredLabel, locale = "en",
 }: {
-  buckets: BucketResult[];
+  buckets: BucketResult[];\n  locale?: string;
   labels: Record<string, string>;
   /** e.g. "{label} covered {date}" — built per-bucket below, this is just the template word. */
   coveredLabel: (label: string, date: string) => string;
@@ -22,13 +21,13 @@ export default function CostRecoveryStrip({
   const caption = buckets
     .map((b) =>
       b.pctCovered >= 100
-        ? coveredLabel(labels[b.code] ?? b.code, b.coveredOn ? shortDate(b.coveredOn) : "")
-        : `${labels[b.code] ?? b.code} ${Math.round(b.pctCovered)}%`,
+        ? coveredLabel(labels[b.code] ?? b.code, b.coveredOn ? shortDate(b.coveredOn, locale) : "")
+        : `${labels[b.code] ?? b.code} ${new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(Math.round(b.pctCovered))}%`,
     )
     .join(" · ");
 
   return (
-    <Link href="/money" className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
+    <Link href="/money" className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
       <div className="flex justify-between gap-2 overflow-x-auto">
         {buckets.map((b) => (
           <FillIcon
