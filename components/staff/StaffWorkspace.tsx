@@ -18,7 +18,7 @@ import {parseHourlyWage,parseWeeklyHours,weeklyHoursInput,isValidTeamAvailabilit
 import {addPerson,updatePerson,setPersonActive} from "@/lib/actions/teamWorkspace";
 import {upsertShift,removeShift,restoreShift,copyWeek,sendSchedule} from "@/lib/actions/schedule";
 type Data=Extract<Awaited<ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>>,{ok:true}>["data"];
-const fmt=(c:number|null,currency:string)=>c==null?"—":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(c/100);
+const fmt=(c:number|null,currency:string,locale?:string)=>c==null?"—":new Intl.NumberFormat(locale,{style:"currency",currency}).format(c/100);
 const hours=(n:number)=>Number((n/60).toFixed(1));
 type Alert={id:string;employee_id:string;rule_key:string;message:string;created_at:string};
 export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null,teamExtras=null}:{
@@ -47,13 +47,14 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   const wage=parseHourlyWage(wageInput),minHours=parseWeeklyHours(minHoursInput),maxHours=parseWeeklyHours(maxHoursInput);
   const invalidWage=wage===undefined,invalidMin=minHours===undefined,invalidMax=maxHours===undefined;
   const invalidRange=minHours!=null&&maxHours!=null&&minHours>maxHours;
- const [phone,setPhone]=useState(""),[whatsAppOptIn,setWhatsAppOptIn]=useState(false),[salaryPeriod,setSalaryPeriod]=useState<string|null>(null),[minWeeklyMinutes,setMinWeeklyMinutes]=useState<number|null>(null),
-  [maxWeeklyMinutes,setMaxWeeklyMinutes]=useState<number|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
+ const [phone,setPhone]=useState(""),[whatsAppOptIn,setWhatsAppOptIn]=useState(false),[salaryPeriod,setSalaryPeriod]=useState<string|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
  const [chosen,setChosen]=useState(data.team[0]?.id??""),[date,setDate]=useState(data.dates[0]);
  const [start,setStart]=useState("07:00"),[end,setEnd]=useState("15:00"),[breakMin,setBreakMin]=useState(30);
  const [editing,setEditing]=useState<string|null>(null),
  [availability,setAvailability]=useState<{day:number;start:string|null;end:string|null}[]>([]),
  [availabilityDirty,setAvailabilityDirty]=useState(false);
+ const invalidAvailability=!isValidTeamAvailability(availability);
+ const personInvalid=invalidWage||invalidMin||invalidMax||invalidRange||invalidAvailability;
  const [undo,setUndo]=useState<{id:string;type:"person"|"shift";message:string}|null>(null);
  useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),6000);return ()=>clearTimeout(timer);},[undo]);
  const allDays=()=>Array.from({length:7},(_,day)=>({day,start:null,end:null}));
@@ -67,7 +68,6 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setPersonEditing(person?.id??null);setName(person?.name??"");setRole(person?.role??"Barista");
   setWageInput(person?.wageCents==null?"":String(Math.floor(person.wageCents/100))+"."+String(person.wageCents%100).padStart(2,"0"));setSalaryPeriod(person?.wagePeriod&&person.wagePeriod!=="hour"?person.wagePeriod:null);
   setPhone(person?.phone??"");setWhatsAppOptIn(person?.whatsappOptIn??false);
-  setMinWeeklyMinutes(person?.minWeeklyMinutes??null);setMaxWeeklyMinutes(person?.maxWeeklyMinutes??null);
    setMinHoursInput(weeklyHoursInput(person?.minWeeklyMinutes??null,locale));setMaxHoursInput(weeklyHoursInput(person?.maxWeeklyMinutes??null,locale));
   if(person){
    const days=person.availableDays??[0,1,2,3,4,5,6];
@@ -243,7 +243,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      {data.team.map(p=><div key={p.id} className="flex min-h-16 items-center gap-3 border-t border-line py-3">
       <span className="grid size-12 place-items-center rounded-full bg-accent-soft font-bold">{p.name[0]}</span>
       <div className="min-w-0 flex-1"><b>{p.name}</b><span className="ms-2 text-sm text-muted">{p.role?roleLabel(p.role):t("team")}</span>
-        <div className="text-sm text-muted">{p.wageCents==null?<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWage")}</button>:fmt(p.wageCents,data.currency)+"/h"}</div><div className="text-sm text-muted">{teamSummary(p)}</div></div>
+        <div className="text-sm text-muted">{p.wageCents==null?<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>:fmt(p.wageCents,data.currency,locale)+"/h"}</div><div className="text-sm text-muted">{teamSummary(p)}</div></div>
       <div className="text-end">{hours(personTotals(p.id,data.shifts).paidMinutes)} h</div>
       <button disabled={data.readOnly} onClick={()=>openPerson(p)} className="min-h-12 px-2">{t("edit")}</button>
      </div>)}
