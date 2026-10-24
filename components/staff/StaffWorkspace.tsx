@@ -169,6 +169,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const dayLabel=(d:string)=>new Intl.DateTimeFormat(locale,{weekday:"short",day:"numeric",timeZone:"UTC"}).format(new Date(d+"T12:00:00Z"));
  const weekday=(d:string,long=false)=>new Intl.DateTimeFormat(locale,{weekday:long?"long":"short",timeZone:"UTC"}).format(new Date(d+"T12:00:00Z"));
  const status=data.shifts.some(s=>s.status==="sent")?t("sent"):t("draft");
+ const localized=(number:number)=>new Intl.NumberFormat(locale,{maximumFractionDigits:1}).format(number);
+ const firstWithoutWage=data.team.find(p=>p.wageCents==null&&(p.wagePeriod==null||p.wagePeriod==="hour"));
  return <div className="mx-auto w-full max-w-7xl space-y-3 px-4 pb-32 pt-5 text-fg" dir={locale==="ar"?"rtl":"ltr"}>
   <header className="flex items-center justify-between gap-3"><h1 className="font-headline text-2xl font-extrabold">{t("schedule")}</h1>
    <div className="flex gap-2"><Link className="flex min-h-12 items-center rounded-full border border-line px-4" href={`/${locale}/staff/rules`}>{t("rules")}</Link><button disabled={data.readOnly} aria-label={t("addShift")} onClick={()=>openShift(date)} className="min-h-12 min-w-12 rounded-full bg-accent text-on-accent">+</button></div>
@@ -193,25 +195,30 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     </div>)}
    </section>}
    <div className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-surface p-3">
-    <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10)}`} className="p-3">‹</Link>
+    <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10)}`} className="p-3"><span className="inline-block rtl:rotate-180">‹</span></Link>
     <div className="text-center font-semibold">{dayLabel(data.dates[0])} – {dayLabel(data.dates[6])}<div className="text-sm text-muted">{status}</div></div>
-    <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")+7*86400000).toISOString().slice(0,10)}`} className="p-3">›</Link>
+    <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")+7*86400000).toISOString().slice(0,10)}`} className="p-3"><span className="inline-block rtl:rotate-180">›</span></Link>
    </div>
    <div className="grid grid-cols-3 gap-2 lg:grid-cols-4">{[
-    [t("paidHours"),String(hours(data.total.paidMinutes))],
+    [t("paidHours"),localized(hours(data.total.paidMinutes))],
     [t("wages"),wageSummary(data.total)],
     [t("gaps"),!data.rules.coverage_enabled?t("coverageDisabled"):uncheckedDays.length?
-   t("coverageNotChecked"):String(data.gaps.length)],
-    [t("overtime"),String(Number((totalOvertimeMinutes(data.team,data.shifts,data.rules.weekly_ot_after_minutes,data.rules.weekly_ot_enabled)/60).toFixed(1)))+" h"]
+   t("coverageNotChecked"):localized(data.gaps.length)],
+    [t("overtime"),localized(totalOvertimeMinutes(data.team,data.shifts,data.rules.weekly_ot_after_minutes,data.rules.weekly_ot_enabled)/60)+" h"]
    ].map(([label,value])=><div key={label} className={`rounded-2xl border border-line bg-surface p-3 ${label===t("overtime")?"hidden lg:block":""} ${label===t("gaps")&&data.gaps.length?"border-neg bg-neg-soft":""}`}><strong className="block text-xl">{value}</strong><span className="text-sm text-muted">{label}</span></div>)}</div>
-   {data.total.estimated&&<p className="rounded-xl bg-warn-soft p-3 text-warn-text">{t("estimateNote",{count:data.total.estimateCount,unknown:data.total.unknownCount})}</p>}
+   {data.total.estimated&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-warn-soft p-3 text-warn-text">
+    <p>{t("estimateNote",{count:data.total.estimateCount,unknown:data.total.unknownCount})}</p>
+    {firstWithoutWage&&!data.readOnly&&<button type="button" className="min-h-12 rounded-xl border border-current px-3 underline" onClick={()=>{
+      setScreen("team");openPerson(firstWithoutWage);
+      setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);
+    }}>{t("addWages")}</button>}</div>}
    <nav aria-label={t("weekDays")} className="grid grid-cols-7 gap-1">{data.dates.map((d,i)=>{
     const totals=dayTotals(d,data.shifts);
-    return <a key={d} href={"#day-"+d} className={`relative rounded-xl border border-line bg-surface px-1 py-2 text-center text-sm ${i===0?"bg-accent text-on-accent":""}`}>
+    return <a key={d} href={"#day-"+d} className={`relative rounded-xl border border-line bg-surface px-1 py-2 text-center text-sm ${d===date?"bg-accent text-on-accent":""}`}>
      {data.gaps.some(g=>g.date===d)&&<span aria-label={t("gap")} className="absolute end-1 top-1 size-2 rounded-full bg-neg"/>}
      <span className="block text-xs font-bold">{weekday(d)}</span>
-     <strong className="block font-headline text-lg">{new Date(d+"T12:00:00Z").getUTCDate()}</strong>
-     <span className="block text-xs">{Number((totals.paidMinutes/60).toFixed(1))}h</span></a>;
+     <strong className="block font-headline text-lg">{localized(new Date(d+"T12:00:00Z").getUTCDate())}</strong>
+     <span className="block text-xs">{localized(totals.paidMinutes/60)}h</span></a>;
    })}</nav>
    <div className="space-y-3 lg:hidden">{data.dates.map(d=>{
     const totals=dayTotals(d,data.shifts);
@@ -221,7 +228,9 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      <div className="flex flex-wrap items-baseline gap-2">
       <h2 className="text-lg font-bold">{dayLabel(d)}</h2>
       <span className="text-sm text-muted">{opening===undefined?t("hoursNotSet"):opening.length?t("open")+" "+opening.map(a=>a.join("–")).join(", "):t("closed")}</span>
-      <strong className="ms-auto text-sm">{Number((totals.paidMinutes/60).toFixed(1))} h · {wageSummary(totals)}{totals.estimated?" "+t("estimated"):""}</strong>
+       {opening===undefined&&<Link className="min-h-12 content-center underline text-accent-text"
+        href={`/${locale}/more/cafe-profile?focus=hours`}>{t("setCafeHours")}</Link>}
+      <strong className="ms-auto text-sm">{localized(totals.paidMinutes/60)} h · {wageSummary(totals)}{totals.estimated?" "+t("estimated"):""}</strong>
      </div>
      <DayTimeline date={d} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours} people={data.team}
       onShiftClick={data.readOnly?undefined:(id)=>openShift(d,id)}/>
