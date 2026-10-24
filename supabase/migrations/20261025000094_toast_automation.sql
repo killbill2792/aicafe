@@ -76,6 +76,9 @@ begin
   update public.daily_rollups dr set sales_data_status='missing'
    where dr.business_id=p_business_id and dr.business_date>=p_from
     and dr.business_date<v_prior_start and dr.sales_data_status='actual'
+    and exists(select 1 from public.toast_day_status already
+     where already.business_id=dr.business_id and already.business_date=dr.business_date
+      and already.import_state='imported')
     and exists (
      select 1 from public.toast_location_mappings m
      left join public.toast_day_status ds
@@ -199,8 +202,11 @@ begin
   on conflict(business_id,restaurant_guid,business_date) do update
    set import_state='failed',coverage_complete=false,last_error_category=excluded.last_error_category;
   -- Preserve other locations' raw sales, but their business-wide coverage is unknown.
-  update public.daily_rollups set sales_data_status='missing'
-   where business_id=p_business_id and business_date=p_business_date;
+  update public.daily_rollups dr set sales_data_status='missing'
+   where dr.business_id=p_business_id and dr.business_date=p_business_date
+    and exists(select 1 from public.toast_day_status d
+     where d.business_id=dr.business_id and d.business_date=dr.business_date
+      and d.import_state='imported');
  end if;
  if p_run_fatal then
   update public.toast_sync_runs set state='failed',finished_at=now(),
@@ -258,6 +264,9 @@ begin
   update public.daily_rollups dr set sales_data_status='missing'
   where dr.business_id=p_business_id and dr.business_date>=p_from
    and dr.business_date<v_prior and dr.sales_data_status='actual'
+   and exists(select 1 from public.toast_day_status already
+    where already.business_id=dr.business_id and already.business_date=dr.business_date
+     and already.import_state='imported')
    and exists(
     select 1 from public.toast_location_mappings m
     left join public.toast_day_status d on d.business_id=m.business_id
@@ -442,6 +451,7 @@ grant select,insert,update,delete on public.toast_job_directory to service_role;
 create table public.toast_void_repull_coverage(
  business_id uuid not null,restaurant_guid uuid not null,business_date date not null,
  scanned_at timestamptz not null,last_window_end timestamptz not null,
+ scan_local_day date not null,
  primary key(business_id,restaurant_guid,business_date),
  foreign key(business_id,restaurant_guid)
  references public.toast_location_mappings(business_id,restaurant_guid));
@@ -453,25 +463,37 @@ create function public.toast_commit_repull_scan_window(
  p_business_id uuid,p_restaurant_guid uuid,p_local_day date,p_days jsonb,
  p_window_start timestamptz,p_window_end timestamptz)
 returns integer language plpgsql security definer set search_path=public as $window$
-declare inserted integer;d date;
+declare inserted integer;d date;v_zone text;v_closeout integer;
+ v_begin timestamptz;v_end timestamptz;
 begin
  if auth.role()<>'service_role' then raise exception 'service role only';end if;
- if p_window_end<=p_window_start or
-  p_window_end-p_window_start>interval '30 days' or
-  jsonb_typeof(p_days)<>'array' then raise exception 'invalid scan window';end if;
- -- The existing helper adds affected whole-day repulls and the scan marker.
+ if p_window_end<=p_window_start
+  or p_window_end-p_window_start>interval '30 days'
+  or jsonb_typeof(p_days)<>'array' then
+  raise exception 'invalid scan window';end if;
+ select m.toast_time_zone,m.closeout_hour into v_zone,v_closeout
+ from public.toast_location_mappings m
+ where m.business_id=p_business_id and m.restaurant_guid=p_restaurant_guid
+ and m.verified_at is not null for share;
+ if v_zone is null or v_closeout is null then
+  raise exception 'unverified Toast local closeout';end if;
+ -- The scan and its full-day repull jobs commit atomically.
  inserted:=public.toast_commit_repull_scan(p_business_id,p_restaurant_guid,
   p_local_day,p_days,p_window_end);
- -- A proven modified-date window covers all days fully contained in it.
  for d in select gs::date from generate_series(
-  (p_window_start+interval '2 days')::date,
-  (p_window_end-interval '2 days')::date,'1 day'::interval) gs loop
-  if d<p_local_day then
+  ((p_window_start at time zone v_zone)::date-1)::timestamp,
+  ((p_window_end at time zone v_zone)::date+1)::timestamp,
+  interval '1 day') gs loop
+  if d>=p_local_day then continue;end if;
+  v_begin:=(d::timestamp+make_interval(hours=>v_closeout)) at time zone v_zone;
+  v_end:=((d+1)::timestamp+make_interval(hours=>v_closeout)) at time zone v_zone;
+  if v_begin>=p_window_start and v_end<=p_window_end then
    insert into public.toast_void_repull_coverage(
-    business_id,restaurant_guid,business_date,scanned_at,last_window_end)
-   values(p_business_id,p_restaurant_guid,d,now(),p_window_end)
+    business_id,restaurant_guid,business_date,scanned_at,last_window_end,scan_local_day)
+   values(p_business_id,p_restaurant_guid,d,now(),p_window_end,p_local_day)
    on conflict(business_id,restaurant_guid,business_date) do update
-    set scanned_at=excluded.scanned_at,last_window_end=excluded.last_window_end;
+    set scanned_at=excluded.scanned_at,last_window_end=excluded.last_window_end,
+     scan_local_day=excluded.scan_local_day;
   end if;
  end loop;
  return inserted;
@@ -514,7 +536,13 @@ begin
   count(*) filter(where s.import_state='imported'
    and s.unparsed_count=0 and s.coverage_complete
    and s.recon_state in ('matched','checked_internal')
-   and c.scanned_at is not null)
+   and c.scanned_at is not null
+   and not exists(select 1 from public.toast_sync_runs pending
+    where pending.business_id=m.business_id
+     and pending.restaurant_guid=m.restaurant_guid
+     and pending.kind='repull_modified'
+     and pending.scan_local_day=c.scan_local_day
+     and pending.state<>'completed'))
  into eligible,complete_count
  from public.toast_location_mappings m
  left join public.toast_day_status s on s.business_id=m.business_id
@@ -653,7 +681,10 @@ begin
   and business_date between first_day and last_day;
  update public.daily_rollups set sales_data_status='missing',
   voids_status='unknown',voids_source=null
- where business_id=new.business_id and business_date between first_day and last_day;
+ where business_id=new.business_id and business_date between first_day and last_day
+  and exists(select 1 from public.toast_day_status d
+   where d.business_id=new.business_id and d.business_date=daily_rollups.business_date
+    and d.import_state='imported');
  -- A long history is queued as bounded chunks. Existing facts remain visible
  -- but cannot be certified until new Toast business-date grouping is pulled.
  for first_day in select gs::date from generate_series(first_day,last_day,
