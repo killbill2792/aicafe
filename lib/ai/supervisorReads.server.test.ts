@@ -52,9 +52,12 @@ function pilotReader(rows:Row[],rpcDates:string[],canonicalToastDates:string[],b
    {data:canonicalToastDates.map(business_date=>({business_date})),error:null}};
  const flagsRead={select:()=>flagsRead,eq:()=>flagsRead,gte:()=>flagsRead,lte:()=>flagsRead,order:()=>flagsRead,
   limit:async()=>({data:flags,error:null})};
+ const ownerFlags={select:()=>ownerFlags,eq:()=>ownerFlags,is:()=>ownerFlags,
+  gte:()=>ownerFlags,lte:()=>ownerFlags,limit:async()=>({data:[],error:null})};
  const rpc=vi.fn().mockResolvedValue({data:rpcDates.map(business_date=>({business_date})),error:null});
  return supervisorHistoricalReaders({
-  from:(table:string)=>table==="orders"?orders:table==="toast_day_status"?flagsRead:rollup,rpc
+  from:(table:string)=>table==="orders"?orders:table==="toast_day_status"?flagsRead:
+   table==="toast_day_owner_flags"?ownerFlags:rollup,rpc
  } as unknown as SupabaseClient,"my-cafe");
 }
 describe("Toast source-scoped Supervisor coverage without changing aggregate formulas",()=>{
