@@ -68,7 +68,9 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
     .order("id").range(a,b),8000):Promise.resolve([]),
   allRows((a,b)=>db.from("order_lines").select("id,menu_item_id,quantity,modifiers,voided,orders!inner(business_id,business_date,closed_at,pos_order_id,location_id)")
     .eq("orders.business_id",businessId).gte("orders.business_date",input.from).lte("orders.business_date",input.to)
-    .like("orders.pos_order_id","toast:%").order("id").range(a,b),20000),
+    .like("orders.pos_order_id","toast:%")
+    .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
+    .order("id").range(a,b),20000),
  ]);
  if(evidence.error||modifiers.error||addons.error||conversions.error||counts.error||!modifiers.data||!addons.data||!conversions.data||!counts.data)
   throw new Error("usage_data_unavailable");
