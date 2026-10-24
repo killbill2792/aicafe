@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown } from "lucide-react";
+import { AgentAvatar } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
