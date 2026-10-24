@@ -25,6 +25,10 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
   const historyBlocker = scenarioHistoryBlocker(kind, {
     salesCoverageGaps, closedDaySales, salesDaysCovered: base?.salesDaysCovered,
   });
+  // A staffing cost change remains valid without item-sale history, but
+  // the break-even amount still needs reliable product/sales coverage.
+  const breakEvenHistoryUnreliable = kind === "staff" &&
+    (closedDaySales || salesCoverageGaps || (base?.salesDaysCovered ?? 0) < 7);
   const invalid = !Number.isFinite(Number(value)) || value.trim() === "" || Number(value) < 0 || Number(value) > 100000;
   const result = useMemo(() => base && !invalid && !historyBlocker ? simulatePlanChange({
     base, type: kind, item: picked, items, preset: presetKind,
@@ -107,10 +111,10 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
       result ? <section aria-live="polite" className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl bg-surface p-4">
           <p className="text-[17px]">{t("effectBreakEven")}</p>
-          {result.monthlyBreakEvenCents === null
+          {result.monthlyBreakEvenCents === null || breakEvenHistoryUnreliable
             ? <p className="text-[17px] text-ink-muted">{t("breakEvenUnknown")}</p>
             : <strong className="block text-2xl">{money.format(result.monthlyBreakEvenCents / 100)}</strong>}
-          {result.breakEvenChangeCents !== null &&
+          {result.breakEvenChangeCents !== null && !breakEvenHistoryUnreliable &&
             <p className="text-[15px]">{money.format(result.breakEvenChangeCents / 100)}</p>}
         </div>
         <div className="rounded-2xl bg-surface p-4">
