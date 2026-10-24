@@ -155,11 +155,8 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const matched=people.filter(p=>p.active&&p.display_name.trim().toLocaleLowerCase()===parsed.personName.trim().toLocaleLowerCase());
    ensure(matched.length===1,"Staff name not found or ambiguous");
    const p=matched[0];subjectName=p.display_name;const rows=availability.filter(x=>x.employee_id===p.id);
-   const old=rows.map(x=>days[x.day_of_week]+" "+String(x.start_local).slice(0,5)+"–"+String(x.end_local).slice(0,5)).join(", ")||copy.noAvailability;
    const windows=parsed.availability.map(x=>({day:x.day,start:x.start,end:x.end}));
    ensure(windows.every(x=>x.start!==null&&x.end!==null),"Incomplete availability window");
-   const next=parsed.offDates?.length?copy.off+" "+parsed.offDates.join(", "):
-     windows.map(x=>days[x.day]+" "+x.start+"–"+x.end).join(", ")||copy.noAvailability;
    const absenceLabels:Record<string,string>={
      unavailable:copy.exceptionUnavailable,approved_leave:copy.exceptionApprovedLeave,
      replace_day:copy.exceptionReplaceDay,add_available:copy.exceptionAddAvailable,

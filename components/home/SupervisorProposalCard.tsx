@@ -113,8 +113,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   }
   const rows:ApprovalPreviewRow[]=value.preview?.length?value.preview:((value.oldPriceCents!=null&&value.newPriceCents!=null)?diffFields([{field:"price",label:"Price",value:{kind:"money",cents:value.oldPriceCents}}],[{field:"price",label:"Price",value:{kind:"money",cents:value.newPriceCents}}]):[]);
   const pending=value.state==="pending"&&!busy;
-  const statuses=copy.states as Record<string,string>;
-  if(experiment)statuses.manual_pending=copy.manualPending;
+  const statuses={...copy.states,...(experiment?{manual_pending:copy.manualPending}:{})} as Record<string,string>;
   const button="min-h-12 min-w-12 rounded-xl px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={copy.title}
     className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
