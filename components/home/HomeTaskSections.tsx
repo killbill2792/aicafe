@@ -17,7 +17,9 @@ export default function HomeTaskSections({ items, title, empty, seeAll }: {
       <ul className="mt-3 divide-y divide-line">{visible.map(item =>
         <li key={item.id} className="flex min-h-16 items-center gap-3 py-2">
           <span className="min-w-0 flex-1 text-[17px] font-semibold text-ink">{item.title}</span>
-          <Link href={item.href} className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-full bg-good px-4 text-[15px] font-bold text-white no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">{item.actionLabel}</Link>
+          {item.href.startsWith("/api/pos/square/connect?")
+            ? <a href={item.href} className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-full bg-good px-4 text-[15px] font-bold text-white no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">{item.actionLabel}</a>
+            : <Link href={item.href} className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-full bg-good px-4 text-[15px] font-bold text-white no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">{item.actionLabel}</Link>}
         </li>)}</ul>}
   </section>;
 }
