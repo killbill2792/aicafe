@@ -36,8 +36,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const setData=(value:Data)=>setVersion({initial,local:value});
  const uncheckedDays=uncheckedCoverageDays(data.dates,data.openHours,data.rules.coverage_enabled);
  const deepDate=focusDate&&data.dates.includes(focusDate)?focusDate:undefined;
- const deepPerson=deepDate&&data.team.find(p=>p.id===focusEmployee);
- const deepShift=deepPerson&&data.shifts.find(s=>s.date===deepDate&&s.employeeId===deepPerson.id);
+ const deepPerson=deepDate?data.team.find(p=>p.id===focusEmployee):undefined;
+ const deepShift=deepPerson?data.shifts.find(s=>s.date===deepDate&&s.employeeId===deepPerson.id):undefined;
  const [screen,setScreen]=useState(deepPerson?"schedule":tab),[sheet,setSheet]=useState<"person"|"shift"|null>(deepPerson?"shift":null);
  const [busy,startTransition]=useTransition(),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [savingConsent,setSavingConsent]=useState(false),[consentError,setConsentError]=useState(false);
