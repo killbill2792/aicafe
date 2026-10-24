@@ -6,4 +6,3 @@ export const DEFAULT_SUPERVISOR_OPENAI_MODEL="gpt-4.1-mini" as const;
 export function configuredSupervisorModel():string{
   return process.env.SUPERVISOR_OPENAI_MODEL?.trim()||DEFAULT_SUPERVISOR_OPENAI_MODEL;
 }
-
