@@ -1,3 +1,4 @@
+import { tokenizeNumbers } from "@/lib/ai/agent/numberTokens";
 import { useEffect, useReducer, useRef, useState, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
 
@@ -162,27 +163,23 @@ function listMarker(line: SourceLine): ListMarker | null {
 function annotatedText(
   text: string, absoluteStart: number, spans: readonly Verification[], labels: ProvenanceLabels, badged: Set<number>,
 ): ReactNode[] {
-  const end = absoluteStart + text.length;
-  const out: ReactNode[] = [];
-  let cursor = absoluteStart;
-  for (const span of spans) {
-    if (span.end <= cursor || span.start >= end) continue;
-    const from = Math.max(cursor, span.start);
-    const to = Math.min(end, span.end);
-    if (from > cursor) out.push(text.slice(cursor - absoluteStart, from - absoluteStart));
-    if (from < to) {
-      const source=span.source??"unchecked";
-      const detail=span.detail==="breakEvenSales"?labels.breakEvenSales:span.detail==="salesGap"?labels.salesGap:span.detail==="dailyOverhead"?labels.dailyOverhead:span.detail;
-      const explanation=detail?labels[source]+": "+detail:labels[source];
-      out.push(<span key={from} className="whitespace-nowrap">
-        {text.slice(from-absoluteStart,to-absoluteStart)}
-        {!badged.has(span.start)&&<SourceDot tone={source} label={explanation}/>}
-      </span>);
-    }
-    if (from < to) badged.add(span.start);
-    cursor = Math.max(cursor, to);
+  const end=absoluteStart+text.length, out:ReactNode[]=[];
+  let cursor=absoluteStart;
+  const tokens=tokenizeNumbers(text,"en");
+  for(const token of tokens){
+    const from=absoluteStart+token.start,to=absoluteStart+token.end;
+    const matching=spans.filter(span=>span.start<to&&span.end>from);
+    if(!matching.length||badged.has(from)||["clock","clockRange","date","dateRange","duration","ordinal","phone/id"].includes(token.kind))continue;
+    if(from>cursor)out.push(text.slice(cursor-absoluteStart,from-absoluteStart));
+    if(from<cursor)continue;
+    const span=matching.find(v=>v.source==="unchecked")??matching[0];
+    const source=span.source??"unchecked";
+    const detail=span.detail==="breakEvenSales"?labels.breakEvenSales:span.detail==="salesGap"?labels.salesGap:span.detail==="dailyOverhead"?labels.dailyOverhead:span.detail;
+    const explanation=detail?labels[source]+": "+detail:labels[source];
+    out.push(<span key={from} className="whitespace-nowrap">{text.slice(token.start,token.end)}<SourceDot tone={source} label={explanation}/></span>);
+    badged.add(from);cursor=to;
   }
-  if (cursor < end) out.push(text.slice(cursor - absoluteStart));
+  if(cursor<end)out.push(text.slice(cursor-absoluteStart));
   return out;
 }
 
