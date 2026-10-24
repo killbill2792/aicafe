@@ -50,10 +50,12 @@ describe("P1 imported day errors remain visible in reports",()=>{
   const rows=[{business_date:"2026-10-16",import_state:"imported",
    recon_state:"matched",last_error_category:"invalid_response"}];
   const chain:Record<string,unknown>={};
-  for(const method of ["select","eq","gte","lte","order"])
+  for(const method of ["select","eq","gte","lte","order","is"])
    chain[method]=()=>chain;
   chain.limit=async()=>({data:rows,error:null});
-  const db={from:()=>chain} as unknown as SupabaseClient;
+  const db={from:(table:string)=>table==="toast_day_owner_flags"?{
+   select:()=>({eq:()=>({is:()=>({gte:()=>({lte:()=>({limit:async()=>({data:[],error:null})})})})})})
+  }:chain} as unknown as SupabaseClient;
   const flags=await toastDayFlags(db,"business","2026-10-16","2026-10-16");
   expect(flags).toEqual([{date:"2026-10-16",status:"imported",needsLook:true}]);
  });
