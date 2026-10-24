@@ -113,21 +113,20 @@ async function readVoidsReview(
     new Date(Date.parse(`${nextMonthStart}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
 
   const { data, error } = await db.from("daily_rollups")
-    .select("business_date, voids_cents, sales_data_status")
+    .select("business_date, voids_cents, sales_data_status, voids_status")
     .eq("business_id", businessId)
     .gte("business_date", priorStart)
     .lte("business_date", endDate)
     .order("business_date", { ascending: true });
   if (error || !data) return { ok: false };
   return { ok: true, summary: summarizeVoidsRollups(
-    // Existing rollups do not store void-amount completeness. In particular,
-    // CSV sales mark sales_data_status=actual but deliberately discard voids.
-    // NEVER derive voidsCoverage="complete" from the sales status or a zero value.
+    // Only an explicit provider-certified void completeness flag is evidence.
+    // Neither a connected POS nor actual sales nor zero voids is proof.
     data.map((r) => ({
       business_date: r.business_date,
       voids_cents: Number(r.voids_cents),
       sales_data_status: r.sales_data_status,
-      voidsCoverage: "unknown" as const,
+      voidsCoverage: r.voids_status === "complete" ? "complete" as const : "unknown" as const,
     })),
     monthKey,
     endDate,
