@@ -504,7 +504,7 @@ function clockSpansFromTokens(text:string,locale:AgentLocale="en"):ClockSpan[]{
   .map(t=>Object.assign([text.slice(t.start,t.end).replace(/\.$/u,"")] as unknown as RegExpMatchArray,{index:t.start}));
 }
 function canonicalClock(clock:ClockSpan):string|null {
-  const raw=ascii(clock[0]).replace(/a\\.m\\./giu,"AM").replace(/p\\.m\\./giu,"PM");
+  const raw=ascii(clock[0]).replace(/a\.m\./giu,"AM").replace(/p\.m\./giu,"PM");
   const matched=raw.match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*)|h(\d{2})?)?$/iu);
   if(!matched)return null;
   let hour=Number(matched[1]);
@@ -518,8 +518,8 @@ function canonicalClock(clock:ClockSpan):string|null {
 
 /** Mask meridiem abbreviations without shifting source offsets. */
 function sentenceBoundary(prefix:string):number{
- const masked=prefix.replace(/(?:a\\.m\\.|p\\.m\\.)/giu,"    ");
- return Math.max(masked.lastIndexOf("\\n"),masked.lastIndexOf("."),
+ const masked=prefix.replace(/(?:a\.m\.|p\.m\.)/giu,"    ");
+ return Math.max(masked.lastIndexOf("\n"),masked.lastIndexOf("."),
   masked.lastIndexOf("!"),masked.lastIndexOf("?"),masked.lastIndexOf(";"))+1;
 }
 function timeRole(text:string, clock:ClockSpan):TimeRole|null {
