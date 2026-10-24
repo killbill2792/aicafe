@@ -312,7 +312,9 @@
     "attentionUploadSales": "Upload sales",
     "attentionUnmatched": "{count} items need matching",
     "attentionMatch": "Match items",
-    "attentionFix": "Fix"
+    "attentionFix": "Fix",
+    "attentionFeesMissing": "Processing fees missing for {count} days",
+    "attentionAddFees": "Add fees"
   },
   "Money": {
     "title": "Money",
