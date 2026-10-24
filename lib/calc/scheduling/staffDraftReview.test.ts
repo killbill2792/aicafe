@@ -56,6 +56,13 @@ describe("in-place Olivia draft review",()=>{
       start:"08:00",end:"14:00",break_minutes:0}],[person],mealRules,[],"UTC");
     expect(reviewed.totals.ruleIssues).toBeGreaterThanOrEqual(1);
   });
+  it("surfaces uncovered minimum staffing as a rule issue",()=>{
+    const reviewed=reviewStaffDraft([{employee_id:person.id,date:"2026-10-26",
+      start:"08:00",end:"10:00",break_minutes:0}],[person],rules,[],"UTC",
+      [],undefined,{dates:["2026-10-26"],openHours:{mon:[["08:00","10:00"]]},minHeadcount:2});
+    expect(reviewed.totals.coverageGaps).toBe(1);
+    expect(reviewed.totals.ruleIssues).toBeGreaterThanOrEqual(1);
+  });
   it("does not allow an unrecognized worker into a draft",()=>{
     expect(()=>reviewStaffDraft([{employee_id:"other",date:"2026-10-26",
       start:"08:00",end:"12:00",break_minutes:0}],[person],rules,[],"UTC"))
