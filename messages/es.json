@@ -2992,7 +2992,7 @@
     "deliveryConsentError": "No se pudo guardar el consentimiento para WhatsApp.",
     "deliveryConsentAfterCreate": "La aceptación de WhatsApp está desactivada por defecto. Después de añadir a esta persona, abre su perfil para registrar su consentimiento.",
     "roleRequired": "Introduce el puesto personalizado antes de guardar.",
-    "multipleAvailabilityHelp": "Esta persona tiene varias franjas de disponibilidad en un mismo día. Para no perderlas, edita su disponibilidad en la gestión avanzada del personal.",
+    "multipleAvailabilityHelp": "Esta persona tiene varias franjas de disponibilidad en un mismo día. Para protegerlas, aquí no se puede editar la disponibilidad. Sí puedes guardar cambios de salario y contacto.",
     "roleOther": "Otro…",
     "notSureYet": "Aún no lo sé / Omitir",
     "invalidWage": "Introduce un salario por hora positivo, con hasta dos decimales.",

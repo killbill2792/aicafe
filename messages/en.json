@@ -2992,7 +2992,7 @@
     "deliveryConsentError": "Could not save WhatsApp consent.",
     "deliveryConsentAfterCreate": "WhatsApp consent defaults off. After adding this person, open their profile to record their opt-in.",
     "roleRequired": "Enter the custom role before saving.",
-    "multipleAvailabilityHelp": "This person has multiple availability windows on a day. To avoid losing them, edit availability in advanced staff management.",
+    "multipleAvailabilityHelp": "This person has multiple availability windows on one day. Editing availability here is disabled to protect those windows. You can still save pay and contact changes.",
     "roleOther": "Other…",
     "notSureYet": "Not sure yet / Skip",
     "invalidWage": "Enter a positive hourly amount, with up to two decimal places.",
