@@ -56,8 +56,9 @@ export async function syncStaffRuleAlerts(){
  const cardIds=[...new Set(alertRows.map(row=>row.timecard_id))];
  const cards=cardIds.length?await owner.supabase.from("timecards")
   .select("id,employee_id,clock_in,clock_out").eq("business_id",owner.businessId).in("id",cardIds):null;
- if(cards?.error)return {ok:false as const,error:"timecards_unavailable"};
- const timecards=new Map((cards?.data??[]).map(card=>[card.id,card]));
+ // Keep the warnings visible even if their source timecards are unavailable;
+ // only the matching Fix deep link must fail closed.
+ const timecards=new Map((cards?.error?[]:cards?.data??[]).map(card=>[card.id,card]));
  const alerts=alertRows.map(row=>{
   const card=timecards.get(row.timecard_id);
   // A stale/mismatched timecard must never point the owner at another person's shift.
