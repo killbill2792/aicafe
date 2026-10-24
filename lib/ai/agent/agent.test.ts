@@ -1353,7 +1353,7 @@ describe("Codex P1 source-specific checks",()=>{
 
 describe("no checker warning may disappear during provenance decoration",()=>{
   it("exempts duration tokens without hiding adjacent unsupported counts",()=>{
-    const reply="We\'ve had 90 days of labor data, with 99 sales."; 
+    const reply="We\'ve had 90 days of labor data, with 99 sales.";
     expect(checkNumbers(reply,"",[],"en").map(v=>v.text)).toEqual(["99"]);
     expect(numberProvenance(reply,"",[],"en").map(v=>v.text)).toEqual(["99"]);
   });
