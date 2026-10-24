@@ -1,7 +1,6 @@
 import "server-only";
 import { persistGroundedSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
 import { recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
-import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import type { ConversationMessage, ConversationScope, GroundedSupervisorReply } from "@/lib/ai/conversations/contracts";
 import type { AgentTurn } from "./loop.server";
 
