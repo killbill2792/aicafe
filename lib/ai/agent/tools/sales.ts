@@ -2,6 +2,9 @@ import { z } from "zod";
 import {resolvePeriod} from "@/lib/calc/periods";
 import {resolveEntity,choicePayload,periodChoicePayload} from "../resolve";
 import type { AgentToolContext, AgentToolResult } from "./index";
+import {estimatedItemRevenueCents} from "@/lib/calc/itemSalesRevenue";
+import {safeDifferenceCents} from "@/lib/calc/explainMath";
+import {money,count} from "../explain";
 
 const period=z.strictObject({period:z.union([z.enum(["today","week","month","last_week","last_month","ytd"]),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const item=z.strictObject({itemId:z.uuid()});
@@ -16,9 +19,24 @@ export const salesTools={
       const s=await ctx.tools.getProductSales(p);
       if(!s.available)return {source:"item_sales",period:p,agentId:"alex",missing:s.quality.missingInputs,items:null};
       const sorted=[...s.value].sort((a,b)=>b.units-a.units);
+      const menu=await ctx.tools.getMenuCatalog();
+      const prices=new Map(menu.available?menu.value.filter(item=>item.active).map(item=>[item.id,item.priceCents]):[]);
+      const displayed=sorted.slice(0,15).map(item=>{
+        const price=prices.get(item.id);
+        const illustrativeRevenueCents=price===undefined?null:estimatedItemRevenueCents(item.units,price);
+        return {...item,illustrativeRevenueCents,currentMenuPriceCents:price??null};
+      });
+      const explain=displayed.slice(0,12).flatMap(item=>{
+        if(item.illustrativeRevenueCents===null||item.currentMenuPriceCents===null)return [];
+        return [{label:item.name,inputs:[{name:"qtySold",value:count(item.units)},
+          {name:"unitPrice",value:money(item.currentMenuPriceCents)}],
+          formula:"multiply" as const,result:money(item.illustrativeRevenueCents),period:p,
+          source:"get_item_sales",provenance:"estimate" as const}];
+      });
       return {source:"item_sales",period:p,agentId:"alex",
         missing:[...s.quality.missingInputs,...(sorted.length>15?["itemSalesTruncated"]:[])],
-        itemCount:sorted.length,items:sorted.slice(0,15)};
+        estimated:explain.length?["currentMenuPriceNotHistoricalSoldPrice"]:[],
+        itemCount:sorted.length,items:displayed,explain};
     },
   },
   get_price_recommendation:{
@@ -36,13 +54,20 @@ export const salesTools={
       const s=await ctx.tools.getPricingRecommendation(itemId);
       if(!s.available)return {source:"pricing_engine",period:null,agentId:"alex",missing:s.quality.missingInputs};
       const v=s.value;
+      const grossProfitPerItemCents=v.currentPriceCents!==null&&v.productCostCents!==null?
+        safeDifferenceCents(v.currentPriceCents,v.productCostCents):null;
       return {source:"pricing_engine",period:null,agentId:"alex",
         missing:[...new Set([...s.quality.missingInputs,...v.dataQuality.missingInputs])],
         estimated:[...new Set([...s.quality.estimatedInputs,...v.dataQuality.estimatedInputs])],
         stale:[...new Set([...s.quality.staleInputs,...v.dataQuality.staleInputs])],
         itemId,status:v.status,confidence:v.confidence,mode:v.calculationMode,
         currentPriceCents:v.currentPriceCents,recommendedPriceCents:v.recommendedPriceCents,
-        productCostCents:v.productCostCents,warnings:v.warnings};
+        productCostCents:v.productCostCents,grossProfitPerItemCents,warnings:v.warnings,
+        explain:grossProfitPerItemCents===null?[]:[{label:product.name,
+          inputs:[{name:"unitPrice",value:money(v.currentPriceCents!)},
+                  {name:"cost",value:money(v.productCostCents!)}],
+          formula:"subtract",result:money(grossProfitPerItemCents),period:null,
+          source:"get_price_recommendation",provenance:s.quality.estimatedInputs.length?"estimate":"recorded"}]};
     },
   },
 } as const;

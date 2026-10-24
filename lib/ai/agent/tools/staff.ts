@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {resolvePeriod} from "@/lib/calc/periods";
 import {periodChoicePayload} from "../resolve";
+import {money} from "../explain";
 
 const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
@@ -50,7 +51,14 @@ export const staffTools = {
       const [labor,attendance]=await Promise.all([ctx.tools.getLaborMetrics(p),
         ctx.tools.getStaffAttendance(p,ctx.timezone)]);
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs];
-      return {source:"labor_and_attendance",period:p,agentId:"olivia",missing:issues,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs],
+      const explain=labor.available?labor.value.slice(-12).filter(d=>Number.isSafeInteger(d.loadedStaffCostCents)&&
+        Number.isSafeInteger(d.wagesCents)&&Number.isSafeInteger(d.staffTaxCents)).map(d=>({
+          label:"Labor "+d.date,inputs:[{name:"wages",value:money(d.wagesCents)},
+            {name:"staffTax",value:money(d.staffTaxCents)}],formula:"sum" as const,
+          result:money(d.loadedStaffCostCents),period:{from:d.date,to:d.date},
+          source:"get_labor",provenance:labor.quality.estimatedInputs.length?"estimate" as const:"recorded" as const
+        })): [];
+      return {source:"labor_and_attendance",period:p,agentId:"olivia",missing:issues,explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs],
         laborDays:labor.available?labor.value.slice(-31).map(d=>({
           date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
           loadedStaffCostCents:d.loadedStaffCostCents})):null,

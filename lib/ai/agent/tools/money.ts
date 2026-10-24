@@ -3,6 +3,8 @@ import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
 import {resolvePeriod} from "@/lib/calc/periods";
 import {resolveEntity,choicePayload,periodChoicePayload} from "../resolve";
+import {money,percent,count} from "../explain";
+import {safeSumCents} from "@/lib/calc/explainMath";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 
 const period=z.strictObject({period:z.union([z.enum(["today","week","month","last_week","last_month","ytd"]),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
@@ -125,8 +127,16 @@ export const moneyTools={
           fixedCostMissing.length?fixedCostMissing:s?.quality.missingInputs??["recordedFixedCostsUnavailable"]),
         ...modelMissing,
       ])];
+      const marginBps=ownerBps===null?null:
+        10000-ownerBps-(percentToBasisPoints(owner.ownerProcessingFeePercent)??0);
+      const breakEvenExplain=comparison&&marginBps!==null&&marginBps>0?[
+        {label:"Daily break-even sales",inputs:[
+          {name:"dailyFixedCosts",value:money(comparison.dailyFixedCostsCents)},
+          {name:"contributionMargin",value:percent(marginBps)}],
+         formula:"divide" as const,result:money(comparison.dailyBreakEvenSalesCents),
+         period:null,source:"get_break_even",provenance:"ownerProvided" as const}]:[];
       return {source:"break_even",period:null,agentId:"leo",
-        missing,
+        missing,explain:breakEvenExplain,
         ...(fixedCostEstimates.length?{estimated:fixedCostEstimates}:{}),
         estimate:s?.available?s.value:null,
         // Null-valued metric keys intentionally invalidate old numeric evidence
@@ -161,7 +171,17 @@ export const moneyTools={
       const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getBusinessCostSummary)return unavailable("business_costs",p,["costSummaryReaderUnavailable"]);
       const s=await ctx.tools.getBusinessCostSummary(p);
-      return {source:"business_costs",period:p,agentId:"leo",missing:s.missingInputs,
+      const costs=[s.components.ingredientsCents,s.components.loadedStaffCents,
+        s.components.cardFeesCents,s.components.runningCostsCents];
+      const sum=safeSumCents(costs);
+      const explain=s.completeness!=="unavailable"&&
+        Object.values(s.observed).every(Boolean)&&sum===s.knownTotalCents?
+        [{label:"Recorded business costs",inputs:[
+          {name:"ingredients",value:money(costs[0])},{name:"staff",value:money(costs[1])},
+          {name:"fees",value:money(costs[2])},{name:"overhead",value:money(costs[3])}],
+          formula:"sum" as const,result:money(s.knownTotalCents),period:p,source:"get_cost_summary",
+          provenance:s.estimatedInputs.length?"estimate" as const:"recorded" as const}]:[];
+      return {source:"business_costs",period:p,agentId:"leo",missing:s.missingInputs,explain,
         completeness:s.completeness,knownTotalCents:s.completeness==="unavailable"?null:s.knownTotalCents,
         // The deterministic cost engine uses zero sentinels for unknown components.
         // Never allow those sentinels to masquerade as observed zero-cost amounts.

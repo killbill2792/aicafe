@@ -1,6 +1,8 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {resolveEntity,ownerChoiceGuard} from "../resolve";
+import {safeDifferenceCents} from "@/lib/calc/explainMath";
+import {money} from "../explain";
 export const priceChangeProposalSchema=z.strictObject({
   product_id:z.uuid(),new_price_cents:z.number().int().safe().positive().max(100000),
 });
@@ -27,7 +29,13 @@ export const proposalTools={propose_price_change:{
       draft:true,saved:false,missing:["proposalsUnavailable"]};
     const result=await ctx.proposals.proposePriceChange({
       productId:input.product_id,newPriceCents:input.new_price_cents});
+    const priceDeltaCents=safeDifferenceCents(result.newPriceCents,result.oldPriceCents);
     return {source:"price_change_proposal",period:null,agentId:"alex",
-      draft:true,saved:false,missing:[],...result};
+      draft:true,saved:false,missing:[],...result,priceDeltaCents,
+      explain:priceDeltaCents===null?[]:[{
+       label:result.productName,inputs:[{name:"newPrice",value:money(result.newPriceCents)},
+         {name:"oldPrice",value:money(result.oldPriceCents)}],
+       formula:"subtract",result:money(priceDeltaCents),period:null,
+       source:"propose_price_change",provenance:"ownerProvided"}]};
   },
 }} as const;

@@ -2,6 +2,7 @@ import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
 import {resolveEntity,choicePayload,ownerChoiceGuard,periodChoicePayload} from "../resolve";
 import {resolvePeriod} from "@/lib/calc/periods";
+import {money,count} from "../explain";
 import { initiativeToolDefinitions,isInitiativeTool,executeInitiativeTool } from "./initiatives";
 import { staffTools } from "./staff";
 import {scheduleReadTools} from "./scheduleReads";
@@ -159,6 +160,11 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       estimated: slice.quality.estimatedInputs,
       netSalesCents: slice.value.netSalesCents, totalCostsCents: slice.value.totalCostsCents,
       ownerProfitCents: slice.value.ownerProfitCents, operatingMargin: slice.value.operatingMargin,
+      explain:[{label:"Owner profit",inputs:[
+        {name:"netSales",value:money(slice.value.netSalesCents)},
+        {name:"cost",value:money(slice.value.totalCostsCents)}],
+        formula:"subtract",result:money(slice.value.ownerProfitCents),period,source:"get_profit",
+        provenance:slice.quality.estimatedInputs.length?"estimate":"recorded"}],
       coveredSalesDays: slice.value.coveredSalesDays, expectedSalesDays: slice.value.expectedSalesDays };
   }
   if (name !== "get_sales") throw new Error("unknown_tool");

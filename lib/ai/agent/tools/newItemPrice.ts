@@ -1,6 +1,7 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {calculateNewItemPrice} from "@/lib/calc/newItemPrice";
+import {money,percent} from "../explain";
 const schema=z.strictObject({
  ingredient_cost_cents:z.number().int().positive(),category:z.enum(["drink","food"]),
  packaging_cents:z.number().int().nonnegative().nullable(),
@@ -31,6 +32,11 @@ export const newItemPriceTools={suggest_new_item_price:{
   const location=site?.available?{city:site.value.city,region:site.value.region,country:site.value.countryCode}:null;
   return {source:"new_item_price",period,agentId:"alex",draft:true,saved:false,itemName:v.item_name,category:v.category,
    categoryUnits30d:categoryUnits,location,localCompetitorPrices:null,...calculated,
+   explain:calculated.costPlusPriceCents!==null&&calculated.fullCostCents!==null?
+    [{label:v.item_name??"New item price",inputs:[{name:"fullCost",value:money(calculated.fullCostCents)},
+      {name:"targetMargin",value:percent(Math.round((100-calculated.targetMarginPercent)*100))}],
+      formula:"divide",result:money(calculated.costPlusPriceCents),period,
+      source:"suggest_new_item_price",provenance:v.target_margin_percent===null?"estimate":"ownerProvided"}]:[],
    missing:[...new Set([...missing,...calculated.missing])],
    estimated:[...new Set([...calculated.estimated,...(labor?.quality.estimatedInputs??[]),...(bills?.quality.estimatedInputs??[])])]};
  }
