@@ -4,7 +4,7 @@ import { DEMO_BUSINESS_ID } from "@/lib/constants";
 vi.mock("server-only", () => ({}));
 const m = vi.hoisted(() => ({
   businessId: "owner-cafe",
-  generate: vi.fn(async () => ({ created: 0 })),
+  generate: vi.fn(async (..._args: unknown[]) => ({ created: 0 })),
   queries: [] as { table: string; businessId?: string; statuses?: string[] }[],
 }));
 vi.mock("@/lib/supabase/client", () => ({ isSupabaseConfigured: () => true }));
