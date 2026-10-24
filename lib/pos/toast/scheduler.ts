@@ -157,12 +157,33 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
   if(leaseError){errors++;continue;}
   if(!nonce)continue;
   acquired++;
+  const isolated=async(name:string,fn:()=>Promise<void>)=>{
+   if(Date.now()>=deadlineAt)return;
+   try{await fn();}
+   catch(e){
+    errors++;
+    const category=e instanceof ToastApiError?e.category:"unavailable";
+    // A malformed scan must be observable but cannot suppress the other phases.
+    // This write is scoped to the leased, verified location.
+    try{
+     await db.from("toast_sync_phase_errors").upsert({
+      business_id:m.business_id,restaurant_guid:m.restaurant_guid,phase:name,
+      last_error_category:category,last_failed_at:new Date().toISOString()
+     },{onConflict:"business_id,restaurant_guid,phase"});
+    }catch{/* Preserve the original phase error in the aggregate count. */}
+   }
+  };
   try {
+   await isolated("restaurant_info",async()=>{
    if(!m.info_refreshed_at||Date.parse(m.info_refreshed_at)<now.getTime()-DAY)
     await refreshToastRestaurantInfo(db,m.business_id,m.restaurant_guid,{deadlineAt});
+   });
+   await isolated("cost_refresh",async()=>{
    mustFinish(deadlineAt);
    // A committed import's failed cost refresh is never another order import.
    await retryToastRollupRefreshes(db,deadlineAt,5);
+   });
+   await isolated("resume",async()=>{
    // Resume paused/running runs first. A day after toast_import_day is derived
    // from requested_from+days_done, NOT from the cleared JSON cursor.
    const {data:pending,error:pErr}=await db.from("toast_sync_runs")
@@ -176,6 +197,8 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     if(Date.now()>=deadlineAt)break;
     processed+=await runDue(db,m,run,deadlineAt);
    }
+   });
+   await isolated("daily",async()=>{
    const closed=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
    if(closed&&Date.now()<deadlineAt){
     await queueDaily(db,m,closed);
@@ -187,7 +210,11 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     if(daily&&shouldResume(daily as Run,Date.now()))
      processed+=await runDue(db,m,daily as Run,deadlineAt);
    }
+   });
+   await isolated("modified_scan",async()=>{
    if(Date.now()<deadlineAt)await scanModifiedDates(db,m,now,deadlineAt);
+   });
+   await isolated("repull",async()=>{
    if(Date.now()<deadlineAt){
     const {data:rePull,error:rePullErr}=await db.from("toast_sync_runs")
      .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
@@ -199,11 +226,15 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
      processed+=await runDue(db,m,run,deadlineAt);
     }
    }
+   });
+   await isolated("reconcile",async()=>{
    if(Date.now()<deadlineAt)await reconcileToastDays(db,{
     businessId:m.business_id,restaurantGuid:m.restaurant_guid,
     locationId:m.location_id,timeZone:m.toast_time_zone,
     closeoutHour:m.closeout_hour
    },deadlineAt);
+   });
+   await isolated("backfill",async()=>{
    if(Date.now()<deadlineAt)await queueFirstBackfill(db,m,now);
    const {data:next,error:nextErr}=await db.from("toast_sync_runs")
     .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
@@ -218,9 +249,14 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     if(Date.now()>=deadlineAt)break;
     processed+=await runDue(db,m,run,deadlineAt);
    }
+   });
+   await isolated("optional",async()=>{
    if(Date.now()<deadlineAt)
     await syncToastOptionalSources(db,m,now,deadlineAt);
+   });
+   await isolated("cleanup",async()=>{
    if(Date.now()<deadlineAt)await db.rpc("toast_cleanup_abandoned_pages");
+   });
   }catch{errors++;}
   finally{
    // Never leak the nonce or delete a different worker's lease.
