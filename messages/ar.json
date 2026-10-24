@@ -909,7 +909,9 @@
     "rentMissing": "الإيجار غير مسجل",
     "monthlyAmount": "{amount} شهريًا",
     "monthlyAmountEstimated": "{amount} شهريًا (يشمل تقديرات)",
-    "toastDaysLook": "{count} يومًا يحتاج إلى مراجعة"
+    "toastDaysLook": "{count} يومًا يحتاج إلى مراجعة",
+    "notConnected": "ربط جهاز المبيعات",
+    "connectedSince": "متصل · آخر مزامنة {time}"
   },
   "BreakEven": {
     "title": "خطة نقطة التعادل",
