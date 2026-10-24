@@ -1,3 +1,6 @@
+import type { AgentId } from "@/lib/operating/tasks";
+export type HomeTaskPreviewItem = { id: string; agentId: AgentId; agentName: string; title: string; href: string };
+
 import { Link } from "@/i18n/navigation";
 import { prioritizeHomeAttention, type HomeAttentionItem } from "./homeAttention";
 
