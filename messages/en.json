@@ -1153,7 +1153,9 @@
     "coverageAssumption": "Estimated using {salesDays} recorded operating days and {openDays} scheduled open days this month.",
     "hoursNotSetAssumption": "Some café hours are not set. This estimate assumes those days are open; set café hours to make the month more accurate.",
     "uncoveredSalesDates": "Some open days in this sales period have no confirmed sales data. Complete the missing dates before estimating changes.",
-    "uploadSales": "Upload sales"
+    "uploadSales": "Upload sales",
+    "closedDaySales": "Some sales were recorded on days your café is now scheduled as closed. The historic item counts cannot safely predict future open-day sales. Check café hours before running this estimate.",
+    "setCafeHours": "Set café hours"
   },
   "Reconnect": {
     "banner": "We couldn't get today's sales from your register. Tap to reconnect.",

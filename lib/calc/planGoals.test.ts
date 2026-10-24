@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countPlanOperatingDays, coveredPlanOperatingDays, hasCompletePlanHours, hasUncoveredPlanOperatingDates, monthlyReducibleStaffHours, weekdayHourlyTarget, simulatePlanChange } from "./planGoals";
+import { countPlanOperatingDays, coveredPlanOperatingDays, hasCompletePlanHours, hasPlanSalesOnClosedDays, hasUncoveredPlanOperatingDates, monthlyReducibleStaffHours, weekdayHourlyTarget, simulatePlanChange } from "./planGoals";
 import { calculateBreakEvenSales } from "./breakEvenSales";
 
 const base = {
@@ -82,6 +82,16 @@ describe("Plan goals", () => {
       newValueCents: 525, staffHoursPerDay: 0, assumedHourlyWageCents: 1950,
     });
     expect(scenario?.monthlyProfitChangeCents).toBe(55_000); // $500 over 20 open days -> $550 over 22
+  });
+  it("withholds projections when the old sales history contradicts today's closed schedule", () => {
+    const weekends = { sat: [] as [string,string][], sun: [] as [string,string][] };
+    expect(hasPlanSalesOnClosedDays([
+      { date: "2026-10-10", netSalesCents: 50000, ordersCount: 10 },
+    ], weekends)).toBe(true);
+    expect(hasPlanSalesOnClosedDays([
+      { date: "2026-10-10", netSalesCents: 0, ordersCount: 0 },
+      { date: "2026-10-12", netSalesCents: 50000, ordersCount: 10 },
+    ], weekends)).toBe(false);
   });
   it("does not count intermittent imported coverage as a complete item quantity window", () => {
     const monFri = { sat: [] as [string, string][], sun: [] as [string, string][] };

@@ -57,6 +57,17 @@ export function coveredPlanOperatingDays(
     .filter(date => regularHoursStateForDate(openHours, date) !== "closed")).size;
 }
 
+/** Historical sales on a weekday now configured as closed cannot be extrapolated
+ * safely using the current weekly schedule: the total item quantities do not
+ * retain enough weekday detail to remove those exceptional sales. */
+export function hasPlanSalesOnClosedDays(
+  days: readonly { date: string; netSalesCents?: number; ordersCount?: number; drinksCount?: number }[],
+  openHours: OpenHours | null | undefined,
+): boolean {
+  return days.some(day => regularHoursStateForDate(openHours, day.date) === "closed" &&
+    ((day.netSalesCents ?? 0) !== 0 || (day.ordersCount ?? 0) > 0 || (day.drinksCount ?? 0) > 0));
+}
+
 /** Detect gaps on operating dates between the first and last covered date.
  * The menu-item RPC aggregates that whole interval, so treating only some
  * of those days as covered could put an unrelated quantity in the numerator. */

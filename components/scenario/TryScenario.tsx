@@ -5,9 +5,9 @@ import { Link } from "@/i18n/navigation";
 import { simulatePlanChange, type PlanScenarioBase, type PlanScenarioItem } from "@/lib/calc/planGoals";
 
 const WAGE_CENTS = 1950;
-export default function TryScenario({ items, base, hoursComplete = true, salesCoverageGaps = false }: {
+export default function TryScenario({ items, base, hoursComplete = true, salesCoverageGaps = false, closedDaySales = false }: {
   items: PlanScenarioItem[]; base: PlanScenarioBase | null;
-  hoursComplete?: boolean; salesCoverageGaps?: boolean;
+  hoursComplete?: boolean; salesCoverageGaps?: boolean; closedDaySales?: boolean;
 }) {
   const t = useTranslations("Scenario");
   const locale = useLocale();
@@ -80,7 +80,12 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
       <button type="button" onClick={() => preset("staff", 0)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetStaff")}</button>
       <button type="button" onClick={() => preset("ingredient", 100)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetMilk")}</button>
     </div>
-    {salesCoverageGaps ? <div className="rounded-xl bg-surface p-4 text-[17px]">
+    {closedDaySales ? <div className="rounded-xl bg-surface p-4 text-[17px]">
+      <p>{t("closedDaySales")}</p>
+      <Link href="/more/cafe-profile?focus=hours" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
+        {t("setCafeHours")}
+      </Link>
+    </div> : salesCoverageGaps ? <div className="rounded-xl bg-surface p-4 text-[17px]">
       <p>{t("uncoveredSalesDates")}</p>
       <Link href="/more/uploads/sales" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
         {t("uploadSales")}
