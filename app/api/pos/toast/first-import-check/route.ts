@@ -21,9 +21,12 @@ export async function POST(request:Request){
   .select("business_date,restaurant_guid").eq("business_id",businessId)
   .eq("import_state","imported").eq("coverage_complete",true).limit(500);
  if(dayError)return send(503,{error:"unavailable"});
- const complete=new Set((days??[]).map(x=>x.business_date));
- if(complete.size<7)return send(409,{error:"not_ready"});
- const eligible=new Set((days??[]).map(x=>x.business_date));
+ const applicable=new Set(locations.map(x=>x.restaurant_guid));
+ const complete=[...new Set((days??[]).map(x=>x.business_date))].filter(date=>
+  [...applicable].every(guid=>(days??[]).some(row=>row.business_date===date&&
+   row.restaurant_guid===guid)));
+ if(complete.length<7)return send(409,{error:"not_ready"});
+ const eligible=new Set(complete);
  if(flaggedDates.some(d=>!eligible.has(d)))return send(400,{error:"invalid_dates"});
  const {data:existing,error:readError}=await db.from("toast_first_import_check")
   .select("answered_at").eq("business_id",businessId).maybeSingle();
