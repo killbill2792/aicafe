@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { Link } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
 import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
 import { parseSalesCsv, type SalesColumnMapping, type SalesRejectReason } from "@/lib/pos/csv/parseSalesCsv";
 import { aggregateSalesRows } from "@/lib/pos/csv/aggregateSalesRows";
@@ -58,6 +59,7 @@ export default function SalesCsvImporter({
     errors: Record<ImportErrorCode, string>;
   };
 }) {
+  const menuT = useTranslations("Menu");
   const [headers, setHeaders] = useState<string[] | null>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [mapping, setMapping] = useState<Partial<SalesColumnMapping>>(initialMapping ?? {});
@@ -232,7 +234,7 @@ export default function SalesCsvImporter({
             <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
               <span className="text-sm font-bold text-warn">{labels.unmatchedWarningTitle}</span>
               <p className="text-xs text-fg">{labels.unmatchedWarningHint}</p>
-              {completedJobId && <Link href="/menu/import-review" className="inline-flex min-h-12 items-center self-start rounded-full bg-accent px-4 font-bold text-on-accent">{labels.matchItems ?? "Match items"}</Link>}
+              {completedJobId && <Link href="/menu/import-review" className="inline-flex min-h-12 items-center self-start rounded-full bg-accent px-4 font-bold text-on-accent">{menuT("matchItems")}</Link>}
               {summary.unmatchedItems.map((u) => (
                 <div key={u.name} className="flex items-center justify-between gap-2 text-sm">
                   <span className="min-w-0 flex-1 truncate">{u.name}</span>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Link } from "@/i18n/navigation";
 import { Plus, Search, Coffee, Milk, Package, Cookie, Droplets } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import {saveUsageEntry,addFromStarter,savePackPrice,createPantryIngredient,updatePantryIngredient} from "@/lib/actions/pantry";
@@ -43,7 +44,9 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  <button type="submit" className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent">{t.usageApply}</button></form>
  <section className="mb-5 rounded-2xl border border-line bg-card p-4">
  <h2 className="font-headline text-xl font-bold">{t.usageTitle}</h2><p className="text-ink-muted">{t.usagePeriod} {variance?.from??"—"} – {variance?.to??"—"}</p>
- {!variance&&<p className="mt-3 text-ink-muted">{t.usageUnavailable}</p>}
+ {!variance&&<div className="mt-3 flex flex-col gap-3"><p className="text-ink-muted">{t.usageUnavailable}</p>
+ <div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEntryKind("count");document.getElementById("pantry-stock-record")?.scrollIntoView({behavior:"smooth",block:"start"});}} className="min-h-12 rounded-full bg-accent px-5 font-bold text-on-accent">{t.usageRecord}</button>
+ <Link href="/more/toast" className="inline-flex min-h-12 items-center rounded-full border border-line px-5 font-bold">{t.usageConnectToast}</Link></div></div>}
  <div className="mt-3 grid gap-2 sm:grid-cols-2">{variance?.rows.map(row=><div key={row.ingredientId} className="rounded-xl border border-line p-3">
  <div className="flex justify-between gap-2"><h3 className="font-bold">{row.name}</h3><span className={row.status==="over"?"font-bold text-warn":"text-ink-muted"}>{row.status?t["usage_"+row.status]:t.usageUnknown}</span></div>
  <p>{t.usageExpected}: {row.expected===null?"—":row.expected.toLocaleString()} {row.unit}</p><p>{t.usageActual}: {row.actual===null?"—":row.actual.toLocaleString()} {row.unit}</p>
@@ -51,7 +54,7 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  {!!row.groups.length&&<details className="mt-2"><summary className="min-h-10 cursor-pointer font-semibold">{t.usageShifts}</summary><p className="text-sm text-ink-muted">{t.usageExpectedOnly}</p>{row.groups.map(g=><p key={g.key} className="mt-1 text-sm">{g.label}: {g.expected.toLocaleString()} {row.unit}</p>)}</details>}
  {!!row.missing.length&&<p className="text-sm text-ink-muted">{t.usageMissing}: {row.missing.map(reason=>reason.startsWith("startCount:")?t.usageStartCount+" "+reason.slice(11):reason.startsWith("endCount:")?t.usageEndCount+" "+reason.slice(9):reason==="toastSalesCoverage"?t.usageCoverage:t.usageRecipeMissing).join(", ")}</p>}
  </div>)}</div></section>
- <section className="mb-5 rounded-2xl border border-line bg-card p-4"><h2 className="font-headline text-xl font-bold">{t.usageRecord}</h2>
+ <section id="pantry-stock-record" className="mb-5 scroll-mt-4 rounded-2xl border border-line bg-card p-4"><h2 className="font-headline text-xl font-bold">{t.usageRecord}</h2>
  <div className="mt-3 flex gap-2">{(["count","purchase"] as const).map(k=><button type="button" key={k} aria-pressed={entryKind===k} onClick={()=>setEntryKind(k)} className={`min-h-12 rounded-xl border px-4 font-bold ${entryKind===k?"bg-accent text-on-accent":"border-line"}`}>{t["usage_"+k]}</button>)}</div>
  <div className="mt-3 grid gap-3 sm:grid-cols-2">
  <label>{t.usageIngredient}<select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3" value={entryItem} onChange={e=>{setEntryItem(e.target.value);setEntryUnit(items.find(i=>i.id===e.target.value)?.baseUnit??"each");}}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>

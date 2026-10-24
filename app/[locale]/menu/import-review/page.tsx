@@ -16,6 +16,7 @@ export default async function ImportReviewPage({searchParams}: {searchParams: Pr
     getCatalogMatchReview(source ? {source,uploadId:params.uploadId} : undefined),
     getMenuItemsForEdit(),getTranslations("Menu"),getTranslations("Common"),getLocale(),
   ]);
+  const menuItems = items.items;
   const backHref = source && params.uploadId ? `/more/uploads/${encodeURIComponent(params.uploadId)}` : "/menu";
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
     <BackHeader title={t("matchItems")} subtitle={t("keepYourWork")} backHref={backHref} backLabel={common("back")}/>
@@ -27,7 +28,7 @@ export default async function ImportReviewPage({searchParams}: {searchParams: Pr
           <label htmlFor={`item-${row.id}`} className="text-sm font-semibold">{t("pickExistingItem")}</label>
           <select id={`item-${row.id}`} name="menuItemId" defaultValue={row.suggestedMenuItemId??""} required className="min-h-12 rounded-xl border border-line bg-card px-3">
             <option value="">{t("selectMenuItem")}</option>
-            {items.filter(item=>item.active && (!item.posItemId || item.posItemId===row.posItemId)).map(item=><option key={item.id} value={item.id}>{item.name}{item.sizeLabel?` · ${item.sizeLabel}`:""}</option>)}
+            {menuItems.filter(item=>item.active && (!item.posItemId || item.posItemId===row.posItemId)).map(item=><option key={item.id} value={item.id}>{item.name}{item.sizeLabel?` · ${item.sizeLabel}`:""}</option>)}
           </select>
           <button className="min-h-12 rounded-full bg-accent px-4 font-bold text-on-accent">{t("confirmMatch")}</button>
         </form>
