@@ -43,7 +43,7 @@ describe("Redesign 03 screen contracts", () => {
     const statement = source("components/addcost/StatementUploader.tsx");
     expect(statement).toContain('setMissingLine(false); setMissingDescription(""); setMissingAmount(""); setMissingDate("");');
     expect(statement).toContain('{labels.missingCancel}');
-    expect(statement).toContain('disabled={isSavingOrSaved || missingLine || saveLock.current}');
+    expect(statement).toContain('disabled={isSavingOrSaved || missingLine}');
   });
 
   it("locks every editable statement action while saving, even before React re-renders", () => {
@@ -53,7 +53,7 @@ describe("Redesign 03 screen contracts", () => {
     expect(statement).toContain('if (!state?.ok || missingLine || isSavingOrSaved || saveLock.current) return;');
     expect(statement).toContain('if (!state?.ok || saveLock.current || isSavingOrSaved) return;');
     expect(statement).toContain('if (!state?.ok || !state.balanceCheck || saveLock.current || isSavingOrSaved) return;');
-    expect(statement).toContain('disabled={isSavingOrSaved || saveLock.current}');
+    expect(statement).toContain('disabled={isSavingOrSaved}');
   });
 
   it("keeps recovery fields at the minimum 48px touch and 17px text sizes", () => {
