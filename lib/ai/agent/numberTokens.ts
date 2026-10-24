@@ -36,6 +36,8 @@ function boundary(text:string,start:number,end:number){
 export function tokenizeNumbers(text:string,locale:NumberLocale):NumberToken[]{
  type Entry=NumberToken&{priority:number}; const all:Entry[]=[];
  const add=(start:number,end:number,kind:NumberTokenKind,value:number|null,unit:string|null,priority:number)=>{
+  while(start<end&&/\s/u.test(text[start]))start++;
+  while(end>start&&/\s/u.test(text[end-1]))end--;
   if(start>=0&&end>start&&boundary(text,start,end))all.push({start,end,kind,value,unit,priority});
  };
  const scan=(pattern:string,kind:NumberTokenKind,priority:number,value:(s:string)=>number|null=()=>null,unit:string|null=null)=>{
