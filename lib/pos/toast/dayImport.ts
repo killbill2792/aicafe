@@ -81,7 +81,8 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    gratuity_cents:sum(orders.map(x=>x.gratuityCents)),
    unparsed_count:unparsed.length,warnings,
    snapshot_sha256:createHash("sha256").update(JSON.stringify(orders)).digest("hex"),
-   voids,refund_facts:orders.flatMap(x=>x.refundFacts),unparsed
+   voids,refund_facts:orders.flatMap(x=>x.refundFacts),
+   parsed_order_guids:orders.map(x=>x.guid),unparsed
   };
   const {data:result,error}=await db.rpc("toast_import_day",{
    p_business_id:p.businessId,p_location_id:p.locationId,
