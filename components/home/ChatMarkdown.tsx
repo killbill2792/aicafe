@@ -21,7 +21,7 @@ export function sourceDotNext(state:DotInteraction,event:DotEvent):DotInteractio
   }
 }
 export function sourceDotIsOpen(state:DotInteraction):boolean{
-  return state.pinned||(!state.dismissed&&(state.hovered||state.focused||state.tooltipFocused));
+  return state.pinned||(!state.dismissed&&(state.hovered||state.focused||state.tooltipFocused===true));
 }
 /** Keyboard scrolling works while focus stays on the superscript button. */
 export function provenanceScrollCommand(key:string,height:number):number|"start"|"end"|null{
