@@ -20,7 +20,7 @@ export default function CostRecoveryStrip({
   incompleteLabel?: string;
 }) {
   const current = buckets.find(bucket => bucket.pctCovered < 100) ?? buckets[buckets.length-1];
-  const caption = !dataComplete ? (incompleteLabel ?? emptyLabel) : !current ? emptyLabel :
+  const caption = !current ? emptyLabel : !dataComplete ? (incompleteLabel ?? emptyLabel) :
     current.pctCovered >= 100 && current.coveredOn
       ? coveredLabel(labels[current.code] ?? current.code, shortDate(current.coveredOn, locale))
       : `${labels[current.code] ?? current.code} ${new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(Math.round(current.pctCovered))}%`;
