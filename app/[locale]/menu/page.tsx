@@ -3,7 +3,6 @@ import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
-import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import MenuCatalog from "@/components/menu/MenuCatalog";
 import { Link } from "@/i18n/navigation";
 import PageShell from "@/components/shared/PageShell";
@@ -28,7 +27,6 @@ export default async function MenuPage() {
           <Link href="/menu/new" className="flex min-h-12 items-center gap-2 rounded-full bg-accent px-4 text-sm font-bold text-on-accent no-underline">
             <Plus aria-hidden="true" size={19} /> {t("addItem")}
           </Link>
-          <LanguageSwitch href="/menu" />
         </div>
       </header>
       {pendingMatches.length > 0 && <Link href="/menu/import-review" className="mx-1 flex min-h-16 items-center justify-between rounded-card-lg border border-line bg-card px-5 py-4 no-underline">
