@@ -2,10 +2,14 @@ import {describe,it,expect,vi} from "vitest";
 import {proposalTools} from "./proposals";
 import type {AgentToolContext} from "./index";
 const input={product_id:"22222222-2222-4222-8222-222222222222",new_price_cents:550};
-const minimal={tools:{getMenuCatalog:async()=>({available:true as const,
- value:[{id:input.product_id,name:"Latte",category:"drink" as const,active:true,priceCents:450}],
- quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}})}
- as unknown as AgentToolContext["tools"],asOf:"2026-10-22",locale:"en" as const};
+const minimal={
+ tools:{getMenuCatalog:async()=>({
+   available:true as const,
+   value:[{id:input.product_id,name:"Latte",category:"drink" as const,active:true,priceCents:450}],
+   quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}
+ })} as unknown as AgentToolContext["tools"],
+ asOf:"2026-10-22",locale:"en" as const,
+};
 describe("price proposal agent tool",()=>{
  it("fails closed when proposal capability is missing",async()=>{
   expect(await proposalTools.propose_price_change.execute(input,minimal)).toMatchObject({
