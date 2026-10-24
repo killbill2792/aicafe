@@ -63,6 +63,8 @@ function fakeDatabase(daysTotal=1){
    }else if(name==="toast_checkpoint_day"){
     run.state="paused_rate_limited";
     run.cursor={business_date:args.p_business_date,page:args.p_page};
+   }else if(name==="toast_mark_day_failed"){
+    run.state="failed";
    }else if(name==="toast_import_day"){
     imports.push(args as unknown as ImportCall);
     run.daysDone++;
