@@ -78,7 +78,16 @@ export const staffProposalTools=Object.fromEntries(
        for(const [key,group] of groups)if(group.length>1){
          const matched=resolveEntity("staff",key,people,{
            nameOf:p=>p.name,idOf:p=>p.id,describe:p=>p.role??"Team"});
-         if(matched.status==="ambiguous")return {...choicePayload(matched,"staff_proposal",null),agentId:"olivia",missing:["ownerChoiceRequired"]};
+         if(matched.status==="ambiguous"){
+           // PR B's scoped availability parser accepts only an exact person
+           // name (not a UUID). Choosing one of two identically named employees
+           // still cannot produce a safe write until that API accepts an ID.
+           if(group.some(person=>ctx.resolveState?.chosenIds.has(person.id.toLowerCase())))
+             return {source:"staff_proposal",period:null,agentId:"olivia",
+               missing:["availabilityBackendRequiresUniqueStaffName"]};
+           return {...choicePayload(matched,"staff_proposal",null),agentId:"olivia",
+             missing:["ownerChoiceRequired"]};
+         }
        }
      }
    }
