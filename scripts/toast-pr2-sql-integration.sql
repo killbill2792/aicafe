@@ -182,4 +182,83 @@ SELECT pg_temp.assert((SELECT voids_status='unknown'
  FROM public.daily_rollups WHERE business_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
   AND business_date='2026-10-06'),'later void edit invalidates prior certification');
 
+
+-- P1: a failed first Toast pull must not hide verified CSV/Square-only sales.
+INSERT INTO public.daily_rollups(
+ business_id,business_date,net_sales_cents,orders_count,drinks_count,
+ ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,
+ voids_cents,sales_data_status)
+VALUES ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-10-03',
+ 4300,9,9,0,0,0,0,0,'actual');
+DO $csv_only$
+declare b uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+ g uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002';r uuid;
+begin
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+  requested_from,requested_to,days_total)
+ values(b,g,'backfill','2026-10-03','2026-10-03',1) returning id into r;
+ perform public.toast_record_day_error(r,b,g,'2026-10-03','invalid_response',false,true);
+ perform pg_temp.assert((select sales_data_status='actual' and net_sales_cents=4300
+  from public.daily_rollups where business_id=b and business_date='2026-10-03'),
+  'failed first Toast import must not demote a CSV-only day');
+ perform public.toast_queue_backfill(b,g,'2026-10-02','2026-10-06');
+ perform pg_temp.assert((select sales_data_status='actual' and net_sales_cents=4300
+  from public.daily_rollups where business_id=b and business_date='2026-10-03'),
+  'backdated Toast start must not demote a date without ANY imported Toast');
+end $csv_only$;
+
+-- P1: October 31 business day spans 25 UTC hours across PDT/PST fallback.
+-- Only mark coverage for an entire restaurant-local 04:00-to-04:00 day.
+SELECT public.toast_commit_repull_scan_window(
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001',
+ '2026-11-02','[]'::jsonb,
+ '2026-10-31T11:00:00Z','2026-11-01T12:00:00Z');
+SELECT pg_temp.assert(exists(select 1 from public.toast_void_repull_coverage
+ where business_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  and restaurant_guid='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001'
+  and business_date='2026-10-31'),'a full 25-hour local closeout day is covered');
+DELETE FROM public.toast_void_repull_coverage
+WHERE business_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+ AND restaurant_guid='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001'
+ AND business_date='2026-10-31';
+SELECT public.toast_commit_repull_scan_window(
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001',
+ '2026-11-02','[]'::jsonb,
+ '2026-10-31T11:00:01Z','2026-11-01T12:00:00Z');
+SELECT pg_temp.assert(not exists(select 1 from public.toast_void_repull_coverage
+ where business_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  and restaurant_guid='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001'
+  and business_date='2026-10-31'),'a partial FIRST local business day is not covered');
+SELECT public.toast_commit_repull_scan_window(
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001',
+ '2026-11-02','[]'::jsonb,
+ '2026-10-31T11:00:00Z','2026-11-01T11:59:59Z');
+SELECT pg_temp.assert(not exists(select 1 from public.toast_void_repull_coverage
+ where business_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  and restaurant_guid='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001'
+  and business_date='2026-10-31'),'a partial LAST local business day is not covered');
+
+-- P1: any not-yet-completed repull from the same full-window scan blocks
+-- certification even if an unrelated day has a valid reconciled void fact.
+DO $pending_repull$
+declare b uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+ g uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001';r uuid;
+begin
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+  scan_local_day,requested_from,requested_to,days_total,state)
+ values(b,g,'repull_modified','2026-10-07','2026-10-05','2026-10-05',
+  1,'queued') returning id into r;
+ perform pg_temp.assert(not public.toast_certify_day_voids(b,'2026-10-06'),
+  'queued re-pull found in the scan prevents void certification');
+ update public.toast_sync_runs set state='failed' where id=r;
+ perform pg_temp.assert(not public.toast_certify_day_voids(b,'2026-10-06'),
+  'failed re-pull found in the scan prevents void certification');
+ update public.toast_sync_runs set state='completed',days_done=1 where id=r;
+ perform pg_temp.assert(public.toast_certify_day_voids(b,'2026-10-06'),
+  'once all repulls finish, the independently reconciled day can certify');
+end $pending_repull$;
+
 ROLLBACK;
