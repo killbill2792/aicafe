@@ -4,12 +4,12 @@ import { Link } from "@/i18n/navigation";
 export default function RegisterChoice({
   locale,
   squareConfigured,
-  toastEnabled,
+  toastEnabled = false,
   labels,
 }: {
   locale: string;
   squareConfigured: boolean;
-  toastEnabled: boolean;
+  toastEnabled?: boolean;
   labels: {
     connectSquare: string;
     squareNotConfigured: string;
