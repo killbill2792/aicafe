@@ -48,7 +48,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    const parsed=statusSchema.safeParse(await response.json());
    if(!parsed.success)throw Error("invalid_status");
    if(active){setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());setStart(old=>old||parsed.data.startDate||
-    dateShift(localDate(parsed.data.timeZone),-84));}
+    dateShift(localDate(parsed.data.timeZone,Date.now()),-84));}
   }catch{if(active){setData(null);setBad(true);}}
  };void refresh();return()=>{active=false;};},[businessId]);
  async function post(url:string,payload:unknown){
@@ -74,7 +74,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  }
  if(bad)return <p role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">{t("ownerStatusUnavailable")}</p>;
  if(!data)return <p role="status" className="text-ink-muted">{t("pending")}</p>;
- const yesterday=dateShift(localDate(data.timeZone),-1);
+ const yesterday=lastLoadedAt?dateShift(localDate(data.timeZone,lastLoadedAt),-1):"";
  const relative=data.lastGoodSyncAt&&lastLoadedAt?new Intl.RelativeTimeFormat(locale,{numeric:"auto"}).format(
   -Math.max(0,Math.round((lastLoadedAt-Date.parse(data.lastGoodSyncAt))/3600000)),"hour"):t("noSyncYet");
  return <div className="flex flex-col gap-4" dir={locale==="ar"?"rtl":"ltr"}>
