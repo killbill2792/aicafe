@@ -896,7 +896,8 @@
     "feesDaysMissing": "{count} days missing",
     "rentMissing": "Rent missing",
     "monthlyAmount": "{amount} a month",
-    "monthlyAmountEstimated": "{amount} a month (includes estimates)"
+    "monthlyAmountEstimated": "{amount} a month (includes estimates)",
+    "toastDaysLook": "{count} days need a look"
   },
   "BreakEven": {
     "title": "Break-even plan",
