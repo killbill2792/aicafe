@@ -863,7 +863,7 @@ export default function SupervisorChatComposer({
           clarifyChoice={clarifyCardState(displayedMessages,messageIndex).choice}
           onClarify={value=>{void sendText(value);}}
           disabled={sending||!enabled||!canUseAi||
-          (message.role==="supervisor"&&message.id!==activeQuestionMessageId)}
+          (message.role==="supervisor"&&message.id!==activeQuestionMessageId&&clarifyCardState(displayedMessages,messageIndex).state!=="active")}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{
             if(sending||!enabled||!canUseAi||origin.id!==activeQuestionMessageId)return;
             const question=ownerQuestionSchema.safeParse((origin.blocks??[]).find(b=>
