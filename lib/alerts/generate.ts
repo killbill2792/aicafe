@@ -94,6 +94,9 @@ async function generateVoidsAlert(supabase: SupabaseClient, businessId: string, 
   const today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
   const monthKey = today.slice(0, 7);
   const monthStart = `${monthKey}-01`;
+  // The Alerts hub says "this month": retire previous-month open spikes instead
+  // of presenting their old numbers as if they described the current month.
+  await resolveStaleGeneratedAlerts(supabase, businessId, "voids", new Set([monthKey]));
 
   const { data: thisMonthRollups } = await supabase.from("daily_rollups").select("voids_cents").eq("business_id", businessId).gte("business_date", monthStart).lte("business_date", today);
   const voidsThisMonthCents = (thisMonthRollups ?? []).reduce((s, r) => s + r.voids_cents, 0);
