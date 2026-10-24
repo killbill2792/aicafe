@@ -31,7 +31,7 @@ const params=(businessDate:string)=>({businessId:business,locationId:location,re
 type ImportCall={p_orders:Array<{posOrderId:string;netSalesCents:number}>;p_summary:{
  order_count:number;unparsed_count:number;parsed_order_guids:string[];net_sales_cents:number
 }};
-function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[]){
+function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook?:()=>void){
  const dayStatuses=new Map<string,string>(initialImportedDays.map(day=>[day,"imported"]));
  const stored=new Map<string,unknown[]>();
  const pendingCosts=new Map<string,string>();
@@ -81,6 +81,7 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[]){
     run.daysDone++;
     run.state=run.daysTotal>0&&run.daysDone>=run.daysTotal?"completed":"running";
     run.cursor={};
+    postCommitHook?.();
    }else if(name==="toast_ack_rollup_refresh"){
     pendingCosts.delete(String(args.p_business_date));
     return {data:true,error:null};
@@ -271,5 +272,23 @@ describe("P1 pause, resume, then next business date",()=>{
   expect(f.imports).toHaveLength(2);
   expect(f.run).toMatchObject({state:"completed",daysDone:2});
   expect(progress()).toBeNull();
+ });
+});
+
+describe("P1 committed day at the shared tick deadline",()=>{
+ it("defers only post-commit costs, with exactly one day advancement",async()=>{
+  const deadlineAt=Date.now()+120000;
+  const f=fakeDatabase(2,[],()=>vi.spyOn(Date,"now").mockReturnValue(deadlineAt+1));
+  try{
+   mocked.request.mockResolvedValue([]);
+   const result=await importToastBusinessDay(f.db,{
+    ...params("2026-10-16"),deadlineAt});
+   expect(result.costsPending).toBe(true);
+   expect(f.run).toMatchObject({state:"running",daysDone:1,cursor:{}});
+   expect(f.imports).toHaveLength(1);
+   expect(f.pendingCosts.has("2026-10-16")).toBe(true);
+   expect(mocked.recompute).not.toHaveBeenCalled();
+   expect(f.operations).not.toContain("toast_checkpoint_day");
+  }finally{vi.restoreAllMocks();}
  });
 });
