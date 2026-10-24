@@ -142,7 +142,8 @@
     "ownerAnalyticsConnect": "ربط التحليلات",
     "ownerAnalyticsDisconnect": "فصل التحليلات",
     "ownerRefreshStatus": "إعادة تحميل الحالة",
-    "ownerImportDisabled": "استيراد المبيعات غير مفعل بعد. يمكنك ربط Toast، لكن الاستيراد وإعادة جلب المبيعات غير متاحين حتى تفعيل الخدمة."
+    "ownerImportDisabled": "استيراد المبيعات غير مفعل بعد. يمكنك ربط Toast، لكن الاستيراد وإعادة جلب المبيعات غير متاحين حتى تفعيل الخدمة.",
+    "ownerPartiallyQueued": "تمت جدولة بعض الأيام، لكن بقية الأيام لم تُجدول. ابدأ مجددًا من {date}."
   },
   "LocaleLayout": {
     "title": "Café Profit"
