@@ -457,3 +457,42 @@ from public.toast_location_mappings m;
 revoke all on public.toast_sync_health_v from public,anon,authenticated;
 grant select on public.toast_sync_health_v to service_role;
 
+
+-- Restore the existing invoker-RLS menu quantity endpoint with source-aware
+-- order filtering. All consumers (pricing, snapshots, chat, product math) use it.
+create or replace function public.menu_item_quantities_sold(
+ p_business_id uuid,p_from date,p_to date)
+returns table(menu_item_id uuid,total_quantity numeric)
+language sql stable security invoker set search_path=public as $menu$
+ select ol.menu_item_id,sum(ol.quantity)
+ from public.order_lines ol
+ join public.orders o on o.id=ol.order_id
+ where o.business_id=p_business_id and o.business_date between p_from and p_to
+  and not o.toast_excluded and o.superseded_by is null
+  and not ol.voided and ol.menu_item_id is not null
+ group by ol.menu_item_id
+$menu$;
+
+-- Non-Toast writers (CSV, Square, re-sync) must not re-activate a replaced
+-- source on INSERT or UPDATE after the Toast day was imported.
+create or replace function public.toast_supersede_non_toast_order()
+returns trigger language plpgsql security invoker set search_path=public as $supersede$
+begin
+ if new.pos_order_id not like 'toast:%' and exists (
+  select 1 from public.toast_day_status d
+  join public.toast_location_mappings m
+   on m.business_id=d.business_id and m.restaurant_guid=d.restaurant_guid
+  where d.business_id=new.business_id and d.business_date=new.business_date
+   and d.import_state='imported' and m.verified_at is not null
+   and new.business_date>=coalesce(m.toast_start_date,new.business_date)
+   and (m.location_id=new.location_id or
+      (new.location_id is null and
+       (select count(*) from public.locations where business_id=new.business_id)=1))
+ ) then
+  new.superseded_by='toast';
+ end if;
+ return new;
+end $supersede$;
+create trigger toast_supersede_late_order
+ before insert or update of business_id,location_id,business_date,pos_order_id,superseded_by
+ on public.orders for each row execute function public.toast_supersede_non_toast_order();
