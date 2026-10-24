@@ -48,7 +48,8 @@ export default function SupervisorExperiment({threadId,locale,copy,canUseAi=true
    if(payload.action==="propose"&&state.proposals?.[0]?.id)setSelectedProposalId(state.proposals[0].id);
   }catch{setError(true);}finally{setBusy(false);}
  };
- const p=proposals.find(value=>value.id===(selectedProposalId||initialProposalId))??(initialProposalId?undefined:proposals[0]),delta=Number(cents);
+ const p=initialProposalId?proposals.find(value=>value.id===initialProposalId):
+   proposals.find(value=>value.id===selectedProposalId)??proposals[0],delta=Number(cents);
  const status=(value:string)=>value==="draft"?copy.statusDraft:
    value==="approved"?copy.statusApproved:value==="manual_pending"?copy.statusManual:
    value==="executing"?copy.statusExecuting:
@@ -60,25 +61,25 @@ export default function SupervisorExperiment({threadId,locale,copy,canUseAi=true
   <button type="button" aria-expanded={open} onClick={()=>setOpen(x=>!x)}
     className={actionClass+" w-full text-start"}>{open?copy.close:copy.open}</button>
   {open&&<div className="space-y-3 p-3 text-[17px] text-ink">
-   {canUseAi&&<label className="block">{copy.product}
+   {canUseAi&&!initialProposalId&&<label className="block">{copy.product}
     <select className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]"
       value={itemId} onChange={e=>{setItemId(e.target.value);setSimulation(null);}}>
       {items.map(item=><option key={item.id} value={item.id}>
         {item.name} · {formatCents(item.priceCents,locale)}</option>)}</select></label>}
-   {canUseAi&&<label className="block">{copy.increase}
+   {canUseAi&&!initialProposalId&&<label className="block">{copy.increase}
     <input type="number" className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]"
       min={1} max={100000} step={1} value={cents}
       onChange={e=>{setCents(e.target.value);setSimulation(null);}}/></label>}
-   {canUseAi&&<button className={actionClass} disabled={busy||!itemId||!valid}
+   {canUseAi&&!initialProposalId&&<button className={actionClass} disabled={busy||!itemId||!valid}
      onClick={()=>void invoke({action:"simulate",productId:itemId,increaseCents:delta})}>{copy.preview}</button>}
-   {canUseAi&&simulation&&<div className="space-y-2">
+   {canUseAi&&!initialProposalId&&simulation&&<div className="space-y-2">
     <p>{simulation.effect.productName}: {formatCents(simulation.effect.oldPriceCents,locale)} → {formatCents(simulation.effect.newPriceCents,locale)}</p>
     <p>{copy.condition} {formatCents(simulation.baseline.estimatedAdditionalRevenue7DaysCents,locale)}</p>
     <button className={actionClass} disabled={busy}
       onClick={()=>void invoke({action:"propose",productId:itemId,increaseCents:delta,
         requestKey:crypto.randomUUID(),locale})}>{copy.propose}</button>
    </div>}
-   {proposals.length>0&&<label className="block">{copy.selectProposal}
+   {!initialProposalId&&proposals.length>0&&<label className="block">{copy.selectProposal}
      <select value={p?.id??""} disabled={busy}
        onChange={e=>{setSelectedProposalId(e.target.value);setReport(null);}}
        className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]">
