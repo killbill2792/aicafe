@@ -723,3 +723,16 @@ create trigger toast_era_report_stale_after_import
  for each row execute function public.toast_invalidate_era_report_on_import();
 revoke all on function public.toast_invalidate_era_report_on_import()
  from public,anon,authenticated;
+
+-- Config:read is optional. Reason names are source metadata; never invent a
+-- voiding employee from order.server or overwrite a canonical owner action.
+alter table public.toast_optional_sync_state add column void_reasons_local_day date;
+create table public.toast_void_reason_directory(
+ business_id uuid not null,restaurant_guid uuid not null,reason_guid uuid not null,
+ name text,entity_type text,fetched_at timestamptz not null default now(),
+ primary key(business_id,restaurant_guid,reason_guid),
+ foreign key(business_id,restaurant_guid)
+ references public.toast_location_mappings(business_id,restaurant_guid));
+alter table public.toast_void_reason_directory enable row level security;
+revoke all on public.toast_void_reason_directory from public,anon,authenticated;
+grant select,insert,update,delete on public.toast_void_reason_directory to service_role;
