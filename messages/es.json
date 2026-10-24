@@ -821,7 +821,8 @@
     "planWhatIf": "¿Qué pasaría si…?",
     "setCafeHours": "Configurar el horario del café",
     "closedToday": "El café está cerrado hoy según su horario",
-    "missingPieces": "Datos que faltan"
+    "missingPieces": "Datos que faltan",
+    "simulationOnly": "Son solo estimaciones. No se guarda ni cambia nada en tu cafetería hasta que realices los cambios."
   },
   "Onboarding": {
     "step1Title": "Conecta tu caja registradora",

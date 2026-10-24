@@ -34,7 +34,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const days = snapshot?.last28Days ?? [];
   const costs = snapshot ? summarizeResolvedSoldProductCosts(snapshot.breakEvenProductCosts ?? snapshot.menuItems) : null;
   const missing = [
-    ...(snapshot && days.length < 7 ? [{ key: "sales", text: money("breakEvenNeedSales"), action: money("uploadSales"), href: "/more/uploads/sales" }] : []),
+    ...(snapshot && (days.length < 7 || drinks?.unavailableReason === "missing_sales") ? [{ key: "sales", text: money("breakEvenNeedSales"), action: money("uploadSales"), href: "/more/uploads/sales" }] : []),
     ...(snapshot?.runningCostLines.filter(line => line.isMissing && line.isExpected).map(line => ({
       key: line.categoryCode, text: categories(line.categoryCode), action: isBillCategory(line.categoryCode) ? money("addBills") : common("addCost"), href: missingCostDestination(line.categoryCode),
     })) ?? []),
@@ -115,6 +115,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         observedProcessingFeesCents: sumCents(days, d => d.cardFeesCents),
         daysInMonth: snapshot.daysInMonth, payrollTaxRate: snapshot.business.payrollTaxRate,
       } : null} />
+      <p className="text-[17px] leading-snug text-ink-muted">{t("simulationOnly")}</p>
     </section>}
   </PageShell>;
 }

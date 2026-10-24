@@ -821,7 +821,8 @@
     "planWhatIf": "What if",
     "setCafeHours": "Set café hours",
     "closedToday": "Closed today according to your café hours",
-    "missingPieces": "What needs to be added"
+    "missingPieces": "What needs to be added",
+    "simulationOnly": "These are estimates only. Nothing is saved or changed in your café until you make the changes yourself."
   },
   "Onboarding": {
     "step1Title": "Connect your register",
