@@ -3,6 +3,7 @@ import {useEffect,useState} from "react";
 import {useLocale,useTranslations} from "next-intl";
 import {statusSchema} from "@/lib/pos/toast/statusSchema";
 import {subscribeToastConnectionChanges} from "./toastConnectionEvents";
+import {canStartToastImport,canRepullToastDay} from "./toastOwnerActionState";
 import type {z} from "zod";
 type Snapshot=z.infer<typeof statusSchema>;
 const dateShift=(d:string,days:number)=>new Date(Date.parse(d+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
@@ -91,7 +92,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    <input aria-label={t("ownerImportFrom")} className="min-h-12 w-full rounded-xl border border-line bg-card p-3"
     type="date" value={start} max={yesterday} onChange={e=>setStart(e.target.value)}/>
    {!data.importEnabled&&<p role="status" className="mt-2 text-warn">{t("ownerImportDisabled")}</p>}
-   <button disabled={busy||!data.importEnabled||!start||start>yesterday} onClick={()=>void backfill()}
+   <button disabled={!canStartToastImport(data.importEnabled,busy,start,yesterday)} onClick={()=>void backfill()}
     className="mt-3 min-h-12 w-full rounded-full bg-accent px-4 text-on-accent disabled:opacity-40">
     {t("ownerStartImport")}</button>
   </section>
@@ -142,7 +143,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <p className="text-warn">{t("ownerReviewReason")}: {row.reason==="owner_flag"?t("ownerReasonOwner"):row.reason==="mismatch"?t("ownerReasonMismatch"):
      row.reason==="analytics_timeout"?t("ownerReasonTimeout"):row.reason==="coverage_invalid"?t("ownerReasonCoverage"):t("ownerReasonOther")}</p>
     <div className="mt-2 flex flex-wrap gap-2">
-     <button disabled={busy||!data.importEnabled||row.date>yesterday||data.queuedRanges.some(range=>range.from<=row.date&&range.to>=row.date)} className="min-h-12 rounded-full border border-line px-4"
+     <button disabled={!canRepullToastDay(data.importEnabled,busy,row.date,yesterday,data.queuedRanges)} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date})}>{t("ownerRepull")}</button>
      <button disabled={busy} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/day-flag",{restaurantGuid:row.restaurantGuid,date:row.date,
