@@ -189,6 +189,9 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
  const maxTolerance=Number(process.env.TOAST_RECON_TOLERANCE_CENTS??5);
  const tolerance=Number.isInteger(maxTolerance)&&maxTolerance>=0&&maxTolerance<=100?
   maxTolerance:5;
+ const sourceIncomplete=status.unparsed_count>0||
+  ["missing_check_amount","missing_deferred_price","missing_refund_amount"].some(
+   k=>Number(status.warnings?.[k]??0)>0);
  const comparison=compareToastAnalytics({
   importedNetSalesCents:status.net_sales_cents,analyticsNetSalesCents:net,
   importedOrderCount:status.order_count,analyticsOrderCount:row.ordersCount,
@@ -198,7 +201,7 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   toleranceCents:tolerance
  });
  await writeReconciliation(db,p,day,{
-  recon_state:comparison.matched?"matched":"mismatch",recon_source:"toast_analytics",
+  recon_state:comparison.matched&&!sourceIncomplete?"matched":"mismatch",recon_source:"toast_analytics",
   analytics_state:"available",reconciled_at:new Date().toISOString(),
   toast_net_sales_cents:net,toast_orders_count:row.ordersCount,
   toast_discount_cents:discount,toast_refund_cents:refunds,
@@ -207,7 +210,8 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   delta_refund_cents:comparison.deltaRefundCents,
   delta_void_orders:comparison.deltaVoidOrders,
   void_amount_gap_cents:amountGap,
-  warnings:{...status.warnings,...(!comparison.matched?{reconciliation_mismatch:1}:{})}
+  warnings:{...status.warnings,...(!comparison.matched?{reconciliation_mismatch:1}:{}),
+   ...(sourceIncomplete?{source_incomplete:1}:{})}
  });
  const {error:save}=await db.from("toast_analytics_jobs").update({
   state:"available",checked_at:new Date().toISOString(),last_error_category:null
