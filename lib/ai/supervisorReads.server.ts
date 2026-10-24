@@ -43,7 +43,12 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
           blocked=new Set([...legacy].filter(date=>!imported.has(date)));
           for(const f of flags)if(f.status!=="imported")blocked.add(f.date);
           toastQuality=flags.filter(f=>f.needsLook).map(f=>"toastDayNeedsLook:"+f.date);
-        }catch {return missing("toastSalesVerificationUnavailable");}
+        }catch {
+          try {
+            blocked=await unverifiedToastSalesDates(client,id,period.from,period.to);
+            toastQuality=blocked.size?["toastSalesVerificationUnavailable"]:[];
+          }catch {return missing("toastSalesVerificationUnavailable");}
+        }
       }
       const days=(data??[]).filter(row=>row.sales_data_status==="actual"&&
         !blocked.has(row.business_date)).map(rowToDailyFacts);
