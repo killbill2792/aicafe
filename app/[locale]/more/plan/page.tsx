@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Coins, Users, Milk, CreditCard } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import BackHeader from "@/components/shared/BackHeader";
@@ -11,7 +11,7 @@ import { sumCents, summarizeResolvedSoldProductCosts } from "@/lib/calc";
 import { weekdayHourlyTarget } from "@/lib/calc/planGoals";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { getProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
-import { missingCostDestination } from "@/lib/expenses/expectedCosts";
+import { isBillCategory, missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { buildBreakEvenViewModel } from "@/lib/viewmodels/breakEvenViewModel";
 import { buildCostRecoveryViewModel } from "@/lib/viewmodels/moneyViewModel";
 
@@ -23,9 +23,9 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   await requireOwnBusiness();
   const { tab: queryTab } = await searchParams;
   const tab: PlanTab = TABS.includes(queryTab as PlanTab) ? queryTab as PlanTab : "break-even";
-  const [t, money, economics, common, locale] = await Promise.all([
+  const [t, money, economics, common, categories, locale] = await Promise.all([
     getTranslations("BreakEven"), getTranslations("Money"), getTranslations("Economics"),
-    getTranslations("Common"), getLocale(),
+    getTranslations("Common"), getTranslations("Categories"), getLocale(),
   ]);
   const snapshot = tab !== "profit-goal" ? await getSnapshot() : null;
   const recovery = snapshot ? buildCostRecoveryViewModel(snapshot) : null;
@@ -36,7 +36,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const missing = [
     ...(snapshot && days.length < 7 ? [{ key: "sales", text: money("breakEvenNeedSales"), action: money("uploadSales"), href: "/more/uploads/sales" }] : []),
     ...(snapshot?.runningCostLines.filter(line => line.isMissing && line.isExpected).map(line => ({
-      key: line.categoryCode, text: line.label, action: money("addBills"), href: missingCostDestination(line.categoryCode),
+      key: line.categoryCode, text: categories(line.categoryCode), action: isBillCategory(line.categoryCode) ? money("addBills") : common("addCost"), href: missingCostDestination(line.categoryCode),
     })) ?? []),
     ...(costs?.missingProductCosts ? [{ key: "products", text: money("breakEvenNeedProductCosts"), action: money("addProductCosts"), href: "/menu" }] : []),
     ...(days.some(day => day.cardFeesStatus === "missing") ? [{ key: "fees", text: money("breakEvenNeedProcessingFees"), action: money("fixFees"), href: "/more/processing-fees" }] : []),
@@ -58,10 +58,10 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         <h2 className="text-[17px] font-bold">{money("monthlyBreakEven")}</h2>
         <div className="mt-2 font-headline text-[36px] font-bold">{recovery.breakEven.kind === "ready" ? <Money cents={recovery.breakEven.breakEvenSalesCents} /> : "—"}</div>
         {recovery.breakEvenUsesEstimates && recovery.breakEven.kind === "ready" && <p className="text-[15px] text-ink-muted">{money("estimateLower")}</p>}
-        <p className="mt-2 text-[17px] text-ink-muted">{t("subtitle")}</p>
+        <p className="mt-2 text-[17px] text-ink-muted">{money("breakEvenSalesNeeded")}</p>
       </section>
       {recovery.breakEven.kind === "ready" && !drinks.unavailableReason && <section className="rounded-card-lg bg-card p-5">
-        <p className="text-[17px] font-semibold">{t("everyDay")}</p>
+        <p className="text-[17px] font-semibold">{t("subtitle")}</p>
         <div className="mt-2 font-headline text-[40px] font-bold text-staff">{numberFormat.format(drinks.drinksNeededPerDay)}</div>
         <p className="text-[17px] font-semibold">{t("drinksToCover")}</p>
         <p className="mt-2 text-[17px] text-ink-muted">{hourly.closed ? t("closedToday") : t("aboutPerHour", { count: numberFormat.format(hourly.perHour ?? 0) })}</p>
@@ -78,11 +78,13 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       {recovery.breakEven.kind === "ready" && !drinks.unavailableReason && <section className="rounded-card-lg bg-card p-5">
         <h2 className="mb-3 text-[17px] font-bold">{t("whereFrom")}</h2>
         {[
-          { label: t("rentBillsRow"), amount: drinks.runningPerDayCents, href: "/more/bills" },
-          { label: t("plannedStaffRow"), amount: drinks.avgDailyStaffCostCents, href: "/staff" },
-          { label: t("eachDrinkLeaves"), amount: drinks.avgMoneyLeftPerDrinkCents, href: "/menu" },
-        ].map(row => <Link key={row.href} href={row.href} className="flex min-h-12 items-center gap-2 border-b border-line py-3 text-[17px] text-ink no-underline last:border-0">
-          <span className="flex-1">{row.label}</span><span className="font-bold">{moneyFormat.format(row.amount / 100)}</span>
+          { label: t("rentBillsRow"), amount: recovery.breakEven.monthlyBillsCents, href: "/more/bills", Icon: Coins, tone: "bg-running text-on-chart-running" },
+          { label: t("plannedStaffRow"), amount: recovery.breakEven.monthlyStaffCents, href: "/staff", Icon: Users, tone: "bg-staff text-on-chart-staff" },
+          { label: money("ingredientsAtBreakEven"), amount: recovery.breakEven.ingredientCostsAtBreakEvenCents, href: "/menu", Icon: Milk, tone: "bg-surface text-ink" },
+          { label: money("processingFeesAtBreakEven"), amount: recovery.breakEven.processingFeesAtBreakEvenCents, href: "/more/processing-fees", Icon: CreditCard, tone: "bg-surface text-ink" },
+        ].map(({ label, amount, href, Icon, tone }) => <Link key={href} href={href} className="flex min-h-12 items-center gap-2 border-b border-line py-3 text-[17px] text-ink no-underline last:border-0">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon aria-hidden="true" size={20} /></span>
+          <span className="min-w-0 flex-1">{label}</span><span className="font-bold">{moneyFormat.format(amount / 100)}</span>
           <ArrowRight aria-hidden="true" size={18} className="shrink-0 rtl:rotate-180" />
         </Link>)}
       </section>}
