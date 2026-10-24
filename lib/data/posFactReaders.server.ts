@@ -62,7 +62,14 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
     for(const f of flags)if(f.status!=="imported")blocked.add(f.date);
     const quality=flags.filter(f=>f.needsLook).map(f=>"toastDayNeedsLook:"+f.date);
     return {blocked,quality};
-  }catch{return null;} // A failed status read must not silently certify Toast.
+  }catch{
+    // If the new status reader is temporarily unavailable, preserve non-Toast
+    // data using the legacy canonical Toast-day inventory as a conservative mask.
+    try {
+      const blocked=await unverifiedToastSalesDates(db,businessId,period.from,period.to);
+      return {blocked,quality:blocked.size?["toastSalesVerificationUnavailable"]:[]};
+    }catch{return null;}
+  }
  }
  return {
   async peakHours(period:CafeStatePeriod):Promise<KnownSlice<PeakHourFacts>>{
