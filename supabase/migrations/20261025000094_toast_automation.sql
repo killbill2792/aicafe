@@ -421,3 +421,106 @@ create table public.toast_job_directory(
 alter table public.toast_job_directory enable row level security;
 revoke all on public.toast_job_directory from public,anon,authenticated;
 grant select,insert,update,delete on public.toast_job_directory to service_role;
+
+-- A completed modified-date scan proves coverage for the business dates
+-- actually within its fully paged window. Unknown is never silently zero.
+create table public.toast_void_repull_coverage(
+ business_id uuid not null,restaurant_guid uuid not null,business_date date not null,
+ scanned_at timestamptz not null,last_window_end timestamptz not null,
+ primary key(business_id,restaurant_guid,business_date),
+ foreign key(business_id,restaurant_guid)
+ references public.toast_location_mappings(business_id,restaurant_guid));
+alter table public.toast_void_repull_coverage enable row level security;
+revoke all on public.toast_void_repull_coverage from public,anon,authenticated;
+grant select,insert,update,delete on public.toast_void_repull_coverage to service_role;
+
+create function public.toast_commit_repull_scan_window(
+ p_business_id uuid,p_restaurant_guid uuid,p_local_day date,p_days jsonb,
+ p_window_start timestamptz,p_window_end timestamptz)
+returns integer language plpgsql security definer set search_path=public as $window$
+declare inserted integer;d date;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if p_window_end<=p_window_start or
+  p_window_end-p_window_start>interval '30 days' or
+  jsonb_typeof(p_days)<>'array' then raise exception 'invalid scan window';end if;
+ -- The existing helper adds affected whole-day repulls and the scan marker.
+ inserted:=public.toast_commit_repull_scan(p_business_id,p_restaurant_guid,
+  p_local_day,p_days,p_window_end);
+ -- A proven modified-date window covers all days fully contained in it.
+ for d in select gs::date from generate_series(p_window_start::date,
+  p_window_end::date-1,'1 day'::interval) gs loop
+  if d<p_local_day then
+   insert into public.toast_void_repull_coverage(
+    business_id,restaurant_guid,business_date,scanned_at,last_window_end)
+   values(p_business_id,p_restaurant_guid,d,now(),p_window_end)
+   on conflict(business_id,restaurant_guid,business_date) do update
+    set scanned_at=excluded.scanned_at,last_window_end=excluded.last_window_end;
+  end if;
+ end loop;
+ return inserted;
+end $window$;
+revoke all on function public.toast_commit_repull_scan_window(
+ uuid,uuid,date,jsonb,timestamptz,timestamptz) from public,anon,authenticated;
+grant execute on function public.toast_commit_repull_scan_window(
+ uuid,uuid,date,jsonb,timestamptz,timestamptz) to service_role;
+
+-- Invalidate the EXACT void business date when a selection's void status,
+-- amount, origin or attribution changes (which may differ from order date).
+create function public.toast_invalidate_changed_void_day()
+returns trigger language plpgsql security definer set search_path=public as $invalidate$
+begin
+ if tg_op='DELETE' or tg_op='UPDATE' then
+  update public.daily_rollups set voids_status='unknown',voids_source=null
+   where business_id=old.business_id and business_date=old.void_business_date;
+ end if;
+ if tg_op='INSERT' or tg_op='UPDATE' then
+  update public.daily_rollups set voids_status='unknown',voids_source=null
+   where business_id=new.business_id and business_date=new.void_business_date;
+ end if;
+ return null;
+end $invalidate$;
+create trigger toast_void_amount_changed
+ after insert or delete or update of amount_cents,void_business_date,amount_basis,order_guid
+ on public.toast_void_facts for each row execute function public.toast_invalidate_changed_void_day();
+revoke all on function public.toast_invalidate_changed_void_day() from public,anon,authenticated;
+
+-- Certification is all-or-nothing across ALL applicable locations.
+create function public.toast_certify_day_voids(p_business_id uuid,p_date date)
+returns boolean language plpgsql security definer set search_path=public as $cert$
+declare eligible integer;complete_count integer;unknown_amounts integer;
+ v_total bigint;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ perform pg_advisory_xact_lock(hashtextextended(
+  'toast-void:'||p_business_id::text||':'||p_date::text,0));
+ select count(*),
+  count(*) filter(where s.import_state='imported'
+   and s.unparsed_count=0 and s.coverage_complete
+   and s.recon_state in ('matched','checked_internal')
+   and c.scanned_at is not null)
+ into eligible,complete_count
+ from public.toast_location_mappings m
+ left join public.toast_day_status s on s.business_id=m.business_id
+  and s.restaurant_guid=m.restaurant_guid and s.business_date=p_date
+ left join public.toast_void_repull_coverage c on c.business_id=m.business_id
+  and c.restaurant_guid=m.restaurant_guid and c.business_date=p_date
+ where m.business_id=p_business_id and m.verified_at is not null
+  and p_date>=coalesce(m.toast_start_date,p_date);
+ select count(*) into unknown_amounts from public.toast_void_facts
+  where business_id=p_business_id and void_business_date=p_date
+   and (amount_cents is null or amount_basis='amount_missing');
+ if eligible=0 or complete_count<>eligible or unknown_amounts>0 then
+  update public.daily_rollups set voids_status='unknown',voids_source=null
+   where business_id=p_business_id and business_date=p_date;
+  return false;
+ end if;
+ select coalesce(sum(amount_cents),0) into v_total
+ from public.toast_void_facts where business_id=p_business_id
+  and void_business_date=p_date;
+ update public.daily_rollups set voids_status='complete',voids_source='toast',
+  voids_cents=v_total where business_id=p_business_id and business_date=p_date;
+ return found;
+end $cert$;
+revoke all on function public.toast_certify_day_voids(uuid,date) from public,anon,authenticated;
+grant execute on function public.toast_certify_day_voids(uuid,date) to service_role;
