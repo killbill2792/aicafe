@@ -140,7 +140,9 @@
     "ownerAnalytics_clientId": "معرّف عميل التحليلات",
     "ownerAnalytics_clientSecret": "سر التحليلات",
     "ownerAnalyticsConnect": "ربط التحليلات",
-    "ownerAnalyticsDisconnect": "فصل التحليلات"
+    "ownerAnalyticsDisconnect": "فصل التحليلات",
+    "ownerRefreshStatus": "إعادة تحميل الحالة",
+    "ownerImportDisabled": "استيراد المبيعات غير مفعل بعد. يمكنك ربط Toast، لكن الاستيراد وإعادة جلب المبيعات غير متاحين حتى تفعيل الخدمة."
   },
   "LocaleLayout": {
     "title": "Café Profit"
