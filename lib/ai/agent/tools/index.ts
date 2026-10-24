@@ -10,7 +10,7 @@ import {draftScheduleTools} from "./draftSchedule";
 import {newItemPriceTools} from "./newItemPrice";
 import {proposalTools} from "./proposals";
 import {priceExperimentTools} from "./priceExperiment";
-import {ownerInputsSchema} from "./ownerInputs";
+import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
@@ -154,9 +154,18 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   const period=selection.period;
   if (name === "get_profit") {
     const slice = await ctx.tools.getProfitability(period);
-    if (!slice.available) return {...absent("profitability", period, slice.quality.missingInputs),coverageLabel:selection.label};
-    return { source: "profitability", period, coverageLabel:selection.label,agentId:"leo", missing: slice.quality.missingInputs,
-      estimated: slice.quality.estimatedInputs,
+    const ownerSales=ownerInputs?.netSalesCents!=null?
+      ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
+    if (!slice.available) return {source:"profitability",period,agentId:"leo",
+      coverageLabel:selection.label,unit:"cents",ownerInputs:ownerInputs??null,
+      netSalesCents:ownerSales,netSalesProvenance:ownerSales!==null?"ownerProvided":null,
+      totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
+      missing:[...slice.quality.missingInputs,...(ownerSales!==null?["costsUnverified"]:[])]};
+    const conflict=ownerConflict(slice.value.netSalesCents,ownerSales);
+    return { source: "profitability", period, coverageLabel:selection.label,agentId:"leo",
+      missing:[...slice.quality.missingInputs,...(conflict?["ownerValueConflict"]:[])],
+      ownerSalesConflict:conflict?{recordedCents:slice.value.netSalesCents,ownerCents:ownerSales}:null,
+      needsOwnerChoice:conflict,estimated: slice.quality.estimatedInputs,
       netSalesCents: slice.value.netSalesCents, totalCostsCents: slice.value.totalCostsCents, unit:"cents",ownerInputs,
       ownerProfitCents: slice.value.ownerProfitCents, operatingMargin: slice.value.operatingMargin,
       coveredSalesDays: slice.value.coveredSalesDays, expectedSalesDays: slice.value.expectedSalesDays };

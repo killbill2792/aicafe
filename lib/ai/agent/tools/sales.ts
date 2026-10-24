@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { requestedPeriod } from "./period";
 import type { AgentToolContext, AgentToolResult } from "./index";
-import {ownerInputsSchema} from "./ownerInputs";
+import {ownerInputsSchema,ownerConflict} from "./ownerInputs";
 import {resolveCoveredSalesWindow} from "./coverage";
 
 const period=z.strictObject({period:z.enum(["today","week","month"])});
@@ -27,10 +27,18 @@ export const salesTools={
       const {itemId,ownerInputs}=item.parse(raw);
       if(!ctx.tools.getPricingRecommendation)return {source:"pricing_engine",period:null,agentId:"alex",missing:["pricingReaderUnavailable"]};
       const s=await ctx.tools.getPricingRecommendation(itemId);
-      if(!s.available)return {source:"pricing_engine",period:null,agentId:"alex",missing:s.quality.missingInputs};
+      if(!s.available)return {source:"pricing_engine",period:null,agentId:"alex",
+        missing:s.quality.missingInputs,ownerProvidedUnitCostCents:ownerInputs?.unitCostCents??null,
+        ownerInputs:ownerInputs??null};
       const v=s.value;
+      const ownerCost=ownerInputs?.unitCostCents??null;
+      const costConflict=ownerConflict(v.productCostCents,ownerCost);
       return {source:"pricing_engine",period:null,agentId:"alex",
-        missing:[...new Set([...s.quality.missingInputs,...v.dataQuality.missingInputs])],
+        missing:[...new Set([...s.quality.missingInputs,...v.dataQuality.missingInputs,
+          ...(costConflict?["ownerValueConflict"]:[])])],
+        ownerProvidedUnitCostCents:ownerCost,
+        ownerCostConflict:costConflict?{recordedCents:v.productCostCents,ownerCents:ownerCost}:null,
+        needsOwnerChoice:costConflict,
         estimated:[...new Set([...s.quality.estimatedInputs,...v.dataQuality.estimatedInputs])],
         stale:[...new Set([...s.quality.staleInputs,...v.dataQuality.staleInputs])],
         itemId,unit:"cents",ownerInputs,status:v.status,confidence:v.confidence,mode:v.calculationMode,

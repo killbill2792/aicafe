@@ -6,6 +6,21 @@ import { executeAgentTool, agentToolDefinitions, type AgentToolContext, requeste
 const base = { source: "profitability", period: null, missing: [],
   ownerProfitCents: 12345, operatingMargin: 0.125, coveredSalesDays: 4 };
 describe("numbers, statuses, and strict tool contracts", () => {
+  it("keeps an owner's stated sales when recorded profitability is unavailable without inventing profit",async()=>{
+    const ctx:AgentToolContext={asOf:"2026-10-24",locale:"en",tools:{
+      getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}}),
+      getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["noProfitFacts"],estimatedInputs:[],staleInputs:[]}}),
+      getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+    }};
+    const ownerInputs={netSalesCents:1100000,salesPeriod:{from:"2026-10-01",to:"2026-10-22"},
+      laborCents:1500000,laborPeriod:{days:31},rentCents:null,otherOverheadCents:null,
+      overheadPeriod:null,unitCostCents:null,itemsSoldPerDay:null};
+    const result=await executeAgentTool("get_profit",{period:"month",ownerInputs},ctx);
+    expect(result).toMatchObject({netSalesProvenance:"ownerProvided",
+      netSalesCents:1200000,ownerProfitCents:null,totalCostsCents:null});
+    expect(result.missing).toContain("costsUnverified");
+  });
+
   it("verifies cents, percentages and plain numbers without erasing text", () => {
     expect(checkNumbers("Profit $123.45, 12.5% margin, 4 days", "", [base], "en")).toEqual([]);
     expect(checkNumbers("Profit $999.00", "", [base], "en")).toHaveLength(1);
