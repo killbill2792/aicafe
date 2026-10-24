@@ -5,6 +5,7 @@ import { RUNNING_COST_CODES } from "@/lib/constants";
 import { staleGeneratedAlertIds } from "./reconcile";
 import { formatInTimeZone } from "date-fns-tz";
 import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
+import { summarizeVoidsRollups } from "@/lib/calc/voidsReview";
 
 /**
  * Generates alert rows from real data (docs/05-calculations.md "Alert rules"). Only 3 of the 6
@@ -93,30 +94,45 @@ async function generateMissingBillAlerts(supabase: SupabaseClient, businessId: s
 async function generateVoidsAlert(supabase: SupabaseClient, businessId: string, timezone: string): Promise<number> {
   const today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
   const monthKey = today.slice(0, 7);
-  const monthStart = `${monthKey}-01`;
-  // The Alerts hub says "this month": retire previous-month open spikes instead
-  // of presenting their old numbers as if they described the current month.
-  await resolveStaleGeneratedAlerts(supabase, businessId, "voids", new Set([monthKey]));
-
-  const { data: thisMonthRollups } = await supabase.from("daily_rollups").select("voids_cents").eq("business_id", businessId).gte("business_date", monthStart).lte("business_date", today);
-  const voidsThisMonthCents = (thisMonthRollups ?? []).reduce((s, r) => s + r.voids_cents, 0);
-
   const [year, month] = monthKey.split("-").map(Number);
-  const threeMonthsAgo = new Date(year, month - 4, 1).toISOString().slice(0, 10);
-  const startOfThisMonth = monthStart;
-  const { data: priorRollups } = await supabase.from("daily_rollups").select("voids_cents").eq("business_id", businessId).gte("business_date", threeMonthsAgo).lt("business_date", startOfThisMonth);
-  const avgVoidsPrevious3MonthsCents = (priorRollups ?? []).reduce((s, r) => s + r.voids_cents, 0) / 3;
+  const threeMonthsAgo = new Date(Date.UTC(year, month - 4, 1)).toISOString().slice(0, 10);
 
-  if (!voidsAlert(voidsThisMonthCents, avgVoidsPrevious3MonthsCents)) return 0;
+  const { data, error } = await supabase.from("daily_rollups")
+    .select("business_date, voids_cents, sales_data_status")
+    .eq("business_id", businessId).gte("business_date", threeMonthsAgo)
+    .lte("business_date", today).order("business_date", { ascending: true });
+  // A failed read cannot prove a spike, and sales coverage never proves void coverage.
+  if (error || !data) return 0;
+  const summary = summarizeVoidsRollups(data.map(row => ({
+    business_date: row.business_date,
+    voids_cents: Number(row.voids_cents),
+    sales_data_status: row.sales_data_status,
+    // The persisted rollup has no void-specific provenance or completeness field.
+    // Even a successful connected-POS sales sync or CSV import cannot certify zero voids.
+    voidsCoverage: "unknown" as const,
+  })), monthKey, today);
+
+  const hasVerifiedComparison =
+    summary.thisMonthCents !== null && summary.previousThreeMonthAverageCents !== null;
+  const fires = hasVerifiedComparison &&
+    voidsAlert(summary.thisMonthCents!, summary.previousThreeMonthAverageCents!);
+
+  // Resolve stale prior-month alerts and current false positives from missing coverage.
+  // Owner-resolved/dismissed history stays immutable under resolveStaleGeneratedAlerts.
+  await resolveStaleGeneratedAlerts(supabase, businessId, "voids",
+    fires ? new Set([monthKey]) : new Set());
+  if (!fires) return 0;
 
   const dedupeKey = monthKey;
   if (await hasOpenAlert(supabase, businessId, "voids", dedupeKey, true)) return 0;
-
   await supabase.from("alerts").insert({
-    business_id: businessId,
-    kind: "voids",
-    impact_cents: voidsThisMonthCents,
-    payload: { dedupeKey, monthKey, voidsThisMonthCents, avgVoidsPrevious3MonthsCents },
+    business_id: businessId, kind: "voids",
+    impact_cents: summary.thisMonthCents,
+    payload: {
+      dedupeKey, monthKey,
+      voidsThisMonthCents: summary.thisMonthCents,
+      avgVoidsPrevious3MonthsCents: summary.previousThreeMonthAverageCents,
+    },
   });
   return 1;
 }
