@@ -807,7 +807,10 @@
     "sourceImported": "Fichaje importado",
     "sourceAiCafe": "Fichaje de AI Cafe",
     "offToday": "Sin horas registradas hoy",
-    "now": "Ahora"
+    "now": "Ahora",
+    "payrollCostsSummary": "Costos del empleador: {percent}% sobre el salario (respaldo)",
+    "payrollCostsEdit": "Editar en Reglas y costos",
+    "payrollSaveFailed": "No se pudieron guardar los costos del empleador. Inténtalo de nuevo."
   },
   "More": {
     "toastConnect": "Conectar Toast",
@@ -920,7 +923,9 @@
     "errorGeneric": "Algo salió mal. Inténtalo de nuevo.",
     "error_square_not_configured": "Square aún no está conectado en este entorno.",
     "error_invalid_state": "Ese enlace de conexión expiró. Inténtalo de nuevo.",
-    "error_connection_failed": "No se pudo conectar con Square. Inténtalo de nuevo."
+    "error_connection_failed": "No se pudo conectar con Square. Inténtalo de nuevo.",
+    "payrollTaxInvalid": "Introduce un porcentaje del 0% al 100%.",
+    "payrollTaxSaveFailed": "No se pudieron guardar los costos del empleador. Inténtalo de nuevo."
   },
   "Uploads": {
     "title": "Archivos subidos",
@@ -2856,7 +2861,7 @@
     "restEvery": "Descanso cada (min)",
     "weeklyOvertime": "Horas extra semanales",
     "weeklyAfter": "Semanal después de (min)",
-    "multiplier": "Multiplicador de extras (puntos base)",
+    "multiplier": "Pago de horas extra",
     "dailyOvertime": "Horas extra diarias",
     "dailyAfter": "Diario después de (min)",
     "shifts": "Turnos",
@@ -2932,7 +2937,31 @@
     "prepAfterClose": "Limpieza después del cierre (minutos)",
     "deliveryConsent": "El empleado aceptó recibir horarios por WhatsApp",
     "deliveryConsentError": "No se pudo guardar el consentimiento para WhatsApp.",
-    "deliveryConsentAfterCreate": "La aceptación de WhatsApp está desactivada por defecto. Después de añadir a esta persona, abre su perfil para registrar su consentimiento."
+    "deliveryConsentAfterCreate": "La aceptación de WhatsApp está desactivada por defecto. Después de añadir a esta persona, abre su perfil para registrar su consentimiento.",
+    "rulesAndCosts": "Reglas y costos",
+    "mealSentence": "Descanso para comer:",
+    "restSentence": "Descanso pagado:",
+    "weeklySentence": "Horas extra semanales después de",
+    "dailySentence": "Horas extra diarias después de",
+    "longestSentence": "Turno más largo",
+    "shortestSentence": "Turno más corto",
+    "betweenSentence": "Descanso entre turnos",
+    "afterOrEvery": "después de / cada",
+    "overtimePays": "Las horas extra se pagan a",
+    "customMultiplier": "Personalizado",
+    "invalidMultiplier": "Introduce un multiplicador de 1 a 5 (hasta cuatro decimales).",
+    "atLeast": "Al menos",
+    "whileOpen": "persona(s) mientras esté abierto",
+    "prepTiming": "Apertura y cierre",
+    "invalidNumber": "Introduce una cantidad válida dentro de los límites.",
+    "rulesSummary": "Comida después de {mealHours} h {mealMinutes} min · Extras semanales después de {otHours} h {otMinutes} min",
+    "after": "después de",
+    "every": "cada",
+    "applyRule": "Aplicar regla",
+    "hoursUnit": "h",
+    "minutesUnit": "min",
+    "hoursInput": "horas",
+    "minutesInput": "minutos"
   },
   "FreeAccess": {
     "pricing": "Planes y precios",

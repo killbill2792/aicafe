@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { savePayrollCostAssumption } from "@/lib/actions/payrollCosts";
+import { employerCostPercentFromInput } from "@/lib/calc/scheduling/ruleInputValues";
+import {useLocale} from "next-intl";
 import type { PayrollCostSettings } from "@/lib/data/getPayrollCostSettings";
 
 function sourceLabel(source: string, labels: { owner: string; estimate: string; quickbooks: string; imported: string; connected: string }) {
@@ -18,8 +20,10 @@ function sourceLabel(source: string, labels: { owner: string; estimate: string; 
 export default function PayrollCostCard({
   settings,
   labels,
+  readOnly=false,
 }: {
   settings: PayrollCostSettings;
+  readOnly?: boolean;
   labels: {
     title: string;
     body: string;
@@ -37,15 +41,15 @@ export default function PayrollCostCard({
     saving: string;
     saved: string;
     invalid: string;
+    saveFailed: string;
   };
 }) {
   const router = useRouter();
-  const [value, setValue] = useState(String(Math.round(settings.employerCostRate * 10_000) / 100));
+  const locale = useLocale();
+  const [value, setValue] = useState(new Intl.NumberFormat(locale,{useGrouping:false,maximumFractionDigits:4}).format(settings.employerCostRate * 100));
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const number = value.trim() === "" ? Number.NaN : Number(value);
-  const valid = Number.isFinite(number) && number >= 0 && number <= 100;
   const sourceLabels = {
     owner: labels.ownerSource,
     estimate: labels.estimateSource,
@@ -57,18 +61,22 @@ export default function PayrollCostCard({
   function save() {
     setMessage(null);
     setError(null);
-    if (!valid) {
+    if (readOnly) return;
+    const rate = employerCostPercentFromInput(value);
+    if (rate === null) {
       setError(labels.invalid);
       return;
     }
     startTransition(async () => {
-      const result = await savePayrollCostAssumption({ employerCostPercent: number });
+      try {
+      const result = await savePayrollCostAssumption({ employerCostPercent: rate });
       if (!result.ok) {
-        setError(result.error);
+        setError(labels.saveFailed);
         return;
       }
       setMessage(labels.saved);
       router.refresh();
+      } catch { setError(labels.saveFailed); }
     });
   }
 
@@ -92,14 +100,13 @@ export default function PayrollCostCard({
         {labels.field}
         <div className="flex items-center gap-2">
           <input
-            type="number"
-            min={0}
-            max={100}
-            step="0.1"
+            type="text"
             inputMode="decimal"
             value={value}
-            onChange={(event) => setValue(event.target.value)}
-            className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
+            disabled={readOnly}
+            onChange={(event) => {setValue(event.target.value);setError(null);}}
+            aria-invalid={!!error}
+            className={`min-h-12 min-w-0 flex-1 rounded-xl border px-3 text-base ${error?"border-neg":"border-line"}`}
           />
           <span className="font-bold text-ink-muted">%</span>
         </div>
@@ -120,7 +127,7 @@ export default function PayrollCostCard({
       <button
         type="button"
         onClick={save}
-        disabled={isPending || !valid}
+        disabled={isPending || readOnly}
         className="min-h-12 self-start rounded-full bg-accent px-5 text-sm font-bold text-on-accent disabled:opacity-40"
       >
         {isPending ? labels.saving : labels.save}

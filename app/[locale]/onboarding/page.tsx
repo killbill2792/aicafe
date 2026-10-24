@@ -93,7 +93,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         </>
       )}
 
-      {step === 3 && <PayrollTaxForm initialPercent={await getPayrollTaxPercent()} labels={{ label: t("payrollTaxLabel"), hint: t("payrollTaxHint"), continueLabel: t("continue") }} />}
+      {step === 3 && <PayrollTaxForm initialPercent={await getPayrollTaxPercent()} labels={{ label: t("payrollTaxLabel"), hint: t("payrollTaxHint"), continueLabel: t("continue"), invalid: t("payrollTaxInvalid"), saveFailed: t("payrollTaxSaveFailed") }} />}
 
       {step === 4 && (
         <div className="flex flex-col gap-4 rounded-card-lg bg-card p-5">
