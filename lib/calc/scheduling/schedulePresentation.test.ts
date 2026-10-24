@@ -24,7 +24,7 @@ describe("dated availability and roster presentation",()=>{
   const monday=[rule("00:00","12:00"),rule("12:00","00:00")];
   const tuesday=monday.map(w=>({...w,day_of_week:2}));
   const both={...person,availableDays:[1,2]};
-  expect(availabilityStatus(person,"2026-10-26","23:59","00:00",[],monday))
+  expect(availabilityStatus(person,"2026-10-26","23:59","00:01",[],monday))
    .toBe("unavailable");
   expect(availabilityStatus(both,"2026-10-26","23:59","00:00",[],[...monday,...tuesday]))
    .toBe("free");

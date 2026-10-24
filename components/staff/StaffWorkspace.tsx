@@ -293,7 +293,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       </div>}
       <div className="mt-4"><h3 className="font-bold">{t("usuallyAvailable")}</h3>
        <p className="text-sm text-muted">{t("availabilityHelp")}</p>
-        {complexAvailability&&<p role="status" className="mt-2 text-[17px] text-warn-text">{t("multipleAvailabilityHelp")}</p>
+        {complexAvailability&&<p role="status" className="mt-2 text-[17px] text-warn-text">{t("multipleAvailabilityHelp")}</p>}
        {[0,1,2,3,4,5,6].map(day=>{const label=new Intl.DateTimeFormat(locale,{weekday:"short",timeZone:"UTC"}).format(new Date(Date.UTC(2026,9,25+day)));
         const row=availability.find(d=>d.day===day);
         return <div key={day} className="border-b border-line py-2">
