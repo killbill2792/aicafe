@@ -27,13 +27,16 @@ function shouldResume(r:Run,now:number){
  return ["queued","running","paused_rate_limited"].includes(r.state)&&
   (!r.resume_at||Date.parse(r.resume_at)<=now);
 }
-async function runDue(db:SupabaseClient,m:Mapping,run:Run,deadlineAt:number){
+async function runDue(db:SupabaseClient,m:Mapping,run:Run,deadlineAt:number,
+ maxHistoricalDays=5,beforeHistorical?:()=>Promise<void>){
  let completed=0;
- const maxDays=run.kind==="backfill"?5:1;
+ const maxDays=run.kind==="backfill"?maxHistoricalDays:1;
  for(let count=0;count<maxDays;count++){
   mustFinish(deadlineAt);
   const day=deriveNextRunDay(run);
   if(!day||run.days_total>0&&run.days_done>=run.days_total)break;
+  if(["backfill","repull_modified"].includes(run.kind))await beforeHistorical?.();
+  mustFinish(deadlineAt);
   try {
    await importToastBusinessDay(db,{businessId:m.business_id,
     locationId:m.location_id,restaurantGuid:m.restaurant_guid,businessDate:day,
@@ -51,12 +54,7 @@ async function runDue(db:SupabaseClient,m:Mapping,run:Run,deadlineAt:number){
   if(error||!updated)throw new ToastApiError("unavailable");
   run=updated as Run;
   if(run.state==="completed"||run.state==="failed")break;
-  if(run.kind==="backfill"&&count+1<maxDays){
-   // Leave a 5s gap between completed historical business-day pulls.
-   const remaining=deadlineAt-Date.now();
-   if(remaining<=5000)break;
-   await new Promise(resolve=>setTimeout(resolve,5000));
-  }
+
  }
  return completed;
 }
@@ -157,6 +155,19 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
   if(leaseError){errors++;continue;}
   if(!nonce)continue;
   acquired++;
+  // The five-day cap and 5s pacing apply across ALL backfill runs for this
+  // restaurant, not independently to every overlapping backfill run.
+  let backfillDone=0;
+  let lastHistoricalPullAt:number|null=null;
+  const paceHistorical=async()=>{
+   if(lastHistoricalPullAt!==null){
+    const pauseMs=Math.max(0,5000-(Date.now()-lastHistoricalPullAt));
+    if(pauseMs>0&&Date.now()+pauseMs>=deadlineAt)throw new ToastApiError("timeout");
+    if(pauseMs>0)await new Promise(resolve=>setTimeout(resolve,pauseMs));
+   }
+   mustFinish(deadlineAt);
+   lastHistoricalPullAt=Date.now();
+  };
   const isolated=async(name:string,fn:()=>Promise<void>)=>{
    if(Date.now()>=deadlineAt)return;
    try{await fn();}
@@ -195,7 +206,11 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    const resumes=((pending??[]) as Run[]).filter(r=>shouldResume(r,Date.now()));
    for(const run of resumes.filter(r=>r.state!=="queued")){
     if(Date.now()>=deadlineAt)break;
-    processed+=await runDue(db,m,run,deadlineAt);
+    if(run.kind==="backfill"&&backfillDone>=5)continue;
+    const done=await runDue(db,m,run,deadlineAt,
+      run.kind==="backfill"?5-backfillDone:5,paceHistorical);
+    processed+=done;
+    if(run.kind==="backfill")backfillDone+=done;
    }
    });
    await isolated("daily",async()=>{
@@ -208,7 +223,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
      .eq("kind","daily").eq("requested_from",closed).maybeSingle();
     if(dailyErr)throw new ToastApiError("unavailable");
     if(daily&&shouldResume(daily as Run,Date.now()))
-     processed+=await runDue(db,m,daily as Run,deadlineAt);
+     processed+=await runDue(db,m,daily as Run,deadlineAt,5,paceHistorical);
    }
    });
    await isolated("modified_scan",async()=>{
@@ -223,7 +238,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     if(rePullErr)throw new ToastApiError("unavailable");
     for(const run of (rePull??[]) as Run[]){
      if(Date.now()>=deadlineAt)break;
-     processed+=await runDue(db,m,run,deadlineAt);
+     processed+=await runDue(db,m,run,deadlineAt,5,paceHistorical);
     }
    }
    });
@@ -247,7 +262,11 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    });
    for(const run of sorted){
     if(Date.now()>=deadlineAt)break;
-    processed+=await runDue(db,m,run,deadlineAt);
+    if(run.kind==="backfill"&&backfillDone>=5)continue;
+    const done=await runDue(db,m,run,deadlineAt,
+      run.kind==="backfill"?5-backfillDone:5,paceHistorical);
+    processed+=done;
+    if(run.kind==="backfill")backfillDone+=done;
    }
    });
    await isolated("optional",async()=>{
