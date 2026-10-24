@@ -1150,8 +1150,10 @@
     "allPricesExplanation": "Preset: raises every menu item's selling price by 25¢; no prices are saved.",
     "milkExplanation": "Preset: a $1/gallon milk increase, assuming 150 mL of milk in every drink.",
     "staffUnknown": "Add staff costs before estimating a change in staff hours.",
-    "coverageAssumption": "Estimated using {salesDays} recorded sales days and {openDays} scheduled open days this month.",
-    "hoursNotSetAssumption": "Some café hours are not set. This estimate assumes those days are open; set café hours to make the month more accurate."
+    "coverageAssumption": "Estimated using {salesDays} recorded operating days and {openDays} scheduled open days this month.",
+    "hoursNotSetAssumption": "Some café hours are not set. This estimate assumes those days are open; set café hours to make the month more accurate.",
+    "uncoveredSalesDates": "Some open days in this sales period have no confirmed sales data. Complete the missing dates before estimating changes.",
+    "uploadSales": "Upload sales"
   },
   "Reconnect": {
     "banner": "We couldn't get today's sales from your register. Tap to reconnect.",

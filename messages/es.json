@@ -1150,8 +1150,10 @@
     "allPricesExplanation": "Opción: aumenta 25 centavos el precio de cada producto del menú; no se guardan precios.",
     "milkExplanation": "Opción: la leche sube $1 por galón, suponiendo 150 ml de leche por bebida.",
     "staffUnknown": "Agrega los costos de personal antes de estimar el efecto de cambiar sus horas.",
-    "coverageAssumption": "Estimación con {salesDays} días de ventas registradas y {openDays} días de apertura previstos este mes.",
-    "hoursNotSetAssumption": "Falta configurar parte del horario. Se supone que el café abre esos días; completa el horario para mejorar el cálculo."
+    "coverageAssumption": "Estimación basada en {salesDays} días de apertura con ventas registradas y {openDays} días de apertura previstos este mes.",
+    "hoursNotSetAssumption": "Falta configurar parte del horario. Se supone que el café abre esos días; completa el horario para mejorar el cálculo.",
+    "uncoveredSalesDates": "Faltan datos confirmados de ventas de algunos días de apertura del período. Completa las fechas que faltan antes de estimar cambios.",
+    "uploadSales": "Subir ventas"
   },
   "Reconnect": {
     "banner": "No pudimos obtener las ventas de hoy de tu caja registradora. Toca para reconectar.",

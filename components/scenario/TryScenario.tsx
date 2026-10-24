@@ -1,11 +1,13 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 import { simulatePlanChange, type PlanScenarioBase, type PlanScenarioItem } from "@/lib/calc/planGoals";
 
 const WAGE_CENTS = 1950;
-export default function TryScenario({ items, base, hoursComplete = true }: {
-  items: PlanScenarioItem[]; base: PlanScenarioBase | null; hoursComplete?: boolean;
+export default function TryScenario({ items, base, hoursComplete = true, salesCoverageGaps = false }: {
+  items: PlanScenarioItem[]; base: PlanScenarioBase | null;
+  hoursComplete?: boolean; salesCoverageGaps?: boolean;
 }) {
   const t = useTranslations("Scenario");
   const locale = useLocale();
@@ -75,7 +77,13 @@ export default function TryScenario({ items, base, hoursComplete = true }: {
       <button type="button" onClick={() => preset("staff", 0)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetStaff")}</button>
       <button type="button" onClick={() => preset("ingredient", 100)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetMilk")}</button>
     </div>
-    {kind === "staff" && base && base.monthlyStaffCents <= 0 ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("staffUnknown")}</p> :
+    {salesCoverageGaps ? <div className="rounded-xl bg-surface p-4 text-[17px]">
+      <p>{t("uncoveredSalesDates")}</p>
+      <Link href="/more/uploads/sales" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
+        {t("uploadSales")}
+      </Link>
+    </div> :
+    kind === "staff" && base && base.monthlyStaffCents <= 0 ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("staffUnknown")}</p> :
     !base ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p> :
       kind !== "staff" && !presetKind && (!picked || picked.costStatus !== "READY" || picked.quantitySoldLast28Days <= 0) ?
         <p className="rounded-xl bg-surface p-4 text-[17px]">{t("noItemSales")}</p> :
