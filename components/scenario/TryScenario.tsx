@@ -10,10 +10,9 @@ export default function TryScenario({ items, base }: { items: PlanScenarioItem[]
   const [kind, setKind] = useState<"price" | "ingredient" | "staff">("price");
   const [id, setId] = useState(items.find(item => item.costStatus === "READY" && item.quantitySoldLast28Days > 0)?.id ?? "");
   const picked = items.find(item => item.id === id) ?? null;
-  const [value, setValue] = useState("0");
-  const [staffHours, setStaffHours] = useState("3");
+  const [value, setValue] = useState(() => String((items.find(item => item.costStatus === "READY" && item.quantitySoldLast28Days > 0)?.priceCents ?? 0) / 100));
+  const [staffHours, setStaffHours] = useState("0");
   const money = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
-  const digits = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
   const invalid = !Number.isFinite(Number(value)) || value.trim() === "" || Number(value) < 0 || Number(value) > 100000;
   const result = useMemo(() => base && !invalid ? simulatePlanChange({
     base, type: kind, item: picked,
@@ -34,7 +33,7 @@ export default function TryScenario({ items, base }: { items: PlanScenarioItem[]
   function preset(type: "price" | "ingredient" | "staff", deltaCents: number) {
     pickType(type);
     if (type === "staff") setStaffHours("3");
-    else setValue(((type === "price" ? picked?.priceCents : picked?.ingredientsCentsToday) ?? 0) / 100 + deltaCents / 100 + "");
+    else setValue(String((((type === "price" ? picked?.priceCents : picked?.ingredientsCentsToday) ?? 0) + deltaCents) / 100));
   }
 
   return <div className="flex flex-col gap-4">
