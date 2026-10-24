@@ -5,7 +5,8 @@ import { sumCents } from "@/lib/calc/money";
 
 export type MenuPrice = {id:string;name:string;priceCents:number};
 export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean};
-export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"}>;
+export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count";
+  provenance?:"estimate";detail?:"breakEvenSales"|"salesGap"|"dailyOverhead"}>;
   times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[];
   invalidatedKeys?:string[];invalidatedPriceIds?:string[];
   priceUpdates?:Array<{id:string;priceCents:number}>};
@@ -135,6 +136,27 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       values.push({key:valueKey,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
     };
     walk(r,"",0,rootScope);
+    // A computed amount must remain an estimate in evidence saved for later
+    // conversational turns. Match both the trusted comparison and its declared
+    // numberEstimates metadata; never mark unrelated numerically equal values.
+    if(r.source==="break_even"&&r.ownerComparison&&
+      typeof r.ownerComparison==="object"&&!Array.isArray(r.ownerComparison)&&
+      Array.isArray(r.numberEstimates)){
+      const comparison=r.ownerComparison as Record<string,unknown>;
+      for(const [key,detail] of [
+        ["dailyBreakEvenSalesCents","breakEvenSales"],
+        ["dailyShortfallCents","salesGap"],
+        ["dailyFixedCostsCents","dailyOverhead"],
+      ] as const){
+        const amount=comparison[key];
+        if(typeof amount!=="number"||!Number.isSafeInteger(amount)||
+          !r.numberEstimates.some(item=>item&&typeof item==="object"&&
+            item.unit==="cents"&&item.value===amount&&item.detail===detail))continue;
+        const observed=values.find(v=>v.key===periodKey+rootScope+key&&
+          v.unit==="cents"&&v.value===amount);
+        if(observed){observed.provenance="estimate";observed.detail=detail;}
+      }
+    }
     appendInitiativeNumericEvidence(r,values,invalidatedKeys);
     const times=[...observedHours([r]),...observedShifts([r])].slice(0,60);
     let timeScope:TimeScope|undefined;
@@ -325,8 +347,16 @@ const monthDayBefore = new RegExp(months + "[\\s]+[٠-٩۰-۹\\d]{1,2}[,\\s]*$",
 const monthAfter = new RegExp("^\\s*(?:de\\s+)?" + months + "(?!\\p{L})", "iu");
 const yearBefore = /(?:^|[\s(])(?:in|en|del|año|year|fy|q[1-4]|عام|سنة)\s*$/iu;
 const isoDate = /[٠-٩۰-۹\d]{4}[-/][٠-٩۰-۹\d]{1,2}[-/][٠-٩۰-۹\d]{1,2}/gu;
+const monthDayRange=new RegExp(
+  months+"\\s+[٠-٩۰-۹\\d]{1,2}\\s*[-–—]\\s*[٠-٩۰-۹\\d]{1,2}|"+
+  "[٠-٩۰-۹\\d]{1,2}\\s*[-–—]\\s*[٠-٩۰-۹\\d]{1,2}\\s*(?:de\\s+)?"+months,"giu");
+
 function isCalendarNumber(text: string, start: number, end: number, value: number, kind: Kind): boolean {
   if (kind !== "number" || !Number.isInteger(value)) return false;
+  // Month/day ranges are calendar references, including the second
+  // endpoint in "Oct 1-22" and signed tokens such as "-22".
+  if([...text.matchAll(monthDayRange)].some(m=>
+    start<m.index+m[0].length&&end>m.index))return true;
   // An ISO/slash date contains several numeric tokens; exempt all of them.
   if ([...text.matchAll(isoDate)].some(match =>
     start < match.index + match[0].length && end > match.index)) return true;
@@ -386,7 +416,10 @@ function isCurrencylessMoneyClaim(text: string, start: number, end: number): boo
   if (/^\s*(?:(?:more|fewer)\s+)?(?:drinks?|orders?|people|staff|employees?|items?|cups?|units?|hours?|days?|coffees?|customers?|shifts?|servings?|tickets?|ounces?|oz|grams?|kg|liters?|litres?|lattes?|mochas?)\b/iu.test(after) ||
     /\b(?:sold|served|ordered|count|quantity|number of|staff|employees?|customers?|shifts?)\b[^.!?;,\n]*$/iu.test(before)) return false;
   const moneyWords = /\b(?:profit|loss|revenues?|sales|prices?|costs?|charges?|rents?|bills?|fees?|salar(?:y|ies)|wages?|payroll|expenses?|income|cash|budget|amount|balance|latte|mocha|espresso|cappuccino|americano|tea|coffee|sandwich|croissant|muffin|brownie|beneficio|ganancia|ingresos|precio|costo|coste|alquiler|gastos?)\b|(?:الربح|الإيرادات|الايرادات|السعر|التكلفة|الإيجار)/iu;
-  return moneyWords.test(before) || /^\s*(?:in\s+)?(?:profit|revenue|sales|costs?|expenses?|income|cash|rent|wages?|payroll|ganancia|beneficio|ingresos)\b/iu.test(after);
+  const amountFirstEstimate=/^\s*(?:(?:is|are|was|were|equals?|represents?)\s+(?:(?:your|the|our|estimated|daily)\s+)?|(?:es|son|equivale a)\s+(?:(?:tu|tus|el|la|los|las)\s+)?|(?:هو|هي|يمثل|تمثل)\s+)?(?:break[ -]?even|breakeven|shortfall|overhead|fixed costs?|daily costs?|sales gap|punto de equilibrio|ventas de equilibrio|gastos? fijos?|costos? fijos?|نقطة التعادل|التعادل|التكاليف الثابتة|المصاريف الثابتة)/iu;
+  return moneyWords.test(before) ||
+    /^\s*(?:in\s+)?(?:profit|revenue|sales|costs?|expenses?|income|cash|rent|wages?|payroll|ganancia|beneficio|ingresos)\b/iu.test(after)||
+    amountFirstEstimate.test(after);
 }
 
 /** Known configured hours remain evidence for their own weekday even when
@@ -1010,6 +1043,9 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
   for(const spoken of spokenOwnerValues(ownerText,locale))allowed[spoken.kind].add(spoken.value);
+  // Only reconciled, typed numeric evidence authorizes an amount.
+  // Re-adding raw current-turn estimates here would resurrect a prior result
+  // that a later tool result explicitly invalidated in this same turn.
   // Assistant prose is NEVER numeric evidence, even if it had no unverified
   // chips. Clock formatting and list markers can pass without a source.
   // Only owner statements and typed tool evidence can authorize a claim.
@@ -1126,4 +1162,104 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     return true;
   })
     .map(({ text: token, start, end, kind }) => ({ text: token, start, end, kind }));
+}
+
+/** The numeric value is not the metric identity. Only attach an estimate
+ * explanation when its clause explicitly identifies that business metric.
+ * Return null for named items or ambiguous prose, never invent attribution. */
+function estimateClaimMetric(text:string,start:number,end:number):"breakEvenSales"|"salesGap"|"dailyOverhead"|null {
+  const before=text.slice(Math.max(0,start-160),start);
+  const prior=before.split(/(?:[!?;,]\s*|\.(?!\d)\s+|\n)/u).at(-1)??"";
+  const after=text.slice(end,end+120).split(/(?:[!?;,\n]|\.(?!\d))/u)[0]??"";
+  const metrics=[
+    {detail:"dailyOverhead",pattern:/\b(?:overhead|fixed[ -]costs?|daily[ -]costs?|operating costs?)\b|(?:costos? fijos?|gastos? fijos?|costes? fijos?|مصروفات ثابتة|تكاليف ثابتة|التكاليف الثابتة|المصاريف الثابتة)/giu},
+    {detail:"salesGap",pattern:/\b(?:shortfall|deficit|sales gap|gap|difference from|below target)\b|(?:brecha|déficit|diferencia|faltante|الفجوة|العجز|الفرق)/giu},
+    {detail:"breakEvenSales",pattern:/\b(?:break[ -]?even|breakeven)\b|(?:punto de equilibrio|ventas de equilibrio|نقطة التعادل|التعادل)/giu},
+  ] as const;
+  // Choose the closest named metric, not the first kind mentioned in the
+  // clause. Two independent amounts can be joined by "and" without a comma.
+  const nearest=(clause:string,side:"before"|"after")=>{
+    let best:{detail:(typeof metrics)[number]["detail"];distance:number}|null=null;
+    for(const metric of metrics){
+      for(const match of clause.matchAll(metric.pattern)){
+        const distance=side==="before"
+          ?clause.length-(match.index+match[0].length):match.index;
+        if(!best||distance<best.distance)best={detail:metric.detail,distance};
+      }
+    }
+    return best?.detail??null;
+  };
+  // For amount-first claims ("$129.88 is your break-even"), the immediately
+  // following predicate is stronger evidence than a preceding unrelated KPI.
+  const amountFirst=/^\s*(?:(?:is|are|was|were|equals?|represents?|means?)\b|(?:es|son|equivale a)\b|(?:هو|هي|يمثل|تمثل))\s+/iu.test(after);
+  return (amountFirst?nearest(after,"after"):null)??nearest(prior,"before");
+}
+
+export type NumberProvenance = UnverifiedNumber & {source:"owner"|"estimate"|"unchecked";detail?:string};
+/** Original UTF-16 offsets; existing checker remains the sole authority for unsupported claims. */
+export function numberProvenance(text:string,ownerText:string,results:readonly AgentToolResult[],
+  locale:AgentLocale,previousEvidence:readonly NumericEvidence[]=[],
+  verifiedVerdict?:readonly UnverifiedNumber[]):NumberProvenance[]{
+ const supplied=candidates(ownerText,locale),spoken=spokenOwnerValues(ownerText,locale);
+ // Saved numeric observations carry estimate origin and detail through turns.
+ // Reconcile first so stale amounts cannot inherit labels after fresh reads.
+ const estimates=reconcileSavedEvidence([...previousEvidence,...compactEvidence(results,Infinity)])
+  .flatMap(entry=>entry.values)
+  .filter((v):v is typeof v & {provenance:"estimate";detail:"breakEvenSales"|"salesGap"|"dailyOverhead"}=>
+    v.provenance==="estimate"&&
+    (v.detail==="breakEvenSales"||v.detail==="salesGap"||v.detail==="dailyOverhead"));
+
+ // The numeric verifier owns EVERY reject/allow decision. Projection below
+ // may decorate supported facts, but it may not suppress unsupported claims.
+ const rejected=verifiedVerdict??checkNumbers(text,ownerText,results,locale,previousEvidence);
+ const rejectedBySpan=new Map(rejected.map(v=>[v.start+":"+v.end,v]));
+ const clocks=[...text.matchAll(clockPattern)];
+ const evidence=reconcileSavedEvidence([...previousEvidence,...compactEvidence(results,Infinity)]);
+ const menuPrices=evidence.flatMap(entry=>entry.prices??[]);
+ const annotated:NumberProvenance[]=[];
+ const withUnit=(v:{text:string;start:number;end:number;kind:Kind})=>{
+   // Treat number + day unit as a single footnote phrase. Validate on the
+   // ORIGINAL numeric span before extending the display span.
+   if(v.kind!=="number")return v;
+   const tail=/^([ \t\u00a0\u202f]*(?:days?|días?|أيام|ايام|weeks?|semanas?|أسابيع|اسابيع))(?!\p{L})/iu.exec(text.slice(v.end));
+   const end=tail?v.end+tail[1].length:v.end;
+   return {...v,end,text:text.slice(v.start,end)};
+ };
+ for(const v of candidates(text,locale)){
+   const key=v.start+":"+v.end;
+   const unsupportedClaim=rejectedBySpan.has(key);
+   if(unsupportedClaim){
+     // Protect rejected day counts, business hours, and item/date mismatches
+     // BEFORE the UI's optional cosmetic exemptions.
+     annotated.push({...withUnit(v),source:"unchecked"});
+     continue;
+   }
+   if(clocks.some(m=>v.start<m.index+m[0].length&&v.end>m.index))continue;
+   if(v.kind==="number"&&(isListMarker(text,v.start,v.end,v.value)||proposedDuration(text,v.start,v.end)||
+      /^\s*(?:days?|días?|أيام|ايام)\b/iu.test(text.slice(v.end))))continue;
+   const moneyLike=v.kind==="money"||
+     (v.kind==="number"&&isCurrencylessMoneyClaim(text,v.start,v.end));
+   // A named product price is a recorded fact, even if an unrelated model
+   // estimate has the same amount. Use the checker's identity-aware matcher.
+   if(moneyLike&&directItemPriceClaim(text,v.start,v.end,menuPrices)!==null)
+     continue;
+   const metric=moneyLike?estimateClaimMetric(text,v.start,v.end):null;
+   const cents=v.kind==="money"?v.value:Math.round(v.value*100);
+   const e=metric&&!datedFinancialScope(text,v.start,v.end)
+     ?estimates.find(x=>x.detail===metric&&x.unit==="cents"&&
+       Math.abs(x.value-cents)<=1):undefined;
+   if(e){annotated.push({...withUnit(v),source:"estimate",detail:e.detail});continue;}
+   const owner=supplied.some(x=>x.kind===v.kind&&x.value===v.value)||
+      spoken.some(x=>x.kind===v.kind&&x.value===v.value);
+   if(owner){annotated.push({...withUnit(v),source:"owner"});}
+ }
+ // Guard against parser divergence: every rejected span must survive. There
+ // must never be fewer unchecked source marks than the checker reported.
+ for(const rejectedSpan of rejected){
+   if(!annotated.some(a=>a.start===rejectedSpan.start&&a.source==="unchecked"))
+     annotated.push({...withUnit(rejectedSpan),source:"unchecked"});
+ }
+ annotated.sort((a,b)=>a.start-b.start);
+
+ return annotated;
 }

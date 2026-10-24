@@ -52,3 +52,8 @@ export function uniqueSources(blocks:FactBlock[]){
     seen.add(key);return true;
   });
 }
+
+/** Group indexes can differ from storage indexes after adjacent fact blocks are collapsed. */
+export function originalReplyBlockIndex(blocks:readonly unknown[],block:unknown):number{
+ return blocks.findIndex(candidate=>candidate===block);
+}
