@@ -47,6 +47,7 @@ export type PlanScenarioItem = {
   ingredientsCentsToday: number;
   quantitySoldLast28Days: number;
   costStatus: "READY" | "NO_RECIPE" | "MISSING_INGREDIENT_COST";
+  category?: "drink" | "food";
 };
 
 /** An illustrative scenario. Reuses Money's break-even function, with unchanged
@@ -58,6 +59,8 @@ export function simulatePlanChange(input: {
   newValueCents: number;
   staffHoursPerDay: number;
   assumedHourlyWageCents: number;
+  preset?: "allPrices" | "milk" | null;
+  items?: readonly PlanScenarioItem[];
 }) {
   const { base, type, item, newValueCents, staffHoursPerDay, assumedHourlyWageCents } = input;
   if (!Number.isFinite(base.observedSalesCents) || base.observedSalesCents <= 0 ||
@@ -66,7 +69,10 @@ export function simulatePlanChange(input: {
       !Number.isSafeInteger(newValueCents) || newValueCents < 0 ||
       !Number.isFinite(staffHoursPerDay) || staffHoursPerDay < 0 || staffHoursPerDay > 24 ||
       !Number.isSafeInteger(assumedHourlyWageCents) || assumedHourlyWageCents < 0) return null;
-  if (type !== "staff" && (!item || item.costStatus !== "READY" || item.quantitySoldLast28Days <= 0)) return null;
+  if (input.preset) {
+    if ((input.preset === "allPrices" && type !== "price") ||
+        (input.preset === "milk" && type !== "ingredient") || !input.items?.length) return null;
+  } else if (type !== "staff" && (!item || item.costStatus !== "READY" || item.quantitySoldLast28Days <= 0)) return null;
   const old = calculateBreakEvenSales(base);
   if (old.kind !== "ready") return null;
   let sales = base.observedSalesCents, ingredients = base.observedIngredientCents;
@@ -77,9 +83,22 @@ export function simulatePlanChange(input: {
     staff -= monthlySaving;
     profitDelta = monthlySaving;
   } else {
-    const chosen = item!;
-    const previous = type === "price" ? chosen.priceCents : chosen.ingredientsCentsToday;
-    const change28Days = Math.round((newValueCents - previous) * chosen.quantitySoldLast28Days);
+    let change28Days: number;
+    if (input.preset) {
+      const soldItems = input.items!.filter(row => row.quantitySoldLast28Days > 0 &&
+        (input.preset === "allPrices" || row.category === "drink"));
+      const units = soldItems.reduce((sum, row) => sum + row.quantitySoldLast28Days, 0);
+      if (units <= 0) return null;
+      // The old price chip changes every item's price by 25 cents.
+      // The milk chip assumes 150 mL per drink and a $1 increase per 3,785 mL gallon.
+      change28Days = input.preset === "allPrices"
+        ? newValueCents * units
+        : Math.round((newValueCents * 150 * units) / 3785);
+    } else {
+      const chosen = item!;
+      const previous = type === "price" ? chosen.priceCents : chosen.ingredientsCentsToday;
+      change28Days = Math.round((newValueCents - previous) * chosen.quantitySoldLast28Days);
+    }
     if (type === "price") sales += change28Days;
     else ingredients += change28Days;
     profitDelta = Math.round((type === "price" ? 1 : -1) * change28Days * base.daysInMonth / 28);

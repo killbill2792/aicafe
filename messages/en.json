@@ -1134,7 +1134,9 @@
     "priceAssumption": "Illustration uses 28-day sales, unchanged volumes and card fees.",
     "presetPrice": "Raise prices 25¢",
     "presetStaff": "One less person 2–5 PM",
-    "presetMilk": "Milk rises $1/gallon (≈4¢ per drink)"
+    "presetMilk": "Milk rises $1/gallon (≈4¢ per drink)",
+    "allPricesExplanation": "Preset: raises every menu item's selling price by 25¢; no prices are saved.",
+    "milkExplanation": "Preset: a $1/gallon milk increase, assuming 150 mL of milk in every drink."
   },
   "Reconnect": {
     "banner": "We couldn't get today's sales from your register. Tap to reconnect.",

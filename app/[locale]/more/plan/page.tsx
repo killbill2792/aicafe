@@ -106,8 +106,8 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       fixCosts: money("addProductCosts"), fixOperating: money("addBills"),
     }} />}
     {tab === "what-if" && snapshot && <section className="rounded-card-lg bg-card p-5">
-      <TryScenario items={snapshot.menuItems.map(item => ({
-        id: item.id, name: item.name, priceCents: item.priceCents, costStatus: item.costStatus,
+      <TryScenario items={(snapshot.breakEvenProductCosts ?? snapshot.menuItems).map(item => ({
+        id: item.id, name: item.name, priceCents: item.priceCents, costStatus: item.costStatus, category: item.category,
         ingredientsCentsToday: item.ingredientsCentsToday, quantitySoldLast28Days: item.quantitySoldLast28Days,
       }))} base={recovery?.breakEven.kind === "ready" && !drinks?.unavailableReason ? {
         monthlyBillsCents: recovery.monthlyBillsCents, monthlyStaffCents: recovery.monthlyStaffCents,

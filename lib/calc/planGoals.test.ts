@@ -33,6 +33,21 @@ describe("Plan goals", () => {
     expect(simulation?.breakEvenChangeCents).toBe(0);
     expect(simulation?.monthlyProfitChangeCents).toBe(0);
   });
+  it("price preset changes every sold item, while milk changes only sold drinks", () => {
+    const products = [
+      { ...item, category: "drink" as const, quantitySoldLast28Days: 100 },
+      { ...item, id: "b", category: "drink" as const, quantitySoldLast28Days: 200 },
+      { ...item, id: "c", category: "food" as const, quantitySoldLast28Days: 50 },
+    ];
+    const one = simulatePlanChange({ base, type: "price", item: products[0], newValueCents: 525,
+      staffHoursPerDay: 0, assumedHourlyWageCents: 1950 });
+    const all = simulatePlanChange({ base, type: "price", item: null, newValueCents: 25,
+      preset: "allPrices", items: products, staffHoursPerDay: 0, assumedHourlyWageCents: 1950 });
+    const milk = simulatePlanChange({ base, type: "ingredient", item: null, newValueCents: 100,
+      preset: "milk", items: products, staffHoursPerDay: 0, assumedHourlyWageCents: 1950 });
+    expect(all?.monthlyProfitChangeCents).toBeGreaterThan(one!.monthlyProfitChangeCents);
+    expect(milk?.monthlyProfitChangeCents).toBe(Math.round(-Math.round(300 * 150 * 100 / 3785) * 30 / 28));
+  });
   it("makes higher ingredient costs worse and fewer staff hours cheaper", () => {
     const ingredient = simulatePlanChange({ base, type: "ingredient", item, newValueCents: 150,
       staffHoursPerDay: 0, assumedHourlyWageCents: 1950 });
