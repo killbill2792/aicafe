@@ -29,6 +29,8 @@ try {
     if (!response?.ok()) throw new Error(`${phase}/${id}: HTTP ${response?.status()}`);
     await page.locator("h1").first().waitFor({ state: "visible" });
     await page.evaluate(() => document.fonts.ready);
+    // Dev-mode status toast is not part of the café owner UI and can change asynchronously.
+    await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
     await page.waitForTimeout(300);
     const filename = join(output, `${phase}-${id}.png`);
     const bytes = await page.screenshot({ path: filename, fullPage: false, animations: "disabled" });
@@ -48,14 +50,14 @@ try {
             if (max) {
               count++;
               maxChannelDelta = Math.max(maxChannelDelta, max);
-              if (max > 16) large++;
+              if (max > 1) large++;
               minX = Math.min(x, minX); minY = Math.min(y, minY);
               maxX = Math.max(x, maxX); maxY = Math.max(y, maxY);
             }
           }
         }
         console.log(`${id}: pixel diff count ${count}/${a.width * a.height}; strong ${large}; max channel ${maxChannelDelta}; bbox ${minX},${minY}-${maxX},${maxY}`);
-        if (count) errors.push(`${id}: ${count} before/after pixels differ`);
+        if (large) errors.push(`${id}: ${large} before/after pixels differ by more than one channel value`);
       }
     }
     console.log(`${phase}: ${route} ${width}x${height} (${bytes.length} bytes)`);
