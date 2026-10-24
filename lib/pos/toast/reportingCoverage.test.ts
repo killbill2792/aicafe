@@ -45,27 +45,39 @@ describe("Toast reporting guard preserves independently verified non-Toast sales
  });
 });
 
-describe("P1 imported day errors remain visible in reports",()=>{
- it("reports the prior imported day as imported and needing look after a failed re-pull",async()=>{
-  const rows=[{business_date:"2026-10-16",import_state:"imported",
+function statusDb(rows:Array<{business_date:string;import_state:string;
+ recon_state:string;last_error_category:string|null}>,ownerFlagDates:string[]=[]){
+ const query=(data:unknown[])=>{
+  const chain:Record<string,unknown>={};
+  for(const name of ["select","eq","is","gte","lte","order"])chain[name]=()=>chain;
+  chain.limit=async()=>({data,error:null});
+  return chain;
+ };
+ return {from:(table:string)=>table==="toast_day_owner_flags"
+  ?query(ownerFlagDates.map(business_date=>({business_date,restaurant_guid:"restaurant"})))
+  :query(rows)} as unknown as SupabaseClient;
+}
+describe("owner/system flags remain distinct in reports",()=>{
+ const date="2026-10-16";
+ it("reports imported day as needing look after failed re-pull",async()=>{
+  const rows=[{business_date:date,import_state:"imported",
    recon_state:"matched",last_error_category:"invalid_response"}];
-  const chain:Record<string,unknown>={};
-  for(const method of ["select","eq","gte","lte","order","is"])
-   chain[method]=()=>chain;
-  chain.limit=async()=>({data:rows,error:null});
-  const db={from:(table:string)=>table==="toast_day_owner_flags"?{
-   select:()=>({eq:()=>({is:()=>({gte:()=>({lte:()=>({limit:async()=>({data:[],error:null})})})})})})
-  }:chain} as unknown as SupabaseClient;
-  const flags=await toastDayFlags(db,"business","2026-10-16","2026-10-16");
-  expect(flags).toEqual([{date:"2026-10-16",status:"imported",needsLook:true}]);
+  expect(await toastDayFlags(statusDb(rows),"business",date,date))
+   .toEqual([{date,status:"imported",needsLook:true}]);
  });
- it("keeps a recovered imported day free of stale errors",async()=>{
-  const chain:Record<string,unknown>={};
-  for(const method of ["select","eq","gte","lte","order"])
-   chain[method]=()=>chain;
-  chain.limit=async()=>({data:[{business_date:"2026-10-16",import_state:"imported",
-   recon_state:"matched",last_error_category:null}],error:null});
-  const db={from:()=>chain} as unknown as SupabaseClient;
-  expect((await toastDayFlags(db,"business","2026-10-16","2026-10-16"))[0].needsLook).toBe(false);
+ it("keeps a recovered import clear of stale system warnings",async()=>{
+  const rows=[{business_date:date,import_state:"imported",
+   recon_state:"matched",last_error_category:null}];
+  expect((await toastDayFlags(statusDb(rows),"business",date,date))[0].needsLook).toBe(false);
+ });
+ it("owner's active flag survives automated reconciliation to matched",async()=>{
+  const rows=[{business_date:date,import_state:"imported",
+   recon_state:"matched",last_error_category:null}];
+  expect((await toastDayFlags(statusDb(rows,[date]),"business",date,date))[0].needsLook).toBe(true);
+ });
+ it("analytics timeout is a SYSTEM status even without an owner flag",async()=>{
+  const rows=[{business_date:date,import_state:"imported",
+   recon_state:"analytics_timeout",last_error_category:null}];
+  expect((await toastDayFlags(statusDb(rows),"business",date,date))[0].needsLook).toBe(true);
  });
 });
