@@ -12,6 +12,7 @@ import {dayTotals,personTotals,bestFreePerson,availabilityStatus,totalOvertimeMi
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 import {uncheckedCoverageDays,coverageVerification} from "@/lib/calc/scheduling/coverageGaps";
 import {automaticUnpaidBreakMinutes} from "@/lib/calc/scheduling/ruleChecks";
+import {scheduledShiftMinutes,parseUnpaidBreakMinutes,validShiftClock} from "@/lib/calc/scheduling/shiftInput";
 import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import Link from "next/link";
 import {parseHourlyWage,parseWeeklyHours,weeklyHoursInput,isValidTeamAvailability,teamAvailabilitySummary} from "./teamPersonFields";
@@ -55,7 +56,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const [chosen,setChosen]=useState(deepPerson?.id??data.team[0]?.id??""),[date,setDate]=useState(deepDate??data.dates[0]);
  const deepOpen=deepDate?data.openHours?.[OPEN_HOURS_DAY_KEYS[new Date(deepDate+"T12:00:00Z").getUTCDay()]]?.[0]:undefined;
  const [start,setStart]=useState(deepShift?.start??deepOpen?.[0]??"07:00"),
- [end,setEnd]=useState(deepShift?.end??deepOpen?.[1]??"15:00"),[breakMin,setBreakMin]=useState(deepShift?.breakMinutes??0);
+ [end,setEnd]=useState(deepShift?.end??deepOpen?.[1]??"15:00"),[breakInput,setBreakInput]=useState(String(deepShift?.breakMinutes??0));
  const [editing,setEditing]=useState<string|null>(deepShift?.id??null),
  [availability,setAvailability]=useState<{day:number;start:string|null;end:string|null}[]>([]),
  [availabilityDirty,setAvailabilityDirty]=useState(false);
@@ -122,7 +123,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setStart(shift?.start??firstOpen?.[0]??"07:00");
   setEnd(shift?.end??firstOpen?.[1]??"15:00");
   setBreakOverridden(shift?.breakSource==="owner");
-  setBreakMin(shift?.breakMinutes??0);setSheet("shift");
+  setBreakInput(String(shift?.breakMinutes??0));setSheet("shift");
  };
  const removePerson=()=>{if(!personEditing||!confirmRemoval)return;const id=personEditing,label=name;
   setData({...data,team:data.team.filter(p=>p.id!==id)});
@@ -144,8 +145,13 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setBreakOverridden(false);
   setFillsGap(true);
  };
- const appliedBreak=breakOverridden?breakMin:automaticUnpaidBreakMinutes(start,end,data.rules);
- const proposed=sheet==="shift"?previewShift({employeeId:chosen,date,start,end,breakMinutes:appliedBreak,editingId:editing},
+ const shiftMinutes=scheduledShiftMinutes(start,end);
+ const parsedBreak=breakOverridden?parseUnpaidBreakMinutes(breakInput,shiftMinutes):
+  shiftMinutes===null?null:automaticUnpaidBreakMinutes(start,end,data.rules);
+ const invalidBreak=breakOverridden&&parsedBreak===null;
+ const invalidShift=shiftMinutes===null||invalidBreak;
+ const appliedBreak=parsedBreak??0;
+ const proposed=sheet==="shift"&&!invalidShift?previewShift({employeeId:chosen,date,start,end,breakMinutes:appliedBreak,editingId:editing},
   data.team,data.shifts,data.gaps,data.availability,data.rules,data.timezone,data.adjacentShifts):null;
  const previewBlock:DetailedShift|null=proposed?{...proposed.next,id:editing??"preview",
   employeeName:data.team.find(p=>p.id===chosen)?.name??t("team"),status:"draft"}:null;
@@ -334,28 +340,41 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         {p.name}<span className={`text-sm font-normal ${status==="free"?"text-pos":"text-muted"}`}>{t(status==="free"?"free":status==="off"?"off":status==="on_shift"?"onShift":"unavailable")}</span></button>;
       })}</div></div>
       {([[t("start"),start,setStart],[t("end"),end,setEnd]] as const).map(([label,time,set])=><div key={label} className="mt-3">
-       <b>{label}</b><div className="flex items-center justify-between rounded-xl bg-surface2">
-        <button onClick={()=>set(timeStep(time,-30))} className="min-h-12 min-w-12">−</button>
-        <span>{time}</span>
-        <button onClick={()=>set(timeStep(time,30))} className="min-h-12 min-w-12">+</button>
-       </div></div>)}
-      <p className="mt-2 text-center text-sm text-muted">{t("stepHint")}</p>
-      <DayTimeline date={date} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours}
-       people={data.team} preview={previewBlock}/>
+       <label className="block font-semibold">{label}
+        <div className="mt-1 flex items-center gap-2">
+         <button type="button" disabled={!validShiftClock(time)||data.readOnly}
+          aria-label={t("nudgeEarlier",{field:label})} onClick={()=>set(timeStep(time,-15))}
+          className="min-h-12 min-w-12 rounded-xl border border-line">−15</button>
+         <input type="time" step={60} dir="ltr" disabled={data.readOnly} aria-invalid={!validShiftClock(time)}
+          value={time} onChange={event=>set(event.target.value)}
+          className={`min-h-12 min-w-0 flex-1 rounded-xl border bg-surface px-3 ${!validShiftClock(time)?"border-neg":"border-line"}`}/>
+         <button type="button" disabled={!validShiftClock(time)||data.readOnly}
+          aria-label={t("nudgeLater",{field:label})} onClick={()=>set(timeStep(time,15))}
+          className="min-h-12 min-w-12 rounded-xl border border-line">+15</button>
+        </div></label></div>)}
+       {shiftMinutes===null&&<p role="alert" className="mt-2 text-neg">{t("shiftTimeError")}</p>}
+       {!invalidShift&&<DayTimeline date={date} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours}
+       people={data.team} preview={previewBlock}/>}
       <div className="mt-4 rounded-2xl border border-line p-3">
        <div className="flex min-h-14 items-center gap-2"><span aria-hidden="true">☕</span>
         <div className="flex-1"><strong>{t("unpaidBreak",{minutes:appliedBreak})}</strong><p className="text-sm text-muted">{breakOverridden?t("breakManual"):data.rules.meal_break_enabled?
    t("autoBreak",{hours:data.rules.meal_break_after_minutes/60}):t("breakDisabled")}</p></div>
-        <button type="button" onClick={()=>{setBreakOverridden(true);setBreakMin(Math.max(0,appliedBreak-10));}} className="min-h-12 min-w-10">−</button>
-        <button type="button" onClick={()=>{setBreakOverridden(true);setBreakMin(Math.min(240,appliedBreak+10));}} className="min-h-12 min-w-10">+</button></div>
-       <label className="flex min-h-14 items-center justify-between gap-3 border-t border-line">
+        <label className="flex items-center gap-2 text-start">{t("breakMinutesLabel")}
+          <input type="number" step="1" min="0" max="240" inputMode="numeric" disabled={data.readOnly}
+           aria-invalid={invalidBreak} aria-describedby={invalidBreak?"staff-break-error":undefined}
+           value={breakOverridden?breakInput:String(appliedBreak)}
+           onChange={event=>{setBreakOverridden(true);setBreakInput(event.target.value);}}
+           className={`min-h-12 w-24 rounded-xl border bg-surface px-2 ${invalidBreak?"border-neg":"border-line"}`}/>
+         </label></div>
+       {invalidBreak&&<p id="staff-break-error" role="alert" className="text-neg">{t("breakError")}</p>}
+        <label className="flex min-h-14 items-center justify-between gap-3 border-t border-line">
         <span>{t("repeatEvery",{day:weekday(date,true)})}</span><input type="checkbox"
          checked={repeatWeekly} onChange={e=>setRepeatWeekly(e.target.checked)} className="size-6 accent-accent"/></label>
       </div>
-      <ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={appliedBreak}
+      {!invalidShift&&<ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={appliedBreak}
        editingId={editing} team={data.team} shifts={data.shifts} gaps={data.gaps}
-       availability={data.availability} boundaryShifts={data.adjacentShifts} coverageChecked={coverageVerification(date,data.openHours,data.rules.coverage_enabled)==="checked"} rules={data.rules} currency={data.currency} timezone={data.timezone}/>
-      <button disabled={busy||!chosen} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakOverridden?breakMin:undefined,repeatWeekly}))}
+       availability={data.availability} boundaryShifts={data.adjacentShifts} coverageChecked={coverageVerification(date,data.openHours,data.rules.coverage_enabled)==="checked"} rules={data.rules} currency={data.currency} timezone={data.timezone}/>}
+      <button disabled={busy||!chosen||data.readOnly||invalidShift||!proposed} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakOverridden?parsedBreak??undefined:undefined,repeatWeekly}))}
        className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">{t("saveShift")}</button>
       {editing&&<button className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}
     </>}
