@@ -133,7 +133,14 @@
     "ownerReasonMismatch": "Totals did not match",
     "ownerReasonTimeout": "Toast Analytics took too long",
     "ownerReasonCoverage": "Import needs checking",
-    "ownerReasonOther": "Sync needs checking"
+    "ownerReasonOther": "Sync needs checking",
+    "ownerAnalyticsSetup": "Analytics connection settings",
+    "ownerAnalytics_apiUrl": "Analytics API URL",
+    "ownerAnalytics_managementGroupGuid": "Management group ID",
+    "ownerAnalytics_clientId": "Analytics client ID",
+    "ownerAnalytics_clientSecret": "Analytics secret",
+    "ownerAnalyticsConnect": "Connect Analytics",
+    "ownerAnalyticsDisconnect": "Disconnect Analytics"
   },
   "LocaleLayout": {
     "title": "Café Profit"
