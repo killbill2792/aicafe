@@ -19,7 +19,8 @@ export const proposalTools={propose_price_change:{
     if(matched.status==="ambiguous"){
       const guard=ownerChoiceGuard(ctx.resolveState,input.product_id);
       if(guard)return {source:"price_change_proposal",period:null,...guard};
-      if(!ctx.resolveState?.ambiguous.some(group=>group.some(c=>c.id===input.product_id)))
+      if(!ctx.resolveState?.chosenIds.has(input.product_id.toLowerCase())&&
+        !ctx.resolveState?.ambiguous.some(group=>group.some(c=>c.id===input.product_id)))
         return {source:"price_change_proposal",period:null,missing:["ownerChoiceRequired"],needsOwnerChoice:true,candidates:matched.candidates};
     }
     if(!ctx.proposals)return {source:"price_change_proposal",period:null,agentId:"alex",
