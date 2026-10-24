@@ -54,7 +54,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
         locale:locale==="ar"?"ar":locale==="es"?"es":"en"});
       if(!result.ok){if(result.error!=="unavailable")draftRequest.current=null;
         setError(t(result.error==="week"?"draftFutureWeek":
-        result.error==="names"?"draftNames":result.error==="missing"?"draftMissing":"draftUnavailable"));return;}
+        result.error==="missing"?"draftMissing":"draftUnavailable"));return;}
       draftRequest.current=null;setRates(result.wageRates);
       setRows(result.shifts);setProposal({proposalId:result.proposalId,revision:result.revision,state:"pending"});
       setWarning(result.costIsPartial||result.estimated);
