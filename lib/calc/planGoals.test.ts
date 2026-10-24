@@ -22,7 +22,7 @@ describe("Plan goals", () => {
     expect(weekdayHourlyTarget(80, { fri: [] }, "2026-10-23")).toMatchObject({ closed: true, perHour: null });
   });
   it("counts overnight and overlapping periods once", () => {
-    expect(weekdayHourlyTarget(80, { fri: [["20:00","02:00"],["22:00","01:00"]] }, "2026-10-23")).toMatchObject({ hours: 6, perHour: 14 });
+    expect(weekdayHourlyTarget(80, { fri: [["20:00","02:00"],["22:00","01:00"]] as [string,string][] }, "2026-10-23")).toMatchObject({ hours: 6, perHour: 14 });
   });
   it("starts from the same monthly break-even as Money", () => {
     const money = calculateBreakEvenSales(base);
