@@ -746,6 +746,7 @@
     "anHour": "por hora",
     "todaySoFar": "hoy hasta ahora",
     "onShiftNow": "En turno ahora",
+    "matchNames": "Revisar nombres",
     "noOneOnShift": "Nadie está programado ni fichado en este momento.",
     "staffRole": "Personal",
     "sinceShort": "Desde las {time}",
