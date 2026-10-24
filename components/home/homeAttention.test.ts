@@ -21,8 +21,9 @@ describe("Home attention", () => {
 
   it("preserves employee and date context when linking to the live schedule", () => {
     expect(homeShiftHref("employee 42", "2026-10-23")).toBe(
-      "/staff?tab=schedule&employee=employee+42&date=2026-10-23");
+      "/staff?tab=schedule&employee=employee+42&date=2026-10-23&week=2026-10-19");
     expect(homeShiftHref()).toBe("/staff?tab=schedule");
+    expect(homeShiftHref("test", "not-a-date")).toBe("/staff?tab=schedule&employee=test&date=not-a-date");
   });
 
   it("sorts by known monetary impact, caps at 5, preserves stable unknown order and deduplicates", () => {
