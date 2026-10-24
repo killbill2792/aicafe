@@ -70,3 +70,41 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
 
   revalidatePath("/menu"); revalidatePath("/menu/import-review");
 }
+
+/** Bind a CSV-only match to an explicit existing menu item without changing its selling price. */
+export async function matchUploadedItem(matchId: string, formData: FormData): Promise<void> {
+  const menuItemId = formData.get("menuItemId");
+  if (typeof menuItemId !== "string" || !/^[0-9a-f-]{36}$/i.test(menuItemId)) return;
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const businessId = await getActiveBusinessId(user.id);
+  const [{data:match,error:matchError},{data:item,error:itemError}] = await Promise.all([
+    supabase.from("pos_catalog_matches").select("id, provider, pos_item_id, imported_name")
+      .eq("business_id",businessId).eq("id",matchId).eq("provider","csv").eq("status","needs_review").maybeSingle(),
+    supabase.from("menu_items").select("id, pos_item_id").eq("business_id",businessId).eq("id",menuItemId).maybeSingle(),
+  ]);
+  if (matchError || itemError || !match || !item) return;
+  if (item.pos_item_id && item.pos_item_id !== match.pos_item_id) return;
+  const { error: updated } = await supabase.from("menu_items").update({
+    pos_item_id: match.pos_item_id, catalog_source: "csv", catalog_last_synced_at: new Date().toISOString(),
+  }).eq("id",item.id).eq("business_id",businessId);
+  if (updated) { logQueryError("matchUploadedItem:update",updated); return; }
+  const {error: confirmed} = await supabase.from("pos_catalog_matches").update({status:"confirmed"})
+    .eq("id",match.id).eq("business_id",businessId).eq("status","needs_review");
+  if (confirmed) logQueryError("matchUploadedItem:confirm",confirmed);
+  revalidatePath("/menu");
+  revalidatePath("/menu/import-review");
+}
+
+/** Ignore is deliberately session-only: there is no durable ignored state without a migration. */
+export async function addUploadedItemToMenu(matchId: string): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const businessId = await getActiveBusinessId(user.id);
+  const {data:match} = await supabase.from("pos_catalog_matches").select("id,provider,status")
+    .eq("business_id",businessId).eq("id",matchId).eq("provider","csv").eq("status","needs_review").maybeSingle();
+  if (!match) return;
+  await resolveCatalogMatch(matchId,"new");
+}

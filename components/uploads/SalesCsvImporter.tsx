@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Link } from "@/i18n/navigation";
 import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
 import { parseSalesCsv, type SalesColumnMapping, type SalesRejectReason } from "@/lib/pos/csv/parseSalesCsv";
 import { aggregateSalesRows } from "@/lib/pos/csv/aggregateSalesRows";
@@ -42,6 +43,7 @@ export default function SalesCsvImporter({
     resultSummaryNoDates: string;
     unmatchedWarningTitle: string;
     unmatchedWarningHint: string;
+    matchItems?: string;
     unmatchedRowsCount: string;
     reviewRowsInFile: string;
     rejectedTitle: string;
@@ -65,6 +67,7 @@ export default function SalesCsvImporter({
   const [summary, setSummary] = useState<SalesImportSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stuckJobId, setStuckJobId] = useState<string | null>(null);
+  const [completedJobId, setCompletedJobId] = useState<string | null>(null);
 
   async function handleFile(file: File) {
     const text = await readUploadedFileAsCsvText(file);
@@ -73,6 +76,7 @@ export default function SalesCsvImporter({
     setRows(r);
     setStage("idle");
     setSummary(null);
+    setCompletedJobId(null);
     setError(null);
     // Auto-apply the saved mapping only if every column it references still exists.
     if (initialMapping && Object.values(initialMapping).every((v) => !v || h.includes(v))) {
@@ -111,6 +115,7 @@ export default function SalesCsvImporter({
       setStage("working");
       setStatusMessage(labels.statusStarting);
       const started = await startSalesImportJob(groups, rows.length, parsed.rejected);
+      if (started.ok) setCompletedJobId(started.jobId ?? null);
       if (!started.ok) {
         setStage("error");
         setStuckJobId(started.blockingJobId ?? null);
@@ -227,6 +232,7 @@ export default function SalesCsvImporter({
             <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
               <span className="text-sm font-bold text-warn">{labels.unmatchedWarningTitle}</span>
               <p className="text-xs text-fg">{labels.unmatchedWarningHint}</p>
+              {completedJobId && <Link href="/menu/import-review" className="inline-flex min-h-12 items-center self-start rounded-full bg-accent px-4 font-bold text-on-accent">{labels.matchItems ?? "Match items"}</Link>}
               {summary.unmatchedItems.map((u) => (
                 <div key={u.name} className="flex items-center justify-between gap-2 text-sm">
                   <span className="min-w-0 flex-1 truncate">{u.name}</span>
