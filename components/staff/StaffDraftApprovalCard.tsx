@@ -1,5 +1,5 @@
 "use client";
-import {useState} from "react";
+import {useRef,useState} from "react";
 import {useTranslations} from "next-intl";
 import {useRouter} from "next/navigation";
 import {draftStaffWeekInPlace,reviseStaffWeekDraft} from "@/lib/actions/staffDraftInPlace";
@@ -19,20 +19,23 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
   const [busy,setBusy]=useState(false),[error,setError]=useState("");
   const [proposal,setProposal]=useState<Proposal|null>(null);
   const [threadId,setThreadId]=useState(""),[rows,setRows]=useState<StaffDraftInputShift[]>([]);
-  const [review,setReview]=useState(false),[editing,setEditing]=useState<number|null>(null);
+  const [review,setReview]=useState(true),[editing,setEditing]=useState<number|null>(null);
   const [draftEdited,setDraftEdited]=useState<StaffDraftInputShift|null>(null);
   const [warning,setWarning]=useState(false);
+  const [rates,setRates]=useState<Record<string,number|null>>({});
+  const threadRequest=useRef<string|null>(null),draftRequest=useRef<string|null>(null);
   const preview=reviewStaffDraft(rows,data.team,data.rules,data.availability,
-    data.timezone,data.adjacentShifts);
+    data.timezone,data.adjacentShifts,rates);
   const money=(cents:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:data.currency}).format(cents/100);
   const num=(n:number,maximumFractionDigits=0)=>new Intl.NumberFormat(locale,{maximumFractionDigits}).format(n);
   async function createThread(){
     const response=await fetch("/api/ai/threads",{method:"POST",
       credentials:"same-origin",headers:{"content-type":"application/json"},
-      body:JSON.stringify({requestId:crypto.randomUUID()})});
+      body:JSON.stringify({requestId:threadRequest.current??(threadRequest.current=crypto.randomUUID())})});
     if(!response.ok)throw new Error("thread");
     const json=await response.json();
     if(typeof json.thread?.id!=="string")throw new Error("thread");
+    threadRequest.current=null;
     return json.thread.id as string;
   }
   async function draft(){
@@ -40,10 +43,12 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     try{
       const id=threadId||await createThread();
       setThreadId(id);
-      const result=await draftStaffWeekInPlace({week,threadId:id,requestKey:crypto.randomUUID(),
+      const result=await draftStaffWeekInPlace({week,threadId:id,
+        requestKey:draftRequest.current??(draftRequest.current=crypto.randomUUID()),
         locale:locale==="ar"?"ar":locale==="es"?"es":"en"});
       if(!result.ok){setError(t(result.error==="week"?"draftFutureWeek":
         result.error==="names"?"draftNames":result.error==="missing"?"draftMissing":"draftUnavailable"));return;}
+      draftRequest.current=null;setRates(result.wageRates);
       setRows(result.shifts);setProposal({proposalId:result.proposalId,revision:result.revision,state:"pending"});
       setWarning(result.costIsPartial||result.estimated);
     }catch{setError(t("draftUnavailable"));}
@@ -68,6 +73,9 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
   }
   async function replaceDraft(changed:StaffDraftInputShift[]){
     if(!proposal||busy)return;
+    if(!changed.length){void update("cancel");return;}
+    try{reviewStaffDraft(changed,data.team,data.rules,data.availability,
+      data.timezone,data.adjacentShifts,rates);}catch{setError(t("draftInvalidShift"));return;}
     setBusy(true);setError("");
     try{
       const previous=proposal;
@@ -79,6 +87,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
       const result=await reviseStaffWeekDraft({week,threadId,requestKey:crypto.randomUUID(),
         locale:locale==="ar"?"ar":locale==="es"?"es":"en",shifts:changed});
       if(!result.ok)throw Error("revise");
+      setRates(result.wageRates);
       setRows(changed);setProposal({proposalId:result.proposalId,revision:result.revision,state:"pending"});
     }catch{setError(t("draftEditRequiresRefresh"));setProposal(null);}
     finally{setBusy(false);}
@@ -93,7 +102,8 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
   return <section className="rounded-2xl border border-line bg-surface p-4" aria-label={t("draftHeading")}>
     <div className="flex items-center justify-between gap-2">
       <h2 className="text-xl font-bold">{t("draftHeading")}</h2>
-      <button type="button" className="min-h-12 px-3" onClick={onClose}>{t("close")}</button>
+      <button type="button" disabled={busy} className="min-h-12 px-3"
+        onClick={()=>proposal?.state==="pending"?void update("cancel"):onClose()}>{t("close")}</button>
     </div>
     {!proposal&&<button type="button" disabled={busy} onClick={()=>void draft()}
       className="mt-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent disabled:opacity-50">
@@ -124,13 +134,31 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     {error&&<p role="alert" className="mt-3 text-neg">{error}</p>}
     {editing!==null&&draftEdited&&<StaffDialog headingId="olivia-draft-shift-heading" onClose={()=>setEditing(null)}>
       <h3 id="olivia-draft-shift-heading" className="text-xl font-bold">{t("editShift")}</h3>
+      <label className="mt-3 block">{t("who")}
+        <select value={draftEdited.employee_id}
+          onChange={e=>setDraftEdited({...draftEdited,employee_id:e.target.value})}
+          className="mt-1 min-h-12 w-full rounded-xl border border-line p-3">
+          {data.team.filter(p=>p.active!==false).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+        </select></label>
+      <label className="mt-3 block">{t("week")}
+        <input type="date" value={draftEdited.date} min={week}
+          max={new Date(Date.parse(week+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)}
+          onChange={e=>setDraftEdited({...draftEdited,date:e.target.value})}
+          className="mt-1 min-h-12 w-full rounded-xl border border-line p-3"/></label>
       <label className="mt-3 block">{t("start")}
         <input type="time" value={draftEdited.start} onChange={e=>setDraftEdited({...draftEdited,start:e.target.value})}
           className="mt-1 min-h-12 w-full rounded-xl border border-line p-3"/></label>
       <label className="mt-3 block">{t("end")}
         <input type="time" value={draftEdited.end} onChange={e=>setDraftEdited({...draftEdited,end:e.target.value})}
           className="mt-1 min-h-12 w-full rounded-xl border border-line p-3"/></label>
-      <button type="button" onClick={saveEdit} className="mt-4 min-h-12 w-full rounded-xl bg-accent text-on-accent">{t("saveChanges")}</button>
+      <label className="mt-3 block">{t("draftBreakMinutes")}
+        <input type="number" min="0" max="240" step="1"
+          value={draftEdited.break_minutes}
+          onChange={e=>setDraftEdited({...draftEdited,break_minutes:Number(e.target.value)})}
+          className="mt-1 min-h-12 w-full rounded-xl border border-line p-3"/></label>
+      <button type="button" disabled={busy} onClick={saveEdit}
+        className="mt-4 min-h-12 w-full rounded-xl bg-accent text-on-accent">{t("saveChanges")}</button>
+      <button type="button" className="mt-2 min-h-12 w-full" onClick={()=>setEditing(null)}>{t("cancel")}</button>
     </StaffDialog>}
   </section>;
 }
