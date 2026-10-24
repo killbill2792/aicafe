@@ -314,7 +314,9 @@
     "attentionMatch": "مطابقة الأصناف",
     "attentionFix": "إصلاح",
     "attentionFeesMissing": "رسوم معالجة المدفوعات مفقودة منذ {count} أيام",
-    "attentionAddFees": "إضافة الرسوم"
+    "attentionAddFees": "إضافة الرسوم",
+    "costsIncomplete": "بعض التكاليف لم تُتحقق بعد",
+    "attentionMatchUnavailable": "تحتاج مطابقة الأصناف إلى مراجعة"
   },
   "Money": {
     "title": "المال",
