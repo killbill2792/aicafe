@@ -8,7 +8,7 @@ describe("Redesign 03 screen contracts", () => {
     const page = source("app/[locale]/more/bills/page.tsx");
     const form = source("components/bills/BillsManager.tsx");
     expect(page).toContain('key={category ?? "none"}');
-    expect(form).toContain('openKey] = useState<string | null>(initialOpenKey)');
+    expect(form).toContain('const [openKey, setOpenKey] = useState<string | null>(initialOpenKey)');
     expect(form).toContain('initialCategory === OTHER_CATEGORY ? firstOtherBill?.id ?? NEW_OTHER_KEY');
     expect(form).toContain('scrollIntoView');
     expect(form).toContain('amountRef.current?.focus({ preventScroll: true })');
@@ -60,7 +60,7 @@ describe("Redesign 03 screen contracts", () => {
     const statement = source("components/addcost/StatementUploader.tsx");
     expect(statement).not.toContain('className="h-11 rounded-xl border border-line px-3"');
     expect(statement).toContain('min-h-12 rounded-xl border border-line px-3 text-[17px]');
-    expect(statement).toContain('min-h-12 rounded-full bg-accent px-4 text-[17px]');
+    expect(statement).toContain('min-h-12 flex-1 rounded-full bg-accent px-4 text-[17px]');
   });
 
   it("does not apply stale overlapping bank uploads and permits a retry", () => {
