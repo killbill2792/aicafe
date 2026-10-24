@@ -74,6 +74,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   if(!value)return error?<p role="alert">{copy.error}</p>:<p role="status">{copy.loading}</p>;
   const money=(cents:number)=>formatCardValue({kind:"money",cents},locale,value.currency??"USD");
   const staff=value.capabilityId?.startsWith("olivia.staff_")===true;
+  const experiment=value.capabilityId==="alex.drink_price_experiment.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
   if(staff){
     const statuses:Record<string,string>={pending:staffCopy.pending,applying:staffCopy.applying,
@@ -112,6 +113,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const rows:ApprovalPreviewRow[]=value.preview?.length?value.preview:((value.oldPriceCents!=null&&value.newPriceCents!=null)?diffFields([{field:"price",label:"Price",value:{kind:"money",cents:value.oldPriceCents}}],[{field:"price",label:"Price",value:{kind:"money",cents:value.newPriceCents}}]):[]);
   const pending=value.state==="pending"&&!busy;
   const statuses=copy.states as Record<string,string>;
+  if(experiment)statuses.manual_pending=copy.manualPending;
   const button="min-h-12 min-w-12 rounded-xl px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={copy.title}
     className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
@@ -122,13 +124,14 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     <h3 className="mt-2 break-words text-xl font-bold">{value.productName}</h3>
     <BeforeAfterRows rows={rows} locale={locale} currency={value.currency??"USD"}/>
     {value.editedByOwner&&<p className="mt-2">{copy.editedByYou}</p>}
+    {experiment&&value.state==="manual_pending"&&<p className="mt-2 text-[17px]">{copy.manualInstructions}</p>}
     {value.state==="stale"&&<p className="mt-2">{copy.stale} {value.currentPriceCents!=null?money(value.currentPriceCents):""}</p>}
     {["failed","conflict","stale"].includes(value.state)&&<p className="mt-2">{copy.stale}</p>}
     {pending&&<div className="mt-4 flex flex-wrap gap-2">
       <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}
         onClick={()=>void invoke("approve")}>{copy.approve}</button>
-      <button type="button" disabled={busy} className={button+" border border-line"}
-        onClick={()=>{setEditing(x=>!x);setPrice(priceEditString(value.newPriceCents!));}}>{copy.edit}</button>
+      {!experiment&&<button type="button" disabled={busy} className={button+" border border-line"}
+        onClick={()=>{setEditing(x=>!x);setPrice(priceEditString(value.newPriceCents!));}}>{copy.edit}</button>}
       <button type="button" disabled={busy} className={button+" border border-line"}
         onClick={()=>void invoke("cancel")}>{copy.cancel}</button>
     </div>}

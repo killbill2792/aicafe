@@ -2645,7 +2645,9 @@
       "stale": "Precio cambiado",
       "failed": "No se aplicó",
       "conflict": "Actualizado en otra sesión"
-    }
+    },
+    "manualPending": "Actualización manual pendiente",
+    "manualInstructions": "La aprobación no cambia el TPV. Actualiza el precio manualmente en el TPV antes de iniciar la prueba."
   },
   "ChatExperience": {
     "ack": "Entendido, estoy en ello.",

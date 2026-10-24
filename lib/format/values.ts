@@ -17,7 +17,9 @@ export const cardValueSchema=z.discriminatedUnion("kind",[
  z.strictObject({kind:z.literal("missing"),reason:z.enum(["noWage","noRole","noPhone","none"])}),
 ]);
 export type CardValue=z.infer<typeof cardValueSchema>;
-export type DiffField={field:string;label:string;before:CardValue|null;after:CardValue|null};
+export const diffFieldSchema=z.strictObject({field:z.string().max(160),label:z.string().max(220),
+ before:cardValueSchema.nullable(),after:cardValueSchema.nullable()});
+export type DiffField=z.infer<typeof diffFieldSchema>;
 export type FieldValue={field:string;label:string;value:CardValue};
 /** Stable keys, never locale-specific strings, decide whether a field changed. */
 export function diffFields(before:readonly FieldValue[],after:readonly FieldValue[]):DiffField[]{
@@ -49,7 +51,11 @@ export function formatCardValue(value:CardValue,locale:CardLocale,currency:strin
     return money(value.cents)+"/"+unit;
   }
   case "percent":return new Intl.NumberFormat(locale,{maximumFractionDigits:2}).format(value.bps/100)+"%";
-  case "count":return new Intl.NumberFormat(locale).format(value.n)+(value.unit?" "+value.unit:"");
+  case "count":{
+   const unit=value.unit==="days"?
+     {en:"days",es:"días",ar:"أيام"}[locale]:value.unit;
+   return new Intl.NumberFormat(locale).format(value.n)+(unit?" "+unit:"");
+  }
   case "duration":return new Intl.NumberFormat(locale).format(value.minutes)+" "+t.minutes;
   case "time":return value.hhmm;
   case "date":return new Intl.DateTimeFormat(locale,{year:"numeric",month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(value.iso+"T12:00:00Z"));

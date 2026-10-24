@@ -1,5 +1,6 @@
 import "server-only";
 import {z} from "zod";
+import {diffFieldSchema,diffFields} from "@/lib/format/values";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -18,7 +19,7 @@ const baseline=z.strictObject({
   productId:z.uuid(),productName:z.string().min(1).max(200),
   oldPriceCents:cents,newPriceCents:cents,ingredientCostCents:cents,
   baselineUnits7Days:cents,currency:z.literal("USD"),
-  estimateKind:z.literal("conditional_unchanged_demand"),
+  estimateKind:z.literal("conditional_unchanged_demand"),preview:z.array(diffFieldSchema).optional(),
 });
 export const priceExperimentCapabilityId="alex.drink_price_experiment.v1";
 export const priceExperimentCapability=registerLoopCapability({
@@ -43,7 +44,12 @@ export const priceExperimentCapability=registerLoopCapability({
     if(!result)throw new Error("Price experiment requires actual, covered sales and recipe cost");
     const {beforeContributionCents,afterContributionCents,
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,...effect}=result;
-    return {effect,baseline:{beforeContributionCents,afterContributionCents,
+    const preview=[
+      ...diffFields([{field:"price",label:"Price",value:{kind:"money",cents:effect.oldPriceCents}}],
+        [{field:"price",label:"Price",value:{kind:"money",cents:effect.newPriceCents}}]),
+      ...diffFields([], [{field:"duration",label:"Duration",value:{kind:"count",n:7,unit:"days"}}] as const),
+    ];
+    return {effect:{...effect,preview},baseline:{beforeContributionCents,afterContributionCents,
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,
       source:"daily_rollups+order_lines",status:"estimated",assumption:"unchanged_unit_demand"},
       monitorSpec:{durationDays:7,metricScope:item.id}};
