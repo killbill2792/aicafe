@@ -2,6 +2,7 @@
 import {useEffect,useState} from "react";
 import {useLocale,useTranslations} from "next-intl";
 import {statusSchema} from "@/lib/pos/toast/statusSchema";
+import {subscribeToastConnectionChanges} from "./toastConnectionEvents";
 import type {z} from "zod";
 type Snapshot=z.infer<typeof statusSchema>;
 const dateShift=(d:string,days:number)=>new Date(Date.parse(d+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
@@ -16,6 +17,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  const [analytics,setAnalytics]=useState({apiUrl:"",managementGroupGuid:"",clientId:"",clientSecret:""});
  const [analyticsBusy,setAnalyticsBusy]=useState(false);
  const [lastLoadedAt,setLastLoadedAt]=useState<number|null>(null);
+ const [reloadKey,setReloadKey]=useState(0);
  const money=new Intl.NumberFormat(locale,{style:"currency",currency});
  const number=new Intl.NumberFormat(locale);
  async function configureAnalytics(action:"connect"|"disconnect"){
@@ -50,7 +52,8 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    if(active){setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());setStart(old=>old||parsed.data.startDate||
     dateShift(localDate(parsed.data.timeZone,Date.now()),-84));}
   }catch{if(active){setData(null);setBad(true);}}
- };void refresh();return()=>{active=false;};},[businessId]);
+ };const unsubscribe=subscribeToastConnectionChanges(window,()=>{void refresh();});
+ void refresh();return()=>{active=false;unsubscribe();};},[businessId,reloadKey]);
  async function post(url:string,payload:unknown){
   if(busy)return false;setBusy(true);setMessage("");
   try{const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
@@ -72,7 +75,11 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   }await load();setMessage(t("ownerQueued"));
   }catch{setMessage(t("ownerError"));}finally{setBusy(false);}
  }
- if(bad)return <p role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">{t("ownerStatusUnavailable")}</p>;
+ if(bad)return <section role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">
+  <p>{t("ownerStatusUnavailable")}</p>
+  <button type="button" className="mt-3 min-h-12 rounded-full border border-warn px-5"
+   onClick={()=>setReloadKey(k=>k+1)}>{t("ownerRefreshStatus")}</button>
+ </section>;
  if(!data)return <p role="status" className="text-ink-muted">{t("pending")}</p>;
  const yesterday=lastLoadedAt?dateShift(localDate(data.timeZone,lastLoadedAt),-1):"";
  const relative=data.lastGoodSyncAt&&lastLoadedAt?new Intl.RelativeTimeFormat(locale,{numeric:"auto"}).format(
@@ -83,7 +90,8 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    <p className="my-2 text-ink-muted">{data.startDate?day(data.startDate):t("ownerNoStart")}</p>
    <input aria-label={t("ownerImportFrom")} className="min-h-12 w-full rounded-xl border border-line bg-card p-3"
     type="date" value={start} max={yesterday} onChange={e=>setStart(e.target.value)}/>
-   <button disabled={busy||!start||start>yesterday} onClick={()=>void backfill()}
+   {!data.importEnabled&&<p role="status" className="mt-2 text-warn">{t("ownerImportDisabled")}</p>}
+   <button disabled={busy||!data.importEnabled||!start||start>yesterday} onClick={()=>void backfill()}
     className="mt-3 min-h-12 w-full rounded-full bg-accent px-4 text-on-accent disabled:opacity-40">
     {t("ownerStartImport")}</button>
   </section>
@@ -96,7 +104,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <progress className="w-full" value={data.backfill.daysDone} max={data.backfill.daysTotal}/>
    </>}
    {data.backfill.resumeAt&&<p className="text-warn">{t("ownerPaused",{time:new Date(data.backfill.resumeAt).toLocaleString(locale)})}</p>}
-   {data.failedRuns>0&&<button disabled={busy} className="mt-3 min-h-12 rounded-full border border-line px-5"
+   {data.failedRuns>0&&<button disabled={busy||!data.importEnabled} className="mt-3 min-h-12 rounded-full border border-line px-5"
      onClick={()=>void post("/api/pos/toast/retry",{})}>{t("ownerTryAgain")}</button>}
   </section>
   {data.firstImportCheck==="due"&&<section className="rounded-card-lg bg-card p-5">
@@ -134,7 +142,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <p className="text-warn">{t("ownerReviewReason")}: {row.reason==="owner_flag"?t("ownerReasonOwner"):row.reason==="mismatch"?t("ownerReasonMismatch"):
      row.reason==="analytics_timeout"?t("ownerReasonTimeout"):row.reason==="coverage_invalid"?t("ownerReasonCoverage"):t("ownerReasonOther")}</p>
     <div className="mt-2 flex flex-wrap gap-2">
-     <button disabled={busy||row.date>yesterday||data.queuedRanges.some(range=>range.from<=row.date&&range.to>=row.date)} className="min-h-12 rounded-full border border-line px-4"
+     <button disabled={busy||!data.importEnabled||row.date>yesterday||data.queuedRanges.some(range=>range.from<=row.date&&range.to>=row.date)} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date})}>{t("ownerRepull")}</button>
      <button disabled={busy} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/day-flag",{restaurantGuid:row.restaurantGuid,date:row.date,
