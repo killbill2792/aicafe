@@ -367,17 +367,21 @@ declare
  r uuid;reused uuid;
 begin
  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
- requested_from,requested_to,days_total,days_done,state,cursor)
+ requested_from,requested_to,days_total,days_done,state,cursor,
+ orders_seen,orders_unparsed,api_calls,rate_limited_count,invalid_days)
  values(b,south,'backfill','2026-10-04','2026-10-06',3,2,
-  'running','{"business_date":"2026-10-06","page":2}'::jsonb)
+  'running','{"business_date":"2026-10-06","page":2}'::jsonb,
+  10,2,6,1,1)
  returning id into r;
  insert into public.toast_day_pages(run_id,business_date,page,payload)
  values(r,'2026-10-06',1,'[]'::jsonb);
  select public.toast_queue_backfill(b,south,'2026-10-04','2026-10-06') into reused;
  perform pg_temp.assert(reused=r,'earlier start-date recovers identical active run');
  perform pg_temp.assert((select days_done=0 and state='queued'
-  and cursor='{}'::jsonb from public.toast_sync_runs where id=r),
-  'earlier Toast start resets stale backfill progress');
+  and cursor='{}'::jsonb and orders_seen=0 and orders_unparsed=0
+  and api_calls=0 and rate_limited_count=0 and invalid_days=0
+  from public.toast_sync_runs where id=r),
+  'earlier Toast start resets progress AND old failure/health counters');
  perform pg_temp.assert(not exists(select 1 from public.toast_day_pages
   where run_id=r),'earlier Toast start discards previously staged pages');
  perform pg_temp.assert((select sales_data_status='missing'
