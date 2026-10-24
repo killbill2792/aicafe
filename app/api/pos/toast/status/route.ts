@@ -32,10 +32,11 @@ export async function GET(request:Request){
     .order("restaurant_guid").range(start,end)),
    db.from("toast_analytics_credentials").select("verified_at").eq("business_id",id.data).maybeSingle(),
    db.from("toast_first_import_check").select("answered_at").eq("business_id",id.data).maybeSingle(),
+   db.from("businesses").select("timezone").eq("id",id.data).maybeSingle(),
   ]);
  }catch{return send(503,{error:"status_unavailable"});}
- const [c,m,runRows,statusRows,flagRows,a,check]=fetched;
- if([c,m,a,check].some(x=>x.error))return send(503,{error:"status_unavailable"});
+ const [c,m,runRows,statusRows,flagRows,a,check,business]=fetched;
+ if([c,m,a,check,business].some(x=>x.error))return send(503,{error:"status_unavailable"});
  if(!m.data?.length)return send(404,{error:"not_found"});
  const validated=toastOwnerDbRows.safeParse({
   mappings:m.data,runs:runRows,days:statusRows,flags:flagRows
@@ -43,8 +44,12 @@ export async function GET(request:Request){
  if(!validated.success)return send(503,{error:"status_unavailable"});
  const {mappings,runs,days,flags:activeFlags}=validated.data;
  const r={data:runs},s={data:days},f={data:activeFlags};
- if(mappings.some(x=>x.verified_at)&&!mappings[0].toast_time_zone)
-  return send(503,{error:"status_unavailable"});
+ // Configured-but-not-yet-tested restaurants need the café timezone,
+ // rather than crashing because Toast closeout metadata is not available yet.
+ const zone=business.data?.timezone;
+ if(!zone)return send(503,{error:"status_unavailable"});
+ try{new Intl.DateTimeFormat("en-CA",{timeZone:zone});}
+ catch{return send(503,{error:"status_unavailable"});}
  const health=await db.from("toast_sync_health_v").select("last_good_sync_at,stale").eq("business_id",id.data);
  if(health.error)return send(503,{error:"status_unavailable"});
  const good=(health.data??[]).map(h=>h.last_good_sync_at).filter(Boolean).sort().at(-1)??null;
@@ -68,7 +73,7 @@ export async function GET(request:Request){
  }
  const completeDates=[...new Set(s.data.map(x=>x.business_date))].filter(date=>
   dayCoverage(mappings,s.data,date).complete);
- const mostRecent=()=>new Intl.DateTimeFormat("en-CA",{timeZone:m.data[0].toast_time_zone,
+ const mostRecent=()=>new Intl.DateTimeFormat("en-CA",{timeZone:zone,
   year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
  const base=Date.parse(mostRecent()+"T12:00:00Z");
  const recentDates=Array.from({length:14},(_,i)=>new Date(base-(i+1)*86400000).toISOString().slice(0,10));
