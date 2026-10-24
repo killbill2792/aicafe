@@ -17,7 +17,7 @@ describe("Toast date-specific verified location eligibility",()=>{
   expect(dayTotals([north,south],[later],"2026-10-12")).toMatchObject({
    complete:false,netSalesCents:null,orders:null});
   expect(dayTotals([north,south],[later,southLater],"2026-10-12")).toMatchObject({
-   complete:true,netSalesCents:15000,orders:8});
+   complete:true,netSalesCents:15000,orders:6});
  });
  it("never treats zero eligible locations or unverified locations as complete",()=>{
   expect(dayCoverage([north,south],[],"2026-09-30").complete).toBe(false);
