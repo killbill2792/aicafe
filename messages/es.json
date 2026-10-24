@@ -140,7 +140,10 @@
     "ownerAnalytics_clientId": "ID de cliente Analytics",
     "ownerAnalytics_clientSecret": "Clave secreta Analytics",
     "ownerAnalyticsConnect": "Conectar Analytics",
-    "ownerAnalyticsDisconnect": "Desconectar Analytics"
+    "ownerAnalyticsDisconnect": "Desconectar Analytics",
+    "ownerRefreshStatus": "Volver a cargar el estado",
+    "ownerImportDisabled": "La importación de ventas aún no está activa. Puedes conectar Toast, pero todavía no puedes importar ni volver a traer ventas.",
+    "ownerPartiallyQueued": "Algunos días se han programado, pero otros no. Vuelve a empezar desde el {date}."
   },
   "LocaleLayout": {
     "title": "Café Profit"
