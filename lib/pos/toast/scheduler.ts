@@ -111,13 +111,13 @@ async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt
     const txt=typeof row.businessDate==="number"&&Number.isInteger(row.businessDate)
      ?String(row.businessDate):"";
     let day:string;
-    if(/^20\\d{6}$/.test(txt)){
+    if(/^20\d{6}$/.test(txt)){
      day=txt.slice(0,4)+"-"+txt.slice(4,6)+"-"+txt.slice(6);
      if(Number.isNaN(Date.parse(day+"T12:00:00Z")))
       throw new ToastApiError("invalid_response");
     }else if(typeof row.openedDate==="string"&&Number.isFinite(Date.parse(
-      row.openedDate.replace(/([+-]\\d{2})(\\d{2})$/,"$1:$2")))){
-     const opened=new Date(row.openedDate.replace(/([+-]\\d{2})(\\d{2})$/,"$1:$2"));
+      row.openedDate.replace(/([+-]\d{2})(\d{2})$/,"$1:$2")))){
+     const opened=new Date(row.openedDate.replace(/([+-]\d{2})(\d{2})$/,"$1:$2"));
      const localOpened=localClock(opened,m.toast_time_zone);
      day=localOpened.minutes<m.closeout_hour*60
       ?addCalendarDays(localOpened.today,-1):localOpened.today;
