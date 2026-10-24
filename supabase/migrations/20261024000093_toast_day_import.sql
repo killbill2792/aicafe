@@ -225,8 +225,11 @@ begin
  and pos_order_id not like 'toast:%'
  and coalesce((select toast_start_date from public.toast_location_mappings
       where business_id=p_business_id and restaurant_guid=p_restaurant_guid),p_business_date)<=p_business_date;
- delete from public.toast_void_facts where business_id=p_business_id
-  and location_id=p_location_id and order_business_date=p_business_date;
+ -- Do not delete previously known void evidence while some orders are unparsed.
+ if (p_summary->>'unparsed_count')::integer=0 then
+  delete from public.toast_void_facts where business_id=p_business_id
+   and location_id=p_location_id and order_business_date=p_business_date;
+ end if;
  insert into public.toast_void_facts(business_id,location_id,selection_guid,order_guid,
   check_guid,order_business_date,void_business_date,voided_at,amount_cents,
   amount_basis,void_reason_guid,level)
@@ -236,9 +239,17 @@ begin
  from jsonb_to_recordset(p_summary->'voids') as x(
   selection_guid uuid,order_guid uuid,check_guid uuid,order_business_date date,
   void_business_date date,voided_at timestamptz,amount_cents bigint,amount_basis text,
-  void_reason_guid uuid,level text);
- delete from public.toast_refund_facts where business_id=p_business_id
-  and restaurant_guid=p_restaurant_guid and order_business_date=p_business_date;
+  void_reason_guid uuid,level text)
+ on conflict(business_id,selection_guid) do update
+ set location_id=excluded.location_id,order_guid=excluded.order_guid,
+ check_guid=excluded.check_guid,order_business_date=excluded.order_business_date,
+ void_business_date=excluded.void_business_date,voided_at=excluded.voided_at,
+ amount_cents=excluded.amount_cents,amount_basis=excluded.amount_basis,
+ void_reason_guid=excluded.void_reason_guid,level=excluded.level,last_seen=now();
+ if (p_summary->>'unparsed_count')::integer=0 then
+  delete from public.toast_refund_facts where business_id=p_business_id
+   and restaurant_guid=p_restaurant_guid and order_business_date=p_business_date;
+ end if;
  insert into public.toast_refund_facts(business_id,restaurant_guid,order_guid,payment_guid,
   order_business_date,refund_business_date,amount_cents)
  select p_business_id,p_restaurant_guid,x.order_guid,x.payment_guid,
@@ -255,8 +266,9 @@ begin
  select coalesce(sum(o.net_sales_cents),0),count(*) into v_net,v_count
  from public.orders o where o.business_id=p_business_id and o.business_date=p_business_date
   and o.pos_order_id like v_prefix||'%' and not o.toast_excluded;
- if v_net<>(p_summary->>'net_sales_cents')::bigint
-  or v_count<>(p_summary->>'order_count')::integer
+ if (p_summary->>'unparsed_count')::integer=0 and
+ (v_net<>(p_summary->>'net_sales_cents')::bigint
+  or v_count<>(p_summary->>'order_count')::integer)
  then raise exception 'Toast canonical sum mismatch';end if;
  insert into public.toast_day_status(business_id,restaurant_guid,business_date,import_state,
   recon_state,imported_at,net_sales_cents,gross_sales_cents,discounts_cents,refunds_cents,
