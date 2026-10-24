@@ -90,7 +90,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
     {tab === "profit-goal" && pricing && <ProfitGoalSimulator data={pricing} labels={{
       currentMargin: economics("currentMargin"), currentMarginMissing: economics("currentMarginMissing"),
       actual: economics("actual"), estimated: economics("estimated"),
-      targetMargin: economics("targetMargin"), targetMarginHint: economics("targetMarginHint"),
+      targetMargin: economics("targetMargin"), targetMarginSuffix: economics("targetMarginSuffix"), targetMarginHint: economics("targetMarginHint"),
       simulationOnly: economics("simulationOnly"), assumption: economics("assumption"),
       readyMeetsTarget: economics("readyMeetsTarget"), readyNeedsIncrease: economics("readyNeedsIncrease"),
       largeChange: economics("largeChange"), unavailableSales: economics("unavailableSales"),
