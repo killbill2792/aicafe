@@ -5,8 +5,8 @@ import {statusSchema} from "@/lib/pos/toast/statusSchema";
 import type {z} from "zod";
 type Snapshot=z.infer<typeof statusSchema>;
 const dateShift=(d:string,days:number)=>new Date(Date.parse(d+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
-function localDate(zone:string){return new Intl.DateTimeFormat("en-CA",{timeZone:zone,
- year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());}
+function localDate(zone:string,instant:number){return new Intl.DateTimeFormat("en-CA",{timeZone:zone,
+ year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(instant));}
 export default function ToastOwnerDashboard({businessId,currency}:{businessId:string;currency:string}){
  const t=useTranslations("ToastConnect");const locale=useLocale();
  const [data,setData]=useState<Snapshot|null>(null),[bad,setBad]=useState(false);
@@ -40,7 +40,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   const parsed=statusSchema.safeParse(await response.json());
   if(!parsed.success)throw Error("invalid_status");
   setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());
-  if(!start)setStart(parsed.data.startDate??dateShift(localDate(parsed.data.timeZone),-84));
+  if(!start)setStart(parsed.data.startDate??dateShift(localDate(parsed.data.timeZone,Date.now()),-84));
  }
  useEffect(()=>{let active=true;const refresh=async()=>{
   try{const response=await fetch("/api/pos/toast/status?businessId="+encodeURIComponent(businessId),{cache:"no-store"});
@@ -60,7 +60,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   }catch{setMessage(t("ownerError"));return false;}finally{setBusy(false);}
  }
  async function backfill(){
-  if(!data)return;const end=dateShift(localDate(data.timeZone),-1);
+  if(!data)return;const end=dateShift(localDate(data.timeZone,Date.now()),-1);
   if(start>end||start<"2015-12-02"){setMessage(t("ownerInvalidDate"));return;}
   // Queue bounded slices; a range longer than 400 days is never sent to SQL.
   setBusy(true);setMessage("");
