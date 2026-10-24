@@ -121,7 +121,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
     };
     const result = await executeAgentTool("get_menu_items",{query:"latte",limit:25},context);
     expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450,
-      unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"ok"}]);
+      unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"ok",pricePeriod:null,priceEvidenceStatus:"unknown"}]);
     expect(result.agentId).toBe("alex");
     await expect(executeAgentTool("get_menu_items",{businessId:"other"},context)).rejects.toThrow();
     await expect(executeAgentTool("get_menu_items",{query:null,limit:26},context)).rejects.toThrow();
