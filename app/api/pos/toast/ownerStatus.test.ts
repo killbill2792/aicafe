@@ -1,9 +1,8 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {z} from "zod";
 vi.mock("server-only",()=>({}));
 const fixtures=vi.hoisted(()=>({db:null as SupabaseClient|null,authorized:true}));
-vi.mock("@/lib/pos/toast/client",()=>({GUID:z.uuid()}));
+vi.mock("@/lib/pos/toast/client",async()=>{const {z}=await import("zod");return {GUID:z.uuid()};});
 vi.mock("@/lib/pos/toast/ownerAccess",()=>({
  authorizeToastOwner:async()=>fixtures.authorized?fixtures.db:null
 }));
