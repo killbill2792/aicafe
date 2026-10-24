@@ -125,16 +125,31 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setBreakMin(shift?.breakMinutes??0);setSheet("shift");
  };
  const removePerson=()=>{if(!personEditing||!confirmRemoval)return;const id=personEditing,label=name;
-  setData({...data,team:data.team.filter(p=>p.id!==id)});
-  setUndo({id,type:"person",message:t("removedPerson",{name:label})});
-  setSheet(null);run(()=>setPersonActive({id,active:false}));
+  run(async()=>{
+   const result=await setPersonActive({id,active:false});
+   if(result.ok){
+    setData({...data,team:data.team.filter(p=>p.id!==id)});
+    setUndo({id,type:"person",message:t("removedPerson",{name:label})});
+   }
+   return result;
+  });
  };
  const removeCurrentShift=()=>{if(!editing)return;const id=editing;
-  setData({...data,shifts:data.shifts.filter(s=>s.id!==id)});
-  setUndo({id,type:"shift",message:t("removedShift")});setSheet(null);run(()=>removeShift({id}));
+  run(async()=>{
+   const result=await removeShift({id});
+   if(result.ok){
+    setData({...data,shifts:data.shifts.filter(s=>s.id!==id)});
+    setUndo({id,type:"shift",message:t("removedShift")});
+   }
+   return result;
+  });
  };
- const undoRemove=()=>{if(!undo)return;const item=undo;setUndo(null);
-  run(()=>item.type==="shift"?restoreShift({id:item.id}):setPersonActive({id:item.id,active:true}));
+ const undoRemove=()=>{if(!undo)return;const item=undo;
+  run(async()=>{
+   const result=await (item.type==="shift"?restoreShift({id:item.id}):setPersonActive({id:item.id,active:true}));
+   if(result.ok)setUndo(null);
+   return result;
+  });
  };
  const fixGap=(gap:Data["gaps"][number])=>{
   const civilDate=gap.shiftDate??gap.date;
