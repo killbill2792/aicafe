@@ -224,7 +224,7 @@ export async function refreshOwnerConfirmedProcessingFeeEstimates(
     supabase
       .from("orders")
       .select("business_date, pos_order_id, net_sales_cents, processing_fee_provider")
-      .eq("business_id", businessId)
+      .eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null)
       .gte("business_date", fromDate)
       .lte("business_date", toDate),
   ]);

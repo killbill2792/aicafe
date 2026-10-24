@@ -2,7 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createToastAdapter} from "./adapter";
 import {ToastApiError} from "./client";
-type Scope={businessId:string;restaurantGuid:string};
+type Scope={businessId:string;restaurantGuid:string;deadlineAt?:number};
 /** Staff and menu facts are source-scoped staging, not canonical wage/recipe edits. */
 export async function stageToastRoster(db:SupabaseClient,p:Scope) {
  const adapter=createToastAdapter({db,...p});

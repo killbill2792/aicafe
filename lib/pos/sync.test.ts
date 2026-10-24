@@ -17,7 +17,7 @@ function db(){
   const seen:string[]=[];
   const from=(table:string)=>{
     seen.push(table);
-    const chain={select:()=>chain,eq:()=>chain,
+    const chain={select:()=>chain,eq:()=>chain,is:()=>chain,
       then:(ok:(value:{data:unknown[];error:null})=>unknown)=>Promise.resolve({data:[],error:null}).then(ok)};
     return chain;
   };
