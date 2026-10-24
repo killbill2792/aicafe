@@ -1351,6 +1351,46 @@ describe("Codex P1 source-specific checks",()=>{
   });
 });
 
+describe("Codex: owner durations are not generic counts",()=>{
+  it.each([
+    ["Staff worked for 7 days.","We sold 7 lattes.","en","7"],
+    ["Staff worked for 7 hours.","We sold 7 lattes.","en","7"],
+    ["Staff worked for 7 days.","We sold 7 days of sales.","en",null],
+    ["Trabajamos 7 días.","Vendimos 7 cafés.","es","7"],
+    ["عمل الفريق ٧ أيام.","بعنا ٧ مشروبات.","ar","٧"],
+  ] as const)("isolates %s from unrelated claim %s",(owner,reply,locale,flag)=>{
+    const checked=checkNumbers(reply,owner,[],locale);
+    if(flag===null){
+      expect(checked).toEqual([]);
+    }else{
+      expect(checked.map(v=>v.text)).toEqual([flag]);
+      const annotated=numberProvenance(reply,owner,[],locale);
+      expect(annotated).toMatchObject([{source:"unchecked",text:flag}]);
+      expect(annotated.some(v=>v.source==="owner")).toBe(false);
+    }
+  });
+  it("keeps a numeric owner duration scoped, even with an unrelated matching count",()=>{
+    const owner="Staff worked for 7 days.";
+    expect(checkNumbers("We sold 7 lattes.",owner,[],"en").map(v=>v.text)).toEqual(["7"]);
+    expect(numberProvenance("We sold 7 lattes.",owner,[],"en")
+      .map(v=>v.source)).toEqual(["unchecked"]);
+    expect(checkNumbers("Staff worked for 7 days.",owner,[],"en")).toEqual([]);
+    expect(numberProvenance("Staff worked for 7 days.",owner,[],"en")
+      .map(v=>v.source)).toEqual(["owner"]);
+  });
+  it("does not promote a spoken owner duration to a sales count or a price",()=>{
+    const owner="Staff worked for seven days.";
+    expect(checkNumbers("We sold 7 lattes.",owner,[],"en").map(v=>v.text)).toEqual(["7"]);
+    expect(checkNumbers("Staff worked for 7 days.",owner,[],"en")).toEqual([]);
+    expect(numberProvenance("We sold 7 lattes.",owner,[],"en")
+      .map(v=>v.source)).toEqual(["unchecked"]);
+  });
+  it("preserves unrelated owner counts as valid count evidence",()=>{
+    expect(checkNumbers("We sold 7 lattes.","We sold 7 lattes.",[],"en")).toEqual([]);
+    expect(checkNumbers("We sold 7 lattes.","Staff worked 7 days. We sold 7 lattes.",[],"en")).toEqual([]);
+  });
+});
+
 describe("no checker warning may disappear during provenance decoration",()=>{
   it("rejects fabricated labor hours and never launders them through sales counts",()=>{
     for(const claim of ["Staff worked 94.5 hours.","Staff worked for 7 days.","Payroll is recorded for 90 days."]){
