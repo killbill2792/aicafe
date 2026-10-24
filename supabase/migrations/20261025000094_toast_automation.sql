@@ -166,3 +166,66 @@ revoke all on function public.toast_ack_rollup_refresh(uuid,date,uuid) from publ
 revoke all on function public.toast_defer_rollup_refresh(uuid,date,uuid,text) from public,anon,authenticated;
 grant execute on function public.toast_ack_rollup_refresh(uuid,date,uuid) to service_role;
 grant execute on function public.toast_defer_rollup_refresh(uuid,date,uuid,text) to service_role;
+
+-- A bad late re-pull must not turn previously committed sales into missing data.
+-- SQL holds the decisive row lock; the importer cannot safely infer this in JS.
+create function public.toast_record_day_error(
+ p_run_id uuid,p_business_id uuid,p_restaurant_guid uuid,p_business_date date,
+ p_category text,p_run_fatal boolean,p_skip boolean)
+returns void language plpgsql security definer set search_path=public as $dayerr$
+declare was_imported boolean;v_run public.toast_sync_runs%rowtype;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ select * into v_run from public.toast_sync_runs where id=p_run_id
+  and business_id=p_business_id and restaurant_guid=p_restaurant_guid for update;
+ if not found or v_run.state not in ('queued','running','paused_rate_limited') then
+  raise exception 'invalid Toast run';end if;
+ if p_skip and v_run.requested_from is not null and v_run.kind='backfill'
+    and v_run.requested_from+v_run.days_done<>p_business_date then
+  raise exception 'out of order Toast day';end if;
+ select import_state='imported' into was_imported from public.toast_day_status
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+  and business_date=p_business_date for update;
+ if coalesce(was_imported,false) then
+  update public.toast_day_status set last_error_category=p_category
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+   and business_date=p_business_date;
+ else
+  insert into public.toast_day_status(business_id,restaurant_guid,business_date,
+   import_state,recon_state,last_error_category)
+  values(p_business_id,p_restaurant_guid,p_business_date,'failed','pending',p_category)
+  on conflict(business_id,restaurant_guid,business_date) do update
+   set import_state='failed',coverage_complete=false,last_error_category=excluded.last_error_category;
+  -- Preserve other locations' raw sales, but their business-wide coverage is unknown.
+  update public.daily_rollups set sales_data_status='missing'
+   where business_id=p_business_id and business_date=p_business_date;
+ end if;
+ if p_run_fatal then
+  update public.toast_sync_runs set state='failed',finished_at=now(),
+   resume_at=null,last_error_category=p_category where id=p_run_id;
+ elsif p_skip then
+  update public.toast_sync_runs set days_done=days_done+1,
+   state=case when days_total>0 and days_done+1>=days_total then 'completed' else 'running' end,
+   finished_at=case when days_total>0 and days_done+1>=days_total then now() else null end,
+   cursor='{}'::jsonb,resume_at=null,last_error_category=p_category where id=p_run_id;
+ else
+  update public.toast_sync_runs set last_error_category=p_category where id=p_run_id;
+ end if;
+ if p_skip or p_run_fatal then
+  delete from public.toast_day_pages where run_id=p_run_id and business_date=p_business_date;
+ end if;
+end $dayerr$;
+revoke all on function public.toast_record_day_error(uuid,uuid,uuid,date,text,boolean,boolean)
+ from public,anon,authenticated;
+grant execute on function public.toast_record_day_error(uuid,uuid,uuid,date,text,boolean,boolean)
+ to service_role;
+
+-- Defend callers of the PR1 RPC as well: imported rows must not be demoted.
+create or replace function public.toast_mark_day_failed(
+ p_business_id uuid,p_restaurant_guid uuid,p_business_date date,p_run_id uuid,p_category text)
+returns void language plpgsql security definer set search_path=public as $safefail$
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ perform public.toast_record_day_error(p_run_id,p_business_id,p_restaurant_guid,
+  p_business_date,p_category,true,false);
+end $safefail$;
