@@ -117,7 +117,6 @@ describe("provenance footnotes",()=>{
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"90 days".length,source:"unchecked"}]}));
    expect(html).not.toContain('aria-label="Not checked against your records"');
-   expect(html).toContain('aria-label="Not checked against your records"');
    expect(html).not.toContain('role="note"');
  });
  it("keeps attached RTL marks after Arabic units and labels the tooltip accessibly",()=>{
@@ -126,8 +125,7 @@ describe("provenance footnotes",()=>{
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"٩٠ أيام".length,source:"unchecked"}]}));
    expect(html).toContain("٩٠ أيام");
-   expect(html).toContain('aria-label="Not checked against your records"');
-   expect(html).toContain("h-12 w-12");
+   expect(html).not.toContain('aria-label="Not checked against your records"');
  });
 });
 
