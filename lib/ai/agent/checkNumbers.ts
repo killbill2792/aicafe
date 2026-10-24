@@ -372,7 +372,7 @@ function isCalendarNumber(text: string, start: number, end: number, value: numbe
   return false;
 }
 function candidates(text:string,locale:AgentLocale):Array<UnverifiedNumber & {value:number;wholePercent:boolean}>{
- return tokenizeNumbers(text,locale).filter(t=>["money","percent","count","decimal","range","duration"].includes(t.kind)&&t.value!==null)
+ return tokenizeNumbers(text,locale).filter(t=>["money","percent","count","decimal","range"].includes(t.kind)&&t.value!==null)
   .filter(t=>!isCalendarNumber(text,t.start,t.end,t.value!,"number"))
   .map(t=>({start:t.start,end:t.end,text:text.slice(t.start,t.end),
     value:t.value!,kind:t.kind==="money"?"money":t.kind==="percent"?"percent":"number",
@@ -922,9 +922,7 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
 }
 function proposedDuration(text:string,start:number,end:number):boolean{
  const before=text.slice(Math.max(0,start-55),start),after=text.slice(end,end+25);
- return (/^\s*(?:days?|weeks?|días?|semanas?|أيام|ايام|أسابيع|اسابيع)(?!\p{L})/iu.test(after)||
-  /\b(?:days?|weeks?|días?|semanas?)$/iu.test(text.slice(start,end))||
-  /(?:أيام|ايام|أسابيع|اسابيع)$/u.test(text.slice(start,end)))&&
+ return /^\s*(?:days?|weeks?|días?|semanas?|أيام|ايام|أسابيع|اسابيع)(?!\p{L})/iu.test(after)&&
   /(?:\b(?:for|over|por|durante)\b|(?:لمدة|خلال))\s*$/iu.test(before)&&
   /(?:\b(?:try|test|plan|propose|recommend|suggest|run a trial|prueba|probar|propongo|recomiendo|sugiero)\b|(?:نجرب|اقترح|جرب|جرّب|أوصي))/iu.test(before);
 }
