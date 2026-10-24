@@ -14,7 +14,7 @@ import {uncheckedCoverageDays,coverageVerification} from "@/lib/calc/scheduling/
 import {automaticUnpaidBreakMinutes} from "@/lib/calc/scheduling/ruleChecks";
 import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import Link from "next/link";
-import {parseHourlyWage,parseWeeklyHours,weeklyHoursInput,isValidTeamAvailability,teamAvailabilitySummary} from "./teamPersonFields";
+import {parseHourlyWage,parseWeeklyHours,weeklyHoursInput,isValidTeamAvailability,teamAvailabilitySummary,formatTeamClock} from "./teamPersonFields";
 import {addPerson,updatePerson,setPersonActive} from "@/lib/actions/teamWorkspace";
 import {upsertShift,removeShift,restoreShift,copyWeek,sendSchedule} from "@/lib/actions/schedule";
 type Data=Extract<Awaited<ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>>,{ok:true}>["data"];
@@ -267,7 +267,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       <div className="mt-3"><label htmlFor="staff-hourly-wage" className="font-semibold">{t("hourlyWage")}</label>
        <div className="mt-2 flex items-center gap-2"><input id="staff-hourly-wage" autoFocus={focusWage} inputMode="decimal" dir="ltr" value={wageInput} onChange={e=>setWageInput(e.target.value)}
         aria-invalid={invalidWage} aria-describedby={invalidWage?"staff-wage-error":undefined}
-        placeholder="18.73" className={`min-h-12 min-w-0 flex-1 rounded-xl border bg-surface px-3 ${invalidWage?"border-neg ring-1 ring-neg":"border-line"}`}/>
+        placeholder={wageEdit(1873,locale)} className={`min-h-12 min-w-0 flex-1 rounded-xl border bg-surface px-3 ${invalidWage?"border-neg ring-1 ring-neg":"border-line"}`}/>
         <button type="button" className="min-h-12 rounded-xl border border-line px-3" onClick={()=>setWageInput("")}>{t("notSureYet")}</button></div>
        {invalidWage&&<p id="staff-wage-error" role="alert" className="mt-1 text-sm text-neg">{t("invalidWage")}</p>}
       </div>}
@@ -279,7 +279,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
          <div className="flex min-h-12 items-center gap-2">
           <button type="button" aria-pressed={Boolean(row)} onClick={()=>mutateAvailability(day,row?null:{start:null,end:null})}
            className={`min-h-12 min-w-14 rounded-xl px-3 ${row?"bg-accent text-on-accent":"bg-surface2 text-muted"}`}>{label}</button>
-          <span className="flex-1 text-sm">{row?(row.start&&row.end?row.start+" – "+row.end:t("anyTime")):t("off")}</span>
+          <span className="flex-1 text-sm">{row?(row.start&&row.end?formatTeamClock(row.start,locale)+" – "+formatTeamClock(row.end,locale):t("anyTime")):t("off")}</span>
          </div>
          {row&&<div className="mt-2 flex flex-wrap gap-2">{(["morning","afternoon","allDay"] as const).map(chip=><button type="button" key={chip}
           onClick={()=>mutateAvailability(day,chip==="allDay"?{start:null,end:null}:chip==="morning"?{start:"06:00",end:"12:00"}:{start:"12:00",end:"18:00"})}
