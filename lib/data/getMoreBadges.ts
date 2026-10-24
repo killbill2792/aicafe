@@ -21,15 +21,17 @@ async function readToastState(businessId: string): Promise<MoreBadgeInputs["toas
       .eq("business_id", businessId).maybeSingle(),
     db.from("toast_location_mappings").select("verified_at")
       .eq("business_id", businessId),
-    db.from("toast_sync_health").select("last_failure_category")
+    db.from("toast_sync_health_v").select("last_good_sync_at,days_needing_look,stale")
       .eq("business_id", businessId),
   ]);
   if (credential.error || locations.error || health.error) return undefined;
   return {
     state: credential.data?.state ?? "not_connected",
     hasError: Boolean(credential.data?.last_error_category ||
-      health.data?.some((row) => row.last_failure_category)),
+      health.data?.some((row) => row.stale)),
     verifiedLocation: Boolean(locations.data?.some((row) => row.verified_at)),
+    daysNeedLook: health.data?.reduce((n,row)=>n+Number(row.days_needing_look??0),0)??0,
+    lastGoodSyncAt: health.data?.map(row=>row.last_good_sync_at).filter(Boolean).sort().at(-1)??null,
   };
 }
 
