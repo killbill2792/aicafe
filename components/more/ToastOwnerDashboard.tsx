@@ -1,7 +1,7 @@
 "use client";
 import {useEffect,useState} from "react";
 import {useLocale,useTranslations} from "next-intl";
-import {statusSchema} from "@/app/api/pos/toast/status/route";
+import {statusSchema} from "@/lib/pos/toast/statusSchema";
 import type {z} from "zod";
 type Snapshot=z.infer<typeof statusSchema>;
 const dateShift=(d:string,days:number)=>new Date(Date.parse(d+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
@@ -116,7 +116,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <p>{t("ownerDifference")}: <bdi>{fmt(row.deltaCents)}</bdi></p>
     <p className="text-warn">{t("ownerReviewReason")}: {row.reason.replaceAll("_"," ")}</p>
     <div className="mt-2 flex flex-wrap gap-2">
-     <button disabled={busy||row.date>=yesterday} className="min-h-12 rounded-full border border-line px-4"
+     <button disabled={busy||row.date>yesterday} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date})}>{t("ownerRepull")}</button>
      <button disabled={busy} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/day-flag",{restaurantGuid:row.restaurantGuid,date:row.date,
