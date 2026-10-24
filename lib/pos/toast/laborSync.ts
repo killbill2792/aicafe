@@ -3,7 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {ToastApiError} from "./client";
 import {createToastAdapter,type ToastAttendanceFact,type ToastScheduledShift} from "./adapter";
 type Range={since:Date;until:Date};
-type LocationParams={businessId:string;locationId:string;restaurantGuid:string};
+type LocationParams={businessId:string;locationId:string;restaurantGuid:string;deadlineAt?:number};
 function checkedRange(range:Range){
  if(!Number.isFinite(range.since.getTime())||!Number.isFinite(range.until.getTime())||
    range.until<=range.since||range.until.getTime()-range.since.getTime()>30*86400000)
