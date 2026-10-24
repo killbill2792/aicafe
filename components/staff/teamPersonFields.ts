@@ -1,5 +1,7 @@
 /** Pure input and summary helpers for the Staff › Team person sheet. No floating-point money. */
 export type TeamAvailability = {day:number;start:string|null;end:string|null};
+/** Locale defaults vary by runtime; Arabic employee numbers use Arabic-Indic digits consistently. */
+export const teamNumberLocale=(locale?:string)=>locale==="ar"?"ar-u-nu-arab":locale;
 
 function latinDigits(input:string):string {
  return input.replace(/[\u0660-\u0669\u06f0-\u06f9]/g,character=>{
@@ -31,7 +33,7 @@ export function parseWeeklyHours(input:string):number|null|undefined {
  return nearest<=10080&&Math.abs(minutes-nearest)<0.001?nearest:undefined;
 }
 export function weeklyHoursInput(minutes:number|null,locale:string):string {
- return minutes===null?"":new Intl.NumberFormat(locale,{useGrouping:false,maximumFractionDigits:6}).format(minutes/60);
+ return minutes===null?"":new Intl.NumberFormat(teamNumberLocale(locale),{useGrouping:false,maximumFractionDigits:6}).format(minutes/60);
 }
 const timePattern=/^(?:[01]\d|2[0-3]):[0-5]\d$/;
 export function isValidTeamAvailability(days:TeamAvailability[]):boolean {
@@ -45,7 +47,7 @@ const dayDate=(day:number)=>new Date(Date.UTC(2026,9,25+day));
 const dayName=(day:number,locale:string)=>new Intl.DateTimeFormat(locale,{weekday:"short",timeZone:"UTC"}).format(dayDate(day));
 export function formatTeamClock(value:string,locale:string):string {
  const [hour,minute]=value.split(":").map(Number);
- const n=(value:number,min=1)=>new Intl.NumberFormat(locale,{useGrouping:false,minimumIntegerDigits:min}).format(value);
+ const n=(value:number,min=1)=>new Intl.NumberFormat(teamNumberLocale(locale),{useGrouping:false,minimumIntegerDigits:min}).format(value);
  return n(hour)+(minute?":"+n(minute,2):"");
 }
 function dayGroups(days:number[],locale:string):string {
