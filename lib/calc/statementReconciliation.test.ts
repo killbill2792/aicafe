@@ -19,4 +19,4 @@ describe("missing statement debit calculations", () => {
     expect(reconcileStatementDebit(starting, 500)?.ok).toBe(false);
     expect(reconcileStatementDebit(starting, 0)).toBeNull();
   });
-}
+});
