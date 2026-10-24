@@ -316,7 +316,9 @@
     "attentionFeesMissing": "Processing fees missing for {count} days",
     "attentionAddFees": "Add fees",
     "costsIncomplete": "Some costs are not verified yet",
-    "attentionMatchUnavailable": "Item matching needs review"
+    "attentionMatchUnavailable": "Item matching needs review",
+    "attentionAlertsUnavailable": "Your alerts need review",
+    "attentionCheckAlerts": "Review alerts"
   },
   "Money": {
     "title": "Money",
