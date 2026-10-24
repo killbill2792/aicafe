@@ -3,13 +3,14 @@ import {useEffect,useState} from "react";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import {formatCents} from "@/lib/calc";
+import {formatCardValue,diffFields} from "@/lib/format/values";
+import BeforeAfterRows,{type ApprovalPreviewRow} from "./BeforeAfterRows";
 import OwnerScheduleSendPanel from "@/components/staff/OwnerScheduleSendPanel";
-import {menuPriceDelta,priceInputCents,priceEditString} from "@/lib/calc/menuPriceProposal";
+import {priceInputCents,priceEditString} from "@/lib/calc/menuPriceProposal";
 type Locale="en"|"es"|"ar";
 export type ProposalView={proposalId:string;revision:number;state:string;capabilityId?:string;
   productName?:string;oldPriceCents?:number;newPriceCents?:number;
-  preview?:Array<{label:string;before:string;after:string}>;
+  preview?:ApprovalPreviewRow[];currency?:string;
   currentPriceCents?:number|null;editedByOwner?:boolean};
 const dict={en,es,ar} as const;
 export default function SupervisorProposalCard({threadId,proposalId,locale}:{
@@ -71,15 +72,15 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     finally{setBusy(false);}
   };
   if(!value)return error?<p role="alert">{copy.error}</p>:<p role="status">{copy.loading}</p>;
-  const money=(cents:number)=>formatCents(cents,locale);
+  const money=(cents:number)=>formatCardValue({kind:"money",cents},locale,value.currency??"USD");
   const staff=value.capabilityId?.startsWith("olivia.staff_")===true;
   const staffCopy=dict[locale].StaffApprovalCard;
   if(staff){
     const statuses:Record<string,string>={pending:staffCopy.pending,applying:staffCopy.applying,
       applied:staffCopy.applied,cancelled:staffCopy.cancelled,stale:staffCopy.stale,
-      failed:staffCopy.failed};
+      failed:staffCopy.stale,conflict:staffCopy.stale};
     const pending=value.state==="pending"&&!busy;
-    const retry=value.state==="failed"&&!busy;
+    const retry=false;
     const button="min-h-12 min-w-12 rounded-xl px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
     return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={staffCopy.title}
       className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
@@ -102,24 +103,24 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
           </div>
         </div>)}
       </div>
-      {value.capabilityId==="olivia.staff_propose_send_schedule.v1"&&value.state!=="applied"&&
+      {value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true&&value.state!=="applied"&&
         <p className="mt-3 text-[17px]">{staffCopy.preparedOnly}</p>}
       {value.state==="applied"&&(
-        value.capabilityId==="olivia.staff_propose_schedule.v1"||
-        value.capabilityId==="olivia.staff_propose_send_schedule.v1")&&
+        value.capabilityId?.startsWith("olivia.staff_propose_schedule.v")===true||
+        value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true)&&
         <OwnerScheduleSendPanel key={proposalId} proposalId={proposalId} locale={locale}/>}
 
-      {(pending||retry)&&<div className="mt-4 flex flex-wrap gap-2">
+      {pending&&<div className="mt-4 flex flex-wrap gap-2">
         <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}
           onClick={()=>void invoke("approve")}>{retry?staffCopy.retry:staffCopy.approve}</button>
         {pending&&<button type="button" disabled={busy} className={button+" border border-line"}
           onClick={()=>void invoke("cancel")}>{staffCopy.decline}</button>}
       </div>}
-      {value.state==="stale"&&<p role="alert" className="mt-3 text-neg">{staffCopy.staleDetails}</p>}
-      {(error||value.state==="failed")&&<p role="alert" className="mt-3 text-neg">{staffCopy.error}</p>}
+      {["stale","conflict","failed"].includes(value.state)&&<p role="alert" className="mt-3 text-neg">{staffCopy.staleDetails}</p>}
+      {error&&<p role="alert" className="mt-3 text-neg">{staffCopy.error}</p>}
     </section>;
   }
-  const delta=menuPriceDelta(value.oldPriceCents!,value.newPriceCents!);
+  const rows:ApprovalPreviewRow[]=value.preview?.length?value.preview:((value.oldPriceCents!=null&&value.newPriceCents!=null)?diffFields([{field:"price",label:"Price",value:{kind:"money",cents:value.oldPriceCents}}],[{field:"price",label:"Price",value:{kind:"money",cents:value.newPriceCents}}]):[]);
   const pending=value.state==="pending"&&!busy;
   const statuses=copy.states as Record<string,string>;
   const button="min-h-12 min-w-12 rounded-xl px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
@@ -130,14 +131,10 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-bold">{statuses[value.state]??copy.states.failed}</span>
     </div>
     <h3 className="mt-2 break-words text-xl font-bold">{value.productName}</h3>
-    <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 text-[17px]">
-      <span>{money(value.oldPriceCents!)}</span><span aria-hidden="true">→</span>
-      <strong>{money(value.newPriceCents!)}</strong>
-      <span className="text-ink-muted">({delta.increased?"+":""}{money(delta.deltaCents)})</span>
-    </div>
+    <BeforeAfterRows rows={rows} locale={locale} currency={value.currency??"USD"}/>
     {value.editedByOwner&&<p className="mt-2">{copy.editedByYou}</p>}
     {value.state==="stale"&&<p className="mt-2">{copy.stale} {value.currentPriceCents!=null?money(value.currentPriceCents):""}</p>}
-    {value.state==="failed"&&<p className="mt-2">{copy.failed}</p>}
+    {["failed","conflict","stale"].includes(value.state)&&<p className="mt-2">{copy.stale}</p>}
     {pending&&<div className="mt-4 flex flex-wrap gap-2">
       <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}
         onClick={()=>void invoke("approve")}>{copy.approve}</button>

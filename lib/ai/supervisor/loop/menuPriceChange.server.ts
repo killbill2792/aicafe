@@ -25,6 +25,7 @@ export const menuPriceChangeCapability=registerLoopCapability({
   id:menuPriceChangeCapabilityId,version:1,
   inputSchema:z.strictObject({productId:z.uuid(),newPriceCents:cents}),
   effectSchema,
+  dependencyScope:(effect)=>({version:2,kind:"menu_price",productId:effect.productId}),
   simulate:async(scope,input)=>{
     const owner=await authorizedOwnerP1();
     if(owner.identity.businessId!==scope.businessId||owner.identity.currency!=="USD")
