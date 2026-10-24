@@ -1,3 +1,4 @@
+import { tokenizeNumbers } from "./numberTokens";
 import type { AgentLocale, AgentToolResult } from "./tools";
 import { menuPriceDifferenceCents } from "@/lib/calc/agentPriceDifferences";
 import { metricCatalog,metricKeySchema } from "@/lib/calc/metrics/catalog";
@@ -370,21 +371,12 @@ function isCalendarNumber(text: string, start: number, end: number, value: numbe
     return monthBefore.test(before) || monthAfter.test(after);
   return false;
 }
-function candidates(text: string, locale: AgentLocale): Array<UnverifiedNumber & { value: number; wholePercent: boolean }> {
-  const found: Array<UnverifiedNumber & { value: number; wholePercent: boolean }> = [];
-  for (const m of text.matchAll(numberPattern(locale))) {
-    const token = m[0].trim(), money = new RegExp(currency, "iu").test(token);
-    const percent = /[%٪]$/.test(token);
-    const raw = token.replace(new RegExp(currency, "giu"), "").replace(/[%٪]/g, "").trim().replace("−", "-");
-    const value = decimal(raw, locale);
-    if (!Number.isFinite(value)) continue;
-    const kind: Kind = money ? "money" : percent ? "percent" : "number";
-    if (isCalendarNumber(text, m.index, m.index + m[0].length, value, kind)) continue;
-    found.push({ text: token, start: m.index, end: m.index + m[0].length, kind,
-      wholePercent: percent && !/[.,٫٬]/.test(raw),
-      value: kind === "money" || kind === "percent" ? Math.round(value * 100) : value });
-  }
-  return found;
+function candidates(text:string,locale:AgentLocale):Array<UnverifiedNumber & {value:number;wholePercent:boolean}>{
+ return tokenizeNumbers(text,locale).filter(t=>["money","percent","count","decimal","range"].includes(t.kind)&&t.value!==null)
+  .filter(t=>!isCalendarNumber(text,t.start,t.end,t.value!,"number"))
+  .map(t=>({start:t.start,end:t.end,text:text.slice(t.start,t.end),
+    value:t.value!,kind:t.kind==="money"?"money":t.kind==="percent"?"percent":"number",
+    wholePercent:t.kind==="percent"&&!/[.,٫٬]/u.test(text.slice(t.start,t.end))}));
 }
 /** Only actual list positions are exempt, not sentence-ending business counts. */
 function isListMarker(text: string, start: number, end: number, value: number): boolean {
@@ -1067,58 +1059,9 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const observed=evidence.flatMap(entry=>entry.times??[]);
   // Only this clock's offsets, action, day(s), and named employee may match a
   // real source interval. Never flatten schedule timestamps into global proof.
-  const clocks = [...text.matchAll(clockPattern)] as ClockSpan[];
-  const ownerClocks = [...ownerText.matchAll(clockPattern)] as ClockSpan[];
   return candidates(text, locale).filter(v => {
     if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
     if(v.kind==="number"&&proposedDuration(text,v.start,v.end))return false;
-    const clock = v.kind==="number" ? clocks.find(m =>
-      v.start < clockEnd(m) && v.end > m.index) : undefined;
-    if(clock){
-      const role=timeRole(text,clock);
-      if(!role){
-        // Sales prose may include incidental timestamps (e.g. "999 (8:00)");
-        // do not mistake the clock for the adjacent sale count. But any
-        // recognizably business-time assertion must fail closed on an
-        // unrecognized action, in every supported language.
-        const prior=text.slice(0,clock.index);
-        const sentenceStart=Math.max(prior.lastIndexOf("\n"),prior.lastIndexOf("."),
-          prior.lastIndexOf("!"),prior.lastIndexOf("?"),prior.lastIndexOf(";"))+1;
-        const sentence=text.slice(sentenceStart);
-        return /\b(?:open|opening|opens|close|closing|closes|hours|shift|starts?|ends?|begins?|finishes?|abrimos|abrir|abre|abren|apertura|cerramos|cerrar|cierra|cierre|turno)\b|(?:نفتح|نغلق|يفتح|يغلق|وردية|مناوبة|الافتتاح|الإغلاق)/iu.test(sentence);
-      }
-      const canonical=canonicalClock(clock);
-      if(canonical){
-        const days=mentionedWeekdays(text,clock,clocks);
-        const claimedDate=claimedClockDate(text,clock,clocks);
-        const calendarDay=claimedDate?DAY_MENTIONS[new Date(claimedDate+"T12:00:00Z").getUTCDay()]?.key:null;
-        const dateAgrees=claimedDate!==null&&
-          (!claimedDate||days.length===0||days.includes(calendarDay??""));
-        const person=role.startsWith("shift")?assertedShiftPerson(text,clock):{kind:"general" as const};
-        const verified=dateAgrees&&person.kind!=="unresolved"&&(days.length?days:[null]).every(day=>observed.some(h=>
-          h.time===canonical&&h.role===role&&(day===null?h.complete:h.day===day)&&
-          (!claimedDate||h.day===calendarDay)&&
-          (!claimedDate||(!h.validFrom||claimedDate>=h.validFrom)&&(!h.validTo||claimedDate<=h.validTo))&&
-          (person.kind==="general"||(person.kind==="named"&&h.person===person.name))));
-        // Owner words also need the same asserted time *role*, weekday and
-        // named employee. Matching a bare "8:00" cannot prove opening hours
-        // when the owner only described an employee shift.
-        const ownerGrounded=ownerClocks.some(ownerClock=>{
-          if(timeRole(ownerText,ownerClock)!==role||canonicalClock(ownerClock)!==canonical)return false;
-          const ownerDays=mentionedWeekdays(ownerText,ownerClock,ownerClocks);
-          if(days.length&&!days.every(day=>ownerDays.includes(day)))return false;
-          const ownerDate=claimedClockDate(ownerText,ownerClock,ownerClocks);
-          if(claimedDate===null||ownerDate===null)return false;
-          if(claimedDate&&ownerDate!==claimedDate)return false;
-          const ownerPerson=role.startsWith("shift")?assertedShiftPerson(ownerText,ownerClock):{kind:"general" as const};
-          if(person.kind==="unresolved"||ownerPerson.kind==="unresolved")return false;
-          return person.kind==="general"||
-            (person.kind==="named"&&ownerPerson.kind==="named"&&ownerPerson.name===person.name);
-        });
-        return !(verified||ownerGrounded);
-      }
-      return true;
-    }
     // Named price and comparison claims are identity-sensitive. Validate
     // them BEFORE checking whether some unrelated raw amount happens to match.
     const moneyLike=v.kind==="money"||
