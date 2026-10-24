@@ -251,7 +251,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       </div>
       <CostRecoveryStrip buckets={vm.recovery.buckets}
         labels={Object.fromEntries(vm.buckets.map(b=>[b.code,labelFor(b.code)]))}
-        coveredLabel={(label,date)=>t("coveredOn",{label,date})} locale={locale} emptyLabel={t("glanceNoBills")}/>
+        coveredLabel={(label,date)=>t("coveredOn",{label,date})} locale={locale} emptyLabel={t("glanceNoBills")}
+        dataComplete={canShowProfit} incompleteLabel={t("costsIncomplete")}/>
     </section>
     <HomeTaskSections items={items} title={t("needsAttention")} empty={t("attentionEmpty")} seeAll={t("taskSeeAll")}/>
     <SupervisorHomePanel
