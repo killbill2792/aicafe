@@ -185,8 +185,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     {initialAlerts.filter(a=>!dismissed.includes(a.id)).map(a=><div key={a.id} className="flex items-start gap-3 border-t border-line py-3">
       <span aria-hidden="true">⚠</span><div className="min-w-0 flex-1"><p className="font-semibold">{t(({meal:"ruleMeal",rest_break:"ruleRestBreak",weekly_overtime:"ruleWeeklyOT",daily_overtime:"ruleDailyOT",short_rest:"ruleShortRest"} as Record<string,"ruleMeal"|"ruleRestBreak"|"ruleWeeklyOT"|"ruleDailyOT"|"ruleShortRest">)[a.rule_key]??"ruleMeal")}</p></div>
       <div className="flex shrink-0 flex-col gap-2">
-       {validScheduleDate(a.workDate)&&isStaffRuleKey(a.rule_key)&&<Link className="flex min-h-12 items-center justify-center rounded-lg bg-accent px-3 font-bold text-on-accent"
-        href={staffScheduleHref({date:a.workDate,employee:a.employee_id})+"&fix="+encodeURIComponent(a.rule_key)+(a.workStart?"&clock="+encodeURIComponent(a.workStart):"")}>{t("fix")}</Link>}
+       {validScheduleDate(a.workDate)&&isStaffRuleKey(a.rule_key)?<Link className="flex min-h-12 items-center justify-center rounded-lg bg-accent px-3 font-bold text-on-accent"
+        href={staffScheduleHref({date:a.workDate,employee:a.employee_id})+"&fix="+encodeURIComponent(a.rule_key)+(a.workStart?"&clock="+encodeURIComponent(a.workStart):"")}>{t("fix")}</Link>:<button type="button" disabled className="min-h-12 rounded-lg border border-line px-3 opacity-60" title={t("manualRuleReview")}>{t("fix")}</button>}
        <button disabled={busy} className="min-h-12 rounded-lg border border-line px-3"
         onClick={()=>startTransition(async()=>{const result=await dismissStaffRuleAlert({id:a.id});
          if(result.ok){setDismissed(ids=>[...ids,a.id]);router.refresh();}
@@ -212,7 +212,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       setScreen("team");openPerson(firstWithoutWage);
       setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);
     }}>{t("addWages")}</button>}</div>}
-   <nav aria-label={t("weekDays")} className="grid grid-cols-7 gap-1">{data.dates.map((d,i)=>{
+   <nav aria-label={t("weekDays")} className="grid grid-cols-7 gap-1">{data.dates.map(d=>{
     const totals=dayTotals(d,data.shifts);
     return <a key={d} href={"#day-"+d} className={`relative rounded-xl border border-line bg-surface px-1 py-2 text-center text-sm ${d===date?"bg-accent text-on-accent":""}`}>
      {data.gaps.some(g=>g.date===d)&&<span aria-label={t("gap")} className="absolute end-1 top-1 size-2 rounded-full bg-neg"/>}
@@ -245,7 +245,12 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    <WeekGrid dates={data.dates} people={data.displayTeam} shifts={data.shifts} gaps={data.gaps}
     openHours={data.openHours} currency={data.currency} readOnly={data.readOnly} coverageEnabled={data.rules.coverage_enabled}
     onEdit={(d,id)=>openShift(d,id)} onAdd={(d,id)=>openShift(d,undefined,id)}/>
-   {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">
+   <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4">
+     <p className="max-w-md text-start">{t("staffMessagingHelp")}</p>
+     <button type="button" disabled={data.readOnly||!data.team.length} className="min-h-12 rounded-xl border border-accent px-4 text-accent-text"
+      onClick={()=>{setScreen("team");openPerson(data.team[0]);}}>{t("whatsAppSetup")}</button>
+    </section>
+    {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">
     <h2 className="font-headline text-xl font-bold">{t("noShifts")}</h2><p className="my-2 text-muted">{t("emptyHelp")}</p>
     <div className="grid gap-2 sm:grid-cols-3">
      <button disabled={data.readOnly||busy} className="min-h-12 rounded-xl border border-accent px-3 text-accent-text"
