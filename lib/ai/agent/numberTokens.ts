@@ -25,7 +25,7 @@ export function numericValue(raw:string,locale:NumberLocale):number {
 }
 const expr=(s:string)=>new RegExp(s,"giu");
 function amountValue(raw:string,locale:NumberLocale):number|null {
- const neg=/^\s*\(/u.test(raw)||/^\s*[-−]/u.test(raw);
+ const neg=/^\s*\(/u.test(raw)||/[-−]/u.test(raw);
  const digits=raw.replace(expr(currency),"").replace(/[%٪()+−-]/g,"").trim();
  const value=numericValue(digits,locale);
  return Number.isFinite(value)?value*(neg?-1:1):null;
@@ -55,7 +55,6 @@ export function tokenizeNumbers(text:string,locale:NumberLocale):NumberToken[]{
  scan(num+"\\s*"+durationUnit+"(?!\\p{L})","duration",95,
    s=>amountValue(s.replace(expr(durationUnit),""),locale),"duration");
  for(const m of text.matchAll(expr("("+amount+")"+join+"("+amount+")"))){
-  if(!boundary(text,m.index,m.index+m[0].length))continue;
   const split=m[0].lastIndexOf(m[2]),money=expr(currency).test(m[0]);
   const first=amountValue(m[1],locale),second=amountValue(m[2],locale);
   add(m.index,m.index+m[1].length,money?"money":"range",first===null?null:money?Math.round(first*100):first,money?"cents":null,85);
@@ -66,7 +65,6 @@ export function tokenizeNumbers(text:string,locale:NumberLocale):NumberToken[]{
  scan(D+"+(?:st|nd|rd|th|º|ª|°|er|do|ro|to)","ordinal",80);
  for(const m of text.matchAll(expr("(?:\\(\\s*[-−+]?"+currency+"\\s*"+num+"\\s*\\)|[-−+]?\\s*(?:"+currency+"\\s*)?"+num+"(?:[ \\u00a0\\u202f]*(?:[%٪]|"+currency+"))?)"))){
   const start=m.index,end=start+m[0].length,raw=m[0];
-  if(!boundary(text,start,end))continue;
   const money=expr(currency).test(raw),percent=/[%٪]\s*$/u.test(raw),n=amountValue(raw,locale);
   if(n===null)continue;
   const kind:NumberTokenKind=money?"money":percent?"percent":/[.,٬٫]/u.test(raw)?"decimal":"count";
