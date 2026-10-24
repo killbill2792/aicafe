@@ -318,7 +318,8 @@
     "costsIncomplete": "Aún faltan costos por verificar",
     "attentionMatchUnavailable": "Hay que revisar la asociación de artículos",
     "attentionAlertsUnavailable": "Hay que revisar las alertas",
-    "attentionCheckAlerts": "Revisar alertas"
+    "attentionCheckAlerts": "Revisar alertas",
+    "attentionRegisterSetupUnavailable": "La conexión con tu caja necesita atención. Sube las ventas para mantener tus cifras actualizadas."
   },
   "Money": {
     "title": "Dinero",
