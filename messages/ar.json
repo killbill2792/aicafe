@@ -2898,8 +2898,8 @@
     "deliveryConsentError": "تعذر حفظ الموافقة على واتساب.",
     "deliveryConsentAfterCreate": "الموافقة على واتساب غير مفعّلة افتراضيًا. بعد إضافة الموظف، افتح ملفه لتسجيل موافقته.",
     "rulesAndCosts": "القواعد والتكاليف",
-    "mealSentence": "استراحة الطعام (دقيقة) بعد",
-    "restSentence": "استراحة مدفوعة (دقيقة) كل",
+    "mealSentence": "استراحة الطعام:",
+    "restSentence": "استراحة مدفوعة:",
     "weeklySentence": "العمل الإضافي الأسبوعي بعد",
     "dailySentence": "العمل الإضافي اليومي بعد",
     "longestSentence": "أطول مناوبة",
@@ -2913,7 +2913,14 @@
     "whileOpen": "شخص أثناء ساعات العمل",
     "prepTiming": "التحضير والإنهاء",
     "invalidNumber": "أدخل قيمة صحيحة ضمن الحدود المسموحة.",
-    "rulesSummary": "استراحة الطعام بعد {meal} ساعة · الإضافي بعد {overtime} ساعة"
+    "rulesSummary": "استراحة الطعام بعد {meal} ساعة · الإضافي بعد {overtime} ساعة",
+    "after": "بعد",
+    "every": "كل",
+    "applyRule": "تطبيق القاعدة",
+    "hoursUnit": "س",
+    "minutesUnit": "د",
+    "hoursInput": "ساعات",
+    "minutesInput": "دقائق"
   },
   "FreeAccess": {
     "pricing": "الباقات والأسعار",
