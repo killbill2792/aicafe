@@ -1061,7 +1061,7 @@ describe("follow-up: owner speech, bounded totals and proposed durations",()=>{
    expect(checkNumbers("Try this for 7 days, then test for 2 weeks.","",[],"en")).toEqual([]);
    expect(checkNumbers("Prueba esto por 7 días.","",[],"es")).toEqual([]);
    expect(checkNumbers("نجرب لمدة 7 أيام.","",[],"ar")).toEqual([]);
-   expect(checkNumbers("Staff worked 7 days.","",[],"en")).toEqual([]);
+   expect(checkNumbers("Staff worked 7 days.","",[],"en").map(v=>v.text)).toEqual(["7 days"]);
  });
 });
 
@@ -1083,8 +1083,8 @@ describe("review: no arithmetic or owner-speech laundering",()=>{
      [],"en").map(x=>x.text)).toEqual(["$8"]);
  });
  it("only exempts proposals, not historical durations",()=>{
-   expect(checkNumbers("Staff worked for 7 days.","",[],"en")).toEqual([]);
-   expect(checkNumbers("Sales declined over 2 weeks.","",[],"en")).toEqual([]);
+   expect(checkNumbers("Staff worked for 7 days.","",[],"en").map(v=>v.text)).toEqual(["7 days"]);
+   expect(checkNumbers("Sales declined over 2 weeks.","",[],"en").map(v=>v.text)).toEqual(["2 weeks"]);
  });
 });
 
@@ -1352,12 +1352,35 @@ describe("Codex P1 source-specific checks",()=>{
 });
 
 describe("no checker warning may disappear during provenance decoration",()=>{
+  it("rejects fabricated labor hours and never launders them through sales counts",()=>{
+    for(const claim of ["Staff worked 94.5 hours.","Staff worked for 7 days.","Payroll is recorded for 90 days."]){
+      const flagged=checkNumbers(claim,"",[],"en");
+      expect(flagged).toHaveLength(1);
+      expect(numberProvenance(claim,"",[],"en")).toMatchObject([
+        {source:"unchecked",start:flagged[0].start,end:flagged[0].end}
+      ]);
+    }
+    expect(checkNumbers("Staff worked 7 days.","We sold 7 lattes.",[],"en")
+      .map(v=>v.text)).toEqual(["7 days"]);
+    expect(checkNumbers("Staff worked 7 days.","We worked 7 days.",[],"en")).toEqual([]);
+  });
+  it("does not allow owner counts to ground a percentage range",()=>{
+    const claim="Margin is 10–20%.";
+    const rejected=checkNumbers(claim,"We sold 10 lattes and 20 teas.",[],"en");
+    expect(rejected.map(v=>v.text)).toEqual(["10","20%"]);
+    expect(numberProvenance(claim,"We sold 10 lattes and 20 teas.",[],"en")
+      .map(v=>v.source)).toEqual(["unchecked","unchecked"]);
+    expect(checkNumbers(claim,"Margin is 10–20%.",[],"en")).toEqual([]);
+  });
   it("exempts duration tokens without hiding adjacent unsupported counts",()=>{
     const reply="We\'ve had 90 days of labor data, with 99 sales.";
-    expect(checkNumbers(reply,"",[],"en").map(v=>v.text)).toEqual(["99"]);
-    expect(numberProvenance(reply,"",[],"en").map(v=>v.text)).toEqual(["99"]);
+    expect(checkNumbers(reply,"",[],"en").map(v=>v.text)).toEqual(["90 days","99"]);
+    expect(numberProvenance(reply,"",[],"en").map(v=>v.text)).toEqual(["90 days","99"]);
   });
   const cases=[
+    {text:"Payroll is recorded for 90 days.",owner:"",results:[],locale:"en" as const},
+    {text:"We\'ve had 90 days of labor data.",owner:"",results:[],locale:"en" as const},
+    {text:"We open Monday at 8:00 AM.",owner:"",results:[],locale:"en" as const},
     {text:"Mocha costs $5.",owner:"Latte costs $5.",results:[
       {source:"menu_items",period:null,missing:[],items:[{id:"a",name:"Latte",priceCents:500},
         {id:"b",name:"Mocha",priceCents:600}]}],locale:"en" as const},
@@ -1378,9 +1401,8 @@ describe("no checker warning may disappear during provenance decoration",()=>{
   it("keeps numeric day units attached but does not decorate owner-backed or proposed durations",()=>{
     const claim="Payroll is recorded for 90 days.";
     const annotated=numberProvenance(claim,"",[],"en");
-    expect(annotated.find(v=>v.text==="90 days")).toBeUndefined();
-    expect(numberProvenance("There are 8 days.","There are 8 days.",[],"en")
-      .some(v=>v.text==="8 days")).toBe(false);
+    expect(annotated.find(v=>v.text==="90 days")).toMatchObject({source:"unchecked"});
+    expect(checkNumbers("There are 8 days.","There are 8 days.",[],"en")).toEqual([]);
     expect(numberProvenance("I suggest trying it for 8 days.","",[],"en")
       .some(v=>v.text==="8 days")).toBe(false);
   });
