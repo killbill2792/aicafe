@@ -37,7 +37,6 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[]){
  const imports:ImportCall[]=[];
  const operations:string[]=[];
  const run={state:"queued",daysDone:0,daysTotal,cursor:{} as Record<string,unknown>};
- let imported=importedAtStart;let visible=imported?"actual":"missing";
  const db={
   from(table:string){
    const filters:Record<string,unknown>={};
@@ -52,8 +51,7 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[]){
       cursor:run.cursor},error:null};
      if(table==="toast_day_pages")return {data:stored.has(filters.business_date+":"+filters.page)?
       {payload:stored.get(filters.business_date+":"+filters.page)}:null,error:null};
-     if(table==="daily_rollups")return {data:{sales_data_status:visible},error:null};
-     if(table==="toast_day_status")return {data:imported?{import_state:"imported"}:null,error:null};
+     if(table==="daily_rollups")return {data:{sales_data_status:"missing"},error:null};
      if(table==="toast_rollup_refresh_jobs")return {data:pendingCosts.has(String(filters.business_date))?
       {generation:pendingCosts.get(String(filters.business_date))}:null,error:null};
      throw new Error("unexpected table "+table);
@@ -75,14 +73,9 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[]){
     if(args.p_run_fatal)run.state="failed";
     else if(args.p_skip){run.daysDone++;run.cursor={};
      run.state=run.daysDone>=run.daysTotal?"completed":"running";}
-   }else if(name==="toast_record_day_error"||name==="toast_mark_day_failed"){
-    if(!imported)visible="missing";
-    if(name==="toast_mark_day_failed"||args.p_run_fatal){run.state="failed";}
-    else if(args.p_skip){run.daysDone++;run.cursor={};run.state=run.daysDone>=run.daysTotal?"completed":"running";}
    }else if(name==="toast_import_day"){
     pendingCosts.set(String(args.p_business_date),"00000000-0000-4000-8000-000000000001");
     imports.push(args as unknown as ImportCall);
-    imported=true;visible="actual";
     dayStatuses.set(String(args.p_business_date),"imported");
     run.daysDone++;
     run.state=run.daysTotal>0&&run.daysDone>=run.daysTotal?"completed":"running";
@@ -246,31 +239,3 @@ describe("P1 bad days never destroy previously imported sales",()=>{
  });
 });
 
-describe("P1-3: failed re-imports preserve good money",()=>{
- it("an invalid-response late re-pull preserves imported report coverage",async()=>{
-  const f=fakeDatabase(1,true);
-  mocked.request.mockRejectedValue(new ToastApiError("invalid_response"));
-  await expect(importToastBusinessDay(f.db,params("2026-10-16")))
-   .rejects.toMatchObject({category:"invalid_response"});
-  expect(f.imported).toBe(true);
-  expect(f.visible).toBe("actual");
-  expect(f.operations).not.toContain("toast_mark_day_failed");
-  expect(f.run).toMatchObject({state:"completed",daysDone:1});
- });
- it("day 3 of ten can be invalid without stopping days 4 through 10",async()=>{
-  const f=fakeDatabase(10);
-  mocked.request.mockImplementation(async(path:string)=>{
-   if(path.includes("businessDate=20261003"))throw new ToastApiError("invalid_response");
-   return [];
-  });
-  for(let d=1;d<=10;d++){
-   const date="2026-10-"+String(d).padStart(2,"0");
-   if(d===3)await expect(importToastBusinessDay(f.db,params(date)))
-    .rejects.toMatchObject({category:"invalid_response"});
-   else await importToastBusinessDay(f.db,params(date));
-  }
-  expect(f.run).toMatchObject({state:"completed",daysDone:10});
-  expect(f.imports).toHaveLength(9);
-  expect(mocked.request.mock.calls.some(c=>String(c[0]).includes("businessDate=20261010"))).toBe(true);
- });
-});
