@@ -19,23 +19,10 @@ export async function POST(request:Request){
  if(error)return reply(503,{error:"unavailable"});
  if(!mapping?.toast_time_zone)return reply(404,{error:"not_found"});
  if(date>=localClock(new Date(),mapping.toast_time_zone).today)return reply(400,{error:"future_day"});
- const {data:existing,error:readError}=await db.from("toast_day_owner_flags")
-  .select("business_date").eq("business_id",businessId).eq("restaurant_guid",restaurantGuid)
-  .eq("business_date",date).maybeSingle();
- if(readError)return reply(503,{error:"unavailable"});
- if(action==="clear"){
-  if(!existing)return reply(200,{cleared:true});
-  const {error:write}=await db.from("toast_day_owner_flags").update({cleared_at:new Date().toISOString()})
-    .eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).eq("business_date",date);
-  if(write)return reply(503,{error:"unavailable"});
- }else{
-  const {error:write}=await db.from("toast_day_owner_flags").upsert({
-   business_id:businessId,restaurant_guid:restaurantGuid,business_date:date,
-   flagged_at:new Date().toISOString(),cleared_at:null,note:note??null
-  },{onConflict:"business_id,restaurant_guid,business_date"});
-  if(write)return reply(503,{error:"unavailable"});
- }
- const {error:certError}=await db.rpc("toast_certify_day_voids",{p_business_id:businessId,p_date:date});
- if(certError)return reply(503,{error:"unavailable"});
+ const {error:write}=await db.rpc("toast_set_day_owner_flag",{
+  p_business_id:businessId,p_restaurant_guid:restaurantGuid,p_date:date,
+  p_flag:action==="flag",p_note:note??null
+ });
+ if(write)return reply(503,{error:"unavailable"});
  return reply(200,{flagged:action==="flag"});
 }
