@@ -75,3 +75,63 @@ describe("Toast daily parser / trustworthy void facts",()=>{
   }
  });
 });
+
+
+describe("Toast PR1 edge-case financial fixtures",()=>{
+ it("subtracts fundraising but not ordinary service charges or gratuity",()=>{
+  const x=parse({...order,checks:[{...check,amount:20,
+   appliedServiceCharges:[
+    {chargeAmount:4,serviceChargeCategory:"FUNDRAISING_CAMPAIGN",gratuity:false},
+    {chargeAmount:2,serviceChargeCategory:"SERVICE_CHARGE",gratuity:false},
+    {chargeAmount:3,serviceChargeCategory:"SERVICE_CHARGE",gratuity:true}
+   ]}]});
+  expect(x.normalized?.netSalesCents).toBe(1600);
+  expect(x.serviceChargesCents).toBe(200);
+  expect(x.gratuityCents).toBe(300);
+ });
+ it("uses non-tax discount only for tax-inclusive selections",()=>{
+  const included={...check.selections[0],taxInclusion:"INCLUDED",
+   appliedDiscounts:[{discountAmount:2.25,nonTaxDiscountAmount:2}]};
+  const excluded={...check.selections[0],taxInclusion:"NOT_INCLUDED",
+   appliedDiscounts:[{discountAmount:3,nonTaxDiscountAmount:1}]};
+  const a=parse({...order,checks:[{...check,selections:[included]}]});
+  const b=parse({...order,checks:[{...check,selections:[excluded]}]});
+  expect(a.normalized?.discountsCents).toBe(200);
+  expect(a.normalized?.grossSalesCents).toBe(1200);
+  expect(b.normalized?.discountsCents).toBe(300);
+ });
+ it("subtracts deferred gift cards and house account payments exactly once",()=>{
+  const first={...check.selections[0],guid:"11111111-1111-4111-8111-111111111111",
+   deferred:true,price:8};
+  const second={...check.selections[0],guid:"22222222-2222-4222-8222-222222222222",
+   selectionType:"HOUSE_ACCOUNT_PAY_BALANCE",price:7};
+  const regular={...check.selections[0],guid:"33333333-3333-4333-8333-333333333333",price:15};
+  const result=parse({...order,checks:[{...check,amount:30,selections:[first,second,regular]}]});
+  expect(result.normalized?.netSalesCents).toBe(1500);
+  expect(result.normalized?.lines).toHaveLength(1);
+  expect(result.normalized?.lines[0].netSalesCents).toBe(1500);
+ });
+ it("does not count voided, denied, cancelled or errored payment tips",()=>{
+  const result=parse({...order,checks:[{...check,payments:[
+    {paymentStatus:"CAPTURED",tipAmount:2,refund:{refundAmount:0,tipRefundAmount:0.5}},
+    {paymentStatus:"VOIDED",tipAmount:8},
+    {paymentStatus:"DENIED",tipAmount:8},
+    {paymentStatus:"CANCELLED",tipAmount:8},
+    {paymentStatus:"ERROR_NETWORK",tipAmount:8},
+    {paymentStatus:"PAID",voided:true,tipAmount:8}
+  ]}]});
+  expect(result.normalized?.tipCents).toBe(150);
+ });
+ it("uses Toast business date across the spring and fall DST boundaries",()=>{
+  for(const [openedDate,expected] of [
+   ["2026-03-08T03:30:00-0700","2026-03-07"],
+   ["2026-11-01T01:30:00-0700","2026-10-31"],
+   ["2026-11-01T01:30:00-0800","2026-10-31"]
+  ]){
+   const result=parseToastBusinessOrder({...order,businessDate:null,openedDate},
+     restaurant,expected,"America/Los_Angeles",4);
+   expect(result.normalized).not.toBeNull();
+   expect(result.warnings.business_date_fallback).toBe(1);
+  }
+ });
+});
