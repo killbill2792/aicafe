@@ -135,7 +135,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       (!input.query || item.name.toLocaleLowerCase(ctx.locale).includes(input.query.toLocaleLowerCase(ctx.locale))));
     const limit = input.limit ?? 8;
     const visible=filtered.slice(0,limit);
-    const facts=ctx.menuPriceEvidence?await ctx.menuPriceEvidence(visible):{};
+    const facts:Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>=
+      ctx.menuPriceEvidence?await ctx.menuPriceEvidence(visible):{};
     return { source: "menu_items", period: null, agentId:"alex",
       missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : [])],
       items: visible.map(item => ({
