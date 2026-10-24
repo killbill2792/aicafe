@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {parseHourlyWage,parseWeeklyHours,isValidTeamAvailability,teamAvailabilitySummary} from "./teamPersonFields";
+import {parseHourlyWage,parseWeeklyHours,isValidTeamAvailability,teamAvailabilitySummary,formatTeamClock,weeklyHoursInput} from "./teamPersonFields";
 
 describe("Staff person typed fields",()=>{
  it("parses wages as exact integer cents, without a stepper",()=>{
@@ -13,6 +13,10 @@ describe("Staff person typed fields",()=>{
  it("parses fractional weekly hours into minutes and guards impossible limits",()=>{
   expect(parseWeeklyHours("25")).toBe(1500);
   expect(parseWeeklyHours("25.5")).toBe(1530);
+  expect(parseWeeklyHours("٢٥٫٥")).toBe(1530);
+  for(const locale of ["en","es","ar"])for(const minutes of [1,59,61,1500,10079]){
+   expect(parseWeeklyHours(weeklyHoursInput(minutes,locale))).toBe(minutes);
+  }
   expect(parseWeeklyHours("")).toBeNull();
   expect(parseWeeklyHours("168.5")).toBeUndefined();
   expect(parseWeeklyHours("1.001")).toBeUndefined();
@@ -23,6 +27,12 @@ describe("Staff person typed fields",()=>{
   expect(isValidTeamAvailability([{day:1,start:null,end:null}])).toBe(true);
   expect(isValidTeamAvailability([{day:1,start:"06:15",end:null}])).toBe(false);
   expect(isValidTeamAvailability([{day:1,start:"06:15",end:"06:15"}])).toBe(false);
+ });
+ it("localizes entered minute-level time labels without changing their stored value",()=>{
+  expect(formatTeamClock("06:15","en")).toBe("6:15");
+  expect(formatTeamClock("12:00","en")).toBe("12");
+  expect(formatTeamClock("06:15","es")).toBe("6:15");
+  expect(formatTeamClock("06:15","ar")).toContain("١٥");
  });
  it("summarizes grouped days in English, Spanish and Arabic",()=>{
   const weekdays=[1,2,3,4,5].map(day=>({day,start:null,end:null}));
