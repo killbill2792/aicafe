@@ -208,20 +208,20 @@ begin
  for v_old in select id,pos_order_id,net_sales_cents from public.orders
   where business_id=p_business_id and location_id=p_location_id and business_date=p_business_date
   and pos_order_id like v_prefix||'%' and toast_excluded=false
+  and (p_summary->>'unparsed_count')::integer=0
   and not exists(select 1 from jsonb_array_elements(p_orders)e where e->>'posOrderId'=orders.pos_order_id)
   for update
  loop
   insert into public.toast_order_revisions(business_id,restaurant_guid,business_date,
    pos_order_id,before_cents,after_cents,run_id)
   values(p_business_id,p_restaurant_guid,p_business_date,v_old.pos_order_id,v_old.net_sales_cents,0,p_run_id);
-  update public.orders set toast_excluded=true,net_sales_cents=0,gross_sales_cents=0,
-    refunds_cents=0,discounts_cents=0,tax_cents=0,tip_cents=0 where id=v_old.id;
+  update public.orders set toast_excluded=true where id=v_old.id;
   delete from public.order_lines where order_id=v_old.id;
  end loop;
  -- Retain non-Toast data for rollback, but prevent double counted sales.
  update public.orders set superseded_by='toast'
  where business_id=p_business_id and business_date=p_business_date
- and (location_id=p_location_id or location_id is null)
+ and location_id=p_location_id
  and pos_order_id not like 'toast:%'
  and coalesce((select toast_start_date from public.toast_location_mappings
       where business_id=p_business_id and restaurant_guid=p_restaurant_guid),p_business_date)<=p_business_date;
@@ -293,18 +293,18 @@ begin
     join public.orders x on x.id=l.order_id where x.business_id=p_business_id
      and x.business_date=p_business_date and not x.toast_excluded
      and x.superseded_by is null and not l.voided),0)::integer,
-   0,0,0,0,0,'actual'
+   0,0,0,0,0,case when (p_summary->>'unparsed_count')::integer=0 then 'actual' else 'missing' end
  from public.orders o where o.business_id=p_business_id
    and o.business_date=p_business_date and not o.toast_excluded
    and o.superseded_by is null
  on conflict(business_id,business_date) do update
  set net_sales_cents=excluded.net_sales_cents,orders_count=excluded.orders_count,
-  drinks_count=excluded.drinks_count,sales_data_status='actual';
+  drinks_count=excluded.drinks_count,sales_data_status=excluded.sales_data_status;
  perform public.pos_rebuild_sales_fact_rollups_v1(p_business_id,p_business_date);
  -- IMPORTANT: completeness remains UNKNOWN until PR2's late-edit re-pull + reconciliation.
  update public.daily_rollups set voids_status='unknown',voids_source=null
  where business_id=p_business_id and business_date=p_business_date;
- update public.toast_sync_runs set state='completed',days_done=days_done+1,
+ update public.toast_sync_runs set state='completed',days_done=greatest(days_done,1),
   orders_unparsed=orders_unparsed+(p_summary->>'unparsed_count')::integer,finished_at=now()
  where id=p_run_id;
  return jsonb_build_object('orders',v_count,'net_sales_cents',v_net);
