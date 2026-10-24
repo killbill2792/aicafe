@@ -150,12 +150,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   };
 
   const [alerts, unmatched] = await Promise.all([
-    getOpenAlerts(),
+    // Alerts are a secondary Home signal: a failing alert refresh must not
+    // take the owner’s financial snapshot and chat offline.
+    getOpenAlerts().catch(() => null),
     // Matching is a secondary Home signal. A temporary match-query failure must
     // not take down the owner’s key numbers and chat; the review link remains visible.
     getCatalogMatchReview().catch(() => null),
   ]);
-  const alertItems: HomeAttentionItem[] = alerts.map(alert => {
+  const alertItems: HomeAttentionItem[] = (alerts ?? []).map(alert => {
     const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
     // The legacy manage-staff redirect opens Team, not Schedule. Link directly
     // to Schedule so the meal-break fix is reachable before Step 13 merges.
@@ -166,9 +168,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       href: homeAttentionHref({ kind: "alert", href }), impactCents: alert.impactCents };
   });
   // Alerts for a missing bill and unmatched catalog items describe the same work.
-  const coveredBills = new Set(alerts.filter(a => a.kind === "missing_bill").map(a => String(a.payload.categoryCode ?? "")));
+  const coveredBills = new Set((alerts ?? []).filter(a => a.kind === "missing_bill").map(a => String(a.payload.categoryCode ?? "")));
   const missingFeeDays = daysForPeriod(snapshot, period).filter(day => day.netSalesCents > 0 && day.cardFeesStatus === "missing").length;
   const items: HomeAttentionItem[] = [
+    ...(alerts === null ? [{
+      id:"alerts-unavailable",title:t("attentionAlertsUnavailable"),actionLabel:t("attentionCheckAlerts"),
+      href:"/more/alerts",impactCents:null
+    }] : []),
     ...(posStatus && posStatus.status!=="active" ? [{
       id:"reconnect",title:tReconnect("banner"),actionLabel:tReconnect("action"),
       href:homeAttentionHref({kind:"reconnect" as const,provider:posStatus.provider}),impactCents:null
@@ -194,7 +200,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     ...(unmatched === null ? [{
       id:"match-unavailable",title:t("attentionMatchUnavailable"),actionLabel:t("attentionMatch"),
       href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
-    }] : unmatched.length>0 && !alerts.some(a=>a.kind==="unmatched_sales_items") ? [{
+    }] : unmatched.length>0 && !(alerts ?? []).some(a=>a.kind==="unmatched_sales_items") ? [{
       id:"unmatched",title:t("attentionUnmatched",{count:unmatched.length}),actionLabel:t("attentionMatch"),
       href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
     }]:[]),
