@@ -277,7 +277,7 @@ describe("GFM response tables",()=>{
    expect(html).not.toContain(">4<");
  });
  it("preserves escaped pipes, code pipes, inline emphasis and safe links",()=>{
-   const html=render("| Name | Link |\n| --- | --- |\n| red\\\\|blue and `a|b` | **Bold** [go](https://example.com) |");
+   const html=render("| Name | Link |\n| --- | --- |\n| red\\|blue and `a|b` | **Bold** [go](https://example.com) |");
    expect(html).toContain("red|blue");
    expect(html).toContain("a|b");
    expect(html).toContain("<strong");
