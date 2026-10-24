@@ -2,7 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {fromZonedTime} from "date-fns-tz";
 import {z} from "zod";
-import {createToastClient,GUID,ToastApiError} from "./client";
+import {createToastClient,GUID,ToastApiError,type ToastFailure} from "./client";
 import {stageToastCatalog,stageToastRoster} from "./operationalStaging";
 import {syncToastLaborReadOnly} from "./laborSync";
 import {addCalendarDays,localClock} from "./scheduleDates";
@@ -34,7 +34,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
    .upsert({...key,...values},{onConflict:"business_id,restaurant_guid"});
   if(error)throw new ToastApiError("unavailable");
  };
- const phaseFailures:string[]=[];
+ const phaseFailures:ToastFailure[]=[];
  const recordFailure=(e:unknown)=>{
   // A scope being absent is an expected, nonfatal skip. Other failures are
   // recorded while the remaining optional source families still get a chance.
