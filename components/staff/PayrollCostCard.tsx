@@ -20,8 +20,10 @@ function sourceLabel(source: string, labels: { owner: string; estimate: string; 
 export default function PayrollCostCard({
   settings,
   labels,
+  readOnly=false,
 }: {
   settings: PayrollCostSettings;
+  readOnly?: boolean;
   labels: {
     title: string;
     body: string;
@@ -48,8 +50,6 @@ export default function PayrollCostCard({
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const number = employerCostPercentFromInput(value);
-  const valid = number !== null;
   const sourceLabels = {
     owner: labels.ownerSource,
     estimate: labels.estimateSource,
@@ -61,13 +61,15 @@ export default function PayrollCostCard({
   function save() {
     setMessage(null);
     setError(null);
-    if (!valid) {
+    if (readOnly) return;
+    const rate = employerCostPercentFromInput(value);
+    if (rate === null) {
       setError(labels.invalid);
       return;
     }
     startTransition(async () => {
       try {
-      const result = await savePayrollCostAssumption({ employerCostPercent: number });
+      const result = await savePayrollCostAssumption({ employerCostPercent: rate });
       if (!result.ok) {
         setError(labels.saveFailed);
         return;
@@ -101,6 +103,7 @@ export default function PayrollCostCard({
             type="text"
             inputMode="decimal"
             value={value}
+            disabled={readOnly}
             onChange={(event) => {setValue(event.target.value);setError(null);}}
             aria-invalid={!!error}
             className={`min-h-12 min-w-0 flex-1 rounded-xl border px-3 text-base ${error?"border-neg":"border-line"}`}
@@ -124,7 +127,7 @@ export default function PayrollCostCard({
       <button
         type="button"
         onClick={save}
-        disabled={isPending}
+        disabled={isPending || readOnly}
         className="min-h-12 self-start rounded-full bg-accent px-5 text-sm font-bold text-on-accent disabled:opacity-40"
       >
         {isPending ? labels.saving : labels.save}
