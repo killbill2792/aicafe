@@ -2,6 +2,8 @@ import {previewShift,type DetailedShift,type PersonForSchedule,type Availability
 import {shiftCost,roleWageAverages,businessWageEstimate} from "./shiftCost";
 import type {RuleSettings} from "./ruleChecks";
 import {assertStaffShiftPlan} from "./staffProposalValidation";
+import {coverageGaps} from "./coverageGaps";
+import type {OpenHours} from "@/lib/business/openHours";
 
 export type StaffDraftInputShift={
   employee_id:string;date:string;start:string;end:string;break_minutes:number
@@ -11,7 +13,7 @@ export type StaffDraftShift=StaffDraftInputShift&{
 };
 export type StaffDraftTotals={
   shiftCount:number;paidMinutes:number;knownCostCents:number;
-  unknownCount:number;estimatedCount:number;ruleIssues:number
+  unknownCount:number;estimatedCount:number;ruleIssues:number;coverageGaps:number
 };
 
 /** UI preview only: server approval independently validates and commits the canonical effect. */
@@ -19,7 +21,8 @@ export function reviewStaffDraft(
   shifts:readonly StaffDraftInputShift[],
   people:PersonForSchedule[],rules:RuleSettings,
   availability:AvailabilityEntry[],timezone:string,adjacent:DetailedShift[]=[],
-  wageRates?:Record<string,number|null>
+  wageRates?:Record<string,number|null>,
+  coverage?:{dates:string[];openHours:OpenHours|null;minHeadcount:number}
 ):{shifts:StaffDraftShift[];totals:StaffDraftTotals}{
   assertStaffShiftPlan(shifts);
   if(shifts.some(s=>s.start===s.end))throw new Error("draft_invalid_shift");
@@ -51,7 +54,9 @@ export function reviewStaffDraft(
     if(check.aboveMaximum)flaggedMax.add(shift.employeeId);
     if(check.overtime)flaggedWeekly.add(shift.employeeId);
   }
-  ruleIssues+=flaggedMax.size+flaggedWeekly.size;
+  const missingCoverage=coverage?coverageGaps(coverage.dates,projected,
+    coverage.openHours,coverage.minHeadcount).length:0;
+  ruleIssues+=flaggedMax.size+flaggedWeekly.size+missingCoverage;
   return {
     shifts:projected.map(s=>({employee_id:s.employeeId,date:s.date,start:s.start,end:s.end,
       break_minutes:s.breakMinutes,id:s.id,name:s.employeeName??"",paidMinutes:s.paidMinutes,
@@ -59,6 +64,7 @@ export function reviewStaffDraft(
     totals:{shiftCount:projected.length,paidMinutes:projected.reduce((n,s)=>n+s.paidMinutes,0),
       knownCostCents:projected.reduce((n,s)=>n+(s.costCents??0),0),
       unknownCount:projected.filter(s=>s.unknown).length,
-      estimatedCount:projected.filter(s=>s.estimated&&!s.unknown).length,ruleIssues}
+      estimatedCount:projected.filter(s=>s.estimated&&!s.unknown).length,ruleIssues,
+      coverageGaps:missingCoverage}
   };
 }
