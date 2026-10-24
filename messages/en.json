@@ -1027,13 +1027,13 @@
     "voidsByDay": "Voids by day",
     "voidsDay": "Date",
     "voidsAmount": "Voided amount",
-    "voidsNoData": "No recorded void data is available for this period.",
+    "voidsNoData": "No confirmed void amounts are available for this period.",
     "voidsReadError": "Voids data isn't available right now.",
     "voidsPeopleUnavailable": "The connected sales data does not identify who voided each item.",
     "impactPartialHint": "Known estimates only; some alerts have no amount.",
-    "voidsUnknown": "Not enough recorded data",
-    "voidsMissingHistory": "A reliable three-month average is unavailable because at least one month has no recorded sales days.",
-    "voidsCoverageNote": "Totals use recorded sales days only. Missing days are not treated as zero.",
+    "voidsUnknown": "Unavailable — void coverage not confirmed",
+    "voidsMissingHistory": "A three-month average needs independently confirmed void records for every day. Recorded sales alone do not establish this.",
+    "voidsCoverageNote": "Only positive void amounts recorded in the rollups are shown. Sales uploads cannot confirm zero-void days or complete totals.",
     "voidsAlertMonth": "{month} (alert month)"
   },
   "DeleteAccount": {
