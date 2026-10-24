@@ -39,9 +39,15 @@ export async function toastDayFlags(
   .order("business_date").limit(373);
  if(error||!Array.isArray(data)||data.length>=373)
   throw new Error("Toast day status unavailable");
+ const {data:flags,error:flagError}=await db.from("toast_day_owner_flags")
+  .select("restaurant_guid,business_date").eq("business_id",businessId)
+  .is("cleared_at",null).gte("business_date",from).lte("business_date",to).limit(373);
+ if(flagError||!Array.isArray(flags)||flags.length>=373)
+  throw new Error("Toast owner flag coverage unavailable");
  return data.map(row=>({
   date:row.business_date,
   status:row.import_state as ToastDayFlag["status"],
-  needsLook:["mismatch","owner_flagged"].includes(row.recon_state)||Boolean(row.last_error_category)
+  needsLook:["mismatch","analytics_timeout","coverage_invalid"].includes(row.recon_state)||
+   flags.some(flag=>flag.business_date===row.business_date)||Boolean(row.last_error_category)
  }));
 }
