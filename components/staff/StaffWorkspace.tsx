@@ -43,7 +43,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const [dismissed,setDismissed]=useState<string[]>([]);
  const [repeatWeekly,setRepeatWeekly]=useState(false),[fillsGap,setFillsGap]=useState(false),[breakOverridden,setBreakOverridden]=useState(false);
  const [inlineName,setInlineName]=useState(""),[inlineRole,setInlineRole]=useState("Barista");
- const [name,setName]=useState(""),[role,setRole]=useState("Barista"),[wageInput,setWageInput]=useState("");
+ const [name,setName]=useState(""),[role,setRole]=useState("Barista"),[wageInput,setWageInput]=useState(""),[focusWage,setFocusWage]=useState(false);
   const [minHoursInput,setMinHoursInput]=useState(""),[maxHoursInput,setMaxHoursInput]=useState(""),[confirmRemoval,setConfirmRemoval]=useState(false);
   const wage=parseHourlyWage(wageInput),minHours=parseWeeklyHours(minHoursInput),maxHours=parseWeeklyHours(maxHoursInput);
   const invalidWage=wage===undefined,invalidMin=minHours===undefined,invalidMax=maxHours===undefined;
@@ -65,7 +65,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setSheet(null);router.refresh();
  });
  const openPerson=(person?:Data["team"][number])=>{
-  setAvailabilityDirty(false);setConsentError(false);setConfirmRemoval(false);
+  setAvailabilityDirty(false);setConsentError(false);setConfirmRemoval(false);setFocusWage(false);
   setPersonEditing(person?.id??null);setName(person?.name??"");setRole(person?.role??"Barista");
   setWageInput(person?.wageCents==null?"":wageEdit(person.wageCents,locale));setSalaryPeriod(person?.wagePeriod&&person.wagePeriod!=="hour"?person.wagePeriod:null);
   setPhone(person?.phone??"");setWhatsAppOptIn(person?.whatsappOptIn??false);
@@ -244,7 +244,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      {data.team.map(p=><div key={p.id} className="flex min-h-16 items-center gap-3 border-t border-line py-3">
       <span className="grid size-12 place-items-center rounded-full bg-accent-soft font-bold">{p.name[0]}</span>
       <div className="min-w-0 flex-1"><b>{p.name}</b><span className="ms-2 text-sm text-muted">{p.role?roleLabel(p.role):t("team")}</span>
-        <div className="text-[17px] text-muted">{p.wageCents==null?(p.wagePeriod!=="hour"?t("salaryManagedBadge"):<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>):t("wagePerHour",{amount:fmt(p.wageCents,data.currency,locale)})}</div><div className="text-[17px] text-muted">{teamSummary(p)}</div></div>
+        <div className="text-[17px] text-muted">{p.wageCents==null?(p.wagePeriod!=="hour"?t("salaryManagedBadge"):<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setFocusWage(true);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>):t("wagePerHour",{amount:fmt(p.wageCents,data.currency,locale)})}</div><div className="text-[17px] text-muted">{teamSummary(p)}</div></div>
       <div className="text-end">{t("teamHoursShort",{hours:new Intl.NumberFormat(locale,{maximumFractionDigits:1}).format(hours(personTotals(p.id,data.shifts).paidMinutes))})}</div>
       <button disabled={data.readOnly} onClick={()=>openPerson(p)} className="min-h-12 px-2">{t("edit")}</button>
      </div>)}
@@ -259,13 +259,13 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   {sheet&&<StaffDialog headingId="staff-sheet-heading" onClose={()=>setSheet(null)}>
     <div className="mx-auto mb-3 h-1 w-12 rounded bg-line"/>{fillsGap&&sheet==="shift"&&<p className="text-sm font-bold text-pos">{t("fillsGap")}</p>}<h2 id="staff-sheet-heading" className="font-headline text-xl font-bold">{sheet==="person"?(personEditing?t("editPerson"):t("addPerson")):(editing?t("editShift"):t("addShiftDate",{date:dayLabel(date)}))}</h2>
     {sheet==="person"?<>
-      <label className="mt-3 block font-semibold">{t("name")}<input autoFocus={sheet==="person"} value={name} onChange={e=>setName(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"/></label>
+      <label className="mt-3 block font-semibold">{t("name")}<input autoFocus={sheet==="person"&&!focusWage} value={name} onChange={e=>setName(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"/></label>
       <div className="mt-3 flex flex-wrap gap-2">{["Barista","Manager","Baker","Cashier"].map(r=><button type="button" key={r} aria-pressed={role===r} onClick={()=>setRole(r)} className="min-h-12 rounded-full border border-line px-3">{roleLabel(r)}</button>)}<button type="button" aria-pressed={!["Barista","Manager","Baker","Cashier"].includes(role)} onClick={()=>setRole("")} className="min-h-12 rounded-full border border-line px-3">{t("roleOther")}</button></div>
       {!["Barista","Manager","Baker","Cashier"].includes(role)&&<label className="mt-2 block">{t("roleOther")}<input maxLength={60} value={role} onChange={e=>setRole(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"/></label>}
       <p className="mt-4 text-muted">{t("optional")}</p>
       {salaryPeriod?<p className="mt-3 rounded-xl bg-surface2 p-3 text-muted">{t("salaryManaged")}</p>:
       <div className="mt-3"><label htmlFor="staff-hourly-wage" className="font-semibold">{t("hourlyWage")}</label>
-       <div className="mt-2 flex items-center gap-2"><input id="staff-hourly-wage" inputMode="decimal" dir="ltr" value={wageInput} onChange={e=>setWageInput(e.target.value)}
+       <div className="mt-2 flex items-center gap-2"><input id="staff-hourly-wage" autoFocus={focusWage} inputMode="decimal" dir="ltr" value={wageInput} onChange={e=>setWageInput(e.target.value)}
         aria-invalid={invalidWage} aria-describedby={invalidWage?"staff-wage-error":undefined}
         placeholder="18.73" className={`min-h-12 min-w-0 flex-1 rounded-xl border bg-surface px-3 ${invalidWage?"border-neg ring-1 ring-neg":"border-line"}`}/>
         <button type="button" className="min-h-12 rounded-xl border border-line px-3" onClick={()=>setWageInput("")}>{t("notSureYet")}</button></div>
