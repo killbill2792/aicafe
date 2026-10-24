@@ -746,6 +746,7 @@
     "anHour": "an hour",
     "todaySoFar": "today so far",
     "onShiftNow": "On shift now",
+    "matchNames": "Match names",
     "noOneOnShift": "No one is scheduled or clocked in right now.",
     "staffRole": "Staff",
     "sinceShort": "Since {time}",
