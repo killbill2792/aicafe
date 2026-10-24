@@ -4,6 +4,7 @@ const money=z.number().int().safe();
 const day=z.iso.date();
 export const statusSchema=z.object({
  connection:z.enum(["not_connected","needs_attention","connected"]),
+ importEnabled:z.boolean(),
  errorCategory:z.string().nullable(),lastGoodSyncAt:z.string().nullable(),stale:z.boolean(),
  backfill:z.object({daysDone:z.number().int(),daysTotal:z.number().int(),
   state:z.string().nullable(),resumeAt:z.string().nullable()}),

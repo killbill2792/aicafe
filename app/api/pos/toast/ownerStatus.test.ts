@@ -51,7 +51,8 @@ function dbWith(mappings:Row[],days:Row[],flags:Row[]=[],runs:Row[]=[]){
  fixtures.db=db as unknown as SupabaseClient;
  return {pages,rpc};
 }
-beforeEach(()=>{vi.stubEnv("TOAST_SETUP_ENABLED","true");fixtures.authorized=true;});
+beforeEach(()=>{vi.stubEnv("TOAST_SETUP_ENABLED","true");
+ vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","false");fixtures.authorized=true;});
 describe("owner Toast status — real multi-location histories",()=>{
  it("paginates more than 500 imported days and 1000 runs instead of hiding controls",async()=>{
   const days=Array.from({length:270},(_,i)=>[day(iso(i),n),day(iso(i),s)]).flat();
@@ -99,6 +100,16 @@ describe("owner Toast status — real multi-location histories",()=>{
   const data=await response.json();
   expect(data.connection).toBe("needs_attention");
   expect(data.timeZone).toBe("America/Los_Angeles");
+ });
+ it("keeps setup visible but reports import disabled until the separate flag is on",async()=>{
+  dbWith([north],[]);
+  let response=await GET(new Request(`http://localhost/api/pos/toast/status?businessId=${b}`));
+  expect(response.status).toBe(200);
+  expect((await response.json()).importEnabled).toBe(false);
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+  response=await GET(new Request(`http://localhost/api/pos/toast/status?businessId=${b}`));
+  expect(response.status).toBe(200);
+  expect((await response.json()).importEnabled).toBe(true);
  });
  it("rejects a non-owner without exposing whether a Toast account exists",async()=>{
   fixtures.authorized=false;

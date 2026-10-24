@@ -1,7 +1,9 @@
 "use client";
-import {useEffect,useState} from "react";
+import {useCallback,useEffect,useRef,useState} from "react";
 import {useLocale,useTranslations} from "next-intl";
 import {statusSchema} from "@/lib/pos/toast/statusSchema";
+import {subscribeToastConnectionChanges,createToastStatusRequestGate} from "./toastConnectionEvents";
+import {canStartToastImport,canRepullToastDay,commitToastOwnerAction,queueToastBackfillChunks,PartialToastQueueError} from "./toastOwnerActionState";
 import type {z} from "zod";
 type Snapshot=z.infer<typeof statusSchema>;
 const dateShift=(d:string,days:number)=>new Date(Date.parse(d+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
@@ -16,47 +18,60 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  const [analytics,setAnalytics]=useState({apiUrl:"",managementGroupGuid:"",clientId:"",clientSecret:""});
  const [analyticsBusy,setAnalyticsBusy]=useState(false);
  const [lastLoadedAt,setLastLoadedAt]=useState<number|null>(null);
+ const [reloadKey,setReloadKey]=useState(0);
+ const statusGate=useRef(createToastStatusRequestGate());
  const money=new Intl.NumberFormat(locale,{style:"currency",currency});
  const number=new Intl.NumberFormat(locale);
  async function configureAnalytics(action:"connect"|"disconnect"){
   if(analyticsBusy)return;
   setAnalyticsBusy(true);setMessage("");
   try{
-   const url="/api/pos/toast/analytics"+(action==="disconnect"?"?businessId="+encodeURIComponent(businessId):"");
-   const response=await fetch(url,{method:action==="disconnect"?"DELETE":"POST",
-    headers:{"Content-Type":"application/json"},
-    ...(action==="connect"?{body:JSON.stringify({businessId,...analytics})}:{})});
-   if(!response.ok)throw Error("unavailable");
-   setAnalytics(old=>({...old,clientSecret:""}));await load();
+   await commitToastOwnerAction(async()=>{
+    const url="/api/pos/toast/analytics"+(action==="disconnect"?"?businessId="+encodeURIComponent(businessId):"");
+    const response=await fetch(url,{method:action==="disconnect"?"DELETE":"POST",
+     headers:{"Content-Type":"application/json"},
+     ...(action==="connect"?{body:JSON.stringify({businessId,...analytics})}:{})});
+    if(!response.ok)throw Error("unavailable");
+    setAnalytics(old=>({...old,clientSecret:""}));
+   },load);
    setMessage(t("ownerSaved"));
   }catch{setMessage(t("ownerError"))}finally{setAnalyticsBusy(false)}
  }
  const fmt=(n:number|null)=>n==null?t("noAmount"):money.format(n/100);
  const day=(d:string)=>new Intl.DateTimeFormat(locale,{timeZone:"UTC",dateStyle:"medium"})
   .format(new Date(d+"T12:00:00Z"));
- async function load(){
-  const response=await fetch("/api/pos/toast/status?businessId="+encodeURIComponent(businessId),{cache:"no-store"});
-  if(!response.ok)throw Error("unavailable");
-  const parsed=statusSchema.safeParse(await response.json());
-  if(!parsed.success)throw Error("invalid_status");
-  setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());
-  if(!start)setStart(parsed.data.startDate??dateShift(localDate(parsed.data.timeZone,Date.now()),-84));
- }
- useEffect(()=>{let active=true;const refresh=async()=>{
-  try{const response=await fetch("/api/pos/toast/status?businessId="+encodeURIComponent(businessId),{cache:"no-store"});
+ const load=useCallback(async()=>{
+  const request=statusGate.current.begin();
+  try{
+   const response=await fetch("/api/pos/toast/status?businessId="+encodeURIComponent(businessId),{cache:"no-store"});
    if(!response.ok)throw Error("unavailable");
    const parsed=statusSchema.safeParse(await response.json());
    if(!parsed.success)throw Error("invalid_status");
-   if(active){setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());setStart(old=>old||parsed.data.startDate||
-    dateShift(localDate(parsed.data.timeZone,Date.now()),-84));}
-  }catch{if(active){setData(null);setBad(true);}}
- };void refresh();return()=>{active=false;};},[businessId]);
+   if(!statusGate.current.isCurrent(request))return;
+   setData(parsed.data);setBad(false);setLastLoadedAt(Date.now());
+   setStart(old=>old||parsed.data.startDate||dateShift(localDate(parsed.data.timeZone,Date.now()),-84));
+  }catch(error){
+   // A stale request must not replace a newly verified connection with an error.
+   if(!statusGate.current.isCurrent(request))return;
+   setData(null);setBad(true);
+   throw error;
+  }
+ },[businessId]);
+ useEffect(()=>{
+  const refresh=()=>{void load().catch(()=>{/* The retry control is now visible. */});};
+  const unsubscribe=subscribeToastConnectionChanges(window,refresh);
+  refresh();
+  return()=>{unsubscribe();statusGate.current.invalidate();};
+ },[load,reloadKey]);
  async function post(url:string,payload:unknown){
   if(busy)return false;setBusy(true);setMessage("");
-  try{const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({businessId,...(payload as object)})});
-   if(!response.ok)throw Error("unavailable");
-   await load();setMessage(t("ownerSaved"));return true;
+  try{
+   await commitToastOwnerAction(async()=>{
+    const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({businessId,...(payload as object)})});
+    if(!response.ok)throw Error("unavailable");
+   },load);
+   setMessage(t("ownerSaved"));return true;
   }catch{setMessage(t("ownerError"));return false;}finally{setBusy(false);}
  }
  async function backfill(){
@@ -64,15 +79,30 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   if(start>end||start<"2015-12-02"){setMessage(t("ownerInvalidDate"));return;}
   // Queue bounded slices; a range longer than 400 days is never sent to SQL.
   setBusy(true);setMessage("");
-  try{for(let from=start;from<=end;){
-   const to=dateShift(from,399)<end?dateShift(from,399):end;
-   const r=await fetch("/api/pos/toast/backfill",{method:"POST",
-    headers:{"Content-Type":"application/json"},body:JSON.stringify({businessId,from,to})});
-   if(!r.ok)throw Error("unavailable");from=dateShift(to,1);
-  }await load();setMessage(t("ownerQueued"));
-  }catch{setMessage(t("ownerError"));}finally{setBusy(false);}
+  try{
+   await commitToastOwnerAction(async()=>{
+    await queueToastBackfillChunks(start,end,async(from,to)=>{
+     const r=await fetch("/api/pos/toast/backfill",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({businessId,from,to})});
+     if(!r.ok)throw Error("unavailable");
+    },dateShift);
+   },load);
+   setMessage(t("ownerQueued"));
+  }catch(error){
+   if(error instanceof PartialToastQueueError&&error.queuedChunks>0){
+    setStart(error.resumeFrom);
+    setMessage(t("ownerPartiallyQueued",{date:day(error.resumeFrom)}));
+    // Prior chunks committed. An unavailable read must not erase that fact.
+    void load().catch(()=>{});
+   }else setMessage(t("ownerError"));
+  }finally{setBusy(false);}
  }
- if(bad)return <p role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">{t("ownerStatusUnavailable")}</p>;
+ if(bad)return <section role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">
+  <p>{t("ownerStatusUnavailable")}</p>
+  {message&&<p role="status" className="mt-2">{message}</p>}
+  <button type="button" className="mt-3 min-h-12 rounded-full border border-warn px-5"
+   onClick={()=>setReloadKey(k=>k+1)}>{t("ownerRefreshStatus")}</button>
+ </section>;
  if(!data)return <p role="status" className="text-ink-muted">{t("pending")}</p>;
  const yesterday=lastLoadedAt?dateShift(localDate(data.timeZone,lastLoadedAt),-1):"";
  const relative=data.lastGoodSyncAt&&lastLoadedAt?new Intl.RelativeTimeFormat(locale,{numeric:"auto"}).format(
@@ -83,7 +113,8 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    <p className="my-2 text-ink-muted">{data.startDate?day(data.startDate):t("ownerNoStart")}</p>
    <input aria-label={t("ownerImportFrom")} className="min-h-12 w-full rounded-xl border border-line bg-card p-3"
     type="date" value={start} max={yesterday} onChange={e=>setStart(e.target.value)}/>
-   <button disabled={busy||!start||start>yesterday} onClick={()=>void backfill()}
+   {!data.importEnabled&&<p role="status" className="mt-2 text-warn">{t("ownerImportDisabled")}</p>}
+   <button disabled={!canStartToastImport(data.importEnabled,busy,start,yesterday)} onClick={()=>void backfill()}
     className="mt-3 min-h-12 w-full rounded-full bg-accent px-4 text-on-accent disabled:opacity-40">
     {t("ownerStartImport")}</button>
   </section>
@@ -96,7 +127,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <progress className="w-full" value={data.backfill.daysDone} max={data.backfill.daysTotal}/>
    </>}
    {data.backfill.resumeAt&&<p className="text-warn">{t("ownerPaused",{time:new Date(data.backfill.resumeAt).toLocaleString(locale)})}</p>}
-   {data.failedRuns>0&&<button disabled={busy} className="mt-3 min-h-12 rounded-full border border-line px-5"
+   {data.failedRuns>0&&<button disabled={busy||!data.importEnabled} className="mt-3 min-h-12 rounded-full border border-line px-5"
      onClick={()=>void post("/api/pos/toast/retry",{})}>{t("ownerTryAgain")}</button>}
   </section>
   {data.firstImportCheck==="due"&&<section className="rounded-card-lg bg-card p-5">
@@ -134,7 +165,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <p className="text-warn">{t("ownerReviewReason")}: {row.reason==="owner_flag"?t("ownerReasonOwner"):row.reason==="mismatch"?t("ownerReasonMismatch"):
      row.reason==="analytics_timeout"?t("ownerReasonTimeout"):row.reason==="coverage_invalid"?t("ownerReasonCoverage"):t("ownerReasonOther")}</p>
     <div className="mt-2 flex flex-wrap gap-2">
-     <button disabled={busy||row.date>yesterday||data.queuedRanges.some(range=>range.from<=row.date&&range.to>=row.date)} className="min-h-12 rounded-full border border-line px-4"
+     <button disabled={!canRepullToastDay(data.importEnabled,busy,row.date,yesterday,data.queuedRanges)} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date})}>{t("ownerRepull")}</button>
      <button disabled={busy} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/day-flag",{restaurantGuid:row.restaurantGuid,date:row.date,
