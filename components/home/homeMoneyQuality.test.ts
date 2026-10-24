@@ -33,6 +33,23 @@ describe("Home key-number trust", () => {
     expect(quality.hasPartial).toBe(true);
   });
 
+  it("does not confirm a profit when legacy missing-bill evidence is incomplete", () => {
+    const snapshot = getFixtureSnapshot();
+    const home = buildHomeViewModel(snapshot,"today");
+    const money = buildProfitAndCostsViewModel(snapshot,"today");
+    const reported = { ...home, missingCategories: [
+      {categoryCode:"rent" as const,label:"Rent",amountCents:0,isMissing:true,isEstimate:false}
+    ]};
+    const quality = homeMoneyQuality(reported,{
+      ...money, businessCosts:{...money.businessCosts,completeness:"complete" as const},
+      ownerProfitDisplay:home.ownerProfitDisplay,
+      changes:[{ key:"ownerProfit",label:"Owner profit",deltaCents:100 }],
+    });
+    expect(quality.canShowProfit).toBe(false);
+    expect(quality.hasPartial).toBe(true);
+    expect(quality.profitChangePct).toBeNull();
+  });
+
   it("shows an estimate marker when canonical costs use estimated input", () => {
     const snapshot = getFixtureSnapshot();
     snapshot.runningCostLines = snapshot.runningCostLines.map(line =>
