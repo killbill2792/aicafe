@@ -119,9 +119,13 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
     p_business_id:p.businessId,p_business_date:p.businessDate,p_generation:generation});
    return {...imported,costsPending:Boolean(ackError||ack!==true)};
   }catch{
-   if(generation)await db.rpc("toast_defer_rollup_refresh",{
-    p_business_id:p.businessId,p_business_date:p.businessDate,
-    p_generation:generation,p_category:"unavailable"}).catch(()=>null);
+   if(generation){
+    try{
+     await db.rpc("toast_defer_rollup_refresh",{
+      p_business_id:p.businessId,p_business_date:p.businessDate,
+      p_generation:generation,p_category:"unavailable"});
+    }catch{ /* The trigger-owned queue remains durable if deferral itself fails. */ }
+   }
    return {...imported,costsPending:true};
   }
  }catch(err){
