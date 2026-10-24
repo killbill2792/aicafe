@@ -167,6 +167,8 @@ revoke all on function public.toast_defer_rollup_refresh(uuid,date,uuid,text) fr
 grant execute on function public.toast_ack_rollup_refresh(uuid,date,uuid) to service_role;
 grant execute on function public.toast_defer_rollup_refresh(uuid,date,uuid,text) to service_role;
 
+alter table public.toast_sync_runs add column invalid_days integer not null default 0;
+
 -- A bad late re-pull must not turn previously committed sales into missing data.
 -- SQL holds the decisive row lock; the importer cannot safely infer this in JS.
 create function public.toast_record_day_error(
@@ -204,7 +206,7 @@ begin
   update public.toast_sync_runs set state='failed',finished_at=now(),
    resume_at=null,last_error_category=p_category where id=p_run_id;
  elsif p_skip then
-  update public.toast_sync_runs set days_done=days_done+1,
+  update public.toast_sync_runs set invalid_days=invalid_days+1,days_done=days_done+1,
    state=case when days_total>0 and days_done+1>=days_total then 'completed' else 'running' end,
    finished_at=case when days_total>0 and days_done+1>=days_total then now() else null end,
    cursor='{}'::jsonb,resume_at=null,last_error_category=p_category where id=p_run_id;
@@ -594,7 +596,7 @@ create or replace view public.toast_sync_health_v with (security_invoker=true) a
 select m.business_id,m.restaurant_guid,
  (select max(r.finished_at) from public.toast_sync_runs r
   where r.business_id=m.business_id and r.restaurant_guid=m.restaurant_guid
-   and r.state='completed' and r.orders_unparsed=0) as last_good_sync_at,
+   and r.state='completed' and r.orders_unparsed=0 and r.invalid_days=0) as last_good_sync_at,
  (select min(s.business_date) from public.toast_day_status s
   where s.business_id=m.business_id and s.restaurant_guid=m.restaurant_guid
   and s.import_state='missing') as oldest_missing_day,
@@ -607,7 +609,7 @@ select m.business_id,m.restaurant_guid,
  not exists(
   select 1 from public.toast_sync_runs r
    where r.business_id=m.business_id and r.restaurant_guid=m.restaurant_guid
-   and r.state='completed' and r.orders_unparsed=0
+   and r.state='completed' and r.orders_unparsed=0 and r.invalid_days=0
    and r.finished_at>=now()-interval '36 hours') as stale,
  case when m.toast_time_zone is not null
     and m.toast_time_zone is distinct from b.timezone
