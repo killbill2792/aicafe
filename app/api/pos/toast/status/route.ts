@@ -88,13 +88,13 @@ export async function GET(request:Request){
   queuedRanges:(r.data??[]).filter(x=>["queued","running","paused_rate_limited"].includes(x.state)&&x.requested_from&&x.requested_to).map(x=>({from:x.requested_from,to:x.requested_to})),
   needsLook,
   firstImportRows:completeDates.slice(0,7).map(date=>{
-   const selected=dayCoverage(m.data,s.data,date).rows;
+   const selected=dayCoverage(mappings,s.data,date).rows;
    return {date,oursCents:dayTotals(mappings,s.data,date).netSalesCents,
     toastCents:!a.data?.verified_at||selected.some(x=>x?.toast_net_sales_cents==null)?null:
      selected.reduce((n,x)=>n+(x?.toast_net_sales_cents??0),0)};
   }),
   recent:recentDates.map(date=>{
-   const totals=dayTotals(m.data,s.data,date);
+   const totals=dayTotals(mappings,s.data,date);
    const eligible=applicableLocations(mappings,date);
    const problem=needsLook.some(x=>x.date===date&&eligible.some(m=>m.restaurant_guid===x.restaurantGuid));
    return {date,netSalesCents:totals.netSalesCents,orders:totals.orders,
@@ -102,7 +102,7 @@ export async function GET(request:Request){
   }),
   analytics:{connected:Boolean(a.data),verified:Boolean(a.data?.verified_at)},
   firstImportCheck:check.data?.answered_at?"answered":completeDates.length>=7?"due":"hidden",
-  timeZone:m.data[0].toast_time_zone,startDate:[...m.data.map(x=>x.toast_start_date).filter((x):x is string=>Boolean(x))].sort()[0]??null,
+  timeZone:zone,startDate:[...m.data.map(x=>x.toast_start_date).filter((x):x is string=>Boolean(x))].sort()[0]??null,
   restaurantGuids:m.data.map(x=>x.restaurant_guid)
  };
  const checked=statusSchema.safeParse(response);
