@@ -198,6 +198,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const percentage = (value:number) => number(Math.round(value*100));
   const money = (cents:number) => formatCents(cents,locale);
   const hasPartial = vm.coverage.actualDays < vm.coverage.expectedDays;
+  const hasEstimatedCosts = vm.isEstimate || daysForPeriod(snapshot, period).some(day =>
+    day.cardFeesStatus === "estimated" || day.staffTaxStatus === "estimated");
   const changeLabel = pctChange===null ? null : t("changeVsLastPeriod",{
     pct:number(Math.abs(Math.round(pctChange))),direction:pctChange>=0?t("more"):t("less")});
   return <PageShell wide className="flex flex-col gap-4 px-3 pb-4 pt-3 md:px-4 md:pt-4">
@@ -220,12 +222,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <p className="text-[15px] font-bold text-ink-muted">{t("youKeep")}</p>
           <p className="break-words font-headline text-xl font-bold text-ink">{vm.ownerProfitDisplay.kind==="unavailable"?"—":money(vm.ownerProfitDisplay.ownerProfitCents)}</p>
           {vm.ownerProfitDisplay.kind!=="unavailable"&&vm.salesCents>0&&<p className="text-[13px] text-ink-muted">{t("ofSales",{pct:percentage(vm.keepRatio)})}</p>}
+          {changeLabel&&<p className="mt-1 text-[13px] leading-tight text-ink-muted">{changeLabel}</p>}
         </div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[15px] text-ink-muted">
-        {changeLabel&&<span>{changeLabel}</span>}
         {hasPartial&&<span className="rounded-full bg-warn-tint px-2 py-1 font-bold text-warn">{t("partialPill")}</span>}
-        {vm.isEstimate&&<span className="rounded-full bg-surface2 px-2 py-1">{t("estimatePill")}</span>}
+        {hasEstimatedCosts&&<span className="rounded-full bg-surface2 px-2 py-1">{t("estimatePill")}</span>}
       </div>
       <CostRecoveryStrip buckets={vm.recovery.buckets}
         labels={Object.fromEntries(vm.buckets.map(b=>[b.code,labelFor(b.code)]))}
