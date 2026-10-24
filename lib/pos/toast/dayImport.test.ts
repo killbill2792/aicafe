@@ -31,7 +31,7 @@ const params=(businessDate:string)=>({businessId:business,locationId:location,re
 type ImportCall={p_orders:Array<{posOrderId:string;netSalesCents:number}>;p_summary:{
  order_count:number;unparsed_count:number;parsed_order_guids:string[];net_sales_cents:number
 }};
-function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook?:()=>void){
+function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook?:()=>void,verified=true){
  const dayStatuses=new Map<string,string>(initialImportedDays.map(day=>[day,"imported"]));
  const stored=new Map<string,unknown[]>();
  const pendingCosts=new Map<string,string>();
@@ -46,7 +46,7 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
     eq(name:string,value:unknown){filters[name]=value;return q;},
     async maybeSingle(){
      if(table==="toast_location_mappings")return {data:{
-      location_id:location,verified_at:"2026-10-15",toast_time_zone:"America/Los_Angeles",
+      location_id:location,verified_at:verified?"2026-10-15":null,toast_time_zone:"America/Los_Angeles",
       closeout_hour:4},error:null};
      if(table==="toast_sync_runs")return {data:{state:run.state,business_id:business,restaurant_guid:restaurant,
       cursor:run.cursor},error:null};
@@ -290,5 +290,17 @@ describe("P1 committed day at the shared tick deadline",()=>{
    expect(mocked.recompute).not.toHaveBeenCalled();
    expect(f.operations).not.toContain("toast_checkpoint_day");
   }finally{vi.restoreAllMocks();}
+ });
+});
+
+describe("permanent Toast location preflight (C1)",()=>{
+ it("marks a revoked verified location's run failed without any Toast HTTP call",async()=>{
+  const f=fakeDatabase(1,[],undefined,false);
+  await expect(importToastBusinessDay(f.db,params("2026-10-16")))
+   .rejects.toMatchObject({category:"unauthorized_location"});
+  expect(f.run.state).toBe("failed");
+  expect(f.dayStatuses.get("2026-10-16")).toBe("failed");
+  expect(f.operations).toContain("toast_record_day_error");
+  expect(mocked.request).not.toHaveBeenCalled();
  });
 });
