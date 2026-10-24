@@ -47,9 +47,9 @@ const connectionLabels={
  chooseApiUrl:"Choose API URL under Technical details"
 };
 
-function choice(locale:string,squareConfigured=true){
+function choice(locale:string,squareConfigured=true,toastEnabled=true){
  return renderToStaticMarkup(createElement(RegisterChoice,{
-  locale,squareConfigured,labels
+  locale,squareConfigured,toastEnabled,labels
  }));
 }
 function anchorFor(markup:string,text:string){
@@ -74,6 +74,11 @@ describe("Register choice navigation across mobile locales",()=>{
    expect(anchorFor(html,"Skip")?.[1]).toContain('href="/onboarding?step=2"');
   }
  );
+ it("hides Toast only when its server-controlled feature flag is off",()=>{
+  const html=choice("en",true,false);
+  expect(anchorFor(html,"Use Toast")).toBeUndefined();
+  expect(anchorFor(html,"Use Clover")?.[1]).toContain('href="/more/uploads"');
+ });
  it("preserves Square OAuth with locale and configured/unavailable behavior",()=>{
   expect(anchorFor(choice("es"),"Connect Square")?.[1])
    .toContain('href="/api/pos/square/connect?locale=es"');
