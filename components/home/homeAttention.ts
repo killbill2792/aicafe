@@ -26,6 +26,14 @@ export function homeAttentionHref(target: AttentionTarget): string {
   }
 }
 
+/** Keep an employee and date together in schedule links (including rule alerts). */
+export function homeShiftHref(employeeId?: string | null, date?: string | null): string {
+  const query = new URLSearchParams({tab:"schedule"});
+  if (employeeId) query.set("employee", employeeId);
+  if (date) query.set("date", date);
+  return "/staff?" + query.toString();
+}
+
 export type HomeAttentionItem = {
   id: string;
   title: string;
