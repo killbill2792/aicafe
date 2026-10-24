@@ -59,7 +59,7 @@ end $fn$;
 create function public.toast_queue_backfill(p_business_id uuid,p_restaurant_guid uuid,
  p_from date,p_to date)
 returns uuid language plpgsql security definer set search_path=public as $fn$
-declare result uuid;
+declare result uuid;v_prior_start date;
 begin
  if auth.role()<>'service_role' then raise exception 'service role only';end if;
  if p_from<'2015-12-02'::date or p_to<p_from or p_to-p_from>=400
@@ -67,9 +67,26 @@ begin
  if not exists(select 1 from public.toast_location_mappings
  where business_id=p_business_id and restaurant_guid=p_restaurant_guid and verified_at is not null)
  then raise exception 'unverified location';end if;
- update public.toast_location_mappings set toast_start_date=least(toast_start_date,p_from)
- where business_id=p_business_id and restaurant_guid=p_restaurant_guid
- and toast_start_date is not null;
+ -- Serialize date eligibility and the dependent stored coverage in this transaction.
+ select toast_start_date into v_prior_start from public.toast_location_mappings
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid for update;
+ if v_prior_start is not null and p_from<v_prior_start then
+  update public.toast_location_mappings set toast_start_date=p_from
+   where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+  update public.daily_rollups dr set sales_data_status='missing'
+   where dr.business_id=p_business_id and dr.business_date>=p_from
+    and dr.business_date<v_prior_start and dr.sales_data_status='actual'
+    and exists (
+     select 1 from public.toast_location_mappings m
+     left join public.toast_day_status ds
+      on ds.business_id=m.business_id and ds.restaurant_guid=m.restaurant_guid
+      and ds.business_date=dr.business_date
+     where m.business_id=dr.business_id and m.verified_at is not null
+      and dr.business_date>=coalesce(m.toast_start_date,dr.business_date)
+      and (ds.import_state is distinct from 'imported'
+       or not coalesce(ds.coverage_complete,false))
+    );
+ end if;
  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
  requested_from,requested_to,days_total,cursor)
  values(p_business_id,p_restaurant_guid,'backfill',p_from,p_to,p_to-p_from+1,
