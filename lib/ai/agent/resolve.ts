@@ -28,17 +28,28 @@ export function resolveEntity<T>(
       const name = normalizedName(field.nameOf(item));
       names.set(name,(names.get(name)??0)+1);
     }
+    const labels=new Set<string>();
     return items.slice(0,4).map(item => {
       const name = field.nameOf(item), detail = field.describe(item);
       const duplicate = (names.get(normalizedName(name))??0)>1;
-      return { id: field.idOf(item), label: duplicate ? name + " — " + detail : name, detail };
+      let label = duplicate ? name + " — " + detail : name;
+      if(labels.has(normalizedName(label)))label+=" ("+field.idOf(item).slice(0,8)+")";
+      labels.add(normalizedName(label));
+      return { id: field.idOf(item), label: label.slice(0,60), detail };
     });
   };
   if (!q) return {status:"none", suggestions:choices(rows)};
   const ids = rows.filter(row => field.idOf(row).toLowerCase() === query.toLowerCase());
   if (ids.length === 1) return {status:"resolved",value:ids[0]};
   const exact = rows.filter(row => normalizedName(field.nameOf(row))===q);
-  if (exact.length===1)return {status:"resolved",value:exact[0]};
+  if(exact.length===1){
+    // "Latte" must not silently win over "Iced Latte": the owner's words
+    // can refer to either when those are both menu products.
+    const otherNames=rows.filter(row=>row!==exact[0]&&
+      normalizedName(field.nameOf(row)).split(" ").includes(q));
+    if(otherNames.length)return {status:"ambiguous",candidates:choices([...exact,...otherNames])};
+    return {status:"resolved",value:exact[0]};
+  }
   if (exact.length>1)return {status:"ambiguous",candidates:choices(exact)};
   const matches = rows.filter(row => {
     const name=normalizedName(field.nameOf(row));
