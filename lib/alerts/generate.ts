@@ -43,8 +43,9 @@ export async function hasOpenAlert(
     .eq("business_id", businessId).eq("kind", kind);
   if (!includeReviewed) query = query.in("status", ["new", "seen"]);
   const { data, error } = await query;
-  // Do not create duplicate alerts when the deduplication read fails.
-  if (error) throw error;
+  // A failed dedupe read must not insert a duplicate OR crash the Alerts page.
+  // Treat the occurrence as already present and let the next refresh retry.
+  if (error) return true;
   return (data ?? []).some((a) => {
     const payload = a.payload as Record<string, unknown> | null;
     return payload?.dedupeKey === dedupeKey &&
