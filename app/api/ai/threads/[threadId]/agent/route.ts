@@ -10,6 +10,7 @@ import { addOwnerMessageInput, threadIdInput, type ConversationMessage, type Con
 import { conversationError, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
 import { getExistingSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
+import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
 import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
@@ -111,6 +112,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
         content: m.text ?? (m.blocks ?? []).flatMap(b => b && typeof b === "object" && "text" in b ?
           [String(b.text)] : []).join(" ") })).filter(m => m.content);
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,
+      menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items),
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       proposals:{proposePriceChange:async({productId,newPriceCents})=>{

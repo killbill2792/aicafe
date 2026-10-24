@@ -35,6 +35,7 @@ export type AgentToolContext = {
   threadId?:string;ownerMessageId?:string;
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
+  menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>};
@@ -133,10 +134,14 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const filtered = slice.value.filter(item => item.active &&
       (!input.query || item.name.toLocaleLowerCase(ctx.locale).includes(input.query.toLocaleLowerCase(ctx.locale))));
     const limit = input.limit ?? 8;
+    const visible=filtered.slice(0,limit);
+    const facts=ctx.menuPriceEvidence?await ctx.menuPriceEvidence(visible):{};
     return { source: "menu_items", period: null, agentId:"alex",
       missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : [])],
-      items: filtered.slice(0, limit).map(item => ({
-        id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,
+      items: visible.map(item => ({
+        id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,unit:"cents",
+        priceSource:facts[item.id]?.priceSource??"initial",realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
+        priceCheck:facts[item.id]?.priceCheck??"ok",
       })) };
   }
   const { period: choice,ownerInputs } = periodSchema.parse(raw);
