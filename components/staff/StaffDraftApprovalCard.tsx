@@ -29,7 +29,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
   async function createThread(){
     const response=await fetch("/api/ai/threads",{method:"POST",
       credentials:"same-origin",headers:{"content-type":"application/json"},
-      body:JSON.stringify({requestId:crypto.randomUUID(),title:null})});
+      body:JSON.stringify({requestId:crypto.randomUUID()})});
     if(!response.ok)throw new Error("thread");
     const json=await response.json();
     if(typeof json.thread?.id!=="string")throw new Error("thread");
@@ -50,7 +50,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     finally{setBusy(false);}
   }
   async function update(action:"approve"|"cancel"){
-    if(!proposal||busy||!changed.length)return;
+    if(!proposal||busy)return;
     setBusy(true);setError("");
     try{
       const response=await fetch("/api/ai/threads/"+encodeURIComponent(threadId)+"/proposals",{
