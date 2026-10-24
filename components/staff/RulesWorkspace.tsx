@@ -1,5 +1,5 @@
 "use client";
-import {useId,useEffect,useState,useTransition} from "react";
+import {useId,useState,useTransition} from "react";
 import {partsToMinutes,minutesToParts,wholeRuleValue,multiplierToBasisPoints,basisPointsToMultiplier} from "@/lib/calc/scheduling/ruleInputValues";
 import {useRouter} from "next/navigation";
 import {useLocale,useTranslations} from "next-intl";
@@ -46,7 +46,6 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
  const t=useTranslations("StaffSchedule");const locale=useLocale();const staffT=useTranslations("Staff");const router=useRouter();
  const [values,setValues]=useState(initial),[draft,setDraft]=useState(""),[pending,transition]=useTransition();
  const [custom,setCustom]=useState(false),[customValue,setCustomValue]=useState(basisPointsToMultiplier(Number(values.ot_multiplier_bp))),[multiplierError,setMultiplierError]=useState(false);
- useEffect(()=>{if(!custom)setCustomValue(basisPointsToMultiplier(Number(values.ot_multiplier_bp)))},[values.ot_multiplier_bp,custom]);
  const [message,setMessage]=useState(""),[undo,setUndo]=useState<{key:string;value:number|boolean}|null>(null);
  const change=(key:string,value:number|boolean)=>{
    if(readOnly)return;
@@ -134,7 +133,7 @@ title:staffT("payrollCostsTitle"),body:staffT("payrollCostsBody"),field:staffT("
    </details>
    {undo&&<div role="status" className="flex items-center justify-between rounded-xl bg-surface2 p-3">
       <span>{t("saved")}</span><button disabled={pending||readOnly} onClick={()=>{
-       const last=undo;setUndo(null);change(last.key,last.value);
+       const last=undo;setUndo(null);if(last.key==="ot_multiplier_bp"){setCustom(false);setCustomValue(basisPointsToMultiplier(Number(last.value)));}change(last.key,last.value);
       }} className="min-h-12 rounded-lg px-3 font-bold text-accent-text">{t("undo")}</button>
     </div>}
    {message&&<p role="status" className="text-sm text-muted">{message}</p>}
