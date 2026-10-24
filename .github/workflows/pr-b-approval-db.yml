@@ -1,0 +1,32 @@
+name: PR B Scoped Approval Disposable DB
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20261023000092_scoped_staff_proposal_cas.sql'
+      - 'scripts/staff-approval-scoped.sql'
+      - '.github/workflows/pr-b-approval-db.yml'
+permissions:
+  contents: read
+jobs:
+  scoped-staff-atomicity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start disposable Supabase
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+          supabase start
+      - name: Apply all migrations to disposable database
+        run: supabase db reset --local --yes
+      - name: Check legacy atomic staff approvals
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/staff-approval-atomic.sql
+      - name: Check v2 scoped compare-and-swap and independent approvals
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/staff-approval-scoped.sql
+      - name: Stop disposable database
+        if: always()
+        run: supabase stop --no-backup

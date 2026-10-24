@@ -39,21 +39,13 @@ describe("modern Supervisor conversation shell", () => {
     expect(html).not.toContain("SUPERVISOR_CHAT_ENABLED");
     expect(html).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
   });
-  it("renders actual precomputed Today and persisted Team previews inside the empty chat", () => {
+  it("does not render a second Today snapshot inside chat", () => {
     const html = renderToStaticMarkup(createElement(SupervisorChatComposer, {
       enabled: true, unavailableReason: null, locale: "en", copy,
-      snapshot: { title: "Today", hasSales: false, caption: "No sales data yet",
-        stats: [{ label: "Sales", value: "No sales recorded yet" }], seeAll: "See all",
-        sections: [{ title: "Needs you", empty: "No pending tasks", href: "/operations?status=needs_you",
-          items: [], count: 0 }],
-      },
     }));
-    expect(html).toContain("No sales recorded yet");
-    expect(html).toContain("Needs you");
-    expect(html).toContain("Today");
-    expect(html).not.toContain("See all");
+    expect(html).not.toContain("Today snapshot");
+    expect(html).not.toContain("No sales recorded yet");
     expect(html).toContain('aria-label="Dictate"');
-    expect(html).not.toContain("Listening… review the transcript before sending");
   });
   it("captures bounded audio with MediaRecorder, transcribes in a private endpoint, and never sends automatically", () => {
     const source = readFileSync("components/home/SupervisorChatComposer.tsx", "utf8");

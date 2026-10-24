@@ -1,3 +1,21 @@
+import type { HomeAttentionItem } from "./homeAttention";
+
+/** New café setup appears in the same attention list as operational issues. */
+export function gettingStartedAttention(labels: {
+  connectRegister: string; uploadSales: string; addBills: string; addStaff: string; actionLabel: string;
+}): HomeAttentionItem[] {
+  return [
+    { id: "getting-started-connect", title: labels.connectRegister, actionLabel: labels.actionLabel,
+      href: "/onboarding", impactCents: null },
+    { id: "getting-started-sales", title: labels.uploadSales, actionLabel: labels.actionLabel,
+      href: "/more/uploads/sales", impactCents: null },
+    { id: "getting-started-bills", title: labels.addBills, actionLabel: labels.actionLabel,
+      href: "/more/bills", impactCents: null },
+    { id: "getting-started-staff", title: labels.addStaff, actionLabel: labels.actionLabel,
+      href: "/more/manage-staff", impactCents: null },
+  ];
+}
+
 import { ChevronRight, CreditCard, FileSpreadsheet, Receipt, Users } from "lucide-react";
 import { Link } from "@/i18n/navigation";
 
