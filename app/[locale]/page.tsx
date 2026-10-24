@@ -40,6 +40,7 @@ import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
 import { syncAndGetOperatingTasks } from "@/lib/data/operatingTasks";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
+import {staffScheduleHref} from "@/lib/scheduling/staffScheduleLinks";
 import type { ExpenseCategoryCode } from "@/lib/constants";
 import type { AgentId, OperatingTask } from "@/lib/operating/tasks";
 
@@ -59,11 +60,8 @@ function operatingTaskHref(task: OperatingTask): string {
   }
   if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
   if (task.kind === "staff_coverage") {
-    const query = new URLSearchParams();
-    if (task.entityId) query.set("employee", task.entityId);
     const shiftDate = task.payload.shiftDate ?? task.payload.businessDate;
-    if (typeof shiftDate === "string") query.set("date", shiftDate);
-    return `/more/manage-staff${query.size ? `?${query}` : ""}`;
+    return staffScheduleHref({employee:task.entityId,date:typeof shiftDate==="string"?shiftDate:undefined});
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";

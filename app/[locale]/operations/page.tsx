@@ -19,6 +19,7 @@ import OwnerWhatsAppAlerts from "@/components/operations/OwnerWhatsAppAlerts";
 import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
+import {staffScheduleHref} from "@/lib/scheduling/staffScheduleLinks";
 
 export const dynamic = "force-dynamic";
 type InboxStatus = "needs_you" | "handled" | "watching";
@@ -96,10 +97,8 @@ function taskHref(task: OperatingTask): string {
   }
   if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
   if (task.kind === "staff_coverage") {
-    const query = new URLSearchParams();
-    if (task.entityId) query.set("employee", task.entityId);
-    if (typeof task.payload.businessDate === "string") query.set("date", task.payload.businessDate);
-    return `/more/manage-staff${query.size ? `?${query}` : ""}`;
+    const shiftDate=task.payload.shiftDate??task.payload.businessDate;
+    return staffScheduleHref({employee:task.entityId,date:typeof shiftDate==="string"?shiftDate:undefined});
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
