@@ -133,7 +133,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <p className="text-warn">{t("ownerReviewReason")}: {row.reason==="owner_flag"?t("ownerReasonOwner"):row.reason==="mismatch"?t("ownerReasonMismatch"):
      row.reason==="analytics_timeout"?t("ownerReasonTimeout"):row.reason==="coverage_invalid"?t("ownerReasonCoverage"):t("ownerReasonOther")}</p>
     <div className="mt-2 flex flex-wrap gap-2">
-     <button disabled={busy||row.date>yesterday} className="min-h-12 rounded-full border border-line px-4"
+     <button disabled={busy||row.date>yesterday||data.queuedRanges.some(range=>range.from<=row.date&&range.to>=row.date)} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date})}>{t("ownerRepull")}</button>
      <button disabled={busy} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/day-flag",{restaurantGuid:row.restaurantGuid,date:row.date,
