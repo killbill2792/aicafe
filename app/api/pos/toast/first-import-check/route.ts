@@ -2,6 +2,8 @@ import {NextResponse} from "next/server";
 import {z} from "zod";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
 import {GUID} from "@/lib/pos/toast/client";
+import {readAllPages} from "@/lib/pos/toast/readAllPages";
+import {dayCoverage} from "@/lib/pos/toast/ownerCoverage";
 const schema=z.object({businessId:GUID,answer:z.enum(["looks_right","something_off"]),
  flaggedDates:z.array(z.iso.date()).max(100).default([]),note:z.string().max(2000).optional()}).strict();
 const send=(status:number,body:unknown)=>NextResponse.json(body,{status,headers:{"Cache-Control":"no-store"}});
@@ -15,19 +17,20 @@ export async function POST(request:Request){
  const db=await authorizeToastOwner(businessId);
  if(!db)return send(404,{error:"not_found"});
  const {data:locations,error:locationError}=await db.from("toast_location_mappings")
-  .select("restaurant_guid,toast_time_zone").eq("business_id",businessId);
- if(locationError||!locations?.length)return send(404,{error:"not_found"});
- const {data:days,error:dayError}=await db.from("toast_day_status")
-  .select("business_date,restaurant_guid").eq("business_id",businessId)
-  .eq("import_state","imported").eq("coverage_complete",true).limit(500);
- if(dayError)return send(503,{error:"unavailable"});
- const applicable=new Set(locations.map(x=>x.restaurant_guid));
- const complete=[...new Set((days??[]).map(x=>x.business_date))].filter(date=>
-  [...applicable].every(guid=>(days??[]).some(row=>row.business_date===date&&
-   row.restaurant_guid===guid)));
+  .select("restaurant_guid,verified_at,toast_start_date").eq("business_id",businessId);
+ if(locationError)return send(503,{error:"unavailable"});
+ if(!locations?.some(x=>x.verified_at))return send(404,{error:"not_found"});
+ let days;
+ try{
+  days=await readAllPages((start,end)=>db.from("toast_day_status")
+   .select("business_date,restaurant_guid,import_state,coverage_complete,net_sales_cents,order_count")
+   .eq("business_id",businessId).order("business_date",{ascending:false})
+   .order("restaurant_guid").range(start,end));
+ }catch{return send(503,{error:"unavailable"});}
+ const complete=[...new Set(days.map(x=>x.business_date))].filter(date=>
+  dayCoverage(locations,days,date).complete);
  if(complete.length<7)return send(409,{error:"not_ready"});
- const eligible=new Set(complete);
- if(flaggedDates.some(d=>!eligible.has(d)))return send(400,{error:"invalid_dates"});
+ if(flaggedDates.some(d=>!complete.includes(d)))return send(400,{error:"invalid_dates"});
  const {data:existing,error:readError}=await db.from("toast_first_import_check")
   .select("answered_at").eq("business_id",businessId).maybeSingle();
  if(readError)return send(503,{error:"unavailable"});
