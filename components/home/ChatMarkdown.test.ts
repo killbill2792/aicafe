@@ -111,12 +111,12 @@ describe("provenance footnotes",()=>{
    expect(html).toContain("aria-expanded=\"false\"");
    expect(html).not.toContain("margin-inline-start");
  });
- it("keeps number and day-unit together before the dot, without inline warnings",()=>{
+ it("does not decorate calendar durations",()=>{
    const text="Payroll is recorded for 90 days.";
    const start=text.indexOf("90");
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"90 days".length,source:"unchecked"}]}));
-   expect(html).toMatch(/90 days<span class="relative inline-block h-\[6px\]/);
+   expect(html).not.toContain('aria-label="Not checked against your records"');
    expect(html).toContain('aria-label="Not checked against your records"');
    expect(html).not.toContain('role="note"');
  });
