@@ -43,7 +43,7 @@ export type AvailabilityWords={anyTime:string;off:string;none:string;everyDay:st
 const weekdays:number[]=[1,2,3,4,5,6,0];
 const dayDate=(day:number)=>new Date(Date.UTC(2026,9,25+day));
 const dayName=(day:number,locale:string)=>new Intl.DateTimeFormat(locale,{weekday:"short",timeZone:"UTC"}).format(dayDate(day));
-function clockLabel(value:string,locale:string):string {
+export function formatTeamClock(value:string,locale:string):string {
  const [hour,minute]=value.split(":").map(Number);
  const n=(value:number,min=1)=>new Intl.NumberFormat(locale,{useGrouping:false,minimumIntegerDigits:min}).format(value);
  return n(hour)+(minute?":"+n(minute,2):"");
@@ -72,12 +72,12 @@ export function teamAvailabilitySummary(days:TeamAvailability[],locale:string,wo
  const sameWindow=entries.every(row=>row.start===entries[0].start&&row.end===entries[0].end);
  const description=active.length===7?words.everyDay:dayGroups(active,locale);
  if(sameWindow&&entries[0].start&&entries[0].end) {
-  return description+" "+clockLabel(entries[0].start,locale)+"–"+clockLabel(entries[0].end,locale);
+  return description+" "+formatTeamClock(entries[0].start,locale)+"–"+formatTeamClock(entries[0].end,locale);
  }
  if(allDay){
   const off=weekdays.filter(day=>!rows.has(day));
   return description+(off.length?" · "+words.off+" "+off.map(day=>dayName(day,locale)).join(", "):"");
  }
  return entries.map(row=>dayName(row.day,locale)+(row.start&&row.end?
-  " "+clockLabel(row.start,locale)+"–"+clockLabel(row.end,locale):" · "+words.anyTime)).join(" · ");
+  " "+formatTeamClock(row.start,locale)+"–"+formatTeamClock(row.end,locale):" · "+words.anyTime)).join(" · ");
 }
