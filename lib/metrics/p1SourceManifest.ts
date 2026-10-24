@@ -12,6 +12,9 @@ import type { SupportedId } from "./p1Catalog";
 type Surface = {capabilities:readonly SupportedId[]} |
   {restricted:string};
 export const SOURCE_SURFACES = {
+  "lib/data/menuPriceEvidence.server.ts":{
+    readMenuPriceEvidence:{restricted:"Authenticated, selected-cafe menu price provenance and observed sales read; accessible only through an owner-scoped strict agent tool, not a generic P1 metric selector"},
+  },
   "lib/data/staffProposalSources.server.ts":{
     readStaffProposalToken:{restricted:"Owner-authenticated staff source revision token for proposal CAS, not a model-readable source"},
     readStaffProposalSources:{restricted:"Owner and cafe scoped private staff schedule and availability reader for inert approval previews"},
