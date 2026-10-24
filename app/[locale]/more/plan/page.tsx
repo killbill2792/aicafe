@@ -8,7 +8,7 @@ import ProfitGoalSimulator from "@/components/more/ProfitGoalSimulator";
 import TryScenario from "@/components/scenario/TryScenario";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { sumCents, summarizeResolvedSoldProductCosts } from "@/lib/calc";
-import { countPlanOperatingDays, hasCompletePlanHours, weekdayHourlyTarget } from "@/lib/calc/planGoals";
+import { countPlanOperatingDays, coveredPlanOperatingDays, hasCompletePlanHours, hasUncoveredPlanOperatingDates, weekdayHourlyTarget } from "@/lib/calc/planGoals";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { getProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
 import { isBillCategory, missingCostDestination } from "@/lib/expenses/expectedCosts";
@@ -111,6 +111,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         {t("setCafeHours")}
       </Link>}
       <TryScenario hoursComplete={hasCompletePlanHours(snapshot.business.openHours)}
+        salesCoverageGaps={hasUncoveredPlanOperatingDates(days, snapshot.business.openHours)}
         items={(snapshot.breakEvenProductCosts ?? snapshot.menuItems).map(item => ({
         id: item.id, name: item.name, priceCents: item.priceCents, costStatus: item.costStatus, category: item.category, active: item.active,
         ingredientsCentsToday: item.ingredientsCentsToday, quantitySoldLast28Days: item.quantitySoldLast28Days,
@@ -119,7 +120,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         observedSalesCents: sumCents(days, d => d.netSalesCents), observedIngredientCents: costs!.totalCostCents,
         observedProcessingFeesCents: sumCents(days, d => d.cardFeesCents),
         daysInMonth: snapshot.daysInMonth,
-        salesDaysCovered: days.length,
+        salesDaysCovered: coveredPlanOperatingDays(days, snapshot.business.openHours),
         operatingDaysInMonth: countPlanOperatingDays(snapshot.business.openHours, snapshot.monthKey),
         payrollTaxRate: snapshot.business.payrollTaxRate,
       } : null} />

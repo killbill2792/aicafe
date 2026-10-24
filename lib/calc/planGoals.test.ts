@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countPlanOperatingDays, hasCompletePlanHours, weekdayHourlyTarget, simulatePlanChange } from "./planGoals";
+import { countPlanOperatingDays, coveredPlanOperatingDays, hasCompletePlanHours, hasUncoveredPlanOperatingDates, weekdayHourlyTarget, simulatePlanChange } from "./planGoals";
 import { calculateBreakEvenSales } from "./breakEvenSales";
 
 const base = {
@@ -63,6 +63,35 @@ describe("Plan goals", () => {
     const fullWindow = simulatePlanChange({ base: { ...sevenDay, salesDaysCovered: 28 },
       type: "price", item, newValueCents: 525, staffHoursPerDay: 0, assumedHourlyWageCents: 1950 });
     expect(fullWindow?.monthlyProfitChangeCents).toBe(Math.round(observedCents * 22 / 28));
+  });
+  it("does not count zero-order closed dates as historical selling days (Codex P1)", () => {
+    const closedWeekends = { sat: [] as [string, string][], sun: [] as [string, string][] };
+    const days = Array.from({ length: 28 }, (_, i) => ({
+      date: new Date(Date.UTC(2026, 9, i + 1)).toISOString().slice(0, 10),
+    }));
+    // Square marks every day actual, including Saturday/Sunday zero-order syncs.
+    expect(days).toHaveLength(28);
+    expect(coveredPlanOperatingDays(days, closedWeekends)).toBe(20);
+    expect(hasUncoveredPlanOperatingDates(days, closedWeekends)).toBe(false);
+    const scenario = simulatePlanChange({
+      base: { ...base, salesDaysCovered: coveredPlanOperatingDays(days, closedWeekends),
+        operatingDaysInMonth: 22, daysInMonth: 31 },
+      type: "price", item: { ...item, quantitySoldLast28Days: 2000 },
+      newValueCents: 525, staffHoursPerDay: 0, assumedHourlyWageCents: 1950,
+    });
+    expect(scenario?.monthlyProfitChangeCents).toBe(55_000); // $500 over 20 open days -> $550 over 22
+  });
+  it("does not count intermittent imported coverage as a complete item quantity window", () => {
+    const monFri = { sat: [] as [string, string][], sun: [] as [string, string][] };
+    expect(hasUncoveredPlanOperatingDates([
+      { date: "2026-10-12" }, { date: "2026-10-13" }, { date: "2026-10-15" },
+    ], monFri)).toBe(true); // Wednesday should have been covered
+    expect(hasUncoveredPlanOperatingDates([
+      { date: "2026-10-09" }, { date: "2026-10-12" },
+    ], monFri)).toBe(false); // weekend closure is not missing data
+    expect(coveredPlanOperatingDays([
+      { date: "2026-10-09" }, { date: "2026-10-10" }, { date: "2026-10-12" },
+    ], monFri)).toBe(2);
   });
   it("uses the same café operating-day rule as Money for staff changes", () => {
     // October 2026 has 22 Monday-to-Friday operating days.

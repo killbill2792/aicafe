@@ -46,6 +46,39 @@ export function countPlanOperatingDays(openHours: OpenHours | null | undefined, 
   return count;
 }
 
+/** Sales coverage is a count of OPEN dates with POS evidence, not all calendar
+ * dates. A successful zero-order sync on a closed day is actual data but is not
+ * a day on which sales could have happened. Match the monthly open-day numerator. */
+export function coveredPlanOperatingDays(
+  days: readonly { date: string }[],
+  openHours: OpenHours | null | undefined,
+): number {
+  return new Set(days.map(day => day.date)
+    .filter(date => regularHoursStateForDate(openHours, date) !== "closed")).size;
+}
+
+/** Detect gaps on operating dates between the first and last covered date.
+ * The menu-item RPC aggregates that whole interval, so treating only some
+ * of those days as covered could put an unrelated quantity in the numerator. */
+export function hasUncoveredPlanOperatingDates(
+  days: readonly { date: string }[],
+  openHours: OpenHours | null | undefined,
+): boolean {
+  if (days.length === 0) return false;
+  const covered = new Set(days.map(day => day.date));
+  const sorted = [...covered].sort();
+  const start = sorted[0];
+  const end = sorted[sorted.length - 1];
+  let cursor = Date.parse(start + "T12:00:00Z");
+  const last = Date.parse(end + "T12:00:00Z");
+  if (!Number.isFinite(cursor) || !Number.isFinite(last)) return true;
+  for (; cursor <= last; cursor += 86_400_000) {
+    const date = new Date(cursor).toISOString().slice(0, 10);
+    if (regularHoursStateForDate(openHours, date) !== "closed" && !covered.has(date)) return true;
+  }
+  return false;
+}
+
 /** A partial or absent week schedule cannot prove how many days the café normally opens. */
 export function hasCompletePlanHours(openHours: OpenHours | null | undefined): boolean {
   return !!openHours && OPEN_HOURS_DAY_KEYS.every(key => Object.prototype.hasOwnProperty.call(openHours, key));
@@ -58,7 +91,7 @@ export type PlanScenarioBase = {
   observedIngredientCents: number;
   observedProcessingFeesCents: number;
   daysInMonth: number;
-  /** Sales-covered dates in the exact window used for the POS item quantity totals. */
+  /** Confirmed sales-covered OPERATING dates in the item quantity window. */
   salesDaysCovered: number;
   /** Café's scheduled open days in this month, matching Money's staff projection. */
   operatingDaysInMonth: number;
