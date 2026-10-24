@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {formatInTimeZone} from "date-fns-tz";
+import {addCalendarDays,localClock,eligibleClosedDay,deriveNextRunDay} from "./scheduleDates";
 import {importToastBusinessDay} from "./dayImport";
 import {refreshToastRestaurantInfo} from "./restaurantInfo";
 import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
@@ -14,24 +14,6 @@ type Run={id:string;kind:string;state:string;requested_from:string|null;
  requested_to:string|null;days_done:number;days_total:number;
  cursor:Record<string,unknown>|null;resume_at:string|null};
 export const TICK_MS=240000;
-const DAY=86400000;
-const isoDay=(d:Date)=>d.toISOString().slice(0,10);
-export const addCalendarDays=(day:string,days:number)=>
- isoDay(new Date(Date.parse(day+"T12:00:00Z")+days*DAY));
-export function localClock(now:Date,timeZone:string){
- const local=formatInTimeZone(now,timeZone,"yyyy-MM-dd HH:mm:ss");
- return {today:local.slice(0,10),minutes:Number(local.slice(11,13))*60+Number(local.slice(14,16))};
-}
-export function eligibleClosedDay(now:Date,timeZone:string,closeoutHour:number){
- const t=localClock(now,timeZone);
- return t.minutes>=((closeoutHour+1)*60)
-  ?addCalendarDays(t.today,-1):null;
-}
-export function deriveNextRunDay(run:Pick<Run,"requested_from"|"days_done"|"requested_to">){
- if(!run.requested_from)return null;
- const day=addCalendarDays(run.requested_from,run.days_done);
- return !run.requested_to||day<=run.requested_to?day:null;
-}
 function mustFinish(deadlineAt:number){
  if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
 }
