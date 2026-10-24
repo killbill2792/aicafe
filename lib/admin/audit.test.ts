@@ -39,9 +39,9 @@ describe("private audit redaction", () => {
     process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS="1";
     process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS="2";
     try {
-      expect(estimatedTurnCost({usage:{inputTokens:2000000,outputTokens:500000}} as never)).toBe(3);
+      expect(estimatedTurnCost({usage:{model:'gpt-6-sol',inputTokens:2000000,outputTokens:500000}} as never)).toBe(3);
       process.env.ADMIN_MODEL_INPUT_USD_PER_MILLION="1";
-      expect(estimatedTurnCost({usage:{inputTokens:2000000,outputTokens:500000}} as never)).toBeNull();
+      expect(estimatedTurnCost({usage:{model:'gpt-6-sol',inputTokens:2000000,outputTokens:500000}} as never)).toBeNull();
     }finally{
       const names=["ADMIN_MODEL_INPUT_USD_PER_MILLION","ADMIN_MODEL_OUTPUT_USD_PER_MILLION","SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS","SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS"];
       names.forEach((name,index)=>{if(previous[index]===undefined)delete process.env[name];else process.env[name]=previous[index];});
