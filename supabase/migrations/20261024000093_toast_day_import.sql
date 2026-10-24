@@ -43,6 +43,7 @@ create table public.toast_day_status(
  toast_refund_cents bigint,delta_net_cents bigint,delta_orders integer,
  recon_source text check(recon_source in ('toast_analytics','internal')),
  reconciled_at timestamptz,unparsed_count integer not null default 0,
+ coverage_complete boolean not null default false,
  warnings jsonb not null default '{}'::jsonb,orders_snapshot_sha256 text,
  last_import_run_id uuid references public.toast_sync_runs(id),
  last_error_category text,
@@ -138,7 +139,8 @@ begin
  insert into public.toast_day_status(business_id,restaurant_guid,business_date,import_state,recon_state,last_error_category)
  values(p_business_id,p_restaurant_guid,p_business_date,'failed','pending',p_category)
  on conflict(business_id,restaurant_guid,business_date) do update
- set import_state='failed',last_error_category=excluded.last_error_category;
+ set import_state='failed',coverage_complete=false,last_error_category=excluded.last_error_category;
+ update public.daily_rollups set sales_data_status='missing' where business_id=p_business_id and business_date=p_business_date;
  update public.toast_sync_runs set state='failed',last_error_category=p_category,finished_at=now()
  where id=p_run_id and business_id=p_business_id and restaurant_guid=p_restaurant_guid;
 end $$;
@@ -150,6 +152,8 @@ returns jsonb language plpgsql security definer set search_path=public as $$
 declare
  rec jsonb;ln jsonb;v_id uuid;v_item uuid;v_prefix text;
  v_before bigint;v_new bigint;v_net bigint;v_count integer;v_old record;
+ v_unparsed_known integer;v_unparsed_cents bigint;v_unparsed_count integer;
+ v_coverage_complete boolean;v_eligible_locations integer;v_complete_locations integer;
 begin
  if auth.role()<>'service_role'
  or jsonb_typeof(p_orders)<>'array' or jsonb_typeof(p_summary)<>'object'
@@ -161,7 +165,8 @@ begin
  or not exists(select 1 from public.toast_sync_runs where id=p_run_id and business_id=p_business_id
   and restaurant_guid=p_restaurant_guid and state in ('queued','running','paused_rate_limited'))
  then raise exception 'invalid Toast import';end if;
- perform pg_advisory_xact_lock(hashtextextended('toast-day:'||p_business_id::text||':'||p_location_id::text||':'||p_business_date::text,0));
+ -- Serialize ALL mapped locations for one business day before touching the shared rollup.
+ perform pg_advisory_xact_lock(hashtextextended('toast-day:'||p_business_id::text||':'||p_business_date::text,0));
  v_prefix:='toast:'||p_restaurant_guid::text||':';
  if exists(select 1 from jsonb_array_elements(p_orders) e
    where e->>'posOrderId' not like v_prefix||'%' or jsonb_typeof(e->'lines')<>'array'
@@ -208,7 +213,10 @@ begin
  for v_old in select id,pos_order_id,net_sales_cents from public.orders
   where business_id=p_business_id and location_id=p_location_id and business_date=p_business_date
   and pos_order_id like v_prefix||'%' and toast_excluded=false
-  and (p_summary->>'unparsed_count')::integer=0
+  and (
+   (p_summary->>'unparsed_count')::integer=0
+   or (p_summary->'parsed_order_guids') ? substring(orders.pos_order_id from length(v_prefix)+1)
+  )
   and not exists(select 1 from jsonb_array_elements(p_orders)e where e->>'posOrderId'=orders.pos_order_id)
   for update
  loop
@@ -278,6 +286,24 @@ begin
  select coalesce(sum(o.net_sales_cents),0),count(*) into v_net,v_count
  from public.orders o where o.business_id=p_business_id and o.business_date=p_business_date
   and o.pos_order_id like v_prefix||'%' and not o.toast_excluded;
+ -- A malformed order has no trusted net amount. Only a previously imported
+ -- canonical order provides a defensible upper-bound estimate. Unknown new
+ -- orders fail closed; never call them $0 merely to hit the 2% allowance.
+ v_unparsed_count:=coalesce((p_summary->>'unparsed_count')::integer,0);
+ select count(o.id),coalesce(sum(abs(o.net_sales_cents)),0)
+ into v_unparsed_known,v_unparsed_cents
+ from jsonb_to_recordset(p_summary->'unparsed') as u(order_guid uuid)
+ left join public.orders o on o.business_id=p_business_id
+  and o.location_id=p_location_id and o.pos_order_id=v_prefix||u.order_guid::text
+  and o.business_date=p_business_date and not o.toast_excluded;
+ v_coverage_complete := (
+  v_unparsed_known=v_unparsed_count
+  and v_unparsed_count*100 <= 2*(jsonb_array_length(p_orders)+v_unparsed_count)
+  and v_unparsed_cents*100 <= 2*(abs(v_net)+v_unparsed_cents)
+  and coalesce((p_summary->'warnings'->>'missing_check_amount')::integer,0)=0
+  and coalesce((p_summary->'warnings'->>'missing_deferred_price')::integer,0)=0
+  and coalesce((p_summary->'warnings'->>'missing_refund_amount')::integer,0)=0
+ );
  if (p_summary->>'unparsed_count')::integer=0 and
  (v_net<>(p_summary->>'net_sales_cents')::bigint
   or v_count<>(p_summary->>'order_count')::integer)
@@ -285,7 +311,7 @@ begin
  insert into public.toast_day_status(business_id,restaurant_guid,business_date,import_state,
   recon_state,imported_at,net_sales_cents,gross_sales_cents,discounts_cents,refunds_cents,
   tax_cents,tip_cents,order_count,open_check_count,service_charges_cents,
-  gratuity_cents,unparsed_count,warnings,orders_snapshot_sha256,last_import_run_id)
+  gratuity_cents,unparsed_count,coverage_complete,warnings,orders_snapshot_sha256,last_import_run_id)
  values(p_business_id,p_restaurant_guid,p_business_date,'imported',
   case when (p_summary->>'unparsed_count')::integer>0 or coalesce((p_summary->'warnings'->>'missing_check_amount')::integer,0)>0
     or coalesce((p_summary->'warnings'->>'missing_deferred_price')::integer,0)>0
@@ -297,7 +323,7 @@ begin
   v_count,(p_summary->>'open_check_count')::integer,
   (p_summary->>'service_charges_cents')::bigint,
   (p_summary->>'gratuity_cents')::bigint,(p_summary->>'unparsed_count')::integer,
-  coalesce(p_summary->'warnings','{}'::jsonb),p_summary->>'snapshot_sha256',p_run_id)
+  v_coverage_complete,coalesce(p_summary->'warnings','{}'::jsonb),p_summary->>'snapshot_sha256',p_run_id)
  on conflict(business_id,restaurant_guid,business_date) do update
  set import_state='imported',recon_state=excluded.recon_state,imported_at=now(),
   net_sales_cents=excluded.net_sales_cents,gross_sales_cents=excluded.gross_sales_cents,
@@ -305,7 +331,7 @@ begin
   tax_cents=excluded.tax_cents,tip_cents=excluded.tip_cents,order_count=excluded.order_count,
   open_check_count=excluded.open_check_count,service_charges_cents=excluded.service_charges_cents,
   gratuity_cents=excluded.gratuity_cents,unparsed_count=excluded.unparsed_count,
-  warnings=excluded.warnings,orders_snapshot_sha256=excluded.orders_snapshot_sha256,
+  coverage_complete=excluded.coverage_complete,warnings=excluded.warnings,orders_snapshot_sha256=excluded.orders_snapshot_sha256,
   last_import_run_id=excluded.last_import_run_id;
  -- The sales numbers and the import-state update share this transaction; avoid
  -- putting verified Toast sales in orders while showing stale daily totals.
@@ -320,10 +346,7 @@ begin
     join public.orders x on x.id=l.order_id where x.business_id=p_business_id
      and x.business_date=p_business_date and not x.toast_excluded
      and x.superseded_by is null and not l.voided),0)::integer,
-   0,0,0,0,0,case when (p_summary->>'unparsed_count')::integer=0 and not (coalesce((p_summary->'warnings'->>'missing_check_amount')::integer,0)>0
-    or coalesce((p_summary->'warnings'->>'missing_deferred_price')::integer,0)>0
-    or coalesce((p_summary->'warnings'->>'missing_refund_amount')::integer,0)>0)
-    then 'actual' else 'missing' end
+   0,0,0,0,0,'missing'
  from public.orders o where o.business_id=p_business_id
    and o.business_date=p_business_date and not o.toast_excluded
    and o.superseded_by is null
@@ -331,6 +354,19 @@ begin
  set net_sales_cents=excluded.net_sales_cents,orders_count=excluded.orders_count,
   drinks_count=excluded.drinks_count,sales_data_status=excluded.sales_data_status;
  perform public.pos_rebuild_sales_fact_rollups_v1(p_business_id,p_business_date);
+ -- Never certify a multi-location total until every verified/mapped Toast
+ -- location applicable to this date has a complete imported snapshot.
+ select count(*),count(*) filter(where d.import_state='imported'
+  and d.coverage_complete) into v_eligible_locations,v_complete_locations
+ from public.toast_location_mappings m
+ left join public.toast_day_status d on d.business_id=m.business_id
+   and d.restaurant_guid=m.restaurant_guid and d.business_date=p_business_date
+ where m.business_id=p_business_id and m.verified_at is not null
+   and p_business_date>=coalesce(m.toast_start_date,p_business_date);
+ update public.daily_rollups set sales_data_status=
+  case when v_eligible_locations>0 and v_complete_locations=v_eligible_locations
+   then 'actual' else 'missing' end
+ where business_id=p_business_id and business_date=p_business_date;
  -- Unknown-location non-Toast rows at a multi-location café cannot be
  -- automatically attributed to Toast. Do not claim verified aggregate sales.
  if exists(select 1 from public.orders where business_id=p_business_id
@@ -346,8 +382,12 @@ begin
  -- IMPORTANT: completeness remains UNKNOWN until PR2's late-edit re-pull + reconciliation.
  update public.daily_rollups set voids_status='unknown',voids_source=null
  where business_id=p_business_id and business_date=p_business_date;
- update public.toast_sync_runs set state='completed',days_done=greatest(days_done,1),
-  orders_unparsed=orders_unparsed+(p_summary->>'unparsed_count')::integer,finished_at=now()
+ update public.toast_sync_runs
+ set days_done=days_done+1,
+  state=case when days_total>0 and days_done+1>=days_total then 'completed' else 'running' end,
+  cursor='{}'::jsonb,resume_at=null,
+  orders_unparsed=orders_unparsed+(p_summary->>'unparsed_count')::integer,
+  finished_at=case when days_total>0 and days_done+1>=days_total then now() else null end
  where id=p_run_id;
  delete from public.toast_day_pages where run_id=p_run_id and business_date=p_business_date;
  return jsonb_build_object('orders',v_count,'net_sales_cents',v_net);
@@ -417,5 +457,3 @@ from public.toast_location_mappings m;
 revoke all on public.toast_sync_health_v from public,anon,authenticated;
 grant select on public.toast_sync_health_v to service_role;
 
--- The existing rollup writers are left as-is until every source honours the exclusion
--- fields. The feature is OFF by default and cannot be enabled safely before that.
