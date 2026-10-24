@@ -170,7 +170,7 @@ function annotatedText(
     const from=absoluteStart+token.start,to=absoluteStart+token.end;
     const matching=spans.filter(span=>span.start<to&&span.end>from);
     if(!matching.length||badged.has(from)||["clock","clockRange","date","dateRange","duration","ordinal","phone/id"].includes(token.kind))continue;
-    if(from>cursor)out.push(text.slice(cursor-absoluteStart,from-absoluteStart));
+    if(from>cursor)out.push(text.slice(cursor-absoluteStart,from-absoluteStart).replace(/\\\|/g,"|"));
     if(from<cursor)continue;
     const span=matching.find(v=>v.source==="unchecked")??matching[0];
     const source=span.source??"unchecked";
@@ -179,7 +179,7 @@ function annotatedText(
     out.push(<span key={from} className="whitespace-nowrap">{text.slice(token.start,token.end)}<SourceDot tone={source} label={explanation}/></span>);
     badged.add(from);cursor=to;
   }
-  if(cursor<end)out.push(text.slice(cursor-absoluteStart));
+  if(cursor<end)out.push(text.slice(cursor-absoluteStart).replace(/\\\|/g,"|"));
   return out;
 }
 
