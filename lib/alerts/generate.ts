@@ -1,10 +1,11 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { mealBreakStatus, missingBillAlert, voidsAlert } from "@/lib/calc";
-import { RUNNING_COST_CODES } from "@/lib/constants";
-import { staleGeneratedAlertIds } from "./reconcile";
+import { mealBreakStatus, missingBillAlert } from "@/lib/calc";
+import { DEMO_BUSINESS_ID, RUNNING_COST_CODES } from "@/lib/constants";
+import { blocksGeneratedAlert, staleGeneratedAlertIds } from "./reconcile";
 import { formatInTimeZone } from "date-fns-tz";
 import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
+import { summarizeVoidsRollups, isUnusualVoids } from "@/lib/calc/voidsReview";
 
 /**
  * Generates alert rows from real data (docs/05-calculations.md "Alert rules"). Only 3 of the 6
@@ -18,6 +19,8 @@ import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
  * Idempotent: re-running never creates a second open alert for the same underlying thing.
  */
 export async function generateAlerts(supabase: SupabaseClient, businessId: string): Promise<{ created: number }> {
+  // The demo tenant is shared by unrelated users. Reading is fine; generation is not.
+  if (businessId === DEMO_BUSINESS_ID) return { created: 0 };
   const { data: business } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
   const timezone = business?.timezone ?? "America/Los_Angeles";
   let created = 0;
@@ -30,14 +33,24 @@ export async function generateAlerts(supabase: SupabaseClient, businessId: strin
 /** Exported for `lib/actions/csvImport.ts`'s `unmatched_sales_items` alert, which is created right
  * at the moment an import finds the problem rather than in the batch pass below (it's tied to one
  * specific upload event, not something recomputable from steady-state data). */
-export async function hasOpenAlert(supabase: SupabaseClient, businessId: string, kind: string, dedupeKey: string): Promise<boolean> {
-  const { data } = await supabase
-    .from("alerts")
-    .select("id, payload")
-    .eq("business_id", businessId)
-    .eq("kind", kind)
-    .in("status", ["new", "seen"]);
-  return (data ?? []).some((a) => (a.payload as { dedupeKey?: string })?.dedupeKey === dedupeKey);
+export async function hasOpenAlert(
+  supabase: SupabaseClient, businessId: string, kind: string, dedupeKey: string,
+  includeReviewed = false,
+): Promise<boolean> {
+  // CSV imports retain open-only retries. Generated incidents suppress owner decisions,
+  // but not automatic reconciliation when a corrected problem becomes actionable again.
+  let query = supabase.from("alerts").select("id, payload, status")
+    .eq("business_id", businessId).eq("kind", kind);
+  if (!includeReviewed) query = query.in("status", ["new", "seen"]);
+  const { data, error } = await query;
+  // A failed dedupe read must not insert a duplicate OR crash the Alerts page.
+  // Treat the occurrence as already present and let the next refresh retry.
+  if (error) return true;
+  return (data ?? []).some((a) => {
+    const payload = a.payload as Record<string, unknown> | null;
+    return payload?.dedupeKey === dedupeKey &&
+      (!includeReviewed || blocksGeneratedAlert(a.status as "new" | "seen" | "resolved" | "dismissed", payload));
+  });
 }
 
 async function generateMissingBillAlerts(supabase: SupabaseClient, businessId: string, timezone: string): Promise<number> {
@@ -73,7 +86,7 @@ async function generateMissingBillAlerts(supabase: SupabaseClient, businessId: s
 
     const dedupeKey = `${monthKey}-${code}`;
     validKeys.add(dedupeKey);
-    if (await hasOpenAlert(supabase, businessId, "missing_bill", dedupeKey)) continue;
+    if (await hasOpenAlert(supabase, businessId, "missing_bill", dedupeKey, true)) continue;
 
     await supabase.from("alerts").insert({
       business_id: businessId,
@@ -90,27 +103,42 @@ async function generateMissingBillAlerts(supabase: SupabaseClient, businessId: s
 async function generateVoidsAlert(supabase: SupabaseClient, businessId: string, timezone: string): Promise<number> {
   const today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
   const monthKey = today.slice(0, 7);
-  const monthStart = `${monthKey}-01`;
-
-  const { data: thisMonthRollups } = await supabase.from("daily_rollups").select("voids_cents").eq("business_id", businessId).gte("business_date", monthStart).lte("business_date", today);
-  const voidsThisMonthCents = (thisMonthRollups ?? []).reduce((s, r) => s + r.voids_cents, 0);
-
   const [year, month] = monthKey.split("-").map(Number);
-  const threeMonthsAgo = new Date(year, month - 4, 1).toISOString().slice(0, 10);
-  const startOfThisMonth = monthStart;
-  const { data: priorRollups } = await supabase.from("daily_rollups").select("voids_cents").eq("business_id", businessId).gte("business_date", threeMonthsAgo).lt("business_date", startOfThisMonth);
-  const avgVoidsPrevious3MonthsCents = (priorRollups ?? []).reduce((s, r) => s + r.voids_cents, 0) / 3;
+  const threeMonthsAgo = new Date(Date.UTC(year, month - 4, 1)).toISOString().slice(0, 10);
 
-  if (!voidsAlert(voidsThisMonthCents, avgVoidsPrevious3MonthsCents)) return 0;
+  const { data, error } = await supabase.from("daily_rollups")
+    .select("business_date, voids_cents, sales_data_status")
+    .eq("business_id", businessId).gte("business_date", threeMonthsAgo)
+    .lte("business_date", today).order("business_date", { ascending: true });
+  // A failed read cannot prove a spike, and sales coverage never proves void coverage.
+  if (error || !data) return 0;
+  const summary = summarizeVoidsRollups(data.map(row => ({
+    business_date: row.business_date,
+    voids_cents: Number(row.voids_cents),
+    sales_data_status: row.sales_data_status,
+    // The persisted rollup has no void-specific provenance or completeness field.
+    // Even a successful connected-POS sales sync or CSV import cannot certify zero voids.
+    voidsCoverage: "unknown" as const,
+  })), monthKey, today);
+
+  const fires = isUnusualVoids(summary);
+
+  // Resolve stale prior-month alerts and current false positives from missing coverage.
+  // Owner-resolved/dismissed history stays immutable under resolveStaleGeneratedAlerts.
+  await resolveStaleGeneratedAlerts(supabase, businessId, "voids",
+    fires ? new Set([monthKey]) : new Set());
+  if (!fires) return 0;
 
   const dedupeKey = monthKey;
-  if (await hasOpenAlert(supabase, businessId, "voids", dedupeKey)) return 0;
-
+  if (await hasOpenAlert(supabase, businessId, "voids", dedupeKey, true)) return 0;
   await supabase.from("alerts").insert({
-    business_id: businessId,
-    kind: "voids",
-    impact_cents: voidsThisMonthCents,
-    payload: { dedupeKey, monthKey, voidsThisMonthCents, avgVoidsPrevious3MonthsCents },
+    business_id: businessId, kind: "voids",
+    impact_cents: summary.thisMonthCents,
+    payload: {
+      dedupeKey, monthKey,
+      voidsThisMonthCents: summary.thisMonthCents,
+      avgVoidsPrevious3MonthsCents: summary.previousThreeMonthAverageCents,
+    },
   });
   return 1;
 }
@@ -134,7 +162,7 @@ async function generateMealBreakAlerts(supabase: SupabaseClient, businessId: str
 
     const dedupeKey = tc.id;
     validKeys.add(dedupeKey);
-    if (await hasOpenAlert(supabase, businessId, "meal_break", dedupeKey)) continue;
+    if (await hasOpenAlert(supabase, businessId, "meal_break", dedupeKey, true)) continue;
 
     const employee = tc.employees as unknown as { display_name: string } | { display_name: string }[] | null;
     const employeeName = Array.isArray(employee) ? employee[0]?.display_name : employee?.display_name;

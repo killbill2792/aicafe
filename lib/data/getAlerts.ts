@@ -3,6 +3,9 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
 import { generateAlerts } from "@/lib/alerts/generate";
+import { summarizeVoidsRollups, type VoidsSummary } from "@/lib/calc/voidsReview";
+import { formatInTimeZone } from "date-fns-tz";
+import { DEMO_BUSINESS_ID } from "@/lib/constants";
 
 export type AlertKind = "missing_bill" | "voids" | "meal_break" | "early_clockin" | "underpriced" | "overstaffed" | "covered_milestone" | "unmatched_sales_items";
 
@@ -13,6 +16,7 @@ export type AlertRow = {
   payload: Record<string, unknown>;
   status: "new" | "seen" | "resolved" | "dismissed";
   createdAt: string;
+  voidsReview?: { ok: true; summary: VoidsSummary } | { ok: false };
 };
 
 /** Regenerates alerts from current data, then returns the open ones. No cron yet (see
@@ -26,7 +30,8 @@ export async function getOpenAlerts(): Promise<AlertRow[]> {
   if (!user) return [];
   const businessId = await getActiveBusinessId(user.id);
 
-  await generateAlerts(supabase, businessId);
+  // The shared demo is read-only: a visit must never mutate other owners’ alerts.
+  if (businessId !== DEMO_BUSINESS_ID) await generateAlerts(supabase, businessId);
 
   const { data } = await supabase
     .from("alerts")
@@ -35,7 +40,7 @@ export async function getOpenAlerts(): Promise<AlertRow[]> {
     .in("status", ["new", "seen"])
     .order("created_at", { ascending: false });
 
-  return (data ?? []).map((a) => ({
+  const alerts: AlertRow[] = (data ?? []).map((a) => ({
     id: a.id,
     kind: a.kind as AlertKind,
     impactCents: a.impact_cents,
@@ -43,20 +48,88 @@ export async function getOpenAlerts(): Promise<AlertRow[]> {
     status: a.status as AlertRow["status"],
     createdAt: a.created_at,
   }));
+  // The stored impact is the amount when a void alert first fired. Display current
+  // recorded totals instead so list, headline, and daily details never disagree.
+  return Promise.all(alerts.map(async (alert) => {
+    if (alert.kind !== "voids") return alert;
+    const review = await readVoidsReview(supabase, businessId, alert.payload.monthKey);
+    return { ...alert, impactCents: review.ok ? review.summary.thisMonthCents : null };
+  }));
 }
 
 export async function getAlertById(id: string): Promise<AlertRow | null> {
   if (!isSupabaseConfigured()) return null;
   const supabase = await createServerSupabaseClient();
-  const { data } = await supabase.from("alerts").select("id, kind, impact_cents, payload, status, created_at").eq("id", id).maybeSingle();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const businessId = await getActiveBusinessId(user.id);
+  const { data } = await supabase.from("alerts")
+    .select("id, kind, impact_cents, payload, status, created_at")
+    .eq("business_id", businessId)
+    .eq("id", id)
+    .maybeSingle();
   if (!data) return null;
 
+  const payload = (data.payload as Record<string, unknown>) ?? {};
+  const voidsReview = data.kind === "voids"
+    ? await readVoidsReview(supabase, businessId, payload.monthKey)
+    : undefined;
   return {
     id: data.id,
     kind: data.kind as AlertKind,
     impactCents: data.impact_cents,
-    payload: (data.payload as Record<string, unknown>) ?? {},
+    payload,
     status: data.status as AlertRow["status"],
     createdAt: data.created_at,
+    voidsReview,
   };
+}
+
+/** Private to this existing, inventoried alert-detail data source. */
+async function readVoidsReview(
+  db: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  businessId: string,
+  payloadMonthKey: unknown,
+): Promise<{ok:true;summary:VoidsSummary}|{ok:false}> {
+  const { data: business, error: businessError } = await db.from("businesses")
+    .select("timezone").eq("id", businessId).maybeSingle();
+  if (businessError || !business?.timezone) return { ok: false };
+
+  let today: string;
+  try {
+    today = formatInTimeZone(new Date(), business.timezone, "yyyy-MM-dd");
+  } catch {
+    return { ok: false };
+  }
+  const currentMonth = today.slice(0, 7);
+  const monthKey = typeof payloadMonthKey === "string" &&
+    /^\d{4}-(0[1-9]|1[0-2])$/.test(payloadMonthKey) &&
+    payloadMonthKey <= currentMonth
+      ? payloadMonthKey : currentMonth;
+  const [year, month] = monthKey.split("-").map(Number);
+  const priorStart = new Date(Date.UTC(year, month - 4, 1)).toISOString().slice(0, 10);
+  const nextMonthStart = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+  const endDate = monthKey === currentMonth ? today :
+    new Date(Date.parse(`${nextMonthStart}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+
+  const { data, error } = await db.from("daily_rollups")
+    .select("business_date, voids_cents, sales_data_status")
+    .eq("business_id", businessId)
+    .gte("business_date", priorStart)
+    .lte("business_date", endDate)
+    .order("business_date", { ascending: true });
+  if (error || !data) return { ok: false };
+  return { ok: true, summary: summarizeVoidsRollups(
+    // Existing rollups do not store void-amount completeness. In particular,
+    // CSV sales mark sales_data_status=actual but deliberately discard voids.
+    // NEVER derive voidsCoverage="complete" from the sales status or a zero value.
+    data.map((r) => ({
+      business_date: r.business_date,
+      voids_cents: Number(r.voids_cents),
+      sales_data_status: r.sales_data_status,
+      voidsCoverage: "unknown" as const,
+    })),
+    monthKey,
+    endDate,
+  ) };
 }
