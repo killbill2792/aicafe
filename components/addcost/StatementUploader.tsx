@@ -165,7 +165,7 @@ export default function StatementUploader({
         </div>
       )}
       {state.balanceCheck && !state.balanceCheck.ok && (
-        <button type="button" onClick={() => { if (!saveLock.current && !isSavingOrSaved) setMissingLine(true); }} disabled={isSavingOrSaved || saveLock.current} className="min-h-12 rounded-full border border-warn px-4 py-3 text-[17px] font-bold text-warn disabled:opacity-40">{labels.addMissingLine}</button>
+        <button type="button" onClick={() => { if (!saveLock.current && !isSavingOrSaved) setMissingLine(true); }} disabled={isSavingOrSaved} className="min-h-12 rounded-full border border-warn px-4 py-3 text-[17px] font-bold text-warn disabled:opacity-40">{labels.addMissingLine}</button>
       )}
       {missingLine && (
         <div className="flex flex-col gap-3 rounded-card-lg border border-warn bg-card p-4">
@@ -185,8 +185,8 @@ export default function StatementUploader({
             </select>
           </label>
           <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={addMissingLine} disabled={!missingCandidate || isSavingOrSaved || saveLock.current} className="min-h-12 flex-1 rounded-full bg-accent px-4 text-[17px] font-bold text-on-accent disabled:opacity-40">{labels.missingConfirm}</button>
-            <button type="button" onClick={() => { if (!saveLock.current && !isSavingOrSaved) { setMissingLine(false); setMissingDescription(""); setMissingAmount(""); setMissingDate(""); } }} disabled={isSavingOrSaved || saveLock.current} className="min-h-12 flex-1 rounded-full border border-line px-4 text-[17px] font-bold text-ink disabled:opacity-40">{labels.missingCancel}</button>
+            <button type="button" onClick={addMissingLine} disabled={!missingCandidate || isSavingOrSaved} className="min-h-12 flex-1 rounded-full bg-accent px-4 text-[17px] font-bold text-on-accent disabled:opacity-40">{labels.missingConfirm}</button>
+            <button type="button" onClick={() => { if (!saveLock.current && !isSavingOrSaved) { setMissingLine(false); setMissingDescription(""); setMissingAmount(""); setMissingDate(""); } }} disabled={isSavingOrSaved} className="min-h-12 flex-1 rounded-full border border-line px-4 text-[17px] font-bold text-ink disabled:opacity-40">{labels.missingCancel}</button>
           </div>
         </div>
       )}
@@ -209,7 +209,7 @@ export default function StatementUploader({
                 <select
                   value={isExcluded ? "exclude" : category}
                   onChange={(e) => updateCategory(line.i, e.target.value as ExpenseCategoryCode | "exclude")}
-                  disabled={isSavingOrSaved || saveLock.current}
+                  disabled={isSavingOrSaved}
                   className="min-h-12 rounded-full border border-line bg-card px-2.5 py-1 text-[17px] font-semibold disabled:opacity-40"
                 >
                   {EXPENSE_CATEGORY_CODES.map((c) => (
@@ -228,7 +228,7 @@ export default function StatementUploader({
       <button
         type="button"
         onClick={handleSaveAll}
-        disabled={isSavingOrSaved || missingLine || saveLock.current}
+        disabled={isSavingOrSaved || missingLine}
         className="h-14 rounded-full bg-accent text-lg font-bold text-on-accent disabled:opacity-40"
       >
         {saveStatus === "saved" ? labels.saved : labels.saveAll}
