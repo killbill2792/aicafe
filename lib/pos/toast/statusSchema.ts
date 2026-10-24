@@ -1,5 +1,5 @@
 import {z} from "zod";
-import {GUID} from "@/lib/pos/toast/client";
+const GUID=z.uuid();
 const money=z.number().int().safe();
 const day=z.iso.date();
 export const statusSchema=z.object({
