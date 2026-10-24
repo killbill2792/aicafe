@@ -238,7 +238,7 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
   .select("business_date,import_state,recon_state,orders_snapshot_sha256,net_sales_cents,order_count,discounts_cents,refunds_cents,unparsed_count,warnings,imported_at,last_recon_attempt_at")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("import_state","imported").in("recon_state",["pending","mismatch","analytics_timeout"])
-  .or(`last_recon_attempt_at.is.null,last_recon_attempt_at.lt.${new Date(Date.now()-9*60000).toISOString()}`)
+  .or(`last_recon_attempt_at.is.null,and(recon_state.eq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-9*60000).toISOString()}),and(recon_state.neq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-60*60000).toISOString()})`)
   .order("last_recon_attempt_at",{ascending:true,nullsFirst:true})
   .order("business_date",{ascending:false}).limit(60);
  if(de)throw new ToastApiError("unavailable");
