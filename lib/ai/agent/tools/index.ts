@@ -14,6 +14,8 @@ import {ownerInputsSchema} from "./ownerInputs";
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
+import {ToolError} from "../toolErrors";
+import {requestedPeriod as calcRequestedPeriod} from "@/lib/calc/periods";
 import {summarizePeakHours,summarizeEmployeeSales,summarizePayrollFacts} from "@/lib/calc/posFactSummaries";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { CafeStatePeriod } from "@/lib/operating/types";
@@ -70,23 +72,19 @@ export const agentToolDefinitions=[...baseToolDefinitions,
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
-export function requestedPeriod(choice: "today" | "week" | "month", asOf: string): CafeStatePeriod {
-  const start = choice === "today" ? asOf
-    : choice === "month" ? asOf.slice(0, 7) + "-01"
-    : new Date(Date.parse(asOf + "T12:00:00Z") - 6 * 86400000).toISOString().slice(0, 10);
-  return { from: start, to: asOf };
-}
+export const requestedPeriod=calcRequestedPeriod;
+
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
   return { source, period, agentId:source==="profitability"?"leo":"alex",
     missing: missing.length ? missing : ["sourceUnavailable"] };
 }
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
   // Backend-only: do not register proposal creation until a real approval surface is available.
-  if(name==="propose_initiative")throw new Error("initiative_approval_surface_not_available");
+  if(name==="propose_initiative")throw new ToolError("not_supported");
   if(isInitiativeTool(name))return executeInitiativeTool(name,raw,ctx);
   // Flag-gated extra tool: only offered to the model when CHAT_MEMORY is on.
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
-  if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
+  if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);

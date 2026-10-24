@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
+import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
+import {prorate,requestedPeriod as normalizedPeriod,calendarMonth} from "@/lib/calc/periods";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 
 const period=z.strictObject({period:z.enum(["today","week","month"])});
@@ -11,6 +13,7 @@ const breakEvenInput=z.strictObject({
   ownerProcessingFeePercent:z.number().min(0).max(99.99).nullable().optional(),
   ownerNetSalesCents:z.number().int().nonnegative().nullable().optional(),
   ownerSalesDays:z.number().int().positive().nullable().optional(),
+  ownerInputs:ownerInputsSchema.nullable().optional(),
 });
 const unavailable=(source:string,period:{from:string;to:string}|null,missing:string[]):AgentToolResult=>
   ({source,period,agentId:"leo",missing:missing.length?missing:["sourceUnavailable"]});
@@ -42,11 +45,14 @@ export const moneyTools={
   get_break_even:{
     agentId:"leo",schema:breakEvenInput,description:"Read recorded daily fixed costs and calculate break-even sales using the owner's ingredient+packaging percentage and their net sales/days when they supply them. Do not demand imported sales when the owner supplies net sales. Pass null for unknown owner inputs; never invent them. If processing-fee rate is unknown, still calculate but explicitly say this estimate excludes processing fees.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const owner=breakEvenInput.parse(raw);
+      const owner=breakEvenInput.parse(raw),provided=owner.ownerInputs;
       const ownerPercent=owner.ownerIngredientPackagingPercent;
       const ownerBps=percentToBasisPoints(ownerPercent);
       const s=ctx.tools.getBreakEven?await ctx.tools.getBreakEven():null;
       let dailyFixedCostsCents=s?.available?s.value.dailyCostsToCoverCents:null;
+      const ownerFixed=provided?.laborCents!=null&&provided.laborPeriod?
+        prorate(provided.laborCents,ownerPeriod(provided.laborPeriod,ctx.asOf)!,{from:ctx.asOf,to:ctx.asOf}):null;
+      if(dailyFixedCostsCents===null&&ownerFixed!==null)dailyFixedCostsCents=ownerFixed;
       let costSource:"break_even"|"business_costs"="break_even";
       let fixedCostMissing:string[]=[];
       let fixedCostEstimates:string[]=[];
@@ -99,8 +105,8 @@ export const moneyTools={
             dailyFixedCostsCents,
             ingredientPackagingBps:ownerBps,
             processingFeeBps:percentToBasisPoints(owner.ownerProcessingFeePercent),
-            netSalesCents:owner.ownerNetSalesCents,
-            salesDays:owner.ownerSalesDays,
+            netSalesCents:owner.ownerNetSalesCents??provided?.netSalesCents,
+            salesDays:owner.ownerSalesDays??(provided?.salesPeriod&&"days" in provided.salesPeriod?provided.salesPeriod.days:null),
           }):null;
       const ownerFiguresProvided=owner.ownerNetSalesCents!=null||
         owner.ownerSalesDays!=null||owner.ownerProcessingFeePercent!=null;
@@ -114,7 +120,7 @@ export const moneyTools={
           fixedCostMissing.length?fixedCostMissing:s?.quality.missingInputs??["recordedFixedCostsUnavailable"]),
         ...modelMissing,
       ])];
-      return {source:"break_even",period:null,agentId:"leo",
+      return {source:"break_even",period:null,agentId:"leo",unit:"cents",ownerInputs:provided??null,
         missing,
         ...(fixedCostEstimates.length?{estimated:fixedCostEstimates}:{}),
         estimate:s?.available?s.value:null,

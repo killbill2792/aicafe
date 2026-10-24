@@ -1,6 +1,7 @@
 import { baselinePriceCents } from "./pricingBaseline";
 import { applyRounding } from "./pricingRounding";
 import { COFFEE_SHOP_PROFILE } from "@/lib/pricing/profiles";
+import {calcResult} from "./result";
 
 export type NewItemPriceInput = {
   ingredientCostCents:number; packagingCents:number|null; targetMarginPercent:number|null;
@@ -26,7 +27,16 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
   const ingredientBenchmarkCents=Math.round(baselinePriceCents(input.ingredientCostCents,COFFEE_SHOP_PROFILE.targetProductCostPercent));
   const rawPrice=Math.max(costPlusPriceCents??0,ingredientBenchmarkCents);
   // Do not present a benchmark as full-cost pricing when labor/overhead are missing.
-  const suggestedPriceCents=fullCostCents===null?null:Math.max(COFFEE_SHOP_PROFILE.roundingRule.incrementCents,applyRounding(rawPrice,COFFEE_SHOP_PROFILE.roundingRule));
+  const suggestedPriceCents=Math.max(COFFEE_SHOP_PROFILE.roundingRule.incrementCents,Math.ceil(rawPrice/25)*25);
+  const rawFloorCents=Math.ceil(input.ingredientCostCents/0.35);
+  const rawTargetCents=Math.ceil(input.ingredientCostCents/0.30);
+  const rawHighCents=Math.ceil(input.ingredientCostCents/0.25);
+  const floorCents=Math.ceil(rawFloorCents/25)*25;
+  const highCents=Math.ceil(rawHighCents/25)*25;
+  const result=calcResult({value:suggestedPriceCents,floor:floorCents,
+    range:{low:floorCents,high:highCents},tier:fullCostCents!==null?"full":units!==null?"partial":"floor_only",
+    inputs:[{name:"unitCostCents",value:input.ingredientCostCents,provenance:"ownerProvided"},
+      {name:"targetCostRatio",value:0.30,provenance:"estimate"}],missing});
   const prices=input.menuPricesCents.filter(v=>Number.isSafeInteger(v)&&v>0).sort((a,b)=>a-b);
   const median=prices.length?(prices.length%2?prices[(prices.length-1)/2]:
     Math.round((prices[prices.length/2-1]+prices[prices.length/2])/2)):null;
@@ -38,6 +48,6 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
     profitPerItemCents:suggestedPriceCents===null||fullCostCents===null?null:suggestedPriceCents-fullCostCents,
     marginPercent:suggestedPriceCents===null||fullCostCents===null?null:
       Math.round((suggestedPriceCents-fullCostCents)/suggestedPriceCents*10000)/100,
-    missing,estimated,
+    missing,estimated,result,rawFloorCents,rawTargetCents,rawHighCents,floorCents,highCents,
   };
 }

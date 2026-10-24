@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { requestedPeriod } from "./period";
 import type { AgentToolContext, AgentToolResult } from "./index";
+import {ownerInputsSchema} from "./ownerInputs";
 
 const period=z.strictObject({period:z.enum(["today","week","month"])});
-const item=z.strictObject({itemId:z.uuid()});
+const item=z.strictObject({itemId:z.uuid(),ownerInputs:ownerInputsSchema.nullable()});
 export const salesTools={
   get_item_sales:{
     agentId:"alex",schema:period,description:"Covered item quantities sold, not inferred from generic sales totals.",
@@ -21,7 +22,7 @@ export const salesTools={
   get_price_recommendation:{
     agentId:"alex",schema:item,description:"Read the deterministic recommendation for one menu item; never auto-update price.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const {itemId}=item.parse(raw);
+      const {itemId,ownerInputs}=item.parse(raw);
       if(!ctx.tools.getPricingRecommendation)return {source:"pricing_engine",period:null,agentId:"alex",missing:["pricingReaderUnavailable"]};
       const s=await ctx.tools.getPricingRecommendation(itemId);
       if(!s.available)return {source:"pricing_engine",period:null,agentId:"alex",missing:s.quality.missingInputs};
@@ -30,7 +31,7 @@ export const salesTools={
         missing:[...new Set([...s.quality.missingInputs,...v.dataQuality.missingInputs])],
         estimated:[...new Set([...s.quality.estimatedInputs,...v.dataQuality.estimatedInputs])],
         stale:[...new Set([...s.quality.staleInputs,...v.dataQuality.staleInputs])],
-        itemId,status:v.status,confidence:v.confidence,mode:v.calculationMode,
+        itemId,unit:"cents",ownerInputs,status:v.status,confidence:v.confidence,mode:v.calculationMode,
         currentPriceCents:v.currentPriceCents,recommendedPriceCents:v.recommendedPriceCents,
         productCostCents:v.productCostCents,warnings:v.warnings};
     },
