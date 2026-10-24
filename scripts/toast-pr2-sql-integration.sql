@@ -92,4 +92,94 @@ BEGIN
   'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-10-05',second_generation),
   'matching post-commit generation acknowledges its own rollup');
 END $generation$;
+
+-- New server-only state and RPCs must be inaccessible to browser roles.
+SELECT pg_temp.assert(NOT has_table_privilege('authenticated',
+ 'public.toast_analytics_credentials','SELECT'),
+ 'RMS Pro secret table is not client-readable');
+SELECT pg_temp.assert(NOT has_table_privilege('authenticated',
+ 'public.toast_automation_leases','UPDATE'),
+ 'browser cannot steal a Toast lease');
+SELECT pg_temp.assert(NOT has_function_privilege('authenticated',
+ 'public.toast_certify_day_voids(uuid,date)','EXECUTE'),
+ 'browser cannot certify voids');
+SELECT pg_temp.assert(NOT has_function_privilege('anon',
+ 'public.toast_record_day_error(uuid,uuid,uuid,date,text,boolean,boolean)','EXECUTE'),
+ 'anonymous cannot replace an imported day');
+
+DO $p1$
+declare b uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+ g uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002';r uuid;again uuid;
+begin
+ -- Duplicate active requests return the same run ID, not a second import.
+ select public.toast_queue_backfill(b,g,'2026-10-05','2026-10-06') into r;
+ select public.toast_queue_backfill(b,g,'2026-10-05','2026-10-06') into again;
+ perform pg_temp.assert(r=again,'same active location/range backfill deduplicated');
+end $p1$;
+
+DO $bad_day$
+declare b uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+ g uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001';r uuid;
+begin
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+  requested_from,requested_to,days_total)
+ values(b,g,'backfill','2026-10-06','2026-10-07',2) returning id into r;
+ perform public.toast_record_day_error(r,b,g,'2026-10-06','invalid_response',false,true);
+ perform pg_temp.assert((select import_state='imported' and last_error_category='invalid_response'
+ from public.toast_day_status where business_id=b and restaurant_guid=g
+  and business_date='2026-10-06'),'reimport error preserves previous good status');
+ perform pg_temp.assert((select sales_data_status='actual'
+  from public.daily_rollups where business_id=b and business_date='2026-10-06'),
+  'reimport error preserves month-calendar actual sales coverage');
+ perform pg_temp.assert((select days_done=1 and state='running'
+  from public.toast_sync_runs where id=r),'invalid day advances backfill once');
+ perform public.toast_record_day_error(r,b,g,'2026-10-07','invalid_response',false,true);
+ perform pg_temp.assert((select days_done=2 and state='completed'
+  from public.toast_sync_runs where id=r),'next bad day finishes without stopping');
+ begin
+  perform public.toast_record_day_error(r,b,g,'2026-10-07','invalid_response',false,true);
+  raise exception 'duplicate skip was accepted';
+ exception when others then
+  if sqlerrm='duplicate skip was accepted' then raise;end if;
+ end;
+ perform pg_temp.assert((select days_done=2 from public.toast_sync_runs where id=r),
+  'completed run cannot increment days_done twice');
+end $bad_day$;
+
+-- Full reconciliation and modified-date proof are prerequisites for certifying voids.
+UPDATE public.toast_day_status SET recon_state='checked_internal'
+WHERE business_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+ AND business_date='2026-10-06' AND import_state='imported';
+INSERT INTO public.toast_void_repull_coverage(
+ business_id,restaurant_guid,business_date,scanned_at,last_window_end)
+VALUES
+ ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001','2026-10-06',now(),now()),
+ ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002','2026-10-06',now(),now());
+INSERT INTO public.toast_void_facts(
+ business_id,location_id,selection_guid,order_guid,order_business_date,
+ void_business_date,amount_basis,amount_cents,level)
+VALUES('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbba001',
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb4444',
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb3333',
+ '2026-10-05','2026-10-06','amount_missing',null,'selection');
+SELECT pg_temp.assert(NOT public.toast_certify_day_voids(
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-10-06'),
+ 'missing amount blocks certifying a void day');
+UPDATE public.toast_void_facts SET amount_basis='price',amount_cents=100
+WHERE selection_guid='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb4444';
+SELECT pg_temp.assert(public.toast_certify_day_voids(
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-10-06'),
+ 'reconciled, fully covered day can certify voids');
+SELECT pg_temp.assert((SELECT voids_status='complete' and voids_cents=100
+ FROM public.daily_rollups WHERE business_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  AND business_date='2026-10-06'),'certified amount is exact integer cents');
+UPDATE public.toast_void_facts SET amount_cents=250
+ WHERE selection_guid='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb4444';
+SELECT pg_temp.assert((SELECT voids_status='unknown'
+ FROM public.daily_rollups WHERE business_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  AND business_date='2026-10-06'),'later void edit invalidates prior certification');
+
 ROLLBACK;
