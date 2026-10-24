@@ -144,6 +144,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,unit:"cents",
         priceSource:facts[item.id]?.priceSource??"initial",realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
         priceCheck:facts[item.id]?.priceCheck??"ok",
+        pricePeriod:facts[item.id]?.pricePeriod??null,
+        priceEvidenceStatus:facts[item.id]?.priceEvidenceStatus??"unknown",
       })) };
   }
   const { period: choice,ownerInputs } = periodSchema.parse(raw);

@@ -113,7 +113,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
         content: m.text ?? (m.blocks ?? []).flatMap(b => b && typeof b === "object" && "text" in b ?
           [String(b.text)] : []).join(" ") })).filter(m => m.content);
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,
-      menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items),
+      menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf),
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       proposals:{proposePriceChange:async({productId,newPriceCents})=>{

@@ -11,3 +11,15 @@ export function priceSource(history:string|null,catalog:string|null):"owner_manu
  if(catalog==="toast"||catalog==="square"||catalog==="clover")return "connected_pos";
  return "initial";
 }
+
+/** Pure realized price aggregation: net sales may include discounts or modifiers. */
+export function realizedUnitAverage(rows:ReadonlyArray<{net_sales_cents:number;quantity:number}>):number|null{
+ let sales=0,units=0;
+ for(const row of rows){
+  if(!Number.isSafeInteger(row.net_sales_cents)||!Number.isFinite(row.quantity)||row.quantity<=0)continue;
+  sales+=row.net_sales_cents;units+=row.quantity;
+ }
+ if(units<=0||!Number.isSafeInteger(sales))return null;
+ const average=Math.round(sales/units);
+ return Number.isSafeInteger(average)&&average>0?average:null;
+}
