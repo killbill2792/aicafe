@@ -1,6 +1,6 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {calculateNewItemPrice} from "@/lib/calc/newItemPrice";
+import {calculateNewItemPrice,contributionCoverage} from "@/lib/calc/newItemPrice";
 import {requestedPeriod,prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
 import {resolveCoveredSalesWindow} from "./coverage";
@@ -41,13 +41,15 @@ export const newItemPriceTools={suggest_new_item_price:{
   const billsForPeriod=bills?.available?prorate(bills.value.totalCents,calendarMonth(ctx.asOf),period):
     owner?.rentCents!=null||owner?.otherOverheadCents!=null?prorate((owner?.rentCents??0)+(owner?.otherOverheadCents??0),
       owner?.overheadPeriod?ownerPeriod(owner.overheadPeriod,ctx.asOf)!:calendarMonth(ctx.asOf),period):null;
-  const contributionCents=calculated.suggestedPriceCents-v.ingredient_cost_cents-(v.packaging_cents??0);
-  const overheadPerDayCents=laborForPeriod!==null||billsForPeriod!==null?
-    Math.round(((laborForPeriod??0)+(billsForPeriod??0))/periodDays(period)):null;
-  const drinksPerDayToCoverOverhead=overheadPerDayCents!==null&&contributionCents>0?
-    Math.ceil(overheadPerDayCents/contributionCents):null;
-  return {source:"new_item_price",period,coverageLabel:coverage.label,unit:"cents",contributionCents,overheadPerDayCents,drinksPerDayToCoverOverhead,
+  const contribution=contributionCoverage({
+    priceCents:calculated.suggestedPriceCents,unitCostCents:v.ingredient_cost_cents,
+    packagingCents:v.packaging_cents,laborCents:laborForPeriod,billsCents:billsForPeriod,
+    days:periodDays(period),
+  });
+  return {source:"new_item_price",period,coverageLabel:coverage.label,unit:"cents",...contribution,
    explain:[...(owner?.laborCents!=null?[{kind:"prorate",name:"labor",value:laborForPeriod,provenance:"ownerProvided"}]:[]),
+     ...(owner?.rentCents!=null?[{kind:"prorate",name:"rent",value:owner.rentCents,provenance:"ownerProvided"}]:[]),
+     ...(owner?.otherOverheadCents!=null?[{kind:"prorate",name:"overhead",value:owner.otherOverheadCents,provenance:"ownerProvided"}]:[]),
      {kind:"input",name:"unitCost",value:v.ingredient_cost_cents,provenance:"ownerProvided"},
      {kind:"input",name:"productCostRatio",value:0.30,provenance:"estimate"}],
    agentId:"alex",draft:true,saved:false,itemName:v.item_name,category:v.category,ownerInputs:owner,

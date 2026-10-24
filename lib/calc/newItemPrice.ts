@@ -50,3 +50,27 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
     missing,estimated,result,rawFloorCents,rawTargetCents,rawHighCents,floorCents,highCents,
   };
 }
+
+/** Partial overhead is a known-cost floor, NEVER the café's complete break-even. */
+export function contributionCoverage(input:{
+  priceCents:number|null;unitCostCents:number;packagingCents:number|null;
+  laborCents:number|null;billsCents:number|null;days:number;
+}){
+  if(!Number.isSafeInteger(input.days)||input.days<1)throw new Error("Invalid covered days");
+  const contributionCents=input.priceCents===null?null:
+    input.priceCents-input.unitCostCents-(input.packagingCents??0);
+  const known=(input.laborCents??0)+(input.billsCents??0);
+  const knownAny=input.laborCents!==null||input.billsCents!==null;
+  const complete=input.laborCents!==null&&input.billsCents!==null;
+  const knownOverheadPerDayCents=knownAny?Math.round(known/input.days):null;
+  const drinks=contributionCents!==null&&contributionCents>0&&knownOverheadPerDayCents!==null?
+    Math.ceil(knownOverheadPerDayCents/contributionCents):null;
+  return {
+    contributionCents,
+    overheadCoverage:complete?"complete" as const:knownAny?"partial" as const:"unknown" as const,
+    knownOverheadPerDayCents,
+    drinksPerDayToCoverKnownOverhead:drinks,
+    overheadPerDayCents:complete?knownOverheadPerDayCents:null,
+    drinksPerDayToCoverOverhead:complete?drinks:null,
+  };
+}
