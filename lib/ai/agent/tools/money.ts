@@ -1,9 +1,11 @@
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
+import {resolvePeriod} from "@/lib/calc/periods";
+import {resolveEntity,choicePayload} from "../resolve";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 
-const period=z.strictObject({period:z.enum(["today","week","month"])});
+const period=z.strictObject({period:z.union([z.enum(["today","week","month","last_week","last_month","ytd"]),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const empty=z.strictObject({});
 // Nullable for the Responses strict-tool schema. Omitted fields keep existing callers working.
 const breakEvenInput=z.strictObject({
@@ -16,15 +18,24 @@ const unavailable=(source:string,period:{from:string;to:string}|null,missing:str
   ({source,period,agentId:"leo",missing:missing.length?missing:["sourceUnavailable"]});
 export const moneyTools={
   get_expenses:{
-    agentId:"leo",schema:period,description:"Recorded actual expenses separately from recurring category estimates.",
+    agentId:"leo",schema:period.extend({category:z.string().max(100).nullable()}),description:"Recorded actual expenses separately from recurring category estimates."
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const p=requestedPeriod(period.parse(raw).period,ctx.asOf);
+      const input=period.extend({category:z.string().max(100).nullable()}).parse(raw);
+      const chosen=resolvePeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
+      if(chosen.status!=="resolved")return {source:"expenses",period:null,missing:chosen.status==="ambiguous"?[]:chosen.missing,needsOwnerChoice:chosen.status==="ambiguous",candidates:chosen.status==="ambiguous"?chosen.candidates:[]};
+      const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getRecordedExpenses||!ctx.tools.getExpenseSummary)return unavailable("expenses",p,["expenseReaderUnavailable"]);
       const [recorded,categories]=await Promise.all([ctx.tools.getRecordedExpenses(p),ctx.tools.getExpenseSummary(p)]);
+      let filterCategory:string|null=null;
+      if(input.category&&categories.available){
+        const selected=resolveEntity("category",input.category,categories.value,{nameOf:c=>c.label,idOf:c=>c.categoryCode,describe:c=>c.categoryCode});
+        if(selected.status!=="resolved")return {...choicePayload(selected,"expenses",p),agentId:"leo"};
+        filterCategory=selected.value.categoryCode;
+      }
       return {source:"expenses",period:p,agentId:"leo",
         missing:[...recorded.quality.missingInputs,...categories.quality.missingInputs],
         recordedActualTotalCents:recorded.available?recorded.value.totalCents:null,
-        categories:categories.available?categories.value.slice(0,15).map(v=>({
+        categories:categories.available?categories.value.filter(c=>filterCategory===null||filterCategory===c.categoryCode).slice(0,15).map(v=>({
           label:v.label,categoryCode:v.categoryCode,amountCents:v.isMissing?null:v.amountCents,
           isEstimate:v.isEstimate,isMissing:v.isMissing})):null};
     },
@@ -145,7 +156,9 @@ export const moneyTools={
   get_cost_summary:{
     agentId:"leo",schema:period,description:"Observed business cost components; respect incomplete coverage.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const p=requestedPeriod(period.parse(raw).period,ctx.asOf);
+      const chosen=resolvePeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
+      if(chosen.status!=="resolved")return {source:"business_costs",period:null,missing:chosen.status==="ambiguous"?[]:chosen.missing,needsOwnerChoice:chosen.status==="ambiguous",candidates:chosen.status==="ambiguous"?chosen.candidates:[]};
+      const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getBusinessCostSummary)return unavailable("business_costs",p,["costSummaryReaderUnavailable"]);
       const s=await ctx.tools.getBusinessCostSummary(p);
       return {source:"business_costs",period:p,agentId:"leo",missing:s.missingInputs,

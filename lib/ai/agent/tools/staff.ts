@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
+import {resolvePeriod} from "@/lib/calc/periods";
 
 const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
-const period = z.strictObject({ period: z.enum(["today", "week", "month"]) });
+const period = z.strictObject({ period: z.union([z.enum(["today","week","month","last_week","last_month","ytd"]),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]) });
 const missing = (source: string, period: {from:string;to:string}|null, reasons: string[]): AgentToolResult => ({
   source, period, agentId:"olivia", missing: reasons.length ? reasons : ["sourceUnavailable"],
 });
@@ -40,7 +41,9 @@ export const staffTools = {
   get_labor: {
     agentId:"olivia",schema:period,description:"Labor-day costs, including estimated inputs, and recorded attendance for a current period.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const choice=period.parse(raw).period,p=requested(choice,ctx.asOf);
+      const resolved=resolvePeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
+      if(resolved.status!=="resolved")return {source:"labor_and_attendance",period:null,missing:resolved.status==="ambiguous"?[]:resolved.missing,needsOwnerChoice:resolved.status==="ambiguous",candidates:resolved.status==="ambiguous"?resolved.candidates:[]};
+      const p={from:resolved.value.from,to:resolved.value.to};
       if(!ctx.tools.getLaborMetrics||!ctx.tools.getStaffAttendance||!ctx.timezone)
         return missing("labor_and_attendance",p,["laborReaderOrTimezoneUnavailable"]);
       const [labor,attendance]=await Promise.all([ctx.tools.getLaborMetrics(p),

@@ -5,7 +5,9 @@ import {staffReadScope,mondayOfLocalDate} from "@/lib/scheduling/staffScope.serv
 import {uncheckedCoverageDays} from "@/lib/calc/scheduling/coverageGaps";
 import {missingWageInputs} from "@/lib/calc/scheduling/shiftCost";
 import type {AgentToolContext,AgentToolResult} from "./index";
+import {resolveEntity,choicePayload,ownerChoiceGuard} from "../resolve";
 const week=z.strictObject({week_start:z.iso.date().nullable()});
+const namedWeek=week.extend({name:z.string().max(100).nullable()});
 const none=z.strictObject({});
 const estimate=z.strictObject({
  employee_id:z.string().uuid(),date:z.iso.date(),
@@ -23,13 +25,19 @@ async function localWeek(requested:string|null,ctx:AgentToolContext){
 }
 export const scheduleReadTools={
  get_team:{
-  agentId:"olivia",schema:week,
+  agentId:"olivia",schema:namedWeek,
   description:"Read active team, individual weekly hours and wage estimate flags. Pass week_start as YYYY-MM-DD Monday or null for this business week.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-   const input=week.parse(raw),ws=await localWeek(input.week_start,ctx);
+   const input=namedWeek.parse(raw),ws=await localWeek(input.week_start,ctx);
    const result=await getTeam({weekStart:ws});
    if(!result.ok)return fail("staff_week",null,result.error);
-   const people=result.data.team.slice(0,30),shifts=result.data.shifts.slice(0,30);
+   let selected=result.data.team;
+   if(input.name){
+     const matched=resolveEntity("employee",input.name,selected,{nameOf:person=>person.name,idOf:person=>person.id,describe:person=>person.role??"Team"});
+     if(matched.status!=="resolved")return {...choicePayload(matched,"employees+scheduled_shifts",null),agentId:"olivia"};
+     selected=[matched.value];
+   }
+   const people=selected.slice(0,30),shifts=result.data.shifts.slice(0,30);
    return {source:"employees+scheduled_shifts",period:{from:ws,to:new Date(Date.parse(ws+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
     agentId:"olivia",missing:[...(result.data.team.length>30?["morePeople"]:[]),
      ...(result.data.shifts.length>30?["moreShifts"]:[]),
@@ -92,8 +100,10 @@ export const scheduleReadTools={
  get_shift_cost:{
   agentId:"olivia",schema:estimate,
   description:"Calculate an uncommitted shift's paid minutes and wages from the same deterministic cost engine used by the shift sheet; missing wage is estimated or unknown.",
-  execute:async(raw:unknown):Promise<AgentToolResult>=>{
+  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const p=estimate.parse(raw);
+   const guard=ownerChoiceGuard(ctx.resolveState,p.employee_id);
+   if(guard)return {source:"shift_cost",period:null,agentId:"olivia",...guard};
    const res=await getShiftCost({employeeId:p.employee_id,date:p.date,start:p.start,end:p.end,
     breakMinutes:p.break_minutes??undefined});
    if(!res.ok)return fail("shift_cost",null,res.error);

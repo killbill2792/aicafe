@@ -1,5 +1,6 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
+import {ownerChoiceGuard} from "../resolve";
 const uuid=z.uuid(),date=z.iso.date(),clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const shift=z.strictObject({employee_id:uuid,date,start:clock,end:clock,
   break_minutes:z.number().int().min(0).max(240)});
@@ -41,6 +42,9 @@ export const staffProposalTools=Object.fromEntries(
   agentId:"olivia" as const,description:descriptions[name],schema:staffProposalInputs[name],
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=staffProposalInputs[name].parse(raw);
+   const employeeId="employee_id" in input&&typeof input.employee_id==="string"?input.employee_id:null;
+   if(employeeId){const guard=ownerChoiceGuard(ctx.resolveState,employeeId);
+     if(guard)return {source:"staff_proposal",period:null,agentId:"olivia",...guard};}
    if(!ctx.proposals?.proposeStaff)return {source:"staff_proposal",period:null,agentId:"olivia",
      draft:true,saved:false,missing:["proposalsUnavailable"]};
    const p=await ctx.proposals.proposeStaff({name,input});
