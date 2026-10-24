@@ -169,7 +169,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const weekday=(d:string,long=false)=>new Intl.DateTimeFormat(locale,{weekday:long?"long":"short",timeZone:"UTC"}).format(new Date(d+"T12:00:00Z"));
  const status=data.shifts.some(s=>s.status==="sent")?t("sent"):t("draft");
  const localized=(number:number)=>new Intl.NumberFormat(locale,{maximumFractionDigits:1}).format(number);
- const firstWithoutWage=data.team.find(p=>p.wageCents==null&&(p.wagePeriod==null||p.wagePeriod==="hour"));
+ const firstWithoutWage=data.team.find(p=>p.wageCents==null&&(p.wagePeriod==null||p.wagePeriod==="hour")&&data.shifts.some(shift=>shift.employeeId===p.id));
  return <div className="mx-auto w-full max-w-7xl space-y-3 px-4 pb-32 pt-5 text-fg" dir={locale==="ar"?"rtl":"ltr"}>
   <header className="flex items-center justify-between gap-3"><h1 className="font-headline text-2xl font-extrabold">{t("schedule")}</h1>
    <div className="flex gap-2"><Link className="flex min-h-12 items-center rounded-full border border-line px-4" href={`/${locale}/staff/rules`}>{t("rules")}</Link><button disabled={data.readOnly} aria-label={t("addShift")} onClick={()=>openShift(date)} className="min-h-12 min-w-12 rounded-full bg-accent text-on-accent">+</button></div>
@@ -376,9 +376,9 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
          <button type="button" disabled={!validShiftClock(time)||data.readOnly}
           aria-label={t("nudgeEarlier",{field:label})} onClick={()=>set(timeStep(time,-15))}
           className="min-h-12 min-w-12 rounded-xl border border-line">−15</button>
-         <input type="time" step={60} dir="ltr" disabled={data.readOnly} aria-invalid={!validShiftClock(time)}
+         <input type="time" step={60} dir="ltr" disabled={data.readOnly} aria-invalid={shiftMinutes===null}
           value={time} onChange={event=>set(event.target.value)}
-          className={`min-h-12 min-w-0 flex-1 rounded-xl border bg-surface px-3 ${!validShiftClock(time)?"border-neg":"border-line"}`}/>
+          className={`min-h-12 min-w-0 flex-1 rounded-xl border bg-surface px-3 ${shiftMinutes===null?"border-neg":"border-line"}`}/>
          <button type="button" disabled={!validShiftClock(time)||data.readOnly}
           aria-label={t("nudgeLater",{field:label})} onClick={()=>set(timeStep(time,15))}
           className="min-h-12 min-w-12 rounded-xl border border-line">+15</button>
