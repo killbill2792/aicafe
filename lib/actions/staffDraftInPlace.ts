@@ -58,3 +58,33 @@ export async function draftStaffWeekInPlace(raw:unknown){
       costIsPartial:result.totals.costIsPartial,estimated:result.estimated.length>0};
   }catch{return {ok:false as const,error:"unavailable"};}
 }
+
+const revisedInput=z.strictObject({week:z.iso.date(),threadId:z.uuid(),requestKey:z.uuid(),
+  locale:z.enum(["en","es","ar"]),shifts:staffProposalInputs.propose_schedule.shape.shifts});
+/** Edits stay inert: propose the exact reviewed rows as a fresh approval effect. */
+export async function reviseStaffWeekDraft(raw:unknown){
+  const parsed=revisedInput.safeParse(raw);
+  if(!parsed.success)return {ok:false as const,error:"invalid"};
+  try{
+    const {scope,service}=await authenticatedConversationContext();
+    await service.getThread(parsed.data.threadId);
+    await assertCafeAiAccess(scope.businessId);
+    const client=await createServerSupabaseClient();
+    const slice=await readSchedulingDraftInputs(client,scope.businessId);
+    if(!slice.available||slice.quality.missingInputs.length)
+      return {ok:false as const,error:"missing"};
+    const today=businessLocalDate(new Date(),slice.value.timezone);
+    if(new Date(parsed.data.week+"T12:00:00Z").getUTCDay()!==1||
+       parsed.data.week<today)return {ok:false as const,error:"week"};
+    if(parsed.data.shifts.length===0)return {ok:false as const,error:"invalid"};
+    const staff=new Set(slice.value.employees.map(x=>x.id));
+    if(parsed.data.shifts.some(x=>!staff.has(x.employee_id)||x.date<parsed.data.week||
+       x.date>new Date(Date.parse(parsed.data.week+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)))
+      return {ok:false as const,error:"invalid"};
+    const proposal=await proposeLoop({...scope,threadId:parsed.data.threadId,
+      locale:parsed.data.locale},supervisorLoopRegistry,new SupabaseLoopRepository(),
+      staffCapabilityId("propose_schedule"),{week_start:parsed.data.week,
+        shifts:parsed.data.shifts},parsed.data.requestKey);
+    return {ok:true as const,proposalId:proposal.id,revision:proposal.revision};
+  }catch{return {ok:false as const,error:"unavailable"};}
+}
