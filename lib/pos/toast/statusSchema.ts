@@ -7,7 +7,7 @@ export const statusSchema=z.object({
  errorCategory:z.string().nullable(),lastGoodSyncAt:z.string().nullable(),stale:z.boolean(),
  backfill:z.object({daysDone:z.number().int(),daysTotal:z.number().int(),
   state:z.string().nullable(),resumeAt:z.string().nullable()}),
- failedRuns:z.number().int(),
+ failedRuns:z.number().int(),queuedRanges:z.array(z.object({from:day,to:day})),
  needsLook:z.array(z.object({date:day,restaurantGuid:GUID,oursCents:money.nullable(),toastCents:money.nullable(),
   deltaCents:money.nullable(),reason:z.string()})),
  firstImportRows:z.array(z.object({date:day,oursCents:money.nullable(),toastCents:money.nullable()})),
