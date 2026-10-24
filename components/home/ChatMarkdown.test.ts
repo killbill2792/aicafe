@@ -111,13 +111,27 @@ describe("provenance footnotes",()=>{
    expect(html).toContain("aria-expanded=\"false\"");
    expect(html).not.toContain("margin-inline-start");
  });
- it("does not decorate calendar durations",()=>{
+ it("displays a checker-rejected historical duration as one complete warning",()=>{
    const text="Payroll is recorded for 90 days.";
    const start=text.indexOf("90");
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"90 days".length,source:"unchecked"}]}));
-   expect(html).not.toContain('aria-label="Not checked against your records"');
+   expect(html.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
+   expect(html).toMatch(/90 days<span class="relative inline-block h-\\[6px\\]/);
    expect(html).not.toContain('role="note"');
+ });
+ it("warns on rejected business clocks, never on supported or incidental clocks",()=>{
+   const text="We open Monday at 8:00 AM.";
+   const start=text.indexOf("8:00 AM");
+   const rejected=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
+     unverified:[{start,end:start+"8:00 AM".length,source:"unchecked"}]}));
+   expect(rejected.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
+   expect(rejected).toMatch(/8:00 AM<span class="relative inline-block h-\\[6px\\]/);
+   const supported=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
+     unverified:[{start,end:start+"8:00 AM".length,source:"owner"}]}));
+   expect(supported).not.toContain('aria-label="You told me"');
+   expect(renderToStaticMarkup(createElement(ChatMarkdown,{text,labels})))
+     .not.toContain('aria-label="Not checked against your records"');
  });
  it("keeps attached RTL marks after Arabic units and labels the tooltip accessibly",()=>{
    const text="الرواتب مسجلة لمدة ٩٠ أيام.";
@@ -125,7 +139,7 @@ describe("provenance footnotes",()=>{
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"٩٠ أيام".length,source:"unchecked"}]}));
    expect(html).toContain("٩٠ أيام");
-   expect(html).not.toContain('aria-label="Not checked against your records"');
+   expect(html.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
  });
 });
 
