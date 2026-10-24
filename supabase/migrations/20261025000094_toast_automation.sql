@@ -101,3 +101,68 @@ grant execute on function public.toast_acquire_lease(uuid,uuid,integer) to servi
 grant execute on function public.toast_release_lease(uuid) to service_role;
 grant execute on function public.toast_checkpoint_day(uuid,uuid,uuid,date,integer,text,timestamptz) to service_role;
 grant execute on function public.toast_queue_backfill(uuid,uuid,date,date) to service_role;
+
+-- The day RPC commits sales and advances days_done before TypeScript recomputes
+-- costs. Queue a separate, durable post-commit rollup job INSIDE that transaction.
+create table public.toast_rollup_refresh_jobs(
+ business_id uuid not null references public.businesses(id),
+ business_date date not null,
+ generation uuid not null default gen_random_uuid(),
+ requested_at timestamptz not null default now(),
+ retry_at timestamptz not null default now(),
+ attempts integer not null default 0,
+ last_error_category text,
+ primary key(business_id,business_date)
+);
+alter table public.toast_rollup_refresh_jobs enable row level security;
+revoke all on public.toast_rollup_refresh_jobs from public,anon,authenticated;
+grant select,insert,update,delete on public.toast_rollup_refresh_jobs to service_role;
+
+create function public.toast_enqueue_rollup_refresh()
+returns trigger language plpgsql security definer set search_path=public as $enqueue$
+begin
+ if new.import_state='imported' then
+  insert into public.toast_rollup_refresh_jobs(business_id,business_date)
+  values(new.business_id,new.business_date)
+  on conflict(business_id,business_date) do update set
+   generation=gen_random_uuid(),requested_at=now(),retry_at=now(),
+   attempts=0,last_error_category=null;
+ end if;
+ return new;
+end $enqueue$;
+create trigger toast_queue_costs_after_import
+ after insert or update of imported_at on public.toast_day_status
+ for each row execute function public.toast_enqueue_rollup_refresh();
+
+-- Compare the job's generation so a later import can never be acknowledged by an
+-- older worker that finished recomputing the same business day concurrently.
+create function public.toast_ack_rollup_refresh(
+ p_business_id uuid,p_business_date date,p_generation uuid)
+returns boolean language plpgsql security definer set search_path=public as $ack$
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ delete from public.toast_rollup_refresh_jobs
+ where business_id=p_business_id and business_date=p_business_date
+  and generation=p_generation;
+ return found;
+end $ack$;
+
+create function public.toast_defer_rollup_refresh(
+ p_business_id uuid,p_business_date date,p_generation uuid,p_category text)
+returns void language plpgsql security definer set search_path=public as $defer$
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ update public.toast_rollup_refresh_jobs
+ set attempts=attempts+1,last_error_category=left(p_category,80),
+  retry_at=now()+make_interval(mins=>case
+   when attempts=0 then 1 when attempts=1 then 5
+   when attempts=2 then 15 else 60 end)
+ where business_id=p_business_id and business_date=p_business_date
+  and generation=p_generation;
+end $defer$;
+
+revoke all on function public.toast_enqueue_rollup_refresh() from public,anon,authenticated;
+revoke all on function public.toast_ack_rollup_refresh(uuid,date,uuid) from public,anon,authenticated;
+revoke all on function public.toast_defer_rollup_refresh(uuid,date,uuid,text) from public,anon,authenticated;
+grant execute on function public.toast_ack_rollup_refresh(uuid,date,uuid) to service_role;
+grant execute on function public.toast_defer_rollup_refresh(uuid,date,uuid,text) to service_role;
