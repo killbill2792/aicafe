@@ -12,7 +12,6 @@ import PageShell from "@/components/shared/PageShell";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { formatShiftTime } from "@/lib/alerts/shiftTime";
 import { formatCents } from "@/lib/calc/money";
-import { getVoidsReview } from "@/lib/data/getVoidsReview";
 import { Link } from "@/i18n/navigation";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -31,7 +30,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
   const tCategories = await getTranslations("Categories");
   const categoryLabels = Object.fromEntries(EXPENSE_CATEGORY_CODES.map((c) => [c, tCategories(c)])) as Record<ExpenseCategoryCode, string>;
   const content = describeAlert(alert, t, (code) => categoryLabels[code as ExpenseCategoryCode] ?? code);
-  const voids = alert.kind === "voids" ? await getVoidsReview(snapshot.business.timezone, alert.payload.monthKey) : null;
+  const voids = alert.voidsReview ?? null;
   const displayedImpact = alert.kind === "voids" ? (voids?.ok ? voids.summary.thisMonthCents : null) : alert.impactCents;
 
   if (alert.status === "new") {
