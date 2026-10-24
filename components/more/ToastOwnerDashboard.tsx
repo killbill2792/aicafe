@@ -3,7 +3,7 @@ import {useCallback,useEffect,useRef,useState} from "react";
 import {useLocale,useTranslations} from "next-intl";
 import {statusSchema} from "@/lib/pos/toast/statusSchema";
 import {subscribeToastConnectionChanges,createToastStatusRequestGate} from "./toastConnectionEvents";
-import {canStartToastImport,canRepullToastDay,commitToastOwnerAction} from "./toastOwnerActionState";
+import {canStartToastImport,canRepullToastDay,commitToastOwnerAction,queueToastBackfillChunks,PartialToastQueueError} from "./toastOwnerActionState";
 import type {z} from "zod";
 type Snapshot=z.infer<typeof statusSchema>;
 const dateShift=(d:string,days:number)=>new Date(Date.parse(d+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
@@ -81,16 +81,21 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   setBusy(true);setMessage("");
   try{
    await commitToastOwnerAction(async()=>{
-    for(let from=start;from<=end;){
-     const to=dateShift(from,399)<end?dateShift(from,399):end;
+    await queueToastBackfillChunks(start,end,async(from,to)=>{
      const r=await fetch("/api/pos/toast/backfill",{method:"POST",
       headers:{"Content-Type":"application/json"},body:JSON.stringify({businessId,from,to})});
      if(!r.ok)throw Error("unavailable");
-     from=dateShift(to,1);
-    }
+    },dateShift);
    },load);
    setMessage(t("ownerQueued"));
-  }catch{setMessage(t("ownerError"));}finally{setBusy(false);}
+  }catch(error){
+   if(error instanceof PartialToastQueueError&&error.queuedChunks>0){
+    setStart(error.resumeFrom);
+    setMessage(t("ownerPartiallyQueued",{date:day(error.resumeFrom)}));
+    // Prior chunks committed. An unavailable read must not erase that fact.
+    void load().catch(()=>{});
+   }else setMessage(t("ownerError"));
+  }finally{setBusy(false);}
  }
  if(bad)return <section role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">
   <p>{t("ownerStatusUnavailable")}</p>
