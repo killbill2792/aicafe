@@ -291,16 +291,19 @@ grant execute on function public.toast_set_day_owner_flag(uuid,uuid,date,boolean
 create or replace function public.toast_queue_backfill(
  p_business_id uuid,p_restaurant_guid uuid,p_from date,p_to date)
 returns uuid language plpgsql security definer set search_path=public as $queue$
-declare v_prior date;v_id uuid;v_new_start date;v_expanded boolean;
+declare v_prior date;v_id uuid;v_new_start date;v_expanded boolean;v_zone text;
 begin
  if auth.role()<>'service_role' then raise exception 'service role only';end if;
  if p_from<'2015-12-02'::date or p_to<p_from or p_to-p_from>=400
-  or p_to>=current_date then raise exception 'invalid backfill range';end if;
- select m.toast_start_date into v_prior
+  then raise exception 'invalid backfill range';end if;
+ select m.toast_start_date,m.toast_time_zone into v_prior,v_zone
  from public.toast_location_mappings m
  where m.business_id=p_business_id and m.restaurant_guid=p_restaurant_guid
  and m.verified_at is not null for update;
- if not found then raise exception 'unverified Toast location';end if;
+ if not found or v_zone is null then raise exception 'unverified Toast location';end if;
+ -- Calendar cutoff is the restaurant's local yesterday, NOT Postgres/UTC today.
+ if p_to >= (now() at time zone v_zone)::date
+  then raise exception 'invalid backfill local range';end if;
  v_new_start:=case when v_prior is null then least(p_from,
    coalesce((select min(requested_from) from public.toast_sync_runs r
     where r.business_id=p_business_id and r.restaurant_guid=p_restaurant_guid
