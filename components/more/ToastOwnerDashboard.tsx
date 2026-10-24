@@ -3,7 +3,7 @@ import {useCallback,useEffect,useRef,useState} from "react";
 import {useLocale,useTranslations} from "next-intl";
 import {statusSchema} from "@/lib/pos/toast/statusSchema";
 import {subscribeToastConnectionChanges,createToastStatusRequestGate} from "./toastConnectionEvents";
-import {canStartToastImport,canRepullToastDay} from "./toastOwnerActionState";
+import {canStartToastImport,canRepullToastDay,commitToastOwnerAction} from "./toastOwnerActionState";
 import type {z} from "zod";
 type Snapshot=z.infer<typeof statusSchema>;
 const dateShift=(d:string,days:number)=>new Date(Date.parse(d+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
@@ -26,12 +26,14 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   if(analyticsBusy)return;
   setAnalyticsBusy(true);setMessage("");
   try{
-   const url="/api/pos/toast/analytics"+(action==="disconnect"?"?businessId="+encodeURIComponent(businessId):"");
-   const response=await fetch(url,{method:action==="disconnect"?"DELETE":"POST",
-    headers:{"Content-Type":"application/json"},
-    ...(action==="connect"?{body:JSON.stringify({businessId,...analytics})}:{})});
-   if(!response.ok)throw Error("unavailable");
-   setAnalytics(old=>({...old,clientSecret:""}));await load();
+   await commitToastOwnerAction(async()=>{
+    const url="/api/pos/toast/analytics"+(action==="disconnect"?"?businessId="+encodeURIComponent(businessId):"");
+    const response=await fetch(url,{method:action==="disconnect"?"DELETE":"POST",
+     headers:{"Content-Type":"application/json"},
+     ...(action==="connect"?{body:JSON.stringify({businessId,...analytics})}:{})});
+    if(!response.ok)throw Error("unavailable");
+    setAnalytics(old=>({...old,clientSecret:""}));
+   },load);
    setMessage(t("ownerSaved"));
   }catch{setMessage(t("ownerError"))}finally{setAnalyticsBusy(false)}
  }
@@ -63,10 +65,13 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  },[load,reloadKey]);
  async function post(url:string,payload:unknown){
   if(busy)return false;setBusy(true);setMessage("");
-  try{const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({businessId,...(payload as object)})});
-   if(!response.ok)throw Error("unavailable");
-   await load();setMessage(t("ownerSaved"));return true;
+  try{
+   await commitToastOwnerAction(async()=>{
+    const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({businessId,...(payload as object)})});
+    if(!response.ok)throw Error("unavailable");
+   },load);
+   setMessage(t("ownerSaved"));return true;
   }catch{setMessage(t("ownerError"));return false;}finally{setBusy(false);}
  }
  async function backfill(){
@@ -74,12 +79,17 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   if(start>end||start<"2015-12-02"){setMessage(t("ownerInvalidDate"));return;}
   // Queue bounded slices; a range longer than 400 days is never sent to SQL.
   setBusy(true);setMessage("");
-  try{for(let from=start;from<=end;){
-   const to=dateShift(from,399)<end?dateShift(from,399):end;
-   const r=await fetch("/api/pos/toast/backfill",{method:"POST",
-    headers:{"Content-Type":"application/json"},body:JSON.stringify({businessId,from,to})});
-   if(!r.ok)throw Error("unavailable");from=dateShift(to,1);
-  }await load();setMessage(t("ownerQueued"));
+  try{
+   await commitToastOwnerAction(async()=>{
+    for(let from=start;from<=end;){
+     const to=dateShift(from,399)<end?dateShift(from,399):end;
+     const r=await fetch("/api/pos/toast/backfill",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({businessId,from,to})});
+     if(!r.ok)throw Error("unavailable");
+     from=dateShift(to,1);
+    }
+   },load);
+   setMessage(t("ownerQueued"));
   }catch{setMessage(t("ownerError"));}finally{setBusy(false);}
  }
  if(bad)return <section role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">
