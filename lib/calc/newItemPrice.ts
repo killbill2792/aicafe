@@ -24,7 +24,7 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
   if(input.targetMarginPercent===null)estimated.push("defaultTargetMargin");
   const costPlusPriceCents=fullCostCents===null?null:Math.round(fullCostCents/(1-targetMarginPercent/100));
   const ingredientBenchmarkCents=Math.round(baselinePriceCents(input.ingredientCostCents,COFFEE_SHOP_PROFILE.targetProductCostPercent));
-  const rawPrice=Math.max(costPlusPriceCents??0,ingredientBenchmarkCents);
+  const rawPrice=input.targetMarginPercent===null?ingredientBenchmarkCents:Math.max(costPlusPriceCents??0,ingredientBenchmarkCents);
   // Do not present a benchmark as full-cost pricing when labor/overhead are missing.
   const suggestedPriceCents=Math.max(COFFEE_SHOP_PROFILE.roundingRule.incrementCents,Math.ceil(rawPrice/25)*25);
   const rawFloorCents=Math.round(input.ingredientCostCents/0.35);
@@ -33,7 +33,7 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
   const floorCents=Math.ceil(rawFloorCents/25)*25;
   const highCents=Math.ceil(rawHighCents/25)*25;
   const result=calcResult({value:suggestedPriceCents,floor:floorCents,
-    range:{low:floorCents,high:highCents},tier:fullCostCents!==null?"full":units!==null?"partial":"floor_only",
+    range:{low:floorCents,high:highCents},tier:fullCostCents!==null&&input.packagingCents!==null?"full":units!==null?"partial":"floor_only",
     inputs:[{name:"unitCostCents",value:input.ingredientCostCents,provenance:"ownerProvided"},
       {name:"targetCostRatio",value:0.30,provenance:"estimate"}],missing});
   const prices=input.menuPricesCents.filter(v=>Number.isSafeInteger(v)&&v>0).sort((a,b)=>a-b);

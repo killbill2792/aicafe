@@ -9,6 +9,6 @@ describe("partial price recommendation",()=>{
  });
  it("upgrades tiers with usage and overhead evidence",()=>{
   expect(calculateNewItemPrice({...base,units30d:1000}).result.tier).toBe("partial");
-  expect(calculateNewItemPrice({...base,units30d:1000,labor30dCents:90000,monthlyBillsCents:60000}).result.tier).toBe("full");
+  expect(calculateNewItemPrice({...base,units30d:1000,labor30dCents:90000,monthlyBillsCents:60000,packagingCents:20}).result.tier).toBe("full");
  });
 });

@@ -2,7 +2,7 @@ import {describe,it,expect} from "vitest";
 import {resolveCoveredSalesWindow} from "./coverage";
 import type {AgentToolContext} from "./index";
 const fakeDate=(date:string)=>({date});
-const unavailable=()=>({available:false,value:null,quality:{level:"low" as const,missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
+const unavailable=()=>({available:false as const,value:null,quality:{level:"low" as const,missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
 function context(dates:string[]):AgentToolContext{
  return {asOf:"2026-10-24",locale:"en",tools:{
    getSalesTrend:async({from,to})=>{

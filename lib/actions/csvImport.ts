@@ -12,6 +12,7 @@ import { rebuildSalesFactRollups } from "@/lib/pos/salesFactRollups";
 import { readStagedSalesGroups, readCsvFeeOrders, csvPromotedOrderId } from "@/lib/pos/csv/finalizeReads";
 import { matchCatalogItem } from "@/lib/pos/catalogMatching";
 import {inferMenuItemCategory} from "@/lib/menu/inferCategory";
+import {medianObservedUnitPriceCents} from "@/lib/calc/importedMenuPrice";
 
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { NEW_EMPLOYEE } from "@/lib/constants";
@@ -201,12 +202,7 @@ async function resolveMenuItemIds(
   const unmatchedRowsByName = new Map<string, number>();
 
   for (const name of [...new Set(groups.map((g) => g.item))]) {
-    const observations=groups.filter(g=>g.item===name&&g.quantity>0)
-      .map(g=>Math.round(g.netSalesCents/g.quantity)).filter(v=>Number.isSafeInteger(v)&&v>0)
-      .sort((a,b)=>a-b);
-    const middle=Math.floor(observations.length/2);
-    const priceCents=observations.length===0?null:observations.length%2?observations[middle]:
-      Math.round((observations[middle-1]+observations[middle])/2);
+    const priceCents=medianObservedUnitPriceCents(groups.filter(g=>g.item===name));
     const posItemId = `csv-item-${csvSlug(name)}`.slice(0, 120);
     const match = matchCatalogItem({ posItemId, name, priceCents, category: null }, candidates);
     if (match.status === "matched" && match.candidateId) {
