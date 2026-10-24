@@ -47,7 +47,7 @@ afterEach(()=>vi.unstubAllEnvs());
 function pilotReader(rows:Row[],rpcDates:string[],canonicalToastDates:string[],broken=false,flags:unknown[]=[]){
  const rollup={select:()=>rollup,eq:()=>rollup,gte:()=>rollup,lte:()=>rollup,
   order:()=>rollup,limit:async()=>({data:rows,error:null})};
- const orders={select:()=>orders,eq:()=>orders,like:()=>orders,in:()=>orders,order:()=>orders,order:()=>orders,
+ const orders={select:()=>orders,eq:()=>orders,like:()=>orders,in:()=>orders,order:()=>orders,
   range:async(start:number,end:number)=>broken?{data:null,error:{message:"connection failed"}}:
    {data:canonicalToastDates.slice(start,end+1).map((business_date,i)=>({id:start+i,business_date})),error:null}};
  const flagsRead={select:()=>flagsRead,eq:()=>flagsRead,gte:()=>flagsRead,lte:()=>flagsRead,
