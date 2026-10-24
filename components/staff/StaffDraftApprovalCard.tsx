@@ -13,7 +13,6 @@ type Data={team:PersonForSchedule[];rules:RuleSettings;availability:Availability
 type Proposal={proposalId:string;revision:number;state:string};
 export default function StaffDraftApprovalCard({week,locale,data,onClose,onApplied}:{
   week:string;locale:string;data:Data;onClose:()=>void;onApplied:()=>void;
-  onReviewShift?:(d:string,id?:string,employeeId?:string)=>void
 }){
   const t=useTranslations("StaffSchedule");const router=useRouter();
   const [busy,setBusy]=useState(false),[error,setError]=useState("");
@@ -28,6 +27,9 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     data.timezone,data.adjacentShifts,rates);
   const money=(cents:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:data.currency}).format(cents/100);
   const num=(n:number,maximumFractionDigits=0)=>new Intl.NumberFormat(locale,{maximumFractionDigits}).format(n);
+  const localTime=(date:string,clock:string)=>new Intl.DateTimeFormat(locale,{
+    hour:"numeric",minute:"2-digit",timeZone:"UTC"
+  }).format(new Date(date+"T"+clock+":00Z"));
   async function createThread(){
     const response=await fetch("/api/ai/threads",{method:"POST",
       credentials:"same-origin",headers:{"content-type":"application/json"},
@@ -63,11 +65,12 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
         body:JSON.stringify({action,proposalId:proposal.proposalId,revision:proposal.revision})});
       const result=await response.json();
       const next=result.proposal;
-      if(next)setProposal({proposalId:next.proposalId,revision:next.revision,state:next.state});
-      if(!response.ok||!next)throw Error();
-      if(next.state==="applied"){onApplied();router.refresh();}
-      if(next.state==="cancelled")onClose();
-      if(next.state==="stale")setError(t("draftStale"));
+      if(!next)throw Error();
+      setProposal({proposalId:next.proposalId,revision:next.revision,state:next.state});
+      if(next.state==="applied"){onApplied();router.refresh();return;}
+      if(next.state==="cancelled"){onClose();return;}
+      if(next.state==="stale"){setError(t("draftStale"));return;}
+      if(!response.ok||next.state==="failed")throw Error();
     }catch{setError(t("draftActionError"));}
     finally{setBusy(false);}
   }
@@ -95,18 +98,22 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
   const saveEdit=()=>{
     if(editing===null||!draftEdited)return;
     const changed=rows.map((row,i)=>i===editing?draftEdited:row);
+    if(draftEdited.date<week||
+      draftEdited.date>new Date(Date.parse(week+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)){
+      setError(t("draftInvalidShift"));return;
+    }
     // Proposal edits require a fresh, server-validated proposal. Never approve an
     // outdated effect while showing different draft rows.
     setEditing(null);void replaceDraft(changed);
   };
-  return <section className="rounded-2xl border border-line bg-surface p-4" aria-label={t("draftHeading")}>
+  return <section className="rounded-2xl border border-line bg-surface p-4 text-[17px]" dir={locale==="ar"?"rtl":"ltr"} aria-label={t("draftHeading")}>
     <div className="flex items-center justify-between gap-2">
       <h2 className="text-xl font-bold">{t("draftHeading")}</h2>
       <button type="button" disabled={busy} className="min-h-12 px-3"
         onClick={()=>proposal?.state==="pending"?void update("cancel"):onClose()}>{t("close")}</button>
     </div>
     {!proposal&&<button type="button" disabled={busy} onClick={()=>void draft()}
-      className="mt-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent disabled:opacity-50">
+      className="mt-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent disabled:opacity-50" role="status">
       {busy?t("draftWorking"):t("draftThisWeek")}</button>}
     {proposal&&<>
       <p role="status" className="mt-3 font-semibold">{t("draftSummary",{
@@ -116,18 +123,18 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
       {(warning||preview.totals.estimatedCount>0)&&<p className="mt-2 text-muted">{t("draftEstimateNote")}</p>}
       <p className="mt-2 text-muted">{t("draftNotSaved")}</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button disabled={busy||proposal.state!=="pending"} onClick={()=>void update("approve")}
-          className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent">{t("draftApproveAll")}</button>
+        <button disabled={busy||!["pending","failed"].includes(proposal.state)} onClick={()=>void update("approve")}
+          className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent">{proposal.state==="failed"?t("draftRetryApproval"):t("draftApproveAll")}</button>
         <button disabled={busy} onClick={()=>setReview(x=>!x)}
-          className="min-h-12 rounded-xl border border-line px-4">{t("draftReview")}</button>
+          className="min-h-12 rounded-xl border border-line px-4">{review?t("draftHideReview"):t("draftReview")}</button>
         <button disabled={busy||proposal.state!=="pending"} onClick={()=>void update("cancel")}
           className="min-h-12 rounded-xl border border-line px-4">{t("draftDiscard")}</button>
       </div>
       {review&&<div className="mt-4 space-y-2">
         {preview.shifts.map((s,i)=><div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 border-dashed border-line p-3">
-          <span>{s.name} · {new Intl.DateTimeFormat(locale,{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(s.date+"T12:00:00Z"))} · {s.start}–{s.end}</span>
-          <div><button type="button" className="min-h-12 px-3 underline" onClick={()=>{setEditing(i);setDraftEdited(rows[i]);}}>{t("edit")}</button>
-          <button type="button" className="min-h-12 px-3 text-neg" onClick={()=>void replaceDraft(rows.filter((_,j)=>i!==j))}>{t("remove")}</button></div>
+          <span>{s.name} · {new Intl.DateTimeFormat(locale,{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(s.date+"T12:00:00Z"))} · {localTime(s.date,s.start)}–{localTime(s.date,s.end)}</span>
+          <div><button type="button" className="min-h-12 px-3 underline" disabled={busy||proposal.state!=="pending"} onClick={()=>{setEditing(i);setDraftEdited(rows[i]);}}>{t("edit")}</button>
+          <button type="button" className="min-h-12 px-3 text-neg" disabled={busy||proposal.state!=="pending"} onClick={()=>void replaceDraft(rows.filter((_,j)=>i!==j))}>{t("remove")}</button></div>
         </div>)}
       </div>}
     </>}
