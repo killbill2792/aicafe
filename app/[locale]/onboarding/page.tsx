@@ -63,6 +63,10 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
             labels={{
               amountLabel: tBills("amountLabel"),
               amountHint: tBills("amountHint"),
+              amountKindLabel: tBills("amountKindLabel"),
+              amountActual: tBills("amountActual"),
+              amountEstimate: tBills("amountEstimate"),
+              estimateBadge: tBills("estimateBadge"),
               dueDayOptional: tBills("dueDayOptional"),
               missing: tBills("missing"),
               confirmRemove: tBills("confirmRemove"),
