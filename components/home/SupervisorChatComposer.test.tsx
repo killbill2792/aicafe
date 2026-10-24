@@ -70,7 +70,7 @@ describe("modern Supervisor conversation shell", () => {
     expect(handler).toContain("setDraft(");
     expect(handler).not.toContain("sendText(");
     expect(source).toContain("onSubmit={(event)");
-    expect(source).toContain('bg-red-600');
+    expect(source).toContain('bg-neg');
     expect(source).toContain("copy.transcribing");
   });
   it("places retry under a durable unanswered owner bubble with its existing clientMessageId", () => {
