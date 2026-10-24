@@ -1,10 +1,12 @@
 import "server-only";
 import {z} from "zod";
+import {diffFieldSchema,diffFields} from "@/lib/format/values";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
+import {formatCardValue} from "@/lib/format/values";
 import {evaluatePriceExperiment,simulatePriceExperiment,priceExperimentEstimatedUplift,
   type PriceExperimentBaseline,type PriceExperimentDay} from "@/lib/calc/priceExperiment";
 import {readPriceExperimentBaselineUnits,readPriceExperimentSalesDays} from "./sales.server";
@@ -17,7 +19,7 @@ const baseline=z.strictObject({
   productId:z.uuid(),productName:z.string().min(1).max(200),
   oldPriceCents:cents,newPriceCents:cents,ingredientCostCents:cents,
   baselineUnits7Days:cents,currency:z.literal("USD"),
-  estimateKind:z.literal("conditional_unchanged_demand"),
+  estimateKind:z.literal("conditional_unchanged_demand"),preview:z.array(diffFieldSchema).optional(),
 });
 export const priceExperimentCapabilityId="alex.drink_price_experiment.v1";
 export const priceExperimentCapability=registerLoopCapability({
@@ -25,6 +27,7 @@ export const priceExperimentCapability=registerLoopCapability({
   inputSchema:z.strictObject({productId:z.uuid(),increaseCents:cents.positive().max(100000)}),
   proposalDescription:"Only when the owner clearly REQUESTS to try/test a specific real drink price increase, or unambiguously confirms the single price trial in their prior message, prepare an inert owner-review proposal. For mere hypothetical questions use read/simulate tools instead. Never approve, commit, change POS prices, or claim an action happened. Read the menu catalog to find an actual product UUID. Match the owner-authored cent increase exactly; ask clarification for ambiguous sizes or amounts. Understand English, Spanish and Arabic.",
   effectSchema:baseline,
+  dependencyScope:(effect)=>({version:2,kind:"menu_price",productId:effect.productId}),
   simulate:async(scope,input)=>{
     // Existing canonical UI read model has recipe-cost quality + covered item sales.
     const authorized=await authorizedOwnerP1();
@@ -41,7 +44,12 @@ export const priceExperimentCapability=registerLoopCapability({
     if(!result)throw new Error("Price experiment requires actual, covered sales and recipe cost");
     const {beforeContributionCents,afterContributionCents,
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,...effect}=result;
-    return {effect,baseline:{beforeContributionCents,afterContributionCents,
+    const preview=[
+      ...diffFields([{field:"price",label:"Price",value:{kind:"money",cents:effect.oldPriceCents}}],
+        [{field:"price",label:"Price",value:{kind:"money",cents:effect.newPriceCents}}]),
+      ...diffFields([], [{field:"duration",label:"Duration",value:{kind:"count",n:7,unit:"days"}}] as const),
+    ];
+    return {effect:{...effect,preview},baseline:{beforeContributionCents,afterContributionCents,
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,
       source:"daily_rollups+order_lines",status:"estimated",assumption:"unchanged_unit_demand"},
       monitorSpec:{durationDays:7,metricScope:item.id}};
@@ -71,7 +79,7 @@ export const priceExperimentCapability=registerLoopCapability({
       ?{...measured,status:"insufficient_evidence" as const}:measured;
     const copy=({en,es,ar} as const)[_scope.locale].SupervisorExperiment;
     const money=(v:unknown)=>typeof v==="number"&&Number.isSafeInteger(v)
-      ?new Intl.NumberFormat(_scope.locale,{style:"currency",currency:"USD"}).format(v/100)
+      ?formatCardValue({kind:"money",cents:v},_scope.locale,effect.currency)
       :copy.notAvailable;
     const recommendation=result.recommendation==="keep"?copy.keep:
       result.recommendation==="revert"?copy.revert:copy.adjust;

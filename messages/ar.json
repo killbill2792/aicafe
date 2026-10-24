@@ -2654,7 +2654,9 @@
       "stale": "تغيّر السعر",
       "failed": "لم يُطبّق",
       "conflict": "تم التحديث في جلسة أخرى"
-    }
+    },
+    "manualPending": "يلزم تحديث يدوي",
+    "manualInstructions": "الموافقة لا تغير سعر نظام نقاط البيع. حدّث سعر الصنف يدويًا قبل بدء التجربة."
   },
   "ChatExperience": {
     "ack": "تمام، أعمل على ذلك الآن.",
@@ -2955,7 +2957,7 @@
     "notOnTeam": "غير موجود في الفريق",
     "noRole": "دون وظيفة",
     "noPhone": "دون هاتف",
-    "perHour": "سنت/ساعة",
+    "perHour": "في الساعة",
     "active": "نشط",
     "inactive": "غير نشط",
     "noAvailability": "لا يوجد توافر دوري",
@@ -3012,5 +3014,30 @@
     "newIngredients": "مكوّنات جديدة أُضيفت",
     "invalidRows": "لم يُستورد {count} صفًا غير صالح.",
     "reupload": "رفع الملف مجددًا"
+  },
+  "CardValues": {
+    "perHour": "ساعة",
+    "perDay": "يوم",
+    "perWeek": "أسبوع",
+    "perMonth": "شهر",
+    "perItem": "عنصر",
+    "noWage": "لا يوجد أجر",
+    "noRole": "دون وظيفة",
+    "noPhone": "دون هاتف",
+    "none": "غير محدد",
+    "yes": "نعم",
+    "no": "لا",
+    "minutes": "دقيقة",
+    "fieldPrice": "السعر",
+    "fieldDuration": "المدة",
+    "fieldName": "الاسم",
+    "fieldRole": "الدور",
+    "fieldWage": "الأجر بالساعة",
+    "fieldPhone": "الهاتف",
+    "fieldActive": "نشط",
+    "fieldShift": "الوردية",
+    "fieldSchedule": "الجدول",
+    "fieldAvailability": "التوفر",
+    "fieldRule": "القاعدة"
   }
 }

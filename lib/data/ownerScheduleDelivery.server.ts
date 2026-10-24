@@ -50,8 +50,8 @@ export async function readApprovedScheduleDelivery(source:unknown,
     .eq("id",params.proposalId).eq("business_id",owner.businessId)
     .eq("owner_user_id",owner.userId).maybeSingle();
   if(error)throw new DeliveryReadError("storage_unavailable");
-  if(!data||data.status!=="committed"||!["olivia.staff_propose_schedule.v1",
-       "olivia.staff_propose_send_schedule.v1"].includes(data.capability_id))
+  if(!data||data.status!=="committed"||!["olivia.staff_propose_schedule.v1","olivia.staff_propose_schedule.v2",
+       "olivia.staff_propose_send_schedule.v1","olivia.staff_propose_send_schedule.v2"].includes(data.capability_id))
    throw new DeliveryReadError("not_approved");
   const effect=data.canonical_effect_payload as {operation?:string;payload?:{week_start?:string}};
   week=effect.payload?.week_start??"";

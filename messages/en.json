@@ -2654,7 +2654,9 @@
       "stale": "Price changed",
       "failed": "Didn't apply",
       "conflict": "Updated elsewhere"
-    }
+    },
+    "manualPending": "Manual update needed",
+    "manualInstructions": "Approval does not change your POS. Update the item price manually in your POS before starting the trial."
   },
   "ChatExperience": {
     "ack": "Got it, I'm working on it.",
@@ -2955,7 +2957,7 @@
     "notOnTeam": "Not on team",
     "noRole": "No role",
     "noPhone": "No phone",
-    "perHour": "¢/hour",
+    "perHour": "per hour",
     "active": "Active",
     "inactive": "Inactive",
     "noAvailability": "No recurring availability",
@@ -3012,5 +3014,30 @@
     "newIngredients": "New ingredients added",
     "invalidRows": "{count} invalid rows weren't imported.",
     "reupload": "Re-upload"
+  },
+  "CardValues": {
+    "perHour": "hour",
+    "perDay": "day",
+    "perWeek": "week",
+    "perMonth": "month",
+    "perItem": "item",
+    "noWage": "No wage",
+    "noRole": "No role",
+    "noPhone": "No phone",
+    "none": "Not set",
+    "yes": "Yes",
+    "no": "No",
+    "minutes": "min",
+    "fieldPrice": "Price",
+    "fieldDuration": "Duration",
+    "fieldName": "Name",
+    "fieldRole": "Role",
+    "fieldWage": "Hourly wage",
+    "fieldPhone": "Phone",
+    "fieldActive": "Active",
+    "fieldShift": "Shift",
+    "fieldSchedule": "Schedule",
+    "fieldAvailability": "Availability",
+    "fieldRule": "Rule"
   }
 }

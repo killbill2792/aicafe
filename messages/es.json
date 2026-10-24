@@ -2654,7 +2654,9 @@
       "stale": "Precio cambiado",
       "failed": "No se aplicó",
       "conflict": "Actualizado en otra sesión"
-    }
+    },
+    "manualPending": "Actualización manual pendiente",
+    "manualInstructions": "La aprobación no cambia el TPV. Actualiza el precio manualmente en el TPV antes de iniciar la prueba."
   },
   "ChatExperience": {
     "ack": "Entendido, estoy en ello.",
@@ -2955,7 +2957,7 @@
     "notOnTeam": "No está en el equipo",
     "noRole": "Sin puesto",
     "noPhone": "Sin teléfono",
-    "perHour": "¢/hora",
+    "perHour": "por hora",
     "active": "Activo",
     "inactive": "Inactivo",
     "noAvailability": "Sin disponibilidad recurrente",
@@ -3012,5 +3014,30 @@
     "newIngredients": "Ingredientes nuevos añadidos",
     "invalidRows": "No se importaron {count} filas no válidas.",
     "reupload": "Volver a cargar"
+  },
+  "CardValues": {
+    "perHour": "hora",
+    "perDay": "día",
+    "perWeek": "semana",
+    "perMonth": "mes",
+    "perItem": "artículo",
+    "noWage": "Sin salario",
+    "noRole": "Sin puesto",
+    "noPhone": "Sin teléfono",
+    "none": "No establecido",
+    "yes": "Sí",
+    "no": "No",
+    "minutes": "min",
+    "fieldPrice": "Precio",
+    "fieldDuration": "Duración",
+    "fieldName": "Nombre",
+    "fieldRole": "Puesto",
+    "fieldWage": "Salario por hora",
+    "fieldPhone": "Teléfono",
+    "fieldActive": "Activo",
+    "fieldShift": "Turno",
+    "fieldSchedule": "Horario",
+    "fieldAvailability": "Disponibilidad",
+    "fieldRule": "Regla"
   }
 }

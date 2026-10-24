@@ -9,7 +9,7 @@ import {ownerMenuPrice} from "@/lib/data/proposalPrices.server";
 import {approveLoop,commitLoop,simulateLoop,effectHash,assertProposalScope,type OwnerLoopScope,type LoopProposal}
   from "@/lib/ai/supervisor/loop/engine";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
-import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
+import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {menuPriceChangeCapabilityId,StaleProposalError}
   from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {isStaffCapabilityId,readStaffProposalToken} from "@/lib/ai/supervisor/loop/staffProposals.server";
@@ -47,14 +47,35 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
   }
   assertProposalScope(scope,p);
   if(isStaffCapabilityId(p.capabilityId)){
-    const effect=supervisorLoopRegistry.get(p.capabilityId).parseEffect(p.canonicalEffectPayload) as
-      {preview:Array<{label:string;before:string;after:string}>;expectedToken:string};
+    const effect=p.capabilityVersion===1?p.canonicalEffectPayload as
+      {preview:Array<{label:string;before:string;after:string}>;expectedToken:string}:
+      supervisorLoopRegistry.get(p.capabilityId).parseEffect(p.canonicalEffectPayload) as
+      {preview:Array<{field:string;label:string;before:unknown;after:unknown}>;expectedToken:string;
+       dependencyScope:import("@/lib/ai/supervisor/loop/staffProposals.server").StaffDependencyScope};
     const data={...card(p),preview:effect.preview};
+    if(p.capabilityVersion===1)return {...data,state:p.status==="committed"?"applied":"stale"};
     if(p.status==="draft"){
-      try{if(await readStaffProposalToken(scope)!==effect.expectedToken)return {...data,state:"stale"};}
-      catch{return {...data,state:"failed"};}
+      try{
+        if(await readStaffProposalToken(scope,(
+          effect as {dependencyScope:import("@/lib/ai/supervisor/loop/staffProposals.server").StaffDependencyScope}
+        ).dependencyScope)!==effect.expectedToken)return {...data,state:"stale"};
+      }catch{return {...data,state:"stale"};}
     }
-    return {...data,state:p.status==="approved"?"failed":data.state};
+    return {...data,state:p.status==="approved"?"conflict":data.state};
+  }
+  if(p.capabilityId===priceExperimentCapabilityId){
+    const effect=supervisorLoopRegistry.get(priceExperimentCapabilityId).parseEffect(p.canonicalEffectPayload);
+    const preview=Array.isArray(effect.preview)?effect.preview:[
+      {field:"price",label:"Price",before:{kind:"money",cents:effect.oldPriceCents},
+       after:{kind:"money",cents:effect.newPriceCents}},
+      {field:"duration",label:"Duration",before:null,after:{kind:"count",n:7,unit:"days"}},
+    ];
+    const data={...card(p),preview};
+    if(p.status==="draft"){
+      const current=await ownerMenuPrice(scope,String(effect.productId));
+      if(current!==effect.oldPriceCents)return {...data,state:"stale",currentPriceCents:current};
+    }
+    return {...data,state:p.status==="manual_pending"?"manual_pending":data.state};
   }
   if(p.capabilityId!==menuPriceChangeCapabilityId)return null;
   const effect=supervisorLoopRegistry.get(menuPriceChangeCapabilityId).parseEffect(p.canonicalEffectPayload);
@@ -98,9 +119,10 @@ export async function POST(request:Request,{params}:Params){
     catch{return conversationJson({error:"proposal_not_found"},404);}
     assertProposalScope(scope,p);
     const staff=isStaffCapabilityId(p.capabilityId);
-    if(!staff&&p.capabilityId!==menuPriceChangeCapabilityId)
+    if(!staff&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
     if(staff){
+      if(p.capabilityVersion===1)return conversationJson({state:"stale",proposal:await view(scope,repo,p)},409);
       if(input.action==="edit")return conversationJson({error:"staff_edits_require_new_proposal"},422);
       if(p.revision!==input.revision||!["draft","approved"].includes(p.status))
         return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
@@ -126,9 +148,33 @@ export async function POST(request:Request,{params}:Params){
           return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
         if(latest.status==="stale")
           return conversationJson({state:"stale",proposal:await view(scope,repo,latest)},409);
+        if(latest.status==="approved")
+          return conversationJson({state:"conflict",proposal:await view(scope,repo,latest)},409);
         return conversationJson({error:"staff_approval_failed",
-          proposal:await view(scope,repo,latest)},latest.revision!==p.revision&&
-            latest.status!=="approved"?409:500);
+          proposal:await view(scope,repo,latest)},409);
+      }
+    }
+    if(p.capabilityId===priceExperimentCapabilityId){
+      if(p.revision!==input.revision||p.status!=="draft")
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      if(input.action==="edit")return conversationJson({error:"experiment_price_edit_not_supported"},422);
+      if(input.action==="cancel"){
+        try{return conversationJson({proposal:card(await repo.transition(scope,p.id,p.revision,"reject"))});}
+        catch{return conversationJson({state:"conflict",proposal:await view(scope,repo,await repo.load(scope,p.id))},409);}
+      }
+      const effect=supervisorLoopRegistry.get(priceExperimentCapabilityId).parseEffect(p.canonicalEffectPayload);
+      const current=await ownerMenuPrice(scope,String(effect.productId));
+      if(current!==effect.oldPriceCents)
+        return conversationJson({state:"stale",proposal:{...card(p,"stale"),currentPriceCents:current}},409);
+      try{
+        const approved=await approveLoop(scope,repo,p.id,p.revision);
+        const committed=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision);
+        return conversationJson({proposal:await view(scope,repo,committed.proposal)});
+      }catch{
+        const latest=await repo.load(scope,p.id);
+        if(latest.status==="manual_pending")
+          return conversationJson({proposal:await view(scope,repo,latest)});
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,latest)},409);
       }
     }
     if(p.revision!==input.revision||p.status!=="draft")

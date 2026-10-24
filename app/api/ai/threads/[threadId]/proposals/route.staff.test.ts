@@ -6,10 +6,11 @@ const f=vi.hoisted(()=>({
  token:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 }));
 const effect={operation:"propose_rule_change",expectedToken:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
- preview:[{label:"prep_minutes_before_open",before:"0",after:"30"}],
+ scopeVersion:2,dependencyScope:{version:2,kind:"rule",rule:"prep_minutes_before_open"},
+ preview:[{field:"rule",label:"prep_minutes_before_open",before:{kind:"duration",minutes:0},after:{kind:"duration",minutes:30}}],
  payload:{rule:"prep_minutes_before_open",boolean_value:null,number_value:30}};
 const row=()=>({id:f.id,businessId:f.business,ownerUserId:f.owner,threadId:f.thread,
- capabilityId:"olivia.staff_propose_rule_change.v1",capabilityVersion:1,
+ capabilityId:"olivia.staff_propose_rule_change.v2",capabilityVersion:2,
  canonicalEffectPayload:effect,effectHash:"a".repeat(64),baseline:{},
  monitorSpec:{durationDays:1,metricScope:"staff"},status:f.status,revision:f.revision,
  locale:"en",monitoringStartDate:null,createdAt:"2026-10-23T00:00:00Z"});

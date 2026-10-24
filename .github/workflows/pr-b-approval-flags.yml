@@ -1,0 +1,37 @@
+name: PR B approval flags regression
+
+on:
+  pull_request:
+    paths:
+      - 'lib/ai/supervisor/loop/**'
+      - 'lib/data/staffProposalSources.server.ts'
+      - 'lib/format/**'
+      - 'components/home/BeforeAfterRows.tsx'
+      - 'components/home/SupervisorProposalCard.tsx'
+      - 'app/api/ai/threads/**/proposals/**'
+      - 'supabase/migrations/20261023000092*'
+      - '.github/workflows/pr-b-approval-flags.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  full-suite:
+    name: Full Vitest suite (three chat flags ${{ matrix.flagset }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flagset: [off, on]
+    env:
+      CHAT_STYLE_V2: ${{ matrix.flagset == 'on' && '1' || '0' }}
+      CHAT_JOBS: ${{ matrix.flagset == 'on' && '1' || '0' }}
+      CHAT_MEMORY: ${{ matrix.flagset == 'on' && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
