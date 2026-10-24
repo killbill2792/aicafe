@@ -13,7 +13,8 @@ export default function CostRecoveryStrip({
   labels,
   coveredLabel, locale = "en",
 }: {
-  buckets: BucketResult[];\n  locale?: string;
+  buckets: BucketResult[];
+  locale?: string;
   labels: Record<string, string>;
   /** e.g. "{label} covered {date}" — built per-bucket below, this is just the template word. */
   coveredLabel: (label: string, date: string) => string;
@@ -36,7 +37,7 @@ export default function CostRecoveryStrip({
             pctCovered={b.pctCovered}
             covered={b.pctCovered >= 100}
             size={44}
-            label={`${labels[b.code] ?? b.code} ${Math.round(b.pctCovered)}%`}
+            label={`${labels[b.code] ?? b.code} ${new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(Math.round(b.pctCovered))}%`}
           />
         ))}
       </div>
