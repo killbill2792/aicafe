@@ -144,7 +144,11 @@ VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa00e5','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa
  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa00e7','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','daily'),
  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa00e8','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
- 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff02','daily');
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff02','daily'),
+ ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa00e9','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','daily'),
+ ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa00ea','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','daily');
 CREATE FUNCTION pg_temp.empty_toast_summary() RETURNS jsonb LANGUAGE sql AS $f$
  select '{"net_sales_cents":0,"order_count":0,"gross_sales_cents":0,
  "discounts_cents":0,"refunds_cents":0,"tax_cents":0,"tip_cents":0,
@@ -203,7 +207,7 @@ SELECT public.toast_import_day(
  "discounts_cents":0,"refunds_cents":0,"tax_cents":0,"tip_cents":0,
  "open_check_count":0,"service_charges_cents":0,"gratuity_cents":0,
  "unparsed_count":0,"warnings":{},"voids":[],"refund_facts":[],"unparsed":[],
- "snapshot_sha256":"csv-overlap"}'::jsonb,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa00e8');
+ "snapshot_sha256":"csv-overlap"}'::jsonb,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa00e9');
 SELECT pg_temp.assert((SELECT superseded_by='toast' FROM public.orders
  WHERE pos_order_id='csv-before'),'existing CSV superseded by Toast');
 INSERT INTO public.orders(id,business_id,location_id,pos_order_id,closed_at,
@@ -233,7 +237,7 @@ SELECT public.toast_import_day(
  "parsed_order_guids":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa1234"],
  "unparsed":[{"business_date":"2026-10-16","order_guid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa9999",
  "error_path":"checks.0.amount","raw_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],
- "snapshot_sha256":"partial-void"}'::jsonb,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa00e8');
+ "snapshot_sha256":"partial-void"}'::jsonb,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa00ea');
 SELECT pg_temp.assert((SELECT toast_excluded AND net_sales_cents=1000 FROM public.orders
  WHERE pos_order_id='toast:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa1234'),
  'partial re-pull retires known void while retaining audit amount');
