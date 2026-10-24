@@ -10,6 +10,7 @@ export const statusSchema=z.object({
  failedRuns:z.number().int(),
  needsLook:z.array(z.object({date:day,restaurantGuid:GUID,oursCents:money.nullable(),toastCents:money.nullable(),
   deltaCents:money.nullable(),reason:z.string()})),
+ firstImportRows:z.array(z.object({date:day,oursCents:money.nullable(),toastCents:money.nullable()})),
  recent:z.array(z.object({date:day,netSalesCents:money.nullable(),orders:z.number().int().nullable(),
   status:z.enum(["checked","checking","needs_look","missing"])})),
  analytics:z.object({connected:z.boolean(),verified:z.boolean()}),
