@@ -59,8 +59,12 @@ export function internalOrderProof(rows:unknown[],p:Location,day:string,
    if(check.paymentStatus==="CLOSED"){
     const charges=Array.isArray(check.appliedServiceCharges)?
      check.appliedServiceCharges as Record<string,unknown>[]:[];
-    const gratuity=sum(charges.filter(c=>c.gratuity===true&&typeof c.chargeAmount==="number")
-     .map(c=>toastMoneyCents(Number(c.chargeAmount))));
+    // Toast Orders Check.amount includes discounts and NON-gratuity
+    // service charges, but excludes taxes and gratuities. Payment.amount
+    // excludes tips; do not add payment.tipAmount on either side.
+    const gratuities=charges.filter(c=>c.gratuity===true);
+    const gratuity=gratuities.some(c=>typeof c.chargeAmount!=="number")?null:
+     sum(gratuities.map(c=>toastMoneyCents(Number(c.chargeAmount))));
     const balance=checkToastPaymentBalance(
      typeof check.amount==="number"?toastMoneyCents(check.amount):null,
      typeof check.taxAmount==="number"?toastMoneyCents(check.taxAmount):null,
@@ -69,15 +73,19 @@ export function internalOrderProof(rows:unknown[],p:Location,day:string,
     else if(balance==="mismatch")reasons.push("check_payment_mismatch");
     const selections=Array.isArray(check.selections)?
      check.selections as Record<string,unknown>[]:[];
-    const selectionPrices=selections.filter(sel=>!sel.voided&&!sel.deferred&&
-     sel.selectionType!=="HOUSE_ACCOUNT_PAY_BALANCE")
+    // Deferred gift cards and house-account payments ARE included in the
+    // guest check amount even though they are excluded from NET SALES.
+    // Selection.price is already net of item-level discounts; only check
+    // level discounts are subtracted here.
+    const selectionPrices=selections.filter(sel=>!sel.voided&&!sel.deleted)
      .map(sel=>typeof sel.price==="number"?toastMoneyCents(sel.price):null);
-    const chargePrices=charges.map(sc=>typeof sc.chargeAmount==="number"?
-     toastMoneyCents(sc.chargeAmount):null);
+    const chargePrices=charges.filter(sc=>sc.gratuity!==true)
+     .map(sc=>typeof sc.chargeAmount==="number"?
+      toastMoneyCents(sc.chargeAmount):null);
     const discounts=Array.isArray(check.appliedDiscounts)?
      check.appliedDiscounts as Record<string,unknown>[]:[];
-    const discountPrices=discounts.map(d=>typeof d.discountAmount==="number"?
-     toastMoneyCents(d.discountAmount):null);
+    const discountPrices=discounts.map(d=>typeof d.nonTaxDiscountAmount==="number"
+      ?toastMoneyCents(d.nonTaxDiscountAmount):null);
     const selectionBalance=checkToastSelectionBalance(
      typeof check.amount==="number"?toastMoneyCents(check.amount):null,
      selectionPrices,chargePrices,discountPrices);
