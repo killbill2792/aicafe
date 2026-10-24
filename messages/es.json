@@ -2913,7 +2913,8 @@
     "draftHideReview": "Ocultar revisión",
     "draftRetryApproval": "Reintentar aprobación",
     "draftApplying": "Guardando tu decisión…",
-    "draftPartialCost": "Conocido: {known}; {count} salarios sin definir"
+    "draftPartialCost": "Conocido: {known}; {count} salarios sin definir",
+    "draftBaseWageNote": "Solo incluye los salarios base. No se incluyen recargos por horas extra ni impuestos de nómina."
   },
   "FreeAccess": {
     "pricing": "Planes y precios",
