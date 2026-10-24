@@ -9,6 +9,7 @@ export async function readMenuPriceEvidence(businessId:string,items:ReadonlyArra
  const [history,lines,catalog]=await Promise.all([
   db.from("menu_price_history").select("menu_item_id,source_type,changed_at").eq("business_id",businessId).in("menu_item_id",ids).order("changed_at",{ascending:false}),
   db.from("order_lines").select("menu_item_id,quantity,net_sales_cents,orders!inner(business_id,business_date)").in("menu_item_id",ids).eq("orders.business_id",businessId).eq("voided",false).limit(30000),
+  db.from("menu_items").select("id,catalog_source").eq("business_id",businessId).in("id",ids),
  ]);
  if(history.error||lines.error||catalog.error)throw new Error("Menu evidence read failed");
  const latest=new Map<string,string>();for(const row of history.data??[])if(!latest.has(row.menu_item_id))latest.set(row.menu_item_id,row.source_type);
