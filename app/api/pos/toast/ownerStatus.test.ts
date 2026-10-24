@@ -28,7 +28,7 @@ function dbWith(mappings:Row[],days:Row[],flags:Row[]=[],runs:Row[]=[]){
   toast_location_mappings:mappings,toast_sync_runs:runs,
   toast_day_status:days,toast_day_owner_flags:flags,
   toast_analytics_credentials:[],
-  toast_first_import_check:[],
+  toast_first_import_check:[],businesses:[{timezone:"America/Los_Angeles"}],
   toast_sync_health_v:mappings.map(()=>({last_good_sync_at:"2026-10-24T12:00:00Z",stale:false}))
  };
  const pages:Record<string,number>={};
@@ -91,6 +91,14 @@ describe("owner Toast status — real multi-location histories",()=>{
   dbWith([north],[{...day(iso(0),n),net_sales_cents:"100.00"}]);
   const response=await GET(new Request(`http://localhost/api/pos/toast/status?businessId=${b}`));
   expect(response.status).toBe(503);
+ });
+ it("renders configured location even when closeout timezone has not been fetched",async()=>{
+  dbWith([{...north,verified_at:null,toast_time_zone:null}],[]);
+  const response=await GET(new Request(`http://localhost/api/pos/toast/status?businessId=${b}`));
+  expect(response.status).toBe(200);
+  const data=await response.json();
+  expect(data.connection).toBe("needs_attention");
+  expect(data.timeZone).toBe("America/Los_Angeles");
  });
  it("rejects a non-owner without exposing whether a Toast account exists",async()=>{
   fixtures.authorized=false;
