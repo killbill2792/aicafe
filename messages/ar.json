@@ -133,7 +133,14 @@
     "ownerReasonMismatch": "الإجماليات غير متطابقة",
     "ownerReasonTimeout": "تأخرت تحليلات Toast",
     "ownerReasonCoverage": "يجب مراجعة الاستيراد",
-    "ownerReasonOther": "يجب مراجعة المزامنة"
+    "ownerReasonOther": "يجب مراجعة المزامنة",
+    "ownerAnalyticsSetup": "إعدادات اتصال التحليلات",
+    "ownerAnalytics_apiUrl": "رابط API التحليلات",
+    "ownerAnalytics_managementGroupGuid": "معرّف مجموعة الإدارة",
+    "ownerAnalytics_clientId": "معرّف عميل التحليلات",
+    "ownerAnalytics_clientSecret": "سر التحليلات",
+    "ownerAnalyticsConnect": "ربط التحليلات",
+    "ownerAnalyticsDisconnect": "فصل التحليلات"
   },
   "LocaleLayout": {
     "title": "Café Profit"
