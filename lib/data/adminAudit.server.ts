@@ -1,3 +1,5 @@
+import { modelFamily } from "@/lib/ai/conversations/modelFamily";
+import { standardModelTokenRates } from "@/lib/calc/supervisorTokenCost";
 import "server-only";
 import { after } from "next/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -45,9 +47,12 @@ export function estimatedTurnCost(turn: AgentTurn | undefined): number | null {
   const customInput=process.env.ADMIN_MODEL_INPUT_USD_PER_MILLION;
   const customOutput=process.env.ADMIN_MODEL_OUTPUT_USD_PER_MILLION;
   const adminOverride=customInput!==undefined || customOutput!==undefined;
+  const family=turn.usage.model?modelFamily(turn.usage.model):null;
+  if(!family){console.error("unpriced_model",{model:turn.usage.model??"unknown"});return null;}
+  const rates=standardModelTokenRates(turn.usage.model!,null,turn.usage.inputTokens);
   const micros=estimateSupervisorCostMicros(turn.usage.inputTokens,turn.usage.outputTokens,
-    adminOverride ? customInput : process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS,
-    adminOverride ? customOutput : process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS);
+    adminOverride ? customInput : process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS??rates?.input,
+    adminOverride ? customOutput : process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS??rates?.output);
   return micros===null?null:micros/1_000_000;
 }
 async function writeTurnAudit(a: TurnAudit): Promise<void> {
@@ -71,7 +76,7 @@ async function writeTurnAudit(a: TurnAudit): Promise<void> {
     started_at: new Date(a.startedAt).toISOString(),
     ended_at: new Date(a.endedAt).toISOString(),
     duration_ms: Math.max(0, a.endedAt - a.startedAt),
-    model: a.turn ? a.turn.usage.model??configuredSupervisorModel() : null,
+    model: a.turn ? a.turn.usage.model??"unknown" : null,
     input_tokens: a.turn?.usage.inputTokens ?? null,
     output_tokens: a.turn?.usage.outputTokens ?? null,
     cost_usd: estimatedTurnCost(a.turn),
