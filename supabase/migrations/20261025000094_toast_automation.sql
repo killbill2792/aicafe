@@ -326,3 +326,71 @@ begin
 end $daily$;
 revoke all on function public.toast_queue_daily(uuid,uuid,date) from public,anon,authenticated;
 grant execute on function public.toast_queue_daily(uuid,uuid,date) to service_role;
+
+-- Per-location modified-date scan marker, separate from individual full-day runs.
+create table public.toast_repull_scan_state(
+ business_id uuid not null,restaurant_guid uuid not null,
+ last_local_day date,last_window_end timestamptz,updated_at timestamptz,
+ primary key(business_id,restaurant_guid),
+ foreign key(business_id,restaurant_guid)
+ references public.toast_location_mappings(business_id,restaurant_guid));
+alter table public.toast_repull_scan_state enable row level security;
+revoke all on public.toast_repull_scan_state from public,anon,authenticated;
+grant select,insert,update,delete on public.toast_repull_scan_state to service_role;
+alter table public.toast_sync_runs add column scan_local_day date;
+create unique index toast_one_repull_per_scan_day on public.toast_sync_runs(
+ business_id,restaurant_guid,requested_from,scan_local_day)
+ where kind='repull_modified';
+create function public.toast_commit_repull_scan(
+ p_business_id uuid,p_restaurant_guid uuid,p_local_day date,
+ p_days jsonb,p_window_end timestamptz)
+returns integer language plpgsql security definer set search_path=public as $repull$
+declare d date;added integer:=0;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if jsonb_typeof(p_days)<>'array' or jsonb_array_length(p_days)>400
+ then raise exception 'invalid modified dates';end if;
+ if not exists(select 1 from public.toast_location_mappings where business_id=p_business_id
+  and restaurant_guid=p_restaurant_guid and verified_at is not null)
+ then raise exception 'unverified restaurant';end if;
+ -- Commit the discovered dates and the watermark together.
+ for d in select distinct value::date from jsonb_array_elements_text(p_days) loop
+  if d<'2015-12-02'::date or d>=p_local_day then
+   raise exception 'invalid modified business date';end if;
+  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+   requested_from,requested_to,scan_local_day,days_total)
+  values(p_business_id,p_restaurant_guid,'repull_modified',d,d,p_local_day,1)
+  on conflict(business_id,restaurant_guid,requested_from,scan_local_day)
+   where kind='repull_modified' do nothing;
+  if found then added:=added+1;end if;
+ end loop;
+ insert into public.toast_repull_scan_state(
+  business_id,restaurant_guid,last_local_day,last_window_end,updated_at)
+ values(p_business_id,p_restaurant_guid,p_local_day,p_window_end,now())
+ on conflict(business_id,restaurant_guid) do update
+ set last_local_day=greatest(toast_repull_scan_state.last_local_day,excluded.last_local_day),
+  last_window_end=greatest(toast_repull_scan_state.last_window_end,excluded.last_window_end),
+  updated_at=now();
+ return added;
+end $repull$;
+revoke all on function public.toast_commit_repull_scan(uuid,uuid,date,jsonb,timestamptz)
+ from public,anon,authenticated;
+grant execute on function public.toast_commit_repull_scan(uuid,uuid,date,jsonb,timestamptz)
+ to service_role;
+
+-- Expire abandoned pages only. Do not delete checkpoint pages of active,
+-- recently paused or resumable runs.
+create function public.toast_cleanup_abandoned_pages()
+returns integer language plpgsql security definer set search_path=public as $cleanup$
+declare n integer;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ delete from public.toast_day_pages p using public.toast_sync_runs r
+ where r.id=p.run_id and (r.state='failed' or
+  (coalesce(r.started_at,r.finished_at,now())<now()-interval '7 days'
+   and r.state<>'paused_rate_limited'));
+ get diagnostics n=row_count;
+ return n;
+end $cleanup$;
+revoke all on function public.toast_cleanup_abandoned_pages() from public,anon,authenticated;
+grant execute on function public.toast_cleanup_abandoned_pages() to service_role;
