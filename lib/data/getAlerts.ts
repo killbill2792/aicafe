@@ -94,7 +94,7 @@ async function readVoidsReview(
   }
   const currentMonth = today.slice(0, 7);
   const monthKey = typeof payloadMonthKey === "string" &&
-    /^\\d{4}-(0[1-9]|1[0-2])$/.test(payloadMonthKey) &&
+    /^\d{4}-(0[1-9]|1[0-2])$/.test(payloadMonthKey) &&
     payloadMonthKey <= currentMonth
       ? payloadMonthKey : currentMonth;
   const [year, month] = monthKey.split("-").map(Number);
