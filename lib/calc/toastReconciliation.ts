@@ -30,3 +30,17 @@ export function checkToastPaymentBalance(checkAmountCents:number|null,
  const paid=paymentsCents.reduce<number>((total,n)=>total+(n as number),0);
  return Math.abs(expected-paid)<=toleranceCents?"matched" as const:"mismatch" as const;
 }
+
+/** Spec internal check 4: nonvoided selections + service charges - check discounts. */
+export function checkToastSelectionBalance(
+ checkAmountCents:number|null,selectionsCents:ReadonlyArray<number|null>,
+ serviceCents:ReadonlyArray<number|null>,discountCents:ReadonlyArray<number|null>,
+ toleranceCents=1
+){
+ const parts=[checkAmountCents,...selectionsCents,...serviceCents,...discountCents];
+ if(parts.some(n=>n==null||!Number.isSafeInteger(n)))return "unknown" as const;
+ const sum=(ns:ReadonlyArray<number|null>)=>ns.reduce<number>((a,n)=>a+(n as number),0);
+ const expected=sum(selectionsCents)+sum(serviceCents)-sum(discountCents);
+ return Math.abs(expected-(checkAmountCents as number))<=toleranceCents
+  ?"matched" as const:"mismatch" as const;
+}
