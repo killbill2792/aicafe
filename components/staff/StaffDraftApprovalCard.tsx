@@ -85,22 +85,37 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     try{reviewStaffDraft(changed,data.team,data.rules,data.availability,
       data.timezone,data.adjacentShifts,rates,coverage);}catch{setError(t("draftInvalidShift"));return;}
     setBusy(true);setError("");
-    const previous=proposal;let oldCancelled=false;
+    const previous=proposal;
+    let staged:{proposalId:string;revision:number}|null=null;
+    const endpoint="/api/ai/threads/"+encodeURIComponent(threadId)+"/proposals";
+    const cancel=async(item:{proposalId:string;revision:number})=>{
+      const response=await fetch(endpoint,{method:"POST",credentials:"same-origin",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({action:"cancel",proposalId:item.proposalId,revision:item.revision})});
+      const body=await response.json();
+      return {ok:response.ok,proposal:body.proposal as Proposal|undefined};
+    };
     try{
-      const cancelled=await fetch("/api/ai/threads/"+encodeURIComponent(threadId)+"/proposals",{
-        method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},
-        body:JSON.stringify({action:"cancel",proposalId:previous.proposalId,revision:previous.revision})});
-      const old=await cancelled.json();
-      if(old.proposal?.state==="applied"){onApplied();router.refresh();return;}
-      if(!cancelled.ok||old.proposal?.state!=="cancelled")throw Error("cancel");
-      oldCancelled=true;setProposal(null);
+      // Prepare the replacement before cancelling the original. A validation
+      // failure must leave the owner's existing approval option intact.
       const result=await reviseStaffWeekDraft({week,threadId,requestKey:crypto.randomUUID(),
         locale:locale==="ar"?"ar":locale==="es"?"es":"en",shifts:changed});
       if(!result.ok)throw Error("revise");
-      setRates(result.wageRates);
-      setRows(changed);setProposal({proposalId:result.proposalId,revision:result.revision,state:"pending"});
-    }catch{setError(t("draftEditRequiresRefresh"));setProposal(oldCancelled?null:previous);}
-    finally{setBusy(false);}
+      staged={proposalId:result.proposalId,revision:result.revision};
+      const old=await cancel(previous);
+      if(old.proposal?.state==="applied"){onApplied();router.refresh();return;}
+      if(!old.ok||old.proposal?.state!=="cancelled")throw Error("cancel");
+      setRates(result.wageRates);setRows(changed);
+      setProposal({...staged,state:"pending"});
+      staged=null;
+    }catch{
+      setError(t("draftEditRequiresRefresh"));
+      setProposal(previous);
+    }
+    finally{
+      if(staged){try{await cancel(staged);}catch{/* Inert proposal; CAS still protects writes. */}}
+      setBusy(false);
+    }
   }
   const saveEdit=()=>{
     if(editing===null||!draftEdited)return;
