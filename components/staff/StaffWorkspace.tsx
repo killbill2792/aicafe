@@ -365,7 +365,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        {!deepShift&&<span className="block">{t("noMatchingShift")}</span>}</p>}
        <div className="mt-3"><h3 className="font-bold">{t("who")}</h3><div className="mt-2 flex flex-wrap gap-2">{data.team.map(p=>{
        const status=availabilityStatus(p,date,start,end,[...data.shifts.filter(s=>s.id!==editing),...data.adjacentShifts],data.availability);
-       return <button key={p.id} type="button" aria-pressed={chosen===p.id} onClick={()=>setChosen(p.id)}
+       return <button key={p.id} type="button" disabled={data.readOnly||ruleReview} aria-pressed={chosen===p.id} onClick={()=>setChosen(p.id)}
         className={`flex min-h-12 items-center gap-2 rounded-full border px-2 py-1 font-bold ${chosen===p.id?"border-accent-text bg-accent-soft text-accent-text":"border-line bg-surface"}`}>
         <span className="grid size-9 place-items-center rounded-full bg-surface2">{p.name[0]}</span>
         {p.name}<span className={`text-sm font-normal ${status==="free"?"text-pos":"text-muted"}`}>{t(status==="free"?"free":status==="off"?"off":status==="on_shift"?"onShift":"unavailable")}</span></button>;
@@ -405,7 +405,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       {!invalidShift&&<ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={appliedBreak}
        editingId={editing} team={data.team} shifts={data.shifts} gaps={data.gaps}
        availability={data.availability} boundaryShifts={data.adjacentShifts} coverageChecked={coverageVerification(date,data.openHours,data.rules.coverage_enabled)==="checked"} rules={data.rules} currency={data.currency} timezone={data.timezone}/>}
-      <button disabled={busy||!chosen||data.readOnly||invalidShift||!proposed||(ruleReview&&!deepShift)} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakOverridden?parsedBreak??undefined:undefined,repeatWeekly}))}
+      <button disabled={busy||!chosen||data.readOnly||invalidShift||!proposed||(ruleReview&&(!deepShift||chosen!==deepPerson?.id))} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakOverridden?parsedBreak??undefined:undefined,repeatWeekly}))}
        className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">{t("saveShift")}</button>
       {editing&&<button disabled={busy||data.readOnly} className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}
     </>}
