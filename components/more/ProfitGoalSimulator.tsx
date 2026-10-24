@@ -12,6 +12,7 @@ type Labels = {
   actual: string;
   estimated: string;
   targetMargin: string;
+  targetMarginSuffix: string;
   targetMarginHint: string;
   simulationOnly: string;
   assumption: string;
@@ -116,7 +117,7 @@ export default function ProfitGoalSimulator({
                 onChange={(event) => setDraftTarget(event.target.value)}
                 className="min-h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
               />
-              <span className="font-bold text-ink-muted">%</span>
+              <span className="font-bold text-ink-muted">{labels.targetMarginSuffix}</span>
             </div>
             <span className="text-xs font-normal leading-snug text-ink-muted">{labels.targetMarginHint}</span>
           </label>
