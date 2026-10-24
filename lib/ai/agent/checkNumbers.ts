@@ -499,7 +499,10 @@ type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;perso
 const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
 // The clock token includes the meridiem: dropping Arabic "مساءً" silently
 // turns a 5 PM closing claim into the wrong 05:00 morning assertion.
-const clockPattern = /(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}:[٠-٩۰-۹\d]{2}(?:\s*(?:AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*))?(?![٠-٩۰-۹\d])|(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}\s*(?:AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*)|(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}h(?:[٠-٩۰-۹\d]{2})?\b/giu;
+function clockSpansFromTokens(text:string,locale:AgentLocale="en"):ClockSpan[]{
+ return tokenizeNumbers(text,locale).filter(t=>t.kind==="clock"||t.kind==="clockRange")
+  .map(t=>Object.assign([text.slice(t.start,t.end)] as unknown as RegExpMatchArray,{index:t.start}));
+}
 function canonicalClock(clock:ClockSpan):string|null {
   const matched=ascii(clock[0]).match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*)|h(\d{2})?)?$/iu);
   if(!matched)return null;
@@ -519,7 +522,7 @@ function timeRole(text:string, clock:ClockSpan):TimeRole|null {
   const phrase=text.slice(sentenceStart,clock.index);
   // In an opening-hours range the second endpoint is closing time, even
   // though "open" remains the closest action verb: "open from 8 to 5".
-  const precedingClocks=[...phrase.matchAll(clockPattern)] as ClockSpan[];
+  const precedingClocks=clockSpansFromTokens(phrase);
   const previous=precedingClocks.at(-1);
   if(previous){
     const between=phrase.slice(previous.index+previous[0].length);
@@ -1059,7 +1062,57 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const observed=evidence.flatMap(entry=>entry.times??[]);
   // Only this clock's offsets, action, day(s), and named employee may match a
   // real source interval. Never flatten schedule timestamps into global proof.
-  return candidates(text, locale).filter(v => {
+  const clocks=clockSpansFromTokens(text,locale);
+  const ownerClocks=clockSpansFromTokens(ownerText,locale);
+  // Keep semantic business-time grounding even though provenance dots are
+  // exempted from clock display. Each endpoint is a single shared token.
+  const unsupportedClocks=clocks.filter(clock=>{
+      const role=timeRole(text,clock);
+      if(!role){
+        // Sales prose may include incidental timestamps (e.g. "999 (8:00)");
+        // do not mistake the clock for the adjacent sale count. But any
+        // recognizably business-time assertion must fail closed on an
+        // unrecognized action, in every supported language.
+        const prior=text.slice(0,clock.index);
+        const sentenceStart=Math.max(prior.lastIndexOf("\n"),prior.lastIndexOf("."),
+          prior.lastIndexOf("!"),prior.lastIndexOf("?"),prior.lastIndexOf(";"))+1;
+        const sentenceEnd=text.slice(clockEnd(clock)).search(/[.!?;\n]/u);
+        const sentence=text.slice(sentenceStart,sentenceEnd<0?text.length:clockEnd(clock)+sentenceEnd);
+        return /\b(?:open|opening|opens|close|closing|closes|hours|shift|starts?|ends?|begins?|finishes?|abrimos|abrir|abre|abren|apertura|cerramos|cerrar|cierra|cierre|turno)\b|(?:نفتح|نغلق|يفتح|يغلق|وردية|مناوبة|الافتتاح|الإغلاق)/iu.test(sentence);
+      }
+      const canonical=canonicalClock(clock);
+      if(canonical){
+        const days=mentionedWeekdays(text,clock,clocks);
+        const claimedDate=claimedClockDate(text,clock,clocks);
+        const calendarDay=claimedDate?DAY_MENTIONS[new Date(claimedDate+"T12:00:00Z").getUTCDay()]?.key:null;
+        const dateAgrees=claimedDate!==null&&
+          (!claimedDate||days.length===0||days.includes(calendarDay??""));
+        const person=role.startsWith("shift")?assertedShiftPerson(text,clock):{kind:"general" as const};
+        const verified=dateAgrees&&person.kind!=="unresolved"&&(days.length?days:[null]).every(day=>observed.some(h=>
+          h.time===canonical&&h.role===role&&(day===null?h.complete:h.day===day)&&
+          (!claimedDate||h.day===calendarDay)&&
+          (!claimedDate||(!h.validFrom||claimedDate>=h.validFrom)&&(!h.validTo||claimedDate<=h.validTo))&&
+          (person.kind==="general"||(person.kind==="named"&&h.person===person.name))));
+        // Owner words also need the same asserted time *role*, weekday and
+        // named employee. Matching a bare "8:00" cannot prove opening hours
+        // when the owner only described an employee shift.
+        const ownerGrounded=ownerClocks.some(ownerClock=>{
+          if(timeRole(ownerText,ownerClock)!==role||canonicalClock(ownerClock)!==canonical)return false;
+          const ownerDays=mentionedWeekdays(ownerText,ownerClock,ownerClocks);
+          if(days.length&&!days.every(day=>ownerDays.includes(day)))return false;
+          const ownerDate=claimedClockDate(ownerText,ownerClock,ownerClocks);
+          if(claimedDate===null||ownerDate===null)return false;
+          if(claimedDate&&ownerDate!==claimedDate)return false;
+          const ownerPerson=role.startsWith("shift")?assertedShiftPerson(ownerText,ownerClock):{kind:"general" as const};
+          if(person.kind==="unresolved"||ownerPerson.kind==="unresolved")return false;
+          return person.kind==="general"||
+            (person.kind==="named"&&ownerPerson.kind==="named"&&ownerPerson.name===person.name);
+        });
+        return !(verified||ownerGrounded);
+      }
+      return true;
+  }).map(clock=>({text:clock[0],start:clock.index,end:clockEnd(clock),kind:"number" as const}));
+  const rejectedQuantities=candidates(text, locale).filter(v => {
     if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
     if(v.kind==="number"&&proposedDuration(text,v.start,v.end))return false;
     // Named price and comparison claims are identity-sensitive. Validate
@@ -1105,6 +1158,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     return true;
   })
     .map(({ text: token, start, end, kind }) => ({ text: token, start, end, kind }));
+  return [...rejectedQuantities,...unsupportedClocks].sort((a,b)=>a.start-b.start);
 }
 
 /** The numeric value is not the metric identity. Only attach an estimate
@@ -1156,7 +1210,7 @@ export function numberProvenance(text:string,ownerText:string,results:readonly A
  // may decorate supported facts, but it may not suppress unsupported claims.
  const rejected=verifiedVerdict??checkNumbers(text,ownerText,results,locale,previousEvidence);
  const rejectedBySpan=new Map(rejected.map(v=>[v.start+":"+v.end,v]));
- const clocks=[...text.matchAll(clockPattern)];
+ const clocks=clockSpansFromTokens(text,locale);
  const evidence=reconcileSavedEvidence([...previousEvidence,...compactEvidence(results,Infinity)]);
  const menuPrices=evidence.flatMap(entry=>entry.prices??[]);
  const annotated:NumberProvenance[]=[];
