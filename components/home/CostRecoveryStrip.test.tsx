@@ -28,6 +28,20 @@ describe("Home cost recovery line", () => {
     expect((html.match(/<p /g) ?? []).length).toBe(1);
   });
 
+  it("never reports a numeric recovered percentage when required cost evidence is missing", () => {
+    const html = renderToStaticMarkup(createElement(CostRecoveryStrip,{
+      buckets:[makeBucket("rent",100,"2026-10-02"),makeBucket("water",45)],
+      labels:{rent:"Rent",water:"Water"},
+      coveredLabel:(label,date)=>`${label} covered ${date}`,
+      emptyLabel:"Add bills",incompleteLabel:"Some costs are not verified yet",
+      dataComplete:false,locale:"en",
+    }));
+    expect(html).toContain("Some costs are not verified yet");
+    expect(html).not.toContain("Water 45%");
+    expect(html).not.toContain("Rent covered");
+    expect(html).toContain('href="/money"');
+  });
+
   it("localizes dates and describes an empty cost setup rather than 0% covered", () => {
     const copy = {labels:{rent:"إيجار"},emptyLabel:"أضف الفواتير",locale:"ar"};
     const html = renderToStaticMarkup(createElement(CostRecoveryStrip,{
