@@ -1,5 +1,5 @@
 "use client";
-import {useState,useTransition} from "react";
+import {useId,useEffect,useState,useTransition} from "react";
 import {partsToMinutes,minutesToParts,wholeRuleValue,multiplierToBasisPoints,basisPointsToMultiplier} from "@/lib/calc/scheduling/ruleInputValues";
 import {useRouter} from "next/navigation";
 import {useLocale,useTranslations} from "next-intl";
@@ -21,7 +21,7 @@ const ranges:Record<string,[number,number]>={
  min_rest_minutes:[0,1440],min_headcount:[1,30],prep_minutes_before_open:[0,240],prep_minutes_after_close:[0,240]
 };
 function NumberField({value,onCommit,label,min,max,disabled,locale,twoParts=false}:{value:number;onCommit:(v:number)=>void;label:string;min:number;max:number;disabled:boolean;locale:string;twoParts?:boolean}){
- const t=useTranslations("StaffSchedule");
+ const t=useTranslations("StaffSchedule");const fieldId=useId();
  const format=(n:number)=>new Intl.NumberFormat(locale,{useGrouping:false}).format(n);
  const split=minutesToParts(value);
  const [entry,setEntry]=useState(format(value));
@@ -46,6 +46,7 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
  const t=useTranslations("StaffSchedule");const locale=useLocale();const staffT=useTranslations("Staff");const router=useRouter();
  const [values,setValues]=useState(initial),[draft,setDraft]=useState(""),[pending,transition]=useTransition();
  const [custom,setCustom]=useState(false),[customValue,setCustomValue]=useState(basisPointsToMultiplier(Number(values.ot_multiplier_bp))),[multiplierError,setMultiplierError]=useState(false);
+ useEffect(()=>{if(!custom)setCustomValue(basisPointsToMultiplier(Number(values.ot_multiplier_bp)))},[values.ot_multiplier_bp,custom]);
  const [message,setMessage]=useState(""),[undo,setUndo]=useState<{key:string;value:number|boolean}|null>(null);
  const change=(key:string,value:number|boolean)=>{
    if(readOnly)return;
@@ -68,9 +69,10 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
     <h2 className="mb-2 text-xl font-bold">{t(group.title)}</h2>
     {group.rows.map(([enabled,first,second,label,sentence])=><div key={enabled} className="border-t border-line py-3">
       <div className="flex flex-wrap items-center gap-3">
-       <label className="flex min-h-12 items-center gap-2 font-semibold"><input type="checkbox" className="size-5" checked={Boolean(values[enabled])} disabled={pending||readOnly} onChange={e=>change(enabled,e.target.checked)}/>{t(label)}</label>
+       <label className="flex min-h-12 items-center gap-2 font-semibold"><input type="checkbox" className="size-5" checked={Boolean(values[enabled])} disabled={pending||readOnly} onChange={e=>change(enabled,e.target.checked)}/>{t("applyRule")}</label>
        <span className="text-base">{t(sentence)}</span>
        <NumberField key={first+String(values[first])} value={Number(values[first])} onCommit={v=>change(first,v)} label={t(label)} min={ranges[first][0]} max={ranges[first][1]} disabled={pending||readOnly} locale={locale} twoParts={first!=="meal_break_minutes"&&first!=="rest_break_minutes"}/>
+       {(first==="meal_break_minutes"||first==="rest_break_minutes")&&<span>{t("minutesUnit")}</span>}
        {second&&<><span>{t(second==="meal_break_after_minutes"?"after":"every")}</span><NumberField key={second+String(values[second])} value={Number(values[second])} onCommit={v=>change(second,v)} label={t(label)} min={ranges[second][0]} max={ranges[second][1]} disabled={pending||readOnly} locale={locale} twoParts/></>}
       </div>
       <p className="text-sm text-muted">{values.owner_set.includes(first)?t("yours"):t("defaultRule")}</p>
