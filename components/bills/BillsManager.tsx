@@ -128,11 +128,11 @@ function BillForm({
       </label>
       {error && <p role="alert" className="text-[17px] text-warn">{error}</p>}
       <div className="flex gap-2">
-        <button type="button" onClick={handleSave} disabled={isPending || !canSave || actionLock.current} className="min-h-12 flex-1 rounded-full bg-accent text-[17px] font-bold text-on-accent disabled:opacity-40">
+        <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="min-h-12 flex-1 rounded-full bg-accent text-[17px] font-bold text-on-accent disabled:opacity-40">
           {labels.save}
         </button>
         {existing && (
-          <button type="button" onClick={handleDelete} disabled={isPending || actionLock.current} className="min-h-12 rounded-full border border-warn px-4 text-[17px] font-bold text-warn">
+          <button type="button" onClick={handleDelete} disabled={isPending} className="min-h-12 rounded-full border border-warn px-4 text-[17px] font-bold text-warn">
             {labels.delete}
           </button>
         )}
