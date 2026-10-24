@@ -1,29 +1,42 @@
 "use client";
 import {useState,useTransition} from "react";
 import {useRouter} from "next/navigation";
-import {useTranslations} from "next-intl";
+import {useLocale,useTranslations} from "next-intl";
+import {getPayrollLabels} from "@/components/staff/payrollLabels";
+import PayrollCostCard from "./PayrollCostCard";
+import type {PayrollCostSettings} from "@/lib/data/getPayrollCostSettings";
 import {Link} from "@/i18n/navigation";
 import {updateTeamRules,addCustomRule,removeCustomRule} from "@/lib/actions/teamRules";
 import OliviaRuleReviewPanel from "./OliviaRuleReviewPanel";
 
 type RuleValues=Record<string,unknown>&{owner_set:string[];custom:{id:string;rule_text:string}[]};
-const groups=[
- {title:"breaks",items:[["meal_break_enabled","mealBreak"],["meal_break_minutes","mealMinutes"],["meal_break_after_minutes","mealAfter"],["rest_break_enabled","paidRest"],["rest_break_minutes","restMinutes"],["rest_break_every_minutes","restEvery"]]},
- {title:"overtime",items:[["weekly_ot_enabled","weeklyOvertime"],["weekly_ot_after_minutes","weeklyAfter"],["ot_multiplier_bp","multiplier"],["daily_ot_enabled","dailyOvertime"],["daily_ot_after_minutes","dailyAfter"]]},
- {title:"shifts",items:[["max_shift_enabled","longestShift"],["max_shift_minutes","longestMinutes"],["min_shift_enabled","shortestShift"],["min_shift_minutes","shortestMinutes"],["min_rest_enabled","betweenShifts"],["min_rest_minutes","betweenMinutes"],["prep_minutes_before_open","prepBeforeOpen"],["prep_minutes_after_close","prepAfterClose"]]},
- {title:"coverage",items:[["coverage_enabled","minimumCoverage"],["min_headcount","peopleWhileOpen"]]}
+const durationRules = [
+ {title:"breaks",rows:[["meal_break_enabled","meal_break_minutes","meal_break_after_minutes","mealBreak","mealSentence"],["rest_break_enabled","rest_break_minutes","rest_break_every_minutes","paidRest","restSentence"]]},
+ {title:"overtime",rows:[["weekly_ot_enabled","weekly_ot_after_minutes",null,"weeklyOvertime","weeklySentence"],["daily_ot_enabled","daily_ot_after_minutes",null,"dailyOvertime","dailySentence"]]},
+ {title:"shifts",rows:[["max_shift_enabled","max_shift_minutes",null,"longestShift","longestSentence"],["min_shift_enabled","min_shift_minutes",null,"shortestShift","shortestSentence"],["min_rest_enabled","min_rest_minutes",null,"betweenShifts","betweenSentence"]]}
 ] as const;
-const bounds:Record<string,[number,number,number]>={
- meal_break_minutes:[0,240,10],meal_break_after_minutes:[0,1440,30],
- rest_break_minutes:[0,60,5],rest_break_every_minutes:[60,1440,30],
- weekly_ot_after_minutes:[0,10080,60],ot_multiplier_bp:[10000,50000,500],
- daily_ot_after_minutes:[0,1440,30],max_shift_minutes:[30,1440,30],
- min_shift_minutes:[0,1440,30],min_rest_minutes:[0,1440,30],min_headcount:[1,30,1],
- prep_minutes_before_open:[0,240,15],prep_minutes_after_close:[0,240,15]
+const ranges:Record<string,[number,number]>={
+ meal_break_minutes:[0,240],meal_break_after_minutes:[0,1440],rest_break_minutes:[0,60],rest_break_every_minutes:[60,1440],
+ weekly_ot_after_minutes:[0,10080],daily_ot_after_minutes:[0,1440],max_shift_minutes:[30,1440],min_shift_minutes:[0,1440],
+ min_rest_minutes:[0,1440],min_headcount:[1,30],prep_minutes_before_open:[0,240],prep_minutes_after_close:[0,240]
 };
-export default function RulesWorkspace({initial,week,readOnly=false}:{initial:RuleValues;week:string;readOnly?:boolean}){
- const t=useTranslations("StaffSchedule");const router=useRouter();
+function NumberField({value,onCommit,label,min,max,disabled,locale,twoParts=false}:{value:number;onCommit:(v:number)=>void;label:string;min:number;max:number;disabled:boolean;locale:string;twoParts?:boolean}){
+ const [entry,setEntry]=useState(String(value)),[minutes,setMinutes]=useState(String(value%60)),[error,setError]=useState(false);
+ const parts=twoParts?{hours:String(Math.floor(value/60)),minutes:String(value%60)}:null;
+ const [hours,setHours]=useState(parts?.hours??"");
+ const current=twoParts?Number(hours)*60+Number(minutes):Number(entry);
+ const valid=(twoParts?(/^\\d+$/.test(hours)&&/^\\d+$/.test(minutes)&&Number(minutes)<60):/^\\d+$/.test(entry))&&Number.isSafeInteger(current)&&current>=min&&current<=max;
+ const commit=()=>{if(!valid){setError(true);return;}setError(false);if(current!==value)onCommit(current)};
+ const field=(part:"hours"|"minutes"|"single",v:string,change:(s:string)=>void)=><input aria-label={part==="single"?label:label+" "+part} aria-invalid={error} inputMode="numeric" type="text" value={v} disabled={disabled} onChange={e=>{change(e.target.value);setError(false)}} onBlur={commit} className={`min-h-12 w-16 rounded-xl border bg-surface px-2 text-center text-base ${error?"border-neg":"border-line"}`}/>;
+ return <span className="inline-flex flex-wrap items-center gap-1 align-middle" dir={locale==="ar"?"rtl":"ltr"}>
+  {twoParts?<>{field("hours",hours,setHours)}<span>{locale==="ar"?"س":locale==="es"?"h":"h"}</span>{field("minutes",minutes,setMinutes)}<span>{locale==="ar"?"د":locale==="es"?"min":"min"}</span></>:field("single",entry,setEntry)}
+  {error&&<span role="alert" className="w-full text-sm text-neg">{locale==="ar"?"أدخل قيمة صحيحة ضمن الحدود.":locale==="es"?"Introduce un valor válido dentro de los límites.":"Enter a valid value within the allowed range."}</span>}
+ </span>
+}
+export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{initial:RuleValues;week:string;readOnly?:boolean;payroll:PayrollCostSettings}){
+ const t=useTranslations("StaffSchedule");const locale=useLocale();const staffT=useTranslations("Staff");const router=useRouter();
  const [values,setValues]=useState(initial),[draft,setDraft]=useState(""),[pending,transition]=useTransition();
+ const [custom,setCustom]=useState(false),[customValue,setCustomValue]=useState(String(Number(values.ot_multiplier_bp)/10000)),[multiplierError,setMultiplierError]=useState(false);
  const [message,setMessage]=useState(""),[undo,setUndo]=useState<{key:string;value:number|boolean}|null>(null);
  const change=(key:string,value:number|boolean)=>{
    if(readOnly)return;
@@ -38,29 +51,43 @@ export default function RulesWorkspace({initial,week,readOnly=false}:{initial:Ru
  };
  const refresh=async()=>{router.refresh();};
  return <div className="mx-auto max-w-3xl space-y-4 text-fg">
-   <Link href="/staff" className="inline-flex min-h-12 items-center text-accent-text">← {t("schedule")}</Link>
-   <h1 className="font-headline text-2xl font-extrabold">{t("rules")}</h1>
+   <Link href="/staff" className="inline-flex min-h-12 items-center text-accent-text"><span className="inline-block rtl:rotate-180">←</span> {t("schedule")}</Link>
+   <h1 className="font-headline text-2xl font-extrabold">{t("rulesAndCosts")}</h1>
    <p className="rounded-2xl bg-accent-soft p-4">{t("ruleInfo")}</p>
    {readOnly&&<p className="rounded-xl bg-surface2 p-3 text-muted">{t("readOnly")}</p>}
-   {groups.map(group=><section key={group.title} className="rounded-[20px] border border-line bg-surface p-4">
+   {durationRules.map(group=><section key={group.title} className="rounded-[20px] border border-line bg-surface p-4">
     <h2 className="mb-2 text-xl font-bold">{t(group.title)}</h2>
-    {group.items.map(([key,label])=><div key={key} className="flex min-h-16 items-center gap-3 border-t border-line py-2">
-      <div className="min-w-0 flex-1"><div className="font-semibold">{t(label)}</div>
-       <div className="text-sm text-muted">{values.owner_set.includes(key)?t("yours"):t("defaultRule")}</div></div>
-      {typeof values[key]==="boolean"?<button type="button" role="switch" aria-checked={Boolean(values[key])}
-       disabled={pending||readOnly} onClick={()=>change(key,!values[key])}
-       className={`min-h-12 min-w-20 rounded-full px-3 ${values[key]?"bg-accent text-on-accent":"bg-surface2"}`}>
-        {values[key]?t("on"):t("off")}</button>:
-       <div className="flex items-center rounded-xl bg-surface2">
-        <button type="button" aria-label={t("decrease",{item:t(label)})} disabled={pending||readOnly}
-         onClick={()=>change(key,Math.max(bounds[key]?.[0]??0,Number(values[key])-(bounds[key]?.[2]??1)))}
-         className="min-h-12 min-w-12">−</button>
-        <b className="min-w-12 text-center" dir="ltr">{String(values[key])}</b>
-        <button type="button" aria-label={t("increase",{item:t(label)})} disabled={pending||readOnly}
-         onClick={()=>change(key,Math.min(bounds[key]?.[1]??10080,Number(values[key])+(bounds[key]?.[2]??1)))}
-         className="min-h-12 min-w-12">+</button></div>}
-     </div>)}
+    {group.rows.map(([enabled,first,second,label,sentence])=><div key={enabled} className="border-t border-line py-3">
+      <div className="flex flex-wrap items-center gap-3">
+       <label className="flex min-h-12 items-center gap-2 font-semibold"><input type="checkbox" className="size-5" checked={Boolean(values[enabled])} disabled={pending||readOnly} onChange={e=>change(enabled,e.target.checked)}/>{t(label)}</label>
+       <span className="text-base">{t(sentence)}</span>
+       <NumberField key={first+String(values[first])} value={Number(values[first])} onCommit={v=>change(first,v)} label={t(label)} min={ranges[first][0]} max={ranges[first][1]} disabled={pending||readOnly} locale={locale} twoParts={first!=="meal_break_minutes"&&first!=="rest_break_minutes"}/>
+       {second&&<><span>{t("afterOrEvery")}</span><NumberField key={second+String(values[second])} value={Number(values[second])} onCommit={v=>change(second,v)} label={t(label)} min={ranges[second][0]} max={ranges[second][1]} disabled={pending||readOnly} locale={locale} twoParts/></>}
+      </div>
+      <p className="text-sm text-muted">{values.owner_set.includes(first)?t("yours"):t("defaultRule")}</p>
+    </div>)}
+    {group.title==="overtime"&&<div className="flex flex-wrap items-center gap-3 border-t border-line py-3">
+     <label className="font-semibold" htmlFor="ot-rate">{t("overtimePays")}</label>
+     <select id="ot-rate" value={[15000,20000].includes(Number(values.ot_multiplier_bp))?String(values.ot_multiplier_bp):"custom"} disabled={pending||readOnly}
+      onChange={e=>{if(e.target.value!=="custom")change("ot_multiplier_bp",Number(e.target.value));else setCustom(true)}}
+      className="min-h-12 rounded-xl border border-line bg-surface px-3"><option value="15000">1.5×</option><option value="20000">2×</option><option value="custom">{t("customMultiplier")}</option></select>
+     {(custom||![15000,20000].includes(Number(values.ot_multiplier_bp)))&&<label className="flex items-center gap-2">{t("customMultiplier")}
+      <input aria-label={t("customMultiplier")} type="text" inputMode="decimal" value={customValue} onChange={e=>{setCustomValue(e.target.value);setMultiplierError(false)}}
+      onBlur={()=>{const n=Number(customValue);if(!customValue.trim()||!Number.isFinite(n)||n<1||n>5||!Number.isInteger(n*10000)){setMultiplierError(true);return}setMultiplierError(false);change("ot_multiplier_bp",Math.round(n*10000));}}
+      disabled={pending||readOnly} aria-invalid={multiplierError} className={`min-h-12 w-24 rounded-xl border px-3 ${multiplierError?"border-neg":"border-line"}`}/>×</label>}
+     {multiplierError&&<span role="alert" className="text-neg">{t("invalidMultiplier")}</span>}
+    </div>}
    </section>)}
+   <section className="rounded-[20px] border border-line bg-surface p-4">
+    <h2 className="text-xl font-bold">{t("coverage")}</h2>
+    <label className="flex min-h-12 items-center gap-2"><input className="size-5" type="checkbox" disabled={pending||readOnly} checked={Boolean(values.coverage_enabled)} onChange={e=>change("coverage_enabled",e.target.checked)}/>{t("minimumCoverage")}</label>
+    <div className="flex flex-wrap items-center gap-2">{t("atLeast")}<NumberField key={"coverage"+String(values.min_headcount)} value={Number(values.min_headcount)} min={1} max={30} label={t("peopleWhileOpen")} disabled={pending||readOnly} locale={locale} onCommit={v=>change("min_headcount",v)}/>{t("whileOpen")}</div>
+   </section>
+   <section className="rounded-[20px] border border-line bg-surface p-4">
+    <h2 className="text-xl font-bold">{t("prepTiming")}</h2>
+    {(["prep_minutes_before_open","prep_minutes_after_close"] as const).map(key=><div key={key} className="flex flex-wrap items-center gap-2 py-2">{t(key==="prep_minutes_before_open"?"prepBeforeOpen":"prepAfterClose")}<NumberField key={key+String(values[key])} value={Number(values[key])} min={0} max={240} label={t(key==="prep_minutes_before_open"?"prepBeforeOpen":"prepAfterClose")} disabled={pending||readOnly} locale={locale} onCommit={v=>change(key,v)} twoParts/></div>)}
+   </section>
+   <PayrollCostCard settings={payroll} labels={getPayrollLabels(staffT)}/>
    <section className="rounded-[20px] border border-line bg-surface p-4">
     <h2 className="text-xl font-bold">{t("yourRules")}</h2>
     <p className="my-2 text-muted">{t("writeYourRules")}</p>
