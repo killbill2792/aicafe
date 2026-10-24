@@ -1431,7 +1431,7 @@
     "currentMarginMissing": "Waiting for enough complete business data",
     "actual": "Based on actual inputs",
     "estimated": "Includes estimated inputs",
-    "targetMargin": "Profit margin to test",
+    "targetMargin": "I want to keep",
     "targetMarginHint": "Enter the operating margin you want to explore. This simulation does not become a saved business setting.",
     "run": "Run simulation",
     "simulationOnly": "Simulation only — no menu prices are changed",
@@ -1452,7 +1452,8 @@
     "change": "Change",
     "unavailableItem": "Needs current price",
     "invalid": "Enter a target from 0% to 80%.",
-    "targetNotFeasible": "This target is not feasible from the current cost structure through pricing alone."
+    "targetNotFeasible": "This target is not feasible from the current cost structure through pricing alone.",
+    "targetMarginSuffix": "% of sales"
   },
   "SupervisorOwnerHelp": {
     "incompleteByDomain": "The {domain} part of your request could not be confirmed.",
