@@ -896,7 +896,8 @@
     "feesDaysMissing": "{count} días sin comisiones",
     "rentMissing": "Falta el alquiler",
     "monthlyAmount": "{amount} al mes",
-    "monthlyAmountEstimated": "{amount} al mes (incluye estimaciones)"
+    "monthlyAmountEstimated": "{amount} al mes (incluye estimaciones)",
+    "toastDaysLook": "{count} días por revisar"
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
