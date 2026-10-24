@@ -20,8 +20,8 @@ type Data=Extract<Awaited<ReturnType<typeof import("@/lib/actions/schedule").get
 const fmt=(c:number|null,currency:string)=>c==null?"—":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(c/100);
 const hours=(n:number)=>Number((n/60).toFixed(1));
 type Alert={id:string;employee_id:string;rule_key:string;message:string;created_at:string};
-export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null,teamExtras=null}:{
- initial:Data;tab?:string;locale?:string;initialAlerts?:Alert[];alertError?:string|null;teamExtras?:React.ReactNode
+export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null,teamExtras=null,focusDate,focusEmployee}:{
+ initial:Data;tab?:string;locale?:string;initialAlerts?:Alert[];alertError?:string|null;teamExtras?:React.ReactNode;focusDate?:string;focusEmployee?:string
 }){
  const router=useRouter();const t=useTranslations("StaffSchedule");
  const wageSummary=(value:{knownCostCents:number;unknownCount:number})=>{
@@ -35,18 +35,23 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const data=version.initial===initial?version.local:initial;
  const setData=(value:Data)=>setVersion({initial,local:value});
  const uncheckedDays=uncheckedCoverageDays(data.dates,data.openHours,data.rules.coverage_enabled);
- const [screen,setScreen]=useState(tab),[sheet,setSheet]=useState<"person"|"shift"|null>(null);
+ const deepDate=focusDate&&data.dates.includes(focusDate)?focusDate:undefined;
+ const deepPerson=deepDate&&data.team.find(p=>p.id===focusEmployee);
+ const deepShift=deepPerson&&data.shifts.find(s=>s.date===deepDate&&s.employeeId===deepPerson.id);
+ const [screen,setScreen]=useState(deepPerson?"schedule":tab),[sheet,setSheet]=useState<"person"|"shift"|null>(deepPerson?"shift":null);
  const [busy,startTransition]=useTransition(),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [savingConsent,setSavingConsent]=useState(false),[consentError,setConsentError]=useState(false);
  const [dismissed,setDismissed]=useState<string[]>([]);
- const [repeatWeekly,setRepeatWeekly]=useState(false),[fillsGap,setFillsGap]=useState(false),[breakOverridden,setBreakOverridden]=useState(false);
+ const [repeatWeekly,setRepeatWeekly]=useState(false),[fillsGap,setFillsGap]=useState(false),[breakOverridden,setBreakOverridden]=useState(deepShift?.breakSource==="owner");
  const [inlineName,setInlineName]=useState(""),[inlineRole,setInlineRole]=useState("Barista");
  const [name,setName]=useState(""),[role,setRole]=useState("Barista"),[wage,setWage]=useState<number|null>(null);
  const [phone,setPhone]=useState(""),[whatsAppOptIn,setWhatsAppOptIn]=useState(false),[salaryPeriod,setSalaryPeriod]=useState<string|null>(null),[minWeeklyMinutes,setMinWeeklyMinutes]=useState<number|null>(null),
   [maxWeeklyMinutes,setMaxWeeklyMinutes]=useState<number|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
- const [chosen,setChosen]=useState(data.team[0]?.id??""),[date,setDate]=useState(data.dates[0]);
- const [start,setStart]=useState("07:00"),[end,setEnd]=useState("15:00"),[breakMin,setBreakMin]=useState(30);
- const [editing,setEditing]=useState<string|null>(null),
+ const [chosen,setChosen]=useState(deepPerson?.id??data.team[0]?.id??""),[date,setDate]=useState(deepDate??data.dates[0]);
+ const deepOpen=deepDate?data.openHours?.[OPEN_HOURS_DAY_KEYS[new Date(deepDate+"T12:00:00Z").getUTCDay()]]?.[0]:undefined;
+ const [start,setStart]=useState(deepShift?.start??deepOpen?.[0]??"07:00"),
+ [end,setEnd]=useState(deepShift?.end??deepOpen?.[1]??"15:00"),[breakMin,setBreakMin]=useState(deepShift?.breakMinutes??0);
+ const [editing,setEditing]=useState<string|null>(deepShift?.id??null),
  [availability,setAvailability]=useState<{day:number;start:string|null;end:string|null}[]>([]),
  [availabilityDirty,setAvailabilityDirty]=useState(false);
  const [undo,setUndo]=useState<{id:string;type:"person"|"shift";message:string}|null>(null);
