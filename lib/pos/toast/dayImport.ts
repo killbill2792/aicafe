@@ -19,12 +19,22 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
  const {data:m,error:me}=await db.from("toast_location_mappings")
    .select("location_id,verified_at,toast_time_zone,closeout_hour")
    .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
- if(me||!m?.verified_at||m.location_id!==p.locationId||
-   !m.toast_time_zone||m.closeout_hour==null)throw new ToastApiError("unauthorized_location");
  const {data:run,error:re}=await db.from("toast_sync_runs").select("state,restaurant_guid,business_id,cursor")
    .eq("id",p.runId).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
  if(re||!run||!["queued","running","paused_rate_limited"].includes(run.state))
    throw new ToastApiError("unauthorized_location");
+ if(me||!m?.verified_at||m.location_id!==p.locationId||
+   !m.toast_time_zone||m.closeout_hour==null){
+   // A revoked or mismapped location is permanent for this verified run.
+   // A failure before the first HTTP request still has a durable run state.
+   const {error:markError}=await db.rpc("toast_record_day_error",{
+    p_run_id:p.runId,p_business_id:p.businessId,
+    p_restaurant_guid:p.restaurantGuid,p_business_date:p.businessDate,
+    p_category:"unauthorized_location",p_run_fatal:true,p_skip:false
+   });
+   if(markError)throw new ToastApiError("unavailable");
+   throw new ToastApiError("unauthorized_location");
+ }
  const client=createToastClient(db,p.businessId);
  const pageSchema=z.array(z.unknown());
  const pages:StoredPage[]=[];
