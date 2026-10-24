@@ -323,6 +323,7 @@ export async function readMetricDay(businessId:string,date:string,
   if(opts.hours){
     const [orders,timecards,timezone]=await Promise.all([
       db.from("orders").select("closed_at,net_sales_cents").eq("business_id",businessId)
+        .eq("toast_excluded",false).is("superseded_by",null)
         .eq("business_date",date).limit(1001),
       db.from("timecards").select("clock_in,clock_out,hourly_wage_cents,breaks,source_type,source_provider")
         .eq("business_id",businessId)
@@ -396,6 +397,7 @@ export async function readMetricDay(businessId:string,date:string,
           // Revenue attribution must ALSO reconcile every exact order total.
           const orderPage=(from:number,to:number)=>db.from("orders")
             .select("id,net_sales_cents").eq("business_id",businessId)
+            .eq("toast_excluded",false).is("superseded_by",null)
             .eq("business_date",date).order("id",{ascending:true}).range(from,to);
           const firstOrders=await orderPage(0,499);
           if(firstOrders.error)throw firstOrders.error;
