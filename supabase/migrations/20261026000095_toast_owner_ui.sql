@@ -366,3 +366,20 @@ begin
  end if;
  return v_id;
 end $queue$;
+
+-- Owner badge counts business DATES, never one row per location.
+-- The per-location health view is intentionally not an additive badge source.
+create view public.toast_owner_attention_counts_v with (security_invoker=true) as
+select m.business_id,count(distinct d.business_date)::integer as days_needing_look
+from (select distinct business_id from public.toast_location_mappings) m
+left join (
+ select business_id,business_date from public.toast_day_status
+ where import_state='failed' or recon_state in
+  ('mismatch','analytics_timeout','coverage_invalid')
+ union
+ select business_id,business_date from public.toast_day_owner_flags
+ where cleared_at is null
+) d on d.business_id=m.business_id
+group by m.business_id;
+revoke all on public.toast_owner_attention_counts_v from public,anon,authenticated;
+grant select on public.toast_owner_attention_counts_v to service_role;
