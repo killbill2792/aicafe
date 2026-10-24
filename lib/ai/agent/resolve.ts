@@ -83,7 +83,7 @@ export function newResolveState(ownerText: string, history: readonly {role:strin
 export function choicePayload(result: EntityResolution<unknown>, source: string, period: {from:string;to:string}|null) {
   return result.status==="ambiguous"
     ? {source,period,missing:[],needsOwnerChoice:true,candidates:result.candidates}
-    : {source,period,missing:["notFound"],suggestions:result.suggestions};
+    : {source,period,missing:["notFound"],suggestions:result.status==="none"?result.suggestions:[]};
 }
 /** Reject a proposal when a result named several targets and the owner did not identify one. */
 export function ownerChoiceGuard(state: ResolveState|undefined, targetId:string) {

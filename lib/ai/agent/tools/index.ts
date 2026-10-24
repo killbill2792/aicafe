@@ -100,7 +100,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_week_schedule")return scheduleReadTools.get_week_schedule.execute(raw,ctx);
   if(name==="get_labor_rules")return scheduleReadTools.get_labor_rules.execute(raw);
   if(name==="get_coverage_gaps")return scheduleReadTools.get_coverage_gaps.execute(raw,ctx);
-  if(name==="get_shift_cost")return scheduleReadTools.get_shift_cost.execute(raw);
+  if(name==="get_shift_cost")return scheduleReadTools.get_shift_cost.execute(raw,ctx);
   if(name==="get_business_hours")return hoursTools.get_business_hours.execute(raw,ctx);
   if(name==="get_expenses")return moneyTools.get_expenses.execute(raw,ctx);
   if(name==="get_bills")return moneyTools.get_bills.execute(raw,ctx);

@@ -228,6 +228,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           }}
           chatCopy={{
             newMessage: tChat("newMessage"),
+            clarifyOther:tChat("clarifyOther"),clarifySend:tChat("clarifySend"),
+            clarifyYouChose:tChat("clarifyYouChose"),clarifySkipped:tChat("clarifySkipped"),
+            clarifyOtherPlaceholder:tChat("clarifyOtherPlaceholder"),
+            howIGotThis:tChat("howIGotThis"),explainYouToldMe:tChat("explainYouToldMe"),
+            explainEstimate:tChat("explainEstimate"),explainSold:tChat("explainSold"),
             live: tChat("chatLive"),
             threads: tChat("chatThreads"),
             newThread: tChat("chatNew"),
