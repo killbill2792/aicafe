@@ -19,6 +19,7 @@ import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
 import {getCafeAccess} from "@/lib/access/access.server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import HomeTaskSections, { type HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
+import { homeMoneyQuality } from "@/components/home/homeMoneyQuality";
 import { homeAttentionHref, homeShiftHref, type HomeAttentionItem } from "@/components/home/homeAttention";
 import { getOpenAlerts } from "@/lib/data/getAlerts";
 import { describeAlert } from "@/components/alerts/alertContent";
@@ -209,15 +210,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   ];
   const number = (value:number) => new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(value);
   // Compare owner profit only when both periods have independently proven costs.
-  const pctChange = moneyVm.changes.some(change => change.key === "ownerProfit")
-    ? vm.changeVsLastPeriodPct : null;
+  const { costCompleteness, hasPartial, canShowProfit, profitChangePct: pctChange, hasEstimatedCosts } =
+    homeMoneyQuality(vm, moneyVm);
   const percentage = (value:number) => number(Math.round(value*100));
   const money = (cents:number) => formatCents(cents,locale);
-  const costCompleteness = moneyVm.businessCosts.completeness;
-  const hasPartial = vm.coverage.actualDays < vm.coverage.expectedDays || costCompleteness === "partial";
-  const canShowProfit = costCompleteness === "complete" && moneyVm.ownerProfitDisplay.kind !== "unavailable";
-  const hasEstimatedCosts = moneyVm.businessCosts.estimatedInputs.length > 0 || daysForPeriod(snapshot, period).some(day =>
-    day.cardFeesStatus === "estimated" || day.staffTaxStatus === "estimated");
   const changeLabel = pctChange===null ? null : t("changeVsLastPeriod",{
     pct:number(Math.abs(Math.round(pctChange))),direction:pctChange>=0?t("more"):t("less")});
   return <PageShell wide className="flex flex-col gap-4 px-3 pb-4 pt-3 md:px-4 md:pt-4">
