@@ -496,3 +496,49 @@ end $supersede$;
 create trigger toast_supersede_late_order
  before insert or update of business_id,location_id,business_date,pos_order_id,superseded_by
  on public.orders for each row execute function public.toast_supersede_non_toast_order();
+
+-- Preserve the coverage decision even if a later Square/CSV sync recomputes
+-- the shared daily row after the Toast import. The trigger applies only to
+-- dates with an actual Toast import, leaving unrelated POS days unchanged.
+create or replace function public.toast_guard_daily_sales_coverage()
+returns trigger language plpgsql security invoker set search_path=public as $guard$
+begin
+ if new.sales_data_status='actual' and exists (
+  select 1 from public.toast_day_status d where d.business_id=new.business_id
+   and d.business_date=new.business_date and d.import_state='imported'
+ ) and (
+  exists (
+   select 1 from public.toast_location_mappings m
+   left join public.toast_day_status d on d.business_id=m.business_id
+    and d.restaurant_guid=m.restaurant_guid and d.business_date=new.business_date
+   where m.business_id=new.business_id and m.verified_at is not null
+    and new.business_date>=coalesce(m.toast_start_date,new.business_date)
+    and (d.import_state is distinct from 'imported' or not coalesce(d.coverage_complete,false))
+  ) or exists (
+   select 1 from public.orders o
+   where o.business_id=new.business_id and o.business_date=new.business_date
+    and o.location_id is null and o.pos_order_id not like 'toast:%'
+    and o.superseded_by is null
+  )
+ ) then
+  new.sales_data_status='missing';
+ end if;
+ return new;
+end $guard$;
+create trigger toast_guard_daily_coverage
+ before insert or update of sales_data_status
+ on public.daily_rollups for each row
+ execute function public.toast_guard_daily_sales_coverage();
+
+-- Exact-order sales proof used by initiative monitors must agree with other
+-- effective-order readers after a Toast/CSV overlap.
+create or replace function public.initiative_daily_order_sales_proof(
+ p_business_id uuid,p_date date)
+returns table(order_count bigint,net_sales_cents bigint,synthetic_count bigint)
+language sql security definer set search_path=public as $proof$
+ select count(*)::bigint,coalesce(sum(o.net_sales_cents),0)::bigint,
+ count(*) filter(where o.pos_order_id is null
+  or o.pos_order_id like 'csv-%' or o.pos_order_id like 'csv:%')::bigint
+ from public.orders o where o.business_id=p_business_id and o.business_date=p_date
+  and not o.toast_excluded and o.superseded_by is null
+$proof$;
