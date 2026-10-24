@@ -40,7 +40,10 @@ export function resolveEntity<T>(
   };
   if (!q) return {status:"none", suggestions:choices(rows)};
   const ids = rows.filter(row => field.idOf(row).toLowerCase() === query.toLowerCase());
-  if (ids.length === 1) return {status:"resolved",value:ids[0]};
+  // Category codes can be natural words ("supplies", "rent"). When the
+  // owner's phrase also labels several records, it is NOT an explicit ID choice.
+  const displayCollisions=rows.filter(row=>normalizedName(field.nameOf(row))===q);
+  if (ids.length===1&&displayCollisions.length<=1)return {status:"resolved",value:ids[0]};
   const exact = rows.filter(row => normalizedName(field.nameOf(row))===q);
   if(exact.length===1){
     // "Latte" must not silently win over "Iced Latte": the owner's words

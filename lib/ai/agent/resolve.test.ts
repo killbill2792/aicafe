@@ -5,6 +5,13 @@ const rows=[{id:hot,name:"Latte",category:"Hot"},{id:iced,name:"Latte",category:
 {id:"33333333-3333-4333-8333-333333333333",name:"Café",category:"Coffee"}];
 const props={nameOf:(r:typeof rows[number])=>r.name,idOf:(r:typeof rows[number])=>r.id,describe:(r:typeof rows[number])=>r.category};
 describe("safe entity resolution",()=>{
+ it("does not treat a human-readable category code as disambiguation",()=>{
+   const categories=[{id:"supplies",name:"Supplies"},{id:"other",name:"Supplies"}];
+   const r=resolveEntity("category","Supplies",categories,{
+     nameOf:x=>x.name,idOf:x=>x.id,describe:x=>x.id});
+   expect(r.status).toBe("ambiguous");
+   if(r.status==="ambiguous")expect(r.candidates.map(c=>c.id)).toEqual(["supplies","other"]);
+ });
  it("resolves exact ids before duplicate names",()=>{
    expect(resolveEntity("product",iced,rows,props)).toEqual({status:"resolved",value:rows[1]});
  });
