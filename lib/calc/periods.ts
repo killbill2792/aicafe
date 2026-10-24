@@ -37,7 +37,7 @@ export function resolvePeriod(input:PeriodInput, options:{
   const monday=offset(asOf,-((new Date(asOf+"T12:00:00Z").getUTCDay()+6)%7));
   const periods:Record<string,PeriodValue>={
     today:{from:asOf,to:asOf,label:"Today"},
-    week:{from:monday,to:asOf,label:"This week"},
+    week:{from:offset(asOf,-6),to:asOf,label:"Last 7 days"},
     month:{from:month,to:asOf,label:"This month"},
     last_week:{from:offset(monday,-7),to:offset(monday,-1),label:"Last week"},
     last_month:{from:prevStart,to:offset(month,-1),label:"Last month"},

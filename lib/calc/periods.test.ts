@@ -2,6 +2,10 @@ import {describe,it,expect} from "vitest";
 import {resolvePeriod} from "./periods";
 const base={asOf:"2026-10-24",timezone:"America/Los_Angeles"};
 describe("business-local period resolution",()=>{
+ it("preserves the existing trailing seven-day week for financial totals",()=>{
+  expect(resolvePeriod("week",{asOf:"2026-10-24",timezone:"America/Los_Angeles"})).toEqual({
+   status:"resolved",value:{from:"2026-10-18",to:"2026-10-24",label:"Last 7 days"}});
+ });
  it("resolves last month without guessing a current month",()=>{
   expect(resolvePeriod({preset:"last_month"},base)).toEqual({status:"resolved",
    value:{from:"2026-09-01",to:"2026-09-30",label:"Last month"}});
