@@ -107,3 +107,10 @@ export function observeToolResult(state:ResolveState|undefined,result:Record<str
   };
   visit(result,0);
 }
+
+/** Periods share the same owner-choice wire contract as named records. */
+export function periodChoicePayload(source:string,result:import("@/lib/calc/periods").PeriodResolution){
+  if(result.status==="ambiguous")return {source,period:null,missing:[] as string[],needsOwnerChoice:true,
+    candidates:result.candidates.map(p=>({id:p.from+"/"+p.to,label:p.label,detail:p.from+" – "+p.to}))};
+  return {source,period:null,missing:["notFound"],suggestions:result.status==="none"?result.suggestions:[]};
+}
