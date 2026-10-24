@@ -19,6 +19,12 @@ describe("What-if history blockers", () => {
   ])("never blocks a staff-hour scenario because of item history: %o", flags => {
     expect(scenarioHistoryBlocker("staff", flags)).toBeNull();
   });
+  it("keeps staffing usable with fewer than seven open sales dates", () => {
+    expect(scenarioHistoryBlocker("staff", { salesDaysCovered: 5, closedDaySales: false, salesCoverageGaps: false })).toBeNull();
+    expect(scenarioHistoryBlocker("price", { salesDaysCovered: 5, closedDaySales: false, salesCoverageGaps: false })).toBe("insufficientSalesDays");
+    expect(scenarioHistoryBlocker("ingredient", { salesDaysCovered: 6, closedDaySales: false, salesCoverageGaps: false })).toBe("insufficientSalesDays");
+    expect(scenarioHistoryBlocker("price", { salesDaysCovered: 7, closedDaySales: false, salesCoverageGaps: false })).toBeNull();
+  });
   it("does not block a priced-item forecast with complete historical coverage", () => {
     expect(scenarioHistoryBlocker("ingredient", { closedDaySales: false, salesCoverageGaps: false })).toBeNull();
   });

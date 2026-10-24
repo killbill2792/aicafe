@@ -191,7 +191,8 @@ export function simulatePlanChange(input: {
   const { base, type, item, newValueCents, staffHoursPerDay, assumedHourlyWageCents } = input;
   if (!Number.isFinite(base.observedSalesCents) || base.observedSalesCents <= 0 ||
       !Number.isSafeInteger(base.daysInMonth) || base.daysInMonth < 1 || base.daysInMonth > 31 ||
-      !Number.isSafeInteger(base.salesDaysCovered) || base.salesDaysCovered < 7 || base.salesDaysCovered > 28 ||
+      !Number.isSafeInteger(base.salesDaysCovered) || base.salesDaysCovered < 0 || base.salesDaysCovered > 28 ||
+      (type !== "staff" && base.salesDaysCovered < 7) ||
       !Number.isSafeInteger(base.operatingDaysInMonth) || base.operatingDaysInMonth < 1 ||
       base.operatingDaysInMonth > base.daysInMonth ||
       !Number.isFinite(base.payrollTaxRate) || base.payrollTaxRate < 0 ||

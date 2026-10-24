@@ -22,15 +22,17 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
   const [staffAfternoonOnly, setStaffAfternoonOnly] = useState(false);
   const [presetKind, setPresetKind] = useState<"allPrices" | "milk" | null>(null);
   const money = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
-  const historyBlocker = scenarioHistoryBlocker(kind, { salesCoverageGaps, closedDaySales });
+  const historyBlocker = scenarioHistoryBlocker(kind, {
+    salesCoverageGaps, closedDaySales, salesDaysCovered: base?.salesDaysCovered,
+  });
   const invalid = !Number.isFinite(Number(value)) || value.trim() === "" || Number(value) < 0 || Number(value) > 100000;
-  const result = useMemo(() => base && !invalid ? simulatePlanChange({
+  const result = useMemo(() => base && !invalid && !historyBlocker ? simulatePlanChange({
     base, type: kind, item: picked, items, preset: presetKind,
     newValueCents: Math.round(Number(value) * 100),
     staffHoursPerDay: kind === "staff" ? Number(staffHours) : 0,
     staffAfternoonOnly,
     assumedHourlyWageCents: WAGE_CENTS,
-  }) : null, [base, invalid, kind, picked, items, presetKind, staffHours, staffAfternoonOnly, value]);
+  }) : null, [base, invalid, historyBlocker, kind, picked, items, presetKind, staffHours, staffAfternoonOnly, value]);
 
   function pickType(next: "price" | "ingredient" | "staff") {
     setKind(next);
@@ -89,6 +91,11 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
       </Link>
     </div> : historyBlocker === "salesCoverageGaps" ? <div className="rounded-xl bg-surface p-4 text-[17px]">
       <p>{t("uncoveredSalesDates")}</p>
+      <Link href="/more/uploads/sales" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
+        {t("uploadSales")}
+      </Link>
+    </div> : historyBlocker === "insufficientSalesDays" ? <div className="rounded-xl bg-surface p-4 text-[17px]">
+      <p>{t("insufficientOperatingSalesDays")}</p>
       <Link href="/more/uploads/sales" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
         {t("uploadSales")}
       </Link>

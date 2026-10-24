@@ -1155,7 +1155,8 @@
     "uncoveredSalesDates": "Some open days in this sales period have no confirmed sales data. Complete the missing dates before estimating changes.",
     "uploadSales": "Upload sales",
     "closedDaySales": "Some sales were recorded on days your café is now scheduled as closed. The historic item counts cannot safely predict future open-day sales. Check café hours before running this estimate.",
-    "setCafeHours": "Set café hours"
+    "setCafeHours": "Set café hours",
+    "insufficientOperatingSalesDays": "Record at least 7 open sales days to estimate changes to drink prices or ingredient costs."
   },
   "Reconnect": {
     "banner": "We couldn't get today's sales from your register. Tap to reconnect.",
