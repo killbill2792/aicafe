@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getLocale, getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
-import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
+import { DEMO_BUSINESS_ID, EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import BackHeader from "@/components/shared/BackHeader";
 import PlainIcon from "@/components/icons/PlainIcon";
 import { describeAlert } from "@/components/alerts/alertContent";
@@ -33,7 +33,8 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
   const voids = alert.voidsReview ?? null;
   const displayedImpact = alert.kind === "voids" ? (voids?.ok ? voids.summary.thisMonthCents : null) : alert.impactCents;
 
-  if (alert.status === "new") {
+  const readOnlyDemo = snapshot.business.id === DEMO_BUSINESS_ID;
+  if (alert.status === "new" && !readOnlyDemo) {
     await setAlertStatus(alert.id, "seen");
   }
 
@@ -92,6 +93,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
         </Link>
       )}
 
+      {readOnlyDemo ? <p className="text-base text-ink-muted">{t("demoReadOnly")}</p> : <>
       <form action={markAlertStatus.bind(null, alert.id, "resolved")}>
         <button type="submit" className="flex h-[52px] w-full items-center justify-center rounded-full border border-line text-base font-semibold text-ink">
           {t("markReviewed")}
@@ -102,6 +104,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
           {t("dismiss")}
         </button>
       </form>
+      </>}
     </PageShell>
   );
 }
