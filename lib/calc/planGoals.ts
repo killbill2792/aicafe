@@ -1,4 +1,4 @@
-import { OPEN_HOURS_DAY_KEYS, type OpenHours } from "@/lib/business/openHours";
+import { OPEN_HOURS_DAY_KEYS, regularHoursStateForDate, type OpenHours } from "@/lib/business/openHours";
 import { calculateBreakEvenSales } from "./breakEvenSales";
 
 /** Use the weekday's configured intervals, including split and overnight shifts. */
@@ -31,6 +31,21 @@ export function weekdayHourlyTarget(drinks: number, openHours: OpenHours | null 
     perHour: hours > 0 && Number.isFinite(drinks) ? Math.ceil(drinks / hours) : null };
 }
 
+/** Match Money's operating-day convention: only explicitly closed weekdays are excluded.
+ * Unset hours must not silently assume the café is closed. */
+export function countPlanOperatingDays(openHours: OpenHours | null | undefined, monthKey: string): number {
+  if (!/^\\d{4}-\\d{2}$/.test(monthKey)) return 0;
+  const [year, month] = monthKey.split("-").map(Number);
+  if (!Number.isInteger(year) || year < 1 || !Number.isInteger(month) || month < 1 || month > 12) return 0;
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  let count = 0;
+  for (let d = 1; d <= days; d++) {
+    const date = `${monthKey}-${String(d).padStart(2, "0")}`;
+    if (regularHoursStateForDate(openHours, date) !== "closed") count++;
+  }
+  return count;
+}
+
 export type PlanScenarioBase = {
   monthlyBillsCents: number;
   monthlyStaffCents: number;
@@ -38,6 +53,10 @@ export type PlanScenarioBase = {
   observedIngredientCents: number;
   observedProcessingFeesCents: number;
   daysInMonth: number;
+  /** Sales-covered dates in the exact window used for the POS item quantity totals. */
+  salesDaysCovered: number;
+  /** Café's scheduled open days in this month, matching Money's staff projection. */
+  operatingDaysInMonth: number;
   payrollTaxRate: number;
 };
 export type PlanScenarioItem = {
@@ -65,7 +84,10 @@ export function simulatePlanChange(input: {
 }) {
   const { base, type, item, newValueCents, staffHoursPerDay, assumedHourlyWageCents } = input;
   if (!Number.isFinite(base.observedSalesCents) || base.observedSalesCents <= 0 ||
-      !Number.isSafeInteger(base.daysInMonth) || base.daysInMonth < 1 ||
+      !Number.isSafeInteger(base.daysInMonth) || base.daysInMonth < 1 || base.daysInMonth > 31 ||
+      !Number.isSafeInteger(base.salesDaysCovered) || base.salesDaysCovered < 7 || base.salesDaysCovered > 28 ||
+      !Number.isSafeInteger(base.operatingDaysInMonth) || base.operatingDaysInMonth < 0 ||
+      base.operatingDaysInMonth > base.daysInMonth ||
       !Number.isFinite(base.payrollTaxRate) || base.payrollTaxRate < 0 ||
       !Number.isSafeInteger(newValueCents) || newValueCents < 0 ||
       !Number.isFinite(staffHoursPerDay) || staffHoursPerDay < 0 || staffHoursPerDay > 24 ||
@@ -81,13 +103,13 @@ export function simulatePlanChange(input: {
   let staff = base.monthlyStaffCents, profitDelta = 0;
   if (type === "staff") {
     const dailySaving = Math.round(staffHoursPerDay * assumedHourlyWageCents * (1 + base.payrollTaxRate));
-    const monthlySaving = Math.min(staff, Math.round(dailySaving * base.daysInMonth));
+    const monthlySaving = Math.min(staff, Math.round(dailySaving * base.operatingDaysInMonth));
     staff -= monthlySaving;
     profitDelta = monthlySaving;
   } else {
     let change28Days: number;
     if (input.preset) {
-      const soldItems = input.items!.filter(row => row.quantitySoldLast28Days > 0 &&
+      const soldItems = input.items!.filter(row => row.quantitySoldLast28Days > 0 && row.active !== false &&
         (input.preset === "allPrices" || row.category === "drink"));
       const units = soldItems.reduce((sum, row) => sum + row.quantitySoldLast28Days, 0);
       if (units <= 0) return null;
@@ -103,7 +125,13 @@ export function simulatePlanChange(input: {
     }
     if (type === "price") sales += change28Days;
     else ingredients += change28Days;
-    profitDelta = Math.round((type === "price" ? 1 : -1) * change28Days * base.daysInMonth / 28);
+    // The item quantity RPC covers the observed dates, not necessarily 28 complete days.
+    // Project an observed *per selling day* change across the café's operating days.
+    // Dividing by 28 understates a new café with only 7–27 days of sales.
+    profitDelta = Math.round(
+      (type === "price" ? 1 : -1) * change28Days *
+      base.operatingDaysInMonth / base.salesDaysCovered,
+    );
   }
   if (sales <= 0 || ingredients < 0 || !Number.isSafeInteger(profitDelta)) return null;
   const next = calculateBreakEvenSales({ ...base, monthlyStaffCents: staff,

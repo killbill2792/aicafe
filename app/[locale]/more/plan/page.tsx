@@ -8,7 +8,7 @@ import ProfitGoalSimulator from "@/components/more/ProfitGoalSimulator";
 import TryScenario from "@/components/scenario/TryScenario";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { sumCents, summarizeResolvedSoldProductCosts } from "@/lib/calc";
-import { weekdayHourlyTarget } from "@/lib/calc/planGoals";
+import { countPlanOperatingDays, weekdayHourlyTarget } from "@/lib/calc/planGoals";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { getProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
 import { isBillCategory, missingCostDestination } from "@/lib/expenses/expectedCosts";
@@ -113,7 +113,10 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         monthlyBillsCents: recovery.monthlyBillsCents, monthlyStaffCents: recovery.monthlyStaffCents,
         observedSalesCents: sumCents(days, d => d.netSalesCents), observedIngredientCents: costs!.totalCostCents,
         observedProcessingFeesCents: sumCents(days, d => d.cardFeesCents),
-        daysInMonth: snapshot.daysInMonth, payrollTaxRate: snapshot.business.payrollTaxRate,
+        daysInMonth: snapshot.daysInMonth,
+        salesDaysCovered: days.length,
+        operatingDaysInMonth: countPlanOperatingDays(snapshot.business.openHours, snapshot.monthKey),
+        payrollTaxRate: snapshot.business.payrollTaxRate,
       } : null} />
       <p className="text-[17px] leading-snug text-ink-muted">{t("simulationOnly")}</p>
     </section>}
