@@ -18,7 +18,9 @@ describe("Staff Olivia draft entry",()=>{
   it("renders an in-place action without routing to Home",()=>{
     const markup=renderToStaticMarkup(createElement(StaffDraftApprovalCard,{
       week:"2026-10-26",locale:"en",
-      data:{team:[],rules:{} as RuleSettings,availability:[],adjacentShifts:[],
+      data:{team:[],rules:{coverage_enabled:false,min_headcount:1} as RuleSettings&
+        {coverage_enabled:boolean;min_headcount:number},
+        dates:["2026-10-26"],openHours:null,availability:[],adjacentShifts:[],
         timezone:"America/Los_Angeles",currency:"USD"},
       onClose:()=>{},onApplied:()=>{}
     }));
