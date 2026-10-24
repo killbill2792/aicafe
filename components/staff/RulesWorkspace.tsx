@@ -1,6 +1,6 @@
 "use client";
 import {useId,useState,useTransition} from "react";
-import {partsToMinutes,minutesToParts,wholeRuleValue,multiplierToBasisPoints,basisPointsToMultiplier} from "@/lib/calc/scheduling/ruleInputValues";
+import {partsToMinutes,minutesToParts,wholeRuleValue,multiplierToBasisPoints} from "@/lib/calc/scheduling/ruleInputValues";
 import {useRouter} from "next/navigation";
 import {useLocale,useTranslations} from "next-intl";
 import PayrollCostCard from "./PayrollCostCard";
@@ -44,8 +44,9 @@ function NumberField({value,onCommit,label,min,max,disabled,locale,twoParts=fals
 }
 export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{initial:RuleValues;week:string;readOnly?:boolean;payroll:PayrollCostSettings}){
  const t=useTranslations("StaffSchedule");const locale=useLocale();const staffT=useTranslations("Staff");const router=useRouter();
+ const formatRate=(value:number)=>new Intl.NumberFormat(locale,{useGrouping:false,maximumFractionDigits:4}).format(value/10000);
  const [values,setValues]=useState(initial),[draft,setDraft]=useState(""),[pending,transition]=useTransition();
- const [custom,setCustom]=useState(false),[customValue,setCustomValue]=useState(basisPointsToMultiplier(Number(values.ot_multiplier_bp))),[multiplierError,setMultiplierError]=useState(false);
+ const [custom,setCustom]=useState(false),[customValue,setCustomValue]=useState(formatRate(Number(values.ot_multiplier_bp))),[multiplierError,setMultiplierError]=useState(false);
  const [message,setMessage]=useState(""),[undo,setUndo]=useState<{key:string;value:number|boolean}|null>(null);
  const change=(key:string,value:number|boolean)=>{
    if(readOnly)return;
@@ -87,7 +88,7 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
     {group.title==="overtime"&&<div className="flex flex-wrap items-center gap-3 border-t border-line py-3">
      <label className="font-semibold" htmlFor="ot-rate">{t("overtimePays")}</label>
      <select id="ot-rate" value={custom||![15000,20000].includes(Number(values.ot_multiplier_bp))?"custom":String(values.ot_multiplier_bp)} disabled={pending||readOnly}
-      onChange={e=>{if(e.target.value!=="custom"){setCustom(false);setCustomValue(basisPointsToMultiplier(Number(e.target.value)));change("ot_multiplier_bp",Number(e.target.value));}else{setCustom(true);setCustomValue(basisPointsToMultiplier(Number(values.ot_multiplier_bp)));}}}
+      onChange={e=>{if(e.target.value!=="custom"){setCustom(false);setCustomValue(formatRate(Number(e.target.value)));change("ot_multiplier_bp",Number(e.target.value));}else{setCustom(true);setCustomValue(formatRate(Number(values.ot_multiplier_bp)));}}}
       className="min-h-12 rounded-xl border border-line bg-surface px-3"><option value="15000">1.5×</option><option value="20000">2×</option><option value="custom">{t("customMultiplier")}</option></select>
      {(custom||![15000,20000].includes(Number(values.ot_multiplier_bp)))&&<label className="flex items-center gap-2">{t("customMultiplier")}
       <input aria-label={t("customMultiplier")} type="text" inputMode="decimal" value={customValue} onChange={e=>{setCustomValue(e.target.value);setMultiplierError(false)}}
@@ -133,7 +134,7 @@ title:staffT("payrollCostsTitle"),body:staffT("payrollCostsBody"),field:staffT("
    </details>
    {undo&&<div role="status" className="flex items-center justify-between rounded-xl bg-surface2 p-3">
       <span>{t("saved")}</span><button disabled={pending||readOnly} onClick={()=>{
-       const last=undo;setUndo(null);if(last.key==="ot_multiplier_bp"){setCustom(false);setCustomValue(basisPointsToMultiplier(Number(last.value)));}change(last.key,last.value);
+       const last=undo;setUndo(null);if(last.key==="ot_multiplier_bp"){setCustom(false);setCustomValue(formatRate(Number(last.value)));}change(last.key,last.value);
       }} className="min-h-12 rounded-lg px-3 font-bold text-accent-text">{t("undo")}</button>
     </div>}
    {message&&<p role="status" className="text-sm text-muted">{message}</p>}
