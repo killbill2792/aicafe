@@ -29,8 +29,12 @@ export function dayTotals(mappings:readonly ToastMapping[],days:readonly ToastDa
  const complete=proof.complete;
  const known=complete&&proof.rows.every(row=>
   row&&Number.isSafeInteger(row.net_sales_cents)&&Number.isSafeInteger(row.order_count));
+ const toastKnown=complete&&proof.rows.every(row=>row&&
+  Number.isSafeInteger(row.toast_net_sales_cents));
  return {
   complete,
+  toastNetSalesCents:toastKnown?proof.rows.reduce((n,row)=>
+   n+(row!.toast_net_sales_cents as number),0):null,
   netSalesCents:known?proof.rows.reduce((n,row)=>n+(row!.net_sales_cents as number),0):null,
   orders:known?proof.rows.reduce((n,row)=>n+(row!.order_count as number),0):null,
   checked:complete&&proof.rows.every(row=>row&&["matched","checked_internal"].includes(row.recon_state??""))
