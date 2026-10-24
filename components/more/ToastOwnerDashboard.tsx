@@ -13,8 +13,23 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
  const [start,setStart]=useState(""),[note,setNote]=useState("");
  const [selected,setSelected]=useState<string[]>([]);
+ const [analytics,setAnalytics]=useState({apiUrl:"",managementGroupGuid:"",clientId:"",clientSecret:""});
+ const [analyticsBusy,setAnalyticsBusy]=useState(false);
  const money=new Intl.NumberFormat(locale,{style:"currency",currency});
  const number=new Intl.NumberFormat(locale);
+ async function configureAnalytics(action:"connect"|"disconnect"){
+  if(analyticsBusy)return;
+  setAnalyticsBusy(true);setMessage("");
+  try{
+   const url="/api/pos/toast/analytics"+(action==="disconnect"?"?businessId="+encodeURIComponent(businessId):"");
+   const response=await fetch(url,{method:action==="disconnect"?"DELETE":"POST",
+    headers:{"Content-Type":"application/json"},
+    ...(action==="connect"?{body:JSON.stringify({businessId,...analytics})}:{})});
+   if(!response.ok)throw Error("unavailable");
+   setAnalytics(old=>({...old,clientSecret:""}));await load();
+   setMessage(t("ownerSaved"));
+  }catch{setMessage(t("ownerError"))}finally{setAnalyticsBusy(false)}
+ }
  const fmt=(n:number|null)=>n==null?t("noAmount"):money.format(n/100);
  const day=(d:string)=>new Intl.DateTimeFormat(locale,{timeZone:"UTC",dateStyle:"medium"})
   .format(new Date(d+"T12:00:00Z"));
@@ -131,7 +146,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    {data.recent.map(row=><div key={row.date} className="flex flex-wrap items-center gap-2 border-b border-line py-3">
     <span className="min-w-24 flex-1"><bdi>{day(row.date)}</bdi></span>
     <span><bdi>{fmt(row.netSalesCents)}</bdi></span>
-    <span>{t("ownerOrders",{count:number.format(row.orders??0)})}</span>
+    <span>{row.orders==null?t("noAmount"):t("ownerOrders",{count:number.format(row.orders)})}</span>
     <span className="text-ink-muted">{row.status==="checked"?t("ownerState_checked"):row.status==="checking"?t("ownerState_checking"):
      row.status==="missing"?t("ownerState_missing"):t("ownerState_needs_look")}</span>
    </div>)}
@@ -140,6 +155,26 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    <h2 className="text-xl font-bold">{t("ownerAnalytics")}</h2>
    <p className="text-ink-muted">{t("ownerAnalyticsNote")}</p>
    <p className="mt-2 font-semibold">{data.analytics.verified?t("verified"):t("notConnected")}</p>
+   <details className="mt-3">
+    <summary className="min-h-12 cursor-pointer font-semibold">{t("ownerAnalyticsSetup")}</summary>
+    <div className="mt-3 flex flex-col gap-3">
+     {(["apiUrl","managementGroupGuid","clientId","clientSecret"] as const).map(key=>
+      <label key={key} className="flex flex-col gap-1">
+       <span>{t("ownerAnalytics_"+key)}</span>
+       <input className="min-h-12 rounded-xl border border-line bg-card p-3"
+        type={key==="clientSecret"?"password":"text"} autoComplete="off"
+        value={analytics[key]} onChange={e=>setAnalytics(old=>({...old,[key]:e.target.value}))}/>
+      </label>)}
+     <button disabled={analyticsBusy||Object.values(analytics).some(x=>!x.trim())}
+      onClick={()=>void configureAnalytics("connect")}
+      className="min-h-12 rounded-full bg-accent px-5 text-on-accent disabled:opacity-40">
+      {t("ownerAnalyticsConnect")}</button>
+     {data.analytics.connected&&<button disabled={analyticsBusy}
+      onClick={()=>void configureAnalytics("disconnect")}
+      className="min-h-12 rounded-full border border-line px-5">
+      {t("ownerAnalyticsDisconnect")}</button>}
+    </div>
+   </details>
   </section>
   {message&&<p role="status" className="rounded-xl bg-card p-3">{message}</p>}
  </div>;
