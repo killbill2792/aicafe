@@ -48,6 +48,7 @@ export type PlanScenarioItem = {
   quantitySoldLast28Days: number;
   costStatus: "READY" | "NO_RECIPE" | "MISSING_INGREDIENT_COST";
   category?: "drink" | "food";
+  active?: boolean;
 };
 
 /** An illustrative scenario. Reuses Money's break-even function, with unchanged
@@ -69,6 +70,7 @@ export function simulatePlanChange(input: {
       !Number.isSafeInteger(newValueCents) || newValueCents < 0 ||
       !Number.isFinite(staffHoursPerDay) || staffHoursPerDay < 0 || staffHoursPerDay > 24 ||
       !Number.isSafeInteger(assumedHourlyWageCents) || assumedHourlyWageCents < 0) return null;
+  if (type === "staff" && base.monthlyStaffCents <= 0) return null;
   if (input.preset) {
     if ((input.preset === "allPrices" && type !== "price") ||
         (input.preset === "milk" && type !== "ingredient") || !input.items?.length) return null;

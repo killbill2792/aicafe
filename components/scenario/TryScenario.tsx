@@ -8,9 +8,11 @@ export default function TryScenario({ items, base }: { items: PlanScenarioItem[]
   const t = useTranslations("Scenario");
   const locale = useLocale();
   const [kind, setKind] = useState<"price" | "ingredient" | "staff">("price");
-  const [id, setId] = useState(items.find(item => item.costStatus === "READY" && item.quantitySoldLast28Days > 0)?.id ?? "");
+  const drinks = items.filter(item => item.category === "drink" && item.active !== false);
+  const firstDrink = drinks.find(item => item.costStatus === "READY" && item.quantitySoldLast28Days > 0);
+  const [id, setId] = useState(firstDrink?.id ?? drinks[0]?.id ?? "");
   const picked = items.find(item => item.id === id) ?? null;
-  const [value, setValue] = useState(() => String((items.find(item => item.costStatus === "READY" && item.quantitySoldLast28Days > 0)?.priceCents ?? 0) / 100));
+  const [value, setValue] = useState(() => String((firstDrink?.priceCents ?? 0) / 100));
   const [staffHours, setStaffHours] = useState("0");
   const [presetKind, setPresetKind] = useState<"allPrices" | "milk" | null>(null);
   const money = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
@@ -54,7 +56,7 @@ export default function TryScenario({ items, base }: { items: PlanScenarioItem[]
     {kind !== "staff" && !presetKind && <label className="flex flex-col gap-2 text-[17px] font-semibold">
       {t("pickDrink")}
       <select className="min-h-12 rounded-xl border border-line bg-card px-3" value={id} onChange={event => pickItem(event.target.value)}>
-        {items.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        {drinks.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
     </label>}
     {presetKind && <p className="rounded-xl bg-surface p-3 text-[17px]">{t(presetKind === "allPrices" ? "allPricesExplanation" : "milkExplanation")}</p>}
@@ -71,7 +73,8 @@ export default function TryScenario({ items, base }: { items: PlanScenarioItem[]
       <button type="button" onClick={() => preset("staff", 0)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetStaff")}</button>
       <button type="button" onClick={() => preset("ingredient", 100)} className="min-h-12 rounded-full bg-surface px-3 text-[15px] font-semibold">{t("presetMilk")}</button>
     </div>
-    {!base ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p> :
+    {kind === "staff" && base && base.monthlyStaffCents <= 0 ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("staffUnknown")}</p> :
+    !base ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p> :
       kind !== "staff" && !presetKind && (!picked || picked.costStatus !== "READY" || picked.quantitySoldLast28Days <= 0) ?
         <p className="rounded-xl bg-surface p-4 text-[17px]">{t("noItemSales")}</p> :
       result ? <section aria-live="polite" className="grid gap-3 sm:grid-cols-2">

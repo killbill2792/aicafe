@@ -1136,7 +1136,8 @@
     "presetStaff": "One less person 2–5 PM",
     "presetMilk": "Milk rises $1/gallon (≈4¢ per drink)",
     "allPricesExplanation": "Preset: raises every menu item's selling price by 25¢; no prices are saved.",
-    "milkExplanation": "Preset: a $1/gallon milk increase, assuming 150 mL of milk in every drink."
+    "milkExplanation": "Preset: a $1/gallon milk increase, assuming 150 mL of milk in every drink.",
+    "staffUnknown": "Add staff costs before estimating a change in staff hours."
   },
   "Reconnect": {
     "banner": "We couldn't get today's sales from your register. Tap to reconnect.",

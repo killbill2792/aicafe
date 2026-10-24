@@ -1136,7 +1136,8 @@
     "presetStaff": "Una persona menos de 2 a 5 de la tarde",
     "presetMilk": "La leche sube $1 por galón (unos 4 centavos por bebida)",
     "allPricesExplanation": "Opción: aumenta 25 centavos el precio de cada producto del menú; no se guardan precios.",
-    "milkExplanation": "Opción: la leche sube $1 por galón, suponiendo 150 ml de leche por bebida."
+    "milkExplanation": "Opción: la leche sube $1 por galón, suponiendo 150 ml de leche por bebida.",
+    "staffUnknown": "Agrega los costos de personal antes de estimar el efecto de cambiar sus horas."
   },
   "Reconnect": {
     "banner": "No pudimos obtener las ventas de hoy de tu caja registradora. Toca para reconectar.",

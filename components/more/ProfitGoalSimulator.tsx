@@ -60,7 +60,7 @@ export default function ProfitGoalSimulator({
   const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
   const fmt = (cents: number) => currency.format(cents / 100);
   const pct = (value: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value);
-  const typedPct = (value: number) => `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value)}%`;
+  const typedPct = (value: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value / 100);
   const blockers = profitGoalBlockers(data);
   const blockerText = { sales: labels.unavailableSales, fees: labels.unavailableFees,
     costs: labels.unavailableCosts, operating: labels.unavailableOperating };

@@ -48,6 +48,11 @@ describe("Plan goals", () => {
     expect(all?.monthlyProfitChangeCents).toBeGreaterThan(one!.monthlyProfitChangeCents);
     expect(milk?.monthlyProfitChangeCents).toBe(Math.round(-Math.round(300 * 150 * 100 / 3785) * 30 / 28));
   });
+  it("does not claim staff-hour savings without any recorded staff cost", () => {
+    expect(simulatePlanChange({ base: { ...base, monthlyStaffCents: 0 },
+      type: "staff", item: null, newValueCents: 0,
+      staffHoursPerDay: 3, assumedHourlyWageCents: 1950 })).toBeNull();
+  });
   it("makes higher ingredient costs worse and fewer staff hours cheaper", () => {
     const ingredient = simulatePlanChange({ base, type: "ingredient", item, newValueCents: 150,
       staffHoursPerDay: 0, assumedHourlyWageCents: 1950 });
