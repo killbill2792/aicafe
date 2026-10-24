@@ -13,6 +13,7 @@ vi.mock("./client",async()=>{
 vi.mock("../rollup",()=>({recomputeDailyRollup:mocked.recompute}));
 import {ToastApiError} from "./client";
 import {importToastBusinessDay} from "./dayImport";
+import {deriveNextRunDay} from "./scheduleDates";
 
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const location="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001";
@@ -239,3 +240,36 @@ describe("P1 bad days never destroy previously imported sales",()=>{
  });
 });
 
+
+describe("P1 pause, resume, then next business date",()=>{
+ it("reuses a staged first page on retry and advances the day only on commit",async()=>{
+  const f=fakeDatabase(2),from="2026-10-16",to="2026-10-17";
+  let page2Attempt=0;
+  mocked.request.mockImplementation(async(path:string)=>{
+   if(path.includes("businessDate=20261016")){
+    if(path.includes("page=1"))
+     return Array.from({length:100},(_,i)=>record(i+1,from));
+    if(page2Attempt++===0)
+     throw new ToastApiError("rate_limited",429,"2026-10-18T00:00:00Z");
+    return [record(101,from)];
+   }
+   return [record(201,to)];
+  });
+  const progress=()=>deriveNextRunDay({requested_from:from,requested_to:to,days_done:f.run.daysDone});
+  expect(progress()).toBe(from);
+  await expect(importToastBusinessDay(f.db,params(progress()!)))
+   .rejects.toMatchObject({category:"rate_limited"});
+  expect(f.run).toMatchObject({state:"paused_rate_limited",daysDone:0,
+   cursor:{business_date:from,page:2}});
+  expect(progress()).toBe(from);
+  await importToastBusinessDay(f.db,params(progress()!));
+  expect(f.run).toMatchObject({state:"running",daysDone:1,cursor:{}});
+  expect(mocked.request.mock.calls.filter(c=>String(c[0]).includes("businessDate=20261016")&&
+   String(c[0]).includes("page=1"))).toHaveLength(1);
+  expect(progress()).toBe(to);
+  await importToastBusinessDay(f.db,params(progress()!));
+  expect(f.imports).toHaveLength(2);
+  expect(f.run).toMatchObject({state:"completed",daysDone:2});
+  expect(progress()).toBeNull();
+ });
+});
