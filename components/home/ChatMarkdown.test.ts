@@ -211,7 +211,7 @@ describe("readable provenance in both appearance modes",()=>{
       sources:["owner","estimate","unchecked"],
       labels:{owner:"You told me",estimate:"Estimate",unchecked:"Not checked against your records"},
     }));
-    expect(html).toContain("text-[17px]");
+    expect(html).toContain("text-[14px]");
     expect(html).toContain("leading-relaxed");
     expect(html).not.toContain("text-xs");
   });
