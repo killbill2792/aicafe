@@ -57,7 +57,10 @@ export function acceptedExplainLines(lines:readonly ExplainLine[],evidence:reado
      const previous=start>0?reply[start-1]:"";
      const following=reply[start+token.length]??"";
      // Reject a suffix inside 156,000 or a prefix inside 56,000,000.
-     const boundary=!/[\\p{N}.,٬٫]/u.test(previous)&&!/[\\p{N}.,٬٫]/u.test(following);
+     const isDigit=(value:string)=>/[\p{N}]/u.test(value);
+     const prevGrouping=/[.,٬٫]/u.test(previous)&&isDigit(reply[start-2]??"");
+     const nextGrouping=/[.,٬٫]/u.test(following)&&isDigit(reply[start+token.length+1]??"");
+     const boundary=!isDigit(previous)&&!isDigit(following)&&!prevGrouping&&!nextGrouping;
      if(boundary&&!unverified.some(span=>
        span.start<start+token.length&&span.end>start))return true;
      from=start+token.length;
