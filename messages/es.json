@@ -909,7 +909,9 @@
     "rentMissing": "Falta el alquiler",
     "monthlyAmount": "{amount} al mes",
     "monthlyAmountEstimated": "{amount} al mes (incluye estimaciones)",
-    "toastDaysLook": "{count} días por revisar"
+    "toastDaysLook": "{count} días por revisar",
+    "notConnected": "Conecta tu caja",
+    "connectedSince": "Conectado · sincronizado {time}"
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
