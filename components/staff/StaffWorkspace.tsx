@@ -19,6 +19,7 @@ import {addPerson,updatePerson,setPersonActive} from "@/lib/actions/teamWorkspac
 import {upsertShift,removeShift,restoreShift,copyWeek,sendSchedule} from "@/lib/actions/schedule";
 type Data=Extract<Awaited<ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>>,{ok:true}>["data"];
 const fmt=(c:number|null,currency:string,locale?:string)=>c==null?"—":new Intl.NumberFormat(locale,{style:"currency",currency}).format(c/100);
+const wageEdit=(c:number,locale:string)=>new Intl.NumberFormat(locale,{useGrouping:false,minimumFractionDigits:2,maximumFractionDigits:2}).format(c/100);
 const hours=(n:number)=>Number((n/60).toFixed(1));
 type Alert={id:string;employee_id:string;rule_key:string;message:string;created_at:string};
 export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null,teamExtras=null}:{
@@ -28,8 +29,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const wageSummary=(value:{knownCostCents:number;unknownCount:number})=>{
   const status=costCompleteness(value);
   return status==="unknown"?t("unknownWages"):
-   status==="partial"?t("partialWages",{known:fmt(value.knownCostCents,data.currency),count:value.unknownCount}):
-   fmt(value.knownCostCents,data.currency);
+   status==="partial"?t("partialWages",{known:fmt(value.knownCostCents,data.currency,locale),count:value.unknownCount}):
+   fmt(value.knownCostCents,data.currency,locale);
  };
  const roleLabel=(v:string)=>({Barista:t("roleBarista"),Manager:t("roleManager"),Baker:t("roleBaker"),Cashier:t("roleCashier")}[v]??v);
  const [version,setVersion]=useState({initial,local:initial});
@@ -54,7 +55,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  [availability,setAvailability]=useState<{day:number;start:string|null;end:string|null}[]>([]),
  [availabilityDirty,setAvailabilityDirty]=useState(false);
  const invalidAvailability=!isValidTeamAvailability(availability);
- const personInvalid=invalidWage||invalidMin||invalidMax||invalidRange||invalidAvailability;
+ const personInvalid=(!salaryPeriod&&invalidWage)||invalidMin||invalidMax||invalidRange||invalidAvailability;
  const [undo,setUndo]=useState<{id:string;type:"person"|"shift";message:string}|null>(null);
  useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),6000);return ()=>clearTimeout(timer);},[undo]);
  const allDays=()=>Array.from({length:7},(_,day)=>({day,start:null,end:null}));
@@ -66,7 +67,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const openPerson=(person?:Data["team"][number])=>{
   setAvailabilityDirty(false);setConsentError(false);setConfirmRemoval(false);
   setPersonEditing(person?.id??null);setName(person?.name??"");setRole(person?.role??"Barista");
-  setWageInput(person?.wageCents==null?"":String(Math.floor(person.wageCents/100))+"."+String(person.wageCents%100).padStart(2,"0"));setSalaryPeriod(person?.wagePeriod&&person.wagePeriod!=="hour"?person.wagePeriod:null);
+  setWageInput(person?.wageCents==null?"":wageEdit(person.wageCents,locale));setSalaryPeriod(person?.wagePeriod&&person.wagePeriod!=="hour"?person.wagePeriod:null);
   setPhone(person?.phone??"");setWhatsAppOptIn(person?.whatsappOptIn??false);
    setMinHoursInput(weeklyHoursInput(person?.minWeeklyMinutes??null,locale));setMaxHoursInput(weeklyHoursInput(person?.maxWeeklyMinutes??null,locale));
   if(person){
@@ -243,8 +244,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      {data.team.map(p=><div key={p.id} className="flex min-h-16 items-center gap-3 border-t border-line py-3">
       <span className="grid size-12 place-items-center rounded-full bg-accent-soft font-bold">{p.name[0]}</span>
       <div className="min-w-0 flex-1"><b>{p.name}</b><span className="ms-2 text-sm text-muted">{p.role?roleLabel(p.role):t("team")}</span>
-        <div className="text-sm text-muted">{p.wageCents==null?<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>:fmt(p.wageCents,data.currency,locale)+"/h"}</div><div className="text-sm text-muted">{teamSummary(p)}</div></div>
-      <div className="text-end">{hours(personTotals(p.id,data.shifts).paidMinutes)} h</div>
+        <div className="text-[17px] text-muted">{p.wageCents==null?(p.wagePeriod!=="hour"?t("salaryManagedBadge"):<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>):t("wagePerHour",{amount:fmt(p.wageCents,data.currency,locale)})}</div><div className="text-[17px] text-muted">{teamSummary(p)}</div></div>
+      <div className="text-end">{t("teamHoursShort",{hours:new Intl.NumberFormat(locale,{maximumFractionDigits:1}).format(hours(personTotals(p.id,data.shifts).paidMinutes))})}</div>
       <button disabled={data.readOnly} onClick={()=>openPerson(p)} className="min-h-12 px-2">{t("edit")}</button>
      </div>)}
      <div className="border-t border-line pt-3 font-bold">{t("total")} {wageSummary(data.total)} {data.total.estimated?" · "+t("estimate"):""}</div>
@@ -282,17 +283,19 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
          </div>
          {row&&<div className="mt-2 flex flex-wrap gap-2">{(["morning","afternoon","allDay"] as const).map(chip=><button type="button" key={chip}
           onClick={()=>mutateAvailability(day,chip==="allDay"?{start:null,end:null}:chip==="morning"?{start:"06:00",end:"12:00"}:{start:"12:00",end:"18:00"})}
-          className="min-h-12 rounded-full border border-line px-3 text-sm">{t(chip)}</button>)}</div>}
+          aria-pressed={chip==="allDay"?row.start===null&&row.end===null:chip==="morning"?row.start==="06:00"&&row.end==="12:00":row.start==="12:00"&&row.end==="18:00"}
+           className="min-h-12 rounded-full border border-line px-3 text-[17px]">{t(chip)}</button>)}</div>}
          {row&&<div className="mt-2 grid grid-cols-2 gap-2">{(["start","end"] as const).map(field=><label key={field} className="text-sm">
           {field==="start"?t("from"):t("until")}
           <input type="time" step={60} value={row[field]??""} onChange={e=>mutateAvailability(day,{...row,[field]:e.target.value||null})}
            aria-invalid={Boolean((row.start===null)!==(row.end===null)||row.start&&row.start===row.end)}
-           className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-2" dir="ltr"/>
+           aria-describedby={invalidAvailability?"staff-availability-error":undefined}
+            className={`mt-1 min-h-12 w-full rounded-xl border bg-surface px-2 ${invalidAvailability?"border-neg":"border-line"}`} dir="ltr"/>
          </label>)}</div>}
         </div>;
        })}
       </div>
-      {invalidAvailability&&<p role="alert" className="mt-2 text-sm text-neg">{t("invalidAvailability")}</p>}
+      {invalidAvailability&&<p id="staff-availability-error" role="alert" className="mt-2 text-[17px] text-neg">{t("invalidAvailability")}</p>}
       {([[t("minimumWeek"),minHoursInput,setMinHoursInput,invalidMin],[t("maximumWeek"),maxHoursInput,setMaxHoursInput,invalidMax||invalidRange]] as const).map(([label,value,set,invalid])=>
        <div key={label} className="mt-3"><label className="font-semibold">{label} ({t("optionalShort")})
         <input inputMode="decimal" dir="ltr" value={value} onChange={e=>set(e.target.value)} aria-invalid={invalid}
