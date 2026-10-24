@@ -1,3 +1,4 @@
+import {verifyBearer} from "@/lib/security/bearer";
 import {NextResponse} from "next/server";
 import {z} from "zod";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
@@ -13,7 +14,7 @@ export async function POST(request:Request) {
  });
  if(process.env.TOAST_POLLING_ENABLED!=="true")return respond(503,{error:"disabled"});
  const secret=process.env.TOAST_JOB_SECRET;
- if(!secret||request.headers.get("authorization")!=="Bearer "+secret)
+ if(!verifyBearer(request,secret))
    return respond(401,{error:"unauthorized"});
  if(request.headers.get("content-type")?.split(";")[0]!=="application/json")
    return respond(415,{error:"invalid_request"});

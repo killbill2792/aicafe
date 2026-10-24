@@ -29,6 +29,7 @@ export async function readPeriodItemSales(
     .select("id, orders!inner(business_id,business_date)",{count:"exact",head:true})
     .is("menu_item_id",null).eq("voided",false)
     .eq("orders.business_id",businessId)
+    .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
     .gte("orders.business_date",period.from)
     .lte("orders.business_date",period.to);
   if(unlinkedError||count===null||count===undefined||count>0)return unknown();
