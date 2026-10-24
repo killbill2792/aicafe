@@ -43,6 +43,10 @@ describe("owner connection status",()=>{
   ["sync_failed","needsAttention"],["stale","needsAttention"],["disconnected","notConnected"],["unknown","needsAttention"]])("maps %s to %s",(state,expected)=>{
   expect(toastStatus(state)).toBe(expected);
  });
+ it("flags even verified credentials when a data sync has failed",()=>{
+  expect(toastStatus("verified",true)).toBe("needsAttention");
+  expect(toastStatus("verified",false)).toBe("connected");
+ });
  it("uses the newest successful fetch",()=>{
   expect(latestToastSync([{last_order_fetch_at:"2026-10-11T00:00:00Z",
    last_time_entry_fetch_at:"2026-10-12T00:00:00Z",last_schedule_fetch_at:null,last_menu_fetch_at:null}]))

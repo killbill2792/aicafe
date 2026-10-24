@@ -32,13 +32,14 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
  const [secret,setSecret]=useState("");
  const [mapping,setMapping]=useState<Record<string,string>>({});
  const [connection,setConnection]=useState<State|null>(null);
+ const [loadFailed,setLoadFailed]=useState(false);
  const [pending,setPending]=useState(false);
  const [message,setMessage]=useState("");
  async function load(){
   const result=await fetch("/api/pos/toast?businessId="+encodeURIComponent(businessId),{cache:"no-store"});
   if(!result.ok)throw new Error("unavailable");
   const data=await result.json() as State;
-  setConnection(data);
+  setConnection(data);setLoadFailed(false);
   setApiUrl(data.apiOrigin&&approvedOrigins.includes(data.apiOrigin)?data.apiOrigin:defaultApiOrigin);
   setMapping(Object.fromEntries((data.locations??[]).map(m=>[m.location_id,m.restaurant_guid])));
  }
@@ -47,10 +48,10 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
   fetch("/api/pos/toast?businessId="+encodeURIComponent(businessId),{cache:"no-store"})
    .then(r=>r.ok?r.json():null).then((data:State|null)=>{
     if(cancelled||!data)return;
-    setConnection(data);
+    setConnection(data);setLoadFailed(false);
     setApiUrl(data.apiOrigin&&approvedOrigins.includes(data.apiOrigin)?data.apiOrigin:defaultApiOrigin);
     setMapping(Object.fromEntries((data.locations??[]).map(m=>[m.location_id,m.restaurant_guid])));
-   }).catch(()=>{if(!cancelled)setMessage(labels.errorUnavailable);});
+   }).catch(()=>{if(!cancelled){setLoadFailed(true);setMessage(labels.errorUnavailable);}});
   return ()=>{cancelled=true;};
  },[businessId,approvedOrigins,defaultApiOrigin,labels.errorUnavailable]);
  const errors:Record<string,string>={
@@ -59,7 +60,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
   rate_limited:labels.errorRateLimited,unavailable:labels.errorUnavailable,
   invalid_response:labels.errorInvalidResponse
  };
- const status=toastStatus(connection?.state);
+ const status=toastStatus(connection?.state,Boolean(connection?.syncLocations?.some(row=>row.last_failure_category)));
  const lastSync=latestToastSync(connection?.syncLocations);
  function time(value:string){
   return new Date(value).toLocaleString(locale);
@@ -75,7 +76,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
     const outcome=await saveThenVerifyToastConnection({
      businessId,apiUrl,clientId,clientSecret:secret,locations:rows
     });
-    if(outcome.saved)setSecret("");
+    if(outcome.saved){setSecret("");window.dispatchEvent(new Event("toast-connection-changed"));}
     await load();
     const reason=errors[outcome.error??""]??labels.errorUnavailable;
     setMessage(outcome.verified?labels.verified:
@@ -93,6 +94,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
     setMessage(labels.error+": "+(errors[result.error??""]??labels.errorUnavailable));
     await load();return;
    }
+   window.dispatchEvent(new Event("toast-connection-changed"));
    await load();
    setMessage(action==="test"&&result.state==="verified"?labels.verified:labels.success);
   }catch{setMessage(labels.errorUnavailable);}
@@ -102,7 +104,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
   <p className="text-base text-ink-muted">{labels.instructions}</p>
   <div className="flex flex-wrap items-center justify-between gap-3">
    <p role="status" className="text-base font-semibold text-ink">
-    {status==="notConnected"?labels.notConnected:
+    {loadFailed?labels.needsAttention:!connection?labels.pending:status==="notConnected"?labels.notConnected:
      status==="connected"?labels.connectedLastSync.replace("{time}",lastSync?time(lastSync):labels.noSyncYet):
       labels.needsAttention}
    </p>

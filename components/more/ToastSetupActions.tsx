@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useState} from "react";
+import {useEffect,useRef,useState} from "react";
 import {useLocale} from "next-intl";
 import {loadToastOwnerSetupState,type ToastOwnerSetupStatus,type ToastWebhookSubscription}
  from "./toastSetupState";
@@ -7,7 +7,7 @@ import ToastOperationalReview, {type ToastReviewLabels} from "./ToastOperational
 type Labels={
  webhookSetup:string;createWebhook:string;webhookUrl:string;webhookSecret:string;
  saveWebhookSecret:string;webhookInactive:string;syncPreferences:string;syncKind:string;
- everyMinutes:string;technicalDetails:string;daysMissing:string;syncAgain:string;noMissingDays:string;syncUnavailable:string;dayStaged:string;enablePolling:string;disablePolling:string;pendingActivation:string;
+ everyMinutes:string;kindLabels:Record<"orders"|"attendance"|"schedules"|"catalog"|"roster",string>;technicalDetails:string;daysMissing:string;syncAgain:string;noMissingDays:string;syncUnavailable:string;dayStaged:string;enablePolling:string;disablePolling:string;pendingActivation:string;
  corrections:string;recovery:string;pending:string;error:string;success:string
 };
 export default function ToastSetupActions({businessId,restaurantGuids,enabled,pilotEnabled,labels,reviewLabels}:{
@@ -25,15 +25,19 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
 
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
  const [dayPending,setDayPending]=useState<string|null>(null);
+ const requestVersion=useRef(0);
  async function reload(){
+  const version=++requestVersion.current;
   try{
    const snapshot=await loadToastOwnerSetupState(businessId);
+   if(version!==requestVersion.current)return false;
    setVerifiedRestaurants(snapshot.restaurantGuids);
    setSubscriptions(snapshot.subscriptions);
    setLocationMappings(snapshot.locationMappings);
    setStatus(snapshot.status);
    return true;
   }catch{
+   if(version!==requestVersion.current)return false;
    // No old verification/disabled flag may survive a failed status refresh.
    setVerifiedRestaurants([]);setSubscriptions([]);setStatus(null);setLocationMappings([]);
    return false;
@@ -41,17 +45,20 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
  }
  useEffect(()=>{
   let cancelled=false;
+  const version=++requestVersion.current;
+  const onConnectionChange=()=>{void reload();};
+  window.addEventListener("toast-connection-changed",onConnectionChange);
   loadToastOwnerSetupState(businessId).then(snapshot=>{
-    if(cancelled)return;
+    if(cancelled||version!==requestVersion.current)return;
     setVerifiedRestaurants(snapshot.restaurantGuids);
     setSubscriptions(snapshot.subscriptions);
     setLocationMappings(snapshot.locationMappings);
     setStatus(snapshot.status);
   }).catch(()=>{
-    if(cancelled)return;
+    if(cancelled||version!==requestVersion.current)return;
     setVerifiedRestaurants([]);setSubscriptions([]);setStatus(null);setLocationMappings([]);
   });
-  return ()=>{cancelled=true;};
+  return ()=>{cancelled=true;window.removeEventListener("toast-connection-changed",onConnectionChange);};
  },[businessId]);
  async function post(url:string,payload:unknown){
   if(busy)return;
@@ -126,7 +133,7 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
   <label className="flex flex-col gap-1 text-sm">{labels.syncKind}
    <select value={kind} onChange={e=>setKind(e.target.value)}
     className="min-h-11 rounded-xl border border-line p-2">
-    {["orders","attendance","schedules","catalog","roster"].map(k=><option key={k} value={k}>{k}</option>)}
+    {(["orders","attendance","schedules","catalog","roster"] as const).map(k=><option key={k} value={k}>{labels.kindLabels[k]}</option>)}
    </select></label>
   {enabled&&selected&&<button type="button" disabled={busy}
    onClick={()=>void post("/api/pos/toast/sync-preferences",
@@ -149,7 +156,7 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
    </div>)}
    {gaps.map((g,i)=><div key={g.restaurant_guid+":"+g.kind+":"+i}
     className="rounded-xl border border-line p-3 text-base text-ink">
-    <p>{labels.recovery}: {g.missing_since?.slice(0,10)??"?"} – {g.missing_until?.slice(0,10)??"?"}</p>
+    <p>{labels.recovery}: {g.missing_since?localDay(g.missing_since.slice(0,10)):"?"} – {g.missing_until?localDay(g.missing_until.slice(0,10)):"?"}</p>
     <p className="text-sm text-ink-muted">{labels.syncUnavailable}</p>
    </div>)}
    {!missingDays.length&&!gaps.length&&<p className="text-base text-ink-muted">{labels.noMissingDays}</p>}

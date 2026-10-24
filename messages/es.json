@@ -83,7 +83,12 @@
     "syncAgain": "Sincronizar de nuevo",
     "noMissingDays": "No hay días pendientes de revisión",
     "syncUnavailable": "No se pudo iniciar la sincronización. Inténtalo durante una prueba autorizada.",
-    "dayStaged": "Se obtuvieron datos de Toast para revisarlos. Las cifras de ventas aún no están confirmadas."
+    "dayStaged": "Se obtuvieron datos de Toast para revisarlos. Las cifras de ventas aún no están confirmadas.",
+    "kindOrders": "Pedidos",
+    "kindAttendance": "Asistencia",
+    "kindSchedules": "Turnos",
+    "kindCatalog": "Menú",
+    "kindRoster": "Personal"
   },
   "LocaleLayout": {
     "title": "Café Profit"

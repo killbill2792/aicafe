@@ -28,9 +28,9 @@ export async function saveThenVerifyToastConnection(
 }
 
 /** One truthful owner-facing status regardless of backend diagnostic state. */
-export function toastStatus(state:string|null|undefined):"notConnected"|"connected"|"needsAttention" {
+export function toastStatus(state:string|null|undefined,hasSyncFailure=false):"notConnected"|"connected"|"needsAttention" {
  if(!state||state==="not_connected"||state==="disconnected")return "notConnected";
- return state==="verified"?"connected":"needsAttention";
+ return state==="verified"&&!hasSyncFailure?"connected":"needsAttention";
 }
 export function latestToastSync(locations:{
  last_order_fetch_at:string|null;last_time_entry_fetch_at:string|null;

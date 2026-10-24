@@ -92,6 +92,8 @@ export default async function ToastConnectionPage() {
           webhookUrl:t("webhookUrl"),webhookSecret:t("webhookSecret"),
           saveWebhookSecret:t("saveWebhookSecret"),webhookInactive:t("webhookInactive"),
           syncPreferences:t("syncPreferences"),syncKind:t("syncKind"),
+          kindLabels:{orders:t("kindOrders"),attendance:t("kindAttendance"),schedules:t("kindSchedules"),
+            catalog:t("kindCatalog"),roster:t("kindRoster")},
           everyMinutes:t("everyMinutes"),enablePolling:t("enablePolling"),
           disablePolling:t("disablePolling"),pendingActivation:t("pendingActivation"),
           corrections:t("corrections"),recovery:t("recovery"),
