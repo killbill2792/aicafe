@@ -5,7 +5,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {createToastClient,GUID,ToastApiError} from "./client";
 import {createToastAnalyticsClient} from "./analyticsClient";
 import {toastMoneyCents} from "./adapter";
-import {parseToastDayPage,type ToastParsedOrder} from "./dayParser";
+import {parseToastDayPage} from "./dayParser";
 type Location={businessId:string;restaurantGuid:string;locationId:string;
  timeZone:string;closeoutHour:number};
 type Status={import_state:string;recon_state:string;orders_snapshot_sha256:string|null;
@@ -31,7 +31,10 @@ async function pullDay(db:SupabaseClient,p:Location,day:string,deadlineAt:number
 export function internalOrderProof(rows:unknown[],p:Location,day:string,
  expectedChecksum:string|null,unparsed:number){
  const parsed=parseToastDayPage(rows,p.restaurantGuid,day,p.timeZone,p.closeoutHour);
- const orders=[...parsed.orders].sort((a,b)=>a.guid.localeCompare(b.guid));
+ const newest=new Map<string,(typeof parsed.orders)[number]>();
+ for(const o of parsed.orders){const older=newest.get(o.guid);
+  if(!older||older.modifiedDate<=o.modifiedDate)newest.set(o.guid,o);}
+ const orders=[...newest.values()].sort((a,b)=>a.guid.localeCompare(b.guid));
  const checksum=createHash("sha256").update(JSON.stringify(orders)).digest("hex");
  const reasons:string[]=[];
  if(parsed.unparsed.length||unparsed)reasons.push("unparsed_orders");
@@ -133,8 +136,8 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   .eq("location_id",p.locationId).eq("order_business_date",day);
  if(ve)throw new ToastApiError("unavailable");
  const distinct=new Set((voids??[]).map(r=>r.order_guid)).size;
- const amountGap=row.voidOrdersAmount==null?null:
-  toastMoneyCents(row.voidOrdersAmount)-sum((voids??[]).map(v=>Number(v.amount_cents??0)));
+ const amountGap=row.voidOrdersAmount==null||(voids??[]).some(v=>v.amount_cents==null)
+  ?null:toastMoneyCents(row.voidOrdersAmount)-sum((voids??[]).map(v=>Number(v.amount_cents)));
  const maxTolerance=Number(process.env.TOAST_RECON_TOLERANCE_CENTS??5);
  const tolerance=Number.isInteger(maxTolerance)&&maxTolerance>=0&&maxTolerance<=100?
   maxTolerance:5;
