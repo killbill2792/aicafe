@@ -1,0 +1,98 @@
+-- Executed only against disposable local Supabase after full migration replay.
+-- Fail the gate when install, least-privilege, or new-cafe enforcement disappears.
+do $admin_access_check$
+declare
+ function_count integer;
+begin
+ select count(*) into function_count from pg_proc p
+ join pg_namespace n on n.oid=p.pronamespace
+ where n.nspname='public' and p.proname in
+ ('initialize_new_cafe_access','redeem_free_access_code',
+  'admin_change_cafe_access','admin_code_redemption_counts',
+  'guard_ai_team_rule_cafe_access');
+ if function_count <> 5 then
+   raise exception 'expected five installed admin-access functions, got %',function_count;
+ end if;
+ if not exists (
+   select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid
+   join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public' and c.relname='businesses'
+     and t.tgname='initialize_cafe_access' and not t.tgisinternal
+ ) then raise exception 'new cafe access trigger missing'; end if;
+ if not exists (
+   select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid
+   join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public' and c.relname='ai_team_rules'
+     and t.tgname='ai_team_rules_cafe_access' and not t.tgisinternal
+ ) then raise exception 'direct memory rule access guard missing'; end if;
+ if position('new.timezone' in pg_get_functiondef('public.initialize_new_cafe_access()'::regprocedure))=0
+ then raise exception 'new cafe expiry must use cafe timezone'; end if;
+ if has_function_privilege('authenticated','public.redeem_free_access_code(uuid,text,uuid)','EXECUTE')
+ or has_function_privilege('authenticated','public.admin_change_cafe_access(uuid,text,date)','EXECUTE')
+ or has_table_privilege('authenticated','public.free_access_codes','SELECT')
+ or has_table_privilege('authenticated','public.cafe_access','UPDATE')
+ then raise exception 'authenticated access exceeded intended private grants'; end if;
+ if not has_function_privilege('service_role','public.redeem_free_access_code(uuid,text,uuid)','EXECUTE')
+ then raise exception 'service role cannot redeem codes'; end if;
+end $admin_access_check$;
+
+-- Exercise the INSERT trigger against real rows, not just its source text.
+-- Roll back all disposable cafés and their automatically generated access rows.
+begin;
+do $new_cafe_entitlement_check$
+declare
+  new_business uuid;
+  access_mode text;
+  expiry date;
+  zone text;
+  expected_date date;
+begin
+  foreach zone in array array['America/Los_Angeles','Pacific/Kiritimati','Asia/Dubai'] loop
+    new_business := gen_random_uuid();
+    insert into public.businesses(id,name,timezone,is_demo)
+      values(new_business,'Admin access migration smoke',zone,false);
+    select mode,access_end into access_mode,expiry
+      from public.cafe_access where business_id=new_business;
+    expected_date := (now() at time zone zone)::date - 1;
+    if access_mode is distinct from 'code' or expiry is distinct from expected_date then
+      raise exception 'new café in % must start expired: mode %, end %, expected %',
+        zone,access_mode,expiry,expected_date;
+    end if;
+  end loop;
+  -- Mirror the trusted demo reset override and prove it restores full access,
+  -- while the ordinary café paths above remain expired.
+  new_business := gen_random_uuid();
+  insert into public.businesses(id,name,timezone,is_demo)
+    values(new_business,'Disposable demo reseed','America/Los_Angeles',true);
+  insert into public.cafe_access(business_id,mode,code_id,access_end,updated_at)
+    values(new_business,'grandfathered',null,null,now())
+    on conflict (business_id) do update set
+      mode='grandfathered',code_id=null,access_end=null,updated_at=now();
+  select mode,access_end into access_mode,expiry
+    from public.cafe_access where business_id=new_business;
+  if access_mode is distinct from 'grandfathered' or expiry is not null then
+    raise exception 'trusted demo reseed did not restore unlimited access';
+  end if;
+end $new_cafe_entitlement_check$;
+rollback;
+
+-- Deleting an administrator must not be blocked by inert home-card suggestions.
+begin;
+do $admin_suggestion_delete_check$
+declare
+  test_admin uuid := gen_random_uuid();
+  linked_admin uuid;
+begin
+  insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
+  values(test_admin,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+         'suggestion-delete-'||replace(test_admin::text,'-','')||'@example.invalid','',now(),now());
+  insert into public.admin_home_card_suggestions(topic,requested_by)
+  values('inventory',test_admin)
+  on conflict (topic) do update set requested_by=excluded.requested_by;
+  delete from auth.users where id=test_admin;
+  select requested_by into linked_admin from public.admin_home_card_suggestions where topic='inventory';
+  if not found or linked_admin is not null then
+    raise exception 'inert admin suggestion prevented account deletion or kept requester';
+  end if;
+end $admin_suggestion_delete_check$;
+rollback;

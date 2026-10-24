@@ -283,3 +283,26 @@ describe("tool start labels and cross-turn numeric grounding",()=>{
     expect(hallucinated.unverified.map(v=>v.text)).toEqual(["$9.75"]);
   });
 });
+
+describe("admin audit does not change the chat result", () => {
+  it("keeps streaming and persisting an answer when audit callbacks throw", async () => {
+    const seen: string[] = [];
+    const result = await runAgentTurn({ownerText:"Hello",context,
+      provider:fixture([[text("Hello!"),completed]]),
+      onAuditStep: () => { throw new Error("audit unavailable"); },
+      onDelta: delta => seen.push(delta)});
+    expect(seen).toEqual(["Hello!"]);
+    expect(result.text).toBe("Hello!");
+    expect(result.endReason).toBe("complete");
+  });
+  it("reports ordered model/tool audit steps without raw tool arguments", async () => {
+    const steps: Array<{kind:string; inputSummary?:string; toolName?:string}> = [];
+    await runAgentTurn({ownerText:"Menu?",context,provider:fixture([
+      [call("get_menu_items",'{"query":"private-owner-value","limit":null}',"audit-call-1"),completed],
+      [text("Here is your menu."),completed],
+    ]),onAuditStep: step => steps.push(step)});
+    expect(steps.map(step=>step.kind)).toEqual(["model_call","tool_call","model_call"]);
+    expect(steps[1].toolName).toBe("get_menu_items");
+    expect(JSON.stringify(steps)).not.toContain("private-owner-value");
+  });
+});

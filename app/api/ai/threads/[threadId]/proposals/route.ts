@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import {authenticatedConversationContext} from "@/lib/ai/conversations/auth.server";
 import {conversationError,conversationJson,parseInput,readBoundedJson,requireSameOrigin}
@@ -89,6 +90,7 @@ export async function POST(request:Request,{params}:Params){
   try{
     requireSameOrigin(request);
     const scope=await context((await params).threadId);
+    await assertCafeAiAccess(scope.businessId);
     const input=parseInput(actions,await readBoundedJson(request));
     const repo=new SupabaseLoopRepository();
     let p:LoopProposal;

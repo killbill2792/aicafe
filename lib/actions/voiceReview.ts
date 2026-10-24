@@ -5,6 +5,8 @@ import { isAiConfigured } from "@/lib/ai/types";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import {requireOwnerAccessScope} from "@/lib/access/access.server";
+import {getTranslations} from "next-intl/server";
 import { parseVoiceExpense, type VoiceExpenseResult } from "@/lib/ai/prompts/voiceExpense";
 
 export type VoiceReviewResult = { ok: true; expense: VoiceExpenseResult } | { ok: false; error: string };
@@ -13,9 +15,16 @@ export type VoiceReviewResult = { ok: true; expense: VoiceExpenseResult } | { ok
 export async function reviewVoiceExpense(transcript: string): Promise<VoiceReviewResult> {
   // The /add-cost/voice page already gates on isAiConfigured() before this ever mounts — this
   // stays as a defensive fallback, never leaking anything about env vars or API keys to the owner.
-  if (!isAiConfigured()) return { ok: false, error: "Voice entry isn't available right now. Try again later, or type it in instead." };
-  if (!transcript.trim()) return { ok: false, error: "Didn't catch that — try again." };
+  if (!isAiConfigured()) return { ok: false, error: (await getTranslations("AddCost"))("voiceUnavailable") };
+  if (!transcript.trim()) return { ok: false, error: (await getTranslations("AddCost"))("voiceNoTranscript") };
 
+  let owner:Awaited<ReturnType<typeof requireOwnerAccessScope>>;
+  try{owner=await requireOwnerAccessScope();}
+  catch{return {ok:false,error:(await getTranslations("AddCost"))("voiceAuthRequired")};}
+  if(!owner.access.active){
+    const t=await getTranslations("FreeAccess");
+    return {ok:false,error:t("expired")};
+  }
   let today = new Date().toISOString().slice(0, 10);
   if (isSupabaseConfigured()) {
     const supabase = await createServerSupabaseClient();
@@ -32,8 +41,8 @@ export async function reviewVoiceExpense(transcript: string): Promise<VoiceRevie
   try {
     const expense = await parseVoiceExpense(transcript, today);
     return { ok: true, expense };
-  } catch (err) {
-    console.error("[reviewVoiceExpense] failed", err);
-    return { ok: false, error: "Couldn't understand that. Try again or type it in instead." };
+  } catch {
+    console.error("voice_review_failed");
+    return { ok: false, error: (await getTranslations("AddCost"))("voiceParseFailed") };
   }
 }

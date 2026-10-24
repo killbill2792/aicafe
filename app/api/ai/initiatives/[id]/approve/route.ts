@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {assertCafeAiAccess} from "@/lib/access/access.server";
 import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
 import { conversationError,conversationJson,parseInput,readBoundedJson,requireSameOrigin }
   from "@/lib/ai/conversations/http.server";
@@ -13,6 +14,7 @@ export async function POST(request:Request,context:Context) {
     const id=parseInput(z.uuid(),(await context.params).id);
     const {revision}=parseInput(bodySchema,await readBoundedJson(request));
     const {scope}=await authenticatedConversationContext();
+    await assertCafeAiAccess(scope.businessId);
     const updated=await activateOwnerInitiative(scope,id,revision);
     return updated?conversationJson({id,status:"active",revision:updated.revision}):
       conversationJson({error:"stale_or_unavailable"},409);

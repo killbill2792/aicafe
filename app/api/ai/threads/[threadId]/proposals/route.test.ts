@@ -5,7 +5,7 @@ const f=vi.hoisted(()=>({
   threadId:"33333333-3333-4333-8333-333333333333",
   id:"44444444-4444-4444-8444-444444444444",
   productId:"55555555-5555-4555-8555-555555555555",
-  revision:1,status:"draft",current:450,saves:0,ownerAllowed:true,
+  revision:1,status:"draft",current:450,saves:0,ownerAllowed:true,accessAllowed:true,
   created:0,createdPrice:0,commitStale:false,editInsertFails:false,editRace:false,
 }));
 const effect=()=>({productId:f.productId,productName:"Latte",oldPriceCents:450,
@@ -24,6 +24,14 @@ vi.mock("@/lib/ai/conversations/auth.server",()=>({
       return {id};
     }},
   }),
+}));
+vi.mock("@/lib/access/access.server",()=>({
+  assertCafeAiAccess:async()=>{
+    if(!f.accessAllowed){
+      const {ConversationApiError}=await import("@/lib/ai/conversations/auth.server");
+      throw new ConversationApiError(403,"access_expired");
+    }
+  },
 }));
 vi.mock("@/lib/ai/supervisor/loop/supabase.server",()=>({
   SupabaseLoopRepository:class{
@@ -88,9 +96,17 @@ const request=(action:string,revision=1,withOrigin=true)=>new Request(url,{
   method:"POST",headers:{"content-type":"application/json",...(withOrigin?{origin:"http://localhost:3000"}:{})},
   body:JSON.stringify({action,proposalId:f.id,revision}),
 });
-beforeEach(()=>{f.revision=1;f.status="draft";f.current=450;f.saves=0;f.ownerAllowed=true;f.created=0;f.createdPrice=0;
+beforeEach(()=>{f.revision=1;f.status="draft";f.current=450;f.saves=0;f.ownerAllowed=true;f.accessAllowed=true;f.created=0;f.createdPrice=0;
   f.commitStale=false;f.editInsertFails=false;f.editRace=false;});
 describe("owner-scoped price approval actions",()=>{
+  it("blocks approval of expired access before a price write",async()=>{
+    f.accessAllowed=false;
+    const response=await POST(request("approve"),params);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({error:"access_expired"});
+    expect(f.saves).toBe(0);
+    expect(f.status).toBe("draft");
+  });
   it("approves and commits in one authenticated request",async()=>{
     const response=await POST(request("approve"),params);
     expect(response.status).toBe(200);

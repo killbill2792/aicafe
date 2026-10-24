@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown, UsersRound, ArrowDown } from "lucide-react";
+import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown, UsersRound, ArrowDown } from "lucide-react";
 import { AgentAvatar, agentVisuals } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
 import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
@@ -46,6 +46,7 @@ export type SupervisorChatCopy = {
   needsYou: string; handled: string; watching: string;
   answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
+  feedbackUp: string; feedbackDown: string; feedbackSaved: string; feedbackError: string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
 type Locale = "en" | "es" | "ar";
@@ -154,6 +155,39 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
   </article>;
 }
 
+function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:SupervisorChatCopy}) {
+  const [rating,setRating]=useState<"up"|"down"|null>(null);
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState(false);
+  const [comment,setComment]=useState("");
+  async function send(value:"up"|"down") {
+    setSaving(true);setError(false);
+    try {
+      const response=await fetch("/api/ai/threads/"+encodeURIComponent(message.threadId)+"/feedback",{
+        method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",
+        body:JSON.stringify({messageId:message.id,rating:value,comment:comment.trim()||undefined})});
+      if(!response.ok)throw new Error("feedback_failed");
+      setRating(value);
+    }catch{setError(true);}finally{setSaving(false);}
+  }
+  return <div className="ps-1 text-[17px] leading-relaxed text-ink-muted">
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="button" onClick={()=>void send("up")} disabled={saving}
+        aria-pressed={rating==="up"} className="inline-flex min-h-12 items-center gap-2 rounded-lg border border-line px-3 text-[17px]">
+        <ThumbsUp size={18} aria-hidden="true"/><span>{copy.feedbackUp}</span>
+      </button>
+      <button type="button" onClick={()=>void send("down")} disabled={saving}
+        aria-pressed={rating==="down"} className="inline-flex min-h-12 items-center gap-2 rounded-lg border border-line px-3 text-[17px]">
+        <ThumbsDown size={18} aria-hidden="true"/><span>{copy.feedbackDown}</span>
+      </button>
+      {rating&&<span role="status">{copy.feedbackSaved}</span>}
+    </div>
+    {rating==="down"&&<textarea aria-label={copy.feedbackDown} value={comment} onChange={e=>setComment(e.target.value)}
+      maxLength={1000} rows={2} className="mt-2 min-h-12 w-full rounded-lg border border-line p-3 text-[17px]"/>}
+    {rating==="down"&&<button className="min-h-12 underline" onClick={()=>void send("down")} disabled={saving} type="button">{copy.feedbackSaved}</button>}
+    {error&&<p role="alert">{copy.feedbackError}</p>}
+  </div>;
+}
 function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
   return <div className="w-full space-y-4 text-start">
     <section aria-label={snapshot.title}>
@@ -189,9 +223,9 @@ function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
 }
 
 export default function SupervisorChatComposer({
-  enabled, locale, copy, snapshot, languageSwitch, onActivityChange, experimentCopy, initialThreadId, initialProposalId,
+  enabled, canUseAi=true, locale, copy, snapshot, languageSwitch, onActivityChange, experimentCopy, initialThreadId, initialProposalId,
 }: {
-  enabled: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
+  enabled: boolean; canUseAi?: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
   locale: Locale; copy: SupervisorChatCopy; snapshot?: SupervisorHomeSnapshot;
   experimentCopy?: ExperimentCopy;
   initialThreadId?:string;initialProposalId?:string;
@@ -423,7 +457,7 @@ export default function SupervisorChatComposer({
    * that same job; the server folds it into the answer or answers it right after. */
   async function sendFollowUp(text: string) {
     const id = threadId;
-    if (!id || !enabled || text.length > 4000) return;
+    if (!id || !enabled || !canUseAi || text.length > 4000) return;
     const clientMessageId = crypto.randomUUID();
     setDraft(""); setFailureCode(null);
     setQueuedOwner((queue) => [...queue, { id: "queued-" + clientMessageId, text, clientMessageId }]);
@@ -463,7 +497,7 @@ export default function SupervisorChatComposer({
     const text = value.trim();
     if (!existingKey && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
       !uploading && !recorder.current && dictation !== "recognizing") return sendFollowUp(text);
-    if (!enabled || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
+    if (!enabled || !canUseAi || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
     const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
     retryId.current = clientMessageId;
     if (!existingKey) {
@@ -650,7 +684,7 @@ export default function SupervisorChatComposer({
     try { active.stop(); } catch { cleanupRecording(); dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError); }
   }
   async function listen() {
-    if (!enabled || sending || uploading || dictation === "recognizing") return;
+    if (!enabled || !canUseAi || sending || uploading || dictation === "recognizing") return;
     if (recorder.current) { stopRecording(); return; }
     if (requestingMicrophone.current) return;
     if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
@@ -715,7 +749,7 @@ export default function SupervisorChatComposer({
   async function attach(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || !enabled || uploading || sending) return;
+    if (!file || !enabled || !canUseAi || uploading || sending) return;
     if (file.size > 2 * 1024 * 1024 || file.size === 0) { setMediaNotice(copy.attachmentUpload); return; }
     setUploading(true); setError(false);
     try {
@@ -766,7 +800,7 @@ export default function SupervisorChatComposer({
         className="inline-flex min-h-12 items-center gap-1 rounded-xl px-2 text-[14px] font-bold text-ink no-underline hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
         <UsersRound size={19} aria-hidden="true" /><span className="hidden sm:inline">{copy.teamButton}</span>
       </Link>
-      <button type="button" onClick={() => selectThread(null)} disabled={!enabled || sending}
+      <button type="button" onClick={() => selectThread(null)} disabled={!enabled || !canUseAi || sending}
         aria-label={copy.startNewChat} title={copy.startNewChat}
         className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <Plus size={22} aria-hidden="true" />
@@ -805,10 +839,10 @@ export default function SupervisorChatComposer({
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
       {displayedMessages.map((message) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
-        <SupervisorMessage message={message} copy={copy} locale={locale} disabled={sending||!enabled||
+        <SupervisorMessage message={message} copy={copy} locale={locale} disabled={sending||!enabled||!canUseAi||
           (message.role==="supervisor"&&message.id!==activeQuestionMessageId)}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{
-            if(sending||!enabled||origin.id!==activeQuestionMessageId)return;
+            if(sending||!enabled||!canUseAi||origin.id!==activeQuestionMessageId)return;
             const question=ownerQuestionSchema.safeParse((origin.blocks??[]).find(b=>
               typeof b==="object"&&b!==null&&"type" in b&&b.type==="owner_question"));
             if(!question.success)return;
@@ -830,11 +864,12 @@ export default function SupervisorChatComposer({
             if(!dismiss)void sendText(isOption&&question.data.input.kind==="options"?
               question.data.input.options.find(o=>o.id===value)?.label[locale]??value:value);
           }}/>
+        {message.role==="supervisor"&&<AnswerFeedback message={message} copy={copy}/>}
         {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-line bg-warn-soft p-3 text-[15px] text-ink" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
           <span className="flex-1">{shownFailure ? failureLine(shownFailure, liveCopy) : copy.answerFailed}</span>
           <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined)}
-            className="min-h-10 rounded-xl bg-accent px-3 font-bold text-on-accent">{copy.retryAnswer}</button>
+            disabled={!canUseAi} className="min-h-10 rounded-xl bg-accent px-3 font-bold text-on-accent disabled:opacity-50">{copy.retryAnswer}</button>
         </div>}
       </div>)}
       {queuedOwner.map((item) => <article key={item.id} className="ms-auto w-fit max-w-[80%] rounded-[22px] rounded-ee-md bg-accent-soft px-4 py-3 text-[17px] text-ink opacity-80 shadow-sm">
@@ -853,9 +888,9 @@ export default function SupervisorChatComposer({
       </div>
     </div>
     {showNewMessage && <button type="button" onClick={scrollToLatest} className="absolute bottom-28 left-1/2 z-10 inline-flex min-h-12 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
-    {enabled&&threadId&&experimentCopy&&<SupervisorExperiment threadId={threadId} locale={locale} copy={experimentCopy} initialProposalId={initialProposalId} refreshVersion={messages.length}/>}
+    {enabled&&threadId&&experimentCopy&&<SupervisorExperiment threadId={threadId} locale={locale} canUseAi={canUseAi} copy={experimentCopy} initialProposalId={initialProposalId} refreshVersion={messages.length}/>}
     <div className="mt-auto shrink-0 border-t border-line bg-surface2 px-2 py-2 md:px-4">
-      {displayedMessages.length === 0 && copy.suggestions.length > 0 && <div className="mb-2 flex max-w-full gap-2 overflow-x-auto pb-1" aria-label={copy.askAnything} >{copy.suggestions.slice(0,3).map(suggestion => <button key={suggestion} type="button" disabled={!enabled || sending} onClick={() => { setDraft(suggestion); retryId.current = null; composer.current?.focus(); }} className="inline-flex min-h-12 w-max shrink-0 items-center whitespace-nowrap rounded-full bg-accent-soft px-4 py-2 text-[15px] font-semibold text-accent-text hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{suggestion}</button>)}</div>}
+      {displayedMessages.length === 0 && copy.suggestions.length > 0 && <div className="mb-2 flex max-w-full gap-2 overflow-x-auto pb-1" aria-label={copy.askAnything} >{copy.suggestions.slice(0,3).map(suggestion => <button key={suggestion} type="button" disabled={!enabled || !canUseAi || sending} onClick={() => { setDraft(suggestion); retryId.current = null; composer.current?.focus(); }} className="inline-flex min-h-12 w-max shrink-0 items-center whitespace-nowrap rounded-full bg-accent-soft px-4 py-2 text-[15px] font-semibold text-accent-text hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{suggestion}</button>)}</div>}
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map((file) => <a key={file.id}
           href={"/api/ai/threads/" + encodeURIComponent(threadId ?? "") + "/attachments/" + encodeURIComponent(file.id)}
@@ -871,7 +906,7 @@ export default function SupervisorChatComposer({
           onChange={(event) => void attach(event)} />
         <button type="button" onClick={() => filePicker.current?.click()}
           aria-label={copy.addAttachment} title={copy.addAttachment}
-          disabled={!enabled || sending || uploading || dictation === "listening" || dictation === "recognizing"}
+          disabled={!enabled || !canUseAi || sending || uploading || dictation === "listening" || dictation === "recognizing"}
           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-ink-muted hover:bg-surface2 disabled:opacity-50">
           <Plus size={22} aria-hidden="true" />
         </button>
@@ -879,7 +914,7 @@ export default function SupervisorChatComposer({
           aria-label={dictation === "listening" ? copy.voiceStop : copy.voiceInput}
           title={dictation === "listening" ? copy.voiceStop : copy.voiceInput}
           aria-pressed={dictation === "listening"}
-          disabled={!enabled || sending || uploading || dictation === "recognizing"}
+          disabled={!enabled || !canUseAi || sending || uploading || dictation === "recognizing"}
           className={dictation === "listening"
             ? "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-600 text-white ring-2 ring-red-200 animate-pulse motion-reduce:animate-none"
             : "flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-good hover:bg-pos-soft disabled:opacity-40"}>
@@ -891,11 +926,11 @@ export default function SupervisorChatComposer({
         <textarea id="supervisor-home-composer" ref={composer}
           rows={1} maxLength={4000} value={draft}
           onChange={(event) => { setDraft(event.target.value); retryId.current = null; }}
-          onKeyDown={composerKey} disabled={!enabled || inputLocked}
+          onKeyDown={composerKey} disabled={!enabled || !canUseAi || inputLocked}
           placeholder={copy.askAnything}
           className="min-w-0 max-h-40 min-h-12 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-3 text-[17px] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
         <button type="submit" aria-label={copy.sendMessage}
-          disabled={!enabled || inputLocked || !draft.trim() || dictation === "listening" || dictation === "recognizing"}
+          disabled={!enabled || !canUseAi || inputLocked || !draft.trim() || dictation === "listening" || dictation === "recognizing"}
           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent shadow-sm hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
           <Send size={21} aria-hidden="true" />
         </button>

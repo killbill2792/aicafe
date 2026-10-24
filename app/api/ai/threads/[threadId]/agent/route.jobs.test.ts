@@ -6,7 +6,7 @@ const NEXT = "66666666-6666-4666-8666-666666666666";
 const job = (id: string, owner = "msg-1") => ({ id, threadId: THREAD, ownerMessageId: owner, status: "running", attempt: 1,
   errorCode: null, replyMessageId: null, progress: [], inbox: [], consumed: [], heartbeatAt: "", createdAt: "" });
 const fake = vi.hoisted(() => ({
-  mode: "started" as string, startFails: false, continuation: null as unknown,
+  mode: "started" as string, startFails: false, accessAllowed: true, continuation: null as unknown,
   finished: [] as Array<{ id: string; status: string; errorCode?: string }>,
   steps: [] as Array<{ tool: string }>, loopArgs: [] as Array<Record<string, unknown>>,
   followUps: [] as Array<{ id: string; text: string }>, kept: 0,
@@ -37,6 +37,14 @@ vi.mock("@/lib/ai/conversations/auth.server", () => ({
       listMessages: async () => ({ items: [], nextOffset: null }),
     },
   }),
+}));
+vi.mock("@/lib/access/access.server", () => ({
+  assertCafeAiAccess: async () => {
+    if (!fake.accessAllowed) {
+      const { ConversationApiError } = await import("@/lib/ai/conversations/auth.server");
+      throw new ConversationApiError(403, "access_expired");
+    }
+  },
 }));
 vi.mock("@/lib/ai/conversations/enabled.server", () => ({
   isSupervisorChatConfigured: () => true, getSupervisorChatReadiness: async () => ({ enabled: true, reason: null }) }));
@@ -72,13 +80,21 @@ const post = () => POST(new Request("http://localhost:3000/api/ai/threads/" + TH
 const events = (body: string) => [...body.matchAll(/event: (\w+)\ndata: (.*)\n\n/g)].map(m => ({ type: m[1], data: JSON.parse(m[2]) }));
 
 beforeEach(() => {
-  fake.mode = "started"; fake.startFails = false; fake.continuation = null; fake.finished = [];
+  fake.mode = "started"; fake.startFails = false; fake.accessAllowed = true; fake.continuation = null; fake.finished = [];
   fake.steps = []; fake.loopArgs = []; fake.followUps = []; fake.kept = 0;
   vi.spyOn(console, "info").mockImplementation(() => undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
 describe("agent route with CHAT_JOBS on", () => {
+  it("blocks expired access before starting a job", async () => {
+    fake.accessAllowed = false;
+    const response = await post();
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({error:"access_expired"});
+    expect(fake.kept).toBe(0);
+    expect(fake.loopArgs).toHaveLength(0);
+  });
   it("acknowledges first, streams progress, keeps the turn alive and finishes the job", async () => {
     const out = events(await (await post()).text());
     expect(out[0]).toEqual({ type: "ack", data: { jobId: JOB, mode: "started" } });

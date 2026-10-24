@@ -24,6 +24,7 @@ export async function categorizeLines(
   supabase: SupabaseClient,
   businessId: string,
   lines: StatementLineInput[],
+  allowAi=true,
 ): Promise<CategorizedLine[]> {
   const { data: vendorRules } = await supabase.from("vendor_rules").select("normalized_vendor, category_code").eq("business_id", businessId);
   const vendorRuleMap = new Map((vendorRules ?? []).map((r) => [r.normalized_vendor, r.category_code as ExpenseCategoryCode]));
@@ -46,7 +47,7 @@ export async function categorizeLines(
     needsAi.push(line);
   }
 
-  if (needsAi.length > 0 && isAiConfigured()) {
+  if (needsAi.length > 0 && allowAi && isAiConfigured()) {
     try {
       const knownVendors = [...vendorRuleMap.keys()];
       const aiResult = await categorizeStatementLines({ knownVendors, lines: needsAi });
@@ -54,8 +55,8 @@ export async function categorizeLines(
         const original = needsAi.find((l) => l.i === line.i);
         results.push({ i: line.i, category: line.category, vendor: line.vendor || original?.description || "", reason: line.reason, confidence: line.confidence, source: "ai" });
       }
-    } catch (err) {
-      console.error("[categorizeLines] AI categorization failed", err);
+    } catch {
+      console.error("statement_categorization_failed");
       for (const line of needsAi) {
         results.push({ i: line.i, category: "other", vendor: line.description, reason: "Could not categorize automatically", confidence: 0, source: "uncategorized" });
       }

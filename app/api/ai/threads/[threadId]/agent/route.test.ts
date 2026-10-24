@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
   reply: { id: "reply-1", grounding: { status: "verified" }, blocks: [{ type:"text",text:"Here is the answer." }] },
-  writes: 0, usageChecks: 0, quotaExhausted: false, ownerWrites: 0,
+  writes: 0, usageChecks: 0, quotaExhausted: false, accessAllowed: true, ownerWrites: 0,
   loopCalls: 0, stored: false, storageFails: false, usageFails: false,
   usageRecorded: [] as Array<{modelCalls:number; toolCalls:number}>,
   queued: [] as Array<{text:string;endReason:string;resetChars?:number;results?: Array<Record<string,unknown>>}>,
@@ -25,6 +25,14 @@ vi.mock("@/lib/ai/conversations/auth.server", () => ({
       listMessages: async () => ({ items: [], nextOffset:null }),
     },
   }),
+}));
+vi.mock("@/lib/access/access.server", () => ({
+  assertCafeAiAccess: async () => {
+    if (!fake.accessAllowed) {
+      const { ConversationApiError } = await import("@/lib/ai/conversations/auth.server");
+      throw new ConversationApiError(403, "access_expired");
+    }
+  },
 }));
 vi.mock("@/lib/ai/conversations/enabled.server", () => ({
   isSupervisorChatConfigured: () => true,
@@ -84,6 +92,23 @@ vi.mock("@/lib/ai/agent/persist.server", () => {
 import { POST } from "./route";
 
 describe("default authenticated streaming agent route", () => {
+  it("rejects expired access before writing or calling the model", async () => {
+    fake.accessAllowed = false;
+    fake.ownerWrites = 0; fake.loopCalls = 0; fake.writes = 0;
+    try {
+      const response = await POST(new Request(
+        "http://localhost:3000/api/ai/threads/11111111-1111-4111-8111-111111111111/agent", {
+          method:"POST",headers:{origin:"http://localhost:3000","content-type":"application/json"},
+          body:JSON.stringify({clientMessageId:"22222222-2222-4222-8222-222222222222",
+            text:"Sales?",locale:"en"}),
+        }), {params:Promise.resolve({threadId:"11111111-1111-4111-8111-111111111111"})});
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({error:"access_expired"});
+      expect(fake.ownerWrites).toBe(0);
+      expect(fake.loopCalls).toBe(0);
+      expect(fake.writes).toBe(0);
+    } finally { fake.accessAllowed = true; }
+  });
   it("streams a complete turn and emits done after successful persistence", async () => {
     fake.writes = 0; fake.usageChecks = 0; fake.quotaExhausted = false;
     fake.ownerWrites=0; fake.loopCalls=0; fake.stored=false; fake.queued=[];

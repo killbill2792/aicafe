@@ -27,6 +27,8 @@ import {
   StaffTeaserCard,
 } from "@/components/home/SectionCards";
 import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
+import {getCafeAccess} from "@/lib/access/access.server";
+import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { formatCents } from "@/lib/calc";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
@@ -84,6 +86,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const requestedLocale = await getLocale();
   const locale = requestedLocale === "es" || requestedLocale === "ar" ? requestedLocale : "en";
   const chatReadiness = await getSupervisorChatReadiness(Boolean(signedInUser));
+  const cafeAccess=signedInUser ? await getCafeAccess(await getActiveBusinessId(signedInUser.id)) : null;
   const { period: periodParam,thread:initialThread,experiment:initialExperiment } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
@@ -104,6 +107,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     getTranslations("SupervisorChat"),
     getTranslations("SupervisorExperiment"),
   ]);
+  const tAccess=await getTranslations("FreeAccess");
   const posStatus = await getPosConnectionStatus();
   const derivedTeam = buildOperationsTeamViewModel(snapshot, menu);
   const persistedTasks = await syncAndGetOperatingTasks([...derivedTeam.needsYou, ...derivedTeam.handled, ...derivedTeam.watching]);
@@ -189,6 +193,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {posStatus && posStatus.status !== "active" && <ReconnectBanner />}
 
       <div className="flex flex-col gap-4">
+        {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px] leading-relaxed">
+          {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
+          {" "}<Link className="inline-flex min-h-12 items-center underline" href="/pricing">{tAccess("haveCode")}</Link>
+        </p>}
         <SupervisorHomePanel
           initialThreadId={initialThread}
           initialProposalId={initialExperiment}
@@ -196,6 +204,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           locale={locale}
           languageSwitch={<LanguageSwitch href="/" compact />}
           chatEnabled={chatReadiness.enabled}
+          canUseAi={cafeAccess?.active ?? true}
           chatUnavailableReason={chatReadiness.reason}
           snapshot={{
             title: t("todaySnapshotTitle"),
@@ -235,6 +244,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             answerFailed: tChat("answerFailed"), retryAnswer: tChat("retryAnswer"),
             todaySummary: tChat("todaySummary"),
             unverified: tChat("unverified"),
+            feedbackUp: tChat("feedbackUp"), feedbackDown: tChat("feedbackDown"),
+            feedbackSaved: tChat("feedbackSaved"), feedbackError: tChat("feedbackError"),
             ownerInputDismiss:tChat("ownerInputDismiss"),
             ownerInputConfirm:tChat("ownerInputConfirm"),
             ownerInputOther:tChat("ownerInputOther"),

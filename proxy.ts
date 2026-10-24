@@ -1,12 +1,14 @@
 import createMiddleware from "next-intl/middleware";
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { routing } from "./i18n/routing";
 import { refreshSupabaseSession } from "./lib/supabase/middleware";
 
 const intlMiddleware = createMiddleware(routing);
 
 export default async function proxy(request: NextRequest) {
-  const response = intlMiddleware(request);
+  // Admin has its own English-only root layout; never locale-rewrite /admin.
+  const response = request.nextUrl.pathname.startsWith("/admin")
+    ? NextResponse.next() : intlMiddleware(request);
   return refreshSupabaseSession(request, response);
 }
 

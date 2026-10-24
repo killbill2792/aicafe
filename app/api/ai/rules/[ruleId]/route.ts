@@ -1,3 +1,4 @@
+import {requireOwnerAccessScope} from "@/lib/access/access.server";
 import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
 import { reviewRuleInput, ruleIdInput } from "@/lib/ai/policies/contracts";
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
@@ -26,6 +27,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     const { ruleId } = await context.params;
     const id = parseInput(ruleIdInput, ruleId);
     const input = parseInput(reviewRuleInput, await readBoundedJson(request));
+    const {access}=await requireOwnerAccessScope();
+    if(!access.active)return conversationJson({error:"access_expired"},403);
     const service = await authenticatedTeamRulesService();
     const rule = await service.reviewRule(id, input.expectedVersion, input.decision);
     return conversationJson({ rule });

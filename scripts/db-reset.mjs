@@ -89,6 +89,16 @@ async function reseedDemoBusiness(client) {
   await insertRows(client, "businesses",
     ["id", "name", "timezone", "currency", "payroll_tax_rate", "default_language", "opened_on", "is_demo"],
     [data.business]);
+  // Business INSERT triggers initialize a newly created café as expired. This
+  // trusted, destructive demo reseed must explicitly restore the shared demo's
+  // unlimited entitlement; never grant this to ordinary new cafés.
+  await client.query(
+    "insert into public.cafe_access (business_id, mode, code_id, access_end, updated_at) " +
+      "values ($1, 'grandfathered', null, null, now()) " +
+      "on conflict (business_id) do update set " +
+      "mode = 'grandfathered', code_id = null, access_end = null, updated_at = now()",
+    [DEMO_BUSINESS_ID],
+  );
   await insertRows(client, "locations",
     ["id", "business_id", "name", "pos_location_id", "open_hours"],
     [data.location]);

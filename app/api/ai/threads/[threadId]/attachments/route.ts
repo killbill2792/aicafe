@@ -1,3 +1,4 @@
+import { assertCafeAiAccess } from "@/lib/access/access.server";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
 import { threadIdInput } from "@/lib/ai/conversations/contracts";
@@ -34,6 +35,7 @@ export async function POST(request:Request,context:Context){
   const id=parseInput(threadIdInput,(await context.params).threadId);
   const {scope,service}=await authenticatedConversationContext();
   await service.getThread(id);
+  await assertCafeAiAccess(scope.businessId);
   const contentLength=Number(request.headers.get("content-length"));
   if(!Number.isFinite(contentLength)||contentLength<1||contentLength>MAX_BYTES+8192)
    throw new ConversationApiError(413,"attachment_too_large");

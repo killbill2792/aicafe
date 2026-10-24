@@ -1,3 +1,4 @@
+import { assertCafeAiAccess } from "@/lib/access/access.server";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { readSafeProviderError } from "@/lib/ai/conversations/diagnostics.server";
 import { conversationError, conversationJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
@@ -56,7 +57,8 @@ function providerCode(status:number,providerErrorCode?:string){
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
-    await authenticatedConversationContext();
+    const {scope}=await authenticatedConversationContext();
+    await assertCafeAiAccess(scope.businessId);
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new ConversationApiError(503, "transcription_unavailable");
     const model=(process.env.SUPERVISOR_TRANSCRIPTION_MODEL?.trim()||"gpt-transcribe").slice(0,80);

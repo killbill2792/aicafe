@@ -2,7 +2,7 @@ import {describe,it,expect,vi,beforeEach} from "vitest";
 const f=vi.hoisted(()=>({
  business:"11111111-1111-4111-8111-111111111111",owner:"22222222-2222-4222-8222-222222222222",
  thread:"33333333-3333-4333-8333-333333333333",id:"44444444-4444-4444-8444-444444444444",
- status:"draft",revision:1,saved:0,approved:0,cancelled:0,stale:false,deny:false,
+ status:"draft",revision:1,saved:0,approved:0,cancelled:0,stale:false,deny:false,accessAllowed:true,
  token:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 }));
 const effect={operation:"propose_rule_change",expectedToken:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -17,6 +17,14 @@ vi.mock("@/lib/ai/conversations/auth.server",()=>({
  ConversationApiError:class extends Error{constructor(public status:number,public code:string){super(code);}},
  authenticatedConversationContext:async()=>({scope:{businessId:f.business,ownerUserId:f.owner},
   service:{getThread:async()=>{if(f.deny)throw Error("forbidden");}}}),
+}));
+vi.mock("@/lib/access/access.server",()=>({
+ assertCafeAiAccess:async()=>{
+  if(!f.accessAllowed){
+   const {ConversationApiError}=await import("@/lib/ai/conversations/auth.server");
+   throw new ConversationApiError(403,"access_expired");
+  }
+ },
 }));
 vi.mock("@/lib/ai/supervisor/loop/staffProposals.server",()=>({
  isStaffCapabilityId:(id:string)=>id.startsWith("olivia.staff_"),
@@ -53,8 +61,16 @@ const params={params:Promise.resolve({threadId:f.thread})};
 const post=(action:string,revision=1)=>new Request(path,{method:"POST",
  headers:{"content-type":"application/json",origin:"http://localhost:3000"},
  body:JSON.stringify({action,proposalId:f.id,revision})});
-beforeEach(()=>{f.status="draft";f.revision=1;f.saved=0;f.approved=0;f.cancelled=0;f.stale=false;f.deny=false;f.token=effect.expectedToken;});
+beforeEach(()=>{f.status="draft";f.revision=1;f.saved=0;f.approved=0;f.cancelled=0;f.stale=false;f.deny=false;f.accessAllowed=true;f.token=effect.expectedToken;});
 describe("staff approval through shared Supervisor ledger",()=>{
+ it("rejects expired access before approving or writing any staff effect",async()=>{
+  f.accessAllowed=false;
+  const response=await POST(post("approve"),params);
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({error:"access_expired"});
+  expect(f.approved).toBe(0);expect(f.saved).toBe(0);
+  expect(f.status).toBe("draft");
+ });
  it("previews before/after without a write, then applies exactly once",async()=>{
   const preview=await GET(new Request(path+"?ids="+f.id),params);
   expect(preview.status).toBe(200);

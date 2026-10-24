@@ -24,6 +24,50 @@ export const SOURCE_SURFACES = {
     updateScheduleChannelPreference:{restricted:"Explicit owner-staff preferred channel change, never a model action"},
     updateScheduleWhatsAppConsent:{restricted:"Explicit owner-attested staff WhatsApp opt-in change, never a model action"},
   },
+  // Administrative observability and entitlement persistence is never a model
+  // fact source. Every export is an explicitly restricted server-only operation.
+  "lib/data/adminAudit.server.ts":{
+    redactAuditText:{restricted:"Pure allowlist-based telemetry masking; raw owner text is never persisted"},
+    estimatedTurnCost:{restricted:"Internal token-price estimate, not café financial evidence"},
+    scheduleTurnAudit:{restricted:"Private best-effort post-turn audit write; never model-readable"},
+  },
+  "lib/data/adminAnalytics.server.ts":{
+    getAdminCosts:{restricted:"Admin-only cross-café cost rollup, never exposed to an owner or model"},
+    getAdminPatterns:{restricted:"Admin-only topic-frequency analytics, not agent business evidence"},
+    getAdminProactive:{restricted:"Admin-only outbound and in-app operations summary, never model-visible"},
+  },
+  "lib/data/adminData.server.ts":{
+    listCafes:{restricted:"Admin-only cross-tenant list guarded by server authorization"},
+    getCafe:{restricted:"Admin-only café diagnostic detail, not a model business read"},
+    listConversations:{restricted:"Admin-only redacted turn telemetry, never owner-scope evidence"},
+    getConversation:{restricted:"Admin-only controlled diagnostic timeline, not model-readable"},
+  },
+  "lib/data/adminQuestionPatterns.server.ts":{
+    classifyPendingTurns:{restricted:"Internal deterministic topic classification job, never model evidence"},
+    supabaseClassifierStore:{restricted:"Service-role-only classifier storage connector, not public data"},
+  },
+  "lib/data/cafeAccess.server.ts":{
+    getCafeAccess:{restricted:"Private entitlement read for a selected business, not a metric"},
+    requireOwnerAccessScope:{restricted:"Owner membership and entitlement guard, no data exposure"},
+    assertCafeAiAccess:{restricted:"Server-side AI access enforcement, not a business metric"},
+    accessCodeHash:{restricted:"One-way code hashing and validation, no model access"},
+    redeemCafeFreeCode:{restricted:"Service-role atomic code redemption, not a model tool"},
+  },
+  "lib/data/adminCodeRedemptions.server.ts":{
+    getCodeRedemptionPage:{restricted:"Admin-only paginated code redemption details; not model-visible"},
+  },
+  "lib/data/adminCodes.server.ts":{
+    getAdminCodeConsole:{restricted:"Server-admin cross-tenant code ledger, never public"},
+    insertFreeAccessCode:{restricted:"Privileged new code write, not a model tool"},
+    toggleFreeAccessCode:{restricted:"Privileged code state change, not a model tool"},
+    changeCafeAccess:{restricted:"Admin-only row-locked override and extension, not a model tool"},
+  },
+  "lib/data/adminSuggestions.server.ts":{
+    createHomeCardSuggestion:{restricted:"Privileged suggestion-only write; never publishes cards"},
+  },
+  "lib/data/adminFeedback.server.ts":{
+    saveOwnerTurnFeedback:{restricted:"Owner-scoped private diagnostic rating write, no free text stored"},
+  },
   "lib/data/usageVariance.server.ts":{
     readUsageBusinessDate:{restricted:"Owner-scoped cafe timezone for stock and reporting date defaults"},
     readUsageVariance:{restricted:"Owner-bound expected/actual usage reconciliation, not a generic P1 source"},

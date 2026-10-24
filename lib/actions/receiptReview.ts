@@ -6,6 +6,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { isAiConfigured } from "@/lib/ai/types";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import {requireOwnerAccessScope} from "@/lib/access/access.server";
+import {getTranslations} from "next-intl/server";
 import { readReceipt, type ReceiptReadingResult } from "@/lib/ai/prompts/receiptReading";
 import { computeDedupeKey } from "@/lib/expenses/dedupeKey";
 import { matchKeywordCategory } from "@/lib/expenses/keywordRules";
@@ -27,10 +29,15 @@ export async function reviewReceiptPhoto(imageDataUrl: string): Promise<ReceiptR
   if (!isAiConfigured()) return { ok: false, error: "Reading receipts isn't available right now. Try again later, or type it in instead." };
 
   try {
+    const {access}=await requireOwnerAccessScope();
+    if(!access.active){
+      const t=await getTranslations("FreeAccess");
+      return {ok:false,error:t("expired")};
+    }
     const receipt = await readReceipt(imageDataUrl);
     return { ok: true, receipt, suggestedCategory: coerceCategory(receipt.vendor, receipt.suggested_category) };
-  } catch (err) {
-    console.error("[reviewReceiptPhoto] failed", err);
+  } catch {
+    console.error("receipt_review_failed");
     return { ok: false, error: "Couldn't read that receipt. Try again or type it in instead." };
   }
 }
