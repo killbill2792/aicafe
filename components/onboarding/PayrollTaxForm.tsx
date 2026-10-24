@@ -18,11 +18,10 @@ export default function PayrollTaxForm({
   const [percent, setPercent] = useState(new Intl.NumberFormat(locale,{useGrouping:false,maximumFractionDigits:4}).format(initialPercent));
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
-  const rate = employerCostPercentFromInput(percent);
-  const valid = rate !== null;
 
   function handleContinue() {
-    if (!valid) { setError(labels.invalid); return; }
+    const rate = employerCostPercentFromInput(percent);
+    if (rate === null) { setError(labels.invalid); return; }
     setError("");
     startTransition(async () => {
       try {
