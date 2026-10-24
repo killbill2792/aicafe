@@ -58,3 +58,16 @@ export function activeOwnerQuestionMessageId(messages:readonly ConversationMessa
   return last.blocks?.some(block=>typeof block==="object"&&block!==null&&
     "type" in block&&block.type==="owner_question")?last.id:null;
 }
+
+/** A clarify card can be answered only once, by the immediately following owner turn. */
+export function clarifyCardState(messages:readonly ConversationMessage[],index:number){
+  const message=messages[index];
+  const card=message?.blocks?.find(b=>b&&typeof b==="object"&&"type" in b&&b.type==="clarify");
+  if(!card||typeof card!=="object"||!("options" in card)||!Array.isArray(card.options))return {state:"hidden" as const,choice:null};
+  const next=messages.slice(index+1).find(m=>m.role==="owner");
+  if(next){
+    const label=card.options.find(o=>o&&typeof o==="object"&&"label" in o&&o.label===next.text);
+    return label?{state:"chosen" as const,choice:String(label.label)}:{state:"skipped" as const,choice:null};
+  }
+  return messages.at(-1)?.id===message.id?{state:"active" as const,choice:null}:{state:"skipped" as const,choice:null};
+}

@@ -1691,7 +1691,16 @@
     "feedbackUp": "إجابة مفيدة",
     "feedbackDown": "غير مفيدة",
     "feedbackSaved": "تم حفظ التقييم",
-    "feedbackError": "تعذر حفظ التقييم. حاول مرة أخرى."
+    "feedbackError": "تعذر حفظ التقييم. حاول مرة أخرى.",
+    "clarifyOther": "خيار آخر…",
+    "clarifySend": "إرسال",
+    "clarifyYouChose": "اخترت: {choice}",
+    "clarifySkipped": "تم التخطي",
+    "clarifyOtherPlaceholder": "اكتب إجابتك",
+    "howIGotThis": "كيف حسبت ذلك",
+    "explainYouToldMe": "أخبرتني",
+    "explainEstimate": "تقدير",
+    "explainSold": "تم بيعها"
   },
   "TeamRules": {
     "title": "قواعد الفريق والموافقات",

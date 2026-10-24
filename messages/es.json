@@ -1691,7 +1691,16 @@
     "feedbackUp": "Respuesta útil",
     "feedbackDown": "No fue útil",
     "feedbackSaved": "Opinión guardada",
-    "feedbackError": "No se pudo guardar. Inténtalo otra vez."
+    "feedbackError": "No se pudo guardar. Inténtalo otra vez.",
+    "clarifyOther": "Otra opción…",
+    "clarifySend": "Enviar",
+    "clarifyYouChose": "Elegiste: {choice}",
+    "clarifySkipped": "Omitido",
+    "clarifyOtherPlaceholder": "Escribe tu respuesta",
+    "howIGotThis": "Cómo lo calculé",
+    "explainYouToldMe": "Me dijiste",
+    "explainEstimate": "Estimación",
+    "explainSold": "vendidos"
   },
   "TeamRules": {
     "title": "Reglas y aprobaciones del equipo",

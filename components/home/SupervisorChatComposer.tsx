@@ -13,12 +13,14 @@ import { audioExtensionForMime, parseTranscriptionResponse, voiceMessageForError
 import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
-import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
+import { activeOwnerQuestionMessageId, clarifyCardState, beginOptimisticOwner, sendKey, visibleConversationMessages,
   hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
 import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
 import SupervisorProposalCard from "./SupervisorProposalCard";
 import MemoryCard from "./MemoryCard";
+import ClarifyCard from "./ClarifyCard";
+import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress from "./ChatJobProgress";
 import { useAgentJobWatcher } from "./useAgentJobWatcher";
 import { answeredOwnerMessageIds, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
@@ -46,6 +48,8 @@ export type SupervisorChatCopy = {
   needsYou: string; handled: string; watching: string;
   answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string; provenanceOwner:string;provenanceEstimate:string;provenanceUnchecked:string;provenanceBreakEven:string;provenanceSalesGap:string;provenanceLegend:string;provenanceOverhead:string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
+  clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;
+  howIGotThis:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
   feedbackUp: string; feedbackDown: string; feedbackSaved: string; feedbackError: string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
@@ -122,9 +126,11 @@ function isOwnerConfirmation(message:ConversationMessage){
   const state=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
   return state.success&&state.data.stage==="confirm";
 }
-function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }: {
+function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, clarifyState, clarifyChoice, disabled }: {
   message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale;
   disabled:boolean;
+  onClarify:(text:string)=>void;
+  clarifyState:"hidden"|"active"|"chosen"|"skipped";clarifyChoice:string|null;
   onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
 }) {
   if (message.role === "owner") return <article className="ms-auto w-fit max-w-[80%] rounded-[22px] rounded-ee-md bg-accent-soft px-4 py-3 text-[17px] text-ink shadow-sm">
@@ -151,6 +157,9 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
       {groups.map((group,i)=>{
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
+        const clarify=clarifyBlockSchema.safeParse(group.block);
+        if(clarify.success)return <ClarifyCard key={i} block={clarify.data} locale={locale} copy={copy}
+          state={clarifyState} choice={clarifyChoice} disabled={disabled} onSend={onClarify}/>;
         const candidate=ownerQuestionSchema.safeParse(group.block);
         if (candidate.success) return <ReplyBlock key={i} block={{type:"text",text:candidate.data.title[locale]}} copy={copy} locale={locale}/>;
         const originalIndex=originalReplyBlockIndex(originalBlocks,group.block);
@@ -848,8 +857,12 @@ export default function SupervisorChatComposer({
         className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold text-ink underline hover:bg-surface2">
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
-      {displayedMessages.map((message) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
-        <SupervisorMessage message={message} copy={copy} locale={locale} disabled={sending||!enabled||!canUseAi||
+      {displayedMessages.map((message,messageIndex) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
+        <SupervisorMessage message={message} copy={copy} locale={locale}
+          clarifyState={clarifyCardState(displayedMessages,messageIndex).state}
+          clarifyChoice={clarifyCardState(displayedMessages,messageIndex).choice}
+          onClarify={value=>{void sendText(value);}}
+          disabled={sending||!enabled||!canUseAi||
           (message.role==="supervisor"&&message.id!==activeQuestionMessageId)}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{
             if(sending||!enabled||!canUseAi||origin.id!==activeQuestionMessageId)return;

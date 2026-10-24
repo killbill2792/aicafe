@@ -1691,7 +1691,16 @@
     "feedbackUp": "Helpful answer",
     "feedbackDown": "Not helpful",
     "feedbackSaved": "Feedback saved",
-    "feedbackError": "Could not save feedback. Try again."
+    "feedbackError": "Could not save feedback. Try again.",
+    "clarifyOther": "Other…",
+    "clarifySend": "Send",
+    "clarifyYouChose": "You chose: {choice}",
+    "clarifySkipped": "Skipped",
+    "clarifyOtherPlaceholder": "Type your answer",
+    "howIGotThis": "How I got this",
+    "explainYouToldMe": "You told me",
+    "explainEstimate": "Estimate",
+    "explainSold": "sold"
   },
   "TeamRules": {
     "title": "Team rules & approvals",
