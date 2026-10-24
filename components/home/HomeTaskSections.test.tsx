@@ -19,6 +19,16 @@ describe("Home Needs your attention", () => {
     expect(html).not.toContain('href="/operations"');
   });
 
+  it("uses a normal browser navigation rather than a locale-prefixed app Link for Square OAuth", () => {
+    const html = renderToStaticMarkup(createElement(HomeTaskSections,{
+      title:"Needs your attention",empty:"None",seeAll:"See all",
+      items:[{id:"square-reconnect",title:"Register disconnected",actionLabel:"Reconnect",
+        href:"/api/pos/square/connect?locale=ar",impactCents:null}],
+    }));
+    expect(html).toContain('href="/api/pos/square/connect?locale=ar"');
+    expect(html).toContain(">Reconnect</a>");
+  });
+
   it("shows at most five one-action rows and sends overflow to Operations", () => {
     const items = Array.from({ length: 7 }, (_, index) => ({
       id: String(index), title: "Issue " + index, actionLabel: "Fix",
