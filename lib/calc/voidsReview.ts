@@ -5,6 +5,8 @@
  * Until a future verified importer can supply it, known-positive values are
  * observations only, never evidence of a complete monthly total.
  */
+import { voidsAlert } from "./alerts";
+
 export type VoidsRollup = {
   business_date: string;
   voids_cents: number;
@@ -70,4 +72,11 @@ export function summarizeVoidsRollups(rows: VoidsRollup[], monthKey: string, thr
       : Math.round((prior as number[]).reduce((sum, total) => sum + total, 0) / 3),
     days,
   };
+}
+
+/** The spike rule must not run when either period lacks independently verified void amounts. */
+export function isUnusualVoids(summary: VoidsSummary): boolean {
+  return summary.thisMonthCents !== null &&
+    summary.previousThreeMonthAverageCents !== null &&
+    voidsAlert(summary.thisMonthCents, summary.previousThreeMonthAverageCents);
 }
