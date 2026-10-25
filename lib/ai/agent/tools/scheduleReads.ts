@@ -128,6 +128,8 @@ export const scheduleReadTools={
    }
    const guard=ownerChoiceGuard(ctx.resolveState,p.employee_id);
    if(guard)return {source:"shift_cost",period:null,agentId:"olivia",...guard};
+   if(person&&!ownerNamedTarget(ctx.resolveState,p.employee_id,person.name))
+     return fail("shift_cost",null,"targetNotConfirmed");
    const res=await getShiftCost({employeeId:p.employee_id,date:p.date,start:p.start,end:p.end,
     breakMinutes:p.break_minutes??undefined});
    if(!res.ok)return fail("shift_cost",null,res.error);
