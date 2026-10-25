@@ -12,12 +12,25 @@ describe("Olivia bounded reads",()=>{
   it("reads real on-shift projection shape",async()=>{
     const data=await staffTools.get_staff.execute({},ctx({getCurrentStaff:async()=>({
       available:true,value:{count:1,asOf:"2026-10-22T14:00:00Z",
-        people:[{name:"Ada",role:"Barista",sourceType:"owner_schedule",sourceProvider:null,
-          start:"2026-10-22T13:00:00Z",breakStatus:"ok",isSchedulePrediction:true}]},quality:q,
-    })}));
+        people:[{name:"Ada",role:"Barista",sourceType:"connected_pos",sourceProvider:"Toast",
+          start:"2026-10-22T13:00:00Z",breakStatus:"ok",isSchedulePrediction:false}]},quality:q,
+    }),
+    getStaffAttendance:async()=>({available:true,value:{timecardCount:1,onClockCount:1,attendanceTracked:true},quality:q})}));
     expect(data.count).toBe(1);
     expect(data.agentId).toBe("olivia");
     expect(data.people).toHaveLength(1);
+  });
+  it("never invents zero clock-ins for a café with only repeating patterns",async()=>{
+    const r=await staffTools.get_staff.execute({},ctx({
+      getCurrentStaff:async()=>({available:true,value:{count:0,asOf:"2026-10-22T14:00:00Z",people:[]},quality:q}),
+      getStaffAttendance:async()=>({available:true,value:{timecardCount:0,onClockCount:null,attendanceTracked:false},
+        quality:{...q,missingInputs:["attendanceNotTracked"]}}),
+    }));
+    expect(r.attendanceTracked).toBe(false);
+    expect(r.onClockCount).toBeNull();
+    expect(r.count).toBeNull();
+    expect(r.people).toEqual([]);
+    expect(r.missing).toContain("attendanceNotTracked");
   });
   it("does not reconstruct historical recurring schedules",async()=>{
     const r=await staffTools.get_schedule.execute({from:"2026-10-21",to:"2026-10-22"},ctx());
