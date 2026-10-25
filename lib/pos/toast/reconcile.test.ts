@@ -33,6 +33,7 @@ function fakeDb(analytics:boolean){
  const selection={or:[] as string[],is:[] as string[]};
  const calls:string[]=[];let certifiedVoids=false;
  const cacheRows:Record<string,unknown>[]=[];let job:Record<string,unknown>|null=null;
+ let matchedOrder:Record<string,unknown>|null=null,otherDay:Record<string,unknown>|null=null;
  const db={
   from(table:string){
    const filters:Record<string,unknown>={};
@@ -52,6 +53,9 @@ function fakeDb(analytics:boolean){
      if(table==="toast_analytics_credentials")
       return {data:analytics?{business_id:business,verified_at:"2026-10-17"}:null,error:null};
      if(table==="toast_analytics_jobs")return {data:job,error:null};
+     if(table==="orders")return {data:matchedOrder,error:null};
+     if(table==="toast_day_status"&&filters.business_date)
+      return {data:otherDay,error:null};
      return {data:null,error:null};
     },
     then(yes:(v:unknown)=>unknown,no?:((e:unknown)=>unknown)){
@@ -73,7 +77,9 @@ function fakeDb(analytics:boolean){
  return {db:db as unknown as SupabaseClient,
   item:item as ReturnType<typeof status>&{internal_state?:string;rechecking_reason:string|null},
   selection,writes,calls,cacheRows,get certifiedVoids(){return certifiedVoids;},
-  setJob(value:Record<string,unknown>){job=value;}};
+  setJob(value:Record<string,unknown>){job=value;},
+  setOrder(value:Record<string,unknown>|null){matchedOrder=value;},
+  setOtherDay(value:Record<string,unknown>|null){otherDay=value;}};
 }
 const orderWithAutoGratAndGiftCard=()=>[{
  guid:"11111111-1111-4111-8111-111111111111",
@@ -233,4 +239,47 @@ it("rejects non-array check payments without void certification",async()=>{
  await reconcileToastDays(f.db,p,Date.now()+20000);
  expect(f.item.recon_state).toBe("mismatch");
  expect(f.certifiedVoids).toBe(false);
+});
+
+describe("unmatched payment GUID must not certify omitted or stale orders",()=>{
+ const extra="ffffffff-ffff-4fff-8fff-ffffffffffff";
+ const orderId="11111111-1111-4111-8111-111111111111";
+ function prepare(excluded:boolean,orderDay:string,importState:"imported"|"missing"="imported"){
+  const f=fakeDb(false);
+  f.setOrder({id:"canonical-order",toast_excluded:excluded,business_date:orderDay});
+  f.setOtherDay({import_state:importState,rechecking_reason:null});
+  mocked.request.mockImplementation(async(path:string)=>{
+   if(path.includes("paidBusinessDate"))return [payment,extra];
+   if(path.includes("/payments/"+extra))return {
+    guid:extra,orderGuid:orderId,paidBusinessDate:20261016};
+   return orderWithAutoGratAndGiftCard();
+  });
+  return f;
+ }
+ it.each([
+  ["a same-day order",false,day],
+  ["a soft-excluded same-day order",true,day],
+  ["an excluded cross-day order",true,"2026-10-15"]
+ ] as const)("rejects extra payment attributed to %s",async(_name,excluded,date)=>{
+  const f=prepare(excluded,date);
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("mismatch");
+  expect(f.item.internal_state).toBe("mismatch");
+  expect(f.certifiedVoids).toBe(false);
+  expect(f.writes.some(w=>(w.internal_reasons as string[]|undefined)?.includes("unknown_payment_order")))
+   .toBe(true);
+ });
+ it("accepts an active imported cross-day order without requeueing",async()=>{
+  const f=prepare(false,"2026-10-15");
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("checked_internal");
+  expect(f.calls).not.toContain("toast_queue_backfill");
+ });
+ it("queues recovery rather than certifying an unimported cross-day order",async()=>{
+  const f=prepare(false,"2026-10-15","missing");
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("pending");
+  expect(f.calls).toContain("toast_queue_backfill");
+  expect(f.certifiedVoids).toBe(false);
+ });
 });
