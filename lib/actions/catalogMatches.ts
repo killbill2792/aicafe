@@ -138,7 +138,7 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
   }
 
   const { error: confirmError } = await supabase.from("pos_catalog_matches").update({ status: "confirmed" }).eq("id", match.id).eq("business_id", businessId).eq("status", "needs_review");
-  if (confirmError) { logQueryError("resolveCatalogMatch:confirm", confirmError); throw new Error("catalog_match_failed"); }
+  if (confirmError) { logQueryError("resolveCatalogMatch:confirm", confirmError); return finishMatch("error"); }
   await resolveUnmatchedAlertsIfClear(supabase, businessId);
 
   revalidatePath("/"); revalidatePath("/more/alerts");
@@ -168,7 +168,7 @@ export async function matchUploadedItem(matchId: string, formData: FormData): Pr
   if (!await backfillUploadedSales(supabase, businessId, match.imported_name, item.id)) return finishMatch("error");
   const {error: confirmed} = await supabase.from("pos_catalog_matches").update({status:"confirmed"})
     .eq("id",match.id).eq("business_id",businessId).eq("status","needs_review");
-  if (confirmed) { logQueryError("matchUploadedItem:confirm",confirmed); throw new Error("catalog_match_failed"); }
+  if (confirmed) { logQueryError("matchUploadedItem:confirm",confirmed); return finishMatch("error"); }
   await resolveUnmatchedAlertsIfClear(supabase, businessId);
   revalidatePath("/");
   revalidatePath("/more/alerts");

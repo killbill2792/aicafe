@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { redirect } from "next/navigation";
 import { addUploadedItemToMenu, matchUploadedItem } from "./catalogMatches";
 import { resolveUnmatchedAlertsIfClear } from "@/lib/data/resolveUnmatchedAlerts.server";
 
@@ -22,7 +23,7 @@ const BUSINESS = "11111111-1111-4111-8111-111111111111";
 const ITEM = "22222222-2222-4222-8222-222222222222";
 const MATCH = "33333333-3333-4333-8333-333333333333";
 
-function fakeDb(count: number, options?: { failLineBatch?: number; noExistingItem?: boolean }) {
+function fakeDb(count: number, options?: { failLineBatch?: number; noExistingItem?: boolean; failConfirm?: boolean }) {
   const orders = Array.from({ length: count }, (_, i) => ({
     id: `order-${String(i).padStart(5, "0")}`, business_id: BUSINESS, pos_order_id: `csv-${i}`,
   }));
@@ -97,8 +98,10 @@ function fakeDb(count: number, options?: { failLineBatch?: number; noExistingIte
           for (const group of groups) if (group.item_name === filters.item_name && group.menu_item_id === null)
             group.menu_item_id = patch.menu_item_id as string;
         }
-        if (table === "pos_catalog_matches" && filters.id === MATCH && match.status === filters.status)
+        if (table === "pos_catalog_matches" && filters.id === MATCH && match.status === filters.status) {
+          if (options?.failConfirm) return {error:{message:"temporary match confirmation failure"}};
           match.status = patch.status as string;
+        }
         return {error:null};
       }
       return q;
@@ -146,6 +149,15 @@ describe("CSV match backfill", () => {
     expect(fake.creates).toBe(1);
     expect(fake.match.status).toBe("confirmed");
     expect(fake.lines.every(line => line.menu_item_id === ITEM)).toBe(true);
+  });
+
+  it("shows a localized error and keeps a failed confirmation reviewable", async () => {
+    const fake = fakeDb(2, {failConfirm:true});
+    const form = new FormData();form.set("menuItemId",ITEM);
+    await matchUploadedItem(MATCH,form);
+    expect(fake.match.status).toBe("needs_review");
+    expect(resolveUnmatchedAlertsIfClear).not.toHaveBeenCalled();
+    expect(redirect).toHaveBeenCalledWith("/en/menu/import-review?result=error");
   });
 
   it("does not confirm an item from another café", async () => {
