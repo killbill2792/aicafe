@@ -1,9 +1,9 @@
 import {z} from "zod";
-import {getTeam,getWeekSchedule,getCoverageGaps,getShiftCost} from "@/lib/actions/schedule";
+import {getTeam,getWeekSchedule,getShiftCost} from "@/lib/actions/schedule";
 import {getTeamRules} from "@/lib/actions/teamRules";
 import {staffReadScope,mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
-import {uncheckedCoverageDays} from "@/lib/calc/scheduling/coverageGaps";
-import {missingWageInputs} from "@/lib/calc/scheduling/shiftCost";
+import {coverageGaps,uncheckedCoverageDays} from "@/lib/calc/scheduling/coverageGaps";
+import {missingWageInputs,aggregateCosts} from "@/lib/calc/scheduling/shiftCost";
 import type {AgentToolContext,AgentToolResult} from "./index";
 const week=z.strictObject({week_start:z.iso.date().nullable()});
 const none=z.strictObject({});
@@ -29,17 +29,19 @@ export const scheduleReadTools={
    const input=week.parse(raw),ws=await localWeek(input.week_start,ctx);
    const result=await getTeam({weekStart:ws});
    if(!result.ok)return fail("staff_week",null,result.error);
-   const people=result.data.team.slice(0,30),shifts=result.data.shifts.slice(0,30);
+   const people=result.data.team.slice(0,30),activeIds=new Set(result.data.team.map(p=>p.id));
+   const activeShifts=result.data.shifts.filter(s=>activeIds.has(s.employeeId));
+   const shifts=activeShifts.slice(0,30),totals=aggregateCosts(activeShifts);
    return {source:"employees+scheduled_shifts",period:{from:ws,to:new Date(Date.parse(ws+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
     agentId:"olivia",missing:[...(result.data.team.length>30?["morePeople"]:[]),
-     ...(result.data.shifts.length>30?["moreShifts"]:[]),
-     ...missingWageInputs(result.data.totals)],estimated:result.data.totals.estimated,
+     ...(activeShifts.length>30?["moreShifts"]:[]),
+     ...missingWageInputs(totals)],estimated:totals.estimated,
     people:people.map(p=>({id:p.id,name:p.name,role:p.role,minWeeklyMinutes:p.minWeeklyMinutes,
       maxWeeklyMinutes:p.maxWeeklyMinutes,hasKnownWage:p.wageCents!==null})),
     shifts:shifts.map(s=>({employeeId:s.employeeId,date:s.date,paidMinutes:s.paidMinutes,
       costCents:s.costCents,estimated:s.estimated})),
-    weeklyPaidMinutes:result.data.totals.paidMinutes,knownWagesCents:result.data.totals.knownCostCents,
-    missingWageCount:result.data.totals.unknownCount};
+    weeklyPaidMinutes:totals.paidMinutes,knownWagesCents:totals.knownCostCents,
+    missingWageCount:totals.unknownCount};
   }
  },
  get_week_schedule:{
@@ -49,17 +51,24 @@ export const scheduleReadTools={
    const p=week.parse(raw),ws=await localWeek(p.week_start,ctx);
    const result=await getWeekSchedule({weekStart:ws});
    if(!result.ok)return fail("scheduled_shifts",null,result.error);
-   const data=result.data;
+   const data=result.data,activeIds=new Set(data.team.map(p=>p.id));
+   const activeShifts=data.shifts.filter(s=>activeIds.has(s.employeeId));
+   const scheduled=activeShifts.length>0,totals=aggregateCosts(activeShifts);
+   const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
+   const gaps=scheduled?coverageGaps(data.dates,[...adjacent,...activeShifts],
+     data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
    return {source:"scheduled_shifts",period:{from:data.dates[0],to:data.dates[6]},
-     agentId:"olivia",missing:[...(data.shifts.length>40?["moreShifts"]:[]),
-       ...missingWageInputs(data.total),
+     agentId:"olivia",scheduleSet:scheduled,href:"/staff?tab=schedule",
+     missing:[...(!scheduled?["scheduleNotSet"]:[]),
+       ...(activeShifts.length>40?["moreShifts"]:[]),
+       ...(scheduled?missingWageInputs(totals):[]),
        ...(!data.rules.coverage_enabled?["coverageDisabled"]:
        uncheckedCoverageDays(data.dates,data.openHours,true).length?["openHoursIncomplete"]:[])],
-     estimated:data.total.estimated,estimatedShiftCount:data.total.estimateCount,
-     paidMinutes:data.total.paidMinutes,knownWagesCents:data.total.knownCostCents,
-     shifts:data.shifts.slice(0,40).map(s=>({id:s.id,date:s.date,employeeId:s.employeeId,
+     estimated:scheduled?totals.estimated:null,estimatedShiftCount:scheduled?totals.estimateCount:null,
+     paidMinutes:scheduled?totals.paidMinutes:null,knownWagesCents:scheduled?totals.knownCostCents:null,
+     shifts:activeShifts.slice(0,40).map(s=>({id:s.id,date:s.date,employeeId:s.employeeId,
        start:s.start,end:s.end,paidMinutes:s.paidMinutes,costCents:s.costCents,estimated:s.estimated})),
-     gaps:data.gaps.slice(0,15)};
+     gaps:gaps.slice(0,15)};
   }
  },
  get_labor_rules:{
@@ -80,13 +89,20 @@ export const scheduleReadTools={
   description:"Check understaffed time ranges against configured café open hours and required headcount. A missing open-hours setup is not zero gaps.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const p=week.parse(raw),ws=await localWeek(p.week_start,ctx);
-   const [gaps,whole]=await Promise.all([getCoverageGaps({weekStart:ws}),getWeekSchedule({weekStart:ws})]);
-   if(!gaps.ok)return fail("coverage_gaps",null,gaps.error);
+   const whole=await getWeekSchedule({weekStart:ws});
    if(!whole.ok)return fail("coverage_gaps",null,whole.error);
-   return {source:"scheduled_shifts+locations.open_hours",period:{from:ws,to:whole.data.dates[6]},
-    agentId:"olivia",missing:[...(!whole.data.rules.coverage_enabled?["coverageDisabled"]:
-      uncheckedCoverageDays(whole.data.dates,whole.data.openHours,true).length?["openHoursIncomplete"]:[]),
-      ...(gaps.data.gaps.length>30?["moreGaps"]:[])],estimated:false,gaps:gaps.data.gaps.slice(0,30)};
+   const data=whole.data,activeIds=new Set(data.team.map(p=>p.id));
+   const activeShifts=data.shifts.filter(s=>activeIds.has(s.employeeId));
+   const scheduled=activeShifts.length>0;
+   const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
+   const gaps=scheduled?coverageGaps(data.dates,[...adjacent,...activeShifts],
+     data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
+   return {source:"scheduled_shifts+locations.open_hours",period:{from:ws,to:data.dates[6]},
+    agentId:"olivia",scheduleSet:scheduled,href:"/staff?tab=schedule",
+    missing:[...(!scheduled?["scheduleNotSet"]:[]),
+      ...(!data.rules.coverage_enabled?["coverageDisabled"]:
+      uncheckedCoverageDays(data.dates,data.openHours,true).length?["openHoursIncomplete"]:[]),
+      ...(gaps.length>30?["moreGaps"]:[])],estimated:false,gaps:gaps.slice(0,30)};
   }
  },
  get_shift_cost:{
