@@ -31,7 +31,7 @@ function fakeDb(analytics:boolean){
  mocked.mode=analytics?"official":"internal";
  const item={...status(),rechecking_reason:null as string|null},writes:Record<string,unknown>[]=[];
  const selection={or:[] as string[],is:[] as string[]};
- const calls:string[]=[];
+ const calls:string[]=[];let certifiedVoids=false;
  const cacheRows:Record<string,unknown>[]=[];let job:Record<string,unknown>|null=null;
  const db={
   from(table:string){
@@ -62,11 +62,18 @@ function fakeDb(analytics:boolean){
     }
    };return q;
   },
-  async rpc(name:string){calls.push(name);return {data:true,error:null};}
+  async rpc(name:string){calls.push(name);
+   if(name==="toast_certify_day_voids"){
+    certifiedVoids=["matched","checked_internal"].includes(item.recon_state);
+    return {data:certifiedVoids,error:null};
+   }
+   return {data:true,error:null};
+  }
  };
  return {db:db as unknown as SupabaseClient,
   item:item as ReturnType<typeof status>&{internal_state?:string;rechecking_reason:string|null},
-  selection,writes,calls,cacheRows,setJob(value:Record<string,unknown>){job=value;}};
+  selection,writes,calls,cacheRows,get certifiedVoids(){return certifiedVoids;},
+  setJob(value:Record<string,unknown>){job=value;}};
 }
 const orderWithAutoGratAndGiftCard=()=>[{
  guid:"11111111-1111-4111-8111-111111111111",
@@ -119,7 +126,8 @@ describe("Toast reconciliation paths: ERA 202, matched, mismatch and internal",(
   await reconcileToastDays(f.db,p,Date.now()+20000);
   expect(f.item).toMatchObject({recon_state:"mismatch",delta_net_cents:1230});
   expect(f.item.internal_state).toBe("matched");
-  expect(f.calls).not.toContain("toast_certify_day_voids");
+  expect(f.calls.filter(name=>name==="toast_certify_day_voids")).toHaveLength(2);
+  expect(f.certifiedVoids).toBe(false);
  });
  it("keeps the successful internal check visible while ERA is pending",async()=>{
   const f=fakeDb(true);mocked.getDay.mockResolvedValue({pending:true});
@@ -217,12 +225,12 @@ it("rejects corrupt order checks instead of crashing or certifying",async()=>{
  mocked.request.mockImplementation(async(path:string)=>path.includes("paidBusinessDate")?[]:rows);
  await reconcileToastDays(f.db,p,Date.now()+20000);
  expect(f.item).toMatchObject({recon_state:"mismatch",last_error_category:null});
- expect(f.calls).not.toContain("toast_certify_day_voids");
+ expect(f.certifiedVoids).toBe(false);
 });
 it("rejects non-array check payments without void certification",async()=>{
  const f=fakeDb(false),rows=[{guid:"11111111-1111-4111-8111-111111111111",checks:[{payments:"broken"}]}];
  mocked.request.mockImplementation(async(path:string)=>path.includes("paidBusinessDate")?[]:rows);
  await reconcileToastDays(f.db,p,Date.now()+20000);
  expect(f.item.recon_state).toBe("mismatch");
- expect(f.calls).not.toContain("toast_certify_day_voids");
+ expect(f.certifiedVoids).toBe(false);
 });

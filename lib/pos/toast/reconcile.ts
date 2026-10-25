@@ -128,7 +128,9 @@ async function writeReconciliation(db:SupabaseClient,p:Location,day:string,
  }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("business_date",day).eq("import_state","imported");
  if(error)throw new ToastApiError("unavailable");
- if(patch.recon_state==="matched"||patch.recon_state==="checked_internal"){
+ // Re-evaluate void certification on both promotion and downgrade:
+ // ERA mismatches must revoke an earlier internal void certificate.
+ if(patch.recon_state){
   const {error:cert}=await db.rpc("toast_certify_day_voids",{
    p_business_id:p.businessId,p_date:day
   });
