@@ -16,7 +16,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       laborCents:1500000,laborPeriod:{days:31},rentCents:null,otherOverheadCents:null,
       overheadPeriod:null,unitCostCents:null,itemsSoldPerDay:null};
     const result=await executeAgentTool("get_profit",{period:"month",ownerInputs},ctx);
-    expect(result).toMatchObject({netSalesProvenance:"ownerProvided",
+    expect(result).toMatchObject({netSalesProvenance:null,
       netSalesCents:null,ownerReportedSalesCents:1100000,ownerProfitCents:null,totalCostsCents:null});
     expect(result.missing).toContain("costsUnverified");
     expect(result.missing).toContain("ownerSalesPeriodMismatch");
