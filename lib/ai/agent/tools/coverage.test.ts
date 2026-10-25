@@ -20,19 +20,19 @@ describe("latest covered sales window",()=>{
   delete (tools as {getSalesTrend?:unknown}).getSalesTrend;
   expect(await resolveCoveredSalesWindow({...ctx,tools} as AgentToolContext,
     {from:"2026-10-18",to:"2026-10-24"})).toEqual({
-      period:{from:"2026-10-18",to:"2026-10-24"},label:null});
+      period:{from:"2026-10-18",to:"2026-10-24"},label:null,coverageFallback:null});
  });
  it("falls back to actual imported coverage instead of declaring no data",async()=>{
   const dates=Array.from({length:14},(_,i)=>new Date(Date.UTC(2026,7,22+i)).toISOString().slice(0,10));
   expect(await resolveCoveredSalesWindow(context(dates),{from:"2026-10-01",to:"2026-10-24"})).toEqual({
-   period:{from:"2026-08-22",to:"2026-09-04"},label:"Latest data: Aug 22–Sep 4"});
+   period:{from:"2026-08-22",to:"2026-09-04"},label:"Latest data: Aug 22–Sep 4",coverageFallback:{requested:{from:"2026-10-01",to:"2026-10-24"},used:{from:"2026-08-22",to:"2026-09-04"}}});
  });
  it("keeps a currently covered period",async()=>{
   expect(await resolveCoveredSalesWindow(context(["2026-10-24"]),{from:"2026-10-01",to:"2026-10-24"})).toEqual({
-   period:{from:"2026-10-01",to:"2026-10-24"},label:null});
+   period:{from:"2026-10-01",to:"2026-10-24"},label:null,coverageFallback:null});
  });
  it("does not fabricate covered dates",async()=>{
   const requested={from:"2026-10-01",to:"2026-10-24"};
-  expect(await resolveCoveredSalesWindow(context([]),requested)).toEqual({period:requested,label:null});
+  expect(await resolveCoveredSalesWindow(context([]),requested)).toEqual({period:requested,label:null,coverageFallback:null});
  });
 });
