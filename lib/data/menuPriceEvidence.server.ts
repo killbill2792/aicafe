@@ -34,6 +34,7 @@ export async function readMenuPriceEvidence(businessId:string,
    const response=await db.from("order_lines")
      .select("id,menu_item_id,quantity,net_sales_cents,orders!inner(business_id,business_date)")
      .in("menu_item_id",ids).eq("orders.business_id",businessId)
+     .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
      .gte("orders.business_date",period.from).lte("orders.business_date",period.to)
      .eq("voided",false).order("id",{ascending:true})
      .range(page*PAGE,(page+1)*PAGE-1);
