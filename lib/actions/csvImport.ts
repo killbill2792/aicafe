@@ -486,8 +486,7 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
   if (unmatchedItems.length === 0) {
     // Finalizing an all-clear import must not leave an old match alert stuck open.
     // If prior reviews remain, the centralized helper leaves alerts untouched.
-    try { await resolveUnmatchedAlertsIfClear(supabase, businessId); }
-    catch { return err("finalize_failed"); }
+    await resolveUnmatchedAlertsIfClear(supabase, businessId, { nonBlocking: true });
   }
   if (unmatchedItems.length > 0) {
     const dedupeKey = [...unmatchedCounts.keys()].sort().join("|");

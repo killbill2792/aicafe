@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveUnmatchedAlertsIfClear } from "./resolveUnmatchedAlerts.server";
 
@@ -61,5 +63,14 @@ describe("unmatched alert reconciliation", () => {
   it("reports failure when alert status cannot be updated", async () => {
     const fake = fakeDb(0,{updateError:true});
     await expect(resolveUnmatchedAlertsIfClear(fake.client,BUSINESS)).rejects.toThrow("alert_resolution_failed");
+  });
+  it("does not turn a completed import into a failed import after alert read/write outages", async () => {
+    const readFailure = fakeDb(0, { readError: true });
+    const writeFailure = fakeDb(0, { updateError: true });
+    expect(await resolveUnmatchedAlertsIfClear(readFailure.client, BUSINESS, { nonBlocking: true })).toBe(false);
+    expect(readFailure.writes).toEqual([]);
+    expect(await resolveUnmatchedAlertsIfClear(writeFailure.client, BUSINESS, { nonBlocking: true })).toBe(false);
+    const csv = readFileSync(join(process.cwd(), "lib/actions/csvImport.ts"), "utf8");
+    expect(csv).toContain("resolveUnmatchedAlertsIfClear(supabase, businessId, { nonBlocking: true })");
   });
 });

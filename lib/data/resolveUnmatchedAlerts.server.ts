@@ -15,8 +15,10 @@ import { logQueryError } from "@/lib/data/queryError";
 export async function resolveUnmatchedAlertsIfClear(
   db: SupabaseClient,
   businessId: string,
+  options?: { nonBlocking?: boolean },
 ): Promise<boolean> {
   if (businessId === DEMO_BUSINESS_ID) return false;
+  try {
   const { data: pending, error: pendingError } = await db
     .from("pos_catalog_matches")
     .select("id")
@@ -39,4 +41,11 @@ export async function resolveUnmatchedAlertsIfClear(
     throw new Error("alert_resolution_failed");
   }
   return true;
+  } catch (error) {
+    // Imported sales are already durable when this is called in non-blocking
+    // mode. Do not misreport that completed import as failed because its
+    // secondary, retryable alert cleanup encountered an outage.
+    if (options?.nonBlocking) return false;
+    throw error;
+  }
 }
