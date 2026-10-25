@@ -7,6 +7,8 @@ import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
+import {newResolveState,observeToolResult} from "./resolve";
+import {acceptedExplainLines,type ExplainLine} from "./explain";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -15,8 +17,8 @@ export type AgentProvider = (params: Record<string, unknown>, signal: AbortSigna
 export type AgentAuditStep = { kind: "model_call" | "tool_call" | "approval_card" | "memory"; toolName?: string;
   inputSummary?: string; outputSummary?: string; durationMs: number; error?: string };
 export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType<typeof statusFromResults>;
-  unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; evidence?: NumericEvidence[]; tools?:string[]; agentIds?:string[];
-  usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number };
+  unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; evidence?: NumericEvidence[]; explain?:ExplainLine[]; tools?:string[]; agentIds?:string[];
+  usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number; model?:string };
   /** Owner messages sent while this turn ran and read by the model before a later step. */
   absorbedOwnerMessageIds?: string[] };
 /** A message the owner sent while the turn was running. */
@@ -27,7 +29,7 @@ export function agentInstructions(style: boolean): string {
   return SYSTEM_PROMPT + "\n" + (style ? STYLE_RULES + "\n" : "") + agentLabelsPrompt;
 }
 export function agentPromptCacheKey(style: boolean): string { return style ? "cafe-agent-v4" : "cafe-agent-v3"; }
-export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. Ask one specific clarifying question naturally when needed. Compute with what you have. Missing inputs narrow an answer; they do not block it. Label owner numbers You told me and estimates Estimate. Ask at most one useful question. Imported or estimated prices are about, not verified list prices; disclose priceCheck differs. Tool values are integer cents, never dollars. If a tool returns an error code, tell the owner its specific safe reason and next step; never say a tool is unavailable unless the code is not_supported. A proposal is not a completed action; say 'I've drafted this for your approval.' No JSON envelope.";
+export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. When a tool result says needsOwnerChoice or multiple products, people, categories, or periods fit and affect numbers or proposals, call ask_owner with 2–4 real candidate names and stop. Never guess silently. If one candidate clearly fits, do not ask. Never ask in plain text when ask_owner fits. Compute with what you have. Missing inputs narrow an answer; they do not block a partial estimate. Label owner-provided figures as You told me, and model estimates as Estimate. Imported prices are approximate observations, never verified list prices; disclose priceCheck differences. Tool money values are integer cents, never dollars. If a tool returns a safe error code, tell the owner its specific reason and next step. On incomplete evidence explain what is known and missing. A proposal is not a completed action; say 'I've drafted this for your approval.' No JSON envelope.";
 
 export async function* openAIProvider(params: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<Event> {
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -35,7 +37,10 @@ export async function* openAIProvider(params: Record<string, unknown>, signal: A
       "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
-  if (!response.ok || !response.body) throw new Error("provider_unavailable");
+  if (!response.ok || !response.body) {
+    console.error("supervisor_provider_error",{model:String(params.model??"unknown"),status:response.status});
+    throw new Error("provider_error");
+  }
   const reader = response.body.getReader(), decoder = new TextDecoder();
   let buffer = "";
   try {
@@ -113,10 +118,13 @@ export async function runAgentTurn(args: {
     if (fresh.length) args.onFollowUp?.(fresh.length);
     return fresh.length;
   };
+  const resolveState=newResolveState(args.ownerText,args.history);
+  args.context.resolveState=resolveState;
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
   const startedTools: string[] = [];
-  const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0 };
+  const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0, model: undefined as string|undefined };
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
+  let askedQuestion:string|null=null;
   const model = configuredSupervisorModel();
   const audit = (step: AgentAuditStep) => { try { args.onAuditStep?.(step); } catch { /* audit is non-critical */ } };
   const request = (final: boolean) => ({
@@ -148,6 +156,8 @@ export async function runAgentTurn(args: {
           if (item.type === "function_call") calls.push(item as ToolCall);
         }
         if (event.type === "response.completed") {
+          const actual=(event.response as {model?:unknown}|undefined)?.model;
+          if(typeof actual==="string"&&actual.trim())usage.model=actual;
           completed = true;
           const u = (event.response as { usage?: { input_tokens?: number; output_tokens?: number;
             input_tokens_details?: { cached_tokens?: number } } } | undefined)?.usage;
@@ -249,7 +259,13 @@ export async function runAgentTurn(args: {
             toolName: tool.name, inputSummary: "Draft request", outputSummary: "Awaiting owner approval", durationMs: 0 });
         }
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
+        observeToolResult(resolveState,result);
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
+        if(tool.name==="ask_owner"&&result.missing.length===0&&typeof result.question==="string"){
+          askedQuestion=result.question;finished=true;
+          for(const skipped of calls.slice(index+1))input.push({type:"function_call_output",call_id:skipped.call_id,output:JSON.stringify({error:"ask_owner_ends_turn"})});
+          break;
+        }
         if (now() >= workDeadline || failures >= 2) {
           endReason = now() >= workDeadline ? "timeout" : "tool_errors";
           // Respond to all calls already returned in this response before the next request.
@@ -262,6 +278,7 @@ export async function runAgentTurn(args: {
           break;
         }
       }
+      if(askedQuestion){if(!text.trim())text=askedQuestion;break;}
       if (endReason !== "complete") break;
       if (round === 4 || usage.toolCalls >= 8) { endReason = "budget"; break; }
     }
@@ -289,6 +306,8 @@ export async function runAgentTurn(args: {
                 text += event.delta; args.onDelta?.(event.delta);
               }
               if (event.type === "response.completed") {
+                const actual=(event.response as {model?:unknown}|undefined)?.model;
+                if(typeof actual==="string"&&actual.trim())usage.model=actual;
                 completed = true;
                 const u = (event.response as {usage?:{input_tokens?:number;output_tokens?:number;input_tokens_details?:{cached_tokens?:number}}}|undefined)?.usage;
                 usage.inputTokens += u?.input_tokens ?? 0; usage.outputTokens += u?.output_tokens ?? 0;
@@ -322,10 +341,15 @@ export async function runAgentTurn(args: {
   const toolResults=results.map(r=>r.result);
   const verificationResults=usageEvidenceRefresh(toolResults,args.previousEvidence);
   const unverified=checkNumbers(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence);
+  const evidence=compactEvidence(verificationResults);
+  const candidates=toolResults.flatMap(result=>Array.isArray(result.explain)?
+    result.explain.slice(0,12).filter((line):line is ExplainLine=>
+      Boolean(line)&&typeof line==="object"&&"source" in line&&typeof line.source==="string") :[]);
+  const explain=askedQuestion?[]:acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale);
   return { text, endReason, status,
     unverified,
     provenance:numberProvenance(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence,unverified),
-    evidence:compactEvidence(verificationResults),
+    evidence,explain,
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
     results:toolResults, usage,
     ...(deliveredIds.size ? { absorbedOwnerMessageIds: [...deliveredIds] } : {}) };

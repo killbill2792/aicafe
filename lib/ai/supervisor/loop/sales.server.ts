@@ -21,6 +21,7 @@ export async function readPriceExperimentSalesDays(
    db.from("order_lines")
      .select("quantity,net_sales_cents,orders!inner(business_date,business_id)",{count:"exact"})
      .eq("menu_item_id",productId).eq("orders.business_id",businessId)
+     .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
      .gte("orders.business_date",firstDate).lte("orders.business_date",lastDate)
      .eq("voided",false).limit(10000),
  ]);

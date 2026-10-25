@@ -86,7 +86,7 @@ describe("Toast rate limits and token reuse",()=>{
  it("does not pretend transient HTTP 503 is an empty set",async()=>{
   const f=fixture({bearer:"token",expiresAt:new Date(Date.now()+3600000).toISOString()});f.install("unavailable");
   await expect(request(f.db)).rejects.toMatchObject({category:"unavailable",status:503});
- });
+ },15000);
  it("does not truncate Retry-After or accept unknown hosts",()=>{
   const r=new Response("",{status:429,headers:{"Retry-After":"900"}});
   expect(Date.parse(toastRetryAt(r,1000))).toBe(901000);

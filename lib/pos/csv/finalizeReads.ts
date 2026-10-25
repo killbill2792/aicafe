@@ -26,6 +26,7 @@ export function readCsvFeeOrders(db: SupabaseClient, businessId: string, busines
   return readAllPosRows((first,last) => db.from("orders")
     .select("processing_fee_cents, processing_fee_status")
     .eq("business_id",businessId).eq("business_date",businessDate)
+    .eq("toast_excluded",false).is("superseded_by",null)
     .eq("processing_fee_provider","csv")
     .order("id").range(first,last),"CSV processing-fee orders") as Promise<Array<{
       processing_fee_cents:number|null;

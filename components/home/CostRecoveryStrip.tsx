@@ -1,47 +1,32 @@
 import { Link } from "@/i18n/navigation";
-import FillIcon from "@/components/icons/FillIcon";
 import type { BucketResult } from "@/lib/calc";
-import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 
-function shortDate(iso: string) {
-  const [, month, day] = iso.split("-");
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${monthNames[Number(month) - 1]} ${Number(day)}`;
+function shortDate(iso: string, locale: string) {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale, {month:"short", day:"numeric", timeZone:"UTC"})
+    .format(new Date(Date.UTC(year,month-1,day)));
 }
 
+/** One recovery status, not a second dashboard covering every cost category. */
 export default function CostRecoveryStrip({
-  buckets,
-  labels,
-  coveredLabel,
+  buckets, labels, coveredLabel, locale = "en", emptyLabel, dataComplete = true, incompleteLabel,
 }: {
   buckets: BucketResult[];
   labels: Record<string, string>;
-  /** e.g. "{label} covered {date}" — built per-bucket below, this is just the template word. */
   coveredLabel: (label: string, date: string) => string;
+  locale?: string;
+  emptyLabel: string;
+  dataComplete?: boolean;
+  incompleteLabel?: string;
 }) {
-  const caption = buckets
-    .map((b) =>
-      b.pctCovered >= 100
-        ? coveredLabel(labels[b.code] ?? b.code, b.coveredOn ? shortDate(b.coveredOn) : "")
-        : `${labels[b.code] ?? b.code} ${Math.round(b.pctCovered)}%`,
-    )
-    .join(" · ");
-
+  const current = buckets.find(bucket => bucket.pctCovered < 100) ?? buckets[buckets.length-1];
+  const caption = !current ? emptyLabel : !dataComplete ? (incompleteLabel ?? emptyLabel) :
+    current.pctCovered >= 100 && current.coveredOn
+      ? coveredLabel(labels[current.code] ?? current.code, shortDate(current.coveredOn, locale))
+      : `${labels[current.code] ?? current.code} ${new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(Math.round(current.pctCovered))}%`;
   return (
-    <Link href="/money" className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
-      <div className="flex justify-between gap-2 overflow-x-auto">
-        {buckets.map((b) => (
-          <FillIcon
-            key={b.code}
-            code={b.code as ExpenseIconCode}
-            pctCovered={b.pctCovered}
-            covered={b.pctCovered >= 100}
-            size={44}
-            label={`${labels[b.code] ?? b.code} ${Math.round(b.pctCovered)}%`}
-          />
-        ))}
-      </div>
-      <p className="text-[13px] font-semibold leading-snug text-ink-muted">{caption}</p>
+    <Link href="/money" className="mt-3 flex min-h-12 items-center border-t border-line pt-3 text-start no-underline">
+      <p className="truncate text-[17px] font-semibold text-ink-muted" title={caption}>{caption}</p>
     </Link>
   );
 }

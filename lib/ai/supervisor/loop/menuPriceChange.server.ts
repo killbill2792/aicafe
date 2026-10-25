@@ -1,6 +1,7 @@
 import "server-only";
 import {revalidatePath} from "next/cache";
 import {z} from "zod";
+import {diffFieldSchema,diffFields} from "@/lib/format/values";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
@@ -15,7 +16,7 @@ const cents=z.number().int().safe().positive().max(100000);
 const effectSchema=z.strictObject({
   productId:z.uuid(),productName:z.string().min(1).max(200),
   oldPriceCents:z.number().int().safe().nonnegative(),
-  newPriceCents:cents,currency:z.literal("USD"),
+  newPriceCents:cents,currency:z.literal("USD"),preview:z.array(diffFieldSchema).optional(),
 });
 export const menuPriceChangeCapabilityId="alex.menu_price_change.v1";
 export class StaleProposalError extends Error{
@@ -26,6 +27,7 @@ export const menuPriceChangeCapability=registerLoopCapability({
   id:menuPriceChangeCapabilityId,version:1,
   inputSchema:z.strictObject({productId:z.uuid(),newPriceCents:cents}),
   effectSchema,
+  dependencyScope:(effect)=>({version:2,kind:"menu_price",productId:effect.productId}),
   simulate:async(scope,input)=>{
     const client=await createServerSupabaseClient();
     const {data:{user}}=await client.auth.getUser();
@@ -39,8 +41,10 @@ export const menuPriceChangeCapability=registerLoopCapability({
     if(matches.length!==1)throw new ToolError("not_found");
     const item=matches[0];
     if(item.priceCents===input.newPriceCents)throw new ToolError("unchanged");
+    const preview=diffFields([{field:"price",label:"Price",value:{kind:"money",cents:item.priceCents}}],
+      [{field:"price",label:"Price",value:{kind:"money",cents:input.newPriceCents}}]);
     return {effect:{productId:item.id,productName:item.name,oldPriceCents:item.priceCents,
-      newPriceCents:input.newPriceCents,currency:"USD"},
+      newPriceCents:input.newPriceCents,currency:"USD",preview},
       baseline:{source:"menu_items",status:"actual"},
       monitorSpec:{durationDays:7,metricScope:item.id}};
   },

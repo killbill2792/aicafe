@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {askOwnerTools} from "./askOwner";
+import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard,periodChoicePayload,resolveOwnerPeriod} from "../resolve";
+
+import {money,count} from "../explain";
 import { initiativeToolDefinitions,isInitiativeTool,executeInitiativeTool } from "./initiatives";
 import { staffTools } from "./staff";
 import {scheduleReadTools} from "./scheduleReads";
@@ -32,6 +36,7 @@ export type AgentToolResult = {
 export type AgentToolContext = {
   tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
   timezone?:string;
+  resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
@@ -41,7 +46,7 @@ export type AgentToolContext = {
     proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>};
 };
-const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]),ownerInputs:ownerInputsSchema.nullable().optional() });
+const periodSchema = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]),ownerInputs:ownerInputsSchema.nullable().optional() });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
 const posPeriodSchema=z.strictObject({from:z.iso.date(),to:z.iso.date()});
@@ -50,9 +55,30 @@ const posReadTools={
   get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
-const schemas = { ...posReadTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
+export const schemas = { ...askOwnerTools, ...posReadTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
   ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools,...priceExperimentTools,...staffProposalTools } as const;
 export type AgentToolName = keyof typeof schemas;
+/** Input fields backed by the shared entity/period resolver. A new tool whose
+ * strict schema accepts a target must declare the corresponding field here;
+ * creation inputs have explicit exemptions below. */
+export const resolverCoverage:Partial<Record<AgentToolName,readonly string[]>>={
+  get_profit:["period"],get_sales:["period"],get_menu_items:["query"],
+  get_labor:["period"],get_team:["name"],get_shift_cost:["employee_id"],
+  get_expenses:["period","category"],get_cost_summary:["period"],
+  get_item_sales:["period","query"],get_price_recommendation:["itemId"],
+  get_ingredient_costs:["query"],get_product_costs:["itemId"],
+  propose_price_change:["product_id"],propose_price_experiment:["product_id"],propose_staff_change:["employee_id"],
+  propose_schedule:["shifts.employee_id"],propose_shift_change:["shift.employee_id"],
+  get_peak_hours:["from","to"],get_employee_sales:["from","to"],
+  get_payroll_facts:["from","to"],
+  propose_availability_change:["instruction"]
+};
+export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>={
+  // These fields describe NEW values, not names or IDs of existing records.
+  propose_add_staff:["name"],propose_staff_change:["name"],
+  suggest_new_item_price:["category"]
+};
+
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
@@ -87,6 +113,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   // Flag-gated extra tool: only offered to the model when CHAT_MEMORY is on.
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");
+  if(name==="ask_owner")return askOwnerTools.ask_owner.execute(raw,ctx);
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
@@ -99,7 +126,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_week_schedule")return scheduleReadTools.get_week_schedule.execute(raw,ctx);
   if(name==="get_labor_rules")return scheduleReadTools.get_labor_rules.execute(raw);
   if(name==="get_coverage_gaps")return scheduleReadTools.get_coverage_gaps.execute(raw,ctx);
-  if(name==="get_shift_cost")return scheduleReadTools.get_shift_cost.execute(raw);
+  if(name==="get_shift_cost")return scheduleReadTools.get_shift_cost.execute(raw,ctx);
   if(name==="get_business_hours")return hoursTools.get_business_hours.execute(raw,ctx);
   if(name==="get_expenses")return moneyTools.get_expenses.execute(raw,ctx);
   if(name==="get_bills")return moneyTools.get_bills.execute(raw,ctx);
@@ -110,8 +137,10 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_usage_variance")return suppliesTools.get_usage_variance.execute(raw,ctx);
   if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw);
   if(name==="get_peak_hours"||name==="get_employee_sales"||name==="get_payroll_facts"){
-    const period=posPeriodSchema.parse(raw);
-    if(period.from>period.to)throw new Error("Invalid reporting range");
+    const input=posPeriodSchema.parse(raw);
+    const checked=resolveOwnerPeriod(input,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
+    if(checked.status!=="resolved")return periodChoicePayload(name,checked);
+    const period={from:checked.value.from,to:checked.value.to};
     if(name==="get_peak_hours"){
       const slice=await ctx.tools.getPeakHours?.(period);
       if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
@@ -132,8 +161,20 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const input = menuSchema.parse(raw);
     const slice = await ctx.tools.getMenuCatalog();
     if (!slice.available) return absent("menu_items", null, slice.quality.missingInputs);
-    const filtered = slice.value.filter(item => item.active &&
-      (!input.query || item.name.toLocaleLowerCase(ctx.locale).includes(input.query.toLocaleLowerCase(ctx.locale))));
+    const active=slice.value.filter(item=>item.active);
+    let filtered=active;
+    if(input.query){
+      const chosen=resolveChosenEntity(ctx.resolveState,active,i=>i.id);
+      if(chosen)filtered=[chosen];
+      else{
+        const resolved=resolveEntity("product",input.query,active,{nameOf:i=>i.name,idOf:i=>i.id,
+          describe:i=>i.category+" · "+(i.priceCents/100).toFixed(2)});
+        if(resolved.status!=="resolved")return {...choicePayload(resolved,"menu_items",null),agentId:"alex"};
+        filtered=[resolved.value];
+      }
+    }
+    if(input.query&&filtered.length===1&&!ownerNamedTarget(ctx.resolveState,filtered[0].id,filtered[0].name))
+      return {source:"menu_items",period:null,agentId:"alex",missing:["targetNotConfirmed"]};
     const limit = input.limit ?? 8;
     const visible=filtered.slice(0,limit);
     let facts:Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>={};
@@ -141,42 +182,55 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     try {if(ctx.menuPriceEvidence)facts=await ctx.menuPriceEvidence(visible);}
     catch {evidenceUnavailable=true;}
     return { source: "menu_items", period: null, agentId:"alex",
-      missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : []), ...(evidenceUnavailable?["menuPriceEvidenceUnavailable"]:[])],
+      missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : []),
+        ...(evidenceUnavailable?["menuPriceEvidenceUnavailable"]:[])],
       items: visible.map(item => ({
         id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,unit:"cents",
-        priceSource:evidenceUnavailable?"unknown":facts[item.id]?.priceSource??"initial",realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
-        priceCheck:facts[item.id]?.priceCheck??"ok",
-        pricePeriod:facts[item.id]?.pricePeriod??null,
+        priceSource:evidenceUnavailable?"unknown":facts[item.id]?.priceSource??"initial",
+        realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
+        priceCheck:facts[item.id]?.priceCheck??"ok",pricePeriod:facts[item.id]?.pricePeriod??null,
         priceEvidenceStatus:facts[item.id]?.priceEvidenceStatus??"unknown",
       })) };
   }
-  const { period: choice,ownerInputs } = periodSchema.parse(raw);
-  const requested = requestedPeriod(choice, ctx.asOf);
-  const selection=await resolveCoveredSalesWindow(ctx,requested);
+  const {period:choice,ownerInputs}=periodSchema.parse(raw);
+  const resolved=resolveOwnerPeriod(choice,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
+  if(resolved.status!=="resolved")return periodChoicePayload(name,resolved);
+  const requested={from:resolved.value.from,to:resolved.value.to};
+  // An explicitly requested historical period must never be silently replaced.
+  const canFallback=typeof choice==="string"&&["today","week","month"].includes(choice);
+  const selection=canFallback?await resolveCoveredSalesWindow(ctx,requested):{period:requested,label:null};
   const period=selection.period;
-  if (name === "get_profit") {
-    const slice = await ctx.tools.getProfitability(period);
+  if(name==="get_profit"){
+    const slice=await ctx.tools.getProfitability(period);
     const ownerSales=ownerInputs?.netSalesCents!=null?
       ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
-    if (!slice.available) return {source:"profitability",period,agentId:"leo",
+    if(!slice.available)return {source:"profitability",period,agentId:"leo",
       coverageLabel:selection.label,unit:"cents",ownerInputs:ownerInputs??null,
-      ownerReportedSalesCents:ownerInputs?.netSalesCents??null,ownerReportedSalesPeriod:ownerInputs?.salesPeriod??null,
+      ownerReportedSalesCents:ownerInputs?.netSalesCents??null,
+      ownerReportedSalesPeriod:ownerInputs?.salesPeriod??null,
       netSalesCents:ownerSales,netSalesProvenance:ownerSales!==null?"ownerProvided":null,
       totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
-      missing:[...slice.quality.missingInputs,...(ownerInputs?.netSalesCents!=null?["costsUnverified"]:[]), ...(ownerInputs?.netSalesCents!=null&&ownerSales===null?["ownerSalesPeriodMismatch"]:[])]};
+      missing:[...slice.quality.missingInputs,...(ownerInputs?.netSalesCents!=null?["costsUnverified"]:[]),
+        ...(ownerInputs?.netSalesCents!=null&&ownerSales===null?["ownerSalesPeriodMismatch"]:[])]};
     const conflict=ownerConflict(slice.value.netSalesCents,ownerSales);
-    return { source: "profitability", period, coverageLabel:selection.label,agentId:"leo",
+    return {source:"profitability",period,coverageLabel:selection.label,agentId:"leo",unit:"cents",
       missing:[...slice.quality.missingInputs,...(conflict?["ownerValueConflict"]:[])],
       ownerSalesConflict:conflict?{recordedCents:slice.value.netSalesCents,ownerCents:ownerSales}:null,
-      needsOwnerChoice:conflict,estimated: slice.quality.estimatedInputs,
-      netSalesCents: slice.value.netSalesCents, totalCostsCents: slice.value.totalCostsCents, unit:"cents",ownerInputs,
-      ownerProfitCents: slice.value.ownerProfitCents, operatingMargin: slice.value.operatingMargin,
-      coveredSalesDays: slice.value.coveredSalesDays, expectedSalesDays: slice.value.expectedSalesDays };
+      needsOwnerChoice:conflict,estimated:slice.quality.estimatedInputs,
+      netSalesCents:slice.value.netSalesCents,totalCostsCents:slice.value.totalCostsCents,
+      ownerProfitCents:slice.value.ownerProfitCents,operatingMargin:slice.value.operatingMargin,
+      ownerInputs:ownerInputs??null,
+      explain:[{label:"Owner profit",inputs:[
+        {name:"netSales",value:money(slice.value.netSalesCents)},
+        {name:"cost",value:money(slice.value.totalCostsCents)}],
+        formula:"subtract",result:money(slice.value.ownerProfitCents),period,source:"get_profit",
+        provenance:slice.quality.estimatedInputs.length?"estimate":"recorded"}],
+      coveredSalesDays:slice.value.coveredSalesDays,expectedSalesDays:slice.value.expectedSalesDays};
   }
-  if (name !== "get_sales") throw new ToolError("not_supported");
-  const slice = await ctx.tools.getSalesTrend(period);
-  if (!slice.available) return {...absent("daily_rollups", period, slice.quality.missingInputs),coverageLabel:selection.label};
-  return { source: "daily_rollups", period, coverageLabel:selection.label,agentId:"alex", missing: slice.quality.missingInputs,
-    netSalesCents: netSalesCentsForPeriod(slice.value),unit:"cents",
-    days: slice.value.slice(-7).map(day => ({ date: day.date, netSalesCents: day.netSalesCents })) };
+  if(name!=="get_sales")throw new ToolError("not_supported");
+  const slice=await ctx.tools.getSalesTrend(period);
+  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),coverageLabel:selection.label};
+  return {source:"daily_rollups",period,coverageLabel:selection.label,agentId:"alex",unit:"cents",
+    missing:slice.quality.missingInputs,netSalesCents:netSalesCentsForPeriod(slice.value),
+    days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
 }

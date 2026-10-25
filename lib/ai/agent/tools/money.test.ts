@@ -1,5 +1,6 @@
 import { describe,expect,it } from "vitest";
 import { moneyTools } from "./money";
+import {newResolveState} from "../resolve";
 import type { AgentToolContext } from "./index";
 const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,quality:{...q,missingInputs:["missingSource"]}};
@@ -9,8 +10,54 @@ function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
     getMenuCatalog:async()=>unavailable,...extra}};
 }
 describe("Leo scoped money reads",()=>{
+  it("allows only the category selected in the previous trusted clarification",async()=>{
+    const state=newResolveState("Supplies — supplies",[
+      {role:"assistant",content:"Asked: Which category? Options: Supplies — supplies (supplies); Supplies — other (other)"}]);
+    const c=ctx({
+      getRecordedExpenses:async()=>({available:true,value:{totalCents:120000},quality:q}),
+      getExpenseSummary:async()=>({available:true,value:[
+        {label:"Supplies",categoryCode:"supplies",amountCents:20000,isEstimate:false,isMissing:false},
+        {label:"Supplies",categoryCode:"other",amountCents:15000,isEstimate:false,isMissing:false}],quality:q}),
+    });
+    c.resolveState=state;
+    const response=await moneyTools.get_expenses.execute({period:"month",category:"supplies"},c);
+    expect(response.needsOwnerChoice).toBeUndefined();
+    expect(response.categories).toEqual([expect.objectContaining({categoryCode:"supplies"})]);
+    expect(response.recordedActualTotalCents).toBeNull();
+  });
+  it("does not replace a named category with all-business expenses if categories are unavailable",async()=>{
+    const r=await moneyTools.get_expenses.execute({period:"month",category:"Rent"},ctx({
+      getRecordedExpenses:async()=>({available:true,value:{totalCents:150000},quality:q}),
+      getExpenseSummary:async()=>unavailable,
+    }));
+    expect(r.recordedActualTotalCents).toBeNull();
+    expect(r.categories).toBeNull();
+    expect(r.missing).toContain("missingSource");
+  });
+  it("never presents the all-category actual total as a selected category's spending",async()=>{
+    const r=await moneyTools.get_expenses.execute({period:"month",category:"Rent"},ctx({
+      getRecordedExpenses:async()=>({available:true,value:{totalCents:150000},quality:q}),
+      getExpenseSummary:async()=>({available:true,value:[
+        {label:"Rent",categoryCode:"rent",amountCents:50000,isEstimate:true,isMissing:false},
+        {label:"Utilities",categoryCode:"utilities_power",amountCents:10000,isEstimate:false,isMissing:false}],quality:q}),
+    }));
+    expect(r.recordedActualTotalCents).toBeNull();
+    expect(r.missing).toContain("categoryRecordedActualTotalUnavailable");
+    expect(r.categories).toEqual([expect.objectContaining({categoryCode:"rent",amountCents:50000})]);
+  });
+  it("asks when multiple categories have an identical owner-facing name",async()=>{
+    const r=await moneyTools.get_expenses.execute({period:"month",category:"Supplies"},ctx({
+      getRecordedExpenses:async()=>({available:true,value:{totalCents:120000},quality:q}),
+      getExpenseSummary:async()=>({available:true,value:[
+        {label:"Supplies",categoryCode:"supplies",amountCents:20000,isEstimate:false,isMissing:false},
+        {label:"Supplies",categoryCode:"other",amountCents:15000,isEstimate:false,isMissing:false}],quality:q}),
+    }));
+    expect(r.needsOwnerChoice).toBe(true);
+    expect((r.candidates as Array<{id:string}>).map(c=>c.id)).toEqual(["supplies","other"]);
+  });
+
   it("does not call recurring bills recorded expenses",async()=>{
-    const r=await moneyTools.get_expenses.execute({period:"month"},ctx({
+    const r=await moneyTools.get_expenses.execute({period:"month",category:null},ctx({
       getRecordedExpenses:async()=>({available:true,value:{totalCents:2500},quality:q}),
       getExpenseSummary:async()=>({available:true,value:[
         {label:"Rent",categoryCode:"rent",amountCents:45000,isEstimate:true,isMissing:false}],quality:q}),

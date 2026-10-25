@@ -4,6 +4,7 @@ import {calculateNewItemPrice,contributionCoverage} from "@/lib/calc/newItemPric
 import {requestedPeriod,prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
 import {resolveCoveredSalesWindow} from "./coverage";
+import {money,percent} from "../explain";
 const schema=z.strictObject({
  ingredient_cost_cents:z.number().int().positive(),category:z.enum(["drink","food"]),
  packaging_cents:z.number().int().nonnegative().nullable(),
@@ -47,13 +48,13 @@ export const newItemPriceTools={suggest_new_item_price:{
     days:periodDays(period),
   });
   return {source:"new_item_price",period,coverageLabel:coverage.label,unit:"cents",...contribution,
-   explain:[...(owner?.laborCents!=null?[{kind:"prorate",name:"labor",value:laborForPeriod,provenance:"ownerProvided"}]:[]),
-     ...(owner?.rentCents!=null?[{kind:"prorate",name:"rent",value:owner.rentCents,provenance:"ownerProvided"}]:[]),
-     ...(owner?.otherOverheadCents!=null?[{kind:"prorate",name:"overhead",value:owner.otherOverheadCents,provenance:"ownerProvided"}]:[]),
-     {kind:"input",name:"unitCost",value:v.ingredient_cost_cents,provenance:"ownerProvided"},
-     {kind:"input",name:"productCostRatio",value:0.30,provenance:"estimate"}],
    agentId:"alex",draft:true,saved:false,itemName:v.item_name,category:v.category,ownerInputs:owner,
    categoryUnits30d:categoryUnits,location,localCompetitorPrices:null,...calculated,
+   explain:calculated.costPlusPriceCents!==null&&calculated.fullCostCents!==null?
+    [{label:v.item_name??"New item price",inputs:[{name:"fullCost",value:money(calculated.fullCostCents)},
+      {name:"targetMargin",value:percent(Math.round((100-calculated.targetMarginPercent)*100))}],
+      formula:"divide",result:money(calculated.costPlusPriceCents),period,
+      source:"suggest_new_item_price",provenance:v.target_margin_percent===null?"estimate":"ownerProvided"}]:[],
    missing:[...new Set([...missing,...calculated.missing])],
    estimated:[...new Set([...calculated.estimated,...(labor?.quality.estimatedInputs??[]),...(bills?.quality.estimatedInputs??[])])]};
  }

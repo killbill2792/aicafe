@@ -1,0 +1,113 @@
+import {describe,it,expect} from "vitest";
+import {resolveEntity,newResolveState,ownerChoiceGuard,observeToolResult} from "./resolve";
+const hot="11111111-1111-4111-8111-111111111111",iced="22222222-2222-4222-8222-222222222222";
+const rows=[{id:hot,name:"Latte",category:"Hot"},{id:iced,name:"Latte",category:"Iced"},
+{id:"33333333-3333-4333-8333-333333333333",name:"Café",category:"Coffee"}];
+const props={nameOf:(r:typeof rows[number])=>r.name,idOf:(r:typeof rows[number])=>r.id,describe:(r:typeof rows[number])=>r.category};
+describe("safe entity resolution",()=>{
+ it("maps a selected category code from a trusted previous clarification",()=>{
+    const state=newResolveState("Supplies — other",[
+      {role:"assistant",content:"Asked: Which supplies? Options: Supplies — supplies (supplies); Supplies — other (other)"}]);
+    expect([...state.chosenIds]).toEqual(["other"]);
+    expect(newResolveState("Other message",[
+      {role:"assistant",content:"Asked: Which supplies? Options: Supplies — supplies (supplies); Supplies — other (other)"}]).chosenIds.size).toBe(0);
+ });
+ it("preserves trusted selections when real menu names contain parentheses",()=>{
+   const selected=newResolveState("Latte (Oat)",[
+     {role:"assistant",content:"Asked: Which? Options: Latte (Dairy) ("+hot+"); Latte (Oat) ("+iced+")"}]);
+   expect([...selected.chosenIds]).toEqual([iced]);
+ });
+ it("does not treat a human-readable category code as disambiguation",()=>{
+   const categories=[{id:"supplies",name:"Supplies"},{id:"other",name:"Supplies"}];
+   const r=resolveEntity("category","Supplies",categories,{
+     nameOf:x=>x.name,idOf:x=>x.id,describe:x=>x.id});
+   expect(r.status).toBe("ambiguous");
+   if(r.status==="ambiguous")expect(r.candidates.map(c=>c.id)).toEqual(["supplies","other"]);
+ });
+ it("resolves exact ids before duplicate names",()=>{
+   expect(resolveEntity("product",iced,rows,props)).toEqual({status:"resolved",value:rows[1]});
+ });
+ it("never picks the first duplicate name",()=>{
+   const r=resolveEntity("product","Latte",rows,props);
+   expect(r.status).toBe("ambiguous");
+   if(r.status==="ambiguous"){expect(r.candidates).toHaveLength(2);expect(r.candidates.map(c=>c.id)).toEqual([hot,iced]);}
+ });
+ it("normalizes accents and Arabic letter variants",()=>{
+   expect(resolveEntity("product","cafe",rows,props)).toEqual({status:"resolved",value:rows[2]});
+   const people=[{id:"1",name:"أحمد"},{id:"2",name:"Maria"}];
+   expect(resolveEntity("staff","احمد",people,{nameOf:p=>p.name,idOf:p=>p.id,describe:()=>""})).toEqual({status:"resolved",value:people[0]});
+ });
+ it("suggests actual rows without inventing ids",()=>{
+   const r=resolveEntity("product","unknown",rows,props);
+   expect(r.status).toBe("none");
+   if(r.status==="none")expect(r.suggestions.every(c=>rows.some(row=>row.id===c.id))).toBe(true);
+ });
+ it("rejects ambiguous proposed writes and accepts the chosen previous card",()=>{
+   const state=newResolveState("raise latte price to $5.50");
+   observeToolResult(state,{source:"menu_items",period:null,missing:[],needsOwnerChoice:true,candidates:[{id:hot,label:"Latte — Hot",detail:"Hot"},{id:iced,label:"Latte — Iced",detail:"Iced"}]});
+   expect(ownerChoiceGuard(state,hot)?.missing).toEqual(["ownerChoiceRequired"]);
+   const chosen=newResolveState("Latte — Iced",[{role:"assistant",content:"Asked: Which? Options: Latte — Hot ("+hot+"); Latte — Iced ("+iced+")"}]);
+   expect(chosen.chosenIds.has(iced)).toBe(true);
+ });
+  it("asks about overlapping Latte names and duplicate Maria staff",()=>{
+    const overlapping=[rows[0],{id:"44444444-4444-4444-8444-444444444444",name:"Iced Latte",category:"Iced"}];
+    const product=resolveEntity("product","Latte",overlapping,props);
+    expect(product.status).toBe("ambiguous");
+    if(product.status==="ambiguous")expect(product.candidates.map(c=>c.id)).toEqual([hot,overlapping[1].id]);
+    const team=[{id:hot,name:"Maria",role:"Barista"},{id:iced,name:"Maria",role:"Manager"}];
+    const staff=resolveEntity("employee","Maria",team,{nameOf:r=>r.name,idOf:r=>r.id,describe:r=>r.role});
+    expect(staff.status).toBe("ambiguous");
+    if(staff.status==="ambiguous")expect(staff.candidates.map(c=>c.label)).toEqual(["Maria — Barista","Maria — Manager"]);
+  });
+  it("resolves an owner-selected month without a second ambiguity loop",async()=>{
+    const {resolveOwnerPeriod}=await import("./resolve");
+    const text="September 2025";
+    const chosen=newResolveState(text,[
+      {role:"assistant",content:"Asked: Which month? Options: September 2025 (2025-09-01/2025-09-30); September 2026 (2026-09-01/2026-09-30)"}]);
+    const options={asOf:"2026-10-24",timezone:"America/Los_Angeles"};
+    expect(resolveOwnerPeriod("September",options,undefined).status).toBe("ambiguous");
+    expect(resolveOwnerPeriod("September",options,chosen)).toMatchObject({
+      status:"resolved",value:{from:"2025-09-01",to:"2025-09-30"}});
+    expect(resolveOwnerPeriod("October",options,chosen).status).not.toBe("resolved");
+  });
+  it("uses only a card-selected ID that still exists in the fresh scoped rows",async()=>{
+    const {resolveChosenEntity}=await import("./resolve");
+    const chosen=newResolveState("Latte — Iced",[
+      {role:"assistant",content:"Asked: Which? Options: Latte — Hot ("+hot+"); Latte — Iced ("+iced+")"}]);
+    expect(resolveChosenEntity(chosen,rows,row=>row.id)).toEqual(rows[1]);
+    expect(resolveChosenEntity(chosen,[rows[0]],row=>row.id)).toBeNull();
+    expect(resolveChosenEntity(newResolveState("Latte"),rows,row=>row.id)).toBeNull();
+  });
+  it("matches only whole product names or a previously selected real ID",async()=>{
+    const {ownerNamedTarget}=await import("./resolve");
+    const ordinary=newResolveState("Show espresso's recipe cost");
+    expect(ownerNamedTarget(ordinary,hot,"Latte")).toBe(false);
+    expect(ownerNamedTarget(ordinary,hot,"Espresso")).toBe(true);
+    expect(ownerNamedTarget(ordinary,hot,"Press")).toBe(false);
+    const chosen=newResolveState("Latte — Hot",[
+      {role:"assistant",content:"Asked: Which? Options: Latte — Hot ("+hot+"); Latte — Iced ("+iced+")"}]);
+    expect(ownerNamedTarget(chosen,hot,"Latte")).toBe(true);
+  });
+  it("does not let a generic product word or overlapping substring select a UUID",()=>{
+    const choices=[{id:hot,label:"Latte",detail:"Hot"},
+      {id:iced,label:"Iced Latte",detail:"Iced"}];
+    const general=newResolveState("raise latte to $5.50");
+    expect(ownerChoiceGuard(general,hot,choices)?.missing).toEqual(["ownerChoiceRequired"]);
+    expect(ownerChoiceGuard(general,iced,choices)?.missing).toEqual(["ownerChoiceRequired"]);
+    const explicit=newResolveState("raise iced latte to $5.50");
+    expect(ownerChoiceGuard(explicit,iced,choices)).toBeNull();
+    expect(ownerChoiceGuard(explicit,hot,choices)?.missing).toEqual(["ownerChoiceRequired"]);
+    const selected=newResolveState("Latte — Hot",[
+      {role:"assistant",content:"Asked: Which? Options: Latte — Hot ("+hot+"); Iced Latte ("+iced+")"}]);
+    expect(ownerChoiceGuard(selected,hot,choices)).toBeNull();
+  });
+  it("records refused proposal candidates without treating the write as successful",()=>{
+    const state=newResolveState("change latte price");
+    const candidates=[{id:hot,label:"Latte — Hot",detail:"Hot"},{id:iced,label:"Latte — Iced",detail:"Iced"}];
+    observeToolResult(state,{source:"price_change_proposal",missing:["ownerChoiceRequired"],
+      needsOwnerChoice:true,candidates});
+    expect(state.ambiguous).toEqual([candidates]);
+    expect(state.seenIds.has(hot)).toBe(true);
+    expect(ownerChoiceGuard(state,hot)?.missing).toEqual(["ownerChoiceRequired"]);
+  });
+});

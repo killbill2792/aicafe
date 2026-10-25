@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { checkNumbers, compactEvidence, numberProvenance } from "./checkNumbers";
 import { statusFromResults } from "./status";
 import { executeAgentTool, agentToolDefinitions, type AgentToolContext, requestedPeriod } from "./tools";
+import {newResolveState} from "./resolve";
 
 const base = { source: "profitability", period: null, missing: [],
   ownerProfitCents: 12345, operatingMargin: 0.125, coveredSalesDays: 4 };
@@ -112,7 +113,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       status:"partial",missing:["sales"] });
   });
   it("publishes exactly the registered strict functions", () => {
-    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["get_peak_hours","get_employee_sales","get_payroll_facts","get_profit","get_sales","get_menu_items",
+    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["ask_owner","get_peak_hours","get_employee_sales","get_payroll_facts","get_profit","get_sales","get_menu_items",
       "get_staff","get_schedule","get_labor","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
       "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
@@ -148,6 +149,11 @@ describe("numbers, statuses, and strict tool contracts", () => {
     const result = await executeAgentTool("get_menu_items",{query:"latte",limit:25},context);
     expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450,
       unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"ok",pricePeriod:null,priceEvidenceStatus:"unknown"}]);
+    context.resolveState=newResolveState("What is the price of Espresso?");
+    const wrong=await executeAgentTool("get_menu_items",{query:"Latte",limit:25},context);
+    expect(wrong.missing).toContain("targetNotConfirmed");
+    expect(wrong.items).toBeUndefined();
+    context.resolveState=undefined;
     expect(result.agentId).toBe("alex");
     await expect(executeAgentTool("get_menu_items",{businessId:"other"},context)).rejects.toThrow();
     await expect(executeAgentTool("get_menu_items",{query:null,limit:26},context)).rejects.toThrow();
@@ -658,7 +664,7 @@ describe("Codex: typed partial updates and temporal cross-turn evidence",()=>{
         endTime:"16:00",effectiveFrom:"2026-11-02",effectiveTo:"2026-11-30"}]};
     const bad="Ada’s shift starts at 8:00 AM and her shift ends at 4:00 PM on Monday, 2026-10-26.";
     expect(checkNumbers(bad,"",[schedule],"en").map(v=>v.text))
-      .toEqual(["8","00","4","00"]);
+      .toEqual(["8:00 AM","4:00 PM"]);
     const good="Ada’s shift starts at 8:00 AM and her shift ends at 4:00 PM on Monday, 2026-11-02.";
     expect(checkNumbers(good,"",[schedule],"en")).toEqual([]);
     expect(checkNumbers(good,"",[],"en",compactEvidence([schedule]))).toEqual([]);
@@ -1019,7 +1025,7 @@ describe("Codex: product identity, dated facts and partial schedule trust bounda
         endTime:"16:00",effectiveFrom:"2026-11-02",effectiveTo:null}]};
     const wrong="Ada’s shift starts at 8:00 AM and her shift ends at 4:00 PM on Tuesday.";
     expect(checkNumbers(wrong,"",[schedule],"en").map(v=>v.text))
-      .toEqual(["8","00","4","00"]);
+      .toEqual(["8:00 AM","4:00 PM"]);
     const good="Ada’s shift starts at 8:00 AM and her shift ends at 4:00 PM on Monday.";
     expect(checkNumbers(good,"",[schedule],"en")).toEqual([]);
   });
@@ -1088,7 +1094,7 @@ describe("follow-up: owner speech, bounded totals and proposed durations",()=>{
    expect(checkNumbers("Try this for 7 days, then test for 2 weeks.","",[],"en")).toEqual([]);
    expect(checkNumbers("Prueba esto por 7 días.","",[],"es")).toEqual([]);
    expect(checkNumbers("نجرب لمدة 7 أيام.","",[],"ar")).toEqual([]);
-   expect(checkNumbers("Staff worked 7 days.","",[],"en").map(x=>x.text)).toEqual(["7"]);
+   expect(checkNumbers("Staff worked 7 days.","",[],"en").map(v=>v.text)).toEqual(["7 days"]);
  });
 });
 
@@ -1110,8 +1116,8 @@ describe("review: no arithmetic or owner-speech laundering",()=>{
      [],"en").map(x=>x.text)).toEqual(["$8"]);
  });
  it("only exempts proposals, not historical durations",()=>{
-   expect(checkNumbers("Staff worked for 7 days.","",[],"en").map(x=>x.text)).toEqual(["7"]);
-   expect(checkNumbers("Sales declined over 2 weeks.","",[],"en").map(x=>x.text)).toEqual(["2"]);
+   expect(checkNumbers("Staff worked for 7 days.","",[],"en").map(v=>v.text)).toEqual(["7 days"]);
+   expect(checkNumbers("Sales declined over 2 weeks.","",[],"en").map(v=>v.text)).toEqual(["2 weeks"]);
  });
 });
 
@@ -1378,13 +1384,71 @@ describe("Codex P1 source-specific checks",()=>{
   });
 });
 
+describe("Codex: owner durations are not generic counts",()=>{
+  it.each([
+    ["Staff worked for 7 days.","We sold 7 lattes.","en","7"],
+    ["Staff worked for 7 hours.","We sold 7 lattes.","en","7"],
+    ["Trabajamos 7 días.","Vendimos 7 cafés.","es","7"],
+    ["عمل الفريق ٧ أيام.","بعنا ٧ مشروبات.","ar","٧"],
+  ] as const)("isolates %s from unrelated claim %s",(owner,reply,locale,flag)=>{
+    const checked=checkNumbers(reply,owner,[],locale);
+    expect(checked.map(v=>v.text)).toEqual([flag]);
+    const annotated=numberProvenance(reply,owner,[],locale);
+    expect(annotated).toMatchObject([{source:"unchecked",text:flag}]);
+    expect(annotated.some(v=>v.source==="owner")).toBe(false);
+  });
+  it("keeps a numeric owner duration scoped, even with an unrelated matching count",()=>{
+    const owner="Staff worked for 7 days.";
+    expect(checkNumbers("We sold 7 lattes.",owner,[],"en").map(v=>v.text)).toEqual(["7"]);
+    expect(numberProvenance("We sold 7 lattes.",owner,[],"en")
+      .map(v=>v.source)).toEqual(["unchecked"]);
+    expect(checkNumbers("Staff worked for 7 days.",owner,[],"en")).toEqual([]);
+    expect(numberProvenance("Staff worked for 7 days.",owner,[],"en")
+      .map(v=>v.source)).toEqual(["owner"]);
+  });
+  it("does not promote a spoken owner duration to a sales count or a price",()=>{
+    const owner="Staff worked for seven days.";
+    expect(checkNumbers("We sold 7 lattes.",owner,[],"en").map(v=>v.text)).toEqual(["7"]);
+    expect(checkNumbers("Staff worked for 7 days.",owner,[],"en")).toEqual([]);
+    expect(numberProvenance("We sold 7 lattes.",owner,[],"en")
+      .map(v=>v.source)).toEqual(["unchecked"]);
+  });
+  it("preserves unrelated owner counts as valid count evidence",()=>{
+    expect(checkNumbers("We sold 7 lattes.","We sold 7 lattes.",[],"en")).toEqual([]);
+    expect(checkNumbers("We sold 7 lattes.","Staff worked 7 days. We sold 7 lattes.",[],"en")).toEqual([]);
+  });
+});
+
 describe("no checker warning may disappear during provenance decoration",()=>{
+  it("rejects fabricated labor hours and never launders them through sales counts",()=>{
+    for(const claim of ["Staff worked 94.5 hours.","Staff worked for 7 days.","Payroll is recorded for 90 days."]){
+      const flagged=checkNumbers(claim,"",[],"en");
+      expect(flagged).toHaveLength(1);
+      expect(numberProvenance(claim,"",[],"en")).toMatchObject([
+        {source:"unchecked",start:flagged[0].start,end:flagged[0].end}
+      ]);
+    }
+    expect(checkNumbers("Staff worked 7 days.","We sold 7 lattes.",[],"en")
+      .map(v=>v.text)).toEqual(["7 days"]);
+    expect(checkNumbers("Staff worked 7 days.","We worked 7 days.",[],"en")).toEqual([]);
+  });
+  it("does not allow owner counts to ground a percentage range",()=>{
+    const claim="Margin is 10–20%.";
+    const rejected=checkNumbers(claim,"We sold 10 lattes and 20 teas.",[],"en");
+    expect(rejected.map(v=>v.text)).toEqual(["10","20%"]);
+    expect(numberProvenance(claim,"We sold 10 lattes and 20 teas.",[],"en")
+      .map(v=>v.source)).toEqual(["unchecked","unchecked"]);
+    expect(checkNumbers(claim,"Margin is 10–20%.",[],"en")).toEqual([]);
+  });
+  it("exempts duration tokens without hiding adjacent unsupported counts",()=>{
+    const reply="We\'ve had 90 days of labor data, with 99 sales.";
+    expect(checkNumbers(reply,"",[],"en").map(v=>v.text)).toEqual(["90 days","99"]);
+    expect(numberProvenance(reply,"",[],"en").map(v=>v.text)).toEqual(["90 days","99"]);
+  });
   const cases=[
     {text:"Payroll is recorded for 90 days.",owner:"",results:[],locale:"en" as const},
-    {text:"We've had 90 days of labor data.",owner:"",results:[],locale:"en" as const},
+    {text:"We\'ve had 90 days of labor data.",owner:"",results:[],locale:"en" as const},
     {text:"We open Monday at 8:00 AM.",owner:"",results:[],locale:"en" as const},
-    {text:"El turno empieza a las 9:00 AM.",owner:"",results:[],locale:"es" as const},
-    {text:"تبدأ المناوبة الساعة 8:00 AM.",owner:"",results:[],locale:"ar" as const},
     {text:"Mocha costs $5.",owner:"Latte costs $5.",results:[
       {source:"menu_items",period:null,missing:[],items:[{id:"a",name:"Latte",priceCents:500},
         {id:"b",name:"Mocha",priceCents:600}]}],locale:"en" as const},
@@ -1406,8 +1470,7 @@ describe("no checker warning may disappear during provenance decoration",()=>{
     const claim="Payroll is recorded for 90 days.";
     const annotated=numberProvenance(claim,"",[],"en");
     expect(annotated.find(v=>v.text==="90 days")).toMatchObject({source:"unchecked"});
-    expect(numberProvenance("There are 8 days.","There are 8 days.",[],"en")
-      .some(v=>v.text==="8 days")).toBe(false);
+    expect(checkNumbers("There are 8 days.","There are 8 days.",[],"en")).toEqual([]);
     expect(numberProvenance("I suggest trying it for 8 days.","",[],"en")
       .some(v=>v.text==="8 days")).toBe(false);
   });

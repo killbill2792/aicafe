@@ -35,9 +35,10 @@ export type LoopReport={status:"in_progress"|"complete"|"insufficient_evidence";
   };
 };
 export type RegisteredLoopCapability={
-  id:string;version:1;proposalInputJsonSchema:unknown;proposalDescription:string;
+  id:string;version:1|2;proposalInputJsonSchema:unknown;proposalDescription:string;
   simulate:(scope:OwnerLoopScope,rawInput:unknown)=>Promise<LoopSimulation>;
   parseEffect:(rawEffect:unknown)=>Record<string,unknown>;
+  dependencyScope:(rawEffect:unknown)=>Record<string,unknown>;
   commit:(scope:OwnerLoopScope,rawEffect:unknown)=>Promise<LoopCommitResult>;
   monitor:(scope:OwnerLoopScope,rawEffect:unknown,businessDate:string)=>Promise<LoopSample|null>;
   report:(scope:OwnerLoopScope,rawEffect:unknown,samples:readonly LoopSample[],windowComplete:boolean)=>Promise<LoopReport>;
@@ -49,7 +50,8 @@ export type RegisteredLoopCapability={
 /** Each domain installs typed input/effect schemas; only the commit hook gets
  * effectful authority. The platform never switches on domain capability IDs. */
 export function registerLoopCapability<I,E extends Record<string,unknown>>(definition:{
-  id:string;version:1;inputSchema:z.ZodType<I>;effectSchema:z.ZodType<E>;
+  id:string;version:1|2;inputSchema:z.ZodType<I>;effectSchema:z.ZodType<E>;
+  dependencyScope:(effect:E)=>Record<string,unknown>;
   proposalDescription?:string;
   simulate:(scope:OwnerLoopScope,input:I)=>Promise<LoopSimulation>;
   commit:(scope:OwnerLoopScope,effect:E)=>Promise<LoopCommitResult>;
@@ -73,6 +75,7 @@ export function registerLoopCapability<I,E extends Record<string,unknown>>(defin
       return s;
     },
     parseEffect:(raw:unknown)=>parse(raw),
+    dependencyScope:(raw:unknown)=>definition.dependencyScope(parse(raw)),
     ...(definition.recognizeProposal?{recognizeProposal:definition.recognizeProposal}:{}),
     commit:(scope:OwnerLoopScope,raw:unknown)=>definition.commit(scope,parse(raw)),
     monitor:(scope:OwnerLoopScope,raw:unknown,date:string)=>definition.monitor(scope,parse(raw),date),
@@ -84,6 +87,7 @@ export function loopRegistry(...definitions:RegisteredLoopCapability[]){
   const map=new Map<string,RegisteredLoopCapability>();
   for(const d of definitions){
     if(map.has(d.id))throw new Error("Duplicate capability registration");
+    if(typeof d.dependencyScope!=="function")throw new Error("Missing dependency scope");
     map.set(d.id,d);
   }
   return Object.freeze({get(id:string){
@@ -126,6 +130,8 @@ export async function proposeLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
   const def=registry.get(capabilityId);
   const simulation=await def.simulate(scope,input);
   const validated=def.parseEffect(simulation.effect);
+  const dependency=def.dependencyScope(validated);
+  if(!dependency||typeof dependency!=="object")throw new Error("Missing dependency scope");
   return repo.create(scope,requestKey,{businessId:scope.businessId,ownerUserId:scope.ownerUserId,
     threadId:scope.threadId,capabilityId:def.id,capabilityVersion:def.version,
     canonicalEffectPayload:validated,effectHash:effectHash(validated),

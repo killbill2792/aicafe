@@ -14,6 +14,7 @@ const {beforeContributionCents:before,afterContributionCents:after,
 void _projected;
 let commits=0;
 const drinkFixture=registerLoopCapability({
+ dependencyScope:(effect)=>({version:1,effect}),
   id:"alex.drink_price_experiment.v1",version:1,
   inputSchema:z.strictObject({drink:z.literal("latte-12oz")}),
   effectSchema:z.strictObject({productId:z.string(),productName:z.string(),

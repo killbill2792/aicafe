@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {availabilityStatus,bestFreePerson,peopleWithRetainedShifts,type PersonForSchedule,type AvailabilityEntry}
+import {availabilityStatus,draftAvailabilityStatus,bestFreePerson,peopleWithRetainedShifts,type PersonForSchedule,type AvailabilityEntry}
  from "./schedulePresentation";
 
 const person:PersonForSchedule={id:"amy",name:"Amy",role:"Barista",wageCents:1900,
@@ -7,6 +7,17 @@ const person:PersonForSchedule={id:"amy",name:"Amy",role:"Barista",wageCents:190
 const rule=(start:string,end:string):AvailabilityEntry=>({
  employee_id:"amy",day_of_week:1,start_local:start,end_local:end,
  effective_from:"2026-10-01",effective_to:null
+});
+describe("partial shift clock inputs",()=>{
+ it("does not run strict availability math for an empty, equal, or impossible clock",()=>{
+  for(const [start,end] of [["","12:00"],["06:15",""],["07:00","07:00"],["24:00","12:00"]]){
+   expect(draftAvailabilityStatus(person,"2026-10-26",start,end,[],[rule("06:00","18:00")])).toBeNull();
+  }
+ });
+ it("still reports actual availability once the time fields are valid",()=>{
+  expect(draftAvailabilityStatus(person,"2026-10-26","06:15","12:37",[],[rule("06:00","18:00")])).toBe("free");
+  expect(draftAvailabilityStatus(person,"2026-10-26","05:00","12:37",[],[rule("06:00","18:00")])).toBe("unavailable");
+ });
 });
 describe("dated availability and roster presentation",()=>{
  it("accepts an afternoon slot in a second same-day window",()=>{
@@ -19,6 +30,19 @@ describe("dated availability and roster presentation",()=>{
   const windows=[rule("06:00","10:00"),rule("10:00","14:00")];
   expect(availabilityStatus(person,"2026-10-26","09:00","12:00",[],windows)).toBe("free");
   expect(availabilityStatus(person,"2026-10-26","09:00","15:00",[],windows)).toBe("unavailable");
+ });
+ it("covers all-day adjoining windows through midnight without claiming a closed Tuesday",()=>{
+  const monday=[rule("00:00","12:00"),rule("12:00","00:00")];
+  const tuesday=monday.map(w=>({...w,day_of_week:2}));
+  const both={...person,availableDays:[1,2]};
+  expect(availabilityStatus(person,"2026-10-26","23:59","00:01",[],monday))
+   .toBe("unavailable");
+  expect(availabilityStatus(both,"2026-10-26","23:59","00:00",[],[...monday,...tuesday]))
+   .toBe("free");
+  expect(availabilityStatus(both,"2026-10-26","22:15","02:30",[],[...monday,...tuesday]))
+   .toBe("free");
+  expect(availabilityStatus(both,"2026-10-26","11:59","12:01",[],monday))
+   .toBe("free");
  });
  it("retains inactive employees who have dated shifts but not unscheduled alumni",()=>{
   const roster=[{id:"active",active:true},{id:"former",active:false},{id:"departed",active:false}];
