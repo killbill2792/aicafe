@@ -15,6 +15,7 @@ import {newItemPriceTools} from "./newItemPrice";
 import {proposalTools} from "./proposals";
 import {priceExperimentTools} from "./priceExperiment";
 import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
+import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../resolveMoney";
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
@@ -202,21 +203,45 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   const period=selection.period;
   if(name==="get_profit"){
     const slice=await ctx.tools.getProfitability(period);
-    const ownerSales=ownerInputs?.netSalesCents!=null?
+    const identity=period.from+"/"+period.to;
+    const recordedSales=slice.available?slice.value.netSalesCents:null;
+    const replay=recordedSales!==null?
+      replayedMoneyChoice(ctx.resolveState,"sales",identity,recordedSales):null;
+    const suppliedSales=ownerInputs?.netSalesCents!=null?
       ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
+    const ownerSales=suppliedSales??(ownerInputs?.netSalesCents==null?replay?.ownerCents??null:null);
     if(!slice.available)return {source:"profitability",period,agentId:"leo",
       coverageLabel:selection.label,unit:"cents",ownerInputs:ownerInputs??null,
       ownerReportedSalesCents:ownerInputs?.netSalesCents??null,
       ownerReportedSalesPeriod:ownerInputs?.salesPeriod??null,
-      netSalesCents:ownerSales,netSalesProvenance:ownerSales!==null?"ownerProvided":null,
+      netSalesCents:suppliedSales,netSalesProvenance:suppliedSales!==null?"ownerProvided":null,
       totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
       missing:[...slice.quality.missingInputs,...(ownerInputs?.netSalesCents!=null?["costsUnverified"]:[]),
-        ...(ownerInputs?.netSalesCents!=null&&ownerSales===null?["ownerSalesPeriodMismatch"]:[])]};
-    const conflict=ownerConflict(slice.value.netSalesCents,ownerSales);
+        ...(ownerInputs?.netSalesCents!=null&&suppliedSales===null?["ownerSalesPeriodMismatch"]:[])]};
+    const conflict=ownerConflict(recordedSales,ownerSales);
+    const candidates=conflict&&recordedSales!==null&&ownerSales!==null?
+      moneyChoiceCandidates("sales",identity,recordedSales,ownerSales,ctx.locale):null;
+    const selected=candidates?
+      chosenMoneySource(ctx.resolveState,candidates)??(replay?.ownerCents===ownerSales?replay.source:null):null;
+    if(conflict&&selected===null)return {source:"profitability",period,coverageLabel:selection.label,
+      agentId:"leo",unit:"cents",ownerInputs:ownerInputs??null,
+      ownerSalesConflict:{recordedCents:recordedSales,ownerCents:ownerSales},
+      recordedNetSalesCents:recordedSales,ownerReportedSalesCents:ownerSales,
+      netSalesCents:null,totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
+      needsOwnerChoice:true,candidates,missing:[...slice.quality.missingInputs,"ownerChoiceRequired"],
+      estimated:slice.quality.estimatedInputs,explain:[]};
+    if(conflict&&selected==="owner")return {source:"profitability",period,coverageLabel:selection.label,
+      agentId:"leo",unit:"cents",ownerInputs:ownerInputs??null,
+      selectedMoneySource:"ownerProvided",ownerReportedSalesCents:ownerSales,
+      recordedNetSalesCents:recordedSales,netSalesCents:ownerSales,netSalesProvenance:"ownerProvided",
+      totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
+      needsOwnerChoice:false,missing:[...slice.quality.missingInputs,"recordedProfitNotApplicable"],
+      estimated:slice.quality.estimatedInputs,explain:[]};
     return {source:"profitability",period,coverageLabel:selection.label,agentId:"leo",unit:"cents",
-      missing:[...slice.quality.missingInputs,...(conflict?["ownerValueConflict"]:[])],
-      ownerSalesConflict:conflict?{recordedCents:slice.value.netSalesCents,ownerCents:ownerSales}:null,
-      needsOwnerChoice:conflict,estimated:slice.quality.estimatedInputs,
+      missing:slice.quality.missingInputs,
+      ownerSalesConflict:conflict?{recordedCents:recordedSales,ownerCents:ownerSales}:null,
+      selectedMoneySource:conflict?"recorded":null,
+      needsOwnerChoice:false,estimated:slice.quality.estimatedInputs,
       netSalesCents:slice.value.netSalesCents,totalCostsCents:slice.value.totalCostsCents,
       ownerProfitCents:slice.value.ownerProfitCents,operatingMargin:slice.value.operatingMargin,
       ownerInputs:ownerInputs??null,
