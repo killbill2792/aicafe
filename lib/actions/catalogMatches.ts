@@ -5,6 +5,7 @@ import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { existingMenuGroups, normalizeMenuGroup } from "@/lib/menu/menuGroups";
 import { inferMenuItemCategory } from "@/lib/menu/inferCategory";
 import { logQueryError } from "@/lib/data/queryError";
+import { resolveUnmatchedAlertsIfClear } from "@/lib/data/resolveUnmatchedAlerts.server";
 import { readAllPosRows, posIdBatches } from "@/lib/pos/pagedReads";
 
 /**
@@ -82,6 +83,7 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
       .eq("business_id", businessId);
     if (updateError) logQueryError("resolveCatalogMatch:update", updateError);
     applied = !updateError;
+    if (applied && match.provider === "csv") csvItemId = match.suggested_menu_item_id;
   } else {
     // A previous CSV attempt may have created the item but failed while updating sales.
     // Reuse the same item on retry instead of inserting a duplicate and hiding the match.
@@ -128,8 +130,10 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
   }
 
   const { error: confirmError } = await supabase.from("pos_catalog_matches").update({ status: "confirmed" }).eq("id", match.id).eq("business_id", businessId).eq("status", "needs_review");
-  if (confirmError) logQueryError("resolveCatalogMatch:confirm", confirmError);
+  if (confirmError) { logQueryError("resolveCatalogMatch:confirm", confirmError); throw new Error("catalog_match_failed"); }
+  await resolveUnmatchedAlertsIfClear(supabase, businessId);
 
+  revalidatePath("/"); revalidatePath("/more/alerts");
   revalidatePath("/menu"); revalidatePath("/menu/import-review");
 }
 
@@ -155,7 +159,10 @@ export async function matchUploadedItem(matchId: string, formData: FormData): Pr
   if (!await backfillUploadedSales(supabase, businessId, match.imported_name, item.id)) return;
   const {error: confirmed} = await supabase.from("pos_catalog_matches").update({status:"confirmed"})
     .eq("id",match.id).eq("business_id",businessId).eq("status","needs_review");
-  if (confirmed) { logQueryError("matchUploadedItem:confirm",confirmed); return; }
+  if (confirmed) { logQueryError("matchUploadedItem:confirm",confirmed); throw new Error("catalog_match_failed"); }
+  await resolveUnmatchedAlertsIfClear(supabase, businessId);
+  revalidatePath("/");
+  revalidatePath("/more/alerts");
   revalidatePath("/menu");
   revalidatePath("/menu/import-review");
   revalidatePath("/more/uploads");
