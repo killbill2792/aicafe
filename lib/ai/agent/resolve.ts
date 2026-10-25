@@ -90,6 +90,15 @@ export function choicePayload(result: EntityResolution<unknown>, source: string,
     ? {source,period,missing:[],needsOwnerChoice:true,candidates:result.candidates}
     : {source,period,missing:["notFound"],suggestions:result.status==="none"?result.suggestions:[]};
 }
+/** Confirm a model-selected target ID against the current owner message or
+ * the ID recorded from the previous clarification card. */
+export function ownerNamedTarget(state:ResolveState|undefined,id:string,label:string):boolean {
+  if(!state)return true; // Direct legacy tool invocations have no turn state.
+  if(state.chosenIds.has(id.toLowerCase()))return true;
+  const name=normalizedName(label);
+  const words=" "+normalizedName(state.ownerText)+" ";
+  return Boolean(name)&&words.includes(" "+name+" ");
+}
 /** Reject ambiguous writes unless this turn uniquely names the selected candidate
  * or a trusted clarification from the previous turn records its actual ID. */
 export function ownerChoiceGuard(
