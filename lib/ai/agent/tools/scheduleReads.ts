@@ -5,7 +5,7 @@ import {staffReadScope,mondayOfLocalDate} from "@/lib/scheduling/staffScope.serv
 import {uncheckedCoverageDays} from "@/lib/calc/scheduling/coverageGaps";
 import {missingWageInputs} from "@/lib/calc/scheduling/shiftCost";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {resolveEntity,choicePayload,ownerChoiceGuard} from "../resolve";
+import {resolveEntity,resolveChosenEntity,choicePayload,ownerChoiceGuard} from "../resolve";
 import {money} from "../explain";
 import {shiftCost} from "@/lib/calc/scheduling/shiftCost";
 const week=z.strictObject({week_start:z.iso.date().nullable()});
