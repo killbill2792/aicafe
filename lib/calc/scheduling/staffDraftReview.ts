@@ -73,3 +73,9 @@ export function reviewStaffDraft(
 export function safeReviewStaffDraft(...args:Parameters<typeof reviewStaffDraft>){
   try{return reviewStaffDraft(...args);}catch{return null;}
 }
+
+/** Only a failed approve can retry an approved-but-uncommitted CAS record.
+ * A failed discard must never become permission to approve. */
+export function staffDraftResponseState(action:"approve"|"cancel",state:string):string{
+ return action==="approve"&&state==="conflict"?"failed":state;
+}

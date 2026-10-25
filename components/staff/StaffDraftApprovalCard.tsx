@@ -3,7 +3,7 @@ import {useRef,useState} from "react";
 import {useTranslations} from "next-intl";
 import {useRouter} from "next/navigation";
 import {draftStaffWeekInPlace,reviseStaffWeekDraft} from "@/lib/actions/staffDraftInPlace";
-import {reviewStaffDraft,safeReviewStaffDraft,type StaffDraftInputShift} from "@/lib/calc/scheduling/staffDraftReview";
+import {reviewStaffDraft,safeReviewStaffDraft,staffDraftResponseState,type StaffDraftInputShift} from "@/lib/calc/scheduling/staffDraftReview";
 import type {PersonForSchedule,AvailabilityEntry,DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
 import type {RuleSettings} from "@/lib/calc/scheduling/ruleChecks";
 import type {OpenHours} from "@/lib/business/openHours";
@@ -71,7 +71,8 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
       const result=await response.json();
       const next=result.proposal;
       if(!next)throw Error();
-      setProposal({proposalId:next.proposalId,revision:next.revision,state:next.state});
+      setProposal({proposalId:next.proposalId,revision:next.revision,
+        state:staffDraftResponseState(action,next.state)});
       if(next.state==="applied"){onApplied();router.refresh();return;}
       if(next.state==="cancelled"){onClose();return;}
       if(next.state==="stale"){setError(t("draftStale"));return;}
