@@ -13,14 +13,14 @@ export const attentionTools={
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
       const items=await getAttentionItems({period:"today",locale:ctx.locale});
-      const {visible,total}=prioritizeHomeAttention(items);
+      const byId=new Map(items.map(item=>[item.id,item]));
+      const {visible,total}=prioritizeHomeAttention(items.map(item=>({
+        id:item.id,title:item.displayTitle,href:item.href,
+        impactCents:item.impactCents,actionLabel:item.actionLabel,
+      })));
       return {source:"home_attention",period:{from:ctx.asOf,to:ctx.asOf},
         agentId:"alex",missing:[],
-        total,items:visible.map(item=>({
-          id:item.id,kind:item.kind,agentId:item.agentId,source:item.source,
-          title:item.title,displayTitle:item.displayTitle,href:item.href,
-          impactCents:item.impactCents,actionLabel:item.actionLabel,
-        }))};
+        total,items:visible.map(row=>byId.get(row.id)!) };
     },
   },
 } as const;
