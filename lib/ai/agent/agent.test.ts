@@ -122,6 +122,11 @@ describe("numbers, statuses, and strict tool contracts", () => {
     };
     const result = await executeAgentTool("get_menu_items",{query:"latte",limit:25},context);
     expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450}]);
+    context.resolveState=newResolveState("What is the price of Espresso?");
+    const wrong=await executeAgentTool("get_menu_items",{query:"Latte",limit:25},context);
+    expect(wrong.missing).toContain("targetNotConfirmed");
+    expect(wrong.items).toBeUndefined();
+    context.resolveState=undefined;
     expect(result.agentId).toBe("alex");
     await expect(executeAgentTool("get_menu_items",{businessId:"other"},context)).rejects.toThrow();
     await expect(executeAgentTool("get_menu_items",{query:null,limit:26},context)).rejects.toThrow();
