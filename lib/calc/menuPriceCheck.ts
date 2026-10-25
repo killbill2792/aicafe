@@ -1,6 +1,8 @@
 /** A list price is not an observed sale price. All comparisons stay in cents. */
-export function priceCheck(listCents:number,realizedAvgCents:number|null):"ok"|"differs"{
- if(realizedAvgCents===null||realizedAvgCents<=0||listCents<=0)return "ok";
+export type PriceCheck="ok"|"differs"|"unknown";
+export type PriceEvidenceStatus="actual"|"partial"|"unknown";
+export function priceCheck(listCents:number,realizedAvgCents:number|null,evidenceStatus:PriceEvidenceStatus="actual"):PriceCheck{
+ if(evidenceStatus!=="actual"||realizedAvgCents===null||realizedAvgCents<=0||listCents<=0)return "unknown";
  return Math.abs(listCents-realizedAvgCents)>100&&
    Math.abs(listCents-realizedAvgCents)/realizedAvgCents>0.25?"differs":"ok";
 }

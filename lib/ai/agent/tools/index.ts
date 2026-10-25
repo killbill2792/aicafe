@@ -189,7 +189,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,unit:"cents",
         priceSource:evidenceUnavailable?"unknown":facts[item.id]?.priceSource??"initial",
         realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
-        priceCheck:facts[item.id]?.priceCheck??"ok",pricePeriod:facts[item.id]?.pricePeriod??null,
+        priceCheck:facts[item.id]?.priceCheck??"unknown",pricePeriod:facts[item.id]?.pricePeriod??null,
         priceEvidenceStatus:facts[item.id]?.priceEvidenceStatus??"unknown",
       })) };
   }
@@ -199,7 +199,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   const requested={from:resolved.value.from,to:resolved.value.to};
   // An explicitly requested historical period must never be silently replaced.
   const canFallback=typeof choice==="string"&&["today","week","month"].includes(choice);
-  const selection=canFallback?await resolveCoveredSalesWindow(ctx,requested):{period:requested,label:null};
+  const selection=canFallback?await resolveCoveredSalesWindow(ctx,requested):{period:requested,label:null,coverageFallback:null};
   const period=selection.period;
   if(name==="get_profit"){
     const slice=await ctx.tools.getProfitability(period);
@@ -211,12 +211,13 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       id.startsWith("sales:"+identity.toLowerCase()+":"));
     if(slice.available&&hasPriorSalesChoice&&!replay)
       return {source:"profitability",period,agentId:"leo",
-        missing:["sourceChoiceExpired"],needsOwnerChoice:false};
+        missing:["sourceChoiceExpired"],needsOwnerChoice:false,
+        coverageLabel:selection.label,coverageFallback:selection.coverageFallback};
     const suppliedSales=ownerInputs?.netSalesCents!=null?
       ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
     const ownerSales=suppliedSales??(ownerInputs?.netSalesCents==null?replay?.ownerCents??null:null);
     if(!slice.available)return {source:"profitability",period,agentId:"leo",
-      coverageLabel:selection.label,unit:"cents",ownerInputs:ownerInputs??null,
+      coverageLabel:selection.label,coverageFallback:selection.coverageFallback,unit:"cents",ownerInputs:ownerInputs??null,
       ownerReportedSalesCents:ownerInputs?.netSalesCents??null,
       ownerReportedSalesPeriod:ownerInputs?.salesPeriod??null,
       netSalesCents:suppliedSales,netSalesProvenance:suppliedSales!==null?"ownerProvided":null,
@@ -228,21 +229,21 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       moneyChoiceCandidates("sales",identity,recordedSales,ownerSales,ctx.locale):null;
     const selected=candidates?
       chosenMoneySource(ctx.resolveState,candidates)??(replay?.ownerCents===ownerSales?replay.source:null):null;
-    if(conflict&&selected===null)return {source:"profitability",period,coverageLabel:selection.label,
+    if(conflict&&selected===null)return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
       agentId:"leo",unit:"cents",ownerInputs:ownerInputs??null,
       ownerSalesConflict:{recordedCents:recordedSales,ownerCents:ownerSales},
       recordedNetSalesCents:recordedSales,ownerReportedSalesCents:ownerSales,
       netSalesCents:null,totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
       needsOwnerChoice:true,candidates,missing:[...slice.quality.missingInputs,"ownerChoiceRequired"],
       estimated:slice.quality.estimatedInputs,explain:[]};
-    if(conflict&&selected==="owner")return {source:"profitability",period,coverageLabel:selection.label,
+    if(conflict&&selected==="owner")return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
       agentId:"leo",unit:"cents",ownerInputs:ownerInputs??null,
       selectedMoneySource:"ownerProvided",ownerReportedSalesCents:ownerSales,
       recordedNetSalesCents:recordedSales,netSalesCents:ownerSales,netSalesProvenance:"ownerProvided",
       totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
       needsOwnerChoice:false,missing:[...slice.quality.missingInputs,"recordedProfitNotApplicable"],
       estimated:slice.quality.estimatedInputs,explain:[]};
-    return {source:"profitability",period,coverageLabel:selection.label,agentId:"leo",unit:"cents",
+    return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,agentId:"leo",unit:"cents",
       missing:[...slice.quality.missingInputs,
         ...(ownerInputs?.netSalesCents!=null&&suppliedSales===null?["ownerSalesPeriodMismatch"]:[])],
       ownerReportedSalesCents:ownerInputs?.netSalesCents??replay?.ownerCents??null,
@@ -262,8 +263,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   }
   if(name!=="get_sales")throw new ToolError("not_supported");
   const slice=await ctx.tools.getSalesTrend(period);
-  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),coverageLabel:selection.label};
-  return {source:"daily_rollups",period,coverageLabel:selection.label,agentId:"alex",unit:"cents",
+  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),coverageLabel:selection.label,coverageFallback:selection.coverageFallback};
+  return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,agentId:"alex",unit:"cents",
     missing:slice.quality.missingInputs,netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
 }

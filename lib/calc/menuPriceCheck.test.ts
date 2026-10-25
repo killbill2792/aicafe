@@ -12,7 +12,10 @@ describe("money evidence contracts",()=>{
  it("does not mistake small deviations for material price discrepancies",()=>{
   expect(priceCheck(510,500)).toBe("ok");
   expect(priceCheck(600,500)).toBe("ok");
-  expect(priceCheck(900,null)).toBe("ok");
+  expect(priceCheck(900,null)).toBe("unknown");
+  expect(priceCheck(900,500,"partial")).toBe("unknown");
+  expect(priceCheck(900,500,"unknown")).toBe("unknown");
+  expect(priceCheck(900,500,"actual")).toBe("differs");
  });
  it("does not let catalog provenance override a manual price",()=>{
   expect(priceSource("owner_manual","csv")).toBe("owner_manual");

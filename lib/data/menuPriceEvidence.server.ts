@@ -1,11 +1,11 @@
 import "server-only";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {dateOffset} from "@/lib/calc/periods";
-import {priceCheck,priceSource,realizedUnitAverage} from "@/lib/calc/menuPriceCheck";
+import {priceCheck,priceSource,realizedUnitAverage,type PriceCheck,type PriceEvidenceStatus} from "@/lib/calc/menuPriceCheck";
 export type MenuPriceEvidence={
  priceSource:"owner_manual"|"connected_pos"|"imported_avg"|"initial";
- realizedAvgCents:number|null;priceCheck:"ok"|"differs";
- pricePeriod:{from:string;to:string}|null;priceEvidenceStatus:"actual"|"partial"|"unknown";
+ realizedAvgCents:number|null;priceCheck:PriceCheck;
+ pricePeriod:{from:string;to:string}|null;priceEvidenceStatus:PriceEvidenceStatus;
 };
 /** Date-bounded, paged and tenant-scoped; never calculate an average from a truncated page. */
 export async function readMenuPriceEvidence(businessId:string,
@@ -49,9 +49,10 @@ export async function readMenuPriceEvidence(businessId:string,
  for(const item of items){
   const found=complete?rows.filter(row=>row.menu_item_id===item.id):[];
   const avg=complete?realizedUnitAverage(found):null;
+  const status:PriceEvidenceStatus=!complete?"partial":avg!==null?"actual":"unknown";
   results[item.id]={priceSource:priceSource(latest.get(item.id)??null,sources.get(item.id)??null),
-    realizedAvgCents:avg,priceCheck:priceCheck(item.priceCents,avg),pricePeriod:period,
-    priceEvidenceStatus:!complete?"partial":avg!==null?"actual":"unknown"};
+    realizedAvgCents:avg,priceCheck:priceCheck(item.priceCents,avg,status),pricePeriod:period,
+    priceEvidenceStatus:status};
  }
  return results;
 }
