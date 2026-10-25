@@ -2,8 +2,7 @@ import { z } from "zod";
 import type {MenuCatalogProduct} from "@/lib/ai/supervisorReads.server";
 import type {SoldProduct} from "@/lib/ai/supervisorFacts.server";
 import type {DataQuality} from "@/lib/calc";
-import {resolvePeriod} from "@/lib/calc/periods";
-import {resolveEntity,resolveChosenEntity,choicePayload,periodChoicePayload,ownerNamedTarget} from "../resolve";
+import {resolveOwnerPeriod,resolveEntity,resolveChosenEntity,choicePayload,periodChoicePayload,ownerNamedTarget} from "../resolve";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {estimatedItemRevenueCents} from "@/lib/calc/itemSalesRevenue";
 import {safeDifferenceCents} from "@/lib/calc/explainMath";
@@ -38,7 +37,7 @@ export const salesTools={
     agentId:"alex",schema:period,description:"Covered item quantities sold. When the owner names an item, pass query (otherwise null), and ask_owner if multiple menu products match; never pick the first.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=period.parse(raw);
-      const resolved=resolvePeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
+      const resolved=resolveOwnerPeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
       if(resolved.status!=="resolved")return periodChoicePayload("item_sales",resolved);
       const p={from:resolved.value.from,to:resolved.value.to};
       if(!ctx.tools.getProductSales)return {source:"item_sales",period:p,agentId:"alex",missing:["itemSalesReaderUnavailable"]};
