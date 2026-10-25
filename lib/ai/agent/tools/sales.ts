@@ -53,6 +53,8 @@ export const salesTools={
         const named=chosen?{status:"resolved" as const,value:chosen}:resolveEntity("product",input.query,active,{
           nameOf:r=>r.name,idOf:r=>r.id,describe:r=>r.category+" · "+(r.priceCents/100).toFixed(2)});
         if(named.status!=="resolved")return {...choicePayload(named,"item_sales",p),agentId:"alex"};
+        if(!ownerNamedTarget(ctx.resolveState,named.value.id,named.value.name))
+          return {source:"item_sales",period:p,agentId:"alex",missing:["targetNotConfirmed"]};
         // A valid item may have zero recorded sales. Never infer zero units from
         // an unrelated drink with a similar label.
         const selected=s.value.filter(row=>row.id===named.value.id);
