@@ -6,12 +6,13 @@ import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { DEMO_BUSINESS_ID } from "@/lib/constants";
+import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 
 const PayrollFallbackSchema = z.object({
   employerCostPercent: z.number().min(0).max(100),
 });
 
-export type PayrollFallbackResult = { ok: true } | { ok: false; error: string };
+export type PayrollFallbackResult = { ok: true; refreshed: boolean } | { ok: false; error: string };
 
 async function ownBusinessContext() {
   const supabase = await createServerSupabaseClient();
@@ -20,31 +21,16 @@ async function ownBusinessContext() {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: memberships, error } = await supabase
-    .from("memberships")
-    .select("business_id, businesses(is_demo, timezone, payroll_tax_rate)")
-    .eq("user_id", user.id);
-  if (error) throw error;
-
-  const own = (memberships ?? []).find((membership) => {
-    const raw = membership.businesses as unknown as
-      | { is_demo: boolean; timezone: string; payroll_tax_rate: number }
-      | { is_demo: boolean; timezone: string; payroll_tax_rate: number }[]
-      | null;
-    const business = Array.isArray(raw) ? raw[0] : raw;
-    return business?.is_demo === false;
-  });
-  if (!own || own.business_id === DEMO_BUSINESS_ID) return null;
-
-  const raw = own.businesses as unknown as
-    | { is_demo: boolean; timezone: string; payroll_tax_rate: number }
-    | { is_demo: boolean; timezone: string; payroll_tax_rate: number }[];
-  const business = Array.isArray(raw) ? raw[0] : raw;
-  return {
-    supabase,
-    businessId: own.business_id,
-    timezone: business?.timezone ?? "America/Los_Angeles",
-  };
+  const businessId = await getActiveBusinessId(user.id);
+  if (businessId === DEMO_BUSINESS_ID) return null;
+  const {data: member,error} = await supabase.from("memberships")
+    .select("role,businesses(is_demo,timezone)").eq("user_id",user.id)
+    .eq("business_id",businessId).eq("role","owner").maybeSingle();
+  if(error) throw error;
+  const raw=member?.businesses as unknown as {is_demo:boolean;timezone:string}|{is_demo:boolean;timezone:string}[]|null|undefined;
+  const business=Array.isArray(raw)?raw[0]:raw;
+  if(!member||business?.is_demo!==false) return null;
+  return {supabase,businessId,timezone:business.timezone??"America/Los_Angeles"};
 }
 
 export async function savePayrollCostAssumption(input: unknown): Promise<PayrollFallbackResult> {
@@ -81,7 +67,8 @@ export async function savePayrollCostAssumption(input: unknown): Promise<Payroll
   if (rowsError) return { ok: false, error: rowsError.message };
 
   // Only fallback/estimated days change. Connected/imported actual payroll is preserved.
-  const estimatedRows = (rows ?? []).filter((row) => row.staff_tax_status !== "actual");
+  const estimatedRows = (rows ?? []).filter((row) => row.staff_tax_status === "estimated" && row.staff_wages_cents !== null && Number.isSafeInteger(Number(row.staff_wages_cents)) && Number(row.staff_wages_cents) >= 0);
+  let refreshed = true;
   for (let index = 0; index < estimatedRows.length; index += 10) {
     const chunk = estimatedRows.slice(index, index + 10);
     const results = await Promise.all(
@@ -94,13 +81,15 @@ export async function savePayrollCostAssumption(input: unknown): Promise<Payroll
             staff_tax_source: "owner_entered",
           })
           .eq("business_id", ctx!.businessId)
-          .eq("business_date", row.business_date),
+          .eq("business_date", row.business_date)
+          .eq("staff_tax_status", "estimated")
+          .eq("staff_wages_cents", row.staff_wages_cents)
+          .select("business_date"),
       ),
     );
-    const failed = results.find((result) => result.error);
-    if (failed?.error) return { ok: false, error: failed.error.message };
+    if (results.some(result => result.error || result.data?.length !== 1)) refreshed = false;
   }
 
-  for (const path of ["/staff", "/", "/money", "/menu", "/operations"]) revalidatePath(path);
-  return { ok: true };
+  for (const path of ["/staff", "/staff/rules", "/onboarding", "/", "/money", "/menu", "/operations"]) revalidatePath(path);
+  return { ok: true, refreshed };
 }

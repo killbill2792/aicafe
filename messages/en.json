@@ -860,7 +860,10 @@
     "sourceImported": "Imported clock-in data",
     "sourceAiCafe": "AI Cafe clock-in/out",
     "offToday": "No hours recorded today",
-    "now": "Now"
+    "now": "Now",
+    "payrollCostsSummary": "Employer costs: {percent}% on top of wages (fallback)",
+    "payrollCostsEdit": "Edit in Rules & costs",
+    "payrollSaveFailed": "Could not save employer costs. Try again."
   },
   "More": {
     "toastConnect": "Connect Toast",
@@ -976,7 +979,9 @@
     "errorGeneric": "Something went wrong. Try again.",
     "error_square_not_configured": "Square isn't connected in this environment yet.",
     "error_invalid_state": "That connection link expired. Try again.",
-    "error_connection_failed": "Couldn't connect to Square. Try again."
+    "error_connection_failed": "Couldn't connect to Square. Try again.",
+    "payrollTaxInvalid": "Enter a percentage from 0% to 100%.",
+    "payrollTaxSaveFailed": "Could not save employer costs. Try again."
   },
   "Uploads": {
     "title": "Uploads",
@@ -2928,7 +2933,7 @@
     "restEvery": "Rest every (min)",
     "weeklyOvertime": "Weekly overtime",
     "weeklyAfter": "Weekly after (min)",
-    "multiplier": "Overtime multiplier (basis points)",
+    "multiplier": "Overtime pay",
     "dailyOvertime": "Daily overtime",
     "dailyAfter": "Daily after (min)",
     "shifts": "Shifts",
@@ -3023,7 +3028,34 @@
     "noWageAction": "No wage set",
     "salaryManagedBadge": "Salary managed separately",
     "wagePerHour": "{amount} per hour",
-    "teamHoursShort": "{hours} h"
+    "teamHoursShort": "{hours} h",
+    "rulesAndCosts": "Rules & costs",
+    "mealSentence": "Meal break:",
+    "restSentence": "Paid rest:",
+    "weeklySentence": "Weekly overtime after",
+    "dailySentence": "Daily overtime after",
+    "longestSentence": "Longest shift",
+    "shortestSentence": "Shortest shift",
+    "betweenSentence": "Rest between shifts",
+    "afterOrEvery": "after / every",
+    "overtimePays": "Overtime pays",
+    "customMultiplier": "Custom",
+    "invalidMultiplier": "Enter a multiplier from 1 to 5 (up to four decimal places).",
+    "atLeast": "At least",
+    "whileOpen": "person(s) while open",
+    "prepTiming": "Opening and closing",
+    "invalidNumber": "Enter a valid amount within the allowed range.",
+    "mealRuleSummaryOn": "Meal break after {hours} h {minutes} min",
+    "mealRuleSummaryOff": "Meal-break rule is off",
+    "weeklyRuleSummaryOn": "Weekly overtime after {hours} h {minutes} min",
+    "weeklyRuleSummaryOff": "Weekly overtime rule is off",
+    "after": "after",
+    "every": "every",
+    "applyRule": "Use rule",
+    "hoursUnit": "h",
+    "minutesUnit": "min",
+    "hoursInput": "hours",
+    "minutesInput": "minutes"
   },
   "FreeAccess": {
     "pricing": "Plans and pricing",

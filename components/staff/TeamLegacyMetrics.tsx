@@ -5,20 +5,24 @@ import {getEmployees} from "@/lib/data/getEmployees";
 import {Link} from "@/i18n/navigation";
 import {buildStaffViewModel} from "@/lib/viewmodels/staffViewModel";
 import {getPayrollCostSettings} from "@/lib/data/getPayrollCostSettings";
+import {getTeamRules} from "@/lib/actions/teamRules";
+import {ruleThresholdStatus} from "@/lib/calc/scheduling/ruleSummary";
 import {formatInTimeZone} from "date-fns-tz";
 import Money from "@/components/shared/Money";
-import PayrollCostCard from "@/components/staff/PayrollCostCard";
 import StaffCostBars,{shortWeekday} from "@/components/staff/StaffCostBars";
 
 /** Retain the legacy, actual-timecard analytics below the scheduling workspace.
  * Scheduled wages above are not mixed into the historical actuals here. */
 export default async function TeamLegacyMetrics(){
  if(!isSupabaseConfigured())return null;
- const [snapshot,payroll,t,locale,team]=await Promise.all([
-  getSnapshot(),getPayrollCostSettings(),getTranslations("Staff"),getLocale(),getEmployees()
+ const [snapshot,payroll,t,locale,team,rules,tRules]=await Promise.all([
+  getSnapshot(),getPayrollCostSettings(),getTranslations("Staff"),getLocale(),getEmployees(),getTeamRules(),getTranslations("StaffSchedule")
  ]);
  const vm=buildStaffViewModel(snapshot,team);
  const clock=(iso:string)=>new Intl.DateTimeFormat(locale,{timeZone:snapshot.business.timezone,hour:"numeric",minute:"2-digit"}).format(new Date(iso));
+ const mealRule=rules.ok?ruleThresholdStatus(Boolean(rules.data.meal_break_enabled),Number(rules.data.meal_break_after_minutes)):{enabled:false as const};
+ const weeklyRule=rules.ok?ruleThresholdStatus(Boolean(rules.data.weekly_ot_enabled),Number(rules.data.weekly_ot_after_minutes)):{enabled:false as const};
+ const formatNumber=(value:number)=>new Intl.NumberFormat(locale).format(value);
  return <section className="mt-6 space-y-3" aria-label={t("onShiftNow")}>
   <section className="rounded-card-lg bg-card p-4">
    <h2 className="text-lg font-bold">{vm.onShift.length?t("activeShiftHero",{count:vm.onShift.length}):t("noOneOnShiftHero")}</h2>
@@ -29,15 +33,21 @@ export default async function TeamLegacyMetrics(){
     <span>{s.name} · {clock(s.clockInIso)}</span><strong><Money cents={s.todayCostCents}/></strong>
    </p>)}
   </section>
-  <PayrollCostCard settings={payroll} labels={{
-   title:t("payrollCostsTitle"),body:t("payrollCostsBody"),field:t("payrollCostsField"),
-   hint:t("payrollCostsHint"),source:t("payrollSource"),
-   ownerSource:t("payrollSourceOwner"),estimateSource:t("payrollSourceEstimate"),
-   quickbooksSource:t("payrollSourceQuickBooks"),importedSource:t("payrollSourceImported"),
-   connectedSource:t("payrollSourceConnected"),actualUsing:t("payrollActualUsing"),
-   fallbackNote:t("payrollFallbackNote"),save:t("payrollSave"),
-   saving:t("payrollSaving"),saved:t("payrollSaved"),invalid:t("payrollInvalid")
-  }}/>
+  {rules.ok&&<section className="rounded-card-lg bg-card p-4">
+   <h2 className="text-lg font-bold">{tRules("rulesAndCosts")}</h2>
+   <p className="mt-2 text-ink-muted">{mealRule.enabled
+    ?tRules("mealRuleSummaryOn",{hours:formatNumber(mealRule.hours),minutes:formatNumber(mealRule.minutes)})
+    :tRules("mealRuleSummaryOff")}</p>
+   <p className="mt-1 text-ink-muted">{weeklyRule.enabled
+    ?tRules("weeklyRuleSummaryOn",{hours:formatNumber(weeklyRule.hours),minutes:formatNumber(weeklyRule.minutes)})
+    :tRules("weeklyRuleSummaryOff")}</p>
+   <Link href="/staff/rules" className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text underline">{t("payrollCostsEdit")}</Link>
+  </section>}
+  <section className="rounded-card-lg bg-card p-4">
+   <h2 className="text-lg font-bold">{t("payrollCostsTitle")}</h2>
+   <p className="mt-2 text-ink-muted">{t("payrollCostsSummary",{percent:new Intl.NumberFormat(locale,{maximumFractionDigits:2}).format(payroll.employerCostRate*100)})}</p>
+   <Link href="/staff/rules" className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text underline">{t("payrollCostsEdit")}</Link>
+  </section>
   <section className="rounded-card-lg bg-card p-4">
    <h2 className="text-lg font-bold">{t("costPerSalesDollar")}</h2>
    <p className="text-sm text-ink-muted">{t("healthyLine",{cents:vm.healthyCostPerSalesDollarCents})}</p>
