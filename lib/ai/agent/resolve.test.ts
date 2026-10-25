@@ -54,6 +54,14 @@ describe("safe entity resolution",()=>{
     expect(staff.status).toBe("ambiguous");
     if(staff.status==="ambiguous")expect(staff.candidates.map(c=>c.label)).toEqual(["Maria — Barista","Maria — Manager"]);
   });
+  it("uses only a card-selected ID that still exists in the fresh scoped rows",async()=>{
+    const {resolveChosenEntity}=await import("./resolve");
+    const chosen=newResolveState("Latte — Iced",[
+      {role:"assistant",content:"Asked: Which? Options: Latte — Hot ("+hot+"); Latte — Iced ("+iced+")"}]);
+    expect(resolveChosenEntity(chosen,rows,row=>row.id)).toEqual(rows[1]);
+    expect(resolveChosenEntity(chosen,[rows[0]],row=>row.id)).toBeNull();
+    expect(resolveChosenEntity(newResolveState("Latte"),rows,row=>row.id)).toBeNull();
+  });
   it("matches only whole product names or a previously selected real ID",async()=>{
     const {ownerNamedTarget}=await import("./resolve");
     const ordinary=newResolveState("Show espresso's recipe cost");
