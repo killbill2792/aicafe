@@ -1,6 +1,6 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {ownerChoiceGuard,resolveEntity,choicePayload,normalizedName} from "../resolve";
+import {ownerChoiceGuard,ownerNamedTarget,resolveEntity,choicePayload,normalizedName} from "../resolve";
 import {getTeam} from "@/lib/actions/schedule";
 import {mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
 const uuid=z.uuid(),date=z.iso.date(),clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
