@@ -34,7 +34,7 @@ describe("canonical attention titles include valid localized metadata",()=>{
     expect(keys.length).toBeGreaterThan(25);
     for(const key of keys){
       const [namespace,name]=key.split(".");
-      const value=(catalog as Record<string,Record<string,string>>)[namespace]?.[name];
+      const value=(catalog as unknown as Record<string,Record<string,string>>)[namespace]?.[name];
       expect(value, key).toBeTruthy();
       for(const input of inputs[key]??[])expect(value,key).toContain("{"+input);
     }
