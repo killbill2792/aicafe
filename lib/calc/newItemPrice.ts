@@ -6,6 +6,8 @@ import {calcResult} from "./result";
 export type NewItemPriceInput = {
   ingredientCostCents:number; packagingCents:number|null; targetMarginPercent:number|null;
   labor30dCents:number|null; monthlyBillsCents:number|null; units30d:number|null;
+  /** Known subset of bills when full overhead coverage is unavailable. Not a complete bill total. */
+  knownPartialBillsCents?:number|null;
   menuPricesCents:number[];
 };
 export function calculateNewItemPrice(input:NewItemPriceInput) {
@@ -19,6 +21,10 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
   if(input.monthlyBillsCents===null)missing.push("monthlyBills");
   const laborPerItemCents=units!==null&&input.labor30dCents!==null?Math.round(input.labor30dCents/units):null;
   const overheadPerItemCents=units!==null&&input.monthlyBillsCents!==null?Math.round(input.monthlyBillsCents/units):null;
+  const partialOverheadPerItemCents=units!==null&&input.monthlyBillsCents===null&&
+    input.knownPartialBillsCents!=null?Math.round(input.knownPartialBillsCents/units):null;
+  const knownUnitCostCents=input.ingredientCostCents+packagingCents+
+    (laborPerItemCents??0)+(overheadPerItemCents??partialOverheadPerItemCents??0);
   const fullCostCents=laborPerItemCents===null||overheadPerItemCents===null?null:
     input.ingredientCostCents+packagingCents+laborPerItemCents+overheadPerItemCents;
   const targetMarginPercent=input.targetMarginPercent??COFFEE_SHOP_PROFILE.targetOperatingMargin*100;
@@ -27,13 +33,17 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
   const ingredientBenchmarkCents=Math.round(baselinePriceCents(input.ingredientCostCents,COFFEE_SHOP_PROFILE.targetProductCostPercent));
   const rawPrice=Math.max(costPlusPriceCents??0,ingredientBenchmarkCents);
   // Do not present a benchmark as full-cost pricing when labor/overhead are missing.
-  const suggestedPriceCents=Math.max(COFFEE_SHOP_PROFILE.roundingRule.incrementCents,
-    applyRounding(rawPrice,COFFEE_SHOP_PROFILE.roundingRule));
+  const increment=COFFEE_SHOP_PROFILE.roundingRule.incrementCents;
+  // A partial recommendation may be approximate, but must never be below costs we DO know.
+  // Nearest-increment rounding on its own can round down below those costs.
+  const knownCostFloorCents=Math.ceil(knownUnitCostCents/increment)*increment;
+  const suggestedPriceCents=Math.max(increment,
+    applyRounding(rawPrice,COFFEE_SHOP_PROFILE.roundingRule),knownCostFloorCents);
   const rawFloorCents=Math.round(input.ingredientCostCents/0.35);
   const rawTargetCents=Math.round(input.ingredientCostCents/0.30);
   const rawHighCents=Math.ceil(input.ingredientCostCents/0.25);
-  const floorCents=Math.ceil(rawFloorCents/25)*25;
-  const highCents=Math.ceil(rawHighCents/25)*25;
+  const floorCents=Math.max(Math.ceil(rawFloorCents/increment)*increment,knownCostFloorCents);
+  const highCents=Math.max(Math.ceil(rawHighCents/increment)*increment,floorCents);
   const result=calcResult({value:suggestedPriceCents,floor:floorCents,
     range:{low:floorCents,high:highCents},tier:fullCostCents!==null&&input.packagingCents!==null?"full":units!==null?"partial":"floor_only",
     inputs:[{name:"unitCostCents",value:input.ingredientCostCents,provenance:"ownerProvided"},
@@ -43,7 +53,9 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
     Math.round((prices[prices.length/2-1]+prices[prices.length/2])/2)):null;
   return {
     ingredientCostCents:input.ingredientCostCents,packagingCents,labor30dCents:input.labor30dCents,
-    monthlyBillsCents:input.monthlyBillsCents,units30d:units,laborPerItemCents,overheadPerItemCents,
+    monthlyBillsCents:input.monthlyBillsCents,
+    knownPartialBillsCents:input.knownPartialBillsCents??null,partialOverheadPerItemCents,
+    knownUnitCostCents,knownCostFloorCents,units30d:units,laborPerItemCents,overheadPerItemCents,
     fullCostCents,costPlusPriceCents,ingredientBenchmarkCents,targetMarginPercent,
     suggestedPriceCents,ownMenuRange:{min:prices[0]??null,median,max:prices.at(-1)??null,count:prices.length},
     profitPerItemCents:suggestedPriceCents===null||fullCostCents===null?null:suggestedPriceCents-fullCostCents,
@@ -56,14 +68,14 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
 /** Partial overhead is a known-cost floor, NEVER the café's complete break-even. */
 export function contributionCoverage(input:{
   priceCents:number|null;unitCostCents:number;packagingCents:number|null;
-  laborCents:number|null;billsCents:number|null;days:number;
+  laborCents:number|null;billsCents:number|null;billsComplete?:boolean;days:number;
 }){
   if(!Number.isSafeInteger(input.days)||input.days<1)throw new Error("Invalid covered days");
   const contributionCents=input.priceCents===null?null:
     input.priceCents-input.unitCostCents-(input.packagingCents??0);
   const known=(input.laborCents??0)+(input.billsCents??0);
   const knownAny=input.laborCents!==null||input.billsCents!==null;
-  const complete=input.laborCents!==null&&input.billsCents!==null;
+  const complete=input.laborCents!==null&&input.billsCents!==null&&input.billsComplete!==false;
   const knownOverheadPerDayCents=knownAny?Math.round(known/input.days):null;
   const drinks=contributionCents!==null&&contributionCents>0&&knownOverheadPerDayCents!==null?
     Math.ceil(knownOverheadPerDayCents/contributionCents):null;
