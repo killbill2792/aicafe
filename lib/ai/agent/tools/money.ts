@@ -1,9 +1,12 @@
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
+import {resolveOwnerPeriod,resolveEntity,choicePayload,periodChoicePayload} from "../resolve";
+import {money,percent,count} from "../explain";
+import {safeSumCents} from "@/lib/calc/explainMath";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 
-const period=z.strictObject({period:z.enum(["today","week","month"])});
+const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const empty=z.strictObject({});
 // Nullable for the Responses strict-tool schema. Omitted fields keep existing callers working.
 const breakEvenInput=z.strictObject({
@@ -16,15 +19,40 @@ const unavailable=(source:string,period:{from:string;to:string}|null,missing:str
   ({source,period,agentId:"leo",missing:missing.length?missing:["sourceUnavailable"]});
 export const moneyTools={
   get_expenses:{
-    agentId:"leo",schema:period,description:"Recorded actual expenses separately from recurring category estimates.",
+    agentId:"leo",schema:period.extend({category:z.string().max(100).nullable()}),description:"Recorded actual expenses separately from recurring category estimates.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const p=requestedPeriod(period.parse(raw).period,ctx.asOf);
+      const input=period.extend({category:z.string().max(100).nullable()}).parse(raw);
+      const chosen=resolveOwnerPeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
+      if(chosen.status!=="resolved")return periodChoicePayload("expenses",chosen);
+      const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getRecordedExpenses||!ctx.tools.getExpenseSummary)return unavailable("expenses",p,["expenseReaderUnavailable"]);
       const [recorded,categories]=await Promise.all([ctx.tools.getRecordedExpenses(p),ctx.tools.getExpenseSummary(p)]);
+      // A named-category request must never silently become an all-expenses
+      // request when the category reader fails.
+      if(input.category&&!categories.available)return {
+        source:"expenses",period:p,agentId:"leo",
+        missing:categories.quality.missingInputs.length?categories.quality.missingInputs:["categoryReaderUnavailable"],
+        recordedActualTotalCents:null,categories:null,
+      };
+      let filterCategory:string|null=null;
+      if(input.category&&categories.available){
+        const chosen=categories.value.find(item=>item.categoryCode.toLowerCase()===input.category?.toLowerCase()&&
+          ctx.resolveState?.chosenIds.has(item.categoryCode.toLowerCase()));
+        if(chosen)filterCategory=chosen.categoryCode;
+        else {
+          const selected=resolveEntity("category",input.category,categories.value,{
+            nameOf:c=>c.label,idOf:c=>c.categoryCode,describe:c=>c.categoryCode});
+          if(selected.status!=="resolved")return {...choicePayload(selected,"expenses",p),agentId:"leo"};
+          filterCategory=selected.value.categoryCode;
+        }
+      }
       return {source:"expenses",period:p,agentId:"leo",
-        missing:[...recorded.quality.missingInputs,...categories.quality.missingInputs],
-        recordedActualTotalCents:recorded.available?recorded.value.totalCents:null,
-        categories:categories.available?categories.value.slice(0,15).map(v=>({
+        missing:[...recorded.quality.missingInputs,...categories.quality.missingInputs,
+          ...(filterCategory?["categoryRecordedActualTotalUnavailable"]:[])],
+        // The recorded expense total covers ALL categories. Never present it as
+        // the selected category's spend.
+        recordedActualTotalCents:filterCategory?null:recorded.available?recorded.value.totalCents:null,
+        categories:categories.available?categories.value.filter(c=>filterCategory===null||filterCategory===c.categoryCode).slice(0,15).map(v=>({
           label:v.label,categoryCode:v.categoryCode,amountCents:v.isMissing?null:v.amountCents,
           isEstimate:v.isEstimate,isMissing:v.isMissing})):null};
     },
@@ -114,8 +142,16 @@ export const moneyTools={
           fixedCostMissing.length?fixedCostMissing:s?.quality.missingInputs??["recordedFixedCostsUnavailable"]),
         ...modelMissing,
       ])];
+      const marginBps=ownerBps===null?null:
+        10000-ownerBps-(percentToBasisPoints(owner.ownerProcessingFeePercent)??0);
+      const breakEvenExplain=comparison&&marginBps!==null&&marginBps>0?[
+        {label:"Daily break-even sales",inputs:[
+          {name:"dailyFixedCosts",value:money(comparison.dailyFixedCostsCents)},
+          {name:"contributionMargin",value:percent(marginBps)}],
+         formula:"divide" as const,result:money(comparison.dailyBreakEvenSalesCents),
+         period:null,source:"get_break_even",provenance:"ownerProvided" as const}]:[];
       return {source:"break_even",period:null,agentId:"leo",
-        missing,
+        missing,explain:breakEvenExplain,
         ...(fixedCostEstimates.length?{estimated:fixedCostEstimates}:{}),
         estimate:s?.available?s.value:null,
         // Null-valued metric keys intentionally invalidate old numeric evidence
@@ -145,10 +181,22 @@ export const moneyTools={
   get_cost_summary:{
     agentId:"leo",schema:period,description:"Observed business cost components; respect incomplete coverage.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const p=requestedPeriod(period.parse(raw).period,ctx.asOf);
+      const chosen=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
+      if(chosen.status!=="resolved")return periodChoicePayload("business_costs",chosen);
+      const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getBusinessCostSummary)return unavailable("business_costs",p,["costSummaryReaderUnavailable"]);
       const s=await ctx.tools.getBusinessCostSummary(p);
-      return {source:"business_costs",period:p,agentId:"leo",missing:s.missingInputs,
+      const costs=[s.components.ingredientsCents,s.components.loadedStaffCents,
+        s.components.cardFeesCents,s.components.runningCostsCents];
+      const sum=safeSumCents(costs);
+      const explain=s.completeness!=="unavailable"&&
+        Object.values(s.observed).every(Boolean)&&sum===s.knownTotalCents?
+        [{label:"Recorded business costs",inputs:[
+          {name:"ingredients",value:money(costs[0])},{name:"staff",value:money(costs[1])},
+          {name:"fees",value:money(costs[2])},{name:"overhead",value:money(costs[3])}],
+          formula:"sum" as const,result:money(s.knownTotalCents),period:p,source:"get_cost_summary",
+          provenance:s.estimatedInputs.length?"estimate" as const:"recorded" as const}]:[];
+      return {source:"business_costs",period:p,agentId:"leo",missing:s.missingInputs,explain,
         completeness:s.completeness,knownTotalCents:s.completeness==="unavailable"?null:s.knownTotalCents,
         // The deterministic cost engine uses zero sentinels for unknown components.
         // Never allow those sentinels to masquerade as observed zero-cost amounts.

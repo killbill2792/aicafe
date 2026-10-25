@@ -45,7 +45,7 @@ describe("answer style (CHAT_STYLE_V2)", () => {
   it("adds the style rules with a new cache key when on", async () => {
     const { requests, provider } = recording([[text("Hi."), completed]]);
     await runAgentTurn({ ownerText: "Hi", context, provider, style: true });
-    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v2");
+    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v4");
     expect(String(requests[0].instructions)).toContain(STYLE_RULES);
     expect(agentPromptCacheKey(true)).not.toBe(agentPromptCacheKey(false));
   });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { checkNumbers, compactEvidence, numberProvenance } from "./checkNumbers";
 import { statusFromResults } from "./status";
 import { executeAgentTool, agentToolDefinitions, type AgentToolContext, requestedPeriod } from "./tools";
+import {newResolveState} from "./resolve";
 
 const base = { source: "profitability", period: null, missing: [],
   ownerProfitCents: 12345, operatingMargin: 0.125, coveredSalesDays: 4 };
@@ -86,7 +87,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       status:"partial",missing:["sales"] });
   });
   it("publishes exactly the registered strict functions", () => {
-    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["get_peak_hours","get_employee_sales","get_payroll_facts","get_profit","get_sales","get_menu_items",
+    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["ask_owner","get_peak_hours","get_employee_sales","get_payroll_facts","get_profit","get_sales","get_menu_items",
       "get_staff","get_schedule","get_labor","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
       "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
@@ -121,6 +122,11 @@ describe("numbers, statuses, and strict tool contracts", () => {
     };
     const result = await executeAgentTool("get_menu_items",{query:"latte",limit:25},context);
     expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450}]);
+    context.resolveState=newResolveState("What is the price of Espresso?");
+    const wrong=await executeAgentTool("get_menu_items",{query:"Latte",limit:25},context);
+    expect(wrong.missing).toContain("targetNotConfirmed");
+    expect(wrong.items).toBeUndefined();
+    context.resolveState=undefined;
     expect(result.agentId).toBe("alex");
     await expect(executeAgentTool("get_menu_items",{businessId:"other"},context)).rejects.toThrow();
     await expect(executeAgentTool("get_menu_items",{query:null,limit:26},context)).rejects.toThrow();

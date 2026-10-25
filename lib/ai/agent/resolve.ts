@@ -1,0 +1,193 @@
+import {resolvePeriod as importResolvePeriod} from "@/lib/calc/periods";
+/** Tool-only name resolution. Never let model-provided ids choose between matching records. */
+export type ChoiceCandidate = { id: string; label: string; detail: string };
+export type EntityResolution<T> =
+  | { status: "resolved"; value: T }
+  | { status: "ambiguous"; candidates: ChoiceCandidate[] }
+  | { status: "none"; suggestions: ChoiceCandidate[] };
+export const normalizedName = (value: string): string => value.normalize("NFKD")
+  .replace(/[\u064b-\u065f\u0670\u0640]/gu, "")
+  .replace(/[أإآٱ]/gu, "ا").replace(/ى/gu, "ي").replace(/ؤ/gu, "و")
+  .replace(/ئ/gu, "ي").replace(/ة/gu, "ه")
+  .replace(/[\u0300-\u036f]/gu, "").toLocaleLowerCase("und")
+  .replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/gu, " ");
+const score = (query: string, label: string): number => {
+  if (label === query) return 0;
+  if (label.startsWith(query)) return 1;
+  if (label.includes(query)) return 2;
+  if (query.split(" ").some(token => token.length > 1 && label.includes(token))) return 3;
+  return 10;
+};
+export function resolveEntity<T>(
+  _kind: string, query: string, rows: readonly T[],
+  field: { nameOf: (row: T) => string; idOf: (row: T) => string; describe: (row: T) => string },
+): EntityResolution<T> {
+  const q = normalizedName(query);
+  const choices = (items: readonly T[]): ChoiceCandidate[] => {
+    const names = new Map<string,number>();
+    for (const item of items) {
+      const name = normalizedName(field.nameOf(item));
+      names.set(name,(names.get(name)??0)+1);
+    }
+    const labels=new Set<string>();
+    return items.slice(0,4).map(item => {
+      const name = field.nameOf(item), detail = field.describe(item);
+      const duplicate = (names.get(normalizedName(name))??0)>1;
+      let label = duplicate ? name + " — " + detail : name;
+      if(labels.has(normalizedName(label)))label+=" ("+field.idOf(item).slice(0,8)+")";
+      labels.add(normalizedName(label));
+      return { id: field.idOf(item), label: label.slice(0,60), detail };
+    });
+  };
+  if (!q) return {status:"none", suggestions:choices(rows)};
+  const ids = rows.filter(row => field.idOf(row).toLowerCase() === query.toLowerCase());
+  // Category codes can be natural words ("supplies", "rent"). When the
+  // owner's phrase also labels several records, it is NOT an explicit ID choice.
+  const displayCollisions=rows.filter(row=>normalizedName(field.nameOf(row))===q);
+  if (ids.length===1&&displayCollisions.length<=1)return {status:"resolved",value:ids[0]};
+  const exact = rows.filter(row => normalizedName(field.nameOf(row))===q);
+  if(exact.length===1){
+    // "Latte" must not silently win over "Iced Latte": the owner's words
+    // can refer to either when those are both menu products.
+    const otherNames=rows.filter(row=>row!==exact[0]&&
+      normalizedName(field.nameOf(row)).split(" ").includes(q));
+    if(otherNames.length)return {status:"ambiguous",candidates:choices([...exact,...otherNames])};
+    return {status:"resolved",value:exact[0]};
+  }
+  if (exact.length>1)return {status:"ambiguous",candidates:choices(exact)};
+  const matches = rows.filter(row => {
+    const name=normalizedName(field.nameOf(row));
+    return name.includes(q) || q.includes(name) && name.length >= 3;
+  });
+  if(matches.length===1)return {status:"resolved",value:matches[0]};
+  if(matches.length>1)return {status:"ambiguous",candidates:choices(matches)};
+  return {status:"none",suggestions:choices([...rows].sort((a,b)=>
+    score(q,normalizedName(field.nameOf(a)))-score(q,normalizedName(field.nameOf(b)))))};
+}
+export type ResolveState = {
+  ownerText: string;
+  priorChoice: string | null;
+  seenIds: Set<string>;
+  chosenIds: Set<string>;
+  ambiguous: ChoiceCandidate[][];
+  asked: boolean;
+};
+export function newResolveState(ownerText: string, history: readonly {role:string;content:string}[] = []): ResolveState {
+  const last=history.at(-1);
+  const previous=history.at(-2);
+  const lastAsk=[last,previous].find(message=>message?.role==="assistant"&&message.content.includes("Asked:"));
+  const chosenIds=new Set<string>();
+  if(lastAsk){
+    const text=normalizedName(ownerText);
+    const options=lastAsk.content.split("Options:").slice(1).join("Options:");
+    for(const entry of options.split(";")){
+      // The final parentheses wrap the trusted ID. Display names themselves
+      // may contain parentheses, such as "Latte (Oat)" or "Maria (AM)".
+      const match=entry.trim().match(/^(.+)\s\(([^()]{1,100})\)$/u);
+      if(match&&normalizedName(match[1])===text)chosenIds.add(match[2].trim().toLowerCase());
+    }
+  }
+  return {ownerText,priorChoice:lastAsk?ownerText:null,seenIds:new Set(),chosenIds,ambiguous:[],asked:false};
+}
+export function choicePayload(result: EntityResolution<unknown>, source: string, period: {from:string;to:string}|null) {
+  return result.status==="ambiguous"
+    ? {source,period,missing:[],needsOwnerChoice:true,candidates:result.candidates}
+    : {source,period,missing:["notFound"],suggestions:result.status==="none"?result.suggestions:[]};
+}
+/** Use a trusted previous card selection only if exactly one active row in the
+ * current, business-scoped tool result still has that ID. Never use a stale
+ * card's payload as the record itself. */
+export function resolveChosenEntity<T>(
+  state:ResolveState|undefined,rows:readonly T[],idOf:(row:T)=>string,
+):T|null {
+  if(!state?.chosenIds.size)return null;
+  const found=rows.filter(row=>state.chosenIds.has(idOf(row).toLowerCase()));
+  return found.length===1?found[0]:null;
+}
+/** Confirm a model-selected target ID against the current owner message or
+ * the ID recorded from the previous clarification card. */
+export function ownerNamedTarget(state:ResolveState|undefined,id:string,label:string):boolean {
+  if(!state)return true; // Direct legacy tool invocations have no turn state.
+  if(state.chosenIds.has(id.toLowerCase()))return true;
+  const name=normalizedName(label);
+  const words=" "+normalizedName(state.ownerText)+" ";
+  return Boolean(name)&&words.includes(" "+name+" ");
+}
+/** Reject ambiguous writes unless this turn uniquely names the selected candidate
+ * or a trusted clarification from the previous turn records its actual ID. */
+export function ownerChoiceGuard(
+  state:ResolveState|undefined,targetId:string,additionalCandidates:readonly ChoiceCandidate[]=[],
+) {
+  if(!state)return null;
+  if(state.chosenIds.has(targetId.toLowerCase()))return null;
+  const owner = " "+normalizedName(state.ownerText)+" ";
+  const groups=[...state.ambiguous,...(additionalCandidates.length>1?[additionalCandidates]:[])];
+  for(const candidates of groups) {
+    const selected=candidates.find(candidate=>candidate.id.toLowerCase()===targetId.toLowerCase());
+    if(!selected)continue;
+    const mentioned=candidates.map(candidate=>({
+      candidate,label:normalizedName(candidate.label),
+    })).filter(entry=>entry.label&&owner.includes(" "+entry.label+" "));
+    const longest=Math.max(0,...mentioned.map(entry=>entry.label.length));
+    const winners=mentioned.filter(entry=>entry.label.length===longest);
+    const selectedLabel=normalizedName(selected.label);
+    // "Latte" is not a distinguishing instruction when "Iced Latte" is
+    // another candidate. Even a model-selected UUID cannot disambiguate it.
+    const shorterThanAnother=candidates.some(candidate=>{
+      if(candidate.id===selected.id)return false;
+      const other=normalizedName(candidate.label);
+      return other!==selectedLabel&&
+        (" "+other+" ").includes(" "+selectedLabel+" ")&&
+        !owner.includes(" "+other+" ");
+    });
+    if(winners.length===1&&winners[0].candidate.id===selected.id&&!shorterThanAnother)continue;
+    return {missing:["ownerChoiceRequired"],needsOwnerChoice:true,candidates};
+  }
+  return null;
+}
+export function observeToolResult(state:ResolveState|undefined,result:Record<string,unknown>):void{
+  if(!state||!Array.isArray(result.missing)||typeof result.error==="string")return;
+  // A safe tool can refuse a write with ownerChoiceRequired. That refusal must
+  // still supply candidates for ask_owner, even when no earlier read occurred.
+  const validChoice=result.needsOwnerChoice===true&&
+    (result.missing.length===0||result.missing.includes("ownerChoiceRequired"));
+  if(validChoice&&Array.isArray(result.candidates)) {
+    const candidates=result.candidates.filter((v):v is ChoiceCandidate=>
+      Boolean(v)&&typeof v==="object"&&typeof v.id==="string"&&typeof v.label==="string"&&typeof v.detail==="string").slice(0,4);
+    if(candidates.length>1){
+      state.ambiguous.push(candidates);
+      for(const candidate of candidates)if(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(candidate.id))
+        state.seenIds.add(candidate.id.toLowerCase());
+    }
+  }
+  const visit=(value:unknown,depth:number)=>{
+    if(depth>5||!value||typeof value!=="object")return;
+    if(Array.isArray(value)){for(const item of value.slice(0,50))visit(item,depth+1);return;}
+    for(const [key,v] of Object.entries(value)){
+      if((key==="id"||key==="itemId"||key==="employeeId"||key==="productId"||key==="product_id")&&
+        typeof v==="string"&&/^[a-f0-9]{8}-[a-f0-9-]{27,}$/iu.test(v))state.seenIds.add(v.toLowerCase());
+      else visit(v,depth+1);
+    }
+  };
+  if(result.missing.length===0)visit(result,0);
+}
+
+/** A month picked from a real card must be one of the period resolver's
+ * current valid candidates. Ignore stale or unrelated choices. */
+export function resolveOwnerPeriod(
+  input:import("@/lib/calc/periods").PeriodInput,
+  options:{asOf:string;timezone:string;coverage?:{from:string;to:string}|null},
+  state:ResolveState|undefined,
+):import("@/lib/calc/periods").PeriodResolution {
+  const resolved=importResolvePeriod(input,options);
+  if(resolved.status!=="ambiguous"||!state?.chosenIds.size)return resolved;
+  const found=resolved.candidates.filter(p=>state.chosenIds.has(p.from+"/"+p.to));
+  return found.length===1?{status:"resolved",value:found[0]}:resolved;
+}
+/** Periods share the same owner-choice wire contract as named records. */
+export function periodChoicePayload(source:string,result:import("@/lib/calc/periods").PeriodResolution){
+  if(result.status==="ambiguous")return {source,period:null,missing:[] as string[],needsOwnerChoice:true,
+    candidates:result.candidates.map(p=>({id:p.from+"/"+p.to,label:p.label,detail:p.from+" – "+p.to}))};
+  return {source,period:null,missing:["notFound"],suggestions:result.status==="none"?result.suggestions:[]};
+}
