@@ -78,9 +78,12 @@ export function newResolveState(ownerText: string, history: readonly {role:strin
   const chosenIds=new Set<string>();
   if(lastAsk){
     const text=normalizedName(ownerText);
-    for(const match of lastAsk.content.matchAll(/([^;:]+?)\s*\(([^();]{1,100})\)(?:;|$)/giu)){
-      const label=normalizedName(match[1].replace(/^.*Options:\s*/u,""));
-      if(label===text)chosenIds.add(match[2].trim().toLowerCase());
+    const options=lastAsk.content.split("Options:").slice(1).join("Options:");
+    for(const entry of options.split(";")){
+      // The final parentheses wrap the trusted ID. Display names themselves
+      // may contain parentheses, such as "Latte (Oat)" or "Maria (AM)".
+      const match=entry.trim().match(/^(.+)\s\(([^()]{1,100})\)$/u);
+      if(match&&normalizedName(match[1])===text)chosenIds.add(match[2].trim().toLowerCase());
     }
   }
   return {ownerText,priorChoice:lastAsk?ownerText:null,seenIds:new Set(),chosenIds,ambiguous:[],asked:false};
