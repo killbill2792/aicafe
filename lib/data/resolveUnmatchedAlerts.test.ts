@@ -50,7 +50,8 @@ describe("unmatched alert reconciliation", () => {
     expect(fake.writes).toContainEqual(["status",["new","seen"]]);
     const patch = fake.writes.find(([field])=>field==="patch")?.[1] as Record<string,unknown>|undefined;
     expect(patch).toMatchObject({status:"resolved"});
-    expect(patch?.resolved_at).toEqual(expect.stringMatching(/^\\d{4}-\\d\\d-\\d\\dT/));
+    expect(typeof patch?.resolved_at).toBe("string");
+    expect(new Date(String(patch?.resolved_at)).toISOString()).toBe(patch?.resolved_at);
   });
   it("fails visibly on an unreadable review count instead of incorrectly clearing", async () => {
     const fake = fakeDb(0,{readError:true});
