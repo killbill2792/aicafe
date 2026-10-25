@@ -24,7 +24,6 @@ function database(pages:number,shortLastPage:boolean){
     return chain;
    };
   }});
-  const chain=q as Record<string,unknown>;
   return chain;
  };
  // menu tables resolve when awaited. Keep order_lines chainable through range().
