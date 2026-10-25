@@ -158,10 +158,10 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, 
     </div>
     <div className="w-full space-y-3 ps-1">
       {groups.map((group,i)=>{
-        if(isDuplicateLinkedExperimentCard(group.block,message.threadId,linkedThreadId,linkedProposalId))
-          return null;
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
+        if(isDuplicateLinkedExperimentCard(group.block,message.threadId,linkedThreadId,linkedProposalId))
+          return null;
         if(record(group.block)&&group.block.type==="how"&&Array.isArray(group.block.lines)){
           const lines=group.block.lines.slice(0,20).flatMap(line=>{
             const parsed=explainLineSchema.safeParse(line);
