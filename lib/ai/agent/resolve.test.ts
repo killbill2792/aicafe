@@ -12,6 +12,11 @@ describe("safe entity resolution",()=>{
     expect(newResolveState("Other message",[
       {role:"assistant",content:"Asked: Which supplies? Options: Supplies — supplies (supplies); Supplies — other (other)"}]).chosenIds.size).toBe(0);
  });
+ it("preserves trusted selections when real menu names contain parentheses",()=>{
+   const selected=newResolveState("Latte (Oat)",[
+     {role:"assistant",content:"Asked: Which? Options: Latte (Dairy) ("+hot+"); Latte (Oat) ("+iced+")"}]);
+   expect([...selected.chosenIds]).toEqual([iced]);
+ });
  it("does not treat a human-readable category code as disambiguation",()=>{
    const categories=[{id:"supplies",name:"Supplies"},{id:"other",name:"Supplies"}];
    const r=resolveEntity("category","Supplies",categories,{
