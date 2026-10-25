@@ -207,12 +207,10 @@ async function getStaffShiftsToday(
     .lte("clock_in", dayEndUtc)
     .order("clock_in", { ascending: true });
   if (error) throw error;
-  const { data: activeRows, error: activeError } = await supabase.from("employees")
-    .select("id").eq("business_id",businessId).eq("active",true);
-  if (activeError) throw activeError;
-  const activeIds = new Set((activeRows ?? []).map(row=>row.id));
-
-  return (data ?? []).filter(row=>row.employee_id && activeIds.has(row.employee_id)).map((row) => {
+  // Preserve every recorded timecard for earned wages, including staff who were
+  // deactivated later today and imports not yet linked to a roster member.
+  // Current-roster filtering belongs ONLY in buildStaffViewModel.onShift.
+  return (data ?? []).map((row) => {
     const employee = row.employees as unknown as { display_name: string; role: string | null } | { display_name: string; role: string | null }[] | null;
     const emp = Array.isArray(employee) ? employee[0] : employee;
     return {
