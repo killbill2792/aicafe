@@ -50,9 +50,17 @@ export const staffTools = {
         return typeof s==="object"&&s!==null&&typeof (s as {date?:unknown}).date==="string"
           &&(s as {date:string}).date>=from&&(s as {date:string}).date<=to;
       });
+      const weeklySet=confirmed.scheduleSet===true,exactWeek=from===monday&&to===sunday;
+      const oldMissing=(confirmed.missing as string[]).filter(v=>v!=="scheduleNotSet");
       return {...confirmed,source:"scheduled_shifts",period,shifts,
-        scheduleSet:shifts.length>0,
-        missing:shifts.length===0?["scheduleNotSet"]:(confirmed.missing as string[]).filter(v=>v!=="scheduleNotSet")};
+        // A day with no assigned shifts is not an entirely unset week.
+        scheduleSet:weeklySet,windowHasShifts:shifts.length>0,
+        // Week-wide totals and gaps must never masquerade as day-range facts.
+        ...(!exactWeek?{
+          paidMinutes:null,knownWagesCents:null,estimated:null,estimatedShiftCount:null,gaps:[],
+        }:{}),
+        missing:[...(!weeklySet?["scheduleNotSet"]:shifts.length===0?["noShiftsInRequestedRange"]:[]),
+          ...oldMissing,...(!exactWeek?["requestRangeTotalsNotAvailable"]:[])]};
     },
   },
   get_labor: {
