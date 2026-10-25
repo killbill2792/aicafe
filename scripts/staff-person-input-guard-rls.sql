@@ -33,8 +33,8 @@ DECLARE
  bad jsonb;
  ix integer;
 BEGIN
- IF (SELECT available_days FROM public.employees WHERE id=e) IS DISTINCT FROM ARRAY[1]::smallint[] THEN
-   RAISE EXCEPTION 'closed weekday incorrectly marked available';
+ IF (SELECT available_days FROM public.employees WHERE id=e) IS DISTINCT FROM ARRAY[1,2]::smallint[] THEN
+   RAISE EXCEPTION 'selected all-day weekday was not saved';
  END IF;
  -- Each case must raise and must never partially edit employee or availability.
  FOR ix IN 1..29 LOOP
@@ -91,13 +91,13 @@ BEGIN
  END LOOP;
  IF (SELECT display_name FROM public.employees WHERE id=e) IS DISTINCT FROM 'Amy'
     OR (SELECT count(*) FROM public.staff_availability_rules
-        WHERE business_id=b AND employee_id=e)<>1 THEN
+        WHERE business_id=b AND employee_id=e)<>3 THEN
    RAISE EXCEPTION 'invalid JSON changed persisted employee/availability';
  END IF;
  -- A legitimate profile-only update keeps the existing window and its day list.
  PERFORM public.staff_write_person(b,e,jsonb_set(good,'{phone}','"+14155551234"'::jsonb));
  IF (SELECT phone_e164 FROM public.employees WHERE id=e) IS DISTINCT FROM '+14155551234'
-    OR (SELECT available_days FROM public.employees WHERE id=e) IS DISTINCT FROM ARRAY[1]::smallint[]
+    OR (SELECT available_days FROM public.employees WHERE id=e) IS DISTINCT FROM ARRAY[1,2]::smallint[]
     OR (SELECT count(*) FROM public.staff_availability_rules
         WHERE business_id=b AND employee_id=e AND day_of_week=1)<>1 THEN
    RAISE EXCEPTION 'valid phone/profile-only edit overwrote availability';

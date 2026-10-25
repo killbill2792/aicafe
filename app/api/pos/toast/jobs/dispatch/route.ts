@@ -1,3 +1,4 @@
+import {verifyBearer} from "@/lib/security/bearer";
 import {NextResponse} from "next/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {pollToastLocation} from "@/lib/pos/toast/poll";
@@ -13,7 +14,7 @@ export async function POST(request:Request){
  if(process.env.TOAST_DISPATCH_ENABLED!=="true"||process.env.TOAST_POLLING_ENABLED!=="true")
   return reply(503,{error:"disabled"});
  const secret=process.env.TOAST_JOB_SECRET;
- if(!secret||request.headers.get("authorization")!=="Bearer "+secret)
+ if(!verifyBearer(request,secret))
   return reply(401,{error:"unauthorized"});
  const db=createAdminSupabaseClient();
  const {data:due,error}=await db.rpc("toast_claim_due_sync");

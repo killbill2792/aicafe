@@ -14,6 +14,7 @@ function fakeTable(
    const query={
      select:()=>query,
      eq:(key:string,value:unknown)=>{filters[key]=value;return query;},
+     is:(key:string,value:unknown)=>{filters[key]=value;return query;},
      order:(key:string)=>{orders.push(key);return query;},
      range:async(first:number,last:number)=>{
        requests.push({table,first,last,orders:[...orders],filters:{...filters}});
@@ -64,6 +65,7 @@ describe("CSV finalizer reads all evidence before claiming completion",()=>{
    const result=await readCsvFeeOrders(db,"business","2026-08-22");
    expect(result.reduce((sum,order)=>sum+Number(order.processing_fee_cents),0)).toBe(6005);
    expect(result).toHaveLength(1201);
-   expect(requests.every(r=>r.filters.processing_fee_provider==="csv"&&r.orders.includes("id"))).toBe(true);
+   expect(requests.every(r=>r.filters.processing_fee_provider==="csv"&&r.filters.toast_excluded===false&&
+     r.filters.superseded_by===null&&r.orders.includes("id"))).toBe(true);
  });
 });

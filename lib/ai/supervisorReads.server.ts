@@ -1,5 +1,5 @@
 import "server-only";
-import {unverifiedToastSalesDates} from "@/lib/pos/toast/reportingCoverage";
+import {unverifiedToastSalesDates,toastDayFlags} from "@/lib/pos/toast/reportingCoverage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
 import { rowToDailyFacts } from "@/lib/data/runningCostCatalog";
@@ -29,16 +29,26 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
         .eq("business_id",id).gte("business_date",period.from).lte("business_date",period.to)
         .order("business_date",{ascending:true}).limit(370);
       if (error) throw error;
-      // Only explicit canonical actual coverage proves aggregate sales, including
-      // genuine $0 days. Null/legacy/staff-only statuses must remain unknown.
-      // Do not call Toast-source days confirmed on the strength of canonical
-      // rollups alone. This guard is only enabled in an explicitly authorized pilot.
-      // A missing/failed coverage check fails CLOSED; unrelated Square-only
-      // operation retains the exact original path when the pilot flag is unset.
-      let blocked=new Set<string>();
-      if(process.env.TOAST_PILOT_IMPORT_ENABLED==="true"){
-        try {blocked=await unverifiedToastSalesDates(client,id,period.from,period.to);}
-        catch {return missing("toastSalesVerificationUnavailable");}
+      // Imported Toast days are immediately reportable; flagged days remain
+      // visible with a quality warning. Legacy Toast days without a status row
+      // stay blocked. No new data access when automatic imports are disabled.
+      let blocked=new Set<string>(),toastQuality:string[]=[];
+      if(process.env.TOAST_AUTO_IMPORT_ENABLED==="true"){
+        try {
+          const [flags,legacy]=await Promise.all([
+            toastDayFlags(client,id,period.from,period.to),
+            unverifiedToastSalesDates(client,id,period.from,period.to)
+          ]);
+          const imported=new Set(flags.filter(f=>f.status==="imported").map(f=>f.date));
+          blocked=new Set([...legacy].filter(date=>!imported.has(date)));
+          for(const f of flags)if(f.status!=="imported")blocked.add(f.date);
+          toastQuality=flags.filter(f=>f.needsLook).map(f=>"toastDayNeedsLook:"+f.date);
+        }catch {
+          try {
+            blocked=await unverifiedToastSalesDates(client,id,period.from,period.to);
+            toastQuality=blocked.size?["toastSalesVerificationUnavailable"]:[];
+          }catch {return missing("toastSalesVerificationUnavailable");}
+        }
       }
       const days=(data??[]).filter(row=>row.sales_data_status==="actual"&&
         !blocked.has(row.business_date)).map(rowToDailyFacts);
@@ -46,7 +56,7 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       const expected = rangeExpectedDays(period), covered = new Set(days.map(d=>d.date)).size;
       return { available:true, value:days, quality:quality([
         ...(covered < expected ? ["salesCoverage:"+covered+"/"+expected] : []),
-        ...(blocked.size ? ["toastSalesAwaitingIndependentReview"] : [])
+        ...toastQuality,...(blocked.size ? ["toastSalesAwaitingIndependentReview"] : [])
       ]) };
     },
     async menuCatalog(id: string): Promise<KnownSlice<MenuCatalogProduct[]>> {

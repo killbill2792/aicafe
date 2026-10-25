@@ -13,6 +13,7 @@ describe("owner-preview rule suggestions",()=>{
   expect(suggestedRuleShiftChange("weekly_overtime",shift,{...rules,weekly_ot_enabled:false},600,2460)).toBeNull();
  });
  it("does not make up a paid rest fix or shorten an unrelated timecard",()=>{
+  expect(suggestedRuleShiftChange("meal",shift,{...rules,meal_break_enabled:false},600,600)).toBeNull();
   expect(suggestedRuleShiftChange("rest_break",shift,rules,600,600)).toBeNull();
   expect(suggestedRuleShiftChange("short_rest",shift,rules,600,600)).toBeNull();
   expect(suggestedRuleShiftChange("daily_overtime",{...shift,breakMinutes:599},rules,600,600)).toBeNull();

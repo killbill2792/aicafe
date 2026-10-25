@@ -106,6 +106,7 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
       .select("menu_item_id, net_sales_cents, quantity, orders!inner(business_date, business_id)")
       .in("menu_item_id", itemIds)
       .eq("orders.business_id", businessId)
+      .eq("orders.toast_excluded", false).is("orders.superseded_by", null)
       .gte("orders.business_date", start90)
       .lte("orders.business_date", today)
       .eq("voided", false),

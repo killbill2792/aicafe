@@ -3,7 +3,7 @@ export const STAFF_RULE_KEYS=["meal","rest_break","weekly_overtime","daily_overt
 export type StaffRuleKey=(typeof STAFF_RULE_KEYS)[number];
 export const isStaffRuleKey=(key:unknown):key is StaffRuleKey=>STAFF_RULE_KEYS.some(x=>x===key);
 type Shift={start:string;end:string;minutes:number;breakMinutes:number;paidMinutes:number};
-type Rules={meal_break_minutes:number;weekly_ot_after_minutes:number;daily_ot_after_minutes:number;weekly_ot_enabled?:boolean;daily_ot_enabled?:boolean};
+type Rules={meal_break_enabled?:boolean;meal_break_minutes:number;weekly_ot_after_minutes:number;daily_ot_after_minutes:number;weekly_ot_enabled?:boolean;daily_ot_enabled?:boolean};
 type Change={start:string;end:string;breakMinutes:number};
 /** Only suggestions justified by a matching SCHEDULED shift; historical timecards are never mutated.
  * If the schedule cannot prove a safe change, require manual owner review instead. */
@@ -13,6 +13,7 @@ export function suggestedRuleShiftChange(
  const span=scheduledShiftMinutes(shift.start,shift.end);
  if(span===null)return null;
  if(key==="meal"){
+  if(rules.meal_break_enabled===false)return null;
   const breakMinutes=Math.max(shift.breakMinutes,rules.meal_break_minutes);
   return breakMinutes<span&&breakMinutes<=240&&breakMinutes!==shift.breakMinutes?
    {start:shift.start,end:shift.end,breakMinutes}:null;

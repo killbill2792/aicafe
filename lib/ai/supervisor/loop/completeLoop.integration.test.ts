@@ -17,6 +17,7 @@ const observed:PriceExperimentDay[]=Array.from({length:7},(_,i)=>({
   businessDate:`2026-10-${String(i+1).padStart(2,"0")}`,
   units:10,netSalesCents:5100,coverage:"actual",source:"order_lines+daily_rollups"}));
 const latte=registerLoopCapability({
+ dependencyScope:(effect)=>({version:1,effect}),
  id:"alex.price_experiment.integration.v1",version:1,
  inputSchema:z.strictObject({increaseCents:z.number().int().positive()}),effectSchema,
  simulate:async(_scope,input)=>{
@@ -46,6 +47,7 @@ const latte=registerLoopCapability({
  },
 });
 const bill=registerLoopCapability({
+ dependencyScope:(effect)=>({version:1,effect}),
  id:"bills.review.integration.v1",version:1,
  inputSchema:z.strictObject({billId:z.uuid()}),
  effectSchema:z.strictObject({billId:z.uuid(),review:z.literal(true)}),
@@ -148,6 +150,7 @@ describe("owner-approved full loop with real cents-only calculator",()=>{
  it("serializes two concurrent effect invocations at the approval-claim gate",async()=>{
    let commits=0;
    const effect=registerLoopCapability({
+ dependencyScope:(effect)=>({version:1,effect}),
      id:"test.one_time_effect.v1",version:1,
      inputSchema:z.strictObject({value:z.number().int()}),
      effectSchema:z.strictObject({value:z.number().int()}),

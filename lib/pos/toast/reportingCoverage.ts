@@ -1,5 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {readAllPages} from "./readAllPages";
 /** The legacy reporting guard can only remove an AGGREGATE daily rollup when
  * canonical Toast orders may contaminate it. A staged-only pilot day or a refund
  * GUID on the same date never invalidates independently verified Square/CSV sales.
@@ -18,10 +19,33 @@ export async function unverifiedToastSalesDates(
  if(possible.length>371)throw new Error("Toast coverage range exceeds bounds");
  // The RPC includes pilot-only and payment-review dates for audit. Those dates
  // must not hide proven Square/CSV canonical revenue when no Toast sale was imported.
- const canonical=await db.from("orders").select("business_date")
+ const canonical=await readAllPages((start,end)=>db.from("orders")
+  .select("id,business_date")
   .eq("business_id",businessId).like("pos_order_id","toast:%")
-  .in("business_date",possible).limit(1000);
- if(canonical.error||!Array.isArray(canonical.data)||canonical.data.length>=1000)
-  throw new Error("Toast canonical source coverage unavailable");
- return new Set(canonical.data.map((row:{business_date:string})=>row.business_date));
+  .in("business_date",possible).order("id").range(start,end));
+ return new Set(canonical.map(row=>row.business_date));
+}
+
+/** Imported Toast days are visible even before external reconciliation. Missing
+ * days are excluded; mismatches are visible with an explicit quality flag.
+ * A failed status read is NOT proof that Toast sales are safe to report. */
+export type ToastDayFlag={date:string;status:"imported"|"missing"|"failed";needsLook:boolean};
+export async function toastDayFlags(
+ db:SupabaseClient,businessId:string,from:string,to:string
+):Promise<ToastDayFlag[]> {
+ const data=await readAllPages((start,end)=>db.from("toast_day_status")
+  .select("business_date,restaurant_guid,import_state,recon_state,last_error_category")
+  .eq("business_id",businessId).gte("business_date",from).lte("business_date",to)
+  .order("business_date").order("restaurant_guid").range(start,end));
+ const flags=await readAllPages((start,end)=>db.from("toast_day_owner_flags")
+  .select("restaurant_guid,business_date").eq("business_id",businessId)
+  .is("cleared_at",null).gte("business_date",from).lte("business_date",to)
+  .order("business_date").order("restaurant_guid").range(start,end));
+ const flagged=new Set(flags.map(x=>x.business_date));
+ return data.map(row=>({
+  date:row.business_date,
+  status:row.import_state as ToastDayFlag["status"],
+  needsLook:["mismatch","analytics_timeout","coverage_invalid"].includes(row.recon_state)||
+   flagged.has(row.business_date)||Boolean(row.last_error_category)
+ }));
 }

@@ -34,7 +34,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
     supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, card_fees_cents, card_fees_status, sales_data_status, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("recurring_costs").select("amount_cents, category_code, frequency, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
-    supabase.from("orders").select("business_date, pos_order_id, net_sales_cents, processing_fee_provider").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
+    supabase.from("orders").select("business_date, pos_order_id, net_sales_cents, processing_fee_provider").eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("expenses").select("category_code, amount_cents, status")
       .eq("business_id",businessId).gte("spent_on",firstOfMonth).lte("spent_on",todayDateStr),
     supabase.from("expenses").select("category_code")
