@@ -243,7 +243,10 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       needsOwnerChoice:false,missing:[...slice.quality.missingInputs,"recordedProfitNotApplicable"],
       estimated:slice.quality.estimatedInputs,explain:[]};
     return {source:"profitability",period,coverageLabel:selection.label,agentId:"leo",unit:"cents",
-      missing:slice.quality.missingInputs,
+      missing:[...slice.quality.missingInputs,
+        ...(ownerInputs?.netSalesCents!=null&&suppliedSales===null?["ownerSalesPeriodMismatch"]:[])],
+      ownerReportedSalesCents:ownerInputs?.netSalesCents??replay?.ownerCents??null,
+      ownerReportedSalesPeriod:ownerInputs?.salesPeriod??null,
       ownerSalesConflict:conflict?{recordedCents:recordedSales,ownerCents:ownerSales}:null,
       selectedMoneySource:conflict?"recorded":null,
       needsOwnerChoice:false,estimated:slice.quality.estimatedInputs,
