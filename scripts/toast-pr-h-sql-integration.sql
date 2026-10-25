@@ -89,6 +89,17 @@ SELECT pg_temp.assert(public.toast_enable_official_check('dddddddd-dddd-4ddd-8dd
  'valid separate Analytics credentials may enable official mode');
 SELECT pg_temp.assert((SELECT toast_check_mode='official' FROM public.toast_api_credentials
  WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'official mode persisted');
+-- A canceled run may not replace a day, even when a worker started before
+-- closeout changed. The failed update must not alter the saved import.
+INSERT INTO public.toast_sync_runs(id,business_id,restaurant_guid,kind,state,days_total,requested_from,requested_to)
+ VALUES('dddddddd-dddd-4ddd-8ddd-dddddddd0099','dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+ 'dddddddd-dddd-4ddd-8ddd-dddddddd0002','backfill','cancelled',1,'2026-09-20','2026-09-20');
+SELECT pg_temp.reject($q$UPDATE public.toast_day_status SET imported_at=now()+interval '3 seconds',
+ last_import_run_id='dddddddd-dddd-4ddd-8ddd-dddddddd0099'
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND business_date='2026-10-01'$q$);
+SELECT pg_temp.assert((SELECT last_import_run_id is null FROM public.toast_day_status
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND business_date='2026-10-01'),
+ 'superseded import did not rewrite the owner day');
 -- Shared client: both callers see one cooldown; a different client is unaffected.
 SELECT public.toast_claim_client_budget(repeat('a',64),now()+interval '10 minutes');
 SELECT pg_temp.assert(public.toast_claim_client_budget(repeat('a',64))>now(),'same client shares 429 cooldown');

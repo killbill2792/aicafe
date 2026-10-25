@@ -249,6 +249,27 @@ drop trigger if exists toast_clear_recheck on public.toast_day_status;
 create trigger toast_clear_recheck before update of imported_at on public.toast_day_status
 for each row execute function public.toast_clear_recheck_after_import();
 
+-- A closeout change cancels old runs. Revalidate and SHARE-lock the exact
+-- run at commit time, so an in-flight old-definition import cannot overwrite
+-- already reclassified historical sales after its run was canceled.
+create or replace function public.toast_reject_superseded_import() returns trigger
+language plpgsql security definer set search_path=public as $run_guard$
+begin
+ if new.import_state='imported' and new.last_import_run_id is not null then
+  perform 1 from public.toast_sync_runs r
+  where r.id=new.last_import_run_id and r.business_id=new.business_id
+    and r.restaurant_guid=new.restaurant_guid
+    and r.state in ('queued','running','paused_rate_limited')
+  for share;
+  if not found then raise exception 'Toast import run was superseded';end if;
+ end if;
+ return new;
+end $run_guard$;
+revoke all on function public.toast_reject_superseded_import() from public,anon,authenticated;
+drop trigger if exists toast_guard_import_run on public.toast_day_status;
+create trigger toast_guard_import_run before insert or update of imported_at
+ on public.toast_day_status for each row execute function public.toast_reject_superseded_import();
+
 -- Operational budget is service-role only. Hash never exposes a client ID.
 create table if not exists public.toast_client_budgets(
  client_hash text primary key check(length(client_hash)=64),

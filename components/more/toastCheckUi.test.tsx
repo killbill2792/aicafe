@@ -1,5 +1,5 @@
 import {it,expect} from "vitest";
-import {createElement,type ComponentProps} from "react";
+import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import {NextIntlClientProvider} from "next-intl";
 import Comparison from "./ToastSummaryComparison";
@@ -10,7 +10,7 @@ import ar from "@/messages/ar.json";
 for(const [locale,messages] of [["en",en],["es",es],["ar",ar]] as const){
  it(`renders the ${locale} report inputs and checklist with all translated keys`,()=>{
   const days=Array.from({length:7},(_,i)=>({date:`2026-10-${String(i+10)}`,restaurantGuid:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",oursCents:123456}));
-  const render=(child:ReturnType<typeof createElement>)=>renderToStaticMarkup(createElement(NextIntlClientProvider,{locale,messages,timeZone:"UTC"} as ComponentProps<typeof NextIntlClientProvider>,child));
+  const render=(child:ReturnType<typeof createElement>)=>renderToStaticMarkup(<NextIntlClientProvider locale={locale} messages={messages} timeZone="UTC">{child}</NextIntlClientProvider>);
   const html=render(createElement(Comparison,{businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",days,currency:"USD",onSaved:async()=>{}}));
   expect(html).toContain(`dir="${locale==="ar"?"rtl":"ltr"}"`);
   expect(html.match(/name="net"/g)).toHaveLength(7);
