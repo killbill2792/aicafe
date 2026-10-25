@@ -114,7 +114,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         coveredLabel={(label,date)=>t("coveredOn",{label,date})} locale={locale} emptyLabel={t("glanceNoBills")}
         dataComplete={canShowProfit} incompleteLabel={t("costsIncomplete")}/>
     </section>
-    <HomeTaskSections items={items} title={t("needsAttention")} empty={t("attentionEmpty")} seeAll={t("taskSeeAll")}/>
+    <HomeTaskSections items={items.map(item=>({id:item.id,title:item.displayTitle,href:item.href,actionLabel:item.actionLabel,impactCents:item.impactCents}))} title={t("needsAttention")} empty={t("attentionEmpty")} seeAll={t("taskSeeAll")}/>
     <SupervisorHomePanel
       initialThreadId={initialThread} initialProposalId={initialExperiment}
           experimentCopy={{open:tExperiment("open"),close:tExperiment("close"),product:tExperiment("product"),increase:tExperiment("increase"),preview:tExperiment("preview"),propose:tExperiment("propose"),approve:tExperiment("approve"),apply:tExperiment("apply"),done:tExperiment("done"),report:tExperiment("report"),waiting:tExperiment("waiting"),loading:tExperiment("loading"),error:tExperiment("error"),condition:tExperiment("condition"),confirmNote:tExperiment("confirmNote"),reportNote:tExperiment("reportNote"),selectProposal:tExperiment("selectProposal"),statusDraft:tExperiment("statusDraft"),statusApproved:tExperiment("statusApproved"),statusManual:tExperiment("statusManual"),statusMonitoring:tExperiment("statusMonitoring"),statusExecuting:tExperiment("statusExecuting"),statusRejected:tExperiment("statusRejected"),statusInProgress:tExperiment("statusInProgress"),statusComplete:tExperiment("statusComplete"),statusInsufficient:tExperiment("statusInsufficient")}}
