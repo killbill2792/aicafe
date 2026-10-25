@@ -20,6 +20,19 @@ describe("dated availability and roster presentation",()=>{
   expect(availabilityStatus(person,"2026-10-26","09:00","12:00",[],windows)).toBe("free");
   expect(availabilityStatus(person,"2026-10-26","09:00","15:00",[],windows)).toBe("unavailable");
  });
+ it("covers all-day adjoining windows through midnight without claiming a closed Tuesday",()=>{
+  const monday=[rule("00:00","12:00"),rule("12:00","00:00")];
+  const tuesday=monday.map(w=>({...w,day_of_week:2}));
+  const both={...person,availableDays:[1,2]};
+  expect(availabilityStatus(person,"2026-10-26","23:59","00:01",[],monday))
+   .toBe("unavailable");
+  expect(availabilityStatus(both,"2026-10-26","23:59","00:00",[],[...monday,...tuesday]))
+   .toBe("free");
+  expect(availabilityStatus(both,"2026-10-26","22:15","02:30",[],[...monday,...tuesday]))
+   .toBe("free");
+  expect(availabilityStatus(both,"2026-10-26","11:59","12:01",[],monday))
+   .toBe("free");
+ });
  it("retains inactive employees who have dated shifts but not unscheduled alumni",()=>{
   const roster=[{id:"active",active:true},{id:"former",active:false},{id:"departed",active:false}];
   expect(peopleWithRetainedShifts(roster,[{employeeId:"former"}]))

@@ -102,8 +102,21 @@ export function availabilityStatus(person:PersonForSchedule,date:string,start:st
  if(valid.length){
   // The foundation permits multiple windows on a weekday. Their union,
   // including touching windows, must cover the full proposed shift.
-  const spans=valid.map(w=>span(w.start_local.slice(0,5),w.end_local.slice(0,5)))
-    .sort((a,b)=>a.start-b.start||a.end-b.end);
+  const spans=valid.map(w=>span(w.start_local.slice(0,5),w.end_local.slice(0,5)));
+  // Overnight work can continue into the next selected day. Extend coverage
+  // using that day's effective windows, rather than stopping at midnight.
+  if(range.end>1440){
+   const nextDate=new Date(Date.parse(date+"T12:00:00Z")+86400000).toISOString().slice(0,10);
+   const nextDay=dateDay(nextDate);
+   if(person.availableDays===null||person.availableDays.includes(nextDay)){
+    for(const window of windows.filter(w=>w.employee_id===person.id&&w.day_of_week===nextDay&&
+     w.effective_from<=nextDate&&(w.effective_to===null||w.effective_to>=nextDate))){
+     const part=span(window.start_local.slice(0,5),window.end_local.slice(0,5));
+     spans.push({start:part.start+1440,end:part.end+1440});
+    }
+   }
+  }
+  spans.sort((a,b)=>a.start-b.start||a.end-b.end);
   let coveredUntil=range.start;
   for(const window of spans){
    if(window.start>coveredUntil)break;
