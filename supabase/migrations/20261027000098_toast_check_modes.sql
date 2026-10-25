@@ -365,3 +365,98 @@ revoke all on function public.toast_clear_internal_check_cache() from public,ano
 drop trigger if exists toast_clear_internal_proof_after_import on public.toast_day_status;
 create trigger toast_clear_internal_proof_after_import after insert or update of imported_at
 on public.toast_day_status for each row execute function public.toast_clear_internal_check_cache();
+
+-- Durable, per-page modified-order scan checkpoints. One scan can span multiple
+-- 60s ticks; only the last terminal page certifies complete window coverage.
+alter table public.toast_repull_scan_state
+ add column if not exists scan_local_day date,
+ add column if not exists scan_start timestamptz,
+ add column if not exists scan_end timestamptz,
+ add column if not exists scan_window_start timestamptz,
+ add column if not exists scan_page integer;
+
+create or replace function public.toast_checkpoint_repull_scan_page(
+ p_business_id uuid,p_restaurant_guid uuid,p_local_day date,
+ p_scan_start timestamptz,p_scan_end timestamptz,
+ p_window_start timestamptz,p_window_end timestamptz,
+ p_page integer,p_last_page boolean,p_days jsonb)
+returns boolean language plpgsql security definer set search_path=public as $checkpoint$
+declare v_state public.toast_repull_scan_state%rowtype;
+ v_day date;v_added boolean;v_zone text;
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if p_scan_start is null or p_scan_end is null or
+  p_scan_end<=p_scan_start or p_scan_end-p_scan_start>interval '30 days' or
+  p_window_start<p_scan_start or p_window_start>=p_scan_end or
+  p_window_end<>least(p_scan_end,p_window_start+interval '7 days') or
+  mod(extract(epoch from p_window_start-p_scan_start)::bigint,604800)<>0 or
+  p_page not between 1 and 300 or p_last_page is null or
+  jsonb_typeof(p_days)<>'array' or jsonb_array_length(p_days)>100 or
+  (not p_last_page and p_page=300) then
+  raise exception 'invalid modified scan page';end if;
+ select toast_time_zone into v_zone from public.toast_location_mappings
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+ and verified_at is not null for share;
+ if v_zone is null then raise exception 'unverified restaurant';end if;
+ insert into public.toast_repull_scan_state(business_id,restaurant_guid)
+ values(p_business_id,p_restaurant_guid) on conflict do nothing;
+ select * into v_state from public.toast_repull_scan_state
+ where business_id=p_business_id and restaurant_guid=p_restaurant_guid for update;
+ if v_state.scan_local_day is null then
+  if p_page<>1 or p_window_start<>p_scan_start or
+   v_state.last_local_day>=p_local_day then
+   raise exception 'invalid scan restart';end if;
+  update public.toast_repull_scan_state set
+   scan_local_day=p_local_day,scan_start=p_scan_start,
+   scan_end=p_scan_end,scan_window_start=p_window_start,scan_page=1
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ elsif v_state.scan_local_day is distinct from p_local_day or
+  v_state.scan_start is distinct from p_scan_start or
+  v_state.scan_end is distinct from p_scan_end or
+  v_state.scan_window_start is distinct from p_window_start or
+  v_state.scan_page is distinct from p_page then
+  raise exception 'stale modified scan checkpoint';end if;
+
+ for v_day in select distinct value::date from jsonb_array_elements_text(p_days) loop
+  if v_day<'2015-12-02'::date or v_day>=p_local_day then
+   raise exception 'invalid modified order day';end if;
+  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,
+   requested_from,requested_to,scan_local_day,days_total)
+  values(p_business_id,p_restaurant_guid,'repull_modified',v_day,v_day,p_local_day,1)
+  on conflict(business_id,restaurant_guid,requested_from,scan_local_day)
+   where kind='repull_modified' do nothing;
+  v_added:=found;
+  if v_added then
+   update public.toast_day_status set recon_state='pending',last_recon_attempt_at=null
+   where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+    and business_date=v_day and import_state='imported';
+   update public.daily_rollups set voids_status='unknown',voids_source=null
+   where business_id=p_business_id and (business_date=v_day or business_date in(
+    select f.void_business_date from public.toast_void_facts f
+    where f.business_id=p_business_id and f.order_business_date=v_day));
+  end if;
+ end loop;
+
+ if p_last_page and p_window_end=p_scan_end then
+  -- Retain the historical certification contract, without repeating per-page
+  -- jobs. This RPC atomically stamps the completed scan and covered void days.
+  perform public.toast_commit_repull_scan_window(p_business_id,
+   p_restaurant_guid,p_local_day,'[]'::jsonb,p_scan_start,p_scan_end);
+  update public.toast_repull_scan_state set scan_local_day=null,scan_start=null,
+   scan_end=null,scan_window_start=null,scan_page=null
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ elsif p_last_page then
+  update public.toast_repull_scan_state set scan_window_start=p_window_end,
+   scan_page=1 where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ else
+  update public.toast_repull_scan_state set scan_page=p_page+1
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid;
+ end if;
+ return true;
+end $checkpoint$;
+revoke all on function public.toast_checkpoint_repull_scan_page(
+ uuid,uuid,date,timestamptz,timestamptz,timestamptz,timestamptz,integer,boolean,jsonb)
+ from public,anon,authenticated;
+grant execute on function public.toast_checkpoint_repull_scan_page(
+ uuid,uuid,date,timestamptz,timestamptz,timestamptz,timestamptz,integer,boolean,jsonb)
+ to service_role;
