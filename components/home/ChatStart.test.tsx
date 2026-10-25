@@ -6,7 +6,7 @@ import { topChatStartItems } from "./chatStartAttention";
 import type { ChatStartAttentionItem } from "./chatStartAttention";
 import { vi } from "vitest";
 vi.mock("@/components/shared/PeriodSwitch", () => ({default:()=>createElement("div", {role:"group"}, "Today · Week · Month to date")}));
-vi.mock("@/i18n/navigation", () => ({ Link:({children,href,...props}:{children:React.ReactNode;href:string})=>createElement("a",{href,...props},children) }));
+vi.mock("@/i18n/navigation", () => ({ Link:({children,href,...props}:{children:import("react").ReactNode;href:string})=>createElement("a",{href,...props},children) }));
 vi.mock("@/components/operations/agentVisuals", () => ({ AgentAvatar:()=>createElement("span",null,"avatar") }));
 import ChatStart, { type ChatStartCopy, type ChatStartData } from "./ChatStart";
 
@@ -64,11 +64,14 @@ describe("PR F shared attention and chat entry",()=>{
   expect(home).not.toContain("<HomeTaskSections");
   expect(home).not.toContain("<CostRecoveryStrip");
   expect(home).not.toContain('<section aria-label={t("keyNumbers")}');
-  expect(composer).not.toContain("<SupervisorExperiment");
+  expect(composer).not.toContain("{enabled&&threadId&&experimentCopy&&<SupervisorExperiment");
+  expect(composer).toContain('block.type==="experiment_card"');
+  expect(composer).toContain("<ClarifyCard");
+  expect(composer).toContain("<HowIGotThis");
   expect(composer).not.toContain("copy.suggestions.slice(0,3)");
-  expect(composer).toContain("if (sendInFlight.current) return");
-  expect(composer).toContain("sendInFlight.current = true");
-  expect(composer).toContain("sendInFlight.current = false");
+  expect(composer).toContain("if (sendOnce.current) return");
+  expect(composer).toContain("sendOnce.current = true");
+  expect(composer).toContain("sendOnce.current = false");
   expect(composer).toContain("setStartExpanded(false)");
  });
  it("keeps token-only classes, localized single-message summary and RTL-safe layout",()=>{
