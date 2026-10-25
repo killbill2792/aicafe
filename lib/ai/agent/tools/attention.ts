@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { getAttentionItems } from "@/lib/attention/getAttentionItems.server";
 import { prioritizeHomeAttention } from "@/components/home/homeAttention";
 import type { AgentToolContext, AgentToolResult } from "./index";
 
@@ -12,6 +11,9 @@ export const attentionTools={
     description:"Read the owner's current Home Needs your attention items and fix links. Always use for 'what needs my attention' and similar; do not infer tasks from labor, schedule or sales.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
+      // Keep the UI/next-intl readers out of the agent registry module graph.
+      // They are loaded only when this authenticated tool is actually called.
+      const {getAttentionItems}=await import("@/lib/attention/getAttentionItems.server");
       const items=await getAttentionItems({period:"today",locale:ctx.locale});
       const byId=new Map(items.map(item=>[item.id,item]));
       const {visible,total}=prioritizeHomeAttention(items.map(item=>({
