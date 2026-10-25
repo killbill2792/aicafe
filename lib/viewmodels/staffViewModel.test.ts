@@ -38,6 +38,16 @@ describe("On shift now: current roster only", () => {
     expect(vm.hasUnmatchedTimecards).toBe(false);
   });
 
+  it("never reassigns archived employee UUIDs to a same-named current staffer", () => {
+    const current = {id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Dawn",active:true};
+    const archivedId = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb";
+    const vm=buildStaffViewModel(snapshot("2026-10-23T18:00:00Z",[
+      shift(archivedId,"Dawn","2026-10-23T17:00:00Z"),
+    ]),[current]);
+    expect(vm.onShift).toEqual([]);
+    expect(vm.hasUnmatchedTimecards).toBe(true);
+  });
+
   it("ignores stale open timecards from the previous cafe-local day", () => {
     const vm = buildStaffViewModel(snapshot("2026-10-23T18:00:00Z", [
       shift("ana", "Ana", "2026-10-23T06:50:00Z"),
