@@ -68,3 +68,8 @@ export function reviewStaffDraft(
       coverageGaps:missingCoverage}
   };
 }
+
+/** A stale client roster must never crash the owner approval card. */
+export function safeReviewStaffDraft(...args:Parameters<typeof reviewStaffDraft>){
+  try{return reviewStaffDraft(...args);}catch{return null;}
+}

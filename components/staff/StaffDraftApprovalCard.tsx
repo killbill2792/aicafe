@@ -3,7 +3,7 @@ import {useRef,useState} from "react";
 import {useTranslations} from "next-intl";
 import {useRouter} from "next/navigation";
 import {draftStaffWeekInPlace,reviseStaffWeekDraft} from "@/lib/actions/staffDraftInPlace";
-import {reviewStaffDraft,type StaffDraftInputShift} from "@/lib/calc/scheduling/staffDraftReview";
+import {reviewStaffDraft,safeReviewStaffDraft,type StaffDraftInputShift} from "@/lib/calc/scheduling/staffDraftReview";
 import type {PersonForSchedule,AvailabilityEntry,DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
 import type {RuleSettings} from "@/lib/calc/scheduling/ruleChecks";
 import type {OpenHours} from "@/lib/business/openHours";
@@ -27,7 +27,7 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
   const threadRequest=useRef<string|null>(null),draftRequest=useRef<string|null>(null);
   const coverage=data.rules.coverage_enabled?{dates:data.dates,
     openHours:data.openHours,minHeadcount:data.rules.min_headcount}:undefined;
-  const preview=reviewStaffDraft(rows,data.team,data.rules,data.availability,
+  const preview=safeReviewStaffDraft(rows,data.team,data.rules,data.availability,
     data.timezone,data.adjacentShifts,rates,coverage);
   const money=(cents:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:data.currency}).format(cents/100);
   const num=(n:number,maximumFractionDigits=0)=>new Intl.NumberFormat(locale,{maximumFractionDigits}).format(n);
@@ -139,25 +139,26 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
       {busy?t("draftWorking"):t("draftThisWeek")}</button>}
     {busy&&<p role="status" className="mt-2 text-muted">{t(proposal?"draftApplying":"draftWorking")}</p>}
     {proposal&&<>
-      <p role="status" className="mt-3 font-semibold">{t("draftSummary",{
+      {!preview&&<p role="alert" className="mt-3 text-neg">{t("draftInvalidShift")}</p>}
+      {preview&&<p role="status" className="mt-3 font-semibold">{t("draftSummary",{
         shifts:num(preview.totals.shiftCount),hours:num(preview.totals.paidMinutes/60,1),
         cost:preview.totals.unknownCount?t("draftPartialCost",{known:money(preview.totals.knownCostCents),count:num(preview.totals.unknownCount)}):money(preview.totals.knownCostCents),
-        issues:num(preview.totals.ruleIssues)})}</p>
-      {(warning||preview.totals.estimatedCount>0)&&<p className="mt-2 text-muted">{t("draftEstimateNote")}</p>}
-      {preview.totals.coverageGaps>0&&<p role="status"
+        issues:num(preview.totals.ruleIssues)})}</p>}
+      {preview&&(warning||preview.totals.estimatedCount>0)&&<p className="mt-2 text-muted">{t("draftEstimateNote")}</p>}
+      {preview&&preview.totals.coverageGaps>0&&<p role="status"
         className="mt-2 rounded-xl bg-warn-soft p-3 text-warn-text">
         {t("draftCoverageGaps",{count:num(preview.totals.coverageGaps)})}</p>}
       <p className="mt-2 text-muted">{t("draftBaseWageNote")}</p>
       <p className="mt-2 text-muted">{t("draftNotSaved")}</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button disabled={busy||!["pending","failed"].includes(proposal.state)} onClick={()=>void update("approve")}
+        <button disabled={busy||!preview||!["pending","failed"].includes(proposal.state)} onClick={()=>void update("approve")}
           className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent">{proposal.state==="failed"?t("draftRetryApproval"):t("draftApproveAll")}</button>
         <button disabled={busy} onClick={()=>setReview(x=>!x)}
           className="min-h-12 rounded-xl border border-line px-4">{review?t("draftHideReview"):t("draftReview")}</button>
         <button disabled={busy||proposal.state!=="pending"} onClick={()=>void update("cancel")}
           className="min-h-12 rounded-xl border border-line px-4">{t("draftDiscard")}</button>
       </div>
-      {review&&<div className="mt-4 space-y-2">
+      {review&&preview&&<div className="mt-4 space-y-2">
         {preview.shifts.map((s,i)=><div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 border-dashed border-line p-3">
           <span>{s.name} · {new Intl.DateTimeFormat(locale,{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(s.date+"T12:00:00Z"))} · {localTime(s.date,s.start)}–{localTime(s.date,s.end)}</span>
           <div><button type="button" className="min-h-12 px-3 underline" disabled={busy||proposal.state!=="pending"} onClick={()=>{setError("");setEditing(i);setDraftEdited(rows[i]);}}>{t("edit")}</button>

@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {reviewStaffDraft} from "./staffDraftReview";
+import {reviewStaffDraft,safeReviewStaffDraft} from "./staffDraftReview";
 import type {RuleSettings} from "./ruleChecks";
 import type {PersonForSchedule} from "./schedulePresentation";
 
@@ -12,6 +12,12 @@ const person={id:"11111111-1111-4111-8111-111111111111",name:"Ava",
   role:"Barista",wageCents:1873,availableDays:[0,1,2,3,4,5,6],
   minWeeklyMinutes:null,maxWeeklyMinutes:null,colorIndex:0,active:true} satisfies PersonForSchedule;
 describe("in-place Olivia draft review",()=>{
+  it("fails closed when a recently removed worker is missing from the visible roster",()=>{
+    const oldRow={employee_id:person.id,date:"2026-10-26",
+      start:"08:00",end:"10:00",break_minutes:0};
+    expect(safeReviewStaffDraft([oldRow],[],rules,[],"UTC")).toBeNull();
+    expect(safeReviewStaffDraft([oldRow],[person],rules,[],"UTC")?.totals.shiftCount).toBe(1);
+  });
   it("shows exact paid minutes and integer-cents wages without saving shifts",()=>{
     const row={employee_id:person.id,date:"2026-10-26",start:"08:00",end:"12:00",break_minutes:30};
     const reviewed=reviewStaffDraft([row],[person],rules,[],"America/Los_Angeles");
