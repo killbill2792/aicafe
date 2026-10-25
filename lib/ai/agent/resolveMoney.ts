@@ -41,7 +41,7 @@ export function replayedMoneyChoice(state:ResolveState|undefined,metric:MoneyMet
   const matches=[...state.chosenIds].flatMap(id=>{
     if(!id.startsWith(prefix))return [];
     const tail=id.slice(prefix.length);
-    const match=/^(\\d+):(recorded|owner)$/u.exec(tail);
+    const match=/^(\d+):(recorded|owner)$/u.exec(tail);
     if(!match)return [];
     const ownerCents=Number(match[1]);
     return Number.isSafeInteger(ownerCents)?[{source:match[2] as MoneySourceChoice,ownerCents}]:[];
