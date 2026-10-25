@@ -100,6 +100,44 @@ SELECT pg_temp.reject($q$UPDATE public.toast_day_status SET imported_at=now()+in
 SELECT pg_temp.assert((SELECT last_import_run_id is null FROM public.toast_day_status
  WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND business_date='2026-10-01'),
  'superseded import did not rewrite the owner day');
+-- A page checkpoint must not certify an incomplete scan.
+SELECT pg_temp.assert(public.toast_checkpoint_repull_scan_page(
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','dddddddd-dddd-4ddd-8ddd-dddddddd0002',
+ '2026-10-24','2026-10-15T00:00:00Z','2026-10-22T00:00:00Z',
+ '2026-10-15T00:00:00Z','2026-10-22T00:00:00Z',1,false,
+ '["2026-10-06"]'::jsonb),'first page persisted');
+SELECT pg_temp.assert((SELECT scan_page=2 AND scan_local_day='2026-10-24'
+ AND last_local_day IS DISTINCT FROM '2026-10-24'::date
+ FROM public.toast_repull_scan_state WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'partial scan did not advance completion marker');
+SELECT pg_temp.assert((SELECT count(*)=1 FROM public.toast_sync_runs WHERE
+ business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND
+ kind='repull_modified' AND requested_from='2026-10-06'),
+ 'checkpoint queued modified day exactly once');
+SELECT pg_temp.reject($q$SELECT public.toast_checkpoint_repull_scan_page(
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','dddddddd-dddd-4ddd-8ddd-dddddddd0002',
+ '2026-10-24','2026-10-15T00:00:00Z','2026-10-22T00:00:00Z',
+ '2026-10-15T00:00:00Z','2026-10-22T00:00:00Z',1,true,'[]'::jsonb)$q$);
+SELECT pg_temp.assert(public.toast_checkpoint_repull_scan_page(
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','dddddddd-dddd-4ddd-8ddd-dddddddd0002',
+ '2026-10-24','2026-10-15T00:00:00Z','2026-10-22T00:00:00Z',
+ '2026-10-15T00:00:00Z','2026-10-22T00:00:00Z',2,true,
+ '["2026-10-05"]'::jsonb),'final page completes scan');
+SELECT pg_temp.assert((SELECT last_local_day='2026-10-24' AND scan_local_day IS NULL
+ FROM public.toast_repull_scan_state WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'only terminal page advances scan watermark');
+SELECT pg_temp.assert((SELECT count(*)=2 FROM public.toast_sync_runs WHERE
+ business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND
+ kind='repull_modified' AND requested_from IN ('2026-10-06','2026-10-05')),
+ 'all pages queued independently without duplication');
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT pg_temp.reject($q$SELECT public.toast_checkpoint_repull_scan_page(
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','dddddddd-dddd-4ddd-8ddd-dddddddd0002',
+ '2026-10-25','2026-10-16T00:00:00Z','2026-10-23T00:00:00Z',
+ '2026-10-16T00:00:00Z','2026-10-23T00:00:00Z',1,true,'[]'::jsonb)$q$);
+RESET ROLE;
+SELECT set_config('request.jwt.claim.role','service_role',true);
 -- Shared client: both callers see one cooldown; a different client is unaffected.
 SELECT public.toast_claim_client_budget(repeat('a',64),now()+interval '10 minutes');
 SELECT pg_temp.assert(public.toast_claim_client_budget(repeat('a',64))>now(),'same client shares 429 cooldown');
