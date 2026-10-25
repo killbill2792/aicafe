@@ -3,6 +3,10 @@
 -- historical payroll, current-day owner schedules or published scheduled_shifts.
 BEGIN;
 
+-- Alert rows predate a resolution timestamp. Preserve the original payload and
+-- record precisely when the last unresolved matching job is cleared.
+ALTER TABLE public.alerts ADD COLUMN IF NOT EXISTS resolved_at timestamptz;
+
 UPDATE public.staff_schedules AS ss
 SET active = false
 FROM public.employees AS e
