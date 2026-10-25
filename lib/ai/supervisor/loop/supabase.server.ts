@@ -2,6 +2,7 @@ import {createHash} from "node:crypto";
 import "server-only";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
+import {ProposalRequestConflictError} from "./engine";
 import type {LoopCreate,LoopRepository,OwnerLoopScope,LoopProposal,LoopSample,LoopReport} from "./engine";
 
 const uuid=z.uuid();
@@ -42,7 +43,7 @@ export class SupabaseLoopRepository implements LoopRepository{
     if(previous.error||!previous.data)return failed(previous.error,"Proposal retry unavailable");
     const result=decode(previous.data as Row);
     if(result.effectHash!==p.effectHash||result.capabilityId!==p.capabilityId)
-      throw new Error("Conflicting proposal request key");
+      throw new ProposalRequestConflictError();
     return result;
   }
   async load(scope:OwnerLoopScope,id:string):Promise<LoopProposal>{

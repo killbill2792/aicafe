@@ -2,6 +2,10 @@ import {createHash} from "node:crypto";
 import {z} from "zod";
 import type {AgentId,OperatingTaskKind,OperatingTask} from "@/lib/operating/tasks";
 
+/** A reused scoped idempotency key must never approve a different effect. */
+export class ProposalRequestConflictError extends Error {
+  constructor(){super("Conflicting proposal request key");this.name="ProposalRequestConflictError";}
+}
 export type LoopLocale="en"|"es"|"ar";
 export type OwnerLoopScope={businessId:string;ownerUserId:string;threadId:string;locale:LoopLocale};
 export type ProposalStatus="draft"|"approved"|"executing"|"committed"|"manual_pending"|

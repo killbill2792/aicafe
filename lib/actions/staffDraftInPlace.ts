@@ -9,7 +9,7 @@ import {scheduleProposalReplacesSavedShifts} from "@/lib/calc/scheduling/staffDr
 import {draftWeekWithStaffIds,businessLocalDate} from "@/lib/calc/scheduling/draftWeek";
 import {staffProposalInputs} from "@/lib/ai/agent/tools/staffProposals";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
-import {proposeLoop,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
+import {proposeLoop,ProposalRequestConflictError,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 
@@ -81,7 +81,13 @@ export async function draftStaffWeekInPlace(raw:unknown){
       shifts:proposed.data.shifts,
       costIsPartial:result.totals.costIsPartial,estimated:result.estimated.length>0,
       wageRates:wageRates(slice.value.employees)};
-  }catch{return {ok:false as const,error:"unavailable"};}
+  }catch(error){
+    // Lost-response retry with changed roster/hours must release the old key,
+    // not strand the owner in an endless unavailable/retry loop.
+    if(error instanceof ProposalRequestConflictError)
+      return {ok:false as const,error:"week_changed"};
+    return {ok:false as const,error:"unavailable"};
+  }
 }
 
 const revisedInput=z.strictObject({week:z.iso.date(),threadId:z.uuid(),requestKey:z.uuid(),
