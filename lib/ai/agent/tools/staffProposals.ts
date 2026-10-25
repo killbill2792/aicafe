@@ -60,6 +60,9 @@ export const staffProposalTools=Object.fromEntries(
      for(const id of new Set(ids)){
        const person=people.find(p=>p.id===id);
        if(!person)return {source:"staff_proposal",period:null,agentId:"olivia",missing:["notFound"],suggestions:people.slice(0,4).map(p=>({id:p.id,label:p.name,detail:p.role??"Team"}))};
+       if(name==="propose_staff_change"&&!ownerNamedTarget(ctx.resolveState,id,person.name))
+         return {source:"staff_proposal",period:null,agentId:"olivia",
+           draft:false,saved:false,missing:["targetNotConfirmed"]};
        const matched=resolveEntity("staff",person.name,people,{
          nameOf:p=>p.name,idOf:p=>p.id,describe:p=>p.role??"Team"});
        if(matched.status==="ambiguous"&&!ctx.resolveState.chosenIds.has(id.toLowerCase())){
