@@ -65,7 +65,7 @@ describe("safe entity resolution",()=>{
     const chosen=newResolveState(text,[
       {role:"assistant",content:"Asked: Which month? Options: September 2025 (2025-09-01/2025-09-30); September 2026 (2026-09-01/2026-09-30)"}]);
     const options={asOf:"2026-10-24",timezone:"America/Los_Angeles"};
-    expect(resolveOwnerPeriod("September",options).status).toBe("ambiguous");
+    expect(resolveOwnerPeriod("September",options,undefined).status).toBe("ambiguous");
     expect(resolveOwnerPeriod("September",options,chosen)).toMatchObject({
       status:"resolved",value:{from:"2025-09-01",to:"2025-09-30"}});
     expect(resolveOwnerPeriod("October",options,chosen).status).not.toBe("resolved");
