@@ -26,4 +26,17 @@ describe("overnight shift explanations",()=>{
   expect(result).toMatchObject({costCents:6300,paidMinutes:210,missing:[]});
   expect(result.explain).toMatchObject([{formula:"prorate",result:{kind:"money",cents:6300}}]);
  });
+ it("does not return another employee's wages when an ID mismatches the owner",async()=>{
+  vi.mocked(getTeam).mockResolvedValue({ok:true,data:{
+    team:[{id,name:"Maria",role:"Barista",wageCents:1800}],shifts:[],totals:{}
+  }} as never);
+  vi.mocked(getShiftCost).mockClear();
+  const ctx={asOf:"2026-10-24",locale:"en",
+    resolveState:newResolveState("What will Alex's shift cost?")} as AgentToolContext;
+  const result=await scheduleReadTools.get_shift_cost.execute({
+    employee_id:id,date:"2026-10-24",start:"10:00",end:"14:00",break_minutes:0
+  },ctx);
+  expect(result.missing).toContain("targetNotConfirmed");
+  expect(getShiftCost).not.toHaveBeenCalled();
+ });
 });
