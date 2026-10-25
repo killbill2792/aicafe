@@ -71,6 +71,13 @@ export async function ensureScheduledShiftsThroughDate(
     .lte("effective_from", throughDate)
     .or(`effective_to.is.null,effective_to.gte.${monthStart}`);
   if (schedulesError || !scheduleRows || scheduleRows.length === 0) return;
+  const { data: activeRows, error: activeError } = await supabase.from("employees")
+    .select("id").eq("business_id",businessId).eq("active",true);
+  // A roster query failure must never be interpreted as "everyone is active".
+  if (activeError) return;
+  const activeIds = new Set((activeRows ?? []).map(row=>row.id));
+  const activeSchedules = scheduleRows.filter(row=>activeIds.has(row.employee_id));
+  if (!activeSchedules.length) return;
 
   const dayStartUtc = fromZonedTime(`${monthStart}T00:00:00`, timezone).toISOString();
   const dayEndUtc = fromZonedTime(`${throughDate}T23:59:59.999`, timezone).toISOString();
@@ -88,7 +95,7 @@ export async function ensureScheduledShiftsThroughDate(
       .map((row) => `${row.employee_id}:${formatInTimeZone(row.clock_in, timezone, "yyyy-MM-dd")}`),
   );
 
-  const schedules = scheduleRows as StaffScheduleMaterializationRow[];
+  const schedules = activeSchedules as StaffScheduleMaterializationRow[];
   const toInsert: ReturnType<typeof timecardRowFromSchedule>[] = [];
   const affectedDates = new Set<string>();
 
