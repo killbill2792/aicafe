@@ -15,6 +15,7 @@ import {automaticUnpaidBreakMinutes} from "@/lib/calc/scheduling/ruleChecks";
 import {scheduledShiftMinutes,parseUnpaidBreakMinutes,validShiftClock} from "@/lib/calc/scheduling/shiftInput";
 import {suggestedRuleShiftChange,type StaffRuleKey,isStaffRuleKey} from "@/lib/calc/scheduling/ruleFixPreview";
 import {staffScheduleHref,validScheduleDate,resolveDatedStaffShift} from "@/lib/scheduling/staffScheduleLinks";
+import {safeScheduleCopyResponse} from "@/lib/scheduling/scheduleCopyResult";
 import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import Link from "next/link";
 import {parseHourlyWage,parseWeeklyHours,weeklyHoursInput,isValidTeamAvailability,teamAvailabilitySummary,formatTeamClock,teamNumberLocale,storedTeamAvailability,hasComplexTeamAvailability,staffChangeSucceeded} from "./teamPersonFields";
@@ -80,6 +81,18 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     if(!await staffChangeSucceeded(fn)){setError(t("saveFailed"));return;}
     setSheet(null);router.refresh();
    } finally {running.current=false;}
+  });
+ };
+ const prepareMessages=()=>{
+  if(running.current)return;
+  running.current=true;
+  startTransition(async()=>{
+   setError("");
+   try{
+    const result=await safeScheduleCopyResponse(()=>sendSchedule({weekStart:data.weekStart}));
+    if(result.ok)setNotice(result.copy);
+    else setError(t("saveFailed"));
+   }finally{running.current=false;}
   });
  };
  const openPerson=(person?:Data["team"][number])=>{
@@ -281,7 +294,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     </div></section>}
    <div className="fixed inset-x-0 bottom-16 z-20 flex gap-2 border-t border-line bg-surface p-3 lg:bottom-0">
     <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl border border-accent text-accent-text" onClick={()=>run(()=>copyWeek({fromWeekStart:new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10),toWeekStart:data.weekStart}))}>{t("copyLastWeek")}</button>
-    <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={()=>startTransition(async()=>{const r=await sendSchedule({weekStart:data.weekStart});if(!r.ok){setError(r.error);return;}setNotice(r.data.messages.map(m=>m.text).join("\n"));})}>{t("prepareScheduleMessages")}</button>
+    <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={prepareMessages}>{t("prepareScheduleMessages")}</button>
    </div>
   </>:<>
    <section className="rounded-[20px] border border-line bg-surface p-4"><h2 className="text-lg font-bold">{t("addSomeone")}</h2>
