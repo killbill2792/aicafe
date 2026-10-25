@@ -1,0 +1,88 @@
+name: Redesign 16 Before After Screenshots
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'components/staff/ManageStaffPanel.tsx'
+      - 'components/staff/OliviaPlanningPanel.tsx'
+      - 'components/staff/SchedulingInputsPanel.tsx'
+      - 'components/more/EditBusinessName.tsx'
+      - 'messages/en.json'
+      - 'messages/es.json'
+      - 'messages/ar.json'
+      - 'scripts/redesign16-visual-compare.mjs'
+      - '.github/workflows/redesign16-visual.yml'
+permissions: { contents: write }
+concurrency:
+  group: redesign16-visual-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  compare:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'redesign/16-cleanup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      STAFF_VISUAL_FIXTURES: 'true'
+      NEXT_PUBLIC_SUPABASE_URL: ''
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Install isolated baseline and head dependencies
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/redesign16-base" "$BASE_SHA"
+          npm ci
+          npm install --no-save --package-lock=false playwright@1.58.2
+          (cd "$RUNNER_TEMP/redesign16-base" && npm ci)
+      - name: Capture baseline from local fixture only
+        run: |
+          (cd "$RUNNER_TEMP/redesign16-base" && npm run dev -- --webpack --hostname 127.0.0.1 --port 3101 > "$RUNNER_TEMP/redesign16-base.log" 2>&1) &
+          echo $! > "$RUNNER_TEMP/redesign16-base.pid"
+          for i in $(seq 1 90); do
+            if curl -fsS 'http://127.0.0.1:3101/en/staff?fixture=1&week=2026-10-26' >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS 'http://127.0.0.1:3101/en/more' >/dev/null
+          node scripts/redesign16-visual-compare.mjs before http://127.0.0.1:3101
+          kill "$(cat "$RUNNER_TEMP/redesign16-base.pid")" || true
+      - name: Compare PR head with baseline using local fixture only
+        run: |
+          npm run dev -- --webpack --hostname 127.0.0.1 --port 3102 > "$RUNNER_TEMP/redesign16-head.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/redesign16-head.pid"
+          for i in $(seq 1 90); do
+            if curl -fsS 'http://127.0.0.1:3102/en/staff?fixture=1&week=2026-10-26' >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS 'http://127.0.0.1:3102/en/more' >/dev/null
+          node scripts/redesign16-visual-compare.mjs after http://127.0.0.1:3102
+          kill "$(cat "$RUNNER_TEMP/redesign16-head.pid")" || true
+      - name: Archive before-after PNGs in the draft branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/screenshots/redesign-16/*.png
+          if ! git diff --cached --quiet; then
+            git commit -m 'docs: record redesign 16 unchanged before-after screens'
+            git push origin HEAD:refs/heads/redesign/16-cleanup
+          fi
+      - name: Attach screenshot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redesign16-before-after
+          path: docs/screenshots/redesign-16/*.png
+          if-no-files-found: error
+      - name: Server diagnostic logs on failure
+        if: failure()
+        run: |
+          tail -100 "$RUNNER_TEMP/redesign16-base.log" 2>/dev/null || true
+          tail -100 "$RUNNER_TEMP/redesign16-head.log" 2>/dev/null || true
