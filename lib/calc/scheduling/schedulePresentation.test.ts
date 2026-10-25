@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {availabilityStatus,bestFreePerson,peopleWithRetainedShifts,type PersonForSchedule,type AvailabilityEntry}
+import {availabilityStatus,draftAvailabilityStatus,bestFreePerson,peopleWithRetainedShifts,type PersonForSchedule,type AvailabilityEntry}
  from "./schedulePresentation";
 
 const person:PersonForSchedule={id:"amy",name:"Amy",role:"Barista",wageCents:1900,
@@ -7,6 +7,17 @@ const person:PersonForSchedule={id:"amy",name:"Amy",role:"Barista",wageCents:190
 const rule=(start:string,end:string):AvailabilityEntry=>({
  employee_id:"amy",day_of_week:1,start_local:start,end_local:end,
  effective_from:"2026-10-01",effective_to:null
+});
+describe("partial shift clock inputs",()=>{
+ it("does not run strict availability math for an empty, equal, or impossible clock",()=>{
+  for(const [start,end] of [["","12:00"],["06:15",""],["07:00","07:00"],["24:00","12:00"]]){
+   expect(draftAvailabilityStatus(person,"2026-10-26",start,end,[],[rule("06:00","18:00")])).toBeNull();
+  }
+ });
+ it("still reports actual availability once the time fields are valid",()=>{
+  expect(draftAvailabilityStatus(person,"2026-10-26","06:15","12:37",[],[rule("06:00","18:00")])).toBe("free");
+  expect(draftAvailabilityStatus(person,"2026-10-26","05:00","12:37",[],[rule("06:00","18:00")])).toBe("unavailable");
+ });
 });
 describe("dated availability and roster presentation",()=>{
  it("accepts an afternoon slot in a second same-day window",()=>{

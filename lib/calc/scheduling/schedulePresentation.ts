@@ -3,6 +3,7 @@ import type {OpenHours} from "@/lib/business/openHours";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 import {minuteOfDay,shiftCost,roleWageAverages,businessWageEstimate,aggregateCosts,type CostShift,type CostLine} from "./shiftCost";
 import {checkShiftLength,checkScheduledWeeklyBounds,type RuleSettings} from "./ruleChecks";
+import {scheduledShiftMinutes} from "./shiftInput";
 
 export type PersonForSchedule={id:string;name:string;role:string|null;wageCents:number|null;
  minWeeklyMinutes:number|null;maxWeeklyMinutes:number|null;availableDays:number[]|null;colorIndex:number|null;
@@ -126,6 +127,12 @@ export function availabilityStatus(person:PersonForSchedule,date:string,start:st
   return "unavailable";
  }
  return "free";
+}
+/** Draft clock fields can temporarily be blank while an owner types.
+ * Never pass them to strict availability math until both are valid. */
+export function draftAvailabilityStatus(person:PersonForSchedule,date:string,start:string,end:string,
+ shifts:DetailedShift[],windows:AvailabilityEntry[]):AvailabilityStatus|null{
+ return scheduledShiftMinutes(start,end)===null?null:availabilityStatus(person,date,start,end,shifts,windows);
 }
 export function bestFreePerson(people:PersonForSchedule[],date:string,start:string,end:string,
  shifts:DetailedShift[],availability:AvailabilityEntry[]):PersonForSchedule|null{

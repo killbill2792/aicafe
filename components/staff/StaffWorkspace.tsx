@@ -8,7 +8,7 @@ import DayTimeline from "./DayTimeline";
 import StaffDialog from "./StaffDialog";
 import WeekGrid from "./WeekGrid";
 import ShiftPreview from "./ShiftPreview";
-import {dayTotals,personTotals,bestFreePerson,availabilityStatus,totalOvertimeMinutes,previewShift,type DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
+import {dayTotals,personTotals,bestFreePerson,draftAvailabilityStatus,totalOvertimeMinutes,previewShift,type DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 import {uncheckedCoverageDays,coverageVerification} from "@/lib/calc/scheduling/coverageGaps";
 import {automaticUnpaidBreakMinutes} from "@/lib/calc/scheduling/ruleChecks";
@@ -399,11 +399,11 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        {!suggested&&<span className="block">{t("manualRuleReview")}</span>}
        {!deepShift&&<span className="block">{t("noMatchingShift")}</span>}</p>}
        <div className="mt-3"><h3 className="font-bold">{t("who")}</h3><div className="mt-2 flex flex-wrap gap-2">{data.team.map(p=>{
-       const status=availabilityStatus(p,date,start,end,[...data.shifts.filter(s=>s.id!==editing),...data.adjacentShifts],data.availability);
+       const status=draftAvailabilityStatus(p,date,start,end,[...data.shifts.filter(s=>s.id!==editing),...data.adjacentShifts],data.availability);
        return <button key={p.id} type="button" disabled={data.readOnly||ruleReview} aria-pressed={chosen===p.id} onClick={()=>setChosen(p.id)}
         className={`flex min-h-12 items-center gap-2 rounded-full border px-2 py-1 font-bold ${chosen===p.id?"border-accent-text bg-accent-soft text-accent-text":"border-line bg-surface"}`}>
         <span className="grid size-9 place-items-center rounded-full bg-surface2">{p.name[0]}</span>
-        {p.name}<span className={`text-sm font-normal ${status==="free"?"text-pos":"text-muted"}`}>{t(status==="free"?"free":status==="off"?"off":status==="on_shift"?"onShift":"unavailable")}</span></button>;
+        {p.name}{status!==null&&<span className={`text-sm font-normal ${status==="free"?"text-pos":"text-muted"}`}>{t(status==="free"?"free":status==="off"?"off":status==="on_shift"?"onShift":"unavailable")}</span>}</button>;
       })}</div></div>
       {([[t("start"),start,setStart],[t("end"),end,setEnd]] as const).map(([label,time,set])=><div key={label} className="mt-3">
        <label className="block font-semibold">{label}

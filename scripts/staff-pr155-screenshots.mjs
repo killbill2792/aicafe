@@ -117,6 +117,17 @@ for(const [locale,width,height] of [["en",390,844],["en",1440,900],["ar",390,844
    throw Error("Arabic shift editor must be RTL");
   const clockInputs=dialog.locator('input[type="time"]');
   if(await clockInputs.count()!==2)throw Error("Step 13 shift form needs two minute-level clock inputs");
+  await clockInputs.nth(0).fill("");
+  await dialog.getByRole("alert").first().waitFor({state:"visible"});
+  if(!await dialog.locator("button.mt-5.min-h-14").first().isDisabled())
+   throw Error("Empty shift start must disable Save");
+  if(!await dialog.isVisible())throw Error("Clearing shift time crashed the editor");
+  await clockInputs.nth(0).fill("06:15");
+  await clockInputs.nth(1).fill("");
+  await dialog.getByRole("alert").first().waitFor({state:"visible"});
+  if(!await dialog.locator("button.mt-5.min-h-14").first().isDisabled())
+   throw Error("Empty shift end must disable Save");
+  if(!await dialog.isVisible())throw Error("Clearing end time crashed the editor");
   await clockInputs.nth(0).fill("06:15");
   await clockInputs.nth(1).fill("12:37");
   if(await clockInputs.nth(0).inputValue()!=="06:15"||await clockInputs.nth(1).inputValue()!=="12:37")
