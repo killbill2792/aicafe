@@ -73,6 +73,11 @@ export function buildStaffViewModel(
     // timecard to a new person who happens to have the same display name.
     const byId = rosterById.get(shift.employeeId);
     if (byId) return byId;
+    // A valid persisted employee ID which is not in the active roster can be
+    // an archived employee; never reassign it to a same-named active person.
+    // Name fallback is only for genuinely unlinked POS/import identifiers.
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shift.employeeId))
+      return null;
     const matches = rosterByName.get(normalizedName(shift.name)) ?? [];
     // A duplicate display name is ambiguous and must not be guessed.
     return matches.length === 1 ? matches[0] : null;
