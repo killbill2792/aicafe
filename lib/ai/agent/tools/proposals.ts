@@ -1,6 +1,6 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {resolveEntity,ownerChoiceGuard} from "../resolve";
+import {resolveEntity,ownerChoiceGuard,normalizedName} from "../resolve";
 import {safeDifferenceCents} from "@/lib/calc/explainMath";
 import {money} from "../explain";
 export const priceChangeProposalSchema=z.strictObject({
