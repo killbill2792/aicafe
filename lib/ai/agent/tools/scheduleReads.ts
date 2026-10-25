@@ -43,6 +43,8 @@ export const scheduleReadTools={
        selected=[matched.value];
      }
    }
+   if(input.name&&selected.length===1&&!ownerNamedTarget(ctx.resolveState,selected[0].id,selected[0].name))
+     return fail("employees+scheduled_shifts",null,"targetNotConfirmed");
    const scoped=input.name?result.data.shifts.filter(shift=>selected.some(person=>
      person.id===shift.employeeId)):result.data.shifts;
    const people=selected.slice(0,30),shifts=scoped.slice(0,30);
