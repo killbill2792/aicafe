@@ -29,24 +29,31 @@ export const newItemPriceTools={suggest_new_item_price:{
   const laborCents=labor?.available?labor.value.reduce((s,d)=>s+d.loadedStaffCostCents,0):null;
   const units=sales?.available?sales.value.reduce((s,d)=>s+d.units,0):null;
   const categoryUnits=sales?.available?sales.value.filter(x=>x.category===v.category).reduce((s,d)=>s+d.units,0):null;
-  const calculated=calculateNewItemPrice({
-   ingredientCostCents:v.ingredient_cost_cents,packagingCents:v.packaging_cents,targetMarginPercent:v.target_margin_percent,
-   labor30dCents:laborCents??(owner?.laborCents!=null&&owner.laborPeriod?prorate(owner.laborCents,ownerPeriod(owner.laborPeriod,ctx.asOf)!,period):null),monthlyBillsCents:bills?.available?prorate(bills.value.totalCents,calendarMonth(ctx.asOf),period):
-    owner?.rentCents!=null||owner?.otherOverheadCents!=null?prorate((owner!.rentCents??0)+(owner!.otherOverheadCents??0),
-      owner?.overheadPeriod?ownerPeriod(owner.overheadPeriod,ctx.asOf)!:calendarMonth(ctx.asOf),period):null,
-   units30d:units??(owner?.itemsSoldPerDay!=null?Math.round(owner.itemsSoldPerDay*periodDays(period)):null),menuPricesCents:menu.available?menu.value.filter(x=>x.active&&x.category===v.category).map(x=>x.priceCents):[]
-  });
-  const location=site?.available?{city:site.value.city,region:site.value.region,country:site.value.countryCode}:null;
   const laborForPeriod=laborCents??(owner?.laborCents!=null&&owner.laborPeriod?
     prorate(owner.laborCents,ownerPeriod(owner.laborPeriod,ctx.asOf)!,period):null);
+  const ownerHasRent=owner?.rentCents!=null,ownerHasOtherOverhead=owner?.otherOverheadCents!=null;
+  const billsComplete=Boolean(bills?.available||(ownerHasRent&&ownerHasOtherOverhead));
+  // A known rent-only or other-overhead-only amount is a lower bound, not full bills.
   const billsForPeriod=bills?.available?prorate(bills.value.totalCents,calendarMonth(ctx.asOf),period):
-    owner?.rentCents!=null||owner?.otherOverheadCents!=null?prorate((owner?.rentCents??0)+(owner?.otherOverheadCents??0),
+    ownerHasRent||ownerHasOtherOverhead?prorate((owner?.rentCents??0)+(owner?.otherOverheadCents??0),
       owner?.overheadPeriod?ownerPeriod(owner.overheadPeriod,ctx.asOf)!:calendarMonth(ctx.asOf),period):null;
+  const calculated=calculateNewItemPrice({
+    ingredientCostCents:v.ingredient_cost_cents,packagingCents:v.packaging_cents,
+    targetMarginPercent:v.target_margin_percent,labor30dCents:laborForPeriod,
+    monthlyBillsCents:billsComplete?billsForPeriod:null,
+    knownPartialBillsCents:billsComplete?null:billsForPeriod,
+    units30d:units??(owner?.itemsSoldPerDay!=null?
+      Math.round(owner.itemsSoldPerDay*periodDays(period)):null),
+    menuPricesCents:menu.available?menu.value.filter(x=>x.active&&x.category===v.category)
+      .map(x=>x.priceCents):[],
+  });
+  const location=site?.available?{city:site.value.city,region:site.value.region,country:site.value.countryCode}:null;
   const contribution=contributionCoverage({
     priceCents:calculated.suggestedPriceCents,unitCostCents:v.ingredient_cost_cents,
     packagingCents:v.packaging_cents,laborCents:laborForPeriod,billsCents:billsForPeriod,
-    days:periodDays(period),
+    billsComplete,days:periodDays(period),
   });
+  const incompleteOwnerBills=!bills?.available&&(ownerHasRent!==ownerHasOtherOverhead);
   return {source:"new_item_price",period,coverageLabel:coverage.label,unit:"cents",...contribution,
    agentId:"alex",draft:true,saved:false,itemName:v.item_name,category:v.category,ownerInputs:owner,
    categoryUnits30d:categoryUnits,location,localCompetitorPrices:null,...calculated,
@@ -55,7 +62,8 @@ export const newItemPriceTools={suggest_new_item_price:{
       {name:"targetMargin",value:percent(Math.round((100-calculated.targetMarginPercent)*100))}],
       formula:"divide",result:money(calculated.costPlusPriceCents),period,
       source:"suggest_new_item_price",provenance:v.target_margin_percent===null?"estimate":"ownerProvided"}]:[],
-   missing:[...new Set([...missing,...calculated.missing])],
+   missing:[...new Set([...missing,...calculated.missing,
+     ...(incompleteOwnerBills?["ownerOverheadIncomplete"]:[])])],
    estimated:[...new Set([...calculated.estimated,...(labor?.quality.estimatedInputs??[]),...(bills?.quality.estimatedInputs??[])])]};
  }
 }} as const;
