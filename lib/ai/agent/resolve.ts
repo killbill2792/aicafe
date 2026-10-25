@@ -172,6 +172,19 @@ export function observeToolResult(state:ResolveState|undefined,result:Record<str
   if(result.missing.length===0)visit(result,0);
 }
 
+/** A month picked from a real card must be one of the period resolver's
+ * current valid candidates. Ignore stale or unrelated choices. */
+export function resolveOwnerPeriod(
+  input:import("@/lib/calc/periods").PeriodInput,
+  options:{asOf:string;timezone:string;coverage?:{from:string;to:string}|null},
+  state:ResolveState|undefined,
+):import("@/lib/calc/periods").PeriodResolution {
+  const resolved=importResolvePeriod(input,options);
+  if(resolved.status!=="ambiguous"||!state?.chosenIds.size)return resolved;
+  const found=resolved.candidates.filter(p=>state.chosenIds.has(p.from+"/"+p.to));
+  return found.length===1?{status:"resolved",value:found[0]}:resolved;
+}
+import {resolvePeriod as importResolvePeriod} from "@/lib/calc/periods";
 /** Periods share the same owner-choice wire contract as named records. */
 export function periodChoicePayload(source:string,result:import("@/lib/calc/periods").PeriodResolution){
   if(result.status==="ambiguous")return {source,period:null,missing:[] as string[],needsOwnerChoice:true,
