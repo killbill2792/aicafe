@@ -20,7 +20,7 @@ import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewm
 import { syncAndGetOperatingTasks } from "@/lib/data/operatingTasks";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
 import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
-import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
+import { EXPENSE_CATEGORY_CODES, RUNNING_COST_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import type { AgentId, OperatingTask } from "@/lib/operating/tasks";
 
 const agentSchema=z.enum(["alex","leo","maya","olivia"]);
@@ -229,9 +229,10 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
         params={item:String(task.payload.itemName??tOperations("homeSupplies"))};
       }else key="Operations.mayaWatching";
     }else if(alert){
-      if(alert.kind==="missing_bill"){
+      if(alert.kind==="missing_bill" &&
+        RUNNING_COST_CODES.includes(String(alert.payload.categoryCode??"") as typeof RUNNING_COST_CODES[number])){
         key="Alerts.missingBillTitle";
-        params={category:tCategories(String(alert.payload.categoryCode??"") as ExpenseCategoryCode)};
+        params={category:tCategories(String(alert.payload.categoryCode) as ExpenseCategoryCode)};
       }else if(alert.kind==="voids")key="Alerts.voidsTitle";
       else if(alert.kind==="meal_break"){
         key="Alerts.mealBreakTitle";
