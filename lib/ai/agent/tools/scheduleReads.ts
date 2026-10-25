@@ -35,9 +35,13 @@ export const scheduleReadTools={
    if(!result.ok)return fail("staff_week",null,result.error);
    let selected=result.data.team;
    if(input.name){
-     const matched=resolveEntity("employee",input.name,selected,{nameOf:person=>person.name,idOf:person=>person.id,describe:person=>person.role??"Team"});
-     if(matched.status!=="resolved")return {...choicePayload(matched,"employees+scheduled_shifts",null),agentId:"olivia"};
-     selected=[matched.value];
+     const chosen=resolveChosenEntity(ctx.resolveState,selected,person=>person.id);
+     if(chosen)selected=[chosen];
+     else{
+       const matched=resolveEntity("employee",input.name,selected,{nameOf:person=>person.name,idOf:person=>person.id,describe:person=>person.role??"Team"});
+       if(matched.status!=="resolved")return {...choicePayload(matched,"employees+scheduled_shifts",null),agentId:"olivia"};
+       selected=[matched.value];
+     }
    }
    const scoped=input.name?result.data.shifts.filter(shift=>selected.some(person=>
      person.id===shift.employeeId)):result.data.shifts;
