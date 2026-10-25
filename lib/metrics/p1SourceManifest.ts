@@ -12,6 +12,9 @@ import type { SupportedId } from "./p1Catalog";
 type Surface = {capabilities:readonly SupportedId[]} |
   {restricted:string};
 export const SOURCE_SURFACES = {
+  "lib/data/resolveUnmatchedAlerts.server.ts":{
+    resolveUnmatchedAlertsIfClear:{restricted:"Owner-authenticated tenant-scoped alert status reconciliation after catalog actions; never an AI fact read or model-triggered write"},
+  },
   "lib/data/staffProposalSources.server.ts":{
     readStaffProposalToken:{restricted:"Owner-authenticated staff source revision token for proposal CAS, not a model-readable source"},
     readStaffProposalSources:{restricted:"Owner and cafe scoped private staff schedule and availability reader for inert approval previews"},
