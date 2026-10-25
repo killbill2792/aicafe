@@ -50,6 +50,12 @@ export function homeShiftHref(employeeId?: string | null, date?: string | null):
   return "/staff?" + query.toString();
 }
 
+/** Historic unmatched-sales alerts reflect an upload-time snapshot, not live review work.
+ * Show the catalog's current needs_review count instead, even if the alert remains open. */
+export function showAlertInHome(kind: string): boolean {
+  return kind !== "unmatched_sales_items";
+}
+
 export type HomeAttentionItem = {
   id: string;
   title: string;
