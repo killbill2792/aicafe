@@ -14,6 +14,15 @@ describe("new unsaved item pricing",()=>{
   expect(r.missing).toContain("itemSales30d");expect(r.laborPerItemCents).toBeNull();
   expect(r.fullCostCents).toBeNull();expect(r.suggestedPriceCents).toBeGreaterThan(0);expect(r.result.tier).toBe("floor_only");
  });
+ it("uses known full costs even with the default target margin",()=>{
+  const r=calculateNewItemPrice({...fixture(),ingredientCostCents:100,labor30dCents:500000,monthlyBillsCents:100000});
+  expect(r.fullCostCents).toBe(720);
+  expect(r.suggestedPriceCents).toBe(850);
+ });
+ it("uses the configured nearest-quarter rounding",()=>{
+  const r=calculateNewItemPrice({...fixture(),ingredientCostCents:100,labor30dCents:0,monthlyBillsCents:0});
+  expect(r.suggestedPriceCents).toBe(325);
+ });
  it("respects owner margin and labels packaging assumption",()=>{
   const r=calculateNewItemPrice({...fixture(),targetMarginPercent:60,packagingCents:null});
   expect(r.costPlusPriceCents).toBe(725);expect(r.suggestedPriceCents).toBe(725);
