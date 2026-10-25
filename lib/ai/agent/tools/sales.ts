@@ -68,6 +68,8 @@ export const salesTools={
       if(!menu.available)return {source:"pricing_engine",period:null,missing:menu.quality.missingInputs};
       const product=menu.value.find(row=>row.active&&row.id===itemId);
       if(!product)return {source:"pricing_engine",period:null,missing:["notFound"]};
+      if(!ownerNamedTarget(ctx.resolveState,itemId,product.name))
+        return {source:"pricing_engine",period:null,agentId:"alex",missing:["targetNotConfirmed"]};
       const resolved=resolveEntity("product",product.name,menu.value.filter(row=>row.active),{nameOf:r=>r.name,idOf:r=>r.id,describe:r=>r.category+" · "+(r.priceCents/100).toFixed(2)});
       if(resolved.status==="ambiguous"&&!ctx.resolveState?.chosenIds.has(itemId.toLowerCase()))
         return {...choicePayload(resolved,"pricing_engine",null),agentId:"alex"};
