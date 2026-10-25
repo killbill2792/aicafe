@@ -833,7 +833,9 @@ export default function SupervisorChatComposer({
         <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
           hasMessages={false} expanded={false} onToggle={()=>{}}
           onSuggestion={prompt=>{retryId.current=null;void sendText(prompt);}}
-          suggestionsDisabled={!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}/>}
+          suggestionsDisabled={!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}
+          unavailableMessage={!enabled ? copy.unavailable : undefined}/>}
+
       {!chatStartData&&!hasChatMessages&&<div className="mx-auto py-3 text-center">
         <h2 className="font-headline text-xl font-bold text-ink">{copy.emptyHeading}</h2>
         {!enabled&&<p className="text-[17px] text-ink-muted">{copy.unavailable}</p>}

@@ -86,10 +86,23 @@ describe("PR F shared attention and chat entry",()=>{
   const composer=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
   expect(home).toContain('initialThreadId={initialThread} initialProposalId={initialExperiment}');
   expect(wrapper).toContain('initialThreadId={initialThreadId} initialProposalId={initialProposalId}');
+  // Fails on the old branch: client-side deep links changed only props, not
+  // the useState-initialized thread, so owner opened the wrong conversation.
+  expect(wrapper).toContain('key={(initialThreadId ?? "new") + ":" + (initialProposalId ?? "")}');
   expect(composer).toContain('initialProposalId && initialThreadId && threadId === initialThreadId');
   expect(composer).toContain('initialProposalId={initialProposalId}');
   expect(composer).toContain('copy={{en,es,ar}[locale].SupervisorExperiment}');
   expect(composer).not.toContain('{enabled&&threadId&&experimentCopy&&<SupervisorExperiment');
+ });
+ it("shows an explicit reason when chat is unavailable instead of only disabled chips",()=>{
+  const html=renderToStaticMarkup(createElement(ChatStart,{
+    data,copy,hasMessages:false,expanded:false,onToggle:()=>{},onSuggestion:()=>{},
+    suggestionsDisabled:true,unavailableMessage:"Chat is unavailable while setup is incomplete",
+  }));
+  expect(html).toContain('role="status"');
+  expect(html).toContain("Chat is unavailable while setup is incomplete");
+  expect(readFileSync("components/home/SupervisorChatComposer.tsx","utf8"))
+    .toContain('unavailableMessage={!enabled ? copy.unavailable : undefined}');
  });
  it("keeps token-only classes, localized single-message summary and RTL-safe layout",()=>{
   const ui=readFileSync("components/home/ChatStart.tsx","utf8");

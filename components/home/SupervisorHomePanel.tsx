@@ -26,6 +26,9 @@ export default function SupervisorHomePanel({
   locale: "en" | "es" | "ar";
 }) {
   return <SupervisorChatComposer
+    // Search-param navigation can reuse this component on Home. A linked proposal
+    // must select its own conversation even when a different one is open.
+    key={(initialThreadId ?? "new") + ":" + (initialProposalId ?? "")}
     enabled={chatEnabled} canUseAi={canUseAi} unavailableReason={chatUnavailableReason}
      locale={locale} languageSwitch={languageSwitch}
     initialThreadId={initialThreadId} initialProposalId={initialProposalId} copy={{ ...copy, ...chatCopy }}

@@ -43,6 +43,7 @@ export type ChatStartProps = {
   onToggle: () => void;
   onSuggestion: (prompt: string) => void;
   suggestionsDisabled: boolean;
+  unavailableMessage?: string;
 };
 
 function SafeAction({ item }: { item: ChatStartAttentionItem }) {
@@ -55,7 +56,7 @@ function SafeAction({ item }: { item: ChatStartAttentionItem }) {
 }
 
 /** One chat-start surface, never a second Home dashboard or attention query. */
-export default function ChatStart({ data, copy, hasMessages, expanded, onToggle, onSuggestion, suggestionsDisabled }: ChatStartProps) {
+export default function ChatStart({ data, copy, hasMessages, expanded, onToggle, onSuggestion, suggestionsDisabled, unavailableMessage }: ChatStartProps) {
   const tops = topChatStartItems(data.attention);
   return <div className="w-full min-w-0 space-y-3" data-testid="chat-start">
     {hasMessages && <button type="button" aria-expanded={expanded} onClick={onToggle}
@@ -110,6 +111,7 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
           {copy.seeAll}
         </Link>
       </section>
+      {unavailableMessage && <p role="status" className="rounded-xl border border-line bg-surface2 p-3 text-[17px] text-ink">{unavailableMessage}</p>}
       {!hasMessages && copy.suggestions.length > 0 && <div className="min-w-0" aria-label={copy.suggestionsLabel}>
         <div className="flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-2" dir="inherit">
           {copy.suggestions.map((label, index) => <button type="button" key={index}
