@@ -18,12 +18,29 @@ export const proposalTools={propose_price_change:{
     if(!product)return {source:"price_change_proposal",period:null,missing:["notFound"]};
     const matched=resolveEntity("product",product.name,active,{
       nameOf:item=>item.name,idOf:item=>item.id,describe:item=>item.category+" · "+(item.priceCents/100).toFixed(2)});
-    if(matched.status==="ambiguous"){
-      const guard=ownerChoiceGuard(ctx.resolveState,input.product_id);
+    // Re-evaluate the owner words against the *whole* active catalog, not
+    // only the name attached to the model-selected UUID. "Latte" names both
+    // Latte and Iced Latte, even if the model proposed the iced item's ID.
+    const ownerTokens=new Set(normalizedName(ctx.resolveState?.ownerText??"").split(" ").filter(t=>t.length>=3));
+    const productTokens=new Set(normalizedName(product.name).split(" "));
+    const relevant=[product,...active.filter(item=>item.id!==product.id&&
+      normalizedName(item.name).split(" ").some(t=>ownerTokens.has(t)&&productTokens.has(t)))];
+    const counts=new Map<string,number>();
+    for(const item of relevant){
+      const key=normalizedName(item.name);
+      counts.set(key,(counts.get(key)??0)+1);
+    }
+    const candidates=matched.status==="ambiguous"?matched.candidates:
+      relevant.length>1?relevant.slice(0,4).map(item=>{
+        const detail=item.category+" · "+(item.priceCents/100).toFixed(2);
+        const label=(counts.get(normalizedName(item.name))??0)>1?item.name+" — "+detail:item.name;
+        return {id:item.id,label:label.slice(0,60),detail};
+      }):null;
+    if(candidates){
+      const guard=ownerChoiceGuard(ctx.resolveState,input.product_id,candidates);
       if(guard)return {source:"price_change_proposal",period:null,...guard};
-      if(!ctx.resolveState?.chosenIds.has(input.product_id.toLowerCase())&&
-        !ctx.resolveState?.ambiguous.some(group=>group.some(c=>c.id===input.product_id)))
-        return {source:"price_change_proposal",period:null,missing:["ownerChoiceRequired"],needsOwnerChoice:true,candidates:matched.candidates};
+      if(!ctx.resolveState)return {source:"price_change_proposal",period:null,
+        missing:["ownerChoiceRequired"],needsOwnerChoice:true,candidates};
     }
     if(!ctx.proposals)return {source:"price_change_proposal",period:null,agentId:"alex",
       draft:true,saved:false,missing:["proposalsUnavailable"]};
