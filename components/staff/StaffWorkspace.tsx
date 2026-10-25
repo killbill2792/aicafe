@@ -8,10 +8,14 @@ import DayTimeline from "./DayTimeline";
 import StaffDialog from "./StaffDialog";
 import WeekGrid from "./WeekGrid";
 import ShiftPreview from "./ShiftPreview";
-import {dayTotals,personTotals,bestFreePerson,availabilityStatus,totalOvertimeMinutes,previewShift,type DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
+import {dayTotals,personTotals,bestFreePerson,draftAvailabilityStatus,totalOvertimeMinutes,previewShift,type DetailedShift} from "@/lib/calc/scheduling/schedulePresentation";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 import {uncheckedCoverageDays,coverageVerification} from "@/lib/calc/scheduling/coverageGaps";
 import {automaticUnpaidBreakMinutes} from "@/lib/calc/scheduling/ruleChecks";
+import {scheduledShiftMinutes,parseUnpaidBreakMinutes,validShiftClock} from "@/lib/calc/scheduling/shiftInput";
+import {suggestedRuleShiftChange,type StaffRuleKey,isStaffRuleKey} from "@/lib/calc/scheduling/ruleFixPreview";
+import {staffScheduleHref,validScheduleDate,resolveDatedStaffShift} from "@/lib/scheduling/staffScheduleLinks";
+import {safeScheduleCopyResponse} from "@/lib/scheduling/scheduleCopyResult";
 import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import Link from "next/link";
 import {parseHourlyWage,parseWeeklyHours,weeklyHoursInput,isValidTeamAvailability,teamAvailabilitySummary,formatTeamClock,teamNumberLocale,storedTeamAvailability,hasComplexTeamAvailability,staffChangeSucceeded} from "./teamPersonFields";
@@ -21,9 +25,9 @@ type Data=Extract<Awaited<ReturnType<typeof import("@/lib/actions/schedule").get
 const fmt=(c:number|null,currency:string,locale?:string)=>c==null?"—":new Intl.NumberFormat(teamNumberLocale(locale),{style:"currency",currency}).format(c/100);
 const wageEdit=(c:number,locale:string)=>new Intl.NumberFormat(teamNumberLocale(locale),{useGrouping:false,minimumFractionDigits:2,maximumFractionDigits:2}).format(c/100);
 const hours=(n:number)=>Number((n/60).toFixed(1));
-type Alert={id:string;employee_id:string;rule_key:string;message:string;created_at:string};
-export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null,teamExtras=null}:{
- initial:Data;tab?:string;locale?:string;initialAlerts?:Alert[];alertError?:string|null;teamExtras?:React.ReactNode
+type Alert={id:string;employee_id:string;rule_key:string;message:string;created_at:string;workDate?:string|null;workStart?:string|null;workEnd?:string|null};
+export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null,teamExtras=null,focusDate,focusEmployee,focusRule,focusClock}:{
+ initial:Data;tab?:string;locale?:string;initialAlerts?:Alert[];alertError?:string|null;teamExtras?:React.ReactNode;focusDate?:string;focusEmployee?:string;focusRule?:StaffRuleKey;focusClock?:string
 }){
  const router=useRouter();const t=useTranslations("StaffSchedule");
  const wageSummary=(value:{knownCostCents:number;unknownCount:number})=>{
@@ -37,11 +41,18 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const data=version.initial===initial?version.local:initial;
  const setData=(value:Data)=>setVersion({initial,local:value});
  const uncheckedDays=uncheckedCoverageDays(data.dates,data.openHours,data.rules.coverage_enabled);
- const [screen,setScreen]=useState(tab),[sheet,setSheet]=useState<"person"|"shift"|null>(null);
+ const linked=resolveDatedStaffShift(data.dates,data.team,data.shifts,focusDate,focusEmployee,focusRule?focusClock:undefined);
+ const deepDate=linked?.date,deepPerson=linked?.person,deepShift=linked?.shift;
+ const hasExistingDatedShift=Boolean(deepPerson&&data.shifts.some(s=>s.date===deepDate&&s.employeeId===deepPerson.id));
+ const suggested=focusRule&&deepShift?suggestedRuleShiftChange(focusRule,deepShift,data.rules,
+  data.shifts.filter(s=>s.date===deepDate&&s.employeeId===deepPerson?.id).reduce((sum,s)=>sum+s.paidMinutes,0),
+  personTotals(deepPerson!.id,data.shifts).paidMinutes):null;
+ const [ruleReview,setRuleReview]=useState(Boolean(focusRule));
+ const [screen,setScreen]=useState(deepPerson?"schedule":tab),[sheet,setSheet]=useState<"person"|"shift"|null>(deepPerson&&(!hasExistingDatedShift||deepShift)?"shift":null);
  const [busy,startTransition]=useTransition(),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [savingConsent,setSavingConsent]=useState(false),[consentError,setConsentError]=useState(false);
  const [dismissed,setDismissed]=useState<string[]>([]);
- const [repeatWeekly,setRepeatWeekly]=useState(false),[fillsGap,setFillsGap]=useState(false),[breakOverridden,setBreakOverridden]=useState(false);
+ const [repeatWeekly,setRepeatWeekly]=useState(false),[fillsGap,setFillsGap]=useState(false),[breakOverridden,setBreakOverridden]=useState(Boolean(suggested&&suggested.breakMinutes!==deepShift?.breakMinutes)||deepShift?.breakSource==="owner");
  const [inlineName,setInlineName]=useState(""),[inlineRole,setInlineRole]=useState("Barista");
  const [name,setName]=useState(""),[role,setRole]=useState("Barista"),[wageInput,setWageInput]=useState(""),[focusWage,setFocusWage]=useState(false);
   const [minHoursInput,setMinHoursInput]=useState(""),[maxHoursInput,setMaxHoursInput]=useState(""),[confirmRemoval,setConfirmRemoval]=useState(false),[complexAvailability,setComplexAvailability]=useState(false);
@@ -49,9 +60,11 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   const invalidWage=wage===undefined,invalidMin=minHours===undefined,invalidMax=maxHours===undefined;
   const invalidRange=minHours!=null&&maxHours!=null&&minHours>maxHours;
  const [phone,setPhone]=useState(""),[whatsAppOptIn,setWhatsAppOptIn]=useState(false),[salaryPeriod,setSalaryPeriod]=useState<string|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
- const [chosen,setChosen]=useState(data.team[0]?.id??""),[date,setDate]=useState(data.dates[0]);
- const [start,setStart]=useState("07:00"),[end,setEnd]=useState("15:00"),[breakMin,setBreakMin]=useState(30);
- const [editing,setEditing]=useState<string|null>(null),
+ const [chosen,setChosen]=useState(deepPerson?.id??data.team[0]?.id??""),[date,setDate]=useState(deepDate??data.dates[0]);
+ const deepOpen=deepDate?data.openHours?.[OPEN_HOURS_DAY_KEYS[new Date(deepDate+"T12:00:00Z").getUTCDay()]]?.[0]:undefined;
+ const [start,setStart]=useState(suggested?.start??deepShift?.start??deepOpen?.[0]??"07:00"),
+ [end,setEnd]=useState(suggested?.end??deepShift?.end??deepOpen?.[1]??"15:00"),[breakInput,setBreakInput]=useState(String(suggested?.breakMinutes??deepShift?.breakMinutes??0));
+ const [editing,setEditing]=useState<string|null>(deepShift?.id??null),
  [availability,setAvailability]=useState<{day:number;start:string|null;end:string|null}[]>([]),
  [availabilityDirty,setAvailabilityDirty]=useState(false);
  const invalidAvailability=!isValidTeamAvailability(availability);
@@ -69,6 +82,18 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     if(!await staffChangeSucceeded(fn)){setError(t("saveFailed"));return;}
     setSheet(null);router.refresh();
    } finally {running.current=false;}
+  });
+ };
+ const prepareMessages=()=>{
+  if(running.current)return;
+  running.current=true;
+  startTransition(async()=>{
+   setError("");
+   try{
+    const result=await safeScheduleCopyResponse(()=>sendSchedule({weekStart:data.weekStart}));
+    if(result.ok)setNotice(result.copy);
+    else setError(t("saveFailed"));
+   }finally{running.current=false;}
   });
  };
  const openPerson=(person?:Data["team"][number])=>{
@@ -116,13 +141,13 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   return String(Math.floor(next/60)).padStart(2,"0")+":"+String(next%60).padStart(2,"0");
  };
  const openShift=(d:string,id?:string,employeeId?:string)=>{
-  const shift=data.shifts.find(s=>s.id===id);setDate(d);setEditing(id??null);setFillsGap(false);setRepeatWeekly(false);
+  const shift=data.shifts.find(s=>s.id===id);setRuleReview(false);setDate(d);setEditing(id??null);setFillsGap(false);setRepeatWeekly(false);
   setChosen(shift?.employeeId??employeeId??data.team[0]?.id??"");
   const firstOpen=data.openHours?.[OPEN_HOURS_DAY_KEYS[new Date(d+"T12:00:00Z").getUTCDay()]]?.[0];
   setStart(shift?.start??firstOpen?.[0]??"07:00");
   setEnd(shift?.end??firstOpen?.[1]??"15:00");
   setBreakOverridden(shift?.breakSource==="owner");
-  setBreakMin(shift?.breakMinutes??0);setSheet("shift");
+  setBreakInput(String(shift?.breakMinutes??0));setSheet("shift");
  };
  const removePerson=()=>{if(!personEditing||!confirmRemoval)return;const id=personEditing,label=name;
   run(async()=>{
@@ -159,8 +184,13 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setBreakOverridden(false);
   setFillsGap(true);
  };
- const appliedBreak=breakOverridden?breakMin:automaticUnpaidBreakMinutes(start,end,data.rules);
- const proposed=sheet==="shift"?previewShift({employeeId:chosen,date,start,end,breakMinutes:appliedBreak,editingId:editing},
+ const shiftMinutes=scheduledShiftMinutes(start,end);
+ const parsedBreak=breakOverridden?parseUnpaidBreakMinutes(breakInput,shiftMinutes):
+  shiftMinutes===null?null:automaticUnpaidBreakMinutes(start,end,data.rules);
+ const invalidBreak=breakOverridden&&parsedBreak===null;
+ const invalidShift=shiftMinutes===null||invalidBreak;
+ const appliedBreak=parsedBreak??0;
+ const proposed=sheet==="shift"&&!invalidShift?previewShift({employeeId:chosen,date,start,end,breakMinutes:appliedBreak,editingId:editing},
   data.team,data.shifts,data.gaps,data.availability,data.rules,data.timezone,data.adjacentShifts):null;
  const previewBlock:DetailedShift|null=proposed?{...proposed.next,id:editing??"preview",
   employeeName:data.team.find(p=>p.id===chosen)?.name??t("team"),status:"draft"}:null;
@@ -171,6 +201,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const dayLabel=(d:string)=>new Intl.DateTimeFormat(locale,{weekday:"short",day:"numeric",timeZone:"UTC"}).format(new Date(d+"T12:00:00Z"));
  const weekday=(d:string,long=false)=>new Intl.DateTimeFormat(locale,{weekday:long?"long":"short",timeZone:"UTC"}).format(new Date(d+"T12:00:00Z"));
  const status=data.shifts.some(s=>s.status==="sent")?t("sent"):t("draft");
+ const localized=(number:number)=>new Intl.NumberFormat(locale,{maximumFractionDigits:1}).format(number);
+ const firstWithoutWage=data.team.find(p=>p.wageCents==null&&(p.wagePeriod==null||p.wagePeriod==="hour")&&data.shifts.some(shift=>shift.employeeId===p.id));
  return <div className="mx-auto w-full max-w-7xl space-y-3 px-4 pb-32 pt-5 text-fg" dir={locale==="ar"?"rtl":"ltr"}>
   <header className="flex items-center justify-between gap-3"><h1 className="font-headline text-2xl font-extrabold">{t("schedule")}</h1>
    <div className="flex gap-2"><Link className="flex min-h-12 items-center rounded-full border border-line px-4" href={`/${locale}/staff/rules`}>{t("rules")}</Link><button disabled={data.readOnly} aria-label={t("addShift")} onClick={()=>openShift(date)} className="min-h-12 min-w-12 rounded-full bg-accent text-on-accent">+</button></div>
@@ -180,33 +212,48 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     className={`min-h-12 rounded-xl font-bold ${screen===k?"bg-surface shadow":"text-muted"}`}>{k==="schedule"?t("schedule"):t("team")}</button>)}</div>
   {screen==="schedule"?<>
    {alertError&&<p role="alert" className="rounded-xl bg-warn-soft p-3 text-warn-text">{t("ruleAlertError",{error:alertError})}</p>}
+   {focusRule&&!deepShift&&<p role="status" className="rounded-xl bg-warn-soft p-3 text-warn-text">{t("manualRuleReview")} {t("noMatchingShift")}</p>}
    {initialAlerts.filter(a=>!dismissed.includes(a.id)).length>0&&<section className="rounded-2xl border border-line bg-surface p-4">
     <h2 className="text-lg font-bold">{t("ruleAlerts")} · {initialAlerts.filter(a=>!dismissed.includes(a.id)).length}</h2>
     {initialAlerts.filter(a=>!dismissed.includes(a.id)).map(a=><div key={a.id} className="flex items-start gap-3 border-t border-line py-3">
       <span aria-hidden="true">⚠</span><div className="min-w-0 flex-1"><p className="font-semibold">{t(({meal:"ruleMeal",rest_break:"ruleRestBreak",weekly_overtime:"ruleWeeklyOT",daily_overtime:"ruleDailyOT",short_rest:"ruleShortRest"} as Record<string,"ruleMeal"|"ruleRestBreak"|"ruleWeeklyOT"|"ruleDailyOT"|"ruleShortRest">)[a.rule_key]??"ruleMeal")}</p></div>
-      <button disabled={busy} className="min-h-12 rounded-lg border border-line px-3" onClick={()=>{setDismissed(ids=>[...ids,a.id]);run(()=>dismissStaffRuleAlert({id:a.id}));}}>{t("dismiss")}</button>
+      <div className="flex shrink-0 flex-col gap-2">
+       {validScheduleDate(a.workDate)&&isStaffRuleKey(a.rule_key)?<Link className="flex min-h-12 items-center justify-center rounded-lg bg-accent px-3 font-bold text-on-accent"
+        href={staffScheduleHref({date:a.workDate,employee:a.employee_id})+"&fix="+encodeURIComponent(a.rule_key)+(a.workStart?"&clock="+encodeURIComponent(a.workStart):"")}>{t("fix")}</Link>:<button type="button" disabled className="min-h-12 rounded-lg border border-line px-3 opacity-60" title={t("manualRuleReview")}>{t("fix")}</button>}
+       <button disabled={busy} className="min-h-12 rounded-lg border border-line px-3"
+        onClick={()=>startTransition(async()=>{try{
+         const result=await dismissStaffRuleAlert({id:a.id});
+         if(result.ok){setDismissed(ids=>[...ids,a.id]);router.refresh();}
+         else setError(t("dismissFailed"));
+        }catch{setError(t("dismissFailed"));}})}>{t("notAnIssue")}</button>
+      </div>
     </div>)}
    </section>}
    <div className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-surface p-3">
-    <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10)}`} className="p-3">‹</Link>
+    <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10)}`} className="p-3"><span className="inline-block rtl:rotate-180">‹</span></Link>
     <div className="text-center font-semibold">{dayLabel(data.dates[0])} – {dayLabel(data.dates[6])}<div className="text-sm text-muted">{status}</div></div>
-    <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")+7*86400000).toISOString().slice(0,10)}`} className="p-3">›</Link>
+    <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")+7*86400000).toISOString().slice(0,10)}`} className="p-3"><span className="inline-block rtl:rotate-180">›</span></Link>
    </div>
    <div className="grid grid-cols-3 gap-2 lg:grid-cols-4">{[
-    [t("paidHours"),String(hours(data.total.paidMinutes))],
+    [t("paidHours"),localized(hours(data.total.paidMinutes))],
     [t("wages"),wageSummary(data.total)],
     [t("gaps"),!data.rules.coverage_enabled?t("coverageDisabled"):uncheckedDays.length?
-   t("coverageNotChecked"):String(data.gaps.length)],
-    [t("overtime"),String(Number((totalOvertimeMinutes(data.team,data.shifts,data.rules.weekly_ot_after_minutes,data.rules.weekly_ot_enabled)/60).toFixed(1)))+" h"]
+   t("coverageNotChecked"):localized(data.gaps.length)],
+    [t("overtime"),localized(totalOvertimeMinutes(data.team,data.shifts,data.rules.weekly_ot_after_minutes,data.rules.weekly_ot_enabled)/60)+" h"]
    ].map(([label,value])=><div key={label} className={`rounded-2xl border border-line bg-surface p-3 ${label===t("overtime")?"hidden lg:block":""} ${label===t("gaps")&&data.gaps.length?"border-neg bg-neg-soft":""}`}><strong className="block text-xl">{value}</strong><span className="text-sm text-muted">{label}</span></div>)}</div>
-   {data.total.estimated&&<p className="rounded-xl bg-warn-soft p-3 text-warn-text">{t("estimateNote",{count:data.total.estimateCount,unknown:data.total.unknownCount})}</p>}
-   <nav aria-label={t("weekDays")} className="grid grid-cols-7 gap-1">{data.dates.map((d,i)=>{
+   {data.total.estimated&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-warn-soft p-3 text-warn-text">
+    <p>{t("estimateNote",{count:data.total.estimateCount,unknown:data.total.unknownCount})}</p>
+    {firstWithoutWage&&!data.readOnly&&<button type="button" className="min-h-12 rounded-xl border border-current px-3 underline" onClick={()=>{
+      setScreen("team");openPerson(firstWithoutWage);
+      setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);
+    }}>{t("addWages")}</button>}</div>}
+   <nav aria-label={t("weekDays")} className="grid grid-cols-7 gap-1">{data.dates.map(d=>{
     const totals=dayTotals(d,data.shifts);
-    return <a key={d} href={"#day-"+d} className={`relative rounded-xl border border-line bg-surface px-1 py-2 text-center text-sm ${i===0?"bg-accent text-on-accent":""}`}>
+    return <a key={d} href={"#day-"+d} className={`relative rounded-xl border border-line bg-surface px-1 py-2 text-center text-sm ${d===date?"bg-accent text-on-accent":""}`}>
      {data.gaps.some(g=>g.date===d)&&<span aria-label={t("gap")} className="absolute end-1 top-1 size-2 rounded-full bg-neg"/>}
      <span className="block text-xs font-bold">{weekday(d)}</span>
-     <strong className="block font-headline text-lg">{new Date(d+"T12:00:00Z").getUTCDate()}</strong>
-     <span className="block text-xs">{Number((totals.paidMinutes/60).toFixed(1))}h</span></a>;
+     <strong className="block font-headline text-lg">{localized(new Date(d+"T12:00:00Z").getUTCDate())}</strong>
+     <span className="block text-xs">{localized(totals.paidMinutes/60)}h</span></a>;
    })}</nav>
    <div className="space-y-3 lg:hidden">{data.dates.map(d=>{
     const totals=dayTotals(d,data.shifts);
@@ -216,7 +263,9 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      <div className="flex flex-wrap items-baseline gap-2">
       <h2 className="text-lg font-bold">{dayLabel(d)}</h2>
       <span className="text-sm text-muted">{opening===undefined?t("hoursNotSet"):opening.length?t("open")+" "+opening.map(a=>a.join("–")).join(", "):t("closed")}</span>
-      <strong className="ms-auto text-sm">{Number((totals.paidMinutes/60).toFixed(1))} h · {wageSummary(totals)}{totals.estimated?" "+t("estimated"):""}</strong>
+       {opening===undefined&&<Link className="min-h-12 content-center underline text-accent-text"
+        href={`/${locale}/more/cafe-profile?focus=hours`}>{t("setCafeHours")}</Link>}
+      <strong className="ms-auto text-sm">{localized(totals.paidMinutes/60)} h · {wageSummary(totals)}{totals.estimated?" "+t("estimated"):""}</strong>
      </div>
      <DayTimeline date={d} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours} people={data.team}
       onShiftClick={data.readOnly?undefined:(id)=>openShift(d,id)}/>
@@ -231,7 +280,12 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    <WeekGrid dates={data.dates} people={data.displayTeam} shifts={data.shifts} gaps={data.gaps}
     openHours={data.openHours} currency={data.currency} readOnly={data.readOnly} coverageEnabled={data.rules.coverage_enabled}
     onEdit={(d,id)=>openShift(d,id)} onAdd={(d,id)=>openShift(d,undefined,id)}/>
-   {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">
+   <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4">
+     <p className="max-w-md text-start">{t("staffMessagingHelp")}</p>
+     <button type="button" disabled={data.readOnly||!data.team.length} className="min-h-12 rounded-xl border border-accent px-4 text-accent-text"
+      onClick={()=>{setScreen("team");openPerson(data.team[0]);}}>{t("whatsAppSetup")}</button>
+    </section>
+    {data.shifts.length===0&&<section className="rounded-2xl border border-line bg-surface p-5">
     <h2 className="font-headline text-xl font-bold">{t("noShifts")}</h2><p className="my-2 text-muted">{t("emptyHelp")}</p>
     <div className="grid gap-2 sm:grid-cols-3">
      <button disabled={data.readOnly||busy} className="min-h-12 rounded-xl border border-accent px-3 text-accent-text"
@@ -241,7 +295,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     </div></section>}
    <div className="fixed inset-x-0 bottom-16 z-20 flex gap-2 border-t border-line bg-surface p-3 lg:bottom-0">
     <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl border border-accent text-accent-text" onClick={()=>run(()=>copyWeek({fromWeekStart:new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10),toWeekStart:data.weekStart}))}>{t("copyLastWeek")}</button>
-    <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={()=>run(async()=>{const r=await sendSchedule({weekStart:data.weekStart});if(r.ok)setNotice(r.data.messages.map(m=>m.text).join("\n"));return r;})}>{t("prepareScheduleMessages")}</button>
+    <button disabled={busy||data.readOnly} className="min-h-14 flex-1 rounded-xl bg-accent text-on-accent" onClick={prepareMessages}>{t("prepareScheduleMessages")}</button>
    </div>
   </>:<>
    <section className="rounded-[20px] border border-line bg-surface p-4"><h2 className="text-lg font-bold">{t("addSomeone")}</h2>
@@ -263,8 +317,8 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      {data.team.map(p=><div key={p.id} className="flex min-h-16 items-center gap-3 border-t border-line py-3">
       <span className="grid size-12 place-items-center rounded-full bg-accent-soft font-bold">{p.name[0]}</span>
       <div className="min-w-0 flex-1"><b>{p.name}</b><span className="ms-2 text-sm text-muted">{p.role?roleLabel(p.role):t("team")}</span>
-        <div className="text-[17px] text-muted">{p.wageCents==null?(p.wagePeriod!=="hour"?t("salaryManagedBadge"):<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setFocusWage(true);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>):t("wagePerHour",{amount:fmt(p.wageCents,data.currency,locale)})}</div><div className="text-[17px] text-muted">{teamSummary(p)}</div></div>
-      <div className="text-end">{t("teamHoursShort",{hours:new Intl.NumberFormat(teamNumberLocale(locale),{maximumFractionDigits:1}).format(hours(personTotals(p.id,data.shifts).paidMinutes))})}</div>
+        <div className="text-[17px] text-muted">{p.wageCents==null?(p.wagePeriod!=="hour"?t("salaryManagedBadge"):<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>):t("wagePerHour",{amount:fmt(p.wageCents,data.currency,locale)})}</div><div className="text-[17px] text-muted">{teamSummary(p)}</div></div>
+      <div className="text-end">{t("teamHoursShort",{hours:new Intl.NumberFormat(locale,{maximumFractionDigits:1}).format(hours(personTotals(p.id,data.shifts).paidMinutes))})}</div>
       <button disabled={data.readOnly} onClick={()=>openPerson(p)} className="min-h-12 px-2">{t("edit")}</button>
      </div>)}
      <div className="border-t border-line pt-3 font-bold">{t("total")} {wageSummary(data.total)} {data.total.estimated?" · "+t("estimate"):""}</div>
@@ -273,11 +327,10 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
    {teamExtras}
   </>}
   {undo&&<div role="status" className="fixed inset-x-4 bottom-36 z-30 flex items-center justify-between rounded-xl bg-fg p-4 text-bg shadow-lg"><span>{undo.message}</span><button onClick={undoRemove} className="min-h-12 px-3 font-bold">{t("undo")}</button></div>}
-  {error&&!sheet&&<p role="alert" className="rounded-xl bg-neg-soft p-3 text-neg">{error}</p>}
+  {error&&<p role="alert" className="rounded-xl bg-neg-soft p-3 text-neg">{error}</p>}
   {notice&&<StaffDialog headingId="staff-copy-heading" layout="center" onClose={()=>setNotice("")}><h2 id="staff-copy-heading">{t("readyCopy")}</h2><p role="status" className="mt-2 text-muted">{t("scheduleNotSent")}</p><pre className="whitespace-pre-wrap">{notice}</pre><button onClick={()=>navigator.clipboard.writeText(notice)} className="my-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent">{t("copy")}</button><button onClick={()=>setNotice("")} className="ms-3 min-h-12">{t("close")}</button></StaffDialog>}
   {sheet&&<StaffDialog headingId="staff-sheet-heading" onClose={()=>setSheet(null)}>
     <div className="mx-auto mb-3 h-1 w-12 rounded bg-line"/>{fillsGap&&sheet==="shift"&&<p className="text-sm font-bold text-pos">{t("fillsGap")}</p>}<h2 id="staff-sheet-heading" className="font-headline text-xl font-bold">{sheet==="person"?(personEditing?t("editPerson"):t("addPerson")):(editing?t("editShift"):t("addShiftDate",{date:dayLabel(date)}))}</h2>
-    {error&&<p role="alert" className="mt-3 rounded-xl bg-neg-soft p-3 text-neg">{error}</p>}
     {sheet==="person"?<>
       <label className="mt-3 block font-semibold">{t("name")}<input autoFocus={sheet==="person"&&!focusWage} value={name} onChange={e=>setName(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"/></label>
       <div className="mt-3 flex flex-wrap gap-2">{["Barista","Manager","Baker","Cashier"].map(r=><button type="button" key={r} aria-pressed={role===r} onClick={()=>setRole(r)} className="min-h-12 rounded-full border border-line px-3">{roleLabel(r)}</button>)}<button type="button" aria-pressed={!["Barista","Manager","Baker","Cashier"].includes(role)} onClick={()=>setRole("")} className="min-h-12 rounded-full border border-line px-3">{t("roleOther")}</button></div>
@@ -342,38 +395,54 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        {personEditing?t("saveChanges"):t("addNamed",{name:name.trim()})}</button>
       {personEditing&&(!confirmRemoval?<button type="button" disabled={busy} onClick={()=>setConfirmRemoval(true)} className="mt-2 min-h-12 w-full text-neg">{t("removePerson")}</button>:<div className="mt-2 rounded-xl border border-neg p-3"><p>{t("confirmRemovePerson",{name})}</p><div className="mt-2 flex gap-2"><button type="button" disabled={busy} onClick={removePerson} className="min-h-12 flex-1 rounded-xl bg-neg px-3 text-white">{t("confirmRemove")}</button><button type="button" onClick={()=>setConfirmRemoval(false)} className="min-h-12 flex-1 rounded-xl border border-line px-3">{t("cancel")}</button></div></div>)}
     </>:<>
-      <div className="mt-3"><h3 className="font-bold">{t("who")}</h3><div className="mt-2 flex flex-wrap gap-2">{data.team.map(p=>{
-       const status=availabilityStatus(p,date,start,end,[...data.shifts.filter(s=>s.id!==editing),...data.adjacentShifts],data.availability);
-       return <button key={p.id} type="button" aria-pressed={chosen===p.id} onClick={()=>setChosen(p.id)}
+      {ruleReview&&<p role="status" className="mt-3 rounded-xl bg-warn-soft p-3 text-warn-text">{t("recordedWarning")}
+       {!suggested&&<span className="block">{t("manualRuleReview")}</span>}
+       {!deepShift&&<span className="block">{t("noMatchingShift")}</span>}</p>}
+       <div className="mt-3"><h3 className="font-bold">{t("who")}</h3><div className="mt-2 flex flex-wrap gap-2">{data.team.map(p=>{
+       const status=draftAvailabilityStatus(p,date,start,end,[...data.shifts.filter(s=>s.id!==editing),...data.adjacentShifts],data.availability);
+       return <button key={p.id} type="button" disabled={data.readOnly||ruleReview} aria-pressed={chosen===p.id} onClick={()=>setChosen(p.id)}
         className={`flex min-h-12 items-center gap-2 rounded-full border px-2 py-1 font-bold ${chosen===p.id?"border-accent-text bg-accent-soft text-accent-text":"border-line bg-surface"}`}>
         <span className="grid size-9 place-items-center rounded-full bg-surface2">{p.name[0]}</span>
-        {p.name}<span className={`text-sm font-normal ${status==="free"?"text-pos":"text-muted"}`}>{t(status==="free"?"free":status==="off"?"off":status==="on_shift"?"onShift":"unavailable")}</span></button>;
+        {p.name}{status!==null&&<span className={`text-sm font-normal ${status==="free"?"text-pos":"text-muted"}`}>{t(status==="free"?"free":status==="off"?"off":status==="on_shift"?"onShift":"unavailable")}</span>}</button>;
       })}</div></div>
       {([[t("start"),start,setStart],[t("end"),end,setEnd]] as const).map(([label,time,set])=><div key={label} className="mt-3">
-       <b>{label}</b><div className="flex items-center justify-between rounded-xl bg-surface2">
-        <button onClick={()=>set(timeStep(time,-30))} className="min-h-12 min-w-12">−</button>
-        <span>{time}</span>
-        <button onClick={()=>set(timeStep(time,30))} className="min-h-12 min-w-12">+</button>
-       </div></div>)}
-      <p className="mt-2 text-center text-sm text-muted">{t("stepHint")}</p>
-      <DayTimeline date={date} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours}
-       people={data.team} preview={previewBlock}/>
+       <label className="block font-semibold">{label}
+        <div className="mt-1 flex items-center gap-2">
+         <button type="button" disabled={!validShiftClock(time)||data.readOnly}
+          aria-label={t("nudgeEarlier",{field:label})} onClick={()=>set(timeStep(time,-15))}
+          className="min-h-12 min-w-12 rounded-xl border border-line">−15</button>
+         <input type="time" step={60} dir="ltr" disabled={data.readOnly} aria-invalid={shiftMinutes===null}
+          value={time} onChange={event=>set(event.target.value)}
+          className={`min-h-12 min-w-0 flex-1 rounded-xl border bg-surface px-3 ${shiftMinutes===null?"border-neg":"border-line"}`}/>
+         <button type="button" disabled={!validShiftClock(time)||data.readOnly}
+          aria-label={t("nudgeLater",{field:label})} onClick={()=>set(timeStep(time,15))}
+          className="min-h-12 min-w-12 rounded-xl border border-line">+15</button>
+        </div></label></div>)}
+       {shiftMinutes===null&&<p role="alert" className="mt-2 text-neg">{t("shiftTimeError")}</p>}
+       {!invalidShift&&<DayTimeline date={date} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours}
+       people={data.team} preview={previewBlock}/>}
       <div className="mt-4 rounded-2xl border border-line p-3">
        <div className="flex min-h-14 items-center gap-2"><span aria-hidden="true">☕</span>
         <div className="flex-1"><strong>{t("unpaidBreak",{minutes:appliedBreak})}</strong><p className="text-sm text-muted">{breakOverridden?t("breakManual"):data.rules.meal_break_enabled?
    t("autoBreak",{hours:data.rules.meal_break_after_minutes/60}):t("breakDisabled")}</p></div>
-        <button type="button" onClick={()=>{setBreakOverridden(true);setBreakMin(Math.max(0,appliedBreak-10));}} className="min-h-12 min-w-10">−</button>
-        <button type="button" onClick={()=>{setBreakOverridden(true);setBreakMin(Math.min(240,appliedBreak+10));}} className="min-h-12 min-w-10">+</button></div>
-       <label className="flex min-h-14 items-center justify-between gap-3 border-t border-line">
+        <label className="flex items-center gap-2 text-start">{t("breakMinutesLabel")}
+          <input type="text" inputMode="numeric" disabled={data.readOnly}
+           aria-invalid={invalidBreak} aria-describedby={invalidBreak?"staff-break-error":undefined}
+           value={breakOverridden?breakInput:new Intl.NumberFormat(locale,{useGrouping:false}).format(appliedBreak)}
+           onChange={event=>{setBreakOverridden(true);setBreakInput(event.target.value);}}
+           className={`min-h-12 w-24 rounded-xl border bg-surface px-2 ${invalidBreak?"border-neg":"border-line"}`}/>
+         </label></div>
+       {invalidBreak&&<p id="staff-break-error" role="alert" className="text-neg">{t("breakError")}</p>}
+        <label className="flex min-h-14 items-center justify-between gap-3 border-t border-line">
         <span>{t("repeatEvery",{day:weekday(date,true)})}</span><input type="checkbox"
-         checked={repeatWeekly} onChange={e=>setRepeatWeekly(e.target.checked)} className="size-6 accent-accent"/></label>
+         checked={repeatWeekly} disabled={data.readOnly||ruleReview} onChange={e=>setRepeatWeekly(e.target.checked)} className="size-6 accent-accent"/></label>
       </div>
-      <ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={appliedBreak}
+      {!invalidShift&&<ShiftPreview personId={chosen} date={date} start={start} end={end} breakMinutes={appliedBreak}
        editingId={editing} team={data.team} shifts={data.shifts} gaps={data.gaps}
-       availability={data.availability} boundaryShifts={data.adjacentShifts} coverageChecked={coverageVerification(date,data.openHours,data.rules.coverage_enabled)==="checked"} rules={data.rules} currency={data.currency} timezone={data.timezone}/>
-      <button disabled={busy||!chosen} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakOverridden?breakMin:undefined,repeatWeekly}))}
+       availability={data.availability} boundaryShifts={data.adjacentShifts} coverageChecked={coverageVerification(date,data.openHours,data.rules.coverage_enabled)==="checked"} rules={data.rules} currency={data.currency} timezone={data.timezone}/>}
+      <button disabled={busy||!chosen||data.readOnly||invalidShift||!proposed||(ruleReview&&(!suggested||!deepShift||chosen!==deepPerson?.id))} onClick={()=>run(()=>upsertShift({id:editing??undefined,employeeId:chosen,date,start,end,breakMinutes:breakOverridden?parsedBreak??undefined:undefined,repeatWeekly:ruleReview?false:repeatWeekly}))}
        className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">{t("saveShift")}</button>
-      {editing&&<button className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}
+      {editing&&!ruleReview&&<button disabled={busy||data.readOnly} className="mt-3 min-h-12 w-full text-neg" onClick={removeCurrentShift}>{t("removeShift")}</button>}
     </>}
     <button onClick={()=>setSheet(null)} className="mt-3 min-h-12 w-full">{t("cancel")}</button>
    </StaffDialog>}
