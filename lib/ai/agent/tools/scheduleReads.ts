@@ -115,11 +115,10 @@ export const scheduleReadTools={
    if(person&&team?.ok){
      const resolved=resolveEntity("staff",person.name,team.data.team,{
        nameOf:row=>row.name,idOf:row=>row.id,describe:row=>row.role??"Team"});
-     if(resolved.status==="ambiguous"&&!ctx.resolveState?.chosenIds.has(p.employee_id.toLowerCase())&&
-       !resolved.candidates.some(c=>c.id===p.employee_id&&
-         normalizedName(ctx.resolveState?.ownerText??"").includes(normalizedName(c.label))))
-       return {source:"shift_cost",period:null,agentId:"olivia",
-         missing:["ownerChoiceRequired"],needsOwnerChoice:true,candidates:resolved.candidates};
+     if(resolved.status==="ambiguous"){
+       const needed=ownerChoiceGuard(ctx.resolveState,p.employee_id,resolved.candidates);
+       if(needed)return {source:"shift_cost",period:null,agentId:"olivia",...needed};
+     }
    }
    const guard=ownerChoiceGuard(ctx.resolveState,p.employee_id);
    if(guard)return {source:"shift_cost",period:null,agentId:"olivia",...guard};
