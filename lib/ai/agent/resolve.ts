@@ -185,7 +185,6 @@ export function resolveOwnerPeriod(
   const found=resolved.candidates.filter(p=>state.chosenIds.has(p.from+"/"+p.to));
   return found.length===1?{status:"resolved",value:found[0]}:resolved;
 }
-import {resolvePeriod as importResolvePeriod} from "@/lib/calc/periods";
 /** Periods share the same owner-choice wire contract as named records. */
 export function periodChoicePayload(source:string,result:import("@/lib/calc/periods").PeriodResolution){
   if(result.status==="ambiguous")return {source,period:null,missing:[] as string[],needsOwnerChoice:true,
