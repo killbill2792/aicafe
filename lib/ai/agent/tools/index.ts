@@ -136,13 +136,15 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       (!input.query || item.name.toLocaleLowerCase(ctx.locale).includes(input.query.toLocaleLowerCase(ctx.locale))));
     const limit = input.limit ?? 8;
     const visible=filtered.slice(0,limit);
-    const facts:Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>=
-      ctx.menuPriceEvidence?await ctx.menuPriceEvidence(visible):{};
+    let facts:Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>={};
+    let evidenceUnavailable=false;
+    try {if(ctx.menuPriceEvidence)facts=await ctx.menuPriceEvidence(visible);}
+    catch {evidenceUnavailable=true;}
     return { source: "menu_items", period: null, agentId:"alex",
-      missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : [])],
+      missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : []), ...(evidenceUnavailable?["menuPriceEvidenceUnavailable"]:[])],
       items: visible.map(item => ({
         id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,unit:"cents",
-        priceSource:facts[item.id]?.priceSource??"initial",realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
+        priceSource:evidenceUnavailable?"unknown":facts[item.id]?.priceSource??"initial",realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
         priceCheck:facts[item.id]?.priceCheck??"ok",
         pricePeriod:facts[item.id]?.pricePeriod??null,
         priceEvidenceStatus:facts[item.id]?.priceEvidenceStatus??"unknown",
@@ -158,9 +160,10 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
     if (!slice.available) return {source:"profitability",period,agentId:"leo",
       coverageLabel:selection.label,unit:"cents",ownerInputs:ownerInputs??null,
+      ownerReportedSalesCents:ownerInputs?.netSalesCents??null,ownerReportedSalesPeriod:ownerInputs?.salesPeriod??null,
       netSalesCents:ownerSales,netSalesProvenance:ownerSales!==null?"ownerProvided":null,
       totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
-      missing:[...slice.quality.missingInputs,...(ownerSales!==null?["costsUnverified"]:[])]};
+      missing:[...slice.quality.missingInputs,...(ownerInputs?.netSalesCents!=null?["costsUnverified"]:[]), ...(ownerInputs?.netSalesCents!=null&&ownerSales===null?["ownerSalesPeriodMismatch"]:[])]};
     const conflict=ownerConflict(slice.value.netSalesCents,ownerSales);
     return { source: "profitability", period, coverageLabel:selection.label,agentId:"leo",
       missing:[...slice.quality.missingInputs,...(conflict?["ownerValueConflict"]:[])],
