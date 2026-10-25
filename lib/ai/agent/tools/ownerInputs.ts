@@ -27,7 +27,8 @@ export function ownerPeriod(value:OwnerInputs["salesPeriod"],asOf:string):CalcPe
 export function ownerAmountForPeriod(amount:number|null,source:OwnerInputs["salesPeriod"],target:CalcPeriod,asOf:string){
  if(amount===null)return null;
  const from=ownerPeriod(source,asOf);
- return from?prorate(amount,from,target):null;
+ // Do not present extrapolated sales as a recorded amount for other dates.
+ return from&&from.from===target.from&&from.to===target.to?amount:null;
 }
 export function ownerMonthlyAmount(amount:number|null,target:CalcPeriod,asOf:string){
  return amount===null?null:prorate(amount,calendarMonth(asOf),target);
