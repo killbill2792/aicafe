@@ -28,6 +28,13 @@ export const moneyTools={
       const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getRecordedExpenses||!ctx.tools.getExpenseSummary)return unavailable("expenses",p,["expenseReaderUnavailable"]);
       const [recorded,categories]=await Promise.all([ctx.tools.getRecordedExpenses(p),ctx.tools.getExpenseSummary(p)]);
+      // A named-category request must never silently become an all-expenses
+      // request when the category reader fails.
+      if(input.category&&!categories.available)return {
+        source:"expenses",period:p,agentId:"leo",
+        missing:categories.quality.missingInputs.length?categories.quality.missingInputs:["categoryReaderUnavailable"],
+        recordedActualTotalCents:null,categories:null,
+      };
       let filterCategory:string|null=null;
       if(input.category&&categories.available){
         const chosen=categories.value.find(item=>item.categoryCode.toLowerCase()===input.category?.toLowerCase()&&
