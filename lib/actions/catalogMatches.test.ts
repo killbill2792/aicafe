@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { redirect } from "next/navigation";
-import { addUploadedItemToMenu, matchUploadedItem } from "./catalogMatches";
+import { addUploadedItemToMenu, matchUploadedItem, resolveCatalogMatch } from "./catalogMatches";
 import { resolveUnmatchedAlertsIfClear } from "@/lib/data/resolveUnmatchedAlerts.server";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -127,7 +127,7 @@ describe("CSV match backfill", () => {
     expect(fake.lines.every(line => line.menu_item_id === ITEM)).toBe(true);
     expect(fake.groups[0].menu_item_id).toBe(ITEM);
     expect(fake.match.status).toBe("confirmed");
-    expect(resolveUnmatchedAlertsIfClear).toHaveBeenCalledWith(expect.anything(), BUSINESS);
+    expect(resolveUnmatchedAlertsIfClear).toHaveBeenCalledWith(expect.anything(), BUSINESS, { nonBlocking: true });
   });
 
   it("keeps a match open after a partial write so a retry repairs all sales", async () => {
@@ -158,6 +158,16 @@ describe("CSV match backfill", () => {
     expect(fake.match.status).toBe("needs_review");
     expect(resolveUnmatchedAlertsIfClear).not.toHaveBeenCalled();
     expect(redirect).toHaveBeenCalledWith("/en/menu/import-review?result=error");
+  });
+
+  it("treats alert reconciliation as secondary after a new catalog item is confirmed", async () => {
+    const fake = fakeDb(2, { noExistingItem: true });
+    await resolveCatalogMatch(MATCH, "new");
+    expect(fake.creates).toBe(1);
+    expect(fake.match.status).toBe("confirmed");
+    expect(resolveUnmatchedAlertsIfClear).toHaveBeenCalledWith(
+      expect.anything(), BUSINESS, { nonBlocking: true },
+    );
   });
 
   it("does not confirm an item from another café", async () => {

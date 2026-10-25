@@ -233,6 +233,7 @@ export default function SupervisorChatComposer({
   const [loadedThreadId,setLoadedThreadId]=useState<string|null>(null);
   const [startExpanded,setStartExpanded]=useState(false);
   const sendOnce=useRef(false);
+  const pendingFollowUps=useRef(new Set<string>());
   const [optimisticOwner, setOptimisticOwner] = useState<{ id: string; text: string; clientMessageId: string } | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -456,7 +457,8 @@ export default function SupervisorChatComposer({
    * that same job; the server folds it into the answer or answers it right after. */
   async function sendFollowUp(text: string) {
     const id = threadId;
-    if (!id || !enabled || !canUseAi || text.length > 4000) return;
+    if (!id || !enabled || !canUseAi || !text.trim() || text.length > 4000 || pendingFollowUps.current.has(text)) return;
+    pendingFollowUps.current.add(text);
     const clientMessageId = crypto.randomUUID();
     setDraft(""); setFailureCode(null);
     setQueuedOwner((queue) => [...queue, { id: "queued-" + clientMessageId, text, clientMessageId }]);
@@ -489,14 +491,18 @@ export default function SupervisorChatComposer({
       setDraft((current) => current || text);
       setFailureCode(failure instanceof Error ? failure.message : "agent_turn_failed");
     } finally {
+      pendingFollowUps.current.delete(text);
       setQueuedOwner((queue) => queue.filter((item) => item.clientMessageId !== clientMessageId));
     }
   }
   async function sendText(value: string, existingKey?: string) {
     const text = value.trim();
+    // A confirmed background job accepts follow-ups while the first response streams.
+    // The main-turn double-tap guard must not intercept this separate path.
+    if (!existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
+      !uploading && !recorder.current && dictation !== "recognizing" && text.length <= 4000)
+      return sendFollowUp(text);
     if(sendOnce.current)return;
-    if (!existingKey && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
-      !uploading && !recorder.current && dictation !== "recognizing") return sendFollowUp(text);
     if (!enabled || !canUseAi || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
     sendOnce.current=true;
     const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
@@ -891,6 +897,12 @@ export default function SupervisorChatComposer({
       </div>
     </div>
     {showNewMessage && <button type="button" onClick={scrollToLatest} className="absolute bottom-28 left-1/2 z-10 inline-flex min-h-12 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
+    {initialProposalId && initialThreadId && threadId === initialThreadId && <div className="max-h-[50dvh] shrink-0 overflow-y-auto" data-testid="experiment-deeplink">
+      <SupervisorExperiment key={initialThreadId + ":" + initialProposalId}
+        threadId={threadId} locale={locale} canUseAi={canUseAi}
+        copy={{en,es,ar}[locale].SupervisorExperiment}
+        initialProposalId={initialProposalId} refreshVersion={messages.length} />
+    </div>}
     <div className="mt-auto shrink-0 border-t border-line bg-surface2 px-2 py-2 md:px-4">
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map((file) => <a key={file.id}

@@ -1,7 +1,22 @@
 import { describe,expect,it,vi } from "vitest";
-import { scheduleReadTools } from "./scheduleReads";
+import { getWeekSchedule } from "@/lib/actions/schedule";
 import { staffTools } from "./staff";
 import type { AgentToolContext } from "./index";
+
+vi.mock("@/lib/actions/schedule",()=>({
+  getWeekSchedule:vi.fn(),getTeam:vi.fn(),getShiftCost:vi.fn(),
+}));
+const week="2026-10-19";
+const dates=Array.from({length:7},(_,i)=>
+  new Date(Date.parse(week+"T12:00:00Z")+i*86400000).toISOString().slice(0,10));
+const employee={id:"barista",name:"Ava",role:"Barista",wageCents:2000,minWeeklyMinutes:0,maxWeeklyMinutes:2400};
+function datedShift(id:string,date:string,employeeId=employee.id){
+  return {id,date,employeeId,start:"08:00",end:"12:00",paidMinutes:240,costCents:8000,estimated:false};
+}
+function confirmed(shifts:ReturnType<typeof datedShift>[]){
+  return {ok:true as const,data:{dates,team:[employee],shifts,adjacentShifts:[],
+    openHours:null,rules:{coverage_enabled:true,min_headcount:1}}};
+}
 const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,quality:{...q,missingInputs:["notAvailable"]}};
 function ctx(extra:Partial<AgentToolContext["tools"]>={}):AgentToolContext{
@@ -34,24 +49,54 @@ describe("Olivia bounded reads",()=>{
     expect(r.missing).toContain("attendanceNotTracked");
   });
   it("does not claim a whole week is unset or reuse weekly totals for an empty day",async()=>{
-    const read=vi.spyOn(scheduleReadTools.get_week_schedule,"execute").mockResolvedValue({
-      source:"scheduled_shifts",period:{from:"2026-10-19",to:"2026-10-25"},
-      scheduleSet:true,missing:[],paidMinutes:480,knownWagesCents:16000,estimated:false,
-      estimatedShiftCount:0,gaps:[{date:"2026-10-19",kind:"gap"}],
-      shifts:[{date:"2026-10-19",employeeId:"barista",paidMinutes:480,costCents:16000}],
-    } as never);
-    try{
-      const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
-      expect(r.source).toBe("scheduled_shifts");
-      expect(r.scheduleSet).toBe(true);
-      expect(r.windowHasShifts).toBe(false);
-      expect(r.shifts).toEqual([]);
-      expect(r.paidMinutes).toBeNull();
-      expect(r.knownWagesCents).toBeNull();
-      expect(r.gaps).toEqual([]);
-      expect(r.missing).toContain("noShiftsInRequestedRange");
-      expect(r.missing).not.toContain("scheduleNotSet");
-    }finally{read.mockRestore();}
+    vi.mocked(getWeekSchedule).mockResolvedValue(confirmed([datedShift("mon",week)]) as never);
+    const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
+    expect(getWeekSchedule).toHaveBeenCalledWith({weekStart:week});
+    expect(r.source).toBe("scheduled_shifts");
+    expect(r.scheduleSet).toBe(true);
+    expect(r.windowHasShifts).toBe(false);
+    expect(r.shifts).toEqual([]);
+    expect(r.paidMinutes).toBeNull();
+    expect(r.knownWagesCents).toBeNull();
+    expect(r.gaps).toEqual([]);
+    expect(r.missing).toContain("noShiftsInRequestedRange");
+    expect(r.missing).not.toContain("scheduleNotSet");
+  });
+  it("finds late-week assignments beyond the 40-item weekly response cap",async()=>{
+    // Read source order is start-time, not date; all 45 Monday shifts precede
+    // this Thursday shift despite being in the same café week.
+    const shifts=[
+      ...Array.from({length:45},(_,i)=>datedShift("mon-"+i,week)),
+      datedShift("thu","2026-10-22"),
+      datedShift("inactive","2026-10-22","former"),
+    ];
+    vi.mocked(getWeekSchedule).mockResolvedValue(confirmed(shifts) as never);
+    const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
+    expect(r.scheduleSet).toBe(true);
+    expect(r.windowHasShifts).toBe(true);
+    expect((r.shifts as {id:string}[]).map(s=>s.id)).toEqual(["thu"]);
+    expect(r.missing).not.toContain("noShiftsInRequestedRange");
+    expect(r.missing).not.toContain("moreShifts");
+    expect(r.paidMinutes).toBeNull();
+    expect(JSON.stringify(r)).not.toContain("inactive");
+  });
+  it("marks a large selected window as truncated without hiding its shifts",async()=>{
+    vi.mocked(getWeekSchedule).mockResolvedValue(confirmed(
+      Array.from({length:43},(_,i)=>datedShift("thu-"+i,"2026-10-22")),
+    ) as never);
+    const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
+    expect(r.windowHasShifts).toBe(true);
+    expect((r.shifts as unknown[]).length).toBe(40);
+    expect(r.missing).toContain("moreShifts");
+  });
+  it("reports an entirely unset week without invented coverage",async()=>{
+    vi.mocked(getWeekSchedule).mockResolvedValue(confirmed([]) as never);
+    const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
+    expect(r.scheduleSet).toBe(false);
+    expect(r.windowHasShifts).toBe(false);
+    expect(r.missing).toContain("scheduleNotSet");
+    expect(r.missing).not.toContain("noShiftsInRequestedRange");
+    expect(r.gaps).toEqual([]);
   });
   it("does not reconstruct historical recurring schedules",async()=>{
     const r=await staffTools.get_schedule.execute({from:"2026-10-21",to:"2026-10-22"},ctx());

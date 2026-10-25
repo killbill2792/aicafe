@@ -83,14 +83,16 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       if (people.error) throw people.error;
       if ((people.data ?? []).length>500) return missing("activeTeamTruncated");
       const active = new Set((people.data ?? []).map(p=>p.id));
-      // Repeating owner_schedule rows are predictions, never attendance.
-      // Do not count deactivated people or unlinked external timecards.
+      // Real recorded timecards remain attendance history even after someone is
+      // deactivated or a POS worker is not linked to a roster member. Restrict
+      // only the *currently on-clock* count to the authenticated active team.
+      // An owner_schedule projection is never recorded attendance.
       const actual = (records.data ?? []).slice(0,500).filter(row =>
-        row.source_type !== "owner_schedule" && active.has(row.employee_id));
+        row.source_type !== "owner_schedule");
       const tracked = actual.length > 0;
       return { available:true, value:{
         timecardCount:actual.length,
-        onClockCount:tracked ? actual.filter(row=>row.clock_out===null).length : null,
+        onClockCount:tracked ? actual.filter(row=>row.clock_out===null && active.has(row.employee_id)).length : null,
         attendanceTracked:tracked,
       },quality:quality([
         ...((records.data ?? []).length>500?["timecardResultTruncated"]:[]),

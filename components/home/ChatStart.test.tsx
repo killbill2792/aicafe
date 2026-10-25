@@ -72,7 +72,24 @@ describe("PR F shared attention and chat entry",()=>{
   expect(composer).toContain("if(sendOnce.current)return");
   expect(composer).toContain("sendOnce.current=true");
   expect(composer).toContain("sendOnce.current=false");
+  const followUp = composer.indexOf("return sendFollowUp(text);", composer.indexOf("async function sendText"));
+  const mainGuard = composer.indexOf("if(sendOnce.current)return;", composer.indexOf("async function sendText"));
+  expect(followUp).toBeGreaterThan(0);
+  expect(mainGuard).toBeGreaterThan(followUp);
+  expect(composer).toContain("pendingFollowUps.current.add(text)");
+  expect(composer).toContain("pendingFollowUps.current.delete(text)");
   expect(composer).toContain("setStartExpanded(false)");
+ });
+ it("restores old exact experiment links without a standalone accordion on every chat",()=>{
+  const home=readFileSync("app/[locale]/page.tsx","utf8");
+  const wrapper=readFileSync("components/home/SupervisorHomePanel.tsx","utf8");
+  const composer=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
+  expect(home).toContain('initialThreadId={initialThread} initialProposalId={initialExperiment}');
+  expect(wrapper).toContain('initialThreadId={initialThreadId} initialProposalId={initialProposalId}');
+  expect(composer).toContain('initialProposalId && initialThreadId && threadId === initialThreadId');
+  expect(composer).toContain('initialProposalId={initialProposalId}');
+  expect(composer).toContain('copy={{en,es,ar}[locale].SupervisorExperiment}');
+  expect(composer).not.toContain('{enabled&&threadId&&experimentCopy&&<SupervisorExperiment');
  });
  it("keeps token-only classes, localized single-message summary and RTL-safe layout",()=>{
   const ui=readFileSync("components/home/ChatStart.tsx","utf8");
