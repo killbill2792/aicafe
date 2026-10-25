@@ -50,7 +50,7 @@ describe("confirmed weekly schedule is the only chat schedule",()=>{
     vi.mocked(getTeam).mockResolvedValue({
       ok:true,data:{team:[active],shifts:[activeShift,removedShift],totals:{}},
     } as never);
-    const roster=await scheduleReadTools.get_team.execute({week_start:week},ctx);
+    const roster=await scheduleReadTools.get_team.execute({week_start:week,name:null},ctx);
     const confirmed=await scheduleReadTools.get_week_schedule.execute({week_start:week},ctx);
     expect(JSON.stringify([roster,confirmed])).not.toContain("former");
     expect((confirmed.shifts as {employeeId:string}[]).map(s=>s.employeeId)).toEqual(["active"]);

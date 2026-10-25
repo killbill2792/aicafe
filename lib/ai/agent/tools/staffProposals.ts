@@ -1,5 +1,8 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
+import {ownerChoiceGuard,ownerNamedTarget,resolveEntity,choicePayload,normalizedName} from "../resolve";
+import {getTeam} from "@/lib/actions/schedule";
+import {mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
 const uuid=z.uuid(),date=z.iso.date(),clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const shift=z.strictObject({employee_id:uuid,date,start:clock,end:clock,
   break_minutes:z.number().int().min(0).max(240)});
@@ -41,6 +44,56 @@ export const staffProposalTools=Object.fromEntries(
   agentId:"olivia" as const,description:descriptions[name],schema:staffProposalInputs[name],
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=staffProposalInputs[name].parse(raw);
+   // The ordinary agent always supplies resolveState. Keep legacy tests that
+   // call this handler directly compatible without weakening the live guard.
+   if(ctx.resolveState&&name!=="propose_add_staff"&&name!=="propose_rule_change"&&name!=="propose_send_schedule"){
+     const team=await getTeam({weekStart:mondayOfLocalDate(ctx.asOf)});
+     if(!team.ok)return {source:"staff_proposal",period:null,agentId:"olivia",
+       draft:true,saved:false,missing:["staffIdentityUnavailable"]};
+     const people=team.data.team;
+     const ids:string[]=[];
+     if("employee_id" in input&&typeof input.employee_id==="string")ids.push(input.employee_id);
+     if("shift" in input&&input.shift&&typeof input.shift==="object"&&"employee_id" in input.shift&&
+       typeof input.shift.employee_id==="string")ids.push(input.shift.employee_id);
+     if("shifts" in input&&Array.isArray(input.shifts))for(const shift of input.shifts)
+       if(shift&&typeof shift==="object"&&"employee_id" in shift&&typeof shift.employee_id==="string")ids.push(shift.employee_id);
+     for(const id of new Set(ids)){
+       const person=people.find(p=>p.id===id);
+       if(!person)return {source:"staff_proposal",period:null,agentId:"olivia",missing:["notFound"],suggestions:people.slice(0,4).map(p=>({id:p.id,label:p.name,detail:p.role??"Team"}))};
+       if(name==="propose_staff_change"&&!ownerNamedTarget(ctx.resolveState,id,person.name))
+         return {source:"staff_proposal",period:null,agentId:"olivia",
+           draft:false,saved:false,missing:["targetNotConfirmed"]};
+       const matched=resolveEntity("staff",person.name,people,{
+         nameOf:p=>p.name,idOf:p=>p.id,describe:p=>p.role??"Team"});
+       if(matched.status==="ambiguous"&&!ctx.resolveState.chosenIds.has(id.toLowerCase())){
+         const guard=ownerChoiceGuard(ctx.resolveState,id);
+         if(guard)return {source:"staff_proposal",period:null,agentId:"olivia",...guard};
+         if(!ctx.resolveState.ambiguous.some(group=>group.some(choice=>choice.id===id)))
+           return {source:"staff_proposal",period:null,agentId:"olivia",
+             missing:["ownerChoiceRequired"],needsOwnerChoice:true,candidates:matched.candidates};
+       }
+     }
+     if(name==="propose_availability_change"&&"instruction" in input){
+       const wording=normalizedName(input.instruction);
+       const mentioned=people.filter(p=>normalizedName(p.name)&&wording.includes(normalizedName(p.name)));
+       const groups=new Map<string,typeof people>();
+       for(const p of mentioned){const key=normalizedName(p.name);groups.set(key,[...(groups.get(key)??[]),p]);}
+       for(const [key,group] of groups)if(group.length>1){
+         const matched=resolveEntity("staff",key,people,{
+           nameOf:p=>p.name,idOf:p=>p.id,describe:p=>p.role??"Team"});
+         if(matched.status==="ambiguous"){
+           // PR B's scoped availability parser accepts only an exact person
+           // name (not a UUID). Choosing one of two identically named employees
+           // still cannot produce a safe write until that API accepts an ID.
+           if(group.some(person=>ctx.resolveState?.chosenIds.has(person.id.toLowerCase())))
+             return {source:"staff_proposal",period:null,agentId:"olivia",
+               missing:["availabilityBackendRequiresUniqueStaffName"]};
+           return {...choicePayload(matched,"staff_proposal",null),agentId:"olivia",
+             missing:["ownerChoiceRequired"]};
+         }
+       }
+     }
+   }
    if(!ctx.proposals?.proposeStaff)return {source:"staff_proposal",period:null,agentId:"olivia",
      draft:true,saved:false,missing:["proposalsUnavailable"]};
    const p=await ctx.proposals.proposeStaff({name,input});

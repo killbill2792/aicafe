@@ -27,13 +27,7 @@ export async function setPersonActive(raw:unknown){
  const {data,error}=await owner.supabase.from("employees").update({active:p.data.active})
   .eq("business_id",owner.businessId).eq("id",p.data.id).select("id").maybeSingle();
  if(error||!data)return {ok:false as const,error:error?"storage_unavailable":"not_found"};
- if (!p.data.active) {
-  // Explicit deactivation is sticky. Reactivating the employee later must not
-  // automatically restore their old repeating assignments.
-  const {error:scheduleError}=await owner.supabase.from("staff_schedules")
-   .update({active:false}).eq("business_id",owner.businessId)
-   .eq("employee_id",p.data.id).eq("active",true);
-  if(scheduleError)return {ok:false as const,error:"storage_unavailable"};
- }
+ // The employee table's AFTER UPDATE trigger atomically deactivates any
+ // repeating staff_schedules. A trigger failure rolls back this update.
  return {ok:true as const,id:data.id as string};
 }

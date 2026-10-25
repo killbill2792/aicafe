@@ -2,10 +2,37 @@ import { describe, expect, it } from "vitest";
 import { checkNumbers, compactEvidence, numberProvenance } from "./checkNumbers";
 import { statusFromResults } from "./status";
 import { executeAgentTool, agentToolDefinitions, type AgentToolContext, requestedPeriod } from "./tools";
+import {newResolveState} from "./resolve";
 
 const base = { source: "profitability", period: null, missing: [],
   ownerProfitCents: 12345, operatingMargin: 0.125, coveredSalesDays: 4 };
 describe("numbers, statuses, and strict tool contracts", () => {
+  it("keeps an owner's stated sales when recorded profitability is unavailable without inventing profit",async()=>{
+    const ctx:AgentToolContext={asOf:"2026-10-24",locale:"en",tools:{
+      getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}}),
+      getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["noProfitFacts"],estimatedInputs:[],staleInputs:[]}}),
+      getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+    }};
+    const ownerInputs={netSalesCents:1100000,salesPeriod:{from:"2026-10-01",to:"2026-10-22"},
+      laborCents:1500000,laborPeriod:{days:31},rentCents:null,otherOverheadCents:null,
+      overheadPeriod:null,unitCostCents:null,itemsSoldPerDay:null};
+    const result=await executeAgentTool("get_profit",{period:"month",ownerInputs},ctx);
+    expect(result).toMatchObject({netSalesProvenance:null,
+      netSalesCents:null,ownerReportedSalesCents:1100000,ownerProfitCents:null,totalCostsCents:null});
+    expect(result.missing).toContain("costsUnverified");
+    expect(result.missing).toContain("ownerSalesPeriodMismatch");
+  });
+
+  it("keeps menu results when price evidence fails, without claiming an initial source",async()=>{
+    const ctx:AgentToolContext={asOf:"2026-10-24",locale:"en",tools:{
+      getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+      getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+      getMenuCatalog:async()=>({available:true,value:[{id:"a",name:"Latte",category:"drink",active:true,priceCents:500}],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+    },menuPriceEvidence:async()=>{throw new Error("database offline")}};
+    const result=await executeAgentTool("get_menu_items",{query:null,limit:null},ctx);
+    expect(result.missing).toContain("menuPriceEvidenceUnavailable");
+    expect(result.items).toMatchObject([{name:"Latte",priceSource:"unknown",priceEvidenceStatus:"unknown",priceCheck:"unknown"}]);
+  });
   it("verifies cents, percentages and plain numbers without erasing text", () => {
     expect(checkNumbers("Profit $123.45, 12.5% margin, 4 days", "", [base], "en")).toEqual([]);
     expect(checkNumbers("Profit $999.00", "", [base], "en")).toHaveLength(1);
@@ -86,11 +113,11 @@ describe("numbers, statuses, and strict tool contracts", () => {
       status:"partial",missing:["sales"] });
   });
   it("publishes exactly the registered strict functions", () => {
-    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items","get_profit","get_sales","get_menu_items",
+    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["ask_owner","get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items","get_profit","get_sales","get_menu_items",
       "get_staff","get_schedule","get_labor","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
       "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
-      "get_item_sales","get_price_recommendation","draft_week_schedule","suggest_new_item_price","propose_price_change",
+      "get_item_sales","get_price_recommendation","draft_week_schedule","suggest_new_item_price","propose_price_change","propose_price_experiment",
       "propose_schedule","propose_shift_change","propose_add_staff","propose_staff_change",
       "propose_availability_change","propose_rule_change","propose_send_schedule",
       "get_initiatives","get_initiative_status","record_checkin"]);
@@ -120,7 +147,13 @@ describe("numbers, statuses, and strict tool contracts", () => {
       },
     };
     const result = await executeAgentTool("get_menu_items",{query:"latte",limit:25},context);
-    expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450}]);
+    expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450,
+      unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"unknown",pricePeriod:null,priceEvidenceStatus:"unknown"}]);
+    context.resolveState=newResolveState("What is the price of Espresso?");
+    const wrong=await executeAgentTool("get_menu_items",{query:"Latte",limit:25},context);
+    expect(wrong.missing).toContain("targetNotConfirmed");
+    expect(wrong.items).toBeUndefined();
+    context.resolveState=undefined;
     expect(result.agentId).toBe("alex");
     await expect(executeAgentTool("get_menu_items",{businessId:"other"},context)).rejects.toThrow();
     await expect(executeAgentTool("get_menu_items",{query:null,limit:26},context)).rejects.toThrow();

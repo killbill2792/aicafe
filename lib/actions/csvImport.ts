@@ -11,6 +11,9 @@ import { recomputeDailyRollup } from "@/lib/pos/rollup";
 import { rebuildSalesFactRollups } from "@/lib/pos/salesFactRollups";
 import { readStagedSalesGroups, readCsvFeeOrders, csvPromotedOrderId } from "@/lib/pos/csv/finalizeReads";
 import { matchCatalogItem } from "@/lib/pos/catalogMatching";
+import {inferMenuItemCategory} from "@/lib/menu/inferCategory";
+import {medianObservedUnitPriceCents} from "@/lib/calc/importedMenuPrice";
+
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { resolveUnmatchedAlertsIfClear } from "@/lib/data/resolveUnmatchedAlerts.server";
 import { NEW_EMPLOYEE } from "@/lib/constants";
@@ -200,8 +203,7 @@ async function resolveMenuItemIds(
   const unmatchedRowsByName = new Map<string, number>();
 
   for (const name of [...new Set(groups.map((g) => g.item))]) {
-    const sample = groups.find((g) => g.item === name)!;
-    const priceCents = sample.quantity > 0 ? Math.round(sample.netSalesCents / sample.quantity) : null;
+    const priceCents = medianObservedUnitPriceCents(groups.filter(g => g.item === name));
     const posItemId = `csv-item-${csvSlug(name)}`.slice(0, 120);
     const match = matchCatalogItem({ posItemId, name, priceCents, category: null }, candidates);
     let resolvedId: string | null = null;
@@ -212,15 +214,23 @@ async function resolveMenuItemIds(
       if (!linkError) resolvedId = match.candidateId;
     } else if (match.status === "new") {
       const { data: created, error: createError } = await supabase.from("menu_items")
-        .insert({ business_id: businessId, pos_item_id: posItemId, name, base_name: name, price_cents: priceCents, category: "ESPRESSO_DRINK", catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() })
+        .insert({ business_id: businessId, pos_item_id: posItemId, name, base_name: name, price_cents: priceCents, category: inferMenuItemCategory(name), catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() })
         .select("id").single();
-      if (!createError) resolvedId = created?.id ?? null;
+      if (!createError && created) {
+        if (priceCents !== null) {
+          const { error: historyError } = await supabase.from("menu_price_history").insert({
+            business_id: businessId, menu_item_id: created.id, old_price_cents: null,
+            new_price_cents: priceCents, source_type: "imported",
+            source_provider: "csv import estimated average",
+          });
+          if (historyError) throw historyError;
+        }
+        resolvedId = created.id;
+      }
     }
     if (resolvedId) {
       menuItemIdByName.set(name.toLowerCase(), resolvedId);
     } else {
-      // An auto-match or menu insert can fail independently of the import. Never
-      // leave unmatched sales without the review row the owner needs to repair it.
       const { error: reviewError } = await supabase.from("pos_catalog_matches").upsert({
         business_id: businessId, provider: "csv", pos_item_id: posItemId,
         imported_name: name, imported_price_cents: priceCents,

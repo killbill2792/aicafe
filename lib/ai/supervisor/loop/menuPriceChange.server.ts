@@ -3,7 +3,8 @@ import {revalidatePath} from "next/cache";
 import {z} from "zod";
 import {diffFieldSchema,diffFields} from "@/lib/format/values";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
-import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
+import {ToolError} from "@/lib/ai/agent/toolErrors";
+import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {ownerMenuPrice} from "@/lib/data/proposalPrices.server";
 import {summarizeActualMenuSales} from "@/lib/calc/menuPriceProposal";
@@ -28,13 +29,18 @@ export const menuPriceChangeCapability=registerLoopCapability({
   effectSchema,
   dependencyScope:(effect)=>({version:2,kind:"menu_price",productId:effect.productId}),
   simulate:async(scope,input)=>{
-    const owner=await authorizedOwnerP1();
-    if(owner.identity.businessId!==scope.businessId||owner.identity.currency!=="USD")
-      throw new Error("Price change outside authenticated café scope");
+    const client=await createServerSupabaseClient();
+    const {data:{user}}=await client.auth.getUser();
+    if(!user||user.id!==scope.ownerUserId)throw new ToolError("unauthorized");
+    const active=await getActiveBusinessId(user.id);
+    if(active!==scope.businessId)throw new ToolError("scope_mismatch");
+    const {data:membership}=await client.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle();
+    const {data:business}=await client.from("businesses").select("currency,is_demo").eq("id",scope.businessId).maybeSingle();
+    if(membership?.role!=="owner"||business?.is_demo||business?.currency!=="USD")throw new ToolError("unauthorized");
     const matches=(await getMenuControlCenter()).filter(item=>item.active&&item.id===input.productId);
-    if(matches.length!==1)throw new Error("Active product unavailable in authorized café");
+    if(matches.length!==1)throw new ToolError("not_found");
     const item=matches[0];
-    if(item.priceCents===input.newPriceCents)throw new Error("Price is unchanged");
+    if(item.priceCents===input.newPriceCents)throw new ToolError("unchanged");
     const preview=diffFields([{field:"price",label:"Price",value:{kind:"money",cents:item.priceCents}}],
       [{field:"price",label:"Price",value:{kind:"money",cents:input.newPriceCents}}]);
     return {effect:{productId:item.id,productName:item.name,oldPriceCents:item.priceCents,
@@ -59,7 +65,7 @@ export const menuPriceChangeCapability=registerLoopCapability({
       // optimistic pre-read; the RPC rechecked under the menu row lock.
       const latest=await ownerMenuPrice(scope,effect.productId,supabase);
       if(latest!==effect.oldPriceCents)throw new StaleProposalError(latest);
-      throw new Error("Menu price save failed");
+      throw new ToolError("write_failed");
     }
     revalidatePath("/menu");revalidatePath("/menu/"+effect.productId);revalidatePath("/");
     return {status:"verified" as const,evidenceSource:"menu_price_history"};

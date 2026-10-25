@@ -25,4 +25,27 @@ WHERE t.business_id = e.business_id
   AND (t.clock_in AT TIME ZONE b.timezone)::date >
       (now() AT TIME ZONE b.timezone)::date;
 
+-- Every owner-authorized deactivation route (including approved staff proposals)
+-- turns off repeating assignments in the same PostgreSQL transaction. A trigger
+-- error rolls back the employee change instead of leaving partially inactive data.
+CREATE OR REPLACE FUNCTION public.staff_disable_repeats_on_deactivation()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $staff_deactivate$
+BEGIN
+  IF OLD.active IS DISTINCT FROM false AND NEW.active = false THEN
+    UPDATE public.staff_schedules
+       SET active = false
+     WHERE business_id = NEW.business_id
+       AND employee_id = NEW.id
+       AND active = true;
+  END IF;
+  RETURN NEW;
+END
+$staff_deactivate$;
+REVOKE ALL ON FUNCTION public.staff_disable_repeats_on_deactivation() FROM PUBLIC, anon, authenticated;
+DROP TRIGGER IF EXISTS staff_disable_repeats_on_deactivation ON public.employees;
+CREATE TRIGGER staff_disable_repeats_on_deactivation
+AFTER UPDATE OF active ON public.employees
+FOR EACH ROW EXECUTE FUNCTION public.staff_disable_repeats_on_deactivation();
+
 COMMIT;

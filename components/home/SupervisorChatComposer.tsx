@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown } from "lucide-react";
-import { AgentAvatar } from "@/components/operations/AITeamCard";
+import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown, UsersRound, ArrowDown } from "lucide-react";
+import { AgentAvatar, agentVisuals } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
+import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { nextDictationStage } from "@/lib/ai/conversations/dictationState";
@@ -12,17 +13,24 @@ import { audioExtensionForMime, parseTranscriptionResponse, voiceMessageForError
 import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
-import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
+import { activeOwnerQuestionMessageId, clarifyCardState, beginOptimisticOwner, sendKey, visibleConversationMessages,
   hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
 import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
 import SupervisorProposalCard from "./SupervisorProposalCard";
 import MemoryCard from "./MemoryCard";
+import ClarifyCard from "./ClarifyCard";
+import HowIGotThis from "./HowIGotThis";
+import {explainLineSchema} from "@/lib/ai/agent/explain";
+import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress from "./ChatJobProgress";
 import { useAgentJobWatcher } from "./useAgentJobWatcher";
 import { answeredOwnerMessageIds, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
 import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
@@ -45,10 +53,20 @@ export type SupervisorChatCopy = {
   needsYou: string; handled: string; watching: string;
   answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string; provenanceOwner:string;provenanceEstimate:string;provenanceUnchecked:string;provenanceBreakEven:string;provenanceSalesGap:string;provenanceLegend:string;provenanceOverhead:string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
+  clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;
+  howIGotThis:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
+  explainMultiply:string;explainSum:string;explainDivide:string;explainRatio:string;explainProrate:string;explainSubtract:string;
   feedbackUp: string; feedbackDown: string; feedbackSaved: string; feedbackError: string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
 type Locale = "en" | "es" | "ar";
+export type SupervisorHomeSnapshot = {
+  title: string; stats: { label: string; value: string }[];
+  caption: string | null; hasSales: boolean;
+  sections: { title: string; empty: string; href: string;
+    items: HomeTaskPreviewItem[]; count: number }[];
+  seeAll: string;
+};
 async function jsonFrom<T>(response: Response): Promise<T> {
   if (!response.ok) throw new Error("conversation_request_failed");
   return response.json() as Promise<T>;
@@ -82,6 +100,9 @@ function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block:
   if (!record(block)) return null;
   if(block.type==="proposal_card"&&typeof block.proposalId==="string"&&threadId)
     return <SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/>;
+  if(block.type==="experiment_card"&&typeof block.proposalId==="string"&&threadId)
+    return <SupervisorExperiment threadId={threadId} locale={locale}
+      copy={{en,es,ar}[locale].SupervisorExperiment} initialProposalId={block.proposalId}/>;
   if(block.type==="memory_card"&&typeof block.ruleId==="string")
     return <MemoryCard ruleId={block.ruleId} locale={locale}/>;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
@@ -114,9 +135,11 @@ function isOwnerConfirmation(message:ConversationMessage){
   const state=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
   return state.success&&state.data.stage==="confirm";
 }
-function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }: {
+function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, clarifyState, clarifyChoice, disabled }: {
   message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale;
   disabled:boolean;
+  onClarify:(text:string)=>void;
+  clarifyState:"hidden"|"active"|"chosen"|"skipped";clarifyChoice:string|null;
   onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
 }) {
   if (message.role === "owner") return <article className="ms-auto w-fit max-w-[80%] rounded-[22px] rounded-ee-md bg-accent-soft px-4 py-3 text-[17px] text-ink shadow-sm">
@@ -143,6 +166,16 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
       {groups.map((group,i)=>{
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
+        if(record(group.block)&&group.block.type==="how"&&Array.isArray(group.block.lines)){
+          const lines=group.block.lines.slice(0,20).flatMap(line=>{
+            const parsed=explainLineSchema.safeParse(line);
+            return parsed.success?[parsed.data]:[];
+          });
+          return lines.length?<HowIGotThis key={i} lines={lines} locale={locale} copy={copy}/>:null;
+        }
+        const clarify=clarifyBlockSchema.safeParse(group.block);
+        if(clarify.success)return <ClarifyCard key={i} block={clarify.data} locale={locale} copy={copy}
+          state={clarifyState} choice={clarifyChoice} disabled={disabled} onSend={onClarify}/>;
         const candidate=ownerQuestionSchema.safeParse(group.block);
         if (candidate.success) return <ReplyBlock key={i} block={{type:"text",text:candidate.data.title[locale]}} copy={copy} locale={locale}/>;
         const originalIndex=originalReplyBlockIndex(originalBlocks,group.block);
@@ -175,11 +208,11 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
   return <div className="ps-1 text-[17px] leading-relaxed text-ink-muted">
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" onClick={()=>void send("up")} disabled={saving}
-        aria-pressed={rating==="up"} className="inline-flex min-h-12 items-center gap-2 rounded-lg border border-line px-3 text-[17px]">
+        aria-pressed={rating==="up"} className={`inline-flex min-h-12 items-center gap-1.5 rounded-lg px-2 text-[17px] hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${rating==="up"?"bg-surface2 text-ink":""}`}>
         <ThumbsUp size={18} aria-hidden="true"/><span>{copy.feedbackUp}</span>
       </button>
       <button type="button" onClick={()=>void send("down")} disabled={saving}
-        aria-pressed={rating==="down"} className="inline-flex min-h-12 items-center gap-2 rounded-lg border border-line px-3 text-[17px]">
+        aria-pressed={rating==="down"} className={`inline-flex min-h-12 items-center gap-1.5 rounded-lg px-2 text-[17px] hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${rating==="down"?"bg-surface2 text-ink":""}`}>
         <ThumbsDown size={18} aria-hidden="true"/><span>{copy.feedbackDown}</span>
       </button>
       {rating&&<span role="status">{copy.feedbackSaved}</span>}
@@ -190,11 +223,45 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
     {error&&<p role="alert">{copy.feedbackError}</p>}
   </div>;
 }
+function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
+  return <div className="w-full space-y-4 text-start">
+    <section aria-label={snapshot.title}>
+      <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-ink-muted">{snapshot.title}</h3>
+      <div className="grid grid-cols-2 gap-2">
+        {snapshot.stats.map((stat) => <div key={stat.label}
+          className="rounded-2xl border border-line bg-surface p-3 shadow-sm">
+          <p className="text-[13px] font-semibold text-ink-muted">{stat.label}</p>
+          <p className="mt-1 break-words text-xl font-extrabold text-ink">{stat.value}</p>
+        </div>)}
+      </div>
+      {snapshot.caption && <p className="mt-2 text-sm text-ink-muted">{snapshot.caption}</p>}
+    </section>
+    {snapshot.sections.map((section) => <section key={section.href}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-extrabold uppercase tracking-wide text-ink-muted">
+          {section.title} <span className="text-ink">{section.count}</span>
+        </h3>
+        <Link href={section.href} className="text-sm font-bold text-good underline">{snapshot.seeAll}</Link>
+      </div>
+      {section.items.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {section.items.map((task) => <Link key={task.id} href={task.href}
+          className="flex min-h-16 items-center gap-2 rounded-2xl border border-line bg-surface p-3 text-ink no-underline hover:bg-surface2">
+          <AgentAvatar agentId={task.agentId} size="task" />
+          <span className="min-w-0 flex-1">
+            <span className={`block text-sm font-bold ${agentVisuals[task.agentId].accent}`}>{task.agentName}</span>
+            <span className="block text-[15px] font-semibold">{task.title}</span>
+          </span>
+        </Link>)}
+      </div> : <p className="mt-1 text-sm text-ink-muted">{section.empty}</p>}
+    </section>)}
+  </div>;
+}
+
 export default function SupervisorChatComposer({
-  enabled, canUseAi=true, locale, copy, languageSwitch, onActivityChange, experimentCopy, initialThreadId, initialProposalId,
+  enabled, canUseAi=true, locale, copy, snapshot, languageSwitch, onActivityChange, experimentCopy, initialThreadId, initialProposalId,
 }: {
   enabled: boolean; canUseAi?: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
-  locale: Locale; copy: SupervisorChatCopy;
+  locale: Locale; copy: SupervisorChatCopy; snapshot?: SupervisorHomeSnapshot;
   experimentCopy?: ExperimentCopy;
   initialThreadId?:string;initialProposalId?:string;
   languageSwitch?: React.ReactNode;
@@ -206,6 +273,7 @@ export default function SupervisorChatComposer({
   const [optimisticOwner, setOptimisticOwner] = useState<{ id: string; text: string; clientMessageId: string } | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [snapshotExpanded, setSnapshotExpanded] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -247,6 +315,8 @@ export default function SupervisorChatComposer({
   const [liveNote, setLiveNote] = useState<string | null>(null);
   const [failureCode, setFailureCode] = useState<string | null>(null);
   const [queuedOwner, setQueuedOwner] = useState<{ id: string; text: string; clientMessageId: string }[]>([]);
+  // Only client display state; no pending clarification stored or sent to the API.
+  const [chosenClarify, setChosenClarify] = useState<Record<string,string>>({});
   const [reloadVersion, setReloadVersion] = useState(0);
   const watcher = useAgentJobWatcher(threadId, enabled && !sending, (job) => {
     setReloadVersion((v) => v + 1);
@@ -613,6 +683,7 @@ export default function SupervisorChatComposer({
     openingThread.current = Boolean(id); pinned.current = true;
     setShowNewMessage(false);
     setThreadTitle(threads.find((thread) => thread.id === id)?.title ?? null);
+    setSnapshotExpanded(false);
     setDraft(""); setMediaNotice(""); setError(false); setHistoryOpen(false);
     setFailureCode(null); setQueuedOwner([]);
     retryId.current = null; threadRequestId.current = null;
@@ -740,6 +811,12 @@ export default function SupervisorChatComposer({
   // owner turn can occur anywhere in history, not only at the end of a thread.
   const displayedMessages: ConversationMessage[] = visibleConversationMessages(
     messages, optimisticOwner, threadId, new Date().toISOString());
+  const clarifyVisibilityMessages:ConversationMessage[]=[
+    ...displayedMessages,...queuedOwner.map(o=>({
+      ...o,threadId:threadId??"",role:"owner" as const,contentType:"text" as const,
+      blocks:null,grounding:null,createdAt:new Date().toISOString(),
+    })),
+  ];
   const activeQuestionMessageId=activeOwnerQuestionMessageId(displayedMessages);
   const answeredOwnerIds = answeredOwnerMessageIds(messages);
   const inFlightOwnerIds = inFlightOwnerMessageIds(watcher.job);
@@ -781,15 +858,37 @@ export default function SupervisorChatComposer({
         </div>
         <h2 className="font-headline text-2xl font-bold text-ink">{copy.emptyHeading}</h2>
         <p className="max-w-md text-[17px] leading-relaxed text-ink-muted">{copy.emptyIntro}</p>
+        {snapshot && <section className="w-full rounded-xl bg-surface2 p-3 text-start">
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            {snapshot.stats.slice(0,3).map(stat=><span key={stat.label} className="text-[14px] text-ink">
+              <span className="text-ink-muted">{stat.label}: </span><strong>{stat.value}</strong>
+            </span>)}
+            <span className="text-[14px] text-ink">
+              <span className="text-ink-muted">{snapshot.sections[0]?.title}: </span>
+              <strong>{snapshot.sections[0]?.count ?? 0}</strong>
+            </span>
+          </div>
+          <button type="button" onClick={()=>setSnapshotExpanded(v=>!v)}
+            aria-expanded={snapshotExpanded} className="mt-1 inline-flex min-h-12 items-center gap-1 text-sm font-bold text-good">
+            {snapshotExpanded ? copy.snapshotCollapse : copy.snapshotExpand}
+            <ChevronDown size={16} className={snapshotExpanded ? "rotate-180" : ""} aria-hidden="true" />
+          </button>
+          {snapshotExpanded && <HomeSnapshot snapshot={snapshot} />}
+        </section>}
         {!enabled && <p className="text-[16px] text-ink-muted">{copy.unavailable}</p>}
       </div>}
       {nextOffset !== null && <button type="button" onClick={() => void loadOlder()} disabled={loading}
         className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold text-ink underline hover:bg-surface2">
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
-      {displayedMessages.map((message) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
-        <SupervisorMessage message={message} copy={copy} locale={locale} disabled={sending||!enabled||!canUseAi||
-          (message.role==="supervisor"&&message.id!==activeQuestionMessageId)}
+      {displayedMessages.map((message,messageIndex) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
+        <SupervisorMessage message={message} copy={copy} locale={locale}
+          clarifyState={chosenClarify[message.id]&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state==="skipped"?
+            "chosen":clarifyCardState(clarifyVisibilityMessages,messageIndex).state}
+          clarifyChoice={chosenClarify[message.id]??clarifyCardState(clarifyVisibilityMessages,messageIndex).choice}
+          onClarify={value=>{setChosenClarify(old=>({...old,[message.id]:value}));void sendText(value);}}
+          disabled={sending||!enabled||!canUseAi||
+          (message.role==="supervisor"&&message.id!==activeQuestionMessageId&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state!=="active")}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{
             if(sending||!enabled||!canUseAi||origin.id!==activeQuestionMessageId)return;
             const question=ownerQuestionSchema.safeParse((origin.blocks??[]).find(b=>

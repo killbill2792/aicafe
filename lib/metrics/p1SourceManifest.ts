@@ -13,7 +13,10 @@ type Surface = {capabilities:readonly SupportedId[]} |
   {restricted:string};
 export const SOURCE_SURFACES = {
   "lib/data/resolveUnmatchedAlerts.server.ts":{
-    resolveUnmatchedAlertsIfClear:{restricted:"Owner-authenticated tenant-scoped alert status reconciliation after catalog actions; never an AI fact read or model-triggered write"},
+    resolveUnmatchedAlertsIfClear:{restricted:"Owner-authenticated tenant-scoped alert status reconciliation after catalog actions; no model-triggered write"},
+  },
+  "lib/data/menuPriceEvidence.server.ts":{
+    readMenuPriceEvidence:{restricted:"Authenticated, selected-cafe menu price provenance and observed sales read; accessible only through an owner-scoped strict agent tool, not a generic P1 metric selector"},
   },
   "lib/data/staffProposalSources.server.ts":{
     readStaffProposalToken:{restricted:"Owner-authenticated staff source revision token for proposal CAS, not a model-readable source"},
