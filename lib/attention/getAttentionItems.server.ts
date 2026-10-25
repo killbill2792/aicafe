@@ -204,12 +204,57 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
     const source=task?"operating_tasks":alert?"alerts":item.id==="unmatched"?"pos_catalog_matches":
       item.id.startsWith("bill:")?"missing_costs":item.id==="pantry"?"usage_variance":"home";
     const agentId:AgentId=task?.agentId??(kind==="staff_coverage"||kind==="meal_break"||
-      kind==="early_clockin"||kind==="getting-started-staff"?"olivia":
-      kind==="unmatched"||kind==="pantry"||kind==="supply_check"?"maya":
+      kind==="early_clockin"||kind==="overstaffed"||kind==="getting-started-staff"?"olivia":
+      kind==="unmatched"||kind==="match-unavailable"||kind==="pantry"||kind==="supply_check"?"maya":
       kind==="bill"||kind==="fees"||kind==="data_quality"||kind==="money_update"||
-      kind==="missing_bill"?"leo":"alex");
-    return {id:item.id,kind,source,agentId,
-      title:{key:task?"Operations."+kind:alert?"Alerts."+kind:"Home."+kind,params:{}},
-      displayTitle:item.title,actionLabel:item.actionLabel,href:item.href,impactCents:item.impactCents};
+      kind==="missing_bill"||kind==="getting-started-bills"?"leo":"alex");
+    // Preserve the actual next-intl key and interpolation arguments as provenance.
+    // displayTitle is the already-localized string shown on Home and in chat.
+    let key:string="Home.attentionEmpty";
+    let params:Record<string,string|number>={};
+    if(task){
+      const itemName=String(task.payload.itemName??"").replace(" · "," ");
+      if(task.kind==="price_experiment_report"){key="SupervisorExperiment.reportTask";params={item:itemName};}
+      else if(task.kind==="price_review"){
+        const direction=priceReviewDirection(Number(task.payload.currentPriceCents),Number(task.payload.suggestedPriceCents));
+        key=direction==="low"?"Operations.priceTaskSentenceLow":"Operations.priceTaskSentenceHigh";
+        params={item:itemName};
+      }else if(task.kind==="data_quality"){
+        key="Operations.missingCategory";params={category:tCategories(String(task.payload.categoryCode) as ExpenseCategoryCode)};
+      }else if(task.kind==="staff_coverage"){
+        key="Operations.staffTaskNamed";params={issue:String(task.payload.issue??task.payload.requestType??tOperations("staffCoverageIssue"))};
+      }else if(task.kind==="money_update")key="Operations.homeMoneyUpdate";
+      else if(task.kind==="supply_check"&&task.status==="needs_response"){
+        key="Operations.homeSupplyNeedsResponse";
+        params={item:String(task.payload.itemName??tOperations("homeSupplies"))};
+      }else key="Operations.mayaWatching";
+    }else if(alert){
+      if(alert.kind==="missing_bill"){
+        key="Alerts.missingBillTitle";
+        params={category:tCategories(String(alert.payload.categoryCode??"") as ExpenseCategoryCode)};
+      }else if(alert.kind==="voids")key="Alerts.voidsTitle";
+      else if(alert.kind==="meal_break"){
+        key="Alerts.mealBreakTitle";
+        params={name:String(alert.payload.employeeName??tAlerts("someone"))};
+      }else key="Alerts.unknownTitle";
+    }else if(item.id==="unmatched"){key="Home.attentionUnmatched";params={count:unmatched?.length??0};}
+    else if(item.id==="match-unavailable")key="Home.attentionMatchUnavailable";
+    else if(item.id==="alerts-unavailable")key="Home.attentionAlertsUnavailable";
+    else if(item.id==="fees"){key="Home.attentionFeesMissing";params={count:missingFeeDays};}
+    else if(item.id.startsWith("bill:")){
+      key="Home.missingCostBannerText";
+      params={category:tCategories(item.id.slice(5) as ExpenseCategoryCode)};
+    }else if(item.id==="missing-sales"){
+      key="Home.attentionSalesMissing";params={count:vm.coverage.expectedDays-vm.coverage.actualDays};
+    }else if(item.id==="reconnect")key=posStatus?.provider==="square"&&!squareReconnectReady?
+      "Home.attentionRegisterSetupUnavailable":"Reconnect.banner";
+    else if(item.id==="pantry")key="Home.usageOverAlert";
+    else if(item.id==="getting-started-connect")key="Home.gettingStartedConnectRegister";
+    else if(item.id==="getting-started-sales")key="Home.gettingStartedUploadSales";
+    else if(item.id==="getting-started-bills")key="Home.gettingStartedAddBills";
+    else if(item.id==="getting-started-staff")key="Home.gettingStartedAddStaff";
+    return {id:item.id,kind,source,agentId,title:{key,params},
+      displayTitle:item.title,actionLabel:item.actionLabel,href:item.href,
+      impactCents:Number.isSafeInteger(item.impactCents)?item.impactCents:null};
   }));
 }
