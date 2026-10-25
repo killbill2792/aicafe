@@ -299,10 +299,26 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
   if(proof.paidGuids.has(guid))continue;
   fail(deadlineAt);
   const payment=await paymentDetail(guid);
-  const {data:order,error}=await db.from("orders").select("id").eq("business_id",p.businessId)
+  const {data:order,error}=await db.from("orders")
+   .select("id,business_date,toast_excluded").eq("business_id",p.businessId)
    .eq("pos_order_id","toast:"+p.restaurantGuid+":"+payment.orderGuid).maybeSingle();
   if(error)throw new ToastApiError("unavailable");
-  if(!order){
+  if(order){
+   // A re-pull retains omitted rows as toast_excluded. Merely finding the
+   // historical order must never prove a missing payment belongs elsewhere.
+   const otherDate=order.business_date as string|null;
+   if(order.toast_excluded!==false||!otherDate||otherDate===day){
+    proof.reasons.push("unknown_payment_order");continue;
+   }
+   const {data:other,error:oe}=await db.from("toast_day_status")
+    .select("import_state,rechecking_reason")
+    .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+    .eq("business_date",otherDate).maybeSingle();
+   if(oe)throw new ToastApiError("unavailable");
+   if(other?.import_state==="imported"&&!other.rechecking_reason)continue;
+   unknownOrder=true;otherDays.add(otherDate);continue;
+  }
+  {
    unknownOrder=true;
    try{
     const remote=await client.request("/orders/v2/orders/"+payment.orderGuid,p.restaurantGuid,
