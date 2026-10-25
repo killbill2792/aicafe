@@ -90,17 +90,34 @@ export function choicePayload(result: EntityResolution<unknown>, source: string,
     ? {source,period,missing:[],needsOwnerChoice:true,candidates:result.candidates}
     : {source,period,missing:["notFound"],suggestions:result.status==="none"?result.suggestions:[]};
 }
-/** Reject a proposal when a result named several targets and the owner did not identify one. */
-export function ownerChoiceGuard(state: ResolveState|undefined, targetId:string) {
+/** Reject ambiguous writes unless this turn uniquely names the selected candidate
+ * or a trusted clarification from the previous turn records its actual ID. */
+export function ownerChoiceGuard(
+  state:ResolveState|undefined,targetId:string,additionalCandidates:readonly ChoiceCandidate[]=[],
+) {
   if(!state)return null;
   if(state.chosenIds.has(targetId.toLowerCase()))return null;
-  const owner = normalizedName(state.ownerText);
-  for(const candidates of state.ambiguous) {
-    if(!candidates.some(candidate=>candidate.id===targetId))continue;
-    if(candidates.some(candidate=>candidate.id===targetId&&(
-      normalizedName(candidate.label)===owner ||
-      normalizedName(candidate.label).length>0&&owner.includes(normalizedName(candidate.label))
-    )))return null;
+  const owner = " "+normalizedName(state.ownerText)+" ";
+  const groups=[...state.ambiguous,...(additionalCandidates.length>1?[additionalCandidates]:[])];
+  for(const candidates of groups) {
+    const selected=candidates.find(candidate=>candidate.id.toLowerCase()===targetId.toLowerCase());
+    if(!selected)continue;
+    const mentioned=candidates.map(candidate=>({
+      candidate,label:normalizedName(candidate.label),
+    })).filter(entry=>entry.label&&owner.includes(" "+entry.label+" "));
+    const longest=Math.max(0,...mentioned.map(entry=>entry.label.length));
+    const winners=mentioned.filter(entry=>entry.label.length===longest);
+    const selectedLabel=normalizedName(selected.label);
+    // "Latte" is not a distinguishing instruction when "Iced Latte" is
+    // another candidate. Even a model-selected UUID cannot disambiguate it.
+    const shorterThanAnother=candidates.some(candidate=>{
+      if(candidate.id===selected.id)return false;
+      const other=normalizedName(candidate.label);
+      return other!==selectedLabel&&
+        (" "+other+" ").includes(" "+selectedLabel+" ")&&
+        !owner.includes(" "+other+" ");
+    });
+    if(winners.length===1&&winners[0].candidate.id===selected.id&&!shorterThanAnother)continue;
     return {missing:["ownerChoiceRequired"],needsOwnerChoice:true,candidates};
   }
   return null;
