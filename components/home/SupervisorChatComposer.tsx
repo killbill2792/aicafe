@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown, UsersRound, ArrowDown } from "lucide-react";
-import { AgentAvatar, agentVisuals } from "@/components/operations/AITeamCard";
+import { Clock3, History, Mic, Plus, Send, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown } from "lucide-react";
+import { AgentAvatar } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
-import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { nextDictationStage } from "@/lib/ai/conversations/dictationState";
@@ -27,7 +26,8 @@ import ChatJobProgress from "./ChatJobProgress";
 import { useAgentJobWatcher } from "./useAgentJobWatcher";
 import { answeredOwnerMessageIds, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
 import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
-import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
+import SupervisorExperiment from "./SupervisorExperiment";
+import ChatStart, {type ChatStartData,type ChatStartCopy} from "./ChatStart";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -60,13 +60,6 @@ export type SupervisorChatCopy = {
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
 type Locale = "en" | "es" | "ar";
-export type SupervisorHomeSnapshot = {
-  title: string; stats: { label: string; value: string }[];
-  caption: string | null; hasSales: boolean;
-  sections: { title: string; empty: string; href: string;
-    items: HomeTaskPreviewItem[]; count: number }[];
-  seeAll: string;
-};
 async function jsonFrom<T>(response: Response): Promise<T> {
   if (!response.ok) throw new Error("conversation_request_failed");
   return response.json() as Promise<T>;
@@ -223,46 +216,13 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
     {error&&<p role="alert">{copy.feedbackError}</p>}
   </div>;
 }
-function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
-  return <div className="w-full space-y-4 text-start">
-    <section aria-label={snapshot.title}>
-      <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-ink-muted">{snapshot.title}</h3>
-      <div className="grid grid-cols-2 gap-2">
-        {snapshot.stats.map((stat) => <div key={stat.label}
-          className="rounded-2xl border border-line bg-surface p-3 shadow-sm">
-          <p className="text-[13px] font-semibold text-ink-muted">{stat.label}</p>
-          <p className="mt-1 break-words text-xl font-extrabold text-ink">{stat.value}</p>
-        </div>)}
-      </div>
-      {snapshot.caption && <p className="mt-2 text-sm text-ink-muted">{snapshot.caption}</p>}
-    </section>
-    {snapshot.sections.map((section) => <section key={section.href}>
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-extrabold uppercase tracking-wide text-ink-muted">
-          {section.title} <span className="text-ink">{section.count}</span>
-        </h3>
-        <Link href={section.href} className="text-sm font-bold text-good underline">{snapshot.seeAll}</Link>
-      </div>
-      {section.items.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        {section.items.map((task) => <Link key={task.id} href={task.href}
-          className="flex min-h-16 items-center gap-2 rounded-2xl border border-line bg-surface p-3 text-ink no-underline hover:bg-surface2">
-          <AgentAvatar agentId={task.agentId} size="task" />
-          <span className="min-w-0 flex-1">
-            <span className={`block text-sm font-bold ${agentVisuals[task.agentId].accent}`}>{task.agentName}</span>
-            <span className="block text-[15px] font-semibold">{task.title}</span>
-          </span>
-        </Link>)}
-      </div> : <p className="mt-1 text-sm text-ink-muted">{section.empty}</p>}
-    </section>)}
-  </div>;
-}
-
 export default function SupervisorChatComposer({
-  enabled, canUseAi=true, locale, copy, snapshot, languageSwitch, onActivityChange, experimentCopy, initialThreadId, initialProposalId,
+  enabled, canUseAi=true, locale, copy, languageSwitch, onActivityChange, initialThreadId, initialProposalId, chatStartData,chatStartCopy,
 }: {
   enabled: boolean; canUseAi?: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
-  locale: Locale; copy: SupervisorChatCopy; snapshot?: SupervisorHomeSnapshot;
-  experimentCopy?: ExperimentCopy;
+  locale: Locale; copy: SupervisorChatCopy;
+  chatStartData?: ChatStartData;
+  chatStartCopy?: Omit<ChatStartCopy,"suggestions">;
   initialThreadId?:string;initialProposalId?:string;
   languageSwitch?: React.ReactNode;
   onActivityChange?: (active: boolean) => void;
@@ -270,10 +230,12 @@ export default function SupervisorChatComposer({
   const [threads, setThreads] = useState<ConversationThread[]>([]);
   const [threadId, setThreadId] = useState<string | null>(initialThreadId??null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [loadedThreadId,setLoadedThreadId]=useState<string|null>(null);
+  const [startExpanded,setStartExpanded]=useState(false);
+  const sendOnce=useRef(false);
   const [optimisticOwner, setOptimisticOwner] = useState<{ id: string; text: string; clientMessageId: string } | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [snapshotExpanded, setSnapshotExpanded] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -401,7 +363,7 @@ export default function SupervisorChatComposer({
       .then((res) => jsonFrom<ConversationPage<ConversationMessage>>(res))
       .then((page) => {
         if (controller.signal.aborted) return;
-        setMessages(page.items); setNextOffset(page.nextOffset);
+        setMessages(page.items); setNextOffset(page.nextOffset);setLoadedThreadId(threadId);
         setThreadTitle(threads.find((thread) => thread.id === threadId)?.title ?? null);
       }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
@@ -532,9 +494,11 @@ export default function SupervisorChatComposer({
   }
   async function sendText(value: string, existingKey?: string) {
     const text = value.trim();
+    if(sendOnce.current)return;
     if (!existingKey && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
       !uploading && !recorder.current && dictation !== "recognizing") return sendFollowUp(text);
     if (!enabled || !canUseAi || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
+    sendOnce.current=true;
     const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
     retryId.current = clientMessageId;
     if (!existingKey) {
@@ -639,6 +603,7 @@ export default function SupervisorChatComposer({
         setError(true);
       }
     } finally {
+      sendOnce.current=false;
       setSending(false); setProgressStatus(null); setStreamedText("");
       setLiveJobId(null); setLiveSteps([]); setLiveNote(null);
     }
@@ -678,12 +643,11 @@ export default function SupervisorChatComposer({
     prependAnchor.current = null;
     selectedThreadId.current = id;
     setLoading(false);
-    setThreadId(id); setMessages([]); setNextOffset(null); setAttachments([]);
+    setThreadId(id); setMessages([]);setLoadedThreadId(null);setStartExpanded(false); setNextOffset(null); setAttachments([]);
     setOptimisticOwner(null);
     openingThread.current = Boolean(id); pinned.current = true;
     setShowNewMessage(false);
     setThreadTitle(threads.find((thread) => thread.id === id)?.title ?? null);
-    setSnapshotExpanded(false);
     setDraft(""); setMediaNotice(""); setError(false); setHistoryOpen(false);
     setFailureCode(null); setQueuedOwner([]);
     retryId.current = null; threadRequestId.current = null;
@@ -818,6 +782,8 @@ export default function SupervisorChatComposer({
     })),
   ];
   const activeQuestionMessageId=activeOwnerQuestionMessageId(displayedMessages);
+  const hasChatMessages=displayedMessages.length>0;
+  const startReady=!threadId||loadedThreadId===threadId||hasChatMessages;
   const answeredOwnerIds = answeredOwnerMessageIds(messages);
   const inFlightOwnerIds = inFlightOwnerMessageIds(watcher.job);
   const pendingOwnerIds = new Set(!sending ? messages
@@ -849,33 +815,22 @@ export default function SupervisorChatComposer({
         <Plus size={22} aria-hidden="true" />
       </button>
     </header>
+    {chatStartData&&chatStartCopy&&hasChatMessages&&<div className="max-h-[55dvh] shrink-0 overflow-y-auto">
+      <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
+        hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
+        onSuggestion={()=>{}} suggestionsDisabled/>
+    </div>}
     <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-4 md:px-6 md:py-5"
       onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-label={copy.threads}>
-      <div ref={messageContent} className="flex min-h-full flex-col items-stretch justify-end gap-4">
-      {displayedMessages.length === 0 && <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-2 py-3 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-pos-soft text-good">
-          <Coffee aria-hidden="true" size={27} strokeWidth={2.2} />
-        </div>
-        <h2 className="font-headline text-2xl font-bold text-ink">{copy.emptyHeading}</h2>
-        <p className="max-w-md text-[17px] leading-relaxed text-ink-muted">{copy.emptyIntro}</p>
-        {snapshot && <section className="w-full rounded-xl bg-surface2 p-3 text-start">
-          <div className="flex flex-wrap gap-x-5 gap-y-2">
-            {snapshot.stats.slice(0,3).map(stat=><span key={stat.label} className="text-[14px] text-ink">
-              <span className="text-ink-muted">{stat.label}: </span><strong>{stat.value}</strong>
-            </span>)}
-            <span className="text-[14px] text-ink">
-              <span className="text-ink-muted">{snapshot.sections[0]?.title}: </span>
-              <strong>{snapshot.sections[0]?.count ?? 0}</strong>
-            </span>
-          </div>
-          <button type="button" onClick={()=>setSnapshotExpanded(v=>!v)}
-            aria-expanded={snapshotExpanded} className="mt-1 inline-flex min-h-12 items-center gap-1 text-sm font-bold text-good">
-            {snapshotExpanded ? copy.snapshotCollapse : copy.snapshotExpand}
-            <ChevronDown size={16} className={snapshotExpanded ? "rotate-180" : ""} aria-hidden="true" />
-          </button>
-          {snapshotExpanded && <HomeSnapshot snapshot={snapshot} />}
-        </section>}
-        {!enabled && <p className="text-[16px] text-ink-muted">{copy.unavailable}</p>}
+      <div ref={messageContent} className="flex min-h-full flex-col items-stretch justify-start gap-4">
+      {chatStartData&&chatStartCopy&&!hasChatMessages&&startReady&&
+        <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
+          hasMessages={false} expanded={false} onToggle={()=>{}}
+          onSuggestion={prompt=>{retryId.current=null;void sendText(prompt);}}
+          suggestionsDisabled={!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}/>}
+      {!chatStartData&&!hasChatMessages&&<div className="mx-auto py-3 text-center">
+        <h2 className="font-headline text-xl font-bold text-ink">{copy.emptyHeading}</h2>
+        {!enabled&&<p className="text-[17px] text-ink-muted">{copy.unavailable}</p>}
       </div>}
       {nextOffset !== null && <button type="button" onClick={() => void loadOlder()} disabled={loading}
         className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold text-ink underline hover:bg-surface2">
@@ -936,9 +891,7 @@ export default function SupervisorChatComposer({
       </div>
     </div>
     {showNewMessage && <button type="button" onClick={scrollToLatest} className="absolute bottom-28 left-1/2 z-10 inline-flex min-h-12 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
-    {enabled&&threadId&&experimentCopy&&<SupervisorExperiment threadId={threadId} locale={locale} canUseAi={canUseAi} copy={experimentCopy} initialProposalId={initialProposalId} refreshVersion={messages.length}/>}
     <div className="mt-auto shrink-0 border-t border-line bg-surface2 px-2 py-2 md:px-4">
-      {displayedMessages.length === 0 && copy.suggestions.length > 0 && <div className="mb-2 flex max-w-full gap-2 overflow-x-auto pb-1" aria-label={copy.askAnything} >{copy.suggestions.slice(0,3).map(suggestion => <button key={suggestion} type="button" disabled={!enabled || !canUseAi || sending} onClick={() => { setDraft(suggestion); retryId.current = null; composer.current?.focus(); }} className="inline-flex min-h-12 w-max shrink-0 items-center whitespace-nowrap rounded-full bg-accent-soft px-4 py-2 text-[15px] font-semibold text-accent-text hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{suggestion}</button>)}</div>}
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map((file) => <a key={file.id}
           href={"/api/ai/threads/" + encodeURIComponent(threadId ?? "") + "/attachments/" + encodeURIComponent(file.id)}
