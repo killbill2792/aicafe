@@ -71,3 +71,14 @@ export function clarifyCardState(messages:readonly ConversationMessage[],index:n
   }
   return messages.at(-1)?.id===message.id?{state:"active" as const,choice:null}:{state:"skipped" as const,choice:null};
 }
+
+/** Keep one copy of an old experiment when a deep link has its own focused
+ * proposal panel. Do not hide unrelated cards or cards from other threads. */
+export function isDuplicateLinkedExperimentCard(
+  block:unknown,messageThreadId:string,linkedThreadId?:string,linkedProposalId?:string,
+):boolean{
+  if(!linkedThreadId||!linkedProposalId||messageThreadId!==linkedThreadId||
+    !block||typeof block!=="object"||Array.isArray(block))return false;
+  return "type" in block&&block.type==="experiment_card"&&
+    "proposalId" in block&&block.proposalId===linkedProposalId;
+}

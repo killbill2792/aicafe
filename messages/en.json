@@ -349,7 +349,7 @@
     "suggestionHowDoing": "How are we doing today?",
     "suggestionAttention": "What needs my attention?",
     "suggestionStaff": "Any staff issues?",
-    "suggestionPrices": "Should I change any prices?",
+    "suggestionPrices": "Try a drink price experiment",
     "todaySnapshotTitle": "Today",
     "taskSeeAll": "See all",
     "businessOverviewTitle": "Business overview",
@@ -373,7 +373,16 @@
     "attentionMatchUnavailable": "Item matching needs review",
     "attentionAlertsUnavailable": "Your alerts need review",
     "attentionCheckAlerts": "Review alerts",
-    "attentionRegisterSetupUnavailable": "Your register connection needs attention. Upload sales to keep your numbers current."
+    "attentionRegisterSetupUnavailable": "Your register connection needs attention. Upload sales to keep your numbers current.",
+    "chatStartDetails": "Details",
+    "chatStartSeeAll": "See all ({count})",
+    "chatStartAllGood": "All good",
+    "chatStartSummary": "{period}: Sales {sales} · You keep {kept} · {count, plural, one {# thing needs you} other {# things need you}}",
+    "chatStartAlexRole": "Pricing",
+    "chatStartLeoRole": "Money",
+    "chatStartMayaRole": "Supplies",
+    "chatStartOliviaRole": "Staff",
+    "chatStartExperimentPrompt": "I want to try a drink price experiment"
   },
   "Money": {
     "title": "Money",

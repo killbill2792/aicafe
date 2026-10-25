@@ -1,5 +1,5 @@
 "use client";
-import type {ExperimentCopy} from "./SupervisorExperiment";
+import type {ChatStartCopy, ChatStartData} from "./ChatStart";
 
 import SupervisorChatComposer, { type SupervisorChatCopy } from "./SupervisorChatComposer";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
@@ -12,11 +12,12 @@ type SupervisorCopy = {
 
 /** One conversation surface, not a dashboard card around another chat card. */
 export default function SupervisorHomePanel({
-  copy, chatCopy, chatEnabled, chatUnavailableReason, canUseAi=true, locale, languageSwitch, experimentCopy, initialThreadId, initialProposalId,
+  copy, chatCopy, chatEnabled, chatUnavailableReason, canUseAi=true, locale, languageSwitch, initialThreadId, initialProposalId, chatStartData, chatStartCopy,
 }: {
   copy: SupervisorCopy;
   chatCopy: Omit<SupervisorChatCopy, keyof SupervisorCopy>;
-  experimentCopy: ExperimentCopy;
+  chatStartData: ChatStartData;
+  chatStartCopy: Omit<ChatStartCopy, "suggestions">;
   initialThreadId?:string;initialProposalId?:string;
   languageSwitch?: React.ReactNode;
   chatEnabled: boolean;
@@ -25,8 +26,12 @@ export default function SupervisorHomePanel({
   locale: "en" | "es" | "ar";
 }) {
   return <SupervisorChatComposer
+    // Search-param navigation can reuse this component on Home. A linked proposal
+    // must select its own conversation even when a different one is open.
+    key={(initialThreadId ?? "new") + ":" + (initialProposalId ?? "")}
     enabled={chatEnabled} canUseAi={canUseAi} unavailableReason={chatUnavailableReason}
-     locale={locale} languageSwitch={languageSwitch} experimentCopy={experimentCopy}
+     locale={locale} languageSwitch={languageSwitch}
     initialThreadId={initialThreadId} initialProposalId={initialProposalId} copy={{ ...copy, ...chatCopy }}
+    chatStartData={chatStartData} chatStartCopy={chatStartCopy}
   />;
 }

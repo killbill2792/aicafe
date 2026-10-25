@@ -11,9 +11,7 @@ import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
 
 
 
-import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
-import CostRecoveryStrip from "@/components/home/CostRecoveryStrip";
 
 import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
 import {getCafeAccess} from "@/lib/access/access.server";
@@ -35,9 +33,7 @@ import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 
 
 
-import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import { getAttentionItems } from "@/lib/attention/getAttentionItems.server";
-import HomeTaskSections from "@/components/home/HomeTaskSections";
 import type { Period } from "@/lib/viewmodels/period";
 
 
@@ -63,61 +59,49 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   // Money and Supervisor agree on known costs and their evidence. Home must not
   // bypass that canonical completeness gate when showing owner profit.
   const moneyVm = buildProfitAndCostsViewModel(snapshot, period);
-  const [t, tCategories, tChat, tExperiment] = await Promise.all([
-    getTranslations("Home"),getTranslations("Categories"),
-    getTranslations("SupervisorChat"),getTranslations("SupervisorExperiment"),
+  const [t, tChat, tCommon] = await Promise.all([
+    getTranslations("Home"), getTranslations("SupervisorChat"), getTranslations("Common"),
   ]);
   const tAccess=await getTranslations("FreeAccess");
   const items=await getAttentionItems({period,locale,snapshot,menu});
-  const labelFor = (code: string) => code === "yours" ? t("yours") :
-    EXPENSE_CATEGORY_CODES.includes(code as ExpenseCategoryCode)
-      ? tCategories(code as ExpenseCategoryCode)
-      : snapshot.runningCostLines.find(l => l.categoryCode === code)?.label ?? code;
-  const number = (value:number) => new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(value);
-  // Compare owner profit only when both periods have independently proven costs.
-  const { costCompleteness, hasPartial, canShowProfit, profitChangePct: pctChange, hasEstimatedCosts } =
-    homeMoneyQuality(vm, moneyVm);
-  const percentage = (value:number) => number(Math.round(value*100));
-  const money = (cents:number) => formatCents(cents,locale);
-  const changeLabel = pctChange===null ? null : t("changeVsLastPeriod",{
-    pct:number(Math.abs(Math.round(pctChange))),direction:pctChange>=0?t("more"):t("less")});
+  const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
+  const money=(cents:number)=>formatCents(cents,locale);
+  const sales=vm.coverage.actualDays===0?"—":money(moneyVm.salesCents);
+  const costs=costCompleteness==="unavailable"?"—":money(moneyVm.totalCostsCents);
+  const kept=canShowProfit?money(moneyVm.ownerProfitCents):"—";
+  // Restore the gated comparisons from the old Home strip; never imply a
+  // verified margin or previous-period change when either side is incomplete.
+  const number=(value:number)=>new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(value);
+  const shareCaption=canShowProfit&&moneyVm.salesCents>0
+    ?t("ofSales",{pct:number(Math.round(vm.keepRatio*100))}):null;
+  const comparisonCaption=profitChangePct===null?null:t("changeVsLastPeriod",{
+    pct:number(Math.abs(Math.round(profitChangePct))),
+    direction:profitChangePct>=0?t("more"):t("less"),
+  });
   return <PageShell wide className="flex flex-col gap-4 px-3 pb-4 pt-3 md:px-4 md:pt-4">
     {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px]">
       {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
       {" "}<Link href="/pricing" className="underline">{tAccess("haveCode")}</Link>
     </p>}
-    <section aria-label={t("keyNumbers")} className="rounded-card-lg bg-card p-4">
-      <PeriodSwitch current={period}/>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <div className="min-w-0 rounded-2xl bg-paper p-3">
-          <p className="text-[15px] font-bold text-ink-muted">{t("sales")}</p>
-          <p className="break-words font-headline text-xl font-bold text-ink">{vm.coverage.actualDays===0?"—":money(moneyVm.salesCents)}</p>
-        </div>
-        <div className="min-w-0 rounded-2xl bg-paper p-3">
-          <p className="text-[15px] font-bold text-ink-muted">{t(costCompleteness === "complete" ? "totalCosts" : "knownCosts")}</p>
-          <p className="break-words font-headline text-xl font-bold text-warn">{costCompleteness === "unavailable" ? "—" : money(moneyVm.totalCostsCents)}</p>
-        </div>
-        <div className="min-w-0 rounded-2xl bg-paper p-3">
-          <p className="text-[15px] font-bold text-ink-muted">{t("youKeep")}</p>
-          <p className="break-words font-headline text-xl font-bold text-ink">{canShowProfit ? money(moneyVm.ownerProfitCents) : "—"}</p>
-          {canShowProfit && moneyVm.salesCents>0 && <p className="text-[13px] text-ink-muted">{t("ofSales",{pct:percentage(vm.keepRatio)})}</p>}
-          {!canShowProfit && vm.coverage.actualDays>0 && <p className="text-[13px] text-ink-muted">{t("costsIncomplete")}</p>}
-          {changeLabel&&<p className="mt-1 text-[13px] leading-tight text-ink-muted">{changeLabel}</p>}
-        </div>
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-[15px] text-ink-muted">
-        {hasPartial&&<span className="rounded-full bg-warn-tint px-2 py-1 font-bold text-warn">{t("partialPill")}</span>}
-        {hasEstimatedCosts&&<span className="rounded-full bg-surface2 px-2 py-1">{t("estimatePill")}</span>}
-      </div>
-      <CostRecoveryStrip buckets={vm.recovery.buckets}
-        labels={Object.fromEntries(vm.buckets.map(b=>[b.code,labelFor(b.code)]))}
-        coveredLabel={(label,date)=>t("coveredOn",{label,date})} locale={locale} emptyLabel={t("glanceNoBills")}
-        dataComplete={canShowProfit} incompleteLabel={t("costsIncomplete")}/>
-    </section>
-    <HomeTaskSections items={items.map(item=>({id:item.id,title:item.displayTitle,href:item.href,actionLabel:item.actionLabel,impactCents:item.impactCents}))} title={t("needsAttention")} empty={t("attentionEmpty")} seeAll={t("taskSeeAll")}/>
     <SupervisorHomePanel
+      chatStartData={{
+        period,sales,costs,kept,attention:items,
+        partial:hasPartial,estimated:hasEstimatedCosts,
+        incomplete:!canShowProfit && vm.coverage.actualDays>0,
+        shareCaption,comparisonCaption,
+      }}
+      chatStartCopy={{
+        keyNumbers:t("keyNumbers"),sales:t("sales"),knownCosts:t("knownCosts"),
+        youKeep:t("youKeep"),partial:t("partialPill"),estimate:t("estimatePill"),
+        incomplete:t("costsIncomplete"),details:t("chatStartDetails"),
+        seeAll:t("chatStartSeeAll",{count:items.length}),allGood:t("chatStartAllGood"),
+        summary:t("chatStartSummary",{period:tCommon(period),sales,kept,count:items.length}),
+        roles:{alex:t("chatStartAlexRole"),leo:t("chatStartLeoRole"),
+          maya:t("chatStartMayaRole"),olivia:t("chatStartOliviaRole")},
+        experimentPrompt:t("chatStartExperimentPrompt"),suggestionsLabel:t("askAnything"),
+        handledLabel:t("attentionHandled"),
+      }}
       initialThreadId={initialThread} initialProposalId={initialExperiment}
-          experimentCopy={{open:tExperiment("open"),close:tExperiment("close"),product:tExperiment("product"),increase:tExperiment("increase"),preview:tExperiment("preview"),propose:tExperiment("propose"),approve:tExperiment("approve"),apply:tExperiment("apply"),done:tExperiment("done"),report:tExperiment("report"),waiting:tExperiment("waiting"),loading:tExperiment("loading"),error:tExperiment("error"),condition:tExperiment("condition"),confirmNote:tExperiment("confirmNote"),reportNote:tExperiment("reportNote"),selectProposal:tExperiment("selectProposal"),statusDraft:tExperiment("statusDraft"),statusApproved:tExperiment("statusApproved"),statusManual:tExperiment("statusManual"),statusMonitoring:tExperiment("statusMonitoring"),statusExecuting:tExperiment("statusExecuting"),statusRejected:tExperiment("statusRejected"),statusInProgress:tExperiment("statusInProgress"),statusComplete:tExperiment("statusComplete"),statusInsufficient:tExperiment("statusInsufficient")}}
           locale={locale}
       languageSwitch={<LanguageSwitch href="/" compact />}
       chatEnabled={chatReadiness.enabled} canUseAi={cafeAccess?.active??true}
@@ -219,6 +203,5 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             ],
           }}
         />
-    <Link href="/operations?status=handled" className="min-h-12 self-start text-[17px] font-semibold text-good underline">{t("attentionHandled")}</Link>
   </PageShell>;
 }

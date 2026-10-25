@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
-  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
+  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard } from "./supervisorChatBehavior";
 
 const owner: ConversationMessage = {
   id: "stored-owner", threadId: "thread", role: "owner", contentType: "text",
@@ -13,6 +13,16 @@ const answer: ConversationMessage = {
 };
 
 describe("Supervisor chat turn and scroll behavior", () => {
+  it("suppresses only the exact experiment already opened by its deep link",()=>{
+    const card={type:"experiment_card",proposalId:"proposal-A"};
+    expect(isDuplicateLinkedExperimentCard(card,"thread-A","thread-A","proposal-A")).toBe(true);
+    expect(isDuplicateLinkedExperimentCard(card,"thread-A","thread-A","proposal-B")).toBe(false);
+    expect(isDuplicateLinkedExperimentCard(card,"thread-B","thread-A","proposal-A")).toBe(false);
+    expect(isDuplicateLinkedExperimentCard(card,"thread-A",undefined,"proposal-A")).toBe(false);
+    expect(isDuplicateLinkedExperimentCard({type:"proposal_card",proposalId:"proposal-A"},
+      "thread-A","thread-A","proposal-A")).toBe(false);
+    expect(isDuplicateLinkedExperimentCard(null,"thread-A","thread-A","proposal-A")).toBe(false);
+  });
   it("shows the optimistic owner turn while server response is pending; reply replaces it without duplicates", () => {
     const optimistic = beginOptimisticOwner("Products so far?", "new-key");
     const before = visibleConversationMessages([owner, answer], optimistic, "thread", "2026-10-11");
