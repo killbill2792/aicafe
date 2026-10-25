@@ -45,9 +45,7 @@ export const proposalTools={propose_price_change:{
     // The model's UUID is not an owner instruction. For an ordinary turn,
     // require the chosen item name (as whole words), or a choice recorded
     // from the immediately preceding clarification card.
-    if(ctx.resolveState&&!ctx.resolveState.chosenIds.has(input.product_id.toLowerCase())&&
-      !(" "+normalizedName(ctx.resolveState.ownerText)+" ").includes(
-        " "+normalizedName(product.name)+" ")){
+    if(!ownerNamedTarget(ctx.resolveState,input.product_id,product.name)){
       return {source:"price_change_proposal",period:null,agentId:"alex",
         missing:["targetNotConfirmed"],draft:false,saved:false};
     }
