@@ -10,6 +10,7 @@ import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
 import { projectCurrentStaff, projectBreakEven, projectRecurringSchedule } from "./conversations/domainProjections";
+import type { StaffRosterMember } from "@/lib/viewmodels/staffViewModel";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { readPersistedOperatingTasks } from "@/lib/data/operatingTasks";
 import { SnapshotCafeStateService } from "@/lib/operating/cafeState";
@@ -48,6 +49,19 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
     // Uses the exact data source and pricing engine already used by Menu and Team.
     return getMenuControlCenter();
   };
+  // Read the active roster once per authenticated café turn. Never infer active
+  // membership from timecards, recurring patterns or historic POS display names.
+  let activeTeamPromise: Promise<StaffRosterMember[]> | null = null;
+  const activeTeam = () => activeTeamPromise ??= (async () => {
+    const { data, error } = await client.from("employees")
+      .select("id,display_name,role,active")
+      .eq("business_id", businessId).eq("active", true).limit(501);
+    if (error) throw error;
+    if ((data ?? []).length > 500) throw new Error("activeTeamTruncated");
+    return (data ?? []).map(row => ({
+      id: row.id, name: row.display_name, role: row.role, active: true,
+    }));
+  })();
   let snapshotPromise: ReturnType<typeof getSnapshot> | null = null;
   const currentSnapshot = () => snapshotPromise ??= getSnapshot();
   const states = new SnapshotCafeStateService(
@@ -83,17 +97,15 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
         assertBusiness(requested);
         const snapshot = await currentSnapshot();
         if(snapshot.business.id !== businessId) throw new Error("Café snapshot scope mismatch");
-        return {available:true,value:projectCurrentStaff(snapshot),quality:{
+        return {available:true,value:projectCurrentStaff(snapshot, await activeTeam()),quality:{
           level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}};
       },
       recurringSchedule: async (requested,range,asOf) => {
         assertBusiness(requested);
-        const [rows, employees] = await Promise.all([
-          getStaffSchedules(),client.from("employees").select("id,display_name").eq("business_id",businessId).limit(200),
-        ]);
-        if(employees.error) throw employees.error;
-        const byId = Object.fromEntries((employees.data ?? []).map(e=>[e.id,e.display_name]));
-        return projectRecurringSchedule(rows,byId,range,asOf);
+        const [rows, team] = await Promise.all([getStaffSchedules(), activeTeam()]);
+        const activeById = Object.fromEntries(team.map(e=>[e.id,e.name]));
+        return projectRecurringSchedule(rows.filter(row=>Object.hasOwn(activeById,row.employeeId)),
+          activeById,range,asOf);
       },
       breakEven: async (requested) => {
         assertBusiness(requested);
