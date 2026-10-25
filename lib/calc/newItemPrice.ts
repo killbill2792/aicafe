@@ -1,4 +1,5 @@
 import { baselinePriceCents } from "./pricingBaseline";
+import {applyRounding} from "./pricingRounding";
 import { COFFEE_SHOP_PROFILE } from "@/lib/pricing/profiles";
 import {calcResult} from "./result";
 
@@ -24,9 +25,10 @@ export function calculateNewItemPrice(input:NewItemPriceInput) {
   if(input.targetMarginPercent===null)estimated.push("defaultTargetMargin");
   const costPlusPriceCents=fullCostCents===null?null:Math.round(fullCostCents/(1-targetMarginPercent/100));
   const ingredientBenchmarkCents=Math.round(baselinePriceCents(input.ingredientCostCents,COFFEE_SHOP_PROFILE.targetProductCostPercent));
-  const rawPrice=input.targetMarginPercent===null?ingredientBenchmarkCents:Math.max(costPlusPriceCents??0,ingredientBenchmarkCents);
+  const rawPrice=Math.max(costPlusPriceCents??0,ingredientBenchmarkCents);
   // Do not present a benchmark as full-cost pricing when labor/overhead are missing.
-  const suggestedPriceCents=Math.max(COFFEE_SHOP_PROFILE.roundingRule.incrementCents,Math.ceil(rawPrice/25)*25);
+  const suggestedPriceCents=Math.max(COFFEE_SHOP_PROFILE.roundingRule.incrementCents,
+    applyRounding(rawPrice,COFFEE_SHOP_PROFILE.roundingRule));
   const rawFloorCents=Math.round(input.ingredientCostCents/0.35);
   const rawTargetCents=Math.round(input.ingredientCostCents/0.30);
   const rawHighCents=Math.ceil(input.ingredientCostCents/0.25);
