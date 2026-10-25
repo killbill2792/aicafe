@@ -211,7 +211,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       id.startsWith("sales:"+identity.toLowerCase()+":"));
     if(slice.available&&hasPriorSalesChoice&&!replay)
       return {source:"profitability",period,agentId:"leo",
-        missing:["sourceChoiceExpired"],needsOwnerChoice:false};
+        missing:["sourceChoiceExpired"],needsOwnerChoice:false,
+        coverageLabel:selection.label,coverageFallback:selection.coverageFallback};
     const suppliedSales=ownerInputs?.netSalesCents!=null?
       ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
     const ownerSales=suppliedSales??(ownerInputs?.netSalesCents==null?replay?.ownerCents??null:null);
