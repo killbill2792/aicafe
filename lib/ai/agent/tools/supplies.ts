@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {projectUsageTool} from "@/lib/calc/usageToolProjection";
 import type { AgentToolContext, AgentToolResult } from "./index";
-import {resolveEntity,choicePayload} from "../resolve";
+import {resolveEntity,choicePayload,ownerNamedTarget} from "../resolve";
 
 const item=z.strictObject({itemId:z.uuid()});
 const ingredients=z.strictObject({query:z.string().max(80).nullable(),limit:z.number().int().min(1).max(20).nullable()});
