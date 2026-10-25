@@ -30,7 +30,7 @@ export async function resolveUnmatchedAlertsIfClear(
   if ((pending ?? []).length > 0) return false;
   const { error: resolveError } = await db
     .from("alerts")
-    .update({ status: "resolved" })
+    .update({ status: "resolved", resolved_at: new Date().toISOString() })
     .eq("business_id", businessId)
     .eq("kind", "unmatched_sales_items")
     .in("status", ["new", "seen"]);
