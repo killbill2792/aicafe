@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {executeAgentTool,type AgentToolContext} from "./tools";
+import {executeAgentTool,type AgentToolContext,type AgentToolResult} from "./tools";
 import {askOwnerTools} from "./tools/askOwner";
 import {newResolveState,observeToolResult,type ChoiceCandidate} from "./resolve";
 import {salesTools} from "./tools/sales";
@@ -22,11 +22,11 @@ const makeContext=():AgentToolContext=>({asOf:"2026-10-24",locale:"en",
   timezone:"America/Los_Angeles",tools:{
     getProfitability:async()=>yes({netSalesCents:20000,totalCostsCents:10000,
       ownerProfitCents:10000,operatingMargin:0.5,coveredSalesDays:24,expectedSalesDays:24}),
-    getSalesTrend:async()=>yes([{date:"2026-10-24",netSalesCents:20000}]),
+    getSalesTrend:async()=>yes([{date:"2026-10-24",netSalesCents:20000}] as never),
     getMenuCatalog:async()=>yes([{id:productId,name:"Latte",active:true,category:"drink",priceCents:550}]),
     getPricingRecommendation:async()=>yes(recommendation),
   }});
-function optionsFrom(result:{candidates?:unknown}) {
+function optionsFrom(result:AgentToolResult) {
   return (result.candidates as ChoiceCandidate[]).map(x=>({label:x.label,value:x.id}));
 }
 function choiceReply(question:string,options:ReturnType<typeof optionsFrom>,index:number) {
