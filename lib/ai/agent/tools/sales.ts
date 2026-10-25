@@ -48,7 +48,9 @@ export const salesTools={
       if(input.query){
         if(!menu.available)return {source:"item_sales",period:p,agentId:"alex",
           missing:menu.quality.missingInputs.length?menu.quality.missingInputs:["menuReaderUnavailable"]};
-        const named=resolveEntity("product",input.query,menu.value.filter(row=>row.active),{
+        const active=menu.value.filter(row=>row.active);
+        const chosen=resolveChosenEntity(ctx.resolveState,active,row=>row.id);
+        const named=chosen?{status:"resolved" as const,value:chosen}:resolveEntity("product",input.query,active,{
           nameOf:r=>r.name,idOf:r=>r.id,describe:r=>r.category+" · "+(r.priceCents/100).toFixed(2)});
         if(named.status!=="resolved")return {...choicePayload(named,"item_sales",p),agentId:"alex"};
         // A valid item may have zero recorded sales. Never infer zero units from
