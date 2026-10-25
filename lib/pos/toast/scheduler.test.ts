@@ -58,7 +58,7 @@ function makeDB(){
     select(_x:string){return q;},eq(k:string,v:unknown){filters[k]=v;return q;},
     not(_k:string,_op:string,_val:unknown){return q;},
     in(_k:string,_vals:unknown[]){return q;},
-    order(_k:string){return q;},limit(_n:number){return q;},
+    order(_k:string){return q;},range(_start:number,_end:number){return q;},update(_value:unknown){return q;},limit(_n:number){return q;},
     async maybeSingle(){return {data:resolve(table,filters)[0]??null,error:null};},
     async single(){return {data:resolve(table,filters)[0]??null,error:null};},
     async upsert(_row:unknown){calls.push("log_error");return {error:null};},
@@ -156,4 +156,25 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   expect(m.request).not.toHaveBeenCalled();
   expect(f.calls).toEqual(["toast_acquire_lease"]);
  });
+});
+it("120 mappings rotate through all cafés in three full ticks despite a café using its slice",async()=>{
+ vi.useFakeTimers();vi.setSystemTime(now);
+ const maps=Array.from({length:120},(_,i)=>({business_id:"cafe-"+String(i).padStart(3,"0"),restaurant_guid:g,location_id:l,
+  toast_time_zone:"America/Los_Angeles",closeout_hour:4,verified_at:now.toISOString(),info_refreshed_at:now.toISOString(),last_tick_started_at:null as string|null}));
+ const reached=new Set<string>();let pages=0;
+ m.reconcile.mockImplementation(async(_db:unknown,p:{businessId:string})=>{reached.add(p.businessId);vi.setSystemTime(Date.now()+6000);return 0;});
+ const db={from(table:string){let patch:Record<string,unknown>|null=null;const filters:Record<string,string>={};
+  const q={select(){return q;},eq(k:string,v:string){filters[k]=v;return q;},in(){return q;},not(){return q;},order(){return q;},limit(){return q;},
+   update(p:Record<string,unknown>){patch=p;return q;},upsert(){return q;},
+   async range(start:number,end:number){pages++;return {data:[...maps].sort((a,b)=>(a.last_tick_started_at??"").localeCompare(b.last_tick_started_at??"")||a.business_id.localeCompare(b.business_id)).slice(start,end+1),error:null};},
+   async maybeSingle(){return {data:table==="toast_day_status"?{import_state:"imported"}:null,error:null};},
+   then(ok:(v:unknown)=>unknown){if(patch){const map=maps.find(m=>m.business_id===filters.business_id);if(map)Object.assign(map,patch);}
+    return Promise.resolve({data:[],error:null}).then(ok);}};return q;},
+  async rpc(name:string){return {data:name==="toast_acquire_lease"?"fair-lease":true,error:null};}} as unknown as SupabaseClient;
+ const logging=vi.spyOn(console,"info").mockImplementation(()=>{});
+ try{
+  for(let tick=0;tick<3;tick++)await runToastSyncTick(db,new Date(),Date.now()+240000);
+  expect(reached.size).toBe(120);expect(pages).toBe(3);
+  expect(logging).toHaveBeenCalledWith("toast_tick_skipped",expect.objectContaining({businessId:"cafe-040"}));
+ }finally{logging.mockRestore();vi.useRealTimers();}
 });

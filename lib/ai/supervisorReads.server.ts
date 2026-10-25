@@ -1,4 +1,6 @@
 import "server-only";
+import {getToastCheckEvidence} from "@/lib/data/getToastCheckEvidence";
+import {getTranslations} from "next-intl/server";
 import {unverifiedToastSalesDates,toastDayFlags} from "@/lib/pos/toast/reportingCoverage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
@@ -49,6 +51,15 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
             toastQuality=blocked.size?["toastSalesVerificationUnavailable"]:[];
           }catch {return missing("toastSalesVerificationUnavailable");}
         }
+      }
+      if(process.env.TOAST_AUTO_IMPORT_ENABLED==="true"){
+       try{
+        const check=await getToastCheckEvidence(client,id);
+        if(check){const t=await getTranslations("ToastConnect");
+         toastQuality.push(t(check.mode==="official"?"checkModeOfficial":"checkModeInternal"));
+         if(check.compared)toastQuality.push(t("summaryCompared",{count:check.compared,matched:check.matched}));
+        }
+       }catch{toastQuality.push("toastCheckEvidenceUnavailable");}
       }
       const days=(data??[]).filter(row=>row.sales_data_status==="actual"&&
         !blocked.has(row.business_date)).map(rowToDailyFacts);

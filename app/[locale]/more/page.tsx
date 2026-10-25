@@ -50,6 +50,7 @@ export default async function MorePage() {
       .format(badges.monthlyBills.amountCents / 100);
   const hoursBadge: FixBadge | undefined = badges.hoursNotSet
     ? { label: t("hoursNotSet"), href: "/more/cafe-profile?focus=hours", warning: true } : undefined;
+  const toastCheck=await getTranslations("ToastConnect");
   const toastBadge: FixBadge | undefined = badges.toast
     ? { label: badges.toast === "daysNeedLook" ? t("toastDaysLook",{count:evidence.toast?.daysNeedLook??0})
       : badges.toast==="connected" && evidence.toast?.lastGoodSyncAt
@@ -81,6 +82,7 @@ export default async function MorePage() {
     </MoreGroup>
     <MoreGroup title={t("yourData")}>
       <MoreRow href="/more/toast" Icon={CreditCard} label={t("toastConnect")} badge={toastBadge} />
+      {evidence.toast?.checkMode&&<p className="px-4 text-[17px] text-muted">{toastCheck(evidence.toast.checkMode==="official"?"checkModeOfficial":"checkModeInternal")}</p>}
       <MoreRow href="/more/uploads" Icon={FileText} label={t("uploads")} badge={uploadBadge} />
       <MoreRow href="/more/processing-fees" Icon={Percent} label={t("processingFees")} badge={feesBadge} />
       <MoreRow href="/more/bills" Icon={Receipt} label={t("monthlyBills")} badge={billsBadge} />

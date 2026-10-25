@@ -27,9 +27,11 @@ function dbWith(mappings:Row[],days:Row[],flags:Row[]=[],runs:Row[]=[]){
   toast_api_credentials:[{state:"verified",last_error_category:null}],
   toast_location_mappings:mappings,toast_sync_runs:runs,
   toast_day_status:days,toast_day_owner_flags:flags,
+  toast_owner_attention_days_v:flags.map(f=>({business_date:f.business_date,restaurant_guid:f.restaurant_guid})),
+  toast_owner_summary_entries:[],
   toast_analytics_credentials:[],
   toast_first_import_check:[],businesses:[{timezone:"America/Los_Angeles"}],
-  toast_sync_health_v:mappings.map(()=>({last_good_sync_at:"2026-10-24T12:00:00Z",stale:false}))
+  toast_sync_health_v:mappings.map(()=>({last_good_sync_at:"2026-10-24T12:00:00Z",stale:false,warnings:{},days_with_unreadable_orders:0}))
  };
  const pages:Record<string,number>={};
  const db={

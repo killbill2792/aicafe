@@ -3,7 +3,7 @@ import {z} from "zod";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
 import {GUID,trustedToastOrigin,ToastApiError} from "@/lib/pos/toast/client";
 import {encryptToken} from "@/lib/security/tokenCrypto";
-import {createToastAnalyticsClient} from "@/lib/pos/toast/analyticsClient";
+import {detectToastCheckMode,setToastCheckMode} from "@/lib/pos/toast/checkMode";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const input=z.object({businessId:GUID,managementGroupGuid:GUID,
  apiUrl:z.string().min(1).max(250),clientId:z.string().min(1).max(500),
@@ -28,8 +28,13 @@ export async function POST(request:Request){
   last_error_category:null,updated_at:new Date().toISOString()
  },{onConflict:"business_id"});
  if(error)return reply(503,{error:"unavailable"});
+ await setToastCheckMode(db,p.businessId,"internal","analytics_auth_failed");
  try {
-  await createToastAnalyticsClient(db,p.businessId,Date.now()+15000).test();
+  const {data:location,error:le}=await db.from("toast_location_mappings")
+   .select("restaurant_guid,toast_time_zone").eq("business_id",p.businessId)
+   .not("verified_at","is",null).order("restaurant_guid").limit(1).maybeSingle();
+  if(le||!location?.toast_time_zone)throw new ToastApiError("unauthorized_location");
+  await detectToastCheckMode(db,p.businessId,location.restaurant_guid,location.toast_time_zone,Date.now()+25000,true);
   return reply(200,{verified:true});
  }catch(err){
   const category=err instanceof ToastApiError?err.category:"unavailable";
@@ -55,5 +60,6 @@ export async function DELETE(request:Request){
  if(!db)return reply(403,{error:"not_authorized"});
  const {error}=await db.from("toast_analytics_credentials").delete().eq("business_id",businessId);
  if(error)return reply(503,{error:"unavailable"});
+ await setToastCheckMode(db,businessId,"internal","no_analytics_credentials");
  return reply(200,{disconnected:true});
 }

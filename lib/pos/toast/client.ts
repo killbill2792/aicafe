@@ -1,9 +1,10 @@
 import "server-only";
+import {createHash} from "node:crypto";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {decryptToken,encryptToken} from "@/lib/security/tokenCrypto";
 
-export type ToastFailure = "invalid_host"|"authentication"|"missing_permissions"|"missing_scope_or_location"|"unauthorized_location"|"rate_limited"|"timeout"|"unavailable"|"invalid_response"|"not_configured";
+export type ToastFailure = "invalid_host"|"authentication"|"missing_permissions"|"missing_scope_or_location"|"unauthorized_location"|"rate_limited"|"timeout"|"unavailable"|"invalid_response"|"not_configured"|"too_many_payments";
 export class ToastApiError extends Error {
   constructor(public readonly category:ToastFailure, public readonly status?:number, public readonly retryAt?:string) {
     super("Toast request failed: "+category);
@@ -142,6 +143,14 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     inflight.set(businessId,refresh);
     try{return await refresh;}finally{inflight.delete(businessId);}
   }
+  async function budget(clientId:string,response?:Response){
+    const hash=createHash("sha256").update(clientId).digest("hex");
+    const exhausted=response&&(response.status===429||response.headers.has("x-toast-ratelimit-remaining")&&Number(response.headers.get("x-toast-ratelimit-remaining"))<3);
+    const {data,error}=await db.rpc("toast_claim_client_budget",{p_hash:hash,
+     p_block_until:exhausted?toastRetryAt(response):null});
+    if(error)throw new ToastApiError("unavailable");
+    if(!response&&data)throw new ToastApiError("rate_limited",429,String(data));
+  }
   async function request<T>(path:string,restaurantGuid:string,schema:z.ZodType<T>,
      opts:{allowUnverified?:boolean;deadlineAt?:number}={}):Promise<T> {
     const guid=GUID.safeParse(restaurantGuid);
@@ -161,13 +170,15 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
       const bucket=path.startsWith("/orders/v2/ordersBulk")?"bulk":
         path.startsWith("/menus")?"menus":"other";
       await throttle(businessId+":"+guid.data+":"+bucket,
-        bucket==="bulk"?250:bucket==="menus"?1000:100,opts.deadlineAt);
+        bucket==="bulk"?5000:bucket==="menus"?1000:100,opts.deadlineAt);
+      await budget(credentials.client_id);
       let res:Response;
       try {
-        res=await fetch(origin+path,{method:"GET",redirect:"error",signal:AbortSignal.timeout(path.startsWith("/orders/v2/ordersBulk")?30000:12000),
+        res=await fetch(origin+path,{method:"GET",redirect:"error",signal:AbortSignal.timeout(Math.max(1,Math.min(path.startsWith("/orders/v2/ordersBulk")?30000:12000,(opts.deadlineAt??Infinity)-Date.now()))),
           headers:{"Authorization":"Bearer "+bearer,"Toast-Restaurant-External-ID":guid.data,
             "Accept":"application/json"}});
       }catch {if(attempt<4){await wait(500*2**attempt+Math.random()*200);continue;}throw new ToastApiError("unavailable");}
+      if(res.status===429||res.headers.has("x-toast-ratelimit-remaining")&&Number(res.headers.get("x-toast-ratelimit-remaining"))<3)await budget(credentials.client_id,res);
       if(res.status===401&&!authRetry){
         authRetry=true;
         const latest=await row();
@@ -199,14 +210,6 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
       if(res.status>=500&&attempt<4){await wait(500*2**attempt+Math.random()*200);continue;}
       if(res.status===403)throw new ToastApiError("missing_scope_or_location",403);
       if(!res.ok)throw failure(res.status,path.startsWith("/restaurants/v1/")?"restaurant":"resource");
-      const remaining=Number(res.headers.get("x-toast-ratelimit-remaining"));
-      const reset=Number(res.headers.get("x-toast-ratelimit-reset"));
-      if(res.headers.has("x-toast-ratelimit-remaining")&&remaining<3&&Number.isFinite(reset)&&reset*1000>Date.now()) {
-        const next=reset*1000;
-        if(next>Date.now()+60000||opts.deadlineAt&&next>=opts.deadlineAt)
-          throw new ToastApiError("rate_limited",429,new Date(next).toISOString());
-        await wait(Math.max(0,next-Date.now()));
-      }
       const raw=await res.json().catch(()=>{throw new ToastApiError("invalid_response");});
       const parsed=schema.safeParse(raw);
       if(!parsed.success)throw new ToastApiError("invalid_response");

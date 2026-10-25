@@ -278,7 +278,7 @@ declare
  north uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001';
  south uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002';
  north_location uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbba001';
- r uuid; d date;
+ r uuid; d date; day_run uuid;
  v_summary jsonb:='{"net_sales_cents":0,"order_count":0,"gross_sales_cents":0,
  "discounts_cents":0,"refunds_cents":0,"tax_cents":0,"tip_cents":0,
  "open_check_count":0,"service_charges_cents":0,"gratuity_cents":0,
@@ -325,35 +325,36 @@ begin
  update public.toast_location_mappings set closeout_hour=5
  where business_id=b and restaurant_guid=north;
 
- perform pg_temp.assert((select days_done=0 and state='queued'
-  and cursor='{}'::jsonb and resume_at is null and finished_at is null
-  from public.toast_sync_runs where id=r),
-  'closeout change MUST reset an active matching backfill, not keep stale days_done');
+ perform pg_temp.assert((select state='cancelled' from public.toast_sync_runs where id=r),
+  'closeout change supersedes the old staged range with newest-first one-day runs');
  perform pg_temp.assert(not exists(select 1 from public.toast_day_pages
   where run_id=r),'closeout change MUST discard old staged page snapshots');
  perform pg_temp.assert((select count(*)=6 from public.toast_day_status
   where business_id=b and restaurant_guid=north
    and business_date between '2026-10-01' and '2026-10-06'
-   and coverage_complete=false),
-   'closeout invalidates every date, including October 1 outside modified-date scan');
+   and coverage_complete and rechecking_reason='closeout_changed'),
+   'closeout keeps every imported date visible with a rechecking marker');
  perform pg_temp.assert((select count(*)=6 from public.daily_rollups
   where business_id=b and business_date between '2026-10-01' and '2026-10-06'
-   and sales_data_status='missing'),'report coverage must stay incomplete while recovery is queued');
+   and sales_data_status='actual'),'history remains visible while recovery is queued');
 
  -- The restored run processes ALL six dates, not just the old pending two.
  for d in select gs::date from generate_series('2026-10-01'::timestamp,
-  '2026-10-06'::timestamp,interval '1 day') gs loop
-  perform public.toast_import_day(b,north_location,north,d,'[]'::jsonb,v_summary,r);
+  '2026-10-06'::timestamp,interval '1 day') gs order by gs desc loop
+  select id into day_run from public.toast_sync_runs where business_id=b and restaurant_guid=north
+   and kind='backfill' and state='queued' and requested_from=d and requested_to=d;
+  perform public.toast_import_day(b,north_location,north,d,'[]'::jsonb,v_summary,day_run);
  end loop;
- perform pg_temp.assert((select state='completed' and days_done=6
-   from public.toast_sync_runs where id=r),
-   'same recovery run commits six days exactly once');
+ perform pg_temp.assert((select count(*)=6 from public.toast_sync_runs
+  where business_id=b and restaurant_guid=north and kind='backfill'
+  and requested_from=requested_to and requested_from between '2026-10-01' and '2026-10-06'
+  and state='completed' and days_done=1), 'six newest-first recovery jobs each commit one day');
  perform pg_temp.assert((select count(*)=6 from public.toast_day_status
   where business_id=b and restaurant_guid=north
    and business_date between '2026-10-01' and '2026-10-06'
    and coverage_complete and import_state='imported'
-   and last_import_run_id=r),
-   'every invalidated old and new day was actually re-imported');
+   and rechecking_reason is null and last_import_run_id<>r),
+   'every day was atomically replaced without hiding the previous import');
  perform pg_temp.assert((select count(*)=6 from public.daily_rollups
   where business_id=b and business_date between '2026-10-01' and '2026-10-06'
    and sales_data_status='actual'),

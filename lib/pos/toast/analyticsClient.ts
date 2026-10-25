@@ -1,8 +1,9 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {createHash} from "node:crypto";
 import {z} from "zod";
 import {decryptToken,encryptToken} from "@/lib/security/tokenCrypto";
-import {GUID,ToastApiError,trustedToastOrigin} from "./client";
+import {GUID,ToastApiError,trustedToastOrigin,toastRetryAt} from "./client";
 
 const tokenSchema=z.object({token:z.object({
  accessToken:z.string().min(1),expiresIn:z.number().positive()
@@ -32,6 +33,9 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
   if(!force&&c.bearer_token_enc&&c.bearer_expires_at&&
    Date.parse(c.bearer_expires_at)>Date.now()+600000)
    return {origin,bearer:decryptToken(c.bearer_token_enc)};
+  const {data:lease,error:leaseError}=await db.rpc("toast_claim_auth_lease",{p_business_id:businessId});
+  if(leaseError||!lease)throw new ToastApiError("unavailable");
+  try{
   let res:Response;
   try{res=await fetch(origin+"/authentication/v1/authentication/login",{
     method:"POST",redirect:"error",signal:AbortSignal.timeout(deadline()),
@@ -48,10 +52,12 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
   const {error}=await db.from("toast_analytics_credentials").update({
    bearer_token_enc:encryptToken(accessToken),
    bearer_expires_at:new Date(Date.now()+expiresIn*1000).toISOString(),
-   verified_at:new Date().toISOString(),last_error_category:null
-  }).eq("business_id",businessId);
+   last_error_category:null
+  }).eq("business_id",businessId).eq("client_secret_enc",c.client_secret_enc);
   if(error)throw new ToastApiError("unavailable");
   return {origin,bearer:accessToken};
+  }finally{await db.rpc("toast_release_auth_lease",{p_business_id:businessId,p_lease_nonce:lease});}
+
  }
  async function rate(kind:"post"|"get"){
   const {data,error}=await db.rpc("toast_claim_era_request",{
@@ -62,9 +68,14 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
  }
  async function call(kind:"post"|"get",path:string,body?:unknown){
   await rate(kind);
+  const credential=await credentials();
+  const hash=createHash("sha256").update(credential.client_id).digest("hex");
   let auth=await login();
   for(let attempt=0;attempt<2;attempt++){
    deadline();
+   const {data:blocked,error:be}=await db.rpc("toast_claim_client_budget",{p_hash:hash,p_block_until:null});
+   if(be)throw new ToastApiError("unavailable");
+   if(blocked)throw new ToastApiError("rate_limited",429,String(blocked));
    let res:Response;
    try{
     res=await fetch(auth.origin+path,{
@@ -75,6 +86,12 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
      ...(kind==="post"?{body:JSON.stringify(body)}:{})
     });
    }catch{throw new ToastApiError("unavailable");}
+   if(res.status===429||res.headers.has("x-toast-ratelimit-remaining")&&Number(res.headers.get("x-toast-ratelimit-remaining"))<3){
+    const retryAt=toastRetryAt(res);
+    const {error}=await db.rpc("toast_claim_client_budget",{p_hash:hash,p_block_until:retryAt});
+    if(error)throw new ToastApiError("unavailable");
+    if(res.status===429)throw new ToastApiError("rate_limited",429,retryAt);
+   }
    if(res.status===401&&attempt===0){auth=await login(true);continue;}
    if(res.status===401)throw new ToastApiError("authentication");
    if(res.status===403)throw new ToastApiError("missing_permissions");
@@ -86,7 +103,16 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
   throw new ToastApiError("authentication");
  }
  return {
-  test:()=>login().then(()=>true),
+  async test(restaurantGuid:string,businessDate:string){
+   const expected=await credentials();
+   const id=await this.requestDay(restaurantGuid,businessDate);
+   if(id)await this.getDay(id); // A real completed OR 202-pending report proves access.
+   const {data:verified,error}=await db.from("toast_analytics_credentials").update({
+    verified_at:new Date().toISOString(),last_error_category:null
+   }).eq("business_id",businessId).eq("client_secret_enc",expected.client_secret_enc).select("business_id").maybeSingle();
+   if(error||!verified)throw new ToastApiError("unavailable");
+   return true;
+  },
   async requestDay(restaurantGuid:string,businessDate:string){
    if(!GUID.safeParse(restaurantGuid).success||!/^\d{4}-\d{2}-\d{2}$/.test(businessDate))
     throw new ToastApiError("invalid_response");
@@ -95,7 +121,7 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
    });
    // A 202 can still carry the report request GUID used for polling.
    const parsed=reportGuid.safeParse(result.body);
-   if(!parsed.success)throw new ToastApiError("invalid_response");
+   if(!parsed.success){if(result.pending)return null;throw new ToastApiError("invalid_response");}
    return parsed.data;
   },
   async getDay(reportRequestGuid:string){
