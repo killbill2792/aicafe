@@ -68,8 +68,9 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
   const [snapshot,menu]=await Promise.all([args.snapshot??getSnapshot(period),args.menu??getMenuControlCenter()]);
   const vm=buildHomeViewModel(snapshot,period);
   const usagePeriod=usageWeekEnding(snapshot.todayDateStr);
-  const usageOver=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to})
-    .then(r=>r.rows.filter(x=>x.status==="over")).catch(()=>[]);
+  const usageRead=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to})
+    .then(r=>({over:r.rows.filter(x=>x.status==="over"),unavailable:false}))
+    .catch(()=>({over:[],unavailable:true}));
   const [t,tOperations,tCategories,tExperiment,tAlerts,tReconnect]=await Promise.all([
     getTranslations("Home"),getTranslations("Operations"),getTranslations("Categories"),
     getTranslations("SupervisorExperiment"),getTranslations("Alerts"),getTranslations("Reconnect"),
@@ -184,7 +185,11 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       id:"unmatched",title:t("attentionUnmatched",{count:unmatched.length}),actionLabel:t("attentionMatch"),
       href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
     }]:[]),
-    ...(usageOver.length>0 ? [{
+    ...(usageRead.unavailable ? [{
+      id:"usage-unavailable",title:t("attentionUsageUnavailable"),actionLabel:t("usageReview"),
+      href:homeAttentionHref({kind:"pantry" as const}),impactCents:null,
+    }] : []),
+    ...(usageRead.over.length>0 ? [{
       id:"pantry",title:t("usageOverAlert"),actionLabel:t("usageReview"),
       href:homeAttentionHref({kind:"pantry" as const}),impactCents:null
     }]:[]),
@@ -215,7 +220,19 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
     if(task){
       const itemName=String(task.payload.itemName??"").replace(" · "," ");
       if(task.kind==="price_experiment_report"){key="SupervisorExperiment.reportTask";params={item:itemName};}
-      else if(task.kind==="price_review"){
+      else if(task.status==="handled" && task.kind==="price_review"){
+        key=task.payload.priceAppliedToPos===true?"Operations.homeVerifiedPriceApplied":
+          task.payload.ownerChoice==="keep_price"?"Operations.homeHandledPrice":"Operations.homePriceReviewClosed";
+        params={item:itemName};
+      }else if(task.status==="handled" && task.kind==="staff_coverage"){
+        key=task.payload.scheduleApplied===true?"Operations.homeHandledCoverage":"Operations.homeCoverageReviewed";
+      }else if(task.status==="handled"){
+        key="Operations.homeTaskHandled";
+      }else if(task.kind==="price_review" && task.status==="watching" && task.payload.awaitingPriceApplication===true){
+        key="Operations.homePriceAwaitingVerification";params={item:itemName};
+      }else if(task.kind==="price_review" && task.status==="watching" && typeof task.payload.snoozeMode==="string"){
+        key="Operations.homePriceReviewLater";params={item:itemName};
+      }else if(task.kind==="price_review"){
         const direction=priceReviewDirection(Number(task.payload.currentPriceCents),Number(task.payload.suggestedPriceCents));
         key=direction==="low"?"Operations.priceTaskSentenceLow":"Operations.priceTaskSentenceHigh";
         params={item:itemName};
@@ -224,9 +241,8 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       }else if(task.kind==="staff_coverage"){
         key="Operations.staffTaskNamed";params={issue:String(task.payload.issue??task.payload.requestType??tOperations("staffCoverageIssue"))};
       }else if(task.kind==="money_update")key="Operations.homeMoneyUpdate";
-      else if(task.kind==="supply_check"&&task.status==="needs_response"){
-        key="Operations.homeSupplyNeedsResponse";
-        params={item:String(task.payload.itemName??tOperations("homeSupplies"))};
+      else if(task.kind==="supply_check" && task.status==="needs_response"){
+        key="Operations.homeSupplyNeedsResponse";params={item:String(task.payload.itemName??tOperations("homeSupplies"))};
       }else key="Operations.mayaWatching";
     }else if(alert){
       if(alert.kind==="missing_bill" &&
@@ -250,6 +266,7 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
     }else if(item.id==="reconnect")key=posStatus?.provider==="square"&&!squareReconnectReady?
       "Home.attentionRegisterSetupUnavailable":"Reconnect.banner";
     else if(item.id==="pantry")key="Home.usageOverAlert";
+    else if(item.id==="usage-unavailable")key="Home.attentionUsageUnavailable";
     else if(item.id==="getting-started-connect")key="Home.gettingStartedConnectRegister";
     else if(item.id==="getting-started-sales")key="Home.gettingStartedUploadSales";
     else if(item.id==="getting-started-bills")key="Home.gettingStartedAddBills";

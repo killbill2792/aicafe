@@ -355,6 +355,7 @@
     "businessOverviewTitle": "Business overview",
     "businessOverviewIntro": "Your trusted profit, costs, recovery, staff, menu, break-even, and alerts.",
     "usageOverAlert": "Weekly ingredient usage is over 10% above expected",
+    "attentionUsageUnavailable": "Ingredient usage is temporarily unavailable; review your pantry",
     "usageReview": "Review pantry usage",
     "keyNumbers": "Key numbers",
     "needsAttention": "Needs your attention",

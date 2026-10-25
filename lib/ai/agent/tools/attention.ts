@@ -24,6 +24,7 @@ export const attentionTools={
         agentId:"alex",missing:[
           ...(items.some(item=>item.id==="alerts-unavailable")?["alertsUnavailable"]:[]),
           ...(items.some(item=>item.id==="match-unavailable")?["catalogReviewUnavailable"]:[]),
+          ...(items.some(item=>item.id==="usage-unavailable")?["usageVarianceUnavailable"]:[]),
         ],
         total,items:visible.map(row=>byId.get(row.id)!) };
     },

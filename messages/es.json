@@ -355,6 +355,7 @@
     "businessOverviewTitle": "Resumen del negocio",
     "businessOverviewIntro": "Tus datos confiables de ganancia, costos, recuperación, personal, menú, punto de equilibrio y alertas.",
     "usageOverAlert": "El uso semanal supera lo esperado en más del 10 %",
+    "attentionUsageUnavailable": "El uso de ingredientes no está disponible temporalmente; revisa tu inventario",
     "usageReview": "Revisar uso de ingredientes",
     "keyNumbers": "Cifras clave",
     "needsAttention": "Necesita tu atención",

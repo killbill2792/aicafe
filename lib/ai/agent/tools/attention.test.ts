@@ -31,6 +31,18 @@ describe("shared attention tool",()=>{
     await expect(attentionTools.get_attention_items.execute({businessId:"another"},ctx)).rejects.toThrow();
     expect(getAttentionItems).not.toHaveBeenCalled();
   });
+  it("marks unavailable usage facts as missing instead of treating zero as verified",async()=>{
+    vi.mocked(getAttentionItems).mockResolvedValue([{
+      id:"usage-unavailable",kind:"usage-unavailable",source:"home",agentId:"maya",
+      title:{key:"Home.attentionUsageUnavailable",params:{}},
+      displayTitle:"Usage records temporarily unavailable",href:"/menu/pantry",
+      actionLabel:"Review pantry",impactCents:null,
+    }] as never);
+    const r=await attentionTools.get_attention_items.execute({},ctx);
+    expect(r.missing).toContain("usageVarianceUnavailable");
+    expect((r.items as {id:string}[]).map(item=>item.id)).toEqual(["usage-unavailable"]);
+    expect(r.total).toBe(1);
+  });
   it("does not fabricate attention for an empty new café",async()=>{
     vi.mocked(getAttentionItems).mockResolvedValue([]);
     const r=await attentionTools.get_attention_items.execute({},ctx);
