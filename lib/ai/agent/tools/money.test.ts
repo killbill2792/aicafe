@@ -25,6 +25,15 @@ describe("Leo scoped money reads",()=>{
     expect(response.categories).toEqual([expect.objectContaining({categoryCode:"supplies"})]);
     expect(response.recordedActualTotalCents).toBeNull();
   });
+  it("does not replace a named category with all-business expenses if categories are unavailable",async()=>{
+    const r=await moneyTools.get_expenses.execute({period:"month",category:"Rent"},ctx({
+      getRecordedExpenses:async()=>({available:true,value:{totalCents:150000},quality:q}),
+      getExpenseSummary:async()=>unavailable,
+    }));
+    expect(r.recordedActualTotalCents).toBeNull();
+    expect(r.categories).toBeNull();
+    expect(r.missing).toContain("missingSource");
+  });
   it("never presents the all-category actual total as a selected category's spending",async()=>{
     const r=await moneyTools.get_expenses.execute({period:"month",category:"Rent"},ctx({
       getRecordedExpenses:async()=>({available:true,value:{totalCents:150000},quality:q}),
