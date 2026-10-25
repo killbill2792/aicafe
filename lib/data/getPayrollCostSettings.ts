@@ -2,6 +2,7 @@ import "server-only";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 
 export type PayrollCostSettings = {
@@ -12,6 +13,14 @@ export type PayrollCostSettings = {
 };
 
 export async function getPayrollCostSettings(): Promise<PayrollCostSettings> {
+  // The Staff Rules screen is also rendered in fixture mode without Supabase.
+  // Render a read-only estimated fallback; never try to connect or imply actual costs.
+  if (!isSupabaseConfigured()) return {
+    employerCostRate: 0.12,
+    fallbackStatus: "estimated",
+    fallbackSource: "system_estimate",
+    actualSources: [],
+  };
   const supabase = await createServerSupabaseClient();
   const {
     data: { user },

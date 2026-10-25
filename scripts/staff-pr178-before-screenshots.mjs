@@ -30,12 +30,12 @@ try {
  for(const [width,height] of [[390,844],[1440,900]]) {
   const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
   try {
-   // The immediately preceding version is merged Step 12, not pre-Step-12.
-   // Verify Step 13's *shift* form is not present in the baseline.
+   // Step 13 has merged into main. This now captures the actual current-main
+   // baseline, where minute-level shift inputs are already present.
    await openFixture(page,root+"/en/staff?fixture=1&week=2026-10-26");
    const shift=await openDialog(page,page.locator("header button[aria-label]").first());
-   if(await shift.locator('input[type="time"]').count()!==0)
-    throw Error("Before-state shift already has Step 13 minute-level clock inputs");
+   if(await shift.locator('input[type="time"]').count()!==2)
+    throw Error("Merged-main baseline must retain Step 13 minute-level clock inputs");
    await page.screenshot({path:join(folder,"shift-before-en-"+width+".png"),fullPage:true});
 
    await page.goto(root+"/en/staff?tab=team&fixture=1&week=2026-10-26",{waitUntil:"networkidle"});
@@ -51,4 +51,4 @@ try {
   } finally {await page.close();}
  }
 } finally {await browser.close();}
-console.log("Verified merged Step 12 wage editor and captured real pre-Step-13 shift forms at 390x844 and 1440x900.");
+console.log("Verified merged-main Step 12 wage editor and Step 13 shift inputs; captured current-main baseline at 390x844 and 1440x900.");
