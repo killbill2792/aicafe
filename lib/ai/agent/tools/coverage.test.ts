@@ -14,6 +14,14 @@ function context(dates:string[]):AgentToolContext{
  }};
 }
 describe("latest covered sales window",()=>{
+ it("preserves the requested period when the optional trend reader is absent",async()=>{
+  const ctx=context([]);
+  const tools={...ctx.tools};
+  delete (tools as {getSalesTrend?:unknown}).getSalesTrend;
+  expect(await resolveCoveredSalesWindow({...ctx,tools} as AgentToolContext,
+    {from:"2026-10-18",to:"2026-10-24"})).toEqual({
+      period:{from:"2026-10-18",to:"2026-10-24"},label:null});
+ });
  it("falls back to actual imported coverage instead of declaring no data",async()=>{
   const dates=Array.from({length:14},(_,i)=>new Date(Date.UTC(2026,7,22+i)).toISOString().slice(0,10));
   expect(await resolveCoveredSalesWindow(context(dates),{from:"2026-10-01",to:"2026-10-24"})).toEqual({
