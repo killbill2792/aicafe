@@ -57,6 +57,15 @@ describe("trusted owner-vs-recorded monetary clarification",()=>{
    expect(recorded).toMatchObject({selectedMoneySource:"recorded",netSalesCents:20000,
      ownerProfitCents:10000,needsOwnerChoice:false});
  });
+ it("labels owner sales for a different date range instead of silently ignoring them",async()=>{
+   const ctx=makeContext();
+   const shortPeriodOwner={...ownerInputs,salesPeriod:{from:"2026-10-01",to:"2026-10-22"}};
+   const r=await executeAgentTool("get_profit",{period:"month",ownerInputs:shortPeriodOwner},ctx);
+   expect(r).toMatchObject({netSalesCents:20000,ownerReportedSalesCents:30000,
+     ownerReportedSalesPeriod:{from:"2026-10-01",to:"2026-10-22"}});
+   expect(r.missing).toContain("ownerSalesPeriodMismatch");
+   expect(r.needsOwnerChoice).toBe(false);
+ });
  it("requires a fresh choice if recorded sales change after the card",async()=>{
    const ctx=makeContext();ctx.resolveState=newResolveState("My sales were $300");
    const first=await executeAgentTool("get_profit",{period:"month",ownerInputs},ctx);
