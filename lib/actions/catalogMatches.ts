@@ -1,5 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { getLocale } from "next-intl/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { existingMenuGroups, normalizeMenuGroup } from "@/lib/menu/menuGroups";
@@ -45,6 +47,12 @@ async function backfillUploadedSales(
   }
 }
 
+// The review page shows a localized success or error status after revalidation.
+async function finishMatch(result: "matched" | "error"): Promise<never> {
+  const locale = await getLocale();
+  redirect(`/${locale}/menu/import-review?result=${result}`);
+}
+
 // Bound directly into a <form action={...}> in import-review/page.tsx, which requires a
 // void-returning action — the actual correctness fix (never mark a match confirmed unless the
 // underlying menu-item change truly succeeded) lives in the early-returns below, not in a result
@@ -52,11 +60,11 @@ async function backfillUploadedSales(
 export async function resolveCatalogMatch(matchId: string, choice: "suggested" | "new"): Promise<void> {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) return finishMatch("error");
   const businessId = await getActiveBusinessId(user.id);
   const { data: match, error: matchError } = await supabase.from("pos_catalog_matches").select("*").eq("id", matchId).eq("business_id", businessId).eq("status","needs_review").single();
   if (matchError) logQueryError("resolveCatalogMatch:match", matchError);
-  if (!match) return;
+  if (!match) return finishMatch("error");
 
   let applied = false;
   let csvItemId: string | null = null;
@@ -90,7 +98,7 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
     if (match.provider === "csv") {
       const { data: existing, error: existingError } = await supabase.from("menu_items")
         .select("id").eq("business_id", businessId).eq("pos_item_id", match.pos_item_id).maybeSingle();
-      if (existingError) { logQueryError("resolveCatalogMatch:csvExisting", existingError); return; }
+      if (existingError) { logQueryError("resolveCatalogMatch:csvExisting", existingError); return finishMatch("error"); }
       csvItemId = existing?.id ?? null;
     }
     if (!csvItemId) {
@@ -124,9 +132,9 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
   // Never mark a match confirmed unless the menu item it was supposed to update/create actually
   // succeeded — otherwise a transient DB failure would leave the match looking resolved while the
   // owner's catalog silently never got the change.
-  if (!applied) return;
+  if (!applied) return finishMatch("error");
   if (match.provider === "csv" && csvItemId) {
-    if (!await backfillUploadedSales(supabase, businessId, match.imported_name, csvItemId)) return;
+    if (!await backfillUploadedSales(supabase, businessId, match.imported_name, csvItemId)) return finishMatch("error");
   }
 
   const { error: confirmError } = await supabase.from("pos_catalog_matches").update({ status: "confirmed" }).eq("id", match.id).eq("business_id", businessId).eq("status", "needs_review");
@@ -135,28 +143,29 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
 
   revalidatePath("/"); revalidatePath("/more/alerts");
   revalidatePath("/menu"); revalidatePath("/menu/import-review");
+  return finishMatch("matched");
 }
 
 /** Bind a CSV-only match to an explicit existing menu item without changing its selling price. */
 export async function matchUploadedItem(matchId: string, formData: FormData): Promise<void> {
   const menuItemId = formData.get("menuItemId");
-  if (typeof menuItemId !== "string" || !/^[0-9a-f-]{36}$/i.test(menuItemId)) return;
+  if (typeof menuItemId !== "string" || !/^[0-9a-f-]{36}$/i.test(menuItemId)) return finishMatch("error");
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) return finishMatch("error");
   const businessId = await getActiveBusinessId(user.id);
   const [{data:match,error:matchError},{data:item,error:itemError}] = await Promise.all([
     supabase.from("pos_catalog_matches").select("id, provider, pos_item_id, imported_name")
       .eq("business_id",businessId).eq("id",matchId).eq("provider","csv").eq("status","needs_review").maybeSingle(),
     supabase.from("menu_items").select("id, pos_item_id").eq("business_id",businessId).eq("id",menuItemId).maybeSingle(),
   ]);
-  if (matchError || itemError || !match || !item) return;
-  if (item.pos_item_id && item.pos_item_id !== match.pos_item_id) return;
+  if (matchError || itemError || !match || !item) return finishMatch("error");
+  if (item.pos_item_id && item.pos_item_id !== match.pos_item_id) return finishMatch("error");
   const { error: updated } = await supabase.from("menu_items").update({
     pos_item_id: match.pos_item_id, catalog_source: "csv", catalog_last_synced_at: new Date().toISOString(),
   }).eq("id",item.id).eq("business_id",businessId);
-  if (updated) { logQueryError("matchUploadedItem:update",updated); return; }
-  if (!await backfillUploadedSales(supabase, businessId, match.imported_name, item.id)) return;
+  if (updated) { logQueryError("matchUploadedItem:update",updated); return finishMatch("error"); }
+  if (!await backfillUploadedSales(supabase, businessId, match.imported_name, item.id)) return finishMatch("error");
   const {error: confirmed} = await supabase.from("pos_catalog_matches").update({status:"confirmed"})
     .eq("id",match.id).eq("business_id",businessId).eq("status","needs_review");
   if (confirmed) { logQueryError("matchUploadedItem:confirm",confirmed); throw new Error("catalog_match_failed"); }
@@ -166,16 +175,17 @@ export async function matchUploadedItem(matchId: string, formData: FormData): Pr
   revalidatePath("/menu");
   revalidatePath("/menu/import-review");
   revalidatePath("/more/uploads");
+  return finishMatch("matched");
 }
 
 /** Ignore is deliberately session-only: there is no durable ignored state without a migration. */
 export async function addUploadedItemToMenu(matchId: string): Promise<void> {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) return finishMatch("error");
   const businessId = await getActiveBusinessId(user.id);
   const {data:match} = await supabase.from("pos_catalog_matches").select("id,provider,status")
     .eq("business_id",businessId).eq("id",matchId).eq("provider","csv").eq("status","needs_review").maybeSingle();
-  if (!match) return;
+  if (!match) return finishMatch("error");
   await resolveCatalogMatch(matchId,"new");
 }
