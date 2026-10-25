@@ -1,8 +1,7 @@
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
-import {resolvePeriod} from "@/lib/calc/periods";
-import {resolveEntity,choicePayload,periodChoicePayload} from "../resolve";
+import {resolveOwnerPeriod,resolveEntity,choicePayload,periodChoicePayload} from "../resolve";
 import {money,percent,count} from "../explain";
 import {safeSumCents} from "@/lib/calc/explainMath";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
@@ -23,7 +22,7 @@ export const moneyTools={
     agentId:"leo",schema:period.extend({category:z.string().max(100).nullable()}),description:"Recorded actual expenses separately from recurring category estimates.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=period.extend({category:z.string().max(100).nullable()}).parse(raw);
-      const chosen=resolvePeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
+      const chosen=resolveOwnerPeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
       if(chosen.status!=="resolved")return periodChoicePayload("expenses",chosen);
       const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getRecordedExpenses||!ctx.tools.getExpenseSummary)return unavailable("expenses",p,["expenseReaderUnavailable"]);
@@ -182,7 +181,7 @@ export const moneyTools={
   get_cost_summary:{
     agentId:"leo",schema:period,description:"Observed business cost components; respect incomplete coverage.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const chosen=resolvePeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
+      const chosen=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
       if(chosen.status!=="resolved")return periodChoicePayload("business_costs",chosen);
       const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getBusinessCostSummary)return unavailable("business_costs",p,["costSummaryReaderUnavailable"]);
