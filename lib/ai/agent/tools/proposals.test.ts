@@ -40,6 +40,10 @@ describe("price proposal agent tool",()=>{
     expect(result).toMatchObject({missing:["ownerChoiceRequired"],needsOwnerChoice:true});
   }
   expect(proposePriceChange).not.toHaveBeenCalled();
+  const wrongProduct=await proposalTools.propose_price_change.execute(input,{
+    ...ctx,resolveState:newResolveState("raise espresso to $5.50")});
+  expect(wrongProduct).toMatchObject({missing:["targetNotConfirmed"],saved:false});
+  expect(proposePriceChange).not.toHaveBeenCalled();
   const chosen=await proposalTools.propose_price_change.execute(input,
     {...ctx,resolveState:newResolveState("raise iced latte to $5.50")});
   expect(chosen.missing).toEqual([]);
