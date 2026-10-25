@@ -59,6 +59,17 @@ describe("safe entity resolution",()=>{
     expect(staff.status).toBe("ambiguous");
     if(staff.status==="ambiguous")expect(staff.candidates.map(c=>c.label)).toEqual(["Maria — Barista","Maria — Manager"]);
   });
+  it("resolves an owner-selected month without a second ambiguity loop",async()=>{
+    const {resolveOwnerPeriod}=await import("./resolve");
+    const text="September 2025";
+    const chosen=newResolveState(text,[
+      {role:"assistant",content:"Asked: Which month? Options: September 2025 (2025-09-01/2025-09-30); September 2026 (2026-09-01/2026-09-30)"}]);
+    const options={asOf:"2026-10-24",timezone:"America/Los_Angeles"};
+    expect(resolveOwnerPeriod("September",options).status).toBe("ambiguous");
+    expect(resolveOwnerPeriod("September",options,chosen)).toMatchObject({
+      status:"resolved",value:{from:"2025-09-01",to:"2025-09-30"}});
+    expect(resolveOwnerPeriod("October",options,chosen).status).not.toBe("resolved");
+  });
   it("uses only a card-selected ID that still exists in the fresh scoped rows",async()=>{
     const {resolveChosenEntity}=await import("./resolve");
     const chosen=newResolveState("Latte — Iced",[
