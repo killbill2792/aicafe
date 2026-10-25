@@ -3,7 +3,7 @@ import type {MenuCatalogProduct} from "@/lib/ai/supervisorReads.server";
 import type {SoldProduct} from "@/lib/ai/supervisorFacts.server";
 import type {DataQuality} from "@/lib/calc";
 import {resolvePeriod} from "@/lib/calc/periods";
-import {resolveEntity,choicePayload,periodChoicePayload,ownerNamedTarget} from "../resolve";
+import {resolveEntity,resolveChosenEntity,choicePayload,periodChoicePayload,ownerNamedTarget} from "../resolve";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {estimatedItemRevenueCents} from "@/lib/calc/itemSalesRevenue";
 import {safeDifferenceCents} from "@/lib/calc/explainMath";
