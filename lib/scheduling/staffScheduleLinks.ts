@@ -34,10 +34,14 @@ export function resolveDatedStaffShift<P extends {id:string},S extends {id:strin
  const person=team.find(p=>p.id===employee);
  if(!person)return null;
  const candidates=shifts.filter(s=>s.employeeId===person.id&&s.date===date);
- let shift=candidates.find(s=>!clock||s.start===clock);
- // Clock-in can differ slightly from scheduled start. A single nearby shift is
- // unambiguous; never guess among split shifts or distant timecards.
- if(!shift&&clock&&candidates.length===1){
+ // Never select a random member of a split-shift day. Even an exact start
+ // time is ambiguous if two records share it.
+ const exact=clock?candidates.filter(s=>s.start===clock):[];
+ let shift=clock?(exact.length===1?exact[0]:undefined):
+  (candidates.length===1?candidates[0]:undefined);
+ // Clock-in can differ slightly from scheduled start, but a fuzzy match is
+ // only safe when one planned shift exists and no exact match exists.
+ if(!shift&&clock&&exact.length===0&&candidates.length===1){
   const minutes=(value:string)=>Number(value.slice(0,2))*60+Number(value.slice(3));
   const distance=Math.abs(minutes(clock)-minutes(candidates[0].start));
   if(distance<=120||1440-distance<=120)shift=candidates[0];

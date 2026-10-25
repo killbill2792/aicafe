@@ -43,11 +43,12 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const uncheckedDays=uncheckedCoverageDays(data.dates,data.openHours,data.rules.coverage_enabled);
  const linked=resolveDatedStaffShift(data.dates,data.team,data.shifts,focusDate,focusEmployee,focusRule?focusClock:undefined);
  const deepDate=linked?.date,deepPerson=linked?.person,deepShift=linked?.shift;
+ const hasExistingDatedShift=Boolean(deepPerson&&data.shifts.some(s=>s.date===deepDate&&s.employeeId===deepPerson.id));
  const suggested=focusRule&&deepShift?suggestedRuleShiftChange(focusRule,deepShift,data.rules,
   data.shifts.filter(s=>s.date===deepDate&&s.employeeId===deepPerson?.id).reduce((sum,s)=>sum+s.paidMinutes,0),
   personTotals(deepPerson!.id,data.shifts).paidMinutes):null;
  const [ruleReview,setRuleReview]=useState(Boolean(focusRule));
- const [screen,setScreen]=useState(deepPerson?"schedule":tab),[sheet,setSheet]=useState<"person"|"shift"|null>(deepPerson?"shift":null);
+ const [screen,setScreen]=useState(deepPerson?"schedule":tab),[sheet,setSheet]=useState<"person"|"shift"|null>(deepPerson&&(!hasExistingDatedShift||deepShift)?"shift":null);
  const [busy,startTransition]=useTransition(),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [savingConsent,setSavingConsent]=useState(false),[consentError,setConsentError]=useState(false);
  const [dismissed,setDismissed]=useState<string[]>([]);
