@@ -23,10 +23,11 @@ const copy: ChatStartCopy = {
  seeAll:"See all (5)",allGood:"All good",summary:"Today: Sales $500 · You keep — · 5 things need you",
  roles:{alex:"Pricing",leo:"Money",maya:"Supplies",olivia:"Staff"},
  suggestions:["How are we doing today?","What needs my attention?","Any staff issues?","Try a drink price experiment"],
- experimentPrompt:"I want to try a drink price experiment", suggestionsLabel:"Ask anything",
+ experimentPrompt:"I want to try a drink price experiment", suggestionsLabel:"Ask anything",handledLabel:"See handled",
 };
 const data: ChatStartData = {period:"today",sales:"$500",costs:"$200",kept:"—",
- attention,partial:false,estimated:false,incomplete:true};
+ attention,partial:false,estimated:false,incomplete:true,
+ shareCaption:"42% of sales",comparisonCaption:"18% more vs last period"};
 describe("PR F shared attention and chat entry",()=>{
  it("picks the highest impact, stable ties, and no invented Olivia card",()=>{
   const top=topChatStartItems(attention);
@@ -47,7 +48,20 @@ describe("PR F shared attention and chat entry",()=>{
   expect(markup).toContain('data-attention-id="a2"');
   expect(markup).toContain('href="/menu/a2"');
   expect(markup).toContain("All good");
+  expect(markup).toContain("42% of sales");
+  expect(markup).toContain("18% more vs last period");
+  expect(markup).toContain('href="/operations?status=handled"');
+  expect(markup).toContain("See handled");
   expect(markup).not.toContain("SupervisorExperiment");
+ });
+ it("does not fabricate a comparison when current or prior-period evidence is incomplete",()=>{
+  const html=renderToStaticMarkup(createElement(ChatStart,{
+    data:{...data,kept:"—",shareCaption:null,comparisonCaption:null},
+    copy,hasMessages:false,expanded:false,onToggle:()=>{},onSuggestion:()=>{},suggestionsDisabled:false,
+  }));
+  expect(html).not.toContain("42% of sales");
+  expect(html).not.toContain("18% more vs last period");
+  expect(html).toContain("Costs incomplete");
  });
  it("collapses for an existing thread and reopens with aria-expanded",()=>{
   const render=(expanded:boolean)=>renderToStaticMarkup(createElement(ChatStart,{
@@ -62,6 +76,9 @@ describe("PR F shared attention and chat entry",()=>{
   const home=readFileSync("app/[locale]/page.tsx","utf8");
   const composer=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
   expect(home).not.toContain("<HomeTaskSections");
+  expect(home).toContain('handledLabel:t("attentionHandled")');
+  expect(home).toContain('profitChangePct===null?null');
+  expect(home).toContain('canShowProfit&&moneyVm.salesCents>0');
   expect(home).not.toContain("<CostRecoveryStrip");
   expect(home).not.toContain('<section aria-label={t("keyNumbers")}');
   expect(composer).not.toContain("{enabled&&threadId&&experimentCopy&&<SupervisorExperiment");

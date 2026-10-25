@@ -13,7 +13,7 @@ import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
 import { activeOwnerQuestionMessageId, clarifyCardState, beginOptimisticOwner, sendKey, visibleConversationMessages,
-  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
+  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget, isDuplicateLinkedExperimentCard } from "./supervisorChatBehavior";
 import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
 import SupervisorProposalCard from "./SupervisorProposalCard";
@@ -128,9 +128,10 @@ function isOwnerConfirmation(message:ConversationMessage){
   const state=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
   return state.success&&state.data.stage==="confirm";
 }
-function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, clarifyState, clarifyChoice, disabled }: {
+function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, clarifyState, clarifyChoice, disabled, linkedThreadId, linkedProposalId }: {
   message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale;
   disabled:boolean;
+  linkedThreadId?:string; linkedProposalId?:string;
   onClarify:(text:string)=>void;
   clarifyState:"hidden"|"active"|"chosen"|"skipped";clarifyChoice:string|null;
   onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
@@ -157,6 +158,8 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, 
     </div>
     <div className="w-full space-y-3 ps-1">
       {groups.map((group,i)=>{
+        if(isDuplicateLinkedExperimentCard(group.block,message.threadId,linkedThreadId,linkedProposalId))
+          return null;
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
         if(record(group.block)&&group.block.type==="how"&&Array.isArray(group.block.lines)){
@@ -846,6 +849,8 @@ export default function SupervisorChatComposer({
       </button>}
       {displayedMessages.map((message,messageIndex) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
         <SupervisorMessage message={message} copy={copy} locale={locale}
+          linkedThreadId={threadId===initialThreadId?initialThreadId:undefined}
+          linkedProposalId={threadId===initialThreadId?initialProposalId:undefined}
           clarifyState={chosenClarify[message.id]&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state==="skipped"?
             "chosen":clarifyCardState(clarifyVisibilityMessages,messageIndex).state}
           clarifyChoice={chosenClarify[message.id]??clarifyCardState(clarifyVisibilityMessages,messageIndex).choice}

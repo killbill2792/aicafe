@@ -64,11 +64,20 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   ]);
   const tAccess=await getTranslations("FreeAccess");
   const items=await getAttentionItems({period,locale,snapshot,menu});
-  const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts } = homeMoneyQuality(vm,moneyVm);
+  const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
   const money=(cents:number)=>formatCents(cents,locale);
   const sales=vm.coverage.actualDays===0?"—":money(moneyVm.salesCents);
   const costs=costCompleteness==="unavailable"?"—":money(moneyVm.totalCostsCents);
   const kept=canShowProfit?money(moneyVm.ownerProfitCents):"—";
+  // Restore the gated comparisons from the old Home strip; never imply a
+  // verified margin or previous-period change when either side is incomplete.
+  const number=(value:number)=>new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(value);
+  const shareCaption=canShowProfit&&moneyVm.salesCents>0
+    ?t("ofSales",{pct:number(Math.round(vm.keepRatio*100))}):null;
+  const comparisonCaption=profitChangePct===null?null:t("changeVsLastPeriod",{
+    pct:number(Math.abs(Math.round(profitChangePct))),
+    direction:profitChangePct>=0?t("more"):t("less"),
+  });
   return <PageShell wide className="flex flex-col gap-4 px-3 pb-4 pt-3 md:px-4 md:pt-4">
     {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px]">
       {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
@@ -79,6 +88,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         period,sales,costs,kept,attention:items,
         partial:hasPartial,estimated:hasEstimatedCosts,
         incomplete:!canShowProfit && vm.coverage.actualDays>0,
+        shareCaption,comparisonCaption,
       }}
       chatStartCopy={{
         keyNumbers:t("keyNumbers"),sales:t("sales"),knownCosts:t("knownCosts"),
@@ -89,6 +99,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         roles:{alex:t("chatStartAlexRole"),leo:t("chatStartLeoRole"),
           maya:t("chatStartMayaRole"),olivia:t("chatStartOliviaRole")},
         experimentPrompt:t("chatStartExperimentPrompt"),suggestionsLabel:t("askAnything"),
+        handledLabel:t("attentionHandled"),
       }}
       initialThreadId={initialThread} initialProposalId={initialExperiment}
           locale={locale}

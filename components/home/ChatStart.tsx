@@ -17,6 +17,8 @@ export type ChatStartData = {
   partial: boolean;
   estimated: boolean;
   incomplete: boolean;
+  shareCaption: string|null;
+  comparisonCaption: string|null;
 };
 export type ChatStartCopy = {
   keyNumbers: string;
@@ -34,6 +36,7 @@ export type ChatStartCopy = {
   suggestions: string[];
   experimentPrompt: string;
   suggestionsLabel: string;
+  handledLabel: string;
 };
 export type ChatStartProps = {
   data: ChatStartData;
@@ -76,6 +79,10 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
           ] as const).map((number) => <div key={number.label} className="min-w-0 rounded-xl bg-surface2 p-2">
             <p className="text-[13px] font-semibold leading-snug text-ink-muted">{number.label}</p>
             <p className="mt-1 break-words font-headline text-[17px] font-bold leading-tight text-ink" dir="auto">{number.value}</p>
+            {number.label===copy.youKeep&&<>
+              {data.shareCaption&&<p className="mt-1 text-[13px] leading-snug text-ink-muted">{data.shareCaption}</p>}
+              {data.comparisonCaption&&<p className="mt-1 text-[13px] leading-snug text-ink-muted">{data.comparisonCaption}</p>}
+            </>}
           </div>)}
         </div>
         {(data.partial || data.estimated || data.incomplete) && <p className="mt-2 text-[13px] text-ink-muted">
@@ -107,9 +114,14 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
             </article>;
           })}
         </div>
-        <Link href="/operations" className="mt-1 inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline">
-          {copy.seeAll}
-        </Link>
+        <div className="mt-1 flex flex-wrap items-center gap-x-5 gap-y-1">
+          <Link href="/operations" className="inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline">
+            {copy.seeAll}
+          </Link>
+          <Link href="/operations?status=handled" className="inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline">
+            {copy.handledLabel}
+          </Link>
+        </div>
       </section>
       {unavailableMessage && <p role="status" className="rounded-xl border border-line bg-surface2 p-3 text-[17px] text-ink">{unavailableMessage}</p>}
       {!hasMessages && copy.suggestions.length > 0 && <div className="min-w-0" aria-label={copy.suggestionsLabel}>
