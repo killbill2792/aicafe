@@ -207,6 +207,11 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const recordedSales=slice.available?slice.value.netSalesCents:null;
     const replay=recordedSales!==null?
       replayedMoneyChoice(ctx.resolveState,"sales",identity,recordedSales):null;
+    const hasPriorSalesChoice=[...(ctx.resolveState?.chosenIds??[])].some(id=>
+      id.startsWith("sales:"+identity.toLowerCase()+":"));
+    if(slice.available&&hasPriorSalesChoice&&!replay)
+      return {source:"profitability",period,agentId:"leo",
+        missing:["sourceChoiceExpired"],needsOwnerChoice:false};
     const suppliedSales=ownerInputs?.netSalesCents!=null?
       ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
     const ownerSales=suppliedSales??(ownerInputs?.netSalesCents==null?replay?.ownerCents??null:null);
