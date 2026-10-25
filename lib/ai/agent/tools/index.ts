@@ -160,10 +160,14 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const active=slice.value.filter(item=>item.active);
     let filtered=active;
     if(input.query){
-      const resolved=resolveEntity("product",input.query,active,{nameOf:i=>i.name,idOf:i=>i.id,
-        describe:i=>i.category+" · "+(i.priceCents/100).toFixed(2)});
-      if(resolved.status!=="resolved")return {...choicePayload(resolved,"menu_items",null),agentId:"alex"};
-      filtered=[resolved.value];
+      const chosen=resolveChosenEntity(ctx.resolveState,active,i=>i.id);
+      if(chosen)filtered=[chosen];
+      else{
+        const resolved=resolveEntity("product",input.query,active,{nameOf:i=>i.name,idOf:i=>i.id,
+          describe:i=>i.category+" · "+(i.priceCents/100).toFixed(2)});
+        if(resolved.status!=="resolved")return {...choicePayload(resolved,"menu_items",null),agentId:"alex"};
+        filtered=[resolved.value];
+      }
     }
     const limit = input.limit ?? 8;
     return { source: "menu_items", period: null, agentId:"alex",
