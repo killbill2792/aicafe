@@ -1,4 +1,5 @@
-import { describe,expect,it } from "vitest";
+import { describe,expect,it,vi } from "vitest";
+import { scheduleReadTools } from "./scheduleReads";
 import { staffTools } from "./staff";
 import type { AgentToolContext } from "./index";
 const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
@@ -31,6 +32,26 @@ describe("Olivia bounded reads",()=>{
     expect(r.count).toBeNull();
     expect(r.people).toEqual([]);
     expect(r.missing).toContain("attendanceNotTracked");
+  });
+  it("does not claim a whole week is unset or reuse weekly totals for an empty day",async()=>{
+    const read=vi.spyOn(scheduleReadTools.get_week_schedule,"execute").mockResolvedValue({
+      source:"scheduled_shifts",period:{from:"2026-10-19",to:"2026-10-25"},
+      scheduleSet:true,missing:[],paidMinutes:480,knownWagesCents:16000,estimated:false,
+      estimatedShiftCount:0,gaps:[{date:"2026-10-19",kind:"gap"}],
+      shifts:[{date:"2026-10-19",employeeId:"barista",paidMinutes:480,costCents:16000}],
+    } as never);
+    try{
+      const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
+      expect(r.source).toBe("scheduled_shifts");
+      expect(r.scheduleSet).toBe(true);
+      expect(r.windowHasShifts).toBe(false);
+      expect(r.shifts).toEqual([]);
+      expect(r.paidMinutes).toBeNull();
+      expect(r.knownWagesCents).toBeNull();
+      expect(r.gaps).toEqual([]);
+      expect(r.missing).toContain("noShiftsInRequestedRange");
+      expect(r.missing).not.toContain("scheduleNotSet");
+    }finally{read.mockRestore();}
   });
   it("does not reconstruct historical recurring schedules",async()=>{
     const r=await staffTools.get_schedule.execute({from:"2026-10-21",to:"2026-10-22"},ctx());
