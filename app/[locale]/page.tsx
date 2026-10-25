@@ -20,7 +20,7 @@ import {getCafeAccess} from "@/lib/access/access.server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import HomeTaskSections, { type HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { homeMoneyQuality } from "@/components/home/homeMoneyQuality";
-import { homeAttentionHref, homeShiftHref, type HomeAttentionItem } from "@/components/home/homeAttention";
+import { homeAttentionHref, homeShiftHref, showAlertInHome, type HomeAttentionItem } from "@/components/home/homeAttention";
 import { getOpenAlerts } from "@/lib/data/getAlerts";
 import { describeAlert } from "@/components/alerts/alertContent";
 import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
@@ -158,7 +158,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     // not take down the owner’s key numbers and chat; the review link remains visible.
     getCatalogMatchReview().catch(() => null),
   ]);
-  const alertItems: HomeAttentionItem[] = (alerts ?? []).map(alert => {
+  const alertItems: HomeAttentionItem[] = (alerts ?? []).filter(alert => showAlertInHome(alert.kind)).map(alert => {
     const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
     // The legacy manage-staff redirect opens Team, not Schedule. Link directly
     // to Schedule so the meal-break fix is reachable before Step 13 merges.
@@ -205,7 +205,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     ...(unmatched === null ? [{
       id:"match-unavailable",title:t("attentionMatchUnavailable"),actionLabel:t("attentionMatch"),
       href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
-    }] : unmatched.length>0 && !(alerts ?? []).some(a=>a.kind==="unmatched_sales_items") ? [{
+    }] : unmatched.length>0 ? [{
       id:"unmatched",title:t("attentionUnmatched",{count:unmatched.length}),actionLabel:t("attentionMatch"),
       href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
     }]:[]),
