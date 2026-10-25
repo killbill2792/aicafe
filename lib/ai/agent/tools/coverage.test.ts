@@ -1,5 +1,7 @@
 import {describe,it,expect} from "vitest";
 import {resolveCoveredSalesWindow} from "./coverage";
+import {executeAgentTool} from "./index";
+import {salesTools} from "./sales";
 import type {AgentToolContext} from "./index";
 const fakeDate=(date:string)=>({date});
 const unavailable=()=>({available:false as const,value:null,quality:{level:"low" as const,missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
@@ -14,6 +16,16 @@ function context(dates:string[]):AgentToolContext{
  }};
 }
 describe("latest covered sales window",()=>{
+ it("exposes requested and used periods on profit and item-sales tool results",async()=>{
+  const dates=["2026-09-01","2026-09-02"];
+  const requested={from:"2026-10-01",to:"2026-10-24"};
+  const used={from:"2026-09-01",to:"2026-09-02"};
+  const profit=await executeAgentTool("get_profit",{period:"month",ownerInputs:null},context(dates));
+  expect(profit).toMatchObject({coverageFallback:{requested,used},period:used});
+  const items=await salesTools.get_item_sales.execute({period:"month",query:null},context(dates));
+  expect(items).toMatchObject({coverageFallback:{requested,used},period:used});
+ });
+
  it("preserves the requested period when the optional trend reader is absent",async()=>{
   const ctx=context([]);
   const tools={...ctx.tools};
