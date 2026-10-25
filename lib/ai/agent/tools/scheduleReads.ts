@@ -127,7 +127,7 @@ export const scheduleReadTools={
    if(!res.ok)return fail("shift_cost",null,res.error);
    const modeled=person&&p.break_minutes!==null&&person.wageCents!==null?
      shiftCost({employeeId:person.id,date:p.date,start:p.start,end:p.end,
-       breakMinutes:p.break_minutes,wageCents:person.wageCents}):null;
+       overnight:p.end<p.start,breakMinutes:p.break_minutes,wageCents:person.wageCents}):null;
    const canExplain=res.data.costCents!==null&&modeled?.costCents===res.data.costCents;
    return {source:"employees+shiftCost",period:{from:p.date,to:p.date},
     agentId:"olivia",missing:res.data.unknown?["wageAndEstimateMissing"]:[],
