@@ -33,6 +33,28 @@ describe("agent read only capabilities",()=>{
   expect(r.location).toBeNull();
   expect(r.missing).toContain("locationUnavailable");
  });
+ it("keeps rent-only overhead partial instead of treating missing bills as zero",async()=>{
+  const context=ctx();
+  context.tools.getMonthlyBills=async()=>({available:false,value:null,quality:{
+    level:"low",missingInputs:["billsNotConnected"],estimatedInputs:[],staleInputs:[],
+  }});
+  const ownerInputs={netSalesCents:null,salesPeriod:null,laborCents:null,laborPeriod:null,
+    rentCents:300000,otherOverheadCents:null,
+    overheadPeriod:{from:"2026-10-01",to:"2026-10-31"},
+    unitCostCents:null,itemsSoldPerDay:null};
+  const r=await executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:100,
+    category:"drink",packaging_cents:300,target_margin_percent:null,item_name:"Latte",
+    ownerInputs},context);
+  expect(r.overheadCoverage).toBe("partial");
+  expect(r.overheadPerDayCents).toBeNull();
+  expect(r.drinksPerDayToCoverOverhead).toBeNull();
+  expect(r.knownOverheadPerDayCents).toBeGreaterThan(0);
+  expect(r.fullCostCents).toBeNull();
+  expect((r.result as {tier:string}).tier).toBe("partial");
+  expect(r.missing).toContain("ownerOverheadIncomplete");
+  expect(r.missing).toContain("monthlyBills");
+  expect(r.suggestedPriceCents).toBeGreaterThanOrEqual(r.knownUnitCostCents as number);
+ });
  it("returns full pricing components without competitor fabrication",async()=>{
   const r=await executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:140,category:"drink",packaging_cents:20,target_margin_percent:null,item_name:"Latte"},ctx());
   expect(r).toMatchObject({agentId:"alex",saved:false,suggestedPriceCents:475,categoryUnits30d:1000,localCompetitorPrices:null,location:{city:"SF"}});
