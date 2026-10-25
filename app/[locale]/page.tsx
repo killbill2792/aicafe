@@ -1,5 +1,5 @@
-import {readUsageVariance} from "@/lib/data/usageVariance.server";
-import {usageWeekEnding} from "@/lib/calc/usageDates";
+
+
 import { getLocale, getTranslations } from "next-intl/server";
 import { getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import { Link } from "@/i18n/navigation";
@@ -7,9 +7,9 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
-import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 
-import { daysForPeriod, type Period } from "@/lib/viewmodels/period";
+
+
 
 import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
@@ -18,54 +18,34 @@ import CostRecoveryStrip from "@/components/home/CostRecoveryStrip";
 import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
 import {getCafeAccess} from "@/lib/access/access.server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
-import HomeTaskSections, { type HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
-import { homeMoneyQuality } from "@/components/home/homeMoneyQuality";
-import { homeAttentionHref, homeShiftHref, showAlertInHome, type HomeAttentionItem } from "@/components/home/homeAttention";
-import { getOpenAlerts } from "@/lib/data/getAlerts";
-import { describeAlert } from "@/components/alerts/alertContent";
-import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
-import { formatCents } from "@/lib/calc";
-import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
-import { isSquareConfigured } from "@/lib/pos/square/oauth";
 
-import { gettingStartedAttention } from "@/components/home/GettingStartedCard";
+import { homeMoneyQuality } from "@/components/home/homeMoneyQuality";
+
+
+
+
+import { formatCents } from "@/lib/calc";
+
+
+
+
 
 import PageShell from "@/components/shared/PageShell";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
-import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
-import { syncAndGetOperatingTasks } from "@/lib/data/operatingTasks";
-import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
+
+
+
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
-import type { AgentId, OperatingTask } from "@/lib/operating/tasks";
+import { getAttentionItems } from "@/lib/attention/getAttentionItems.server";
+import HomeTaskSections from "@/components/home/HomeTaskSections";
+import type { Period } from "@/lib/viewmodels/period";
+
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
 function isPeriod(value: string | undefined): value is Period {
   return value === "today" || value === "week" || value === "month";
-}
-
-function operatingTaskHref(task: OperatingTask): string {
-  if(task.kind==="price_experiment_report"){
-    const thread=task.payload.threadId,proposal=task.payload.proposalId;
-    if(typeof thread==="string"&&typeof proposal==="string")
-      return "/?thread="+encodeURIComponent(thread)+"&experiment="+encodeURIComponent(proposal);
-    return "/operations?agent=alex&status=needs_you&task="+encodeURIComponent(task.id);
-  }
-  if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
-  if (task.kind === "staff_coverage") {
-    const shiftDate = task.payload.shiftDate ?? task.payload.businessDate;
-    return homeShiftHref(task.entityId, typeof shiftDate === "string" ? shiftDate : null);
-  }
-  if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
-  if (task.kind === "money_update") return "/more/bills";
-  // Supply questions need the existing Team inbox; an ingredient-cost upload is not a
-  // response to a staff/member stock check, and this UI must never imply it is.
-  if (task.kind === "supply_check") {
-    const status = task.status === "handled" ? "handled" : task.status === "watching" ? "watching" : "needs_you";
-    return `/operations?status=${status}&agent=maya`;
-  }
-  return "/operations";
 }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string; thread?: string; experiment?: string }> }) {
@@ -79,147 +59,20 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   // Match Money’s selected-period evidence; the default month snapshot cannot prove Today or Week ingredient coverage.
   const [snapshot, menu] = await Promise.all([getSnapshot(period), getMenuControlCenter()]);
-  const usagePeriod=usageWeekEnding(snapshot.todayDateStr);
-  const usageOver=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to}).then(r=>r.rows.filter(x=>x.status==="over")).catch(()=>[]);
   const vm = buildHomeViewModel(snapshot, period);
   // Money and Supervisor agree on known costs and their evidence. Home must not
   // bypass that canonical completeness gate when showing owner profit.
   const moneyVm = buildProfitAndCostsViewModel(snapshot, period);
-  const [t, tOperations, tCategories, tChat, tExperiment, tAlerts, tReconnect] = await Promise.all([
-    getTranslations("Home"),
-    getTranslations("Operations"),
-    getTranslations("Categories"),
-    getTranslations("SupervisorChat"),
-    getTranslations("SupervisorExperiment"),
-    getTranslations("Alerts"),
-    getTranslations("Reconnect"),
+  const [t, tCategories, tChat, tExperiment] = await Promise.all([
+    getTranslations("Home"),getTranslations("Categories"),
+    getTranslations("SupervisorChat"),getTranslations("SupervisorExperiment"),
   ]);
   const tAccess=await getTranslations("FreeAccess");
-  const posStatus = await getPosConnectionStatus();
-  // Square cannot complete OAuth without the redirect URI, even if an app ID and secret exist.
-  const squareReconnectReady = isSquareConfigured() && Boolean(process.env.SQUARE_REDIRECT_URI);
-  const derivedTeam = buildOperationsTeamViewModel(snapshot, menu);
-  const persistedTasks = await syncAndGetOperatingTasks([...derivedTeam.needsYou, ...derivedTeam.handled, ...derivedTeam.watching]);
-  const team = projectOperatingTasks(persistedTasks.tasks);
-
+  const items=await getAttentionItems({period,locale,snapshot,menu});
   const labelFor = (code: string) => code === "yours" ? t("yours") :
     EXPENSE_CATEGORY_CODES.includes(code as ExpenseCategoryCode)
       ? tCategories(code as ExpenseCategoryCode)
       : snapshot.runningCostLines.find(l => l.categoryCode === code)?.label ?? code;
-  const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
-  const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
-    const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
-    let title: string;
-
-    if(task.kind==="price_experiment_report"){
-      title=tExperiment("reportTask",{item:itemName});
-    }else if (task.status === "handled" && task.kind === "price_review") {
-      // Handled covers both "keep current" and a separately verified price application.
-      // Never describe a verified price change as a decision to keep the old price.
-      title = tOperations(
-        task.payload.priceAppliedToPos === true
-          ? "homeVerifiedPriceApplied"
-          : task.payload.ownerChoice === "keep_price"
-            ? "homeHandledPrice"
-            : "homePriceReviewClosed",
-        { item: itemName },
-      );
-    } else if (task.status === "handled" && task.kind === "staff_coverage") {
-      title = tOperations(task.payload.scheduleApplied === true ? "homeHandledCoverage" : "homeCoverageReviewed");
-    } else if (task.status === "handled") {
-      title = tOperations("homeTaskHandled");
-    } else if (task.kind === "price_review" && task.status === "watching" && task.payload.awaitingPriceApplication === true) {
-      title = tOperations("homePriceAwaitingVerification", { item: itemName });
-    } else if (task.kind === "price_review" && task.status === "watching" && typeof task.payload.snoozeMode === "string") {
-      title = tOperations("homePriceReviewLater", { item: itemName });
-    } else if (task.kind === "price_review") {
-      const direction = priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents));
-      title = tOperations(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName });
-    } else if (task.kind === "data_quality") {
-      title = tOperations("missingCategory", { category: tCategories(String(task.payload.categoryCode) as ExpenseCategoryCode) });
-    } else if (task.kind === "staff_coverage") {
-      title = tOperations("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? tOperations("staffCoverageIssue")) });
-    } else if (task.kind === "money_update") {
-      title = tOperations("homeMoneyUpdate");
-    } else if (task.kind === "supply_check" && task.status === "needs_response") {
-      title = tOperations("homeSupplyNeedsResponse", { item: String(task.payload.itemName ?? tOperations("homeSupplies")) });
-    } else {
-      title = tOperations("mayaWatching");
-    }
-
-    return { id: task.id, agentId: task.agentId, agentName: agentNames[task.agentId], title, href: operatingTaskHref(task) };
-  };
-
-  const [alerts, unmatched] = await Promise.all([
-    // Alerts are a secondary Home signal: a failing alert refresh must not
-    // take the owner’s financial snapshot and chat offline.
-    getOpenAlerts().catch(() => null),
-    // Matching is a secondary Home signal. A temporary match-query failure must
-    // not take down the owner’s key numbers and chat; the review link remains visible.
-    getCatalogMatchReview().catch(() => null),
-  ]);
-  const alertItems: HomeAttentionItem[] = (alerts ?? []).filter(alert => showAlertInHome(alert.kind)).map(alert => {
-    const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
-    // The legacy manage-staff redirect opens Team, not Schedule. Link directly
-    // to Schedule so the meal-break fix is reachable before Step 13 merges.
-    const href = alert.kind === "meal_break"
-      ? homeShiftHref(String(alert.payload.employeeId ?? ""), String(alert.payload.date ?? ""))
-      : description.actionHref;
-    return { id: "alert:" + alert.id, title: description.title, actionLabel: description.actionLabel,
-      href: homeAttentionHref({ kind: "alert", href }), impactCents: alert.impactCents };
-  });
-  // Alerts for a missing bill and unmatched catalog items describe the same work.
-  const coveredBills = new Set((alerts ?? []).filter(a => a.kind === "missing_bill").map(a => String(a.payload.categoryCode ?? "")));
-  const missingFeeDays = daysForPeriod(snapshot, period).filter(day => day.netSalesCents > 0 && day.cardFeesStatus === "missing").length;
-  const items: HomeAttentionItem[] = [
-    ...(alerts === null ? [{
-      id:"alerts-unavailable",title:t("attentionAlertsUnavailable"),actionLabel:t("attentionCheckAlerts"),
-      href:"/more/alerts",impactCents:null
-    }] : []),
-    ...(posStatus && posStatus.status!=="active" ? [{
-      id:"reconnect",
-      title:posStatus.provider==="square" && !squareReconnectReady ? t("attentionRegisterSetupUnavailable") : tReconnect("banner"),
-      actionLabel:posStatus.provider==="toast" || posStatus.provider==="square" && squareReconnectReady
-        ? tReconnect("action") : t("attentionUploadSales"),
-      href:homeAttentionHref({kind:"reconnect" as const,provider:posStatus.provider,
-        locale, squareConfigured:squareReconnectReady}),impactCents:null
-    }]:[]),
-    ...(vm.isGettingStarted ? gettingStartedAttention({
-      connectRegister: t("gettingStartedConnectRegister"), uploadSales: t("gettingStartedUploadSales"),
-      addBills: t("gettingStartedAddBills"), addStaff: t("gettingStartedAddStaff"),
-      actionLabel: t("attentionFix"),
-    }) : []),
-    ...(missingFeeDays > 0 ? [{
-      id:"fees",title:t("attentionFeesMissing",{count:missingFeeDays}),actionLabel:t("attentionAddFees"),
-      href:homeAttentionHref({kind:"fees" as const}),impactCents:null
-    }] : []),
-    ...vm.missingCategories.filter(line => !coveredBills.has(line.categoryCode)).map(line => ({
-      id: "bill:" + line.categoryCode, title: t("missingCostBannerText", {category: tCategories(line.categoryCode)}),
-      actionLabel: t("missingCostBannerAction"), href: homeAttentionHref({kind:"bill" as const,category:line.categoryCode}), impactCents: null
-    })),
-    ...(!vm.isGettingStarted && vm.coverage.actualDays < vm.coverage.expectedDays ? [{
-      id:"missing-sales", title:t("attentionSalesMissing",{count:vm.coverage.expectedDays-vm.coverage.actualDays}),
-      actionLabel:posStatus?.provider==="toast" && posStatus.status==="active" ? t("attentionSyncToast") : t("attentionUploadSales"),
-      href:homeAttentionHref({kind:"missing_sales" as const,toastConnected:posStatus?.provider==="toast" && posStatus.status==="active"}),impactCents:null
-    }] : []),
-    ...(unmatched === null ? [{
-      id:"match-unavailable",title:t("attentionMatchUnavailable"),actionLabel:t("attentionMatch"),
-      href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
-    }] : unmatched.length>0 ? [{
-      id:"unmatched",title:t("attentionUnmatched",{count:unmatched.length}),actionLabel:t("attentionMatch"),
-      href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
-    }]:[]),
-    ...(usageOver.length>0 ? [{
-      id:"pantry",title:t("usageOverAlert"),actionLabel:t("usageReview"),
-      href:homeAttentionHref({kind:"pantry" as const}),impactCents:null
-    }]:[]),
-    ...alertItems,
-    ...team.needsYou.filter(task=>!(task.kind==="data_quality" && coveredBills.has(String(task.payload.categoryCode))) &&
-      !(task.kind==="data_quality" && vm.missingCategories.some(line=>line.categoryCode===task.payload.categoryCode)))
-      .map(task=>({...taskPreview(task),actionLabel:t("attentionFix"),impactCents:
-        typeof task.payload.impactCents==="number" ? task.payload.impactCents :
-        typeof task.payload.estimatedAmountCents==="number" ? task.payload.estimatedAmountCents : null})),
-  ];
   const number = (value:number) => new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(value);
   // Compare owner profit only when both periods have independently proven costs.
   const { costCompleteness, hasPartial, canShowProfit, profitChangePct: pctChange, hasEstimatedCosts } =
