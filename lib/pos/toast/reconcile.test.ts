@@ -26,7 +26,8 @@ const checksum=createHash("sha256").update("[]").digest("hex");
 const status=()=>({business_date:day,import_state:"imported",recon_state:"pending",
  orders_snapshot_sha256:checksum,net_sales_cents:10000,order_count:1,
  discounts_cents:0,refunds_cents:0,unparsed_count:0,warnings:{},
- imported_at:"2026-10-17T10:00:00Z",last_recon_attempt_at:null as string|null});
+ imported_at:"2026-10-17T10:00:00Z",last_recon_attempt_at:null as string|null,
+ recon_source:null as string|null,analytics_state:null as string|null});
 function fakeDb(analytics:boolean){
  mocked.mode=analytics?"official":"internal";
  const item={...status(),rechecking_reason:null as string|null},writes:Record<string,unknown>[]=[];
@@ -244,14 +245,18 @@ it("rejects non-array check payments without void certification",async()=>{
 describe("unmatched payment GUID must not certify omitted or stale orders",()=>{
  const extra="ffffffff-ffff-4fff-8fff-ffffffffffff";
  const orderId="11111111-1111-4111-8111-111111111111";
- function prepare(excluded:boolean,orderDay:string,importState:"imported"|"missing"="imported"){
+ function prepare(excluded:boolean,orderDay:string,importState:"imported"|"missing"="imported",
+  remoteOrderDay=orderDay,unparsedCount=0){
   const f=fakeDb(false);
   f.setOrder({id:"canonical-order",toast_excluded:excluded,business_date:orderDay});
-  f.setOtherDay({import_state:importState,rechecking_reason:null});
+  f.setOtherDay({import_state:importState,rechecking_reason:null,
+   unparsed_count:unparsedCount,coverage_complete:unparsedCount===0});
   mocked.request.mockImplementation(async(path:string)=>{
    if(path.includes("paidBusinessDate"))return [payment,extra];
    if(path.includes("/payments/"+extra))return {
     guid:extra,orderGuid:orderId,paidBusinessDate:20261016};
+   if(path.includes("/orders/"+orderId))return {
+    guid:orderId,businessDate:Number(remoteOrderDay.replaceAll("-",""))};
    return orderWithAutoGratAndGiftCard();
   });
   return f;
@@ -281,5 +286,80 @@ describe("unmatched payment GUID must not certify omitted or stale orders",()=>{
   expect(f.item.recon_state).toBe("pending");
   expect(f.calls).toContain("toast_queue_backfill");
   expect(f.certifiedVoids).toBe(false);
+ });
+ it("never certifies a retained cross-day order after a partial, unparsed import",async()=>{
+  const f=prepare(false,"2026-10-15","imported","2026-10-15",1);
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("pending");
+  expect(f.calls).toContain("toast_queue_backfill");
+  expect(f.certifiedVoids).toBe(false);
+ });
+ it("rejects a stale canonical cross-day date when live Toast now says same-day",async()=>{
+  const f=prepare(false,"2026-10-15","imported",day,1);
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("mismatch");
+  expect(f.certifiedVoids).toBe(false);
+ });
+ it("queues both sides of a newly moved order date",async()=>{
+  const f=prepare(false,"2026-10-14","imported","2026-10-15");
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("pending");
+  expect(f.calls.filter(name=>name==="toast_queue_backfill").length).toBeGreaterThanOrEqual(2);
+ });
+});
+
+
+describe("Analytics evidence durability and retriable official work",()=>{
+ it("keeps a confirmed external mismatch visible when ERA is rate limited on retry",async()=>{
+  const f=fakeDb(true);
+  Object.assign(f.item,{recon_state:"mismatch",recon_source:"toast_analytics",
+   internal_state:"matched",analytics_state:"available",delta_net_cents:1230});
+  const {ToastApiError}=await import("./client");
+  mocked.requestDay.mockRejectedValue(new ToastApiError("rate_limited"));
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item).toMatchObject({recon_state:"mismatch",recon_source:"toast_analytics",
+   analytics_state:"pending",delta_net_cents:1230});
+  expect(f.certifiedVoids).toBe(false);
+  expect(mocked.request).not.toHaveBeenCalled();
+ });
+ it("keeps a confirmed external mismatch on a 48-hour timeout, not internal fallback",async()=>{
+  const f=fakeDb(true);
+  Object.assign(f.item,{recon_state:"mismatch",recon_source:"toast_analytics",
+   internal_state:"matched",analytics_state:"available"});
+  f.setJob({report_request_guid:report,requested_at:new Date(Date.now()-49*3600000).toISOString(),state:"pending"});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item).toMatchObject({recon_state:"mismatch",analytics_state:"missing"});
+  expect(mocked.mode).toBe("internal");
+  expect(f.certifiedVoids).toBe(false);
+ });
+ it.each(["rate_limited","invalid_response","unavailable"] as const)(
+  "leaves first failed external check retryable after %s",async(category)=>{
+  const f=fakeDb(true);
+  const {ToastApiError}=await import("./client");
+  mocked.requestDay.mockRejectedValue(new ToastApiError(category));
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item).toMatchObject({recon_state:"checked_internal",internal_state:"matched",
+   analytics_state:"pending",last_error_category:category});
+  f.item.last_recon_attempt_at=null;
+  mocked.requestDay.mockResolvedValue(report);
+  mocked.getDay.mockResolvedValue({pending:true});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.requestDay).toHaveBeenCalledTimes(2);
+  expect(f.item.analytics_state).toBe("pending");
+ });
+ it("only a fresh matching ERA comparison clears a prior mismatch warning",async()=>{
+  const f=fakeDb(true);
+  Object.assign(f.item,{recon_state:"mismatch",recon_source:"toast_analytics",
+   internal_state:"matched",analytics_state:"pending",
+   warnings:{reconciliation_mismatch:1,analytics_timeout:1}});
+  mocked.getDay.mockResolvedValue({pending:false,rows:[{
+   restaurantGuid:restaurant,businessDate:"20261016",netSalesAmount:100,
+   ordersCount:1,discountAmount:0,refundAmount:0,voidOrdersCount:0
+  }]});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item).toMatchObject({recon_state:"matched",analytics_state:"available",
+   last_error_category:null});
+  expect(f.item.warnings).not.toHaveProperty("reconciliation_mismatch");
+  expect(f.item.warnings).not.toHaveProperty("analytics_timeout");
  });
 });
