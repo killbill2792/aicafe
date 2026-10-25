@@ -349,7 +349,7 @@
     "suggestionHowDoing": "¿Cómo nos va hoy?",
     "suggestionAttention": "¿Qué necesita mi atención?",
     "suggestionStaff": "¿Hay algún problema con el personal?",
-    "suggestionPrices": "¿Debería cambiar algún precio?",
+    "suggestionPrices": "Probar un experimento de precio de bebidas",
     "todaySnapshotTitle": "Hoy",
     "taskSeeAll": "Ver todo",
     "businessOverviewTitle": "Resumen del negocio",
@@ -373,7 +373,16 @@
     "attentionMatchUnavailable": "Hay que revisar la asociación de artículos",
     "attentionAlertsUnavailable": "Hay que revisar las alertas",
     "attentionCheckAlerts": "Revisar alertas",
-    "attentionRegisterSetupUnavailable": "La conexión con tu caja necesita atención. Sube las ventas para mantener tus cifras actualizadas."
+    "attentionRegisterSetupUnavailable": "La conexión con tu caja necesita atención. Sube las ventas para mantener tus cifras actualizadas.",
+    "chatStartDetails": "Detalles",
+    "chatStartSeeAll": "Ver todo ({count})",
+    "chatStartAllGood": "Todo bien",
+    "chatStartSummary": "{period}: Ventas {sales} · Te queda {kept} · {count, plural, one {# asunto requiere atención} other {# asuntos requieren atención}}",
+    "chatStartAlexRole": "Precios",
+    "chatStartLeoRole": "Dinero",
+    "chatStartMayaRole": "Insumos",
+    "chatStartOliviaRole": "Personal",
+    "chatStartExperimentPrompt": "Quiero probar un experimento de precio de bebidas"
   },
   "Money": {
     "title": "Dinero",

@@ -349,7 +349,7 @@
     "suggestionHowDoing": "كيف تسير أمورنا اليوم؟",
     "suggestionAttention": "ما الذي يحتاج إلى انتباهي؟",
     "suggestionStaff": "هل توجد أي مشاكل تخص الموظفين؟",
-    "suggestionPrices": "هل ينبغي أن أغيّر أي أسعار؟",
+    "suggestionPrices": "جرّب تجربة لسعر مشروب",
     "todaySnapshotTitle": "اليوم",
     "taskSeeAll": "عرض الكل",
     "businessOverviewTitle": "نظرة عامة على العمل",
@@ -373,7 +373,16 @@
     "attentionMatchUnavailable": "تحتاج مطابقة الأصناف إلى مراجعة",
     "attentionAlertsUnavailable": "تحتاج التنبيهات إلى المراجعة",
     "attentionCheckAlerts": "مراجعة التنبيهات",
-    "attentionRegisterSetupUnavailable": "يحتاج اتصال نظام البيع إلى انتباهك. ارفع المبيعات للحفاظ على تحديث أرقامك."
+    "attentionRegisterSetupUnavailable": "يحتاج اتصال نظام البيع إلى انتباهك. ارفع المبيعات للحفاظ على تحديث أرقامك.",
+    "chatStartDetails": "التفاصيل",
+    "chatStartSeeAll": "عرض الكل ({count})",
+    "chatStartAllGood": "كل شيء جيد",
+    "chatStartSummary": "{period}: المبيعات {sales} · يبقى لك {kept} · {count, plural, zero {لا شيء يحتاج إلى تدخلك} one {أمر واحد يحتاج إلى تدخلك} two {أمران يحتاجان إلى تدخلك} few {# أمور تحتاج إلى تدخلك} many {# أمرًا يحتاج إلى تدخلك} other {# أمر يحتاج إلى تدخلك}}",
+    "chatStartAlexRole": "التسعير",
+    "chatStartLeoRole": "المال",
+    "chatStartMayaRole": "الإمدادات",
+    "chatStartOliviaRole": "الموظفون",
+    "chatStartExperimentPrompt": "أريد تجربة تغيير سعر مشروب"
   },
   "Money": {
     "title": "المال",
