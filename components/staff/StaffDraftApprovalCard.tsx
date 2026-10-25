@@ -54,7 +54,8 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
         locale:locale==="ar"?"ar":locale==="es"?"es":"en"});
       if(!result.ok){if(result.error!=="unavailable")draftRequest.current=null;
         setError(t(result.error==="week"?"draftFutureWeek":
-        result.error==="missing"?"draftMissing":"draftUnavailable"));return;}
+        result.error==="missing"?"draftMissing":
+        result.error==="week_changed"?"draftStale":"draftUnavailable"));return;}
       draftRequest.current=null;setRates(result.wageRates);
       setRows(result.shifts);setProposal({proposalId:result.proposalId,revision:result.revision,state:"pending"});
       setWarning(result.costIsPartial||result.estimated);
@@ -101,7 +102,14 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
       // failure must leave the owner's existing approval option intact.
       const result=await reviseStaffWeekDraft({week,threadId,requestKey:crypto.randomUUID(),
         locale:locale==="ar"?"ar":locale==="es"?"es":"en",shifts:changed});
-      if(!result.ok)throw Error("revise");
+      if(!result.ok){
+        if(result.error==="week_changed"){
+          setProposal({...previous,state:"stale"});
+          setError(t("draftStale"));
+          return;
+        }
+        throw Error("revise");
+      }
       staged={proposalId:result.proposalId,revision:result.revision};
       const old=await cancel(previous);
       if(old.proposal?.state==="applied"){onApplied();router.refresh();return;}

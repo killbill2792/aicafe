@@ -12,9 +12,27 @@ vi.mock("@/lib/actions/staffDraftInPlace",()=>({
   draftStaffWeekInPlace:vi.fn(),reviseStaffWeekDraft:vi.fn()
 }));
 import StaffDraftApprovalCard from "./StaffDraftApprovalCard";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import type {RuleSettings} from "@/lib/calc/scheduling/ruleChecks";
 
 describe("Staff Olivia draft entry",()=>{
+  it("includes all approval controls and numeric placeholders in EN, ES and AR",()=>{
+    const keys=["draftThisWeek","draftHeading","draftWorking","draftSummary",
+      "draftEstimateNote","draftNotSaved","draftApproveAll","draftReview","draftDiscard",
+      "draftFutureWeek","draftMissing","draftUnavailable","draftStale","draftActionError",
+      "draftEditRequiresRefresh","draftInvalidShift","draftBreakMinutes",
+      "draftHideReview","draftRetryApproval","draftApplying","draftPartialCost",
+      "draftBaseWageNote","draftCoverageGaps"] as const;
+    for(const copy of [en.StaffSchedule,es.StaffSchedule,ar.StaffSchedule]){
+      for(const key of keys)expect(copy[key]).toBeTruthy();
+      for(const placeholder of ["shifts","hours","cost","issues"])
+        expect(copy.draftSummary).toContain("{"+placeholder+"}");
+      expect(copy.draftPartialCost).toContain("{known}");
+      expect(copy.draftPartialCost).toContain("{count}");
+    }
+  });
   it("renders an in-place action without routing to Home",()=>{
     const markup=renderToStaticMarkup(createElement(StaffDraftApprovalCard,{
       week:"2026-10-26",locale:"en",

@@ -79,3 +79,16 @@ export function safeReviewStaffDraft(...args:Parameters<typeof reviewStaffDraft>
 export function staffDraftResponseState(action:"approve"|"cancel",state:string):string{
  return action==="approve"&&state==="conflict"?"failed":state;
 }
+
+/** v2 schedule previews must only add shifts to an empty week; replacing
+ * already-saved rows behind this simplified card would silently delete them. */
+export function scheduleProposalReplacesSavedShifts(effect:unknown):boolean{
+ if(!effect||typeof effect!=="object")return true;
+ const preview=(effect as {preview?:unknown}).preview;
+ if(!Array.isArray(preview)||preview.length===0)return true;
+ return preview.some(row=>{
+  if(!row||typeof row!=="object")return true;
+  const item=row as {field?:unknown;before?:unknown};
+  return typeof item.field!=="string"||!item.field.startsWith("schedule:")||item.before!==null;
+ });
+}
