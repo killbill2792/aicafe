@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
-import {resolveEntity,choicePayload,ownerChoiceGuard,periodChoicePayload} from "../resolve";
+import {resolveEntity,resolveChosenEntity,choicePayload,ownerChoiceGuard,periodChoicePayload} from "../resolve";
 import {resolvePeriod} from "@/lib/calc/periods";
 import {money,count} from "../explain";
 import { initiativeToolDefinitions,isInitiativeTool,executeInitiativeTool } from "./initiatives";
