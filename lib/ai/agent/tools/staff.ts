@@ -14,14 +14,22 @@ const requested = (choice:"today"|"week"|"month",asOf:string) => ({
 });
 export const staffTools = {
   get_staff: {
-    agentId: "olivia", schema:empty, description:"Who is on shift now, including scheduled predictions versus clocked-in people.",
+    agentId: "olivia", schema:empty, description:"Read only active employees with recorded current shifts; old repeating schedule predictions are not clock-ins.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
       if(!ctx.tools.getCurrentStaff)return missing("current_staff",null,["staffReaderUnavailable"]);
       const s=await ctx.tools.getCurrentStaff();
       if(!s.available)return missing("current_staff",null,s.quality.missingInputs);
-      return {source:"current_staff",period:null,agentId:"olivia",missing:s.quality.missingInputs,
-        count:s.value.count,asOf:s.value.asOf,people:s.value.people.slice(0,15)};
+      const attendance = ctx.tools.getStaffAttendance && ctx.timezone
+        ? await ctx.tools.getStaffAttendance({from:ctx.asOf,to:ctx.asOf},ctx.timezone)
+        : null;
+      const tracked=attendance?.available ? attendance.value.attendanceTracked : null;
+      return {source:"current_staff",period:null,agentId:"olivia",
+        missing:[...s.quality.missingInputs,
+          ...(attendance?.quality.missingInputs ?? ["attendanceReaderUnavailable"])],
+        attendanceTracked:tracked, onClockCount:attendance?.available ? attendance.value.onClockCount : null,
+        count:tracked ? s.value.count : null,asOf:s.value.asOf,
+        people:tracked ? s.value.people.slice(0,15) : []};
     },
   },
   get_schedule: {
@@ -50,6 +58,7 @@ export const staffTools = {
         laborDays:labor.available?labor.value.slice(-31).map(d=>({
           date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
           loadedStaffCostCents:d.loadedStaffCostCents})):null,
+        attendanceTracked:attendance.available?attendance.value.attendanceTracked:null,
         attendance:attendance.available?attendance.value:null};
     },
   },
