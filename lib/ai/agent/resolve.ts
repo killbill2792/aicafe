@@ -1,3 +1,4 @@
+import {resolvePeriod as importResolvePeriod} from "@/lib/calc/periods";
 /** Tool-only name resolution. Never let model-provided ids choose between matching records. */
 export type ChoiceCandidate = { id: string; label: string; detail: string };
 export type EntityResolution<T> =
