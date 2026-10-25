@@ -8,7 +8,7 @@ import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 import { rangeExpectedDays } from "./conversations/dateRange";
 
 export type MenuCatalogProduct = { id: string; name: string; category: "drink" | "food"; active: boolean; priceCents: number };
-export type StaffAttendance = { timecardCount: number; onClockCount: number };
+export type StaffAttendance = { timecardCount: number; onClockCount: number | null; attendanceTracked: boolean };
 const quality = (missingInputs: string[] = []) => ({
   level: (missingInputs.length ? "low" : "high") as "low" | "high",
   missingInputs, estimatedInputs: [] as string[], staleInputs: [] as string[],
@@ -74,14 +74,28 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       assertScope(id);
       const start = fromZonedTime(period.from+"T00:00:00",timezone).toISOString();
       const end = fromZonedTime(period.to+"T23:59:59.999",timezone).toISOString();
-      const { data, error } = await client.from("timecards").select("clock_in,clock_out")
-        .eq("business_id",id).gte("clock_in",start).lte("clock_in",end).limit(501);
-      if (error) throw error;
-      if (!data?.length) return missing("noRecordedTimecards");
+      const [records,people] = await Promise.all([
+        client.from("timecards").select("employee_id,clock_in,clock_out,source_type")
+          .eq("business_id",id).gte("clock_in",start).lte("clock_in",end).limit(501),
+        client.from("employees").select("id").eq("business_id",id).eq("active",true).limit(501),
+      ]);
+      if (records.error) throw records.error;
+      if (people.error) throw people.error;
+      if ((people.data ?? []).length>500) return missing("activeTeamTruncated");
+      const active = new Set((people.data ?? []).map(p=>p.id));
+      // Repeating owner_schedule rows are predictions, never attendance.
+      // Do not count deactivated people or unlinked external timecards.
+      const actual = (records.data ?? []).slice(0,500).filter(row =>
+        row.source_type !== "owner_schedule" && active.has(row.employee_id));
+      const tracked = actual.length > 0;
       return { available:true, value:{
-        timecardCount:Math.min(data.length,500),
-        onClockCount:data.slice(0,500).filter(row=>!row.clock_out).length,
-      },quality:quality(data.length > 500 ? ["timecardResultTruncated"] : []) };
+        timecardCount:actual.length,
+        onClockCount:tracked ? actual.filter(row=>row.clock_out===null).length : null,
+        attendanceTracked:tracked,
+      },quality:quality([
+        ...((records.data ?? []).length>500?["timecardResultTruncated"]:[]),
+        ...(!tracked?["attendanceNotTracked"]:[]),
+      ]) };
     },
   };
 }
