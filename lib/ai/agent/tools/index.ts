@@ -134,7 +134,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw);
   if(name==="get_peak_hours"||name==="get_employee_sales"||name==="get_payroll_facts"){
     const input=posPeriodSchema.parse(raw);
-    const checked=resolvePeriod(input,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
+    const checked=resolveOwnerPeriod(input,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
     if(checked.status!=="resolved")return periodChoicePayload(name,checked);
     const period={from:checked.value.from,to:checked.value.to};
     if(name==="get_peak_hours"){
@@ -179,7 +179,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       })) };
   }
   const {period:choice}=periodSchema.parse(raw);
-  const resolved=resolvePeriod(choice,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"});
+  const resolved=resolveOwnerPeriod(choice,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
   if(resolved.status!=="resolved")return periodChoicePayload(name,resolved);
   const period={from:resolved.value.from,to:resolved.value.to};
   if (name === "get_profit") {
