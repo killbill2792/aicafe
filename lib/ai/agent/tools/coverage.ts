@@ -4,6 +4,7 @@ import {coveredWindow,dateOffset,type CalcPeriod} from "@/lib/calc/periods";
  * A missing current window does not imply zero sales. */
 export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:CalcPeriod):
  Promise<{period:CalcPeriod;label:string|null}>{
+ if(typeof ctx.tools.getSalesTrend!=="function")return {period:requested,label:null};
  const current=await ctx.tools.getSalesTrend(requested);
  if(current.available&&current.value.length)return {period:requested,label:null};
  const historical=await ctx.tools.getSalesTrend({
