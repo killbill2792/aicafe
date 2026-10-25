@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { homeAttentionHref, homeShiftHref, prioritizeHomeAttention, type HomeAttentionItem } from "./homeAttention";
+import { homeAttentionHref, homeShiftHref, showAlertInHome, prioritizeHomeAttention, type HomeAttentionItem } from "./homeAttention";
 
 describe("Home attention", () => {
+  it("does not show old unmatched alerts after catalog review is completed", () => {
+    expect(showAlertInHome("unmatched_sales_items")).toBe(false);
+    expect(showAlertInHome("missing_bill")).toBe(true);
+    expect(showAlertInHome("meal_break")).toBe(true);
+  });
+
   it("routes each actionable source to the correct fix", () => {
     expect(homeAttentionHref({kind:"bill",category:"rent"})).toBe("/more/bills?category=rent");
     expect(homeAttentionHref({kind:"bill",category:"utilities_power"})).toBe("/more/bills?category=utilities_power");

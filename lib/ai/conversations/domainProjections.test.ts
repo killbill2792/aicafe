@@ -5,14 +5,22 @@ import {buildBreakEvenViewModel} from "@/lib/viewmodels/breakEvenViewModel";
 import {projectBreakEven,projectCurrentStaff,projectRecurringSchedule} from "./domainProjections";
 
 const snapshot=getFixtureSnapshot();
+const team=snapshot.staffShiftsToday.map(row=>({id:row.employeeId,name:row.name,role:row.role,active:true}));
 describe("Supervisor canonical domain projections",()=>{
   it("uses the Staff screen's onShift source/provenance, not open-timecard count",()=>{
-    const expected=buildStaffViewModel(snapshot).onShift;
-    const current=projectCurrentStaff(snapshot);
+    const expected=buildStaffViewModel(snapshot,team).onShift.filter(s=>s.sourceType!=="owner_schedule");
+    const current=projectCurrentStaff(snapshot,team);
     expect(current.count).toBe(expected.length);
     expect(current.people.map(x=>x.name)).toEqual(expected.slice(0,15).map(x=>x.name));
     expect(current.people.map(x=>x.sourceType)).toEqual(expected.slice(0,15).map(x=>x.sourceType));
     expect(JSON.stringify(current)).not.toContain("hourlyWageCents");
+  });
+  it("does not present removed staff or owner schedule predictions as clocked in",()=>{
+    const removed=team.map((member,i)=>({...member,active:i!==0}));
+    const without=projectCurrentStaff(snapshot,removed);
+    expect(without.people.some(p=>p.name===team[0].name)).toBe(false);
+    expect(without.people.some(p=>p.isSchedulePrediction)).toBe(false);
+    expect(without.count).toBe(without.people.length);
   });
   it("shows recurring schedule plan, effective date and display name but never calls it attendance",()=>{
     const rows=[{id:"s",employeeId:"e",dayOfWeek:1,startTime:"08:00",endTime:"16:00",

@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
-import { addUploadedItemToMenu, matchUploadedItem } from "./catalogMatches";
+import { redirect } from "next/navigation";
+import { addUploadedItemToMenu, matchUploadedItem, resolveCatalogMatch } from "./catalogMatches";
+import { resolveUnmatchedAlertsIfClear } from "@/lib/data/resolveUnmatchedAlerts.server";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+vi.mock("next-intl/server", () => ({ getLocale: vi.fn(async () => "en") }));
+vi.mock("@/lib/data/resolveUnmatchedAlerts.server", () => ({
+  resolveUnmatchedAlertsIfClear: vi.fn(async () => true),
+}));
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn() }));
 vi.mock("@/lib/data/getActiveBusinessId", () => ({ getActiveBusinessId: vi.fn() }));
 vi.mock("@/lib/data/queryError", () => ({ logQueryError: vi.fn() }));
@@ -16,7 +23,7 @@ const BUSINESS = "11111111-1111-4111-8111-111111111111";
 const ITEM = "22222222-2222-4222-8222-222222222222";
 const MATCH = "33333333-3333-4333-8333-333333333333";
 
-function fakeDb(count: number, options?: { failLineBatch?: number; noExistingItem?: boolean }) {
+function fakeDb(count: number, options?: { failLineBatch?: number; noExistingItem?: boolean; failConfirm?: boolean }) {
   const orders = Array.from({ length: count }, (_, i) => ({
     id: `order-${String(i).padStart(5, "0")}`, business_id: BUSINESS, pos_order_id: `csv-${i}`,
   }));
@@ -91,8 +98,10 @@ function fakeDb(count: number, options?: { failLineBatch?: number; noExistingIte
           for (const group of groups) if (group.item_name === filters.item_name && group.menu_item_id === null)
             group.menu_item_id = patch.menu_item_id as string;
         }
-        if (table === "pos_catalog_matches" && filters.id === MATCH && match.status === filters.status)
+        if (table === "pos_catalog_matches" && filters.id === MATCH && match.status === filters.status) {
+          if (options?.failConfirm) return {error:{message:"temporary match confirmation failure"}};
           match.status = patch.status as string;
+        }
         return {error:null};
       }
       return q;
@@ -118,6 +127,7 @@ describe("CSV match backfill", () => {
     expect(fake.lines.every(line => line.menu_item_id === ITEM)).toBe(true);
     expect(fake.groups[0].menu_item_id).toBe(ITEM);
     expect(fake.match.status).toBe("confirmed");
+    expect(resolveUnmatchedAlertsIfClear).toHaveBeenCalledWith(expect.anything(), BUSINESS, { nonBlocking: true });
   });
 
   it("keeps a match open after a partial write so a retry repairs all sales", async () => {
@@ -125,6 +135,7 @@ describe("CSV match backfill", () => {
     const form = new FormData();form.set("menuItemId",ITEM);
     await matchUploadedItem(MATCH,form);
     expect(fake.match.status).toBe("needs_review");
+    expect(resolveUnmatchedAlertsIfClear).not.toHaveBeenCalled();
     expect(fake.groups[0].menu_item_id).toBeNull();
     expect(fake.lines.some(row => row.menu_item_id === null)).toBe(true);
     await matchUploadedItem(MATCH,form);
@@ -138,6 +149,25 @@ describe("CSV match backfill", () => {
     expect(fake.creates).toBe(1);
     expect(fake.match.status).toBe("confirmed");
     expect(fake.lines.every(line => line.menu_item_id === ITEM)).toBe(true);
+  });
+
+  it("shows a localized error and keeps a failed confirmation reviewable", async () => {
+    const fake = fakeDb(2, {failConfirm:true});
+    const form = new FormData();form.set("menuItemId",ITEM);
+    await matchUploadedItem(MATCH,form);
+    expect(fake.match.status).toBe("needs_review");
+    expect(resolveUnmatchedAlertsIfClear).not.toHaveBeenCalled();
+    expect(redirect).toHaveBeenCalledWith("/en/menu/import-review?result=error");
+  });
+
+  it("treats alert reconciliation as secondary after a new catalog item is confirmed", async () => {
+    const fake = fakeDb(2, { noExistingItem: true });
+    await resolveCatalogMatch(MATCH, "new");
+    expect(fake.creates).toBe(1);
+    expect(fake.match.status).toBe("confirmed");
+    expect(resolveUnmatchedAlertsIfClear).toHaveBeenCalledWith(
+      expect.anything(), BUSINESS, { nonBlocking: true },
+    );
   });
 
   it("does not confirm an item from another café", async () => {

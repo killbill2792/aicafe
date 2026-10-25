@@ -5,6 +5,7 @@ import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerCh
 import {money,count} from "../explain";
 import { initiativeToolDefinitions,isInitiativeTool,executeInitiativeTool } from "./initiatives";
 import { staffTools } from "./staff";
+import { attentionTools } from "./attention";
 import {scheduleReadTools} from "./scheduleReads";
 import { hoursTools } from "./hours";
 import { moneyTools } from "./money";
@@ -56,7 +57,7 @@ const posReadTools={
   get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
-export const schemas = { ...askOwnerTools, ...posReadTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
+export const schemas = { ...askOwnerTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
   ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...proposalTools,...priceExperimentTools,...staffProposalTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
@@ -120,6 +121,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
   if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);
   if(Object.hasOwn(staffProposalTools,name))return staffProposalTools[name as keyof typeof staffProposalTools].execute(raw,ctx);
+  if(name==="get_attention_items")return attentionTools.get_attention_items.execute(raw,ctx);
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
   if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
   if(name==="get_labor")return staffTools.get_labor.execute(raw,ctx);

@@ -26,6 +26,8 @@ export async function setPersonActive(raw:unknown){
  const owner=await requireSchedulingOwner();if(!owner)return {ok:false as const,error:"unauthorized"};
  const {data,error}=await owner.supabase.from("employees").update({active:p.data.active})
   .eq("business_id",owner.businessId).eq("id",p.data.id).select("id").maybeSingle();
- if(error||!data)return {ok:false as const,error:"not_found"};
+ if(error||!data)return {ok:false as const,error:error?"storage_unavailable":"not_found"};
+ // The employee table's AFTER UPDATE trigger atomically deactivates any
+ // repeating staff_schedules. A trigger failure rolls back this update.
  return {ok:true as const,id:data.id as string};
 }

@@ -15,6 +15,7 @@ import {inferMenuItemCategory} from "@/lib/menu/inferCategory";
 import {medianObservedUnitPriceCents} from "@/lib/calc/importedMenuPrice";
 
 import { hasOpenAlert } from "@/lib/alerts/generate";
+import { resolveUnmatchedAlertsIfClear } from "@/lib/data/resolveUnmatchedAlerts.server";
 import { NEW_EMPLOYEE } from "@/lib/constants";
 import { toCents } from "@/lib/pos/csv/csvUtils";
 import type { AggregatedSalesRow } from "@/lib/pos/csv/aggregateSalesRows";
@@ -202,25 +203,41 @@ async function resolveMenuItemIds(
   const unmatchedRowsByName = new Map<string, number>();
 
   for (const name of [...new Set(groups.map((g) => g.item))]) {
-    const priceCents=medianObservedUnitPriceCents(groups.filter(g=>g.item===name));
+    const priceCents = medianObservedUnitPriceCents(groups.filter(g => g.item === name));
     const posItemId = `csv-item-${csvSlug(name)}`.slice(0, 120);
     const match = matchCatalogItem({ posItemId, name, priceCents, category: null }, candidates);
+    let resolvedId: string | null = null;
     if (match.status === "matched" && match.candidateId) {
-      menuItemIdByName.set(name.toLowerCase(), match.candidateId);
-      await supabase.from("menu_items").update({ pos_item_id: posItemId, catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() }).eq("id", match.candidateId).eq("business_id", businessId);
+      const { error: linkError } = await supabase.from("menu_items")
+        .update({ pos_item_id: posItemId, catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() })
+        .eq("id", match.candidateId).eq("business_id", businessId);
+      if (!linkError) resolvedId = match.candidateId;
     } else if (match.status === "new") {
-      const { data: created } = await supabase.from("menu_items").insert({ business_id: businessId, pos_item_id: posItemId, name, base_name: name, price_cents: priceCents, category: inferMenuItemCategory(name), catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() }).select("id").single();
-      if (created){
-        menuItemIdByName.set(name.toLowerCase(), created.id);
-        if(priceCents!==null){
-          const {error:historyError}=await supabase.from("menu_price_history").insert({business_id:businessId,
-            menu_item_id:created.id,old_price_cents:null,new_price_cents:priceCents,
-            source_type:"imported",source_provider:"csv import estimated average"});
-          if(historyError)throw historyError;
+      const { data: created, error: createError } = await supabase.from("menu_items")
+        .insert({ business_id: businessId, pos_item_id: posItemId, name, base_name: name, price_cents: priceCents, category: inferMenuItemCategory(name), catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() })
+        .select("id").single();
+      if (!createError && created) {
+        if (priceCents !== null) {
+          const { error: historyError } = await supabase.from("menu_price_history").insert({
+            business_id: businessId, menu_item_id: created.id, old_price_cents: null,
+            new_price_cents: priceCents, source_type: "imported",
+            source_provider: "csv import estimated average",
+          });
+          if (historyError) throw historyError;
         }
+        resolvedId = created.id;
       }
+    }
+    if (resolvedId) {
+      menuItemIdByName.set(name.toLowerCase(), resolvedId);
     } else {
-      await supabase.from("pos_catalog_matches").upsert({ business_id: businessId, provider: "csv", pos_item_id: posItemId, imported_name: name, imported_price_cents: priceCents, suggested_menu_item_id: match.candidateId, match_score: match.score, status: "needs_review" }, { onConflict: "business_id,provider,pos_item_id" });
+      const { error: reviewError } = await supabase.from("pos_catalog_matches").upsert({
+        business_id: businessId, provider: "csv", pos_item_id: posItemId,
+        imported_name: name, imported_price_cents: priceCents,
+        suggested_menu_item_id: match.status === "new" ? null : match.candidateId,
+        match_score: match.score, status: "needs_review",
+      }, { onConflict: "business_id,provider,pos_item_id" });
+      if (reviewError) throw reviewError;
       const rows = groups.filter((g) => g.item === name).reduce((s, g) => s + g.sourceRowCount, 0);
       unmatchedRowsByName.set(name, rows);
     }
@@ -335,7 +352,16 @@ export async function startSalesImportJob(
 
   // Only now (lock held) do we touch shared catalog state.
   const { data: locationRow } = await supabase.from("locations").select("id").eq("business_id", businessId).limit(1).maybeSingle();
-  const { menuItemIdByName, unmatchedItems } = await resolveMenuItemIds(supabase, businessId, groups);
+  let menuItemIdByName: Map<string, string>;
+  let unmatchedItems: { name: string; rows: number }[];
+  try {
+    ({ menuItemIdByName, unmatchedItems } = await resolveMenuItemIds(supabase, businessId, groups));
+  } catch {
+    // Release the active-job lock on error; a retry must not remain stuck.
+    await supabase.from("csv_import_jobs").update({ status: "failed", updated_at: new Date().toISOString() })
+      .eq("id", job.id).eq("business_id", businessId);
+    return err("staging_failed");
+  }
 
   const stagingRows = groups.map((g) => ({
     job_id: job.id,
@@ -457,6 +483,11 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
     return err("finalize_failed");
   }
 
+  if (unmatchedItems.length === 0) {
+    // Finalizing an all-clear import must not leave an old match alert stuck open.
+    // If prior reviews remain, the centralized helper leaves alerts untouched.
+    await resolveUnmatchedAlertsIfClear(supabase, businessId, { nonBlocking: true });
+  }
   if (unmatchedItems.length > 0) {
     const dedupeKey = [...unmatchedCounts.keys()].sort().join("|");
     if (!(await hasOpenAlert(supabase, businessId, "unmatched_sales_items", dedupeKey))) {

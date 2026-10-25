@@ -45,11 +45,11 @@ export type StaffViewModel = {
   worstDay: { date: string; cents: number } | null;
 };
 
-/** Pass the current roster for owner-facing "On shift now". Legacy projections without
- * roster data retain their existing behavior until their data contract includes one. */
+/** An authenticated active-team roster is mandatory: a missing roster must never
+ * turn archived or unlinked timecards into apparently active employees. */
 export function buildStaffViewModel(
   snapshot: BusinessSnapshot,
-  team?: readonly StaffRosterMember[],
+  team: readonly StaffRosterMember[],
 ): StaffViewModel {
   const now = new Date(snapshot.staffNowIso);
   const payrollTaxRate = snapshot.business.payrollTaxRate;
@@ -59,24 +59,25 @@ export function buildStaffViewModel(
   // owner-scheduled interval. All date comparisons use the cafe's local calendar.
   const today = formatInTimeZone(now, snapshot.business.timezone, "yyyy-MM-dd");
   const currentTime = now.getTime();
-  const rosterById = new Map(team?.map((member) => [member.id, member]) ?? []);
+  const rosterById = new Map(team.map((member) => [member.id, member]));
   const rosterByName = new Map<string, StaffRosterMember[]>();
   const normalizedName = (name: string) => name.trim().normalize("NFKC").replace(/\s+/g, " ").toLocaleLowerCase();
 
-  for (const member of team ?? []) {
+  for (const member of team) {
     const name = normalizedName(member.name);
     rosterByName.set(name, [...(rosterByName.get(name) ?? []), member]);
   }
 
   const findMember = (shift: StaffShift): StaffRosterMember | null => {
-    if (!team) {
-      // Compatibility for call sites without a separately loaded team roster.
-      return { id: shift.employeeId, name: shift.name, active: true, role: shift.role };
-    }
     // Stable employee IDs take precedence. Never reassign a removed employee's
     // timecard to a new person who happens to have the same display name.
     const byId = rosterById.get(shift.employeeId);
     if (byId) return byId;
+    // A valid persisted employee ID which is not in the active roster can be
+    // an archived employee; never reassign it to a same-named active person.
+    // Name fallback is only for genuinely unlinked POS/import identifiers.
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shift.employeeId))
+      return null;
     const matches = rosterByName.get(normalizedName(shift.name)) ?? [];
     // A duplicate display name is ambiguous and must not be guessed.
     return matches.length === 1 ? matches[0] : null;
@@ -88,7 +89,7 @@ export function buildStaffViewModel(
       && formatInTimeZone(clockIn, snapshot.business.timezone, "yyyy-MM-dd") === today;
   });
   const matchedToday = todayShifts.map((shift) => ({ shift, member: findMember(shift) }));
-  const hasUnmatchedTimecards = !!team && matchedToday.some(({ member }) => member === null);
+  const hasUnmatchedTimecards = matchedToday.some(({ member }) => member === null);
   const byMember = new Map<string, { shift: StaffShift; member: StaffRosterMember }>();
 
   for (const { shift, member } of matchedToday) {

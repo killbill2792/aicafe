@@ -570,7 +570,8 @@ export function createSupervisorToolRegistry(context: Context) {
         note:"Observed timecards are not a complete employee roster or schedule"});
       if (attendance.available) {
         addFact(result,prefix+"timecards","Recorded timecards",attendance.value.timecardCount,"count",source);
-        if (range.to === asOf && range.from === asOf)
+        if (range.to === asOf && range.from === asOf && attendance.value.attendanceTracked &&
+          attendance.value.onClockCount !== null)
           addFact(result,prefix+"now","Currently clocked-in timecards",attendance.value.onClockCount,"count",source);
       }
       return result;

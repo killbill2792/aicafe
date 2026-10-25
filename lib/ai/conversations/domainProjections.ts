@@ -1,6 +1,6 @@
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { StaffScheduleRow } from "@/lib/data/getStaffSchedules";
-import { buildStaffViewModel } from "@/lib/viewmodels/staffViewModel";
+import { buildStaffViewModel, type StaffRosterMember } from "@/lib/viewmodels/staffViewModel";
 import { buildBreakEvenViewModel } from "@/lib/viewmodels/breakEvenViewModel";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 
@@ -9,8 +9,10 @@ const missing = <T>(reason: string): KnownSlice<T> => ({available:false,value:nu
   quality:{...high,level:"low",missingInputs:[reason]}});
 
 /** Same current on-shift semantics as Staff screen. Never derive from raw open-timecard counts. */
-export function projectCurrentStaff(snapshot: BusinessSnapshot) {
-  const onShift = buildStaffViewModel(snapshot).onShift;
+export function projectCurrentStaff(snapshot: BusinessSnapshot, team: readonly StaffRosterMember[]) {
+  // A repeating owner_schedule projection is not an actual clock-in and is not a
+  // shift confirmed in scheduled_shifts. Chat must never report it as on shift.
+  const onShift = buildStaffViewModel(snapshot, team).onShift.filter(s => s.sourceType !== "owner_schedule");
   return { count:onShift.length, asOf:snapshot.staffNowIso,
     people:onShift.slice(0,15).map(s=>({
       name:s.name.slice(0,100), role:s.role?.slice(0,70) ?? null,

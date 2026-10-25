@@ -8,7 +8,7 @@ import BackHeader from "@/components/shared/BackHeader";
 import PageShell from "@/components/shared/PageShell";
 
 export const dynamic = "force-dynamic";
-export default async function ImportReviewPage({searchParams}: {searchParams: Promise<{source?: string; uploadId?: string}>}) {
+export default async function ImportReviewPage({searchParams}: {searchParams: Promise<{source?: string; uploadId?: string; result?: string}>}) {
   await requireOwnBusiness();
   const params = await searchParams;
   const source = params.source === "upload" ? "upload" : undefined;
@@ -19,8 +19,13 @@ export default async function ImportReviewPage({searchParams}: {searchParams: Pr
   const menuItems = items.items;
   const backHref = source && params.uploadId ? `/more/uploads/${encodeURIComponent(params.uploadId)}` : "/menu";
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
-    <BackHeader title={t("matchItems")} subtitle={t("keepYourWork")} backHref={backHref} backLabel={common("back")}/>
-    {rows.length === 0 ? <p className="rounded-card-lg bg-card p-5 text-[17px] text-ink-muted">{t("noMatches")}</p> : rows.map(row=><section key={row.id} className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+    <BackHeader title={t("matchItems")} subtitle={rows.length ? t("keepYourWork") : undefined} backHref={backHref} backLabel={common("back")}/>
+    {params.result === "error" && <p role="alert" className="rounded-card-lg border border-line bg-card p-4 text-[17px] text-ink">{t("matchError")}</p>}
+    {params.result === "matched" && <p role="status" className="rounded-card-lg bg-card p-4 text-[17px] text-ink">{t(rows.length ? "matchSaved" : "matchDone")}</p>}
+    {rows.length === 0 ? <div className="rounded-card-lg bg-card p-5 text-[17px] text-ink-muted">
+      <p>{t("noMatches")}</p>
+      <Link href="/" className="mt-3 inline-flex min-h-12 items-center font-semibold text-accent-text underline">{t("backHome")}</Link>
+    </div> : rows.map(row=><section key={row.id} className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
       <div className="flex justify-between gap-3"><div><strong className="text-lg">{row.importedName}</strong><p className="text-sm text-ink-muted">{t("syncedFrom",{source:row.provider.toUpperCase()})}</p></div>
         {row.importedPriceCents!==null && <strong>{new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(row.importedPriceCents/100)}</strong>}</div>
       {row.provider==="csv" ? <>

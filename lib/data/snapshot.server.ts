@@ -207,7 +207,9 @@ async function getStaffShiftsToday(
     .lte("clock_in", dayEndUtc)
     .order("clock_in", { ascending: true });
   if (error) throw error;
-
+  // Preserve every recorded timecard for earned wages, including staff who were
+  // deactivated later today and imports not yet linked to a roster member.
+  // Current-roster filtering belongs ONLY in buildStaffViewModel.onShift.
   return (data ?? []).map((row) => {
     const employee = row.employees as unknown as { display_name: string; role: string | null } | { display_name: string; role: string | null }[] | null;
     const emp = Array.isArray(employee) ? employee[0] : employee;

@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {resolveOwnerPeriod,periodChoicePayload} from "../resolve";
 import {money} from "../explain";
+import { scheduleReadTools } from "./scheduleReads";
+import { getWeekSchedule } from "@/lib/actions/schedule";
 
 const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
@@ -16,27 +18,57 @@ const requested = (choice:"today"|"week"|"month",asOf:string) => ({
 });
 export const staffTools = {
   get_staff: {
-    agentId: "olivia", schema:empty, description:"Who is on shift now, including scheduled predictions versus clocked-in people.",
+    agentId:"olivia",schema:empty,description:"Read only active employees with recorded current shifts; repeating schedule predictions are not clock-ins.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
       if(!ctx.tools.getCurrentStaff)return missing("current_staff",null,["staffReaderUnavailable"]);
       const s=await ctx.tools.getCurrentStaff();
       if(!s.available)return missing("current_staff",null,s.quality.missingInputs);
-      return {source:"current_staff",period:null,agentId:"olivia",missing:s.quality.missingInputs,
-        count:s.value.count,asOf:s.value.asOf,people:s.value.people.slice(0,15)};
+      const attendance=ctx.tools.getStaffAttendance&&ctx.timezone?
+        await ctx.tools.getStaffAttendance({from:ctx.asOf,to:ctx.asOf},ctx.timezone):null;
+      const tracked=attendance?.available?attendance.value.attendanceTracked:null;
+      return {source:"current_staff",period:null,agentId:"olivia",
+        missing:[...s.quality.missingInputs,...(attendance?.quality.missingInputs??["attendanceReaderUnavailable"])],
+        attendanceTracked:tracked,onClockCount:attendance?.available?attendance.value.onClockCount:null,
+        count:tracked?s.value.count:null,asOf:s.value.asOf,
+        people:tracked?s.value.people.slice(0,15):[]};
     },
   },
   get_schedule: {
-    agentId:"olivia",schema:range,description:"Read owner-entered recurring shifts for future dates; cannot reconstruct past rosters.",
+    agentId:"olivia",schema:range,
+    description:"Read confirmed dated shifts for a business-local week. Old recurring patterns are not confirmed attendance or shifts.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const {from,to}=range.parse(raw),period={from,to};
-      if(from<ctx.asOf)return missing("recurring_schedule",period,["historicalScheduleNotReconstructable"]);
-      if(from>to||days(from,to)>90)return missing("recurring_schedule",period,["scheduleRangeInvalid"]);
-      if(!ctx.tools.getRecurringSchedule)return missing("recurring_schedule",period,["scheduleReaderUnavailable"]);
-      const s=await ctx.tools.getRecurringSchedule(period,ctx.asOf);
-      if(!s.available)return missing("recurring_schedule",period,s.quality.missingInputs);
-      return {source:"recurring_schedule",period,agentId:"olivia",missing:s.quality.missingInputs,
-        shifts:s.value.shifts.slice(0,30),sourceType:s.value.source};
+      if(from>to||days(from,to)>90)return missing("scheduled_shifts",period,["scheduleRangeInvalid"]);
+      if(from<ctx.asOf)return missing("scheduled_shifts",period,["historicalScheduleNotReconstructable"]);
+      const d=new Date(from+"T12:00:00Z"),day=d.getUTCDay();
+      const monday=new Date(d.getTime()-((day+6)%7)*86400000).toISOString().slice(0,10);
+      const sunday=new Date(Date.parse(monday+"T12:00:00Z")+6*86400000).toISOString().slice(0,10);
+      if(to>sunday)return {...missing("scheduled_shifts",period,["scheduleRangeRequiresWeeklyRead"]),href:"/staff?tab=schedule"};
+      const exactWeek=from===monday&&to===sunday;
+      if (exactWeek) {
+        const confirmed=await scheduleReadTools.get_week_schedule.execute({week_start:monday},ctx);
+        if(!Array.isArray(confirmed.shifts))return {...confirmed,period,href:"/staff?tab=schedule"};
+        return {...confirmed,period,windowHasShifts:confirmed.scheduleSet===true};
+      }
+      // The chat weekly tool intentionally caps its public answer at 40 shifts.
+      // A day/window must filter the complete owner-scoped dated source BEFORE
+      // truncating; otherwise an ordinary busy week can look like an empty day.
+      const response=await getWeekSchedule({weekStart:monday});
+      if(!response.ok)return {...missing("scheduled_shifts",period,[response.error]),href:"/staff?tab=schedule"};
+      const activeIds=new Set(response.data.team.map(person=>person.id));
+      const allActiveShifts=response.data.shifts.filter(shift=>activeIds.has(shift.employeeId));
+      const selected=allActiveShifts.filter(shift=>shift.date>=from&&shift.date<=to);
+      const scheduleSet=allActiveShifts.length>0;
+      return {source:"scheduled_shifts",period,agentId:"olivia",href:"/staff?tab=schedule",
+        scheduleSet,windowHasShifts:selected.length>0,
+        shifts:selected.slice(0,40).map(shift=>({
+          id:shift.id,date:shift.date,employeeId:shift.employeeId,start:shift.start,end:shift.end,
+          paidMinutes:shift.paidMinutes,costCents:shift.costCents,estimated:shift.estimated,
+        })),
+        paidMinutes:null,knownWagesCents:null,estimated:null,estimatedShiftCount:null,gaps:[],
+        missing:[...(!scheduleSet?["scheduleNotSet"]:selected.length===0?["noShiftsInRequestedRange"]:[]),
+          ...(selected.length>40?["moreShifts"]:[]),"requestRangeTotalsNotAvailable"]};
     },
   },
   get_labor: {
@@ -61,6 +93,7 @@ export const staffTools = {
         laborDays:labor.available?labor.value.slice(-31).map(d=>({
           date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
           loadedStaffCostCents:d.loadedStaffCostCents})):null,
+        attendanceTracked:attendance.available?attendance.value.attendanceTracked:null,
         attendance:attendance.available?attendance.value:null};
     },
   },
