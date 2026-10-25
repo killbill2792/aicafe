@@ -69,9 +69,9 @@ describe("PR F shared attention and chat entry",()=>{
   expect(composer).toContain("<ClarifyCard");
   expect(composer).toContain("<HowIGotThis");
   expect(composer).not.toContain("copy.suggestions.slice(0,3)");
-  expect(composer).toContain("if (sendOnce.current) return");
-  expect(composer).toContain("sendOnce.current = true");
-  expect(composer).toContain("sendOnce.current = false");
+  expect(composer).toContain("if(sendOnce.current)return");
+  expect(composer).toContain("sendOnce.current=true");
+  expect(composer).toContain("sendOnce.current=false");
   expect(composer).toContain("setStartExpanded(false)");
  });
  it("keeps token-only classes, localized single-message summary and RTL-safe layout",()=>{
