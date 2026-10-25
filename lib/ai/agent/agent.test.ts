@@ -31,7 +31,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
     },menuPriceEvidence:async()=>{throw new Error("database offline")}};
     const result=await executeAgentTool("get_menu_items",{query:null,limit:null},ctx);
     expect(result.missing).toContain("menuPriceEvidenceUnavailable");
-    expect(result.items).toMatchObject([{name:"Latte",priceSource:"unknown",priceEvidenceStatus:"unknown"}]);
+    expect(result.items).toMatchObject([{name:"Latte",priceSource:"unknown",priceEvidenceStatus:"unknown",priceCheck:"unknown"}]);
   });
   it("verifies cents, percentages and plain numbers without erasing text", () => {
     expect(checkNumbers("Profit $123.45, 12.5% margin, 4 days", "", [base], "en")).toEqual([]);
@@ -148,7 +148,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
     };
     const result = await executeAgentTool("get_menu_items",{query:"latte",limit:25},context);
     expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450,
-      unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"ok",pricePeriod:null,priceEvidenceStatus:"unknown"}]);
+      unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"unknown",pricePeriod:null,priceEvidenceStatus:"unknown"}]);
     context.resolveState=newResolveState("What is the price of Espresso?");
     const wrong=await executeAgentTool("get_menu_items",{query:"Latte",limit:25},context);
     expect(wrong.missing).toContain("targetNotConfirmed");
