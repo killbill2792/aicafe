@@ -17,10 +17,21 @@ describe("numbers, statuses, and strict tool contracts", () => {
       overheadPeriod:null,unitCostCents:null,itemsSoldPerDay:null};
     const result=await executeAgentTool("get_profit",{period:"month",ownerInputs},ctx);
     expect(result).toMatchObject({netSalesProvenance:"ownerProvided",
-      netSalesCents:1200000,ownerProfitCents:null,totalCostsCents:null});
+      netSalesCents:null,ownerReportedSalesCents:1100000,ownerProfitCents:null,totalCostsCents:null});
     expect(result.missing).toContain("costsUnverified");
+    expect(result.missing).toContain("ownerSalesPeriodMismatch");
   });
 
+  it("keeps menu results when price evidence fails, without claiming an initial source",async()=>{
+    const ctx:AgentToolContext={asOf:"2026-10-24",locale:"en",tools:{
+      getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+      getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+      getMenuCatalog:async()=>({available:true,value:[{id:"a",name:"Latte",category:"drink",active:true,priceCents:500}],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+    },menuPriceEvidence:async()=>{throw new Error("database offline")}};
+    const result=await executeAgentTool("get_menu_items",{query:null,limit:null},ctx);
+    expect(result.missing).toContain("menuPriceEvidenceUnavailable");
+    expect(result.items).toMatchObject([{name:"Latte",priceSource:"unknown",priceEvidenceStatus:"unknown"}]);
+  });
   it("verifies cents, percentages and plain numbers without erasing text", () => {
     expect(checkNumbers("Profit $123.45, 12.5% margin, 4 days", "", [base], "en")).toEqual([]);
     expect(checkNumbers("Profit $999.00", "", [base], "en")).toHaveLength(1);
