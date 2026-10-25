@@ -21,7 +21,10 @@ export const attentionTools={
         impactCents:item.impactCents,actionLabel:item.actionLabel,
       })));
       return {source:"home_attention",period:{from:ctx.asOf,to:ctx.asOf},
-        agentId:"alex",missing:[],
+        agentId:"alex",missing:[
+          ...(items.some(item=>item.id==="alerts-unavailable")?["alertsUnavailable"]:[]),
+          ...(items.some(item=>item.id==="match-unavailable")?["catalogReviewUnavailable"]:[]),
+        ],
         total,items:visible.map(row=>byId.get(row.id)!) };
     },
   },
