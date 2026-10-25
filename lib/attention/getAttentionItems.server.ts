@@ -1,0 +1,215 @@
+import "server-only";
+import { z } from "zod";
+import { getLocale, getTranslations } from "next-intl/server";
+import { getSnapshot } from "@/lib/data/getSnapshot";
+import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
+import type { BusinessSnapshot } from "@/lib/data/types";
+import { readUsageVariance } from "@/lib/data/usageVariance.server";
+import { usageWeekEnding } from "@/lib/calc/usageDates";
+import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
+import { daysForPeriod, type Period } from "@/lib/viewmodels/period";
+import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
+import { isSquareConfigured } from "@/lib/pos/square/oauth";
+import { getOpenAlerts } from "@/lib/data/getAlerts";
+import { describeAlert } from "@/components/alerts/alertContent";
+import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
+import { gettingStartedAttention } from "@/components/home/GettingStartedCard";
+import { homeAttentionHref, homeShiftHref, showAlertInHome, type HomeAttentionItem } from "@/components/home/homeAttention";
+import { missingCostDestination } from "@/lib/expenses/expectedCosts";
+import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
+import { syncAndGetOperatingTasks } from "@/lib/data/operatingTasks";
+import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
+import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
+import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
+import type { AgentId, OperatingTask } from "@/lib/operating/tasks";
+
+const agentSchema=z.enum(["alex","leo","maya","olivia"]);
+export const attentionItemSchema=z.strictObject({
+  id:z.string().min(1).max(220),kind:z.string().min(1).max(80),
+  agentId:agentSchema,source:z.string().min(1).max(80),
+  title:z.strictObject({key:z.string().min(1).max(130),params:z.record(z.string(),z.union([z.string(),z.number()]))}),
+  displayTitle:z.string().min(1).max(350),
+  actionLabel:z.string().min(1).max(160),href:z.string().min(1).max(1000).regex(/^\/(?!\/)[^\\]*$/),
+  impactCents:z.number().int().safe().nullable(),
+});
+export type AttentionItem=z.infer<typeof attentionItemSchema>;
+export type AttentionArgs={period?:Period;locale?:"en"|"es"|"ar";snapshot?:BusinessSnapshot;
+  menu?:Awaited<ReturnType<typeof getMenuControlCenter>>};
+/** Home and chat must call this same owner-scoped source. A failed optional read is
+ * reported as its own action, never silently replaced with no work. */
+function operatingTaskHref(task: OperatingTask): string {
+  if(task.kind==="price_experiment_report"){
+    const thread=task.payload.threadId,proposal=task.payload.proposalId;
+    if(typeof thread==="string"&&typeof proposal==="string")
+      return "/?thread="+encodeURIComponent(thread)+"&experiment="+encodeURIComponent(proposal);
+    return "/operations?agent=alex&status=needs_you&task="+encodeURIComponent(task.id);
+  }
+  if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
+  if (task.kind === "staff_coverage") {
+    const shiftDate = task.payload.shiftDate ?? task.payload.businessDate;
+    return homeShiftHref(task.entityId, typeof shiftDate === "string" ? shiftDate : null);
+  }
+  if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
+  if (task.kind === "money_update") return "/more/bills";
+  // Supply questions need the existing Team inbox; an ingredient-cost upload is not a
+  // response to a staff/member stock check, and this UI must never imply it is.
+  if (task.kind === "supply_check") {
+    const status = task.status === "handled" ? "handled" : task.status === "watching" ? "watching" : "needs_you";
+    return `/operations?status=${status}&agent=maya`;
+  }
+  return "/operations";
+}
+
+
+export async function getAttentionItems(args:AttentionArgs={}):Promise<AttentionItem[]>{
+  const period=args.period??"today";
+  const requestedLocale=args.locale??await getLocale();
+  const locale=requestedLocale==="es"||requestedLocale==="ar"?requestedLocale:"en";
+  const [snapshot,menu]=await Promise.all([args.snapshot??getSnapshot(period),args.menu??getMenuControlCenter()]);
+  const vm=buildHomeViewModel(snapshot,period);
+  const usagePeriod=usageWeekEnding(snapshot.todayDateStr);
+  const usageOver=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to})
+    .then(r=>r.rows.filter(x=>x.status==="over")).catch(()=>[]);
+  const [t,tOperations,tCategories,tExperiment,tAlerts,tReconnect]=await Promise.all([
+    getTranslations("Home"),getTranslations("Operations"),getTranslations("Categories"),
+    getTranslations("SupervisorExperiment"),getTranslations("Alerts"),getTranslations("Reconnect"),
+  ]);
+  const posStatus=await getPosConnectionStatus();
+  const squareReconnectReady=isSquareConfigured()&&Boolean(process.env.SQUARE_REDIRECT_URI);
+  const derivedTeam=buildOperationsTeamViewModel(snapshot,menu);
+  const persistedTasks=await syncAndGetOperatingTasks([
+    ...derivedTeam.needsYou,...derivedTeam.handled,...derivedTeam.watching,
+  ]);
+  const team=projectOperatingTasks(persistedTasks.tasks);
+  const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
+  const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
+    const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
+    let title: string;
+
+    if(task.kind==="price_experiment_report"){
+      title=tExperiment("reportTask",{item:itemName});
+    }else if (task.status === "handled" && task.kind === "price_review") {
+      // Handled covers both "keep current" and a separately verified price application.
+      // Never describe a verified price change as a decision to keep the old price.
+      title = tOperations(
+        task.payload.priceAppliedToPos === true
+          ? "homeVerifiedPriceApplied"
+          : task.payload.ownerChoice === "keep_price"
+            ? "homeHandledPrice"
+            : "homePriceReviewClosed",
+        { item: itemName },
+      );
+    } else if (task.status === "handled" && task.kind === "staff_coverage") {
+      title = tOperations(task.payload.scheduleApplied === true ? "homeHandledCoverage" : "homeCoverageReviewed");
+    } else if (task.status === "handled") {
+      title = tOperations("homeTaskHandled");
+    } else if (task.kind === "price_review" && task.status === "watching" && task.payload.awaitingPriceApplication === true) {
+      title = tOperations("homePriceAwaitingVerification", { item: itemName });
+    } else if (task.kind === "price_review" && task.status === "watching" && typeof task.payload.snoozeMode === "string") {
+      title = tOperations("homePriceReviewLater", { item: itemName });
+    } else if (task.kind === "price_review") {
+      const direction = priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents));
+      title = tOperations(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName });
+    } else if (task.kind === "data_quality") {
+      title = tOperations("missingCategory", { category: tCategories(String(task.payload.categoryCode) as ExpenseCategoryCode) });
+    } else if (task.kind === "staff_coverage") {
+      title = tOperations("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? tOperations("staffCoverageIssue")) });
+    } else if (task.kind === "money_update") {
+      title = tOperations("homeMoneyUpdate");
+    } else if (task.kind === "supply_check" && task.status === "needs_response") {
+      title = tOperations("homeSupplyNeedsResponse", { item: String(task.payload.itemName ?? tOperations("homeSupplies")) });
+    } else {
+      title = tOperations("mayaWatching");
+    }
+
+    return { id: task.id, agentId: task.agentId, agentName: agentNames[task.agentId], title, href: operatingTaskHref(task) };
+  };
+
+  const [alerts, unmatched] = await Promise.all([
+    // Alerts are a secondary Home signal: a failing alert refresh must not
+    // take the owner’s financial snapshot and chat offline.
+    getOpenAlerts().catch(() => null),
+    // Matching is a secondary Home signal. A temporary match-query failure must
+    // not take down the owner’s key numbers and chat; the review link remains visible.
+    getCatalogMatchReview().catch(() => null),
+  ]);
+  const alertItems: HomeAttentionItem[] = (alerts ?? []).filter(alert => showAlertInHome(alert.kind)).map(alert => {
+    const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
+    // The legacy manage-staff redirect opens Team, not Schedule. Link directly
+    // to Schedule so the meal-break fix is reachable before Step 13 merges.
+    const href = alert.kind === "meal_break"
+      ? homeShiftHref(String(alert.payload.employeeId ?? ""), String(alert.payload.date ?? ""))
+      : description.actionHref;
+    return { id: "alert:" + alert.id, title: description.title, actionLabel: description.actionLabel,
+      href: homeAttentionHref({ kind: "alert", href }), impactCents: alert.impactCents };
+  });
+  // Alerts for a missing bill and unmatched catalog items describe the same work.
+  const coveredBills = new Set((alerts ?? []).filter(a => a.kind === "missing_bill").map(a => String(a.payload.categoryCode ?? "")));
+  const missingFeeDays = daysForPeriod(snapshot, period).filter(day => day.netSalesCents > 0 && day.cardFeesStatus === "missing").length;
+  const items: HomeAttentionItem[] = [
+    ...(alerts === null ? [{
+      id:"alerts-unavailable",title:t("attentionAlertsUnavailable"),actionLabel:t("attentionCheckAlerts"),
+      href:"/more/alerts",impactCents:null
+    }] : []),
+    ...(posStatus && posStatus.status!=="active" ? [{
+      id:"reconnect",
+      title:posStatus.provider==="square" && !squareReconnectReady ? t("attentionRegisterSetupUnavailable") : tReconnect("banner"),
+      actionLabel:posStatus.provider==="toast" || posStatus.provider==="square" && squareReconnectReady
+        ? tReconnect("action") : t("attentionUploadSales"),
+      href:homeAttentionHref({kind:"reconnect" as const,provider:posStatus.provider,
+        locale, squareConfigured:squareReconnectReady}),impactCents:null
+    }]:[]),
+    ...(vm.isGettingStarted ? gettingStartedAttention({
+      connectRegister: t("gettingStartedConnectRegister"), uploadSales: t("gettingStartedUploadSales"),
+      addBills: t("gettingStartedAddBills"), addStaff: t("gettingStartedAddStaff"),
+      actionLabel: t("attentionFix"),
+    }) : []),
+    ...(missingFeeDays > 0 ? [{
+      id:"fees",title:t("attentionFeesMissing",{count:missingFeeDays}),actionLabel:t("attentionAddFees"),
+      href:homeAttentionHref({kind:"fees" as const}),impactCents:null
+    }] : []),
+    ...vm.missingCategories.filter(line => !coveredBills.has(line.categoryCode)).map(line => ({
+      id: "bill:" + line.categoryCode, title: t("missingCostBannerText", {category: tCategories(line.categoryCode)}),
+      actionLabel: t("missingCostBannerAction"), href: homeAttentionHref({kind:"bill" as const,category:line.categoryCode}), impactCents: null
+    })),
+    ...(!vm.isGettingStarted && vm.coverage.actualDays < vm.coverage.expectedDays ? [{
+      id:"missing-sales", title:t("attentionSalesMissing",{count:vm.coverage.expectedDays-vm.coverage.actualDays}),
+      actionLabel:posStatus?.provider==="toast" && posStatus.status==="active" ? t("attentionSyncToast") : t("attentionUploadSales"),
+      href:homeAttentionHref({kind:"missing_sales" as const,toastConnected:posStatus?.provider==="toast" && posStatus.status==="active"}),impactCents:null
+    }] : []),
+    ...(unmatched === null ? [{
+      id:"match-unavailable",title:t("attentionMatchUnavailable"),actionLabel:t("attentionMatch"),
+      href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
+    }] : unmatched.length>0 ? [{
+      id:"unmatched",title:t("attentionUnmatched",{count:unmatched.length}),actionLabel:t("attentionMatch"),
+      href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
+    }]:[]),
+    ...(usageOver.length>0 ? [{
+      id:"pantry",title:t("usageOverAlert"),actionLabel:t("usageReview"),
+      href:homeAttentionHref({kind:"pantry" as const}),impactCents:null
+    }]:[]),
+    ...alertItems,
+    ...team.needsYou.filter(task=>!(task.kind==="data_quality" && coveredBills.has(String(task.payload.categoryCode))) &&
+      !(task.kind==="data_quality" && vm.missingCategories.some(line=>line.categoryCode===task.payload.categoryCode)))
+      .map(task=>({...taskPreview(task),actionLabel:t("attentionFix"),impactCents:
+        typeof task.payload.impactCents==="number" ? task.payload.impactCents :
+        typeof task.payload.estimatedAmountCents==="number" ? task.payload.estimatedAmountCents : null})),
+  ];
+
+  const taskMap=new Map(team.needsYou.map(task=>[task.id,task]));
+  const alertMap=new Map((alerts??[]).map(alert=>["alert:"+alert.id,alert]));
+  return z.array(attentionItemSchema).parse(items.map(item=>{
+    const task=taskMap.get(item.id),alert=alertMap.get(item.id);
+    const kind=task?.kind??alert?.kind??(item.id.startsWith("bill:")?"bill":item.id);
+    const source=task?"operating_tasks":alert?"alerts":item.id==="unmatched"?"pos_catalog_matches":
+      item.id.startsWith("bill:")?"missing_costs":item.id==="pantry"?"usage_variance":"home";
+    const agentId:AgentId=task?.agentId??(kind==="staff_coverage"||kind==="meal_break"||
+      kind==="early_clockin"||kind==="getting-started-staff"?"olivia":
+      kind==="unmatched"||kind==="pantry"||kind==="supply_check"?"maya":
+      kind==="bill"||kind==="fees"||kind==="data_quality"||kind==="money_update"||
+      kind==="missing_bill"?"leo":"alex");
+    return {id:item.id,kind,source,agentId,
+      title:{key:task?"Operations."+kind:alert?"Alerts."+kind:"Home."+kind,params:{}},
+      displayTitle:item.title,actionLabel:item.actionLabel,href:item.href,impactCents:item.impactCents};
+  }));
+}
