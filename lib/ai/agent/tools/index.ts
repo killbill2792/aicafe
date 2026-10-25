@@ -169,6 +169,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         filtered=[resolved.value];
       }
     }
+    if(input.query&&filtered.length===1&&!ownerNamedTarget(ctx.resolveState,filtered[0].id,filtered[0].name))
+      return {source:"menu_items",period:null,agentId:"alex",missing:["targetNotConfirmed"]};
     const limit = input.limit ?? 8;
     return { source: "menu_items", period: null, agentId:"alex",
       missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : [])],
