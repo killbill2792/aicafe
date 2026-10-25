@@ -54,6 +54,19 @@ describe("safe entity resolution",()=>{
     expect(staff.status).toBe("ambiguous");
     if(staff.status==="ambiguous")expect(staff.candidates.map(c=>c.label)).toEqual(["Maria — Barista","Maria — Manager"]);
   });
+  it("does not let a generic product word or overlapping substring select a UUID",()=>{
+    const choices=[{id:hot,label:"Latte",detail:"Hot"},
+      {id:iced,label:"Iced Latte",detail:"Iced"}];
+    const general=newResolveState("raise latte to $5.50");
+    expect(ownerChoiceGuard(general,hot,choices)?.missing).toEqual(["ownerChoiceRequired"]);
+    expect(ownerChoiceGuard(general,iced,choices)?.missing).toEqual(["ownerChoiceRequired"]);
+    const explicit=newResolveState("raise iced latte to $5.50");
+    expect(ownerChoiceGuard(explicit,iced,choices)).toBeNull();
+    expect(ownerChoiceGuard(explicit,hot,choices)?.missing).toEqual(["ownerChoiceRequired"]);
+    const selected=newResolveState("Latte — Hot",[
+      {role:"assistant",content:"Asked: Which? Options: Latte — Hot ("+hot+"); Iced Latte ("+iced+")"}]);
+    expect(ownerChoiceGuard(selected,hot,choices)).toBeNull();
+  });
   it("records refused proposal candidates without treating the write as successful",()=>{
     const state=newResolveState("change latte price");
     const candidates=[{id:hot,label:"Latte — Hot",detail:"Hot"},{id:iced,label:"Latte — Iced",detail:"Iced"}];
