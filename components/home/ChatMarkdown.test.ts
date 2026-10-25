@@ -76,7 +76,7 @@ describe("provenance footnotes",()=>{
      {start:0,end:7,source:"owner"}]}));
    expect(html).toContain('aria-label="You told me"');
    expect(html).toContain('aria-expanded="false"');
-   expect(html).toContain("bg-blue-600");
+   expect(html).toContain("bg-chart-staff");
    expect(html).toContain("$11,000");
    expect(html).not.toContain("Not checked against your records");
  });
@@ -86,9 +86,9 @@ describe("provenance footnotes",()=>{
      {start:0,end:4,source:"estimate",detail:"Ingredient percentage"},
      {start:12,end:19,source:"owner"}]}));
    expect(html).toContain("Ingredient percentage");
-   expect(html).toContain("bg-amber-600");
-   expect(html).toContain("bg-blue-600");
-   expect(html).not.toContain("bg-gray-500");
+   expect(html).toContain("bg-warn");
+   expect(html).toContain("bg-chart-staff");
+   expect(html).not.toContain("border border-ink bg-transparent");
    expect(html.match(/aria-label="Number sources"/g)).toHaveLength(1);
  });
  it("has no legend for dates and unlabeled day counts",()=>{
@@ -111,14 +111,27 @@ describe("provenance footnotes",()=>{
    expect(html).toContain("aria-expanded=\"false\"");
    expect(html).not.toContain("margin-inline-start");
  });
- it("keeps number and day-unit together before the dot, without inline warnings",()=>{
+ it("displays a checker-rejected historical duration as one complete warning",()=>{
    const text="Payroll is recorded for 90 days.";
    const start=text.indexOf("90");
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"90 days".length,source:"unchecked"}]}));
-   expect(html).toMatch(/90 days<span class="relative inline-block h-\[6px\]/);
-   expect(html).toContain('aria-label="Not checked against your records"');
+   expect(html.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
+   expect(html).toContain('90 days<span class="relative inline-block h-[6px]');
    expect(html).not.toContain('role="note"');
+ });
+ it("warns on rejected business clocks, never on supported or incidental clocks",()=>{
+   const text="We open Monday at 8:00 AM.";
+   const start=text.indexOf("8:00 AM");
+   const rejected=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
+     unverified:[{start,end:start+"8:00 AM".length,source:"unchecked"}]}));
+   expect(rejected.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
+   expect(rejected).toContain('8:00 AM<span class="relative inline-block h-[6px]');
+   const supported=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
+     unverified:[{start,end:start+"8:00 AM".length,source:"owner"}]}));
+   expect(supported).not.toContain('aria-label="You told me"');
+   expect(renderToStaticMarkup(createElement(ChatMarkdown,{text,labels})))
+     .not.toContain('aria-label="Not checked against your records"');
  });
  it("keeps attached RTL marks after Arabic units and labels the tooltip accessibly",()=>{
    const text="الرواتب مسجلة لمدة ٩٠ أيام.";
@@ -126,8 +139,7 @@ describe("provenance footnotes",()=>{
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"٩٠ أيام".length,source:"unchecked"}]}));
    expect(html).toContain("٩٠ أيام");
-   expect(html).toContain('aria-label="Not checked against your records"');
-   expect(html).toContain("h-12 w-12");
+   expect(html.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
  });
 });
 
@@ -142,9 +154,9 @@ describe("reply-wide provenance legend",()=>{
      createElement(SourceLegend,{sources:["owner","estimate"],labels,legendLabel:"Fuentes de los números"})
    ));
    expect(html.match(/aria-label="Fuentes de los números"/g)).toHaveLength(1);
-   expect(html).not.toContain("bg-gray-500");
-   expect(html).toContain("bg-blue-600");
-   expect(html).toContain("bg-amber-600");
+   expect(html).not.toContain("border border-ink bg-transparent");
+   expect(html).toContain("bg-chart-staff");
+   expect(html).toContain("bg-warn");
  });
  it("omits legend completely if no spans are displayed",()=>{
    const html=renderToStaticMarkup(createElement(SourceLegend,{
@@ -211,7 +223,7 @@ describe("readable provenance in both appearance modes",()=>{
       sources:["owner","estimate","unchecked"],
       labels:{owner:"You told me",estimate:"Estimate",unchecked:"Not checked against your records"},
     }));
-    expect(html).toContain("text-[17px]");
+    expect(html).toContain("text-[14px]");
     expect(html).toContain("leading-relaxed");
     expect(html).not.toContain("text-xs");
   });
@@ -254,4 +266,42 @@ describe("keyboard access to long provenance explanations",()=>{
     expect(html).toContain('tabindex="-1"');
     expect(html).toContain("overflow-y-auto");
   });
+});
+
+
+describe("GFM response tables",()=>{
+ const render=(text:string,locale:"en"|"es"|"ar"="en",unverified:ReadonlyArray<{start:number;end:number}>=[])=>
+   renderToStaticMarkup(createElement(ChatMarkdown,{text,locale,unverified}));
+ it("renders optional pipes, alignment, header-only and paragraph adjacency",()=>{
+   const html=render("Intro\nItem | Value\n:--- | ---:\nLatte | $7");
+   expect(html).toContain("<table");
+   expect(html).toContain('scope="col"');
+   expect(html).toContain("text-end");
+   expect(html).toContain('role="region"');
+   expect(html).toContain("overflow-x-auto");
+   expect(render("| Head |\n| :---: |")).toContain("<table");
+ });
+ it("does not render malformed tables",()=>{
+   expect(render("Item | Value\nOne | Two")).not.toContain("<table");
+ });
+ it("handles ragged rows and consecutive tables",()=>{
+   const html=render("A | B\n--- | ---\n1\n2 | 3 | 4\nC | D\n--- | ---\n5 | 6");
+   expect(html.match(/<table/g)).toHaveLength(2);
+   expect(html).toContain("3");
+   expect(html).not.toContain(">4<");
+ });
+ it("preserves escaped pipes, code pipes, inline emphasis and safe links",()=>{
+   const html=render("| Name | Link |\n| --- | --- |\n| red\\|blue and `a|b` | **Bold** [go](https://example.com) |");
+   expect(html).toContain("red|blue");
+   expect(html).toContain("a|b");
+   expect(html).toContain("<strong");
+   expect(html).toContain("https://example.com");
+ });
+ it("renders Arabic RTL and places one dot after whole monetary token",()=>{
+   const text="الصنف | المبلغ\n--- | ---:\nقهوة | $1,274.25";
+   const start=text.indexOf("$");
+   const html=render(text,"ar",[{start,end:start+9}]);
+   expect(html).toContain('dir="rtl"');
+   expect(html.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
+ });
 });

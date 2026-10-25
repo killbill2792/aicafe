@@ -104,7 +104,7 @@ function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block:
       ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
           <AlertCircle aria-hidden="true" size={18} className="mt-1 shrink-0" />{block.text}
         </p>
-      : <ChatMarkdown text={block.text} unverified={unverified} labels={{owner:copy.provenanceOwner,estimate:copy.provenanceEstimate,unchecked:copy.provenanceUnchecked,breakEvenSales:copy.provenanceBreakEven,salesGap:copy.provenanceSalesGap,dailyOverhead:copy.provenanceOverhead}} showLegend={false} />;
+      : <ChatMarkdown text={block.text} locale={locale} unverified={unverified} labels={{owner:copy.provenanceOwner,estimate:copy.provenanceEstimate,unchecked:copy.provenanceUnchecked,breakEvenSales:copy.provenanceBreakEven,salesGap:copy.provenanceSalesGap,dailyOverhead:copy.provenanceOverhead}} showLegend={false} />;
   }
   if (block.type === "task_card" && typeof block.title === "string" && typeof block.agent === "string" &&
     typeof block.status === "string" && typeof block.href === "string" &&
@@ -958,7 +958,7 @@ export default function SupervisorChatComposer({
           aria-pressed={dictation === "listening"}
           disabled={!enabled || !canUseAi || sending || uploading || dictation === "recognizing"}
           className={dictation === "listening"
-            ? "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-600 text-white ring-2 ring-red-200 animate-pulse motion-reduce:animate-none"
+            ? "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neg text-paper ring-2 ring-neg-soft animate-pulse motion-reduce:animate-none"
             : "flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-good hover:bg-pos-soft disabled:opacity-40"}>
           {dictation === "listening" ? <Square size={20} fill="currentColor" aria-hidden="true" />
             : dictation === "recognizing" ? <LoaderCircle size={21} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />

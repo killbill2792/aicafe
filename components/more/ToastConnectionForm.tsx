@@ -2,6 +2,7 @@
 import {useEffect,useState} from "react";
 import {useLocale} from "next-intl";
 import {saveThenVerifyToastConnection,toastStatus,latestToastSync} from "./toastConnectFlow";
+import {TOAST_CONNECTION_CHANGED} from "./toastConnectionEvents";
 type Location={id:string;name:string};
 type State={
  state:string;apiOrigin:string|null;lastVerifiedAt:string|null;
@@ -76,7 +77,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
     const outcome=await saveThenVerifyToastConnection({
      businessId,apiUrl,clientId,clientSecret:secret,locations:rows
     });
-    if(outcome.saved){setSecret("");window.dispatchEvent(new Event("toast-connection-changed"));}
+    if(outcome.saved){setSecret("");window.dispatchEvent(new Event(TOAST_CONNECTION_CHANGED));}
     await load();
     const reason=errors[outcome.error??""]??labels.errorUnavailable;
     setMessage(outcome.verified?labels.verified:
@@ -94,7 +95,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
     setMessage(labels.error+": "+(errors[result.error??""]??labels.errorUnavailable));
     await load();return;
    }
-   window.dispatchEvent(new Event("toast-connection-changed"));
+   window.dispatchEvent(new Event(TOAST_CONNECTION_CHANGED));
    await load();
    setMessage(action==="test"&&result.state==="verified"?labels.verified:labels.success);
   }catch{setMessage(labels.errorUnavailable);}

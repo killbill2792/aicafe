@@ -16,20 +16,24 @@ type CafeDb = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 async function readToastState(businessId: string): Promise<MoreBadgeInputs["toast"]> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return undefined;
   const db = createAdminSupabaseClient();
-  const [credential, locations, health] = await Promise.all([
+  const [credential, locations, health, attention] = await Promise.all([
     db.from("toast_api_credentials").select("state,last_error_category")
       .eq("business_id", businessId).maybeSingle(),
     db.from("toast_location_mappings").select("verified_at")
       .eq("business_id", businessId),
-    db.from("toast_sync_health").select("last_failure_category")
+    db.from("toast_sync_health_v").select("last_good_sync_at,stale")
       .eq("business_id", businessId),
+    db.from("toast_owner_attention_counts_v").select("days_needing_look")
+      .eq("business_id", businessId).maybeSingle(),
   ]);
-  if (credential.error || locations.error || health.error) return undefined;
+  if (credential.error || locations.error || health.error || attention.error) return undefined;
   return {
     state: credential.data?.state ?? "not_connected",
     hasError: Boolean(credential.data?.last_error_category ||
-      health.data?.some((row) => row.last_failure_category)),
+      health.data?.some((row) => row.stale)),
     verifiedLocation: Boolean(locations.data?.some((row) => row.verified_at)),
+    daysNeedLook: Number(attention.data?.days_needing_look??0),
+    lastGoodSyncAt: health.data?.map(row=>row.last_good_sync_at).filter(Boolean).sort().at(-1)??null,
   };
 }
 

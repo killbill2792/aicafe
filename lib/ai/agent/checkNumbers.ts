@@ -1,3 +1,4 @@
+import { tokenizeNumbers } from "./numberTokens";
 import type { AgentLocale, AgentToolResult } from "./tools";
 import { menuPriceDifferenceCents } from "@/lib/calc/agentPriceDifferences";
 import { metricCatalog,metricKeySchema } from "@/lib/calc/metrics/catalog";
@@ -370,21 +371,22 @@ function isCalendarNumber(text: string, start: number, end: number, value: numbe
     return monthBefore.test(before) || monthAfter.test(after);
   return false;
 }
-function candidates(text: string, locale: AgentLocale): Array<UnverifiedNumber & { value: number; wholePercent: boolean }> {
-  const found: Array<UnverifiedNumber & { value: number; wholePercent: boolean }> = [];
-  for (const m of text.matchAll(numberPattern(locale))) {
-    const token = m[0].trim(), money = new RegExp(currency, "iu").test(token);
-    const percent = /[%٪]$/.test(token);
-    const raw = token.replace(new RegExp(currency, "giu"), "").replace(/[%٪]/g, "").trim().replace("−", "-");
-    const value = decimal(raw, locale);
-    if (!Number.isFinite(value)) continue;
-    const kind: Kind = money ? "money" : percent ? "percent" : "number";
-    if (isCalendarNumber(text, m.index, m.index + m[0].length, value, kind)) continue;
-    found.push({ text: token, start: m.index, end: m.index + m[0].length, kind,
-      wholePercent: percent && !/[.,٫٬]/.test(raw),
-      value: kind === "money" || kind === "percent" ? Math.round(value * 100) : value });
-  }
-  return found;
+/** Keep calendar durations separate from arbitrary sales/item counts. */
+function durationUnitFamily(text:string):"hour"|"minute"|"day"|"week"|"month"|null{
+ if(/(?:hours?|hrs?|horas?|ساعات?|ساعة)/iu.test(text))return "hour";
+ if(/(?:minutes?|mins?|minutos?|دقائق?|دقيقة)/iu.test(text))return "minute";
+ if(/(?:days?|días?|أيام|ايام)/iu.test(text))return "day";
+ if(/(?:weeks?|semanas?|أسابيع|اسابيع)/iu.test(text))return "week";
+ if(/(?:months?|meses?|أشهر|شهور)/iu.test(text))return "month";
+ return null;
+}
+function candidates(text:string,locale:AgentLocale):Array<UnverifiedNumber & {value:number;wholePercent:boolean;durationUnit:ReturnType<typeof durationUnitFamily>}>{
+ return tokenizeNumbers(text,locale).filter(t=>["money","percent","count","decimal","range","duration"].includes(t.kind)&&t.value!==null)
+  .filter(t=>t.kind==="duration"||!isCalendarNumber(text,t.start,t.end,t.value!,"number"))
+  .map(t=>({start:t.start,end:t.end,text:text.slice(t.start,t.end),
+    value:t.value!,kind:t.kind==="money"?"money":t.kind==="percent"?"percent":"number",
+    wholePercent:t.kind==="percent"&&!/[.,٫٬]/u.test(text.slice(t.start,t.end)),
+    durationUnit:t.kind==="duration"?durationUnitFamily(text.slice(t.start,t.end)):null}));
 }
 /** Only actual list positions are exempt, not sentence-ending business counts. */
 function isListMarker(text: string, start: number, end: number, value: number): boolean {
@@ -507,27 +509,36 @@ type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;perso
 const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
 // The clock token includes the meridiem: dropping Arabic "مساءً" silently
 // turns a 5 PM closing claim into the wrong 05:00 morning assertion.
-const clockPattern = /(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}:[٠-٩۰-۹\d]{2}(?:\s*(?:AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*))?(?![٠-٩۰-۹\d])|(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}\s*(?:AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*)|(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}h(?:[٠-٩۰-۹\d]{2})?\b/giu;
+function clockSpansFromTokens(text:string,locale:AgentLocale="en"):ClockSpan[]{
+ return tokenizeNumbers(text,locale).filter(t=>t.kind==="clock"||t.kind==="clockRange")
+  .map(t=>Object.assign([text.slice(t.start,t.end).replace(/\.$/u,"")] as unknown as RegExpMatchArray,{index:t.start}));
+}
 function canonicalClock(clock:ClockSpan):string|null {
-  const matched=ascii(clock[0]).match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*)|h(\d{2})?)?$/iu);
+  const raw=ascii(clock[0]).replace(/a\.m\./giu,"AM").replace(/p\.m\./giu,"PM");
+  const matched=raw.match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*)|h(\d{2})?)?$/iu);
   if(!matched)return null;
   let hour=Number(matched[1]);
   if(matched[3]){
-    const evening=/^(?:PM|مساء)/iu.test(matched[3]);
+    const evening=/^(?:PM|م|مساء)/iu.test(matched[3]);
     hour=(hour%12)+(evening?12:0);
   }
   if(hour>23||Number(matched[2]??matched[4]??"00")>59)return null;
   return String(hour).padStart(2,"0")+":"+(matched[2]??matched[4]??"00");
 }
 
+/** Mask meridiem abbreviations without shifting source offsets. */
+function sentenceBoundary(prefix:string):number{
+ const masked=prefix.replace(/(?:a\.m\.|p\.m\.)/giu,"    ");
+ return Math.max(masked.lastIndexOf("\n"),masked.lastIndexOf("."),
+  masked.lastIndexOf("!"),masked.lastIndexOf("?"),masked.lastIndexOf(";"))+1;
+}
 function timeRole(text:string, clock:ClockSpan):TimeRole|null {
   const prefix=text.slice(0,clock.index);
-  const sentenceStart=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),
-    prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
+  const sentenceStart=sentenceBoundary(prefix);
   const phrase=text.slice(sentenceStart,clock.index);
   // In an opening-hours range the second endpoint is closing time, even
   // though "open" remains the closest action verb: "open from 8 to 5".
-  const precedingClocks=[...phrase.matchAll(clockPattern)] as ClockSpan[];
+  const precedingClocks=clockSpansFromTokens(phrase);
   const previous=precedingClocks.at(-1);
   if(previous){
     const between=phrase.slice(previous.index+previous[0].length);
@@ -551,8 +562,7 @@ function timeRole(text:string, clock:ClockSpan):TimeRole|null {
 }
 function mentionedWeekdays(text:string,clock:ClockSpan,clocks:ClockSpan[]):string[] {
   const prefix=text.slice(0,clock.index);
-  const sentenceStart=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),prefix.lastIndexOf("!"),
-    prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
+  const sentenceStart=sentenceBoundary(prefix);
   const suffix=text.slice(clockEnd(clock));
   const nextStop=suffix.search(/[.!?;\n]/u);
   const sentenceEnd=nextStop<0?text.length:clockEnd(clock)+nextStop;
@@ -797,7 +807,7 @@ const WORD_NUMBERS:Record<AgentLocale,Record<string,number>>={
   ar:{"صفر":0,"واحد":1,"واحدة":1,"اثنين":2,"اثنان":2,"اثنتان":2,"اثنتين":2,"ثلاثة":3,"ثلاث":3,"أربعة":4,"اربعة":4,"خمسة":5,"ستة":6,"سبعة":7,"ثمانية":8,"ثمان":8,"تسعة":9,"عشرة":10,"عشر":10,"عشرون":20,"ثلاثون":30,"أربعون":40,"اربعون":40,"خمسون":50,"ستون":60,"سبعون":70,"ثمانون":80,"تسعون":90}
 };
 type SpokenWord={word:string;start:number;end:number;group:number};
-type SpokenValue={value:number;kind:Kind};
+type SpokenValue={value:number;kind:Kind;durationUnit:ReturnType<typeof durationUnitFamily>};
 function ownerWordTokens(text:string,locale:AgentLocale):SpokenWord[]{
   const words:SpokenWord[]=[];
   let group=0,lastEnd=0;
@@ -914,15 +924,20 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
     if(unsupportedAdjacent||(explicitQuantity&&attachedMoney)){i=next;continue;}
     const money=!explicitQuantity&&(attachedMoney||monetaryContext.test(before)||monetaryContext.test(after.slice(0,30)));
     const signed=negative?-1:1;
-    result.push({value:signed*(attachedPercent?value:money?value:value/100),
-      kind:attachedPercent?"percent":money?"money":"number"});
+    const kind:Kind=attachedPercent?"percent":money?"money":"number";
+    // Spoken "seven days" is duration evidence, never evidence of 7 sales.
+    const nextWord=after.trimStart().match(/^[\p{L}\p{M}]+/u)?.[0]??"";
+    result.push({value:signed*(attachedPercent?value:money?value:value/100),kind,
+      durationUnit:kind==="number"?durationUnitFamily(nextWord):null});
     i=next;
   }
   return result;
 }
 function proposedDuration(text:string,start:number,end:number):boolean{
  const before=text.slice(Math.max(0,start-55),start),after=text.slice(end,end+25);
- return /^\s*(?:days?|weeks?|días?|semanas?|أيام|ايام|أسابيع|اسابيع)(?!\p{L})/iu.test(after)&&
+ return (/^\s*(?:days?|weeks?|días?|semanas?|أيام|ايام|أسابيع|اسابيع)(?!\p{L})/iu.test(after) ||
+  /\b(?:days?|weeks?|días?|semanas?)$/iu.test(text.slice(start,end)) ||
+  /(?:أيام|ايام|أسابيع|اسابيع)$/u.test(text.slice(start,end))) &&
   /(?:\b(?:for|over|por|durante)\b|(?:لمدة|خلال))\s*$/iu.test(before)&&
   /(?:\b(?:try|test|plan|propose|recommend|suggest|run a trial|prueba|probar|propongo|recomiendo|sugiero)\b|(?:نجرب|اقترح|جرب|جرّب|أوصي))/iu.test(before);
 }
@@ -1041,8 +1056,10 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   for(const item of itemPrices)allowed.money.add(item.priceCents);
   const menuPrices=itemPrices;
   const ownerNumbers=candidates(ownerText,locale);
-  ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
-  for(const spoken of spokenOwnerValues(ownerText,locale))allowed[spoken.kind].add(spoken.value);
+  // Time units are scoped evidence, never generic quantity allowances.
+  ownerNumbers.forEach(v=>{if(!v.durationUnit)allowed[v.kind].add(v.value);});
+  const ownerSpoken=spokenOwnerValues(ownerText,locale);
+  for(const spoken of ownerSpoken)if(!spoken.durationUnit)allowed[spoken.kind].add(spoken.value);
   // Only reconciled, typed numeric evidence authorizes an amount.
   // Re-adding raw current-turn estimates here would resurrect a prior result
   // that a later tool result explicitly invalidated in this same turn.
@@ -1052,7 +1069,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   // Explicit owner-provided quantities are not prices. Infer dollars only from
   // a nearby monetary / menu-price statement, never from "sold 9 drinks".
   for(const v of ownerNumbers){
-    if(v.kind!=="number")continue;
+    if(v.kind!=="number"||v.durationUnit)continue;
     const before=ownerText.slice(Math.max(0,v.start-90),v.start);
     const after=ownerText.slice(v.end,v.end+24);
     if(/^\s*(?:drinks?|orders?|people|staff|items?|cups?|units?|hours?|days?|coffees?)\b/iu.test(after))continue;
@@ -1067,14 +1084,11 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const observed=evidence.flatMap(entry=>entry.times??[]);
   // Only this clock's offsets, action, day(s), and named employee may match a
   // real source interval. Never flatten schedule timestamps into global proof.
-  const clocks = [...text.matchAll(clockPattern)] as ClockSpan[];
-  const ownerClocks = [...ownerText.matchAll(clockPattern)] as ClockSpan[];
-  return candidates(text, locale).filter(v => {
-    if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
-    if(v.kind==="number"&&proposedDuration(text,v.start,v.end))return false;
-    const clock = v.kind==="number" ? clocks.find(m =>
-      v.start < clockEnd(m) && v.end > m.index) : undefined;
-    if(clock){
+  const clocks=clockSpansFromTokens(text,locale);
+  const ownerClocks=clockSpansFromTokens(ownerText,locale);
+  // Keep semantic business-time grounding even though provenance dots are
+  // exempted from clock display. Each endpoint is a single shared token.
+  const unsupportedClocks=clocks.filter(clock=>{
       const role=timeRole(text,clock);
       if(!role){
         // Sales prose may include incidental timestamps (e.g. "999 (8:00)");
@@ -1084,7 +1098,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         const prior=text.slice(0,clock.index);
         const sentenceStart=Math.max(prior.lastIndexOf("\n"),prior.lastIndexOf("."),
           prior.lastIndexOf("!"),prior.lastIndexOf("?"),prior.lastIndexOf(";"))+1;
-        const sentence=text.slice(sentenceStart);
+        const sentenceEnd=text.slice(clockEnd(clock)).search(/[.!?;\n]/u);
+        const sentence=text.slice(sentenceStart,sentenceEnd<0?text.length:clockEnd(clock)+sentenceEnd);
         return /\b(?:open|opening|opens|close|closing|closes|hours|shift|starts?|ends?|begins?|finishes?|abrimos|abrir|abre|abren|apertura|cerramos|cerrar|cierra|cierre|turno)\b|(?:نفتح|نغلق|يفتح|يغلق|وردية|مناوبة|الافتتاح|الإغلاق)/iu.test(sentence);
       }
       const canonical=canonicalClock(clock);
@@ -1118,6 +1133,21 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         return !(verified||ownerGrounded);
       }
       return true;
+  }).map(clock=>({text:clock[0],start:clock.index,end:clockEnd(clock),kind:"number" as const}));
+  const rejectedQuantities=candidates(text, locale).filter(v => {
+    if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
+    if(v.kind==="number"&&proposedDuration(text,v.start,v.end))return false;
+    if(v.durationUnit){
+      // Matching a latte count of 7 cannot verify "staff worked 7 days".
+      const fromOwner=ownerNumbers.some(o=>o.durationUnit===v.durationUnit&&o.value===v.value)||
+        ownerSpoken.some(o=>o.kind==="number"&&o.durationUnit===v.durationUnit&&o.value===v.value);
+      const unitKey:Record<NonNullable<typeof v.durationUnit>,RegExp>={
+        hour:/hours?|hrs?|horas?/iu,minute:/minutes?|mins?|minutos?/iu,
+        day:/days?|días?/iu,week:/weeks?|semanas?/iu,month:/months?|meses?/iu,
+      };
+      const fromTools=evidence.some(entry=>entry.values.some(value=>
+        value.unit==="count"&&unitKey[v.durationUnit!].test(value.key)&&value.value===v.value));
+      return !(fromOwner||fromTools);
     }
     // Named price and comparison claims are identity-sensitive. Validate
     // them BEFORE checking whether some unrelated raw amount happens to match.
@@ -1162,6 +1192,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     return true;
   })
     .map(({ text: token, start, end, kind }) => ({ text: token, start, end, kind }));
+  return [...rejectedQuantities,...unsupportedClocks].sort((a,b)=>a.start-b.start);
 }
 
 /** The numeric value is not the metric identity. Only attach an estimate
@@ -1213,7 +1244,7 @@ export function numberProvenance(text:string,ownerText:string,results:readonly A
  // may decorate supported facts, but it may not suppress unsupported claims.
  const rejected=verifiedVerdict??checkNumbers(text,ownerText,results,locale,previousEvidence);
  const rejectedBySpan=new Map(rejected.map(v=>[v.start+":"+v.end,v]));
- const clocks=[...text.matchAll(clockPattern)];
+ const clocks=clockSpansFromTokens(text,locale);
  const evidence=reconcileSavedEvidence([...previousEvidence,...compactEvidence(results,Infinity)]);
  const menuPrices=evidence.flatMap(entry=>entry.prices??[]);
  const annotated:NumberProvenance[]=[];
@@ -1249,8 +1280,10 @@ export function numberProvenance(text:string,ownerText:string,results:readonly A
      ?estimates.find(x=>x.detail===metric&&x.unit==="cents"&&
        Math.abs(x.value-cents)<=1):undefined;
    if(e){annotated.push({...withUnit(v),source:"estimate",detail:e.detail});continue;}
-   const owner=supplied.some(x=>x.kind===v.kind&&x.value===v.value)||
-      spoken.some(x=>x.kind===v.kind&&x.value===v.value);
+   const owner=supplied.some(x=>x.kind===v.kind&&x.value===v.value&&
+     x.durationUnit===v.durationUnit)||
+      spoken.some(x=>x.kind===v.kind&&x.value===v.value&&
+        x.durationUnit===v.durationUnit);
    if(owner){annotated.push({...withUnit(v),source:"owner"});}
  }
  // Guard against parser divergence: every rejected span must survive. There

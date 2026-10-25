@@ -47,14 +47,18 @@ afterEach(()=>vi.unstubAllEnvs());
 function pilotReader(rows:Row[],rpcDates:string[],canonicalToastDates:string[],broken=false,flags:unknown[]=[]){
  const rollup={select:()=>rollup,eq:()=>rollup,gte:()=>rollup,lte:()=>rollup,
   order:()=>rollup,limit:async()=>({data:rows,error:null})};
- const orders={select:()=>orders,eq:()=>orders,like:()=>orders,in:()=>orders,
-  limit:async()=>broken?{data:null,error:{message:"connection failed"}}:
-   {data:canonicalToastDates.map(business_date=>({business_date})),error:null}};
- const flagsRead={select:()=>flagsRead,eq:()=>flagsRead,gte:()=>flagsRead,lte:()=>flagsRead,order:()=>flagsRead,
-  limit:async()=>({data:flags,error:null})};
+ const orders={select:()=>orders,eq:()=>orders,like:()=>orders,in:()=>orders,order:()=>orders,
+  range:async(start:number,end:number)=>broken?{data:null,error:{message:"connection failed"}}:
+   {data:canonicalToastDates.slice(start,end+1).map((business_date,i)=>({id:start+i,business_date})),error:null}};
+ const flagsRead={select:()=>flagsRead,eq:()=>flagsRead,gte:()=>flagsRead,lte:()=>flagsRead,
+  order:()=>flagsRead,range:async(a:number,b:number)=>({data:flags.slice(a,b+1),error:null})};
+ const ownerFlags={select:()=>ownerFlags,eq:()=>ownerFlags,is:()=>ownerFlags,
+  gte:()=>ownerFlags,lte:()=>ownerFlags,order:()=>ownerFlags,
+  range:async()=>({data:[],error:null})};
  const rpc=vi.fn().mockResolvedValue({data:rpcDates.map(business_date=>({business_date})),error:null});
  return supervisorHistoricalReaders({
-  from:(table:string)=>table==="orders"?orders:table==="toast_day_status"?flagsRead:rollup,rpc
+  from:(table:string)=>table==="orders"?orders:table==="toast_day_status"?flagsRead:
+   table==="toast_day_owner_flags"?ownerFlags:rollup,rpc
  } as unknown as SupabaseClient,"my-cafe");
 }
 describe("Toast source-scoped Supervisor coverage without changing aggregate formulas",()=>{

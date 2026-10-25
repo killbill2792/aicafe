@@ -35,7 +35,7 @@ function fakeDb(analytics:boolean){
    let patch:Record<string,unknown>|null=null;
    const q={
     select(_s:string){return q;},eq(k:string,v:unknown){filters[k]=v;return q;},
-    in(_k:string,_v:unknown[]){return q;},order(_k:string){return q;},limit(_n:number){return q;},
+    in(_k:string,_v:unknown[]){return q;},or(_expr:string){return q;},order(_k:string,_opts?:unknown){return q;},limit(_n:number){return q;},
     update(value:Record<string,unknown>){patch=value;return q;},
     upsert(_x:unknown){return {error:null};},
     async maybeSingle(){
