@@ -101,19 +101,20 @@ export function calendarMonth(date:string):CalcPeriod{
   return {from:start,to:new Date(next.getTime()-CALC_DAY).toISOString().slice(0,10)};
 }
 export type Coverage=CalcPeriod|readonly string[];
+export type CoverageFallback={requested:CalcPeriod;used:CalcPeriod};
 /** Use the requested window if it overlaps actual coverage; otherwise use the
  * most recent covered window (up to the requested length) and tell the owner.
  * A disjoint set of covered days never implies missing days are zero sales. */
 export function coveredWindow(requested:CalcPeriod,coverage:Coverage):{
-  period:CalcPeriod;fallback:boolean;label:string|null
+  period:CalcPeriod;fallback:boolean;label:string|null;coverageFallback:CoverageFallback|null
 }{
   const days=Array.isArray(coverage)?[...coverage].sort():null;
   const from=days?days[0]: (coverage as CalcPeriod).from;
   const to=days?days.at(-1): (coverage as CalcPeriod).to;
-  if(!from||!to)return {period:requested,fallback:false,label:null};
+  if(!from||!to)return {period:requested,fallback:false,label:null,coverageFallback:null};
   civilDay(from);civilDay(to);
-  if(from<=requested.to&&to>=requested.from)return {period:requested,fallback:false,label:null};
+  if(from<=requested.to&&to>=requested.from)return {period:requested,fallback:false,label:null,coverageFallback:null};
   const latest={from:dateOffset(to,-Math.min(periodDays(requested),periodDays({from,to}))+1),to};
   const fmt=(v:string)=>{const d=new Date(civilDay(v));return d.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});};
-  return {period:latest,fallback:true,label:"Latest data: "+fmt(latest.from)+"–"+fmt(latest.to)};
+  return {period:latest,fallback:true,label:"Latest data: "+fmt(latest.from)+"–"+fmt(latest.to),coverageFallback:{requested,used:latest}};
 }
