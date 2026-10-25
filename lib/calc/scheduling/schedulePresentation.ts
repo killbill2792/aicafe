@@ -3,6 +3,7 @@ import type {OpenHours} from "@/lib/business/openHours";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 import {minuteOfDay,shiftCost,roleWageAverages,businessWageEstimate,aggregateCosts,type CostShift,type CostLine} from "./shiftCost";
 import {checkShiftLength,checkScheduledWeeklyBounds,type RuleSettings} from "./ruleChecks";
+import {scheduledShiftMinutes} from "./shiftInput";
 
 export type PersonForSchedule={id:string;name:string;role:string|null;wageCents:number|null;
  minWeeklyMinutes:number|null;maxWeeklyMinutes:number|null;availableDays:number[]|null;colorIndex:number|null;
@@ -102,8 +103,21 @@ export function availabilityStatus(person:PersonForSchedule,date:string,start:st
  if(valid.length){
   // The foundation permits multiple windows on a weekday. Their union,
   // including touching windows, must cover the full proposed shift.
-  const spans=valid.map(w=>span(w.start_local.slice(0,5),w.end_local.slice(0,5)))
-    .sort((a,b)=>a.start-b.start||a.end-b.end);
+  const spans=valid.map(w=>span(w.start_local.slice(0,5),w.end_local.slice(0,5)));
+  // Overnight work can continue into the next selected day. Extend coverage
+  // using that day's effective windows, rather than stopping at midnight.
+  if(range.end>1440){
+   const nextDate=new Date(Date.parse(date+"T12:00:00Z")+86400000).toISOString().slice(0,10);
+   const nextDay=dateDay(nextDate);
+   if(person.availableDays===null||person.availableDays.includes(nextDay)){
+    for(const window of windows.filter(w=>w.employee_id===person.id&&w.day_of_week===nextDay&&
+     w.effective_from<=nextDate&&(w.effective_to===null||w.effective_to>=nextDate))){
+     const part=span(window.start_local.slice(0,5),window.end_local.slice(0,5));
+     spans.push({start:part.start+1440,end:part.end+1440});
+    }
+   }
+  }
+  spans.sort((a,b)=>a.start-b.start||a.end-b.end);
   let coveredUntil=range.start;
   for(const window of spans){
    if(window.start>coveredUntil)break;
@@ -113,6 +127,12 @@ export function availabilityStatus(person:PersonForSchedule,date:string,start:st
   return "unavailable";
  }
  return "free";
+}
+/** Draft clock fields can temporarily be blank while an owner types.
+ * Never pass them to strict availability math until both are valid. */
+export function draftAvailabilityStatus(person:PersonForSchedule,date:string,start:string,end:string,
+ shifts:DetailedShift[],windows:AvailabilityEntry[]):AvailabilityStatus|null{
+ return scheduledShiftMinutes(start,end)===null?null:availabilityStatus(person,date,start,end,shifts,windows);
 }
 export function bestFreePerson(people:PersonForSchedule[],date:string,start:string,end:string,
  shifts:DetailedShift[],availability:AvailabilityEntry[]):PersonForSchedule|null{

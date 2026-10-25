@@ -73,6 +73,75 @@ for(const locale of ["es","ar"]){
  await page.screenshot({path:join(output,"schedule-"+locale+"-390.png"),fullPage:true});
  await page.close();
 }
+// Step 12 acceptance: Team person editor at 390×844, 1440×900 and Arabic RTL.
+for(const [locale,width,height] of [["en",390,844],["en",1440,900],["ar",390,844]]){
+ const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
+ page.on("pageerror",err=>errors.push(String(err)));
+ await page.goto(base+"/"+locale+"/staff?tab=team&fixture=1&week=2026-10-26",{waitUntil:"networkidle"});
+ await assertVisible(page,"input[aria-label]",locale+" team person");
+ await setPalette(page);
+ const dialog=page.locator('dialog[aria-labelledby="staff-sheet-heading"]');
+ // The route can return before React has hydrated on a busy CI runner.
+ for(let attempt=0;attempt<8&&!await dialog.isVisible();attempt++){
+  await page.locator("button.border-dashed").first().click();
+  if(!await dialog.isVisible())await page.waitForTimeout(1200);
+ }
+ await dialog.waitFor({state:"visible",timeout:15000});
+ if(locale==="ar"&&await dialog.evaluate(el=>getComputedStyle(el).direction)!=="rtl")
+  throw Error("Arabic person editor did not inherit RTL");
+ await dialog.locator("input").first().fill("Fixture Person");
+ const wage=dialog.locator("#staff-hourly-wage");
+ await wage.fill("invalid");
+ await dialog.locator("#staff-wage-error").waitFor({state:"visible"});
+ await wage.fill("18.73");
+ await dialog.locator("#staff-wage-error").waitFor({state:"hidden"});
+ await dialog.locator('input[type="time"]').nth(0).fill("06:15");
+ await dialog.locator('input[type="time"]').nth(1).fill("12:37");
+ await page.screenshot({path:join(output,"team-person-"+locale+"-"+width+".png"),fullPage:true});
+ await page.close();
+}
+// Step 13 acceptance: minute-level shift edit after-state at 390x844,
+// 1440x900 and Arabic RTL. Verify invalid breaks never reach preview or save.
+for(const [locale,width,height] of [["en",390,844],["en",1440,900],["ar",390,844]]){
+ const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
+ page.on("pageerror",err=>errors.push(String(err)));
+ try {
+  await page.goto(base+"/"+locale+"/staff?fixture=1&week=2026-10-26",{waitUntil:"networkidle"});
+  const dialog=page.locator('dialog[aria-labelledby="staff-sheet-heading"]');
+  for(let attempt=0;attempt<8&&!await dialog.isVisible();attempt++){
+   await page.locator("header button[aria-label]").first().click();
+   if(!await dialog.isVisible())await page.waitForTimeout(1200);
+  }
+  await dialog.waitFor({state:"visible",timeout:15000});
+  if(locale==="ar"&&await dialog.evaluate(el=>getComputedStyle(el).direction)!=="rtl")
+   throw Error("Arabic shift editor must be RTL");
+  const clockInputs=dialog.locator('input[type="time"]');
+  if(await clockInputs.count()!==2)throw Error("Step 13 shift form needs two minute-level clock inputs");
+  await clockInputs.nth(0).fill("");
+  await dialog.getByRole("alert").first().waitFor({state:"visible"});
+  if(!await dialog.locator("button.mt-5.min-h-14").first().isDisabled())
+   throw Error("Empty shift start must disable Save");
+  if(!await dialog.isVisible())throw Error("Clearing shift time crashed the editor");
+  await clockInputs.nth(0).fill("06:15");
+  await clockInputs.nth(1).fill("");
+  await dialog.getByRole("alert").first().waitFor({state:"visible"});
+  if(!await dialog.locator("button.mt-5.min-h-14").first().isDisabled())
+   throw Error("Empty shift end must disable Save");
+  if(!await dialog.isVisible())throw Error("Clearing end time crashed the editor");
+  await clockInputs.nth(0).fill("06:15");
+  await clockInputs.nth(1).fill("12:37");
+  if(await clockInputs.nth(0).inputValue()!=="06:15"||await clockInputs.nth(1).inputValue()!=="12:37")
+   throw Error("Shift minute input was lost");
+  const breaks=dialog.locator('input[type="text"][inputmode="numeric"]');
+  if(await breaks.count()!==1)throw Error("Step 13 typed break input missing");
+  await breaks.fill("");
+  await dialog.locator("#staff-break-error").waitFor({state:"visible"});
+  if(await breaks.getAttribute("aria-invalid")!=="true")throw Error("Empty break input not marked invalid");
+  await breaks.fill(locale==="ar"?"٣١":"31");
+  await dialog.locator("#staff-break-error").waitFor({state:"hidden"});
+  await page.screenshot({path:join(output,"shift-after-"+locale+"-"+width+".png"),fullPage:true});
+ } finally {await page.close();}
+}
 await browser.close();
 if(errors.length)throw Error("Client runtime errors: "+errors.join("\n"));
-console.log("Captured Schedule, Team, Rules at 390/1280, shift editing, 8 themes in light/dark, and es/ar at 390.");
+console.log("Captured Schedule/Team/Rules, Team person at 390/1440 and ar RTL, shift editing, 8 themes and es/ar.");

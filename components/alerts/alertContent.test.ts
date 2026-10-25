@@ -25,7 +25,7 @@ describe("describeAlert", () => {
   });
   it("keeps the meal break link unchanged", () => {
     expect(get("meal_break",{employeeName:"Sam",date:"2026-10-23",employeeId:"emp1"})).toMatchObject({
-      actionHref:"/more/manage-staff?date=2026-10-23&employee=emp1#employee-emp1",
+      actionHref:"/staff?tab=schedule&date=2026-10-23&employee=emp1",
     });
   });
   it("directs matched and empty-name imports to Match items", () => {
@@ -34,5 +34,14 @@ describe("describeAlert", () => {
   });
   it.each(["early_clockin","underpriced","overstaffed","covered_milestone","not-in-enum"])("safely describes %s", (kind) => {
     expect(get(kind as AlertRow["kind"])).toMatchObject({icon:"other",title:"Something needs a look",subtitle:"Review the alert",actionLabel:"Review",actionHref:"/more/alerts/alert-123"});
+  });
+
+  it("keeps encoded employee ids when taking meal warnings to the schedule", () => {
+    expect(get("meal_break", {employeeId:"staff & 1",date:"2026-10-29",employeeName:"Alex"}).actionHref)
+      .toBe("/staff?tab=schedule&date=2026-10-29&employee=staff+%26+1");
+  });
+  it("omits impossible dates from staff alert links", () => {
+    expect(get("meal_break", {employeeId:"staff",date:"2026-02-30"}).actionHref)
+      .toBe("/staff?tab=schedule&employee=staff");
   });
 });
