@@ -10,11 +10,13 @@ import {money,count} from "../explain";
 import {ownerInputsSchema,ownerConflict} from "./ownerInputs";
 import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../resolveMoney";
 import {resolveCoveredSalesWindow} from "./coverage";
+import type {CoverageFallback} from "@/lib/calc/periods";
 
 const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]),query:z.string().trim().max(120).nullable().optional()});
 const item=z.strictObject({itemId:z.uuid(),ownerInputs:ownerInputsSchema.nullable().optional()});
 function presentItemSales(rows:readonly SoldProduct[],menu:readonly MenuCatalogProduct[],
-  p:{from:string;to:string},quality:DataQuality,coverageLabel:string|null=null):AgentToolResult{
+  p:{from:string;to:string},quality:DataQuality,coverageLabel:string|null=null,
+  coverageFallback:CoverageFallback|null=null):AgentToolResult{
   const sorted=[...rows].sort((a,b)=>b.units-a.units);
   const prices=new Map(menu.filter(item=>item.active).map(item=>[item.id,item.priceCents]));
   const displayed=sorted.slice(0,15).map(item=>{
@@ -29,7 +31,7 @@ function presentItemSales(rows:readonly SoldProduct[],menu:readonly MenuCatalogP
       formula:"multiply" as const,result:money(item.illustrativeRevenueCents),period:p,
       source:"get_item_sales",provenance:"estimate" as const}];
   });
-  return {source:"item_sales",period:p,coverageLabel,agentId:"alex",
+  return {source:"item_sales",period:p,coverageLabel,coverageFallback,agentId:"alex",
     missing:[...quality.missingInputs,...(sorted.length>15?["itemSalesTruncated"]:[])],
     estimated:explain.length?["currentMenuPriceNotHistoricalSoldPrice"]:[],
     itemCount:sorted.length,items:displayed,explain};
@@ -44,11 +46,11 @@ export const salesTools={
       if(resolved.status!=="resolved")return periodChoicePayload("item_sales",resolved);
       const requested={from:resolved.value.from,to:resolved.value.to};
       const canFallback=typeof input.period==="string"&&["today","week","month"].includes(input.period);
-      const selectedWindow=canFallback?await resolveCoveredSalesWindow(ctx,requested):{period:requested,label:null};
+      const selectedWindow=canFallback?await resolveCoveredSalesWindow(ctx,requested):{period:requested,label:null,coverageFallback:null};
       const p=selectedWindow.period;
-      if(!ctx.tools.getProductSales)return {source:"item_sales",period:p,agentId:"alex",missing:["itemSalesReaderUnavailable"]};
+      if(!ctx.tools.getProductSales)return {source:"item_sales",period:p,agentId:"alex",coverageLabel:selectedWindow.label,coverageFallback:selectedWindow.coverageFallback,missing:["itemSalesReaderUnavailable"]};
       const s=await ctx.tools.getProductSales(p);
-      if(!s.available)return {source:"item_sales",period:p,agentId:"alex",missing:s.quality.missingInputs,items:null};
+      if(!s.available)return {source:"item_sales",period:p,agentId:"alex",coverageLabel:selectedWindow.label,coverageFallback:selectedWindow.coverageFallback,missing:s.quality.missingInputs,items:null};
       const menu=await ctx.tools.getMenuCatalog();
       if(input.query){
         if(!menu.available)return {source:"item_sales",period:p,agentId:"alex",
@@ -63,9 +65,9 @@ export const salesTools={
         // A valid item may have zero recorded sales. Never infer zero units from
         // an unrelated drink with a similar label.
         const selected=s.value.filter(row=>row.id===named.value.id);
-        return presentItemSales(selected,menu.value,p,s.quality,selectedWindow.label);
+        return presentItemSales(selected,menu.value,p,s.quality,selectedWindow.label,selectedWindow.coverageFallback);
       }
-      return presentItemSales(s.value,menu.available?menu.value:[],p,s.quality,selectedWindow.label);
+      return presentItemSales(s.value,menu.available?menu.value:[],p,s.quality,selectedWindow.label,selectedWindow.coverageFallback);
 
     },
   },
