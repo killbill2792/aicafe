@@ -310,45 +310,59 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
   if(proof.paidGuids.has(guid))continue;
   fail(deadlineAt);
   const payment=await paymentDetail(guid);
+  if(payment.guid!==guid||String(payment.paidBusinessDate)!==day8(day)){
+   proof.reasons.push("payment_guid_mismatch");continue;
+  }
+  // Import state and canonical order existence cannot prove an individual
+  // order was read successfully: an unparsed reimport retains old rows.
+  // Fetch the current provider business date for every unmatched payment.
+  let remoteDate:string;
+  try{
+   const remote=await client.request("/orders/v2/orders/"+payment.orderGuid,p.restaurantGuid,
+    z.object({guid:GUID,businessDate:z.number().int()}),{deadlineAt});
+   const value=String(remote.businessDate);
+   if(remote.guid!==payment.orderGuid||!/^20\d{6}$/.test(value))
+    throw new ToastApiError("invalid_response");
+   remoteDate=value.slice(0,4)+"-"+value.slice(4,6)+"-"+value.slice(6);
+   if(Number.isNaN(Date.parse(remoteDate+"T12:00:00Z")))
+    throw new ToastApiError("invalid_response");
+  }catch(e){
+   if(e instanceof ToastApiError&&e.status===404){
+    proof.reasons.push("unknown_payment_order");continue;
+   }
+   throw e;
+  }
+  if(remoteDate===day){proof.reasons.push("unknown_payment_order");continue;}
   const {data:order,error}=await db.from("orders")
    .select("id,business_date,toast_excluded").eq("business_id",p.businessId)
    .eq("pos_order_id","toast:"+p.restaurantGuid+":"+payment.orderGuid).maybeSingle();
   if(error)throw new ToastApiError("unavailable");
-  if(order){
-   // A re-pull retains omitted rows as toast_excluded. Merely finding the
-   // historical order must never prove a missing payment belongs elsewhere.
-   const otherDate=order.business_date as string|null;
-   if(order.toast_excluded!==false||!otherDate||otherDate===day){
-    proof.reasons.push("unknown_payment_order");continue;
-   }
+  if(order?.toast_excluded===true){proof.reasons.push("unknown_payment_order");continue;}
+  const canonicalDate=order?.business_date as string|null|undefined;
+  if(canonicalDate&&canonicalDate!==remoteDate)otherDays.add(canonicalDate);
+  if(order&&order.toast_excluded===false&&canonicalDate===remoteDate){
    const {data:other,error:oe}=await db.from("toast_day_status")
-    .select("import_state,rechecking_reason")
+    .select("import_state,rechecking_reason,unparsed_count,coverage_complete")
     .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
-    .eq("business_date",otherDate).maybeSingle();
+    .eq("business_date",remoteDate).maybeSingle();
    if(oe)throw new ToastApiError("unavailable");
-   if(other?.import_state==="imported"&&!other.rechecking_reason)continue;
-   unknownOrder=true;otherDays.add(otherDate);continue;
+   // Full, unparsed-free replacement excludes absent orders. Partial imports
+   // cannot establish whether this canonical row is merely a stale survivor.
+   if(other?.import_state==="imported"&&other.unparsed_count===0&&
+    other.coverage_complete===true&&!other.rechecking_reason)continue;
   }
-  {
-   unknownOrder=true;
-   try{
-    const remote=await client.request("/orders/v2/orders/"+payment.orderGuid,p.restaurantGuid,
-     z.object({guid:GUID,businessDate:z.number().int()}),{deadlineAt});
-    const value=String(remote.businessDate);
-    if(remote.guid!==payment.orderGuid||!/^\d{8}$/.test(value))throw new ToastApiError("invalid_response");
-    otherDays.add(value.slice(0,4)+"-"+value.slice(4,6)+"-"+value.slice(6));
-   }catch(e){
-    if(e instanceof ToastApiError&&e.status===404)otherDays.add(day);
-    else throw e;
-   }
-  }
+  unknownOrder=true;otherDays.add(remoteDate);
  }
  if(unknownOrder){
   const {data:otherStatus,error:oe}=await db.from("toast_day_status").select("business_date,imported_at")
    .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).in("business_date",[...otherDays]);
   if(oe)throw new ToastApiError("unavailable");
-  const repulled=status.payment_repull_at&&[...otherDays].every(date=>(otherStatus??[]).some(d=>
-   d.business_date===date&&d.imported_at&&Date.parse(d.imported_at)>Date.parse(status.payment_repull_at!)));
+  // Do not keep creating recovery jobs forever when Toast never supplies a
+ // complete snapshot; escalate a six-hour unresolved discrepancy to attention.
+ const repulled=Boolean(status.payment_repull_at)&&(
+  [...otherDays].every(date=>(otherStatus??[]).some(d=>
+   d.business_date===date&&d.imported_at&&Date.parse(d.imported_at)>Date.parse(status.payment_repull_at!)))||
+  Date.now()-Date.parse(status.payment_repull_at!)>6*3600000);
   if(repulled)proof.reasons.push("unknown_payment_order");
   else {
    // Let the modified-order scan import the other day before declaring a mismatch.
