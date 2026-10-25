@@ -90,6 +90,16 @@ export function choicePayload(result: EntityResolution<unknown>, source: string,
     ? {source,period,missing:[],needsOwnerChoice:true,candidates:result.candidates}
     : {source,period,missing:["notFound"],suggestions:result.status==="none"?result.suggestions:[]};
 }
+/** Use a trusted previous card selection only if exactly one active row in the
+ * current, business-scoped tool result still has that ID. Never use a stale
+ * card's payload as the record itself. */
+export function resolveChosenEntity<T>(
+  state:ResolveState|undefined,rows:readonly T[],idOf:(row:T)=>string,
+):T|null {
+  if(!state?.chosenIds.size)return null;
+  const found=rows.filter(row=>state.chosenIds.has(idOf(row).toLowerCase()));
+  return found.length===1?found[0]:null;
+}
 /** Confirm a model-selected target ID against the current owner message or
  * the ID recorded from the previous clarification card. */
 export function ownerNamedTarget(state:ResolveState|undefined,id:string,label:string):boolean {
