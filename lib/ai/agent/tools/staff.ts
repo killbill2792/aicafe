@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
+import { scheduleReadTools } from "./scheduleReads";
 
 const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
@@ -33,16 +34,25 @@ export const staffTools = {
     },
   },
   get_schedule: {
-    agentId:"olivia",schema:range,description:"Read owner-entered recurring shifts for future dates; cannot reconstruct past rosters.",
+    agentId:"olivia",schema:range,
+    description:"Read the confirmed dated schedule from scheduled_shifts for one business-local week. Old repeating staff_schedules are not confirmed shifts. For more weeks use get_week_schedule separately.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const {from,to}=range.parse(raw),period={from,to};
-      if(from<ctx.asOf)return missing("recurring_schedule",period,["historicalScheduleNotReconstructable"]);
-      if(from>to||days(from,to)>90)return missing("recurring_schedule",period,["scheduleRangeInvalid"]);
-      if(!ctx.tools.getRecurringSchedule)return missing("recurring_schedule",period,["scheduleReaderUnavailable"]);
-      const s=await ctx.tools.getRecurringSchedule(period,ctx.asOf);
-      if(!s.available)return missing("recurring_schedule",period,s.quality.missingInputs);
-      return {source:"recurring_schedule",period,agentId:"olivia",missing:s.quality.missingInputs,
-        shifts:s.value.shifts.slice(0,30),sourceType:s.value.source};
+      if(from<ctx.asOf)return missing("scheduled_shifts",period,["historicalScheduleNotReconstructable"]);
+      if(from>to||days(from,to)>90)return missing("scheduled_shifts",period,["scheduleRangeInvalid"]);
+      const d=new Date(from+"T12:00:00Z");
+      const day=d.getUTCDay(),monday=new Date(d.getTime()-((day+6)%7)*86400000).toISOString().slice(0,10);
+      const sunday=new Date(Date.parse(monday+"T12:00:00Z")+6*86400000).toISOString().slice(0,10);
+      if(to>sunday)return {...missing("scheduled_shifts",period,["scheduleRangeRequiresWeeklyRead"]),href:"/staff?tab=schedule"};
+      const confirmed=await scheduleReadTools.get_week_schedule.execute({week_start:monday},ctx);
+      if(!Array.isArray(confirmed.shifts))return {...confirmed,period,href:"/staff?tab=schedule"};
+      const shifts=confirmed.shifts.filter((s):s is {date:string} & Record<string,unknown>=>{
+        return typeof s==="object"&&s!==null&&typeof (s as {date?:unknown}).date==="string"
+          &&(s as {date:string}).date>=from&&(s as {date:string}).date<=to;
+      });
+      return {...confirmed,source:"scheduled_shifts",period,shifts,
+        scheduleSet:shifts.length>0,
+        missing:shifts.length===0?["scheduleNotSet"]:(confirmed.missing as string[]).filter(v=>v!=="scheduleNotSet")};
     },
   },
   get_labor: {
