@@ -2441,6 +2441,8 @@
     "statusInsufficient": "Faltan datos diarios de ventas verificados"
   },
   "AgentFields": {
+    "recordedChoice": "Registrado",
+    "ownerChoice": "Me dijiste",
     "netSalesCents": "Ventas netas",
     "totalCostsCents": "Costos totales",
     "ownerProfitCents": "Ganancia del dueño",

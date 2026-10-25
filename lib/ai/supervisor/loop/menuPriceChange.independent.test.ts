@@ -6,18 +6,24 @@ const s=vi.hoisted(()=>({
  latte:"33333333-3333-4333-8333-333333333333",
  prices:{coffee:450,latte:600},
  saves:0,
+ authUserId:"44444444-4444-4444-8444-444444444444",
 }));
 vi.mock("next/cache",()=>({revalidatePath:vi.fn()}));
-vi.mock("@/lib/metrics/p1Readers.server",()=>({
- authorizedOwnerP1:async()=>({identity:{businessId:s.business,currency:"USD"}}),
-}));
 vi.mock("@/lib/data/getMenuControlCenter",()=>({
  getMenuControlCenter:async()=>[
   {id:s.coffee,name:"Coffee",active:true,priceCents:s.prices.coffee},
   {id:s.latte,name:"Latte",active:true,priceCents:s.prices.latte},
  ],
 }));
-vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({})}));
+vi.mock("@/lib/data/getActiveBusinessId",()=>({getActiveBusinessId:async()=>s.business}));
+vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({
+  auth:{getUser:async()=>({data:{user:{id:s.authUserId}}})},
+  from:(table:string)=>{
+    const filters={eq:()=>filters,maybeSingle:async()=>({data:table==="memberships"?
+      {role:"owner"}:{currency:"USD",is_demo:false}})};
+    return {select:()=>filters};
+  },
+})}));
 vi.mock("@/lib/data/proposalPrices.server",()=>({
  ownerMenuPrice:async(_scope:unknown,id:string)=>{
   if(id===s.coffee)return s.prices.coffee;
@@ -37,8 +43,14 @@ vi.mock("./sales.server",()=>({readPriceExperimentSalesDays:async()=>[]}));
 import {menuPriceChangeCapability,StaleProposalError} from "./menuPriceChange.server";
 const scope={businessId:s.business,ownerUserId:"44444444-4444-4444-8444-444444444444",
  threadId:"55555555-5555-4555-8555-555555555555",locale:"en" as const};
-beforeEach(()=>{s.prices.coffee=450;s.prices.latte=600;s.saves=0;});
+beforeEach(()=>{s.prices.coffee=450;s.prices.latte=600;s.saves=0;s.authUserId="44444444-4444-4444-8444-444444444444";});
 describe("two independent owner price cards",()=>{
+ it("rejects a different authenticated user before even creating a draft",async()=>{
+  s.authUserId="99999999-9999-4999-8999-999999999999";
+  await expect(menuPriceChangeCapability.simulate(scope,{productId:s.coffee,newPriceCents:500}))
+    .rejects.toThrow("signed in");
+  expect(s.saves).toBe(0);
+ });
  it("both commit when different items were drafted against their own prices",async()=>{
   const coffee=await menuPriceChangeCapability.simulate(scope,{productId:s.coffee,newPriceCents:500});
   const latte=await menuPriceChangeCapability.simulate(scope,{productId:s.latte,newPriceCents:675});

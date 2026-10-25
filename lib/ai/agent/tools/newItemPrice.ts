@@ -1,17 +1,22 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {calculateNewItemPrice} from "@/lib/calc/newItemPrice";
+import {calculateNewItemPrice,contributionCoverage} from "@/lib/calc/newItemPrice";
+import {requestedPeriod,prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
+import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
+import {resolveCoveredSalesWindow} from "./coverage";
 import {money,percent} from "../explain";
 const schema=z.strictObject({
  ingredient_cost_cents:z.number().int().positive(),category:z.enum(["drink","food"]),
  packaging_cents:z.number().int().nonnegative().nullable(),
- target_margin_percent:z.number().min(0).max(60).nullable(),item_name:z.string().trim().max(120).nullable()
+ target_margin_percent:z.number().min(0).max(60).nullable(),item_name:z.string().trim().max(120).nullable(),ownerInputs:ownerInputsSchema.nullable().optional()
 });
-const thirtyDays=(asOf:string)=>new Date(Date.parse(asOf+"T12:00:00Z")-29*86400000).toISOString().slice(0,10);
 export const newItemPriceTools={suggest_new_item_price:{
  agentId:"alex",schema,description:"Suggest a price for a new or unsaved item from its ingredient cost, the café's real labor and overhead per item sold, target margin and own menu range. Location is context only: never invent competitor or local prices.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-  const v=schema.parse(raw),period={from:thirtyDays(ctx.asOf),to:ctx.asOf};
+  const v=schema.parse(raw),owner=v.ownerInputs;
+  const ownerWindow=owner?.salesPeriod?ownerPeriod(owner.salesPeriod,ctx.asOf):null;
+  const coverage=ownerWindow?{period:ownerWindow,label:null}:await resolveCoveredSalesWindow(ctx,requestedPeriod("month",ctx.asOf));
+  const period=coverage.period;
   const sitePromise=ctx.tools.getSchedulingDraftInputs?.().catch(()=>undefined);
   const [labor,sales,bills,menu,site]=await Promise.all([
    ctx.tools.getLaborMetrics?.(period),ctx.tools.getProductSales?.(period),
@@ -24,20 +29,41 @@ export const newItemPriceTools={suggest_new_item_price:{
   const laborCents=labor?.available?labor.value.reduce((s,d)=>s+d.loadedStaffCostCents,0):null;
   const units=sales?.available?sales.value.reduce((s,d)=>s+d.units,0):null;
   const categoryUnits=sales?.available?sales.value.filter(x=>x.category===v.category).reduce((s,d)=>s+d.units,0):null;
+  const laborForPeriod=laborCents??(owner?.laborCents!=null&&owner.laborPeriod?
+    prorate(owner.laborCents,ownerPeriod(owner.laborPeriod,ctx.asOf)!,period):null);
+  const ownerHasRent=owner?.rentCents!=null,ownerHasOtherOverhead=owner?.otherOverheadCents!=null;
+  const billsComplete=Boolean(bills?.available||(ownerHasRent&&ownerHasOtherOverhead));
+  // A known rent-only or other-overhead-only amount is a lower bound, not full bills.
+  const billsForPeriod=bills?.available?prorate(bills.value.totalCents,calendarMonth(ctx.asOf),period):
+    ownerHasRent||ownerHasOtherOverhead?prorate((owner?.rentCents??0)+(owner?.otherOverheadCents??0),
+      owner?.overheadPeriod?ownerPeriod(owner.overheadPeriod,ctx.asOf)!:calendarMonth(ctx.asOf),period):null;
   const calculated=calculateNewItemPrice({
-   ingredientCostCents:v.ingredient_cost_cents,packagingCents:v.packaging_cents,targetMarginPercent:v.target_margin_percent,
-   labor30dCents:laborCents,monthlyBillsCents:bills?.available?bills.value.totalCents:null,
-   units30d:units,menuPricesCents:menu.available?menu.value.filter(x=>x.active&&x.category===v.category).map(x=>x.priceCents):[]
+    ingredientCostCents:v.ingredient_cost_cents,packagingCents:v.packaging_cents,
+    targetMarginPercent:v.target_margin_percent,labor30dCents:laborForPeriod,
+    monthlyBillsCents:billsComplete?billsForPeriod:null,
+    knownPartialBillsCents:billsComplete?null:billsForPeriod,
+    units30d:units??(owner?.itemsSoldPerDay!=null?
+      Math.round(owner.itemsSoldPerDay*periodDays(period)):null),
+    menuPricesCents:menu.available?menu.value.filter(x=>x.active&&x.category===v.category)
+      .map(x=>x.priceCents):[],
   });
   const location=site?.available?{city:site.value.city,region:site.value.region,country:site.value.countryCode}:null;
-  return {source:"new_item_price",period,agentId:"alex",draft:true,saved:false,itemName:v.item_name,category:v.category,
+  const contribution=contributionCoverage({
+    priceCents:calculated.suggestedPriceCents,unitCostCents:v.ingredient_cost_cents,
+    packagingCents:v.packaging_cents,laborCents:laborForPeriod,billsCents:billsForPeriod,
+    billsComplete,days:periodDays(period),
+  });
+  const incompleteOwnerBills=!bills?.available&&(ownerHasRent!==ownerHasOtherOverhead);
+  return {source:"new_item_price",period,coverageLabel:coverage.label,unit:"cents",...contribution,
+   agentId:"alex",draft:true,saved:false,itemName:v.item_name,category:v.category,ownerInputs:owner,
    categoryUnits30d:categoryUnits,location,localCompetitorPrices:null,...calculated,
    explain:calculated.costPlusPriceCents!==null&&calculated.fullCostCents!==null?
     [{label:v.item_name??"New item price",inputs:[{name:"fullCost",value:money(calculated.fullCostCents)},
       {name:"targetMargin",value:percent(Math.round((100-calculated.targetMarginPercent)*100))}],
       formula:"divide",result:money(calculated.costPlusPriceCents),period,
       source:"suggest_new_item_price",provenance:v.target_margin_percent===null?"estimate":"ownerProvided"}]:[],
-   missing:[...new Set([...missing,...calculated.missing])],
+   missing:[...new Set([...missing,...calculated.missing,
+     ...(incompleteOwnerBills?["ownerOverheadIncomplete"]:[])])],
    estimated:[...new Set([...calculated.estimated,...(labor?.quality.estimatedInputs??[]),...(bills?.quality.estimatedInputs??[])])]};
  }
 }} as const;

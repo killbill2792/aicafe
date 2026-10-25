@@ -2441,6 +2441,8 @@
     "statusInsufficient": "نحتاج إلى بيانات مبيعات يومية موثقة إضافية"
   },
   "AgentFields": {
+    "recordedChoice": "المسجّل",
+    "ownerChoice": "حسب ما أخبرتني",
     "netSalesCents": "صافي المبيعات",
     "totalCostsCents": "إجمالي التكاليف",
     "ownerProfitCents": "ربح المالك",

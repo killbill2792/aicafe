@@ -2441,6 +2441,8 @@
     "statusInsufficient": "More verified daily sales data is needed"
   },
   "AgentFields": {
+    "recordedChoice": "Recorded",
+    "ownerChoice": "You told me",
     "netSalesCents": "Net sales",
     "totalCostsCents": "Total costs",
     "ownerProfitCents": "Owner profit",
