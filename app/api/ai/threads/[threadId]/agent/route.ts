@@ -188,7 +188,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
         for(const [index,line] of input.lines.entries()){
           try{
             const requestKey=proposalRequestKey(id,JSON.stringify({
-              ownerMessageId:owner.id,kind:"purchase",line,source:input.source,indexInIdenticalBatch:index
+              ownerMessageId:owner.id,kind:"purchase",batch:input.lines,line,source:input.source,indexInBatch:index
             }));
             const prior=known.get(requestKey);
             const receiptLineIndex=input.source==="receipt_chat"?
