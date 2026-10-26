@@ -8,6 +8,7 @@ alter table public.pantry_stock_purchases
   add column if not exists cost_cents bigint check (cost_cents is null or cost_cents >= 0),
   add column if not exists expense_line_id uuid references public.expense_lines(id) on delete set null,
   add column if not exists updated_at timestamptz not null default now(),
+  add column if not exists revision bigint not null default 1,
   add column if not exists voided_at timestamptz;
 update public.pantry_stock_purchases set source='manual' where source is null;
 create unique index if not exists pantry_purchases_business_line_uidx
@@ -152,9 +153,9 @@ create or replace function public.pantry_write_purchase_line(
  p_business_id uuid,p_line_id uuid,p_ingredient_id uuid,p_date date,
  p_quantity numeric,p_unit text,p_base_quantity numeric,p_cost_cents bigint,
  p_price_micros bigint,p_source text,p_source_ref text,p_expense_line_id uuid,
- p_expected_updated_at timestamptz
-) returns timestamptz language plpgsql security definer set search_path=public as $$
-declare v_row public.pantry_stock_purchases%rowtype;v_time timestamptz;
+ p_expected_revision bigint
+) returns bigint language plpgsql security definer set search_path=public as $$
+declare v_row public.pantry_stock_purchases%rowtype;v_revision bigint;
 begin
  if auth.uid() is null or not exists (
   select 1 from public.memberships m join public.businesses b on b.id=m.business_id
@@ -185,7 +186,7 @@ begin
  if found then
   if v_row.voided_at is not null then
    raise exception 'purchase voided' using errcode='40001';end if;
-  if p_expected_updated_at is null then
+  if p_expected_revision is null then
    -- Retries are permitted only when all stored facts are identical.
    if v_row.ingredient_id is distinct from p_ingredient_id
     or v_row.purchase_date is distinct from p_date
@@ -197,18 +198,17 @@ begin
     or v_row.source_ref is distinct from p_source_ref
     or v_row.expense_line_id is distinct from p_expense_line_id
     then raise exception 'purchase changed' using errcode='40001';end if;
-   return v_row.updated_at;
+   return v_row.revision;
   end if;
-  if v_row.updated_at is distinct from p_expected_updated_at
+  if v_row.revision is distinct from p_expected_revision
    then raise exception 'stale purchase' using errcode='40001';end if;
-  v_time:=clock_timestamp();
   update public.pantry_stock_purchases set
    ingredient_id=p_ingredient_id,purchase_date=p_date,entered_quantity=p_quantity,
    entered_unit=p_unit,quantity_base=p_base_quantity,cost_cents=p_cost_cents,
-   updated_at=v_time
-   where id=v_row.id;
+   updated_at=clock_timestamp(),revision=revision+1
+   where id=v_row.id returning revision into v_revision;
  else
-  if p_expected_updated_at is not null
+  if p_expected_revision is not null
    then raise exception 'purchase missing' using errcode='40001';end if;
   insert into public.pantry_stock_purchases(
    business_id,line_id,ingredient_id,purchase_date,entered_quantity,entered_unit,
@@ -216,7 +216,7 @@ begin
   ) values(
    p_business_id,p_line_id,p_ingredient_id,p_date,p_quantity,p_unit,
    p_base_quantity,p_cost_cents,p_source,p_source_ref,p_expense_line_id
-  ) returning updated_at into v_time;
+  ) returning revision into v_revision;
  end if;
  if p_price_micros is not null then
   insert into public.ingredient_prices(
@@ -240,11 +240,11 @@ begin
   delete from public.ingredient_prices where source_stock_line_id=p_line_id
    and ingredient_id in (select id from public.ingredients where business_id=p_business_id);
  end if;
- return v_time;
+ return v_revision;
 end $$;
-revoke all on function public.pantry_write_purchase_line(uuid,uuid,uuid,date,numeric,text,numeric,bigint,bigint,text,text,uuid,timestamptz)
+revoke all on function public.pantry_write_purchase_line(uuid,uuid,uuid,date,numeric,text,numeric,bigint,bigint,text,text,uuid,bigint)
  from public,anon,authenticated;
-grant execute on function public.pantry_write_purchase_line(uuid,uuid,uuid,date,numeric,text,numeric,bigint,bigint,text,text,uuid,timestamptz)
+grant execute on function public.pantry_write_purchase_line(uuid,uuid,uuid,date,numeric,text,numeric,bigint,bigint,text,text,uuid,bigint)
  to authenticated;
 
 -- A void removes its attributed price atomically and is idempotent.
@@ -262,7 +262,7 @@ begin
   where business_id=p_business_id and line_id=p_line_id for update;
  if not found then return false;end if;
  if v_row.voided_at is not null then return true;end if;
- update public.pantry_stock_purchases set voided_at=clock_timestamp(),updated_at=clock_timestamp()
+ update public.pantry_stock_purchases set voided_at=clock_timestamp(),updated_at=clock_timestamp(),revision=revision+1
   where id=v_row.id;
  delete from public.ingredient_prices where source_stock_line_id=p_line_id
   and ingredient_id in (select id from public.ingredients where business_id=p_business_id);
@@ -287,8 +287,8 @@ create or replace function public.pantry_write_receipt_chat_line(
  p_quantity numeric,p_unit text,p_base_quantity numeric,p_cost_cents bigint,
  p_price_micros bigint,p_group_id uuid,p_line_index integer,
  p_vendor text,p_total_cents bigint,p_dedupe_key text,p_name text
-) returns timestamptz language plpgsql security definer set search_path=public as $$
-declare v_expense_id uuid;v_line public.expense_lines%rowtype;v_result timestamptz;
+) returns bigint language plpgsql security definer set search_path=public as $$
+declare v_expense_id uuid;v_line public.expense_lines%rowtype;v_result bigint;
   v_expense public.expenses%rowtype;
 begin
  if auth.uid() is null or not exists (
