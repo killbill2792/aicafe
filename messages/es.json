@@ -3229,6 +3229,8 @@
     "modifierBaseQuantity": "Cantidad por opción (unidades base)",
     "modifierReplaces": "Ingrediente al que sustituye, si corresponde",
     "modifierNoReplacement": "No sustituye ningún ingrediente",
+    "modifierLinked": "Esta opción ya está vinculada. Actualiza Inventario.",
+    "modifierStale": "Esta opción cambió. Actualiza Inventario y vuelve a intentarlo.",
     "proposalsHeading": "Compras pendientes de aprobación",
     "proposalsUnavailable": "No se pueden cargar las propuestas de compra."
   },
