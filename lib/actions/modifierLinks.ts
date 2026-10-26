@@ -26,6 +26,7 @@ export async function confirmModifierLink(raw:unknown):Promise<{ok:boolean;error
   const {data:{user}}=await db.auth.getUser();
   if(!user)return {ok:false,error:"owner_required"};
   const businessId=await getActiveBusinessId(user.id);
+  if(businessId!==setup.businessId)return {ok:false,error:"modifier_changed"};
   // An observed, unmapped modifier can only get its first mapping here.
   const {error}=await db.from("pantry_modifier_links").insert({
    business_id:businessId,provider:input.provider,location_ref:input.locationRef,
@@ -59,6 +60,7 @@ export async function createAndConfirmModifierLink(raw:unknown):Promise<{ok:bool
   const {data:{user}}=await db.auth.getUser();
   if(!user)return {ok:false,error:"owner_required"};
   const businessId=await getActiveBusinessId(user.id);
+  if(businessId!==setup.businessId)return {ok:false,error:"modifier_changed"};
   const {error}=await db.rpc("pantry_create_modifier_recipe_link",{
    p_business_id:businessId,p_provider:input.provider,p_location_ref:input.locationRef,
    p_pos_modifier_id:input.posModifierId,p_name:input.name,
