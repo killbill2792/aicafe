@@ -10,7 +10,9 @@ export const purchaseToolLine=z.strictObject({
 });
 export const purchaseToolInput=z.strictObject({
  lines:z.array(purchaseToolLine).min(1).max(10),
- source:z.enum(["receipt_chat","chat_text"])
+ source:z.enum(["receipt_chat","chat_text"]),
+ receiptVendor:z.string().trim().min(1).max(160).nullable(),
+ receiptTotalCents:z.number().int().positive().safe().nullable()
 });
 export const purchasesTools={propose_purchases:{
  agentId:"maya" as const,schema:purchaseToolInput,
