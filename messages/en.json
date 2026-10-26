@@ -3224,6 +3224,11 @@
     "modifierRecipe": "Recipe to use",
     "modifierChoose": "Select a recipe",
     "modifierConfirm": "Confirm link",
+    "modifierCreate": "Create and link a new recipe",
+    "modifierIngredient": "Ingredient to add",
+    "modifierBaseQuantity": "Quantity per option (base units)",
+    "modifierReplaces": "Ingredient this replaces, if any",
+    "modifierNoReplacement": "Does not replace an ingredient",
     "proposalsHeading": "Purchases waiting for your approval",
     "proposalsUnavailable": "Could not load pending purchase cards."
   },
