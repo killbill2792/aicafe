@@ -3,6 +3,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 import {ownerChoiceGuard,ownerNamedTarget,resolveEntity,choicePayload,normalizedName} from "../resolve";
 import {getTeam} from "@/lib/actions/schedule";
 import {mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
+import {scheduleDraftNotice} from "@/lib/calc/scheduling/ownerDeliveryLinks";
 const uuid=z.uuid(),date=z.iso.date(),clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const shift=z.strictObject({employee_id:uuid,date,start:clock,end:clock,
   break_minutes:z.number().int().min(0).max(240)});
@@ -98,7 +99,8 @@ export const staffProposalTools=Object.fromEntries(
      draft:true,saved:false,missing:["proposalsUnavailable"]};
    const p=await ctx.proposals.proposeStaff({name,input});
    return {source:"staff_proposal",period:null,agentId:"olivia",draft:true,saved:false,
-     missing:[],...p};
+     missing:[],...p,
+     ...(name==="propose_send_schedule"?{handoffNotice:scheduleDraftNotice(ctx.locale)}:{})};
   },
  }])) as {[K in StaffProposalName]:{
   agentId:"olivia";description:string;schema:(typeof staffProposalInputs)[K];

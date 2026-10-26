@@ -27,6 +27,17 @@ describe("staff owner-approval tool registration",()=>{
     proposalId:"22222222-2222-4222-8222-222222222222",missing:[]});
   }
  });
+ it("says staff messages require an owner action and never asserts delivery",async()=>{
+  const result=await staffProposalTools.propose_send_schedule.execute(valid.propose_send_schedule,{
+   ...ctx,proposals:{proposePriceChange:vi.fn(),
+    proposeStaff:vi.fn().mockResolvedValue({proposalId:"22222222-2222-4222-8222-222222222222",revision:1})}
+  });
+  const notice=(result as {handoffNotice?:string}).handoffNotice;
+  expect(notice).toContain("I can't send messages myself");
+  expect(notice).toMatch(/WhatsApp or SMS/);
+  expect(notice).not.toMatch(/\b(?:sent|texted|delivered)\b/i);
+  expect(result).toMatchObject({draft:true,saved:false});
+ });
  it("cannot write or claim approval without the scoped proposal port",async()=>{
   for(const name of Object.keys(valid) as Array<keyof typeof valid>){
    expect(await staffProposalTools[name].execute(valid[name],ctx)).toMatchObject({
