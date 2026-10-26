@@ -13,7 +13,8 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   productName?:string;oldPriceCents?:number;newPriceCents?:number;
   preview?:ApprovalPreviewRow[];currency?:string;
   currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null;
-  purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string};
+  purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string;
+    receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
   ingredientOptions?:Array<{id:string;name:string;base_unit:string}>;};
 const dict={en,es,ar} as const;
 export default function SupervisorProposalCard({threadId,proposalId,locale}:{
@@ -26,7 +27,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const [price,setPrice]=useState("");
   const [error,setError]=useState(false);
   const [purchaseDraft,setPurchaseDraft]=useState<{
-    ingredientId:string|null;quantity:string;unit:string;cost:string;date:string}|null>(null);
+    ingredientId:string|null;quantity:string;unit:string;cost:string;date:string;receiptVendor:string;receiptTotal:string}|null>(null);
   const endpoint="/api/ai/threads/"+encodeURIComponent(threadId)+"/proposals";
   useEffect(()=>{
     let alive=true;
@@ -96,6 +97,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     const copy=dict[locale].InventoryApprovalCard;
     const p=value.purchase;
     const edit=purchaseDraft;
+    const receiptComplete=p.source!=="receipt_chat"||Boolean(p.receiptVendor&&p.receiptTotalCents&&p.costCents!==null);
     const pending=value.state==="pending"&&!busy;
     const canRetry=["failed","conflict"].includes(value.state)&&!busy;
     const label=value.state==="applied"?copy.applied:
@@ -108,15 +110,20 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       const quantity=edit?parseOwnerDecimal(edit.quantity,locale):p.quantity;
       const moneyValue=edit?.cost.trim()?parseOwnerDecimal(edit.cost,locale):null;
       const cents=moneyValue===null?null:Math.round(moneyValue*100);
+      const receiptAmount=edit?.receiptTotal.trim()?parseOwnerDecimal(edit.receiptTotal,locale):null;
+      const receiptTotalCents=receiptAmount===null?null:Math.round(receiptAmount*100);
       if(action==="edit_purchase"&&(!edit||quantity===null||quantity<=0||
-        (edit.cost.trim()&&cents===null))){setError(true);return;}
+        (edit.cost.trim()&&cents===null)||
+        (p.source==="receipt_chat"&&(!edit.receiptVendor.trim()||!receiptTotalCents||cents===null)))){
+        setError(true);return;}
       setBusy(true);setError(false);
       try{
         const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json"},
           credentials:"same-origin",body:JSON.stringify({
             action,proposalId:value.proposalId,revision:value.revision,
             ...(action==="edit_purchase"?{
-              ingredientId:selected,quantity,unit:edit!.unit,costCents:cents,date:edit!.date
+              ingredientId:selected,quantity,unit:edit!.unit,costCents:cents,date:edit!.date,
+              ...(p.source==="receipt_chat"?{receiptVendor:edit!.receiptVendor.trim(),receiptTotalCents}:{})
             }:{})
           })});
         const result=await response.json() as {proposal?:ProposalView;state?:string;error?:string};
@@ -132,6 +139,11 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       {!p.ingredientId&&<p className="mt-2 text-[17px] text-neg">{copy.newItem}</p>}
       <p className="mt-2 text-[17px]">{amount+" · "+p.date}</p>
       {p.costCents!==null&&<p className="mt-2 text-[17px]">{money(p.costCents)}</p>}
+      {p.source==="receipt_chat"&&<p className="mt-2 text-[17px]">
+        {copy.receiptVendor+": "+(p.receiptVendor??copy.receiptIncomplete)+" · "+
+          copy.receiptTotal+": "+(p.receiptTotalCents?money(p.receiptTotalCents):copy.receiptIncomplete)}
+      </p>}
+      {!receiptComplete&&<p role="alert" className="mt-2 text-[17px] text-neg">{copy.receiptIncomplete}</p>}
       {purchaseDraft&&<form className="mt-3 space-y-2" onSubmit={e=>{e.preventDefault();void submit("edit_purchase");}}>
         <label className="block text-[17px]">{copy.ingredient}<select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
           value={purchaseDraft.ingredientId??""} onChange={e=>setPurchaseDraft(v=>v?{...v,ingredientId:e.target.value||null}:v)}>
@@ -145,15 +157,26 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
           value={purchaseDraft.cost} onChange={e=>setPurchaseDraft(v=>v?{...v,cost:e.target.value}:v)}/></label>
         <label className="block text-[17px]">{copy.date}<input type="date" className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
           value={purchaseDraft.date} onChange={e=>setPurchaseDraft(v=>v?{...v,date:e.target.value}:v)}/></label>
+        {p.source==="receipt_chat"&&<>
+          <label className="block text-[17px]">{copy.receiptVendor}<input
+            className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+            value={purchaseDraft.receiptVendor}
+            onChange={e=>setPurchaseDraft(v=>v?{...v,receiptVendor:e.target.value}:v)}/></label>
+          <label className="block text-[17px]">{copy.receiptTotal}<input type="text" inputMode="decimal"
+            className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+            value={purchaseDraft.receiptTotal}
+            onChange={e=>setPurchaseDraft(v=>v?{...v,receiptTotal:e.target.value}:v)}/></label>
+        </>}
         <button type="submit" disabled={busy} className={button+" bg-accent text-on-accent"}>{copy.save}</button>
         <button type="button" disabled={busy} className={button} onClick={()=>setPurchaseDraft(null)}>{copy.cancel}</button>
       </form>}
       {(pending||canRetry)&&!purchaseDraft&&<div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" disabled={busy||!p.ingredientId} className={button+" bg-accent text-on-accent"}
+        <button type="button" disabled={busy||!p.ingredientId||!receiptComplete} className={button+" bg-accent text-on-accent"}
           onClick={()=>void submit("approve")}>{canRetry?copy.retry:copy.approve}</button>
         {pending&&<button type="button" disabled={busy} className={button} onClick={()=>setPurchaseDraft({
           ingredientId:p.ingredientId,quantity:String(p.quantity),unit:p.unit,
-          cost:p.costCents===null?"":String(p.costCents/100),date:p.date
+          cost:p.costCents===null?"":String(p.costCents/100),date:p.date,
+          receiptVendor:p.receiptVendor??"",receiptTotal:p.receiptTotalCents?String(p.receiptTotalCents/100):""
         })}>{copy.edit}</button>}
         {pending&&<button type="button" disabled={busy} className={button}
           onClick={()=>void submit("cancel")}>{copy.skip}</button>}
