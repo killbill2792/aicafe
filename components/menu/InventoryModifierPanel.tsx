@@ -80,7 +80,8 @@ export default function InventoryModifierPanel({data,t,locale}:{
          }):await confirmModifierLink({provider:item.provider,
           locationRef:item.locationRef,posModifierId:item.posModifierId,recipeId:selected});
          if(result.ok){setFailures(v=>({...v,[key]:""}));router.refresh();}
-         else setFailures(v=>({...v,[key]:result.error??t.failed}));
+         else setFailures(v=>({...v,[key]:result.error==="link_already_confirmed"?t.modifierLinked:
+          ["modifier_changed","link_no_longer_available"].includes(result.error??"")?t.modifierStale:t.failed}));
         }catch{setFailures(v=>({...v,[key]:t.failed}));}
        })}>{t.modifierConfirm}</button>
       {failures[key]&&<p role="alert" className="text-[17px] text-neg">{failures[key]}</p>}
