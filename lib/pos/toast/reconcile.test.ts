@@ -27,7 +27,10 @@ const status=()=>({business_date:day,import_state:"imported",recon_state:"pendin
  orders_snapshot_sha256:checksum,net_sales_cents:10000,order_count:1,
  discounts_cents:0,refunds_cents:0,unparsed_count:0,warnings:{},
  imported_at:"2026-10-17T10:00:00Z",last_recon_attempt_at:null as string|null,
- recon_source:null as string|null,analytics_state:null as string|null});
+ recon_source:null as string|null,analytics_state:null as string|null,
+ internal_state:null as string|null,internal_reasons:[] as string[],paid_other_day:0,
+ reconciled_at:null as string|null,payment_repull_at:null as string|null,
+ last_error_category:null as string|null});
 function fakeDb(analytics:boolean){
  mocked.mode=analytics?"official":"internal";
  const item={...status(),rechecking_reason:null as string|null},writes:Record<string,unknown>[]=[];
