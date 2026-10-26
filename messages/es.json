@@ -3221,7 +3221,9 @@
     "modifierSuggested": "Sugerencia (sin guardar)",
     "modifierRecipe": "Receta",
     "modifierChoose": "Elige una receta",
-    "modifierConfirm": "Confirmar vínculo"
+    "modifierConfirm": "Confirmar vínculo",
+    "proposalsHeading": "Compras pendientes de aprobación",
+    "proposalsUnavailable": "No se pueden cargar las propuestas de compra."
   },
   "InventoryApprovalCard": {
     "pending": "Listo para revisar",
