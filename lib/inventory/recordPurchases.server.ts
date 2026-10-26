@@ -14,7 +14,7 @@ export interface PurchaseSourceAdapter<T> {
 }
 export type PurchaseLineInput={
   lineId:string;ingredientId:string|null;date:string;quantity:number;unit:string;
-  costCents:number|null;expenseLineId?:string|null;expectedUpdatedAt?:string|null;
+  costCents:number|null;expenseLineId?:string|null;expectedRevision?:string|null;
   receipt?:{groupId:string|null;index:number|null;vendor:string|null;totalCents:number|null;name:string};
 };
 export type PurchaseResult={lineId:string;ok:boolean;error?:string};
@@ -27,7 +27,7 @@ const lineSchema=z.strictObject({
  quantity:z.number().finite().positive().max(1e9),unit:z.string().trim().min(1).max(40),
  costCents:z.number().int().nonnegative().safe().nullable(),
  expenseLineId:z.string().uuid().nullable().optional(),
- expectedUpdatedAt:z.string().datetime({offset:true}).nullable().optional(),
+ expectedRevision:z.number().int().positive().safe().nullable().optional(),
  receipt:z.strictObject({groupId:z.uuid().nullable(),index:z.number().int().min(0).max(99).nullable(),
    vendor:z.string().trim().min(1).max(160).nullable(),totalCents:z.number().int().positive().safe().nullable(),
    name:z.string().trim().min(1).max(160)}).optional()
@@ -112,7 +112,7 @@ export async function recordPurchases(
     p_date:line.date,p_quantity:line.quantity,p_unit:line.unit,p_base_quantity:baseQuantity,
     p_cost_cents:line.costCents,p_price_micros:micros,p_source:source,
     p_source_ref:sourceRef,p_expense_line_id:line.expenseLineId??null,
-    p_expected_updated_at:line.expectedUpdatedAt??null
+    p_expected_revision:line.expectedRevision??null
    });
   if(purchaseError){
    results.push({lineId,ok:false,error:purchaseError.code==="40001"?"purchase_changed":
