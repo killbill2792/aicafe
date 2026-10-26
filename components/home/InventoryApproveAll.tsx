@@ -1,5 +1,6 @@
 "use client";
 import {useEffect,useState} from "react";
+import {Link} from "@/i18n/navigation";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -55,6 +56,7 @@ export default function InventoryApproveAll({threadId,ids,locale}:{
   setResult({saved,failed});setBusy(false);
  };
  return <div dir={locale==="ar"?"rtl":"ltr"} className="my-3 space-y-2 rounded-xl border border-line bg-surface p-3">
+  <Link href={"/menu/pantry?proposals="+encodeURIComponent(ids.join(","))} className="inline-flex min-h-12 items-center rounded-xl border border-line px-4 text-[17px] font-semibold underline">{t.reviewOnInventory}</Link>
   {available&&<button type="button" disabled={busy} onClick={()=>void approve()}
     className="min-h-12 rounded-xl bg-accent px-4 text-[17px] font-semibold text-on-accent disabled:opacity-50">
     {t.approveAll}</button>}

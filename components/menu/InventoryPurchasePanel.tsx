@@ -7,12 +7,14 @@ import {saveBulkPurchases,editInventoryPurchase,voidInventoryPurchase,importInve
  from "@/lib/actions/inventory";
 import type {PurchaseMonthLine} from "@/lib/data/inventory.server";
 import type {PurchaseLineInput} from "@/lib/inventory/recordPurchases.server";
+import {parseOwnerDecimal} from "@/lib/calc/localeDecimal";
+import {toCents} from "@/lib/pos/csv/csvUtils";
 
 type Item={id:string;name:string;baseUnit:"g"|"ml"|"each"};
-type Draft=PurchaseLineInput;
+type Draft=Omit<PurchaseLineInput,"quantity"|"costCents">&{quantity:string;cost:string};
 function emptyLine(items:Item[],date:string):Draft{
- return {lineId:crypto.randomUUID(),ingredientId:items[0]?.id??null,date,quantity:1,
-  unit:items[0]?.baseUnit??"each",costCents:null};
+ return {lineId:crypto.randomUUID(),ingredientId:items[0]?.id??null,date,quantity:"1",
+  unit:items[0]?.baseUnit??"each",cost:""};
 }
 const commonUnits:Record<Item["baseUnit"],string[]>={
  ml:["ml","fl_oz","l","qt","gal","pump"],g:["g","kg","lb","oz_wt","shot"],
@@ -33,9 +35,15 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  const qty=(value:number)=>new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(value);
  const money=(cents:number|null)=>cents===null?t.unknown:
   new Intl.NumberFormat(locale,{style:"currency",currency}).format(cents/100);
- const number=(value:string)=>Number(value.trim().replace(/[٠-٩۰-۹]/g,c=>{
-   const code=c.charCodeAt(0);return String(code>=0x6F0?code-0x6F0:code-0x660);
- }).replace(/٫/g,".").replace(/٬/g,"").replace(/,/g,"."));
+ const parseDraft=(d:Draft):{line:PurchaseLineInput|null;error:string|null}=>{
+  const quantity=parseOwnerDecimal(d.quantity,locale);
+  if(quantity===null||quantity<=0)return {line:null,error:"invalid_quantity"};
+  const costValue=d.cost.trim()?parseOwnerDecimal(d.cost,locale):null;
+  const costCents=costValue===null?null:toCents(String(costValue));
+  if(d.cost.trim()&&(costValue===null||!Number.isSafeInteger(costCents)))return {line:null,error:"invalid_cost"};
+  return {line:{lineId:d.lineId,ingredientId:d.ingredientId,date:d.date,quantity,unit:d.unit,
+   costCents,expectedRevision:d.expectedRevision},error:null};
+ };
  const update=(id:string,patch:Partial<Draft>)=>setDrafts(prev=>prev.map(d=>d.lineId===id?{...d,...patch}:d));
  const totals=useMemo(()=>{
   const byId=new Map<string,{name:string;total:number;unit:string;cost:number|null}>();
@@ -51,7 +59,11 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  const submit=()=>{
   start(async()=>{
    try{
-   const result=await saveBulkPurchases(drafts);
+   const prepared=drafts.map(d=>({draft:d,...parseDraft(d)}));
+   const valid=prepared.flatMap(x=>x.line?[x.line]:[]);
+   const result=valid.length?await saveBulkPurchases(valid):[];
+   const bad=prepared.filter(x=>x.error).map(x=>({lineId:x.draft.lineId,ok:false,error:x.error??"save_failed"}));
+   result.push(...bad);
    const byId=new Map(result.map(r=>[r.lineId,r]));
    setErrors(Object.fromEntries(result.filter(r=>!r.ok).map(r=>[r.lineId,r.error??"save_failed"])));
    setDrafts(prev=>{
@@ -65,13 +77,15 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  const beginEdit=(r:PurchaseMonthLine)=>{
   setEditing(r.lineId);
   setEditDraft({lineId:r.lineId,ingredientId:r.ingredientId,date:r.date,
-    quantity:r.quantity,unit:r.unit,costCents:r.costCents,expectedRevision:r.revision});
+    quantity:String(r.quantity),unit:r.unit,cost:r.costCents===null?"":String(r.costCents/100),expectedRevision:r.revision});
  };
  const saveEdit=()=>{
   if(!editDraft)return;
   start(async()=>{
    try{
-   const result=await editInventoryPurchase(editDraft);
+   const parsed=parseDraft(editDraft);
+   if(!parsed.line){setErrors(prev=>({...prev,[editDraft.lineId]:parsed.error??"save_failed"}));return;}
+   const result=await editInventoryPurchase(parsed.line);
    if(result.ok){setEditing(null);setEditDraft(null);router.refresh();}
    else setErrors(prev=>({...prev,[editDraft.lineId]:result.error??"save_failed"}));
    }catch{setErrors(prev=>({...prev,[editDraft.lineId]:"save_failed"}));}
@@ -102,7 +116,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
   if(!fileText)return;
   start(async()=>{
    try{
-   const outcomes=await importInventoryCsv(fileText,mapping);
+   const outcomes=await importInventoryCsv(fileText,mapping,locale);
    const success=outcomes.filter(r=>r.ok).length;
    const failed=outcomes.filter(r=>!r.ok);
    setCsvStatus(failed.length?
@@ -118,14 +132,14 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
   <label className="text-[17px]">{t.item}<select value={d.ingredientId??""} className={input}
     onChange={e=>{const i=items.find(x=>x.id===e.target.value);onChange({ingredientId:e.target.value,unit:i?.baseUnit??"each"});}}>
     {items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
-  <label className="text-[17px]">{t.quantity}<input className={input} type="text" inputMode="decimal" value={String(d.quantity)}
-    onChange={e=>onChange({quantity:number(e.target.value)})}/></label>
+  <label className="text-[17px]">{t.quantity}<input className={input} type="text" inputMode="decimal" value={d.quantity}
+    onChange={e=>onChange({quantity:e.target.value})}/></label>
   <label className="text-[17px]">{t.unit}<select className={input} value={d.unit}
     onChange={e=>onChange({unit:e.target.value})}>
     {[...new Set([...commonUnits[items.find(i=>i.id===d.ingredientId)?.baseUnit??"each"],d.unit])].map(u=><option key={u}>{u}</option>)}</select></label>
   <label className="text-[17px]">{t.cost}<input className={input} type="text" inputMode="decimal"
-    placeholder={t.optional} value={d.costCents===null?"":String(d.costCents/100)}
-    onChange={e=>onChange({costCents:e.target.value.trim()===""?null:Math.round(number(e.target.value)*100)})}/></label>
+    placeholder={t.optional} value={d.cost}
+    onChange={e=>onChange({cost:e.target.value})}/></label>
   <label className="text-[17px]">{t.date}<input className={input} type="date" value={d.date}
     onChange={e=>onChange({date:e.target.value})}/></label>
  </div>;

@@ -15,7 +15,7 @@ import PageShell from "@/components/shared/PageShell";
 import PantryWorkspace from "@/components/menu/PantryWorkspace";
 
 export const dynamic = "force-dynamic";
-export default async function PantryPage({searchParams}:{searchParams:Promise<{from?:string;to?:string;month?:string}>}) {
+export default async function PantryPage({searchParams}:{searchParams:Promise<{from?:string;to?:string;month?:string;proposals?:string}>}) {
   await requireOwnBusiness();
   const businessToday=await readUsageBusinessDate();
   const params=await searchParams;
@@ -28,6 +28,9 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
     readPurchaseMonth(month).catch(()=>null),getTranslations("Inventory"),getLocale(),
     readModifierSetup().catch(()=>null),readPendingInventoryProposals().catch(()=>null)
   ]);
+  const selectedIds=(params.proposals??"").split(",").filter(id=>/^[0-9a-f]{8}-[0-9a-f-]{27,}$/.test(id)).slice(0,100);
+  const selected=selectedIds.flatMap(id=>pendingProposals?.find(p=>p.id===id)?[pendingProposals.find(p=>p.id===id)!]:[]);
+  const orderedProposals=selectedIds.length?selected:pendingProposals;
   const i18nKeys=["title","heading","month","photo","unavailable","empty","totals","bulk","csv","chooseFile",
     "date","item","quantity","unit","cost","optional","edit","void","save","cancel","remove","addLine",
     "saveAll","none","import","failed","unknown","csvFailed","csvSaved","csvPartial",
@@ -41,6 +44,11 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
   const inventoryLabels=Object.fromEntries(i18nKeys.map(key=>[key,inventoryText.raw(key as never) as string]));
 
   return <PageShell className="px-4 pb-24 pt-6" wide>
+    {selectedIds.length>0&&selected.length===0&&<p role="status" className="mb-4 text-[17px]">{inventoryLabels.proposalsUnavailable}</p>}
+    {selectedIds.length>0&&selected.length>0&&<section className="mb-5 space-y-3">
+      <h2 className="text-xl font-bold">{inventoryLabels.proposalsHeading}</h2>
+      {selected.map(p=><SupervisorProposalCard key={p.id} threadId={p.threadId} proposalId={p.id} locale={locale as "en"|"es"|"ar"}/>)}
+    </section>}
     <PantryWorkspace businessToday={businessToday} inventoryPanel={
       <InventoryPurchasePanel items={items.map(i=>({id:i.id,name:i.name,baseUnit:i.baseUnit}))}
         month={month} rows={purchases?.rows??[]} currency={purchases?.currency??"USD"}
@@ -48,9 +56,9 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
     } variance={variance} items={items} starters={PANTRY_STARTERS.map(({key,name,category,baseUnit,packQuantity,packUnit})=>({key,name,category,baseUnit,packQuantity,packUnit}))}
       labels={Object.fromEntries(["title","search","all","coffee","milk","syrups","packaging","bakery","other","reviewNow","confirmed","add","packSize","packPrice","category","baseUnit","name","create","save","cancel","edit","estimate","confirm","usedIn","perUnit","priceUnknown","starterPack","chooseStarter","newIngredient","noItems","priceTitle","purchaseUnit","error","usageTitle","usagePeriod","usageExpected","usageActual","usageDifference","usageUnknown","usage_on_target","usage_watch","usage_over","usageMissing","usageRecord","usage_count","usage_purchase","usageIngredient","usageQuantity","usageUnit","usageDate","usageSaved","usageCountNote","usageShifts","usageExpectedOnly","usageStart","usageEnd","usageApply","usageStartCount","usageEndCount","usageCoverage","usageRecipeMissing","usageUnavailable","usageConnectToast","usageErrorInvalidQuantity","usageErrorInvalidUnit","usageErrorIngredientNotFound","usageErrorSaveFailed"].map(key=>[key,key==="title"?inventoryLabels.title:t.raw(key as never) as string]))} />
     {pendingProposals===null?<p role="alert" className="text-[17px]">{inventoryLabels.proposalsUnavailable}</p>:
-      pendingProposals.length>0&&<section className="mb-5 space-y-3">
+      selectedIds.length===0&&orderedProposals&&orderedProposals.length>0&&<section className="mb-5 space-y-3">
         <h2 className="text-xl font-bold">{inventoryLabels.proposalsHeading}</h2>
-        {pendingProposals.map(p=><SupervisorProposalCard key={p.id}
+        {orderedProposals.map(p=><SupervisorProposalCard key={p.id}
           threadId={p.threadId} proposalId={p.id} locale={locale as "en"|"es"|"ar"}/>)}
       </section>}
     <InventoryModifierPanel data={modifierSetup} t={inventoryLabels} locale={locale as "en"|"es"|"ar"}/>

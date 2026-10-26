@@ -3257,6 +3257,7 @@
     "approveAllPartial": "Recorded {saved} purchases; {failed} still need review.",
     "receiptVendor": "Receipt vendor",
     "receiptTotal": "Receipt total",
-    "receiptIncomplete": "Review the vendor, receipt total, and line cost before approval."
+    "receiptIncomplete": "Review the vendor, receipt total, and line cost before approval.",
+    "reviewOnInventory": "Review on Inventory page"
   }
 }

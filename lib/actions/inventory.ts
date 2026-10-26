@@ -6,6 +6,7 @@ import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {recordPurchases,type PurchaseLineInput,type PurchaseResult} from "@/lib/inventory/recordPurchases.server";
 import {detectCsvColumns,toDateStr,toCents} from "@/lib/pos/csv/csvUtils";
+import {parseOwnerDecimal} from "@/lib/calc/localeDecimal";
 
 async function ownerScope(){
  const db=await createServerSupabaseClient();
@@ -59,7 +60,7 @@ function stableUuid(seed:string):string{
  hex[12]="5";hex[16]=((parseInt(hex[16],16)&3)|8).toString(16);
  const s=hex.join("");return [s.slice(0,8),s.slice(8,12),s.slice(12,16),s.slice(16,20),s.slice(20)].join("-");
 }
-export async function importInventoryCsv(content:string,rawMapping:PurchaseCsvMapping):Promise<PurchaseResult[]>{
+export async function importInventoryCsv(content:string,rawMapping:PurchaseCsvMapping,locale:"en"|"es"|"ar"="en"):Promise<PurchaseResult[]>{
  const mapping=mappingSchema.safeParse(rawMapping);
  if(!mapping.success||content.length>2_000_000)return [{lineId:"csv",ok:false,error:"invalid_csv"}];
  const {businessId,db}=await ownerScope();
@@ -75,16 +76,22 @@ export async function importInventoryCsv(content:string,rawMapping:PurchaseCsvMa
   byName.set(name,byName.has(name)?null:ingredient.id);
  }
  const fingerprint=createHash("sha256").update(content).digest("hex");
- const lines:PurchaseLineInput[]=parsed.rows.map((row,i)=>{
+ const invalid:PurchaseResult[]=[];
+ const lines:PurchaseLineInput[]=parsed.rows.flatMap((row,i)=>{
   const name=String(row[mapping.data.item]??"").trim().toLocaleLowerCase();
   const value=String(mapping.data.cost?row[mapping.data.cost]??"":"").trim();
-  const costCents=value?toCents(value):null;
-  return {lineId:stableUuid(businessId+":"+fingerprint+":"+i),
+  const costValue=value?parseOwnerDecimal(value,locale):null;
+  const costCents=costValue===null?null:toCents(String(costValue));
+  const quantity=parseOwnerDecimal(String(row[mapping.data.quantity]??""),locale);
+  const lineId=stableUuid(businessId+":"+fingerprint+":"+i);
+  if(value&&(costValue===null||!Number.isSafeInteger(costCents))){invalid.push({lineId,ok:false,error:"invalid_cost"});return [];}
+  if(quantity===null||quantity<=0){invalid.push({lineId,ok:false,error:"invalid_quantity"});return [];}
+  return [{lineId,
    ingredientId:byName.get(name)??null,date:toDateStr(row[mapping.data.date]??""),
-   quantity:Number(row[mapping.data.quantity]??""),unit:String(row[mapping.data.unit]??"").trim(),
-   costCents:costCents!==null&&costCents>=0?costCents:-1};
+   quantity,unit:String(row[mapping.data.unit]??"").trim(),
+   costCents}];
  });
- const result=await recordPurchases(lines,"csv",fingerprint);
+ const result=lines.length?await recordPurchases(lines,"csv",fingerprint):[];
  if(result.some(r=>r.ok))revalidatePath("/menu/pantry");
- return result;
+ return [...result,...invalid];
 }

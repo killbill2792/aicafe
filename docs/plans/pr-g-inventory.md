@@ -7,7 +7,7 @@ Status: implementation in progress on draft PR #194. Transactional purchases, pr
 PRs C/D/E/F/H are merged on main; PR G is now based directly on `main`.
 Keep all their prior Home, Chat, Supervisor and CSV changes when rebasing.
 PR I independently reserves migration 099. PR G therefore contains a single
-additive migration: `20261027000100_inventory_purchases.sql`. Re-check if main moves.
+additive migration: `20261027000099_inventory_purchases.sql`. Re-check if main moves.
 Do not apply production migrations or merge this PR.
 
 Read AGENTS.md and docs/02-design-system.md before implementation.

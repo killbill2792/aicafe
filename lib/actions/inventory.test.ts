@@ -42,3 +42,20 @@ describe("purchases CSV stable source identity",()=>{
   expect(calls[1][2]).toBe(calls[0][2]);
  });
 });
+
+describe("CSV rows with missing and localized amounts",()=>{
+ it("preserves unknown costs as null while importing localized quantities",async()=>{
+  const result=await importInventoryCsv('date,item,quantity,unit,cost\n2026-10-25,Milk,"1,5",gal,',mapping,"es");
+  expect(result).toHaveLength(1);
+  expect(result[0].ok).toBe(true);
+  expect(vi.mocked(recordPurchases).mock.calls.at(-1)?.[0][0]).toMatchObject({quantity:1.5,costCents:null});
+ });
+ it("rejects only the invalid-cost row without writing it",async()=>{
+  const csv="date,item,quantity,unit,cost\n2026-10-25,Milk,1,gal,not-money\n2026-10-25,Milk,2,gal,12.50";
+  const result=await importInventoryCsv(csv,mapping);
+  expect(result).toHaveLength(2);
+  expect(result.filter(r=>!r.ok)).toMatchObject([{error:"invalid_cost"}]);
+  expect(vi.mocked(recordPurchases).mock.calls.at(-1)?.[0]).toHaveLength(1);
+  expect(vi.mocked(recordPurchases).mock.calls.at(-1)?.[0][0]).toMatchObject({quantity:2,costCents:1250});
+ });
+});

@@ -3257,6 +3257,7 @@
     "approveAllPartial": "Se registraron {saved} compras; faltan revisar {failed}.",
     "receiptVendor": "Proveedor del recibo",
     "receiptTotal": "Total del recibo",
-    "receiptIncomplete": "Revisa el proveedor, total del recibo y costo de la línea antes de aprobar."
+    "receiptIncomplete": "Revisa el proveedor, total del recibo y costo de la línea antes de aprobar.",
+    "reviewOnInventory": "Revisar en la página de Inventario"
   }
 }

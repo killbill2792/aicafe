@@ -3257,6 +3257,7 @@
     "approveAllPartial": "تم تسجيل {saved} مشتريات؛ ولا تزال {failed} بحاجة للمراجعة.",
     "receiptVendor": "اسم المورد في الإيصال",
     "receiptTotal": "إجمالي الإيصال",
-    "receiptIncomplete": "راجع المورد وإجمالي الإيصال وتكلفة البند قبل الموافقة."
+    "receiptIncomplete": "راجع المورد وإجمالي الإيصال وتكلفة البند قبل الموافقة.",
+    "reviewOnInventory": "مراجعة في صفحة المخزون"
   }
 }

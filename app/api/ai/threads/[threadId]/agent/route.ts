@@ -25,6 +25,7 @@ import { isJobStepAgent, type AgentJob } from "@/lib/ai/agent/jobState";
 import { scheduleTurnAudit } from "@/lib/admin/audit.server";
 import { assertCafeAiAccess } from "@/lib/access/access.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 
 export const runtime = "nodejs";
@@ -170,15 +171,35 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       },
       proposePurchases:async(input)=>{
         const output:Array<{proposalId?:string;revision?:number;name:string;error?:string}>=[];
+        // Stable request keys are scoped to the logical line, NOT the tool-call position.
+        // Read the whole receipt so batches start after previously allocated indexes.
+        const receiptRows=input.source==="receipt_chat"?await createAdminSupabaseClient()
+          .from("supervisor_proposals")
+          .select("request_key,canonical_effect_payload")
+          .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+          .eq("thread_id",id).eq("capability_id",purchaseCapabilityId):null;
+        if(receiptRows?.error)throw new Error("receipt_proposals_unavailable");
+        const existing=(receiptRows?.data??[]).filter(row=>
+          (row.canonical_effect_payload as {receiptGroupId?:string}|null)?.receiptGroupId===owner.id);
+        const known=new Map(existing.map(row=>[row.request_key,
+          (row.canonical_effect_payload as {receiptLineIndex?:number}).receiptLineIndex]));
+        let nextIndex=Math.max(-1,...existing.map(row=>
+          (row.canonical_effect_payload as {receiptLineIndex?:number}).receiptLineIndex??-1))+1;
         for(const [index,line] of input.lines.entries()){
           try{
-            const requestKey=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,kind:"purchase",index,line,source:input.source}));
+            const requestKey=proposalRequestKey(id,JSON.stringify({
+              ownerMessageId:owner.id,kind:"purchase",line,source:input.source,indexInIdenticalBatch:index
+            }));
+            const prior=known.get(requestKey);
+            const receiptLineIndex=input.source==="receipt_chat"?
+              (prior??nextIndex++):null;
             const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},supervisorLoopRegistry,
               new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:input.source,
                 receiptGroupId:input.source==="receipt_chat"?owner.id:null,
-                receiptLineIndex:input.source==="receipt_chat"?index:null,
+                receiptLineIndex,
                 receiptVendor:input.source==="receipt_chat"?input.receiptVendor:null,
                 receiptTotalCents:input.source==="receipt_chat"?input.receiptTotalCents:null},requestKey);
+            if(input.source==="receipt_chat")known.set(requestKey,receiptLineIndex!);
             output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name});
           }catch{output.push({name:line.name,error:"needs_review"});}
         }

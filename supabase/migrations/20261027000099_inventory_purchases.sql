@@ -119,7 +119,7 @@ create or replace function public.supervisor_edit_inventory_purchase(
 ) returns public.supervisor_proposals language plpgsql security definer set search_path=public as $$
 declare v_proposal public.supervisor_proposals%rowtype;
 begin
- if current_user <> 'service_role' then
+ if auth.role() <> 'service_role' then
   raise exception 'service role required' using errcode='42501';
  end if;
  if p_effect is null or jsonb_typeof(p_effect)<>'object'

@@ -18,6 +18,7 @@ import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
 import SupervisorProposalCard from "./SupervisorProposalCard";
 import InventoryApproveAll from "./InventoryApproveAll";
+import {buildAgentSendBody} from "./agentSendBody";
 import MemoryCard from "./MemoryCard";
 import ClarifyCard from "./ClarifyCard";
 import HowIGotThis from "./HowIGotThis";
@@ -472,8 +473,7 @@ export default function SupervisorChatComposer({
     try {
       const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ clientMessageId, text, locale,
-          attachmentIds:attachments.filter(file=>file.mediaType.startsWith("image/")).slice(0,3).map(file=>file.id) }),
+        body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachments)),
       });
       if (!response.ok || !response.body) throw new Error(await agentErrorCode(response));
       const reader = response.body.getReader();
@@ -532,7 +532,7 @@ export default function SupervisorChatComposer({
       attemptedThreadId = id;
       const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ clientMessageId, text, locale }),
+        body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachments)),
       });
       if (!response.ok || !response.body) throw new Error("agent_request_failed");
       const reader = response.body.getReader();

@@ -20,6 +20,7 @@ async function as(actor,fn){
  try{
   await db.query("set local role authenticated");
   await db.query("select set_config('request.jwt.claim.sub',$1,true)",[actor]);
+   await db.query("select set_config('request.jwt.claim.role','authenticated',true)");
   await fn();
   await db.query("commit");
  }catch(e){await db.query("rollback");throw e;}
@@ -40,7 +41,8 @@ try{
   "do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$",
   "do $$ begin create role anon nologin; exception when duplicate_object then null; end $$",
   "do $$ begin create role service_role nologin; exception when duplicate_object then null; end $$",
-  "create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$",
+  "create function auth.uid() returns uuid language sql stable as $ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $",
+   "create function auth.role() returns text language sql stable as $ select nullif(current_setting('request.jwt.claim.role',true),'') $",
   "create table businesses(id uuid primary key,is_demo boolean not null default false,timezone text not null default 'America/Los_Angeles')",
   "create table memberships(business_id uuid references businesses(id),user_id uuid,role text,primary key(business_id,user_id))",
   "create function public.is_member(target uuid) returns boolean language sql stable security definer set search_path=public as $$ select exists(select 1 from memberships where business_id=target and user_id=auth.uid()) $$",
@@ -57,7 +59,8 @@ try{
   "create table toast_employee_directory(business_id uuid,restaurant_guid uuid,employee_guid uuid,deleted boolean default false,display_name text)",
   "create table daily_rollups(business_id uuid,business_date date,sales_data_status text)",
   "create table supervisor_proposals(id uuid primary key,business_id uuid,owner_user_id uuid,thread_id uuid,capability_id text,status text,revision integer,canonical_effect_payload jsonb,effect_hash text,updated_at timestamptz)",
-  "grant usage on schema public,auth to authenticated",
+  "grant usage on schema public,auth to authenticated,service_role",
+   "grant execute on function auth.role() to authenticated,service_role",
   "grant execute on function auth.uid() to authenticated",
   "grant select on businesses,memberships,ingredients,modifier_recipes,ingredient_prices,expenses,expense_lines to authenticated",
   "alter table pantry_stock_purchases enable row level security",
@@ -70,10 +73,25 @@ try{
  await db.query("insert into memberships(business_id,user_id,role) values($1,$2,'owner'),($3,$4,'owner')",[A,O,B,X]);
  await db.query("insert into ingredients(id,business_id,name,base_unit) values($1,$2,'Milk','each'),($3,$4,'Other milk','each')",[ING,A,FOREIGN,B]);
  await db.query("insert into modifier_recipes values($1,$2),($3,$4)",[RECIPE,A,OTHER_RECIPE,B]);
- const migration=readFileSync(new URL("../supabase/migrations/20261027000100_inventory_purchases.sql",import.meta.url),"utf8");
+ const migration=readFileSync(new URL("../supabase/migrations/20261027000099_inventory_purchases.sql",import.meta.url),"utf8");
  await db.query(migration);
  await db.query(migration);
  const w=call("pantry_write_purchase_line",13),q=call("pantry_write_receipt_chat_line",15);
+ const proposalId="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+ const proposalArgs=[A,O,GROUP,proposalId,1,JSON.stringify({name:"Edited milk",quantity:1}),"a".repeat(64)];
+ await db.query("insert into supervisor_proposals(id,business_id,owner_user_id,thread_id,capability_id,status,revision,canonical_effect_payload,effect_hash) values($1,$2,$3,$4,'maya.inventory_purchase.v1','draft',1,$5::jsonb,$6)",[
+  proposalId,A,O,GROUP,JSON.stringify({name:"New item",quantity:1}),"b".repeat(64)]);
+ await as(O,async()=>{await reject(call("supervisor_edit_inventory_purchase",7),proposalArgs,"42501");});
+ await db.query("begin");
+ try{
+  await db.query("set local role service_role");
+  await db.query("select set_config('request.jwt.claim.role','service_role',true)");
+  await db.query(call("supervisor_edit_inventory_purchase",7),proposalArgs);
+  await db.query("commit");
+ }catch(e){await db.query("rollback");throw e;}
+ const edited=await db.query("select revision,canonical_effect_payload from supervisor_proposals where id=$1",[proposalId]);
+ assert.equal(edited.rows[0].revision,2);
+ assert.equal(edited.rows[0].canonical_effect_payload.name,"Edited milk");
  await as(O,async()=>{
   const first=await db.query(w,stock());
   await db.query(w,stock());
@@ -115,6 +133,22 @@ try{
   await reject(newModifier,newArgs,"40001");
   await reject(newModifier,[A,"square","loc4","mod4","Foreign",FOREIGN,1,null],"22023");
   assert.equal((await db.query(call("pantry_usage_sales_evidence",3),[A,"2026-10-25","2026-10-25"])).rows[0].value.covered,false);
+ });
+ // Thirteen separately approved receipt proposals share exactly one expense and indexed lines.
+ const secondGroup="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+ await as(O,async()=>{
+  for(let i=0;i<13;i++){
+   const lineId="cc"+i.toString(16).padStart(2,"0")+"cccc-cccc-4ccc-8ccc-cccccccccccc";
+   const args=receipt(lineId,i,100,"Milk");
+   args[9]=secondGroup;args[12]=1300;args[13]="pr-g-test-13-lines";
+   await db.query(q,args);
+  }
+  const indexes=(await db.query("select l.receipt_line_index from expense_lines l join expenses e on e.id=l.expense_id where e.chat_receipt_group_id=$1 order by l.receipt_line_index",[secondGroup])).rows.map(l=>l.receipt_line_index);
+  assert.deepEqual(indexes,Array.from({length:13},(_,i)=>i));
+  const retry=receipt("cc0acccc-cccc-4ccc-8ccc-cccccccccccc",10,100,"Milk");
+  retry[9]=secondGroup;retry[12]=1300;retry[13]="pr-g-test-13-lines";
+  await db.query(q,retry);
+  assert.equal((await db.query("select count(*)::int n from expense_lines l join expenses e on e.id=l.expense_id where e.chat_receipt_group_id=$1",[secondGroup])).rows[0].n,13);
  });
  await as(X,async()=>{
   await reject(w,stock(),"42501");
