@@ -26,7 +26,7 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
      setBusy(true);setFailure(false);
      try{
        for(const entry of values){
-         const match=entry.f.key.match(/^(endCount|purchase):([0-9a-f-]{36}):(\\d{4}-\\d{2}-\\d{2})$/i);
+         const match=entry.f.key.match(/^(endCount|purchase):([0-9a-f-]{36}):(\d{4}-\d{2}-\d{2})$/i);
          if(!match)throw Error("invalid_field");
          if(match[1]==="endCount"){
            const result=await saveUsageEntry("count",{ingredientId:match[2],date:match[3],
