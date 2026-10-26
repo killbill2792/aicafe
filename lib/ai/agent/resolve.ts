@@ -155,10 +155,10 @@ export function observeToolResult(state:ResolveState|undefined,result:Record<str
       if(!row||typeof row!=="object"||typeof row.ingredientId!=="string"||
         typeof row.name!=="string"||typeof row.unit!=="string"||!Array.isArray(row.missing))continue;
       for(const missing of row.missing){
-        const found=typeof missing==="string"?missing.match(/^(endCount|purchase):?(\\d{4}-\\d{2}-\\d{2})?$/):null;
+        const found=typeof missing==="string"?missing.match(/^(endCount|purchase):?(\d{4}-\d{2}-\d{2})?$/):null;
         if(!found)continue;
         const date=found[2]??(result.period&&typeof result.period==="object"&&"to" in result.period?String(result.period.to):"");
-        if(/^\\d{4}-\\d{2}-\\d{2}$/.test(date))state.usageMissing.set(found[1]+":"+row.ingredientId+":"+date,
+        if(/^\d{4}-\d{2}-\d{2}$/.test(date))state.usageMissing.set(found[1]+":"+row.ingredientId+":"+date,
           {name:row.name,unit:row.unit,kind:found[1] as "endCount"|"purchase",date});
       }
     }
