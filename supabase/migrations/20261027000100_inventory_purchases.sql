@@ -270,3 +270,74 @@ begin
 end $$;
 revoke all on function public.pantry_void_purchase_line(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.pantry_void_purchase_line(uuid,uuid) to authenticated;
+
+
+-- Receipt chat: create ONE expense for the owner-reviewed receipt total, then
+-- the approved expense line and canonical stock+price in the SAME transaction.
+-- Unapproved siblings create no stock or price; their later approvals resume
+-- against the same expense and indexed line. A conflicting retry rolls back.
+create or replace function public.pantry_write_receipt_chat_line(
+ p_business_id uuid,p_line_id uuid,p_ingredient_id uuid,p_date date,
+ p_quantity numeric,p_unit text,p_base_quantity numeric,p_cost_cents bigint,
+ p_price_micros bigint,p_group_id uuid,p_line_index integer,
+ p_vendor text,p_total_cents bigint,p_dedupe_key text,p_name text
+) returns timestamptz language plpgsql security definer set search_path=public as $$
+declare v_expense_id uuid;v_line public.expense_lines%rowtype;v_result timestamptz;
+  v_expense public.expenses%rowtype;
+begin
+ if auth.uid() is null or not exists (
+  select 1 from public.memberships m join public.businesses b on b.id=m.business_id
+  where m.business_id=p_business_id and m.user_id=auth.uid()
+   and m.role='owner' and b.is_demo=false
+ ) then raise exception 'owner required' using errcode='42501';end if;
+ if p_group_id is null or p_line_id is null or p_line_index not between 0 and 99
+   or p_vendor is null or length(btrim(p_vendor)) not between 1 and 160
+   or p_total_cents is null or p_total_cents <= 0 or p_total_cents > 900000000000000
+   or p_cost_cents is null or p_cost_cents < 0
+   or p_dedupe_key is null or length(p_dedupe_key) not between 1 and 200
+   or p_name is null or length(btrim(p_name)) not between 1 and 160
+ then raise exception 'receipt information required' using errcode='22023';end if;
+ -- Same logical receipt is serialized BEFORE expense-line or stock locks.
+ -- The expense dedupe key also detects a receipt recorded on the page.
+ perform pg_advisory_xact_lock(hashtextextended(p_business_id::text||':receipt:'||p_dedupe_key,53));
+ insert into public.expenses(
+  business_id,spent_on,amount_cents,vendor,category_code,source,status,dedupe_key
+ ) values (
+  p_business_id,p_date,p_total_cents,p_vendor,'ingredients','receipt','actual',p_dedupe_key
+ ) on conflict(business_id,dedupe_key) do nothing returning id into v_expense_id;
+ if v_expense_id is null then
+  select * into v_expense from public.expenses
+   where business_id=p_business_id and dedupe_key=p_dedupe_key for update;
+  if not found or v_expense.source <> 'receipt'
+   or v_expense.amount_cents is distinct from p_total_cents
+   or v_expense.spent_on is distinct from p_date
+   or lower(btrim(coalesce(v_expense.vendor,'')))<>lower(btrim(p_vendor))
+    then raise exception 'receipt changed' using errcode='40001';end if;
+  v_expense_id:=v_expense.id;
+ end if;
+ if exists(select 1 from public.expense_lines
+  where expense_id=v_expense_id and receipt_line_index is null)
+  then raise exception 'historical receipt needs review' using errcode='40001';end if;
+ insert into public.expense_lines(
+  expense_id,receipt_line_index,description,quantity,unit,amount_cents,ingredient_id
+ ) values(v_expense_id,p_line_index,p_name,p_quantity,p_unit,p_cost_cents,p_ingredient_id)
+ on conflict(expense_id,receipt_line_index) do nothing;
+ select * into v_line from public.expense_lines
+  where expense_id=v_expense_id and receipt_line_index=p_line_index for update;
+ if not found or v_line.description is distinct from p_name
+  or v_line.quantity is distinct from p_quantity
+  or v_line.unit is distinct from p_unit
+  or v_line.amount_cents is distinct from p_cost_cents
+  or v_line.ingredient_id is distinct from p_ingredient_id
+ then raise exception 'receipt line changed' using errcode='40001';end if;
+ select public.pantry_write_purchase_line(
+  p_business_id,p_line_id,p_ingredient_id,p_date,p_quantity,p_unit,
+  p_base_quantity,p_cost_cents,p_price_micros,'receipt_chat',
+  p_group_id::text,v_line.id,null
+ ) into v_result;
+ return v_result;
+end $$;
+revoke all on function public.pantry_write_receipt_chat_line(uuid,uuid,uuid,date,numeric,text,numeric,bigint,bigint,uuid,integer,text,bigint,text,text)
+ from public,anon,authenticated;
+grant execute on function public.pantry_write_receipt_chat_line(uuid,uuid,uuid,date,numeric,text,numeric,bigint,bigint,uuid,integer,text,bigint,text,text)
+ to authenticated;
