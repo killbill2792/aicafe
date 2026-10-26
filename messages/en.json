@@ -3221,7 +3221,9 @@
     "modifierSuggested": "Suggested match (not yet saved)",
     "modifierRecipe": "Recipe to use",
     "modifierChoose": "Select a recipe",
-    "modifierConfirm": "Confirm link"
+    "modifierConfirm": "Confirm link",
+    "proposalsHeading": "Purchases waiting for your approval",
+    "proposalsUnavailable": "Could not load pending purchase cards."
   },
   "InventoryApprovalCard": {
     "pending": "Ready for review",
