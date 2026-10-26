@@ -37,7 +37,7 @@ describe("single transactional purchase path",()=>{
   expect(rpc).toHaveBeenCalledWith("pantry_write_purchase_line",expect.objectContaining({
    p_business_id:BUSINESS,p_line_id:ID1,p_ingredient_id:INGREDIENT,
    p_source:"bulk",p_cost_cents:2199,p_price_micros:expect.any(Number),
-   p_base_quantity:15141.6474,p_expected_updated_at:null
+   p_base_quantity:15141.6471,p_expected_updated_at:null
   }));
   expect(from).not.toHaveBeenCalledWith("pantry_stock_purchases");
   expect(from).not.toHaveBeenCalledWith("ingredient_prices");
