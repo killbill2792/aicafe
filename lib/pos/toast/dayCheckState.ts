@@ -16,6 +16,7 @@ export type DayCheckEvent=
  |{type:"era_pending"}
  |{type:"era_result";matched:boolean;sourceIncomplete:boolean;comparisonMatched:boolean}
  |{type:"era_error";category:string;permissionsLost:boolean}
+ |{type:"internal_error";category:string}
  |{type:"era_timeout"}
  |{type:"mode_downgraded"}
  |{type:"evidence_invalidated"}
@@ -69,6 +70,9 @@ export function nextDayCheckState(current:DayCheckState,event:DayCheckEvent,at:s
    break;
   case "era_error":
    internalVerdict();next.analytics_state=event.permissionsLost?"missing":"pending";
+   next.last_error_category=event.category;break;
+  case "internal_error":
+   // Internal import/read failures do not invent pending Analytics requests.
    next.last_error_category=event.category;break;
   case "era_timeout":
    internalVerdict();next.analytics_state="missing";

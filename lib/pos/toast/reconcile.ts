@@ -405,7 +405,7 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
     await writeReconciliation(db,scoped,day,status,{type:"internal_result",
      result:"matched",reasons:status.internal_reasons??[],paidOtherDay:status.paid_other_day??0});
    if(mode==="official"&&internal){
-    try{if(await eraDay(db,scoped,day,{...status,internal_state:internal},deadlineAt)==="timeout")mode="internal";}
+    try{if(await eraDay(db,scoped,day,status,deadlineAt)==="timeout")mode="internal";}
     catch(e){
      const category=e instanceof ToastApiError?e.category:"unavailable";
      const permissionLost=["authentication","missing_permissions"].includes(category);
@@ -428,7 +428,7 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
    const category=err instanceof ToastApiError?err.category:"unavailable";
    try{
      await writeReconciliation(db,scoped,day,status,{
-      type:"era_error",category,permissionsLost:false
+      type:"internal_error",category
      });
     }catch(markErr){
      if(markErr instanceof StaleImportError)continue;
