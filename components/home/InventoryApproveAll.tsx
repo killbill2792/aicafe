@@ -33,7 +33,9 @@ export default function InventoryApproveAll({threadId,ids,locale}:{
   // Sequential by design: a failure does not cancel or stale any sibling card.
   for(const card of cards){
    if(!["pending","failed","conflict"].includes(card.state))continue;
-   if(!card.purchase?.ingredientId){failed++;continue;}
+   const receiptReady=card.purchase?.source!=="receipt_chat"||Boolean(
+    card.purchase.receiptVendor&&card.purchase.receiptTotalCents&&card.purchase.costCents!==null);
+   if(!card.purchase?.ingredientId||!receiptReady){failed++;continue;}
    try{
     const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json"},
      credentials:"same-origin",body:JSON.stringify({action:"approve",proposalId:card.proposalId,revision:card.revision})});
