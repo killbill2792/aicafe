@@ -3245,6 +3245,9 @@
     "skip": "Skip",
     "approveAll": "Approve all matched purchases",
     "approveAllDone": "Recorded {saved} purchases.",
-    "approveAllPartial": "Recorded {saved} purchases; {failed} still need review."
+    "approveAllPartial": "Recorded {saved} purchases; {failed} still need review.",
+    "receiptVendor": "Receipt vendor",
+    "receiptTotal": "Receipt total",
+    "receiptIncomplete": "Review the vendor, receipt total, and line cost before approval."
   }
 }
