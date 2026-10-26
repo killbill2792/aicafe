@@ -109,6 +109,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           chatCopy={{
         photoRequest:tChat("photoRequest"),
         clarifyFillError:tChat("clarifyFillError"),
+        clarifyCountSummary:tChat("clarifyCountSummary"),clarifyPurchaseSummary:tChat("clarifyPurchaseSummary"),
         clarifyOther:tChat("clarifyOther"),clarifySend:tChat("clarifySend"),
         clarifyYouChose:tChat("clarifyYouChose"),clarifySkipped:tChat("clarifySkipped"),
         clarifyOtherPlaceholder:tChat("clarifyOtherPlaceholder"),
