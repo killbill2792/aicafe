@@ -145,9 +145,9 @@ for(const [locale,width,height] of [["en",390,844],["en",1440,900],["ar",390,844
 // PR I: exercise the genuine owner handoff panel with mocked READ-only
 // approved recipients in the development-only visual fixture. No messages or ledger writes.
 for(const locale of ["en","ar"]){
- const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1});
+ const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1,serviceWorkers:"block"});
  page.on("pageerror",err=>errors.push(String(err)));
- await page.route("**/api/staff/schedule-delivery**",async route=>{
+ await page.route(/\/api\/staff\/schedule-delivery/,async route=>{
   if(route.request().method()!=="GET")throw Error("visual fixture must not send or record");
   const mock={source:{planRevisionId:"11111111-1111-4111-8111-111111111111"},week:"2026-10-26",
    recipients:[
