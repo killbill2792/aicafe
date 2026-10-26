@@ -353,3 +353,50 @@ revoke all on function public.pantry_write_receipt_chat_line(uuid,uuid,uuid,date
  from public,anon,authenticated;
 grant execute on function public.pantry_write_receipt_chat_line(uuid,uuid,uuid,date,numeric,text,numeric,bigint,bigint,uuid,integer,text,bigint,text,text)
  to authenticated;
+
+
+-- A brand-new café may have zero modifier_recipes. Let the owner explicitly
+-- create a base-unit recipe and link one observed POS modifier atomically.
+-- Never create a recipe from an AI suggestion without this owner's click.
+create or replace function public.pantry_create_modifier_recipe_link(
+ p_business_id uuid,p_provider text,p_location_ref text,p_pos_modifier_id text,
+ p_name text,p_ingredient_id uuid,p_quantity_delta numeric,p_replaces_ingredient_id uuid
+) returns uuid language plpgsql security definer set search_path=public as $$
+declare v_recipe_id uuid;
+begin
+ if auth.uid() is null or not exists(
+  select 1 from public.memberships m join public.businesses b on b.id=m.business_id
+  where m.business_id=p_business_id and m.user_id=auth.uid()
+   and m.role='owner' and b.is_demo=false
+ ) then raise exception 'owner required' using errcode='42501';end if;
+ if p_provider not in ('toast','square','csv')
+  or p_location_ref is null or length(btrim(p_location_ref)) not between 1 and 120
+  or p_pos_modifier_id is null or length(btrim(p_pos_modifier_id)) not between 1 and 200
+  or p_name is null or length(btrim(p_name)) not between 1 and 160
+  or p_quantity_delta is null or p_quantity_delta<=0 or p_quantity_delta>999999
+  or not exists(select 1 from public.ingredients i
+    where i.business_id=p_business_id and i.id=p_ingredient_id)
+  or (p_replaces_ingredient_id is not null and
+    not exists(select 1 from public.ingredients i
+      where i.business_id=p_business_id and i.id=p_replaces_ingredient_id))
+ then raise exception 'invalid modifier recipe' using errcode='22023';end if;
+ -- A duplicate link must fail before producing a dangling second recipe.
+ perform pg_advisory_xact_lock(hashtextextended(
+  p_business_id::text||':'||p_provider||':'||p_location_ref||':'||p_pos_modifier_id,71));
+ if exists(select 1 from public.pantry_modifier_links l
+  where l.business_id=p_business_id and l.provider=p_provider
+    and l.location_ref=p_location_ref and l.pos_modifier_id=p_pos_modifier_id)
+ then raise exception 'modifier already linked' using errcode='40001';end if;
+ insert into public.modifier_recipes(
+  business_id,pos_modifier_id,name,ingredient_id,quantity_delta,replaces_ingredient_id
+ ) values (p_business_id,p_pos_modifier_id,p_name,p_ingredient_id,
+  p_quantity_delta,p_replaces_ingredient_id) returning id into v_recipe_id;
+ insert into public.pantry_modifier_links(
+  business_id,provider,location_ref,pos_modifier_id,modifier_recipe_id
+ ) values (p_business_id,p_provider,p_location_ref,p_pos_modifier_id,v_recipe_id);
+ return v_recipe_id;
+end $$;
+revoke all on function public.pantry_create_modifier_recipe_link(uuid,text,text,text,text,uuid,numeric,uuid)
+ from public,anon,authenticated;
+grant execute on function public.pantry_create_modifier_recipe_link(uuid,text,text,text,text,uuid,numeric,uuid)
+ to authenticated;
