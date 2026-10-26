@@ -51,7 +51,7 @@ try{
   "create table expenses(id uuid primary key default gen_random_uuid(),business_id uuid not null references businesses(id),spent_on date not null,amount_cents bigint not null,vendor text,category_code text references expense_categories(code),source text not null,status text not null,dedupe_key text not null,unique(business_id,dedupe_key))",
   "create table expense_lines(id uuid primary key default gen_random_uuid(),expense_id uuid not null references expenses(id),description text not null,quantity numeric(12,4),unit text,amount_cents bigint not null,ingredient_id uuid references ingredients(id))",
   "create table pantry_stock_purchases(id uuid primary key default gen_random_uuid(),business_id uuid not null references businesses(id),ingredient_id uuid not null,purchase_date date not null,quantity_base numeric(18,4) not null,entered_quantity numeric(18,4) not null,entered_unit text not null,created_at timestamptz not null default now(),foreign key(ingredient_id,business_id) references ingredients(id,business_id))",
-  "create table modifier_recipes(id uuid primary key,business_id uuid not null references businesses(id))",
+  "create table modifier_recipes(id uuid primary key default gen_random_uuid(),business_id uuid not null references businesses(id),pos_modifier_id text,name text not null default 'Modifier',ingredient_id uuid,quantity_delta numeric(12,4) not null default 0,replaces_ingredient_id uuid)",
   "create table toast_catalog_facts(business_id uuid,restaurant_guid uuid,provider_guid uuid,linked_modifier_recipe_id uuid,kind text)",
   "create table toast_labor_entries(business_id uuid,external_time_entry_id uuid,clock_in timestamptz,clock_out timestamptz,location_id uuid,external_employee_id uuid,restaurant_guid uuid,deleted boolean default false)",
   "create table toast_employee_directory(business_id uuid,restaurant_guid uuid,employee_guid uuid,deleted boolean default false,display_name text)",
@@ -107,6 +107,13 @@ try{
   assert.equal(links.rows[0].expense_id,links.rows[1].expense_id);
   await db.query("insert into pantry_modifier_links(business_id,provider,location_ref,pos_modifier_id,modifier_recipe_id) values($1,'square','loc1','mod1',$2)",[A,RECIPE]);
   await reject("insert into pantry_modifier_links(business_id,provider,location_ref,pos_modifier_id,modifier_recipe_id) values($1,'square','loc2','mod2',$2)",[A,OTHER_RECIPE],"42501");
+  const newModifier=call("pantry_create_modifier_recipe_link",8);
+  const newArgs=[A,"square","loc3","mod3","Extra milk",ING,60,null];
+  const added=(await db.query(newModifier,newArgs)).rows[0].value;
+  assert.ok(added,"New modifier recipe must be created by owner's click");
+  assert.equal((await db.query("select count(*)::int n from pantry_modifier_links where provider='square'")).rows[0].n,2);
+  await reject(newModifier,newArgs,"40001");
+  await reject(newModifier,[A,"square","loc4","mod4","Foreign",FOREIGN,1,null],"22023");
   assert.equal((await db.query(call("pantry_usage_sales_evidence",3),[A,"2026-10-25","2026-10-25"])).rows[0].value.covered,false);
  });
  await as(X,async()=>{
