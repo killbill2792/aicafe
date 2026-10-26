@@ -2,7 +2,6 @@
 import {useEffect,useRef,useState,useTransition} from "react";
 import {useRouter} from "next/navigation";
 import OwnerScheduleSendPanel from "./OwnerScheduleSendPanel";
-import {normalizeStaffPhone,formatStaffPhonePreview} from "@/lib/calc/scheduling/staffPhone";
 import {useTranslations} from "next-intl";
 import {dismissStaffRuleAlert} from "@/lib/actions/ruleAlerts";
 import DayTimeline from "./DayTimeline";
@@ -28,8 +27,8 @@ const fmt=(c:number|null,currency:string,locale?:string)=>c==null?"—":new Intl
 const wageEdit=(c:number,locale:string)=>new Intl.NumberFormat(teamNumberLocale(locale),{useGrouping:false,minimumFractionDigits:2,maximumFractionDigits:2}).format(c/100);
 const hours=(n:number)=>Number((n/60).toFixed(1));
 type Alert={id:string;employee_id:string;rule_key:string;message:string;created_at:string;workDate?:string|null;workStart?:string|null;workEnd?:string|null};
-export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null,teamExtras=null,focusDate,focusEmployee,focusRule,focusClock,focusContact}:{
- initial:Data;tab?:string;locale?:string;initialAlerts?:Alert[];alertError?:string|null;teamExtras?:React.ReactNode;focusDate?:string;focusEmployee?:string;focusRule?:StaffRuleKey;focusClock?:string;focusContact?:"phone"|"consent"
+export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null,teamExtras=null,focusDate,focusEmployee,focusRule,focusClock}:{
+ initial:Data;tab?:string;locale?:string;initialAlerts?:Alert[];alertError?:string|null;teamExtras?:React.ReactNode;focusDate?:string;focusEmployee?:string;focusRule?:StaffRuleKey;focusClock?:string
 }){
  const router=useRouter();const t=useTranslations("StaffSchedule");
  const wageSummary=(value:{knownCostCents:number;unknownCount:number})=>{
@@ -62,9 +61,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   const wage=parseHourlyWage(wageInput),minHours=parseWeeklyHours(minHoursInput),maxHours=parseWeeklyHours(maxHoursInput);
   const invalidWage=wage===undefined,invalidMin=minHours===undefined,invalidMax=maxHours===undefined;
   const invalidRange=minHours!=null&&maxHours!=null&&minHours>maxHours;
- const [language,setLanguage]=useState<"en"|"es"|"ar"|"">("");
-  const [phone,setPhone]=useState(""),[whatsAppOptIn,setWhatsAppOptIn]=useState(false),[salaryPeriod,setSalaryPeriod]=useState<string|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
- const normalizedPhone=normalizeStaffPhone(phone,data.countryCode);
+ const [phone,setPhone]=useState(""),[whatsAppOptIn,setWhatsAppOptIn]=useState(false),[salaryPeriod,setSalaryPeriod]=useState<string|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
  const [chosen,setChosen]=useState(deepPerson?.id??data.team[0]?.id??""),[date,setDate]=useState(deepDate??data.dates[0]);
  const deepOpen=deepDate?data.openHours?.[OPEN_HOURS_DAY_KEYS[new Date(deepDate+"T12:00:00Z").getUTCDay()]]?.[0]:undefined;
  const [start,setStart]=useState(suggested?.start??deepShift?.start??deepOpen?.[0]??"07:00"),
@@ -73,7 +70,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  [availability,setAvailability]=useState<{day:number;start:string|null;end:string|null}[]>([]),
  [availabilityDirty,setAvailabilityDirty]=useState(false);
  const invalidAvailability=!isValidTeamAvailability(availability);
- const personInvalid=normalizedPhone===undefined||(!salaryPeriod&&invalidWage)||invalidMin||invalidMax||invalidRange||invalidAvailability||(!["Barista","Manager","Baker","Cashier"].includes(role)&&!role.trim());
+ const personInvalid=(!salaryPeriod&&invalidWage)||invalidMin||invalidMax||invalidRange||invalidAvailability||(!["Barista","Manager","Baker","Cashier"].includes(role)&&!role.trim());
  const [undo,setUndo]=useState<{id:string;type:"person"|"shift";message:string}|null>(null);
  useEffect(()=>{if(!undo||busy)return;const timer=setTimeout(()=>setUndo(null),6000);return ()=>clearTimeout(timer);},[undo,busy]);
  const allDays=()=>Array.from({length:7},(_,day)=>({day,start:null,end:null}));
@@ -105,7 +102,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   setAvailabilityDirty(false);setConsentError(false);setConfirmRemoval(false);setFocusWage(false);setError("");
   setPersonEditing(person?.id??null);setName(person?.name??"");setRole(person?.role??"Barista");
   setWageInput(person?.wageCents==null?"":wageEdit(person.wageCents,locale));setSalaryPeriod(person?.wagePeriod&&person.wagePeriod!=="hour"?person.wagePeriod:null);
-  setPhone(person?.phone??"");setLanguage(person?.preferredLanguage??"");setWhatsAppOptIn(person?.whatsappOptIn??false);
+  setPhone(person?.phone??"");setWhatsAppOptIn(person?.whatsappOptIn??false);
    setMinHoursInput(weeklyHoursInput(person?.minWeeklyMinutes??null,locale));setMaxHoursInput(weeklyHoursInput(person?.maxWeeklyMinutes??null,locale));
   if(person){
    const stored=storedTeamAvailability(person.availableDays,
@@ -115,19 +112,6 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   }else {setComplexAvailability(false);setAvailability(allDays());}
   setSheet("person");
  };
- useEffect(()=>{
-  if(!focusEmployee||!focusContact)return;
-  const person=data.team.find(p=>p.id===focusEmployee);
-  if(!person)return;
-  let focusTimer:ReturnType<typeof setTimeout>|null=null;
-  const timer=setTimeout(()=>{
-   setScreen("team");openPerson(person);
-   focusTimer=setTimeout(()=>document.getElementById(focusContact==="phone"?"staff-person-phone":"staff-person-consent")?.focus(),50);
-  },0);
-  return ()=>{clearTimeout(timer);if(focusTimer)clearTimeout(focusTimer);};
-  // The deep link opens the editor once per keyed mount.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
- },[focusEmployee,focusContact]);
  // An explicit owner action persists immediately; don't toggle the visible
  // consent checkbox until the protected PATCH completes successfully.
  const saveConsent=async(next:boolean)=>{
@@ -397,17 +381,11 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
          className={`mt-1 min-h-12 w-full rounded-xl border bg-surface px-3 ${invalid?"border-neg ring-1 ring-neg":"border-line"}`} placeholder="25"/>
        </label>{invalid&&<p role="alert" className="mt-1 text-sm text-neg">{invalidRange?t("invalidWeeklyRange"):t("invalidWeeklyHours")}</p>}</div>)}
       <label className="mt-3 block font-semibold">{t("whatsapp")}
-        <input id="staff-person-phone" type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+14155551234"
+        <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+14155551234"
          className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3" dir="ltr"/>
       </label>
-      {phone.trim()&&<p role="status" className="mt-1 text-[17px]">{normalizedPhone?t("phoneWillSave",{phone:formatStaffPhonePreview(normalizedPhone)}):t("invalidPhone")}</p>}
-      <label className="mt-3 block font-semibold">{t("messageLanguage")}
-       <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[17px]" value={language} onChange={event=>setLanguage(event.target.value as "en"|"es"|"ar"|"")}>
-        <option value="">{t("sameAsApp")}</option><option value="en">English</option><option value="es">Español</option><option value="ar">العربية</option>
-       </select>
-      </label>
       {personEditing?<label className="mt-3 flex min-h-12 items-center gap-3 rounded-xl border border-line p-3">
-        <input id="staff-person-consent" type="checkbox" checked={whatsAppOptIn}
+        <input type="checkbox" checked={whatsAppOptIn}
           disabled={savingConsent||busy||data.readOnly}
           onChange={event=>void saveConsent(event.target.checked)}
           className="size-6 shrink-0 accent-accent"/>
@@ -416,7 +394,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
        {personEditing&&consentError&&<p role="alert" className="mt-2 text-neg">{t("deliveryConsentError")}</p>}
        <button disabled={busy||savingConsent||!name.trim()||personInvalid} onClick={()=>run(()=>{
        const fields={name,role:role||null,wageCents:salaryPeriod?null:wage??null,availability:personEditing&&!availabilityDirty?null:availability,
-        minWeeklyMinutes:minHours??null,maxWeeklyMinutes:maxHours??null,phone:normalizedPhone??null,language:language||null};
+        minWeeklyMinutes:minHours??null,maxWeeklyMinutes:maxHours??null,phone:phone.trim()||null};
        return personEditing?updatePerson({id:personEditing,...fields}):addPerson(fields);
       })} className="mt-5 min-h-14 w-full rounded-xl bg-accent text-on-accent">
        {personEditing?t("saveChanges"):t("addNamed",{name:name.trim()})}</button>

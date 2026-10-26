@@ -12,7 +12,7 @@ export function createStaffScreenshotFixture(weekStart="2026-10-26"){
  const team=employees.map(([name,role,wageCents],i)=>({
   id:`00000000-0000-4000-8000-${String(i+1).padStart(12,"0")}`,
   active:true,name,role,wageCents,wagePeriod:"hour" as const,salaryAmountCents:null,minWeeklyMinutes:null,maxWeeklyMinutes:null,
-  availableDays:[0,1,2,3,4,5,6],colorIndex:i,phone:null,whatsappOptIn:false,preferredLanguage:null
+  availableDays:[0,1,2,3,4,5,6],colorIndex:i,phone:null,whatsappOptIn:false
  }));
  const hours:OpenHours={
   mon:[["07:00","16:00"]],tue:[["07:00","16:00"]],wed:[["07:00","16:00"]],
@@ -32,5 +32,5 @@ export function createStaffScreenshotFixture(weekStart="2026-10-26"){
  return {dates,weekStart,team,displayTeam:team,shifts,total:aggregateCosts(shifts),
   gaps:coverageGaps(dates,shifts,hours,2),openHours:hours,
   currency:"USD",rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},
-  availability:[],profileAvailability:[],adjacentShifts:[],readOnly:false,timezone:"America/Los_Angeles",countryCode:"US"};
+  availability:[],profileAvailability:[],adjacentShifts:[],readOnly:false,timezone:"America/Los_Angeles"};
 }

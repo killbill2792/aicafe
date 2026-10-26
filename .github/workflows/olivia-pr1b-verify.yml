@@ -47,7 +47,7 @@ jobs:
       - name: Scoped scheduling UI/backend lint
         run: npx eslint "components/staff/*.tsx" "lib/scheduling/*.ts" "lib/actions/schedulingFoundation.ts" "lib/calc/scheduling/*.ts" "app/[locale]/more/manage-staff/page.tsx"
       - name: Build
-        run: npm run build -- --webpack
+        run: npm run build
       - name: Whitespace
         run: git diff --check origin/main...HEAD
   disposable-database:

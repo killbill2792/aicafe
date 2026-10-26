@@ -42,8 +42,6 @@ jobs:
       - name: Changed TypeScript lint
         run: npx eslint lib/metrics
       - name: Production build
-        # Next 16 Turbopack Google-font import resolution is unstable on ephemeral runners.
-        # Use the supported Webpack production build, as our Playwright workflow does for dev.
-        run: npm run build -- --webpack
+        run: npm run build
       - name: Whitespace
         run: git diff --check origin/main...HEAD

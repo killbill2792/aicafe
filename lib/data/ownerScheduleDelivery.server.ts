@@ -114,7 +114,7 @@ export async function readApprovedScheduleDelivery(source:unknown,
    week,recipients:[]};
  const ids=[...new Set(shifts.map(s=>s.employee_id))];
  const [{data:people,error:peopleError},{data:history,error:historyError}]=await Promise.all([
-   db.from("employees").select("id,display_name,phone_e164,whatsapp_opt_in,preferred_schedule_channel,preferred_language,active")
+   db.from("employees").select("id,display_name,phone_e164,whatsapp_opt_in,preferred_schedule_channel,active")
      .eq("business_id",owner.businessId).in("id",ids),
    db.from("staff_schedule_deliveries")
      .select("employee_id,status,channel,sent_at").eq("business_id",owner.businessId)
@@ -130,7 +130,7 @@ export async function readApprovedScheduleDelivery(source:unknown,
    const phone=eligibleForChannel(p.phone_e164,p.whatsapp_opt_in,"sms")==="ready"?p.phone_e164:null;
    return {id:p.id,name:p.display_name,phone,optedIn:p.whatsapp_opt_in===true,
      preferredChannel:(p.preferred_schedule_channel==="sms"?"sms":"whatsapp") as OwnerChannel,
-     message:buildScheduleMessage(p.preferred_language==="en"||p.preferred_language==="es"||p.preferred_language==="ar"?p.preferred_language:locale,p.display_name,week,rows),
+     message:buildScheduleMessage(locale,p.display_name,week,rows),
      ledgerStatus:(h?.status==="sent_by_owner"?"sent_by_owner":h?.status==="prepared"?"prepared":null) as Recipient["ledgerStatus"],
      lastChannel:(h?.channel==="sms"?"sms":h?.channel==="whatsapp"?"whatsapp":null) as OwnerChannel|null,
      sentAt:h?.sent_at??null};

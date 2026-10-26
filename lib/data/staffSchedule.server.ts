@@ -23,14 +23,14 @@ export async function getWeekSchedule(raw:unknown){
  const dates=Array.from({length:7},(_,i)=>plusDays(p.data.weekStart,i));
  if(!owner.supabase||owner.businessId===DEMO_BUSINESS_ID)return {ok:true as const,data:{
   dates,weekStart:p.data.weekStart,team:[],displayTeam:[],shifts:[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
-  gaps:[],adjacentShifts:[],openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],profileAvailability:[],readOnly:true,timezone:owner.timezone,countryCode:null as string|null
+  gaps:[],adjacentShifts:[],openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],profileAvailability:[],readOnly:true,timezone:owner.timezone
  }};
  const [people,shifts,profile,ruleResult,availability,profileAvailability]=await Promise.all([
-  owner.supabase.from("employees").select("id,display_name,role,active,default_hourly_wage_cents,wage_amount_cents,wage_period,available_days,min_weekly_minutes,max_weekly_minutes,phone_e164,whatsapp_opt_in,preferred_language,color_index")
+  owner.supabase.from("employees").select("id,display_name,role,active,default_hourly_wage_cents,wage_amount_cents,wage_period,available_days,min_weekly_minutes,max_weekly_minutes,phone_e164,whatsapp_opt_in,color_index")
     .eq("business_id",owner.businessId).order("display_name"),
   owner.supabase.from("scheduled_shifts").select("*").eq("business_id",owner.businessId)
     .gte("local_date",plusDays(dates[0],-1)).lte("local_date",plusDays(dates[6],1)).is("deleted_at",null).order("start_local"),
-  owner.supabase.from("locations").select("open_hours,country_code").eq("business_id",owner.businessId)
+  owner.supabase.from("locations").select("open_hours").eq("business_id",owner.businessId)
    .order("name").limit(1).maybeSingle(),getTeamRules(),
   owner.supabase.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to")
    .eq("business_id",owner.businessId).lte("effective_from",dates[6]),
@@ -45,8 +45,7 @@ export async function getWeekSchedule(raw:unknown){
     : p.default_hourly_wage_cents as number|null,
    minWeeklyMinutes:p.min_weekly_minutes as number|null,maxWeeklyMinutes:p.max_weekly_minutes as number|null,
    availableDays:p.available_days as number[]|null,colorIndex:p.color_index as number|null,
-   phone:p.phone_e164 as string|null,whatsappOptIn:p.whatsapp_opt_in===true,
-    preferredLanguage:p.preferred_language as "en"|"es"|"ar"|null,wagePeriod:p.wage_period as "hour"|"month"|"year",
+   phone:p.phone_e164 as string|null,whatsappOptIn:p.whatsapp_opt_in===true,wagePeriod:p.wage_period as "hour"|"month"|"year",
    salaryAmountCents:p.wage_period==="hour"?null:p.wage_amount_cents as number|null
  }));
  const team=allEmployees.filter(p=>p.active);
@@ -69,7 +68,7 @@ export async function getWeekSchedule(raw:unknown){
  return {ok:true as const,data:{
    dates,team,displayTeam,shifts:inWeek,adjacentShifts:mapped.filter(s=>s.date<dates[0]||s.date>dates[6]),total,gaps,openHours,
    currency:owner.currency,rules:ruleResult.data,
-   availability:availability.data??[],profileAvailability:profileAvailability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone,countryCode:profile.data?.country_code??null
+   availability:availability.data??[],profileAvailability:profileAvailability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone
  }};
 }
 export async function getCoverageGaps(raw:unknown){

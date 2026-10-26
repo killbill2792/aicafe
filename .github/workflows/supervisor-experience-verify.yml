@@ -66,6 +66,6 @@ jobs:
       - name: Unit and regression tests
         run: npm test
       - name: Next.js production build
-        run: npm run build -- --webpack
+        run: npm run build
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD

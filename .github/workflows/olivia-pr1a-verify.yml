@@ -36,7 +36,7 @@ jobs:
       - name: Scheduling PR 1A changed-code lint
         run: npx eslint lib/actions/schedulingFoundation.ts lib/actions/staff.scheduling-wage.test.ts lib/scheduling/foundation.server.ts lib/scheduling/foundationSchemas.ts lib/scheduling/foundationSchemas.test.ts lib/scheduling/foundation.server.test.ts lib/calc/scheduling/availability.ts lib/calc/scheduling/availability.test.ts
       - name: Build
-        run: npm run build -- --webpack
+        run: npm run build
       - name: Diff whitespace
         run: git diff --check origin/main...HEAD
   disposable-database:
