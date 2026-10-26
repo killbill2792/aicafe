@@ -45,7 +45,7 @@ export async function editInventoryPurchase(line:PurchaseLineInput):Promise<Purc
    .select("source,source_ref,expense_line_id").eq("business_id",businessId).eq("line_id",line.lineId)
    .is("voided_at",null).maybeSingle();
   if(error||!data)return {lineId:line.lineId,ok:false,error:"purchase_not_found"};
-  if(!line.expectedUpdatedAt)return {lineId:line.lineId,ok:false,error:"missing_revision"};
+  if(!line.expectedRevision)return {lineId:line.lineId,ok:false,error:"missing_revision"};
   const result=await recordPurchases([{...line,expenseLineId:data.expense_line_id}],data.source as import("@/lib/inventory/recordPurchases.server").PurchaseSource,data.source_ref);
   if(result[0]?.ok)revalidatePath("/menu/pantry");
   return result[0]??{lineId:line.lineId,ok:false,error:"save_failed"};
