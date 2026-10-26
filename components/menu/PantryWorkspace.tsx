@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { Link } from "@/i18n/navigation";
 import { Plus, Search, Coffee, Milk, Package, Cookie, Droplets } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
@@ -21,6 +21,7 @@ function categoryOf(value:string|null) { if(value==="syrup"||value==="sauce")ret
 function icon(category:string) {const cls="h-5 w-5";switch(category){case "coffee":return <Coffee className={cls}/>;case "milk":return <Milk className={cls}/>;case "syrups":return <Droplets className={cls}/>;case "bakery":return <Cookie className={cls}/>;default:return <Package className={cls}/>;}}
 const units:Record<BaseUnit,string[]>={ml:["gal","qt","l","ml","fl_oz"],g:["lb","kg","oz_wt","g"],each:["each","dozen","case(100)","case(1000)"]};
 export default function PantryWorkspace({items,starters,labels:t,variance,businessToday,inventoryPanel}:{items:Item[];starters:Starter[];labels:Record<string,string>;variance:Variance|null;businessToday:string;inventoryPanel?:ReactNode}) {
+ const pendingPurchaseId=useRef<string|null>(null);
  const router=useRouter();const [entryKind,setEntryKind]=useState<"count"|"purchase">("count"); const [entryItem,setEntryItem]=useState(items[0]?.id??""); const [entryQuantity,setEntryQuantity]=useState(""); const [entryUnit,setEntryUnit]=useState<string>(items[0]?.baseUnit??"each"); const [entryDate,setEntryDate]=useState(businessToday); const [entryError,setEntryError]=useState(""); const [entryDone,setEntryDone]=useState(false);
  const [query,setQuery]=useState("");const [filter,setFilter]=useState<string>("all");const [dialog,setDialog]=useState<"starter"|"custom"|"price"|"edit"|null>(null);
  const [selected,setSelected]=useState<Item|null>(null);const [chosen,setChosen]=useState<string[]>([]);const [name,setName]=useState("");const [category,setCategory]=useState<PantryCategory>("other");const [baseUnit,setBaseUnit]=useState<BaseUnit>("each");
@@ -34,7 +35,7 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  function submitStarters(){start(async()=>{const result=await addFromStarter(chosen);if(!result.ok)setError(t.error);else{setDialog(null);setChosen([]);router.refresh();}});}
  function submitEdit(){if(!selected)return;start(async()=>{const result=await updatePantryIngredient({id:selected.id,name,category});if(!result.ok)setError(t.error);else{setDialog(null);router.refresh();}});}
  function submitCustom(){start(async()=>{const result=await createPantryIngredient({name,category,baseUnit});if(!result.ok)setError(t.error);else{setDialog(null);setName("");router.refresh();}});}
- function saveEntry(){const chosen=items.find(i=>i.id===entryItem);if(!chosen)return;setEntryError("");setEntryDone(false);start(async()=>{const result=await saveUsageEntry(entryKind,{ingredientId:chosen.id,quantity:Number(entryQuantity),unit:entryUnit,date:entryDate});if(!result.ok)setEntryError(result.error);else{setEntryQuantity("");setEntryDone(true);router.refresh();}});}
+ function saveEntry(){const chosen=items.find(i=>i.id===entryItem);if(!chosen)return;setEntryError("");setEntryDone(false);if(entryKind==="purchase"&&!pendingPurchaseId.current)pendingPurchaseId.current=crypto.randomUUID();start(async()=>{try{const result=await saveUsageEntry(entryKind,{ingredientId:chosen.id,quantity:Number(entryQuantity),unit:entryUnit,date:entryDate,...(entryKind==="purchase"?{lineId:pendingPurchaseId.current}: {})});if(!result.ok)setEntryError(result.error);else{pendingPurchaseId.current=null;setEntryQuantity("");setEntryDone(true);router.refresh();}}catch{setEntryError("save_failed");}});}
  const fmt=(pattern:string,values:Record<string,string|number>)=>Object.entries(values).reduce((text,[key,value])=>text.replaceAll("{"+key+"}",String(value)),pattern);
  return <div className="mx-auto w-full max-w-5xl text-ink">
  <div className="mb-4 flex items-center justify-between gap-3"><h1 className="font-headline text-3xl font-extrabold">{t.title}</h1><button type="button" onClick={()=>{setError("");setDialog("starter");}} aria-label={t.add} className="flex size-12 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent"><Plus/></button></div>
