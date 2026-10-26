@@ -32,6 +32,22 @@ describe("ask_owner tool",()=>{
   const again=await askOwnerTools.ask_owner.execute({question:"Again?",options,allowOther:false},ctx);
   expect(again.missing).toContain("alreadyAsked");
  });
+ it("allows verified numeric closing-count fills once and rejects unobserved amounts",async()=>{
+  const id="33333333-3333-4333-8333-333333333333",date="2026-10-25";
+  const ctx={resolveState:newResolveState("How much milk remains?")} as AgentToolContext;
+  observeToolResult(ctx.resolveState,{source:"usage_variance",period:{from:date,to:date},
+   missing:["endCount:"+date],rows:[{ingredientId:id,name:"Milk",unit:"ml",
+    missing:["endCount:"+date]}]});
+  const input={kind:"fill",question:"How much milk remains?",options:[],allowOther:false,
+   fields:[{key:"endCount:"+id+":"+date,label:"Milk at closing",inputType:"number",
+    units:["ml","l"],defaultUnit:"ml"}]};
+  expect(askOwnerSchema.safeParse(input).success).toBe(true);
+  const first=await askOwnerTools.ask_owner.execute(input,ctx);
+  expect(first).toMatchObject({kind:"fill",missing:[]});
+  expect((await askOwnerTools.ask_owner.execute(input,ctx)).missing).toContain("alreadyAsked");
+  const notObserved={resolveState:newResolveState("hi")} as AgentToolContext;
+  expect((await askOwnerTools.ask_owner.execute(input,notObserved)).missing).toContain("noMissingInput");
+ });
  it("requires candidates observed this turn",async()=>{
   const ctx={resolveState:newResolveState("hello")} as AgentToolContext;
   expect((await askOwnerTools.ask_owner.execute({question:"Which?",options,allowOther:true},ctx)).missing).toContain("noAmbiguity");
