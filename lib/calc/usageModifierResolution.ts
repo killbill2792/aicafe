@@ -1,11 +1,15 @@
 import type {UsageModifier} from "./usageVariance";
 
-/** A Toast modifier GUID is only unique inside its source restaurant. */
-export function scopedToastModifierId(restaurantGuid:string|null,modifierGuid:string):string|null{
- if(!restaurantGuid||!modifierGuid)return null;
- return "toast:"+restaurantGuid.toLowerCase()+":"+modifierGuid.toLowerCase();
+/** IDs are unique only within each provider and restaurant/location, never globally.
+ * Missing source identity must not fall back to a bare modifier id. */
+export function scopedModifierId(provider:"toast"|"square"|"csv",locationRef:string|null,modifierId:string):string|null{
+ if(!locationRef||!modifierId)return null;
+ return provider+":"+locationRef.toLowerCase()+":"+modifierId.toLowerCase();
 }
-export type CatalogModifierLink={restaurantGuid:string;posModifierId:string;recipeId:string};
+export function scopedToastModifierId(restaurantGuid:string|null,modifierGuid:string):string|null{
+ return scopedModifierId("toast",restaurantGuid,modifierGuid);
+}
+export type CatalogModifierLink={restaurantGuid?:string;provider?:"toast"|"square"|"csv";locationRef?:string;posModifierId:string;recipeId:string};
 export type ApprovedModifierRecipe={id:string;ingredientId:string|null;quantityDelta:number;replacesIngredientId:string|null;posModifierId?:string|null};
 
 /** Fail closed on missing or conflicting restaurant-specific approval links.
@@ -27,11 +31,11 @@ export function scopedToastModifierRecipes(
   else linked.set(key,next);
  };
  for(const r of recipes){
-  const match=r.posModifierId?.match(/^toast:([0-9a-f-]{36}):([0-9a-f-]{36})$/i);
-  if(match)register(scopedToastModifierId(match[1],match[2]),r);
+  const match=r.posModifierId?.match(/^(toast|square|csv):([^:]+):(.+)$/i);
+  if(match)register(scopedModifierId(match[1].toLowerCase() as "toast"|"square"|"csv",match[2],match[3]),r);
  }
  for(const link of links){
-  register(scopedToastModifierId(link.restaurantGuid,link.posModifierId),
+  register(scopedModifierId(link.provider??"toast",link.locationRef??link.restaurantGuid??null,link.posModifierId),
    byRecipe.get(link.recipeId));
  }
  for(const key of ambiguous)linked.delete(key);
