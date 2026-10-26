@@ -17,7 +17,7 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
  [error,setError]=useState(""),[notApproved,setNotApproved]=useState(false);
  const [busy,setBusy]=useState<string|null>(null);
  const clickGuard=useRef(false);
- const [copied,setCopied]=useState(false);
+ const [copied,setCopied]=useState(false),[fallbackText,setFallbackText]=useState<string|null>(null);
  const [batch,setBatch]=useState<string[]>([]),[position,setPosition]=useState(0);
  const endpoint="/api/staff/schedule-delivery";
  const params=new URLSearchParams({...proposalId?{proposalId}:{week:week??""},locale}).toString();
@@ -64,7 +64,7 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
   }catch{setError("ledger");return false;}finally{setBusy(null);}
  }
  async function copyMessage(text:string){
-  setError("");setCopied(false);
+  setError("");setCopied(false);setFallbackText(null);
   try{
    if(!navigator.clipboard?.writeText)throw Error("clipboard");
    await navigator.clipboard.writeText(text);setCopied(true);
@@ -75,7 +75,7 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
     document.body.appendChild(box);box.select();
     if(!document.execCommand("copy"))throw Error("clipboard");
     setCopied(true);
-   }catch{setError("clipboard");}
+   }catch{setError("clipboard");setFallbackText(text);}
    finally{box.remove();}
   }
  }
@@ -131,6 +131,7 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
       className="min-h-12 rounded-xl bg-accent px-4 font-semibold text-on-accent">{t.sendAll}</button>}
    </div>
    {copied&&<p role="status" className="text-[17px]">{t.copied}</p>}
+   {fallbackText!==null&&<textarea readOnly value={fallbackText} aria-label={t.copyMessage} onFocus={e=>e.currentTarget.select()} className="min-h-28 w-full rounded-xl border border-line bg-surface p-3 text-[17px]"/>}
    {batch.length>0&&<div className="rounded-xl border border-accent p-3" role="status">
     {next?<><p className="font-semibold">{t.next}: {next.name} ({position+1}/{batch.length})</p>
       <div className="mt-2 flex flex-wrap gap-2">

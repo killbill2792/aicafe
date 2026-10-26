@@ -14,6 +14,9 @@ describe("owner staff phone normalization",()=>{
  it("never guesses absent country or accepts garbage",()=>{
   expect(normalizeStaffPhone("4155551234",null)).toBeUndefined();
   expect(normalizeStaffPhone("hello","US")).toBeUndefined();
+  expect(normalizeStaffPhone("1234","US")).toBeUndefined();
+  expect(normalizeStaffPhone("1234","MX")).toBeUndefined();
+  expect(normalizeStaffPhone(undefined,"US")).toBeNull();
   expect(normalizeStaffPhone("+0123","US")).toBeUndefined();
   expect(normalizeStaffPhone("",null)).toBeNull();
  });

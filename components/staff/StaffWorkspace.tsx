@@ -2,7 +2,7 @@
 import {useEffect,useRef,useState,useTransition} from "react";
 import {useRouter} from "next/navigation";
 import OwnerScheduleSendPanel from "./OwnerScheduleSendPanel";
-import {normalizeStaffPhone} from "@/lib/calc/scheduling/staffPhone";
+import {normalizeStaffPhone,formatStaffPhonePreview} from "@/lib/calc/scheduling/staffPhone";
 import {useTranslations} from "next-intl";
 import {dismissStaffRuleAlert} from "@/lib/actions/ruleAlerts";
 import DayTimeline from "./DayTimeline";
@@ -397,7 +397,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         <input id="staff-person-phone" type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+14155551234"
          className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3" dir="ltr"/>
       </label>
-      {phone.trim()&&<p role="status" className="mt-1 text-[17px]">{normalizedPhone?t("phoneWillSave",{phone:normalizedPhone}):t("invalidPhone")}</p>}
+      {phone.trim()&&<p role="status" className="mt-1 text-[17px]">{normalizedPhone?t("phoneWillSave",{phone:formatStaffPhonePreview(normalizedPhone)}):t("invalidPhone")}</p>}
       <label className="mt-3 block font-semibold">{t("messageLanguage")}
        <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[17px]" value={language} onChange={event=>setLanguage(event.target.value as "en"|"es"|"ar"|"")}>
         <option value="">{t("sameAsApp")}</option><option value="en">English</option><option value="es">Español</option><option value="ar">العربية</option>
