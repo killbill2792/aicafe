@@ -2,7 +2,8 @@ import "server-only";
 import {z} from "zod";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
-import {packBaseQuantity,packToCostPerBaseMicros,type BaseUnit} from "@/lib/calc/recipeUnits";
+import {packBaseQuantity,type BaseUnit} from "@/lib/calc/recipeUnits";
+import {computeDedupeKey} from "@/lib/expenses/dedupeKey";
 
 export const purchaseSources=["manual","bulk","receipt_page","receipt_chat","chat_text","csv","quickbooks","bank_feed"] as const;
 export type PurchaseSource=typeof purchaseSources[number];
@@ -14,6 +15,7 @@ export interface PurchaseSourceAdapter<T> {
 export type PurchaseLineInput={
   lineId:string;ingredientId:string|null;date:string;quantity:number;unit:string;
   costCents:number|null;expenseLineId?:string|null;expectedUpdatedAt?:string|null;
+  receipt?:{groupId:string|null;index:number|null;vendor:string|null;totalCents:number|null;name:string};
 };
 export type PurchaseResult={lineId:string;ok:boolean;error?:string};
 const iso=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>{
@@ -25,7 +27,10 @@ const lineSchema=z.strictObject({
  quantity:z.number().finite().positive().max(1e9),unit:z.string().trim().min(1).max(40),
  costCents:z.number().int().nonnegative().safe().nullable(),
  expenseLineId:z.string().uuid().nullable().optional(),
- expectedUpdatedAt:z.string().datetime({offset:true}).nullable().optional()
+ expectedUpdatedAt:z.string().datetime({offset:true}).nullable().optional(),
+ receipt:z.strictObject({groupId:z.uuid().nullable(),index:z.number().int().min(0).max(99).nullable(),
+   vendor:z.string().trim().min(1).max(160).nullable(),totalCents:z.number().int().positive().safe().nullable(),
+   name:z.string().trim().min(1).max(160)}).optional()
 });
 
 /** The only write path for stock purchases. One rejected line cannot roll back siblings.
@@ -80,23 +85,40 @@ export async function recordPurchases(
   }
   // Validate the derived price before any mutation; the DB RPC saves stock
   // and price within one PostgreSQL transaction or rolls both back.
+  // Derive the price from the SAME canonical quantity saved as stock, including
+  // owner-defined ingredient conversions (never a different generic pack rate).
   const micros=line.costCents!==null&&line.costCents>0
-   ?packToCostPerBaseMicros(line.quantity,line.unit,line.costCents,ingredient.base_unit as BaseUnit)
-     ??Math.round(line.costCents*1000000/baseQuantity):null;
+    ?Math.round(line.costCents*1000000/baseQuantity):null;
   if(micros!==null&&(!Number.isSafeInteger(micros)||micros<=0)){
    results.push({lineId,ok:false,error:"invalid_cost"});continue;
   }
-  const {error:purchaseError}=await db.rpc("pantry_write_purchase_line",{
-   p_business_id:businessId,p_line_id:line.lineId,p_ingredient_id:line.ingredientId,
-   p_date:line.date,p_quantity:line.quantity,p_unit:line.unit,p_base_quantity:baseQuantity,
-   p_cost_cents:line.costCents,p_price_micros:micros,p_source:source,
-   p_source_ref:sourceRef,p_expense_line_id:line.expenseLineId??null,
-   p_expected_updated_at:line.expectedUpdatedAt??null
-  });
+  if(source==="receipt_chat"&&(!line.receipt?.groupId||
+    line.receipt.index===null||line.receipt.index===undefined||
+    !line.receipt.vendor||!line.receipt.totalCents||line.costCents===null)){
+   results.push({lineId,ok:false,error:"receipt_details_missing"});continue;
+  }
+  const {error:purchaseError}=source==="receipt_chat"&&line.receipt?
+   await db.rpc("pantry_write_receipt_chat_line",{
+    p_business_id:businessId,p_line_id:line.lineId,p_ingredient_id:line.ingredientId,
+    p_date:line.date,p_quantity:line.quantity,p_unit:line.unit,p_base_quantity:baseQuantity,
+    p_cost_cents:line.costCents,p_price_micros:micros,p_group_id:line.receipt.groupId,
+    p_line_index:line.receipt.index,p_vendor:line.receipt.vendor,
+    p_total_cents:line.receipt.totalCents,p_name:line.receipt.name,
+    p_dedupe_key:computeDedupeKey({businessId,spentOn:line.date,
+      amountCents:line.receipt.totalCents!,vendor:line.receipt.vendor!})
+   }):
+   await db.rpc("pantry_write_purchase_line",{
+    p_business_id:businessId,p_line_id:line.lineId,p_ingredient_id:line.ingredientId,
+    p_date:line.date,p_quantity:line.quantity,p_unit:line.unit,p_base_quantity:baseQuantity,
+    p_cost_cents:line.costCents,p_price_micros:micros,p_source:source,
+    p_source_ref:sourceRef,p_expense_line_id:line.expenseLineId??null,
+    p_expected_updated_at:line.expectedUpdatedAt??null
+   });
   if(purchaseError){
    results.push({lineId,ok:false,error:purchaseError.code==="40001"?"purchase_changed":
     purchaseError.code==="23505"?"purchase_already_linked":
-    purchaseError.code==="42501"?"owner_required":"save_failed"});
+    purchaseError.code==="42501"?"owner_required":
+    purchaseError.code==="22023"?"invalid_receipt_or_purchase":"save_failed"});
    continue;
   }
   results.push({lineId,ok:true});
