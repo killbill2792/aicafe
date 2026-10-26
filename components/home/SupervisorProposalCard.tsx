@@ -7,11 +7,15 @@ import {formatCardValue,diffFields} from "@/lib/format/values";
 import BeforeAfterRows,{type ApprovalPreviewRow} from "./BeforeAfterRows";
 import OwnerScheduleSendPanel from "@/components/staff/OwnerScheduleSendPanel";
 import {priceInputCents,priceEditString} from "@/lib/calc/menuPriceProposal";
+import {parseOwnerDecimal} from "@/lib/calc/localeDecimal";
 type Locale="en"|"es"|"ar";
 export type ProposalView={proposalId:string;revision:number;state:string;capabilityId?:string;
   productName?:string;oldPriceCents?:number;newPriceCents?:number;
   preview?:ApprovalPreviewRow[];currency?:string;
-  currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null};
+  currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null;
+  purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string;
+    receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
+  ingredientOptions?:Array<{id:string;name:string;base_unit:string}>;};
 const dict={en,es,ar} as const;
 export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   threadId:string;proposalId:string;locale:Locale;
@@ -22,6 +26,8 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const [editing,setEditing]=useState(false);
   const [price,setPrice]=useState("");
   const [error,setError]=useState(false);
+  const [purchaseDraft,setPurchaseDraft]=useState<{
+    ingredientId:string|null;quantity:string;unit:string;cost:string;date:string;receiptVendor:string;receiptTotal:string}|null>(null);
   const endpoint="/api/ai/threads/"+encodeURIComponent(threadId)+"/proposals";
   useEffect(()=>{
     let alive=true;
@@ -30,6 +36,16 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       .then((data:{cards:ProposalView[]})=>{if(alive)setValue(data.cards[0]??null);})
       .catch(()=>{if(alive)setError(true);});
     return ()=>{alive=false;};
+  },[endpoint,proposalId]);
+  useEffect(()=>{
+    const refresh=()=>{
+      void fetch(endpoint+"?ids="+encodeURIComponent(proposalId),{cache:"no-store"})
+       .then(r=>{if(!r.ok)throw Error();return r.json();})
+       .then((data:{cards:ProposalView[]})=>{if(data.cards[0])setValue(data.cards[0]);})
+       .catch(()=>setError(true));
+    };
+    window.addEventListener("aicafe:purchase-cards-updated",refresh);
+    return ()=>window.removeEventListener("aicafe:purchase-cards-updated",refresh);
   },[endpoint,proposalId]);
   // An executing approval can still be writing in another tab. Refresh only
   // that state; never label an unverified in-flight operation as a failed write.
@@ -74,8 +90,100 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   if(!value)return error?<p role="alert">{copy.error}</p>:<p role="status">{copy.loading}</p>;
   const money=(cents:number)=>formatCardValue({kind:"money",cents},locale,value.currency??"USD");
   const staff=value.capabilityId?.startsWith("olivia.staff_")===true;
+  const purchase=value.capabilityId==="maya.inventory_purchase.v1";
   const experiment=value.capabilityId==="alex.drink_price_experiment.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
+  if(purchase&&value.purchase){
+    const copy=dict[locale].InventoryApprovalCard;
+    const p=value.purchase;
+    const edit=purchaseDraft;
+    const receiptComplete=p.source!=="receipt_chat"||Boolean(p.receiptVendor&&p.receiptTotalCents&&p.costCents!==null);
+    const pending=value.state==="pending"&&!busy;
+    const canRetry=["failed","conflict"].includes(value.state)&&!busy;
+    const label=value.state==="applied"?copy.applied:
+      value.state==="cancelled"?copy.skipped:
+      value.state==="failed"?copy.failed:value.state==="applying"?copy.applying:copy.pending;
+    const button="min-h-12 rounded-xl border border-line px-4 text-[17px] font-bold disabled:opacity-50";
+    const selected=edit?.ingredientId??p.ingredientId;
+    const submit=async(action:"approve"|"cancel"|"edit_purchase")=>{
+      if(busy)return;
+      const quantity=edit?parseOwnerDecimal(edit.quantity,locale):p.quantity;
+      const moneyValue=edit?.cost.trim()?parseOwnerDecimal(edit.cost,locale):null;
+      const cents=moneyValue===null?null:Math.round(moneyValue*100);
+      const receiptAmount=edit?.receiptTotal.trim()?parseOwnerDecimal(edit.receiptTotal,locale):null;
+      const receiptTotalCents=receiptAmount===null?null:Math.round(receiptAmount*100);
+      if(action==="edit_purchase"&&(!edit||quantity===null||quantity<=0||
+        (edit.cost.trim()&&cents===null)||
+        (p.source==="receipt_chat"&&(!edit.receiptVendor.trim()||!receiptTotalCents||cents===null)))){
+        setError(true);return;}
+      setBusy(true);setError(false);
+      try{
+        const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json"},
+          credentials:"same-origin",body:JSON.stringify({
+            action,proposalId:value.proposalId,revision:value.revision,
+            ...(action==="edit_purchase"?{
+              ingredientId:selected,quantity,unit:edit!.unit,costCents:cents,date:edit!.date,
+              ...(p.source==="receipt_chat"?{receiptVendor:edit!.receiptVendor.trim(),receiptTotalCents}:{})
+            }:{})
+          })});
+        const result=await response.json() as {proposal?:ProposalView;state?:string;error?:string};
+        if(result.proposal)setValue(result.proposal);
+        if(!response.ok)setError(true);
+        if(action==="edit_purchase"&&response.ok)setPurchaseDraft(null);
+      }catch{setError(true);}finally{setBusy(false);}
+    };
+    const amount=(new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(p.quantity)+" "+p.unit);
+    return <section dir={locale==="ar"?"rtl":"ltr"} className="rounded-2xl border border-line bg-surface p-4 text-ink">
+      <div className="flex flex-wrap justify-between gap-2"><h3 className="text-xl font-bold">{p.name}</h3>
+        <span className="rounded-full bg-surface2 px-3 py-1 text-[17px]">{label}</span></div>
+      {!p.ingredientId&&<p className="mt-2 text-[17px] text-neg">{copy.newItem}</p>}
+      <p className="mt-2 text-[17px]">{amount+" · "+p.date}</p>
+      {p.costCents!==null&&<p className="mt-2 text-[17px]">{money(p.costCents)}</p>}
+      {p.source==="receipt_chat"&&<p className="mt-2 text-[17px]">
+        {copy.receiptVendor+": "+(p.receiptVendor??copy.receiptIncomplete)+" · "+
+          copy.receiptTotal+": "+(p.receiptTotalCents?money(p.receiptTotalCents):copy.receiptIncomplete)}
+      </p>}
+      {!receiptComplete&&<p role="alert" className="mt-2 text-[17px] text-neg">{copy.receiptIncomplete}</p>}
+      {purchaseDraft&&<form className="mt-3 space-y-2" onSubmit={e=>{e.preventDefault();void submit("edit_purchase");}}>
+        <label className="block text-[17px]">{copy.ingredient}<select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+          value={purchaseDraft.ingredientId??""} onChange={e=>setPurchaseDraft(v=>v?{...v,ingredientId:e.target.value||null}:v)}>
+          <option value="">{copy.newItem}</option>
+          {(value.ingredientOptions??[]).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
+        <label className="block text-[17px]">{copy.quantity}<input type="text" inputMode="decimal" className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+          value={purchaseDraft.quantity} onChange={e=>setPurchaseDraft(v=>v?{...v,quantity:e.target.value}:v)}/></label>
+        <label className="block text-[17px]">{copy.unit}<input className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+          value={purchaseDraft.unit} onChange={e=>setPurchaseDraft(v=>v?{...v,unit:e.target.value}:v)}/></label>
+        <label className="block text-[17px]">{copy.cost}<input type="text" inputMode="decimal" className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+          value={purchaseDraft.cost} onChange={e=>setPurchaseDraft(v=>v?{...v,cost:e.target.value}:v)}/></label>
+        <label className="block text-[17px]">{copy.date}<input type="date" className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+          value={purchaseDraft.date} onChange={e=>setPurchaseDraft(v=>v?{...v,date:e.target.value}:v)}/></label>
+        {p.source==="receipt_chat"&&<>
+          <label className="block text-[17px]">{copy.receiptVendor}<input
+            className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+            value={purchaseDraft.receiptVendor}
+            onChange={e=>setPurchaseDraft(v=>v?{...v,receiptVendor:e.target.value}:v)}/></label>
+          <label className="block text-[17px]">{copy.receiptTotal}<input type="text" inputMode="decimal"
+            className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+            value={purchaseDraft.receiptTotal}
+            onChange={e=>setPurchaseDraft(v=>v?{...v,receiptTotal:e.target.value}:v)}/></label>
+        </>}
+        <button type="submit" disabled={busy} className={button+" bg-accent text-on-accent"}>{copy.save}</button>
+        <button type="button" disabled={busy} className={button} onClick={()=>setPurchaseDraft(null)}>{copy.cancel}</button>
+      </form>}
+      {(pending||canRetry)&&!purchaseDraft&&<div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" disabled={busy||!p.ingredientId||!receiptComplete} className={button+" bg-accent text-on-accent"}
+          onClick={()=>void submit("approve")}>{canRetry?copy.retry:copy.approve}</button>
+        {pending&&<button type="button" disabled={busy} className={button} onClick={()=>setPurchaseDraft({
+          ingredientId:p.ingredientId,quantity:String(p.quantity),unit:p.unit,
+          cost:p.costCents===null?"":String(p.costCents/100),date:p.date,
+          receiptVendor:p.receiptVendor??"",receiptTotal:p.receiptTotalCents?String(p.receiptTotalCents/100):""
+        })}>{copy.edit}</button>}
+        {pending&&<button type="button" disabled={busy} className={button}
+          onClick={()=>void submit("cancel")}>{copy.skip}</button>}
+      </div>}
+      {error&&<p role="alert" className="mt-3 text-[17px] text-neg">{copy.failed}</p>}
+    </section>;
+  }
   if(staff){
     const statuses:Record<string,string>={pending:staffCopy.pending,applying:staffCopy.applying,
       applied:staffCopy.applied,cancelled:staffCopy.cancelled,stale:staffCopy.stale,

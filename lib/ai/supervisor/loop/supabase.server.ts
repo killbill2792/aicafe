@@ -88,6 +88,19 @@ export class SupabaseLoopRepository implements LoopRepository{
       throw new Error("Staff commit result outside approval scope");
     return {state:result.state,proposal};
   }
+  async editPurchaseDraft(scope:OwnerLoopScope,id:string,revision:number,effect:Record<string,unknown>,
+    hash:string):Promise<LoopProposal>{
+    const {data,error}=await createAdminSupabaseClient().rpc("supervisor_edit_inventory_purchase",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
+      p_proposal_id:uuid.parse(id),p_revision:revision,p_effect:effect,p_effect_hash:hash
+    });
+    if(error||!data)return failed(error,"Purchase proposal edit conflict");
+    const proposal=decode(data as Row);
+    if(proposal.id!==id||proposal.businessId!==scope.businessId||
+      proposal.ownerUserId!==scope.ownerUserId||proposal.threadId!==scope.threadId)
+      throw new Error("Edited purchase outside scope");
+    return proposal;
+  }
   async markStalePrice(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
     const db=createAdminSupabaseClient();
     const {data,error}=await db.rpc("supervisor_mark_stale_menu_price",{

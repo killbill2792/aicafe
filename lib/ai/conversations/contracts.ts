@@ -11,6 +11,7 @@ export const createThreadInput = z.strictObject({
 export const addOwnerMessageInput = z.strictObject({
   clientMessageId: z.uuid(),
   text: z.string().trim().min(1).max(4000),
+  attachmentIds:z.array(z.uuid()).max(3).optional(),
   locale: z.enum(["en", "es", "ar"]).default("en"),
   ownerInputResponse:ownerInputResponseSchema.optional(),
 });
@@ -64,7 +65,8 @@ export type EvidenceReference = {
 };
 
 export type SupervisorReplyBlock =
-  | {type:"clarify";question:string;options:{label:string;value:string}[];allowOther:boolean}
+  | {type:"clarify";question:string;options:{label:string;value:string}[];allowOther:boolean;kind?:"choice"}
+  | {type:"clarify";kind:"fill";question:string;fields:{key:string;label:string;inputType:"number";units:string[];defaultUnit:string}[]}
   | {type:"how";lines:ExplainLine[]}
   | OwnerQuestion
   | { type: "proposal_card"; proposalId: string }
@@ -98,7 +100,16 @@ export const evidenceReferenceSchema = z.strictObject({
 const textBlockSchema = z.strictObject({
   type: z.literal("text"), text: z.string().min(1).max(1200),
 });
-export const clarifyBlockSchema=z.strictObject({type:z.literal("clarify"),question:z.string().min(1).max(200),options:z.array(z.strictObject({label:z.string().min(1).max(60),value:z.string().min(1).max(100)})).min(2).max(4),allowOther:z.boolean()});
+export const clarifyBlockSchema=z.union([
+ z.strictObject({type:z.literal("clarify"),kind:z.literal("choice").optional(),
+   question:z.string().min(1).max(200),
+   options:z.array(z.strictObject({label:z.string().min(1).max(60),value:z.string().min(1).max(100)})).min(2).max(4),
+   allowOther:z.boolean()}),
+ z.strictObject({type:z.literal("clarify"),kind:z.literal("fill"),question:z.string().min(1).max(200),
+   fields:z.array(z.strictObject({key:z.string().max(90),label:z.string().min(1).max(100),
+     inputType:z.literal("number"),units:z.array(z.string().min(1).max(20)).min(1).max(8),
+     defaultUnit:z.string().min(1).max(20)})).min(1).max(2)})
+]);
 const howBlockSchema=z.strictObject({type:z.literal("how"),lines:z.array(explainLineSchema).min(1).max(20)});
 const proposalCardSchema=z.strictObject({type:z.literal("proposal_card"),proposalId:z.uuid()});
 const experimentCardSchema=z.strictObject({type:z.literal("experiment_card"),proposalId:z.uuid()});
@@ -144,7 +155,7 @@ export const groundedReplySchema = z.strictObject({
     "operating_tasks", "expenses", "sales_quantity", "menu_catalog", "owner_rules", "unknown"]),
   status: z.enum(["verified", "estimated", "partial", "unavailable", "insufficient_evidence","requires_owner_input"]),
   evidence: z.array(evidenceReferenceSchema).max(30),
-  blocks: z.array(z.discriminatedUnion("type",
+  blocks: z.array(z.union(
     [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, percentBlockSchema,
       taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema,proposalCardSchema,experimentCardSchema,memoryCardSchema,clarifyBlockSchema,howBlockSchema])).min(1).max(30),
 });

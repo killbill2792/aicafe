@@ -19,7 +19,7 @@ describe("weekly ingredient reconciliation",()=>{
  it("preserves unknown sales or either missing boundary as null, never zero",()=>{
   const rows=calculateUsage({...base,salesCovered:false,counts:[]});
   expect(rows[0]).toMatchObject({expected:null,actual:null,differencePct:null,status:null});
-  expect(rows[0].missing).toContain("toastSalesCoverage");
+  expect(rows[0].missing).toContain("salesCoverage");
  });
  it("subtracts replaced milk, adds recorded swap and addon for each sold drink",()=>{
   const rows=calculateUsage({...base,ingredients:[...ingredients,{id:"oat",name:"Oat",unit:"ml" as const}],
@@ -29,6 +29,28 @@ describe("weekly ingredient reconciliation",()=>{
   expect(rows.find(x=>x.ingredientId==="milk")?.expected).toBe(0);
   expect(rows.find(x=>x.ingredientId==="oat")?.expected).toBe(440);
   expect(rows.find(x=>x.ingredientId==="coffee")?.expected).toBe(72);
+ });
+ it("multiplies modifier quantity by the number of drinks, including old default one",()=>{
+  const extra={posModifierId:"shot",ingredientId:"coffee",quantityDelta:18,replacesIngredientId:null};
+  const line={...sales[0],modifiers:[{posModifierId:"shot",name:"Extra shot",quantity:2}]};
+  expect(calculateUsage({...base,modifiers:[extra],sales:[line]})[1].expected).toBe(108);
+  expect(calculateUsage({...base,modifiers:[extra],sales:[{...line,modifiers:[{posModifierId:"shot",name:"Extra shot"}]}]})[1].expected).toBe(72);
+ });
+ it("multiplies nested modifier selections by their parent and sold quantity once",()=>{
+  const source={...sales[0],quantity:2,modifiers:[
+   {posModifierId:"parent",name:"Double selection",quantity:2},
+   {posModifierId:"child",name:"Add coffee",quantity:3,parentPosModifierId:"parent"}
+  ]};
+  const rows=calculateUsage({...base,sales:[source],modifiers:[
+   {posModifierId:"parent",ingredientId:null,quantityDelta:0,replacesIngredientId:null},
+   {posModifierId:"child",ingredientId:"coffee",quantityDelta:9,replacesIngredientId:null}
+  ]});
+  expect(rows[1].expected).toBe(144);
+  const malformed=calculateUsage({...base,sales:[{...source,modifiers:[
+   {posModifierId:"child",name:"Missing parent",quantity:3,parentPosModifierId:"absent"}
+  ]}],modifiers:[{posModifierId:"child",ingredientId:"coffee",quantityDelta:9,replacesIngredientId:null}]});
+  expect(malformed[1].expected).toBeNull();
+  expect(malformed[1].missing).toContain("unlinkedSalesRecipeOrModifier");
  });
  it("will not claim complete expected totals for unmapped Toast modifiers",()=>{
   const rows=calculateUsage({...base,sales:[{...sales[0],modifiers:[{posModifierId:"?",name:"Unknown"}]}]});

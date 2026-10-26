@@ -13,6 +13,8 @@ import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/super
 import {menuPriceChangeCapabilityId,StaleProposalError}
   from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {isStaffCapabilityId,readStaffProposalToken} from "@/lib/ai/supervisor/loop/staffProposals.server";
+import {purchaseCapabilityId,purchaseCapability} from "@/lib/ai/supervisor/loop/purchases.server";
+import {createServerSupabaseClient} from "@/lib/supabase/server";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type Params={params:Promise<{threadId:string}>};
 const uuid=z.uuid(),revision=z.number().int().positive();
@@ -21,6 +23,11 @@ const actions=z.discriminatedUnion("action",[
   z.strictObject({action:z.literal("approve"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("cancel"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("edit"),proposalId:uuid,revision,newPriceCents:price}),
+  z.strictObject({action:z.literal("edit_purchase"),proposalId:uuid,revision,
+    ingredientId:uuid.nullable(),quantity:z.number().finite().positive().max(1e9),
+    unit:z.string().trim().min(1).max(40),costCents:z.number().int().nonnegative().safe().nullable(),
+    date:z.iso.date(),receiptVendor:z.string().trim().min(1).max(160).nullable().optional(),
+    receiptTotalCents:z.number().int().positive().safe().nullable().optional()}),
 ]);
 async function context(threadId:string){
   const {scope,service}=await authenticatedConversationContext();
@@ -46,6 +53,16 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
     assertProposalScope(scope,p);
   }
   assertProposalScope(scope,p);
+  if(p.capabilityId===purchaseCapabilityId){
+    const effect=supervisorLoopRegistry.get(purchaseCapabilityId).parseEffect(p.canonicalEffectPayload);
+    const db=await createServerSupabaseClient();
+    const {data:ingredients,error}=await db.from("ingredients").select("id,name,base_unit")
+      .eq("business_id",scope.businessId).order("name").limit(2000);
+    if(error)throw new Error("purchase_ingredients_unavailable");
+    return {...card(p),state:p.status==="executing"?"failed":card(p).state,
+      subjectName:effect.name,purchase:effect,
+      ingredientOptions:ingredients??[]};
+  }
   if(isStaffCapabilityId(p.capabilityId)){
     const effect=p.capabilityVersion===1?p.canonicalEffectPayload as
       {preview:Array<{label:string;before:string;after:string}>;expectedToken:string}:
@@ -119,8 +136,68 @@ export async function POST(request:Request,{params}:Params){
     catch{return conversationJson({error:"proposal_not_found"},404);}
     assertProposalScope(scope,p);
     const staff=isStaffCapabilityId(p.capabilityId);
-    if(!staff&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId)
+    const purchase=p.capabilityId===purchaseCapabilityId;
+    if(!staff&&!purchase&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
+    if(purchase){
+      if(p.status==="committed")
+        return conversationJson({state:"applied",proposal:await view(scope,repo,p)});
+      if(input.action==="edit")
+        return conversationJson({error:"purchase_edit_fields_required"},422);
+      if(input.action==="edit_purchase"){
+        if(p.status!=="draft"||p.revision!==input.revision)
+          return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+        const current=supervisorLoopRegistry.get(purchaseCapabilityId).parseEffect(p.canonicalEffectPayload);
+        const db=await createServerSupabaseClient();
+        const selected=input.ingredientId
+          ?await db.from("ingredients").select("id,name").eq("business_id",scope.businessId)
+             .eq("id",input.ingredientId).maybeSingle():null;
+        if(selected?.error||input.ingredientId&&!selected?.data)
+          return conversationJson({state:"unchanged",error:"ingredient_not_found"},422);
+        const newName=selected?.data?.name??current.name;
+        const simulation=await simulateLoop({...scope,locale:p.locale},supervisorLoopRegistry,purchaseCapabilityId,{
+          name:newName,ingredientId:input.ingredientId,quantity:input.quantity,
+          unit:input.unit,costCents:input.costCents,date:input.date,source:current.source,
+          receiptGroupId:current.receiptGroupId??null,receiptLineIndex:current.receiptLineIndex??null,
+          receiptVendor:input.receiptVendor??current.receiptVendor??null,
+          receiptTotalCents:input.receiptTotalCents??current.receiptTotalCents??null
+        });
+        const effect=supervisorLoopRegistry.get(purchaseCapabilityId).parseEffect(simulation.effect);
+        try{
+          const edited=await repo.editPurchaseDraft(scope,p.id,p.revision,effect,effectHash(effect));
+          return conversationJson({proposal:await view(scope,repo,edited)});
+        }catch{return conversationJson({state:"conflict",proposal:await view(scope,repo,await repo.load(scope,p.id))},409);}
+      }
+      if(input.action==="cancel"){
+        if(p.status!=="draft"||p.revision!==input.revision)
+          return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+        try{return conversationJson({proposal:await view(scope,repo,
+          await repo.transition(scope,p.id,p.revision,"reject"))});}
+        catch{return conversationJson({state:"conflict",proposal:await view(scope,repo,await repo.load(scope,p.id))},409);}
+      }
+      if(p.revision!==input.revision||!["draft","approved","executing"].includes(p.status))
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      const effect=supervisorLoopRegistry.get(purchaseCapabilityId).parseEffect(p.canonicalEffectPayload);
+      if(!effect.ingredientId)
+        return conversationJson({state:"unchanged",error:"ingredient_match_required",proposal:await view(scope,repo,p)},422);
+      try{
+        if(p.status==="executing"){
+          // Explicit owner retry only. Stable proposal id makes repeated stock and price writes safe.
+          await purchaseCapability.commit(scope,effect,p.id);
+          const committed=await repo.transition(scope,p.id,p.revision,"committed",
+            new Date(Date.now()+86400000).toISOString().slice(0,10));
+          return conversationJson({proposal:await view(scope,repo,committed)});
+        }
+        const approved=p.status==="draft"?await approveLoop(scope,repo,p.id,p.revision):p;
+        const result=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision);
+        return conversationJson({proposal:await view(scope,repo,result.proposal)});
+      }catch{
+        const latest=await repo.load(scope,p.id);
+        if(latest.status==="committed")return conversationJson({proposal:await view(scope,repo,latest)});
+        return conversationJson({state:latest.status==="executing"?"failed":"conflict",
+          error:"purchase_save_failed",proposal:await view(scope,repo,latest)},409);
+      }
+    }
     if(staff){
       if(p.capabilityVersion===1)return conversationJson({state:"stale",proposal:await view(scope,repo,p)},409);
       if(input.action==="edit")return conversationJson({error:"staff_edits_require_new_proposal"},422);

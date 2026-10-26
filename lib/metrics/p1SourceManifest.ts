@@ -77,6 +77,15 @@ export const SOURCE_SURFACES = {
   "lib/data/adminFeedback.server.ts":{
     saveOwnerTurnFeedback:{restricted:"Owner-scoped private diagnostic rating write, no free text stored"},
   },
+  "lib/data/modifierLinks.server.ts":{
+    readModifierSetup:{restricted:"Owner-only, non-demo, selected-cafe observed sales and inert modifier suggestions; no automatic mapping or generic model source"},
+  },
+  "lib/data/inventoryProposals.server.ts":{
+    readPendingInventoryProposals:{restricted:"Owner-only selected-cafe lookup of inert purchase proposal identifiers; approvals stay in the existing scoped endpoint"},
+  },
+  "lib/data/inventory.server.ts":{
+    readPurchaseMonth:{restricted:"Owner-authenticated, non-demo, business-scoped purchase month history; private Inventory UI only, never a generic model metric"},
+  },
   "lib/data/usageVariance.server.ts":{
     readUsageBusinessDate:{restricted:"Owner-scoped cafe timezone for stock and reporting date defaults"},
     readUsageVariance:{restricted:"Owner-bound expected/actual usage reconciliation, not a generic P1 source"},

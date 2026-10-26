@@ -8,7 +8,8 @@ type SquareOrderLineItem = {
   name?: string;
   quantity?: string;
   total_money?: SquareMoney;
-  modifiers?: { catalog_object_id?: string; name?: string }[];
+  modifiers?: { catalog_object_id?: string; name?: string; quantity?:string;
+    base_price_money?:SquareMoney;total_price_money?:SquareMoney }[];
 };
 type SquareOrder = {
   id: string;
@@ -136,7 +137,12 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
             name: line.name ?? "Item",
             quantity: Number(line.quantity ?? "1"),
             netSalesCents: cents(line.total_money),
-            modifiers: (line.modifiers ?? []).map((m) => ({ posModifierId: m.catalog_object_id ?? "", name: m.name ?? "" })),
+            modifiers: (line.modifiers ?? []).map((m) => ({
+              posModifierId: m.catalog_object_id ?? "",name: m.name ?? "",
+              quantity: m.quantity == null ? 1 : Number(m.quantity),
+              priceCents: m.total_price_money?.amount ?? m.base_price_money?.amount ?? null,
+              parentPosModifierId: null,
+            })),
             voided: false,
             voidedBy: null,
           })),

@@ -8,12 +8,20 @@
 export type PosProvider = "square" | "toast" | "clover" | "csv" | "demo";
 export type ProcessingFeeStatus = "actual" | "estimated" | "missing";
 
+export type PosModifier = {
+  posModifierId:string;
+  name:string;
+  /** Historical orders omit quantity, so reads default to one. */
+  quantity?:number;
+  priceCents?:number|null;
+  parentPosModifierId?:string|null;
+};
 export type PosOrderLine = {
   posItemId: string | null;
   name: string;
   quantity: number;
   netSalesCents: number;
-  modifiers: { posModifierId: string; name: string }[];
+  modifiers: PosModifier[];
   voided: boolean;
   voidedBy: string | null;
   category?: string | null;

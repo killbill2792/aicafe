@@ -2,7 +2,7 @@
 export type UsageIngredient={id:string;name:string;unit:"g"|"ml"|"each"};
 export type UsageRecipe={menuItemId:string;ingredientId:string;quantity:number};
 export type UsageModifier={posModifierId:string;ingredientId:string|null;quantityDelta:number;replacesIngredientId:string|null};
-export type UsageSale={menuItemId:string|null;quantity:number;businessDate:string;closedAt:string;locationId:string|null;modifiers:Array<{posModifierId:string;name:string}>};
+export type UsageSale={menuItemId:string|null;quantity:number;businessDate:string;closedAt:string;locationId:string|null;modifiers:Array<{posModifierId:string;name:string;quantity?:number;priceCents?:number|null;parentPosModifierId?:string|null}>};
 export type UsageStaff={id:string;staffId:string;staff:string;locationId:string;clockIn:string;clockOut:string|null};
 export type UsageCount={ingredientId:string;date:string;quantity:number};
 export type UsagePurchase={ingredientId:string;date:string;quantity:number};
@@ -43,12 +43,32 @@ export function calculateUsage(input:{
   }
   const lineTotals=new Map<string,number>();
   for(const r of recipes.get(sale.menuItemId)!)lineTotals.set(r.ingredientId,(lineTotals.get(r.ingredientId)??0)+r.quantity);
+  const modifierById=new Map<string,(typeof sale.modifiers)[number]>();
+  const duplicateIds=new Set<string>();
   for(const modifier of sale.modifiers){
-   // Unmapped options are not silently treated as zero consumption.
+   if(modifierById.has(modifier.posModifierId))duplicateIds.add(modifier.posModifierId);
+   modifierById.set(modifier.posModifierId,modifier);
+  }
+  for(const modifier of sale.modifiers){
+   // Nested children inherit parent selection multiplicity exactly once.
+   // Fail closed on missing parents, cycles or repeated ambiguous identities.
    const m=mods.get(modifier.posModifierId);
-   if(!m){salesMissing=true;continue;}
+   let count=modifier.quantity??1,ancestor=modifier.parentPosModifierId??null;
+   const seen=new Set([modifier.posModifierId]);
+   let depth=0;
+   while(ancestor&&depth++<8&&!seen.has(ancestor)){
+    seen.add(ancestor);
+    const parent=modifierById.get(ancestor);
+    if(!parent||duplicateIds.has(ancestor)){count=NaN;break;}
+    count*=parent.quantity??1;
+    ancestor=parent.parentPosModifierId??null;
+   }
+   if(ancestor)count=NaN;
+   if(!m||duplicateIds.has(modifier.posModifierId)||!Number.isFinite(count)||count<=0){
+    salesMissing=true;continue;
+   }
    if(m.replacesIngredientId)lineTotals.delete(m.replacesIngredientId);
-   if(m.ingredientId)lineTotals.set(m.ingredientId,(lineTotals.get(m.ingredientId)??0)+m.quantityDelta);
+   if(m.ingredientId)lineTotals.set(m.ingredientId,(lineTotals.get(m.ingredientId)??0)+m.quantityDelta*count);
   }
   const clocked=staff.filter(s=>sale.locationId!==null && s.locationId===sale.locationId &&
    Date.parse(s.clockIn)<=Date.parse(sale.closedAt) &&
@@ -58,9 +78,9 @@ export function calculateUsage(input:{
    if(!Number.isFinite(qty)||qty<0){salesMissing=true;continue;}
    let key="all",label="All";
    if(input.groupBy==="day"){key=sale.businessDate;label=key;}
-   if(input.groupBy==="shift"){key=(sale.locationId??"unknown")+":"+(clocked.map(s=>s.id).sort().join("|")||"unassigned:"+sale.businessDate);label=crew.join(", ")||"No matched Toast time entry";}
+   if(input.groupBy==="shift"){key=(sale.locationId??"unknown")+":"+(clocked.map(s=>s.id).sort().join("|")||"unassigned:"+sale.businessDate);label=crew.join(", ")||"No matched time entry";}
    if(input.groupBy==="staff"){ // Shared expected usage, not proof who prepared the sale.
-    const members=clocked.length?clocked:[{staffId:"unassigned",staff:"No matched Toast time entry"}];
+    const members=clocked.length?clocked:[{staffId:"unassigned",staff:"No matched time entry"}];
     for(const s of members)add(id,qty*sale.quantity/members.length,
      (sale.locationId??"unknown")+":"+s.staffId,s.staff,[s.staff]);
     continue;
@@ -75,7 +95,7 @@ export function calculateUsage(input:{
   const end=input.counts.find(c=>c.ingredientId===i.id&&c.date===input.to);
   if(!start)missing.push("startCount:"+fromPrevious);
   if(!end)missing.push("endCount:"+input.to);
-  if(!input.salesCovered)missing.push("toastSalesCoverage");
+  if(!input.salesCovered)missing.push("salesCoverage");
   if(salesMissing)missing.push("unlinkedSalesRecipeOrModifier");
   const expected=input.salesCovered&&!salesMissing?Math.max(0,totals.get(i.id)??0):null;
   const added=input.purchases.filter(p=>p.ingredientId===i.id&&p.date>=input.from&&p.date<=input.to)

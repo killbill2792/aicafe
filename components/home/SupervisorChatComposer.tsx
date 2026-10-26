@@ -17,6 +17,8 @@ import { activeOwnerQuestionMessageId, clarifyCardState, beginOptimisticOwner, s
 import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
 import SupervisorProposalCard from "./SupervisorProposalCard";
+import InventoryApproveAll from "./InventoryApproveAll";
+import {buildAgentSendBody} from "./agentSendBody";
 import MemoryCard from "./MemoryCard";
 import ClarifyCard from "./ClarifyCard";
 import HowIGotThis from "./HowIGotThis";
@@ -46,14 +48,14 @@ export type SupervisorChatCopy = {
   voiceProcessing: string; voicePermissionDenied: string; voiceNoSpeech: string;
   voiceServiceUnavailable: string; voiceNetworkError: string; voiceTooLong: string;
   voiceError: string; voiceCanceled: string;
-  attachmentSaved: string; attachmentNotice: string; attachmentUpload: string;
+  attachmentSaved: string; attachmentNotice: string; attachmentUpload: string; photoRequest:string;
   statusDisabled: string; statusDatabase: string; statusWriter: string; statusOwner: string; statusStorage: string;
   emptyHeading: string; emptyIntro: string; historyTitle: string; closeHistory: string;
   startNewChat: string; reviewHint: string; taskOpen: string;
   needsYou: string; handled: string; watching: string;
   answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string; provenanceOwner:string;provenanceEstimate:string;provenanceUnchecked:string;provenanceBreakEven:string;provenanceSalesGap:string;provenanceLegend:string;provenanceOverhead:string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
-  clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;
+  clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string;
   howIGotThis:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
   explainMultiply:string;explainSum:string;explainDivide:string;explainRatio:string;explainProrate:string;explainSubtract:string;
   feedbackUp: string; feedbackDown: string; feedbackSaved: string; feedbackError: string;
@@ -140,6 +142,7 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, 
     <p className="whitespace-pre-wrap break-words">{message.text}</p>
   </article>;
   const originalBlocks=message.blocks??[];
+  const proposalIds=originalBlocks.flatMap(block=>record(block)&&block.type==="proposal_card"&&typeof block.proposalId==="string"?[block.proposalId]:[]);
   const groups=groupReplyBlocks(originalBlocks);
   const rawMetadata=message.grounding?.agentMetadata;
   const metadata=record(rawMetadata)?rawMetadata:null;
@@ -157,6 +160,7 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, 
       {copy.supervisor}
     </div>
     <div className="w-full space-y-3 ps-1">
+      {proposalIds.length>1&&<InventoryApproveAll threadId={message.threadId} ids={proposalIds} locale={locale}/>}
       {groups.map((group,i)=>{
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
@@ -469,7 +473,7 @@ export default function SupervisorChatComposer({
     try {
       const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ clientMessageId, text, locale }),
+        body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachments)),
       });
       if (!response.ok || !response.body) throw new Error(await agentErrorCode(response));
       const reader = response.body.getReader();
@@ -499,7 +503,7 @@ export default function SupervisorChatComposer({
     }
   }
   async function sendText(value: string, existingKey?: string) {
-    const text = value.trim();
+    const text = value.trim() || (attachments.some(file=>file.mediaType.startsWith("image/"))?copy.photoRequest:"");
     // A confirmed background job accepts follow-ups while the first response streams.
     // The main-turn double-tap guard must not intercept this separate path.
     if (!existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
@@ -528,7 +532,7 @@ export default function SupervisorChatComposer({
       attemptedThreadId = id;
       const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ clientMessageId, text, locale }),
+        body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachments)),
       });
       if (!response.ok || !response.body) throw new Error("agent_request_failed");
       const reader = response.body.getReader();
@@ -590,7 +594,7 @@ export default function SupervisorChatComposer({
       setOptimisticOwner(null);
       await refreshThreads();
       retryId.current = null; setStreamedText("");
-      dispatchDictation({ type: "reset" }); setMediaNotice("");
+      dispatchDictation({ type: "reset" }); setMediaNotice(""); setAttachments([]);
     } catch (failure) {
       if (existingKey) retryId.current = null;
       // Server may have persisted the owner turn before the response failed.

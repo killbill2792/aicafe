@@ -13,6 +13,7 @@ import { computeDedupeKey } from "@/lib/expenses/dedupeKey";
 import { matchKeywordCategory } from "@/lib/expenses/keywordRules";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import type { ActionResult } from "./expenses";
+import {recordPurchases,type PurchaseLineInput} from "@/lib/inventory/recordPurchases.server";
 
 export type ReceiptReviewResult = { ok: true; receipt: ReceiptReadingResult; suggestedCategory: ExpenseCategoryCode } | { ok: false; error: string };
 
@@ -56,6 +57,12 @@ export async function saveReceiptExpense(params: {
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Sign in first." };
   const businessId = await getActiveBusinessId(user.id);
+  const {data:member,error:memberError}=await supabase.from("memberships")
+    .select("role,businesses(is_demo)").eq("business_id",businessId).eq("user_id",user.id).maybeSingle();
+  const b=member?.businesses as unknown as {is_demo:boolean}|{is_demo:boolean}[]|null;
+  const isDemo=Array.isArray(b)?b[0]?.is_demo:b?.is_demo;
+  if(memberError||member?.role!=="owner"||isDemo!==false)
+    return {ok:false,error:"Only a café owner can save a receipt."};
 
   let spentOn = params.receipt.date;
   if (!spentOn) {
@@ -64,55 +71,55 @@ export async function saveReceiptExpense(params: {
   }
   const dedupeKey = computeDedupeKey({ businessId, spentOn, amountCents: params.receipt.total_cents, vendor: params.receipt.vendor });
 
-  const { data: expense, error } = await supabase
-    .from("expenses")
-    .insert({
-      business_id: businessId,
-      spent_on: spentOn,
-      amount_cents: params.receipt.total_cents,
-      vendor: params.receipt.vendor,
-      category_code: params.category,
-      source: "receipt",
-      status: "actual",
-      dedupe_key: dedupeKey,
-    })
-    .select("id")
-    .single();
-
-  if (error) {
-    if (error.code === "23505") return { ok: true, skipped: 1 }; // already recorded
-    return { ok: false, error: error.message };
+  const {data:created,error}=await supabase.from("expenses").insert({
+    business_id:businessId,spent_on:spentOn,amount_cents:params.receipt.total_cents,
+    vendor:params.receipt.vendor,category_code:params.category,
+    source:"receipt",status:"actual",dedupe_key:dedupeKey
+  }).select("id").single();
+  if(error&&error.code!=="23505")return {ok:false,error:"Couldn't save the receipt."};
+  let expense=created;
+  if(!expense){
+    const existing=await supabase.from("expenses").select("id")
+      .eq("business_id",businessId).eq("dedupe_key",dedupeKey).eq("source","receipt").maybeSingle();
+    if(existing.error||!existing.data)return {ok:false,error:"Receipt duplicate needs review."};
+    expense=existing.data;
   }
-
-  const lineRows = params.receipt.lines.map((line, i) => ({
-    expense_id: expense.id,
-    description: line.description,
-    quantity: line.quantity,
-    unit: line.unit,
-    amount_cents: line.amount_cents,
-    ingredient_id: params.ingredientMappings[i] ?? null,
+  const rows=params.receipt.lines.map((line,index)=>({
+    expense_id:expense.id,receipt_line_index:index,description:line.description,
+    quantity:line.quantity,unit:line.unit,amount_cents:line.amount_cents,
+    ingredient_id:params.ingredientMappings[index]??null
   }));
-  if (lineRows.length > 0) {
-    const { data: savedLines } = await supabase.from("expense_lines").insert(lineRows).select("id, quantity, unit, amount_cents, ingredient_id");
-    const ingredientIds = [...new Set((savedLines ?? []).flatMap((line) => line.ingredient_id ? [line.ingredient_id] : []))];
-    const { data: ingredients } = ingredientIds.length
-      ? await supabase.from("ingredients").select("id, base_unit").in("id", ingredientIds).eq("business_id", businessId)
-      : { data: [] };
-    const unitByIngredient = new Map((ingredients ?? []).map((ingredient) => [ingredient.id, ingredient.base_unit]));
-    const priceRows = (savedLines ?? []).flatMap((line) => {
-      if (!line.ingredient_id || !line.quantity || Number(line.quantity) <= 0) return [];
-      const normalizedUnit = String(line.unit ?? "").toLowerCase().replace(/s$/, "");
-      const baseUnit = unitByIngredient.get(line.ingredient_id);
-      if (!baseUnit || ![baseUnit, baseUnit === "each" ? "item" : baseUnit].includes(normalizedUnit)) return [];
-      return [{
-        ingredient_id: line.ingredient_id,
-        effective_from: spentOn,
-        cost_per_base_unit_micros: Math.round((line.amount_cents / Number(line.quantity)) * 1_000_000),
-        source: "receipt",
-        source_expense_line_id: line.id,
-      }];
+  if(rows.length){
+    const {error:linesError}=await supabase.from("expense_lines").upsert(rows,{
+      onConflict:"expense_id,receipt_line_index",ignoreDuplicates:true
     });
-    if (priceRows.length) await supabase.from("ingredient_prices").insert(priceRows);
+    if(linesError)return {ok:false,error:"Receipt saved but lines could not be saved. Try again."};
+    const {data:savedLines,error:fetchError}=await supabase.from("expense_lines")
+      .select("id,receipt_line_index,description,quantity,unit,amount_cents,ingredient_id")
+      .eq("expense_id",expense.id).not("receipt_line_index","is",null);
+    if(fetchError||!savedLines)return {ok:false,error:"Receipt saved but stock lines could not be read. Try again."};
+    // A dedupe key may match a prior receipt. Never rewrite its expense lines
+    // or apply different stock facts to an existing expense without review.
+    if(savedLines.length!==rows.length||rows.some(expected=>{
+      const actual=savedLines.find(line=>line.receipt_line_index===expected.receipt_line_index);
+      return !actual||actual.description!==expected.description||
+        Number(actual.quantity)!==Number(expected.quantity)||
+        (actual.unit??null)!==(expected.unit??null)||
+        Number(actual.amount_cents)!==Number(expected.amount_cents)||
+        (actual.ingredient_id??null)!==(expected.ingredient_id??null);
+    }))return {ok:false,error:"This receipt was already saved with different lines. Review the existing expense."};
+
+    const purchases:PurchaseLineInput[]=savedLines.flatMap(line=>{
+      if(!line.ingredient_id||!line.quantity||Number(line.quantity)<=0)return [];
+      return [{lineId:line.id,ingredientId:line.ingredient_id,date:spentOn,
+        quantity:Number(line.quantity),unit:String(line.unit??""),
+        costCents:line.amount_cents,expenseLineId:line.id}];
+    });
+    if(purchases.length){
+      const results=await recordPurchases(purchases,"receipt_page",expense.id);
+      if(results.some(result=>!result.ok))
+        return {ok:false,error:"Expense saved, but some stock lines need review. Correct their units and try again."};
+    }
   }
 
   revalidatePath("/money");

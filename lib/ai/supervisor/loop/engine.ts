@@ -43,7 +43,7 @@ export type RegisteredLoopCapability={
   simulate:(scope:OwnerLoopScope,rawInput:unknown)=>Promise<LoopSimulation>;
   parseEffect:(rawEffect:unknown)=>Record<string,unknown>;
   dependencyScope:(rawEffect:unknown)=>Record<string,unknown>;
-  commit:(scope:OwnerLoopScope,rawEffect:unknown)=>Promise<LoopCommitResult>;
+  commit:(scope:OwnerLoopScope,rawEffect:unknown,proposalId?:string)=>Promise<LoopCommitResult>;
   monitor:(scope:OwnerLoopScope,rawEffect:unknown,businessDate:string)=>Promise<LoopSample|null>;
   report:(scope:OwnerLoopScope,rawEffect:unknown,samples:readonly LoopSample[],windowComplete:boolean)=>Promise<LoopReport>;
   /** Pure owner-intent interpretation and canonical source resolution,
@@ -58,7 +58,7 @@ export function registerLoopCapability<I,E extends Record<string,unknown>>(defin
   dependencyScope:(effect:E)=>Record<string,unknown>;
   proposalDescription?:string;
   simulate:(scope:OwnerLoopScope,input:I)=>Promise<LoopSimulation>;
-  commit:(scope:OwnerLoopScope,effect:E)=>Promise<LoopCommitResult>;
+  commit:(scope:OwnerLoopScope,effect:E,proposalId?:string)=>Promise<LoopCommitResult>;
   monitor:(scope:OwnerLoopScope,effect:E,date:string)=>Promise<LoopSample|null>;
   report:(scope:OwnerLoopScope,effect:E,samples:readonly LoopSample[],windowComplete:boolean)=>Promise<LoopReport>;
   recognizeProposal?:(scope:OwnerLoopScope,currentText:string,
@@ -81,7 +81,7 @@ export function registerLoopCapability<I,E extends Record<string,unknown>>(defin
     parseEffect:(raw:unknown)=>parse(raw),
     dependencyScope:(raw:unknown)=>definition.dependencyScope(parse(raw)),
     ...(definition.recognizeProposal?{recognizeProposal:definition.recognizeProposal}:{}),
-    commit:(scope:OwnerLoopScope,raw:unknown)=>definition.commit(scope,parse(raw)),
+    commit:(scope:OwnerLoopScope,raw:unknown,proposalId?:string)=>definition.commit(scope,parse(raw),proposalId),
     monitor:(scope:OwnerLoopScope,raw:unknown,date:string)=>definition.monitor(scope,parse(raw),date),
     report:(scope:OwnerLoopScope,raw:unknown,samples:readonly LoopSample[],windowComplete:boolean)=>
       definition.report(scope,parse(raw),samples,windowComplete),
@@ -178,7 +178,7 @@ export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof
   if(claimed.status!=="executing"||claimed.revision!==revision+1||
     claimed.effectHash!==p.effectHash)throw new Error("Approval claim invalid");
   // Only this mode has access to the domain commit hook.
-  const result=await def.commit(scope,effect);
+  const result=await def.commit(scope,effect,id);
   const transition=result.status==="requires_manual_action"?"manual_pending":"committed";
   // For a future connected integration, a verified commit starts a monitor
   // window. The manual POS workflow uses the café-local confirmed date.

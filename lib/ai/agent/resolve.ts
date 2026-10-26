@@ -71,6 +71,7 @@ export type ResolveState = {
   chosenIds: Set<string>;
   ambiguous: ChoiceCandidate[][];
   asked: boolean;
+  usageMissing:Map<string,{name:string;unit:string;kind:"endCount"|"purchase";date:string}>;
 };
 export function newResolveState(ownerText: string, history: readonly {role:string;content:string}[] = []): ResolveState {
   const last=history.at(-1);
@@ -87,7 +88,7 @@ export function newResolveState(ownerText: string, history: readonly {role:strin
       if(match&&normalizedName(match[1])===text)chosenIds.add(match[2].trim().toLowerCase());
     }
   }
-  return {ownerText,priorChoice:lastAsk?ownerText:null,seenIds:new Set(),chosenIds,ambiguous:[],asked:false};
+  return {ownerText,priorChoice:lastAsk?ownerText:null,seenIds:new Set(),chosenIds,ambiguous:[],asked:false,usageMissing:new Map()};
 }
 export function choicePayload(result: EntityResolution<unknown>, source: string, period: {from:string;to:string}|null) {
   return result.status==="ambiguous"
@@ -149,6 +150,19 @@ export function observeToolResult(state:ResolveState|undefined,result:Record<str
   if(!state||!Array.isArray(result.missing)||typeof result.error==="string")return;
   // A safe tool can refuse a write with ownerChoiceRequired. That refusal must
   // still supply candidates for ask_owner, even when no earlier read occurred.
+  if(result.source==="usage_variance"&&Array.isArray(result.rows)){
+    for(const row of result.rows.slice(0,50)){
+      if(!row||typeof row!=="object"||typeof row.ingredientId!=="string"||
+        typeof row.name!=="string"||typeof row.unit!=="string"||!Array.isArray(row.missing))continue;
+      for(const missing of row.missing){
+        const found=typeof missing==="string"?missing.match(/^(endCount|purchase):?(\d{4}-\d{2}-\d{2})?$/):null;
+        if(!found)continue;
+        const date=found[2]??(result.period&&typeof result.period==="object"&&"to" in result.period?String(result.period.to):"");
+        if(/^\d{4}-\d{2}-\d{2}$/.test(date))state.usageMissing.set(found[1]+":"+row.ingredientId+":"+date,
+          {name:row.name,unit:row.unit,kind:found[1] as "endCount"|"purchase",date});
+      }
+    }
+  }
   const validChoice=result.needsOwnerChoice===true&&
     (result.missing.length===0||result.missing.includes("ownerChoiceRequired"));
   if(validChoice&&Array.isArray(result.candidates)) {

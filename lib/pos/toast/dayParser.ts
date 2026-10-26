@@ -13,6 +13,28 @@ const ref=z.object({guid:GUID}).passthrough().nullish();
 const discount=z.object({discountAmount:money,nonTaxDiscountAmount:money}).passthrough();
 const service=z.object({chargeAmount:money,gratuity:z.boolean().nullish(),
   serviceChargeCategory:z.string().nullish()}).passthrough();
+const modifierSelection=z.object({
+ item:ref,displayName:z.string().nullish(),quantity:money,price:money,
+ modifiers:z.array(z.unknown()).nullish()
+}).passthrough();
+/** Flatten nested Toast modifiers once while preserving parent identity and quantity. */
+export function normalizeToastModifiers(input:readonly unknown[]):import("../types").PosModifier[]{
+ const result:import("../types").PosModifier[]=[];
+ const visit=(rows:readonly unknown[],parent:string|null,depth:number)=>{
+  if(depth>8)return;
+  for(const row of rows){
+   const parsed=modifierSelection.safeParse(row);
+   if(!parsed.success)continue;
+   const m=parsed.data,id=m.item?.guid??"";
+   result.push({posModifierId:id,name:m.displayName??"",
+    quantity:m.quantity??1,priceCents:m.price==null?null:Math.round(m.price*100),
+    parentPosModifierId:parent});
+   visit(m.modifiers??[],id||null,depth+1);
+  }
+ };
+ visit(input,null,0);
+ return result;
+}
 const selection=z.object({
   guid:GUID.nullish(),item:ref,displayName:z.string().nullish(),
   salesCategory:z.object({name:z.string().nullish()}).passthrough().nullish(),
@@ -22,7 +44,7 @@ const selection=z.object({
   voidDate:z.string().nullish(),voidBusinessDate:z.number().int().nullish(),voidReason:ref,
   refundDetails:z.object({refundAmount:money}).passthrough().nullish(),
   appliedDiscounts:z.array(discount).nullish(),
-  modifiers:z.array(z.object({item:ref,displayName:z.string().nullish()}).passthrough()).nullish()
+  modifiers:z.array(modifierSelection).nullish()
 }).passthrough();
 const payment=z.object({
   guid:GUID.nullish(),paymentStatus:z.string().nullish(),voided:z.boolean().nullish(),
@@ -193,9 +215,7 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
       netSalesCents:s.voided?0:cents(s.price,w)-cents(s.refundDetails?.refundAmount,w),
       voided:Boolean(s.voided),voidedBy:null,
       category:s.salesCategory?.name?.trim()||null,
-      modifiers:(s.modifiers??[]).map(m=>({
-        posModifierId:m.item?.guid??"",name:m.displayName??""
-      }))});
+      modifiers:normalizeToastModifiers(s.modifiers??[])});
    }
   }
   if(!active)continue;

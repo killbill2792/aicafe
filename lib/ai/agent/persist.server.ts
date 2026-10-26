@@ -66,11 +66,13 @@ export function agentReplyPayload(turn: AgentTurn) {
   // The card itself owns the question; avoid showing the identical text twice.
   const blocks=isOnlyQuestion?[]:splitAgentText(turn.text,turn.provenance??turn.unverified);
   const proposalIds=[...new Set(turn.results.flatMap(result=>
-    (result.source==="price_change_proposal"||result.source==="staff_proposal")&&result.draft===true&&
-      result.saved===false&&result.missing.length===0&&
+    (result.source==="price_change_proposal"||result.source==="staff_proposal"||result.source==="purchase_proposal")&&
+      (result.source==="purchase_proposal"||result.missing.length===0)&&result.draft===true&&
+      result.saved===false&&
       typeof result.proposalId==="string"&&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.proposalId)
-      ?[result.proposalId]:[]))].slice(0,Math.max(0,29-blocks.length));
+      ?[result.proposalId]:result.source==="purchase_proposal"&&Array.isArray(result.proposals)?
+       result.proposals.flatMap(p=>p&&typeof p==="object"&&"proposalId" in p&&typeof p.proposalId==="string"&&UUID.test(p.proposalId)?[p.proposalId]:[]):[]))].slice(0,Math.max(0,29-blocks.length));
   const experimentIds=[...new Set(turn.results.flatMap(result=>
     result.source==="price_experiment_proposal"&&result.draft===true&&result.saved===false&&
     result.missing.length===0&&typeof result.proposalId==="string"&&UUID.test(result.proposalId)
@@ -92,7 +94,12 @@ export function agentReplyPayload(turn: AgentTurn) {
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
     ...experimentIds.map(proposalId=>({type:"experiment_card" as const,proposalId})),
     ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId})),
-    ...(clarify&&typeof clarify.question==="string"&&Array.isArray(clarify.options)?[{type:"clarify" as const,question:clarify.question,options:clarify.options as {label:string;value:string}[],allowOther:clarify.allowOther===true}]:[]),
+    ...(clarify&&typeof clarify.question==="string"&&clarify.kind==="fill"&&Array.isArray(clarify.fields)?
+     [{type:"clarify" as const,kind:"fill" as const,question:clarify.question,
+       fields:clarify.fields as {key:string;label:string;inputType:"number";units:string[];defaultUnit:string}[]}]:
+      clarify&&typeof clarify.question==="string"&&Array.isArray(clarify.options)?
+       [{type:"clarify" as const,question:clarify.question,
+         options:clarify.options as {label:string;value:string}[],allowOther:clarify.allowOther===true}]:[]),
     ...(safeExplain.length?[{type:"how" as const,lines:safeExplain}]:[])] };
   const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
   const unverified = annotations.flatMap(item => {
