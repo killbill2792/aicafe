@@ -30,11 +30,11 @@ export async function voidInventoryPurchase(lineId:string):Promise<{ok:boolean;e
  if(!valid.success)return {ok:false,error:"invalid_line_id"};
  try{
   const {db,businessId}=await ownerScope();
-  const {data,error}=await db.from("pantry_stock_purchases")
-    .update({voided_at:new Date().toISOString(),updated_at:new Date().toISOString()})
-    .eq("business_id",businessId).eq("line_id",lineId).is("voided_at",null).select("id");
+  const {data,error}=await db.rpc("pantry_void_purchase_line",{
+   p_business_id:businessId,p_line_id:lineId
+  });
   if(error)return {ok:false,error:"save_failed"};
-  if(!data?.length)return {ok:false,error:"already_voided_or_missing"};
+  if(!data)return {ok:false,error:"already_voided_or_missing"};
   revalidatePath("/menu/pantry");return {ok:true};
  }catch{return {ok:false,error:"owner_required"};}
 }
@@ -45,6 +45,7 @@ export async function editInventoryPurchase(line:PurchaseLineInput):Promise<Purc
    .select("source,source_ref,expense_line_id").eq("business_id",businessId).eq("line_id",line.lineId)
    .is("voided_at",null).maybeSingle();
   if(error||!data)return {lineId:line.lineId,ok:false,error:"purchase_not_found"};
+  if(!line.expectedUpdatedAt)return {lineId:line.lineId,ok:false,error:"missing_revision"};
   const result=await recordPurchases([{...line,expenseLineId:data.expense_line_id}],data.source as import("@/lib/inventory/recordPurchases.server").PurchaseSource,data.source_ref);
   if(result[0]?.ok)revalidatePath("/menu/pantry");
   return result[0]??{lineId:line.lineId,ok:false,error:"save_failed"};
