@@ -11,7 +11,8 @@ import {readAllPages} from "./readAllPages";
 import {localClock} from "./scheduleDates";
 import {parseToastDayPage} from "./dayParser";
 type Location={businessId:string;restaurantGuid:string;locationId:string;
- timeZone:string;closeoutHour:number};
+ timeZone:string;closeoutHour:number;expectedImportedAt?:string|null};
+class StaleImportError extends Error{}
 type Status={import_state:string;recon_state:string;orders_snapshot_sha256:string|null;
  net_sales_cents:number;order_count:number;discounts_cents:number;refunds_cents:number;
  unparsed_count:number;warnings:Record<string,unknown>;imported_at:string|null;
@@ -131,11 +132,16 @@ export function internalOrderProof(rows:unknown[],p:Location,day:string,
 }
 async function writeReconciliation(db:SupabaseClient,p:Location,day:string,
  patch:Record<string,unknown>){
- const {error}=await db.from("toast_day_status").update({
+ // Fence each verdict to the imported generation that was actually checked.
+ // A concurrent reimport must never be overwritten by an older provider reply.
+ let query=db.from("toast_day_status").update({
   ...patch,last_recon_attempt_at:new Date().toISOString()
  }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("business_date",day).eq("import_state","imported");
+ if(p.expectedImportedAt)query=query.eq("imported_at",p.expectedImportedAt);
+ const {data:written,error}=await query.select("business_date").maybeSingle();
  if(error)throw new ToastApiError("unavailable");
+ if(!written)throw new StaleImportError();
  // Re-evaluate void certification on both promotion and downgrade:
  // ERA mismatches must revoke an earlier internal void certificate.
  if(patch.recon_state){
@@ -402,20 +408,21 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
  for(const item of days??[]){
   if(Date.now()>=deadlineAt)break;
   const day=item.business_date as string,status=item as Status;
+  const scoped={...p,expectedImportedAt:status.imported_at};
   if(status.last_recon_attempt_at&&
    Date.now()-Date.parse(status.last_recon_attempt_at)<(status.recon_state==="pending"?9:60)*60000)
    continue;
   try {
 
-   const internal=status.internal_state??await internalDay(db,p,day,status,deadlineAt);
+   const internal=status.internal_state??await internalDay(db,scoped,day,status,deadlineAt);
    if(mode==="official"&&internal){
-    try{if(await eraDay(db,p,day,{...status,internal_state:internal},deadlineAt)==="timeout")mode="internal";}
+    try{if(await eraDay(db,scoped,day,{...status,internal_state:internal},deadlineAt)==="timeout")mode="internal";}
     catch(e){
      const category=e instanceof ToastApiError?e.category:"unavailable";
      const permissionLost=["authentication","missing_permissions"].includes(category);
      // ERA unavailable is unfinished work, not a successful reconciliation.
      // Keep the previous external mismatch visible until fresh ERA data resolves it.
-     await writeReconciliation(db,p,day,{
+     await writeReconciliation(db,scoped,day,{
       analytics_state:permissionLost?"missing":"pending",
       recon_state:stateWithoutFreshAnalytics(status,internal),
       last_error_category:category
@@ -429,11 +436,12 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
    }
    attempted++;
   }catch(err){
+   if(err instanceof StaleImportError)continue;
    const category=err instanceof ToastApiError?err.category:"unavailable";
    const {error:mark}=await db.from("toast_day_status").update({
     last_error_category:category,last_recon_attempt_at:new Date().toISOString()
    }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
-    .eq("business_date",day);
+    .eq("business_date",day).eq("imported_at",status.imported_at);
    if(mark)throw new ToastApiError("unavailable");
    if(["authentication","missing_permissions","missing_scope_or_location",
     "unauthorized_location","not_configured","invalid_host"].includes(category))continue;
