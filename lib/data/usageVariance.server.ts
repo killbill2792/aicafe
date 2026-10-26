@@ -14,7 +14,7 @@ const readInput=z.strictObject({
 }).refine(v=>v.to>=v.from&& (Date.parse(v.to)-Date.parse(v.from))/86400000<=30);
 const stockInput=z.strictObject({
  ingredientId:z.string().uuid(),date:iso,quantity:z.number().finite().nonnegative().max(1000000000),
- unit:z.string().min(1).max(40)
+ unit:z.string().min(1).max(40),lineId:z.string().uuid().optional()
 });
 async function scope(){
  const db=await createServerSupabaseClient();
@@ -172,7 +172,7 @@ export async function saveUsageEntry(kind:"count"|"purchase",raw:unknown):Promis
   if(kind==="purchase"){
    const {recordPurchases}=await import("@/lib/inventory/recordPurchases.server");
    const result=await recordPurchases([{
-    lineId:crypto.randomUUID(),ingredientId:ingredient.id,date:parsed.data.date,
+    lineId:parsed.data.lineId??crypto.randomUUID(),ingredientId:ingredient.id,date:parsed.data.date,
     quantity:parsed.data.quantity,unit:parsed.data.unit,costCents:null
    }],"manual",null);
    if(!result[0]?.ok)return {ok:false,error:result[0]?.error??"save_failed"};
