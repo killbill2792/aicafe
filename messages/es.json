@@ -1825,7 +1825,9 @@
     "explainProrate": "prorrateado",
     "explainSubtract": "menos",
     "photoRequest": "Revisa esta foto de un recibo de compra.",
-    "clarifyFillError": "Introduce un número positivo válido e inténtalo de nuevo."
+    "clarifyFillError": "Introduce un número positivo válido e inténtalo de nuevo.",
+    "clarifyCountSummary": "El recuento de cierre de {item} es {amount} {unit}.",
+    "clarifyPurchaseSummary": "Compré {amount} {unit} de {item} el {date}. Prepara una propuesta de compra para mi aprobación; todavía no guardes el inventario."
   },
   "TeamRules": {
     "title": "Reglas y aprobaciones del equipo",
