@@ -5,6 +5,8 @@ import { listPantry } from "@/lib/actions/pantry";
 import {usageWeekEnding} from "@/lib/calc/usageDates";
 import { PANTRY_STARTERS } from "@/lib/menu/pantryStarter";
 import {readPurchaseMonth} from "@/lib/data/inventory.server";
+import {readModifierSetup} from "@/lib/data/modifierLinks.server";
+import InventoryModifierPanel from "@/components/menu/InventoryModifierPanel";
 import InventoryPurchasePanel from "@/components/menu/InventoryPurchasePanel";
 import {getLocale} from "next-intl/server";
 import PageShell from "@/components/shared/PageShell";
@@ -19,15 +21,18 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
   const to=valid(params.to)?params.to!:businessToday;
   const start=usageWeekEnding(to).from;
   const month=params.month&&/^\d{4}-(0[1-9]|1[0-2])$/.test(params.month)?params.month:businessToday.slice(0,7);
-  const from=valid(params.from)&&params.from!<=to&&(Date.parse(to)-Date.parse(params.from!))/86400000<=30?params.from!:start; const [items,t,variance,purchases,inventoryText,locale]=await Promise.all([
+  const from=valid(params.from)&&params.from!<=to&&(Date.parse(to)-Date.parse(params.from!))/86400000<=30?params.from!:start; const [items,t,variance,purchases,inventoryText,locale,modifierSetup]=await Promise.all([
     listPantry(),getTranslations("MenuBuilder"),readUsageVariance({from,to,groupBy:"shift"}).catch(()=>null),
-    readPurchaseMonth(month).catch(()=>null),getTranslations("Inventory"),getLocale()
+    readPurchaseMonth(month).catch(()=>null),getTranslations("Inventory"),getLocale(),
+    readModifierSetup().catch(()=>null)
   ]);
   const i18nKeys=["title","heading","month","photo","unavailable","empty","totals","bulk","csv","chooseFile",
     "date","item","quantity","unit","cost","optional","edit","void","save","cancel","remove","addLine",
     "saveAll","none","import","failed","unknown","csvFailed","csvSaved","csvPartial",
     "source_manual","source_bulk","source_receipt_page","source_receipt_chat","source_chat_text",
-    "source_csv","source_quickbooks","source_bank_feed","source_other"];
+    "source_csv","source_quickbooks","source_bank_feed","source_other",
+    "modifierHeading","modifierExplain","modifierUnavailable","modifierEmpty",
+    "modifierSuggested","modifierRecipe","modifierChoose","modifierConfirm"];
   const inventoryLabels=Object.fromEntries(i18nKeys.map(key=>[key,inventoryText.raw(key as never) as string]));
 
   return <PageShell className="px-4 pb-24 pt-6" wide>
@@ -37,5 +42,6 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
         locale={locale as "en"|"es"|"ar"} t={inventoryLabels} today={businessToday} unavailable={!purchases}/>
     } variance={variance} items={items} starters={PANTRY_STARTERS.map(({key,name,category,baseUnit,packQuantity,packUnit})=>({key,name,category,baseUnit,packQuantity,packUnit}))}
       labels={Object.fromEntries(["title","search","all","coffee","milk","syrups","packaging","bakery","other","reviewNow","confirmed","add","packSize","packPrice","category","baseUnit","name","create","save","cancel","edit","estimate","confirm","usedIn","perUnit","priceUnknown","starterPack","chooseStarter","newIngredient","noItems","priceTitle","purchaseUnit","error","usageTitle","usagePeriod","usageExpected","usageActual","usageDifference","usageUnknown","usage_on_target","usage_watch","usage_over","usageMissing","usageRecord","usage_count","usage_purchase","usageIngredient","usageQuantity","usageUnit","usageDate","usageSaved","usageCountNote","usageShifts","usageExpectedOnly","usageStart","usageEnd","usageApply","usageStartCount","usageEndCount","usageCoverage","usageRecipeMissing","usageUnavailable","usageConnectToast","usageErrorInvalidQuantity","usageErrorInvalidUnit","usageErrorIngredientNotFound","usageErrorSaveFailed"].map(key=>[key,key==="title"?inventoryLabels.title:t.raw(key as never) as string]))} />
+    <InventoryModifierPanel data={modifierSetup} t={inventoryLabels} locale={locale as "en"|"es"|"ar"}/>
   </PageShell>;
 }
