@@ -113,7 +113,7 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
      provider==="square"?order.location_id:order.location_id??"csv";
    const scoped=scopedModifierId(provider,locationRef,key);
    const metadata={name:m.name??"",quantity:m.quantity??1,priceCents:m.priceCents??null,
-     parentPosModifierId:m.parentPosModifierId??null};
+     parentPosModifierId:m.parentPosModifierId?scopedModifierId(provider,locationRef,m.parentPosModifierId):null};
    if(scoped&&mappedMods.has(scoped))return {posModifierId:scoped,...metadata};
    const matches=optionRows.filter(a=>a.enabled&&
     ingredientById.get(a.ingredient_id)?.name.toLowerCase()===String(m.name??"").trim().toLowerCase());
