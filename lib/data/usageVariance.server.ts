@@ -5,7 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { packBaseQuantity, toBaseUnitQuantity, type BaseUnit, type RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
 import { calculateUsage, type UsageIngredient, type UsageRecipe, type UsageSale, type UsageCount, type UsagePurchase, type UsageStaff, type UsageRow } from "@/lib/calc/usageVariance";
-import {scopedToastModifierId,scopedToastModifierRecipes,sizedMilkReplacementQuantity} from "@/lib/calc/usageModifierResolution";
+import {scopedModifierId,scopedToastModifierRecipes,sizedMilkReplacementQuantity} from "@/lib/calc/usageModifierResolution";
 
 const iso=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>!Number.isNaN(Date.parse(s+"T00:00:00Z")));
 const readInput=z.strictObject({
@@ -54,7 +54,7 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
   i.id===input.ingredient||i.name.toLowerCase().includes(input.ingredient.toLowerCase()));
  const allIds=ingredients.map(i=>i.id),chosenIds=selected.map(i=>i.id);
  const [evidence,recipes,modifiers,addons,conversions,counts,purchases,sales] = await Promise.all([
-  db.rpc("pantry_usage_toast_evidence",{p_business_id:businessId,p_from:input.from,p_to:input.to}),
+  db.rpc("pantry_usage_sales_evidence",{p_business_id:businessId,p_from:input.from,p_to:input.to}),
   allRows((a,b)=>db.from("recipe_lines").select("menu_item_id,ingredient_id,quantity,menu_items!inner(business_id)")
    .eq("menu_items.business_id",businessId).order("menu_item_id").order("ingredient_id").range(a,b),8000),
   db.from("modifier_recipes").select("id,pos_modifier_id,name,ingredient_id,quantity_delta,replaces_ingredient_id").eq("business_id",businessId).limit(2000),
@@ -64,18 +64,17 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
   chosenIds.length?db.from("pantry_stock_counts").select("ingredient_id,count_date,quantity_base")
    .eq("business_id",businessId).in("ingredient_id",chosenIds).in("count_date",[input.to,new Date(Date.parse(input.from+"T12:00:00Z")-86400000).toISOString().slice(0,10)]):Promise.resolve({data:[],error:null}),
   chosenIds.length?allRows((a,b)=>db.from("pantry_stock_purchases").select("ingredient_id,purchase_date,quantity_base")
-    .eq("business_id",businessId).in("ingredient_id",chosenIds).gte("purchase_date",input.from).lte("purchase_date",input.to)
+    .eq("business_id",businessId).in("ingredient_id",chosenIds).gte("purchase_date",input.from).lte("purchase_date",input.to).is("voided_at",null)
     .order("id").range(a,b),8000):Promise.resolve([]),
   allRows((a,b)=>db.from("order_lines").select("id,menu_item_id,quantity,modifiers,voided,orders!inner(business_id,business_date,closed_at,pos_order_id,location_id)")
     .eq("orders.business_id",businessId).gte("orders.business_date",input.from).lte("orders.business_date",input.to)
-    .like("orders.pos_order_id","toast:%")
     .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
     .order("id").range(a,b),20000),
  ]);
  if(evidence.error||modifiers.error||addons.error||conversions.error||counts.error||!modifiers.data||!addons.data||!conversions.data||!counts.data)
   throw new Error("usage_data_unavailable");
  const e=evidence.data as {covered?:boolean;staff?:UsageStaff[];
-  modifierMappings?:Array<{restaurantGuid:string;posModifierId:string;recipeId:string}>}|null;
+  modifierMappings?:Array<{restaurantGuid?:string;locationRef?:string;provider?:"toast"|"square"|"csv";posModifierId:string;recipeId:string}>}|null;
  const mappedMods=scopedToastModifierRecipes(e?.modifierMappings??[],modifiers.data.map(m=>({
   id:m.id,ingredientId:m.ingredient_id,quantityDelta:Number(m.quantity_delta),
   replacesIngredientId:m.replaces_ingredient_id,posModifierId:m.pos_modifier_id
@@ -104,12 +103,18 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
   // an individual option GUID has no business-wide uniqueness guarantee.
   const restaurantGuid=order.pos_order_id.match(/^toast:([0-9a-f-]{36}):/i)?.[1]??null;
   const sizeRecipe=recipesByItem.get(s.menu_item_id??"")??[];
-  const savedMods=Array.isArray(s.modifiers)?s.modifiers as Array<{posModifierId?:string;name?:string}>:[];
+  const savedMods=Array.isArray(s.modifiers)?s.modifiers as Array<{posModifierId?:string;name?:string;quantity?:number;priceCents?:number|null;parentPosModifierId?:string|null}>:[];
   const optionRows=addonsByItem.get(s.menu_item_id??"")??[];
   const normalized=savedMods.map((m,index)=>{
    const key=String(m.posModifierId??"");
-   const scoped=scopedToastModifierId(restaurantGuid,key);
-   if(scoped&&mappedMods.has(scoped))return {posModifierId:scoped,name:m.name??""};
+   const provider=order.pos_order_id.startsWith("toast:")?"toast":
+     order.pos_order_id.startsWith("square:")?"square":"csv";
+   const locationRef=provider==="toast"?restaurantGuid:
+     provider==="square"?order.location_id:order.location_id??"csv";
+   const scoped=scopedModifierId(provider,locationRef,key);
+   const metadata={name:m.name??"",quantity:m.quantity??1,priceCents:m.priceCents??null,
+     parentPosModifierId:m.parentPosModifierId??null};
+   if(scoped&&mappedMods.has(scoped))return {posModifierId:scoped,...metadata};
    const matches=optionRows.filter(a=>a.enabled&&
     ingredientById.get(a.ingredient_id)?.name.toLowerCase()===String(m.name??"").trim().toLowerCase());
    if(matches.length===1){
@@ -130,11 +135,11 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
      const synthetic="addon:"+s.id+":"+index;
      mappedMods.set(synthetic,{posModifierId:synthetic,ingredientId:match.ingredient_id,
       quantityDelta:qty,replacesIngredientId:match.kind==="milk"?sourceMilkId:null});
-     return {posModifierId:synthetic,name:m.name??""};
+     return {posModifierId:synthetic,...metadata};
     }
    }
    // Do not accidentally match Toast modifiers with generic names across items.
-   return {posModifierId:key||"unmapped:"+s.id+":"+index,name:m.name??""};
+   return {posModifierId:key||"unmapped:"+s.id+":"+index,...metadata};
   });
   return {menuItemId:s.menu_item_id,quantity:Number(s.quantity),businessDate:order.business_date,
    closedAt:order.closed_at,locationId:order.location_id,modifiers:normalized};
@@ -148,7 +153,7 @@ export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{
  return {from:input.from,to:input.to,rows,groupBy:input.groupBy??null,
   missing:[...new Set(rows.flatMap(r=>r.missing))]};
 }
-/** Closing counts overwrite the same ingredient/date; purchases remain append-only. */
+/** Closing counts overwrite an ingredient/date; purchases use a stable line ID. */
 export async function saveUsageEntry(kind:"count"|"purchase",raw:unknown):Promise<{ok:true}|{ok:false;error:string}>{
  const parsed=stockInput.safeParse(raw);
  if(!parsed.success||kind==="purchase"&&parsed.data.quantity===0)return {ok:false,error:"invalid_quantity"};
@@ -164,11 +169,19 @@ export async function saveUsageEntry(kind:"count"|"purchase",raw:unknown):Promis
   if(inBase===null||!Number.isFinite(inBase)||inBase>1e9)return {ok:false,error:"invalid_unit"};
   const base={business_id:businessId,ingredient_id:ingredient.id,entered_quantity:parsed.data.quantity,
    entered_unit:parsed.data.unit,quantity_base:Math.round(inBase*10000)/10000};
-  const result=kind==="count"?await db.from("pantry_stock_counts").upsert({
-   ...base,count_date:parsed.data.date,updated_at:new Date().toISOString()
-  },{onConflict:"business_id,ingredient_id,count_date"}):
-  await db.from("pantry_stock_purchases").insert({...base,purchase_date:parsed.data.date});
-  if(result.error)return {ok:false,error:"save_failed"};
+  if(kind==="purchase"){
+   const {recordPurchases}=await import("@/lib/inventory/recordPurchases.server");
+   const result=await recordPurchases([{
+    lineId:crypto.randomUUID(),ingredientId:ingredient.id,date:parsed.data.date,
+    quantity:parsed.data.quantity,unit:parsed.data.unit,costCents:null
+   }],"manual",null);
+   if(!result[0]?.ok)return {ok:false,error:result[0]?.error??"save_failed"};
+  }else{
+   const result=await db.from("pantry_stock_counts").upsert({
+    ...base,count_date:parsed.data.date,updated_at:new Date().toISOString()
+   },{onConflict:"business_id,ingredient_id,count_date"});
+   if(result.error)return {ok:false,error:"save_failed"};
+  }
   return {ok:true};
  }catch{return {ok:false,error:"save_failed"};}
 }
