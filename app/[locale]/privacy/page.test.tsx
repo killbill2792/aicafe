@@ -27,7 +27,7 @@ describe("public draft privacy policy",()=>{
    state.locale=locale;
    // No authenticated session is supplied; page itself must be public.
    const html=renderToStaticMarkup(await PrivacyPage());
-   const t=dictionaries[locale].Privacy;
+   const t:Record<string,string>=dictionaries[locale].Privacy;
    expect((html.match(/<section\b/g)??[])).toHaveLength(7);
    expect(html).toContain(t.draftBanner);
    for(const key of ["whatWeCollect","toastSquare","aiProcessing","staffMessages","retention",
