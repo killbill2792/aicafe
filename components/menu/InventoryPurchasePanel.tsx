@@ -65,7 +65,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  const beginEdit=(r:PurchaseMonthLine)=>{
   setEditing(r.lineId);
   setEditDraft({lineId:r.lineId,ingredientId:r.ingredientId,date:r.date,
-    quantity:r.quantity,unit:r.unit,costCents:r.costCents,expectedUpdatedAt:r.updatedAt});
+    quantity:r.quantity,unit:r.unit,costCents:r.costCents,expectedRevision:r.revision});
  };
  const saveEdit=()=>{
   if(!editDraft)return;
