@@ -35,6 +35,7 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
     "source_csv","source_quickbooks","source_bank_feed","source_other",
     "modifierHeading","modifierExplain","modifierUnavailable","modifierEmpty",
     "modifierSuggested","modifierRecipe","modifierChoose","modifierConfirm",
+    "modifierCreate","modifierIngredient","modifierBaseQuantity","modifierReplaces","modifierNoReplacement",
     "proposalsHeading","proposalsUnavailable"];
   const inventoryLabels=Object.fromEntries(i18nKeys.map(key=>[key,inventoryText.raw(key as never) as string]));
 
