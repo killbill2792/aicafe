@@ -1825,7 +1825,9 @@
     "explainProrate": "prorated",
     "explainSubtract": "minus",
     "photoRequest": "Please review this purchase receipt photo.",
-    "clarifyFillError": "Enter a valid positive number and try again."
+    "clarifyFillError": "Enter a valid positive number and try again.",
+    "clarifyCountSummary": "The closing stock count for {item} is {amount} {unit}.",
+    "clarifyPurchaseSummary": "I purchased {amount} {unit} of {item} on {date}. Draft a purchase proposal for my approval; do not save stock yet."
   },
   "TeamRules": {
     "title": "Team rules & approvals",
