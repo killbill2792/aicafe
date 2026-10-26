@@ -1825,7 +1825,9 @@
     "explainProrate": "حصة نسبية",
     "explainSubtract": "ناقص",
     "photoRequest": "يرجى مراجعة صورة إيصال الشراء هذه.",
-    "clarifyFillError": "أدخل رقمًا موجبًا صالحًا ثم حاول مجددًا."
+    "clarifyFillError": "أدخل رقمًا موجبًا صالحًا ثم حاول مجددًا.",
+    "clarifyCountSummary": "الجرد الختامي لـ {item} هو {amount} {unit}.",
+    "clarifyPurchaseSummary": "اشتريت {amount} {unit} من {item} بتاريخ {date}. أعد اقتراح شراء للموافقة عليه، ولا تسجّل المخزون بعد."
   },
   "TeamRules": {
     "title": "قواعد الفريق والموافقات",
