@@ -1,13 +1,21 @@
 import "server-only";
 import {personFields,updatePersonFields,setPersonActiveInput} from "@/lib/calc/scheduling/scheduleValidators";
+import {normalizeStaffPhone} from "@/lib/calc/scheduling/staffPhone";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 
 async function writePerson(id:string|null,input:unknown){
- const p=id?updatePersonFields.safeParse({...((input&&typeof input==="object")?input as Record<string,unknown>:{}),id}):
-   personFields.safeParse(input);
- if(!p.success)return {ok:false as const,error:"invalid_input"};
  const owner=await requireSchedulingOwner();
  if(!owner)return {ok:false as const,error:"unauthorized"};
+ const raw=input&&typeof input==="object"?input as Record<string,unknown>:{};
+ const {data:location,error:locationError}=await owner.supabase.from("locations")
+   .select("country_code").eq("business_id",owner.businessId).order("name").limit(1).maybeSingle();
+ if(locationError)return {ok:false as const,error:"storage_unavailable"};
+ const phone=raw.phone===undefined||raw.phone===null||typeof raw.phone==="string"
+   ?normalizeStaffPhone(raw.phone as string|null|undefined,location?.country_code??null):raw.phone;
+ if(phone===undefined)return {ok:false as const,error:"invalid_phone"};
+ const values={...raw,phone};
+ const p=id?updatePersonFields.safeParse({...values,id}):personFields.safeParse(values);
+ if(!p.success)return {ok:false as const,error:"invalid_input"};
  const {data,error}=await owner.supabase.rpc("staff_write_person",{
   p_business_id:owner.businessId,p_id:id,p_payload:id?Object.fromEntries(Object.entries(p.data).filter(([key])=>key!=="id")):p.data
  });
@@ -16,9 +24,9 @@ async function writePerson(id:string|null,input:unknown){
 }
 export async function addPerson(raw:unknown){return writePerson(null,raw);}
 export async function updatePerson(raw:unknown){
- const p=updatePersonFields.safeParse(raw);
- if(!p.success)return {ok:false as const,error:"invalid_input"};
- const {id,...fields}=p.data;return writePerson(id,fields);
+ const id=raw&&typeof raw==="object"?(raw as {id?:unknown}).id:undefined;
+ if(typeof id!=="string")return {ok:false as const,error:"invalid_input"};
+ return writePerson(id,raw);
 }
 export async function setPersonActive(raw:unknown){
  const p=setPersonActiveInput.safeParse(raw);

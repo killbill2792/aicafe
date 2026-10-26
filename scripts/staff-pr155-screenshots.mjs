@@ -142,6 +142,58 @@ for(const [locale,width,height] of [["en",390,844],["en",1440,900],["ar",390,844
   await page.screenshot({path:join(output,"shift-after-"+locale+"-"+width+".png"),fullPage:true});
  } finally {await page.close();}
 }
+// PR I: exercise the genuine owner handoff panel with mocked READ-only
+// approved recipients in the development-only visual fixture. No messages or ledger writes.
+for(const locale of ["en","ar"]){
+ const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1,serviceWorkers:"block"});
+ page.on("pageerror",err=>errors.push(String(err)));
+ await page.route(/\/api\/staff\/schedule-delivery/,async route=>{
+  if(route.request().method()!=="GET")throw Error("visual fixture must not send or record");
+  const mock={source:{planRevisionId:"11111111-1111-4111-8111-111111111111"},week:"2026-10-26",
+   recipients:[
+    {id:"22222222-2222-4222-8222-222222222222",name:"María",phone:null,
+     optedIn:false,preferredChannel:"whatsapp",message:"Hola María,\nTu turno: 08:00–16:00.",
+     ledgerStatus:null,lastChannel:null,sentAt:null},
+    {id:"33333333-3333-4333-8333-333333333333",name:"Ahmed",phone:"+14155551234",
+     optedIn:false,preferredChannel:"whatsapp",message:"مرحبًا أحمد،\nمناوبتك: ٠٧:٠٠–١٤:٠٠.",
+     ledgerStatus:null,lastChannel:null,sentAt:null}
+   ]};
+  await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(mock)});
+ });
+ try{
+  await page.goto(base+"/"+locale+"/staff?fixture=1&sendFixture=1&week=2026-10-26",{waitUntil:"networkidle"});
+  const all=locale==="ar"?"نسخ جميع الرسائل":"Copy all messages";
+  const add=locale==="ar"?"إضافة رقم هاتف":"Add phone";
+  const consent=locale==="ar"?"تسجيل موافقة واتساب":"Record WhatsApp consent";
+  await page.getByRole("button",{name:all}).first().waitFor({state:"visible",timeout:15000});
+  await page.getByRole("link",{name:add}).first().waitFor({state:"visible",timeout:15000});
+  await page.getByRole("link",{name:consent}).first().waitFor({state:"visible",timeout:15000});
+  await page.screenshot({path:join(output,"send-panel-pr-i-"+locale+".png"),fullPage:true});
+ }finally{await page.close();}
+}
+
+// PR I signed-out owner journey: the draft policy and its sign-up link
+// must be visible in English and Arabic, not hidden behind authentication.
+for(const locale of ["en","ar"]){
+ const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1});
+ page.on("pageerror",err=>errors.push(String(err)));
+ try{
+  await page.goto(base+"/"+locale+"/privacy",{waitUntil:"networkidle"});
+  await page.locator("main section").first().waitFor({state:"visible",timeout:15000});
+  if(await page.locator("main section").count()!==7)
+   throw Error("PR I policy missing one of seven sections: "+locale);
+  if(await page.locator('p[role="status"]').count()<1)
+   throw Error("PR I policy draft banner missing: "+locale);
+  if(locale==="ar"&&await page.locator("html").getAttribute("dir")!=="rtl")
+   throw Error("Arabic privacy RTL missing");
+  await page.screenshot({path:join(output,"privacy-pr-i-"+locale+".png"),fullPage:true});
+  await page.goto(base+"/"+locale+"/signup",{waitUntil:"networkidle"});
+  const link=page.locator('a[href*="/privacy"]');
+  await link.first().waitFor({state:"visible",timeout:15000});
+  await page.screenshot({path:join(output,"signup-pr-i-"+locale+".png"),fullPage:true});
+ }finally{await page.close();}
+}
+
 await browser.close();
 if(errors.length)throw Error("Client runtime errors: "+errors.join("\n"));
 console.log("Captured Schedule/Team/Rules, Team person at 390/1440 and ar RTL, shift editing, 8 themes and es/ar.");
