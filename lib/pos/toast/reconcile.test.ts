@@ -400,3 +400,12 @@ it("discards a verdict for an older imported generation without overwriting the 
  expect(f.writes).toHaveLength(0);
  expect(f.calls).not.toContain("toast_certify_day_voids");
 });
+
+it("an accepted 202 without an Analytics report GUID stays pending without a provider error",async()=>{
+ const f=fakeDb(true);
+ mocked.requestDay.mockResolvedValue(null);
+ await reconcileToastDays(f.db,p,Date.now()+20000);
+ expect(f.item).toMatchObject({recon_state:"checked_internal",
+  internal_state:"matched",analytics_state:"pending",last_error_category:null});
+ expect(mocked.getDay).not.toHaveBeenCalled();
+});
