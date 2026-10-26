@@ -3224,6 +3224,11 @@
     "modifierRecipe": "Receta",
     "modifierChoose": "Elige una receta",
     "modifierConfirm": "Confirmar vínculo",
+    "modifierCreate": "Crear y vincular una receta nueva",
+    "modifierIngredient": "Ingrediente que se añade",
+    "modifierBaseQuantity": "Cantidad por opción (unidades base)",
+    "modifierReplaces": "Ingrediente al que sustituye, si corresponde",
+    "modifierNoReplacement": "No sustituye ningún ingrediente",
     "proposalsHeading": "Compras pendientes de aprobación",
     "proposalsUnavailable": "No se pueden cargar las propuestas de compra."
   },
