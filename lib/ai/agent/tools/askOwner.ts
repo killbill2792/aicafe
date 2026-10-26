@@ -2,9 +2,15 @@ import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 export const askOwnerSchema=z.strictObject({
  question:z.string().trim().min(1).max(200),
+ kind:z.enum(["choice","fill"]).optional(),
  options:z.array(z.strictObject({label:z.string().trim().min(1).max(60),
-   value:z.string().trim().min(1).max(100)})).min(2).max(4),
+   value:z.string().trim().min(1).max(100)})).max(4),
  allowOther:z.boolean(),
+ fields:z.array(z.strictObject({
+   key:z.string().min(1).max(90),label:z.string().trim().min(1).max(100),
+   inputType:z.literal("number"),units:z.array(z.string().min(1).max(20)).min(1).max(8),
+   defaultUnit:z.string().min(1).max(20)
+ })).max(2).optional(),
 });
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 export const askOwnerTools={ask_owner:{
@@ -15,9 +21,9 @@ export const askOwnerTools={ask_owner:{
   const state=ctx.resolveState;
   if(!state||state.asked)return {source:"ask_owner",period:null,missing:["alreadyAsked"],error:"askOwnerLimit"};
   if(input.kind==="fill"){
-    if(!input.fields.length||input.options.length||input.allowOther)
+    if(!input.fields?.length||input.options.length||input.allowOther)
       return {source:"ask_owner",period:null,missing:["invalidFields"],error:"invalidFillFields"};
-    const verified=input.fields.every(field=>{
+    const verified=input.fields!.every(field=>{
       const observed=state.usageMissing.get(field.key);
       return observed&&field.label.toLocaleLowerCase().includes(observed.name.toLocaleLowerCase())&&
         field.units.includes(field.defaultUnit)&&field.units.includes(observed.unit);
@@ -26,6 +32,7 @@ export const askOwnerTools={ask_owner:{
     state.asked=true;
     return {source:"ask_owner",period:null,missing:[],kind:"fill",question:input.question,fields:input.fields};
   }
+  if(input.fields?.length)return {source:"ask_owner",period:null,missing:["invalidChoiceFields"],error:"invalidChoiceFields"};
   if(input.options.length<2||!state.ambiguous.length)return {source:"ask_owner",period:null,missing:["noAmbiguity"],error:"noRecordedAmbiguity"};
   if(new Set(input.options.map(o=>o.label.trim().toLocaleLowerCase())).size!==input.options.length)
     return {source:"ask_owner",period:null,missing:["duplicateLabels"],error:"duplicateLabels"};
