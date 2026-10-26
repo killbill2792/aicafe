@@ -10,8 +10,8 @@ async function writePerson(id:string|null,input:unknown){
  const {data:location,error:locationError}=await owner.supabase.from("locations")
    .select("country_code").eq("business_id",owner.businessId).order("name").limit(1).maybeSingle();
  if(locationError)return {ok:false as const,error:"storage_unavailable"};
- const phone=typeof raw.phone==="string"||raw.phone===null?
-   normalizeStaffPhone(raw.phone,location?.country_code??null):raw.phone;
+ const phone=raw.phone===undefined||raw.phone===null||typeof raw.phone==="string"
+   ?normalizeStaffPhone(raw.phone as string|null|undefined,location?.country_code??null):raw.phone;
  if(phone===undefined)return {ok:false as const,error:"invalid_phone"};
  const values={...raw,phone};
  const p=id?updatePersonFields.safeParse({...values,id}):personFields.safeParse(values);

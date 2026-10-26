@@ -18,7 +18,7 @@ export default async function PrivacyPage() {
           <p className="text-[17px] leading-relaxed text-ink-muted">{t(`${key}Body`)}</p>
         </section>
       ))}
-    <Link href="/more" className="inline-flex min-h-12 items-center text-[17px] text-accent-text underline">{t("deleteLink")}</Link>
+    <Link href="/more/delete-account" className="inline-flex min-h-12 items-center text-[17px] text-accent-text underline">{t("deleteLink")}</Link>
     </PageShell>
   );
 }

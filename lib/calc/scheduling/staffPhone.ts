@@ -13,5 +13,13 @@ export function normalizeStaffPhone(value:string|null|undefined,country:string|n
  if(stripped.startsWith("00"))result="+"+stripped.slice(2);
  else if(stripped.startsWith("+"))result=stripped;
  else if(prefix)result="+"+(prefix==="1"&&stripped.startsWith("1")&&stripped.length===11?stripped:prefix+stripped);
- return result&&/^\+[1-9][0-9]{1,14}$/.test(result)?result:undefined;
+ return result&&/^\+[1-9][0-9]{1,14}$/.test(result)&&
+  (!result.startsWith("+1")||result.length===12)&&
+  (!result.startsWith("+34")||result.length===12)&&
+  (!result.startsWith("+52")||result.length===13)?result:undefined;
+}
+export function formatStaffPhonePreview(number:string):string{
+ if(/^\+1\d{10}$/.test(number))return `${number.slice(0,2)} ${number.slice(2,5)} ${number.slice(5,8)} ${number.slice(8)}`;
+ return number;
+
 }
