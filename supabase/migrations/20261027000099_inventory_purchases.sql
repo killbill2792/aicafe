@@ -53,14 +53,14 @@ drop policy if exists "owners write" on public.pantry_modifier_links;
 create policy "owners write" on public.pantry_modifier_links for insert to authenticated
  with check(exists(select 1 from public.memberships m where m.business_id=pantry_modifier_links.business_id
   and m.user_id=auth.uid() and m.role='owner')
-  and exists(select 1 from public.modifier_recipes r where r.id=modifier_recipe_id and r.business_id=business_id));
+  and exists(select 1 from public.modifier_recipes r where r.id=modifier_recipe_id and r.business_id=pantry_modifier_links.business_id));
 drop policy if exists "owners update" on public.pantry_modifier_links;
 create policy "owners update" on public.pantry_modifier_links for update to authenticated
  using(exists(select 1 from public.memberships m where m.business_id=pantry_modifier_links.business_id
   and m.user_id=auth.uid() and m.role='owner'))
  with check(exists(select 1 from public.memberships m where m.business_id=pantry_modifier_links.business_id
   and m.user_id=auth.uid() and m.role='owner')
-  and exists(select 1 from public.modifier_recipes r where r.id=modifier_recipe_id and r.business_id=business_id));
+  and exists(select 1 from public.modifier_recipes r where r.id=modifier_recipe_id and r.business_id=pantry_modifier_links.business_id));
 grant select,insert,update on public.pantry_modifier_links to authenticated;
 
 -- Canonical rollups represent sync/import evidence even for a day with zero sales.
