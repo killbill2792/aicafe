@@ -3229,6 +3229,8 @@
     "modifierBaseQuantity": "الكمية لكل خيار (الوحدة الأساسية)",
     "modifierReplaces": "المكوّن المستبدل إن وجد",
     "modifierNoReplacement": "لا يستبدل أي مكوّن",
+    "modifierLinked": "تم ربط هذا الخيار مسبقًا. حدّث صفحة المخزون.",
+    "modifierStale": "تغيّر هذا الخيار. حدّث صفحة المخزون وحاول مرة أخرى.",
     "proposalsHeading": "مشتريات بانتظار موافقتك",
     "proposalsUnavailable": "تعذر تحميل طلبات الموافقة على المشتريات."
   },
