@@ -363,3 +363,15 @@ describe("Analytics evidence durability and retriable official work",()=>{
   expect(f.item.warnings).not.toHaveProperty("analytics_timeout");
  });
 });
+
+it("reprobes a previously missing report after separate Analytics credentials recover",async()=>{
+ const f=fakeDb(true);
+ Object.assign(f.item,{recon_state:"mismatch",recon_source:"toast_analytics",
+  internal_state:"matched",analytics_state:"pending"});
+ f.setJob({report_request_guid:report,requested_at:new Date(Date.now()-49*3600000).toISOString(),state:"missing"});
+ mocked.requestDay.mockResolvedValue(report);
+ mocked.getDay.mockResolvedValue({pending:true});
+ await reconcileToastDays(f.db,p,Date.now()+20000);
+ expect(mocked.requestDay).toHaveBeenCalledTimes(1);
+ expect(f.item).toMatchObject({recon_state:"mismatch",analytics_state:"pending"});
+});
