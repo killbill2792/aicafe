@@ -47,6 +47,6 @@ jobs:
             echo "No changed JavaScript or TypeScript files."
           fi
       - name: Production build
-        run: npm run build
+        run: npm run build -- --webpack
       - name: Verify Git patch whitespace
         run: git diff --check origin/main...HEAD
