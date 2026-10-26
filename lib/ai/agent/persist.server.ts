@@ -93,7 +93,12 @@ export function agentReplyPayload(turn: AgentTurn) {
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
     ...experimentIds.map(proposalId=>({type:"experiment_card" as const,proposalId})),
     ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId})),
-    ...(clarify&&typeof clarify.question==="string"&&Array.isArray(clarify.options)?[{type:"clarify" as const,question:clarify.question,options:clarify.options as {label:string;value:string}[],allowOther:clarify.allowOther===true}]:[]),
+    ...(clarify&&typeof clarify.question==="string"&&clarify.kind==="fill"&&Array.isArray(clarify.fields)?
+     [{type:"clarify" as const,kind:"fill" as const,question:clarify.question,
+       fields:clarify.fields as {key:string;label:string;inputType:"number";units:string[];defaultUnit:string}[]}]:
+      clarify&&typeof clarify.question==="string"&&Array.isArray(clarify.options)?
+       [{type:"clarify" as const,question:clarify.question,
+         options:clarify.options as {label:string;value:string}[],allowOther:clarify.allowOther===true}]:[]),
     ...(safeExplain.length?[{type:"how" as const,lines:safeExplain}]:[])] };
   const annotations=turn.provenance??turn.unverified.map(item=>({...item,source:"unchecked" as const}));
   const unverified = annotations.flatMap(item => {

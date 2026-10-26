@@ -108,6 +108,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       chatUnavailableReason={chatReadiness.reason}
           chatCopy={{
         photoRequest:tChat("photoRequest"),
+        clarifyFillError:tChat("clarifyFillError"),
         clarifyOther:tChat("clarifyOther"),clarifySend:tChat("clarifySend"),
         clarifyYouChose:tChat("clarifyYouChose"),clarifySkipped:tChat("clarifySkipped"),
         clarifyOtherPlaceholder:tChat("clarifyOtherPlaceholder"),

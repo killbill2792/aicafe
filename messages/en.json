@@ -1824,7 +1824,8 @@
     "explainRatio": "ratio",
     "explainProrate": "prorated",
     "explainSubtract": "minus",
-    "photoRequest": "Please review this purchase receipt photo."
+    "photoRequest": "Please review this purchase receipt photo.",
+    "clarifyFillError": "Enter a valid positive number and try again."
   },
   "TeamRules": {
     "title": "Team rules & approvals",

@@ -1824,7 +1824,8 @@
     "explainRatio": "proporción",
     "explainProrate": "prorrateado",
     "explainSubtract": "menos",
-    "photoRequest": "Revisa esta foto de un recibo de compra."
+    "photoRequest": "Revisa esta foto de un recibo de compra.",
+    "clarifyFillError": "Introduce un número positivo válido e inténtalo de nuevo."
   },
   "TeamRules": {
     "title": "Reglas y aprobaciones del equipo",

@@ -1824,7 +1824,8 @@
     "explainRatio": "النسبة",
     "explainProrate": "حصة نسبية",
     "explainSubtract": "ناقص",
-    "photoRequest": "يرجى مراجعة صورة إيصال الشراء هذه."
+    "photoRequest": "يرجى مراجعة صورة إيصال الشراء هذه.",
+    "clarifyFillError": "أدخل رقمًا موجبًا صالحًا ثم حاول مجددًا."
   },
   "TeamRules": {
     "title": "قواعد الفريق والموافقات",
