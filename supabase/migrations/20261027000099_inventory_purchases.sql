@@ -17,6 +17,7 @@ create unique index if not exists pantry_purchases_expense_line_uidx
 create index if not exists pantry_purchases_active_month_idx
   on public.pantry_stock_purchases(business_id,purchase_date) where voided_at is null;
 alter table public.pantry_stock_purchases enable row level security;
+drop policy if exists "owners update" on public.pantry_stock_purchases;
 create policy "owners update" on public.pantry_stock_purchases for update to authenticated
  using (exists (select 1 from public.memberships m where m.business_id=pantry_stock_purchases.business_id
    and m.user_id=auth.uid() and m.role='owner'))
@@ -45,12 +46,15 @@ create table if not exists public.pantry_modifier_links (
  primary key(business_id,provider,location_ref,pos_modifier_id)
 );
 alter table public.pantry_modifier_links enable row level security;
+drop policy if exists "members read" on public.pantry_modifier_links;
 create policy "members read" on public.pantry_modifier_links for select to authenticated
  using(public.is_member(business_id));
+drop policy if exists "owners write" on public.pantry_modifier_links;
 create policy "owners write" on public.pantry_modifier_links for insert to authenticated
  with check(exists(select 1 from public.memberships m where m.business_id=pantry_modifier_links.business_id
   and m.user_id=auth.uid() and m.role='owner')
   and exists(select 1 from public.modifier_recipes r where r.id=modifier_recipe_id and r.business_id=business_id));
+drop policy if exists "owners update" on public.pantry_modifier_links;
 create policy "owners update" on public.pantry_modifier_links for update to authenticated
  using(exists(select 1 from public.memberships m where m.business_id=pantry_modifier_links.business_id
   and m.user_id=auth.uid() and m.role='owner'))
@@ -106,3 +110,36 @@ begin
 end $$;
 revoke all on function public.pantry_usage_sales_evidence(uuid,date,date) from public,anon,authenticated;
 grant execute on function public.pantry_usage_sales_evidence(uuid,date,date) to authenticated;
+
+-- Edit an inert purchase proposal with its own revision token, never after approval.
+create or replace function public.supervisor_edit_inventory_purchase(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
+ p_proposal_id uuid,p_revision integer,p_effect jsonb,p_effect_hash text
+) returns public.supervisor_proposals language plpgsql security definer set search_path=public as $$
+declare v_proposal public.supervisor_proposals%rowtype;
+begin
+ if current_user <> 'service_role' then
+  raise exception 'service role required' using errcode='42501';
+ end if;
+ if p_effect is null or jsonb_typeof(p_effect)<>'object'
+  or p_effect_hash !~ '^[a-f0-9]{64}$' then
+  raise exception 'invalid purchase effect';
+ end if;
+ select * into v_proposal from public.supervisor_proposals where id=p_proposal_id
+  and business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id
+  for update;
+ if not found or v_proposal.capability_id<>'maya.inventory_purchase.v1'
+  or v_proposal.status<>'draft' or v_proposal.revision<>p_revision then
+  raise exception 'purchase proposal changed' using errcode='40001';
+ end if;
+ update public.supervisor_proposals set
+  canonical_effect_payload=p_effect,effect_hash=p_effect_hash,revision=revision+1,
+  updated_at=now()
+ where id=p_proposal_id
+ returning * into v_proposal;
+ return v_proposal;
+end $$;
+revoke all on function public.supervisor_edit_inventory_purchase(uuid,uuid,uuid,uuid,integer,jsonb,text)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_edit_inventory_purchase(uuid,uuid,uuid,uuid,integer,jsonb,text)
+ to service_role;
