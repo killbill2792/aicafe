@@ -59,7 +59,7 @@ try{
   "create table supervisor_proposals(id uuid primary key,business_id uuid,owner_user_id uuid,thread_id uuid,capability_id text,status text,revision integer,canonical_effect_payload jsonb,effect_hash text,updated_at timestamptz)",
   "grant usage on schema public,auth to authenticated",
   "grant execute on function auth.uid() to authenticated",
-  "grant select on businesses,memberships,ingredients,modifier_recipes to authenticated",
+  "grant select on businesses,memberships,ingredients,modifier_recipes,ingredient_prices,expenses,expense_lines to authenticated",
   "alter table pantry_stock_purchases enable row level security",
   "create policy owners_insert on pantry_stock_purchases for insert to authenticated with check(exists(select 1 from memberships m where m.business_id=pantry_stock_purchases.business_id and m.user_id=auth.uid() and m.role='owner'))",
   "create policy members_select on pantry_stock_purchases for select to authenticated using(public.is_member(business_id))",
