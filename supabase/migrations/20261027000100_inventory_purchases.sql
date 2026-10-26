@@ -290,7 +290,7 @@ begin
   where m.business_id=p_business_id and m.user_id=auth.uid()
    and m.role='owner' and b.is_demo=false
  ) then raise exception 'owner required' using errcode='42501';end if;
- if p_group_id is null or p_line_id is null or p_line_index not between 0 and 99
+ if p_group_id is null or p_line_id is null or p_line_index is null or p_line_index not between 0 and 99
    or p_vendor is null or length(btrim(p_vendor)) not between 1 and 160
    or p_total_cents is null or p_total_cents <= 0 or p_total_cents > 900000000000000
    or p_cost_cents is null or p_cost_cents < 0
