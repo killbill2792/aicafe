@@ -110,6 +110,29 @@ SELECT pg_temp.assert(public.toast_enable_official_check('dddddddd-dddd-4ddd-8dd
  'valid separate Analytics credentials may enable official mode');
 SELECT pg_temp.assert((SELECT toast_check_mode='official' FROM public.toast_api_credentials
  WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'official mode persisted');
+-- A business-wide fallback is one transaction, not a mode change followed
+-- by a possibly failed credentials write.
+SELECT pg_temp.assert(public.toast_disable_official_check(
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','analytics_timeout'),
+ 'service downgrade succeeds');
+SELECT pg_temp.assert((SELECT toast_check_mode='internal' AND mode_reason='analytics_timeout'
+ FROM public.toast_api_credentials WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'fallback mode persisted');
+SELECT pg_temp.assert((SELECT verified_at IS NULL
+ FROM public.toast_analytics_credentials
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'fallback also invalidated verification atomically');
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT pg_temp.reject($q$SELECT public.toast_disable_official_check(
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','analytics_timeout')$q$);
+RESET ROLE;
+SELECT set_config('request.jwt.claim.role','service_role',true);
+UPDATE public.toast_analytics_credentials SET verified_at=now()
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+SELECT pg_temp.assert(public.toast_enable_official_check(
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'new independently verified credential can restore official mode');
 -- Restoring official access must retire suspended per-restaurant report GUIDs
 -- and their old timestamps in one transaction; healthy completed work is retained.
 INSERT INTO public.locations(id,business_id,name)
