@@ -24,6 +24,11 @@ create policy "owners update" on public.pantry_stock_purchases for update to aut
    and m.user_id=auth.uid() and m.role='owner'));
 grant select,insert,update on public.pantry_stock_purchases to authenticated;
 
+-- Index per scanned receipt row makes expense + stock retry-resumable.
+alter table public.expense_lines add column if not exists receipt_line_index integer;
+create unique index if not exists expense_lines_receipt_index_uidx
+ on public.expense_lines(expense_id,receipt_line_index);
+
 -- One price per stock line: retries never create multiple price-history entries.
 alter table public.ingredient_prices add column if not exists source_stock_line_id uuid;
 create unique index if not exists ingredient_prices_stock_line_uidx
