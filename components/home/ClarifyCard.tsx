@@ -5,7 +5,7 @@ import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import {parseOwnerDecimal} from "@/lib/calc/localeDecimal";
 import {saveUsageEntry} from "@/lib/actions/pantry";
 type Block=z.infer<typeof clarifyBlockSchema>;
-type Copy={clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string};
+type Copy={clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string};
 export default function ClarifyCard({block,locale,copy,state,choice,disabled,onSend}:{
  block:Block;locale:"en"|"es"|"ar";copy:Copy;state:"hidden"|"active"|"chosen"|"skipped";choice:string|null;
  disabled:boolean;onSend:(text:string)=>void;
