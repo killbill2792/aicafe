@@ -143,3 +143,124 @@ revoke all on function public.supervisor_edit_inventory_purchase(uuid,uuid,uuid,
  from public,anon,authenticated;
 grant execute on function public.supervisor_edit_inventory_purchase(uuid,uuid,uuid,uuid,integer,jsonb,text)
  to service_role;
+
+
+-- Save stock and its derived price atomically. Row-level owner authorization is
+-- repeated inside the RPC because SECURITY DEFINER must never trust a caller ID.
+-- New lines are idempotent; edits require the displayed updated_at CAS token.
+create or replace function public.pantry_write_purchase_line(
+ p_business_id uuid,p_line_id uuid,p_ingredient_id uuid,p_date date,
+ p_quantity numeric,p_unit text,p_base_quantity numeric,p_cost_cents bigint,
+ p_price_micros bigint,p_source text,p_source_ref text,p_expense_line_id uuid,
+ p_expected_updated_at timestamptz
+) returns timestamptz language plpgsql security definer set search_path=public as $$
+declare v_row public.pantry_stock_purchases%rowtype;v_time timestamptz;
+begin
+ if auth.uid() is null or not exists (
+  select 1 from public.memberships m join public.businesses b on b.id=m.business_id
+  where m.business_id=p_business_id and m.user_id=auth.uid()
+    and m.role='owner' and b.is_demo=false
+ ) then raise exception 'owner required' using errcode='42501';end if;
+ if p_business_id is null or p_line_id is null or p_ingredient_id is null or p_date is null
+  or p_quantity <= 0 or p_quantity > 1000000000
+  or p_base_quantity <= 0 or p_base_quantity > 1000000000
+  or p_unit is null or length(btrim(p_unit)) not between 1 and 40
+  or p_cost_cents < 0 or p_cost_cents > 900000000000000
+  or length(coalesce(p_source_ref,''))>200
+  or p_source not in ('manual','bulk','receipt_page','receipt_chat','chat_text','csv','quickbooks','bank_feed')
+  or (p_cost_cents>0 and (p_price_micros is null or p_price_micros<=0))
+  or (coalesce(p_cost_cents,0)=0 and p_price_micros is not null)
+  or not exists (select 1 from public.ingredients i
+    where i.id=p_ingredient_id and i.business_id=p_business_id)
+ then raise exception 'invalid purchase' using errcode='22023';end if;
+ if p_expense_line_id is not null and (
+  p_source not in ('receipt_page','receipt_chat') or
+  not exists (select 1 from public.expense_lines l
+    join public.expenses e on e.id=l.expense_id
+    where l.id=p_expense_line_id and e.business_id=p_business_id)
+ ) then raise exception 'invalid expense link' using errcode='42501';end if;
+ perform pg_advisory_xact_lock(hashtextextended(p_business_id::text||':'||p_line_id::text,47));
+ select * into v_row from public.pantry_stock_purchases
+  where business_id=p_business_id and line_id=p_line_id for update;
+ if found then
+  if v_row.voided_at is not null then
+   raise exception 'purchase voided' using errcode='40001';end if;
+  if p_expected_updated_at is null then
+   -- Retries are permitted only when all stored facts are identical.
+   if v_row.ingredient_id is distinct from p_ingredient_id
+    or v_row.purchase_date is distinct from p_date
+    or v_row.entered_quantity is distinct from p_quantity
+    or v_row.entered_unit is distinct from p_unit
+    or v_row.quantity_base is distinct from p_base_quantity
+    or v_row.cost_cents is distinct from p_cost_cents
+    or v_row.source is distinct from p_source
+    or v_row.source_ref is distinct from p_source_ref
+    or v_row.expense_line_id is distinct from p_expense_line_id
+    then raise exception 'purchase changed' using errcode='40001';end if;
+   return v_row.updated_at;
+  end if;
+  if v_row.updated_at is distinct from p_expected_updated_at
+   then raise exception 'stale purchase' using errcode='40001';end if;
+  v_time:=clock_timestamp();
+  update public.pantry_stock_purchases set
+   ingredient_id=p_ingredient_id,purchase_date=p_date,entered_quantity=p_quantity,
+   entered_unit=p_unit,quantity_base=p_base_quantity,cost_cents=p_cost_cents,
+   updated_at=v_time
+   where id=v_row.id;
+ else
+  if p_expected_updated_at is not null
+   then raise exception 'purchase missing' using errcode='40001';end if;
+  insert into public.pantry_stock_purchases(
+   business_id,line_id,ingredient_id,purchase_date,entered_quantity,entered_unit,
+   quantity_base,cost_cents,source,source_ref,expense_line_id
+  ) values(
+   p_business_id,p_line_id,p_ingredient_id,p_date,p_quantity,p_unit,
+   p_base_quantity,p_cost_cents,p_source,p_source_ref,p_expense_line_id
+  ) returning updated_at into v_time;
+ end if;
+ if p_price_micros is not null then
+  insert into public.ingredient_prices(
+   ingredient_id,effective_from,cost_per_base_unit_micros,source,
+   source_expense_line_id,source_stock_line_id
+  ) values(
+   p_ingredient_id,p_date,p_price_micros,
+   case when p_source in ('receipt_page','receipt_chat') then 'receipt' else 'manual' end,
+   p_expense_line_id,p_line_id
+  ) on conflict (source_stock_line_id) do update set
+   ingredient_id=excluded.ingredient_id,effective_from=excluded.effective_from,
+   cost_per_base_unit_micros=excluded.cost_per_base_unit_micros,
+   source=excluded.source,source_expense_line_id=excluded.source_expense_line_id;
+ else
+  delete from public.ingredient_prices where source_stock_line_id=p_line_id
+   and ingredient_id in (select id from public.ingredients where business_id=p_business_id);
+ end if;
+ return v_time;
+end $$;
+revoke all on function public.pantry_write_purchase_line(uuid,uuid,uuid,date,numeric,text,numeric,bigint,bigint,text,text,uuid,timestamptz)
+ from public,anon,authenticated;
+grant execute on function public.pantry_write_purchase_line(uuid,uuid,uuid,date,numeric,text,numeric,bigint,bigint,text,text,uuid,timestamptz)
+ to authenticated;
+
+-- A void removes its attributed price atomically and is idempotent.
+create or replace function public.pantry_void_purchase_line(p_business_id uuid,p_line_id uuid)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare v_row public.pantry_stock_purchases%rowtype;
+begin
+ if auth.uid() is null or not exists (
+  select 1 from public.memberships m join public.businesses b on b.id=m.business_id
+  where m.business_id=p_business_id and m.user_id=auth.uid()
+   and m.role='owner' and b.is_demo=false
+ ) then raise exception 'owner required' using errcode='42501';end if;
+ perform pg_advisory_xact_lock(hashtextextended(p_business_id::text||':'||p_line_id::text,47));
+ select * into v_row from public.pantry_stock_purchases
+  where business_id=p_business_id and line_id=p_line_id for update;
+ if not found then return false;end if;
+ if v_row.voided_at is not null then return true;end if;
+ update public.pantry_stock_purchases set voided_at=clock_timestamp(),updated_at=clock_timestamp()
+  where id=v_row.id;
+ delete from public.ingredient_prices where source_stock_line_id=p_line_id
+  and ingredient_id in (select id from public.ingredients where business_id=p_business_id);
+ return true;
+end $$;
+revoke all on function public.pantry_void_purchase_line(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.pantry_void_purchase_line(uuid,uuid) to authenticated;
