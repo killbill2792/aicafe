@@ -91,13 +91,24 @@ export async function saveReceiptExpense(params: {
   }));
   if(rows.length){
     const {error:linesError}=await supabase.from("expense_lines").upsert(rows,{
-      onConflict:"expense_id,receipt_line_index"
+      onConflict:"expense_id,receipt_line_index",ignoreDuplicates:true
     });
     if(linesError)return {ok:false,error:"Receipt saved but lines could not be saved. Try again."};
     const {data:savedLines,error:fetchError}=await supabase.from("expense_lines")
-      .select("id,receipt_line_index,quantity,unit,amount_cents,ingredient_id")
+      .select("id,receipt_line_index,description,quantity,unit,amount_cents,ingredient_id")
       .eq("expense_id",expense.id).not("receipt_line_index","is",null);
     if(fetchError||!savedLines)return {ok:false,error:"Receipt saved but stock lines could not be read. Try again."};
+    // A dedupe key may match a prior receipt. Never rewrite its expense lines
+    // or apply different stock facts to an existing expense without review.
+    if(savedLines.length!==rows.length||rows.some(expected=>{
+      const actual=savedLines.find(line=>line.receipt_line_index===expected.receipt_line_index);
+      return !actual||actual.description!==expected.description||
+        Number(actual.quantity)!==Number(expected.quantity)||
+        (actual.unit??null)!==(expected.unit??null)||
+        Number(actual.amount_cents)!==Number(expected.amount_cents)||
+        (actual.ingredient_id??null)!==(expected.ingredient_id??null);
+    }))return {ok:false,error:"This receipt was already saved with different lines. Review the existing expense."};
+
     const purchases:PurchaseLineInput[]=savedLines.flatMap(line=>{
       if(!line.ingredient_id||!line.quantity||Number(line.quantity)<=0)return [];
       return [{lineId:line.id,ingredientId:line.ingredient_id,date:spentOn,
