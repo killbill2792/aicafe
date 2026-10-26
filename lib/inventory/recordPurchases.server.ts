@@ -77,6 +77,11 @@ export async function recordPurchases(
     .eq("expenses.business_id",businessId).maybeSingle();
    if(expenseError||!expenseLine){results.push({lineId,ok:false,error:"invalid_expense_link"});continue;}
   }
+  // Never retry into a voided row: a retry must not resurrect removed stock.
+  const existing=await db.from("pantry_stock_purchases").select("voided_at")
+   .eq("business_id",businessId).eq("line_id",line.lineId).maybeSingle();
+  if(existing.error){results.push({lineId,ok:false,error:"save_failed"});continue;}
+  if(existing.data?.voided_at){results.push({lineId,ok:false,error:"purchase_voided"});continue;}
   const {error:purchaseError}=await db.from("pantry_stock_purchases").upsert({
    business_id:businessId,line_id:line.lineId,ingredient_id:line.ingredientId,
    purchase_date:line.date,entered_quantity:line.quantity,entered_unit:line.unit,
