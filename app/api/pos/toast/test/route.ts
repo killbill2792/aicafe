@@ -7,14 +7,7 @@ export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const json=(status:number,data:unknown)=>NextResponse.json(data,{status,headers:{"Cache-Control":"no-store"}});
 const expected=z.object({businessId:GUID}).strict();
-export function verificationFailure(previousVerified:boolean,category:string) {
-  // A temporary outage, rate-limit or timeout does not revoke access or erase past verification.
-  const transient=["unavailable","timeout","rate_limited","invalid_response"].includes(category);
-  return {state:transient?(previousVerified?"verified":"configured"):
-    ["missing_permissions","missing_scope_or_location"].includes(category)?"missing_permissions":
-    category==="unauthorized_location"?"configured":"needs_reconnect",
-    preserveVerification:transient};
-}
+import {verificationFailure} from "@/lib/pos/toast/verificationState";
 export async function POST(request:Request){
   if(process.env.TOAST_SETUP_ENABLED!=="true")return json(503,{error:"setup_disabled"});
   const body=expected.safeParse(await request.json().catch(()=>null));

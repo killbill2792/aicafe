@@ -6,7 +6,7 @@ import { exchangeCodeForToken, squareApiBaseUrl } from "@/lib/pos/square/oauth";
 import { encryptToken } from "@/lib/security/tokenCrypto";
 import { createSquareAdapter } from "@/lib/pos/square/adapter";
 import { syncPosData } from "@/lib/pos/sync";
-import { STATE_COOKIE } from "../connect/route";
+import {STATE_COOKIE} from "@/lib/pos/square/oauthState";
 
 /** Step 1 of onboarding, continued: Square redirects back here with a code (or an error). */
 export async function GET(request: Request) {
