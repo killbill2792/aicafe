@@ -1,14 +1,13 @@
 # PR G — Inventory, purchases, and drink consistency
 
-Status: implementation pending. Draft only; no merge or review-ready claim.
+Status: implementation in progress on draft PR #194. Transactional purchases, proposed chat purchases, Inventory history, per-line approvals, and source-scoped modifier linking are coded, but end-to-end DB/owner acceptance verification remains required.
 
 ## Integration
 
-This draft is stacked on PR F (#193), `feat/pr-f-chat-start-20261024`.
-After F merges, rebase on latest origin/main and preserve E/F Home and
-Supervisor changes, C clarification cards, and D CSV/experiment changes.
-Migration 20261027000097 is already occupied by PR E; re-check the next
-free number after the final rebase. Add exactly one additive, idempotent migration.
+PRs C/D/E/F/H are merged on main; PR G is now based directly on `main`.
+Keep all their prior Home, Chat, Supervisor and CSV changes when rebasing.
+PR I independently reserves migration 099. PR G therefore contains a single
+additive migration: `20261027000100_inventory_purchases.sql`. Re-check if main moves.
 Do not apply production migrations or merge this PR.
 
 Read AGENTS.md and docs/02-design-system.md before implementation.
