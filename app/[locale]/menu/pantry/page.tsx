@@ -23,17 +23,17 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
   const to=valid(params.to)?params.to!:businessToday;
   const start=usageWeekEnding(to).from;
   const month=params.month&&/^\d{4}-(0[1-9]|1[0-2])$/.test(params.month)?params.month:businessToday.slice(0,7);
+  const selectedIds=(params.proposals??"").split(",").filter(id=>/^[0-9a-f]{8}-[0-9a-f-]{27,}$/.test(id)).slice(0,100);
   const from=valid(params.from)&&params.from!<=to&&(Date.parse(to)-Date.parse(params.from!))/86400000<=30?params.from!:start; const [items,t,variance,purchases,inventoryText,locale,modifierSetup,pendingProposals]=await Promise.all([
     listPantry(),getTranslations("MenuBuilder"),readUsageVariance({from,to,groupBy:"shift"}).catch(()=>null),
     readPurchaseMonth(month).catch(()=>null),getTranslations("Inventory"),getLocale(),
-    readModifierSetup().catch(()=>null),readPendingInventoryProposals().catch(()=>null)
+    readModifierSetup().catch(()=>null),readPendingInventoryProposals(selectedIds).catch(()=>null)
   ]);
-  const selectedIds=(params.proposals??"").split(",").filter(id=>/^[0-9a-f]{8}-[0-9a-f-]{27,}$/.test(id)).slice(0,100);
   const selected=selectedIds.flatMap(id=>pendingProposals?.find(p=>p.id===id)?[pendingProposals.find(p=>p.id===id)!]:[]);
   const orderedProposals=selectedIds.length?selected:pendingProposals;
   const i18nKeys=["title","heading","month","photo","unavailable","empty","totals","bulk","csv","chooseFile",
     "date","item","quantity","unit","cost","optional","edit","void","save","cancel","remove","addLine",
-    "saveAll","none","import","failed","unknown","csvFailed","csvSaved","csvPartial",
+    "saveAll","none","import","failed","invalidCost","invalidQuantity","unknown","csvFailed","csvSaved","csvPartial",
     "source_manual","source_bulk","source_receipt_page","source_receipt_chat","source_chat_text",
     "source_csv","source_quickbooks","source_bank_feed","source_other",
     "modifierHeading","modifierExplain","modifierUnavailable","modifierEmpty",

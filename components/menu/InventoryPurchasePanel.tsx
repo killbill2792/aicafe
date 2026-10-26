@@ -168,7 +168,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
       <button type="button" disabled={pending} className={button} onClick={()=>beginEdit(r)}>{t.edit}</button>
       <button type="button" disabled={pending} className={button} onClick={()=>voidLine(r.lineId)}>{t.void}</button>
      </div>}
-    {errors[r.lineId]&&<p role="alert" className="text-[17px] text-neg">{t.failed}</p>}
+    {errors[r.lineId]&&<p role="alert" className="text-[17px] text-neg">{errors[r.lineId]==="invalid_cost"?t.invalidCost:errors[r.lineId]==="invalid_quantity"?t.invalidQuantity:t.failed}</p>}
    </div>)}
    {!!totals.length&&<div className="rounded-xl bg-surface2 p-3">
     <h3 className="mb-2 text-[17px] font-bold">{t.totals}</h3>
@@ -180,7 +180,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
    <h3 className="text-lg font-bold">{t.bulk}</h3>
    {drafts.map(d=><div key={d.lineId} className="rounded-xl border border-line p-3">
     {fields(d,patch=>update(d.lineId,patch))}
-    {errors[d.lineId]&&<p role="alert" className="text-[17px] text-neg">{t.failed}</p>}
+    {errors[d.lineId]&&<p role="alert" className="text-[17px] text-neg">{errors[d.lineId]==="invalid_cost"?t.invalidCost:errors[d.lineId]==="invalid_quantity"?t.invalidQuantity:t.failed}</p>}
     <button type="button" className={button+" mt-2"} onClick={()=>setDrafts(v=>v.filter(x=>x.lineId!==d.lineId))}>{t.remove}</button>
    </div>)}
    <div className="flex flex-wrap gap-2">

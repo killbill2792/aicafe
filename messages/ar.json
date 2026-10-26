@@ -3232,7 +3232,9 @@
     "modifierLinked": "تم ربط هذا الخيار مسبقًا. حدّث صفحة المخزون.",
     "modifierStale": "تغيّر هذا الخيار. حدّث صفحة المخزون وحاول مرة أخرى.",
     "proposalsHeading": "مشتريات بانتظار موافقتك",
-    "proposalsUnavailable": "تعذر تحميل طلبات الموافقة على المشتريات."
+    "proposalsUnavailable": "تعذر تحميل طلبات الموافقة على المشتريات.",
+    "invalidCost": "أدخل تكلفة صحيحة.",
+    "invalidQuantity": "أدخل كمية صحيحة."
   },
   "InventoryApprovalCard": {
     "pending": "جاهز للمراجعة",

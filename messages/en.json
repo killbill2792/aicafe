@@ -3232,7 +3232,9 @@
     "modifierLinked": "This option was linked already. Refresh Inventory.",
     "modifierStale": "This option changed. Refresh Inventory and try again.",
     "proposalsHeading": "Purchases waiting for your approval",
-    "proposalsUnavailable": "Could not load pending purchase cards."
+    "proposalsUnavailable": "Could not load pending purchase cards.",
+    "invalidCost": "Enter a valid cost.",
+    "invalidQuantity": "Enter a valid quantity."
   },
   "InventoryApprovalCard": {
     "pending": "Ready for review",

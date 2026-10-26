@@ -3232,7 +3232,9 @@
     "modifierLinked": "Esta opción ya está vinculada. Actualiza Inventario.",
     "modifierStale": "Esta opción cambió. Actualiza Inventario y vuelve a intentarlo.",
     "proposalsHeading": "Compras pendientes de aprobación",
-    "proposalsUnavailable": "No se pueden cargar las propuestas de compra."
+    "proposalsUnavailable": "No se pueden cargar las propuestas de compra.",
+    "invalidCost": "Introduce un costo válido.",
+    "invalidQuantity": "Introduce una cantidad válida."
   },
   "InventoryApprovalCard": {
     "pending": "Listo para revisar",
