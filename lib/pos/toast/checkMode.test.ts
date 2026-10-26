@@ -20,9 +20,15 @@ function fixture(){
   state:string;requested_at:string};
  const days:Day[]=[],jobs:Job[]=[];
  const db={
-  async rpc(name:string,args:{p_business_id:string}){
-   if(name!=="toast_enable_official_check")throw Error("unexpected RPC");
+  async rpc(name:string,args:{p_business_id:string;p_reason?:string}){
    const b=args.p_business_id;
+   if(name==="toast_disable_official_check"){
+    Object.assign(modes[b],{toast_check_mode:"internal",mode_reason:args.p_reason,
+     mode_checked_at:new Date().toISOString()});
+    if(analytics[b])analytics[b].verified_at=null;
+    return {data:true,error:null};
+   }
+   if(name!=="toast_enable_official_check")throw Error("unexpected RPC");
    if(!analytics[b]?.verified_at)return {data:false,error:null};
    const wasInternal=modes[b].toast_check_mode==="internal";
    Object.assign(modes[b],{toast_check_mode:"official",mode_reason:"ok",
@@ -128,4 +134,13 @@ it("a routine official probe does not restart a healthy pending report",async()=
  await setToastCheckMode(f.db,"A","official","ok");
  expect(f.jobs).toHaveLength(1);
  expect(f.days[0].last_recon_attempt_at).toBe("2026-10-20T12:00:00Z");
+});
+
+it("downgrades mode and credential verification together for one café",async()=>{
+ const f=fixture();
+ await setToastCheckMode(f.db,"B","internal","analytics_timeout");
+ expect(f.modes.B).toMatchObject({
+  toast_check_mode:"internal",mode_reason:"analytics_timeout"});
+ expect(f.analytics.B.verified_at).toBeNull();
+ expect(f.modes.A.toast_check_mode).toBe("internal");
 });
