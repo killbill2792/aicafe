@@ -5,7 +5,7 @@ import {revalidatePath} from "next/cache";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {recordPurchases,type PurchaseLineInput,type PurchaseResult} from "@/lib/inventory/recordPurchases.server";
-import {detectCsvColumns,toDateStr,toCents,isValidCalendarDate} from "@/lib/pos/csv/csvUtils";
+import {detectCsvColumns,toDateStr,toCents} from "@/lib/pos/csv/csvUtils";
 
 async function ownerScope(){
  const db=await createServerSupabaseClient();
