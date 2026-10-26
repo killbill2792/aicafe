@@ -17,6 +17,7 @@ import { activeOwnerQuestionMessageId, clarifyCardState, beginOptimisticOwner, s
 import { ChatMarkdown, SourceLegend } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
 import SupervisorProposalCard from "./SupervisorProposalCard";
+import InventoryApproveAll from "./InventoryApproveAll";
 import MemoryCard from "./MemoryCard";
 import ClarifyCard from "./ClarifyCard";
 import HowIGotThis from "./HowIGotThis";
@@ -140,6 +141,7 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, 
     <p className="whitespace-pre-wrap break-words">{message.text}</p>
   </article>;
   const originalBlocks=message.blocks??[];
+  const proposalIds=originalBlocks.flatMap(block=>record(block)&&block.type==="proposal_card"&&typeof block.proposalId==="string"?[block.proposalId]:[]);
   const groups=groupReplyBlocks(originalBlocks);
   const rawMetadata=message.grounding?.agentMetadata;
   const metadata=record(rawMetadata)?rawMetadata:null;
@@ -157,6 +159,7 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, 
       {copy.supervisor}
     </div>
     <div className="w-full space-y-3 ps-1">
+      {proposalIds.length>1&&<InventoryApproveAll threadId={message.threadId} ids={proposalIds} locale={locale}/>}
       {groups.map((group,i)=>{
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
