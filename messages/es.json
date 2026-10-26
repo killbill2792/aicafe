@@ -3213,7 +3213,15 @@
     "source_csv": "CSV",
     "source_quickbooks": "QuickBooks",
     "source_bank_feed": "Banco",
-    "source_other": "Otro"
+    "source_other": "Otro",
+    "modifierHeading": "Vincular opciones a recetas",
+    "modifierExplain": "Solo las relaciones confirmadas afectan el consumo. Revisa el ingrediente y la cantidad antes de guardar.",
+    "modifierUnavailable": "No se pueden cargar las opciones.",
+    "modifierEmpty": "No hay opciones sin vincular.",
+    "modifierSuggested": "Sugerencia (sin guardar)",
+    "modifierRecipe": "Receta",
+    "modifierChoose": "Elige una receta",
+    "modifierConfirm": "Confirmar vínculo"
   },
   "InventoryApprovalCard": {
     "pending": "Listo para revisar",
