@@ -36,7 +36,7 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
        }
        onSend(values.map(v=>{
          const amount=new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(v.quantity!);
-         const match=v.f.key.match(/^(endCount|purchase):[0-9a-f-]{36}:(\\d{4}-\\d{2}-\\d{2})$/i);
+         const match=v.f.key.match(/^(endCount|purchase):[0-9a-f-]{36}:(\d{4}-\d{2}-\d{2})$/i);
          return match?.[1]==="purchase"
           ?("I purchased "+amount+" "+v.unit+" of "+v.f.label+" on "+match[2]+
             ". Please draft a purchase proposal for my approval; do not save stock yet.")
