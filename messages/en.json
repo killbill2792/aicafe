@@ -3242,6 +3242,9 @@
     "retry": "Try again",
     "approve": "Approve",
     "edit": "Edit",
-    "skip": "Skip"
+    "skip": "Skip",
+    "approveAll": "Approve all matched purchases",
+    "approveAllDone": "Recorded {saved} purchases.",
+    "approveAllPartial": "Recorded {saved} purchases; {failed} still need review."
   }
 }
