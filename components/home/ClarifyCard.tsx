@@ -22,7 +22,7 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
      if(disabled||busy)return;
      const values=block.fields.map(f=>({f,quantity:parseOwnerDecimal(amounts[f.key]??"",locale),
        unit:selectedUnits[f.key]??f.defaultUnit}));
-     if(values.some(v=>v.quantity===null||v.quantity<=0)){setFailure(true);return;}
+     if(values.some(v=>v.quantity===null||v.quantity<0||v.f.key.startsWith("purchase:")&&v.quantity===0)){setFailure(true);return;}
      setBusy(true);setFailure(false);
      try{
        for(const entry of values){
