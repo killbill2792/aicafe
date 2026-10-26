@@ -12,7 +12,7 @@ const ID2="44444444-4444-4444-8444-444444444444";
 const line=(id:string):PurchaseLineInput=>({lineId:id,ingredientId:INGREDIENT,
  date:"2026-10-25",quantity:4,unit:"gal",costCents:2199});
 function fakeDb(role="owner",is_demo=false){
- const rpc=vi.fn(async()=>({error:null}));
+ const rpc=vi.fn(async(_name:string,_args:Record<string,unknown>):Promise<{error:{code:string}|null}>=>({error:null}));
  const from=vi.fn((table:string)=>{
   if(table==="memberships")return {select:()=>({eq:()=>({eq:()=>({
     maybeSingle:async()=>({data:{role,businesses:{is_demo}},error:null})
