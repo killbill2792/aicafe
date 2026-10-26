@@ -14,7 +14,7 @@ export interface PurchaseSourceAdapter<T> {
 }
 export type PurchaseLineInput={
   lineId:string;ingredientId:string|null;date:string;quantity:number;unit:string;
-  costCents:number|null;expenseLineId?:string|null;expectedRevision?:string|null;
+  costCents:number|null;expenseLineId?:string|null;expectedRevision?:number|null;
   receipt?:{groupId:string|null;index:number|null;vendor:string|null;totalCents:number|null;name:string};
 };
 export type PurchaseResult={lineId:string;ok:boolean;error?:string};
