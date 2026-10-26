@@ -34,8 +34,14 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
            if(!result.ok)throw Error("save_failed");
          }
        }
-       onSend(values.map(v=>v.f.label+": "+
-         new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(v.quantity!)+" "+v.unit).join("; "));
+       onSend(values.map(v=>{
+         const amount=new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(v.quantity!);
+         const match=v.f.key.match(/^(endCount|purchase):[0-9a-f-]{36}:(\\d{4}-\\d{2}-\\d{2})$/i);
+         return match?.[1]==="purchase"
+          ?("I purchased "+amount+" "+v.unit+" of "+v.f.label+" on "+match[2]+
+            ". Please draft a purchase proposal for my approval; do not save stock yet.")
+          :("The closing stock count for "+v.f.label+" is "+amount+" "+v.unit);
+       }).join("; "));
      }catch{setFailure(true);}finally{setBusy(false);}
    };
    return <section dir={locale==="ar"?"rtl":"ltr"} className="space-y-3 rounded-2xl border border-line bg-surface p-3">
