@@ -142,6 +142,28 @@ for(const [locale,width,height] of [["en",390,844],["en",1440,900],["ar",390,844
   await page.screenshot({path:join(output,"shift-after-"+locale+"-"+width+".png"),fullPage:true});
  } finally {await page.close();}
 }
+// PR I signed-out owner journey: the draft policy and its sign-up link
+// must be visible in English and Arabic, not hidden behind authentication.
+for(const locale of ["en","ar"]){
+ const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1});
+ page.on("pageerror",err=>errors.push(String(err)));
+ try{
+  await page.goto(base+"/"+locale+"/privacy",{waitUntil:"networkidle"});
+  await page.locator("main section").first().waitFor({state:"visible",timeout:15000});
+  if(await page.locator("main section").count()!==7)
+   throw Error("PR I policy missing one of seven sections: "+locale);
+  if(await page.locator('p[role="status"]').count()<1)
+   throw Error("PR I policy draft banner missing: "+locale);
+  if(locale==="ar"&&await page.locator("html").getAttribute("dir")!=="rtl")
+   throw Error("Arabic privacy RTL missing");
+  await page.screenshot({path:join(output,"privacy-pr-i-"+locale+".png"),fullPage:true});
+  await page.goto(base+"/"+locale+"/signup",{waitUntil:"networkidle"});
+  const link=page.locator('a[href*="/privacy"]');
+  await link.first().waitFor({state:"visible",timeout:15000});
+  await page.screenshot({path:join(output,"signup-pr-i-"+locale+".png"),fullPage:true});
+ }finally{await page.close();}
+}
+
 await browser.close();
 if(errors.length)throw Error("Client runtime errors: "+errors.join("\n"));
 console.log("Captured Schedule/Team/Rules, Team person at 390/1440 and ar RTL, shift editing, 8 themes and es/ar.");
