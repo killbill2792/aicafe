@@ -16,7 +16,7 @@ export const purchaseToolInput=z.strictObject({
 });
 export const purchasesTools={propose_purchases:{
  agentId:"maya" as const,schema:purchaseToolInput,
- description:"When an owner says they bought stock or sends a purchase receipt, draft separate inert inventory purchase proposals, one per item. Use owner-given quantity, unit, date, and cost only; omit unknown cost as null. Find a real matching ingredient UUID from read tools, or pass null and name for a New item needing review. Never record the purchases until the owner approves each line.",
+ description:"When an owner says they bought stock or sends a purchase receipt, draft separate inert inventory purchase proposals, one per item. Use owner-given quantity, unit, date, and cost only; omit unknown cost as null. Find a real matching ingredient UUID from read tools, or pass null and name for a New item needing review. For receipt_chat, include the receipt vendor and exact printed receipt total in integer cents when legible; otherwise use null and the owner must complete them in the approval card. For chat_text, set receiptVendor and receiptTotalCents to null. Never estimate taxes, gratuities or missing totals, and never record stock or an expense until the owner approves each line.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const input=purchaseToolInput.parse(raw);
   if(!ctx.proposals?.proposePurchases)
