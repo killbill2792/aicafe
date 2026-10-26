@@ -51,6 +51,26 @@ describe("single transactional purchase path",()=>{
    {lineId:ID2,ok:true}]);
   expect(rpc.mock.calls.map(c=>c[1].p_line_id)).toEqual([ID1,ID2]);
  });
+ it("requires reviewed receipt details and commits one linked expense-line transaction per approval",async()=>{
+  const {db,rpc}=fakeDb();
+  vi.mocked(createServerSupabaseClient).mockResolvedValue(db as never);
+  const missing=await recordPurchases([{...line(ID1),receipt:{
+   groupId:ID2,index:0,vendor:null,totalCents:null,name:"Milk"
+  }}],"receipt_chat",ID2);
+  expect(missing).toEqual([{lineId:ID1,ok:false,error:"receipt_details_missing"}]);
+  expect(rpc).not.toHaveBeenCalled();
+  const good=await recordPurchases([{...line(ID1),receipt:{
+   groupId:ID2,index:0,vendor:"Market",totalCents:2199,name:"Milk"
+  }}],"receipt_chat",ID2);
+  expect(good).toEqual([{lineId:ID1,ok:true}]);
+  expect(rpc).toHaveBeenCalledTimes(1);
+  expect(rpc).toHaveBeenCalledWith("pantry_write_receipt_chat_line",
+   expect.objectContaining({p_group_id:ID2,p_line_index:0,p_vendor:"Market",
+    p_total_cents:2199,p_cost_cents:2199,p_name:"Milk",p_dedupe_key:expect.any(String)}));
+  const normal=await recordPurchases([line(ID1)],"manual",null);
+  expect(normal[0].ok).toBe(true);
+  expect(rpc.mock.calls[1][0]).toBe("pantry_write_purchase_line");
+ });
  it("rejects demo and non-owner requests before writing stock",async()=>{
   for(const [role,demo] of [["owner",true],["member",false]] as const){
    const {db,rpc}=fakeDb(role,demo);
