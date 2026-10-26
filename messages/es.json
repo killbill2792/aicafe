@@ -3242,6 +3242,9 @@
     "retry": "Reintentar",
     "approve": "Aprobar",
     "edit": "Editar",
-    "skip": "Omitir"
+    "skip": "Omitir",
+    "approveAll": "Aprobar todas las compras vinculadas",
+    "approveAllDone": "Se registraron {saved} compras.",
+    "approveAllPartial": "Se registraron {saved} compras; faltan revisar {failed}."
   }
 }
