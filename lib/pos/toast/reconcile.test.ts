@@ -472,3 +472,33 @@ it("escalates cross-day payment recovery at its original deadline even after rei
  expect(f.calls).not.toContain("toast_queue_backfill");
  expect(f.certifiedVoids).toBe(false);
 });
+
+describe("recovered Analytics pending reports",()=>{
+ it("202 acceptance retires a 503 error without hiding an established mismatch",async()=>{
+  const f=fakeDb(true);
+  Object.assign(f.item,{recon_state:"mismatch",recon_source:"toast_analytics",
+   internal_state:"matched",analytics_state:"pending",last_error_category:"unavailable",
+   warnings:{reconciliation_mismatch:1,analytics_timeout:1}});
+  mocked.requestDay.mockResolvedValue(null);
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item).toMatchObject({recon_state:"mismatch",recon_source:"toast_analytics",
+   analytics_state:"pending",last_error_category:null});
+  expect(f.item.warnings).toHaveProperty("reconciliation_mismatch",1);
+  expect(f.item.warnings).not.toHaveProperty("analytics_timeout");
+  expect(f.certifiedVoids).toBe(false);
+ });
+ it("polling a pending report retires a 429 error but preserves prior ERA mismatch",async()=>{
+  const f=fakeDb(true);
+  Object.assign(f.item,{recon_state:"mismatch",recon_source:"toast_analytics",
+   internal_state:"matched",last_error_category:"rate_limited",
+   warnings:{reconciliation_mismatch:1}});
+  f.setJob({state:"pending",report_request_guid:report,
+   requested_at:new Date(Date.now()-3600000).toISOString()});
+  mocked.getDay.mockResolvedValue({pending:true});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.requestDay).not.toHaveBeenCalled();
+  expect(f.item).toMatchObject({recon_state:"mismatch",recon_source:"toast_analytics",
+   analytics_state:"pending",last_error_category:null});
+  expect(f.item.warnings).toHaveProperty("reconciliation_mismatch",1);
+ });
+});
