@@ -37,10 +37,9 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
        onSend(values.map(v=>{
          const amount=new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(v.quantity!);
          const match=v.f.key.match(/^(endCount|purchase):[0-9a-f-]{36}:(\d{4}-\d{2}-\d{2})$/i);
-         return match?.[1]==="purchase"
-          ?("I purchased "+amount+" "+v.unit+" of "+v.f.label+" on "+match[2]+
-            ". Please draft a purchase proposal for my approval; do not save stock yet.")
-          :("The closing stock count for "+v.f.label+" is "+amount+" "+v.unit);
+         const template=match?.[1]==="purchase"?copy.clarifyPurchaseSummary:copy.clarifyCountSummary;
+         return template.replace("{item}",v.f.label).replace("{amount}",amount)
+           .replace("{unit}",v.unit).replace("{date}",match?.[2]??"");
        }).join("; "));
      }catch{setFailure(true);}finally{setBusy(false);}
    };
