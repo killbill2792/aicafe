@@ -272,6 +272,12 @@ revoke all on function public.pantry_void_purchase_line(uuid,uuid) from public,a
 grant execute on function public.pantry_void_purchase_line(uuid,uuid) to authenticated;
 
 
+-- Bind one owner-uploaded chat receipt to exactly one expense across independently
+-- approved lines; a stale line with a different total/date must fail closed.
+alter table public.expenses add column if not exists chat_receipt_group_id uuid;
+create unique index if not exists expenses_chat_receipt_group_uidx
+ on public.expenses(business_id,chat_receipt_group_id) where chat_receipt_group_id is not null;
+
 -- Receipt chat: create ONE expense for the owner-reviewed receipt total, then
 -- the approved expense line and canonical stock+price in the SAME transaction.
 -- Unapproved siblings create no stock or price; their later approvals resume
@@ -299,11 +305,12 @@ begin
  then raise exception 'receipt information required' using errcode='22023';end if;
  -- Same logical receipt is serialized BEFORE expense-line or stock locks.
  -- The expense dedupe key also detects a receipt recorded on the page.
+ perform pg_advisory_xact_lock(hashtextextended(p_business_id::text||':receipt-group:'||p_group_id::text,52));
  perform pg_advisory_xact_lock(hashtextextended(p_business_id::text||':receipt:'||p_dedupe_key,53));
  insert into public.expenses(
-  business_id,spent_on,amount_cents,vendor,category_code,source,status,dedupe_key
+  business_id,spent_on,amount_cents,vendor,category_code,source,status,dedupe_key,chat_receipt_group_id
  ) values (
-  p_business_id,p_date,p_total_cents,p_vendor,'ingredients','receipt','actual',p_dedupe_key
+  p_business_id,p_date,p_total_cents,p_vendor,'ingredients','receipt','actual',p_dedupe_key,p_group_id
  ) on conflict(business_id,dedupe_key) do nothing returning id into v_expense_id;
  if v_expense_id is null then
   select * into v_expense from public.expenses
@@ -313,6 +320,11 @@ begin
    or v_expense.spent_on is distinct from p_date
    or lower(btrim(coalesce(v_expense.vendor,'')))<>lower(btrim(p_vendor))
     then raise exception 'receipt changed' using errcode='40001';end if;
+  if v_expense.chat_receipt_group_id is not null
+    and v_expense.chat_receipt_group_id <> p_group_id then
+    raise exception 'receipt already assigned elsewhere' using errcode='40001';end if;
+  update public.expenses set chat_receipt_group_id=p_group_id
+   where id=v_expense.id and chat_receipt_group_id is null;
   v_expense_id:=v_expense.id;
  end if;
  if exists(select 1 from public.expense_lines
