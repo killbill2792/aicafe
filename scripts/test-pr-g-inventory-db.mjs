@@ -81,7 +81,7 @@ try{
   assert.equal((await db.query("select count(*)::int n from ingredient_prices where source_stock_line_id=$1",[LINE])).rows[0].n,1);
   await reject(w,stock(LINE,700,700000),"40001");
   await reject(w,[A,LINE,FOREIGN,...stock().slice(3)],"22023");
-  await reject(w,stock(LINE,500,500000,"2026-10-25","2000-01-01T00:00:00Z"),"40001");
+  await reject(w,stock(LINE,500,500000,"2026-10-25",99),"40001");
   await db.query(w,stock(LINE,600,600000,"2026-10-25",first.rows[0].value));
   assert.equal((await db.query("select cost_cents from pantry_stock_purchases where line_id=$1",[LINE])).rows[0].cost_cents,"600");
   await db.query(call("pantry_void_purchase_line",2),[A,LINE]);
