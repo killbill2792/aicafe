@@ -51,6 +51,13 @@ function fakeDb(analytics:boolean){
      return {error:null};
     },
     async maybeSingle(){
+     if(table==="toast_day_status"&&patch){
+      // PostgREST UPDATE ... WHERE imported_at=... RETURNING must reject
+      // stale reconciliation work after a newer canonical import.
+      if(filters.imported_at!==item.imported_at)return {data:null,error:null};
+      writes.push(patch);Object.assign(item,patch);
+      return {data:{business_date:item.business_date},error:null};
+     }
      if(table==="toast_analytics_credentials")
       return {data:analytics?{business_id:business,verified_at:"2026-10-17"}:null,error:null};
      if(table==="toast_analytics_jobs")return {data:job,error:null};
@@ -374,4 +381,22 @@ it("reprobes a previously missing report after separate Analytics credentials re
  await reconcileToastDays(f.db,p,Date.now()+20000);
  expect(mocked.requestDay).toHaveBeenCalledTimes(1);
  expect(f.item).toMatchObject({recon_state:"mismatch",analytics_state:"pending"});
+});
+
+it("discards a verdict for an older imported generation without overwriting the new one",async()=>{
+ const f=fakeDb(false);
+ const later="2026-10-19T12:00:00Z";
+ mocked.request.mockImplementation(async(path:string)=>{
+  if(path.includes("paidBusinessDate")){
+   f.item.imported_at=later;
+   return [payment];
+  }
+  return orderWithAutoGratAndGiftCard();
+ });
+ await reconcileToastDays(f.db,p,Date.now()+20000);
+ expect(f.item.imported_at).toBe(later);
+ expect(f.item.recon_state).toBe("pending");
+ expect(f.item).not.toHaveProperty("last_error_category");
+ expect(f.writes).toHaveLength(0);
+ expect(f.calls).not.toContain("toast_certify_day_voids");
 });
