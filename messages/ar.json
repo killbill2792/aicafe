@@ -3221,7 +3221,9 @@
     "modifierSuggested": "اقتراح لم يُحفظ بعد",
     "modifierRecipe": "الوصفة",
     "modifierChoose": "اختر وصفة",
-    "modifierConfirm": "تأكيد الربط"
+    "modifierConfirm": "تأكيد الربط",
+    "proposalsHeading": "مشتريات بانتظار موافقتك",
+    "proposalsUnavailable": "تعذر تحميل طلبات الموافقة على المشتريات."
   },
   "InventoryApprovalCard": {
     "pending": "جاهز للمراجعة",
