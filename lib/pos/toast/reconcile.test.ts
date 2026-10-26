@@ -413,7 +413,7 @@ it("discards a verdict for an older imported generation without overwriting the 
  await reconcileToastDays(f.db,p,Date.now()+20000);
  expect(f.item.imported_at).toBe(later);
  expect(f.item.recon_state).toBe("pending");
- expect(f.item).not.toHaveProperty("last_error_category");
+ expect(f.item.last_error_category).toBeNull();
  expect(f.writes).toHaveLength(0);
  expect(f.calls).not.toContain("toast_certify_day_voids");
 });

@@ -29,6 +29,9 @@ export async function detectToastCheckMode(db:SupabaseClient,businessId:string,
  const {data:cred,error}=await db.from("toast_analytics_credentials").select("business_id,verified_at")
   .eq("business_id",businessId).maybeSingle();
  if(error)throw new ToastApiError("unavailable");
+ // Capture BEFORE the asynchronous probe; a re-verified credential has a
+ // different generation and must survive this provider request's failure.
+ const usedVerification=cred?.verified_at??null;
  if(!cred){await setToastCheckMode(db,businessId,"internal","no_analytics_credentials");return "internal";}
  const {data:mode,error:me}=await db.from("toast_api_credentials")
   .select("toast_check_mode,mode_checked_at").eq("business_id",businessId).single();
@@ -43,7 +46,7 @@ export async function detectToastCheckMode(db:SupabaseClient,businessId:string,
   let downgraded=false;
   if(e instanceof ToastApiError&&["authentication","missing_permissions"].includes(e.category)){
    downgraded=await setToastCheckMode(db,businessId,"internal",
-    e.category==="authentication"?"analytics_auth_failed":"analytics_forbidden",cred.verified_at??null);
+    e.category==="authentication"?"analytics_auth_failed":"analytics_forbidden",usedVerification);
   }
   if(force)throw e;
   // Transient provider failure never stops the internal check or changes a proven mode.
