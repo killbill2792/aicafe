@@ -77,8 +77,10 @@ grant execute on function public.toast_enable_official_check(uuid) to service_ro
 
 -- Both direction changes are atomic and lock the API credential before
 -- Analytics credentials, avoiding a partial or deadlocked fallback.
-create or replace function public.toast_disable_official_check(p_business_id uuid,p_reason text)
+create or replace function public.toast_disable_official_check(
+ p_business_id uuid,p_reason text,p_expected_verified_at timestamptz default null)
 returns boolean language plpgsql security definer set search_path=public as $downgrade$
+declare actual_verified_at timestamptz;
 begin
  if auth.role()<>'service_role' then raise exception 'service role only';end if;
  if p_reason not in ('no_analytics_credentials','analytics_forbidden',
@@ -87,15 +89,19 @@ begin
  perform 1 from public.toast_api_credentials
  where business_id=p_business_id for update;
  if not found then return false;end if;
+ select verified_at into actual_verified_at from public.toast_analytics_credentials
+ where business_id=p_business_id for update;
+ if actual_verified_at is distinct from p_expected_verified_at then
+  return false;end if;
  update public.toast_api_credentials set toast_check_mode='internal',
   mode_reason=p_reason,mode_checked_at=now() where business_id=p_business_id;
  update public.toast_analytics_credentials set verified_at=null
  where business_id=p_business_id;
  return true;
 end $downgrade$;
-revoke all on function public.toast_disable_official_check(uuid,text)
+revoke all on function public.toast_disable_official_check(uuid,text,timestamptz)
  from public,anon,authenticated;
-grant execute on function public.toast_disable_official_check(uuid,text) to service_role;
+grant execute on function public.toast_disable_official_check(uuid,text,timestamptz) to service_role;
 
 create table if not exists public.toast_owner_summary_entries(
  business_id uuid not null,restaurant_guid uuid not null,business_date date not null,
@@ -261,6 +267,17 @@ begin
  update public.toast_location_mappings set recheck_total=(select count(*) from public.toast_day_status
  where business_id=new.business_id and restaurant_guid=new.restaurant_guid and rechecking_reason='closeout_changed')
  where business_id=new.business_id and restaurant_guid=new.restaurant_guid;
+ -- Invalidating closeout coverage also invalidates its certified void totals.
+ -- Imported sales and owner history remain visible; unknown is not zero.
+ update public.daily_rollups set voids_status='unknown',voids_source=null
+ where business_id=new.business_id and voids_source='toast'
+  and business_date in (
+   select s.business_date from public.toast_day_status s
+    where s.business_id=new.business_id and s.restaurant_guid=new.restaurant_guid
+     and s.import_state='imported'
+   union select f.void_business_date from public.toast_void_facts f
+    where f.business_id=new.business_id and f.location_id=new.location_id
+  );
  delete from public.toast_void_repull_coverage where business_id=new.business_id and restaurant_guid=new.restaurant_guid;
  select array_agg(distinct dates.business_date) into recovery_dates from (
   select business_date from public.toast_day_status where business_id=new.business_id
