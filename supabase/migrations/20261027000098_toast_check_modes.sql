@@ -57,7 +57,8 @@ begin
   and d.restaurant_guid=j.restaurant_guid and d.business_date=j.business_date
   and d.import_state='imported' and d.rechecking_reason is null
   and (d.analytics_state='missing' or
-       (was_internal and d.analytics_state='pending'));
+       (was_internal and d.analytics_state='pending') or
+       (d.recon_state='checked_internal' and d.analytics_state is null));
 
  update public.toast_day_status d
  set analytics_state='pending',last_recon_attempt_at=null,
@@ -73,6 +74,28 @@ begin
 end $official$;
 revoke all on function public.toast_enable_official_check(uuid) from public,anon,authenticated;
 grant execute on function public.toast_enable_official_check(uuid) to service_role;
+
+-- Both direction changes are atomic and lock the API credential before
+-- Analytics credentials, avoiding a partial or deadlocked fallback.
+create or replace function public.toast_disable_official_check(p_business_id uuid,p_reason text)
+returns boolean language plpgsql security definer set search_path=public as $downgrade$
+begin
+ if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ if p_reason not in ('no_analytics_credentials','analytics_forbidden',
+  'analytics_auth_failed','analytics_timeout') then
+  raise exception 'invalid check mode reason';end if;
+ perform 1 from public.toast_api_credentials
+ where business_id=p_business_id for update;
+ if not found then return false;end if;
+ update public.toast_api_credentials set toast_check_mode='internal',
+  mode_reason=p_reason,mode_checked_at=now() where business_id=p_business_id;
+ update public.toast_analytics_credentials set verified_at=null
+ where business_id=p_business_id;
+ return true;
+end $downgrade$;
+revoke all on function public.toast_disable_official_check(uuid,text)
+ from public,anon,authenticated;
+grant execute on function public.toast_disable_official_check(uuid,text) to service_role;
 
 create table if not exists public.toast_owner_summary_entries(
  business_id uuid not null,restaurant_guid uuid not null,business_date date not null,

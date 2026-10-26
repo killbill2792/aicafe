@@ -13,12 +13,10 @@ export async function setToastCheckMode(db:SupabaseClient,businessId:string,mode
   // reports and queues fresh per-day work for all of this business's locations.
  }
  if(mode==="internal"){
-  const {error}=await db.from("toast_api_credentials").update({toast_check_mode:"internal",
-   mode_reason:reason,mode_checked_at:new Date().toISOString()}).eq("business_id",businessId);
-  if(error)throw new ToastApiError("unavailable");
-  const {error:clear}=await db.from("toast_analytics_credentials").update({verified_at:null})
-   .eq("business_id",businessId);
-  if(clear)throw new ToastApiError("unavailable");
+  const {data:disabled,error}=await db.rpc("toast_disable_official_check",{
+   p_business_id:businessId,p_reason:reason
+  });
+  if(error||disabled!==true)throw new ToastApiError("unavailable");
  }
 }
 /** Only separate Analytics credentials ever reach ERA. Login alone proves nothing. */
