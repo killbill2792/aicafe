@@ -174,7 +174,11 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
           try{
             const requestKey=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,kind:"purchase",index,line,source:input.source}));
             const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},supervisorLoopRegistry,
-              new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:input.source},requestKey);
+              new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:input.source,
+                receiptGroupId:input.source==="receipt_chat"?owner.id:null,
+                receiptLineIndex:input.source==="receipt_chat"?index:null,
+                receiptVendor:input.source==="receipt_chat"?input.receiptVendor:null,
+                receiptTotalCents:input.source==="receipt_chat"?input.receiptTotalCents:null},requestKey);
             output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name});
           }catch{output.push({name:line.name,error:"needs_review"});}
         }
