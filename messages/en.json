@@ -3229,6 +3229,8 @@
     "modifierBaseQuantity": "Quantity per option (base units)",
     "modifierReplaces": "Ingredient this replaces, if any",
     "modifierNoReplacement": "Does not replace an ingredient",
+    "modifierLinked": "This option was linked already. Refresh Inventory.",
+    "modifierStale": "This option changed. Refresh Inventory and try again.",
     "proposalsHeading": "Purchases waiting for your approval",
     "proposalsUnavailable": "Could not load pending purchase cards."
   },
