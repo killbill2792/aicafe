@@ -43,11 +43,30 @@ export function calculateUsage(input:{
   }
   const lineTotals=new Map<string,number>();
   for(const r of recipes.get(sale.menuItemId)!)lineTotals.set(r.ingredientId,(lineTotals.get(r.ingredientId)??0)+r.quantity);
+  const modifierById=new Map<string,(typeof sale.modifiers)[number]>();
+  const duplicateIds=new Set<string>();
   for(const modifier of sale.modifiers){
-   // Unmapped options are not silently treated as zero consumption.
+   if(modifierById.has(modifier.posModifierId))duplicateIds.add(modifier.posModifierId);
+   modifierById.set(modifier.posModifierId,modifier);
+  }
+  for(const modifier of sale.modifiers){
+   // Nested children inherit parent selection multiplicity exactly once.
+   // Fail closed on missing parents, cycles or repeated ambiguous identities.
    const m=mods.get(modifier.posModifierId);
-   const count=modifier.quantity??1;
-   if(!m||!Number.isFinite(count)||count<=0){salesMissing=true;continue;}
+   let count=modifier.quantity??1,ancestor=modifier.parentPosModifierId??null;
+   const seen=new Set([modifier.posModifierId]);
+   let depth=0;
+   while(ancestor&&depth++<8&&!seen.has(ancestor)){
+    seen.add(ancestor);
+    const parent=modifierById.get(ancestor);
+    if(!parent||duplicateIds.has(ancestor)){count=NaN;break;}
+    count*=parent.quantity??1;
+    ancestor=parent.parentPosModifierId??null;
+   }
+   if(ancestor)count=NaN;
+   if(!m||duplicateIds.has(modifier.posModifierId)||!Number.isFinite(count)||count<=0){
+    salesMissing=true;continue;
+   }
    if(m.replacesIngredientId)lineTotals.delete(m.replacesIngredientId);
    if(m.ingredientId)lineTotals.set(m.ingredientId,(lineTotals.get(m.ingredientId)??0)+m.quantityDelta*count);
   }
