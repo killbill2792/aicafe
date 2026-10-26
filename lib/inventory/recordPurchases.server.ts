@@ -13,7 +13,7 @@ export interface PurchaseSourceAdapter<T> {
 }
 export type PurchaseLineInput={
   lineId:string;ingredientId:string|null;date:string;quantity:number;unit:string;
-  costCents:number|null;expenseLineId?:string|null;
+  costCents:number|null;expenseLineId?:string|null;expectedUpdatedAt?:string|null;
 };
 export type PurchaseResult={lineId:string;ok:boolean;error?:string};
 const iso=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>{
@@ -24,7 +24,8 @@ const lineSchema=z.strictObject({
  lineId:z.string().uuid(),ingredientId:z.string().uuid(),date:iso,
  quantity:z.number().finite().positive().max(1e9),unit:z.string().trim().min(1).max(40),
  costCents:z.number().int().nonnegative().safe().nullable(),
- expenseLineId:z.string().uuid().nullable().optional()
+ expenseLineId:z.string().uuid().nullable().optional(),
+ expectedUpdatedAt:z.string().datetime({offset:true}).nullable().optional()
 });
 
 /** The only write path for stock purchases. One rejected line cannot roll back siblings.
@@ -77,35 +78,26 @@ export async function recordPurchases(
     .eq("expenses.business_id",businessId).maybeSingle();
    if(expenseError||!expenseLine){results.push({lineId,ok:false,error:"invalid_expense_link"});continue;}
   }
-  // Never retry into a voided row: a retry must not resurrect removed stock.
-  const existing=await db.from("pantry_stock_purchases").select("voided_at")
-   .eq("business_id",businessId).eq("line_id",line.lineId).maybeSingle();
-  if(existing.error){results.push({lineId,ok:false,error:"save_failed"});continue;}
-  if(existing.data?.voided_at){results.push({lineId,ok:false,error:"purchase_voided"});continue;}
-  const {error:purchaseError}=await db.from("pantry_stock_purchases").upsert({
-   business_id:businessId,line_id:line.lineId,ingredient_id:line.ingredientId,
-   purchase_date:line.date,entered_quantity:line.quantity,entered_unit:line.unit,
-   quantity_base:baseQuantity,cost_cents:line.costCents,
-   source,source_ref:sourceRef,expense_line_id:line.expenseLineId??null,
-   updated_at:new Date().toISOString()
-  },{onConflict:"business_id,line_id"});
-  if(purchaseError){
-   results.push({lineId,ok:false,error:purchaseError.code==="23505"?"purchase_already_linked":"save_failed"});
-   continue;
+  // Validate the derived price before any mutation; the DB RPC saves stock
+  // and price within one PostgreSQL transaction or rolls both back.
+  const micros=line.costCents!==null&&line.costCents>0
+   ?packToCostPerBaseMicros(line.quantity,line.unit,line.costCents,ingredient.base_unit as BaseUnit)
+     ??Math.round(line.costCents*1000000/baseQuantity):null;
+  if(micros!==null&&(!Number.isSafeInteger(micros)||micros<=0)){
+   results.push({lineId,ok:false,error:"invalid_cost"});continue;
   }
-  if(line.costCents!==null&&line.costCents>0){
-   const micros=packToCostPerBaseMicros(line.quantity,line.unit,line.costCents,ingredient.base_unit as BaseUnit)
-    ??Math.round(line.costCents*1000000/baseQuantity);
-   if(!Number.isSafeInteger(micros)||micros<=0){
-    results.push({lineId,ok:false,error:"invalid_cost"});continue;
-   }
-   const {error:priceError}=await db.from("ingredient_prices").upsert({
-    ingredient_id:line.ingredientId,effective_from:line.date,
-    cost_per_base_unit_micros:micros,
-    source:source==="receipt_page"||source==="receipt_chat"?"receipt":"manual",
-    source_expense_line_id:line.expenseLineId??null,source_stock_line_id:line.lineId
-   },{onConflict:"source_stock_line_id"});
-   if(priceError){results.push({lineId,ok:false,error:"purchase_saved_price_failed"});continue;}
+  const {error:purchaseError}=await db.rpc("pantry_write_purchase_line",{
+   p_business_id:businessId,p_line_id:line.lineId,p_ingredient_id:line.ingredientId,
+   p_date:line.date,p_quantity:line.quantity,p_unit:line.unit,p_base_quantity:baseQuantity,
+   p_cost_cents:line.costCents,p_price_micros:micros,p_source:source,
+   p_source_ref:sourceRef,p_expense_line_id:line.expenseLineId??null,
+   p_expected_updated_at:line.expectedUpdatedAt??null
+  });
+  if(purchaseError){
+   results.push({lineId,ok:false,error:purchaseError.code==="40001"?"purchase_changed":
+    purchaseError.code==="23505"?"purchase_already_linked":
+    purchaseError.code==="42501"?"owner_required":"save_failed"});
+   continue;
   }
   results.push({lineId,ok:true});
  }
