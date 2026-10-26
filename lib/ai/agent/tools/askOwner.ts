@@ -11,6 +11,10 @@ export const askOwnerSchema=z.strictObject({
    inputType:z.literal("number"),units:z.array(z.string().min(1).max(20)).min(1).max(8),
    defaultUnit:z.string().min(1).max(20)
  })).max(2).optional(),
+}).superRefine((input,ctx)=>{
+ // Choice-mode contracts remain strict while fill-mode accepts no choices.
+ if(input.kind!=="fill"&&input.options.length<2)
+  ctx.addIssue({code:"custom",message:"Choose between two and four options"});
 });
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 export const askOwnerTools={ask_owner:{
