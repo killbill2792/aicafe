@@ -3,6 +3,11 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 /** External compose only. These links do not send or confirm delivery. */
 export type OwnerChannel="whatsapp"|"sms";
+export type StaffMessageLocale="en"|"es"|"ar";
+export const scheduleApprovalReply=(locale:StaffMessageLocale)=>
+ ({en,es,ar} as const)[locale].OwnerScheduleDelivery.approvalReply;
+export const scheduleDraftNotice=(locale:StaffMessageLocale)=>
+ ({en,es,ar} as const)[locale].OwnerScheduleDelivery.draftNotice;
 export const validE164=(phone:string|null|undefined):phone is string=>
   typeof phone==="string"&&/^\+[1-9][0-9]{1,14}$/.test(phone);
 export function composeScheduleLink(phone:string,message:string,channel:OwnerChannel,isIOS=false){
