@@ -77,6 +77,9 @@ export const SOURCE_SURFACES = {
   "lib/data/adminFeedback.server.ts":{
     saveOwnerTurnFeedback:{restricted:"Owner-scoped private diagnostic rating write, no free text stored"},
   },
+  "lib/data/inventory.server.ts":{
+    readPurchaseMonth:{restricted:"Owner-authenticated, non-demo, business-scoped purchase month history; private Inventory UI only, never a generic model metric"},
+  },
   "lib/data/usageVariance.server.ts":{
     readUsageBusinessDate:{restricted:"Owner-scoped cafe timezone for stock and reporting date defaults"},
     readUsageVariance:{restricted:"Owner-bound expected/actual usage reconciliation, not a generic P1 source"},
