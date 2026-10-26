@@ -302,4 +302,30 @@ INSERT INTO public.toast_client_budgets(client_hash,calls) VALUES(repeat('c',64)
 SELECT pg_temp.assert(public.toast_claim_client_budget(repeat('c',64))>now(),'20-per-second bound');
 INSERT INTO public.toast_client_budgets(client_hash,calls) VALUES(repeat('d',64),array_fill(now()-interval '2 minutes',array[10000]));
 SELECT pg_temp.assert(public.toast_claim_client_budget(repeat('d',64))>now(),'10000-per-15-minutes bound');
+-- I1: a closeout definition change is not fresh ERA evidence. A persisted
+-- official mismatch stays actionable until this business day is reimported.
+UPDATE public.toast_day_status SET recon_state='mismatch',
+ recon_source='toast_analytics',rechecking_reason=null
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND restaurant_guid='dddddddd-dddd-4ddd-8ddd-dddddddd0002'
+ AND business_date='2026-10-02';
+UPDATE public.toast_location_mappings SET closeout_hour=6
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND restaurant_guid='dddddddd-dddd-4ddd-8ddd-dddddddd0002';
+SELECT pg_temp.assert((SELECT recon_state='mismatch'
+ AND recon_source='toast_analytics' AND rechecking_reason='closeout_changed'
+ FROM public.toast_day_status
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-02'),
+ 'I1: closeout invalidation may not hide an established ERA mismatch');
+UPDATE public.toast_day_status SET imported_at=now()+interval '7 seconds'
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-02';
+SELECT pg_temp.assert((SELECT recon_state='pending'
+ AND recon_source IS NULL AND internal_state IS NULL
+ AND rechecking_reason IS NULL
+ FROM public.toast_day_status
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-02'),
+ 'I1: reimport removes old proof and allows a fresh check');
 ROLLBACK;
