@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import { Link } from "@/i18n/navigation";
 import { Plus, Search, Coffee, Milk, Package, Cookie, Droplets } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
@@ -20,7 +20,7 @@ const categories=["all","coffee","milk","syrups","packaging","bakery","other"] a
 function categoryOf(value:string|null) { if(value==="syrup"||value==="sauce")return "syrups";if(value==="bakery"||value==="food")return "bakery";if(value==="coffee"||value==="milk"||value==="packaging")return value;return "other"; }
 function icon(category:string) {const cls="h-5 w-5";switch(category){case "coffee":return <Coffee className={cls}/>;case "milk":return <Milk className={cls}/>;case "syrups":return <Droplets className={cls}/>;case "bakery":return <Cookie className={cls}/>;default:return <Package className={cls}/>;}}
 const units:Record<BaseUnit,string[]>={ml:["gal","qt","l","ml","fl_oz"],g:["lb","kg","oz_wt","g"],each:["each","dozen","case(100)","case(1000)"]};
-export default function PantryWorkspace({items,starters,labels:t,variance,businessToday}:{items:Item[];starters:Starter[];labels:Record<string,string>;variance:Variance|null;businessToday:string}) {
+export default function PantryWorkspace({items,starters,labels:t,variance,businessToday,inventoryPanel}:{items:Item[];starters:Starter[];labels:Record<string,string>;variance:Variance|null;businessToday:string;inventoryPanel?:ReactNode}) {
  const router=useRouter();const [entryKind,setEntryKind]=useState<"count"|"purchase">("count"); const [entryItem,setEntryItem]=useState(items[0]?.id??""); const [entryQuantity,setEntryQuantity]=useState(""); const [entryUnit,setEntryUnit]=useState<string>(items[0]?.baseUnit??"each"); const [entryDate,setEntryDate]=useState(businessToday); const [entryError,setEntryError]=useState(""); const [entryDone,setEntryDone]=useState(false);
  const [query,setQuery]=useState("");const [filter,setFilter]=useState<string>("all");const [dialog,setDialog]=useState<"starter"|"custom"|"price"|"edit"|null>(null);
  const [selected,setSelected]=useState<Item|null>(null);const [chosen,setChosen]=useState<string[]>([]);const [name,setName]=useState("");const [category,setCategory]=useState<PantryCategory>("other");const [baseUnit,setBaseUnit]=useState<BaseUnit>("each");
@@ -38,6 +38,7 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  const fmt=(pattern:string,values:Record<string,string|number>)=>Object.entries(values).reduce((text,[key,value])=>text.replaceAll("{"+key+"}",String(value)),pattern);
  return <div className="mx-auto w-full max-w-5xl text-ink">
  <div className="mb-4 flex items-center justify-between gap-3"><h1 className="font-headline text-3xl font-extrabold">{t.title}</h1><button type="button" onClick={()=>{setError("");setDialog("starter");}} aria-label={t.add} className="flex size-12 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent"><Plus/></button></div>
+ {inventoryPanel}
  <form method="get" className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-card p-3">
  <label className="min-w-0 flex-1">{t.usageStart}<input type="date" name="from" defaultValue={variance?.from??""} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2"/></label>
  <label className="min-w-0 flex-1">{t.usageEnd}<input type="date" name="to" defaultValue={variance?.to??""} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2"/></label>
@@ -52,7 +53,7 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  <p>{t.usageExpected}: {row.expected===null?"—":row.expected.toLocaleString()} {row.unit}</p><p>{t.usageActual}: {row.actual===null?"—":row.actual.toLocaleString()} {row.unit}</p>
  <p>{t.usageDifference}: {row.differencePct===null?"—":row.differencePct.toFixed(1)+"%"}</p>
  {!!row.groups.length&&<details className="mt-2"><summary className="min-h-10 cursor-pointer font-semibold">{t.usageShifts}</summary><p className="text-sm text-ink-muted">{t.usageExpectedOnly}</p>{row.groups.map(g=><p key={g.key} className="mt-1 text-sm">{g.label}: {g.expected.toLocaleString()} {row.unit}</p>)}</details>}
- {!!row.missing.length&&<p className="text-sm text-ink-muted">{t.usageMissing}: {row.missing.map(reason=>reason.startsWith("startCount:")?t.usageStartCount+" "+reason.slice(11):reason.startsWith("endCount:")?t.usageEndCount+" "+reason.slice(9):reason==="toastSalesCoverage"?t.usageCoverage:t.usageRecipeMissing).join(", ")}</p>}
+ {!!row.missing.length&&<p className="text-sm text-ink-muted">{t.usageMissing}: {row.missing.map(reason=>reason.startsWith("startCount:")?t.usageStartCount+" "+reason.slice(11):reason.startsWith("endCount:")?t.usageEndCount+" "+reason.slice(9):reason==="salesCoverage"?t.usageCoverage:t.usageRecipeMissing).join(", ")}</p>}
  </div>)}</div></section>
  <section id="pantry-stock-record" className="mb-5 scroll-mt-4 rounded-2xl border border-line bg-card p-4"><h2 className="font-headline text-xl font-bold">{t.usageRecord}</h2>
  <div className="mt-3 flex gap-2">{(["count","purchase"] as const).map(k=><button type="button" key={k} aria-pressed={entryKind===k} onClick={()=>setEntryKind(k)} className={`min-h-12 rounded-xl border px-4 font-bold ${entryKind===k?"bg-accent text-on-accent":"border-line"}`}>{t["usage_"+k]}</button>)}</div>

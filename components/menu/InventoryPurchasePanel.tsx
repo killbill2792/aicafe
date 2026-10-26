@@ -139,7 +139,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
      <p className="text-[17px] font-semibold">{money(r.costCents)}</p>
     </div>
     {editing===r.lineId&&editDraft?<div className="mt-3 space-y-2">
-      {fields(editDraft,setEditDraft)}
+      {fields(editDraft,patch=>setEditDraft(v=>v?{...v,...patch}:v))}
       <button type="button" disabled={pending} className={button+" bg-accent text-on-accent"} onClick={saveEdit}>{t.save}</button>
       <button type="button" className={button} onClick={()=>setEditing(null)}>{t.cancel}</button>
      </div>:<div className="mt-2 flex gap-2">
