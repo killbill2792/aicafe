@@ -154,12 +154,10 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   .eq("business_date",day).maybeSingle();
  if(je)throw new ToastApiError("unavailable");
  const retained=stateWithoutFreshAnalytics(status,status.internal_state??"matched");
- let reportId=job?.report_request_guid as string|null;
- let requested=job?.requested_at as string|null;
- if(job?.state==="missing"){
-  await writeReconciliation(db,p,day,{analytics_state:"missing",
-   recon_state:retained});return;
- }
+ // Once fresh credentials pass verification, a previously missing report
+ // must start a new request rather than permanently short-circuiting.
+ let reportId=job?.state==="missing"?null:job?.report_request_guid as string|null;
+ let requested=job?.state==="missing"?null:job?.requested_at as string|null;
  if(requested&&Date.now()-Date.parse(requested)>48*3600000){
   const {error:expired}=await db.from("toast_analytics_jobs").upsert({
    business_id:p.businessId,restaurant_guid:p.restaurantGuid,business_date:day,

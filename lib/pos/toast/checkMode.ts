@@ -12,6 +12,13 @@ export async function setToastCheckMode(db:SupabaseClient,businessId:string,mode
   const {error:queue}=await db.from("toast_day_status").update({analytics_state:"pending",last_recon_attempt_at:null})
    .eq("business_id",businessId).eq("recon_state","checked_internal").is("analytics_state",null);
   if(queue)throw new ToastApiError("unavailable");
+  // A previous 48-hour timeout/permissions downgrade must not strand days
+  // when Analytics becomes usable again. Re-probe only incomplete ERA work.
+  const {error:resume}=await db.from("toast_day_status")
+   .update({analytics_state:"pending",last_recon_attempt_at:null})
+   .eq("business_id",businessId).eq("import_state","imported")
+   .eq("analytics_state","missing");
+  if(resume)throw new ToastApiError("unavailable");
  }
  if(mode==="internal"){
   const {error}=await db.from("toast_api_credentials").update({toast_check_mode:"internal",
