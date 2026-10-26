@@ -241,13 +241,41 @@ create or replace function public.toast_clear_recheck_after_import() returns tri
 language plpgsql set search_path=public as $clear$
 begin
  if new.import_state='imported' then
- new.rechecking_reason=null;new.internal_state=null;new.internal_reasons='[]';new.paid_other_day=0;
+  -- An import invalidates both internal proof and ALL external evidence from
+  -- the previous snapshot. An old ERA report must not match a new import.
+  new.rechecking_reason=null;new.internal_state=null;
+  new.internal_reasons='[]';new.paid_other_day=0;
+  new.payment_repull_at=null;new.analytics_state=null;
+  new.recon_source=null;new.reconciled_at=null;new.last_recon_attempt_at=null;
+  new.toast_net_sales_cents=null;new.toast_orders_count=null;
+  new.toast_discount_cents=null;new.toast_refund_cents=null;
+  new.delta_net_cents=null;new.delta_orders=null;
+  new.delta_discount_cents=null;new.delta_refund_cents=null;
+  new.delta_void_orders=null;new.void_amount_gap_cents=null;
+  new.last_error_category=null;
  end if;return new;
 end $clear$;
 revoke all on function public.toast_clear_recheck_after_import() from public,anon,authenticated;
 drop trigger if exists toast_clear_recheck on public.toast_day_status;
 create trigger toast_clear_recheck before update of imported_at on public.toast_day_status
 for each row execute function public.toast_clear_recheck_after_import();
+
+-- Discard an ERA report tied to the replaced order snapshot. The new day
+-- must request fresh official evidence; the previous GUID is not reusable.
+create or replace function public.toast_expire_era_job_after_import() returns trigger
+language plpgsql security definer set search_path=public as $era_reset$
+begin
+ if new.import_state='imported' then
+  delete from public.toast_analytics_jobs where business_id=new.business_id
+   and restaurant_guid=new.restaurant_guid and business_date=new.business_date;
+ end if;
+ return null;
+end $era_reset$;
+revoke all on function public.toast_expire_era_job_after_import() from public,anon,authenticated;
+drop trigger if exists toast_expire_era_report_after_import on public.toast_day_status;
+create trigger toast_expire_era_report_after_import
+ after insert or update of imported_at on public.toast_day_status
+ for each row execute function public.toast_expire_era_job_after_import();
 
 -- A closeout change cancels old runs. Revalidate and SHARE-lock the exact
 -- run at commit time, so an in-flight old-definition import cannot overwrite

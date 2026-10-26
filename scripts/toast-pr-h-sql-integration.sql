@@ -68,6 +68,27 @@ SELECT pg_temp.assert((SELECT net_sales_cents=127456 AND source='photo' AND comp
  FROM public.toast_owner_summary_entries WHERE business_date='2026-10-03'),'repull preserves owner values and refreshes comparison');
 SELECT pg_temp.assert((SELECT days_needing_look=0 FROM public.toast_owner_attention_counts_v
  WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'repull clears mismatch from shared attention count');
+-- A new imported snapshot must not inherit the prior ERA report GUID,
+-- verdict, or amount deltas. It will be freshly checked on the next scheduler pass.
+INSERT INTO public.toast_analytics_jobs(business_id,restaurant_guid,business_date,
+ report_request_guid,requested_at,state)
+ VALUES('dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+ 'dddddddd-dddd-4ddd-8ddd-dddddddd0002','2026-10-02',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',now(),'available');
+UPDATE public.toast_day_status SET recon_source='toast_analytics',
+ analytics_state='available',delta_net_cents=1234,toast_net_sales_cents=124690
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-02';
+UPDATE public.toast_day_status SET imported_at=now()+interval '2 seconds'
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-02';
+SELECT pg_temp.assert((SELECT recon_source IS NULL AND analytics_state IS NULL
+ AND delta_net_cents IS NULL AND toast_net_sales_cents IS NULL
+ FROM public.toast_day_status WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-02'),'reimport cleared old external evidence');
+SELECT pg_temp.assert(NOT EXISTS(SELECT 1 FROM public.toast_analytics_jobs
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-02'),'reimport invalidated old ERA report GUID');
 UPDATE public.toast_day_status SET unparsed_count=1 WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND business_date='2026-10-01';
 SELECT pg_temp.assert((SELECT days_needing_look=1 FROM public.toast_owner_attention_counts_v
  WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'unreadable day is counted once');
