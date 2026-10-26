@@ -110,6 +110,71 @@ SELECT pg_temp.assert(public.toast_enable_official_check('dddddddd-dddd-4ddd-8dd
  'valid separate Analytics credentials may enable official mode');
 SELECT pg_temp.assert((SELECT toast_check_mode='official' FROM public.toast_api_credentials
  WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'official mode persisted');
+-- Restoring official access must retire suspended per-restaurant report GUIDs
+-- and their old timestamps in one transaction; healthy completed work is retained.
+INSERT INTO public.locations(id,business_id,name)
+ VALUES('dddddddd-dddd-4ddd-8ddd-dddddddd0003',
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','H Secondary');
+INSERT INTO public.toast_location_mappings
+ (business_id,location_id,restaurant_guid,verified_at)
+ VALUES('dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+ 'dddddddd-dddd-4ddd-8ddd-dddddddd0003','dddddddd-dddd-4ddd-8ddd-dddddddd0004',now());
+INSERT INTO public.toast_day_status(business_id,restaurant_guid,business_date,
+ import_state,coverage_complete,recon_state,analytics_state,imported_at)
+ VALUES('dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+ 'dddddddd-dddd-4ddd-8ddd-dddddddd0004','2026-10-04',
+ 'imported',true,'checked_internal','pending',now());
+UPDATE public.toast_day_status SET rechecking_reason=null,
+ analytics_state='missing',last_error_category='authentication',
+ last_recon_attempt_at=now()
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND restaurant_guid='dddddddd-dddd-4ddd-8ddd-dddddddd0002'
+ AND business_date='2026-10-01';
+UPDATE public.toast_day_status SET rechecking_reason=null,
+ analytics_state='available',last_recon_attempt_at=now()
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND restaurant_guid='dddddddd-dddd-4ddd-8ddd-dddddddd0002'
+ AND business_date='2026-10-03';
+INSERT INTO public.toast_analytics_jobs(business_id,restaurant_guid,business_date,
+ report_request_guid,requested_at,state) VALUES
+ ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','dddddddd-dddd-4ddd-8ddd-dddddddd0002',
+ '2026-10-01',null,now()-interval '72 hours','pending'),
+ ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','dddddddd-dddd-4ddd-8ddd-dddddddd0004',
+ '2026-10-04',null,now()-interval '72 hours','pending'),
+ ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','dddddddd-dddd-4ddd-8ddd-dddddddd0002',
+ '2026-10-03','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ now()-interval '72 hours','available');
+UPDATE public.toast_api_credentials SET toast_check_mode='internal',
+ mode_reason='analytics_timeout' WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+SELECT pg_temp.assert(public.toast_enable_official_check('dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'verified credentials restore official mode');
+SELECT pg_temp.assert((SELECT count(*)=1 FROM public.toast_analytics_jobs
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'suspended reports retired across both restaurants without deleting completed job');
+SELECT pg_temp.assert((SELECT count(*)=2 FROM public.toast_day_status
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND (business_date='2026-10-01' OR
+ (business_date='2026-10-04' AND restaurant_guid='dddddddd-dddd-4ddd-8ddd-dddddddd0004'))
+ AND analytics_state='pending' AND last_recon_attempt_at is null),
+ 'expired unfinished work is queued for fresh report request');
+SELECT pg_temp.assert((SELECT last_error_category IS NULL
+ FROM public.toast_day_status WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-01'),
+ 'recovered permission error no longer marks owner attention');
+SELECT pg_temp.assert((SELECT analytics_state='available' FROM public.toast_day_status
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-03'),
+ 'completed report remains available');
+-- A routine re-probe while already official must not restart an active report.
+INSERT INTO public.toast_analytics_jobs(business_id,restaurant_guid,business_date,
+ report_request_guid,requested_at,state)
+ VALUES('dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+ 'dddddddd-dddd-4ddd-8ddd-dddddddd0004','2026-10-04',null,now(),'pending');
+SELECT pg_temp.assert(public.toast_enable_official_check('dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'routine official mode recheck succeeds');
+SELECT pg_temp.assert((SELECT count(*)=2 FROM public.toast_analytics_jobs
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'routine recheck preserves active pending job');
 -- A canceled run may not replace a day, even when a worker started before
 -- closeout changed. The failed update must not alter the saved import.
 INSERT INTO public.toast_sync_runs(id,business_id,restaurant_guid,kind,state,days_total,requested_from,requested_to)
