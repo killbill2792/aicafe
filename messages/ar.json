@@ -3242,6 +3242,9 @@
     "retry": "حاول مجددًا",
     "approve": "موافقة",
     "edit": "تعديل",
-    "skip": "تخطي"
+    "skip": "تخطي",
+    "approveAll": "الموافقة على كل المشتريات المطابقة",
+    "approveAllDone": "تم تسجيل {saved} مشتريات.",
+    "approveAllPartial": "تم تسجيل {saved} مشتريات؛ ولا تزال {failed} بحاجة للمراجعة."
   }
 }
