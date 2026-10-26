@@ -18,7 +18,7 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
   const valid=(d:string|undefined)=>!!d&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&!Number.isNaN(Date.parse(d+"T00:00:00Z"));
   const to=valid(params.to)?params.to!:businessToday;
   const start=usageWeekEnding(to).from;
-  const month=params.month&&/^\\d{4}-(0[1-9]|1[0-2])$/.test(params.month)?params.month:businessToday.slice(0,7);
+  const month=params.month&&/^\d{4}-(0[1-9]|1[0-2])$/.test(params.month)?params.month:businessToday.slice(0,7);
   const from=valid(params.from)&&params.from!<=to&&(Date.parse(to)-Date.parse(params.from!))/86400000<=30?params.from!:start; const [items,t,variance,purchases,inventoryText,locale]=await Promise.all([
     listPantry(),getTranslations("MenuBuilder"),readUsageVariance({from,to,groupBy:"shift"}).catch(()=>null),
     readPurchaseMonth(month).catch(()=>null),getTranslations("Inventory"),getLocale()
