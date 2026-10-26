@@ -61,7 +61,7 @@ describe("complete pure Toast day-check transitions",()=>{
  it("I1: no event except fresh ERA result or reimport clears existing ERA mismatch",()=>{
   const current=day({recon_state:"mismatch",recon_source:"toast_analytics",
    warnings:{reconciliation_mismatch:1}});
-  for(const {event} of cases.filter(c=>!["era_result","reimported","evidence_invalidated"].includes(c.event.type))){
+  for(const {event} of cases.filter(c=>!["era_result","reimported"].includes(c.event.type))){
    const result=nextDayCheckState(current,event,at);
    expect(result.recon_state,event.type).toBe("mismatch");
    expect(result.recon_source,event.type).toBe("toast_analytics");
