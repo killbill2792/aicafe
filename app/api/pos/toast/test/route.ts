@@ -1,4 +1,5 @@
 import {refreshToastRestaurantInfo} from "@/lib/pos/toast/restaurantInfo";
+import {verificationFailure} from "@/lib/pos/toast/verificationState";
 import {NextResponse} from "next/server";
 import {z} from "zod";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
@@ -7,7 +8,6 @@ export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const json=(status:number,data:unknown)=>NextResponse.json(data,{status,headers:{"Cache-Control":"no-store"}});
 const expected=z.object({businessId:GUID}).strict();
-import {verificationFailure} from "@/lib/pos/toast/verificationState";
 export async function POST(request:Request){
   if(process.env.TOAST_SETUP_ENABLED!=="true")return json(503,{error:"setup_disabled"});
   const body=expected.safeParse(await request.json().catch(()=>null));
