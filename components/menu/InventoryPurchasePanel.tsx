@@ -50,6 +50,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  const sourceLabel=(source:string)=>t["source_"+source]??t.source_other;
  const submit=()=>{
   start(async()=>{
+   try{
    const result=await saveBulkPurchases(drafts);
    const byId=new Map(result.map(r=>[r.lineId,r]));
    setErrors(Object.fromEntries(result.filter(r=>!r.ok).map(r=>[r.lineId,r.error??"save_failed"])));
@@ -58,6 +59,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
     return keep.length?keep:[emptyLine(items,today)];
    });
    if(result.some(r=>r.ok))router.refresh();
+   }catch{setErrors(Object.fromEntries(drafts.map(line=>[line.lineId,"save_failed"])));}
   });
  };
  const beginEdit=(r:PurchaseMonthLine)=>{
@@ -68,16 +70,20 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  const saveEdit=()=>{
   if(!editDraft)return;
   start(async()=>{
+   try{
    const result=await editInventoryPurchase(editDraft);
    if(result.ok){setEditing(null);setEditDraft(null);router.refresh();}
    else setErrors(prev=>({...prev,[editDraft.lineId]:result.error??"save_failed"}));
+   }catch{setErrors(prev=>({...prev,[editDraft.lineId]:"save_failed"}));}
   });
  };
  const voidLine=(id:string)=>{
   start(async()=>{
+   try{
    const result=await voidInventoryPurchase(id);
    if(result.ok)router.refresh();
    else setErrors(prev=>({...prev,[id]:result.error??"save_failed"}));
+   }catch{setErrors(prev=>({...prev,[id]:"save_failed"}));}
   });
  };
  const chooseFile=async(file:File|null)=>{
@@ -95,6 +101,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  const submitCsv=()=>{
   if(!fileText)return;
   start(async()=>{
+   try{
    const outcomes=await importInventoryCsv(fileText,mapping);
    const success=outcomes.filter(r=>r.ok).length;
    const failed=outcomes.filter(r=>!r.ok);
@@ -102,6 +109,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
      t.csvPartial.replace("{saved}",qty(success)).replace("{failed}",qty(failed.length)):
      t.csvSaved.replace("{saved}",qty(success)));
    if(success)router.refresh();
+   }catch{setCsvStatus(t.csvFailed);}
   });
  };
  const input="mt-1 min-h-12 w-full min-w-0 rounded-xl border border-line bg-surface px-3 text-[17px]";
@@ -146,7 +154,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
       <button type="button" disabled={pending} className={button} onClick={()=>beginEdit(r)}>{t.edit}</button>
       <button type="button" disabled={pending} className={button} onClick={()=>voidLine(r.lineId)}>{t.void}</button>
      </div>}
-    {errors[r.lineId]&&<p role="alert" className="text-[17px] text-neg">{t.failed+": "+errors[r.lineId]}</p>}
+    {errors[r.lineId]&&<p role="alert" className="text-[17px] text-neg">{t.failed}</p>}
    </div>)}
    {!!totals.length&&<div className="rounded-xl bg-surface2 p-3">
     <h3 className="mb-2 text-[17px] font-bold">{t.totals}</h3>
@@ -158,7 +166,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
    <h3 className="text-lg font-bold">{t.bulk}</h3>
    {drafts.map(d=><div key={d.lineId} className="rounded-xl border border-line p-3">
     {fields(d,patch=>update(d.lineId,patch))}
-    {errors[d.lineId]&&<p role="alert" className="text-[17px] text-neg">{t.failed+": "+errors[d.lineId]}</p>}
+    {errors[d.lineId]&&<p role="alert" className="text-[17px] text-neg">{t.failed}</p>}
     <button type="button" className={button+" mt-2"} onClick={()=>setDrafts(v=>v.filter(x=>x.lineId!==d.lineId))}>{t.remove}</button>
    </div>)}
    <div className="flex flex-wrap gap-2">
