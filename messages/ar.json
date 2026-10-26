@@ -3212,5 +3212,24 @@
     "source_quickbooks": "QuickBooks",
     "source_bank_feed": "المصرف",
     "source_other": "أخرى"
+  },
+  "InventoryApprovalCard": {
+    "pending": "جاهز للمراجعة",
+    "applied": "تم التسجيل",
+    "skipped": "تم التخطي",
+    "failed": "تعذر تسجيل هذا البند. حاول مجددًا.",
+    "applying": "جارٍ الحفظ",
+    "newItem": "عنصر جديد — اختر مكوّنًا موجودًا قبل الموافقة.",
+    "ingredient": "المكوّن",
+    "quantity": "الكمية",
+    "unit": "الوحدة",
+    "cost": "التكلفة",
+    "date": "التاريخ",
+    "save": "حفظ التعديلات",
+    "cancel": "إلغاء",
+    "retry": "حاول مجددًا",
+    "approve": "موافقة",
+    "edit": "تعديل",
+    "skip": "تخطي"
   }
 }

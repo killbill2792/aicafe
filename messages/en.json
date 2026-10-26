@@ -3212,5 +3212,24 @@
     "source_quickbooks": "QuickBooks",
     "source_bank_feed": "Bank feed",
     "source_other": "Other"
+  },
+  "InventoryApprovalCard": {
+    "pending": "Ready for review",
+    "applied": "Recorded",
+    "skipped": "Skipped",
+    "failed": "Could not record this line. Try again.",
+    "applying": "Saving",
+    "newItem": "New item — select an existing ingredient before approval.",
+    "ingredient": "Ingredient",
+    "quantity": "Quantity",
+    "unit": "Unit",
+    "cost": "Cost",
+    "date": "Date",
+    "save": "Save changes",
+    "cancel": "Cancel",
+    "retry": "Try again",
+    "approve": "Approve",
+    "edit": "Edit",
+    "skip": "Skip"
   }
 }

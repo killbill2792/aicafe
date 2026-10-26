@@ -3212,5 +3212,24 @@
     "source_quickbooks": "QuickBooks",
     "source_bank_feed": "Banco",
     "source_other": "Otro"
+  },
+  "InventoryApprovalCard": {
+    "pending": "Listo para revisar",
+    "applied": "Registrado",
+    "skipped": "Omitido",
+    "failed": "No se pudo registrar esta línea. Reinténtalo.",
+    "applying": "Guardando",
+    "newItem": "Artículo nuevo: elige un ingrediente existente antes de aprobar.",
+    "ingredient": "Ingrediente",
+    "quantity": "Cantidad",
+    "unit": "Unidad",
+    "cost": "Costo",
+    "date": "Fecha",
+    "save": "Guardar cambios",
+    "cancel": "Cancelar",
+    "retry": "Reintentar",
+    "approve": "Aprobar",
+    "edit": "Editar",
+    "skip": "Omitir"
   }
 }
