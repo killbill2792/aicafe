@@ -107,6 +107,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       chatEnabled={chatReadiness.enabled} canUseAi={cafeAccess?.active??true}
       chatUnavailableReason={chatReadiness.reason}
           chatCopy={{
+        photoRequest:tChat("photoRequest"),
         clarifyOther:tChat("clarifyOther"),clarifySend:tChat("clarifySend"),
         clarifyYouChose:tChat("clarifyYouChose"),clarifySkipped:tChat("clarifySkipped"),
         clarifyOtherPlaceholder:tChat("clarifyOtherPlaceholder"),
