@@ -24,6 +24,7 @@ import type { AgentToolContext } from "@/lib/ai/agent/tools";
 import { isJobStepAgent, type AgentJob } from "@/lib/ai/agent/jobState";
 import { scheduleTurnAudit } from "@/lib/admin/audit.server";
 import { assertCafeAiAccess } from "@/lib/access/access.server";
+import {createServerSupabaseClient} from "@/lib/supabase/server";
 import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 
 export const runtime = "nodejs";
@@ -80,7 +81,30 @@ type TurnParams = {
   scope: ConversationScope; threadId: string; owner: ConversationMessage; ownerText: string; locale: Locale;
   service: Awaited<ReturnType<typeof authenticatedConversationContext>>["service"];
   flags: ChatExperienceFlags; emit: Emit; job: AgentJob | null; jobs: JobsModule | null;
+  attachmentIds?:string[];
 };
+/** Read only IDs explicitly selected for this turn. An old thread file is never
+ * silently inserted into a subsequent model turn, even within the same café. */
+async function readOwnerImages(scope:ConversationScope,threadId:string,ids:readonly string[]){
+ if(ids.length===0)return [];
+ if(ids.length>3||new Set(ids).size!==ids.length)throw new ConversationApiError(422,"invalid_attachments");
+ const db=await createServerSupabaseClient();
+ const {data,error}=await db.from("ai_attachments")
+  .select("id,object_path,media_type,bytes")
+  .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+  .eq("thread_id",threadId).in("id",[...ids]);
+ if(error||!data||data.length!==ids.length)throw new ConversationApiError(403,"attachments_not_available");
+ const images:Array<{mimeType:string;base64:string}>=[];
+ for(const id of ids){
+  const row=data.find(a=>a.id===id);
+  if(!row||!["image/jpeg","image/png","image/webp"].includes(row.media_type)||row.bytes<1||row.bytes>2097152)
+    throw new ConversationApiError(422,"unsupported_image_attachment");
+  const {data:blob,error:downloadError}=await db.storage.from("ai-chat-private").download(row.object_path);
+  if(downloadError||!blob||blob.size!==row.bytes)throw new ConversationApiError(503,"attachment_unavailable");
+  images.push({mimeType:row.media_type,base64:Buffer.from(await blob.arrayBuffer()).toString("base64")});
+ }
+ return images;
+}
 /** One owner turn: tools → loop → persist → usage. Emits done/error and never throws. */
 async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwnerMessageIds: string[] } | { errorCode: string }> {
   const { scope, threadId: id, owner, emit, flags, job, jobs } = p;
@@ -162,7 +186,8 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
           supervisorLoopRegistry,new SupabaseLoopRepository(),staffCapabilityId(name),input,requestKey);
         return {proposalId:proposal.id,revision:proposal.revision,capabilityId:proposal.capabilityId};
       }} };
-    const result = await runAgentTurn({ ownerText: p.ownerText, history, context,businessId:scope.businessId,requestId:owner.id,
+    const ownerImages=await readOwnerImages(scope,id,p.attachmentIds??[]);
+    const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages, history, context,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       previousEvidence,
       onTool:(name,agentId)=>{
@@ -250,7 +275,8 @@ export async function POST(request: Request, context: RouteContext) {
       try { await labelSupervisorThread(scope, id, input.text); } catch { /* title is optional */ }
     }
     const flags = chatExperienceFlags();
-    const base = { scope, threadId: id, owner, ownerText: input.text, locale: input.locale, service, flags };
+    const base = { scope, threadId: id, owner, ownerText: input.text, locale: input.locale, service, flags,
+      attachmentIds:input.attachmentIds??[] };
 
     if (prior) return sseStream((emit, close) => { emit("done", { reply: prior, replayed: true }); close(); });
 
@@ -289,7 +315,8 @@ export async function POST(request: Request, context: RouteContext) {
       let job: AgentJob | null = started.job, owner = base.owner, ownerText = base.ownerText;
       try {
         while (job) {
-          const outcome = await runOneTurn({ ...base, owner, ownerText, emit: sink.emit, job, jobs });
+          const outcome = await runOneTurn({ ...base, owner, ownerText,
+            attachmentIds:owner.id===base.owner.id?base.attachmentIds:[],emit: sink.emit, job, jobs });
           let next: AgentJob | null = null;
           try {
             next = (await jobs.finishAgentJob(job.id, "replyId" in outcome
