@@ -3224,6 +3224,11 @@
     "modifierRecipe": "الوصفة",
     "modifierChoose": "اختر وصفة",
     "modifierConfirm": "تأكيد الربط",
+    "modifierCreate": "إنشاء وصفة جديدة وربطها",
+    "modifierIngredient": "المكوّن المضاف",
+    "modifierBaseQuantity": "الكمية لكل خيار (الوحدة الأساسية)",
+    "modifierReplaces": "المكوّن المستبدل إن وجد",
+    "modifierNoReplacement": "لا يستبدل أي مكوّن",
     "proposalsHeading": "مشتريات بانتظار موافقتك",
     "proposalsUnavailable": "تعذر تحميل طلبات الموافقة على المشتريات."
   },
