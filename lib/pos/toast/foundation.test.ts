@@ -1,7 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {toastRetryAt,trustedToastOrigin} from "./client";
-import {verificationFailure} from "./verificationState";
+import {verificationFailure} from "@/app/api/pos/toast/test/route";
 import {setupSchema} from "./ownerAccess";
 it("does not compress Toast's required 15-minute retry to an unsafe immediate retry",()=>{
  const until=toastRetryAt(new Response("",{status:429,headers:{"Retry-After":"900"}}),1000);

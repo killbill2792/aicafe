@@ -14,8 +14,7 @@ export const personFields=z.strictObject({
   .optional().default(()=>Array.from({length:7},(_,day)=>({day,start:null,end:null}))),
  minWeeklyMinutes:z.number().int().min(0).max(10080).nullable().optional().default(null),
  maxWeeklyMinutes:z.number().int().min(0).max(10080).nullable().optional().default(null),
- phone:z.string().regex(/^\+[1-9]\d{1,14}$/).nullable().optional().default(null),
-  language:z.enum(["en","es","ar"]).nullable().optional()
+ phone:z.string().regex(/^\+[1-9]\d{1,14}$/).nullable().optional().default(null)
 }).refine(p=>p.minWeeklyMinutes===null||p.maxWeeklyMinutes===null||
   p.minWeeklyMinutes<=p.maxWeeklyMinutes,"Invalid weekly range");
 

@@ -1252,7 +1252,7 @@
   },
   "Privacy": {
     "title": "Privacidad",
-    "lastUpdated": "Última actualización: 25 de octubre de 2026",
+    "lastUpdated": "Última actualización septiembre de 2026",
     "dataWeReadTitle": "Lo que leemos",
     "dataWeReadBody": "Con tu permiso, leemos los datos de ventas, pedidos, catálogo, personal y horarios de tu caja registradora (solo lectura — nunca podemos cambiar nada ni mover tu dinero). También guardamos los gastos, cuentas, recibos y líneas bancarias que nos das.",
     "dataWeNeverTouchTitle": "Lo que nunca tocamos",
@@ -1264,22 +1264,7 @@
     "yourControlTitle": "Tu control",
     "yourControlBody": "Puedes revisar, corregir o eliminar cualquier gasto que hayamos registrado. Puedes desconectar tu caja registradora en cualquier momento desde Ajustes.",
     "deletingYourAccountTitle": "Eliminar tu cuenta",
-    "deletingYourAccountBody": "Ve a Más → Eliminar cuenta para borrar cuenta, datos, archivos, recibos, personal y credenciales del registro. Plazos de copias y excepciones legales pendientes de revisión.",
-    "draftBanner": "Borrador — pendiente de revisión legal",
-    "whatWeCollectTitle": "Qué recopilamos",
-    "whatWeCollectBody": "Leemos ventas, pedidos, menú, personal y fichajes de Toast o Square (solo lectura); gastos, facturas, recibos y líneas bancarias añadidas; nombres, teléfonos, disponibilidad y salarios del personal; y tu correo.",
-    "toastSquareTitle": "Toast y Square",
-    "toastSquareBody": "Las credenciales API de solo lectura que creas están cifradas. Nunca modificamos la caja ni movemos dinero. Desconecta desde Más → Toast / Square.",
-    "aiProcessingTitle": "Procesamiento con IA",
-    "aiProcessingBody": "Enviamos a OpenAI, nuestro proveedor de IA, solo las imágenes y datos de recibos, descripciones e importes bancarios, preguntas y cifras relevantes para leer recibos, clasificar líneas y responder. Nuestros términos API indican que no se usan para entrenamiento. Confirmar con abogado.",
-    "staffMessagesTitle": "Mensajes al personal",
-    "staffMessagesBody": "Nunca escribimos al personal. Los botones abren tu WhatsApp o SMS y registramos solo el toque, no la entrega.",
-    "retentionTitle": "Conservación",
-    "retentionBody": "Conservamos los datos mientras la cuenta está activa y los borramos al eliminarla, salvo excepciones legales. Los registros se guardan [X days] — confirmar con abogado.",
-    "contactTitle": "Contacto",
-    "contactBody": "[privacy contact email — placeholder]",
-    "deleteLink": "Más → Eliminar cuenta",
-    "toastLink": "Cómo usamos los datos de Toast"
+    "deletingYourAccountBody": "Eliminar tu cuenta borra permanentemente los datos y archivos de tu negocio, y desconecta cualquier caja registradora conectada. Esto no se puede deshacer."
   },
   "ManageStaff": {
     "wagePeriodHour": "Por hora",
@@ -2321,9 +2306,7 @@
     "alreadyHaveAccount": "¿Ya tienes cuenta?",
     "signIn": "Iniciar sesión",
     "backToSignIn": "Volver a iniciar sesión",
-    "error": "Ocurrió un error. Inténtalo de nuevo.",
-    "privacyAgreement": "Al crear una cuenta aceptas nuestra",
-    "privacyLink": "Política de privacidad"
+    "error": "Ocurrió un error. Inténtalo de nuevo."
   },
   "PasswordRecovery": {
     "email": "Correo electrónico",
@@ -3052,11 +3035,7 @@
     "draftApplying": "Guardando tu decisión…",
     "draftPartialCost": "Conocido: {known}; {count} salarios sin definir",
     "draftBaseWageNote": "Solo incluye los salarios base. No se incluyen recargos por horas extra ni impuestos de nómina.",
-    "draftCoverageGaps": "Quedan {count} periodos sin la cobertura de personal necesaria. Revisa antes de aprobar.",
-    "messageLanguage": "Idioma del mensaje",
-    "sameAsApp": "Igual que la app",
-    "phoneWillSave": "Se guardará como {phone}",
-    "invalidPhone": "Introduce un teléfono válido."
+    "draftCoverageGaps": "Quedan {count} periodos sin la cobertura de personal necesaria. Revisa antes de aprobar."
   },
   "FreeAccess": {
     "pricing": "Planes y precios",
@@ -3152,17 +3131,7 @@
     "listDone": "Lista abierta. Envía cada mensaje desde la aplicación.",
     "messageGreeting": "Hola {name},",
     "messageWeek": "Tu horario para la semana del {week}:",
-    "messageClosing": "Por favor, revisa tus turnos.",
-    "addPhone": "Añadir teléfono",
-    "recordConsent": "Registrar consentimiento para WhatsApp",
-    "copyAll": "Copiar todos los mensajes",
-    "copyMessage": "Copiar mensaje",
-    "copied": "Copiado",
-    "copyError": "No se pudo copiar. Selecciona el texto y cópialo manualmente.",
-    "linkTooLong": "Mensaje demasiado largo para el enlace. Usa Copiar.",
-    "approvalReply": "Aprobado. No puedo enviar mensajes. Usa los botones para abrir WhatsApp o SMS para cada persona.",
-    "draftNotice": "No puedo enviar mensajes por mi cuenta. Después de aprobar, usa los botones para abrir WhatsApp o SMS para cada persona.",
-    "openError": "No se pudo abrir la aplicación de mensajes. Usa Copiar mensaje."
+    "messageClosing": "Por favor, revisa tus turnos."
   },
   "UploadReview": {
     "title": "Revisar carga",

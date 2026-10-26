@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { buildAuthorizeUrl, isSquareConfigured } from "@/lib/pos/square/oauth";
 
-import {STATE_COOKIE} from "@/lib/pos/square/oauthState";
+export const STATE_COOKIE = "square_oauth_state";
 
 /** Step 1 of onboarding (docs/03-screens.md S2): "Connect Square" sends the owner here. */
 export async function GET(request: Request) {

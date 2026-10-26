@@ -1,7 +1,6 @@
 "use client";
 import {useEffect,useState} from "react";
-import {useLocale,useTranslations} from "next-intl";
-import {Link} from "@/i18n/navigation";
+import {useLocale} from "next-intl";
 import {saveThenVerifyToastConnection,toastStatus,latestToastSync} from "./toastConnectFlow";
 import {TOAST_CONNECTION_CHANGED} from "./toastConnectionEvents";
 type Location={id:string;name:string};
@@ -29,7 +28,6 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
  approvedOrigins:string[];defaultApiOrigin:string;labels:Labels;
 }) {
  const locale=useLocale();
- const privacy=useTranslations("Privacy");
  const [apiUrl,setApiUrl]=useState(defaultApiOrigin);
  const [clientId,setClientId]=useState("");
  const [secret,setSecret]=useState("");
@@ -130,7 +128,6 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
       value={secret} onChange={e=>setSecret(e.target.value)} autoComplete="new-password"/>
     </label>
    </div>
-   <Link href="/privacy" className="inline-flex min-h-12 items-center text-[17px] text-accent-text underline">{privacy("toastLink")}</Link>
    <div className="flex flex-wrap gap-3">
     <button disabled={pending||!secret||!approvedOrigins.includes(apiUrl)||!clientId||
       !Object.values(mapping).some(Boolean)}
