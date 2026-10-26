@@ -314,7 +314,16 @@ begin
  if new.import_state='imported' then
   -- An import invalidates both internal proof and ALL external evidence from
   -- the previous snapshot. An old ERA report must not match a new import.
-  new.rechecking_reason=null;new.recon_state='pending';new.internal_state=null;
+  new.rechecking_reason=null;
+  -- The PR1 importer must remain fail-closed for missing/unparsed money.
+  -- A new import discards the OLD reconciliation, not the NEW import's
+  -- source-incompleteness verdict.
+  new.recon_state=case when new.unparsed_count>0
+   or coalesce((new.warnings->>'missing_check_amount')::integer,0)>0
+   or coalesce((new.warnings->>'missing_deferred_price')::integer,0)>0
+   or coalesce((new.warnings->>'missing_refund_amount')::integer,0)>0
+   then 'mismatch' else 'pending' end;
+  new.internal_state=null;
   new.internal_reasons='[]';new.paid_other_day=0;
   -- An import invalidates its proof, but must NOT restart an unresolved
   -- cross-day payment recovery timer. That deadline belongs to the payment
