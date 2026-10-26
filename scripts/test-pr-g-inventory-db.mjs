@@ -95,6 +95,13 @@ try{
   assert.equal((await db.query("select count(*)::int n from expense_lines")).rows[0].n,2);
   assert.equal((await db.query("select count(*)::int n from pantry_stock_purchases where expense_line_id is not null")).rows[0].n,2);
   await reject(q,receipt(TWO,1,1600,"Milk"),"40001");
+  assert.equal((await db.query("select chat_receipt_group_id from expenses")).rows[0].chat_receipt_group_id,GROUP);
+  // Conflicting new total uses a different expense dedupe key but must never
+  // split one receipt group into a second expense.
+  await reject(q,[...receipt(TWO,2,1000,"Milk").slice(0,12),2700,
+    "pr-g-conflicting-receipt-key","Milk"],"23505");
+  assert.equal((await db.query("select count(*)::int n from expenses")).rows[0].n,1);
+
   const links=await db.query("select l.expense_id from pantry_stock_purchases p join expense_lines l on p.expense_line_id=l.id where p.source='receipt_chat'");
   assert.equal(links.rowCount,2);
   assert.equal(links.rows[0].expense_id,links.rows[1].expense_id);
