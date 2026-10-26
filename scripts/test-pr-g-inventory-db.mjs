@@ -8,7 +8,7 @@ const LINE="55555555-5555-4555-8555-555555555555",GROUP="66666666-6666-4666-8666
 const ONE="77777777-7777-4777-8777-777777777777",TWO="88888888-8888-4888-8888-888888888888";
 const RECIPE="99999999-9999-4999-8999-999999999999",OTHER_RECIPE="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const db=new pg.Client({host:process.env.PGHOST||"127.0.0.1",port:Number(process.env.PGPORT||5432),
- user:"postgres",password:"postgres",database:"postgres"});
+ user:"postgres",password:"postgres",database:process.env.PGDATABASE||"postgres"});
 const call=(name,n)=>"select public."+name+"("+Array.from({length:n},(_,i)=>"$"+(i+1)).join(",")+") as value";
 const stock=(line=LINE,cost=500,price=500000,date="2026-10-25",expected=null)=>
  [A,line,ING,date,1,"each",1,cost,price,"bulk",null,null,expected];
@@ -37,9 +37,9 @@ try{
  const setup=[
   "create extension if not exists pgcrypto",
   "create schema auth",
-  "create role authenticated nologin",
-  "create role anon nologin",
-  "create role service_role nologin",
+  "do $ begin create role authenticated nologin; exception when duplicate_object then null; end $",
+  "do $ begin create role anon nologin; exception when duplicate_object then null; end $",
+  "do $ begin create role service_role nologin; exception when duplicate_object then null; end $",
   "create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$",
   "create table businesses(id uuid primary key,is_demo boolean not null default false,timezone text not null default 'America/Los_Angeles')",
   "create table memberships(business_id uuid references businesses(id),user_id uuid,role text,primary key(business_id,user_id))",
