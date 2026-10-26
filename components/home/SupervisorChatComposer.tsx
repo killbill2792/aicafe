@@ -46,7 +46,7 @@ export type SupervisorChatCopy = {
   voiceProcessing: string; voicePermissionDenied: string; voiceNoSpeech: string;
   voiceServiceUnavailable: string; voiceNetworkError: string; voiceTooLong: string;
   voiceError: string; voiceCanceled: string;
-  attachmentSaved: string; attachmentNotice: string; attachmentUpload: string;
+  attachmentSaved: string; attachmentNotice: string; attachmentUpload: string; photoRequest:string;
   statusDisabled: string; statusDatabase: string; statusWriter: string; statusOwner: string; statusStorage: string;
   emptyHeading: string; emptyIntro: string; historyTitle: string; closeHistory: string;
   startNewChat: string; reviewHint: string; taskOpen: string;
@@ -469,7 +469,8 @@ export default function SupervisorChatComposer({
     try {
       const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ clientMessageId, text, locale }),
+        body: JSON.stringify({ clientMessageId, text, locale,
+          attachmentIds:attachments.filter(file=>file.mediaType.startsWith("image/")).slice(0,3).map(file=>file.id) }),
       });
       if (!response.ok || !response.body) throw new Error(await agentErrorCode(response));
       const reader = response.body.getReader();
@@ -499,7 +500,7 @@ export default function SupervisorChatComposer({
     }
   }
   async function sendText(value: string, existingKey?: string) {
-    const text = value.trim();
+    const text = value.trim() || (attachments.some(file=>file.mediaType.startsWith("image/"))?copy.photoRequest:"");
     // A confirmed background job accepts follow-ups while the first response streams.
     // The main-turn double-tap guard must not intercept this separate path.
     if (!existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
@@ -590,7 +591,7 @@ export default function SupervisorChatComposer({
       setOptimisticOwner(null);
       await refreshThreads();
       retryId.current = null; setStreamedText("");
-      dispatchDictation({ type: "reset" }); setMediaNotice("");
+      dispatchDictation({ type: "reset" }); setMediaNotice(""); setAttachments([]);
     } catch (failure) {
       if (existingKey) retryId.current = null;
       // Server may have persisted the owner turn before the response failed.

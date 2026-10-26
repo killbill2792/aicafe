@@ -1823,7 +1823,8 @@
     "explainDivide": "divided by",
     "explainRatio": "ratio",
     "explainProrate": "prorated",
-    "explainSubtract": "minus"
+    "explainSubtract": "minus",
+    "photoRequest": "Please review this purchase receipt photo."
   },
   "TeamRules": {
     "title": "Team rules & approvals",

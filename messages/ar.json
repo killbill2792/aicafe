@@ -1823,7 +1823,8 @@
     "explainDivide": "مقسوم على",
     "explainRatio": "النسبة",
     "explainProrate": "حصة نسبية",
-    "explainSubtract": "ناقص"
+    "explainSubtract": "ناقص",
+    "photoRequest": "يرجى مراجعة صورة إيصال الشراء هذه."
   },
   "TeamRules": {
     "title": "قواعد الفريق والموافقات",

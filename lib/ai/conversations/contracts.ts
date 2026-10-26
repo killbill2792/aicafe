@@ -11,6 +11,7 @@ export const createThreadInput = z.strictObject({
 export const addOwnerMessageInput = z.strictObject({
   clientMessageId: z.uuid(),
   text: z.string().trim().min(1).max(4000),
+  attachmentIds:z.array(z.uuid()).max(3).optional(),
   locale: z.enum(["en", "es", "ar"]).default("en"),
   ownerInputResponse:ownerInputResponseSchema.optional(),
 });

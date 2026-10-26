@@ -1823,7 +1823,8 @@
     "explainDivide": "dividido entre",
     "explainRatio": "proporción",
     "explainProrate": "prorrateado",
-    "explainSubtract": "menos"
+    "explainSubtract": "menos",
+    "photoRequest": "Revisa esta foto de un recibo de compra."
   },
   "TeamRules": {
     "title": "Reglas y aprobaciones del equipo",
