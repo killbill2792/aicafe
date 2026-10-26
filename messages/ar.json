@@ -3213,7 +3213,15 @@
     "source_csv": "CSV",
     "source_quickbooks": "QuickBooks",
     "source_bank_feed": "المصرف",
-    "source_other": "أخرى"
+    "source_other": "أخرى",
+    "modifierHeading": "ربط خيارات المشروبات بالوصفات",
+    "modifierExplain": "تؤثر الروابط المؤكدة فقط على استهلاك المكونات. راجع المكوّن والكمية قبل الحفظ.",
+    "modifierUnavailable": "تعذر تحميل خيارات المشروبات.",
+    "modifierEmpty": "لا توجد خيارات غير مرتبطة.",
+    "modifierSuggested": "اقتراح لم يُحفظ بعد",
+    "modifierRecipe": "الوصفة",
+    "modifierChoose": "اختر وصفة",
+    "modifierConfirm": "تأكيد الربط"
   },
   "InventoryApprovalCard": {
     "pending": "جاهز للمراجعة",
