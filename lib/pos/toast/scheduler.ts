@@ -7,6 +7,7 @@ import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
 import {retryToastRollupRefreshes} from "./rollupRetries";
 import {z} from "zod";
 import {syncToastOptionalSources} from "./optionalSync";
+import {readAllPages} from "./readAllPages";
 import {reconcileToastDays} from "./reconcile";
 
 type Mapping={business_id:string;location_id:string;restaurant_guid:string;
@@ -84,27 +85,35 @@ async function queueFirstBackfill(db:SupabaseClient,m:Mapping,now:Date){
 }
 async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt:number){
  const clock=localClock(now,m.toast_time_zone);
- if(clock.minutes<(m.closeout_hour+6)*60)return;
  const {data:last,error}=await db.from("toast_repull_scan_state")
-  .select("last_local_day").eq("business_id",m.business_id)
-  .eq("restaurant_guid",m.restaurant_guid).maybeSingle();
+  .select("last_local_day,scan_local_day,scan_start,scan_end,scan_window_start,scan_page")
+  .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid).maybeSingle();
  if(error)throw new ToastApiError("unavailable");
- if(last?.last_local_day===clock.today)return;
+ // An unfinished scan is resumed even after midnight or before the next day's
+ // usual scan hour. Its end timestamp stays fixed across scheduler slices.
+ if(!last?.scan_local_day&&clock.minutes<(m.closeout_hour+6)*60)return;
+ if(!last?.scan_local_day&&last?.last_local_day===clock.today)return;
  const configured=Number(process.env.TOAST_REPULL_DAYS??7);
  const days=Number.isInteger(configured)?Math.min(30,Math.max(1,configured)):7;
+ const scanDay=last?.scan_local_day??clock.today;
+ const scanEnd=last?.scan_end?new Date(last.scan_end).getTime():now.getTime();
+ const scanStart=last?.scan_start?new Date(last.scan_start).getTime():scanEnd-days*DAY;
+ let windowStart=last?.scan_window_start?new Date(last.scan_window_start).getTime():scanStart;
+ let page=last?.scan_page??1;
+ if(!Number.isFinite(scanStart)||!Number.isFinite(scanEnd)||scanStart>=scanEnd||
+  !Number.isFinite(windowStart)||windowStart<scanStart||windowStart>=scanEnd||
+  !Number.isInteger(page)||page<1||page>300)
+  throw new ToastApiError("invalid_response");
  const client=createToastClient(db,m.business_id);
- const end=now.getTime();
- const firstWindowStart=end-days*DAY;
- const discovered=new Set<string>();
- for(let windowStart=firstWindowStart;windowStart<end;){
-  mustFinish(deadlineAt);
-  const windowEnd=Math.min(end,windowStart+7*DAY);
-  for(let page=1;page<=300;page++){
+ for(;windowStart<scanEnd;){
+  const windowEnd=Math.min(scanEnd,windowStart+7*DAY);
+  for(;page<=300;page++){
    mustFinish(deadlineAt);
    const path="/orders/v2/ordersBulk?startDate="+toToastTimestamp(new Date(windowStart))+
     "&endDate="+toToastTimestamp(new Date(windowEnd))+"&pageSize=100&page="+page;
    const rows=await client.request(path,m.restaurant_guid,z.array(z.unknown()),{deadlineAt});
-   if(rows.length>100)throw new ToastApiError("invalid_response");
+   if(rows.length>100||page===300&&rows.length===100)throw new ToastApiError("invalid_response");
+   const discovered=new Set<string>();
    for(const o of rows){
     if(typeof o!=="object"||o===null)throw new ToastApiError("invalid_response");
     const row=o as {businessDate?:unknown;openedDate?:unknown};
@@ -116,45 +125,60 @@ async function scanModifiedDates(db:SupabaseClient,m:Mapping,now:Date,deadlineAt
      if(Number.isNaN(Date.parse(day+"T12:00:00Z")))
       throw new ToastApiError("invalid_response");
     }else if(typeof row.openedDate==="string"&&Number.isFinite(Date.parse(
-      row.openedDate.replace(/([+-]\d{2})(\d{2})$/,"$1:$2")))){
+     row.openedDate.replace(/([+-]\d{2})(\d{2})$/,"$1:$2")))){
      const opened=new Date(row.openedDate.replace(/([+-]\d{2})(\d{2})$/,"$1:$2"));
      const localOpened=localClock(opened,m.toast_time_zone);
      day=localOpened.minutes<m.closeout_hour*60
       ?addCalendarDays(localOpened.today,-1):localOpened.today;
     }else throw new ToastApiError("invalid_response");
-    if(day<clock.today)discovered.add(day);
+    if(day<scanDay)discovered.add(day);
    }
-   if(rows.length<100)break;
-   if(page===300)throw new ToastApiError("invalid_response");
+   // A page and its affected whole-day jobs are committed atomically. Unlike
+   // the old all-or-nothing scan, a timed-out tick retains its page cursor.
+   // The final watermark/void coverage advances ONLY on the terminal page.
+   const terminal=rows.length<100;
+   const {data:accepted,error:checkpointError}=await db.rpc("toast_checkpoint_repull_scan_page",{
+    p_business_id:m.business_id,p_restaurant_guid:m.restaurant_guid,
+    p_local_day:scanDay,p_scan_start:new Date(scanStart).toISOString(),
+    p_scan_end:new Date(scanEnd).toISOString(),
+    p_window_start:new Date(windowStart).toISOString(),
+    p_window_end:new Date(windowEnd).toISOString(),p_page:page,
+    p_last_page:terminal,p_days:[...discovered].sort()
+   });
+   if(checkpointError||accepted!==true)throw new ToastApiError("unavailable");
+   if(terminal)break;
   }
   windowStart=windowEnd;
+  page=1;
  }
- // Scan marker and all affected whole-day runs commit together. A crash before
- // this RPC simply scans again; a crash after it resumes the queued day runs.
- const {error:queued}=await db.rpc("toast_commit_repull_scan_window",{
-  p_business_id:m.business_id,p_restaurant_guid:m.restaurant_guid,
-  p_local_day:clock.today,p_days:[...discovered].sort(),
-  p_window_start:new Date(firstWindowStart).toISOString(),
-  p_window_end:now.toISOString()
- });
- if(queued)throw new ToastApiError("unavailable");
 }
 export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
  deadlineAt=Date.now()+TICK_MS){
  if(process.env.TOAST_AUTO_IMPORT_ENABLED!=="true")return {disabled:true};
- const {data:mappings,error}=await db.from("toast_location_mappings")
+ // Snapshot the rotation order before updating it; mutable offset paging would skip cafés.
+ const mappings=await readAllPages((start,end)=>db.from("toast_location_mappings")
   .select("business_id,location_id,restaurant_guid,toast_time_zone,closeout_hour,info_refreshed_at,verified_at")
-  .not("verified_at","is",null).order("business_id").limit(100);
- if(error)throw new ToastApiError("unavailable");
+  .not("verified_at","is",null).order("last_tick_started_at",{ascending:true,nullsFirst:true})
+  .order("business_id").order("restaurant_guid").range(start,end));
+ const globalDeadline=deadlineAt;
  let acquired=0,processed=0,errors=0;
- for(const m of (mappings??[]) as Mapping[]){
-  if(Date.now()>=deadlineAt)break;
+ for(const [index,m] of (mappings as Mapping[]).entries()){
+  if(Date.now()>=globalDeadline){
+   for(const skipped of mappings.slice(index))console.info("toast_tick_skipped",{businessId:skipped.business_id,restaurantGuid:skipped.restaurant_guid});
+   break;
+  }
+  const deadlineAt=Math.min(globalDeadline,Date.now()+Math.min(60000,
+   Math.max(6000,(globalDeadline-Date.now())/Math.max(1,Math.min(40,mappings.length-index)))));
+
   if(!m.toast_time_zone||m.closeout_hour==null)continue;
   const {data:nonce,error:leaseError}=await db.rpc("toast_acquire_lease",{
    p_business_id:m.business_id,p_restaurant_guid:m.restaurant_guid,p_seconds:290});
   if(leaseError){errors++;continue;}
   if(!nonce)continue;
   acquired++;
+  const {error:stampError}=await db.from("toast_location_mappings").update({last_tick_started_at:new Date().toISOString()})
+   .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid);
+  if(stampError){await db.rpc("toast_release_lease",{p_nonce:nonce});errors++;continue;}
   // The five-day cap and 5s pacing apply across ALL backfill runs for this
   // restaurant, not independently to every overlapping backfill run.
   let backfillDone=0;
@@ -192,7 +216,27 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    await isolated("cost_refresh",async()=>{
    mustFinish(deadlineAt);
    // A committed import's failed cost refresh is never another order import.
-   await retryToastRollupRefreshes(db,deadlineAt,5);
+   await retryToastRollupRefreshes(db,deadlineAt,5,m.business_id);
+   });
+   await isolated("daily",async()=>{
+   const closed=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
+   if(closed&&Date.now()<deadlineAt){
+    await queueDaily(db,m,closed);
+    const {data:daily,error:dailyErr}=await db.from("toast_sync_runs")
+     .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
+     .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid)
+     .eq("kind","daily").eq("requested_from",closed).maybeSingle();
+    if(dailyErr)throw new ToastApiError("unavailable");
+    if(daily&&shouldResume(daily as Run,Date.now()))
+     processed+=await runDue(db,m,daily as Run,deadlineAt,5,paceHistorical);
+   }
+   });
+   await isolated("reconcile",async()=>{
+   if(Date.now()<deadlineAt)await reconcileToastDays(db,{
+    businessId:m.business_id,restaurantGuid:m.restaurant_guid,
+    locationId:m.location_id,timeZone:m.toast_time_zone,
+    closeoutHour:m.closeout_hour
+   },deadlineAt);
    });
    await isolated("resume",async()=>{
    // Resume paused/running runs first. A day after toast_import_day is derived
@@ -213,19 +257,6 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     if(run.kind==="backfill")backfillDone+=done;
    }
    });
-   await isolated("daily",async()=>{
-   const closed=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
-   if(closed&&Date.now()<deadlineAt){
-    await queueDaily(db,m,closed);
-    const {data:daily,error:dailyErr}=await db.from("toast_sync_runs")
-     .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
-     .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid)
-     .eq("kind","daily").eq("requested_from",closed).maybeSingle();
-    if(dailyErr)throw new ToastApiError("unavailable");
-    if(daily&&shouldResume(daily as Run,Date.now()))
-     processed+=await runDue(db,m,daily as Run,deadlineAt,5,paceHistorical);
-   }
-   });
    await isolated("modified_scan",async()=>{
    if(Date.now()<deadlineAt)await scanModifiedDates(db,m,now,deadlineAt);
    });
@@ -242,23 +273,16 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     }
    }
    });
-   await isolated("reconcile",async()=>{
-   if(Date.now()<deadlineAt)await reconcileToastDays(db,{
-    businessId:m.business_id,restaurantGuid:m.restaurant_guid,
-    locationId:m.location_id,timeZone:m.toast_time_zone,
-    closeoutHour:m.closeout_hour
-   },deadlineAt);
-   });
    await isolated("backfill",async()=>{
    if(Date.now()<deadlineAt)await queueFirstBackfill(db,m,now);
    const {data:next,error:nextErr}=await db.from("toast_sync_runs")
     .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
     .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid)
-    .eq("state","queued").order("requested_from").limit(100);
+    .eq("state","queued").order("requested_from",{ascending:false}).limit(100);
    if(nextErr)throw new ToastApiError("unavailable");
    const sorted=((next??[]) as Run[]).sort((a,b)=>{
     const priority=(k:string)=>k==="daily"?0:k==="repull_modified"?1:k==="backfill"?3:2;
-    return priority(a.kind)-priority(b.kind)||(a.requested_from??"").localeCompare(b.requested_from??"");
+    return priority(a.kind)-priority(b.kind)||(b.requested_from??"").localeCompare(a.requested_from??"");
    });
    for(const run of sorted){
     if(Date.now()>=deadlineAt)break;

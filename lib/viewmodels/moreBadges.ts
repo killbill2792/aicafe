@@ -5,7 +5,7 @@ import { totalMonthlyRecurringCostsCents } from "@/lib/expenses/recurringMonthly
 
 export type MoreBadgeInputs = {
   openHours?: OpenHours | null;
-  toast?: { state: string | null; hasError: boolean; verifiedLocation: boolean; daysNeedLook?:number;lastGoodSyncAt?:string|null } | null;
+  toast?: { checkMode?:"official"|"internal";state: string | null; hasError: boolean; verifiedLocation: boolean; daysNeedLook?:number;lastGoodSyncAt?:string|null } | null;
   uploads?: Pick<UploadHistoryRow, "id" | "status">[];
   missingFeeDays?: number | null;
   bills?: RecurringCostRow[];

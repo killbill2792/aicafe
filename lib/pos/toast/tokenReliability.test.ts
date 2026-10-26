@@ -25,6 +25,7 @@ function fixture(initial:{bearer?:string;expiresAt?:string;retryAt?:string}={}) 
    update:(updates:Record<string,unknown>)=>({eq:async()=>{if(table==="toast_api_credentials")Object.assign(row,updates);return {error:null};}})
   }),
   rpc:async(name:string,args:Record<string,unknown>)=>{
+   if(name==="toast_claim_client_budget")return {data:null,error:null};
    if(name==="toast_claim_auth_lease"){
     if(lease)return {data:null,error:null};
     lease="cccccccc-cccc-4ccc-8ccc-cccccccccccc";return {data:lease,error:null};

@@ -35,6 +35,8 @@ function makeDB(){
  const status=new Set<string>();
  let backfillQueued=false;
  let scanDay:string|null=null;
+ const scan={scan_local_day:null as string|null,scan_start:null as string|null,
+  scan_end:null as string|null,scan_window_start:null as string|null,scan_page:null as number|null};
  let claim=true;
  const resolve=(table:string,filters:Record<string,unknown>)=>{
   if(table==="toast_location_mappings")return [mapping];
@@ -43,7 +45,7 @@ function makeDB(){
    return status.has(day)?[{import_state:"imported"}]:[];
   }
   if(table==="toast_repull_scan_state")
-   return scanDay?[{last_local_day:scanDay}]:[];
+   return scanDay||scan.scan_local_day?[{last_local_day:scanDay,...scan}]:[];
   if(table==="toast_sync_runs"){
    if(filters.kind==="backfill" && !filters.state)
     return backfillQueued?[{id:"backfill-placeholder"}]:[];
@@ -58,7 +60,7 @@ function makeDB(){
     select(_x:string){return q;},eq(k:string,v:unknown){filters[k]=v;return q;},
     not(_k:string,_op:string,_val:unknown){return q;},
     in(_k:string,_vals:unknown[]){return q;},
-    order(_k:string){return q;},limit(_n:number){return q;},
+    order(_k:string){return q;},range(_start:number,_end:number){return q;},update(_value:unknown){return q;},limit(_n:number){return q;},
     async maybeSingle(){return {data:resolve(table,filters)[0]??null,error:null};},
     async single(){return {data:resolve(table,filters)[0]??null,error:null};},
     async upsert(_row:unknown){calls.push("log_error");return {error:null};},
@@ -76,13 +78,26 @@ function makeDB(){
      runs.push({id:"daily",kind:"daily",requested_from:String(args.p_date),
       requested_to:String(args.p_date),state:"queued",days_done:0,days_total:1,cursor:{},resume_at:null});
    }else if(name==="toast_queue_backfill")backfillQueued=true;
-   else if(name==="toast_commit_repull_scan_window"){
-    scanDay=String(args.p_local_day);
+   else if(name==="toast_checkpoint_repull_scan_page"){
+    if(!scan.scan_local_day){
+     scan.scan_local_day=String(args.p_local_day);
+     scan.scan_start=String(args.p_scan_start);scan.scan_end=String(args.p_scan_end);
+     scan.scan_window_start=String(args.p_window_start);scan.scan_page=1;
+    }
+    if(scan.scan_page!==args.p_page||scan.scan_window_start!==args.p_window_start)
+     return {data:false,error:{message:"stale scan cursor"}};
     for(const date of args.p_days as string[]){
      if(!runs.some(r=>r.kind==="repull_modified"&&r.requested_from===date))
       runs.push({id:"repull-"+date,kind:"repull_modified",state:"queued",
        requested_from:date,requested_to:date,days_done:0,days_total:1,cursor:{},resume_at:null});
     }
+    if(args.p_last_page){
+     if(args.p_window_end===args.p_scan_end){
+      scanDay=String(args.p_local_day);
+      scan.scan_local_day=null;scan.scan_start=null;scan.scan_end=null;
+      scan.scan_window_start=null;scan.scan_page=null;
+     }else{scan.scan_window_start=String(args.p_window_end);scan.scan_page=1;}
+    }else scan.scan_page=(scan.scan_page??0)+1;
    }
    return {data:true,error:null};
   }
@@ -94,8 +109,9 @@ function makeDB(){
   status.add(p.businessDate);
   return {costsPending:false};
  });
- return {db:db as unknown as SupabaseClient,calls,imports,runs,status,
-  setLease(v:boolean){claim=v;},get backfillQueued(){return backfillQueued;}};
+ return {db:db as unknown as SupabaseClient,calls,imports,runs,status,scan,
+  get scanDay(){return scanDay;},setLease(v:boolean){claim=v;},
+  get backfillQueued(){return backfillQueued;}};
 }
 beforeEach(()=>{
  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
@@ -141,7 +157,7 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   const f=makeDB();
   m.request.mockResolvedValueOnce([{businessDate:20261020}]);
   await runToastSyncTick(f.db,now,Date.now()+60000);
-  expect(f.calls).toContain("toast_commit_repull_scan_window");
+  expect(f.calls).toContain("toast_checkpoint_repull_scan_page");
   expect(f.imports).toContain("2026-10-20");
   expect(m.reconcile).toHaveBeenCalledTimes(1);
   expect(f.runs.find(r=>r.kind==="repull_modified"))
@@ -156,4 +172,53 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   expect(m.request).not.toHaveBeenCalled();
   expect(f.calls).toEqual(["toast_acquire_lease"]);
  });
+});
+it("120 mappings rotate through all cafés in three full ticks despite a café using its slice",async()=>{
+ vi.useFakeTimers();vi.setSystemTime(now);
+ const maps=Array.from({length:120},(_,i)=>({business_id:"cafe-"+String(i).padStart(3,"0"),restaurant_guid:g,location_id:l,
+  toast_time_zone:"America/Los_Angeles",closeout_hour:4,verified_at:now.toISOString(),info_refreshed_at:now.toISOString(),last_tick_started_at:null as string|null}));
+ const reached=new Set<string>();let pages=0;
+ m.reconcile.mockImplementation(async(_db:unknown,p:{businessId:string})=>{reached.add(p.businessId);vi.setSystemTime(Date.now()+6000);return 0;});
+ const db={from(table:string){let patch:Record<string,unknown>|null=null;const filters:Record<string,string>={};
+  const q={select(){return q;},eq(k:string,v:string){filters[k]=v;return q;},in(){return q;},not(){return q;},order(){return q;},limit(){return q;},
+   update(p:Record<string,unknown>){patch=p;return q;},upsert(){return q;},
+   async range(start:number,end:number){pages++;return {data:[...maps].sort((a,b)=>(a.last_tick_started_at??"").localeCompare(b.last_tick_started_at??"")||a.business_id.localeCompare(b.business_id)).slice(start,end+1),error:null};},
+   async maybeSingle(){return {data:table==="toast_day_status"?{import_state:"imported"}:null,error:null};},
+   then(ok:(v:unknown)=>unknown){if(patch){const map=maps.find(m=>m.business_id===filters.business_id);if(map)Object.assign(map,patch);}
+    return Promise.resolve({data:[],error:null}).then(ok);}};return q;},
+  async rpc(name:string){return {data:name==="toast_acquire_lease"?"fair-lease":true,error:null};}} as unknown as SupabaseClient;
+ const logging=vi.spyOn(console,"info").mockImplementation(()=>{});
+ try{
+  for(let tick=0;tick<3;tick++)await runToastSyncTick(db,new Date(),Date.now()+240000);
+  expect(reached.size).toBe(120);expect(pages).toBe(3);
+  expect(logging).toHaveBeenCalledWith("toast_tick_skipped",expect.objectContaining({businessId:"cafe-040"}));
+ }finally{logging.mockRestore();vi.useRealTimers();}
+});
+
+it("resumes an exact 1,200-order scan across short slices without skipping the terminal page",async()=>{
+ vi.useFakeTimers();vi.setSystemTime(now);
+ const f=makeDB(),paths:string[]=[];
+ m.request.mockImplementation(async(path:string)=>{
+  paths.push(path);vi.setSystemTime(Date.now()+10000);
+  const page=Number(new URL(path,"https://example.invalid").searchParams.get("page"));
+  return page<=12?Array.from({length:100},()=>({businessDate:20261020})):[];
+ });
+ try{
+  await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(paths.length).toBeGreaterThan(0);
+  expect(paths.length).toBeLessThan(13);
+  expect(f.scanDay).toBeNull();
+  expect(f.scan.scan_page).toBe(paths.length+1);
+  for(let attempt=0;attempt<5&&f.scanDay===null;attempt++)
+   await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(paths).toHaveLength(13);
+  expect(paths.map(path=>new URL(path,"https://example.invalid").searchParams.get("page")))
+   .toEqual(Array.from({length:13},(_,i)=>String(i+1)));
+  expect(f.scanDay).toBe("2026-10-23");
+  expect(f.scan.scan_local_day).toBeNull();
+  expect(f.runs.filter(r=>r.kind==="repull_modified")).toHaveLength(1);
+  expect(f.imports).toContain("2026-10-20");
+  await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(paths).toHaveLength(13);
+ }finally{vi.useRealTimers();}
 });

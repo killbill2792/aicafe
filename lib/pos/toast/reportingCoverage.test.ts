@@ -54,7 +54,8 @@ function statusDb(rows:Array<{business_date:string;import_state:string;
   chain.range=async(start:number,end:number)=>({data:data.slice(start,end+1),error:null});
   return chain;
  };
- return {from:(table:string)=>table==="toast_day_owner_flags"
+ const flagged=[...new Set([...ownerFlagDates,...rows.filter(r=>r.recon_state==="mismatch"||r.recon_state==="coverage_invalid"||r.last_error_category).map(r=>r.business_date)])].map(business_date=>({business_date}));
+ return {rpc:()=>query(flagged),from:(table:string)=>table==="toast_day_owner_flags"
   ?query(ownerFlagDates.map(business_date=>({business_date,restaurant_guid:"restaurant"})))
   :query(rows)} as unknown as SupabaseClient;
 }
@@ -76,9 +77,17 @@ describe("owner/system flags remain distinct in reports",()=>{
    recon_state:"matched",last_error_category:null}];
   expect((await toastDayFlags(statusDb(rows,[date]),"business",date,date))[0].needsLook).toBe(true);
  });
- it("analytics timeout is a SYSTEM status even without an owner flag",async()=>{
+ it("analytics timeout falls back without adding a Needs a look item",async()=>{
   const rows=[{business_date:date,import_state:"imported",
    recon_state:"analytics_timeout",last_error_category:null}];
-  expect((await toastDayFlags(statusDb(rows),"business",date,date))[0].needsLook).toBe(true);
+  expect((await toastDayFlags(statusDb(rows),"business",date,date))[0].needsLook).toBe(false);
  });
+});
+
+it("paginates shared attention beyond the first two hundred combinations",async()=>{
+ const flags=Array.from({length:251},(_,i)=>new Date(Date.UTC(2026,0,1+i)).toISOString().slice(0,10));
+ const last=flags[flags.length-1];
+ const rows=[{business_date:last,import_state:"imported",recon_state:"matched",last_error_category:null}];
+ const result=await toastDayFlags(statusDb(rows,flags),"business",flags[0],last);
+ expect(result).toEqual([{date:last,status:"imported",needsLook:true}]);
 });

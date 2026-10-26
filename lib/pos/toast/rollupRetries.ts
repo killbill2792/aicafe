@@ -6,13 +6,15 @@ type Job={business_id:string;business_date:string;generation:string};
 
 /** Retry only the post-import cost computation, never the committed Toast day. */
 export async function retryToastRollupRefreshes(
- db:SupabaseClient,deadlineAt:number,limit=20
+ db:SupabaseClient,deadlineAt:number,limit=20,businessId?:string
 ):Promise<{processed:number;deferred:number}> {
  if(Date.now()>=deadlineAt)return {processed:0,deferred:0};
- const {data:jobs,error}=await db.from("toast_rollup_refresh_jobs")
+ let query=db.from("toast_rollup_refresh_jobs")
   .select("business_id,business_date,generation")
   .lte("retry_at",new Date().toISOString())
   .order("retry_at",{ascending:true}).limit(limit);
+ if(businessId)query=query.eq("business_id",businessId);
+ const {data:jobs,error}=await query;
  if(error)throw new Error("Toast cost refresh queue unavailable");
  let processed=0,deferred=0;
  for(const job of (jobs??[]) as Job[]){

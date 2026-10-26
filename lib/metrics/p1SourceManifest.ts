@@ -12,6 +12,9 @@ import type { SupportedId } from "./p1Catalog";
 type Surface = {capabilities:readonly SupportedId[]} |
   {restricted:string};
 export const SOURCE_SURFACES = {
+  "lib/data/getToastCheckEvidence.ts":{
+    getToastCheckEvidence:{restricted:"Selected-café, membership-checked Toast check provenance only; no credentials or independent financial metric, shared by owner UI and existing sales quality reads"},
+  },
   "lib/data/resolveUnmatchedAlerts.server.ts":{
     resolveUnmatchedAlertsIfClear:{restricted:"Owner-authenticated tenant-scoped alert status reconciliation after catalog actions; no model-triggered write"},
   },

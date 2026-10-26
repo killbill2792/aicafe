@@ -1,0 +1,42 @@
+import {beforeEach,afterEach,it,expect,vi} from "vitest";
+import type {SupabaseClient} from "@supabase/supabase-js";
+vi.mock("server-only",()=>({}));
+import {createToastAnalyticsClient} from "./analyticsClient";
+import {encryptToken} from "@/lib/security/tokenCrypto";
+const b="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",g="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+function fixture(){
+ const row={api_origin:"https://ws-api.toasttab.com",client_id:"analytics-client",client_secret_enc:encryptToken("secret"),
+  management_group_guid:g,bearer_token_enc:null,bearer_expires_at:null,verified_at:null};
+ const rpc=vi.fn(async(name:string)=>({data:name==="toast_claim_auth_lease"?"lease":name==="toast_claim_era_request"?true:null,error:null}));
+ const db={rpc,from(){let patch:object|null=null;
+  const q={select(){return q;},eq(){return q;},update(p:object){patch=p;return q;},
+   async maybeSingle(){if(patch)Object.assign(row,patch);return {data:row,error:null};},
+   then(ok:(v:unknown)=>unknown){if(patch)Object.assign(row,patch);return Promise.resolve({data:row,error:null}).then(ok);}};return q;}};
+ return {row,db:db as unknown as SupabaseClient,rpc};
+}
+beforeEach(()=>{vi.stubEnv("TOKEN_ENCRYPTION_KEY",Buffer.alloc(32,9).toString("base64"));vi.stubEnv("TOAST_ALLOWED_API_HOSTS","ws-api.toasttab.com");});
+afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
+it("login succeeds but a real ERA 403 never sets verified_at",async()=>{
+ const f=fixture();
+ vi.stubGlobal("fetch",vi.fn(async(url:string)=>url.includes("/authentication/")?
+  new Response(JSON.stringify({token:{accessToken:"bearer",expiresIn:3600}})):
+  new Response("",{status:403})));
+ await expect(createToastAnalyticsClient(f.db,b,Date.now()+20000).test(g,"2026-10-20"))
+  .rejects.toMatchObject({category:"missing_permissions"});
+ expect(f.row.bearer_token_enc).toBeTruthy();expect(f.row.verified_at).toBeNull();
+ expect(f.rpc).toHaveBeenCalledWith("toast_release_auth_lease",{p_business_id:b,p_lease_nonce:"lease"});
+});
+it("a genuine ERA 202 proves report access, including when the GUID is not ready",async()=>{
+ const f=fixture(),calls:string[]=[];
+ vi.stubGlobal("fetch",vi.fn(async(url:string)=>{calls.push(url);return url.includes("/authentication/")?
+  new Response(JSON.stringify({token:{accessToken:"bearer",expiresIn:3600}})):
+  new Response("",{status:202});}));
+ await createToastAnalyticsClient(f.db,b,Date.now()+20000).test(g,"2026-10-20");
+ expect(f.row.verified_at).toBeTruthy();expect(calls.some(p=>p.endsWith("/era/v1/metrics/day"))).toBe(true);
+});
+it("bad Analytics login cannot create false verification",async()=>{
+ const f=fixture();vi.stubGlobal("fetch",vi.fn(async()=>new Response("",{status:401})));
+ await expect(createToastAnalyticsClient(f.db,b,Date.now()+20000).test(g,"2026-10-20"))
+  .rejects.toMatchObject({category:"authentication"});
+ expect(f.row.verified_at).toBeNull();
+});

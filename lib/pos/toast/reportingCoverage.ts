@@ -37,15 +37,13 @@ export async function toastDayFlags(
   .select("business_date,restaurant_guid,import_state,recon_state,last_error_category")
   .eq("business_id",businessId).gte("business_date",from).lte("business_date",to)
   .order("business_date").order("restaurant_guid").range(start,end));
- const flags=await readAllPages((start,end)=>db.from("toast_day_owner_flags")
-  .select("restaurant_guid,business_date").eq("business_id",businessId)
-  .is("cleared_at",null).gte("business_date",from).lte("business_date",to)
-  .order("business_date").order("restaurant_guid").range(start,end));
+ const flags=await readAllPages<{business_date:string;restaurant_guid:string}>((start,end)=>db.rpc("toast_attention_days",{
+  p_business_id:businessId,p_from:from,p_to:to
+ }).range(start,end));
  const flagged=new Set(flags.map(x=>x.business_date));
  return data.map(row=>({
   date:row.business_date,
   status:row.import_state as ToastDayFlag["status"],
-  needsLook:["mismatch","analytics_timeout","coverage_invalid"].includes(row.recon_state)||
-   flagged.has(row.business_date)||Boolean(row.last_error_category)
+  needsLook:flagged.has(row.business_date)
  }));
 }

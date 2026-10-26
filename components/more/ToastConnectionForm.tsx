@@ -101,7 +101,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
   }catch{setMessage(labels.errorUnavailable);}
   finally{setPending(false);}
  }
- return <section className="flex flex-col gap-4 rounded-card-lg bg-card p-4">
+ return <section className="flex flex-col gap-4 rounded-card-lg bg-card p-4 text-[17px]">
   <p className="text-base text-ink-muted">{labels.instructions}</p>
   <div className="flex flex-wrap items-center justify-between gap-3">
    <p role="status" className="text-base font-semibold text-ink">
@@ -145,7 +145,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
     !Object.values(mapping).some(Boolean)&&<p className="text-sm text-ink-muted">{labels.manualLocationHint}</p>}
    {!approvedOrigins.includes(apiUrl)&&<p className="text-sm text-ink-muted">{labels.chooseApiUrl}</p>}
    <details className="rounded-xl border border-line p-3">
-    <summary className="cursor-pointer text-base font-semibold text-ink">{labels.technicalDetails}</summary>
+    <summary className="min-h-12 cursor-pointer text-base font-semibold text-ink">{labels.technicalDetails}</summary>
     <div className="mt-4 flex flex-col gap-4">
      {approvedOrigins.length>1&&<label className="flex flex-col gap-1 text-base font-semibold text-ink">
       {labels.url}

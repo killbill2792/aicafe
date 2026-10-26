@@ -55,7 +55,12 @@ function pilotReader(rows:Row[],rpcDates:string[],canonicalToastDates:string[],b
  const ownerFlags={select:()=>ownerFlags,eq:()=>ownerFlags,is:()=>ownerFlags,
   gte:()=>ownerFlags,lte:()=>ownerFlags,order:()=>ownerFlags,
   range:async()=>({data:[],error:null})};
- const rpc=vi.fn().mockResolvedValue({data:rpcDates.map(business_date=>({business_date})),error:null});
+ // Preserve the legacy coverage RPC and model the new pageable attention RPC.
+ const attention=flags.map(flag=>({business_date:(flag as {business_date:string}).business_date,
+  restaurant_guid:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}));
+ const rpc=vi.fn((name:string)=>name==="toast_attention_days"?
+  {range:async(start:number,end:number)=>({data:attention.slice(start,end+1),error:null})}:
+  Promise.resolve({data:name==="toast_check_evidence"?null:rpcDates.map(business_date=>({business_date})),error:null}));
  return supervisorHistoricalReaders({
   from:(table:string)=>table==="orders"?orders:table==="toast_day_status"?flagsRead:
    table==="toast_day_owner_flags"?ownerFlags:rollup,rpc

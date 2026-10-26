@@ -10,7 +10,7 @@ export type ToastMapping={
 export type ToastDay={
  business_date:string;restaurant_guid:string;import_state:string;
  coverage_complete:boolean;net_sales_cents:number|null;order_count:number|null;
- recon_state?:string;toast_net_sales_cents?:number|null;
+ recon_state?:string;toast_net_sales_cents?:number|null;paid_other_day?:number;
 };
 export function applicableLocations(mappings:readonly ToastMapping[],date:string){
  return mappings.filter(m=>m.verified_at!==null &&
@@ -33,6 +33,7 @@ export function dayTotals(mappings:readonly ToastMapping[],days:readonly ToastDa
   Number.isSafeInteger(row.toast_net_sales_cents));
  return {
   complete,
+  paidOtherDay:proof.rows.reduce((n,row)=>n+(row?.paid_other_day??0),0),
   toastNetSalesCents:toastKnown?proof.rows.reduce((n,row)=>
    n+(row!.toast_net_sales_cents as number),0):null,
   netSalesCents:known?proof.rows.reduce((n,row)=>n+(row!.net_sales_cents as number),0):null,

@@ -1,4 +1,5 @@
 import "server-only";
+import {getToastCheckEvidence} from "./getToastCheckEvidence";
 import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { normalizeOpenHours } from "@/lib/business/openHours";
@@ -16,7 +17,7 @@ type CafeDb = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 async function readToastState(businessId: string): Promise<MoreBadgeInputs["toast"]> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return undefined;
   const db = createAdminSupabaseClient();
-  const [credential, locations, health, attention] = await Promise.all([
+  const [credential, locations, health, attention,checkEvidence] = await Promise.all([
     db.from("toast_api_credentials").select("state,last_error_category")
       .eq("business_id", businessId).maybeSingle(),
     db.from("toast_location_mappings").select("verified_at")
@@ -25,9 +26,11 @@ async function readToastState(businessId: string): Promise<MoreBadgeInputs["toas
       .eq("business_id", businessId),
     db.from("toast_owner_attention_counts_v").select("days_needing_look")
       .eq("business_id", businessId).maybeSingle(),
+    getToastCheckEvidence(db,businessId),
   ]);
   if (credential.error || locations.error || health.error || attention.error) return undefined;
   return {
+    checkMode:checkEvidence?.mode,
     state: credential.data?.state ?? "not_connected",
     hasError: Boolean(credential.data?.last_error_category ||
       health.data?.some((row) => row.stale)),
