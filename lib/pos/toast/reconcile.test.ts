@@ -516,3 +516,63 @@ describe("recovered Analytics pending reports",()=>{
   expect(f.item.warnings).toHaveProperty("reconciliation_mismatch",1);
  });
 });
+
+describe("owner check scheduling invariants",()=>{
+ it("I2: a cached internal mismatch reruns proof instead of reusing mismatch",async()=>{
+  const f=fakeDb(false);
+  Object.assign(f.item,{recon_state:"mismatch",internal_state:"mismatch",
+   last_recon_attempt_at:null,internal_reasons:["invalid_checks"]});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.request).toHaveBeenCalledWith(
+   expect.stringContaining("/orders/v2/ordersBulk"),restaurant,expect.anything(),expect.anything());
+  expect(f.item).toMatchObject({recon_state:"checked_internal",internal_state:"matched"});
+  expect(f.item.last_recon_attempt_at).not.toBeNull();
+ });
+ it("I3: 61 cached official-pending days cannot starve a newer pending task",async()=>{
+  const f=fakeDb(false);
+  const old=Array.from({length:61},(_,i)=>({...status(),
+   business_date:new Date(Date.UTC(2026,9,1+i)).toISOString().slice(0,10),
+   recon_state:"checked_internal",internal_state:"matched",
+   analytics_state:"pending",last_recon_attempt_at:null}));
+  const newcomer={...status(),business_date:"2026-09-20",
+   internal_state:null as string|null,analytics_state:null,recon_state:"pending",
+   last_recon_attempt_at:null};
+  f.setBatch([...old,newcomer]);
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(newcomer.last_recon_attempt_at).not.toBeNull();
+  expect(newcomer.recon_state).toBe("checked_internal");
+  expect(f.selection.or.every(expr=>!expr.includes("recon_state.eq.checked_internal"))).toBe(true);
+ });
+ it("I3: a cached internal match keeps a prior official mismatch and advances its cursor",async()=>{
+  const f=fakeDb(false);
+  Object.assign(f.item,{recon_state:"mismatch",recon_source:"toast_analytics",
+   internal_state:"matched",last_recon_attempt_at:null});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("mismatch");
+  expect(f.item.recon_source).toBe("toast_analytics");
+  expect(f.item.last_recon_attempt_at).not.toBeNull();
+ });
+ it("I1: payment recovery never changes an established ERA mismatch into pending",async()=>{
+  const f=fakeDb(false);
+  Object.assign(f.item,{recon_state:"mismatch",recon_source:"toast_analytics",
+   internal_state:null,payment_repull_at:null});
+  const extra="ffffffff-ffff-4fff-8fff-ffffffffffff";
+  const orderId="11111111-1111-4111-8111-111111111111";
+  f.setOrder({id:"canonical",toast_excluded:false,business_date:"2026-10-15"});
+  f.setOtherDay({import_state:"imported",unparsed_count:1,coverage_complete:false,
+   rechecking_reason:null});
+  mocked.request.mockImplementation(async(path:string)=>{
+   if(path.includes("paidBusinessDate"))return [payment,extra];
+   if(path.includes("/payments/"+extra))return {
+    guid:extra,orderGuid:orderId,paidBusinessDate:20261016};
+   if(path.includes("/orders/"+orderId))return {guid:orderId,businessDate:20261015};
+   return orderWithAutoGratAndGiftCard();
+  });
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("mismatch");
+  expect(f.item.recon_source).toBe("toast_analytics");
+  expect(f.item.internal_state).toBeNull();
+  expect(f.item.payment_repull_at).toBeTruthy();
+ });
+});
