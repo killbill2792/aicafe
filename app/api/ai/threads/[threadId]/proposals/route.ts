@@ -26,7 +26,8 @@ const actions=z.discriminatedUnion("action",[
   z.strictObject({action:z.literal("edit_purchase"),proposalId:uuid,revision,
     ingredientId:uuid.nullable(),quantity:z.number().finite().positive().max(1e9),
     unit:z.string().trim().min(1).max(40),costCents:z.number().int().nonnegative().safe().nullable(),
-    date:z.iso.date()}),
+    date:z.iso.date(),receiptVendor:z.string().trim().min(1).max(160).nullable().optional(),
+    receiptTotalCents:z.number().int().positive().safe().nullable().optional()}),
 ]);
 async function context(threadId:string){
   const {scope,service}=await authenticatedConversationContext();
@@ -156,7 +157,10 @@ export async function POST(request:Request,{params}:Params){
         const newName=selected?.data?.name??current.name;
         const simulation=await simulateLoop({...scope,locale:p.locale},supervisorLoopRegistry,purchaseCapabilityId,{
           name:newName,ingredientId:input.ingredientId,quantity:input.quantity,
-          unit:input.unit,costCents:input.costCents,date:input.date,source:current.source
+          unit:input.unit,costCents:input.costCents,date:input.date,source:current.source,
+          receiptGroupId:current.receiptGroupId??null,receiptLineIndex:current.receiptLineIndex??null,
+          receiptVendor:input.receiptVendor??current.receiptVendor??null,
+          receiptTotalCents:input.receiptTotalCents??current.receiptTotalCents??null
         });
         const effect=supervisorLoopRegistry.get(purchaseCapabilityId).parseEffect(simulation.effect);
         try{
