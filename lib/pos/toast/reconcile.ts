@@ -160,11 +160,15 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   .eq("business_date",day).maybeSingle();
  if(je)throw new ToastApiError("unavailable");
  const retained=stateWithoutFreshAnalytics(status,status.internal_state??"matched");
- // Once fresh credentials pass verification, a previously missing report
- // must start a new request rather than permanently short-circuiting.
- let reportId=job?.state==="missing"?null:job?.report_request_guid as string|null;
- let requested=job?.state==="missing"?null:job?.requested_at as string|null;
- if(requested&&Date.now()-Date.parse(requested)>48*3600000){
+ // A completed report is evidence for its completed comparison, not an
+ // unfinished request. Any later reconciliation requests a fresh ERA report.
+ // Likewise, resume a missing report with a new request after credentials
+ // have been reverified. Only truly pending reports can time out.
+ const unfinished=job?.state==="pending";
+ const refresh=job?.state==="available"||job?.state==="missing";
+ let reportId=refresh?null:job?.report_request_guid as string|null;
+ let requested=refresh?null:job?.requested_at as string|null;
+ if(unfinished&&requested&&Date.now()-Date.parse(requested)>48*3600000){
   const {error:expired}=await db.from("toast_analytics_jobs").upsert({
    business_id:p.businessId,restaurant_guid:p.restaurantGuid,business_date:day,
    report_request_guid:reportId,requested_at:requested,state:"missing",
@@ -201,7 +205,7 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
  }
  const result=await client.getDay(reportId);
  if(result.pending){
-  if(requested&&Date.now()-Date.parse(requested)>48*3600000){
+  if(unfinished&&requested&&Date.now()-Date.parse(requested)>48*3600000){
    const {error}=await db.from("toast_analytics_jobs").update({
     state:"missing",last_error_category:"analytics_timeout"
    }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
@@ -377,6 +381,9 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
  const internal=proof.reasons.length?"mismatch":"matched";
  await writeReconciliation(db,p,day,{
   internal_state:internal,internal_reasons:proof.reasons,paid_other_day:paidOtherDay,
+  // The first recovery attempt persists across imports, and is reset only when
+  // we establish a verdict (matched or explicitly escalated mismatch).
+  payment_repull_at:null,
   recon_state:stateWithoutFreshAnalytics(status,internal),
   recon_source:status.recon_state==="mismatch"&&status.recon_source==="toast_analytics"
    ?"toast_analytics":"internal",

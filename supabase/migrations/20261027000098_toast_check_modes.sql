@@ -245,7 +245,10 @@ begin
   -- the previous snapshot. An old ERA report must not match a new import.
   new.rechecking_reason=null;new.internal_state=null;
   new.internal_reasons='[]';new.paid_other_day=0;
-  new.payment_repull_at=null;new.analytics_state=null;
+  -- An import invalidates its proof, but must NOT restart an unresolved
+  -- cross-day payment recovery timer. That deadline belongs to the payment
+  -- discrepancy and survives repeated recovery imports until a verdict.
+  new.analytics_state=null;
   new.recon_source=null;new.reconciled_at=null;new.last_recon_attempt_at=null;
   new.toast_net_sales_cents=null;new.toast_orders_count=null;
   new.toast_discount_cents=null;new.toast_refund_cents=null;

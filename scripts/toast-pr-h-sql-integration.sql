@@ -121,6 +121,24 @@ SELECT pg_temp.reject($q$UPDATE public.toast_day_status SET imported_at=now()+in
 SELECT pg_temp.assert((SELECT last_import_run_id is null FROM public.toast_day_status
  WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND business_date='2026-10-01'),
  'superseded import did not rewrite the owner day');
+-- A payment-recovery deadline survives any number of successful imports
+-- until reconciliation has explicitly matched or escalated the discrepancy.
+UPDATE public.toast_day_status SET payment_repull_at='2026-10-20T12:00:00Z'
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND restaurant_guid='dddddddd-dddd-4ddd-8ddd-dddddddd0002'
+ AND business_date='2026-10-02';
+UPDATE public.toast_day_status SET imported_at=now()+interval '4 seconds'
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-02';
+UPDATE public.toast_day_status SET imported_at=now()+interval '5 seconds'
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-02';
+SELECT pg_temp.assert((SELECT payment_repull_at='2026-10-20T12:00:00Z'::timestamptz
+ AND internal_state IS NULL AND analytics_state IS NULL
+ FROM public.toast_day_status
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND restaurant_guid='dddddddd-dddd-4ddd-8ddd-dddddddd0002'
+ AND business_date='2026-10-02'), 'reimports preserve recovery start but discard old proof');
 -- A page checkpoint must not certify an incomplete scan.
 SELECT pg_temp.assert(public.toast_checkpoint_repull_scan_page(
  'dddddddd-dddd-4ddd-8ddd-dddddddddddd','dddddddd-dddd-4ddd-8ddd-dddddddd0002',

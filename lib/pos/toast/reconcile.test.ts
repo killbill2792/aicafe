@@ -409,3 +409,40 @@ it("an accepted 202 without an Analytics report GUID stays pending without a pro
   internal_state:"matched",analytics_state:"pending",last_error_category:null});
  expect(mocked.getDay).not.toHaveBeenCalled();
 });
+
+describe("recovery timers and finished Analytics reports",()=>{
+ it("refreshes an old completed ERA report rather than treating it as a global timeout",async()=>{
+  const f=fakeDb(true);
+  Object.assign(f.item,{recon_state:"mismatch",recon_source:"toast_analytics",
+   internal_state:"matched",analytics_state:"available"});
+  f.setJob({report_request_guid:report,requested_at:new Date(Date.now()-72*3600000).toISOString(),
+   state:"available"});
+  const fresh="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  mocked.requestDay.mockResolvedValue(fresh);
+  mocked.getDay.mockResolvedValue({pending:true});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.requestDay).toHaveBeenCalledTimes(1);
+  expect(mocked.getDay).toHaveBeenCalledWith(fresh);
+  expect(mocked.mode).toBe("official");
+  expect(f.item).toMatchObject({recon_state:"mismatch",analytics_state:"pending",
+   recon_source:"toast_analytics"});
+  expect(f.certifiedVoids).toBe(false);
+ });
+ it("still falls back for a genuinely unfinished 49-hour ERA report",async()=>{
+  const f=fakeDb(true);
+  f.setJob({report_request_guid:report,
+   requested_at:new Date(Date.now()-49*3600000).toISOString(),state:"pending"});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.mode).toBe("internal");
+  expect(mocked.requestDay).not.toHaveBeenCalled();
+  expect(mocked.getDay).not.toHaveBeenCalled();
+  expect(f.item.analytics_state).toBe("missing");
+ });
+ it("clears payment recovery only when a genuine internal verdict is reached",async()=>{
+  const f=fakeDb(false);
+  Object.assign(f.item,{payment_repull_at:new Date(Date.now()-3600000).toISOString()});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item).toMatchObject({recon_state:"checked_internal",payment_repull_at:null});
+  expect(f.writes).toContainEqual(expect.objectContaining({payment_repull_at:null}));
+ });
+});
