@@ -37,9 +37,9 @@ try{
  const setup=[
   "create extension if not exists pgcrypto",
   "create schema auth",
-  "do $ begin create role authenticated nologin; exception when duplicate_object then null; end $",
-  "do $ begin create role anon nologin; exception when duplicate_object then null; end $",
-  "do $ begin create role service_role nologin; exception when duplicate_object then null; end $",
+  "do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$",
+  "do $$ begin create role anon nologin; exception when duplicate_object then null; end $$",
+  "do $$ begin create role service_role nologin; exception when duplicate_object then null; end $$",
   "create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$",
   "create table businesses(id uuid primary key,is_demo boolean not null default false,timezone text not null default 'America/Los_Angeles')",
   "create table memberships(business_id uuid references businesses(id),user_id uuid,role text,primary key(business_id,user_id))",
