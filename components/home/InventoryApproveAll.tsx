@@ -13,16 +13,17 @@ export default function InventoryApproveAll({threadId,ids,locale}:{
  const [result,setResult]=useState<{saved:number;failed:number}|null>(null);
  const t={en,es,ar}[locale].InventoryApprovalCard;
  const endpoint="/api/ai/threads/"+encodeURIComponent(threadId)+"/proposals";
+ const keys=ids.join(",");
  useEffect(()=>{
   if(ids.length<2)return;
   let live=true;
-  void fetch(endpoint+"?ids="+encodeURIComponent(ids.join(",")),{cache:"no-store"})
+  void fetch(endpoint+"?ids="+encodeURIComponent(keys),{cache:"no-store"})
    .then(r=>{if(!r.ok)throw Error("read");return r.json();})
    .then((data:{cards:ProposalView[]})=>{
     if(live)setCards(data.cards.filter(card=>card.capabilityId==="maya.inventory_purchase.v1"));
    }).catch(()=>{if(live)setResult({saved:0,failed:ids.length});});
   return ()=>{live=false;};
- },[endpoint,ids.join(",")]);
+ },[endpoint,keys]);
  if(cards.length<2)return null;
  const available=cards.some(card=>["pending","failed","conflict"].includes(card.state));
  const approve=async()=>{
