@@ -20,6 +20,7 @@ const cases:Array<{label:string;event:DayCheckEvent}>= [
  {label:"ERA pending",event:{type:"era_pending"}},
  {label:"ERA matching result",event:{type:"era_result",matched:true,comparisonMatched:true,sourceIncomplete:false}},
  {label:"ERA mismatching result",event:{type:"era_result",matched:false,comparisonMatched:false,sourceIncomplete:false}},
+ {label:"internal provider error",event:{type:"internal_error",category:"unavailable"}},
  {label:"ERA response error",event:{type:"era_error",category:"unavailable",permissionsLost:false}},
  {label:"ERA permission error",event:{type:"era_error",category:"authentication",permissionsLost:true}},
  {label:"ERA timeout",event:{type:"era_timeout"}},
@@ -107,4 +108,12 @@ describe("complete pure Toast day-check transitions",()=>{
   expect(fixed.warnings).not.toHaveProperty("invalid_checks");
   expect(fixed.warnings.time_zone_mismatch).toBe(1);
  });
+});
+
+it("internal API failures preserve official proof without fabricating Analytics pending status",()=>{
+ const current=day({recon_state:"mismatch",recon_source:"toast_analytics",
+  analytics_state:"available",internal_state:"mismatch"});
+ const result=nextDayCheckState(current,{type:"internal_error",category:"unavailable"},at);
+ expect(result).toMatchObject({recon_state:"mismatch",recon_source:"toast_analytics",
+  analytics_state:"available",last_error_category:"unavailable"});
 });
