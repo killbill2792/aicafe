@@ -1,7 +1,7 @@
 "use client";
 import {useEffect,useRef,useState} from "react";
 import Link from "next/link";
-import {composeScheduleLink,eligibleForChannel,type OwnerChannel} from "@/lib/calc/scheduling/ownerDeliveryLinks";
+import {composeScheduleLink,eligibleForChannel,buildScheduleCopyAll,type OwnerChannel} from "@/lib/calc/scheduling/ownerDeliveryLinks";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -126,7 +126,7 @@ export default function OwnerScheduleSendPanel({week,proposalId,locale}:Props){
    <p className="text-sm font-semibold">{t.week}: {data.week}</p>
    {data.recipients.length===0&&<p>{t.noShifts}</p>}
    <div className="flex flex-wrap gap-3">
-    <button type="button" onClick={()=>void copyMessage(data.recipients.map(p=>p.name+"\n"+p.message).join("\n\n"))} className="min-h-12 rounded-xl border border-line px-4 text-[17px]">{t.copyAll}</button>
+    <button type="button" onClick={()=>void copyMessage(buildScheduleCopyAll(data.recipients))} className="min-h-12 rounded-xl border border-line px-4 text-[17px]">{t.copyAll}</button>
     {eligible.length>0&&<button type="button" onClick={()=>{setBatch(eligible.map(p=>p.id));setPosition(0);}}
       className="min-h-12 rounded-xl bg-accent px-4 font-semibold text-on-accent">{t.sendAll}</button>}
    </div>
