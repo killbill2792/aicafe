@@ -446,3 +446,29 @@ describe("recovery timers and finished Analytics reports",()=>{
   expect(f.writes).toContainEqual(expect.objectContaining({payment_repull_at:null}));
  });
 });
+
+it("escalates cross-day payment recovery at its original deadline even after reimports",async()=>{
+ const f=fakeDb(false);
+ const extra="ffffffff-ffff-4fff-8fff-ffffffffffff";
+ const orderId="11111111-1111-4111-8111-111111111111";
+ const started=new Date(Date.now()-7*3600000).toISOString();
+ Object.assign(f.item,{payment_repull_at:started});
+ f.setOrder({id:"canonical-order",toast_excluded:false,business_date:"2026-10-15"});
+ f.setOtherDay({import_state:"imported",rechecking_reason:null,
+  unparsed_count:1,coverage_complete:false});
+ mocked.request.mockImplementation(async(path:string)=>{
+  if(path.includes("paidBusinessDate"))return [payment,extra];
+  if(path.includes("/payments/"+extra))return {
+   guid:extra,orderGuid:orderId,paidBusinessDate:20261016};
+  if(path.includes("/orders/"+orderId))return {
+   guid:orderId,businessDate:20261015};
+  return orderWithAutoGratAndGiftCard();
+ });
+ await reconcileToastDays(f.db,p,Date.now()+20000);
+ expect(f.item).toMatchObject({recon_state:"mismatch",internal_state:"mismatch",
+  payment_repull_at:null});
+ expect(f.writes.some(w=>(w.internal_reasons as string[]|undefined)
+  ?.includes("unknown_payment_order"))).toBe(true);
+ expect(f.calls).not.toContain("toast_queue_backfill");
+ expect(f.certifiedVoids).toBe(false);
+});
