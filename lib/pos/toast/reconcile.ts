@@ -174,6 +174,7 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   await writeReconciliation(db,p,day,status,{type:"era_timeout"});
    const downgraded=await setToastCheckMode(db,p.businessId,"internal",
     "analytics_timeout",usedVerifiedAt);
+  if(!downgraded)await writeReconciliation(db,p,day,status,{type:"era_pending"});
   return downgraded?"timeout" as const:undefined;
  }
  if(!reportId){
@@ -419,6 +420,7 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
        category==="authentication"?"analytics_auth_failed":"analytics_forbidden",
        verifiedGeneration);
       if(downgraded)mode="internal";
+      else await writeReconciliation(db,scoped,day,status,{type:"era_pending"});
      }
     }
    }
