@@ -47,6 +47,7 @@ export const purchaseCapability=registerLoopCapability({
  },
  commit:async(_scope,effect,proposalId)=>{
   if(!effect.ingredientId)throw new Error("ingredient_match_required");
+  if(!proposalId)throw new Error("proposal_id_required");
   const result=await recordPurchases([{
    lineId:proposalId,ingredientId:effect.ingredientId,date:effect.date,
    quantity:effect.quantity,unit:effect.unit,costCents:effect.costCents
