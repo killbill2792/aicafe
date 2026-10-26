@@ -99,7 +99,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       {value.state==="applied"&&(
         value.capabilityId?.startsWith("olivia.staff_propose_schedule.v")===true||
         value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true)&&
-        <OwnerScheduleSendPanel key={proposalId} proposalId={proposalId} locale={locale}/>}
+        <><p className="mt-3 text-[17px]">{dict[locale].OwnerScheduleDelivery.approvalReply}</p><OwnerScheduleSendPanel key={proposalId} proposalId={proposalId} locale={locale}/></>}
 
       {(pending||retry)&&<div className="mt-4 flex flex-wrap gap-2">
         <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}

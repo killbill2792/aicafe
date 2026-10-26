@@ -23,7 +23,7 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
  return <PageShell className="!max-w-full">{result.ok?
   <StaffWorkspace key={`${selected}:${date??""}:${employee??""}:${tab??""}:${fix??""}:${clock??""}`} initial={result.data} tab={tab} locale={locale}
    focusDate={validScheduleDate(date)?date:undefined} focusEmployee={employee}
-   focusRule={isStaffRuleKey(fix)?fix:undefined} focusClock={validShiftClock(clock??"")?clock:undefined} teamExtras={<TeamLegacyMetrics/>}
+   focusContact={fix==="phone"||fix==="consent"?fix:undefined} focusRule={isStaffRuleKey(fix)?fix:undefined} focusClock={validShiftClock(clock??"")?clock:undefined} teamExtras={<TeamLegacyMetrics/>}
    initialAlerts={alerts.ok?[...alerts.alerts]:[]} alertError={alerts.ok?null:alerts.error}/>:
   <div className="p-6 text-fg"><h1>{t("schedule")}</h1><p role="alert">{t("loadError")} ({result.error}).</p></div>}</PageShell>;
 }
