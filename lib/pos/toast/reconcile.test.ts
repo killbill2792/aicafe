@@ -8,7 +8,7 @@ vi.mock("./client",async()=>{
  class ToastApiError extends Error{constructor(public category:string){super(category);}}
  return {GUID:z.uuid(),ToastApiError,createToastClient:()=>({request:mocked.request})};
 });
-vi.mock("./checkMode",()=>({detectToastCheckMode:async()=>mocked.mode,setToastCheckMode:vi.fn(async(_db:unknown,_b:string,mode:string)=>{mocked.mode=mode;})}));
+vi.mock("./checkMode",()=>({detectToastCheckMode:async()=>mocked.mode,setToastCheckMode:vi.fn(async(_db:unknown,_b:string,mode:string)=>{mocked.mode=mode;return true;})}));
 vi.mock("./analyticsClient",()=>({createToastAnalyticsClient:()=>({
  requestDay:mocked.requestDay,getDay:mocked.getDay})}));
 vi.mock("./adapter",()=>({toastMoneyCents:(v:number)=>Math.round(v*100)}));
