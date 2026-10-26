@@ -261,7 +261,9 @@ declare d record; recovery_id uuid; recovery_dates date[];
 begin
  if old.toast_time_zone is not distinct from new.toast_time_zone and
  coalesce(old.closeout_hour,0)=coalesce(new.closeout_hour,0) then return new;end if;
- update public.toast_day_status set recon_state='pending',last_recon_attempt_at=null,
+ update public.toast_day_status set
+ recon_state=case when recon_state='mismatch' and recon_source='toast_analytics'
+  then 'mismatch' else 'pending' end,last_recon_attempt_at=null,
  rechecking_reason='closeout_changed',last_error_category=case when last_error_category='closeout_changed' then null else last_error_category end
  where business_id=new.business_id and restaurant_guid=new.restaurant_guid and import_state='imported';
  update public.toast_location_mappings set recheck_total=(select count(*) from public.toast_day_status
@@ -312,7 +314,7 @@ begin
  if new.import_state='imported' then
   -- An import invalidates both internal proof and ALL external evidence from
   -- the previous snapshot. An old ERA report must not match a new import.
-  new.rechecking_reason=null;new.internal_state=null;
+  new.rechecking_reason=null;new.recon_state='pending';new.internal_state=null;
   new.internal_reasons='[]';new.paid_other_day=0;
   -- An import invalidates its proof, but must NOT restart an unresolved
   -- cross-day payment recovery timer. That deadline belongs to the payment
@@ -325,6 +327,8 @@ begin
   new.delta_discount_cents=null;new.delta_refund_cents=null;
   new.delta_void_orders=null;new.void_amount_gap_cents=null;
   new.last_error_category=null;
+  new.warnings=coalesce(new.warnings,'{}'::jsonb)-
+   'reconciliation_mismatch'-'source_incomplete'-'analytics_timeout';
  end if;return new;
 end $clear$;
 revoke all on function public.toast_clear_recheck_after_import() from public,anon,authenticated;
