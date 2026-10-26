@@ -18,7 +18,7 @@ describe("purchase proposal tool: ten-line receipt, independent approvals",()=>{
   expect(proposePurchases).toHaveBeenCalledTimes(1);
   expect(result).toMatchObject({source:"purchase_proposal",draft:true,saved:false,
    missing:["someLinesNeedReview"]});
-  const proposed=(result as {proposals:Array<{proposalId?:string;error?:string}>}).proposals;
+  const proposed=(result as unknown as {proposals:Array<{proposalId?:string;error?:string}>}).proposals;
   expect(proposed).toHaveLength(10);
   expect(proposed[3].error).toBe("needs_review");
   expect(proposed.filter(row=>row.proposalId)).toHaveLength(9);
