@@ -3,6 +3,9 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 /** External compose only. These links do not send or confirm delivery. */
 export type OwnerChannel="whatsapp"|"sms";
+export function staffContactFixHref(locale:StaffMessageLocale,employeeId:string,fix:"phone"|"consent"):string {
+ return `/${locale}/staff?tab=team&employee=${encodeURIComponent(employeeId)}&fix=${fix}`;
+}
 export function buildScheduleCopyAll(people:readonly {name:string;message:string}[]):string {
  return people.map(p=>p.name+"\n"+p.message).join("\n\n");
 }

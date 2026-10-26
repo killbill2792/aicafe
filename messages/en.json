@@ -3161,7 +3161,8 @@
     "copyError": "Copy failed. Select the text and copy manually.",
     "linkTooLong": "Message too long for link. Use Copy.",
     "approvalReply": "Approved. I can't send messages myself. Use the buttons below to open WhatsApp or SMS for each person.",
-    "draftNotice": "I can't send messages myself. After approval, use the buttons to open WhatsApp or SMS for each person."
+    "draftNotice": "I can't send messages myself. After approval, use the buttons to open WhatsApp or SMS for each person.",
+    "openError": "Couldn't open the message app. Use Copy message instead."
   },
   "UploadReview": {
     "title": "Upload review",

@@ -3161,7 +3161,8 @@
     "copyError": "No se pudo copiar. Selecciona el texto y cópialo manualmente.",
     "linkTooLong": "Mensaje demasiado largo para el enlace. Usa Copiar.",
     "approvalReply": "Aprobado. No puedo enviar mensajes. Usa los botones para abrir WhatsApp o SMS para cada persona.",
-    "draftNotice": "No puedo enviar mensajes por mi cuenta. Después de aprobar, usa los botones para abrir WhatsApp o SMS para cada persona."
+    "draftNotice": "No puedo enviar mensajes por mi cuenta. Después de aprobar, usa los botones para abrir WhatsApp o SMS para cada persona.",
+    "openError": "No se pudo abrir la aplicación de mensajes. Usa Copiar mensaje."
   },
   "UploadReview": {
     "title": "Revisar carga",

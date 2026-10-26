@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {composeScheduleLink,validE164,eligibleForChannel,buildScheduleMessage,scheduleApprovalReply,scheduleDraftNotice,buildScheduleCopyAll} from "./ownerDeliveryLinks";
+import {composeScheduleLink,validE164,eligibleForChannel,buildScheduleMessage,scheduleApprovalReply,scheduleDraftNotice,buildScheduleCopyAll,staffContactFixHref} from "./ownerDeliveryLinks";
 describe("owner-initiated schedule compose links",()=>{
  it("encodes message as a query component for wa.me (not phone plus)",()=>{
   const text="Hola María & أحمد\nMonday 7:00–15:00 + tips";
@@ -50,6 +50,10 @@ describe("manual schedule delivery guarantees",()=>{
    expect(scheduleApprovalReply(locale)).not.toMatch(/\b(?:sent|texted|delivered)\b/i);
    expect(scheduleDraftNotice(locale)).not.toMatch(/\b(?:sent|texted|delivered)\b/i);
   }
+ });
+ it("creates an exact locale-aware deep link to the correct employee editor field",()=>{
+  expect(staffContactFixHref("en","employee 1","phone")).toBe("/en/staff?tab=team&employee=employee%201&fix=phone");
+  expect(staffContactFixHref("ar","employee 2","consent")).toBe("/ar/staff?tab=team&employee=employee%202&fix=consent");
  });
  it("joins all prepared messages with recipient headers",()=>{
   expect(buildScheduleCopyAll([{name:"María",message:"Hola María"},{name:"Ahmed",message:"مرحبا أحمد"}]))
