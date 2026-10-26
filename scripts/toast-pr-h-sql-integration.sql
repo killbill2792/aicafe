@@ -92,7 +92,21 @@ SELECT pg_temp.assert(NOT EXISTS(SELECT 1 FROM public.toast_analytics_jobs
 UPDATE public.toast_day_status SET unparsed_count=1 WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND business_date='2026-10-01';
 SELECT pg_temp.assert((SELECT days_needing_look=1 FROM public.toast_owner_attention_counts_v
  WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'unreadable day is counted once');
+-- I5: old complete Toast void figures must be uncertified on closeout.
+INSERT INTO public.daily_rollups(business_id,business_date,
+ net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,
+ staff_tax_cents,card_fees_cents,voids_cents,sales_data_status,
+ voids_status,voids_source)
+VALUES('dddddddd-dddd-4ddd-8ddd-dddddddddddd','2026-10-01',
+ 123456,210,210,0,0,0,0,500,'actual','complete','toast')
+ON CONFLICT(business_id,business_date) DO UPDATE SET
+ voids_status='complete',voids_source='toast',sales_data_status='actual';
 UPDATE public.toast_location_mappings SET closeout_hour=5 WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+SELECT pg_temp.assert((SELECT voids_status='unknown' AND voids_source IS NULL
+ AND sales_data_status='actual' AND net_sales_cents=123456
+ FROM public.daily_rollups WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+ AND business_date='2026-10-01'),
+ 'I5: closeout revokes void proof without erasing sales or showing unknown as zero');
 SELECT pg_temp.assert((SELECT count(*)=3 FROM public.toast_day_status WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'
  AND coverage_complete AND import_state='imported' AND rechecking_reason='closeout_changed'),'closeout preserves all three imports');
 SELECT pg_temp.assert((SELECT days_needing_look=1 FROM public.toast_owner_attention_counts_v WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'closeout does not add all days to attention');
@@ -110,10 +124,24 @@ SELECT pg_temp.assert(public.toast_enable_official_check('dddddddd-dddd-4ddd-8dd
  'valid separate Analytics credentials may enable official mode');
 SELECT pg_temp.assert((SELECT toast_check_mode='official' FROM public.toast_api_credentials
  WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'official mode persisted');
+-- I6: an older permission failure must not invalidate newly verified ERA access.
+UPDATE public.toast_analytics_credentials SET verified_at='2026-10-25T12:30:00Z'
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+SELECT pg_temp.assert(NOT public.toast_disable_official_check(
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','analytics_forbidden',
+ '2026-10-24T12:30:00Z'), 'stale permission failure cannot downgrade new credentials');
+SELECT pg_temp.assert((SELECT toast_check_mode='official' FROM public.toast_api_credentials
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'I6: stale error leaves business official');
+SELECT pg_temp.assert((SELECT verified_at='2026-10-25T12:30:00Z'::timestamptz
+ FROM public.toast_analytics_credentials
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+ 'I6: stale error leaves verified credentials intact');
 -- A business-wide fallback is one transaction, not a mode change followed
 -- by a possibly failed credentials write.
 SELECT pg_temp.assert(public.toast_disable_official_check(
- 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','analytics_timeout'),
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','analytics_timeout',
+ '2026-10-25T12:30:00Z'),
  'service downgrade succeeds');
 SELECT pg_temp.assert((SELECT toast_check_mode='internal' AND mode_reason='analytics_timeout'
  FROM public.toast_api_credentials WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
@@ -125,7 +153,8 @@ SELECT pg_temp.assert((SELECT verified_at IS NULL
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.role','authenticated',true);
 SELECT pg_temp.reject($q$SELECT public.toast_disable_official_check(
- 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','analytics_timeout')$q$);
+ 'dddddddd-dddd-4ddd-8ddd-dddddddddddd','analytics_timeout',
+ '2026-10-25T12:30:00Z')$q$);
 RESET ROLE;
 SELECT set_config('request.jwt.claim.role','service_role',true);
 UPDATE public.toast_analytics_credentials SET verified_at=now()
