@@ -20,9 +20,11 @@ function fixture(){
   state:string;requested_at:string};
  const days:Day[]=[],jobs:Job[]=[];
  const db={
-  async rpc(name:string,args:{p_business_id:string;p_reason?:string}){
+  async rpc(name:string,args:{p_business_id:string;p_reason?:string;p_expected_verified_at?:string|null}){
    const b=args.p_business_id;
    if(name==="toast_disable_official_check"){
+    if((analytics[b]?.verified_at??null)!==(args.p_expected_verified_at??null))
+     return {data:false,error:null};
     Object.assign(modes[b],{toast_check_mode:"internal",mode_reason:args.p_reason,
      mode_checked_at:new Date().toISOString()});
     if(analytics[b])analytics[b].verified_at=null;
@@ -138,9 +140,25 @@ it("a routine official probe does not restart a healthy pending report",async()=
 
 it("downgrades mode and credential verification together for one café",async()=>{
  const f=fixture();
- await setToastCheckMode(f.db,"B","internal","analytics_timeout");
+ await setToastCheckMode(f.db,"B","internal","analytics_timeout","before");
  expect(f.modes.B).toMatchObject({
   toast_check_mode:"internal",mode_reason:"analytics_timeout"});
  expect(f.analytics.B.verified_at).toBeNull();
  expect(f.modes.A.toast_check_mode).toBe("internal");
+});
+
+it("I6: stale ERA permission failure cannot invalidate newly verified credentials",async()=>{
+ const f=fixture();
+ const old="2026-10-24T12:00:00Z",newer="2026-10-25T12:00:00Z";
+ f.analytics.A.verified_at=old;
+ f.modes.A.toast_check_mode="official";
+ probe.mockImplementation(async()=>{f.analytics.A.verified_at=newer;
+  throw new ToastApiError("missing_permissions");});
+ await expect(detectToastCheckMode(f.db,"A","g","UTC",Date.now()+10000,true))
+  .rejects.toMatchObject({category:"missing_permissions"});
+ expect(f.analytics.A.verified_at).toBe(newer);
+ expect(f.modes.A.toast_check_mode).toBe("official");
+ expect(await setToastCheckMode(f.db,"A","internal","analytics_forbidden",old))
+  .toBe(false);
+ expect(f.modes.B.toast_check_mode).toBe("official");
 });
