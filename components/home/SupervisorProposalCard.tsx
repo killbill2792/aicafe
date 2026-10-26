@@ -36,6 +36,16 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       .catch(()=>{if(alive)setError(true);});
     return ()=>{alive=false;};
   },[endpoint,proposalId]);
+  useEffect(()=>{
+    const refresh=()=>{
+      void fetch(endpoint+"?ids="+encodeURIComponent(proposalId),{cache:"no-store"})
+       .then(r=>{if(!r.ok)throw Error();return r.json();})
+       .then((data:{cards:ProposalView[]})=>{if(data.cards[0])setValue(data.cards[0]);})
+       .catch(()=>setError(true));
+    };
+    window.addEventListener("aicafe:purchase-cards-updated",refresh);
+    return ()=>window.removeEventListener("aicafe:purchase-cards-updated",refresh);
+  },[endpoint,proposalId]);
   // An executing approval can still be writing in another tab. Refresh only
   // that state; never label an unverified in-flight operation as a failed write.
   useEffect(()=>{
