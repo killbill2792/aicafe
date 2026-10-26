@@ -1,5 +1,5 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
-import {readApprovedScheduleDelivery,DeliveryReadError} from "./ownerScheduleDelivery.server";
+import {readApprovedScheduleDelivery} from "./ownerScheduleDelivery.server";
 
 const shared=vi.hoisted(()=>({client:null as unknown}));
 vi.mock("server-only",()=>({}));
