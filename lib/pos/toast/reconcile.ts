@@ -10,24 +10,16 @@ import {compareToastAnalytics,checkToastPaymentBalance,checkToastSelectionBalanc
 import {readAllPages} from "./readAllPages";
 import {localClock} from "./scheduleDates";
 import {parseToastDayPage} from "./dayParser";
+import {nextDayCheckState,type DayCheckEvent,type DayCheckState} from "./dayCheckState";
 type Location={businessId:string;restaurantGuid:string;locationId:string;
  timeZone:string;closeoutHour:number;expectedImportedAt?:string|null};
 class StaleImportError extends Error{}
-type Status={import_state:string;recon_state:string;orders_snapshot_sha256:string|null;
+type Status=DayCheckState&{import_state:string;orders_snapshot_sha256:string|null;
  net_sales_cents:number;order_count:number;discounts_cents:number;refunds_cents:number;
- unparsed_count:number;warnings:Record<string,unknown>;imported_at:string|null;
- last_recon_attempt_at:string|null;internal_state?:string;
- recon_source?:string|null;analytics_state?:string|null;payment_repull_at?:string|null};
+ unparsed_count:number;imported_at:string|null};
 const fail=(deadlineAt:number)=>{if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");};
 const day8=(date:string)=>date.replaceAll("-","");
 const sum=(a:number[])=>a.reduce((x,y)=>x+y,0);
-// Internal math and official Analytics are independent evidence.
-// A failed external retry never dismisses a previously confirmed mismatch.
-function stateWithoutFreshAnalytics(status:Status,internal:string){
- return internal==="mismatch"||
-  status.recon_state==="mismatch"&&status.recon_source==="toast_analytics"
-  ?"mismatch":"checked_internal";
-}
 /** Each cache row is generation-scoped so an interrupted 30,000-order proof resumes
  * without mixing it with a repull. No cache can promote or hide imported sales. */
 function proofCache(db:SupabaseClient,p:Location,day:string,status:Status){
@@ -130,26 +122,27 @@ export function internalOrderProof(rows:unknown[],p:Location,day:string,
  }
  return {reasons:[...new Set(reasons)],paidGuids,checksum,orders};
 }
+/** The ONLY application-level writer for day check state. */
+type EvidencePatch=Partial<Record<
+ "toast_net_sales_cents"|"toast_orders_count"|"toast_discount_cents"|
+ "toast_refund_cents"|"delta_net_cents"|"delta_orders"|
+ "delta_discount_cents"|"delta_refund_cents"|"delta_void_orders"|
+ "void_amount_gap_cents",number|null>>;
 async function writeReconciliation(db:SupabaseClient,p:Location,day:string,
- patch:Record<string,unknown>){
- // Fence each verdict to the imported generation that was actually checked.
- // A concurrent reimport must never be overwritten by an older provider reply.
- let query=db.from("toast_day_status").update({
-  ...patch,last_recon_attempt_at:new Date().toISOString()
- }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+ status:Status,event:DayCheckEvent,extra:EvidencePatch={}){
+ const next=nextDayCheckState(status,event,new Date().toISOString());
+ let query=db.from("toast_day_status").update({...next,...extra})
+  .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("business_date",day).eq("import_state","imported");
  if(p.expectedImportedAt)query=query.eq("imported_at",p.expectedImportedAt);
  const {data:written,error}=await query.select("business_date").maybeSingle();
  if(error)throw new ToastApiError("unavailable");
  if(!written)throw new StaleImportError();
- // Re-evaluate void certification on both promotion and downgrade:
- // ERA mismatches must revoke an earlier internal void certificate.
- if(patch.recon_state){
-  const {error:cert}=await db.rpc("toast_certify_day_voids",{
-   p_business_id:p.businessId,p_date:day
-  });
-  if(cert)throw new ToastApiError("unavailable");
- }
+ Object.assign(status,next);
+ const {error:cert}=await db.rpc("toast_certify_day_voids",{
+  p_business_id:p.businessId,p_date:day
+ });
+ if(cert)throw new ToastApiError("unavailable");
 }
 async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
  deadlineAt:number){
@@ -159,7 +152,6 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("business_date",day).maybeSingle();
  if(je)throw new ToastApiError("unavailable");
- const retained=stateWithoutFreshAnalytics(status,status.internal_state??"matched");
  // A completed report is evidence for its completed comparison, not an
  // unfinished request. Any later reconciliation requests a fresh ERA report.
  // Likewise, resume a missing report with a new request after credentials
@@ -175,11 +167,8 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
    checked_at:new Date().toISOString(),last_error_category:"analytics_timeout"
   },{onConflict:"business_id,restaurant_guid,business_date"});
   if(expired)throw new ToastApiError("unavailable");
-  await writeReconciliation(db,p,day,{
-   analytics_state:"missing",recon_state:retained,
-   warnings:{...status.warnings,analytics_timeout:1}
-  });
-  await setToastCheckMode(db,p.businessId,"internal","analytics_timeout");
+  await writeReconciliation(db,p,day,status,{type:"era_timeout"});
+   await setToastCheckMode(db,p.businessId,"internal","analytics_timeout");
   return "timeout" as const;
  }
  if(!reportId){
@@ -194,10 +183,7 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   // transport throws instead, so the caller records the error and retries.
   reportId=await client.requestDay(p.restaurantGuid,day);
   if(!reportId){
-   await writeReconciliation(db,p,day,{analytics_state:"pending",
-    recon_state:retained,last_error_category:null,
-    warnings:Object.fromEntries(Object.entries(status.warnings).filter(
-     ([key])=>key!=="analytics_timeout"))});return;
+   await writeReconciliation(db,p,day,status,{type:"era_pending"});return;
   }
   const {error:save}=await db.from("toast_analytics_jobs").update({
    report_request_guid:reportId
@@ -213,14 +199,9 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
    }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
     .eq("business_date",day);
    if(error)throw new ToastApiError("unavailable");
-   await writeReconciliation(db,p,day,{analytics_state:"missing",
-    recon_state:retained,warnings:{...status.warnings,analytics_timeout:1}});
-  }else await writeReconciliation(db,p,day,{
-   analytics_state:"pending",recon_state:retained,last_error_category:null,
-   warnings:Object.fromEntries(Object.entries(status.warnings).filter(
-    ([key])=>key!=="analytics_timeout"))
-  });
-  return;
+   await writeReconciliation(db,p,day,status,{type:"era_timeout"});
+   }else await writeReconciliation(db,p,day,status,{type:"era_pending"});
+   return;
  }
  const match=result.rows.filter(x=>x.restaurantGuid.toLowerCase()===p.restaurantGuid.toLowerCase()&&
   x.businessDate===day8(day));
@@ -250,20 +231,17 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   importedVoidOrderCount:distinct,analyticsVoidOrderCount:row.voidOrdersCount,
   toleranceCents:tolerance
  });
- await writeReconciliation(db,p,day,{
-  recon_state:comparison.matched&&!sourceIncomplete&&status.internal_state==="matched"?"matched":"mismatch",recon_source:"toast_analytics",
-  analytics_state:"available",reconciled_at:new Date().toISOString(),last_error_category:null,
+ await writeReconciliation(db,p,day,status,{
+  type:"era_result",
+  matched:comparison.matched&&!sourceIncomplete&&status.internal_state==="matched",
+  sourceIncomplete,comparisonMatched:comparison.matched
+ },{
   toast_net_sales_cents:net,toast_orders_count:row.ordersCount,
   toast_discount_cents:discount,toast_refund_cents:refunds,
   delta_net_cents:comparison.deltaNetCents,delta_orders:comparison.deltaOrders,
   delta_discount_cents:comparison.deltaDiscountCents,
   delta_refund_cents:comparison.deltaRefundCents,
-  delta_void_orders:comparison.deltaVoidOrders,
-  void_amount_gap_cents:amountGap,
-  warnings:{...Object.fromEntries(Object.entries(status.warnings).filter(([key])=>
-   !["reconciliation_mismatch","source_incomplete","analytics_timeout"].includes(key))),
-   ...(!comparison.matched?{reconciliation_mismatch:1}:{}),
-   ...(sourceIncomplete?{source_incomplete:1}:{})}
+  delta_void_orders:comparison.deltaVoidOrders,void_amount_gap_cents:amountGap
  });
  const {error:save}=await db.from("toast_analytics_jobs").update({
   state:"available",checked_at:new Date().toISOString(),last_error_category:null
@@ -380,21 +358,12 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
      p_restaurant_guid:p.restaurantGuid,p_from:date,p_to:date});
     if(error)throw new ToastApiError("unavailable");
    }
-   await writeReconciliation(db,p,day,{payment_repull_at:status.payment_repull_at??new Date().toISOString(),
-    recon_state:"pending",internal_state:null});return null;
+   await writeReconciliation(db,p,day,status,{type:"payment_recovery_queued"});return null;
   }
  }
  const internal=proof.reasons.length?"mismatch":"matched";
- await writeReconciliation(db,p,day,{
-  internal_state:internal,internal_reasons:proof.reasons,paid_other_day:paidOtherDay,
-  // The first recovery attempt persists across imports, and is reset only when
-  // we establish a verdict (matched or explicitly escalated mismatch).
-  payment_repull_at:null,
-  recon_state:stateWithoutFreshAnalytics(status,internal),
-  recon_source:status.recon_state==="mismatch"&&status.recon_source==="toast_analytics"
-   ?"toast_analytics":"internal",
-  reconciled_at:new Date().toISOString(),last_error_category:null,
-  warnings:{...status.warnings,...Object.fromEntries(proof.reasons.map(x=>[x,1]))}
+ await writeReconciliation(db,p,day,status,{
+  type:"internal_result",result:internal,reasons:proof.reasons,paidOtherDay
  });
  await cache.clear();
  return internal;
@@ -402,11 +371,11 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
 export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt:number){
  let mode=await detectToastCheckMode(db,p.businessId,p.restaurantGuid,p.timeZone,deadlineAt);
  const {data:days,error:de}=await db.from("toast_day_status")
-  .select("business_date,import_state,recon_state,orders_snapshot_sha256,net_sales_cents,order_count,discounts_cents,refunds_cents,unparsed_count,warnings,imported_at,last_recon_attempt_at,internal_state,payment_repull_at,analytics_state,recon_source")
+  .select("business_date,import_state,recon_state,orders_snapshot_sha256,net_sales_cents,order_count,discounts_cents,refunds_cents,unparsed_count,warnings,imported_at,last_recon_attempt_at,internal_state,internal_reasons,paid_other_day,payment_repull_at,analytics_state,recon_source,reconciled_at,last_error_category")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("import_state","imported").is("rechecking_reason",null)
   // Supabase .or() calls overwrite the same PostgREST "or" query key.
-  .or(`and(or(recon_state.in.(pending,mismatch,analytics_timeout),and(recon_state.eq.checked_internal,analytics_state.eq.pending)),or(last_recon_attempt_at.is.null,and(recon_state.eq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-9*60000).toISOString()}),and(recon_state.neq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-60*60000).toISOString()})))`)
+  .or(`and(${mode==="official"?"or(recon_state.in.(pending,mismatch,analytics_timeout),and(recon_state.eq.checked_internal,analytics_state.eq.pending))":"recon_state.in.(pending,mismatch,analytics_timeout)"},or(last_recon_attempt_at.is.null,and(recon_state.eq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-9*60000).toISOString()}),and(recon_state.neq.pending,last_recon_attempt_at.lt.${new Date(Date.now()-60*60000).toISOString()})))`)
   .order("last_recon_attempt_at",{ascending:true,nullsFirst:true})
   .order("business_date",{ascending:false}).limit(60);
  if(de)throw new ToastApiError("unavailable");
@@ -420,7 +389,12 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
    continue;
   try {
 
-   const internal=status.internal_state??await internalDay(db,scoped,day,status,deadlineAt);
+   const internal=status.internal_state==="matched"?"matched":
+    await internalDay(db,scoped,day,status,deadlineAt);
+   // A cached internal proof must still advance this tick's attempt marker.
+   if(mode==="internal"&&internal==="matched")
+    await writeReconciliation(db,scoped,day,status,{type:"internal_result",
+     result:"matched",reasons:status.internal_reasons??[],paidOtherDay:status.paid_other_day??0});
    if(mode==="official"&&internal){
     try{if(await eraDay(db,scoped,day,{...status,internal_state:internal},deadlineAt)==="timeout")mode="internal";}
     catch(e){
@@ -428,12 +402,10 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
      const permissionLost=["authentication","missing_permissions"].includes(category);
      // ERA unavailable is unfinished work, not a successful reconciliation.
      // Keep the previous external mismatch visible until fresh ERA data resolves it.
-     await writeReconciliation(db,scoped,day,{
-      analytics_state:permissionLost?"missing":"pending",
-      recon_state:stateWithoutFreshAnalytics(status,internal),
-      last_error_category:category
-     });
-     if(permissionLost){
+     await writeReconciliation(db,scoped,day,status,{
+       type:"era_error",category,permissionsLost:permissionLost
+      });
+      if(permissionLost){
       mode="internal";
       await setToastCheckMode(db,p.businessId,"internal",category==="authentication"?
        "analytics_auth_failed":"analytics_forbidden");
@@ -444,12 +416,15 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
   }catch(err){
    if(err instanceof StaleImportError)continue;
    const category=err instanceof ToastApiError?err.category:"unavailable";
-   const {error:mark}=await db.from("toast_day_status").update({
-    last_error_category:category,last_recon_attempt_at:new Date().toISOString()
-   }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
-    .eq("business_date",day).eq("imported_at",status.imported_at);
-   if(mark)throw new ToastApiError("unavailable");
-   if(["authentication","missing_permissions","missing_scope_or_location",
+   try{
+     await writeReconciliation(db,scoped,day,status,{
+      type:"era_error",category,permissionsLost:false
+     });
+    }catch(markErr){
+     if(markErr instanceof StaleImportError)continue;
+     throw markErr;
+    }
+    if(["authentication","missing_permissions","missing_scope_or_location",
     "unauthorized_location","not_configured","invalid_host"].includes(category))continue;
   }
  }
