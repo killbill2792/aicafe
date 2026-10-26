@@ -119,9 +119,12 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
   if(!focusEmployee||!focusContact)return;
   const person=data.team.find(p=>p.id===focusEmployee);
   if(!person)return;
-  setScreen("team");openPerson(person);
-  const timer=setTimeout(()=>document.getElementById(focusContact==="phone"?"staff-person-phone":"staff-person-consent")?.focus(),50);
-  return ()=>clearTimeout(timer);
+  let focusTimer:ReturnType<typeof setTimeout>|null=null;
+  const timer=setTimeout(()=>{
+   setScreen("team");openPerson(person);
+   focusTimer=setTimeout(()=>document.getElementById(focusContact==="phone"?"staff-person-phone":"staff-person-consent")?.focus(),50);
+  },0);
+  return ()=>{clearTimeout(timer);if(focusTimer)clearTimeout(focusTimer);};
   // The deep link opens the editor once per keyed mount.
   // eslint-disable-next-line react-hooks/exhaustive-deps
  },[focusEmployee,focusContact]);
