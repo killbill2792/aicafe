@@ -146,6 +146,10 @@ async function writeReconciliation(db:SupabaseClient,p:Location,day:string,
 }
 async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
  deadlineAt:number){
+ const {data:verified,error:ce}=await db.from("toast_analytics_credentials")
+  .select("verified_at").eq("business_id",p.businessId).maybeSingle();
+ if(ce||!verified)throw new ToastApiError("unavailable");
+ const usedVerifiedAt=verified.verified_at as string|null;
  const client=createToastAnalyticsClient(db,p.businessId,deadlineAt);
  const {data:job,error:je}=await db.from("toast_analytics_jobs")
   .select("report_request_guid,requested_at,state")
@@ -168,8 +172,9 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   },{onConflict:"business_id,restaurant_guid,business_date"});
   if(expired)throw new ToastApiError("unavailable");
   await writeReconciliation(db,p,day,status,{type:"era_timeout"});
-   await setToastCheckMode(db,p.businessId,"internal","analytics_timeout");
-  return "timeout" as const;
+   const downgraded=await setToastCheckMode(db,p.businessId,"internal",
+    "analytics_timeout",usedVerifiedAt);
+  return downgraded?"timeout" as const:undefined;
  }
  if(!reportId){
   requested??=new Date().toISOString();
@@ -384,6 +389,10 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
   if(Date.now()>=deadlineAt)break;
   const day=item.business_date as string,status=item as Status;
   const scoped={...p,expectedImportedAt:status.imported_at};
+  const {data:cred,error:credError}=await db.from("toast_analytics_credentials")
+   .select("verified_at").eq("business_id",p.businessId).maybeSingle();
+  if(credError)throw new ToastApiError("unavailable");
+  const verifiedGeneration=cred?.verified_at as string|null;
   if(status.last_recon_attempt_at&&
    Date.now()-Date.parse(status.last_recon_attempt_at)<(status.recon_state==="pending"?9:60)*60000)
    continue;
@@ -406,9 +415,10 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
        type:"era_error",category,permissionsLost:permissionLost
       });
       if(permissionLost){
-      mode="internal";
-      await setToastCheckMode(db,p.businessId,"internal",category==="authentication"?
-       "analytics_auth_failed":"analytics_forbidden");
+      const downgraded=await setToastCheckMode(db,p.businessId,"internal",
+       category==="authentication"?"analytics_auth_failed":"analytics_forbidden",
+       verifiedGeneration);
+      if(downgraded)mode="internal";
      }
     }
    }
