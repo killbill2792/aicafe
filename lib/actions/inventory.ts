@@ -42,10 +42,10 @@ export async function editInventoryPurchase(line:PurchaseLineInput):Promise<Purc
  try{
   const {db,businessId}=await ownerScope();
   const {data,error}=await db.from("pantry_stock_purchases")
-   .select("source,source_ref").eq("business_id",businessId).eq("line_id",line.lineId)
+   .select("source,source_ref,expense_line_id").eq("business_id",businessId).eq("line_id",line.lineId)
    .is("voided_at",null).maybeSingle();
   if(error||!data)return {lineId:line.lineId,ok:false,error:"purchase_not_found"};
-  const result=await recordPurchases([line],data.source as import("@/lib/inventory/recordPurchases.server").PurchaseSource,data.source_ref);
+  const result=await recordPurchases([{...line,expenseLineId:data.expense_line_id}],data.source as import("@/lib/inventory/recordPurchases.server").PurchaseSource,data.source_ref);
   if(result[0]?.ok)revalidatePath("/menu/pantry");
   return result[0]??{lineId:line.lineId,ok:false,error:"save_failed"};
  }catch{return {lineId:line.lineId,ok:false,error:"owner_required"};}

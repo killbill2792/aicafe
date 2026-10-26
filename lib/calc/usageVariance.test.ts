@@ -19,7 +19,7 @@ describe("weekly ingredient reconciliation",()=>{
  it("preserves unknown sales or either missing boundary as null, never zero",()=>{
   const rows=calculateUsage({...base,salesCovered:false,counts:[]});
   expect(rows[0]).toMatchObject({expected:null,actual:null,differencePct:null,status:null});
-  expect(rows[0].missing).toContain("toastSalesCoverage");
+  expect(rows[0].missing).toContain("salesCoverage");
  });
  it("subtracts replaced milk, adds recorded swap and addon for each sold drink",()=>{
   const rows=calculateUsage({...base,ingredients:[...ingredients,{id:"oat",name:"Oat",unit:"ml" as const}],
