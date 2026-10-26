@@ -30,17 +30,46 @@ where not exists(select 1 from public.toast_api_credentials c
  where c.business_id=toast_analytics_credentials.business_id and c.mode_reason='ok');
 
 -- Serialize official-mode promotion against Analytics credential removal/rotation.
+-- One database transaction owns verification, reactivation, and retirement of
+-- suspended reports. Lock credentials in the same order as a downgrade.
 create or replace function public.toast_enable_official_check(p_business_id uuid)
 returns boolean language plpgsql security definer set search_path=public as $official$
+declare was_internal boolean;
 begin
  if auth.role()<>'service_role' then raise exception 'service role only';end if;
+ select toast_check_mode='internal' into was_internal
+ from public.toast_api_credentials where business_id=p_business_id for update;
+ if not found then return false;end if;
  perform 1 from public.toast_analytics_credentials
  where business_id=p_business_id and verified_at is not null
- and last_error_category is null for share;
+  and last_error_category is null for share;
  if not found then return false;end if;
  update public.toast_api_credentials set toast_check_mode='official',
- mode_reason='ok',mode_checked_at=now() where business_id=p_business_id;
- return found;
+  mode_reason='ok',mode_checked_at=now() where business_id=p_business_id;
+
+ -- When access was suspended, a report's old 48-hour timer is not fresh
+ -- work. Invalidate ONLY affected imported-day reports before requeueing.
+ -- This includes pending jobs whose day was set to 'missing' on a 403,
+ -- and pending jobs left behind by a business-wide downgrade.
+ delete from public.toast_analytics_jobs j
+ using public.toast_day_status d
+ where j.business_id=p_business_id and d.business_id=j.business_id
+  and d.restaurant_guid=j.restaurant_guid and d.business_date=j.business_date
+  and d.import_state='imported' and d.rechecking_reason is null
+  and (d.analytics_state='missing' or
+       (was_internal and d.analytics_state='pending'));
+
+ update public.toast_day_status d
+ set analytics_state='pending',last_recon_attempt_at=null,
+  last_error_category=case when d.last_error_category in
+    ('authentication','missing_permissions','analytics_timeout')
+    then null else d.last_error_category end
+ where d.business_id=p_business_id and d.import_state='imported'
+  and d.rechecking_reason is null
+  and ((d.recon_state='checked_internal' and d.analytics_state is null)
+       or d.analytics_state='missing'
+       or (was_internal and d.analytics_state='pending'));
+ return true;
 end $official$;
 revoke all on function public.toast_enable_official_check(uuid) from public,anon,authenticated;
 grant execute on function public.toast_enable_official_check(uuid) to service_role;

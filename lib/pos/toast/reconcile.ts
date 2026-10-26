@@ -195,7 +195,9 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   reportId=await client.requestDay(p.restaurantGuid,day);
   if(!reportId){
    await writeReconciliation(db,p,day,{analytics_state:"pending",
-    recon_state:retained});return;
+    recon_state:retained,last_error_category:null,
+    warnings:Object.fromEntries(Object.entries(status.warnings).filter(
+     ([key])=>key!=="analytics_timeout"))});return;
   }
   const {error:save}=await db.from("toast_analytics_jobs").update({
    report_request_guid:reportId
@@ -213,7 +215,11 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
    if(error)throw new ToastApiError("unavailable");
    await writeReconciliation(db,p,day,{analytics_state:"missing",
     recon_state:retained,warnings:{...status.warnings,analytics_timeout:1}});
-  }else await writeReconciliation(db,p,day,{analytics_state:"pending",recon_state:retained});
+  }else await writeReconciliation(db,p,day,{
+   analytics_state:"pending",recon_state:retained,last_error_category:null,
+   warnings:Object.fromEntries(Object.entries(status.warnings).filter(
+    ([key])=>key!=="analytics_timeout"))
+  });
   return;
  }
  const match=result.rows.filter(x=>x.restaurantGuid.toLowerCase()===p.restaurantGuid.toLowerCase()&&
