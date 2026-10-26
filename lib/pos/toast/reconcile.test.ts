@@ -605,3 +605,22 @@ describe("I6 stale credential failure recovery",()=>{
   expect(f.item.last_error_category).toBeNull();
  });
 });
+
+it("P1: reconciliation updates check state without writing source import lifecycle fields",async()=>{
+ for(const official of [false,true]){
+  const f=fakeDb(official);
+  mocked.requestDay.mockResolvedValue(null);
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.writes.length).toBeGreaterThan(0);
+  for(const patch of f.writes){
+   for(const name of ["imported_at","last_import_run_id","orders_snapshot_sha256",
+    "net_sales_cents","coverage_complete","business_date","restaurant_guid",
+    "business_id","rechecking_reason","import_state"]){
+    expect(patch,official?"official":"internal").not.toHaveProperty(name);
+   }
+   expect(patch).toHaveProperty("last_recon_attempt_at");
+   expect(patch).toHaveProperty("recon_state");
+  }
+  expect(f.item.imported_at).toBe("2026-10-17T10:00:00Z");
+ }
+});

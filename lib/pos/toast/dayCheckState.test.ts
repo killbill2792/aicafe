@@ -39,7 +39,36 @@ const startingStates=[
   warnings:{}})]
 ] as const;
 
+const managedKeys=[
+ "recon_state","recon_source","internal_state","analytics_state",
+ "last_error_category","warnings","payment_repull_at","last_recon_attempt_at",
+ "reconciled_at","internal_reasons","paid_other_day"
+] as const;
+
 describe("complete pure Toast day-check transitions",()=>{
+ it("P1: every event emits only managed check columns, even given a full imported SQL row",()=>{
+  const source={
+   ...day(),
+   business_id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+   restaurant_guid:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+   business_date:"2026-10-16",
+   imported_at:"2026-10-17T10:00:00Z",
+   last_import_run_id:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+   orders_snapshot_sha256:"retained-import-checksum",
+   net_sales_cents:12345,
+   unparsed_count:2,
+   coverage_complete:true,
+   rechecking_reason:null,
+   other_immutable_import_proof:"do not write"
+  };
+  for(const {label,event} of cases){
+   const patch=nextDayCheckState(source,event,at);
+   expect(Object.keys(patch).sort(),label).toEqual([...managedKeys].sort());
+   expect(patch,"does not keep import metadata").not.toHaveProperty("imported_at");
+   expect(patch,"does not overwrite sales").not.toHaveProperty("net_sales_cents");
+  }
+  expect(source.imported_at).toBe("2026-10-17T10:00:00Z");
+ });
  for(const [label,current] of startingStates){
   describe("starting at "+label,()=>{
    for(const {label:action,event} of cases){

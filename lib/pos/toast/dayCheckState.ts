@@ -24,10 +24,14 @@ export type DayCheckEvent=
 
 export function nextDayCheckState(current:DayCheckState,event:DayCheckEvent,at:string):DayCheckState{
  const externalMismatch=current.recon_state==="mismatch"&&current.recon_source==="toast_analytics";
- const next:DayCheckState={...current,
+ // Explicitly whitelist check-state columns. Supabase rows also carry
+ // imported_at, import run IDs and money totals: spreading one into a patch
+ // would fire import-reset/guard triggers even if imported_at is unchanged.
+ const next:DayCheckState={
+  recon_state:current.recon_state,
+  recon_source:current.recon_source??null,
   internal_state:current.internal_state??null,
   analytics_state:current.analytics_state??null,
-  recon_source:current.recon_source??null,
   last_error_category:current.last_error_category??null,
   payment_repull_at:current.payment_repull_at??null,
   last_recon_attempt_at:at,
