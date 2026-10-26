@@ -3213,7 +3213,15 @@
     "source_csv": "CSV",
     "source_quickbooks": "QuickBooks",
     "source_bank_feed": "Bank feed",
-    "source_other": "Other"
+    "source_other": "Other",
+    "modifierHeading": "Match drink options to recipes",
+    "modifierExplain": "Only confirmed matches affect drink consistency. Review the ingredient and quantity before saving.",
+    "modifierUnavailable": "Could not read observed drink options.",
+    "modifierEmpty": "No unmapped drink options found.",
+    "modifierSuggested": "Suggested match (not yet saved)",
+    "modifierRecipe": "Recipe to use",
+    "modifierChoose": "Select a recipe",
+    "modifierConfirm": "Confirm link"
   },
   "InventoryApprovalCard": {
     "pending": "Ready for review",
