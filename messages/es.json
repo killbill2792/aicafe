@@ -3245,6 +3245,9 @@
     "skip": "Omitir",
     "approveAll": "Aprobar todas las compras vinculadas",
     "approveAllDone": "Se registraron {saved} compras.",
-    "approveAllPartial": "Se registraron {saved} compras; faltan revisar {failed}."
+    "approveAllPartial": "Se registraron {saved} compras; faltan revisar {failed}.",
+    "receiptVendor": "Proveedor del recibo",
+    "receiptTotal": "Total del recibo",
+    "receiptIncomplete": "Revisa el proveedor, total del recibo y costo de la línea antes de aprobar."
   }
 }
