@@ -389,19 +389,19 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
   if(Date.now()>=deadlineAt)break;
   const day=item.business_date as string,status=item as Status;
   const scoped={...p,expectedImportedAt:status.imported_at};
-  const {data:cred,error:credError}=await db.from("toast_analytics_credentials")
-   .select("verified_at").eq("business_id",p.businessId).maybeSingle();
-  if(credError)throw new ToastApiError("unavailable");
-  const verifiedGeneration=cred?.verified_at as string|null;
   if(status.last_recon_attempt_at&&
    Date.now()-Date.parse(status.last_recon_attempt_at)<(status.recon_state==="pending"?9:60)*60000)
    continue;
   try {
-
-   const internal=status.internal_state==="matched"?"matched":
+   const {data:cred,error:credError}=await db.from("toast_analytics_credentials")
+    .select("verified_at").eq("business_id",p.businessId).maybeSingle();
+   if(credError)throw new ToastApiError("unavailable");
+   const verifiedGeneration=cred?.verified_at as string|null;
+   const cachedMatch=status.internal_state==="matched";
+   const internal=cachedMatch?"matched":
     await internalDay(db,scoped,day,status,deadlineAt);
    // A cached internal proof must still advance this tick's attempt marker.
-   if(mode==="internal"&&internal==="matched")
+   if(mode==="internal"&&cachedMatch)
     await writeReconciliation(db,scoped,day,status,{type:"internal_result",
      result:"matched",reasons:status.internal_reasons??[],paidOtherDay:status.paid_other_day??0});
    if(mode==="official"&&internal){
