@@ -13,6 +13,7 @@ import InventoryPurchasePanel from "@/components/menu/InventoryPurchasePanel";
 import {getLocale} from "next-intl/server";
 import PageShell from "@/components/shared/PageShell";
 import PantryWorkspace from "@/components/menu/PantryWorkspace";
+import {selectRequestedPurchases} from "@/lib/calc/inventoryReviewLinks";
 
 export const dynamic = "force-dynamic";
 export default async function PantryPage({searchParams}:{searchParams:Promise<{from?:string;to?:string;month?:string;proposals?:string}>}) {
@@ -29,7 +30,7 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
     readPurchaseMonth(month).catch(()=>null),getTranslations("Inventory"),getLocale(),
     readModifierSetup().catch(()=>null),readPendingInventoryProposals(selectedIds).catch(()=>null)
   ]);
-  const selected=selectedIds.flatMap(id=>pendingProposals?.find(p=>p.id===id)?[pendingProposals.find(p=>p.id===id)!]:[]);
+  const selected=selectRequestedPurchases(selectedIds,pendingProposals??[]);
   const orderedProposals=selectedIds.length?selected:pendingProposals;
   const i18nKeys=["title","heading","month","photo","unavailable","empty","totals","bulk","csv","chooseFile",
     "date","item","quantity","unit","cost","optional","edit","void","save","cancel","remove","addLine",

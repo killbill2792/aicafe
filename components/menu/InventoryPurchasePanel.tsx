@@ -7,8 +7,7 @@ import {saveBulkPurchases,editInventoryPurchase,voidInventoryPurchase,importInve
  from "@/lib/actions/inventory";
 import type {PurchaseMonthLine} from "@/lib/data/inventory.server";
 import type {PurchaseLineInput} from "@/lib/inventory/recordPurchases.server";
-import {parseOwnerDecimal} from "@/lib/calc/localeDecimal";
-import {toCents} from "@/lib/pos/csv/csvUtils";
+import {parseOwnerPurchaseNumbers} from "@/lib/calc/ownerPurchaseNumbers";
 
 type Item={id:string;name:string;baseUnit:"g"|"ml"|"each"};
 type Draft=Omit<PurchaseLineInput,"quantity"|"costCents">&{quantity:string;cost:string};
@@ -36,13 +35,11 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  const money=(cents:number|null)=>cents===null?t.unknown:
   new Intl.NumberFormat(locale,{style:"currency",currency}).format(cents/100);
  const parseDraft=(d:Draft):{line:PurchaseLineInput|null;error:string|null}=>{
-  const quantity=parseOwnerDecimal(d.quantity,locale);
-  if(quantity===null||quantity<=0)return {line:null,error:"invalid_quantity"};
-  const costValue=d.cost.trim()?parseOwnerDecimal(d.cost,locale):null;
-  const costCents=costValue===null?null:toCents(String(costValue));
-  if(d.cost.trim()&&(costValue===null||!Number.isSafeInteger(costCents)))return {line:null,error:"invalid_cost"};
-  return {line:{lineId:d.lineId,ingredientId:d.ingredientId,date:d.date,quantity,unit:d.unit,
-   costCents,expectedRevision:d.expectedRevision},error:null};
+  const parsed=parseOwnerPurchaseNumbers({quantity:d.quantity,cost:d.cost},locale);
+  if(!parsed.numbers)return {line:null,error:parsed.error};
+  return {line:{lineId:d.lineId,ingredientId:d.ingredientId,date:d.date,
+   quantity:parsed.numbers.quantity,unit:d.unit,costCents:parsed.numbers.costCents,
+   expectedRevision:d.expectedRevision},error:null};
  };
  const update=(id:string,patch:Partial<Draft>)=>setDrafts(prev=>prev.map(d=>d.lineId===id?{...d,...patch}:d));
  const totals=useMemo(()=>{

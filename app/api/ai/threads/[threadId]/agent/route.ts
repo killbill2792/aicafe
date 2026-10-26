@@ -1,4 +1,5 @@
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
+import {allocateReceiptIndexes,purchaseBatchKeys} from "@/lib/ai/supervisor/loop/receiptAllocation";
 import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -181,25 +182,21 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
         if(receiptRows?.error)throw new Error("receipt_proposals_unavailable");
         const existing=(receiptRows?.data??[]).filter(row=>
           (row.canonical_effect_payload as {receiptGroupId?:string}|null)?.receiptGroupId===owner.id);
-        const known=new Map(existing.map(row=>[row.request_key,
-          (row.canonical_effect_payload as {receiptLineIndex?:number}).receiptLineIndex]));
-        let nextIndex=Math.max(-1,...existing.map(row=>
-          (row.canonical_effect_payload as {receiptLineIndex?:number}).receiptLineIndex??-1))+1;
+        const requestKeys=purchaseBatchKeys(id,owner.id,input.source,input.lines);
+        const indexes=allocateReceiptIndexes(requestKeys,existing.map(row=>({
+          requestKey:row.request_key,index:
+            (row.canonical_effect_payload as {receiptLineIndex?:number}).receiptLineIndex
+        })));
         for(const [index,line] of input.lines.entries()){
           try{
-            const requestKey=proposalRequestKey(id,JSON.stringify({
-              ownerMessageId:owner.id,kind:"purchase",batch:input.lines,line,source:input.source,indexInBatch:index
-            }));
-            const prior=known.get(requestKey);
-            const receiptLineIndex=input.source==="receipt_chat"?
-              (prior??nextIndex++):null;
+            const requestKey=requestKeys[index];
+            const receiptLineIndex=input.source==="receipt_chat"?indexes[index]:null;
             const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},supervisorLoopRegistry,
               new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:input.source,
                 receiptGroupId:input.source==="receipt_chat"?owner.id:null,
                 receiptLineIndex,
                 receiptVendor:input.source==="receipt_chat"?input.receiptVendor:null,
                 receiptTotalCents:input.source==="receipt_chat"?input.receiptTotalCents:null},requestKey);
-            if(input.source==="receipt_chat")known.set(requestKey,receiptLineIndex!);
             output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name});
           }catch{output.push({name:line.name,error:"needs_review"});}
         }
