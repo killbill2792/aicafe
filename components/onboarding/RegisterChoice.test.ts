@@ -10,7 +10,7 @@ vi.mock("@/i18n/navigation",()=>({
  })=>createElement("a",{href,className},children)
 }));
 
-vi.mock("next-intl",()=>({useLocale:()=> "en"}));
+vi.mock("next-intl",()=>({useLocale:()=> "en",useTranslations:()=> (key:string)=>key}));
 vi.mock("next-intl/server",()=>({getTranslations:async()=> (key:string)=>key}));
 import RegisterChoice from "./RegisterChoice";
 import ReconnectBanner, {reconnectHref} from "@/components/shared/ReconnectBanner";

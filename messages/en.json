@@ -1252,7 +1252,7 @@
   },
   "Privacy": {
     "title": "Privacy",
-    "lastUpdated": "Last updated September 2026",
+    "lastUpdated": "Last updated October 25, 2026",
     "dataWeReadTitle": "What we read",
     "dataWeReadBody": "With your permission, we read your register's sales, order, catalog, staff and timecard data (read-only — we can never change anything or move your money). We also store the costs, bills, receipts and bank lines you give us.",
     "dataWeNeverTouchTitle": "What we never touch",
@@ -1264,7 +1264,22 @@
     "yourControlTitle": "Your control",
     "yourControlBody": "You can review, correct, or remove any cost we've recorded. You can disconnect your register at any time from Settings.",
     "deletingYourAccountTitle": "Deleting your account",
-    "deletingYourAccountBody": "Deleting your account permanently removes your business data and files, and disconnects any connected register. This can't be undone."
+    "deletingYourAccountBody": "Go to More → Delete account to remove your account, business data, uploaded receipts and files, staff records, and register connection credentials. Backup timing and legal exceptions need lawyer review.",
+    "draftBanner": "Draft — under legal review",
+    "whatWeCollectTitle": "What we collect",
+    "whatWeCollectBody": "We read sales, orders, menus, staff and timecards from Toast or Square (read-only); costs, bills, receipts and bank lines you add; staff names, phone numbers, availability and wages you enter; and your account email.",
+    "toastSquareTitle": "Toast and Square",
+    "toastSquareBody": "Read-only API credentials you create are encrypted at rest. We never change the register or move money. Disconnect anytime from More → Toast / Square.",
+    "aiProcessingTitle": "AI processing",
+    "aiProcessingBody": "We share only needed receipt images and details, bank line descriptions and amounts, and relevant café numbers and questions with OpenAI, our AI provider, to read receipts, categorize lines and answer questions. Our API terms say this data is not used to train models. Lawyer to confirm.",
+    "staffMessagesTitle": "Staff messages",
+    "staffMessagesBody": "We never message staff. Buttons open your WhatsApp or SMS app, and only the tap to open the composer is recorded. This is not proof of delivery.",
+    "retentionTitle": "Retention",
+    "retentionBody": "Data is kept while the account is active and deleted after account deletion, subject to legal exceptions. Logs are kept for [X days] — lawyer to confirm.",
+    "contactTitle": "Contact",
+    "contactBody": "[privacy contact email — placeholder]",
+    "deleteLink": "More → Delete account",
+    "toastLink": "How we use your Toast data"
   },
   "ManageStaff": {
     "wagePeriodHour": "Per hour",
@@ -2306,7 +2321,9 @@
     "alreadyHaveAccount": "Already have an account?",
     "signIn": "Sign In",
     "backToSignIn": "Back to Sign In",
-    "error": "Something went wrong. Try again."
+    "error": "Something went wrong. Try again.",
+    "privacyAgreement": "By creating an account you agree to our",
+    "privacyLink": "Privacy policy"
   },
   "PasswordRecovery": {
     "email": "Email address",
@@ -3035,7 +3052,11 @@
     "draftApplying": "Saving your decision…",
     "draftPartialCost": "Known {known}; {count} wages unknown",
     "draftBaseWageNote": "Base wages only. Overtime premiums and payroll taxes are not included.",
-    "draftCoverageGaps": "{count} opening-hour coverage gaps remain. Review before approval."
+    "draftCoverageGaps": "{count} opening-hour coverage gaps remain. Review before approval.",
+    "messageLanguage": "Message language",
+    "sameAsApp": "Same as app",
+    "phoneWillSave": "Will be saved as {phone}",
+    "invalidPhone": "Enter a valid international or local phone number."
   },
   "FreeAccess": {
     "pricing": "Plans and pricing",
@@ -3131,7 +3152,17 @@
     "listDone": "Finished opening list. Check each app to send.",
     "messageGreeting": "Hi {name},",
     "messageWeek": "Here is your schedule for the week of {week}:",
-    "messageClosing": "Please check your shifts."
+    "messageClosing": "Please check your shifts.",
+    "addPhone": "Add phone",
+    "recordConsent": "Record WhatsApp consent",
+    "copyAll": "Copy all messages",
+    "copyMessage": "Copy message",
+    "copied": "Copied",
+    "copyError": "Copy failed. Select the text and copy manually.",
+    "linkTooLong": "Message too long for link. Use Copy.",
+    "approvalReply": "Approved. I can't send messages myself. Use the buttons below to open WhatsApp or SMS for each person.",
+    "draftNotice": "I can't send messages myself. After approval, use the buttons to open WhatsApp or SMS for each person.",
+    "openError": "Couldn't open the message app. Use Copy message instead."
   },
   "UploadReview": {
     "title": "Upload review",
