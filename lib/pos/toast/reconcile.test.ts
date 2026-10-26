@@ -579,3 +579,29 @@ describe("owner check scheduling invariants",()=>{
   expect(f.item.payment_repull_at).toBeTruthy();
  });
 });
+
+describe("I6 stale credential failure recovery",()=>{
+ it("a stale 48-hour timeout cannot strand a day after newer credentials win",async()=>{
+  const f=fakeDb(true);
+  f.setJob({report_request_guid:report,state:"pending",
+   requested_at:new Date(Date.now()-49*3600000).toISOString()});
+  const {setToastCheckMode}=await import("./checkMode");
+  vi.mocked(setToastCheckMode).mockResolvedValueOnce(false);
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.mode).toBe("official");
+  expect(f.item.recon_state).toBe("checked_internal");
+  expect(f.item.analytics_state).toBe("pending");
+  expect(f.item.last_error_category).toBeNull();
+ });
+ it("a stale 403 cannot strand a pending official check",async()=>{
+  const f=fakeDb(true);
+  const {ToastApiError}=await import("./client");
+  const {setToastCheckMode}=await import("./checkMode");
+  vi.mocked(setToastCheckMode).mockResolvedValueOnce(false);
+  mocked.requestDay.mockRejectedValue(new ToastApiError("missing_permissions"));
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.mode).toBe("official");
+  expect(f.item.analytics_state).toBe("pending");
+  expect(f.item.last_error_category).toBeNull();
+ });
+});
