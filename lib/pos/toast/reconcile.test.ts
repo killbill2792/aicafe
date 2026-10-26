@@ -31,6 +31,7 @@ const status=()=>({business_date:day,import_state:"imported",recon_state:"pendin
 function fakeDb(analytics:boolean){
  mocked.mode=analytics?"official":"internal";
  const item={...status(),rechecking_reason:null as string|null},writes:Record<string,unknown>[]=[];
+ let batch:Array<Record<string,unknown>>|null=null;
  const selection={or:[] as string[],is:[] as string[]};
  const calls:string[]=[];let certifiedVoids=false;
  const cacheRows:Record<string,unknown>[]=[];let job:Record<string,unknown>|null=null;
@@ -38,13 +39,13 @@ function fakeDb(analytics:boolean){
  const db={
   from(table:string){
    const filters:Record<string,unknown>={};
-   let patch:Record<string,unknown>|null=null;
+   let patch:Record<string,unknown>|null=null,queryOr="",queryLimit=Infinity;
    const q={
     select(_s:string){return q;},eq(k:string,v:unknown){filters[k]=v;return q;},
     in(_k:string,_v:unknown[]){return q;},
-    or(expr:string){if(table==="toast_day_status"&&!patch)selection.or.push(expr);return q;},
+    or(expr:string){if(table==="toast_day_status"&&!patch){selection.or.push(expr);queryOr=expr;}return q;},
     is(k:string){if(table==="toast_day_status"&&!patch)selection.is.push(k);return q;},
-    order(_k:string,_opts?:unknown){return q;},limit(_n:number){return q;},range(_s:number,_e:number){return q;},delete(){return q;},
+    order(_k:string,_opts?:unknown){return q;},limit(n:number){queryLimit=n;return q;},range(_s:number,_e:number){return q;},delete(){return q;},
     update(value:Record<string,unknown>){patch=value;return q;},
     upsert(value:Record<string,unknown>){
      if(table==="toast_internal_check_cache")cacheRows.push(value);
@@ -54,9 +55,10 @@ function fakeDb(analytics:boolean){
      if(table==="toast_day_status"&&patch){
       // PostgREST UPDATE ... WHERE imported_at=... RETURNING must reject
       // stale reconciliation work after a newer canonical import.
-      if(filters.imported_at!==item.imported_at)return {data:null,error:null};
-      writes.push(patch);Object.assign(item,patch);
-      return {data:{business_date:item.business_date},error:null};
+      const target=batch?.find(row=>row.business_date===filters.business_date)??item;
+      if(filters.imported_at!==target.imported_at)return {data:null,error:null};
+      writes.push(patch);Object.assign(target,patch);
+      return {data:{business_date:target.business_date},error:null};
      }
      if(table==="toast_analytics_credentials")
       return {data:analytics?{business_id:business,verified_at:"2026-10-17"}:null,error:null};
@@ -68,7 +70,18 @@ function fakeDb(analytics:boolean){
     },
     then(yes:(v:unknown)=>unknown,no?:((e:unknown)=>unknown)){
      if(table==="toast_day_status"&&patch){writes.push(patch);Object.assign(item,patch);}
-     const data=table==="toast_day_status"&&!patch?(item.rechecking_reason?[]:[item]):
+     const days=batch??(item.rechecking_reason?[]:[item]);
+     const eligible=days.filter(d=>{
+      if(d.rechecking_reason)return false;
+      const state=d.recon_state as string;
+      if(!["pending","mismatch","analytics_timeout"].includes(state)&&
+       !(queryOr.includes("recon_state.eq.checked_internal")&&state==="checked_internal"&&
+         d.analytics_state==="pending"))return false;
+      const stamp=d.last_recon_attempt_at as string|null;
+      return !stamp||Date.now()-Date.parse(stamp)>(state==="pending"?9:60)*60000;
+     }).sort((a,b)=>(a.last_recon_attempt_at?1:0)-(b.last_recon_attempt_at?1:0)||
+       String(b.business_date).localeCompare(String(a.business_date))).slice(0,queryLimit);
+     const data=table==="toast_day_status"&&!patch?eligible:
       table==="toast_internal_check_cache"?cacheRows:[];
      return Promise.resolve({data,error:null}).then(yes,no);
     }
@@ -87,7 +100,8 @@ function fakeDb(analytics:boolean){
   selection,writes,calls,cacheRows,get certifiedVoids(){return certifiedVoids;},
   setJob(value:Record<string,unknown>){job=value;},
   setOrder(value:Record<string,unknown>|null){matchedOrder=value;},
-  setOtherDay(value:Record<string,unknown>|null){otherDay=value;}};
+  setOtherDay(value:Record<string,unknown>|null){otherDay=value;},
+   setBatch(value:Array<Record<string,unknown>>){batch=value;}};
 }
 const orderWithAutoGratAndGiftCard=()=>[{
  guid:"11111111-1111-4111-8111-111111111111",
