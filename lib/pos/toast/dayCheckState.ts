@@ -78,6 +78,12 @@ export function nextDayCheckState(current:DayCheckState,event:DayCheckEvent,at:s
    if(next.analytics_state==="pending")next.analytics_state="missing";
    next.last_error_category=null;break;
   case "evidence_invalidated":
+   // Invalidated auxiliary evidence cannot erase an independent ERA mismatch.
+   next.recon_state=externalMismatch?"mismatch":"pending";
+   if(!externalMismatch)next.recon_source=null;
+   next.internal_state=null;
+   next.last_error_category=null;next.last_recon_attempt_at=null;
+   break;
   case "reimported":
    next.recon_state="pending";next.recon_source=null;next.internal_state=null;
    next.analytics_state=null;next.last_error_category=null;next.internal_reasons=[];
