@@ -186,19 +186,12 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
    state:"pending",checked_at:null,last_error_category:null
   },{onConflict:"business_id,restaurant_guid,business_date"});
   if(pendingError)throw new ToastApiError("unavailable");
-  try{
-   reportId=await client.requestDay(p.restaurantGuid,day);
-  }catch(e){
-   if(e instanceof ToastApiError&&e.category==="unavailable"){
-    // A provider 202 without a GUID is pending, not a new day failure.
-    await writeReconciliation(db,p,day,{analytics_state:"pending",
-     recon_state:retained});
-    return;
-   }
-   throw e;
-  }
+  // A legitimate 202 without a report GUID returns null. A 503 or failed
+  // transport throws instead, so the caller records the error and retries.
+  reportId=await client.requestDay(p.restaurantGuid,day);
   if(!reportId){
-   await writeReconciliation(db,p,day,{analytics_state:"pending"});return;
+   await writeReconciliation(db,p,day,{analytics_state:"pending",
+    recon_state:retained});return;
   }
   const {error:save}=await db.from("toast_analytics_jobs").update({
    report_request_guid:reportId
