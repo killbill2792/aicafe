@@ -59,6 +59,7 @@ export async function readModifierSetup(){
   }
  }
  const suggestions=suggestModifierLinks(observed,recipes,mapped);
- return {observed:observed.slice(0,100),recipes:recipes.slice(0,200),
+ return {observed:observed.slice(0,100),ingredients:ingredients.data.map(i=>({id:i.id,name:i.name,baseUnit:i.base_unit})),
+  recipes:recipes.slice(0,200),
   suggestions:suggestions.slice(0,100)};
 }
