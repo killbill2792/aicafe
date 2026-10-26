@@ -66,11 +66,12 @@ export function agentReplyPayload(turn: AgentTurn) {
   // The card itself owns the question; avoid showing the identical text twice.
   const blocks=isOnlyQuestion?[]:splitAgentText(turn.text,turn.provenance??turn.unverified);
   const proposalIds=[...new Set(turn.results.flatMap(result=>
-    (result.source==="price_change_proposal"||result.source==="staff_proposal")&&result.draft===true&&
-      result.saved===false&&result.missing.length===0&&
+    (result.source==="price_change_proposal"||result.source==="staff_proposal"||result.source==="purchase_proposal")&&result.draft===true&&
+      result.saved===false&&
       typeof result.proposalId==="string"&&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.proposalId)
-      ?[result.proposalId]:[]))].slice(0,Math.max(0,29-blocks.length));
+      ?[result.proposalId]:result.source==="purchase_proposal"&&Array.isArray(result.proposals)?
+       result.proposals.flatMap(p=>p&&typeof p==="object"&&"proposalId" in p&&typeof p.proposalId==="string"&&UUID.test(p.proposalId)?[p.proposalId]:[]):[]))].slice(0,Math.max(0,29-blocks.length));
   const experimentIds=[...new Set(turn.results.flatMap(result=>
     result.source==="price_experiment_proposal"&&result.draft===true&&result.saved===false&&
     result.missing.length===0&&typeof result.proposalId==="string"&&UUID.test(result.proposalId)

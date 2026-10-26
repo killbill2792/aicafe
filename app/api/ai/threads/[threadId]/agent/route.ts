@@ -4,6 +4,7 @@ import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.s
 import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
+import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { addOwnerMessageInput, threadIdInput, type ConversationMessage, type ConversationScope } from "@/lib/ai/conversations/contracts";
@@ -142,6 +143,18 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
           new SupabaseLoopRepository(),priceExperimentCapabilityId,{productId,increaseCents:increase},key);
         const effect=proposal.canonicalEffectPayload as {productName:string;oldPriceCents:number;newPriceCents:number};
         return {proposalId:proposal.id,revision:proposal.revision,productName:effect.productName,oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents};
+      },
+      proposePurchases:async(input)=>{
+        const output:Array<{proposalId?:string;revision?:number;name:string;error?:string}>=[];
+        for(const [index,line] of input.lines.entries()){
+          try{
+            const requestKey=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,kind:"purchase",index,line,source:input.source}));
+            const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},supervisorLoopRegistry,
+              new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:input.source},requestKey);
+            output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name});
+          }catch{output.push({name:line.name,error:"needs_review"});}
+        }
+        return output;
       },
       proposeStaff:async({name,input})=>{
         const requestKey=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,name,input}));
