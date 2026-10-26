@@ -229,7 +229,13 @@ begin
   ) on conflict (source_stock_line_id) do update set
    ingredient_id=excluded.ingredient_id,effective_from=excluded.effective_from,
    cost_per_base_unit_micros=excluded.cost_per_base_unit_micros,
-   source=excluded.source,source_expense_line_id=excluded.source_expense_line_id;
+   source=excluded.source,source_expense_line_id=excluded.source_expense_line_id
+   where exists(select 1 from public.ingredients i where
+     i.id=ingredient_prices.ingredient_id and i.business_id=p_business_id);
+  if not found then
+   -- SECURITY DEFINER must not let a guessed UUID rewrite another café's price.
+   raise exception 'price line belongs to a different cafe' using errcode='42501';
+  end if;
  else
   delete from public.ingredient_prices where source_stock_line_id=p_line_id
    and ingredient_id in (select id from public.ingredients where business_id=p_business_id);
