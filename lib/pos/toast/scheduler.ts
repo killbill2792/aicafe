@@ -167,7 +167,7 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    for(const skipped of mappings.slice(index))console.info("toast_tick_skipped",{businessId:skipped.business_id,restaurantGuid:skipped.restaurant_guid});
    break;
   }
-  const deadlineAt=Math.min(globalDeadline,Date.now()+Math.min(60000,
+  const deadlineAt=mappings.length===1?globalDeadline:Math.min(globalDeadline,Date.now()+Math.min(60000,
    Math.max(6000,(globalDeadline-Date.now())/Math.max(1,Math.min(40,mappings.length-index)))));
 
   if(!m.toast_time_zone||m.closeout_hour==null)continue;
@@ -182,6 +182,14 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
   // The five-day cap and 5s pacing apply across ALL backfill runs for this
   // restaurant, not independently to every overlapping backfill run.
   let backfillDone=0;
+  let pendingBackfills:Run[]=[];
+  const coveredByBackfill=(run:Run)=>run.kind==="repull_modified"&&
+   pendingBackfills.some(backfill=>{
+    return run.requested_from!==null&&run.requested_to!==null&&
+     backfill.requested_from!==null&&backfill.requested_to!==null&&
+     run.requested_from>=backfill.requested_from&&
+     run.requested_to<=backfill.requested_to;
+   });
   let lastHistoricalPullAt:number|null=null;
   const paceHistorical=async()=>{
    if(lastHistoricalPullAt!==null){
@@ -218,10 +226,6 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    // A committed import's failed cost refresh is never another order import.
    await retryToastRollupRefreshes(db,deadlineAt,5,m.business_id);
    });
-   await isolated("optional",async()=>{
-   if(Date.now()<deadlineAt)
-    await syncToastOptionalSources(db,m,now,deadlineAt);
-   });
    await isolated("daily",async()=>{
    const closed=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
    if(closed&&Date.now()<deadlineAt){
@@ -233,6 +237,24 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     if(dailyErr)throw new ToastApiError("unavailable");
     if(daily&&shouldResume(daily as Run,Date.now()))
      processed+=await runDue(db,m,daily as Run,deadlineAt,5,paceHistorical);
+   }
+   });
+   await isolated("backfill",async()=>{
+   if(Date.now()>=deadlineAt)return;
+   await queueFirstBackfill(db,m,now);
+   const {data:backfills,error:backfillErr}=await db.from("toast_sync_runs")
+    .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
+    .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid)
+    .eq("kind","backfill").in("state",["queued","running","paused_rate_limited"])
+    .order("requested_from").limit(100);
+   if(backfillErr)throw new ToastApiError("unavailable");
+   pendingBackfills=(backfills??[]) as Run[];
+   for(const run of pendingBackfills){
+    if(Date.now()>=deadlineAt||backfillDone>=5)break;
+    if(!shouldResume(run,Date.now()))continue;
+    const done=await runDue(db,m,run,deadlineAt,5-backfillDone,paceHistorical);
+    processed+=done;
+    backfillDone+=done;
    }
    });
    await isolated("reconcile",async()=>{
@@ -254,15 +276,15 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    const resumes=((pending??[]) as Run[]).filter(r=>shouldResume(r,Date.now()));
    for(const run of resumes.filter(r=>r.state!=="queued")){
     if(Date.now()>=deadlineAt)break;
-    if(run.kind==="backfill"&&backfillDone>=5)continue;
-    const done=await runDue(db,m,run,deadlineAt,
-      run.kind==="backfill"?5-backfillDone:5,paceHistorical);
-    processed+=done;
-    if(run.kind==="backfill")backfillDone+=done;
+    if(run.kind==="backfill"||coveredByBackfill(run))continue;
+    processed+=await runDue(db,m,run,deadlineAt,5,paceHistorical);
    }
    });
    await isolated("modified_scan",async()=>{
-   if(Date.now()<deadlineAt)await scanModifiedDates(db,m,now,deadlineAt);
+   // A first-import backfill covers these historical dates; scan them only
+   // after it finishes, when there is no risk of starving the initial load.
+   if(!pendingBackfills.length&&Date.now()<deadlineAt)
+    await scanModifiedDates(db,m,now,deadlineAt);
    });
    await isolated("repull",async()=>{
    if(Date.now()<deadlineAt){
@@ -273,28 +295,32 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     if(rePullErr)throw new ToastApiError("unavailable");
     for(const run of (rePull??[]) as Run[]){
      if(Date.now()>=deadlineAt)break;
+     if(coveredByBackfill(run))continue;
      processed+=await runDue(db,m,run,deadlineAt,5,paceHistorical);
     }
    }
    });
-   await isolated("backfill",async()=>{
-   if(Date.now()<deadlineAt)await queueFirstBackfill(db,m,now);
-   const {data:next,error:nextErr}=await db.from("toast_sync_runs")
+   await isolated("optional",async()=>{
+   if(Date.now()<deadlineAt)
+    await syncToastOptionalSources(db,m,now,deadlineAt);
+   });
+   await isolated("queued",async()=>{
+   if(Date.now()>=deadlineAt)return;
+   // Pick up older daily runs missed by the D-1 phase. Daily jobs go first,
+   // newest to oldest; backfill stays in its priority phase above.
+   const {data:pending,error:pErr}=await db.from("toast_sync_runs")
     .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
     .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid)
     .eq("state","queued").order("requested_from",{ascending:false}).limit(100);
-   if(nextErr)throw new ToastApiError("unavailable");
-   const sorted=((next??[]) as Run[]).sort((a,b)=>{
-    const priority=(k:string)=>k==="daily"?0:k==="repull_modified"?1:k==="backfill"?3:2;
-    return priority(a.kind)-priority(b.kind)||(b.requested_from??"").localeCompare(a.requested_from??"");
-   });
+   if(pErr)throw new ToastApiError("unavailable");
+   const sorted=((pending??[]) as Run[]).sort((a,b)=>
+    Number(b.kind==="daily")-Number(a.kind==="daily")||
+    (b.requested_from??"").localeCompare(a.requested_from??""));
    for(const run of sorted){
     if(Date.now()>=deadlineAt)break;
-    if(run.kind==="backfill"&&backfillDone>=5)continue;
-    const done=await runDue(db,m,run,deadlineAt,
-      run.kind==="backfill"?5-backfillDone:5,paceHistorical);
-    processed+=done;
-    if(run.kind==="backfill")backfillDone+=done;
+    if(run.kind==="backfill"||coveredByBackfill(run)||
+     !shouldResume(run,Date.now()))continue;
+    processed+=await runDue(db,m,run,deadlineAt,1,paceHistorical);
    }
    });
    await isolated("cleanup",async()=>{
