@@ -93,3 +93,22 @@ export async function savePayrollCostAssumption(input: unknown): Promise<Payroll
   for (const path of ["/staff", "/staff/rules", "/onboarding", "/", "/money", "/menu", "/operations"]) revalidatePath(path);
   return { ok: true, refreshed };
 }
+
+/** Save only payroll that is NOT already represented by connected clocked
+ * wages, employer-cost percentage, or imported payroll facts. Never infer 0. */
+export async function saveMonthlyPayrollExtras(input:unknown):Promise<PayrollFallbackResult>{
+ const parsed=z.object({monthlyCents:z.number().int().safe().min(0)}).safeParse(input);
+ if(!parsed.success)return {ok:false,error:"Enter a valid monthly amount."};
+ let ctx:Awaited<ReturnType<typeof ownBusinessContext>>;
+ try{ctx=await ownBusinessContext();}
+ catch(error){return {ok:false,error:error instanceof Error?error.message:"Could not load your café."};}
+ if(!ctx)return {ok:false,error:"Set up your own café first."};
+ const {error}=await ctx.supabase.from("businesses").update({
+  owner_monthly_payroll_extras_cents:parsed.data.monthlyCents,
+  owner_monthly_payroll_extras_updated_at:new Date().toISOString(),
+ }).eq("id",ctx.businessId);
+ if(error)return {ok:false,error:error.message};
+ for(const path of ["/staff","/staff/rules","/","/money","/menu","/operations"])
+  revalidatePath(path);
+ return {ok:true,refreshed:true};
+}
