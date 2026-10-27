@@ -157,10 +157,11 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
       return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,...summarizeEmployeeSales(slice.value)};
     }
-    const [slice,ownerCosts,labor]=await Promise.all([
+    const [slice,ownerCosts,labor,toastScopes]=await Promise.all([
       ctx.tools.getPayrollFacts?.(period),
       ctx.tools.getOwnerMonthlyPayrollExtras?.(),
       ctx.tools.getLaborMetrics?.(period),
+      ctx.tools.getToastScopeCoverage?.(),
     ]);
     const ownerMonthlyPayrollExtrasCents=ownerCosts?.available?
       ownerCosts.value.monthlyCents:null;
@@ -170,6 +171,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       labor.value.every(day=>day.wagesCents!==null)?
       labor.value.reduce((total,day)=>total+day.wagesCents!,0):null;
     const costEvidence={
+      toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
       ownerMonthlyPayrollExtrasCents,ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?
         null:"You told me" as const,
       ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"estimate",
@@ -179,20 +181,27 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     if(!slice?.available)return {source:name,period,agentId:"olivia",
       missing:[...(slice?.quality.missingInputs??["toastPayrollRunsNotAvailable"]),
         ...(ownerMonthlyPayrollExtrasCents===null?["ownerMonthlyPayrollExtrasNotSet"]:[]),
-        ...unknownWageDates.map(day=>"laborWageUnknown:"+day)],
+        ...unknownWageDates.map(day=>"laborWageUnknown:"+day),
+        ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[])],
       ...costEvidence};
     return {source:name,period,agentId:"olivia",
       missing:[...slice.quality.missingInputs,
         ...(ownerMonthlyPayrollExtrasCents===null?["ownerMonthlyPayrollExtrasNotSet"]:[]),
-        ...unknownWageDates.map(day=>"laborWageUnknown:"+day)],
+        ...unknownWageDates.map(day=>"laborWageUnknown:"+day),
+        ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[])],
       ...costEvidence,...summarizePayrollFacts(slice.value)};
   }
   if(name==="get_item_sales")return salesTools.get_item_sales.execute(raw,ctx);
   if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
   if (name === "get_menu_items") {
     const input = menuSchema.parse(raw);
-    const slice = await ctx.tools.getMenuCatalog();
-    if (!slice.available) return absent("menu_items", null, slice.quality.missingInputs);
+    const [slice,toastScopes] = await Promise.all([
+      ctx.tools.getMenuCatalog(),ctx.tools.getToastScopeCoverage?.(),
+    ]);
+    if (!slice.available) return absent("menu_items", null, [
+      ...slice.quality.missingInputs,
+      ...(toastScopes?.available&&toastScopes.value.menus===false?["toastMenuScopeMissing"]:[])
+    ]);
     const active=slice.value.filter(item=>item.active);
     let filtered=active;
     if(input.query){
@@ -216,7 +225,9 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     catch {evidenceUnavailable=true;}
     return { source: "menu_items", period: null, agentId:"alex",
       missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : []),
-        ...(evidenceUnavailable?["menuPriceEvidenceUnavailable"]:[])],
+        ...(evidenceUnavailable?["menuPriceEvidenceUnavailable"]:[]),
+        ...(toastScopes?.available&&toastScopes.value.menus===false?["toastMenuScopeMissing"]:[])],
+      toastMenuScopeAvailable:toastScopes?.available?toastScopes.value.menus:null,
       items: visible.map(item => ({
         id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,unit:"cents",
         baseName:item.baseName,sizeLabel:item.sizeLabel,description:item.description,
