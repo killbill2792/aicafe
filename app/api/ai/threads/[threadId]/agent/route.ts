@@ -162,6 +162,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
         const catalog=await tools.getMenuCatalog();
         const item=catalog.available?catalog.value.find(x=>x.id===productId&&x.active):null;
         if(!item)throw new ToolError("not_found");
+        if(item.priceCents===null)throw new ToolError("validation","An open-price item has no confirmed starting price.");
         const increase=increaseCents??(newPriceCents===null?null:newPriceCents-item.priceCents);
         if(increase===null||increase<=0)throw new ToolError("validation","Enter a positive price increase.");
         const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,productId,increase,days}));
