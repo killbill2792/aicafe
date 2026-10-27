@@ -141,9 +141,14 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
     ...recordedDays.filter(d=>d.laborWageStatus==="estimate")
       .map(d=>"laborWageEstimate:"+d.date),
   ];
-  const observed={ingredients:salesDays.length>0,loadedStaff:recordedDays.some(day=>day.wagesCents!==null),
+  const observed={ingredients:salesDays.length>0,
+    loadedStaff:recordedDays.length>0&&staff!==null,
     cardFees:salesDays.length>0,runningCosts:snapshot.runningCostLines.some(line=>!line.isMissing)};
-  const anyKnown=Object.values(observed).some(Boolean);
+  // Partial known wages contribute to the subtotal but never certify the
+  // loadedStaff component for agent/UI readers. Keep all-wage-only periods
+  // partial rather than hiding their known subtotal as unavailable.
+  const anyKnown=Object.values(observed).some(Boolean)||
+    recordedDays.some(day=>day.wagesCents!==null||day.staffTaxCents!==null);
   return {
     period,knownTotalCents:anyKnown?knownTotalCents:0,
     completeness:!anyKnown?"unavailable":missingInputs.length?"partial":"complete",
