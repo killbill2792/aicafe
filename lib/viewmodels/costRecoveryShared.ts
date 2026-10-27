@@ -1,10 +1,11 @@
+import { laborKnown } from "@/lib/calc";
 import type { CategoryMonthlyAmount, DailyFacts, DayContribution, RecoveryBucket } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { regularHoursStateForDate } from "@/lib/business/openHours";
 
 /** Per_cup mode day contribution: net sales − ingredients − card fees − loaded staff cost. */
 export function dayContributionCents(day: DailyFacts): number | null {
-  return day.wagesCents===null||day.staffTaxCents===null?null:
+  return !laborKnown(day)?null:
     day.netSalesCents-day.ingredientsCents-day.cardFeesCents-(day.wagesCents+day.staffTaxCents);
 }
 
