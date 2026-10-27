@@ -27,7 +27,7 @@ describe("One canonical BusinessCostSummary for Money and Supervisor",()=>{
    const running=runningCostsForPeriodCents(fixture.runningCostLines.map(l=>({
      ...l,monthKey:fixture.monthKey
    })),period.from,period.to);
-   expect(roundHalfUpToCent(totalCostsCentsForPeriod(days,running))).toBe(x.knownTotalCents);
+   expect(roundHalfUpToCent(totalCostsCentsForPeriod(days,running)!)).toBe(x.knownTotalCents);
    expect(x.components).toEqual({
      ingredientsCents:ingredientsCentsForPeriod(days),
      loadedStaffCents:staffCostCentsForPeriod(days),
@@ -77,7 +77,7 @@ describe("One canonical BusinessCostSummary for Money and Supervisor",()=>{
    expect(x.components.loadedStaffCents).toBe(
      staffCostCentsForPeriod(snapshot.monthRecordedDays!));
    const money=buildProfitAndCostsViewModel(snapshot,"month");
-   expect(money.wagesCents+money.staffTaxCents).toBe(x.components.loadedStaffCents);
+   expect(money.wagesCents!+money.staffTaxCents!).toBe(x.components.loadedStaffCents);
    expect(money.totalCostsCents).toBe(x.knownTotalCents);
    expect(x.knownTotalCents).toBe(Object.values(x.components).reduce((a,b)=>a+b,0));
  });

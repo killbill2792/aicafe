@@ -72,8 +72,8 @@ describe("Fixture A: owner profit", () => {
     );
     expect(Math.round(runningCosts)).toBe(832_000); // 26 × 320.00
 
-    expect(Math.round(totalCostsCentsForPeriod(days, runningCosts))).toBe(4_730_752);
-    expect(Math.round(ownerProfitCentsForPeriod(days, runningCosts))).toBe(1_509_248);
+    expect(Math.round(totalCostsCentsForPeriod(days, runningCosts)!)).toBe(4_730_752);
+    expect(Math.round(ownerProfitCentsForPeriod(days, runningCosts)!)).toBe(1_509_248);
   });
 
   it("today (any single day) is $580.48", () => {
@@ -84,7 +84,7 @@ describe("Fixture A: owner profit", () => {
       "2026-09-01",
     );
     expect(Math.round(runningCosts)).toBe(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS);
-    expect(Math.round(ownerProfitCentsForPeriod(days, runningCosts))).toBe(58_048);
+    expect(Math.round(ownerProfitCentsForPeriod(days, runningCosts)!)).toBe(58_048);
   });
 });
 
@@ -132,8 +132,8 @@ describe("Fixture A: per-drink and health", () => {
   it("ingredients 27.1% healthy, staff 32.5% healthy, combined 59.6% healthy", () => {
     const days = fixtureADays(1);
     const ingredientsRatio = ratio(FIXTURE_A_DAY.ingredientsCents, FIXTURE_A_DAY.netSalesCents);
-    const staffRatio = ratio(staffCostCentsForPeriod(days), FIXTURE_A_DAY.netSalesCents);
-    const combinedRatio = ratio(FIXTURE_A_DAY.ingredientsCents + staffCostCentsForPeriod(days), FIXTURE_A_DAY.netSalesCents);
+    const staffRatio = ratio(staffCostCentsForPeriod(days)!, FIXTURE_A_DAY.netSalesCents);
+    const combinedRatio = ratio(FIXTURE_A_DAY.ingredientsCents + staffCostCentsForPeriod(days)!, FIXTURE_A_DAY.netSalesCents);
 
     expect(ingredientsRatio * 100).toBeCloseTo(27.1, 1);
     expect(staffRatio * 100).toBeCloseTo(32.5, 1);

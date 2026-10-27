@@ -72,7 +72,7 @@ describe("buildProfitAndCostsViewModel — running cost rows match the selected 
     const today = buildProfitAndCostsViewModel(snapshot, "today");
     const month = buildProfitAndCostsViewModel(snapshot, "month");
     expect(month.runningCostLines[0].amountCents).toBeCloseTo(today.runningCostLines[0].amountCents, 6);
-    expect(month.totalCostsCents).toBeCloseTo(today.totalCostsCents, 6);
+    expect(month.totalCostsCents).toBeCloseTo(today.totalCostsCents!, 6);
     expect(month.salesCents).toBe(today.salesCents);
   });
 
@@ -88,7 +88,7 @@ describe("buildProfitAndCostsViewModel — running cost rows match the selected 
     for (const period of ["today", "week", "month"] as const) {
       const vm = buildProfitAndCostsViewModel(snapshot, period);
       const rowsTotal = vm.runningCostLines.reduce((sum, line) => sum + line.amountCents, 0);
-      const expectedNonOperatingCosts = vm.totalCostsCents - vm.ingredientsCents - vm.wagesCents - vm.staffTaxCents - vm.cardFeesCents;
+      const expectedNonOperatingCosts = vm.totalCostsCents! - vm.ingredientsCents - vm.wagesCents! - vm.staffTaxCents! - vm.cardFeesCents;
       expect(rowsTotal).toBeCloseTo(expectedNonOperatingCosts, 6);
     }
   });
@@ -97,9 +97,9 @@ describe("buildProfitAndCostsViewModel — running cost rows match the selected 
     for (const period of ["today", "week", "month"] as const) {
       const vm = buildProfitAndCostsViewModel(snapshot, period);
       const rowsTotal = vm.runningCostLines.reduce((sum, line) => sum + line.amountCents, 0);
-      const recomputedTotalCosts = vm.ingredientsCents + vm.wagesCents + vm.staffTaxCents + vm.cardFeesCents + rowsTotal;
-      expect(recomputedTotalCosts).toBeCloseTo(vm.totalCostsCents, 6);
-      expect(vm.salesCents - recomputedTotalCosts).toBeCloseTo(vm.ownerProfitCents, 6);
+      const recomputedTotalCosts = vm.ingredientsCents + vm.wagesCents! + vm.staffTaxCents! + vm.cardFeesCents + rowsTotal;
+      expect(recomputedTotalCosts).toBeCloseTo(vm.totalCostsCents!, 6);
+      expect(vm.salesCents - recomputedTotalCosts).toBeCloseTo(vm.ownerProfitCents!, 6);
     }
   });
 });
@@ -166,7 +166,7 @@ describe("Money Week spanning previous month remains supported Oct 1–6",()=>{
       const previousDays=7-octoberDay;
       const expectedRunning=Math.round(310000*(previousDays/30+octoberDay/31));
 
-      const expectedTotal=Math.round(totalCostsCentsForPeriod(last7,expectedRunning));
+      const expectedTotal=Math.round(totalCostsCentsForPeriod(last7,expectedRunning)!);
       expect(partial.businessCosts.components.runningCostsCents).toBe(expectedRunning);
       expect(partial.businessCosts.knownTotalCents).toBe(expectedTotal);
       expect(partial.totalCostsCents).toBe(expectedTotal);
@@ -251,7 +251,7 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     );
     expect(previousCosts.completeness).toBe("complete");
     expect(delta.deltaCents).toBe(
-      vm.ownerProfitCents-(previous.netSalesCents-previousCosts.knownTotalCents),
+      vm.ownerProfitCents!-(previous.netSalesCents-previousCosts.knownTotalCents),
     );
   });
   it("previous period complete item proof but missing a staff record: no staff or profit delta",()=>{

@@ -47,7 +47,7 @@ export type MenuPriceSourceBasis = {
   payrollOldestDate: string | null;
   payrollLatestDate: string | null;
 };
-const finiteNonnegative = (n:number)=>Number.isSafeInteger(n)&&n>=0;
+const finiteNonnegative = (n:number|null)=>n!==null&&Number.isSafeInteger(n)&&n>=0;
 const runningCodes = new Set<string>(RUNNING_COST_CODES);
 /**
  * The canonical "actual expense by category, otherwise recurring estimate"
@@ -156,7 +156,7 @@ export function menuPriceSourceBasis(input:{
   const payrollDays=sourceDays.filter(d=>verifiedLaborDates.has(d.businessDate)&&
     finiteNonnegative(d.wagesCents)&&finiteNonnegative(d.payrollTaxCents));
   const payrollCoveredDays=payrollDays.length;
-  const payrollCents=payrollDays.reduce((n,d)=>n+d.wagesCents+d.payrollTaxCents,0);
+  const payrollCents=payrollDays.reduce((n,d)=>n+(d.wagesCents??0)+(d.payrollTaxCents??0),0);
   const monthlyPayrollCents=payrollCoveredDays>=7&&
     continuousLaborCoverage&&payrollCoveredDays===verifiedLaborDates.size?
       Math.round(payrollCents*daysInMonth/payrollCoveredDays):null;
