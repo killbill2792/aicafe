@@ -51,6 +51,7 @@ export type PosCatalogModifierOption = {
   name: string;
   priceCents: number | null;
   pricingStrategy: string | null;
+  posMetadata?: Record<string,unknown>;
 };
 export type PosCatalogModifierGroup = {
   posGroupId: string;
@@ -58,6 +59,7 @@ export type PosCatalogModifierGroup = {
   minSelections: number | null;
   maxSelections: number | null;
   required: boolean;
+  posMetadata?: Record<string,unknown>;
   options: PosCatalogModifierOption[];
 };
 export type PosCatalogItem = {
