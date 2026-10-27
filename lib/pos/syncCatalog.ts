@@ -9,7 +9,16 @@ type Row={id:string;pos_item_id:string|null;name:string;base_name:string|null;si
  price_cents:number|null;category:string|null;catalog_source:string|null;pos_name:string|null;
  is_active:boolean;description:string|null;menu_group:string|null;pos_visibility:string|null;
  pos_pricing_strategy:string|null;pos_archived_at:string|null;pos_metadata:Record<string,unknown>|null};
-const same=(a:unknown,b:unknown)=>JSON.stringify(a??null)===JSON.stringify(b??null);
+const canonicalJson=(value:unknown):unknown=>{
+ if(Array.isArray(value))return value.map(canonicalJson);
+ if(value!==null&&typeof value==="object")
+  return Object.fromEntries(Object.entries(value as Record<string,unknown>)
+   .sort(([a],[b])=>a.localeCompare(b))
+   .map(([key,entry])=>[key,canonicalJson(entry)]));
+ return value===undefined?null:value;
+};
+const same=(a:unknown,b:unknown)=>JSON.stringify(canonicalJson(a??null))===
+ JSON.stringify(canonicalJson(b??null));
 const pick=(current:object,desired:object)=>
  Object.fromEntries(Object.entries(desired).filter(([k,v])=>!same((current as Record<string,unknown>)[k],v)));
 const resultError=(error:unknown)=>{if(error)throw error;};
@@ -24,6 +33,12 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
  .eq("business_id",businessId);
  resultError(error);
  const rows=(data??[]) as Row[];
+ // Read all existing options once; preserve owner recipes and quantities.
+ const currentOptions=await readAllPosRows((from,to)=>db.from("modifier_recipes")
+  .select("id,pos_modifier_id,name,price_cents,pos_group_id,pos_group_name,pos_pricing_strategy,pos_metadata,is_active")
+  .eq("business_id",businessId).not("pos_modifier_id","is",null)
+  .order("id").range(from,to),"POS modifier options");
+ const optionsById=new Map(currentOptions.map(option=>[option.pos_modifier_id,option]));
  const {data:aliasRows,error:aliasesError}=await db.from("pos_item_aliases")
  .select("menu_item_id,provider,pos_item_id").eq("business_id",businessId);
  resultError(aliasesError);
@@ -146,10 +161,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
      resultError(gError);changed++;
     }
     for(const option of group.options){
-     const {data:existing,error:readError}=await db.from("modifier_recipes")
-       .select("id,name,price_cents,pos_group_id,pos_group_name,pos_pricing_strategy,pos_metadata,is_active")
-       .eq("business_id",businessId).eq("pos_modifier_id",option.posModifierId).maybeSingle();
-     resultError(readError);
+     const existing=optionsById.get(option.posModifierId);
      const values={name:option.name,price_cents:option.priceCents,
       pos_pricing_strategy:option.pricingStrategy,pos_metadata:option.posMetadata??{},
       pos_group_id:group.posGroupId,pos_group_name:group.name,is_active:true};
@@ -159,11 +171,14 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
        catalog_source:adapter.provider,catalog_last_synced_at:new Date().toISOString()
       },{onConflict:"business_id,pos_modifier_id"});
       resultError(modifierError);changed++;
+       optionsById.set(option.posModifierId,{...values,id:"",
+        pos_modifier_id:option.posModifierId});
      }else if(!same(Object.fromEntries(Object.keys(values).map(k=>[k,existing[k as keyof typeof existing]])),values)){
       const {error:modifierError}=await db.from("modifier_recipes").update({
        ...values,catalog_last_synced_at:new Date().toISOString()
       }).eq("business_id",businessId).eq("id",existing.id);
       resultError(modifierError);changed++;
+       optionsById.set(option.posModifierId,{...existing,...values});
      }
     }
    }
