@@ -129,7 +129,7 @@ export function simulateEconomics(input:Economics,delta:ScenarioDelta){
    itemMarginBeforeCents=delta.currentPriceCents-delta.oldCostCents;
    itemMarginAfterCents=delta.currentPriceCents-delta.newCostCents;
   }
-  profitChangeCents=Math.round(weeklyChangeCents*weeklyFactor);
+  profitChangeCents=weeklyChangeCents===null?null:Math.round(weeklyChangeCents*weeklyFactor);
   if(afterInput.monthlyRevenue.valueCents!==null&&delta.kind==="price")
    afterInput.monthlyRevenue=figure(afterInput.monthlyRevenue.valueCents+
     Math.round((delta.newPriceCents-delta.oldPriceCents)*delta.weeklyUnits*weeklyFactor),
@@ -140,7 +140,7 @@ export function simulateEconomics(input:Economics,delta:ScenarioDelta){
   const wages=delta.kind==="shift"?delta.hoursChange*delta.shiftsPerWeek*delta.wageCents:
    delta.weeklyHours*(delta.newWageCents-delta.oldWageCents);
   weeklyChangeCents=-Math.round(wages*(1+delta.payrollTaxRate));
-  profitChangeCents=Math.round(weeklyChangeCents*weeklyFactor);
+  profitChangeCents=weeklyChangeCents===null?null:Math.round(weeklyChangeCents*weeklyFactor);
   afterInput.monthlyStaff=figure(input.monthlyStaff.valueCents===null?null:
     Math.max(0,input.monthlyStaff.valueCents-profitChangeCents),
    "estimate","Payroll scenario",input.monthlyStaff.missingDays);
