@@ -125,9 +125,9 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
           required:link.required,options:optionsByGroup.get(link.pos_group_id)??[]
         }))
       })),quality:quality([
-        ...(data??[]).length>500?"menuCatalogTruncated":"",
-        ...(links??[]).length>10000?"menuModifierLinksTruncated":""
-      ].filter(Boolean)) };
+        ...((data??[]).length>500?["menuCatalogTruncated"]:[]),
+        ...((links??[]).length>10000?["menuModifierLinksTruncated"]:[])
+      ]) };
     },
     async staffAttendance(id: string, period: CafeStatePeriod, timezone: string): Promise<KnownSlice<StaffAttendance>> {
       assertScope(id);
