@@ -197,8 +197,12 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
           <span className="text-[13px] text-ink-muted">{t("healthCheckSubtitle")}</span>
         </div>
         <HealthRow label={t("ingredients")} pct={vm.ingredientsRatio * 100} band={vm.ingredientsBand} note={t("healthyRange")} bandLabel={bandLabel[vm.ingredientsBand]} />
-        <HealthRow label={t("staff")} pct={vm.staffRatio * 100} band={vm.staffBand} note={t("healthyRange")} bandLabel={bandLabel[vm.staffBand]} />
-        <HealthRow label={t("ingredientsPlusStaff")} pct={vm.combinedRatio * 100} band={vm.combinedBand} note={t("keepUnder")} bandLabel={bandLabel[vm.combinedBand]} />
+        {vm.staffRatio!==null&&vm.staffBand!==null?
+          <HealthRow label={t("staff")} pct={vm.staffRatio * 100} band={vm.staffBand} note={t("healthyRange")} bandLabel={bandLabel[vm.staffBand]} />:
+          <p className="text-sm text-ink-muted">{t("staff")}: {t("ownerProfitWaiting")}</p>}
+        {vm.combinedRatio!==null&&vm.combinedBand!==null?
+          <HealthRow label={t("ingredientsPlusStaff")} pct={vm.combinedRatio * 100} band={vm.combinedBand} note={t("keepUnder")} bandLabel={bandLabel[vm.combinedBand]} />:
+          <p className="text-sm text-ink-muted">{t("ingredientsPlusStaff")}: {t("ownerProfitWaiting")}</p>}
       </section>
 
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
