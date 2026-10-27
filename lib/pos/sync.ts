@@ -16,30 +16,18 @@ import { connectedActualFactFromOrders, setProcessingFeeCandidateEligibility, up
  */
 export async function syncPosData(
   supabase: SupabaseClient,
-  params: { businessId: string; locationId: string; timezone: string; adapter: PosAdapter; since: Date; until: Date },
-): Promise<{ ordersSynced: number; timecardsSynced: number; affectedDates: string[] }> {
+  params: { businessId: string; locationId: string; timezone: string; adapter: PosAdapter; since: Date; until: Date; allowCatalogArchive?:boolean },
+): Promise<{ ordersSynced: number; timecardsSynced: number; affectedDates: string[]; scheduledShiftsStatus:"not_supported"|"synced"|"unavailable" }> {
   const { businessId, locationId, timezone, adapter, since, until } = params;
   const affectedDates = new Set<string>();
 
-  await syncCanonicalCatalog(supabase, businessId, adapter);
+  await syncCanonicalCatalog(supabase, businessId, adapter, {archiveMissing:params.allowCatalogArchive});
 
-  const [orders, employees, timecards, scheduledShifts] = await Promise.all([
+  const [orders, employees, timecards] = await Promise.all([
     adapter.fetchOrders({ since, until }),
     adapter.fetchEmployees(),
     adapter.fetchTimecards({ since, until }),
-    adapter.fetchPosScheduledShifts?.({since:new Date(Date.now()-7*86400000),
-      until:new Date(Date.now()+14*86400000)})??Promise.resolve([]),
   ]);
-  if(scheduledShifts.length){
-    const {error:scheduledError}=await supabase.from("pos_scheduled_shifts").upsert(
-      scheduledShifts.map(s=>({business_id:businessId,location_id:locationId,
-       provider:adapter.provider,external_shift_id:s.externalShiftId,
-       external_employee_id:s.externalEmployeeId,external_job_id:s.externalJobId,
-       scheduled_start:s.scheduledStart,scheduled_end:s.scheduledEnd,deleted:s.deleted,
-       last_synced_at:new Date().toISOString()})),
-      {onConflict:"business_id,provider,external_shift_id"});
-    if(scheduledError)throw scheduledError;
-  }
   // Fetch succeeded across the complete Square pagination before any zero-day proof.
   // Only a full café-local day (or the covered portion of the CURRENT day
   // starting at local midnight) can be explicitly marked actual.
@@ -217,5 +205,34 @@ export async function syncPosData(
   }
 
   await rebuildSalesFactRollups(supabase,businessId,[...affectedDates],timezone);
-  return { ordersSynced: orders.length, timecardsSynced: timecards.length, affectedDates: [...affectedDates] };
+  // Published schedules are optional evidence, not a prerequisite for importing paid
+  // attendance or sales. Record a safe failure category and retry on the next tick.
+  let scheduledShiftsStatus:"not_supported"|"synced"|"unavailable"="not_supported";
+  if(adapter.fetchPosScheduledShifts){
+    try{
+      const scheduledShifts=await adapter.fetchPosScheduledShifts({
+        since:new Date(Date.now()-7*86400000),until:new Date(Date.now()+14*86400000)
+      });
+      if(scheduledShifts.length){
+        const {error}=await supabase.from("pos_scheduled_shifts").upsert(
+          scheduledShifts.map(s=>({business_id:businessId,location_id:locationId,
+            provider:adapter.provider,external_shift_id:s.externalShiftId,
+            external_employee_id:s.externalEmployeeId,external_job_id:s.externalJobId,
+            scheduled_start:s.scheduledStart,scheduled_end:s.scheduledEnd,deleted:s.deleted,
+            last_synced_at:new Date().toISOString()})),
+          {onConflict:"business_id,provider,external_shift_id"});
+        if(error)throw error;
+      }
+      scheduledShiftsStatus="synced";
+    }catch(error){
+      scheduledShiftsStatus="unavailable";
+      // Never log provider response bodies, credentials or raw third-party errors.
+      console.warn("[pos/sync] optional schedule unavailable",{
+        provider:adapter.provider,category:error instanceof Error&&
+          /(?:401|403|permission|forbidden)/i.test(error.message)?"permission":"sync_failed"
+      });
+    }
+  }
+  return { ordersSynced: orders.length, timecardsSynced: timecards.length,
+    affectedDates: [...affectedDates],scheduledShiftsStatus };
 }

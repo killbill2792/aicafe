@@ -133,3 +133,15 @@ describe("Square catalog and published shifts",()=>{
   expect((vi.mocked(squareRequest).mock.calls[1][2] as {body:{cursor:string}}).body.cursor).toBe("next");
  });
 });
+
+describe("Square nullable wage provenance",()=>{
+ it("preserves missing hourly wages as unknown rather than claiming a zero rate",async()=>{
+  vi.mocked(squarePaginated).mockResolvedValueOnce([
+   {id:"missing",team_member_id:"staff",start_at:"2026-10-02T10:00:00Z"},
+   {id:"zero",team_member_id:"staff",start_at:"2026-10-02T11:00:00Z",
+    wage:{hourly_rate:{amount:0}}}
+  ]);
+  const cards=await createSquareAdapter({accessToken:"token",locationId:"location"}).fetchTimecards(range);
+  expect(cards.map(card=>card.hourlyWageCents)).toEqual([null,0]);
+ });
+});

@@ -15,8 +15,9 @@ begin
    and conname='businesses_target_ingredient_rate_guard')
  then raise exception 'Ingredient rate CHECK missing';end if;
  if not exists (select 1 from pg_constraint where conrelid='public.businesses'::regclass
-   and conname='businesses_owner_payroll_guard')
- then raise exception 'Payroll cents CHECK missing';end if;
+   and contype='c' and pg_get_constraintdef(oid) like '%owner_monthly_payroll_extras_cents%'
+    and pg_get_constraintdef(oid) like '%>= 0%')
+ then raise exception 'Owner payroll extras nonnegative CHECK missing';end if;
  if not exists (select 1 from pg_indexes where schemaname='public'
    and indexname='toast_one_cafe_per_restaurant_uidx')
  then raise exception 'Toast tenant-wide uniqueness missing';end if;

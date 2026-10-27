@@ -54,7 +54,8 @@ export async function syncSquareTick(db:SupabaseClient,now=new Date()):Promise<T
    const since=first<from?first:from;
    for(const location of locations){
     await syncPosData(db,{businessId:conn.business_id,locationId:location.id,
-     timezone:business.timezone,adapter:createSquareAdapter({
+     timezone:business.timezone,allowCatalogArchive:locations.length===1,
+      adapter:createSquareAdapter({
       accessToken:token,locationId:location.pos_location_id}),since,until:now});
    }
    const {error:doneError}=await db.from("pos_connections").update({

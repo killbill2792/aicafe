@@ -26,7 +26,7 @@ const normalized=(v:string|null|undefined)=>(v??"").normalize("NFKD").toLowerCas
 
 /** Never let provider identity replace the owner/CSV identity without an alias. */
 export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,adapter:PosAdapter,
- options:{restaurantGuid?:string}={}){
+ options:{restaurantGuid?:string;archiveMissing?:boolean}={}){
  const imported=await adapter.fetchCatalogItems();
  const {data,error}=await db.from("menu_items")
  .select("id,pos_item_id,name,base_name,size_label,price_cents,category,catalog_source,pos_name,is_active,description,menu_group,pos_visibility,pos_pricing_strategy,pos_archived_at,pos_metadata")
@@ -202,7 +202,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
   }
  }
  // A complete menu snapshot archives only published items owned by this same provider.
- if(adapter.provider!=="csv"){
+ if(adapter.provider!=="csv"&&options.archiveMissing!==false){
   for(const row of rows){
    // Toast snapshots are restaurant-specific. Never archive another location's
    // published menu merely because it wasn't in this restaurant's response.

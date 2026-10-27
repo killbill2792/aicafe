@@ -4,6 +4,7 @@ on:
     paths:
       - 'supabase/migrations/20261027000102_supervisor_all_data.sql'
       - 'scripts/supervisor-all-data-db-integration.sql'
+      - 'scripts/supervisor-all-data-schema-check.sql'
       - '.github/workflows/supervisor-db-integration.yml'
   workflow_dispatch:
 concurrency:
@@ -55,6 +56,10 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f scripts/supervisor-all-data-db-integration.sql
+      - name: Read-only schema inventory (one row per object)
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/supervisor-all-data-schema-check.sql
       - name: Stop disposable Supabase
         if: always()
         run: supabase stop --no-backup
