@@ -169,9 +169,9 @@ begin
    limit 1),
  (select mi.id from public.menu_items mi
    where mi.business_id=p_business_id and mi.pos_item_id=l.pos_item_id limit 1),
- (select mi.id from public.menu_items mi
+ (select max(mi.id) from public.menu_items mi
    where mi.business_id=p_business_id and mi.pos_item_id like l.pos_item_id||':size:%'
-   order by mi.id limit 1))
+   having count(*)=1))
  from public.orders o
  where o.id=l.order_id and o.business_id=p_business_id
   and l.pos_item_id like v_prefix||'%'

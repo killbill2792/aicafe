@@ -1,14 +1,14 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
-const m=vi.hoisted(()=>({request:vi.fn(),roster:vi.fn(),catalog:vi.fn(),labor:vi.fn()}));
+const m=vi.hoisted(()=>({request:vi.fn(),roster:vi.fn(),catalog:vi.fn(),labor:vi.fn(),attendance:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./client",async()=>{
  const {z}=await import("zod");
  class ToastApiError extends Error{constructor(public category:string){super(category);}}
  return {ToastApiError,GUID:z.uuid(),createToastClient:()=>({request:m.request})};
 });
-vi.mock("./operationalStaging",()=>({
- stageToastCatalog:m.catalog,stageToastRoster:m.roster
+vi.mock("./operationalCopy",()=>({
+ copyToastPublishedMenu:m.catalog,copyToastStaff:m.roster,copyToastAttendance:m.attendance
 }));
 vi.mock("./laborSync",()=>({syncToastLaborReadOnly:m.labor}));
 import {syncToastOptionalSources} from "./optionalSync";
@@ -38,6 +38,7 @@ beforeEach(()=>{
  m.roster.mockResolvedValue({staged:0});
  m.catalog.mockResolvedValue({staged:0});
  m.labor.mockResolvedValue({staged:0});
+ m.attendance.mockResolvedValue({changed:0,affectedDates:[]});
  m.request.mockImplementation(async (path:string)=>{
   if(path.includes("/menus/v2/metadata"))
    return {restaurantGuid:restaurant,lastUpdated:"2026-10-23T00:00:00Z"};
@@ -54,7 +55,8 @@ describe("independent optional Toast source phases",()=>{
   await expect(syncToastOptionalSources(f.db,scope,now,Date.now()+20000))
    .rejects.toMatchObject({category:"invalid_response"});
   expect(m.roster).toHaveBeenCalledTimes(1);
-  expect(m.labor).toHaveBeenCalledTimes(2);
+  expect(m.attendance).toHaveBeenCalledTimes(2);
+  expect(m.labor).toHaveBeenCalledTimes(1); // scheduled shifts remain separate from paid hours
   expect(m.request.mock.calls.map(c=>String(c[0]))).toEqual(
    expect.arrayContaining(["/labor/v1/jobs","/config/v2/voidReasons"]));
   expect(f.writes.some(w=>w.labor_local_day==="2026-10-23")).toBe(true);
@@ -66,6 +68,7 @@ describe("independent optional Toast source phases",()=>{
   expect(m.request).not.toHaveBeenCalled();
   expect(m.roster).not.toHaveBeenCalled();
   expect(m.labor).not.toHaveBeenCalled();
+  expect(m.attendance).not.toHaveBeenCalled();
   expect(f.writes).toEqual([]);
  });
 });
