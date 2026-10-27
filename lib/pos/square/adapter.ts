@@ -153,32 +153,35 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
     },
 
     async fetchCatalogItems(): Promise<PosCatalogItem[]> {
-      type CatalogObject = {
-        id: string;
-        type: string;
-        item_data?: { name?: string; category_id?: string; variations?: { item_variation_data?: { price_money?: SquareMoney } }[] };
-      };
-      const data = await squareRequest<{ objects?: CatalogObject[] }>(accessToken, "/v2/catalog/list?types=ITEM");
-      return (data.objects ?? [])
-        .filter((o) => o.type === "ITEM")
-        .map((o) => ({
-          posItemId: o.id,
-          name: o.item_data?.name ?? "Item",
-          priceCents: cents(o.item_data?.variations?.[0]?.item_variation_data?.price_money) || null,
-          category: o.item_data?.category_id ?? null,
+      type Variation={id:string;item_variation_data?:{
+        name?:string;price_money?:SquareMoney;pricing_type?:string}};
+      type CatalogObject={id:string;type:string;item_data?:{
+        name?:string;description?:string;category_id?:string;variations?:Variation[]}};
+      const data=await squareRequest<{objects?:CatalogObject[]}>(
+        accessToken,"/v2/catalog/list?types=ITEM");
+      return (data.objects??[]).filter(o=>o.type==="ITEM").flatMap(o=>{
+        const title=o.item_data?.name??"Item";
+        return (o.item_data?.variations??[]).map(v=>({
+          posItemId:v.id,name:title,baseName:title,
+          sizeLabel:v.item_variation_data?.name??null,
+          priceCents:v.item_variation_data?.price_money?.amount??null,
+          category:o.item_data?.category_id??null,
+          description:o.item_data?.description??null,
+          pricingStrategy:v.item_variation_data?.pricing_type??null
         }));
+      });
     },
 
     async fetchEmployees(): Promise<PosEmployee[]> {
       type TeamMember = { id: string; given_name?: string; family_name?: string; status?: string };
       const data = await squareRequest<{ team_members?: TeamMember[] }>(accessToken, "/v2/team-members/search", {
         method: "POST",
-        body: { query: { filter: { status: "ACTIVE" } } },
+        body: { query: {} },
       });
       return (data.team_members ?? []).map((m) => ({
         posTeamMemberId: m.id,
         displayName: [m.given_name, m.family_name].filter(Boolean).join(" ") || "Team member",
-        role: null,
+        role: null,active:m.status!=="INACTIVE",
       }));
     },
 

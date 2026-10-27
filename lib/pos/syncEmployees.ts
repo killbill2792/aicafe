@@ -6,8 +6,8 @@ type EmployeeRow={id:string;display_name:string;pos_team_member_id:string|null;r
  pos_last_role:string|null;pos_last_wage_cents:number|null;pos_last_active:boolean|null};
 const normalize=(s:string)=>s.trim().normalize("NFKD").toLowerCase().replace(/\s+/g," ");
 /** One employee importer for Square, Toast and future registers. Never erase owner edits. */
-export async function syncCanonicalEmployees(db:SupabaseClient,businessId:string,adapter:PosAdapter){
- const incoming=await adapter.fetchEmployees();
+export async function syncCanonicalEmployees(db:SupabaseClient,businessId:string,adapter:PosAdapter,provided?:PosEmployee[]){
+ const incoming=provided??await adapter.fetchEmployees();
  const {data,error}=await db.from("employees").select(
   "id,display_name,pos_team_member_id,role,active,default_hourly_wage_cents,pos_display_name,pos_last_role,pos_last_wage_cents,pos_last_active"
  ).eq("business_id",businessId);

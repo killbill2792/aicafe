@@ -6,6 +6,7 @@ import { recomputeDailyRollup } from "./rollup";
 import { rebuildSalesFactRollups } from "./salesFactRollups";
 import { squareCoveredSalesDates } from "./squareCoveredDates";
 import { syncCanonicalCatalog } from "./syncCatalog";
+import {syncCanonicalEmployees} from "./syncEmployees";
 import { connectedActualFactFromOrders, setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "./processingFees";
 
 /**
@@ -33,17 +34,14 @@ export async function syncPosData(
   const actualDates=new Set(squareCoveredSalesDates({provider:adapter.provider,
     since,until,timezone}));
   for(const date of actualDates)affectedDates.add(date);
-  const { data: menuRows } = await supabase.from("menu_items").select("id, pos_item_id").eq("business_id", businessId);
+  const { data: menuRows,error: menuReadError } = await supabase.from("menu_items").select("id, pos_item_id").eq("business_id", businessId);
+  if(menuReadError)throw menuReadError;
   const menuItemIdByPos = new Map((menuRows ?? []).filter((item) => item.pos_item_id).map((item) => [item.pos_item_id, item.id]));
 
   // Employees first (timecards reference them by pos_team_member_id).
-  if (employees.length > 0) {
-    await supabase.from("employees").upsert(
-      employees.map((e) => ({ business_id: businessId, pos_team_member_id: e.posTeamMemberId, display_name: e.displayName, role: e.role })),
-      { onConflict: "business_id,pos_team_member_id" },
-    );
-  }
-  const { data: employeeRows } = await supabase.from("employees").select("id, pos_team_member_id, display_name").eq("business_id", businessId);
+  await syncCanonicalEmployees(supabase,businessId,adapter,employees);
+  const { data: employeeRows,error:staffReadError } = await supabase.from("employees").select("id, pos_team_member_id, display_name").eq("business_id", businessId);
+  if(staffReadError)throw staffReadError;
   const employeeIdByPos = new Map((employeeRows ?? []).map((e) => [e.pos_team_member_id, e.id]));
   const employeeNameById = new Map((employeeRows ?? []).map((e) => [e.id, e.display_name]));
 
@@ -81,9 +79,10 @@ export async function syncPosData(
 
     if (orderError || !existing) throw orderError ?? new Error("POS order persistence failed");
 
-    await supabase.from("order_lines").delete().eq("order_id", existing.id);
+    const {error:lineDeleteError}=await supabase.from("order_lines").delete().eq("order_id", existing.id);
+    if(lineDeleteError)throw lineDeleteError;
     if (order.lines.length > 0) {
-      await supabase.from("order_lines").insert(
+      const {error:lineInsertError}=await supabase.from("order_lines").insert(
         order.lines.map((line) => ({
           order_id: existing.id,
           pos_item_id: line.posItemId,
@@ -97,6 +96,7 @@ export async function syncPosData(
           category:line.category??null,
         })),
       );
+      if(lineInsertError)throw lineInsertError;
     }
   }
 
@@ -112,27 +112,30 @@ export async function syncPosData(
     const dayStart = fromZonedTime(`${businessDate}T00:00:00`, timezone).toISOString();
     const dayEnd = fromZonedTime(`${businessDate}T23:59:59.999`, timezone).toISOString();
 
-    const { data: samePosRow } = await supabase
+    const { data: samePosRow,error:samePosError } = await supabase
       .from("timecards")
-      .select("id")
+      .select("id,pos_owner_edited")
       .eq("business_id", businessId)
       .eq("pos_timecard_id", tc.posTimecardId)
       .maybeSingle();
 
+    if(samePosError)throw samePosError;
     if (samePosRow) {
-      await supabase.from("timecards").update({
+      if(samePosRow.pos_owner_edited)continue;
+      const {error:timecardUpdateError}=await supabase.from("timecards").update({
         employee_id: employeeId,
         source_type: "connected_pos",
         source_provider: adapter.provider,
         clock_in: tc.clockIn,
         clock_out: tc.clockOut,
         hourly_wage_cents: tc.hourlyWageCents,
-        breaks: tc.breaks,
-      }).eq("id", samePosRow.id);
+        wage_source:"pos",breaks: tc.breaks,
+      }).eq("id", samePosRow.id).eq("business_id",businessId);
+      if(timecardUpdateError)throw timecardUpdateError;
       continue;
     }
 
-    const { data: priorRows } = await supabase
+    const { data: priorRows,error:priorRowsError } = await supabase
       .from("timecards")
       .select("id, schedule_id, source_type, source_provider, clock_in, clock_out")
       .eq("business_id", businessId)
@@ -142,70 +145,24 @@ export async function syncPosData(
       .lte("clock_in", dayEnd)
       .order("clock_in", { ascending: true })
       .limit(1);
+    if(priorRowsError)throw priorRowsError;
     const prior = priorRows?.[0] ?? null;
 
-    if (prior) {
-      await supabase.from("timecards").update({
-        pos_timecard_id: tc.posTimecardId,
-        source_type: "connected_pos",
-        source_provider: adapter.provider,
-        clock_in: tc.clockIn,
-        clock_out: tc.clockOut,
-        hourly_wage_cents: tc.hourlyWageCents,
-        breaks: tc.breaks,
-      }).eq("id", prior.id);
-
-      const scheduledStart = new Date(prior.clock_in).getTime();
-      const scheduledEnd = prior.clock_out ? new Date(prior.clock_out).getTime() : null;
-      const actualStart = new Date(tc.clockIn).getTime();
-      const actualEnd = tc.clockOut ? new Date(tc.clockOut).getTime() : null;
-      const changed = scheduledStart !== actualStart || scheduledEnd !== actualEnd;
-
-      if (changed) {
-        const issue = prior.source_type === "owner_schedule"
-          ? "actual clock times differ from the owner schedule"
-          : prior.source_type === "ai_cafe"
-            ? "POS clock times differ from AI Cafe clock-in/out"
-            : "POS clock times differ from previously entered hours";
-        await supabase.from("operating_tasks").upsert({
-          business_id: businessId,
-          id: `staff-actual:${employeeId}:${businessDate}:${tc.posTimecardId}`,
-          agent_id: "olivia",
-          kind: "staff_coverage",
-          entity_type: "employee",
-          entity_id: employeeId,
-          status: "needs_owner",
-          payload: {
-            issue,
-            employeeName: employeeNameById.get(employeeId) ?? "Staff",
-            businessDate,
-            previousSource: prior.source_type,
-            previousProvider: prior.source_provider,
-            expectedClockIn: prior.clock_in,
-            expectedClockOut: prior.clock_out,
-            actualClockIn: tc.clockIn,
-            actualClockOut: tc.clockOut,
-            actualProvider: adapter.provider,
-          },
-          confidence: "high",
-          evidence: [{
-            source: "staff_actual_reconciliation",
-            facts: {
-              expectedClockIn: prior.clock_in,
-              expectedClockOut: prior.clock_out,
-              actualClockIn: tc.clockIn,
-              actualClockOut: tc.clockOut,
-              actualProvider: adapter.provider,
-            },
-          }],
-        }, { onConflict: "business_id,id" });
-      }
+    if(prior){
+      // A POS clock must not replace an owner/imported/scheduled shift. Ask once.
+      const {error:reviewError}=await supabase.from("pos_import_reviews").upsert({
+        business_id:businessId,provider:adapter.provider,
+        review_type:"overlapping_timecard",source_key:tc.posTimecardId,
+        detail:{employeeId,existingTimecardId:prior.id,actualClockIn:tc.clockIn,
+          actualClockOut:tc.clockOut}
+      },{onConflict:"business_id,provider,review_type,source_key"});
+      if(reviewError)throw reviewError;
       continue;
     }
 
     // No owner schedule/manual/AI-Cafe row exists for this employee/day, so this POS row becomes
     // the canonical timecard for the day.
-    await supabase.from("timecards").insert({
+    const {error:timecardInsertError}=await supabase.from("timecards").insert({
       business_id: businessId,
       employee_id: employeeId,
       pos_timecard_id: tc.posTimecardId,
@@ -214,8 +171,9 @@ export async function syncPosData(
       clock_in: tc.clockIn,
       clock_out: tc.clockOut,
       hourly_wage_cents: tc.hourlyWageCents,
-      breaks: tc.breaks,
+      wage_source:"pos",breaks: tc.breaks,
     });
+    if(timecardInsertError)throw timecardInsertError;
   }
 
   for (const date of affectedDates) {

@@ -9,8 +9,8 @@ type Row={id:string;pos_item_id:string|null;name:string;base_name:string|null;si
  is_active:boolean;description:string|null;menu_group:string|null;pos_visibility:string|null;
  pos_pricing_strategy:string|null;pos_archived_at:string|null;pos_metadata:Record<string,unknown>|null};
 const same=(a:unknown,b:unknown)=>JSON.stringify(a??null)===JSON.stringify(b??null);
-const pick=<T extends Record<string,unknown>>(current:T,desired:Partial<T>)=>
- Object.fromEntries(Object.entries(desired).filter(([k,v])=>!same(current[k],v)));
+const pick=(current:object,desired:object)=>
+ Object.fromEntries(Object.entries(desired).filter(([k,v])=>!same((current as Record<string,unknown>)[k],v)));
 const resultError=(error:unknown)=>{if(error)throw error;};
 const normalized=(v:string|null|undefined)=>(v??"").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 
