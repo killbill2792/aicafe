@@ -45,4 +45,11 @@ export async function recordToastCopyFailure(db:SupabaseClient,p:ToastCopyScope,
   last_error_category:category,last_failed_at:new Date().toISOString()
  },{onConflict:"business_id,restaurant_guid,phase"});
  if(writeError)throw writeError;
+ // Surface source-copy failures on the normal owner-facing Toast health path.
+ // The credential's verified state is intentionally left unchanged.
+ const {error:healthError}=await db.from("toast_sync_health").upsert({
+   business_id:p.businessId,restaurant_guid:p.restaurantGuid,
+   last_attempt_at:new Date().toISOString(),last_failure_category:category,
+ },{onConflict:"business_id,restaurant_guid"});
+ if(healthError)throw healthError;
 }
