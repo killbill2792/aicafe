@@ -1,5 +1,6 @@
 import {
   mealBreakStatus,
+  laborKnown,
   payrollTaxCents,
   ratio,
   staffCostLoadedCents,
@@ -146,7 +147,7 @@ export function buildStaffViewModel(
       };
     });
 
-  const dailyCostPerSalesDollarCents = snapshot.last7Days.filter(d=>d.wagesCents!==null&&d.staffTaxCents!==null).map((d) => ({
+  const dailyCostPerSalesDollarCents = snapshot.last7Days.filter(laborKnown).map((d) => ({
     date: d.date,
     cents: ratio((d.wagesCents??0)+(d.staffTaxCents??0), d.netSalesCents) * 100,
   }));
