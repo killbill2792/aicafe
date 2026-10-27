@@ -237,3 +237,25 @@ describe("Persisted Needs You cards and evidence-proven zero facts",()=>{
     expect(r.facts).toHaveLength(0);
   });
 });
+
+
+describe("legacy Supervisor cannot certify known-only missing wages",()=>{
+ it("suppresses recorded loaded labor despite a non-null aggregate",async()=>{
+   const partial={date:"2026-10-10",wagesCents:1200,staffTaxCents:144,
+     loadedStaffCostCents:1344,wageStatus:"missing" as const};
+   vi.mocked(tools.getLaborMetrics).mockResolvedValueOnce(known([partial]) as never);
+   const staff=await execute("get_staff",{view:"labor_cost",...dates("today")},91);
+   expect(staff.missingInputs).toContain("laborWageUnknown");
+   expect(staff.facts.some(f=>f.label==="Recorded loaded staff cost")).toBe(false);
+   vi.mocked(tools.getLaborMetrics)
+     .mockResolvedValueOnce(known([partial]) as never)
+     .mockResolvedValueOnce(known([partial]) as never);
+   const comparison=await execute("compare_periods",{
+     metric:"loaded_labor",
+     current_period:"today",current_from:null,current_to:null,
+     comparison_period:"today",comparison_from:null,comparison_to:null,
+   },92);
+   expect(comparison.status).not.toBe("complete");
+   expect(comparison.missingInputs).toContain("laborWageUnknown");
+ });
+});
