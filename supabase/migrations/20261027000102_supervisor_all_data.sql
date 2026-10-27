@@ -122,7 +122,7 @@ end $toast_identity_cascade$;
 -- Preserve migration 051's validation, credentials, atomic writes and ACLs.
 CREATE OR REPLACE FUNCTION toast_save_configuration(
  p_business_id uuid,p_origin text,p_client_id text,p_secret_enc text,p_mappings jsonb)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $toast_cfg_guard$
 DECLARE n integer;
 BEGIN
  IF p_origin IS NULL OR length(p_origin)<8 OR p_client_id IS NULL OR p_secret_enc IS NULL
@@ -183,7 +183,7 @@ BEGIN
  IF (SELECT count(*) FROM toast_location_mappings WHERE business_id=p_business_id)<>n
  THEN RAISE EXCEPTION 'mapping conflict requires manual review'; END IF;
  UPDATE toast_location_mappings SET verified_at=NULL WHERE business_id=p_business_id;
-END $;
+END $toast_cfg_guard$;
 REVOKE ALL ON FUNCTION toast_save_configuration(uuid,text,text,text,jsonb)
  FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION toast_save_configuration(uuid,text,text,text,jsonb) TO service_role;
