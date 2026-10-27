@@ -197,8 +197,12 @@ async function resolveMenuItemIds(
   businessId: string,
   groups: AggregatedSalesRow[],
 ): Promise<{ menuItemIdByName: Map<string, string>; unmatchedItems: { name: string; rows: number }[] }> {
-  const { data: menuItems } = await supabase.from("menu_items").select("id, name, size_label, price_cents, category, pos_item_id").eq("business_id", businessId);
-  const candidates = (menuItems ?? []).map((item) => ({ id: item.id, name: item.name, sizeLabel: item.size_label, priceCents: item.price_cents, category: item.category, posItemId: item.pos_item_id }));
+  const { data: menuItems, error: menuError } = await supabase.from("menu_items").select("id, name, base_name, size_label, price_cents, category, pos_item_id, catalog_source").eq("business_id", businessId);
+  if(menuError)throw menuError;
+  const {data: itemAliases,error: aliasError}=await supabase.from("pos_item_aliases").select("menu_item_id,pos_item_id").eq("business_id",businessId).eq("provider","csv");
+  if(aliasError)throw aliasError;
+  const csvAliases=new Map((itemAliases??[]).map(r=>[r.pos_item_id,r.menu_item_id]));
+  const candidates = (menuItems ?? []).map((item) => ({ id: item.id, name: item.name, baseName:item.base_name, sizeLabel: item.size_label, priceCents: item.price_cents, category: item.category, posItemId: item.pos_item_id, catalogSource:item.catalog_source }));
   const menuItemIdByName = new Map<string, string>();
   const unmatchedRowsByName = new Map<string, number>();
 
@@ -206,26 +210,50 @@ async function resolveMenuItemIds(
     const priceCents = medianObservedUnitPriceCents(groups.filter(g => g.item === name));
     const posItemId = `csv-item-${csvSlug(name)}`.slice(0, 120);
     const match = matchCatalogItem({ posItemId, name, priceCents, category: null }, candidates);
-    let resolvedId: string | null = null;
-    if (match.status === "matched" && match.candidateId) {
-      const { error: linkError } = await supabase.from("menu_items")
-        .update({ pos_item_id: posItemId, catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() })
-        .eq("id", match.candidateId).eq("business_id", businessId);
-      if (!linkError) resolvedId = match.candidateId;
-    } else if (match.status === "new") {
-      const { data: created, error: createError } = await supabase.from("menu_items")
-        .insert({ business_id: businessId, pos_item_id: posItemId, name, base_name: name, price_cents: priceCents, category: inferMenuItemCategory(name), catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() })
-        .select("id").single();
-      if (!createError && created) {
-        if (priceCents !== null) {
-          const { error: historyError } = await supabase.from("menu_price_history").insert({
-            business_id: businessId, menu_item_id: created.id, old_price_cents: null,
-            new_price_cents: priceCents, source_type: "imported",
-            source_provider: "csv import estimated average",
+    let resolvedId: string | null = csvAliases.get(posItemId)??null;
+    const known=candidates.find(c=>c.posItemId===posItemId);
+    if(!resolvedId&&known)resolvedId=known.id;
+    if(!resolvedId){
+      // CSV median prices can differ from Toast; a single exact POS display
+      // name is still the same item. Multiple names require owner review.
+      const names=candidates.filter(c=>(c.baseName??c.name).trim().toLowerCase()===name.trim().toLowerCase()
+        && !c.sizeLabel);
+      if(names.length===1&&names[0].posItemId&&!names[0].posItemId.startsWith("csv-item-"))
+        resolvedId=names[0].id;
+      else if(match.status==="matched"&&match.candidateId)resolvedId=match.candidateId;
+    }
+    if(resolvedId){
+      const selected=candidates.find(c=>c.id===resolvedId);
+      if(selected?.posItemId===null||selected?.posItemId?.startsWith("csv-item-")){
+        const {error:linkError}=await supabase.from("menu_items")
+          .update({pos_item_id:posItemId,catalog_source:"csv",
+            catalog_last_synced_at:new Date().toISOString()})
+          .eq("id",resolvedId).eq("business_id",businessId);
+        if(linkError)throw linkError;
+      }else{
+        // A linked register GUID always wins. Record CSV identity as an alias.
+        const {error:aliasWrite}=await supabase.from("pos_item_aliases").upsert({
+          business_id:businessId,provider:"csv",pos_item_id:posItemId,menu_item_id:resolvedId
+        },{onConflict:"business_id,provider,pos_item_id"});
+        if(aliasWrite)throw aliasWrite;
+      }
+    }else if(match.status==="new"){
+      const {data:created,error:createError}=await supabase.from("menu_items")
+        .upsert({business_id:businessId,pos_item_id:posItemId,name,base_name:name,
+          price_cents:priceCents,category:inferMenuItemCategory(name),catalog_source:"csv",
+          catalog_last_synced_at:new Date().toISOString()
+        },{onConflict:"business_id,pos_item_id"}).select("id").single();
+      if(createError)throw createError;
+      if(created){
+        resolvedId=created.id;
+        if(priceCents!==null){
+          const {error:historyError}=await supabase.from("menu_price_history").insert({
+            business_id:businessId,menu_item_id:created.id,old_price_cents:null,
+            new_price_cents:priceCents,source_type:"imported",
+            source_provider:"csv import estimated average"
           });
-          if (historyError) throw historyError;
+          if(historyError)throw historyError;
         }
-        resolvedId = created.id;
       }
     }
     if (resolvedId) {
@@ -260,8 +288,13 @@ async function reconcileUnresolvedSalesItems(supabase: SupabaseServerClient, bus
   const stillUnmatchedNames = [...new Set((unresolvedGroups ?? []).map((g) => g.item_name as string))];
   if (stillUnmatchedNames.length === 0) return summary;
 
-  const { data: menuItems } = await supabase.from("menu_items").select("id, name, pos_item_id").eq("business_id", businessId);
-  const byPosItemId = new Map((menuItems ?? []).map((m) => [m.pos_item_id, m.id]));
+  const { data: menuItems,error:itemsError } = await supabase.from("menu_items").select("id, name, pos_item_id").eq("business_id", businessId);
+  if(itemsError)throw itemsError;
+  const {data:aliases,error:aliasesError}=await supabase.from("pos_item_aliases")
+    .select("pos_item_id,menu_item_id").eq("business_id",businessId).eq("provider","csv");
+  if(aliasesError)throw aliasesError;
+  const byPosItemId = new Map((menuItems ?? []).filter(m=>m.pos_item_id).map((m) => [m.pos_item_id, m.id]));
+  for(const row of aliases??[])byPosItemId.set(row.pos_item_id,row.menu_item_id);
 
   const { data: csvOrders } = await supabase.from("orders").select("id").eq("business_id", businessId).like("pos_order_id", "csv-%");
   const csvOrderIds = (csvOrders ?? []).map((o) => o.id);
@@ -271,9 +304,11 @@ async function reconcileUnresolvedSalesItems(supabase: SupabaseServerClient, bus
     const posItemId = `csv-item-${csvSlug(name)}`.slice(0, 120);
     const menuItemId = byPosItemId.get(posItemId);
     if (!menuItemId) continue;
-    await supabase.from("csv_sales_import_groups").update({ menu_item_id: menuItemId }).eq("job_id", job.id).eq("item_name", name).is("menu_item_id", null);
+    const {error:groupUpdateError}=await supabase.from("csv_sales_import_groups").update({ menu_item_id: menuItemId }).eq("job_id", job.id).eq("item_name", name).is("menu_item_id", null);
+    if(groupUpdateError)throw groupUpdateError;
     if (csvOrderIds.length > 0) {
-      await supabase.from("order_lines").update({ menu_item_id: menuItemId }).eq("name", name).is("menu_item_id", null).in("order_id", csvOrderIds);
+      const {error:lineUpdateError}=await supabase.from("order_lines").update({ menu_item_id: menuItemId }).eq("name", name).is("menu_item_id", null).in("order_id", csvOrderIds);
+      if(lineUpdateError)throw lineUpdateError;
     }
     resolvedNames.add(name);
   }
