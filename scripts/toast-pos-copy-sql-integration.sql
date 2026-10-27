@@ -197,17 +197,17 @@ declare b uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
  loc uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccc01';
  item_guid text:='cccccccc-cccc-4ccc-8ccc-cccccccc0030';
  size_guid text:='cccccccc-cccc-4ccc-8ccc-cccccccc0040';
- pos text;order_id uuid;line_id uuid;archived_id uuid;sized_id uuid;
+ pos text;test_order_id uuid;line_id uuid;archived_id uuid;sized_id uuid;
  actual_id uuid; n integer;
 begin
  pos:='toast:'||r::text||':'||item_guid;
  insert into public.orders(business_id,location_id,pos_order_id,closed_at,
   business_date,gross_sales_cents,net_sales_cents)
  values(b,loc,'toast:copy-synthetic-001','2026-10-26T18:00:00Z',
-   '2026-10-26',550,550) returning id into order_id;
+   '2026-10-26',550,550) returning id into test_order_id;
  insert into public.order_lines(order_id,pos_item_id,name,quantity,
   net_sales_cents,voided,modifiers)
- values(order_id,pos,'Latte sold before menu import',1,550,false,
+ values(test_order_id,pos,'Latte sold before menu import',1,550,false,
    jsonb_build_array(jsonb_build_object(
     'posModifierId',size_guid,'name','Large','quantity',1)))
  returning id into line_id;
@@ -235,7 +235,7 @@ begin
  if (select menu_item_id from public.order_lines where id=line_id)
    is distinct from sized_id then
   raise exception 'second sized relink changed canonical identity';end if;
- if (select count(*) from public.order_lines where order_id=order_id)<>1 then
+ if (select count(*) from public.order_lines l where l.order_id=test_order_id)<>1 then
   raise exception 'relink must not duplicate sales lines';end if;
 end
 $catalog_link$;
