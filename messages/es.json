@@ -2814,6 +2814,17 @@
     }
   },
   "StaffSchedule": {
+    "posReviewsTitle": "Revisiones del equipo y fichajes de Toast",
+    "posReviewsHint": "Resuelve cada conflicto de identidad o turno una vez. Los turnos planeados se sustituyen automáticamente por fichajes reales.",
+    "posReviewIdentity": "Identificar empleado",
+    "posReviewUnlinked": "Fichaje de Toast sin vincular",
+    "posReviewOverlap": "Turno pagado superpuesto",
+    "posReviewCorrected": "Toast modificó un turno editado por el propietario",
+    "posReviewChooseEmployee": "Elegir empleado",
+    "posReviewLink": "Vincular empleado",
+    "posReviewAcceptToast": "Usar la corrección de Toast en la próxima sincronización",
+    "posReviewKeepOwner": "Mantener el turno del propietario",
+    "posReviewsTruncated": "Hay más revisiones; resuelve estas y actualiza.",
     "toastPlannedTitle": "Turnos previstos de Toast",
     "toastPlannedNotPaid": "Turnos de Toast de solo lectura. Son planes, no horas registradas; no se cuentan como salarios pagados ni como horarios aprobados.",
     "nudgeEarlier": "Adelantar {field} 15 minutos",
