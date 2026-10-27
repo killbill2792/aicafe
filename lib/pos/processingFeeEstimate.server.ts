@@ -30,8 +30,9 @@ type RollupRefreshRow = {
   orders_count: number;
   drinks_count: number;
   ingredients_cents: number;
-  staff_wages_cents: number;
-  staff_tax_cents: number;
+  staff_wages_cents: number | null;
+  staff_tax_cents: number | null;
+  labor_wage_status: "actual" | "estimate" | "missing";
   card_fees_cents: number;
   card_fees_status: "actual" | "estimated" | "missing";
   voids_cents: number;
@@ -215,7 +216,7 @@ export async function refreshOwnerConfirmedProcessingFeeEstimates(
     supabase
       .from("daily_rollups")
       .select(
-        "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, card_fees_cents, card_fees_status, voids_cents",
+        "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, card_fees_cents, card_fees_status, voids_cents",
       )
       .eq("business_id", businessId)
       .gte("business_date", fromDate)
@@ -282,6 +283,7 @@ export async function refreshOwnerConfirmedProcessingFeeEstimates(
           ingredients_cents: rollup.ingredients_cents,
           staff_wages_cents: rollup.staff_wages_cents,
           staff_tax_cents: rollup.staff_tax_cents,
+          labor_wage_status: rollup.labor_wage_status,
           card_fees_cents: selected?.amountCents ?? 0,
           card_fees_status: selected?.status ?? "missing",
           voids_cents: rollup.voids_cents,
