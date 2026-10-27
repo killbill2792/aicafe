@@ -14,6 +14,7 @@ import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, recoveryBuckets } from "./costRecoveryShared";
 import {
   daysForPeriod,
+  periodCalendarRange,
   periodCoverage,
   previousPeriodCoverage,
   previousPeriodDays,
@@ -29,7 +30,16 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
   const runningCosts = runningCostsForPeriod(snapshot, period);
   const salesCents = sumCents(days, (d) => d.netSalesCents);
-  const ownerProfitCents = ownerProfitCentsForPeriod(days, runningCosts);
+  const calendar=periodCalendarRange(snapshot,period);
+  // A staff-only recorded day is absent from sales-day arrays, but missing
+  // wages on that day still make the period's owner profit unknown.
+  const recordedLaborDays=[
+    ...(calendar.start<snapshot.monthKey+"-01"
+      ? (snapshot.previousMonthRecordedDays??snapshot.previousMonthDays):[]),
+    ...(snapshot.monthRecordedDays??snapshot.monthActualDays),
+  ].filter(day=>day.date>=calendar.start&&day.date<=calendar.end);
+  const missingRecordedLabor=recordedLaborDays.some(day=>!laborKnown(day));
+  const ownerProfitCents=missingRecordedLabor?null:ownerProfitCentsForPeriod(days,runningCosts);
   const totalCostsCents = ownerProfitCents===null?null:salesCents-ownerProfitCents;
   const isEstimate = snapshot.runningCostLines.some((l) => l.isEstimate && l.amountCents > 0);
   const coverage = periodCoverage(snapshot, period);
