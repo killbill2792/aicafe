@@ -141,7 +141,7 @@ export function simulateEconomics(input:Economics,delta:ScenarioDelta){
    delta.weeklyHours*(delta.newWageCents-delta.oldWageCents);
   weeklyChangeCents=-Math.round(wages*(1+delta.payrollTaxRate));
   profitChangeCents=weeklyChangeCents===null?null:Math.round(weeklyChangeCents*weeklyFactor);
-  afterInput.monthlyStaff=figure(input.monthlyStaff.valueCents===null?null:
+  afterInput.monthlyStaff=figure(input.monthlyStaff.valueCents===null||profitChangeCents===null?null:
     Math.max(0,input.monthlyStaff.valueCents-profitChangeCents),
    "estimate","Payroll scenario",input.monthlyStaff.missingDays);
  }else if(delta.kind==="drinks"){
