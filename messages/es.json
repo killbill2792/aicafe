@@ -553,6 +553,10 @@
     "seePlan": "Ver el plan"
   },
   "Menu": {
+    "posAddOnTitle": "Adicionales publicados por la caja",
+    "posAddOnItemSize": "Se aplica a",
+    "posAddOnRequired": "Obligatorio",
+    "posAddOnOptional": "Opcional",
     "unpricedPublished": "Artículos publicados con precios variables o desconocidos",
     "openPrice": "Precio abierto",
     "visibility": "Visibilidad",
