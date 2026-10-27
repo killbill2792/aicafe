@@ -36,7 +36,7 @@ function fakeDb(count: number, options?: { failLineBatch?: number; noExistingIte
   const groups = [{ item_name: "Iced mocha", menu_item_id: null as string | null }];
   const match = { id: MATCH, business_id: BUSINESS, provider: "csv", status: "needs_review",
     pos_item_id: "csv-item-iced-mocha", imported_name: "Iced mocha", imported_price_cents: 525,
-    imported_category: null, suggested_menu_item_id: null };
+    imported_category: null, suggested_menu_item_id: null as string|null };
   const items = options?.noExistingItem ? [] as Array<{id:string;pos_item_id:string|null;menu_group:string|null;price_cents:number|null;catalog_source:string|null}> :
     [{id:ITEM,pos_item_id:options?.existingPosItemId??null,
       menu_group:null,price_cents:525,catalog_source:options?.existingPosItemId?.startsWith("csv-item-")?"csv":"toast"}];
