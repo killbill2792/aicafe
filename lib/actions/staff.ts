@@ -291,6 +291,10 @@ export async function saveShiftForDay(input: z.infer<typeof ShiftSchema>): Promi
     schedule_id: null,
     source_type: "owner_manual",
     source_provider: "Owner",
+    // Preserve the owner's final say even when this action uses elevated DB
+    // credentials and would bypass the authenticated-role trigger.
+    pos_owner_edited: true,
+    wage_source: "owner",
     clock_in: clockInUtc.toISOString(),
     clock_out: clockOutUtc.toISOString(),
     hourly_wage_cents: parsed.data.hourlyWageCents,
