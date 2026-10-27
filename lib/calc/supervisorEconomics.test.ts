@@ -14,6 +14,20 @@ describe("single deterministic supervisor economics model",()=>{
   expect(addOwnerPayrollExtras(0,25000)).toBe(25000);
   expect(addOwnerPayrollExtras(null,25000)).toBeNull();
  });
+ it("keeps known owner extras in the break-even floor when clocked payroll is missing",()=>{
+  const unknown={...base,monthlyStaff:figure(null,"missing","No recorded wages"),
+   knownMonthlyLaborExtrasCents:25000};
+  const answer=unifiedBreakEven(unknown);
+  expect(answer.monthlyFixedKnownCents).toBe(746700+25000);
+  expect(answer.knownCostBreakEvenFloorCents).toBeGreaterThan(0);
+  expect(answer.monthlyBreakEven.valueCents).toBeNull();
+  expect(answer.missing).toContain("monthlyLabor");
+ });
+ it("does not count owner extras twice when clocked payroll is known",()=>{
+  const known={...base,monthlyStaff:figure(525000,"estimate","Wages and saved extras"),
+   knownMonthlyLaborExtrasCents:25000};
+  expect(unifiedBreakEven(known).monthlyFixedKnownCents).toBe(746700+525000);
+ });
  it("includes owner extras on top of clocked wages only once",()=>{
   const extras=25000,clocked=500000;
   const model={...base,monthlyStaff:figure(addOwnerPayrollExtras(clocked,extras),"estimate","Clocked payroll plus owner extras")};

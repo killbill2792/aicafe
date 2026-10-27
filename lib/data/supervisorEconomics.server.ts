@@ -120,6 +120,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   Math.round(observedRevenueCents/totalDrinks):null;
  return {economics:{
   monthlyBills,monthlyStaff:payroll,
+  knownMonthlyLaborExtrasCents:ownerMonthlyPayrollExtrasCents,
   monthlyRevenue:figure(monthlyRevenueCents,"estimate",
     "Current month's covered sales projected across open days; not recorded month-end revenue"),
   ingredientRate,feeRate,ingredientStatus,feeStatus,averagePriceCents,monthlyUnits,

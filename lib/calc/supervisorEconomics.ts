@@ -15,6 +15,8 @@ export function addOwnerPayrollExtras(clockedMonthlyCents:number|null,extrasCent
 }
 export type Economics={
  monthlyBills:Figure;monthlyStaff:Figure;monthlyRevenue:Figure;
+ /** Saved extras remain a known-cost floor when imported clocked labor is missing. */
+ knownMonthlyLaborExtrasCents?:number|null;
  ingredientRate:number|null;feeRate:number|null;
  ingredientStatus:FigureStatus;feeStatus:FigureStatus;
  averagePriceCents:number|null;monthlyUnits:number|null;daysInMonth:number;
@@ -26,7 +28,9 @@ export type Economics={
  * Missing variable costs never silently become zero; known fixed costs survive partial payroll. */
 export function unifiedBreakEven(input:Economics){
  const fixed=[input.monthlyBills,input.monthlyStaff].filter(f=>f.valueCents!==null);
- const fixedKnown=fixed.reduce((sum,f)=>sum+f.valueCents!,0);
+ const extrasFloor=input.monthlyStaff.valueCents===null?
+  (input.knownMonthlyLaborExtrasCents??0):0;
+ const fixedKnown=fixed.reduce((sum,f)=>sum+f.valueCents!,0)+extrasFloor;
  const missing=[...(input.monthlyBills.valueCents===null?["monthlyBills"]:[]),
    ...(input.missingBillCategories??[]).map(category=>"monthlyBill:"+category),
    ...(input.monthlyStaff.valueCents===null?["monthlyLabor"]:[]),
@@ -37,13 +41,14 @@ export function unifiedBreakEven(input:Economics){
  const effectiveFeeRate=input.feeRate??0;
  const computed=calculateBreakEvenSales({
   monthlyBillsCents:input.monthlyBills.valueCents??0,
-  monthlyStaffCents:input.monthlyStaff.valueCents??0,
+  monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
   observedSalesCents:100_000_000,
   observedIngredientCents:Math.round(100_000_000*effectiveIngredientRate),
   observedProcessingFeesCents:Math.round(100_000_000*effectiveFeeRate)
  });
  const completeFixed=input.monthlyBills.valueCents!==null&&input.monthlyStaff.valueCents!==null;
- const knownCostBreakEvenFloorCents=fixed.length&&rateKnown&&computed.kind==="ready"?computed.breakEvenSalesCents:null;
+ const knownCostBreakEvenFloorCents=(fixed.length>0||extrasFloor>0)&&rateKnown&&
+  computed.kind==="ready"?computed.breakEvenSalesCents:null;
  const monthlyCents=completeFixed&&rateKnown&&!(input.missingBillCategories?.length)&&
   computed.kind==="ready"?computed.breakEvenSalesCents:null;
  const drinksPerDay=monthlyCents!==null&&input.averagePriceCents!==null&&input.averagePriceCents>0
