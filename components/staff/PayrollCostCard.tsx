@@ -55,7 +55,7 @@ export default function PayrollCostCard({
   function saveExtras(){
     if(readOnly||isPending)return;
     const raw=monthlyExtras.trim();
-    if(!/^\\d+(?:\\.\\d{1,2})?$/.test(raw)){setExtrasNotice(extraT("payrollMonthlyInvalid"));return;}
+    if(!/^\d+(?:\.\d{1,2})?$/.test(raw)){setExtrasNotice(extraT("payrollMonthlyInvalid"));return;}
     const amount=Number(raw),cents=Math.round(amount*100);
     if(!Number.isSafeInteger(cents)||cents<0){setExtrasNotice(extraT("payrollMonthlyInvalid"));return;}
     setExtrasNotice(null);
