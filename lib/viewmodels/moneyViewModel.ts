@@ -147,7 +147,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   // separately gates any owner-profit claim on the existing strict coverage.
   const totalCostsCents=businessCosts.completeness==="unavailable"
     ? totalCostsCentsForPeriod(days,runningCosts) : businessCosts.knownTotalCents;
-  const ownerProfitCents = ownerProfitCentsForPeriod(days, runningCosts);
+  const ownerProfitCents = wageUnknown?null:ownerProfitCentsForPeriod(days, runningCosts);
   const coverage = periodCoverage(snapshot, period);
   const baselineProfitDisplay=ownerProfitCents===null?{kind:"unavailable" as const}:
     ownerProfitDisplayState(ownerProfitCents,coverage);
