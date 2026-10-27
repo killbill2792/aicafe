@@ -134,7 +134,7 @@ export function simulateEconomics(input:Economics,delta:ScenarioDelta){
    afterInput.monthlyRevenue=figure(afterInput.monthlyRevenue.valueCents+
     Math.round((delta.newPriceCents-delta.oldPriceCents)*delta.weeklyUnits*weeklyFactor),
     "estimate","Price scenario");
-  if(delta.kind==="item_cost"&&input.monthlyRevenue.valueCents&&input.ingredientRate!==null)
+  if(delta.kind==="item_cost"&&input.monthlyRevenue.valueCents&&input.ingredientRate!==null&&profitChangeCents!==null)
    afterInput.ingredientRate=Math.max(0,input.ingredientRate-profitChangeCents/input.monthlyRevenue.valueCents);
  }else if(delta.kind==="shift"||delta.kind==="wage"){
   const wages=delta.kind==="shift"?delta.hoursChange*delta.shiftsPerWeek*delta.wageCents:
