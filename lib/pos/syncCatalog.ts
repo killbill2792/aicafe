@@ -60,7 +60,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
   if(!row&&aliased)row=byId.get(aliased);
   let match:ReturnType<typeof matchCatalogItem>|null=null;
   if(!row){
-   match=matchCatalogItem(item,candidates());
+   match=matchCatalogItem(item,candidates(),adapter.provider);
    if(match.status==="needs_review"){
     needsReview++;
     const {error:reviewError}=await db.from("pos_catalog_matches").upsert({
