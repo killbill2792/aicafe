@@ -47,6 +47,21 @@ describe("provider catalog matching identities",()=>{
    candidate({id:"medium-row",sizeLabel:"Medium",priceCents:500})
   ])).toMatchObject({status:"matched",candidateId:"medium-row"});
  });
+ it("brand-new Toast café preserves two distinct GUIDs with the same name",()=>{
+  const existing=candidate({posItemId:latte,catalogSource:"toast"});
+  expect(matchCatalogItem(item({posItemId:id("cccccccc-cccc-4ccc-8ccc-cccccccccccc")}),
+    [existing],"toast")).toMatchObject({status:"new",candidateId:null});
+ });
+ it("Square variation identities remain distinct even with matching names and prices",()=>{
+  expect(matchCatalogItem(item({posItemId:"sq-variation-two"}),
+    [candidate({posItemId:"sq-variation-one",catalogSource:"square"})],"square"))
+    .toMatchObject({status:"new",candidateId:null});
+ });
+ it("a later CSV upload aliases an already imported Toast product without replacing its GUID",()=>{
+  expect(matchCatalogItem(item({posItemId:"csv-item-latte",priceCents:450}),
+    [candidate({posItemId:latte,catalogSource:"toast",priceCents:550})],"csv"))
+    .toMatchObject({status:"matched",candidateId:"row-1"});
+ });
  it("open-price items do not automatically claim unknown-priced manual items",()=>{
   expect(matchCatalogItem(item({priceCents:null}),[
    candidate({priceCents:null})
