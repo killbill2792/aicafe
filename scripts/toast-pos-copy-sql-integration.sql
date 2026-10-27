@@ -146,12 +146,12 @@ begin
   'cccccccc-cccc-4ccc-8ccc-cccccccc0011',
   '2026-11-01T09:00:00Z','2026-11-01T11:00:00Z',2000,'verified','[]',false);
  select public.pos_import_toast_attendance(b,r) into changes;
- if (changes->>'changed')::int<>4 or (changes->>'skipped')::int<>1 then
-  raise exception 'attendance must import four valid entries, skip only overlap: %',changes;
+ if (changes->>'changed')::int<>3 or (changes->>'skipped')::int<>2 then
+  raise exception 'attendance must import three valid entries and review two overlaps: %',changes;
  end if;
  select count(*) into n from public.timecards
   where business_id=b and source_provider='Toast';
- if n<>4 then raise exception 'automatic attendance row count: %',n;end if;
+ if n<>3 then raise exception 'automatic attendance row count: %',n;end if;
  if not exists(select 1 from public.timecards
   where business_id=b and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0022'
   and hourly_wage_cents=1500 and wage_source='estimate')
@@ -160,13 +160,16 @@ begin
   where business_id=b and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0023'
   and hourly_wage_cents is null and wage_source='unknown')
  then raise exception 'unknown hourly wage must remain SQL NULL';end if;
- if exists(select 1 from public.timecards where business_id=b
-  and source_type='owner_schedule' and employee_id=a)
- then raise exception 'Toast attendance must replace the overlapping owner plan';end if;
  if not exists(select 1 from public.timecards where business_id=b
-  and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0027'
-  and source_provider='Toast')
- then raise exception 'actual Toast clock-in must replace owner_schedule';end if;
+  and source_type='owner_schedule' and employee_id=a)
+ then raise exception 'owner scheduled shift was silently erased';end if;
+ if exists(select 1 from public.timecards where business_id=b
+  and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0027')
+ then raise exception 'Toast overlap must not replace owner schedule without review';end if;
+ if not exists(select 1 from public.pos_import_reviews where business_id=b
+  and review_type='overlapping_timecard'
+  and source_key='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0027')
+ then raise exception 'overlapping owner schedule must create one review';end if;
  if not exists(select 1 from public.pos_import_reviews
   where business_id=b and review_type='overlapping_timecard'
   and source_key='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0024')
@@ -176,7 +179,7 @@ begin
   raise exception 'second attendance import changed canonical rows: %',changes;end if;
  select count(*) into n from public.pos_import_reviews
   where business_id=b and review_type='overlapping_timecard';
- if n<>1 then raise exception 'duplicate overlap review rows';end if;
+ if n<>2 then raise exception 'one review per distinct overlap, no duplicate reviews';end if;
  update public.toast_labor_entries set clock_out='2026-10-26T10:00:00Z'
   where business_id=b and restaurant_guid=r
   and external_time_entry_id='cccccccc-cccc-4ccc-8ccc-cccccccc0021';
