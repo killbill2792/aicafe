@@ -133,16 +133,16 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   expect(await runToastSyncTick(f.db,now,Date.now()+60000)).toEqual({disabled:true});
   expect(f.calls).toEqual([]);
  });
- it("runs first-ever catalog before importing any sale and preserves sales after a menu failure",async()=>{
+ it("runs sales/backfill before optional catalog and isolates optional failures",async()=>{
   const f=makeDB(),order:string[]=[];
-  m.firstMenu.mockImplementation(async()=>{order.push("menu");throw new ToastApiError("unavailable");});
+  m.optional.mockImplementation(async()=>{order.push("optional");throw new ToastApiError("unavailable");});
   const importImpl=m.importDay.getMockImplementation()!;
   m.importDay.mockImplementation(async(...args:unknown[])=>{
     order.push("sales");return importImpl(...args);
   });
   const result=await runToastSyncTick(f.db,now,Date.now()+60000) as {errors:number};
-  expect(order[0]).toBe("menu");
-  expect(order).toContain("sales");
+  expect(order[0]).toBe("sales");
+  expect(order).toContain("optional");
   expect(f.imports).toContain(d);
   expect(result.errors).toBeGreaterThanOrEqual(1);
  });
