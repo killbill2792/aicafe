@@ -185,9 +185,9 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
   let pendingBackfills:Run[]=[];
   const coveredByBackfill=(run:Run)=>run.kind==="repull_modified"&&
    pendingBackfills.some(backfill=>{
-    const next=deriveNextRunDay(backfill);
-    return next!==null&&run.requested_from!==null&&run.requested_to!==null&&
-     backfill.requested_to!==null&&run.requested_from>=next&&
+    return run.requested_from!==null&&run.requested_to!==null&&
+     backfill.requested_from!==null&&backfill.requested_to!==null&&
+     run.requested_from>=backfill.requested_from&&
      run.requested_to<=backfill.requested_to;
    });
   let lastHistoricalPullAt:number|null=null;
