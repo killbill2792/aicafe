@@ -455,6 +455,12 @@ begin
    where id=p_order_id and business_id=p_business_id) then
   raise exception 'POS order is not available in this café';
  end if;
+ if exists(
+  select 1 from jsonb_to_recordset(p_lines) as x(menu_item_id uuid)
+  where x.menu_item_id is not null and not exists(
+   select 1 from public.menu_items m
+    where m.id=x.menu_item_id and m.business_id=p_business_id)
+ ) then raise exception 'POS order line refers to another or missing café item';end if;
  delete from public.order_lines where order_id=p_order_id;
  insert into public.order_lines(
    order_id,pos_item_id,menu_item_id,name,quantity,net_sales_cents,
