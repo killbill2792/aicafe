@@ -81,18 +81,22 @@ export const staffTools = {
         return missing("labor_and_attendance",p,["laborReaderOrTimezoneUnavailable"]);
       const [labor,attendance]=await Promise.all([ctx.tools.getLaborMetrics(p),
         ctx.tools.getStaffAttendance(p,ctx.timezone)]);
-      const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs];
-      const explain=labor.available?labor.value.slice(-12).filter(d=>Number.isSafeInteger(d.loadedStaffCostCents)&&
+      const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
+        ...(labor.available?labor.value.filter(d=>d.wagesCents===null||d.staffTaxCents===null)
+         .map(d=>"laborWageUnknown:"+d.date):[])];
+      const explain=labor.available?labor.value.slice(-12).filter(d=>d.loadedStaffCostCents!==null&&d.wagesCents!==null&&d.staffTaxCents!==null&&Number.isSafeInteger(d.loadedStaffCostCents)&&
         Number.isSafeInteger(d.wagesCents)&&Number.isSafeInteger(d.staffTaxCents)).map(d=>({
-          label:"Labor "+d.date,inputs:[{name:"wages",value:money(d.wagesCents)},
-            {name:"staffTax",value:money(d.staffTaxCents)}],formula:"sum" as const,
-          result:money(d.loadedStaffCostCents),period:{from:d.date,to:d.date},
+          label:"Labor "+d.date,inputs:[{name:"wages",value:money(d.wagesCents!)},
+            {name:"staffTax",value:money(d.staffTaxCents!)}],formula:"sum" as const,
+          result:money(d.loadedStaffCostCents!),period:{from:d.date,to:d.date},
           source:"get_labor",provenance:labor.quality.estimatedInputs.length?"estimate" as const:"recorded" as const
         })): [];
-      return {source:"labor_and_attendance",period:p,agentId:"olivia",missing:issues,explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs],
+      return {source:"labor_and_attendance",period:p,agentId:"olivia",missing:issues,explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs,
+          ...(labor.available?labor.value.filter(d=>d.wageStatus==="estimate")
+           .map(d=>"laborWageEstimate:"+d.date):[])],
         laborDays:labor.available?labor.value.slice(-31).map(d=>({
           date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
-          loadedStaffCostCents:d.loadedStaffCostCents})):null,
+          loadedStaffCostCents:d.loadedStaffCostCents,wageStatus:d.wageStatus})):null,
         attendanceTracked:attendance.available?attendance.value.attendanceTracked:null,
         attendance:attendance.available?attendance.value:null};
     },

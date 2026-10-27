@@ -62,7 +62,9 @@ export function buildMonthCalendarViewModel(params: {
   const salesCoveredDays = days.filter(hasSalesCoverage);
   const recovery = computeCostRecovery(
     buckets,
-    [...salesCoveredDays.map((d) => ({ date: d.date, cents: dayContributionCents(d), projected: false })), ...(isCurrentMonth ? projectedDays : [])],
+    [...salesCoveredDays.filter(d=>dayContributionCents(d)!==null)
+       .map(d=>({date:d.date,cents:dayContributionCents(d)!,projected:false})),
+       ...(isCurrentMonth ? projectedDays : [])],
   );
   const milestonesByDate = new Map<string, string[]>();
   for (const bucket of recovery.buckets) {

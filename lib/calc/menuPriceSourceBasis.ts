@@ -8,8 +8,8 @@ export type MenuPriceSourceDay = {
   salesStatus: "actual" | "missing" | null;
   netSalesCents: number;
   drinksCount: number;
-  wagesCents: number;
-  payrollTaxCents: number;
+  wagesCents: number | null;
+  payrollTaxCents: number | null;
   payrollTaxStatus: "actual" | "estimated" | null;
   cardFeesCents: number;
   cardFeesStatus: "actual" | "estimated" | "missing" | null;

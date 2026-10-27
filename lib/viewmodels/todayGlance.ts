@@ -21,7 +21,7 @@ export type TodayGlanceViewModel = {
   salesCents: number;
   ordersCount: number;
   avgOrderValueCents: number;
-  moneyLeftCents: number;
+  moneyLeftCents: number | null;
   drinksCount: number;
   bucketState: TodayGlanceBucketState;
 };
@@ -32,7 +32,7 @@ export function buildTodayGlanceViewModel(snapshot: BusinessSnapshot): TodayGlan
   const contributionCentsToday = dayContributionCents(today);
   const cumulativeBeforeToday = snapshot.monthActualDays
     .filter((d) => d.date < snapshot.todayDateStr)
-    .reduce((sum, d) => sum + dayContributionCents(d), 0);
+    .reduce((sum, d) => sum + (dayContributionCents(d)??0), 0);
 
   const base = {
     salesCents: today.netSalesCents,
@@ -42,6 +42,9 @@ export function buildTodayGlanceViewModel(snapshot: BusinessSnapshot): TodayGlan
     drinksCount: today.drinksCount,
   };
 
+  if(contributionCentsToday===null){
+    return {...base,bucketState:{kind:"noSalesYet"}};
+  }
   if (!snapshot.todayHasData) {
     return { ...base, bucketState: { kind: "noSalesYet" } };
   }

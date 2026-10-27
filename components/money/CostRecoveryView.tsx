@@ -175,7 +175,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
           </div>
           <div className="rounded-2xl bg-paper p-3">
             <span className="block text-xs font-semibold text-ink-muted">{t("monthlyStaffEstimate")}</span>
-            <strong className="mt-1 block text-xl text-ink"><Money cents={vm.monthlyStaffCents} /></strong>
+            <strong className="mt-1 block text-xl text-ink">{vm.monthlyStaffCents===null?"—":<Money cents={vm.monthlyStaffCents} />}</strong>
           </div>
         </div>
       </section>

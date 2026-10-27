@@ -34,9 +34,9 @@ export type StaffShiftVM = {
 };
 
 export type StaffViewModel = {
-  costPerMinuteCents: number;
-  costPerHourCents: number;
-  costTodayCents: number;
+  costPerMinuteCents: number | null;
+  costPerHourCents: number | null;
+  costTodayCents: number | null;
   onShift: StaffShiftVM[];
   /** A timecard dated today could not be tied to a unique roster member. */
   hasUnmatchedTimecards: boolean;

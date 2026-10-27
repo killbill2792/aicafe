@@ -165,7 +165,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
             ? t("knownCosts") : vm.businessCosts.completeness==="unavailable"
               ? t("costsUnavailable") : t("totalCosts")}</span>
           <span className="text-lg font-extrabold text-warn">
-            {vm.businessCosts.completeness!=="unavailable"
+            {vm.businessCosts.completeness!=="unavailable"&&vm.totalCostsCents!==null
               ? <Money cents={vm.totalCostsCents} /> : "—"}
           </span>
         </div>

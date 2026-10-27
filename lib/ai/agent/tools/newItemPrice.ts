@@ -26,7 +26,8 @@ export const newItemPriceTools={suggest_new_item_price:{
    ...(sales?.quality.missingInputs??["productSalesReaderUnavailable"]),
    ...(bills?.quality.missingInputs??["billsReaderUnavailable"]),
    ...menu.quality.missingInputs,...(!site?.available?["locationUnavailable"]:[])];
-  const laborCents=labor?.available?labor.value.reduce((s,d)=>s+d.loadedStaffCostCents,0):null;
+  const laborCents=labor?.available&&labor.value.every(d=>d.loadedStaffCostCents!==null)?
+    labor.value.reduce((s,d)=>s+(d.loadedStaffCostCents??0),0):null;
   const units=sales?.available?sales.value.reduce((s,d)=>s+d.units,0):null;
   const categoryUnits=sales?.available?sales.value.filter(x=>x.category===v.category).reduce((s,d)=>s+d.units,0):null;
   const laborForPeriod=laborCents??(owner?.laborCents!=null&&owner.laborPeriod?
