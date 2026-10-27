@@ -419,7 +419,8 @@ export function createSupervisorToolRegistry(context: Context) {
             costEstimated:current?.costQuality === "estimated",
             physicalStockKnown:false };
         }) };
-        for (const [i,p] of selected.entries()) addFact(result,prefix+"price"+i,p.name+" price",p.priceCents,"metric",source);
+        for (const [i,p] of selected.entries()) if(p.priceCents!==null)
+          addFact(result,prefix+"price"+i,p.name+" price",p.priceCents,"metric",source);
       }
       return result;
     }
