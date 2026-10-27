@@ -12,7 +12,7 @@ alter table public.toast_sync_phase_errors
  add constraint toast_sync_phase_errors_phase_check
  check(phase in ('restaurant_info','cost_refresh','resume','daily',
  'modified_scan','repull','reconcile','backfill','optional','cleanup',
- 'menu','roster','labor','sales_link'));
+ 'menu','roster','labor','sales_link','queued'));
 create unique index if not exists menu_items_business_id_id_uidx
  on public.menu_items(business_id,id);
 alter table public.menu_items
