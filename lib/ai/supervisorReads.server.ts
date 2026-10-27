@@ -10,9 +10,9 @@ import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 import { rangeExpectedDays } from "./conversations/dateRange";
 
 export type MenuCatalogProduct = { id: string; name: string; category: "drink" | "food";
- active: boolean; priceCents: number|null; baseName:string|null; sizeLabel:string|null;
- description:string|null; menuGroup:string|null; visibility:string|null;
- pricingStrategy:string|null; modifierGroups:Array<{id:string;name:string;
+ active: boolean; priceCents: number|null; baseName?:string|null; sizeLabel?:string|null;
+ description?:string|null; menuGroup?:string|null; visibility?:string|null;
+ pricingStrategy?:string|null; modifierGroups?:Array<{id:string;name:string;
  minSelections:number|null;maxSelections:number|null;required:boolean;
  options:Array<{name:string;priceCents:number|null}>}> };
 export type StaffAttendance = { timecardCount: number; onClockCount: number | null; attendanceTracked: boolean };
