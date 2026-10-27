@@ -16,6 +16,39 @@ const jobSchema=z.array(z.object({guid:GUID,title:z.string().nullish(),
  deleted:z.boolean().nullish()}).passthrough()).max(5000);
 const missingScope=(e:unknown)=>e instanceof ToastApiError&&
  ["missing_permissions","missing_scope_or_location"].includes(e.category);
+/** One-time catalog identity preflight before the very first sales import.
+ * Normal menu, roster and labor refreshes still run after backfill.
+ * Never mark first menu copied until the canonical copy completed.
+ */
+export async function ensureToastFirstCatalog(db:SupabaseClient,p:Location,
+ now:Date,deadlineAt:number):Promise<boolean>{
+ if(Date.now()>=deadlineAt)return false;
+ const {data:state,error:stateError}=await db.from("toast_optional_sync_state")
+  .select("menu_last_updated").eq("business_id",p.business_id)
+  .eq("restaurant_guid",p.restaurant_guid).maybeSingle();
+ if(stateError)throw new ToastApiError("unavailable");
+ if(state?.menu_last_updated)return false;
+ const {data:credentials,error:ce}=await db.from("toast_api_credentials")
+  .select("scopes_available").eq("business_id",p.business_id).maybeSingle();
+ if(ce)throw new ToastApiError("unavailable");
+ const scopes=(credentials?.scopes_available??{}) as Record<string,boolean>;
+ if(scopes.menus===false)return false;
+ const metadata=await createToastClient(db,p.business_id).request(
+  "/menus/v2/metadata",p.restaurant_guid,dateSchema,{deadlineAt});
+ if(metadata.restaurantGuid.toLowerCase()!==p.restaurant_guid.toLowerCase())
+  throw new ToastApiError("unauthorized_location");
+ await copyToastPublishedMenu(db,{
+  businessId:p.business_id,restaurantGuid:p.restaurant_guid,deadlineAt,
+  locationId:p.location_id,timezone:p.toast_time_zone});
+ const local=localClock(now,p.toast_time_zone);
+ const {error}=await db.from("toast_optional_sync_state").upsert({
+  business_id:p.business_id,restaurant_guid:p.restaurant_guid,
+  menu_last_updated:metadata.lastUpdated,menu_checked_local_day:local.today,
+ },{onConflict:"business_id,restaurant_guid"});
+ if(error)throw new ToastApiError("unavailable");
+ return true;
+}
+
 export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
  now:Date,deadlineAt:number){
  if(Date.now()>=deadlineAt)return {menu:"deferred",labor:"deferred"};
