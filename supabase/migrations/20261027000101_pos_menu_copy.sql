@@ -234,10 +234,11 @@ begin
    on conflict do nothing;
    v_skipped:=v_skipped+1;continue;
   end if;
-  -- Any existing manually entered, scheduled, or CSV shift must be
-  -- reviewed before replacing it. Do not silently discard the owner's plan.
+  -- A plan is not a clock-in. Actual Toast attendance supersedes only
+  -- owner_schedule; paid/manual/CSV overlaps still require owner review.
   if exists (select 1 from public.timecards t
    where t.business_id=p_business_id and t.employee_id=r.linked_employee_id
+     and t.source_type is distinct from 'owner_schedule'
      and t.pos_timecard_id is distinct from v_id
      and t.clock_in<r.clock_out and coalesce(t.clock_out,'infinity'::timestamptz)>r.clock_in)
   then
@@ -247,6 +248,18 @@ begin
    on conflict do nothing;
    v_skipped:=v_skipped+1;continue;
   end if;
+  -- Remove overlapping planned records only after confirming there are no
+  -- conflicting paid owner shifts. Keep a rollup interval for affected days.
+  with removed as (
+   delete from public.timecards t where t.business_id=p_business_id
+     and t.employee_id=r.linked_employee_id and t.source_type='owner_schedule'
+     and t.clock_in<r.clock_out
+     and coalesce(t.clock_out,'infinity'::timestamptz)>r.clock_in
+   returning t.clock_in,t.clock_out
+  )
+  select v_intervals||coalesce(jsonb_agg(jsonb_build_object(
+   'start',clock_in,'end',coalesce(clock_out,r.clock_out))),'[]'::jsonb)
+   into v_intervals from removed;
   insert into public.timecards(business_id,employee_id,pos_timecard_id,clock_in,clock_out,
    hourly_wage_cents,wage_source,source_type,source_provider,breaks,pos_last_synced_at)
   values(p_business_id,r.linked_employee_id,v_id,r.clock_in,r.clock_out,
