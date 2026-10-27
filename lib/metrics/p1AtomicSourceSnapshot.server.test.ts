@@ -5,6 +5,7 @@ vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:vi.fn()}));
 import { authorizedOwnerP1 } from "./p1Readers.server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { atomicP1SourceSchema,readAuthorizedAtomicP1SourceSnapshot } from "./p1AtomicSourceSnapshot.server";
+import {extractAtomicSnapshot} from "./p1AtomicSnapshotProjection";
 
 const owner=vi.mocked(authorizedOwnerP1);
 const connect=vi.mocked(createServerSupabaseClient);
@@ -35,6 +36,28 @@ describe("P1 authoritative source adapter never invents a DB revision",()=>{
     expect(result).toMatchObject({status:"available",
       snapshot:{businessId:cafe,revision:"25",coverage:"not_proven_by_revision"}});
     expect(connect).toHaveBeenCalledTimes(1);
+  });
+  it("keeps a snapshot with a NULL-wage day available without assuming $0 labor",async()=>{
+    const date="2026-10-21";
+    const source={...base,sources:{...base.sources,dailyRollups:[{
+      business_date:date,net_sales_cents:20000,orders_count:10,drinks_count:14,
+      ingredients_cents:1200,staff_wages_cents:null,staff_tax_cents:null,
+      card_fees_cents:100,sales_data_status:"actual",staff_tax_status:"estimated",
+    }]}};
+    connect.mockResolvedValue(fakeClient(source));
+    const response=await readAuthorizedAtomicP1SourceSnapshot();
+    expect(response.status).toBe("available");
+    if(response.status!=="available")throw new Error("snapshot should parse");
+    const labor=extractAtomicSnapshot("labor.daily_costs",response.snapshot,
+      {period:{from:date,to:date}},date);
+    expect(labor?.leaves).toEqual([]);
+    expect(labor?.missingInputs).toContain("labor_wage_or_tax_missing:"+date);
+    expect(labor?.staleInputs).toContain("estimated_payroll_tax");
+    // Missing labor must not make unrelated pricing/product source unavailable.
+    expect(extractAtomicSnapshot("sales.daily",response.snapshot,
+      {period:{from:date,to:date}},date)?.leaves).toMatchObject([
+      {field:"netSalesCents",value:20000}
+    ]);
   });
   it("retains owner-entered total cost provenance without conflating it with recipes",()=>{
     const amount={menu_item_id:cafe,cost_cents:135,status:"confirmed",
