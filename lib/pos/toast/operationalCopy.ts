@@ -17,7 +17,7 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
 }
 export async function copyToastStaff(db:SupabaseClient,p:ToastCopyScope){
  await stageToastRoster(db,p); // keeps pilot links and usage checks consistent.
- return syncCanonicalEmployees(db,p.businessId,createToastAdapter({db,...p}));
+ return syncCanonicalEmployees(db,p.businessId,createToastAdapter({db,...p}),undefined,{restaurantGuid:p.restaurantGuid});
 }
 /** Only closed time entries are canonical; incomplete rates remain NULL, never zero. */
 export async function copyToastAttendance(db:SupabaseClient,p:ToastCopyScope,
