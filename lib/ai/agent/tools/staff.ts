@@ -79,8 +79,9 @@ export const staffTools = {
       const p={from:resolved.value.from,to:resolved.value.to};
       if(!ctx.tools.getLaborMetrics||!ctx.tools.getStaffAttendance||!ctx.timezone)
         return missing("labor_and_attendance",p,["laborReaderOrTimezoneUnavailable"]);
-      const [labor,attendance]=await Promise.all([ctx.tools.getLaborMetrics(p),
-        ctx.tools.getStaffAttendance(p,ctx.timezone)]);
+      const [labor,attendance,ownerPayroll]=await Promise.all([ctx.tools.getLaborMetrics(p),
+        ctx.tools.getStaffAttendance(p,ctx.timezone),
+        ctx.tools.getOwnerMonthlyPayrollExtras?.()]);
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
         ...(labor.available?labor.value.filter(d=>d.wagesCents===null||d.staffTaxCents===null)
          .map(d=>"laborWageUnknown:"+d.date):[])];
@@ -91,7 +92,14 @@ export const staffTools = {
           result:money(d.loadedStaffCostCents!),period:{from:d.date,to:d.date},
           source:"get_labor",provenance:labor.quality.estimatedInputs.length?"estimate" as const:"recorded" as const
         })): [];
-      return {source:"labor_and_attendance",period:p,agentId:"olivia",missing:issues,explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs,
+      const ownerMonthlyPayrollExtrasCents=ownerPayroll?.available?
+        ownerPayroll.value.monthlyCents:null;
+      return {source:"labor_and_attendance",period:p,agentId:"olivia",
+        ownerMonthlyPayrollExtrasCents,
+        ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
+        ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"You told me",
+        missing:[...issues,...(ownerMonthlyPayrollExtrasCents===null?
+          ["ownerMonthlyPayrollExtrasNotSet"]:[])],explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs,
           ...(labor.available?labor.value.filter(d=>d.wageStatus==="estimate")
            .map(d=>"laborWageEstimate:"+d.date):[])],
         laborDays:labor.available?labor.value.slice(-31).map(d=>({
