@@ -8,7 +8,7 @@ export type CanonicalMenuCandidate={
 export type CatalogMatch={imported:PosCatalogItem;candidateId:string|null;
  score:number;status:"matched"|"needs_review"|"new"};
 const normalize=(value:string|null|undefined)=>(value??"").toLocaleLowerCase().normalize("NFKD")
- .replace(/[^a-z0-9]+/g," ").trim();
+ .replace(/\p{M}/gu,"").replace(/[^\p{L}\p{N}]+/gu," ").trim();
 
 /** Immutable provider GUID wins, then matching is exact size/name and conservative. */
 export function matchCatalogItem(imported:PosCatalogItem,candidates:CanonicalMenuCandidate[]):CatalogMatch{
