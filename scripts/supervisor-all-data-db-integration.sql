@@ -126,8 +126,8 @@ begin
  values(toastRecipeId,a,'toast-test-modifier','Toast linked recipe'),
        (pantryRecipeId,a,'pantry-test-modifier','Pantry linked recipe'),
        (foreignRecipeId,b,'other-cafe-modifier','Another cafe recipe');
- insert into public.menu_items(id,business_id,name)
- values(linkedMenuItemId,a,'Toast catalog linked drink');
+ insert into public.menu_items(id,business_id,name,base_name)
+ values(linkedMenuItemId,a,'Toast catalog linked drink','Toast catalog linked drink');
  insert into public.employees(id,business_id,display_name,active)
  values(linkedEmployeeId,a,'Linked Toast staff',true);
  insert into public.toast_employee_directory(
