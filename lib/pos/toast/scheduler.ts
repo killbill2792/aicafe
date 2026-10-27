@@ -7,6 +7,7 @@ import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
 import {retryToastRollupRefreshes} from "./rollupRetries";
 import {z} from "zod";
 import {syncToastOptionalSources} from "./optionalSync";
+import {syncToastFirstCatalogIfMissing} from "./firstCatalog";
 import {readAllPages} from "./readAllPages";
 import {reconcileToastDays} from "./reconcile";
 
@@ -225,6 +226,11 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    mustFinish(deadlineAt);
    // A committed import's failed cost refresh is never another order import.
    await retryToastRollupRefreshes(db,deadlineAt,5,m.business_id);
+   });
+   // Only the never-synced first catalog must precede sale-day imports;
+   // subsequent catalog refreshes retain the backfill-first priority.
+   await isolated("menu",async()=>{
+    await syncToastFirstCatalogIfMissing(db,m,now,deadlineAt);
    });
    await isolated("daily",async()=>{
    const closed=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
