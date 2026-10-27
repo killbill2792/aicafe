@@ -27,6 +27,8 @@ describe("ProfitCostsView incomplete POS wages",()=>{
     const html=renderToStaticMarkup(await ProfitCostsView({
       snapshot,period:"today",salesSources:["toast"]}));
     expect(html).toContain("ownerProfitWaiting");
+    expect(html).toContain("staff:");
+    expect(html).not.toContain("STAFF</span><span class=\"text-[13px] font-bold text-ink-muted\">0%");
     expect(html).not.toContain("rounded-md bg-staff");
     const completeHtml=renderToStaticMarkup(await ProfitCostsView({
       snapshot:complete,period:"today",salesSources:["toast"]}));
