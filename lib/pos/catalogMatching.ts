@@ -19,7 +19,12 @@ export function matchCatalogItem(imported:PosCatalogItem,candidates:CanonicalMen
  const same=candidates.filter(c=>(
    normalize(c.baseName??c.name)===inputName&&normalize(c.sizeLabel)===inputSize
  ));
- if(!same.length)return {imported,candidateId:null,score:0,status:"new"};
+ if(!same.length){
+  const legacy=candidates.filter(c=>normalize(c.name)===normalize(imported.name));
+  if(legacy.length)return {imported,candidateId:legacy.length===1?legacy[0].id:null,
+   score:0.6,status:"needs_review"};
+  return {imported,candidateId:null,score:0,status:"new"};
+ }
  const equalPrice=(c:CanonicalMenuCandidate)=>imported.priceCents!==null&&
     c.priceCents===imported.priceCents;
  const exactPrice=same.filter(equalPrice);
