@@ -234,8 +234,12 @@ begin
    on conflict do nothing;
    v_skipped:=v_skipped+1;continue;
   end if;
+  -- A scheduled plan is not attendance. It must yield to confirmed
+  -- Toast clock-in data rather than blocking real paid hours.
+  -- Non-plan overlaps still require owner resolution, and cannot be removed.
   if exists (select 1 from public.timecards t
    where t.business_id=p_business_id and t.employee_id=r.linked_employee_id
+     and t.source_type is distinct from 'owner_schedule'
      and t.pos_timecard_id is distinct from v_id
      and t.clock_in<r.clock_out and coalesce(t.clock_out,'infinity'::timestamptz)>r.clock_in)
   then
@@ -245,6 +249,19 @@ begin
    on conflict do nothing;
    v_skipped:=v_skipped+1;continue;
   end if;
+  -- Remove only overlapping planned timecards after validating that no paid
+  -- owner/CSV shift conflicts. The same transaction inserts actual attendance.
+  with removed as (
+   delete from public.timecards t
+    where t.business_id=p_business_id and t.employee_id=r.linked_employee_id
+     and t.source_type='owner_schedule'
+     and t.clock_in<r.clock_out
+     and coalesce(t.clock_out,'infinity'::timestamptz)>r.clock_in
+    returning t.clock_in,t.clock_out
+  )
+  select v_intervals||coalesce(jsonb_agg(jsonb_build_object(
+   'start',clock_in,'end',coalesce(clock_out,r.clock_out))),'[]'::jsonb)
+   into v_intervals from removed;
   insert into public.timecards(business_id,employee_id,pos_timecard_id,clock_in,clock_out,
    hourly_wage_cents,wage_source,source_type,source_provider,breaks,pos_last_synced_at)
   values(p_business_id,r.linked_employee_id,v_id,r.clock_in,r.clock_out,
