@@ -2814,6 +2814,17 @@
     }
   },
   "StaffSchedule": {
+    "posReviewsTitle": "Toast staff and timecard reviews",
+    "posReviewsHint": "Resolve each identity or shift conflict once. Planned shifts are replaced by actual clock-ins automatically.",
+    "posReviewIdentity": "Match employee",
+    "posReviewUnlinked": "Unlinked Toast timecard",
+    "posReviewOverlap": "Overlapping paid shift",
+    "posReviewCorrected": "Toast changed an owner-edited shift",
+    "posReviewChooseEmployee": "Choose employee",
+    "posReviewLink": "Link employee",
+    "posReviewAcceptToast": "Use Toast correction on next sync",
+    "posReviewKeepOwner": "Keep owner shift",
+    "posReviewsTruncated": "More reviews available; resolve these and refresh.",
     "toastPlannedTitle": "Toast planned shifts",
     "toastPlannedNotPaid": "Read-only shifts from Toast. These are plans, not clocked hours, and are not counted in paid wages or your approved schedule.",
     "nudgeEarlier": "Move {field} 15 minutes earlier",
