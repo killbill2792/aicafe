@@ -79,6 +79,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     menuPricesCents:menu.available?menu.value.filter(x=>x.active&&x.category===v.category)
       .flatMap(x=>x.priceCents===null?[]:[x.priceCents]):[],
   });
+  const packagingMissing=v.packaging_cents===null;
   const location=site?.available?{city:site.value.city,region:site.value.region,country:site.value.countryCode}:null;
   const contribution=contributionCoverage({
     priceCents:packagingMissing?null:calculated.suggestedPriceCents,unitCostCents:v.ingredient_cost_cents,
