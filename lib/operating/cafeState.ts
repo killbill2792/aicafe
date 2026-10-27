@@ -131,6 +131,8 @@ export function cafeStateFromSnapshot(
   const feeEstimated = days
     .filter((day) => day.cardFeesStatus === "estimated")
     .map((day) => `cardFees:${day.date}`);
+  const unknownLabor = recorded.filter(day=>day.wagesCents===null||day.staffTaxCents===null);
+  const wageEstimated = recorded.filter(day=>day.laborWageStatus==="estimate");
   const taxEstimated = recorded
     .filter((day) => day.staffTaxStatus === "estimated")
     .map((day) => `staffTax:${day.date}`);
@@ -140,8 +142,10 @@ export function cafeStateFromSnapshot(
   ];
   const observedQuality = quality([...basicMissing, ...feeMissing], [...feeEstimated, ...taxEstimated]);
   const financialQuality = quality(
-    [...basicMissing, ...feeMissing, ...expenseMissing, ...missingProductCosts],
-    [...expenseEstimated, ...feeEstimated, ...taxEstimated, ...estimatedProductCosts],
+    [...basicMissing, ...feeMissing, ...expenseMissing, ...missingProductCosts,
+      ...unknownLabor.map(day=>"laborWageUnknown:"+day.date)],
+    [...expenseEstimated, ...feeEstimated, ...taxEstimated, ...estimatedProductCosts,
+      ...wageEstimated.map(day=>"laborWageEstimate:"+day.date)],
   );
 
   const labor = recorded.map((day) => ({
@@ -149,14 +153,16 @@ export function cafeStateFromSnapshot(
     wagesCents: day.wagesCents,
     staffTaxCents: day.staffTaxCents,
     loadedStaffCostCents: staffCostCentsForPeriod([day]),
+    wageStatus:day.laborWageStatus??(day.wagesCents===null?"missing":"actual"),
   }));
   const laborDayCount = new Set(labor.map((day) => day.date)).size;
   const laborQuality = quality(
     [
       ...(!inRange ? ["periodOutsideLoadedMonth"] : []),
       ...(laborDayCount !== expectedDays ? [`laborCoverage:${laborDayCount}/${expectedDays}`] : []),
+      ...unknownLabor.map(day=>"laborWageUnknown:"+day.date),
     ],
-    taxEstimated,
+    [...taxEstimated,...wageEstimated.map(day=>"laborWageEstimate:"+day.date)],
   );
 
   const allProductIds = new Set(snapshot.menuItems.map((item) => item.id));
@@ -203,9 +209,10 @@ export function cafeStateFromSnapshot(
   const profit = ownerProfitCentsForPeriod(days, running);
   const financials = {
     netSalesCents: salesCents,
-    totalCostsCents: roundHalfUpToCent(totalCosts),
-    ownerProfitCents: roundHalfUpToCent(profit),
-    operatingMargin: ratio(profit, salesCents),
+    // This object is never exposed when financialQuality marks wages missing.
+    totalCostsCents: totalCosts===null?0:roundHalfUpToCent(totalCosts),
+    ownerProfitCents: profit===null?0:roundHalfUpToCent(profit),
+    operatingMargin: profit===null?0:ratio(profit, salesCents),
     coveredSalesDays: observedDays,
     expectedSalesDays: expectedDays,
   };

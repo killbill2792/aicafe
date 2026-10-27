@@ -105,12 +105,14 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const days: DailyFacts[] = (rollupsResult.data ?? []).map((row) => ({ date: row.business_date, netSalesCents: row.net_sales_cents, ordersCount: row.orders_count, drinksCount: row.drinks_count, ingredientsCents: row.ingredients_cents, wagesCents: row.staff_wages_cents, staffTaxCents: row.staff_tax_cents, cardFeesCents: row.card_fees_cents, voidsCents: row.voids_cents }));
   const scale = 30 / windowDays;
   const monthlyRevenueCents = Math.round(days.reduce((sum, day) => sum + day.netSalesCents, 0) * scale);
-  const monthlyWagesCents = Math.round(days.reduce((sum, day) => sum + day.wagesCents, 0) * scale);
-  const monthlyStaffCostCents = Math.round(staffCostCentsForPeriod(days) * scale);
+  const knownWages=days.every(day=>day.wagesCents!==null&&day.staffTaxCents!==null);
+  const monthlyWagesCents = knownWages?Math.round(days.reduce((sum,day)=>sum+(day.wagesCents??0),0)*scale):0;
+  const totalStaff=staffCostCentsForPeriod(days);
+  const monthlyStaffCostCents=totalStaff===null?0:Math.round(totalStaff*scale);
   const monthlyProcessingFeesCents = monthlyProcessingFeesForWindow(days.map((day) => day.cardFeesCents), windowDays);
   const payrollCostsStatus =
     (rollupsResult.data ?? []).length > 0 &&
-    (rollupsResult.data ?? []).every((row) => row.staff_tax_status === "actual")
+    knownWages && (rollupsResult.data ?? []).every((row) => row.staff_tax_status === "actual")
       ? "actual" as const
       : "estimated" as const;
   const salesDayFeeStatuses = (rollupsResult.data ?? []).filter((row) => Number(row.net_sales_cents) > 0).map((row) => row.card_fees_status ?? "missing");
@@ -149,8 +151,8 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
       salesStatus:row.sales_data_status,
       netSalesCents:Number(row.net_sales_cents),
       drinksCount:Number(row.drinks_count),
-      wagesCents:Number(row.staff_wages_cents),
-      payrollTaxCents:Number(row.staff_tax_cents),
+      wagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
+      payrollTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
       payrollTaxStatus:row.staff_tax_status,
       cardFeesCents:Number(row.card_fees_cents),
       cardFeesStatus:row.card_fees_status,

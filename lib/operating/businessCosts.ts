@@ -108,10 +108,15 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
       cardFeesCents:day.cardFeesStatus==="missing"&&day.netSalesCents>0?0:day.cardFeesCents})),
     ...recordedDays.map(day=>({...day,ingredientsCents:0,cardFeesCents:0})),
   ];
-  const knownTotalCents=roundHalfUpToCent(totalCostsCentsForPeriod(costDays,running));
+  const fullTotal=totalCostsCentsForPeriod(costDays,running);
+  // Exclude unknown compensation from the KNOWN subtotal, while reporting it
+  // missing. Never claim the subtotal is the full payroll expense.
+  const knownTotalCents=roundHalfUpToCent(fullTotal??(ingredient+fees+running));
   const missingInputs=[
     ...(saleDates.size<expectedDays?["salesCoverage:"+saleDates.size+"/"+expectedDays]:[]),
     ...(laborDates.size<expectedDays?["laborCoverage:"+laborDates.size+"/"+expectedDays]:[]),
+    ...recordedDays.filter(d=>d.wagesCents===null||d.staffTaxCents===null)
+      .map(d=>"laborWageUnknown:"+d.date),
     ...missingExpenses.map(x=>"expense:"+x.categoryCode),
     // Money's supported cross-month Week prorates prior-month bills using
     // THIS month's rates. Preserve its subtotal, but do not call assumed
@@ -129,14 +134,16 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
     ...estimatedProducts.map(x=>"productCost:"+x.id),
     ...estimatedFees.map(x=>"cardFees:"+x.date),
     ...estimatedTax.map(x=>"staffTax:"+x.date),
+    ...recordedDays.filter(d=>d.laborWageStatus==="estimate")
+      .map(d=>"laborWageEstimate:"+d.date),
   ];
-  const observed={ingredients:salesDays.length>0,loadedStaff:recordedDays.length>0,
+  const observed={ingredients:salesDays.length>0,loadedStaff:recordedDays.length>0&&staff!==null,
     cardFees:salesDays.length>0,runningCosts:snapshot.runningCostLines.some(line=>!line.isMissing)};
   const anyKnown=Object.values(observed).some(Boolean);
   return {
     period,knownTotalCents:anyKnown?knownTotalCents:0,
     completeness:!anyKnown?"unavailable":missingInputs.length?"partial":"complete",
-    components:{ingredientsCents:ingredient,loadedStaffCents:staff,
+    components:{ingredientsCents:ingredient,loadedStaffCents:staff??0,
       cardFeesCents:fees,runningCostsCents:roundHalfUpToCent(running)},
     observed,missingInputs,estimatedInputs,
     coverage:{salesDays:saleDates.size,laborDays:laborDates.size,expectedDays,

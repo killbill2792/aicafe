@@ -130,10 +130,10 @@ export async function recomputeDailyRollup(
   const wagesUnknown=timecards.some(tc=>tc.hourly_wage_cents===null);
   const wageEstimated=timecards.some(tc=>tc.wage_source==="estimate");
   const wagesCents=wagesUnknown?null:timecards.reduce((sum,tc)=>
-    sum+wagesCentsForTimecard({
+    sum+(wagesCentsForTimecard({
       clockIn:tc.clock_in,clockOut:tc.clock_out,
       hourlyWageCents:tc.hourly_wage_cents as number,breaks:tc.breaks??[]
-    }),0);
+    })??0),0);
   const laborWageStatus=wagesUnknown?"missing":wageEstimated?"estimate":"actual";
   const { data: existingRollup, error: existingRollupError } = await supabase
     .from("daily_rollups")
