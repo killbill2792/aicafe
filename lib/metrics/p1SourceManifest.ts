@@ -162,6 +162,9 @@ export const SOURCE_SURFACES = {
   "lib/data/getCafeProfile.ts": {
     getCafeProfile:{capabilities:["business.profile"]},
   },
+  "lib/data/getUnpricedPublishedMenu.ts":{
+    getUnpricedPublishedMenu:{restricted:"Authenticated current-café Menu UI read of active null-priced POS products and add-on amounts; not a P1 generic metric or unrestricted model capability"},
+  },
   "lib/data/getUnpricedProductSizes.ts": {
     getUnpricedProductSizes:{restricted:"Owner-authenticated product size drafts; excludes prices and is not model-exposed evidence"},
   },
