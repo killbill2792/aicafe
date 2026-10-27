@@ -1,5 +1,14 @@
 -- PR 201: shared source metadata, source identities and trustworthy nullable labor.
 -- Apply manually after migration 100. No production data is erased.
+alter table public.toast_sync_phase_errors
+ drop constraint if exists toast_sync_phase_errors_phase_check;
+alter table public.toast_sync_phase_errors
+ add constraint toast_sync_phase_errors_phase_check
+ check(phase in ('restaurant_info','cost_refresh','resume','daily',
+ 'modified_scan','repull','reconcile','backfill','optional','cleanup',
+ 'menu','roster','labor','sales_link'));
+create unique index if not exists menu_items_business_id_id_uidx
+ on public.menu_items(business_id,id);
 alter table public.menu_items
  add column if not exists description text,
  add column if not exists pos_visibility text,
@@ -32,6 +41,7 @@ create table if not exists public.menu_item_modifier_groups(
  max_selections integer,
  required boolean not null default false,
  primary key(business_id,menu_item_id,pos_group_id),
+ foreign key(business_id,menu_item_id) references public.menu_items(business_id,id) on delete cascade,
  check (min_selections is null or min_selections>=0),
  check (max_selections is null or max_selections>=0)
 );
@@ -40,7 +50,8 @@ create table if not exists public.pos_item_aliases(
  menu_item_id uuid not null references public.menu_items(id) on delete cascade,
  provider text not null,
  pos_item_id text not null,
- primary key(business_id,provider,pos_item_id)
+ primary key(business_id,provider,pos_item_id),
+ foreign key(business_id,menu_item_id) references public.menu_items(business_id,id) on delete cascade
 );
 create index if not exists pos_item_aliases_item_idx
  on public.pos_item_aliases(business_id,menu_item_id);
