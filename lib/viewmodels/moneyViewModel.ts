@@ -159,8 +159,8 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
   const ingredientsRatio = ratio(ingredientsCents, salesCents);
-  const staffRatio=wagesCents===null||staffTaxCents===null?0:ratio(wagesCents+staffTaxCents,salesCents);
-  const combinedRatio=wagesCents===null||staffTaxCents===null?0:ratio(ingredientsCents+wagesCents+staffTaxCents,salesCents);
+  const staffRatio=wagesCents===null||staffTaxCents===null?null:ratio(wagesCents+staffTaxCents,salesCents);
+  const combinedRatio=wagesCents===null||staffTaxCents===null?null:ratio(ingredientsCents+wagesCents+staffTaxCents,salesCents);
 
   const prevDays = previousPeriodDays(snapshot, period);
   const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
@@ -254,8 +254,8 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     staffRatio,
     combinedRatio,
     ingredientsBand: ingredientsHealthBand(ingredientsRatio),
-    staffBand: staffHealthBand(staffRatio),
-    combinedBand: combinedHealthBand(combinedRatio),
+    staffBand: staffRatio===null?null:staffHealthBand(staffRatio),
+    combinedBand: combinedRatio===null?null:combinedHealthBand(combinedRatio),
     changes,
     costsEnteredCount: enteredCount,
     costsTotalCount: snapshot.runningCostLines.length,
