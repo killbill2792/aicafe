@@ -311,6 +311,10 @@ describe("Money partial-known-wage day",()=>{
     expect(vm.salesCents).toBeGreaterThan(0);
     expect(vm.wagesCents).toBeNull();
     expect(vm.staffTaxCents).toBeNull();
+    expect(vm.staffRatio).toBeNull();
+    expect(vm.combinedRatio).toBeNull();
+    expect(vm.staffBand).toBeNull();
+    expect(vm.combinedBand).toBeNull();
     expect(vm.ownerProfitCents).toBeNull();
     expect(vm.ownerProfitDisplay.kind).toBe("unavailable");
     expect(vm.businessCosts.missingInputs).toContain("laborWageUnknown:"+date);
