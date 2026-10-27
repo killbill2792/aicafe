@@ -81,6 +81,8 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
   // nonsense like "150200000%" the moment a period had no sales yet. 0% reads as "not enough
   // sales to show a ratio" rather than a fabricated number.
   const pct = (n: number) => (vm.salesCents > 0 ? (n / vm.salesCents) * 100 : 0);
+  const knownLabor=vm.wagesCents!==null&&vm.staffTaxCents!==null;
+  const knownTotals=vm.totalCostsCents!==null&&knownLabor;
   const runningExCardFees = vm.runningCostLines.reduce((s, l) => s + l.amountCents, 0);
   // No confirmed owner-profit figure to color when nothing's been uploaded yet — the flow bar and
   // summary box fall back to a neutral, non-alarming presentation rather than a precise red loss.
@@ -108,16 +110,16 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
         <div className="flex flex-col gap-2">
           <StepBar label={t("sales")} cents={vm.salesCents} widthPct={100} color="bg-ink" />
           <StepBar label={t("ingredients")} cents={-vm.ingredientsCents} widthPct={pct(vm.ingredientsCents)} color="bg-ingredients" />
-          <StepBar label={t("staff")} cents={-(vm.wagesCents + vm.staffTaxCents)} widthPct={pct(vm.wagesCents + vm.staffTaxCents)} color="bg-staff" />
-          <StepBar
+          {knownLabor&&<StepBar label={t("staff")} cents={-(vm.wagesCents!+vm.staffTaxCents!)} widthPct={pct(vm.wagesCents!+vm.staffTaxCents!)} color="bg-staff" />}
+          {knownTotals&&<StepBar
             label={t("rentAndBills")}
-            cents={-(vm.totalCostsCents - vm.ingredientsCents - vm.wagesCents - vm.staffTaxCents)}
-            widthPct={pct(vm.totalCostsCents - vm.ingredientsCents - vm.wagesCents - vm.staffTaxCents)}
+            cents={-(vm.totalCostsCents! - vm.ingredientsCents - vm.wagesCents! - vm.staffTaxCents!)}
+            widthPct={pct(vm.totalCostsCents! - vm.ingredientsCents - vm.wagesCents! - vm.staffTaxCents!)}
             color="bg-running"
-          />
-          {vm.ownerProfitDisplay.kind!=="unavailable" &&
-            <StepBar label={t("youKeep")} cents={vm.ownerProfitCents}
-              widthPct={flowBarWidthPct(vm.ownerProfitCents, vm.salesCents)}
+          />}
+          {vm.ownerProfitCents!==null&&vm.ownerProfitDisplay.kind!=="unavailable" &&
+            <StepBar label={t("youKeep")} cents={vm.ownerProfitCents!}
+              widthPct={flowBarWidthPct(vm.ownerProfitCents!, vm.salesCents)}
               color="bg-good" tone={tone} />}
         </div>
       </section>
@@ -137,7 +139,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
           <Row name={t("ingredientsAndCups")} cents={vm.ingredientsCents} addLabel={t("add")} />
         </RowGroup>
 
-        <RowGroup label={t("staff")} pct={Math.round(pct(vm.wagesCents + vm.staffTaxCents))} color="bg-staff">
+        <RowGroup label={t("staff")} pct={Math.round(pct((vm.wagesCents??0)+(vm.staffTaxCents??0)))} color="bg-staff">
           <Row name={t("wages")} cents={vm.wagesCents} addLabel={t("add")} />
           <Row name={t("payrollTaxes")} cents={vm.staffTaxCents} addLabel={t("add")} last />
         </RowGroup>

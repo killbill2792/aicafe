@@ -3,8 +3,9 @@ import type { BusinessSnapshot } from "@/lib/data/types";
 import { regularHoursStateForDate } from "@/lib/business/openHours";
 
 /** Per_cup mode day contribution: net sales − ingredients − card fees − loaded staff cost. */
-export function dayContributionCents(day: DailyFacts): number {
-  return day.netSalesCents - day.ingredientsCents - day.cardFeesCents - (day.wagesCents + day.staffTaxCents);
+export function dayContributionCents(day: DailyFacts): number | null {
+  return day.wagesCents===null||day.staffTaxCents===null?null:
+    day.netSalesCents-day.ingredientsCents-day.cardFeesCents-(day.wagesCents+day.staffTaxCents);
 }
 
 export function recoveryBuckets(snapshot: BusinessSnapshot): RecoveryBucket[] {
@@ -25,7 +26,8 @@ export function recoveryBucketsFromAmounts(categoryAmounts: CategoryMonthlyAmoun
 }
 
 export function actualDayContributions(snapshot: BusinessSnapshot): DayContribution[] {
-  return snapshot.monthActualDays.map((d) => ({ date: d.date, cents: dayContributionCents(d), projected: false }));
+  return snapshot.monthActualDays.filter(d=>dayContributionCents(d)!==null)
+    .map(d=>({date:d.date,cents:dayContributionCents(d)!,projected:false}));
 }
 
 /**
@@ -33,7 +35,8 @@ export function actualDayContributions(snapshot: BusinessSnapshot): DayContribut
  * last 4 weeks (fallback: last 14 days average) — docs/05-calculations.md "Cost recovery".
  */
 export function projectedDayContributions(snapshot: BusinessSnapshot): DayContribution[] {
-  const { daysInMonth, monthKey, last28Days, todayDateStr } = snapshot;
+  const {daysInMonth,monthKey,todayDateStr}=snapshot;
+  const last28Days=snapshot.last28Days.filter(d=>dayContributionCents(d)!==null);
   // Anchored to the real day-of-month of `todayDateStr`, not `monthActualDays.length` — a gap
   // before today (a day with no rollup yet) would otherwise shift every later date `length` was
   // standing in for, projecting the wrong calendar days as "the rest of the month."
@@ -42,14 +45,14 @@ export function projectedDayContributions(snapshot: BusinessSnapshot): DayContri
 
   const [year, month] = monthKey.split("-").map(Number);
   const fallbackAvg =
-    last28Days.length > 0 ? last28Days.slice(-14).reduce((s, d) => s + dayContributionCents(d), 0) / Math.min(14, last28Days.length) : 0;
+    last28Days.length > 0 ? last28Days.slice(-14).reduce((s, d) => s + dayContributionCents(d)!, 0) / Math.min(14, last28Days.length) : 0;
 
   const byWeekday = new Map<number, number[]>();
   for (const d of last28Days) {
     const [y, m, day] = d.date.split("-").map(Number);
     const weekday = new Date(y, m - 1, day).getDay();
     const arr = byWeekday.get(weekday) ?? [];
-    arr.push(dayContributionCents(d));
+    arr.push(dayContributionCents(d)!);
     byWeekday.set(weekday, arr);
   }
 

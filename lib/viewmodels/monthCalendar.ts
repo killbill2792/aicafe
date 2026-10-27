@@ -80,7 +80,7 @@ export function buildMonthCalendarViewModel(params: {
 
     // Only explicit sales coverage makes this an actual performance day. A staff-only rollup is
     // still Missing sales and must never become a red "loss" day.
-    if (dayFacts && hasSalesCoverage(dayFacts)) {
+    if (dayFacts && hasSalesCoverage(dayFacts) && dayFacts.wagesCents!==null && dayFacts.staffTaxCents!==null) {
       const runningCostShareCents = roundHalfUpToCent(runningCostsForPeriodCents(categoryAmounts, date, date));
       const staffCents = dayFacts.wagesCents + dayFacts.staffTaxCents;
       const ownerProfitCents = dayFacts.netSalesCents - dayFacts.ingredientsCents - staffCents - dayFacts.cardFeesCents - runningCostShareCents;

@@ -25,8 +25,8 @@ export type StaffShiftVM = {
   name: string;
   role: string | null;
   clockInIso: string;
-  hourlyWageCents: number;
-  todayCostCents: number;
+  hourlyWageCents: number | null;
+  todayCostCents: number | null;
   breakFlag: "ok" | "due_soon" | "missed";
   breakDueIso: string | null;
   sourceType: "owner_schedule" | "owner_manual" | "connected_pos" | "imported" | "ai_cafe";
@@ -114,19 +114,20 @@ export function buildStaffViewModel(
     (a, b) => new Date(a.shift.timecard.clockIn).getTime() - new Date(b.shift.timecard.clockIn).getTime(),
   );
 
-  const currentHourlyWageCents = onShiftShifts.reduce((sum, { shift }) => sum + shift.timecard.hourlyWageCents, 0);
-  const currentHourlyLoadedCents = staffCostLoadedCents(currentHourlyWageCents, payrollTaxCents(currentHourlyWageCents, payrollTaxRate));
+  const unknownCurrent=onShiftShifts.some(({shift})=>shift.timecard.hourlyWageCents===null);
+  const currentHourlyWageCents=unknownCurrent?null:onShiftShifts.reduce((sum,{shift})=>sum+(shift.timecard.hourlyWageCents??0),0);
+  const currentHourlyLoadedCents=currentHourlyWageCents===null?null:staffCostLoadedCents(currentHourlyWageCents,payrollTaxCents(currentHourlyWageCents,payrollTaxRate));
 
   const wagesTodayCents = wagesCentsForTimecards(
     snapshot.staffShiftsToday.map((s) => s.timecard),
     now,
   );
-  const costTodayCents = staffCostLoadedCents(wagesTodayCents, payrollTaxCents(wagesTodayCents, payrollTaxRate));
+  const costTodayCents=wagesTodayCents===null?null:staffCostLoadedCents(wagesTodayCents,payrollTaxCents(wagesTodayCents,payrollTaxRate));
 
   const onShift: StaffShiftVM[] = onShiftShifts
     .map(({ shift: s, member }) => {
       const wages = wagesCentsForTimecard(s.timecard, now);
-      const todayCostCents = staffCostLoadedCents(wages, payrollTaxCents(wages, payrollTaxRate));
+      const todayCostCents=wages===null?null:staffCostLoadedCents(wages,payrollTaxCents(wages,payrollTaxRate));
       const mbs = mealBreakStatus(s.timecard, now);
       const breakFlag: StaffShiftVM["breakFlag"] = mbs.missed ? "missed" : mbs.warn ? "due_soon" : "ok";
       const breakDueIso = breakFlag === "ok" ? null : new Date(new Date(s.timecard.clockIn).getTime() + 5 * 3_600_000).toISOString();
@@ -145,9 +146,9 @@ export function buildStaffViewModel(
       };
     });
 
-  const dailyCostPerSalesDollarCents = snapshot.last7Days.map((d) => ({
+  const dailyCostPerSalesDollarCents = snapshot.last7Days.filter(d=>d.wagesCents!==null&&d.staffTaxCents!==null).map((d) => ({
     date: d.date,
-    cents: ratio(d.wagesCents + d.staffTaxCents, d.netSalesCents) * 100,
+    cents: ratio((d.wagesCents??0)+(d.staffTaxCents??0), d.netSalesCents) * 100,
   }));
 
   const worstDay = dailyCostPerSalesDollarCents.reduce<{ date: string; cents: number } | null>((worst, day) => {
@@ -157,7 +158,7 @@ export function buildStaffViewModel(
   }, null);
 
   return {
-    costPerMinuteCents: currentHourlyLoadedCents / 60,
+    costPerMinuteCents: currentHourlyLoadedCents===null?null:currentHourlyLoadedCents/60,
     costPerHourCents: currentHourlyLoadedCents,
     costTodayCents,
     onShift,

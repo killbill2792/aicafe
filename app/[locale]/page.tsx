@@ -67,8 +67,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
   const money=(cents:number)=>formatCents(cents,locale);
   const sales=vm.coverage.actualDays===0?"—":money(moneyVm.salesCents);
-  const costs=costCompleteness==="unavailable"?"—":money(moneyVm.totalCostsCents);
-  const kept=canShowProfit?money(moneyVm.ownerProfitCents):"—";
+  const costs=costCompleteness==="unavailable"||moneyVm.totalCostsCents===null?"—":money(moneyVm.totalCostsCents);
+  const kept=canShowProfit&&moneyVm.ownerProfitCents!==null?money(moneyVm.ownerProfitCents):"—";
   // Restore the gated comparisons from the old Home strip; never imply a
   // verified margin or previous-period change when either side is incomplete.
   const number=(value:number)=>new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(value);
