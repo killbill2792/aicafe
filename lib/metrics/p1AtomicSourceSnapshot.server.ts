@@ -49,7 +49,7 @@ export const atomicP1SourceSchema=z.strictObject({
       wage_amount_cents:cents.nullable()}),501),
     dailyRollups:bounded(z.strictObject({
       business_date:day,net_sales_cents:cents,orders_count:cents,drinks_count:cents,
-      ingredients_cents:cents,staff_wages_cents:cents,staff_tax_cents:cents,
+      ingredients_cents:cents,staff_wages_cents:cents.nullable(),staff_tax_cents:cents.nullable(),
       card_fees_cents:cents,sales_data_status:z.enum(["actual","missing"]),
       staff_tax_status:z.enum(["actual","estimated"])}),367),
     expenses:bounded(z.strictObject({
