@@ -949,7 +949,8 @@
     "payrollMonthlyInvalid": "أدخل مبلغًا صالحًا بمنزلتين عشريتين على الأكثر.",
     "payrollMonthlySave": "حفظ التكاليف الشهرية",
     "payrollMonthlySaved": "تم الحفظ كتقدير من المالك.",
-    "payrollMonthlySaveFailed": "تعذّر حفظ تكاليف الرواتب الشهرية."  },
+    "payrollMonthlySaveFailed": "تعذّر حفظ تكاليف الرواتب الشهرية."
+  },
   "More": {
     "toastConnect": "ربط Toast",
     "title": "المزيد",
@@ -1002,7 +1003,8 @@
     "monthlyAmountEstimated": "{amount} شهريًا (يشمل تقديرات)",
     "toastDaysLook": "{count} يومًا يحتاج إلى مراجعة",
     "notConnected": "ربط جهاز المبيعات",
-    "connectedSince": "متصل · آخر مزامنة {time}"
+    "connectedSince": "متصل · آخر مزامنة {time}",
+    "financialAssumptions": "الافتراضات المالية"
   },
   "BreakEven": {
     "title": "خطة نقطة التعادل",
@@ -3324,5 +3326,18 @@
     "receiptTotal": "إجمالي الإيصال",
     "receiptIncomplete": "راجع المورد وإجمالي الإيصال وتكلفة البند قبل الموافقة.",
     "reviewOnInventory": "مراجعة في صفحة المخزون"
+  },
+  "SupervisorFinancialSettings": {
+    "title": "الافتراضات المالية",
+    "subtitle": "لتقديرات أدق في المال والقائمة والخطة والمحادثة",
+    "ingredient": "تكلفة المكونات المعتادة (% من المبيعات)",
+    "ingredientHint": "تُستخدم فقط عندما لا تكفي الوصفات والمبيعات لإثبات النسبة. اترك الحقل فارغًا إذا كانت مجهولة.",
+    "monthlyPayroll": "تكاليف الرواتب الشهرية الإضافية ($)",
+    "monthlyPayrollHint": "أضف فقط الرواتب والمزايا والتكاليف غير المحتسبة ضمن أجور الحضور أو ضرائب الموظفين المقدرة. تُضاف مرة واحدة ولا تستبدل الأجور المسجلة.",
+    "save": "حفظ الإعدادات المالية",
+    "saving": "جارٍ الحفظ…",
+    "saved": "تم حفظ الإعدادات",
+    "failed": "تحقق من القيم وأعد المحاولة",
+    "none": "غير محدد"
   }
 }

@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import { buildAuthorizeUrl, isSquareConfigured } from "@/lib/pos/square/oauth";
 
 import {STATE_COOKIE} from "@/lib/pos/square/oauthState";
@@ -20,6 +21,11 @@ export async function GET(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.redirect(`${origin}/${locale}/login`);
+  const businessId=await getActiveBusinessId(user.id);
+  const {data:member,error:membershipError}=await supabase.from("memberships")
+    .select("role").eq("user_id",user.id).eq("business_id",businessId).maybeSingle();
+  if(membershipError||member?.role!=="owner")
+    return NextResponse.json({error:"owner_required"},{status:403});
 
   const state = randomBytes(16).toString("hex");
   const cookieStore = await cookies();

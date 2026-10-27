@@ -4,6 +4,7 @@ import { fromZonedTime } from "date-fns-tz";
 import {readAllPosRows,posIdBatches} from "./pagedReads";
 import { itemIngredientCostCents } from "@/lib/calc";
 import { timecardWagesForLocalDay } from "./timecardDay";
+import {laborWageStatusFromTimecards} from "@/lib/calc/profit";
 import { processingFeeForRollup } from "./processingFees";
 import { ensureOwnerConfirmedProcessingFeeEstimateForDay } from "./processingFeeEstimate.server";
 import { resolveSalesDataStatus, type SalesDataStatus } from "./salesCoverage";
@@ -132,8 +133,7 @@ export async function recomputeDailyRollup(
     .or("clock_out.is.null,clock_out.gt."+dayStartUtc)
     .order("id").range(first,last),"daily timecards");
 
-  const wagesUnknown=timecards.some(tc=>tc.hourly_wage_cents===null);
-  const wageEstimated=timecards.some(tc=>tc.wage_source==="estimate");
+
   // Retain known wages while identifying incomplete days separately. Unknown
   // wages cannot be assumed zero when calculating total labor or margins.
   const wagesCents=timecards.reduce((sum,tc)=>{
@@ -143,7 +143,7 @@ export async function recomputeDailyRollup(
     },businessDate,timezone);
     return sum+(amount??0);
   },0);
-  const laborWageStatus=wagesUnknown?"missing":wageEstimated?"estimate":"actual";
+  const laborWageStatus=laborWageStatusFromTimecards(timecards);
   const { data: existingRollup, error: existingRollupError } = await supabase
     .from("daily_rollups")
     .select("staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status, voids_status, voids_cents")

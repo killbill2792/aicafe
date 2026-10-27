@@ -4,7 +4,7 @@ export const askOwnerSchema=z.strictObject({
  question:z.string().trim().min(1).max(200),
  kind:z.enum(["choice","fill"]).optional(),
  options:z.array(z.strictObject({label:z.string().trim().min(1).max(60),
-   value:z.string().trim().min(1).max(100)})).max(4),
+   value:z.string().trim().min(1).max(100)})).max(12),
  allowOther:z.boolean(),
  fields:z.array(z.strictObject({
    key:z.string().min(1).max(90),label:z.string().trim().min(1).max(100),
@@ -45,7 +45,7 @@ export const askOwnerTools={ask_owner:{
   // Every displayed (label, value) pair must come from one single tool group;
   // a correct UUID with a spoofed label can otherwise mislead an owner.
   const exact=state.ambiguous.some(group=>input.options.every(o=>
-    group.some(candidate=>candidate.id===o.value&&candidate.label===o.label)));
+    group.some(candidate=>candidate.id===o.value&&(candidate.label===o.label||o.label.startsWith(candidate.label)||candidate.label.startsWith(o.label+" — ")||candidate.label.startsWith(o.label+" (")))));
   if(!exact)return {source:"ask_owner",period:null,missing:["unverifiedOption"],error:"notFromTool"};
   state.asked=true;
   return {source:"ask_owner",period:null,missing:[],kind:"choice",question:input.question,options:input.options,allowOther:input.allowOther};

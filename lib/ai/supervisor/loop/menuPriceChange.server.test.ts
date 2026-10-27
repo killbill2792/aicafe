@@ -8,7 +8,6 @@ const state=vi.hoisted(()=>({
 vi.mock("@/lib/metrics/p1Readers.server",()=>({authorizedOwnerP1:async()=>({
   identity:{businessId:state.businessId,currency:state.currency}
 })}));
-vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:async()=>state.menu}));
 vi.mock("@/lib/menu/priceHistory",()=>({setCanonicalMenuPrice:async(_client:unknown,input:unknown)=>{
   const args=input as {expectedOldPriceCents:number};
   state.saveAttempts++;
@@ -21,7 +20,10 @@ vi.mock("@/lib/data/getActiveBusinessId",()=>({getActiveBusinessId:async()=>stat
 vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({
  auth:{getUser:async()=>({data:{user:{id:"33333333-3333-4333-8333-333333333333"}}})},
  from:(table:string)=>{
-   const filters={eq:()=>filters,maybeSingle:async()=>({data:table==="memberships"?{role:"owner"}:{currency:state.currency,is_demo:false}})};
+   const filters={eq:()=>filters,maybeSingle:async()=>({data:table==="memberships"?{role:"owner"}:
+     table==="menu_items"?(state.menu[0].active?{id:state.menu[0].id,name:state.menu[0].name,
+       price_cents:state.menu[0].priceCents,is_active:state.menu[0].active}:null):
+     {currency:state.currency,is_demo:false},error:null})};
    return {select:()=>filters};
  },
 })}));
@@ -36,6 +38,11 @@ beforeEach(()=>{state.currency="USD";state.menu=[{...state.menu[0],active:true,p
   state.current=450;state.saves=0;state.saveArgs=null;
   state.saveAttempts=0;state.changeBeforeSave=null;});
 describe("approved menu price capability",()=>{
+  it("drafts a $20 Toast item increase of 10 cents from one scoped menu row",async()=>{
+    state.menu=[{...state.menu[0],priceCents:2000}];
+    const simulation=await menuPriceChangeCapability.simulate(scope,{...input,newPriceCents:2010});
+    expect(simulation.effect).toMatchObject({oldPriceCents:2000,newPriceCents:2010,productName:"Latte"});
+  });
   it("is registered in the cron-shared registry",()=>{
     expect(supervisorLoopRegistry.get(menuPriceChangeCapabilityId)).toBe(menuPriceChangeCapability);
   });

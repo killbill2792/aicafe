@@ -4,7 +4,7 @@ export type NumberLocale="en"|"es"|"ar";
 export type NumberTokenKind="money"|"percent"|"count"|"decimal"|"clock"|"clockRange"|"date"|"dateRange"|"duration"|"range"|"ordinal"|"phone/id";
 export type NumberToken={start:number;end:number;kind:NumberTokenKind;value:number|null;unit:string|null};
 const D="[0-9٠-٩۰-۹]";
-const currency="(?:US\\$|[$€£]|USD|EUR|GBP|ر\\.س|د\\.إ|دولار(?:ات)?|ريال|درهم|dollars?|euros?|pesos?|dólares?)";
+const currency="(?:US\\$|[$€£]|USD|EUR|GBP|ر\\.س|د\\.إ|دولار(?:ات)?|ريال|درهم|dollars?|euros?|pesos?|dólares?|¢|centavos|cents?|سنت)";
 const num="(?:"+D+"{1,3}(?:[,.٬\\u00a0\\u202f]"+D+"{3})+(?:[.,٫]"+D+"+)?|"+D+"{1,3}(?: "+D+"{3})+,[0-9٠-٩۰-۹]+|"+D+"+(?:[.,٫]"+D+"+)?)";
 const amount="(?:\\(\\s*[-−+]?"+currency+"\\s*[-−+]?"+num+"\\s*\\)|[-−+]?\\s*(?:"+currency+"\\s*[-−+]?\\s*)?"+num+"(?:[ \\u00a0\\u202f]*"+currency+")?)";
 const clock="(?:"+D+"{1,2}:"+D+"{2}(?::"+D+"{2})?(?:\\s*(?:a\\.?m\\.?|p\\.?m\\.?|صباح[\\u064b-\\u065f]*|مساء[\\u064b-\\u065f]*|ص|م))?|"+D+"{1,2}\\s*(?:a\\.?m\\.?|p\\.?m\\.?|ص|م)|"+D+"{1,2}\\s*h(?:"+D+"{2})?)";
@@ -66,8 +66,9 @@ export function tokenizeNumbers(text:string,locale:NumberLocale):NumberToken[]{
   const kind:NumberTokenKind=money?"money":percent?"percent":"range";
   const unit=money?"cents":percent?"bps":null;
   const first=amountValue(m[1],locale),second=amountValue(m[2],locale);
-  add(m.index,m.index+m[1].length,kind,first===null?null:money||percent?Math.round(first*100):first,unit,85);
-  add(m.index+split,m.index+split+m[2].length,kind,second===null?null:money||percent?Math.round(second*100):second,unit,85);
+  const subunit=/(?:¢|cents?|centavos|سنت)/iu.test(m[0]);
+  add(m.index,m.index+m[1].length,kind,first===null?null:money?(subunit?Math.round(first):Math.round(first*100)):percent?Math.round(first*100):first,unit,85);
+  add(m.index+split,m.index+split+m[2].length,kind,second===null?null:money?(subunit?Math.round(second):Math.round(second*100)):percent?Math.round(second*100):second,unit,85);
  }
  scan("(?:\\+?\\d{1,3}[-. ]){2,}\\d{3,4}(?!\\d)","phone/id",82);
  scan("(?:gpt[-\\w.]*\\d[\\w.-]*|[A-Za-z]{1,8}[-_]\\d[\\w.-]*)","phone/id",82);
@@ -75,9 +76,10 @@ export function tokenizeNumbers(text:string,locale:NumberLocale):NumberToken[]{
  for(const m of text.matchAll(expr("(?:\\(\\s*[-−+]?"+currency+"\\s*[-−+]?"+num+"\\s*\\)|[-−+]?\\s*(?:"+currency+"\\s*[-−+]?\\s*)?"+num+"(?:[ \\u00a0\\u202f]*(?:[%٪]|"+currency+"))?)"))){
   const start=m.index,end=start+m[0].length,raw=m[0];
   const money=expr(currency).test(raw),percent=/[%٪]\s*$/u.test(raw),n=amountValue(raw,locale);
+  const subunit=/(?:¢|cents?|centavos|سنت)/iu.test(raw);
   if(n===null)continue;
   const kind:NumberTokenKind=money?"money":percent?"percent":/[.,٬٫]/u.test(raw)?"decimal":"count";
-  add(start,end,kind,money||percent?Math.round(n*100):n,money?"cents":percent?"bps":null,30);
+  add(start,end,kind,money?(subunit?Math.round(n):Math.round(n*100)):percent?Math.round(n*100):n,money?"cents":percent?"bps":null,30);
  }
  all.sort((a,b)=>b.priority-a.priority||(b.end-b.start)-(a.end-a.start)||a.start-b.start);
  const kept:Entry[]=[];

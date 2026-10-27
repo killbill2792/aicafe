@@ -1,0 +1,69 @@
+name: PR202 disposable migration 102 verification
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20261027000102_supervisor_all_data.sql'
+      - 'scripts/supervisor-all-data-db-integration.sql'
+      - 'scripts/supervisor-all-data-schema-check.sql'
+      - '.github/workflows/supervisor-db-integration.yml'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  full-tests-both-square-flags:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        square-sync-enabled: ['false', 'true']
+    env:
+      SQUARE_AUTO_SYNC_ENABLED: ${{ matrix.square-sync-enabled }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Entire unit test suite with Square auto-sync flag ${{ matrix.square-sync-enabled }}
+        run: npm test
+  isolated-supabase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.108.0
+      - name: Initialize ephemeral local Supabase
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+      - name: Start disposable Supabase
+        run: supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - name: Replay the entire schema on fresh database
+        run: supabase db reset --local --yes
+      - name: Prove migration idempotency on the isolated database
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f supabase/migrations/20261027000102_supervisor_all_data.sql
+      - name: Verify dependent migration 101 catalog and nullable-wage SQL invariants
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/toast-pos-copy-sql-integration.sql
+      - name: Verify financial columns, uniqueness, tenant boundaries and function grants
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/supervisor-all-data-db-integration.sql
+      - name: Read-only schema inventory (one row per object)
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/supervisor-all-data-schema-check.sql
+      - name: Stop disposable Supabase
+        if: always()
+        run: supabase stop --no-backup

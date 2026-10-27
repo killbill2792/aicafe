@@ -11,9 +11,9 @@ function context(){
  return {resolveState} as AgentToolContext;
 }
 describe("ask_owner tool",()=>{
- it("rejects fewer than two or more than four options",()=>{
+ it("rejects fewer than two or more than twelve options",()=>{
   expect(askOwnerSchema.safeParse({question:"Which?",options:options.slice(0,1),allowOther:true}).success).toBe(false);
-  expect(askOwnerSchema.safeParse({question:"Which?",options:[...options,...options,...options.slice(0,1)],allowOther:true}).success).toBe(false);
+  expect(askOwnerSchema.safeParse({question:"Which?",options:Array.from({length:13},(_,i)=>({label:"Latte "+i,value:String(i)})),allowOther:true}).success).toBe(false);
  });
  it("refuses invented UUIDs and duplicate labels",async()=>{
   const ctx=context();

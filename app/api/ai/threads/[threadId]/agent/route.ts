@@ -14,6 +14,7 @@ import { getExistingSupervisorReply } from "@/lib/ai/conversations/replyWriter.s
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
+import {readSupervisorEconomics} from "@/lib/data/supervisorEconomics.server";
 import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
@@ -142,6 +143,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
           ["Asked: "+String(b.question)+" Options: "+b.options.map(o=>o&&typeof o==="object"&&"label" in o&&"value" in o?String(o.label)+" ("+String(o.value)+")":"").join("; ")] : []).join(" ") })).filter(m => m.content);
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf),
+      readEconomics:async()=>readSupervisorEconomics(await createServerSupabaseClient(),scope.businessId,identity.asOf),
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       proposals:{proposePriceChange:async({productId,newPriceCents})=>{

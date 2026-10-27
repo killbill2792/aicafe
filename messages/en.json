@@ -949,7 +949,8 @@
     "payrollMonthlyInvalid": "Enter a valid amount with up to two decimals.",
     "payrollMonthlySave": "Save monthly payroll costs",
     "payrollMonthlySaved": "Saved as an owner estimate.",
-    "payrollMonthlySaveFailed": "Could not save monthly payroll costs."  },
+    "payrollMonthlySaveFailed": "Could not save monthly payroll costs."
+  },
   "More": {
     "toastConnect": "Connect Toast",
     "title": "More",
@@ -1002,7 +1003,8 @@
     "monthlyAmountEstimated": "{amount} a month (includes estimates)",
     "toastDaysLook": "{count} days need a look",
     "notConnected": "Connect your register",
-    "connectedSince": "Connected · synced {time}"
+    "connectedSince": "Connected · synced {time}",
+    "financialAssumptions": "Financial assumptions"
   },
   "BreakEven": {
     "title": "Break-even plan",
@@ -3324,5 +3326,18 @@
     "receiptTotal": "Receipt total",
     "receiptIncomplete": "Review the vendor, receipt total, and line cost before approval.",
     "reviewOnInventory": "Review on Inventory page"
+  },
+  "SupervisorFinancialSettings": {
+    "title": "Financial assumptions",
+    "subtitle": "For better estimates in Money, Menu, Plan and chat",
+    "ingredient": "Typical ingredient cost (% of sales)",
+    "ingredientHint": "Used only when the recipes and sold-item costs cannot prove the rate. Leave blank if unknown.",
+    "monthlyPayroll": "Other monthly payroll costs ($)",
+    "monthlyPayrollHint": "Extra salaries, benefits or payroll costs NOT already included in clocked wages or estimated employer tax. Added once; never replaces imported wages.",
+    "save": "Save financial settings",
+    "saving": "Saving…",
+    "saved": "Financial settings saved",
+    "failed": "Check the values and try again",
+    "none": "Not set"
   }
 }

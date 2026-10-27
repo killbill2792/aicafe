@@ -32,6 +32,10 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.redirect(`${origin}/${locale}/login`);
   const businessId = await getActiveBusinessId(user.id);
+  const {data:member,error:membershipError}=await supabase.from("memberships")
+    .select("role").eq("user_id",user.id).eq("business_id",businessId).maybeSingle();
+  if(membershipError||member?.role!=="owner")
+    return redirectHome("?error=owner_required");
 
   try {
     const token = await exchangeCodeForToken(code);
@@ -43,10 +47,13 @@ export async function GET(request: Request) {
     });
     const locationsData = await locationsRes.json();
     const squareLocationId: string | undefined = locationsData?.locations?.[0]?.id;
-    const locationName: string = locationsData?.locations?.[0]?.name ?? "Main";
+    const posLocation=locationsData?.locations?.[0];
+    const locationName: string = posLocation?.name ?? "Main";
     if (!squareLocationId) throw new Error("Square account has no locations");
 
-    const { data: location } = await supabase
+    // A global uniqueness constraint protects another café's location even
+    // though RLS correctly prevents querying another owner's private rows.
+     const { data: location,error:locationError } = await supabase
       .from("locations")
       .upsert(
         { business_id: businessId, name: locationName, pos_location_id: squareLocationId },
@@ -54,8 +61,12 @@ export async function GET(request: Request) {
       )
       .select("id")
       .single();
-
-    await supabase.from("pos_connections").upsert(
+    if(locationError){
+      if(locationError.code==="23505")return redirectHome("?error=square_location_already_linked");
+      throw locationError;
+    }
+    if(!location)throw new Error("Square location could not be linked");
+     const {error:connectionError}=await supabase.from("pos_connections").upsert(
       {
         business_id: businessId,
         provider: "square",
@@ -64,10 +75,44 @@ export async function GET(request: Request) {
         refresh_token_enc: encryptToken(token.refresh_token),
         token_expires_at: token.expires_at,
         status: "active",
-        last_synced_at: new Date().toISOString(),
+        // Connection is authorized, but sales are not proven synced until
+        // syncPosData finishes; old backfills must never survive re-link.
+        last_synced_at: null,
+        backfill_completed_at: null,
       },
       { onConflict: "business_id,provider" },
     );
+
+    if(connectionError)throw connectionError;
+
+    // POS-local timezone and hours fill unset café values only. Owner-provided
+    // hours are never overwritten; conflicting POS values need explicit review.
+    const {data:currentBusiness,error:businessLoadError}=await supabase.from("businesses")
+      .select("timezone").eq("id",businessId).single();
+    if(businessLoadError)throw businessLoadError;
+    if(!currentBusiness?.timezone&&posLocation?.timezone){
+      const {error:tzError}=await supabase.from("businesses").update({
+        timezone:posLocation.timezone
+      }).eq("id",businessId).is("timezone",null);
+      if(tzError)throw tzError;
+    }
+    const {data:site,error:siteError}=await supabase.from("locations").select("open_hours")
+      .eq("id",location.id).eq("business_id",businessId).single();
+    if(siteError)throw siteError;
+    if(!site?.open_hours&&posLocation?.business_hours?.periods){
+      const days=["sun","mon","tue","wed","thu","fri","sat"];
+      const hours:Record<string,Array<[string,string]>>={};
+      for(const period of posLocation.business_hours.periods){
+        const key=String(period.day_of_week??"").trim().toLowerCase().slice(0,3);
+        if(!days.includes(key))continue;
+        if(!period.start_local_time||!period.end_local_time)continue;
+        (hours[key]??=[]).push([period.start_local_time.slice(0,5),period.end_local_time.slice(0,5)]);
+      }
+      const {error:hoursError}=await supabase.from("locations").update({
+        open_hours:hours
+      }).eq("id",location.id).eq("business_id",businessId).is("open_hours",null);
+      if(hoursError)throw hoursError;
+    }
 
     // Backfill: last 90 days (docs/06-integrations.md). Runs inline for now — move to a background
     // job before pilot if 90 days of real order volume risks the route handler's time limit.
@@ -84,11 +129,16 @@ export async function GET(request: Request) {
       until,
     });
 
-    await supabase.from("pos_connections").update({ backfill_completed_at: new Date().toISOString() }).eq("business_id", businessId).eq("provider", "square");
+    const {error:completedError}=await supabase.from("pos_connections").update({
+      backfill_completed_at:new Date().toISOString(),last_synced_at:new Date().toISOString()
+    }).eq("business_id",businessId).eq("provider","square");
+    if(completedError)throw completedError;
 
     return NextResponse.redirect(`${origin}/${locale}/onboarding?step=2`);
-  } catch (err) {
-    console.error("[square/callback] failed", err);
+  } catch {
+    // Errors may include Square's authorization details. Log only the safe
+    // category; never tokens, claims, or provider response bodies.
+    console.error("[square/callback] connection_failed");
     return redirectHome("?error=connection_failed");
   }
 }

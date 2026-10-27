@@ -97,6 +97,9 @@ export const SOURCE_SURFACES = {
   "lib/data/schedulingDraftInputs.server.ts":{
     readSchedulingDraftInputs:{restricted:"Owner-authenticated, business-scoped agent-only scheduling draft reader (employees, wages, availability, preferences, location); not a P1 generic selector"},
   },
+  "lib/data/supervisorEconomics.server.ts":{
+    readSupervisorEconomics:{restricted:"Authenticated authorized-business read of Menu pricing inputs, bills, recorded timecards and configured settings. Not a generic P1 metric query."},
+  },
   "lib/data/agentReadSources.server.ts":{
     agentSourceReaders:{restricted:"Owner-authenticated, business-scoped agent-only hours and ingredient history reader; not a P1 generic selector"},
   },

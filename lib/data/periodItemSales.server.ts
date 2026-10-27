@@ -16,7 +16,12 @@ export async function readPeriodItemSales(
     .select("provider,last_synced_at,backfill_completed_at")
     .eq("business_id",businessId).eq("status","active");
   if(connectionError)return unknown();
-  if(!resolveItemSalesCoverage(connections??[],period).covered)return unknown();
+  const {data:days,error:dayError}=await supabase.from("daily_rollups")
+    .select("business_date,sales_data_status").eq("business_id",businessId)
+    .gte("business_date",period.from).lte("business_date",period.to);
+  if(dayError)return unknown();
+  if(!resolveItemSalesCoverage(connections??[],period,(days??[])
+    .filter(day=>day.sales_data_status==="actual").map(day=>day.business_date)).covered)return unknown();
   const {data,error}=await supabase.rpc("menu_item_quantities_sold",{
     p_business_id:businessId,p_from:period.from,p_to:period.to,
   });

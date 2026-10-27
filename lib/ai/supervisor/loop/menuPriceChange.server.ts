@@ -2,7 +2,6 @@ import "server-only";
 import {revalidatePath} from "next/cache";
 import {z} from "zod";
 import {diffFieldSchema,diffFields} from "@/lib/format/values";
-import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
@@ -37,13 +36,18 @@ export const menuPriceChangeCapability=registerLoopCapability({
     const {data:membership}=await client.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle();
     const {data:business}=await client.from("businesses").select("currency,is_demo").eq("id",scope.businessId).maybeSingle();
     if(membership?.role!=="owner"||business?.is_demo||business?.currency!=="USD")throw new ToolError("unauthorized");
-    const matches=(await getMenuControlCenter()).filter(item=>item.active&&item.id===input.productId);
-    if(matches.length!==1)throw new ToolError("not_found");
-    const item=matches[0];
-    if(item.priceCents===input.newPriceCents)throw new ToolError("unchanged");
-    const preview=diffFields([{field:"price",label:"Price",value:{kind:"money",cents:item.priceCents}}],
+    // Price proposals need one current menu row, not the entire Menu control
+    // center (which also loads history, markets and every item sale). A failing
+    // unrelated catalog query must never prevent drafting an approval card.
+    const {data:item,error:itemError}=await client.from("menu_items")
+      .select("id,name,price_cents,is_active").eq("business_id",scope.businessId)
+      .eq("id",input.productId).eq("is_active",true).maybeSingle();
+    if(itemError)throw new ToolError("write_failed","Price preview could not read this item. Please retry.");
+    if(!item)throw new ToolError("not_found");
+    if(Number(item.price_cents)===input.newPriceCents)throw new ToolError("unchanged");
+    const preview=diffFields([{field:"price",label:"Price",value:{kind:"money",cents:Number(item.price_cents)}}],
       [{field:"price",label:"Price",value:{kind:"money",cents:input.newPriceCents}}]);
-    return {effect:{productId:item.id,productName:item.name,oldPriceCents:item.priceCents,
+    return {effect:{productId:item.id,productName:item.name,oldPriceCents:Number(item.price_cents),
       newPriceCents:input.newPriceCents,currency:"USD",preview},
       baseline:{source:"menu_items",status:"actual"},
       monitorSpec:{durationDays:7,metricScope:item.id}};

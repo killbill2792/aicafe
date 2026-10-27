@@ -19,6 +19,10 @@
     {
       "path": "/api/cron/toast-sync",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/square-sync",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

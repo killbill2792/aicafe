@@ -16,12 +16,12 @@ import { connectedActualFactFromOrders, setProcessingFeeCandidateEligibility, up
  */
 export async function syncPosData(
   supabase: SupabaseClient,
-  params: { businessId: string; locationId: string; timezone: string; adapter: PosAdapter; since: Date; until: Date },
-): Promise<{ ordersSynced: number; timecardsSynced: number; affectedDates: string[] }> {
+  params: { businessId: string; locationId: string; timezone: string; adapter: PosAdapter; since: Date; until: Date; allowCatalogArchive?:boolean },
+): Promise<{ ordersSynced: number; timecardsSynced: number; affectedDates: string[]; scheduledShiftsStatus:"not_supported"|"synced"|"unavailable" }> {
   const { businessId, locationId, timezone, adapter, since, until } = params;
   const affectedDates = new Set<string>();
 
-  await syncCanonicalCatalog(supabase, businessId, adapter);
+  await syncCanonicalCatalog(supabase, businessId, adapter, {archiveMissing:params.allowCatalogArchive});
 
   const [orders, employees, timecards] = await Promise.all([
     adapter.fetchOrders({ since, until }),
@@ -79,25 +79,19 @@ export async function syncPosData(
 
     if (orderError || !existing) throw orderError ?? new Error("POS order persistence failed");
 
-    const {error:lineDeleteError}=await supabase.from("order_lines").delete().eq("order_id", existing.id);
-    if(lineDeleteError)throw lineDeleteError;
-    if (order.lines.length > 0) {
-      const {error:lineInsertError}=await supabase.from("order_lines").insert(
-        order.lines.map((line) => ({
-          order_id: existing.id,
-          pos_item_id: line.posItemId,
-          menu_item_id: line.posItemId ? menuItemIdByPos.get(line.posItemId) ?? null : null,
-          name: line.name,
-          quantity: line.quantity,
-          net_sales_cents: line.netSalesCents,
-          modifiers: line.modifiers,
-          voided: line.voided,
-          voided_by: line.voidedBy,
-          category:line.category??null,
-        })),
-      );
-      if(lineInsertError)throw lineInsertError;
-    }
+    // SQL RPC replaces the whole set atomically. If one new line is bad, the
+    // previous line set survives; an interrupted sync never drops its contents.
+    const {error:linesError}=await supabase.rpc("pos_replace_order_lines",{
+      p_business_id:businessId,p_order_id:existing.id,
+      p_lines:order.lines.map(line=>({
+        pos_item_id:line.posItemId,
+        menu_item_id:line.posItemId?menuItemIdByPos.get(line.posItemId)??null:null,
+        name:line.name,quantity:line.quantity,net_sales_cents:line.netSalesCents,
+        modifiers:line.modifiers,voided:line.voided,voided_by:line.voidedBy,
+        category:line.category??null,
+      }))
+    });
+    if(linesError)throw linesError;
   }
 
   // Reconcile connected actual attendance into an existing owner/AI-Cafe row for the same
@@ -205,5 +199,34 @@ export async function syncPosData(
   }
 
   await rebuildSalesFactRollups(supabase,businessId,[...affectedDates],timezone);
-  return { ordersSynced: orders.length, timecardsSynced: timecards.length, affectedDates: [...affectedDates] };
+  // Published schedules are optional evidence, not a prerequisite for importing paid
+  // attendance or sales. Record a safe failure category and retry on the next tick.
+  let scheduledShiftsStatus:"not_supported"|"synced"|"unavailable"="not_supported";
+  if(adapter.fetchPosScheduledShifts){
+    try{
+      const scheduledShifts=await adapter.fetchPosScheduledShifts({
+        since:new Date(Date.now()-7*86400000),until:new Date(Date.now()+14*86400000)
+      });
+      if(scheduledShifts.length){
+        const {error}=await supabase.from("pos_scheduled_shifts").upsert(
+          scheduledShifts.map(s=>({business_id:businessId,location_id:locationId,
+            provider:adapter.provider,external_shift_id:s.externalShiftId,
+            external_employee_id:s.externalEmployeeId,external_job_id:s.externalJobId,
+            scheduled_start:s.scheduledStart,scheduled_end:s.scheduledEnd,deleted:s.deleted,
+            last_synced_at:new Date().toISOString()})),
+          {onConflict:"business_id,provider,external_shift_id"});
+        if(error)throw error;
+      }
+      scheduledShiftsStatus="synced";
+    }catch(error){
+      scheduledShiftsStatus="unavailable";
+      // Never log provider response bodies, credentials or raw third-party errors.
+      console.warn("[pos/sync] optional schedule unavailable",{
+        provider:adapter.provider,category:error instanceof Error&&
+          /(?:401|403|permission|forbidden)/i.test(error.message)?"permission":"sync_failed"
+      });
+    }
+  }
+  return { ordersSynced: orders.length, timecardsSynced: timecards.length,
+    affectedDates: [...affectedDates],scheduledShiftsStatus };
 }

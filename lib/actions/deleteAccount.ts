@@ -24,17 +24,23 @@ export async function deleteAccount(): Promise<{ ok: boolean; error?: string }> 
 
   const admin = createAdminSupabaseClient();
 
-  const { data: memberships } = await supabase.from("memberships").select("business_id, businesses(is_demo)").eq("user_id", user.id);
+  const { data: memberships } = await supabase.from("memberships").select("business_id, role, businesses(is_demo)").eq("user_id", user.id);
   const ownBusinessIds = (memberships ?? [])
     .filter((m) => {
       const b = m.businesses as unknown as { is_demo: boolean } | { is_demo: boolean }[] | null;
       const isDemo = Array.isArray(b) ? b[0]?.is_demo : b?.is_demo;
-      return isDemo === false;
+      return isDemo === false && m.role === "owner";
     })
     .map((m) => m.business_id)
     .filter((id) => id !== DEMO_BUSINESS_ID);
 
   for (const businessId of ownBusinessIds) {
+    // Deleting an account must never erase a different owner’s shared café.
+    const {data:otherOwners,error:coOwnerError}=await admin.from("memberships")
+      .select("user_id").eq("business_id",businessId).eq("role","owner")
+      .neq("user_id",user.id).limit(1);
+    if(coOwnerError)return {ok:false,error:"Could not verify café ownership. Please retry."};
+    if((otherOwners??[]).length>0)continue;
     const { data: squareConnection } = await admin
       .from("pos_connections")
       .select("access_token_enc")
@@ -69,7 +75,11 @@ export async function deleteAccount(): Promise<{ ok: boolean; error?: string }> 
 
     // Cascades to every child row (orders, expenses, timecards, ...) per docs/04-data-model.md's
     // `on delete cascade` foreign keys.
-    await admin.from("businesses").delete().eq("id", businessId);
+    const {error:deleteError}=await admin.from("businesses").delete().eq("id", businessId);
+    if(deleteError){
+      console.error("[deleteAccount] business deletion failed",{code:deleteError.code});
+      return {ok:false,error:"Café data could not be deleted. Your account remains available; please retry."};
+    }
   }
 
   const { error: authError } = await admin.auth.admin.deleteUser(user.id);
