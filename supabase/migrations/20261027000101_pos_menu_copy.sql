@@ -309,3 +309,71 @@ begin
 end $$;
 revoke all on function public.toast_business_scope_summary(uuid) from public,anon;
 grant execute on function public.toast_business_scope_summary(uuid) to authenticated;
+
+-- Atomic owner resolutions for incoming POS staff/attendance evidence.
+-- Never let the client assign a POS identity across cafés or override a paid
+-- shift by a generic "resolve" click.
+create or replace function public.pos_resolve_staff_import_review(
+ p_business_id uuid,p_review_type text,p_source_key text,
+ p_decision text,p_employee_id uuid default null)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare v_review public.pos_import_reviews%rowtype;
+ v_restaurant uuid;v_employee uuid;
+begin
+ if auth.role()<>'authenticated' or not public.scheduling_is_owner(p_business_id)
+ then raise exception 'staff review unauthorized' using errcode='42501';end if;
+ select * into v_review from public.pos_import_reviews
+  where business_id=p_business_id and provider='toast'
+  and review_type=p_review_type and source_key=p_source_key
+  and status='needs_owner' for update;
+ if not found then return false;end if;
+ if p_review_type in ('staff_identity','unlinked_timecard') then
+  if p_decision<>'link_existing' or p_employee_id is null then return false;end if;
+  if not exists(select 1 from public.employees
+   where business_id=p_business_id and id=p_employee_id)
+  then return false;end if;
+  if p_review_type='staff_identity' then
+   if not (v_review.detail->'candidates') ? p_employee_id::text then
+    return false;
+   end if;
+   v_restaurant:=split_part(p_source_key,':',2)::uuid;
+   update public.employees set pos_team_member_id=p_source_key
+    where business_id=p_business_id and id=p_employee_id
+     and (pos_team_member_id is null or pos_team_member_id=p_source_key);
+   if not found then return false;end if;
+   update public.toast_employee_directory set linked_employee_id=p_employee_id,
+    linked_at=now()
+    where business_id=p_business_id and restaurant_guid=v_restaurant
+     and employee_guid=split_part(p_source_key,':',3)::uuid
+     and (linked_employee_id is null or linked_employee_id=p_employee_id);
+   if not found then return false;end if;
+  else
+   v_restaurant:=split_part(p_source_key,':',2)::uuid;
+   select d.linked_employee_id into v_employee
+    from public.toast_labor_entries l join public.toast_employee_directory d
+      on d.business_id=l.business_id and d.restaurant_guid=l.restaurant_guid
+      and d.employee_guid=l.external_employee_id
+    where l.business_id=p_business_id and l.restaurant_guid=v_restaurant
+      and l.external_time_entry_id=split_part(p_source_key,':',3)::uuid;
+   if v_employee is distinct from p_employee_id then return false;end if;
+  end if;
+ elsif p_review_type='shift_corrected' then
+  if p_decision='accept_toast' then
+   update public.timecards set pos_owner_edited=false
+    where business_id=p_business_id and pos_timecard_id=p_source_key
+     and source_provider='Toast';
+   if not found then return false;end if;
+  elsif p_decision<>'keep_owner' then return false;end if;
+ elsif p_review_type='overlapping_timecard' then
+  if p_decision<>'keep_owner' then return false;end if;
+ else return false;end if;
+ update public.pos_import_reviews set status='resolved'
+  where business_id=p_business_id and provider='toast'
+   and review_type=p_review_type and source_key=p_source_key
+   and status='needs_owner';
+ return found;
+end $$;
+revoke all on function public.pos_resolve_staff_import_review(uuid,text,text,text,uuid)
+ from public,anon,service_role;
+grant execute on function public.pos_resolve_staff_import_review(uuid,text,text,text,uuid)
+ to authenticated;
