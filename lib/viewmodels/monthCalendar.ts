@@ -2,6 +2,7 @@ import { computeCostRecovery, hasSalesCoverage, roundHalfUpToCent, runningCostsF
 import { regularHoursStateForDate } from "@/lib/business/openHours";
 import type { MonthCalendarData } from "@/lib/data/monthCalendar.server";
 import { dayContributionCents, recoveryBucketsFromAmounts } from "./costRecoveryShared";
+import { laborKnown } from "@/lib/calc";
 import { previousMonthKey } from "./period";
 import { profitTone, type ProfitTone } from "./profitTone";
 
@@ -82,7 +83,7 @@ export function buildMonthCalendarViewModel(params: {
 
     // Only explicit sales coverage makes this an actual performance day. A staff-only rollup is
     // still Missing sales and must never become a red "loss" day.
-    if (dayFacts && hasSalesCoverage(dayFacts) && dayFacts.wagesCents!==null && dayFacts.staffTaxCents!==null) {
+    if (dayFacts && hasSalesCoverage(dayFacts) && laborKnown(dayFacts)) {
       const runningCostShareCents = roundHalfUpToCent(runningCostsForPeriodCents(categoryAmounts, date, date));
       const staffCents = dayFacts.wagesCents + dayFacts.staffTaxCents;
       const ownerProfitCents = dayFacts.netSalesCents - dayFacts.ingredientsCents - staffCents - dayFacts.cardFeesCents - runningCostShareCents;
