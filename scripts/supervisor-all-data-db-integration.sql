@@ -69,6 +69,10 @@ declare
  toastRecipeId uuid:=gen_random_uuid();
  pantryRecipeId uuid:=gen_random_uuid();
  foreignRecipeId uuid:=gen_random_uuid();
+ linkedMenuItemId uuid:=gen_random_uuid();
+ linkedToastItemGuid uuid:=gen_random_uuid();
+ linkedEmployeeId uuid:=gen_random_uuid();
+ linkedToastEmployeeGuid uuid:=gen_random_uuid();
  usage jsonb;
 begin
  insert into public.businesses(id,name) values(a,'Migration A'),(b,'Migration B');
@@ -122,6 +126,16 @@ begin
  values(toastRecipeId,a,'toast-test-modifier','Toast linked recipe'),
        (pantryRecipeId,a,'pantry-test-modifier','Pantry linked recipe'),
        (foreignRecipeId,b,'other-cafe-modifier','Another cafe recipe');
+ insert into public.menu_items(id,business_id,name)
+ values(linkedMenuItemId,a,'Toast catalog linked drink');
+ insert into public.employees(id,business_id,display_name,active)
+ values(linkedEmployeeId,a,'Linked Toast staff',true);
+ insert into public.toast_employee_directory(
+  business_id,restaurant_guid,employee_guid,display_name,linked_employee_id,linked_at)
+ values(a,ga,linkedToastEmployeeGuid,'Linked Toast staff',linkedEmployeeId,now());
+ insert into public.toast_catalog_facts(
+  business_id,restaurant_guid,kind,provider_guid,name,linked_menu_item_id)
+ values(a,ga,'item',linkedToastItemGuid,'Linked Toast item',linkedMenuItemId);
  insert into public.toast_catalog_facts(
   business_id,restaurant_guid,kind,provider_guid,name,linked_modifier_recipe_id)
  values(a,ga,'modifier',toastModifierId,'Linked Toast modifier',toastRecipeId),

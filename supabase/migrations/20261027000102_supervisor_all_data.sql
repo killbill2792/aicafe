@@ -67,6 +67,29 @@ begin
  end loop;
 end $cascade$;
 
+-- Legacy Toast staging points at canonical rows with ON DELETE RESTRICT.
+-- Those links can block owner café deletion after business-owned canonical
+-- employees, menu items and modifier recipes are cascaded. Repoint nullable
+-- catalog identities to SET NULL (preserve the catalog and its price history)
+-- and cascade employee directory identities, whose linked_at check requires
+-- the directory row to disappear with the canonical employee.
+-- Reapplying migration 102 replaces each constraint with the same definition.
+alter table public.toast_catalog_facts
+ drop constraint if exists toast_catalog_facts_linked_menu_item_id_fkey;
+alter table public.toast_catalog_facts
+ add constraint toast_catalog_facts_linked_menu_item_id_fkey
+ foreign key(linked_menu_item_id) references public.menu_items(id) on delete set null;
+alter table public.toast_catalog_facts
+ drop constraint if exists toast_catalog_facts_linked_modifier_recipe_id_fkey;
+alter table public.toast_catalog_facts
+ add constraint toast_catalog_facts_linked_modifier_recipe_id_fkey
+ foreign key(linked_modifier_recipe_id) references public.modifier_recipes(id) on delete set null;
+alter table public.toast_employee_directory
+ drop constraint if exists toast_employee_directory_linked_employee_id_fkey;
+alter table public.toast_employee_directory
+ add constraint toast_employee_directory_linked_employee_id_fkey
+ foreign key(linked_employee_id) references public.employees(id) on delete cascade;
+
 -- Preserve ALL existing import logic and update only the order's canonical extras.
 create or replace function public.toast_import_day(
  p_business_id uuid,p_location_id uuid,p_restaurant_guid uuid,
