@@ -12,12 +12,10 @@ vi.mock("@/lib/supabase/server",()=>({
     auth:{getUser:async()=>({data:{user:{id:"owner"}}})},
     from:(table:string)=>{
       if(table==="memberships"){
-        const query={
-          select:()=>query,eq:()=>query,
+        return {select:()=>({eq:()=>({eq:()=>({eq:()=>({
           maybeSingle:async()=>({data:{role:"owner",
             businesses:{is_demo:false,timezone:"UTC"}},error:null}),
-        };
-        return query;
+        })})})})};
       }
       if(table==="businesses")return {update:()=>({
         eq:async()=>({error:null})})};
@@ -28,9 +26,9 @@ vi.mock("@/lib/supabase/server",()=>({
           select:()=>read,
           update:(payload:Record<string,unknown>)=>{
             state.taxUpdates.push(payload);
-            const write={eq:()=>write,
-              select:async()=>({data:[{business_date:"2026-10-23"}],error:null})};
-            return write;
+            return {eq:()=>({eq:()=>({eq:()=>({eq:()=>({
+              select:async()=>({data:[{business_date:"2026-10-23"}],error:null}),
+            })})})})};
           },
         };
       }
