@@ -40,11 +40,11 @@ begin
 end $$;
 -- A missing wage round-trips as SQL NULL; there must be no forced-zero fallback.
 do $$
-declare column_default text;
+declare v_default text;
 begin
- select column_default into column_default from information_schema.columns
+ select c.column_default into v_default from information_schema.columns c
  where table_schema='public' and table_name='timecards' and column_name='hourly_wage_cents';
- if column_default is not null then
+ if v_default is not null then
   raise exception 'timecards hourly_wage_cents must not have a synthetic default';
  end if;
 end $$;

@@ -102,6 +102,15 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
     businessId,menuItemId:itemId,priceCents:item.priceCents,sourceProvider:adapter.provider
    });
   }
+  if(row&&item.priceCents===null&&row.price_cents!==null){
+   // Toast OPEN_PRICE means unknown, not a stale historical fixed price.
+   const {error:clearPriceError}=await db.from("menu_items").update({
+    price_cents:null
+   }).eq("business_id",businessId).eq("id",itemId);
+   resultError(clearPriceError);
+   const updated=byId.get(itemId);if(updated)updated.price_cents=null;
+   changed++;
+  }
   if(row&&item.priceCents!==null&&row.price_cents!==item.priceCents){
    await setCanonicalMenuPrice(db,{businessId,menuItemId:itemId,
     priceCents:item.priceCents,sourceType:adapter.provider==="csv"?"imported":"connected_pos",
