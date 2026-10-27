@@ -1,12 +1,13 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
-const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),
+const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstMenu:vi.fn(),
  refresh:vi.fn(),costs:vi.fn(),request:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
 vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional}));
+vi.mock("./firstCatalog",()=>({syncToastFirstCatalogIfMissing:m.firstMenu}));
 vi.mock("./restaurantInfo",()=>({refreshToastRestaurantInfo:m.refresh}));
 vi.mock("./rollupRetries",()=>({retryToastRollupRefreshes:m.costs}));
 vi.mock("./client",()=>{
@@ -120,6 +121,7 @@ beforeEach(()=>{
  for(const fn of Object.values(m))fn.mockReset();
  m.request.mockResolvedValue([]);
  m.optional.mockResolvedValue({menu:"skipped",labor:"skipped"});
+ m.firstMenu.mockResolvedValue(false);
  m.costs.mockResolvedValue({processed:0,deferred:0});
  m.reconcile.mockResolvedValue(0);
  m.refresh.mockResolvedValue(null);
@@ -130,6 +132,19 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   const f=makeDB();
   expect(await runToastSyncTick(f.db,now,Date.now()+60000)).toEqual({disabled:true});
   expect(f.calls).toEqual([]);
+ });
+ it("runs first-ever catalog before importing any sale and preserves sales after a menu failure",async()=>{
+  const f=makeDB(),order:string[]=[];
+  m.firstMenu.mockImplementation(async()=>{order.push("menu");throw new ToastApiError("unavailable");});
+  const importImpl=m.importDay.getMockImplementation()!;
+  m.importDay.mockImplementation(async(...args:unknown[])=>{
+    order.push("sales");return importImpl(...args);
+  });
+  const result=await runToastSyncTick(f.db,now,Date.now()+60000) as {errors:number};
+  expect(order[0]).toBe("menu");
+  expect(order).toContain("sales");
+  expect(f.imports).toContain(d);
+  expect(result.errors).toBeGreaterThanOrEqual(1);
  });
  it("releases a nonce in finally, and only imports the D-1 date once",async()=>{
   const f=makeDB();
