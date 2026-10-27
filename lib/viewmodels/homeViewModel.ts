@@ -7,6 +7,7 @@ import {
   ratio,
   roundHalfUpToCent,
   staffCostCentsForPeriod,
+  laborKnown,
   sumCents,
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
@@ -87,7 +88,7 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const drinksNeeded=avgDailyStaffCost===null?0:
     drinksNeededPerDay(dailyCostsToCoverCents(runningPerDay,avgDailyStaffCost),avgMoneyLeft);
 
-  const staffCostToday = today.wagesCents===null||today.staffTaxCents===null?null:
+  const staffCostToday = !laborKnown(today)?null:
     today.wagesCents+today.staffTaxCents;
   const staffCostPerMinuteNow=staffCostToday===null?null:staffCostToday/(11.5*60); // avg operating hours/day; refined once live timecards land
 
