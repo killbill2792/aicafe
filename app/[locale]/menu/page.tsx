@@ -61,7 +61,7 @@ export default async function MenuPage() {
             </div>}
           </article>)}
         </div>
-      </section>
+      </section>}
     </PageShell>
   );
 }
