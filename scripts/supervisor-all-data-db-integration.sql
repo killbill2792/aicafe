@@ -62,8 +62,27 @@ declare
  la uuid:=gen_random_uuid();lb uuid:=gen_random_uuid();
  ga uuid:=gen_random_uuid();gb uuid:=gen_random_uuid();
  duplicateBlocked boolean;
+ orderId uuid:=gen_random_uuid();
 begin
  insert into public.businesses(id,name) values(a,'Migration A'),(b,'Migration B');
+ -- A malformed resync must roll back replacement and keep old item details.
+ insert into public.orders(id,business_id,pos_order_id,closed_at,business_date,
+   gross_sales_cents,net_sales_cents)
+ values(orderId,a,'square:rollback-check',now(),'2026-10-25',100,100);
+ insert into public.order_lines(order_id,name,quantity,net_sales_cents)
+ values(orderId,'Original item',1,100);
+ begin
+  perform public.pos_replace_order_lines(a,orderId,
+   '[{"name":"Replacement","menu_item_id":"not-a-uuid","quantity":1,"net_sales_cents":200}]'::jsonb);
+  raise exception 'Invalid POS item accepted';
+ exception when invalid_text_representation then null;
+ end;
+ if not exists(select 1 from public.order_lines
+   where order_id=orderId and name='Original item')
+ then raise exception 'POS order-line replacement lost existing rows';end if;
+ perform public.pos_replace_order_lines(a,orderId,'[]'::jsonb);
+ if exists(select 1 from public.order_lines where order_id=orderId)
+ then raise exception 'POS zero-line replacement did not clear previous lines';end if;
  insert into public.locations(id,business_id,name,pos_location_id)
  values(la,a,'A Location','square-'||a::text),(lb,b,'B Location','square-'||b::text);
  duplicateBlocked:=false;

@@ -427,3 +427,37 @@ begin
    check(provider in ('toast','square'));
  end if;
 end $scheduled$;
+
+
+-- Square and other shared adapters must never erase previously imported
+-- order lines if one replacement row fails validation. Postgres runs all
+-- statements in this RPC in one transaction and rolls them back together.
+-- SECURITY INVOKER preserves the caller's RLS (owners) or service role.
+create or replace function public.pos_replace_order_lines(
+ p_business_id uuid,p_order_id uuid,p_lines jsonb)
+returns void language plpgsql security invoker set search_path=public as $lines$
+begin
+ if p_business_id is null or p_order_id is null or
+   jsonb_typeof(p_lines) is distinct from 'array' or
+   jsonb_array_length(p_lines)>2000 then
+  raise exception 'invalid POS order-line replacement';
+ end if;
+ if not exists(select 1 from public.orders
+   where id=p_order_id and business_id=p_business_id) then
+  raise exception 'POS order is not available in this café';
+ end if;
+ delete from public.order_lines where order_id=p_order_id;
+ insert into public.order_lines(
+   order_id,pos_item_id,menu_item_id,name,quantity,net_sales_cents,
+   modifiers,voided,voided_by,category)
+ select p_order_id,lines.pos_item_id,lines.menu_item_id,lines.name,
+   lines.quantity,lines.net_sales_cents,coalesce(lines.modifiers,'[]'::jsonb),
+   coalesce(lines.voided,false),lines.voided_by,lines.category
+ from jsonb_to_recordset(p_lines) as lines(
+   pos_item_id text,menu_item_id uuid,name text,quantity numeric,
+   net_sales_cents bigint,modifiers jsonb,voided boolean,voided_by text,category text);
+end $lines$;
+revoke all on function public.pos_replace_order_lines(uuid,uuid,jsonb)
+ from public,anon,authenticated;
+grant execute on function public.pos_replace_order_lines(uuid,uuid,jsonb)
+ to authenticated,service_role;

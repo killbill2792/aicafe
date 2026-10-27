@@ -20,6 +20,7 @@ with expected(kind,relation_name,object_name) as (
   ('function','','toast_import_day(uuid,uuid,uuid,date,jsonb,jsonb,uuid)'),
   ('function','','pantry_usage_sales_evidence(uuid,date,date)'),
   ('function','','square_claim_sync_lease(uuid,integer)'),
+  ('function','','pos_replace_order_lines(uuid,uuid,jsonb)'),
   ('constraint','businesses','businesses_target_ingredient_rate_guard'),
   ('constraint','businesses','businesses_ingredient_source_guard'),
   ('constraint','pos_scheduled_shifts','pos_scheduled_shifts_supported_provider')

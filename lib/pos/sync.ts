@@ -79,25 +79,19 @@ export async function syncPosData(
 
     if (orderError || !existing) throw orderError ?? new Error("POS order persistence failed");
 
-    const {error:lineDeleteError}=await supabase.from("order_lines").delete().eq("order_id", existing.id);
-    if(lineDeleteError)throw lineDeleteError;
-    if (order.lines.length > 0) {
-      const {error:lineInsertError}=await supabase.from("order_lines").insert(
-        order.lines.map((line) => ({
-          order_id: existing.id,
-          pos_item_id: line.posItemId,
-          menu_item_id: line.posItemId ? menuItemIdByPos.get(line.posItemId) ?? null : null,
-          name: line.name,
-          quantity: line.quantity,
-          net_sales_cents: line.netSalesCents,
-          modifiers: line.modifiers,
-          voided: line.voided,
-          voided_by: line.voidedBy,
-          category:line.category??null,
-        })),
-      );
-      if(lineInsertError)throw lineInsertError;
-    }
+    // SQL RPC replaces the whole set atomically. If one new line is bad, the
+    // previous line set survives; an interrupted sync never drops its contents.
+    const {error:linesError}=await supabase.rpc("pos_replace_order_lines",{
+      p_business_id:businessId,p_order_id:existing.id,
+      p_lines:order.lines.map(line=>({
+        pos_item_id:line.posItemId,
+        menu_item_id:line.posItemId?menuItemIdByPos.get(line.posItemId)??null:null,
+        name:line.name,quantity:line.quantity,net_sales_cents:line.netSalesCents,
+        modifiers:line.modifiers,voided:line.voided,voided_by:line.voidedBy,
+        category:line.category??null,
+      }))
+    });
+    if(linesError)throw linesError;
   }
 
   // Reconcile connected actual attendance into an existing owner/AI-Cafe row for the same
