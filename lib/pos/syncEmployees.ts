@@ -4,7 +4,8 @@ import type {PosAdapter,PosEmployee} from "./types";
 type EmployeeRow={id:string;display_name:string;pos_team_member_id:string|null;role:string|null;
  active:boolean;default_hourly_wage_cents:number|null;pos_display_name:string|null;
  pos_last_role:string|null;pos_last_wage_cents:number|null;pos_last_active:boolean|null};
-const normalize=(s:string)=>s.trim().normalize("NFKD").toLowerCase().replace(/\s+/g," ");
+const normalize=(s:string)=>s.trim().normalize("NFKD").toLocaleLowerCase()
+ .replace(/\p{M}/gu,"").replace(/[^\p{L}\p{N}]+/gu," ").trim();
 /** One employee importer for Square, Toast and future registers. Never erase owner edits. */
 export async function syncCanonicalEmployees(db:SupabaseClient,businessId:string,adapter:PosAdapter,
  provided?:PosEmployee[],options:{restaurantGuid?:string}={}){
