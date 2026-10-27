@@ -11,7 +11,7 @@ vi.mock("./operationalCopy",()=>({
  copyToastPublishedMenu:m.catalog,copyToastStaff:m.roster,copyToastAttendance:m.attendance
 }));
 vi.mock("./laborSync",()=>({syncToastLaborReadOnly:m.labor}));
-import {syncToastOptionalSources} from "./optionalSync";
+import {syncToastOptionalSources,ensureToastFirstCatalog} from "./optionalSync";
 import {ToastApiError} from "./client";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -19,15 +19,20 @@ const location="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const scope={business_id:business,restaurant_guid:restaurant,location_id:location,
  toast_time_zone:"America/Los_Angeles",closeout_hour:4};
 const now=new Date("2026-10-23T19:00:00-07:00");
-function mockDB(scopes:Record<string,boolean>){
+function mockDB(scopes:Record<string,boolean>,alreadyCopied=false){
+ let lastMenu=alreadyCopied?"2026-10-22T00:00:00Z":null;
  const writes:Array<Record<string,unknown>>=[];
  const db={
   from(table:string){
    const q={
     select(_columns:string){return q;},eq(_key:string,_value:unknown){return q;},
     async maybeSingle(){return {data:table==="toast_api_credentials"
-     ?{scopes_available:scopes}:null,error:null};},
-    async upsert(value:Record<string,unknown>){writes.push(value);return {error:null};}
+     ?{scopes_available:scopes}:table==="toast_optional_sync_state"
+      ?{menu_last_updated:lastMenu}:null,error:null};},
+    async upsert(value:Record<string,unknown>){
+      writes.push(value);
+      if(typeof value.menu_last_updated==="string")lastMenu=value.menu_last_updated;
+      return {error:null};}
    };return q;
   }
  };
@@ -45,6 +50,35 @@ beforeEach(()=>{
   return [];
  });
 });
+describe("first-time Toast catalog before sales",()=>{
+ it("imports the first menu once and stamps only after copy succeeds",async()=>{
+   const f=mockDB({menus:true});
+   const deadline=Date.now()+20000;
+   expect(await ensureToastFirstCatalog(f.db,scope,now,deadline)).toBe(true);
+   expect(m.catalog).toHaveBeenCalledTimes(1);
+   expect(f.writes).toContainEqual(expect.objectContaining({
+     menu_last_updated:"2026-10-23T00:00:00Z",
+     menu_checked_local_day:"2026-10-23",
+   }));
+   expect(await ensureToastFirstCatalog(f.db,scope,now,deadline)).toBe(false);
+   expect(m.catalog).toHaveBeenCalledTimes(1);
+ });
+ it("never performs initial menu copy on already stamped or denied locations",async()=>{
+   const copied=mockDB({menus:true},true);
+   const denied=mockDB({menus:false});
+   expect(await ensureToastFirstCatalog(copied.db,scope,now,Date.now()+20000)).toBe(false);
+   expect(await ensureToastFirstCatalog(denied.db,scope,now,Date.now()+20000)).toBe(false);
+   expect(m.catalog).not.toHaveBeenCalled();
+ });
+ it("does not stamp success after a failed catalog import",async()=>{
+   const f=mockDB({menus:true});
+   m.catalog.mockRejectedValueOnce(new ToastApiError("invalid_response"));
+   await expect(ensureToastFirstCatalog(f.db,scope,now,Date.now()+20000))
+     .rejects.toMatchObject({category:"invalid_response"});
+   expect(f.writes).toEqual([]);
+ });
+});
+
 describe("independent optional Toast source phases",()=>{
  it("a malformed menu response records the failure but does not block roster, labor, jobs or reasons",async()=>{
   const f=mockDB({menus:true,labor:true,config:true});
