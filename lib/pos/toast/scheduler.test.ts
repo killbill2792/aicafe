@@ -208,6 +208,36 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
    expect(f.imports[9]).toBe("2026-08-28");
   }finally{vi.useRealTimers();}
  });
+ it("imports missed queued daily runs newest first on the next tick without duplicates",async()=>{
+  const f=makeDB();
+  f.status.add(d); // The current closed day was already imported.
+  await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(f.imports).toEqual([]);
+
+  // Simulate daily jobs queued by earlier missed closeouts, oldest first.
+  for(const day of ["2026-10-19","2026-10-20"]){
+   f.runs.push({id:"missed-"+day,kind:"daily",state:"queued",
+    requested_from:day,requested_to:day,days_done:0,days_total:1,
+    cursor:{},resume_at:null});
+  }
+  const order:string[]=[];
+  const importDay=m.importDay.getMockImplementation()!;
+  m.importDay.mockImplementation(async(...args:unknown[])=>{
+   order.push("import:"+((args[1] as {businessDate:string}).businessDate));
+   return importDay(...args);
+  });
+  m.optional.mockImplementation(async()=>{order.push("optional");});
+  await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(order).toEqual(["optional","import:2026-10-20","import:2026-10-19"]);
+  expect(f.imports).toEqual(["2026-10-20","2026-10-19"]);
+  expect(f.runs.filter(r=>r.kind==="daily")).toEqual([
+   expect.objectContaining({state:"completed",days_done:1}),
+   expect.objectContaining({state:"completed",days_done:1})
+  ]);
+  await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(f.imports).toEqual(["2026-10-20","2026-10-19"]);
+  expect(new Set(f.imports).size).toBe(f.imports.length);
+ });
  it("a held lease prevents any provider read or writes",async()=>{
   const f=makeDB();f.setLease(false);
   const result=await runToastSyncTick(f.db,now,Date.now()+60000) as {acquired:number};
