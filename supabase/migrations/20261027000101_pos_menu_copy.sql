@@ -26,6 +26,8 @@ alter table public.modifier_recipes
  add column if not exists price_cents bigint,
  add column if not exists pos_group_id text,
  add column if not exists pos_group_name text,
+ add column if not exists pos_pricing_strategy text,
+ add column if not exists pos_metadata jsonb not null default '{}'::jsonb,
  add column if not exists is_active boolean not null default true,
  add column if not exists catalog_source text,
  add column if not exists catalog_last_synced_at timestamptz;
@@ -43,6 +45,7 @@ create table if not exists public.menu_item_modifier_groups(
  menu_item_id uuid not null references public.menu_items(id) on delete cascade,
  pos_group_id text not null,
  pos_group_name text,
+ pos_metadata jsonb not null default '{}'::jsonb,
  min_selections integer,
  max_selections integer,
  required boolean not null default false,
