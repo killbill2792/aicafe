@@ -1,5 +1,7 @@
 {
   "ToastConnect": {
+    "laborScopeMissing": "No hay acceso a los datos laborales de Toast. La sincronización del menú y las ventas puede continuar; las horas y los salarios requieren permiso de personal.",
+    "menuScopeMissing": "No hay acceso al menú de Toast. Las ventas pueden importarse; los productos se vincularán cuando se otorgue permiso al menú.",
     "reviewTitle": "Revisar correspondencias de personal y menú de Toast",
     "sourceRoster": "Personal de Toast",
     "sourceMenu": "Menú y modificadores de Toast",
