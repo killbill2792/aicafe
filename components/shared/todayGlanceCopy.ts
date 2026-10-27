@@ -19,6 +19,7 @@ export function todayGlanceCopy(
   const state = glance.bucketState;
 
   if (state.kind === "noSalesYet") return { caption: tCommon("noSalesToday"), icon: null };
+  if (state.kind === "costsUnknown") return { caption: t("ownerProfitWaiting"), icon: null };
   if (state.kind === "noProgressToday") return { caption: t("glanceNoProgressToday"), icon: null };
   if (state.kind === "noBills") return { caption: t("glanceNoBills"), icon: null };
 
