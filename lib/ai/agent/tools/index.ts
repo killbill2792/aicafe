@@ -167,7 +167,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       ownerCosts.value.monthlyCents:null;
     const unknownWageDates=labor?.available?
       labor.value.filter(day=>day.wagesCents===null).map(day=>day.date):[];
-    const observedToastWagesCents=labor?.available&&unknownWageDates.length===0&&
+    const observedLaborWagesCents=labor?.available&&unknownWageDates.length===0&&
       labor.value.every(day=>day.wagesCents!==null)?
       labor.value.reduce((total,day)=>total+day.wagesCents!,0):null;
     const costEvidence={
@@ -175,8 +175,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       ownerMonthlyPayrollExtrasCents,ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?
         null:"You told me" as const,
       ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"estimate",
-      observedToastWagesCents,
-      observedWageStatus:unknownWageDates.length?"unknown":"recorded",
+      observedLaborWagesCents,
+      observedWageStatus:!labor?.available?"unavailable":unknownWageDates.length?"unknown":"recorded",
     };
     if(!slice?.available)return {source:name,period,agentId:"olivia",
       missing:[...(slice?.quality.missingInputs??["toastPayrollRunsNotAvailable"]),
