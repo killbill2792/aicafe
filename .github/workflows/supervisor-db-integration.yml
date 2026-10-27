@@ -52,6 +52,10 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f supabase/migrations/20261027000102_supervisor_all_data.sql
+      - name: Verify dependent migration 101 catalog and nullable-wage SQL invariants
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/toast-pos-copy-sql-integration.sql
       - name: Verify financial columns, uniqueness, tenant boundaries and function grants
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
