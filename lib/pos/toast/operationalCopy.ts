@@ -1,5 +1,5 @@
 import "server-only";
-import {formatInTimeZone} from "date-fns-tz";
+import {affectedLocalDays} from "../timecardDay";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createToastAdapter} from "./adapter";
 import {stageToastCatalog,stageToastRoster} from "./operationalStaging";
@@ -28,11 +28,10 @@ export async function copyToastAttendance(db:SupabaseClient,p:ToastCopyScope,
  });
  if(error)throw new ToastApiError("unavailable");
  const dates=new Set<string>();
- const info=(data??{}) as {changedClockIns?:string[];changed?:number;skipped?:number};
- for(const stamp of info.changedClockIns??[]){
-  const date=new Date(stamp);
-  if(!Number.isFinite(date.getTime()))throw new ToastApiError("invalid_response");
-  dates.add(formatInTimeZone(date,p.timezone,"yyyy-MM-dd"));
+ const info=(data??{}) as {changedIntervals?:{start:string;end:string}[];changed?:number;skipped?:number};
+ for(const interval of info.changedIntervals??[]){
+  for(const day of affectedLocalDays(interval.start,interval.end,p.timezone))
+   dates.add(day);
  }
  for(const date of dates)await recomputeDailyRollup(db,p.businessId,date);
  return {changed:info.changed??0,skipped:info.skipped??0,affectedDates:[...dates]};
