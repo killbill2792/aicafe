@@ -64,3 +64,40 @@ export async function getUnpricedPublishedMenu():Promise<UnpricedPublishedItem[]
    })))
  }));
 }
+
+/** Detail-page read for priced and open-price items alike, including every
+ * referenced group and its priced options. Read-only and selected-café scoped.
+ */
+export type PublishedModifierGroup={itemId:string;id:string;name:string;
+ minSelections:number|null;maxSelections:number|null;required:boolean;
+ options:{name:string;priceCents:number|null}[]};
+export async function getPublishedModifiersForItems(itemIds:string[]):Promise<PublishedModifierGroup[]>{
+ if(!isSupabaseConfigured()||itemIds.length===0)return [];
+ const db=await createServerSupabaseClient();
+ const {data:{user},error:authError}=await db.auth.getUser();
+ if(authError)throw authError;
+ if(!user)return [];
+ const businessId=await getActiveBusinessId(user.id);
+ const links:Array<{menu_item_id:string;pos_group_id:string;pos_group_name:string|null;
+   min_selections:number|null;max_selections:number|null;required:boolean}>=[];
+ for(const batch of posIdBatches([...new Set(itemIds)])){
+  links.push(...await readAllPosRows((from,to)=>db.from("menu_item_modifier_groups")
+   .select("menu_item_id,pos_group_id,pos_group_name,min_selections,max_selections,required")
+   .eq("business_id",businessId).in("menu_item_id",batch)
+   .order("menu_item_id").order("pos_group_id").range(from,to),"product modifier groups"));
+ }
+ if(!links.length)return [];
+ const options:{pos_group_id:string|null;name:string;price_cents:number|null;is_active:boolean}[]=[];
+ for(const batch of posIdBatches([...new Set(links.map(x=>x.pos_group_id))])){
+  options.push(...await readAllPosRows((from,to)=>db.from("modifier_recipes")
+   .select("pos_group_id,name,price_cents,is_active").eq("business_id",businessId)
+   .in("pos_group_id",batch).order("id").range(from,to),"product modifier prices"));
+ }
+ return links.map(link=>({
+  itemId:link.menu_item_id,id:link.pos_group_id,
+  name:link.pos_group_name??"Add-ons",minSelections:link.min_selections,
+  maxSelections:link.max_selections,required:link.required,
+  options:options.filter(o=>o.is_active&&o.pos_group_id===link.pos_group_id)
+   .map(o=>({name:o.name,priceCents:o.price_cents}))
+ }));
+}
