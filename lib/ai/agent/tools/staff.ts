@@ -79,11 +79,12 @@ export const staffTools = {
       const p={from:resolved.value.from,to:resolved.value.to};
       if(!ctx.tools.getLaborMetrics||!ctx.tools.getStaffAttendance||!ctx.timezone)
         return missing("labor_and_attendance",p,["laborReaderOrTimezoneUnavailable"]);
-      const [labor,attendance,ownerPayroll,toastScopes]=await Promise.all([
+      const [labor,attendance,ownerPayroll,toastScopes,reviews]=await Promise.all([
         ctx.tools.getLaborMetrics(p),
         ctx.tools.getStaffAttendance(p,ctx.timezone),
         ctx.tools.getOwnerMonthlyPayrollExtras?.(),
         ctx.tools.getToastScopeCoverage?.(),
+        ctx.tools.getPosImportReviews?.(),
       ]);
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
         ...(labor.available?labor.value.filter(d=>d.wagesCents===null||d.staffTaxCents===null)
@@ -100,6 +101,9 @@ export const staffTools = {
       return {source:"labor_and_attendance",period:p,agentId:"olivia",
         ownerMonthlyPayrollExtrasCents,
         toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
+        pendingPosStaffReviews:reviews?.available?reviews.value:null,
+        posReviewHref:"/staff",
+        posReviewMissing:reviews?.quality.missingInputs??["toastReviewsUnavailable"],
         ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
         ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"You told me",
         missing:[...issues,
