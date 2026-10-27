@@ -113,6 +113,12 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
  const relative=data.lastGoodSyncAt&&lastLoadedAt?new Intl.RelativeTimeFormat(locale,{numeric:"auto"}).format(
   -Math.max(0,Math.round((lastLoadedAt-Date.parse(data.lastGoodSyncAt))/3600000)),"hour"):t("noSyncYet");
  return <div className="flex flex-col gap-4 text-[17px]" dir={locale==="ar"?"rtl":"ltr"}>
+  {data.missingLaborScope&&<section role="alert" className="rounded-card-lg border border-warn bg-warn-tint p-4 text-warn">
+    {t("laborScopeMissing")}
+  </section>}
+  {data.missingMenuScope&&<section role="alert" className="rounded-card-lg border border-warn bg-warn-tint p-4 text-warn">
+    {t("menuScopeMissing")}
+  </section>}
   <section className="rounded-card-lg bg-card p-5">
    <p>{t(data.checkEvidence.mode==="official"?"checkModeOfficial":"checkModeInternal")}</p>
    {data.checkEvidence.compared>0&&<p className="mt-2">{t("summaryCompared",{count:data.checkEvidence.compared,matched:data.checkEvidence.matched})}</p>}
