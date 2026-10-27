@@ -369,6 +369,17 @@ begin
    and coalesce(t.clock_out,now()) >= (p_from::timestamp at time zone b.timezone);
  return jsonb_build_object('covered',v_covered,'staff',v_staff,
   'modifierMappings',coalesce((
+    -- Preserve migration 099's linked Toast catalog modifier mappings.
+    select jsonb_agg(jsonb_build_object('provider','toast',
+     'locationRef',c.restaurant_guid::text,
+     'posModifierId',c.provider_guid::text,
+     'recipeId',c.linked_modifier_recipe_id::text))
+    from public.toast_catalog_facts c
+    join public.modifier_recipes cr
+     on cr.id=c.linked_modifier_recipe_id and cr.business_id=c.business_id
+    where c.business_id=p_business_id and c.kind='modifier'
+     and c.linked_modifier_recipe_id is not null
+   ),'[]'::jsonb) || coalesce((
     select jsonb_agg(jsonb_build_object('provider',l.provider,'locationRef',l.location_ref,
      'posModifierId',l.pos_modifier_id,'recipeId',l.modifier_recipe_id::text))
     from public.pantry_modifier_links l

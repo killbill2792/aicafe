@@ -63,6 +63,13 @@ declare
  ga uuid:=gen_random_uuid();gb uuid:=gen_random_uuid();
  duplicateBlocked boolean;
  orderId uuid:=gen_random_uuid();
+ ownerId uuid:=gen_random_uuid();
+ toastModifierId uuid:=gen_random_uuid();
+ foreignModifierId uuid:=gen_random_uuid();
+ toastRecipeId uuid:=gen_random_uuid();
+ pantryRecipeId uuid:=gen_random_uuid();
+ foreignRecipeId uuid:=gen_random_uuid();
+ usage jsonb;
 begin
  insert into public.businesses(id,name) values(a,'Migration A'),(b,'Migration B');
  -- A malformed resync must roll back replacement and keep old item details.
@@ -105,6 +112,38 @@ begin
  if not duplicateBlocked then raise exception 'Toast restaurant linked to two cafés';end if;
  insert into public.toast_location_mappings(business_id,location_id,restaurant_guid)
  values(b,lb,gb);
+ -- Real invocation: a linked Toast catalog modifier and an owner-linked pantry
+ -- modifier must both survive in the scoped, JSONB-concatenated mapping array.
+ insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
+ values(ownerId,'00000000-0000-0000-0000-000000000000',
+  'authenticated','authenticated','usage-'||ownerId::text||'@example.invalid','',now(),now());
+ insert into public.memberships(business_id,user_id,role) values(a,ownerId,'owner');
+ insert into public.modifier_recipes(id,business_id,pos_modifier_id,name)
+ values(toastRecipeId,a,'toast-test-modifier','Toast linked recipe'),
+       (pantryRecipeId,a,'pantry-test-modifier','Pantry linked recipe'),
+       (foreignRecipeId,b,'other-cafe-modifier','Another cafe recipe');
+ insert into public.toast_catalog_facts(
+  business_id,restaurant_guid,kind,provider_guid,name,linked_modifier_recipe_id)
+ values(a,ga,'modifier',toastModifierId,'Linked Toast modifier',toastRecipeId),
+       (b,gb,'modifier',foreignModifierId,'Foreign Toast modifier',foreignRecipeId);
+ insert into public.pantry_modifier_links(
+  business_id,provider,location_ref,pos_modifier_id,modifier_recipe_id)
+ values(a,'square','test-square-location','test-square-modifier',pantryRecipeId);
+ perform set_config('request.jwt.claim.sub',ownerId::text,true);
+ usage:=public.pantry_usage_sales_evidence(a,date '2026-10-25',date '2026-10-25');
+ if not exists(select 1 from jsonb_array_elements(usage->'modifierMappings') as m(value)
+  where m.value=jsonb_build_object('provider','toast','locationRef',ga::text,
+   'posModifierId',toastModifierId::text,'recipeId',toastRecipeId::text))
+ then raise exception 'Linked Toast catalog modifier absent from modifierMappings';end if;
+ if not exists(select 1 from jsonb_array_elements(usage->'modifierMappings') as m(value)
+  where m.value=jsonb_build_object('provider','square','locationRef','test-square-location',
+   'posModifierId','test-square-modifier','recipeId',pantryRecipeId::text))
+ then raise exception 'Pantry modifier mapping lost when Toast catalog mapping restored';end if;
+ if jsonb_array_length(usage->'modifierMappings')<>2 or exists(
+  select 1 from jsonb_array_elements(usage->'modifierMappings') as m(value)
+  where m.value->>'recipeId'=foreignRecipeId::text
+ ) then raise exception 'Modifier mappings leaked between cafés or were duplicated';end if;
+ perform set_config('request.jwt.claim.sub','',true);
  insert into public.toast_analytics_credentials(
   business_id,management_group_guid,api_origin,client_id,client_secret_enc)
  values(a,gen_random_uuid(),'https://example.invalid','integration-a','synthetic'),

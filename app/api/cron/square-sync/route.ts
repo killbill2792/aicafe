@@ -9,7 +9,7 @@ export async function GET(request:Request){
  if(!verifyBearer(request,process.env.CRON_SECRET))
   return NextResponse.json({error:"unauthorized"},{status:401});
  if(process.env.SQUARE_AUTO_SYNC_ENABLED!=="true")
-  return NextResponse.json({disabled:true},{status:503});
+  return NextResponse.json({disabled:true},{status:200,headers:{"Cache-Control":"no-store"}});
  try {
   const result=await syncSquareTick(createAdminSupabaseClient());
   return NextResponse.json(result,{headers:{"Cache-Control":"no-store"}});
