@@ -10,6 +10,26 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  full-tests-both-square-flags:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        square-sync-enabled: ['false', 'true']
+    env:
+      SQUARE_AUTO_SYNC_ENABLED: ${{ matrix.square-sync-enabled }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Entire unit test suite with Square auto-sync flag ${{ matrix.square-sync-enabled }}
+        run: npm test
   isolated-supabase:
     runs-on: ubuntu-latest
     timeout-minutes: 35
