@@ -937,8 +937,14 @@
     "now": "Ahora",
     "payrollCostsSummary": "Costos del empleador: {percent}% sobre el salario (respaldo)",
     "payrollCostsEdit": "Editar en Reglas y costos",
-    "payrollSaveFailed": "No se pudieron guardar los costos del empleador. Inténtalo de nuevo."
-  },
+    "payrollSaveFailed": "No se pudieron guardar los costos del empleador. Inténtalo de nuevo.",
+    "payrollMonthlyTitle": "Costos mensuales de nómina no incluidos en Toast",
+    "payrollMonthlyHint": "Incluye salarios fijos, beneficios y gastos mensuales que no estén incluidos en las horas registradas ni en el porcentaje de costos patronales anterior. Si incluyes impuestos aquí, configura el porcentaje anterior en 0 % para evitar duplicarlos. Es una estimación proporcionada por ti, no por Toast Payroll.",
+    "payrollMonthlyField": "Otros costos mensuales de nómina (USD)",
+    "payrollMonthlyInvalid": "Introduce un importe válido con hasta dos decimales.",
+    "payrollMonthlySave": "Guardar costos mensuales",
+    "payrollMonthlySaved": "Guardado como estimación del propietario.",
+    "payrollMonthlySaveFailed": "No se pudieron guardar los costos mensuales."  },
   "More": {
     "toastConnect": "Conectar Toast",
     "title": "Más",
