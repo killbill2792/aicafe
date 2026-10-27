@@ -1,6 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import {renderToStaticMarkup} from "react-dom/server";
 import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
+import type {ReactNode} from "react";
 import ProfitCostsView from "./ProfitCostsView";
 
 vi.mock("next-intl/server",()=>({
@@ -8,7 +9,7 @@ vi.mock("next-intl/server",()=>({
   getLocale:async()=>"en",
 }));
 vi.mock("@/i18n/navigation",()=>({
-  Link:({children,href}:{children:React.ReactNode;href:string})=><a href={href}>{children}</a>,
+  Link:({children,href}:{children:ReactNode;href:string})=><a href={href}>{children}</a>,
 }));
 vi.mock("@/components/shared/Money",()=>({
   default:({cents}:{cents:number|null})=><span>{cents===null?"unknown":String(cents)}</span>,
