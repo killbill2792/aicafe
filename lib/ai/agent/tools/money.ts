@@ -5,7 +5,7 @@ import {resolveOwnerPeriod,resolveEntity,choicePayload,periodChoicePayload} from
 import {money,percent,count} from "../explain";
 import {safeSumCents} from "@/lib/calc/explainMath";
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
-import {prorate,periodDays} from "@/lib/calc/periods";
+import {prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 
 const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
@@ -127,6 +127,22 @@ export const moneyTools={
         if(dailyFixedCostsCents===null&&fixedCostMissing.length===0)
           fixedCostMissing.push("recordedFixedCostsUnavailable");
       }
+      // Add only the owner-entered amount explicitly identified as NOT covered
+      // by connected wages, employer-tax rate, or imported payroll.
+      const ownerPayroll=await ctx.tools.getOwnerMonthlyPayrollExtras?.();
+      const ownerMonthlyPayrollExtrasCents=ownerPayroll?.available?
+        ownerPayroll.value.monthlyCents:null;
+      const ownerDailyPayrollExtrasCents=ownerMonthlyPayrollExtrasCents===null?null:
+        Math.round(ownerMonthlyPayrollExtrasCents/periodDays(calendarMonth(ctx.asOf)));
+      if(ownerDailyPayrollExtrasCents!==null&&dailyFixedCostsCents!==null){
+        const total=dailyFixedCostsCents+ownerDailyPayrollExtrasCents;
+        if(Number.isSafeInteger(total)){
+          dailyFixedCostsCents=total;
+          fixedCostEstimates=[...new Set([...fixedCostEstimates,"ownerMonthlyPayrollExtras"])];
+        }else{
+          dailyFixedCostsCents=null;fixedCostMissing.push("ownerMonthlyPayrollOverflow");
+        }
+      }
       const comparison=dailyFixedCostsCents!==null&&ownerBps!==null
         ? ownerReportedDailyBreakEven({
             dailyFixedCostsCents,
@@ -147,6 +163,8 @@ export const moneyTools={
         ...(comparison?(comparison.processingFeesIncluded?[]:["processingFeeRateUnknown:estimateExcludesProcessingFees"]):
           fixedCostMissing.length?fixedCostMissing:s?.quality.missingInputs??["recordedFixedCostsUnavailable"]),
         ...modelMissing,
+        ...(ownerMonthlyPayrollExtrasCents===null?
+         ["ownerMonthlyPayrollExtrasNotSet:estimateExcludesUnknownAdditionalPayroll"]:[]),
       ])];
       const marginBps=ownerBps===null?null:
         10000-ownerBps-(percentToBasisPoints(owner.ownerProcessingFeePercent)??0);
@@ -158,6 +176,10 @@ export const moneyTools={
          period:null,source:"get_break_even",provenance:"ownerProvided" as const}]:[];
       return {source:"break_even",period:null,agentId:"leo",unit:"cents",
         ownerInputs:provided??null,knownOwnerLaborDailyCents,
+        ownerMonthlyPayrollExtrasCents,
+        ownerDailyPayrollExtrasCents,
+        ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"You told me",
+        ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
         // Owner-supplied labor alone is NOT verified full fixed-cost coverage.
         missing,explain:breakEvenExplain,
         ...(fixedCostEstimates.length?{estimated:fixedCostEstimates}:{}),
