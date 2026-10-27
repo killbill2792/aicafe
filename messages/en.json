@@ -2813,6 +2813,8 @@
     }
   },
   "StaffSchedule": {
+    "toastPlannedTitle": "Toast planned shifts",
+    "toastPlannedNotPaid": "Read-only shifts from Toast. These are plans, not clocked hours, and are not counted in paid wages or your approved schedule.",
     "nudgeEarlier": "Move {field} 15 minutes earlier",
     "nudgeLater": "Move {field} 15 minutes later",
     "breakMinutesLabel": "Minutes",
