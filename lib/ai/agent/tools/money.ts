@@ -220,7 +220,7 @@ export const moneyTools={
       const costs=[s.components.ingredientsCents,s.components.loadedStaffCents,
         s.components.cardFeesCents,s.components.runningCostsCents];
       const sum=safeSumCents(costs);
-      const explain=s.completeness!=="unavailable"&&
+      const explain=s.completeness==="complete"&&
         Object.values(s.observed).every(Boolean)&&sum===s.knownTotalCents?
         [{label:"Recorded business costs",inputs:[
           {name:"ingredients",value:money(costs[0])},{name:"staff",value:money(costs[1])},
