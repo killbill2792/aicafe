@@ -25,6 +25,7 @@ export const statusSchema=z.object({
  recent:z.array(z.object({date:day,netSalesCents:money.nullable(),orders:z.number().int().nullable(),paidOtherDay:z.number().int().nonnegative(),
   status:z.enum(["checked","checked_internal","owner_match","checking","needs_look","missing"])})),
  analytics:z.object({connected:z.boolean(),verified:z.boolean(),errorCategory:z.string().nullable()}),
+ missingLaborScope:z.boolean().optional(),missingMenuScope:z.boolean().optional(),
  firstImportCheck:z.enum(["hidden","due","answered"]),
  timeZone:z.string(),startDate:day.nullable(),
  restaurantNames:z.record(GUID,z.string()),
