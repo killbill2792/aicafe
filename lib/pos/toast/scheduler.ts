@@ -304,6 +304,25 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    if(Date.now()<deadlineAt)
     await syncToastOptionalSources(db,m,now,deadlineAt);
    });
+   await isolated("queued",async()=>{
+   if(Date.now()>=deadlineAt)return;
+   // Pick up older daily runs missed by the D-1 phase. Daily jobs go first,
+   // newest to oldest; backfill stays in its priority phase above.
+   const {data:pending,error:pErr}=await db.from("toast_sync_runs")
+    .select("id,kind,state,requested_from,requested_to,days_done,days_total,cursor,resume_at")
+    .eq("business_id",m.business_id).eq("restaurant_guid",m.restaurant_guid)
+    .eq("state","queued").order("requested_from",{ascending:false}).limit(100);
+   if(pErr)throw new ToastApiError("unavailable");
+   const sorted=((pending??[]) as Run[]).sort((a,b)=>
+    Number(b.kind==="daily")-Number(a.kind==="daily")||
+    (b.requested_from??"").localeCompare(a.requested_from??""));
+   for(const run of sorted){
+    if(Date.now()>=deadlineAt)break;
+    if(run.kind==="backfill"||coveredByBackfill(run)||
+     !shouldResume(run,Date.now()))continue;
+    processed+=await runDue(db,m,run,deadlineAt,1,paceHistorical);
+   }
+   });
    await isolated("cleanup",async()=>{
    if(Date.now()<deadlineAt)await db.rpc("toast_cleanup_abandoned_pages");
    });
