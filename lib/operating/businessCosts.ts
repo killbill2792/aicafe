@@ -1,7 +1,7 @@
 import type {BusinessSnapshot} from "@/lib/data/types";
 import type {DailyFacts} from "@/lib/calc";
 import {
-  ingredientsCentsForPeriod,staffCostCentsForPeriod,cardFeesCentsForPeriod,
+  ingredientsCentsForPeriod,staffCostCentsForPeriod,cardFeesCentsForPeriod,laborKnown,
   totalCostsCentsForPeriod,runningCostsForPeriodCents,roundHalfUpToCent,
 } from "@/lib/calc";
 import type {BusinessCostSummary,CafeStatePeriod} from "./types";
@@ -115,7 +115,7 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
   const missingInputs=[
     ...(saleDates.size<expectedDays?["salesCoverage:"+saleDates.size+"/"+expectedDays]:[]),
     ...(laborDates.size<expectedDays?["laborCoverage:"+laborDates.size+"/"+expectedDays]:[]),
-    ...recordedDays.filter(d=>d.wagesCents===null||d.staffTaxCents===null)
+    ...recordedDays.filter(d=>!laborKnown(d))
       .map(d=>"laborWageUnknown:"+d.date),
     ...missingExpenses.map(x=>"expense:"+x.categoryCode),
     // Money's supported cross-month Week prorates prior-month bills using
