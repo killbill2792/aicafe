@@ -37,7 +37,12 @@ SELECT pg_temp.assert((SELECT not stale FROM public.toast_sync_health_v
  WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'one unreadable order does not make a completed run stale');
 SELECT pg_temp.assert(NOT has_table_privilege('authenticated','public.toast_owner_summary_entries','INSERT'),'direct member writes denied');
 SELECT pg_temp.assert(NOT has_table_privilege('authenticated','public.toast_client_budgets','SELECT'),'operational budget private');
-SELECT pg_temp.assert(NOT has_table_privilege('authenticated','public.memberships','SELECT'),'summary RLS does not require membership table grants');
+-- Memberships may grant SELECT to authenticated users, but RLS must still
+-- scope those reads; the summary policy relies on its SECURITY DEFINER helper.
+SELECT pg_temp.assert((SELECT relrowsecurity FROM pg_class WHERE oid='public.memberships'::regclass),
+ 'membership table must enforce row-level security');
+SELECT pg_temp.assert((SELECT prosecdef FROM pg_proc WHERE oid='public.toast_is_business_member(uuid)'::regprocedure),
+ 'summary membership check must run as SECURITY DEFINER');
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.role','authenticated',true);
 SELECT set_config('request.jwt.claim.sub','dddddddd-dddd-4ddd-8ddd-dddddddd0011',true);
