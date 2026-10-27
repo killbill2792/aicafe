@@ -61,7 +61,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const recorded=payEvidence.coveredDates;
  const laborDays=elapsed.filter(day=>recorded.has(day));
  const laborMissing=elapsed.filter(day=>!recorded.has(day));
- const payrollRows=(rollups.data??[]).filter(row=>recorded.has(row.business_date));
+ // Match the numerator to the same elapsed, open, labor-covered dates used by the projection denominator.
+ const payrollRows=(rollups.data??[]).filter(row=>laborDays.includes(row.business_date));
  const wages=payrollRows.reduce((sum,row)=>sum+Number(row.staff_wages_cents)+Number(row.staff_tax_cents),0);
  const estimatedTax=payrollRows.some(row=>payEvidence.taxEstimatedDays.has(row.business_date));
  const projectedLabor=laborDays.length?Math.round(wages*dayList.length/laborDays.length):null;
