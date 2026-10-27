@@ -256,7 +256,10 @@ export function createSupervisorToolRegistry(context: Context) {
           const slice=await tools.getLaborMetrics(range);
           if(!slice.available) return slice;
           const covered=new Set(slice.value.map(x=>x.date)).size;
-          return {available:true,value:slice.value.reduce((n,d)=>n+d.loadedStaffCostCents,0),
+          if(slice.value.some(d=>d.loadedStaffCostCents===null))return {
+            available:false,value:null,quality:{...slice.quality,
+            missingInputs:[...slice.quality.missingInputs,"laborWageUnknown"]}};
+          return {available:true,value:slice.value.reduce((n,d)=>n+(d.loadedStaffCostCents??0),0),
             quality:{...slice.quality,missingInputs:[...slice.quality.missingInputs,
               ...(covered===rangeExpectedDays(range)?[]:["laborCoverage"])]}};
         }
@@ -561,7 +564,10 @@ export function createSupervisorToolRegistry(context: Context) {
           const covered = new Set(labor.value.map(x=>x.date)).size, expected = rangeExpectedDays(range);
           result.coverage = { coveredDays:covered,expectedDays:expected, missingDays:expected-covered };
           if (covered !== expected) { result.status="partial"; result.missingInputs.push("laborCoverage"); }
-          addFact(result,prefix+"labor","Recorded loaded staff cost",labor.value.reduce((n,x)=>n+x.loadedStaffCostCents,0),"metric",source);
+          if(labor.value.some(d=>d.loadedStaffCostCents===null)){
+             result.status="partial";result.missingInputs.push("laborWageUnknown");
+           }else addFact(result,prefix+"labor","Recorded loaded staff cost",
+             labor.value.reduce((n,x)=>n+(x.loadedStaffCostCents??0),0),"metric",source);
         }
         return result;
       }
