@@ -2813,6 +2813,8 @@
     }
   },
   "StaffSchedule": {
+    "toastPlannedTitle": "المناوبات المخططة في Toast",
+    "toastPlannedNotPaid": "مناوبات من Toast للعرض فقط. هذه خطط وليست ساعات عمل مسجلة ولا تدخل في الأجور المدفوعة أو جدولك المعتمد.",
     "nudgeEarlier": "تقديم {field} بمقدار ١٥ دقيقة",
     "nudgeLater": "تأخير {field} بمقدار ١٥ دقيقة",
     "breakMinutesLabel": "دقائق",
