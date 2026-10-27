@@ -17,20 +17,22 @@ function fixture(rows:Row[]){
  const writes:Record<string,unknown>[]=[];
  const db={from(table:string){
   const filters:Record<string,unknown>={};
+  let pending:Record<string,unknown>|null=null;
   const q={
    select:()=>q,eq:(key:string,value:unknown)=>{filters[key]=value;return q;},
    is:()=>q,
    async then(resolve:(value:unknown)=>unknown){
+    if(pending){
+     writes.push({...pending});
+     if(table==="employees"){
+      const target=rows.find(r=>r.id===filters.id);
+      if(target)Object.assign(target,pending);
+     }
+     return resolve({data:null,error:null});
+    }
     return resolve({data:table==="employees"?rows:null,error:null});
    },
-   async update(values:Record<string,unknown>){
-    writes.push({...values});
-    if(table==="employees"){
-     const target=rows.find(r=>r.id===filters.id);
-     if(target)Object.assign(target,values);
-    }
-    return {error:null};
-   },
+   update(values:Record<string,unknown>){pending=values;return q;},
    async upsert(){return {error:null};},
   };
   return q;
