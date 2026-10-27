@@ -165,9 +165,6 @@ export const SOURCE_SURFACES = {
   "lib/data/getCafeProfile.ts": {
     getCafeProfile:{capabilities:["business.profile"]},
   },
-  "lib/data/posImportReviews.server.ts":{
-    getOpenPosStaffImportReviews:{restricted:"Owner-authenticated selected café Toast staff review details, displayed only on Staff; not a generic P1 metric"},
-  },
   "lib/data/toastScheduledShifts.server.ts":{
     readToastPlannedShifts:{restricted:"Owner-scoped read-only Toast planned shifts for Team UI; never a timecard, paid-hour metric, or model-selected P1 projection"},
   },
