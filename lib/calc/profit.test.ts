@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { averageOrderValueCents, staffCostCentsForPeriod, ownerProfitCentsForPeriod } from "./profit";
+import { averageOrderValueCents, staffCostCentsForPeriod, ownerProfitCentsForPeriod, laborKnown } from "./profit";
 import type { DailyFacts } from "./types";
 
 describe("averageOrderValueCents", () => {
@@ -33,5 +33,16 @@ describe("partial payroll never becomes a final profit", () => {
     expect(staffCostCentsForPeriod([day])).toBeNull();
     expect(ownerProfitCentsForPeriod([day],1000)).toBeNull();
     expect(staffCostCentsForPeriod([{...day,laborWageStatus:"actual"}])).toBe(3920);
+  });
+});
+
+
+describe("shared labor completeness",()=>{
+  it("rejects known-only wages on missing days, not actual or estimated days",()=>{
+    const day={wagesCents:3500,staffTaxCents:420,laborWageStatus:"missing" as const};
+    expect(laborKnown(day)).toBe(false);
+    expect(laborKnown({...day,laborWageStatus:"actual"})).toBe(true);
+    expect(laborKnown({...day,laborWageStatus:"estimate"})).toBe(true);
+    expect(laborKnown({...day,staffTaxCents:null})).toBe(false);
   });
 });
