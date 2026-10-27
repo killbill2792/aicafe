@@ -35,8 +35,12 @@ export async function syncCanonicalEmployees(db:SupabaseClient,businessId:string
    const patch:Record<string,unknown>={};
    if(row.pos_team_member_id!==person.posTeamMemberId)
     patch.pos_team_member_id=person.posTeamMemberId;
-   if(row.pos_display_name===null||row.display_name===row.pos_display_name)
-    if(row.display_name!==person.displayName)patch.display_name=person.displayName;
+   // A matching manual employee's display name is an owner choice. Only
+   // track future POS name changes if this row was already linked and its
+   // current display name still equals the previous POS-published name.
+   if(row.pos_team_member_id===person.posTeamMemberId&&
+     row.pos_display_name!==null&&row.display_name===row.pos_display_name&&
+     row.display_name!==person.displayName)patch.display_name=person.displayName;
    if(row.pos_display_name!==person.displayName)patch.pos_display_name=person.displayName;
    if(person.role!==null&&(row.role===null||row.role===row.pos_last_role)&&row.role!==person.role)
     patch.role=person.role;
@@ -45,7 +49,10 @@ export async function syncCanonicalEmployees(db:SupabaseClient,businessId:string
      row.default_hourly_wage_cents===row.pos_last_wage_cents)
      &&row.default_hourly_wage_cents!==wage)patch.default_hourly_wage_cents=wage;
    if(wage!==null&&row.pos_last_wage_cents!==wage)patch.pos_last_wage_cents=wage;
-   const ownerDisabled=row.pos_last_active===true&&row.active===false;
+   // A manually disabled employee can precede the first POS link.
+   // Never turn that person back on merely because Toast marks them active.
+   const ownerDisabled=row.active===false&&
+     (row.pos_last_active===true||row.pos_last_active===null);
    if(!ownerDisabled&&row.active!==posActive)patch.active=posActive;
    if(row.pos_last_active!==posActive)patch.pos_last_active=posActive;
    if(Object.keys(patch).length){
@@ -81,7 +88,7 @@ export async function syncCanonicalEmployees(db:SupabaseClient,businessId:string
      linked_employee_id:row.id,linked_at:new Date().toISOString()
    }).eq("business_id",businessId).eq("restaurant_guid",restaurantGuid)
     .eq("employee_guid",employeeGuid)
-    .or("linked_employee_id.is.null,linked_employee_id.eq."+row.id);
+    .is("linked_employee_id",null);
    if(linkError)throw linkError;
   }
  }
