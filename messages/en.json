@@ -553,6 +553,10 @@
     "seePlan": "See the plan"
   },
   "Menu": {
+    "posAddOnTitle": "Published POS add-ons",
+    "posAddOnItemSize": "Applies to",
+    "posAddOnRequired": "Required",
+    "posAddOnOptional": "Optional",
     "unpricedPublished": "Published items with variable or unknown prices",
     "openPrice": "Open price",
     "visibility": "Visibility",
