@@ -7,6 +7,7 @@ const cafe="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const location="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const employee="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const canonicalId="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 function db(){
  const scopeChecks:string[]=[];
  const sources:Record<string,Record<string,unknown>[]> = {
@@ -20,14 +21,15 @@ function db(){
   ],
   toast_location_mappings:[{business_id:cafe,location_id:location,restaurant_guid:restaurant}],
   toast_employee_directory:[{business_id:cafe,restaurant_guid:restaurant,
-   employee_guid:employee,display_name:"Maria"}],
+   employee_guid:employee,display_name:"Maria",linked_employee_id:canonicalId}],
+  employees:[{business_id:cafe,id:canonicalId,display_name:"María (owner)"}],
  };
  const conn={from(table:string){
   let scoped:string|null=null;
   const chain={
    select:()=>chain,
    eq:(field:string,value:unknown)=>{if(field==="business_id"){scopeChecks.push(table);scoped=String(value);}return chain;},
-   gte:()=>chain,lte:()=>chain,order:()=>chain,limit:()=>chain,
+   gte:()=>chain,lte:()=>chain,order:()=>chain,limit:()=>chain,in:()=>chain,
    then:(cb:(value:{data:Record<string,unknown>[];error:null})=>unknown)=>
     Promise.resolve({data:(sources[table]??[]).filter(row=>row.business_id===scoped),error:null}).then(cb),
   };
@@ -40,10 +42,10 @@ describe("Toast planned shifts never become wages",()=>{
   const f=db();
   const rows=await readToastPlannedShifts(f.conn,cafe,"2026-10-26","2026-11-01",
    "America/Los_Angeles");
-  expect(rows).toEqual([{id:"toast-shift-1",employeeName:"Maria",
+  expect(rows).toEqual([{id:"toast-shift-1",employeeName:"María (owner)",
    locationId:location,source:"toast",paid:false,
    start:"2026-10-27T18:00:00Z",end:"2026-10-27T20:00:00Z"}]);
   expect(f.scopeChecks).toEqual([
-   "pos_scheduled_shifts","toast_location_mappings","toast_employee_directory"]);
+   "pos_scheduled_shifts","toast_location_mappings","toast_employee_directory","employees"]);
  });
 });
