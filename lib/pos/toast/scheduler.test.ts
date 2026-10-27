@@ -1,13 +1,12 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
-const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstMenu:vi.fn(),
+const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),
  refresh:vi.fn(),costs:vi.fn(),request:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
 vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional}));
-vi.mock("./firstCatalog",()=>({syncToastFirstCatalogIfMissing:m.firstMenu}));
 vi.mock("./restaurantInfo",()=>({refreshToastRestaurantInfo:m.refresh}));
 vi.mock("./rollupRetries",()=>({retryToastRollupRefreshes:m.costs}));
 vi.mock("./client",()=>{
@@ -121,7 +120,6 @@ beforeEach(()=>{
  for(const fn of Object.values(m))fn.mockReset();
  m.request.mockResolvedValue([]);
  m.optional.mockResolvedValue({menu:"skipped",labor:"skipped"});
- m.firstMenu.mockResolvedValue(false);
  m.costs.mockResolvedValue({processed:0,deferred:0});
  m.reconcile.mockResolvedValue(0);
  m.refresh.mockResolvedValue(null);
