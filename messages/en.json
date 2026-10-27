@@ -1,5 +1,6 @@
 {
   "ToastConnect": {
+    "ownerPayrollLimitsNote": "Toast supplies clocked hours and hourly wages, but not employer payroll taxes, benefits, salaried pay or Toast Payroll runs. Add missing monthly costs once under Staff → Rules & costs. AI Cafe treats those owner-entered amounts as labeled estimates; recipes and ingredient costs are also not provided by Toast.",
     "laborScopeMissing": "Toast labor access is unavailable. Menu and sales sync can still continue; clocked hours and wages cannot sync until labor permission is granted.",
     "menuScopeMissing": "Toast menu access is unavailable. Sales can still import; menu items will link when menu permission is granted.",
     "reviewTitle": "Review Toast staff and menu matches",
