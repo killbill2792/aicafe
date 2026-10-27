@@ -9,10 +9,6 @@ export const summaryEntrySchema=z.object({restaurant_guid:GUID,business_date:day
 export const statusSchema=z.object({
  connection:z.enum(["not_connected","needs_attention","connected"]),
  importEnabled:z.boolean(),
- // A missing optional POS scope is not a disconnected café. Preserve unknown
- // until Toast has returned authoritative permissions.
- sourceScopes:z.object({menus:z.boolean().nullable(),labor:z.boolean().nullable()})
-  .default({menus:null,labor:null}),
  errorCategory:z.string().nullable(),lastGoodSyncAt:z.string().nullable(),stale:z.boolean(),
  backfill:z.object({daysDone:z.number().int(),daysTotal:z.number().int(),
   state:z.string().nullable(),resumeAt:z.string().nullable()}),
