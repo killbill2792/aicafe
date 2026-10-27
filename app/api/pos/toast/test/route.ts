@@ -6,6 +6,8 @@ import {z} from "zod";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
 import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "@/lib/pos/toast/client";
 export const runtime="nodejs";
+// Credential verification and first catalog copy share one bounded request.
+export const maxDuration=300;
 export const dynamic="force-dynamic";
 const json=(status:number,data:unknown)=>NextResponse.json(data,{status,headers:{"Cache-Control":"no-store"}});
 const expected=z.object({businessId:GUID}).strict();
