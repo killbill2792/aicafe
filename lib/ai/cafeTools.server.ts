@@ -143,6 +143,29 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       return {available:true,value:{menus:choose(parsed?.menus),labor:choose(parsed?.labor)},
         quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}};
     },
+    async(requested)=>{
+      assertBusiness(requested);
+      const {data,error}=await client.from("pos_import_reviews")
+        .select("review_type,source_key,detail")
+        .eq("business_id",requested).eq("provider","toast")
+        .eq("status","needs_owner")
+        .in("review_type",["staff_identity","unlinked_timecard",
+          "overlapping_timecard","shift_corrected"])
+        .order("created_at",{ascending:false}).limit(51);
+      if(error){
+        if(["42P01","PGRST205"].includes(error.code??""))
+          return {available:false,value:null,quality:{level:"low" as const,
+            missingInputs:["posImportReviewsMigrationPending"],estimatedInputs:[],staleInputs:[]}};
+        throw error;
+      }
+      const truncated=(data??[]).length>50;
+      return {available:true,value:(data??[]).slice(0,50).map(row=>({
+        reviewType:row.review_type,sourceKey:row.source_key,
+        detail:row.detail&&typeof row.detail==="object"&&!Array.isArray(row.detail)?
+         row.detail as Record<string,unknown>:{}
+      })),quality:{level:truncated?"medium" as const:"high" as const,
+        missingInputs:truncated?["morePosReviews"]:[],estimatedInputs:[],staleInputs:[]}};
+    },
   );
   return new BusinessScopedCafeTools(tools, businessId);
 }
