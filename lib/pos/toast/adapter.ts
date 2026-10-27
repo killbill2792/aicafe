@@ -31,8 +31,12 @@ const ordersSchema=z.array(z.object({guid:GUID,server:z.object({guid:GUID}).null
   createdInTestMode:z.boolean().nullish(),deleted:z.boolean().nullish(),voided:z.boolean().nullish(),modifiedDate:z.string().nullish(),
   checks:z.array(check)}));
 const employeesSchema=z.array(z.object({guid:GUID,firstName:z.string().nullish(),
-  chosenName:z.string().nullish(),lastName:z.string().nullish(),deleted:z.boolean().nullish()}));
+  chosenName:z.string().nullish(),lastName:z.string().nullish(),deleted:z.boolean().nullish(),
+  jobReferences:z.array(z.object({guid:GUID}).passthrough()).nullish(),
+  wageOverrides:z.array(z.object({jobReference:z.object({guid:GUID}).passthrough(),wage:z.number()}).passthrough()).nullish()
+}).passthrough());
 const timeEntriesSchema=z.array(z.object({guid:GUID,modifiedDate:z.string().nullish(),employeeReference:z.object({guid:GUID}),
+  jobReference:z.object({guid:GUID}).nullish(),
   inDate:z.string(),outDate:z.string().nullish(),hourlyWage:z.number().nullish(),
   deleted:z.boolean().nullish(),breaks:z.array(z.object({
     inDate:z.string().nullish(),outDate:z.string().nullish(),
@@ -40,22 +44,44 @@ const timeEntriesSchema=z.array(z.object({guid:GUID,modifiedDate:z.string().null
 const shiftsSchema=z.array(z.object({guid:GUID,employeeReference:z.object({guid:GUID}),
   jobReference:z.object({guid:GUID}).nullish(),inDate:z.string(),outDate:z.string(),
   deleted:z.boolean().nullish()}));
-const itemSchema=z.object({guid:GUID,name:z.string().min(1),price:z.number().nullish(),
-  pricingStrategy:z.string().nullish(),salesCategory:z.object({name:z.string().nullish()}).nullish(),
-  modifierGroupReferences:z.array(z.number()).nullish()});
-type MenuGroup={name:string;menuItems:z.infer<typeof itemSchema>[];menuGroups:MenuGroup[]};
+const pricingRulesSchema=z.object({
+  sizeSpecificPricingGuid:GUID.nullish(),
+  timeSpecificPricingRules:z.array(z.unknown()).nullish(),
+  sizeSequencePricingRules:z.array(z.unknown()).nullish()
+}).passthrough();
+const itemSchema=z.object({
+  guid:GUID,name:z.string().min(1),description:z.string().nullish(),
+  price:z.number().nullish(),pricingStrategy:z.string().nullish(),
+  pricingRules:pricingRulesSchema.nullish(),
+  visibility:z.array(z.string().nullable()).nullish(),
+  image:z.string().nullish(),plu:z.string().nullish(),sku:z.string().nullish(),
+  salesCategory:z.object({name:z.string().nullish()}).passthrough().nullish(),
+  modifierGroupReferences:z.array(z.number()).nullish()
+}).passthrough();
+type MenuGroup={name:string;menuItems:z.infer<typeof itemSchema>[];menuGroups:MenuGroup[];
+ availability?:unknown};
 const groupSchema:z.ZodType<MenuGroup>=z.lazy(()=>z.object({
-  name:z.string(),menuItems:z.array(itemSchema).default([]),menuGroups:z.array(groupSchema).default([])}));
+  name:z.string(),availability:z.unknown().optional(),
+  menuItems:z.array(itemSchema).default([]),menuGroups:z.array(groupSchema).default([])
+}).passthrough());
 const menusSchema=z.object({restaurantGuid:GUID,menus:z.array(
-  z.object({menuGroups:z.array(groupSchema).default([])})),
+  z.object({name:z.string().nullish(),availability:z.unknown().optional(),
+    menuGroups:z.array(groupSchema).default([])}).passthrough()),
   modifierGroupReferences:z.record(z.string(),z.object({
-    guid:GUID,modifierOptionReferences:z.array(z.number()).default([])
-  })).default({}),
+    guid:GUID,name:z.string().nullish(),minSelections:z.number().int().nullish(),
+    maxSelections:z.number().int().nullish(),requiredMode:z.string().nullish(),
+    pricingStrategy:z.string().nullish(),pricingRules:pricingRulesSchema.nullish(),
+    modifierOptionReferences:z.array(z.number()).default([])
+  }).passthrough()).default({}),
   modifierOptionReferences:z.record(z.string(),z.object({
     guid:GUID,name:z.string().min(1),price:z.number().nullish(),
-    pricingStrategy:z.string().nullish()
-  })).default({})
-});
+    pricingStrategy:z.string().nullish(),pricingRules:pricingRulesSchema.nullish()
+  }).passthrough()).default({})
+}).passthrough();
+const toastJobSchema=z.array(z.object({
+  guid:GUID,title:z.string().nullish(),defaultWage:z.number().nullish(),
+  wageFrequency:z.enum(["HOURLY","SALARY"]).nullish(),deleted:z.boolean().nullish()
+}).passthrough());
 const metadataSchema=z.object({restaurantGuid:GUID,lastUpdated:z.string().min(1)});
 function validRange(range:Range) {
   if(!Number.isFinite(range.since.getTime())||!Number.isFinite(range.until.getTime())||
@@ -258,16 +284,61 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       if(data.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
         throw new ToastApiError("unauthorized_location");
       const items=new Map<string,PosCatalogItem>();
-      function visit(g:MenuGroup) {
+      const groups=Object.values(data.modifierGroupReferences);
+      const options=data.modifierOptionReferences;
+      const posId=(guid:string)=>"toast:"+restaurantGuid+":"+guid;
+      function visit(g:MenuGroup,path:string[],menuAvailability:unknown){
         for(const i of g.menuItems) {
-          const simple=i.pricingStrategy==="BASE_PRICE"||i.pricingStrategy==="MENU_SPECIFIC_PRICE";
-          items.set(i.guid,{posItemId:"toast:"+restaurantGuid+":"+i.guid,name:i.name,
-            priceCents:simple&&i.price!=null?cents(i.price):null,
-            category:i.salesCategory?.name??g.name});
+          const itemGroups=(i.modifierGroupReferences??[])
+            .map(id=>data.modifierGroupReferences[String(id)]).filter((x):x is typeof groups[number]=>Boolean(x));
+          const linkedGroups=itemGroups.map(group=>({
+            posGroupId:posId(group.guid),name:group.name??"Modifier group",
+            minSelections:group.minSelections??null,maxSelections:group.maxSelections??null,
+            required:group.requiredMode==="REQUIRED",
+            options:group.modifierOptionReferences.map(id=>options[String(id)]).filter((o):o is NonNullable<typeof options[string]>=>Boolean(o)).map(o=>({
+              posModifierId:posId(o.guid),name:o.name,
+              priceCents:o.price!=null&&["BASE_PRICE","MENU_SPECIFIC_PRICE","NONE"].includes(o.pricingStrategy??"NONE")?
+                cents(o.price):null,pricingStrategy:o.pricingStrategy??null
+            }))
+          }));
+          const simple=["BASE_PRICE","MENU_SPECIFIC_PRICE"].includes(i.pricingStrategy??"");
+          const resolvedPrice=simple&&i.price!=null?cents(i.price):null;
+          const visibility=(i.visibility??[]).filter((v):v is string=>typeof v==="string").join(",")||null;
+          const common={
+            name:i.name,baseName:i.name,category:i.salesCategory?.name??g.name,
+            menuGroup:path.join(" / "),description:i.description??null,
+            visibility,pricingStrategy:i.pricingStrategy??null,
+            imageUrl:i.image??null,plu:i.plu??null,sku:i.sku??null,
+            modifierGroups:linkedGroups,
+            posMetadata:{
+              itemGuid:i.guid,pricingRules:i.pricingRules??null,
+              itemVisibility:i.visibility??null,
+              menuAvailability,groupAvailability:g.availability??null,
+              originalItem:i
+            } as Record<string,unknown>
+          };
+          const sizeGuid=i.pricingStrategy==="SIZE_PRICE"?i.pricingRules?.sizeSpecificPricingGuid:null;
+          const sizeGroup=sizeGuid?groups.find(group=>group.guid===sizeGuid):undefined;
+          const sizes=(sizeGroup?.modifierOptionReferences??[])
+            .map(id=>options[String(id)]).filter((o):o is NonNullable<typeof options[string]>=>Boolean(o));
+          if(sizes.length){
+            for(const option of sizes){
+              const id=posId(i.guid)+":size:"+option.guid;
+              // Toast publishes size prices on the Size group's option items.
+              const sizePrice=option.price!=null&&["BASE_PRICE","MENU_SPECIFIC_PRICE","NONE"].includes(option.pricingStrategy??"NONE")
+                ?cents(option.price):null;
+              items.set(id,{...common,posItemId:id,sizeLabel:option.name,priceCents:sizePrice});
+            }
+          }else{
+            const id=posId(i.guid);
+            items.set(id,{...common,posItemId:id,sizeLabel:null,priceCents:resolvedPrice});
+          }
         }
-        for(const child of g.menuGroups)visit(child);
+        for(const child of g.menuGroups)visit(child,[...path,child.name],menuAvailability);
       }
-      for(const menu of data.menus)for(const group of menu.menuGroups)visit(group);
+      for(const menu of data.menus)for(const group of menu.menuGroups)
+        visit(group,[menu.name??"Menu",group.name],menu.availability??null);
+      if(items.size>5000)throw new ToastApiError("invalid_response");
       return [...items.values()];
     },
     async fetchCatalogFacts():Promise<ToastCatalogFact[]> {
@@ -317,11 +388,21 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       }));
     },
     async fetchEmployees():Promise<PosEmployee[]> {
-      const rows=await request("/labor/v1/employees",employeesSchema);
-      return rows.filter(r=>!r.deleted).map(r=>{
-        const displayName=[r.chosenName||r.firstName,r.lastName].filter(Boolean).join(" ").trim();
-        if(!displayName)throw new ToastApiError("invalid_response");
-        return {posTeamMemberId:"toast:"+restaurantGuid+":"+r.guid,displayName,role:null};
+      const [rows,jobs]=await Promise.all([
+        request("/labor/v1/employees",employeesSchema),
+        request("/labor/v1/jobs",toastJobSchema)
+      ]);
+      const jobsById=new Map(jobs.filter(j=>!j.deleted).map(j=>[j.guid,j]));
+      return rows.map(r=>{
+        const displayName=[r.chosenName||r.firstName,r.lastName].filter(Boolean).join(" ").trim()
+          ||"Toast employee "+r.guid.slice(0,8);
+        const jobId=r.jobReferences?.find(j=>jobsById.has(j.guid))?.guid;
+        const job=jobId?jobsById.get(jobId):undefined;
+        const override=r.wageOverrides?.find(w=>w.jobReference.guid===jobId);
+        const wage=override?.wage??(job?.wageFrequency==="HOURLY"?job.defaultWage:null);
+        return {posTeamMemberId:"toast:"+restaurantGuid+":"+r.guid,
+          displayName,posName:displayName,role:job?.title??null,
+          hourlyWageCents:wage==null?null:cents(wage),active:!r.deleted};
       });
     },
     fetchAttendanceFacts:(range)=>fetchAttendance(range,"historical"),
