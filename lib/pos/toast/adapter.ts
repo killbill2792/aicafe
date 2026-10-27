@@ -46,7 +46,10 @@ const shiftsSchema=z.array(z.object({guid:GUID,employeeReference:z.object({guid:
   deleted:z.boolean().nullish()}));
 const pricingRulesSchema=z.object({
   sizeSpecificPricingGuid:GUID.nullish(),
-  timeSpecificPricingRules:z.array(z.unknown()).nullish(),
+  timeSpecificPricingRules:z.array(z.object({
+    timeSpecificPrice:z.number().nullish(),basePrice:z.number().nullish(),
+    schedule:z.array(z.unknown()).nullish()
+  }).passthrough()).nullish(),
   sizeSequencePricingRules:z.array(z.unknown()).nullish()
 }).passthrough();
 const itemSchema=z.object({
@@ -287,6 +290,20 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       const groups=Object.values(data.modifierGroupReferences);
       const options=data.modifierOptionReferences;
       const posId=(guid:string)=>"toast:"+restaurantGuid+":"+guid;
+      // Toast Menus v2 supplies basePrice inside time-specific rules.
+      // Use only a consistent base, never invent an unresolved price.
+      const resolvedRulePrice=(strategy:string|null|undefined,price:number|null|undefined,
+        rules:z.infer<typeof pricingRulesSchema>|null|undefined):number|null=>{
+        if(strategy==="OPEN_PRICE")return null;
+        if(price!=null&&["BASE_PRICE","MENU_SPECIFIC_PRICE","GROUP_PRICE","TIME_SPECIFIC_PRICE"]
+          .includes(strategy??""))return cents(price);
+        if(strategy==="TIME_SPECIFIC_PRICE"){
+          const bases=(rules?.timeSpecificPricingRules??[])
+            .map(rule=>rule.basePrice).filter((value):value is number=>value!=null);
+          if(bases.length&&bases.every(base=>base===bases[0]))return cents(bases[0]);
+        }
+        return null;
+      };
       function visit(g:MenuGroup,path:string[],menuAvailability:unknown){
         for(const i of g.menuItems) {
           const itemGroups=(i.modifierGroupReferences??[])
@@ -297,12 +314,11 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
             required:group.requiredMode==="REQUIRED",
             options:group.modifierOptionReferences.map(id=>options[String(id)]).filter((o):o is NonNullable<typeof options[string]>=>Boolean(o)).map(o=>({
               posModifierId:posId(o.guid),name:o.name,
-              priceCents:o.price!=null&&["BASE_PRICE","MENU_SPECIFIC_PRICE","NONE"].includes(o.pricingStrategy??"NONE")?
-                cents(o.price):null,pricingStrategy:o.pricingStrategy??null
+              priceCents:resolvedRulePrice(o.pricingStrategy??"NONE",o.price,o.pricingRules),
+              pricingStrategy:o.pricingStrategy??null
             }))
           }));
-          const simple=["BASE_PRICE","MENU_SPECIFIC_PRICE"].includes(i.pricingStrategy??"");
-          const resolvedPrice=simple&&i.price!=null?cents(i.price):null;
+          const resolvedPrice=resolvedRulePrice(i.pricingStrategy,i.price,i.pricingRules);
           const visibility=(i.visibility??[]).filter((v):v is string=>typeof v==="string").join(",")||null;
           const common={
             name:i.name,baseName:i.name,category:i.salesCategory?.name??g.name,
@@ -314,7 +330,9 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
               itemGuid:i.guid,pricingRules:i.pricingRules??null,
               itemVisibility:i.visibility??null,
               menuAvailability,groupAvailability:g.availability??null,
-              originalItem:i
+              originalItem:i,originalModifierGroups:itemGroups,
+              originalModifierOptions:itemGroups.flatMap(group=>group.modifierOptionReferences
+                .map(ref=>options[String(ref)]).filter(Boolean))
             } as Record<string,unknown>
           };
           const sizeGuid=i.pricingStrategy==="SIZE_PRICE"?i.pricingRules?.sizeSpecificPricingGuid:null;
@@ -325,9 +343,9 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
             for(const option of sizes){
               const id=posId(i.guid)+":size:"+option.guid;
               // Toast publishes size prices on the Size group's option items.
-              const sizePrice=option.price!=null&&["BASE_PRICE","MENU_SPECIFIC_PRICE","NONE"].includes(option.pricingStrategy??"NONE")
-                ?cents(option.price):null;
-              items.set(id,{...common,posItemId:id,sizeLabel:option.name,priceCents:sizePrice});
+              const sizePrice=resolvedRulePrice(option.pricingStrategy??"NONE",option.price,option.pricingRules);
+              items.set(id,{...common,posItemId:id,sizeLabel:option.name,priceCents:sizePrice,
+                posMetadata:{...common.posMetadata,sizeOption:option}});
             }
           }else{
             const id=posId(i.guid);
