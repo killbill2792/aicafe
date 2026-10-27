@@ -1,5 +1,11 @@
 -- PR 201: shared source metadata, source identities and trustworthy nullable labor.
 -- Apply manually after migration 100. No production data is erased.
+-- Additional monthly pay that the Standard Toast API cannot supply. Distinct
+-- from imported hourly wages and employer-tax percentage fallback.
+alter table public.businesses
+ add column if not exists owner_monthly_payroll_extras_cents bigint
+   check (owner_monthly_payroll_extras_cents >= 0),
+ add column if not exists owner_monthly_payroll_extras_updated_at timestamptz;
 alter table public.toast_sync_phase_errors
  drop constraint if exists toast_sync_phase_errors_phase_check;
 alter table public.toast_sync_phase_errors
