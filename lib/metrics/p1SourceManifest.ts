@@ -164,6 +164,7 @@ export const SOURCE_SURFACES = {
   },
   "lib/data/getUnpricedPublishedMenu.ts":{
     getUnpricedPublishedMenu:{restricted:"Authenticated current-café Menu UI read of active null-priced POS products and add-on amounts; not a P1 generic metric or unrestricted model capability"},
+    getPublishedModifiersForItems:{restricted:"Owner-session scoped detail-page read of POS groups and prices; no unrestricted model access"},
   },
   "lib/data/getUnpricedProductSizes.ts": {
     getUnpricedProductSizes:{restricted:"Owner-authenticated product size drafts; excludes prices and is not model-exposed evidence"},
