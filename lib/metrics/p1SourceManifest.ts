@@ -162,6 +162,9 @@ export const SOURCE_SURFACES = {
   "lib/data/getCafeProfile.ts": {
     getCafeProfile:{capabilities:["business.profile"]},
   },
+  "lib/data/toastScheduledShifts.server.ts":{
+    readToastPlannedShifts:{restricted:"Owner-scoped read-only Toast planned shifts for Team UI; never a timecard, paid-hour metric, or model-selected P1 projection"},
+  },
   "lib/data/getUnpricedPublishedMenu.ts":{
     getUnpricedPublishedMenu:{restricted:"Authenticated current-café Menu UI read of active null-priced POS products and add-on amounts; not a P1 generic metric or unrestricted model capability"},
     getPublishedModifiersForItems:{restricted:"Owner-session scoped detail-page read of POS groups and prices; no unrestricted model access"},
