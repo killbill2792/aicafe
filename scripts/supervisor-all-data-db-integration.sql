@@ -73,9 +73,9 @@ begin
  values(orderId,'Original item',1,100);
  begin
   perform public.pos_replace_order_lines(a,orderId,
-   '[{"name":"Replacement","menu_item_id":"not-a-uuid","quantity":1,"net_sales_cents":200}]'::jsonb);
+   '[{"name":"Replacement","quantity":null,"net_sales_cents":200}]'::jsonb);
   raise exception 'Invalid POS item accepted';
- exception when invalid_text_representation then null;
+ exception when not_null_violation then null;
  end;
  if not exists(select 1 from public.order_lines
    where order_id=orderId and name='Original item')
