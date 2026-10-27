@@ -97,13 +97,13 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       readyMeetsTarget: economics("readyMeetsTarget"), readyNeedsIncrease: economics("readyNeedsIncrease"),
       largeChange: economics("largeChange"), unavailableSales: economics("unavailableSales"),
       unavailableFees: economics("unavailableFees"), unavailableCosts: economics("unavailableCosts"),
-      unavailableOperating: economics("unavailableOperating"), targetTested: economics("targetTested"),
+      unavailableOperating: economics("unavailableOperating"), unavailablePayroll:economics("unavailablePayroll"), targetTested: economics("targetTested"),
       item: economics("item"), productCost: economics("productCost"), productCostPct: economics("productCostPct"),
       currentPrice: economics("currentPrice"), simulatedPrice: economics("simulatedPrice"),
       change: economics("change"), unavailableItem: economics("unavailableItem"),
       invalid: economics("invalid"), targetNotFeasible: economics("targetNotFeasible"),
       fixSales: money("uploadSales"), fixFees: money("fixFees"),
-      fixCosts: money("addProductCosts"), fixOperating: money("addBills"),
+      fixCosts: money("addProductCosts"), fixOperating: money("addBills"), fixPayroll:economics("fixPayroll"),
     }} />}
     {tab === "what-if" && snapshot && <section className="rounded-card-lg bg-card p-5">
       {!hasCompletePlanHours(snapshot.business.openHours) && <Link href="/more/cafe-profile?focus=hours"

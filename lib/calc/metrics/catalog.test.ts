@@ -62,6 +62,12 @@ describe("M1 typed metric catalog",()=>{
     expect(computeMetric("item_revenue",{itemId}, {...recorded,itemRevenueVerified:false}).coverage).toBe(0);
     expect(computeMetric("sales_per_labor_hour",{fromHour:10,toHour:11},{...recorded,attendanceCoverageVerified:false}).value).toBeNull();
   });
+  it("withholds labor, profit and margin for numeric partial wages",()=>{
+    const partial={...recorded,facts:{...recorded.facts!,laborWageStatus:"missing" as const}};
+    for(const key of ["labor_cost","labor_pct","net_profit","operating_margin"] as const){
+      expect(computeMetric(key,{},partial).value).toBeNull();
+    }
+  });
   it("never promotes owner schedules or partially imported timecards to confirmed attendance",()=>{
     const schedule={...recorded,attendanceCoverageVerified:false,
       attendanceSources:["owner_schedule"]};

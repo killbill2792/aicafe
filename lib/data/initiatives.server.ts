@@ -279,14 +279,14 @@ export async function readMetricDay(businessId:string,date:string,
   signal?:AbortSignal):Promise<MetricDailyInput> {
   const db=createAdminSupabaseClient(signal);
   const day=await db.from("daily_rollups").select(
-    "business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,staff_tax_status,sales_data_status,card_fees_cents,voids_cents"
+    "business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,sales_data_status,card_fees_cents,voids_cents"
   ).eq("business_id",businessId).eq("business_date",date).maybeSingle();
   if(day.error)throw day.error;
   const facts=day.data?{
     date:day.data.business_date,netSalesCents:Number(day.data.net_sales_cents),
     ordersCount:Number(day.data.orders_count),drinksCount:Number(day.data.drinks_count),
     ingredientsCents:Number(day.data.ingredients_cents),wagesCents:day.data.staff_wages_cents==null?null:Number(day.data.staff_wages_cents),
-    staffTaxCents:day.data.staff_tax_cents==null?null:Number(day.data.staff_tax_cents),staffTaxStatus:day.data.staff_tax_status,
+    staffTaxCents:day.data.staff_tax_cents==null?null:Number(day.data.staff_tax_cents),laborWageStatus:day.data.labor_wage_status,staffTaxStatus:day.data.staff_tax_status,
     salesDataStatus:day.data.sales_data_status,
     cardFeesCents:Number(day.data.card_fees_cents),voidsCents:Number(day.data.voids_cents),
   }:undefined;

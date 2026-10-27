@@ -1656,6 +1656,8 @@
     "unavailableFees": "Processing fees are incomplete, so the simulator would overstate profit. Add actual fees or confirm an estimate first.",
     "unavailableCosts": "Some sold menu items are missing product costs, so the simulator would overstate profit.",
     "unavailableOperating": "Add or confirm the missing monthly operating costs (rent, bills and supplies) before AI CAFE can calculate a reliable operating margin or run this price simulation.",
+    "unavailablePayroll": "Payroll is incomplete. Recorded wages cover known staff only; final profit cannot be calculated until the missing wages are resolved.",
+    "fixPayroll": "Review staff wages",
     "targetTested": "Testing {target}",
     "item": "Item",
     "productCost": "Product cost",

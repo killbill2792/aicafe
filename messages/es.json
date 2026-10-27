@@ -1656,6 +1656,8 @@
     "unavailableFees": "Las comisiones de procesamiento están incompletas y la simulación exageraría la ganancia. Agrega datos reales o confirma una estimación.",
     "unavailableCosts": "Faltan costos de producto para algunos artículos vendidos y la simulación exageraría la ganancia.",
     "unavailableOperating": "Agregue o confirme los gastos operativos mensuales que faltan (alquiler, facturas y suministros) antes de calcular un margen operativo fiable o simular precios.",
+    "unavailablePayroll": "La nómina está incompleta. Los salarios registrados incluyen solo al personal conocido; no se puede calcular la ganancia definitiva hasta resolver los salarios faltantes.",
+    "fixPayroll": "Revisar salarios del personal",
     "targetTested": "Probando {target}",
     "item": "Artículo",
     "productCost": "Costo del producto",

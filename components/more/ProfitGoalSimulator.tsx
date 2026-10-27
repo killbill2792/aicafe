@@ -24,6 +24,7 @@ type Labels = {
   unavailableFees: string;
   unavailableCosts: string;
   unavailableOperating: string;
+  unavailablePayroll: string;
   targetTested: string;
   item: string;
   productCost: string;
@@ -38,6 +39,7 @@ type Labels = {
   fixFees: string;
   fixCosts: string;
   fixOperating: string;
+  fixPayroll: string;
 };
 
 export default function ProfitGoalSimulator({
@@ -63,9 +65,9 @@ export default function ProfitGoalSimulator({
   const typedPct = (value: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value / 100);
   const blockers = profitGoalBlockers(data);
   const blockerText = { sales: labels.unavailableSales, fees: labels.unavailableFees,
-    costs: labels.unavailableCosts, operating: labels.unavailableOperating };
+    costs: labels.unavailableCosts, operating: labels.unavailableOperating, payroll:labels.unavailablePayroll };
   const blockerActions = { sales: labels.fixSales, fees: labels.fixFees,
-    costs: labels.fixCosts, operating: labels.fixOperating };
+    costs: labels.fixCosts, operating: labels.fixOperating, payroll:labels.fixPayroll };
 
   const simulation = useMemo(() => {
     if (error || !data.economics || !data.canSimulate) return null;
