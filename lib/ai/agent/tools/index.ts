@@ -1,3 +1,4 @@
+import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
 import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard,periodChoicePayload,resolveOwnerPeriod} from "../resolve";
@@ -166,9 +167,11 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const ownerMonthlyPayrollExtrasCents=ownerCosts?.available?
       ownerCosts.value.monthlyCents:null;
     const unknownWageDates=labor?.available?
-      labor.value.filter(day=>day.wagesCents===null).map(day=>day.date):[];
-    const observedLaborWagesCents=labor?.available&&unknownWageDates.length===0&&
-      labor.value.every(day=>day.wagesCents!==null)?
+      labor.value.filter(day=>!laborKnown({wagesCents:day.wagesCents,staffTaxCents:day.staffTaxCents,
+        laborWageStatus:day.wageStatus})).map(day=>day.date):[];
+    const observedLaborWagesCents=labor?.available&&labor.value.length>0&&unknownWageDates.length===0&&
+      labor.value.every(day=>laborKnown({wagesCents:day.wagesCents,staffTaxCents:day.staffTaxCents,
+        laborWageStatus:day.wageStatus}))?
       labor.value.reduce((total,day)=>total+day.wagesCents!,0):null;
     const costEvidence={
       toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
@@ -176,7 +179,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
         null:"You told me" as const,
       ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"estimate",
       observedLaborWagesCents,
-      observedWageStatus:!labor?.available?"unavailable":unknownWageDates.length?"unknown":"recorded",
+      observedWageStatus:!labor?.available?"unavailable":unknownWageDates.length||labor.value.length===0?"unknown":"recorded",
     };
     if(!slice?.available)return {source:name,period,agentId:"olivia",
       missing:[...(slice?.quality.missingInputs??["toastPayrollRunsNotAvailable"]),
