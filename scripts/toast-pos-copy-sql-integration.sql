@@ -47,7 +47,7 @@ begin
  then raise exception 'Toast owner-only scopes function not secured';end if;
  if has_function_privilege('anon','public.toast_business_scope_summary(uuid)','EXECUTE')
  then raise exception 'anonymous role can read Toast scopes';end if;
-end $;
+end $$;
 -- A missing wage round-trips as SQL NULL; there must be no forced-zero fallback.
 do $$
 declare v_default text;
@@ -63,14 +63,14 @@ end $$;
 -- All fixtures are synthetic and rolled back with the outer transaction.
 select set_config('request.jwt.claim.role','service_role',true);
 -- Owner scope function must never reveal data to the service role or strangers.
-do $
+do $$
 begin
  begin
   perform public.toast_business_scope_summary('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
   raise exception 'Toast owner-only scope function accepted service role';
  exception when sqlstate '42501' then null;
  end;
-end $;
+end $$;
 insert into public.businesses(id,name,is_demo)
  values('cccccccc-cccc-4ccc-8ccc-cccccccccccc','Toast 101 disposable café',false);
 insert into public.locations(id,business_id,name)
@@ -80,7 +80,7 @@ insert into public.locations(id,business_id,name)
 update public.businesses
  set owner_monthly_payroll_extras_cents=37500,owner_monthly_payroll_extras_updated_at=now()
  where id='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
-do $ begin
+do $$ begin
  if (select owner_monthly_payroll_extras_cents from public.businesses
      where id='cccccccc-cccc-4ccc-8ccc-cccccccccccc')<>37500
  then raise exception 'owner-stated monthly payroll not saved';end if;
@@ -90,7 +90,7 @@ do $ begin
   raise exception 'negative monthly payroll costs must be rejected';
  exception when check_violation then null;
  end;
-end $;
+end $$;
 select public.toast_save_configuration('cccccccc-cccc-4ccc-8ccc-cccccccccccc',
  'https://ws-api.toasttab.com','disposable_test','synthetic_ciphertext',
  '[{"location_id":"cccccccc-cccc-4ccc-8ccc-cccccccccc01","restaurant_guid":"cccccccc-cccc-4ccc-8ccc-ccccccccff01"}]'::jsonb);
