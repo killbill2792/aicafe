@@ -115,6 +115,23 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       },
     },
     async (requested,input)=>{assertBusiness(requested);return readUsageVariance(input);},
+    async(requested)=>{
+      assertBusiness(requested);
+      const {data,error}=await client.from("businesses")
+        .select("owner_monthly_payroll_extras_cents").eq("id",requested).single();
+      if(error)throw error;
+      if(!data)throw new Error("Owner payroll setting unavailable");
+      const amount=data.owner_monthly_payroll_extras_cents===null?null:
+        Number(data.owner_monthly_payroll_extras_cents);
+      if(amount!==null&&(!Number.isSafeInteger(amount)||amount<0))
+        throw new Error("Invalid owner payroll setting");
+      return {available:true,value:{monthlyCents:amount,
+        source:amount===null?null:"owner_entered" as const},
+        quality:{level:amount===null?"low" as const:"medium" as const,
+          missingInputs:amount===null?["ownerMonthlyPayrollExtrasNotSet"]:[],
+          estimatedInputs:amount===null?[]:["ownerMonthlyPayrollExtras"],
+          staleInputs:[]}};
+    },
   );
   return new BusinessScopedCafeTools(tools, businessId);
 }
