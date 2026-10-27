@@ -117,9 +117,13 @@ export function simulateEconomics(input:Economics,delta:ScenarioDelta){
   profitChangeCents=-delta.monthlyChangeCents;
  }else if(delta.kind==="price"||delta.kind==="item_cost"){
   if(delta.kind==="price"){
-   weeklyChangeCents=Math.round((delta.newPriceCents-delta.oldPriceCents)*delta.weeklyUnits*(1-(input.feeRate??0)));
-   itemMarginBeforeCents=delta.unitCostCents===null?null:Math.round(delta.oldPriceCents*(1-(input.feeRate??0)))-delta.unitCostCents;
-   itemMarginAfterCents=delta.unitCostCents===null?null:Math.round(delta.newPriceCents*(1-(input.feeRate??0)))-delta.unitCostCents;
+   // Unknown processing fees cannot be treated as a zero-percent fee.
+   weeklyChangeCents=input.feeRate===null?null:
+    Math.round((delta.newPriceCents-delta.oldPriceCents)*delta.weeklyUnits*(1-input.feeRate));
+   itemMarginBeforeCents=delta.unitCostCents===null||input.feeRate===null?null:
+    Math.round(delta.oldPriceCents*(1-input.feeRate))-delta.unitCostCents;
+   itemMarginAfterCents=delta.unitCostCents===null||input.feeRate===null?null:
+    Math.round(delta.newPriceCents*(1-input.feeRate))-delta.unitCostCents;
   }else{
    weeklyChangeCents=Math.round((delta.oldCostCents-delta.newCostCents)*delta.weeklyUnits);
    itemMarginBeforeCents=delta.currentPriceCents-delta.oldCostCents;

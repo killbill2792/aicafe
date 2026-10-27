@@ -98,6 +98,16 @@ describe("single deterministic supervisor economics model",()=>{
   expect(unavailable.difference.monthlyProfitCents).toBeNull();
   expect(unavailable.after.monthlyProfitCents).toBeNull();
  });
+ it("does not invent zero processing fees in a price what-if",()=>{
+  const result=simulateEconomics({...base,feeRate:null,feeStatus:"missing"},
+   {kind:"price",itemId:"latte",oldPriceCents:2000,newPriceCents:2010,
+    weeklyUnits:100,unitCostCents:600});
+  expect(result.weeklyChangeCents).toBeNull();
+  expect(result.difference.monthlyProfitCents).toBeNull();
+  expect(result.before.itemMarginCents).toBeNull();
+  expect(result.after.itemMarginCents).toBeNull();
+  expect(result.missing).toContain("processingFeeRate");
+ });
  it("calculates a ten-cent latte what-if from current weekly units and no card",()=>{
   const result=simulateEconomics(base,{kind:"price",itemId:"latte",oldPriceCents:2000,
    newPriceCents:2010,weeklyUnits:100,unitCostCents:600});
