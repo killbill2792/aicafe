@@ -38,6 +38,26 @@ function buildSnapshot(opts: {
 }
 
 describe("buildTodayGlanceViewModel", () => {
+
+  it("does not claim all yours from non-null partial wages on a past day",()=>{
+    const prior={...zeroDailyFacts("2026-10-02"),netSalesCents:2000,
+      wagesCents:200,staffTaxCents:25,laborWageStatus:"missing" as const};
+    const today={...zeroDailyFacts("2026-10-03"),netSalesCents:1500};
+    const snapshot=buildSnapshot({todayHasData:true,today,monthActualDays:[prior,today]});
+    const vm=buildTodayGlanceViewModel(snapshot);
+    expect(vm.bucketState).toEqual({kind:"costsUnknown"});
+    expect(vm.moneyLeftCents).toBe(1500);
+    const complete=buildTodayGlanceViewModel({...snapshot,
+      monthActualDays:[{...prior,laborWageStatus:"actual" as const},today]});
+    expect(complete.bucketState.kind).toBe("allYours");
+  });
+  it("today's known-only partial wages do not become zero or positive profit",()=>{
+    const today={...zeroDailyFacts("2026-10-03"),netSalesCents:3000,
+      wagesCents:200,staffTaxCents:25,laborWageStatus:"missing" as const};
+    const vm=buildTodayGlanceViewModel(buildSnapshot({todayHasData:true,today}));
+    expect(vm.moneyLeftCents).toBeNull();
+    expect(vm.bucketState.kind).toBe("costsUnknown");
+  });
   it("is 'noSalesYet' when today has no rollup at all — not a substituted stale day", () => {
     const snapshot = buildSnapshot({ todayHasData: false });
     const vm = buildTodayGlanceViewModel(snapshot);

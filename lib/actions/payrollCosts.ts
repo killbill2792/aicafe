@@ -60,14 +60,14 @@ export async function savePayrollCostAssumption(input: unknown): Promise<Payroll
   const fromDate = formatInTimeZone(subDays(new Date(`${today}T12:00:00Z`), 89), "UTC", "yyyy-MM-dd");
   const { data: rows, error: rowsError } = await ctx.supabase
     .from("daily_rollups")
-    .select("business_date, staff_wages_cents, staff_tax_status")
+    .select("business_date, staff_wages_cents, staff_tax_status, labor_wage_status")
     .eq("business_id", ctx.businessId)
     .gte("business_date", fromDate)
     .lte("business_date", today);
   if (rowsError) return { ok: false, error: rowsError.message };
 
   // Only fallback/estimated days change. Connected/imported actual payroll is preserved.
-  const estimatedRows = (rows ?? []).filter((row) => row.staff_tax_status === "estimated" && row.staff_wages_cents !== null && Number.isSafeInteger(Number(row.staff_wages_cents)) && Number(row.staff_wages_cents) >= 0);
+  const estimatedRows = (rows ?? []).filter((row) => row.staff_tax_status === "estimated" && row.labor_wage_status !== "missing" && row.staff_wages_cents !== null && Number.isSafeInteger(Number(row.staff_wages_cents)) && Number(row.staff_wages_cents) >= 0);
   let refreshed = true;
   for (let index = 0; index < estimatedRows.length; index += 10) {
     const chunk = estimatedRows.slice(index, index + 10);
@@ -83,6 +83,7 @@ export async function savePayrollCostAssumption(input: unknown): Promise<Payroll
           .eq("business_id", ctx!.businessId)
           .eq("business_date", row.business_date)
           .eq("staff_tax_status", "estimated")
+          .eq("labor_wage_status", row.labor_wage_status)
           .eq("staff_wages_cents", row.staff_wages_cents)
           .select("business_date"),
       ),
@@ -92,4 +93,23 @@ export async function savePayrollCostAssumption(input: unknown): Promise<Payroll
 
   for (const path of ["/staff", "/staff/rules", "/onboarding", "/", "/money", "/menu", "/operations"]) revalidatePath(path);
   return { ok: true, refreshed };
+}
+
+/** Save only payroll that is NOT already represented by connected clocked
+ * wages, employer-cost percentage, or imported payroll facts. Never infer 0. */
+export async function saveMonthlyPayrollExtras(input:unknown):Promise<PayrollFallbackResult>{
+ const parsed=z.object({monthlyCents:z.number().int().safe().min(0)}).safeParse(input);
+ if(!parsed.success)return {ok:false,error:"Enter a valid monthly amount."};
+ let ctx:Awaited<ReturnType<typeof ownBusinessContext>>;
+ try{ctx=await ownBusinessContext();}
+ catch(error){return {ok:false,error:error instanceof Error?error.message:"Could not load your café."};}
+ if(!ctx)return {ok:false,error:"Set up your own café first."};
+ const {error}=await ctx.supabase.from("businesses").update({
+  owner_monthly_payroll_extras_cents:parsed.data.monthlyCents,
+  owner_monthly_payroll_extras_updated_at:new Date().toISOString(),
+ }).eq("id",ctx.businessId);
+ if(error)return {ok:false,error:error.message};
+ for(const path of ["/staff","/staff/rules","/","/money","/menu","/operations"])
+  revalidatePath(path);
+ return {ok:true,refreshed:true};
 }

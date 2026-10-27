@@ -21,9 +21,10 @@ export function buildScenarioViewModel(snapshot: BusinessSnapshot): ScenarioView
     avgDrinksPerDay: item.quantitySoldLast28Days / 28,
   }));
 
+  const covered=snapshot.last28Days.filter(d=>dayContributionCents(d)!==null);
   const avgDailyContributionCents =
-    snapshot.last28Days.length > 0
-      ? snapshot.last28Days.reduce((sum, d) => sum + dayContributionCents(d), 0) / snapshot.last28Days.length
+    covered.length > 0
+      ? covered.reduce((sum, d) => sum + (dayContributionCents(d)??0), 0) / covered.length
       : 0;
 
   return { items, avgDailyContributionCents };

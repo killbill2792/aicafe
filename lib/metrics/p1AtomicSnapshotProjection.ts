@@ -89,12 +89,23 @@ function daily(snapshot:AtomicP1SourceSnapshot,
   const names=labor?["wagesCents","staffTaxCents"] as const:
     ["netSalesCents"] as const;
   const leaves:SnapshotLeaf[]=[];
+  const missingLaborDays=new Set<string>(labor?rows.filter(row=>
+    row.labor_wage_status===undefined||row.labor_wage_status==="missing")
+    .map(row=>row.business_date):[]);
   for(let i=0;i<fields.length;i++){
-    // Each SQL cent is an integer; preserve exactness even when an
-    // intermediate sum is larger than MAX_SAFE_INTEGER and later negative
-    // adjustments bring the final period total back into range.
-    const exact=rows.reduce((sum,row)=>
-      sum+BigInt(row[fields[i]]),BigInt(0));
+    // An unknown wage/tax must stay missing, never BigInt(null) or zero.
+    // Retain known component evidence without claiming the full labor total.
+    const known=rows.filter(row=>{
+      const n=row[fields[i]];
+      if(n===null||(labor&&row.labor_wage_status!=="actual"&&row.labor_wage_status!=="estimate")){
+        if(labor)missingLaborDays.add(row.business_date);
+        return false;
+      }
+      return true;
+    });
+    if(known.length!==rows.length)continue;
+    const exact=known.reduce((sum,row)=>
+      sum+BigInt(row[fields[i]]!),BigInt(0));
     if(exact>BigInt("1000000000000")||
       exact<BigInt("-1000000000000"))
       return blocked("daily_total_out_of_range");
@@ -103,18 +114,19 @@ function daily(snapshot:AtomicP1SourceSnapshot,
     leaves.push({key:"aggregate",name:"daily rows",field:names[i],
       value,unit:"USD_cents"});
   }
-  if(labor){
+  if(labor&&leaves.length===2){
     const loaded=staffCostLoadedCents(leaves[0].value,leaves[1].value);
     if(!safe(loaded))return blocked("loaded_labor_out_of_range");
     leaves.push({key:"aggregate",name:"daily rows",
       field:"loadedStaffCostCents",value:loaded,unit:"USD_cents"});
   }
   const estimate=labor&&rows.some(row=>row.staff_tax_status==="estimated");
-  return result(leaves,[labor?"labor_coverage_not_proven":
-    "pos_import_date_and_item_coverage_not_proven",
+  return result(leaves,[
+    labor?"labor_coverage_not_proven":"pos_import_date_and_item_coverage_not_proven",
     "card_fee_status_unavailable_from_atomic_snapshot",
-    "historical_ingredient_cost_coverage_not_proven"],
-    estimate?["estimated_payroll_tax"]:[]);
+    "historical_ingredient_cost_coverage_not_proven",
+    ...[...missingLaborDays].sort().map(date=>"labor_wage_or_tax_missing:"+date),
+  ],estimate?["estimated_payroll_tax"]:[]);
 }
 
 export function extractAtomicSnapshot(
@@ -196,8 +208,21 @@ export function extractAtomicSnapshot(
     // Daily staff cents have no attendance/wage coverage status in the atomic
     // RPC. A zero may mean missing labor rather than an observed zero.
     // Use source-bound employee wages + burden for what-if labor instead.
-    case "labor.daily_costs":
-      return blocked("labor_attendance_and_wage_coverage_not_proven");
+    case "labor.daily_costs":{
+      // Attendance/coverage is still unverified by this snapshot, so expose
+      // no wage totals. But preserve precise NULL-day and estimated-tax
+      // diagnostics instead of hiding evidence behind a generic error.
+      const seen=snapshot.sources.dailyRollups.filter(row=>
+        query.period&&row.business_date>=query.period.from&&
+        row.business_date<=query.period.to);
+      const unknown=[...new Set(seen.filter(row=>
+        row.staff_wages_cents===null||row.staff_tax_cents===null||
+         row.labor_wage_status===undefined||row.labor_wage_status==="missing")
+        .map(row=>"labor_wage_or_tax_missing:"+row.business_date))].sort();
+      return result([],["labor_attendance_and_wage_coverage_not_proven",...unknown],
+        seen.some(row=>row.staff_tax_status==="estimated")?
+         ["estimated_payroll_tax"]:[]);
+    }
     default:return null;
   }
 }

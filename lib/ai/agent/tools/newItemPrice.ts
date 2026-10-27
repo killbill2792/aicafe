@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {laborKnown} from "@/lib/calc";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {calculateNewItemPrice,contributionCoverage} from "@/lib/calc/newItemPrice";
 import {requestedPeriod,prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
@@ -26,7 +27,10 @@ export const newItemPriceTools={suggest_new_item_price:{
    ...(sales?.quality.missingInputs??["productSalesReaderUnavailable"]),
    ...(bills?.quality.missingInputs??["billsReaderUnavailable"]),
    ...menu.quality.missingInputs,...(!site?.available?["locationUnavailable"]:[])];
-  const laborCents=labor?.available?labor.value.reduce((s,d)=>s+d.loadedStaffCostCents,0):null;
+  const laborCents=labor?.available&&labor.value.length>0&&labor.value.every(d=>
+    laborKnown({wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
+      laborWageStatus:d.wageStatus})&&d.loadedStaffCostCents!==null)?
+    labor.value.reduce((s,d)=>s+(d.loadedStaffCostCents??0),0):null;
   const units=sales?.available?sales.value.reduce((s,d)=>s+d.units,0):null;
   const categoryUnits=sales?.available?sales.value.filter(x=>x.category===v.category).reduce((s,d)=>s+d.units,0):null;
   const laborForPeriod=laborCents??(owner?.laborCents!=null&&owner.laborPeriod?
@@ -45,7 +49,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     units30d:units??(owner?.itemsSoldPerDay!=null?
       Math.round(owner.itemsSoldPerDay*periodDays(period)):null),
     menuPricesCents:menu.available?menu.value.filter(x=>x.active&&x.category===v.category)
-      .map(x=>x.priceCents):[],
+      .flatMap(x=>x.priceCents===null?[]:[x.priceCents]):[],
   });
   const location=site?.available?{city:site.value.city,region:site.value.region,country:site.value.countryCode}:null;
   const contribution=contributionCoverage({

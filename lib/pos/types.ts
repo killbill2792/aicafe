@@ -46,17 +46,48 @@ export type PosOrder = {
   lines: PosOrderLine[];
 };
 
+export type PosCatalogModifierOption = {
+  posModifierId: string;
+  name: string;
+  priceCents: number | null;
+  pricingStrategy: string | null;
+  posMetadata?: Record<string,unknown>;
+};
+export type PosCatalogModifierGroup = {
+  posGroupId: string;
+  name: string;
+  minSelections: number | null;
+  maxSelections: number | null;
+  required: boolean;
+  posMetadata?: Record<string,unknown>;
+  options: PosCatalogModifierOption[];
+};
 export type PosCatalogItem = {
   posItemId: string;
   name: string;
+  baseName?: string;
+  sizeLabel?: string | null;
   priceCents: number | null;
   category: string | null;
+  menuGroup?: string | null;
+  description?: string | null;
+  visibility?: string | null;
+  pricingStrategy?: string | null;
+  imageUrl?: string | null;
+  plu?: string | null;
+  sku?: string | null;
+  /** Provider-specific published menu facts; no owner recipes or costs. */
+  posMetadata?: Record<string, unknown>;
+  modifierGroups?: PosCatalogModifierGroup[];
 };
-
 export type PosEmployee = {
   posTeamMemberId: string;
   displayName: string;
   role: string | null;
+  active?: boolean;
+  hourlyWageCents?: number | null;
+  /** Raw provider display name is tracked separately from owner's display name. */
+  posName?: string;
 };
 
 export type PosTimecardBreak = { start: string; end: string; paid: boolean };

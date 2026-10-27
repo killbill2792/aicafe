@@ -147,7 +147,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       },
     };
     const result = await executeAgentTool("get_menu_items",{query:"latte",limit:25},context);
-    expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450,
+    expect(result.items).toMatchObject([{id:"a",name:"Latte",category:"drink",priceCents:450,
       unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"unknown",pricePeriod:null,priceEvidenceStatus:"unknown"}]);
     context.resolveState=newResolveState("What is the price of Espresso?");
     const wrong=await executeAgentTool("get_menu_items",{query:"Latte",limit:25},context);

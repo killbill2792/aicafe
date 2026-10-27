@@ -16,6 +16,12 @@ describe("profit goal repair actions", () => {
       { kind: "operating", href: "/more/bills" },
     ]);
   });
+  it("offers staff repair when incomplete wages would inflate profit",()=>{
+    expect(profitGoalBlockers({...fixture,business:{...fixture.business,
+      daysWithSalesInWindow:9,processingFeesStatus:"actual",operatingCostsStatus:"actual",
+      payrollCostsStatus:"missing",monthlyStaffCostCents:null},items:[]} as ProfitGoalSimulatorData))
+      .toEqual([{kind:"payroll",href:"/staff"}]);
+  });
   it("does not treat unsold menu items as a blocker", () => {
     expect(profitGoalBlockers({ ...fixture, business: {
       ...fixture.business, daysWithSalesInWindow: 9, processingFeesStatus: "actual", operatingCostsStatus: "actual",

@@ -33,6 +33,16 @@ describe("Menu pricing source basis",()=>{
     expect(p).toMatchObject({coveredDays:14,oldestDate:"2026-10-01",
       latestDate:"2026-10-14",monthlyDrinks:310,processingFeeBps:100});
   });
+  it("does not count known-only wages as complete even on verified labor dates",()=>{
+    const sales=Array.from({length:14},(_,i)=>({...day(i+1),
+      wagesCents:5000,payrollTaxCents:600,
+      laborWageStatus:i===0?"missing" as const:"actual" as const}));
+    const b=basis(sales,{laborCoveredDates:sales.map(d=>d.businessDate)});
+    expect(b.payrollStatus).toBe("missing");
+    expect(b.monthlyPayrollCents).toBeNull();
+    expect(b.payrollCoveredDays).toBe(13);
+  });
+
   it("withholds payroll when positive paid dates lack independently verified zero-day coverage",()=>{
     const sales=Array.from({length:14},(_,i)=>({
       ...day(i+1),wagesCents:i<10?5000:0,payrollTaxCents:i<10?600:0,

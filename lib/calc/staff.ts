@@ -17,12 +17,13 @@ export function paidHoursForTimecard(timecard: Timecard, now: Date = new Date())
   return Math.max(0, totalMs - unpaidBreakMs) / 3_600_000;
 }
 
-export function wagesCentsForTimecard(timecard: Timecard, now: Date = new Date()): number {
-  return paidHoursForTimecard(timecard, now) * timecard.hourlyWageCents;
+export function wagesCentsForTimecard(timecard: Timecard, now: Date = new Date()): number | null {
+  return timecard.hourlyWageCents===null?null:paidHoursForTimecard(timecard, now)*timecard.hourlyWageCents;
 }
 
-export function wagesCentsForTimecards(timecards: Timecard[], now: Date = new Date()): number {
-  return timecards.reduce((sum, tc) => sum + wagesCentsForTimecard(tc, now), 0);
+export function wagesCentsForTimecards(timecards: Timecard[], now: Date = new Date()): number | null {
+  if(timecards.some(tc=>tc.hourlyWageCents===null))return null;
+  return timecards.reduce((sum, tc) => sum + (wagesCentsForTimecard(tc, now)??0), 0);
 }
 
 /** Payroll taxes = wages × business.payroll_tax_rate (default 0.12). */

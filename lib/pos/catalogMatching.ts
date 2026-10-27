@@ -1,28 +1,54 @@
-import type { PosCatalogItem, PosProvider } from "./types";
+import type {PosCatalogItem,PosProvider} from "./types";
 
-export type CanonicalMenuCandidate = { id: string; name: string; sizeLabel: string | null; priceCents: number | null; category: string | null; posItemId: string | null };
-export type CatalogMatch = { imported: PosCatalogItem; candidateId: string | null; score: number; status: "matched" | "needs_review" | "new" };
+export type CanonicalMenuCandidate={
+ id:string;name:string;baseName?:string|null;sizeLabel:string|null;
+ priceCents:number|null;category:string|null;posItemId:string|null;
+ catalogSource?:string|null
+};
+export type CatalogMatch={imported:PosCatalogItem;candidateId:string|null;
+ score:number;status:"matched"|"needs_review"|"new"};
+const normalize=(value:string|null|undefined)=>(value??"").toLocaleLowerCase().normalize("NFKD")
+ .replace(/\p{M}/gu,"").replace(/[^\p{L}\p{N}]+/gu," ").trim();
 
-const normalize = (value: string | null) => (value ?? "").toLocaleLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
-
-/** Pure, conservative matcher: exact external ids win; ambiguous name matches always need review. */
-export function matchCatalogItem(imported: PosCatalogItem, candidates: CanonicalMenuCandidate[]): CatalogMatch {
-  const external = candidates.find((candidate) => candidate.posItemId === imported.posItemId);
-  if (external) return { imported, candidateId: external.id, score: 1, status: "matched" };
-  const name = normalize(imported.name);
-  const scored = candidates.map((candidate) => {
-    let score = normalize(candidate.name) === name ? 0.6 : 0;
-    if (imported.priceCents !== null && candidate.priceCents === imported.priceCents) score += 0.2;
-    if (normalize(imported.category) && normalize(candidate.category) === normalize(imported.category)) score += 0.1;
-    return { candidate, score };
-  }).filter((entry) => entry.score >= 0.6).sort((a, b) => b.score - a.score);
-  if (scored.length === 0) return { imported, candidateId: null, score: 0, status: "new" };
-  const best = scored[0];
-  const unambiguous = best.score >= 0.8 && (scored.length === 1 || best.score > scored[1].score);
-  return { imported, candidateId: best.candidate.id, score: best.score, status: unambiguous ? "matched" : "needs_review" };
+/** Immutable provider GUID wins, then matching is exact size/name and conservative. */
+export function matchCatalogItem(imported:PosCatalogItem,candidates:CanonicalMenuCandidate[],
+ provider?:PosProvider):CatalogMatch{
+ const external=candidates.find(c=>c.posItemId===imported.posItemId);
+ if(external)return {imported,candidateId:external.id,score:1,status:"matched"};
+ const inputName=normalize(imported.baseName??imported.name);
+ const inputSize=normalize(imported.sizeLabel??null);
+ const source=provider??(imported.posItemId.startsWith("toast:")?"toast":undefined);
+ const matchingNames=candidates.filter(c=>(
+   normalize(c.baseName??c.name)===inputName&&normalize(c.sizeLabel)===inputSize
+ ));
+ // GUIDs within one provider identify distinct rows, even with identical labels.
+ const same=matchingNames.filter(c=>!(source&&c.catalogSource===source&&
+   c.posItemId!==null&&c.posItemId!==imported.posItemId));
+ if(!same.length){
+  if(matchingNames.length)return {imported,candidateId:null,score:0,status:"new"};
+  const legacy=candidates.filter(c=>!(source&&c.catalogSource===source&&c.posItemId!==null)&&
+   normalize(c.name)===normalize(imported.name));
+  if(legacy.length)return {imported,candidateId:legacy.length===1?legacy[0].id:null,
+   score:0.6,status:"needs_review"};
+  return {imported,candidateId:null,score:0,status:"new"};
+ }
+ const equalPrice=(c:CanonicalMenuCandidate)=>imported.priceCents!==null&&
+    c.priceCents===imported.priceCents;
+ const exactPrice=same.filter(equalPrice);
+ const chosen=(exactPrice.length===1?exactPrice[0]:same[0]);
+ // Exact size/name/price is needed for manual records; the CSV median is not a
+ // provider authority and may be different to the current published POS price.
+ const manual=chosen.catalogSource===undefined||chosen.catalogSource==="manual"||
+   chosen.posItemId===null;
+ const single=same.length===1;
+ const csv=chosen.posItemId?.startsWith("csv-item-")||chosen.catalogSource==="csv";
+ const importedCsv=imported.posItemId.startsWith("csv-item-");
+ const sourceConflict=chosen.posItemId!==null&&!csv&&!importedCsv&&
+   chosen.posItemId!==imported.posItemId;
+ const matched=single&&!sourceConflict&&(csv||importedCsv||equalPrice(chosen));
+ return {imported,candidateId:single?chosen.id:null,
+  score:matched?1:manual?0.6:0.7,status:matched?"matched":"needs_review"};
 }
-
-export function catalogSourceFor(provider: PosProvider): "csv" | "square" | "toast" | "clover" | "other_pos" {
-  if (provider === "demo") return "other_pos";
-  return provider;
+export function catalogSourceFor(provider:PosProvider):"csv"|"square"|"toast"|"clover"|"other_pos" {
+ return provider==="demo"?"other_pos":provider;
 }

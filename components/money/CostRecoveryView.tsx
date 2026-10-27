@@ -175,7 +175,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
           </div>
           <div className="rounded-2xl bg-paper p-3">
             <span className="block text-xs font-semibold text-ink-muted">{t("monthlyStaffEstimate")}</span>
-            <strong className="mt-1 block text-xl text-ink"><Money cents={vm.monthlyStaffCents} /></strong>
+            <strong className="mt-1 block text-xl text-ink">{vm.monthlyStaffCents===null?"—":<Money cents={vm.monthlyStaffCents} />}</strong>
           </div>
         </div>
       </section>
@@ -254,7 +254,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
           { label: t("glanceSales"), value: formatCents(glance.salesCents) },
           { label: t("glanceOrders"), value: String(glance.ordersCount) },
           { label: t("glanceAvgOrder"), value: formatCents(glance.avgOrderValueCents) },
-          { label: t("glanceMoneyLeft"), value: formatCents(glance.moneyLeftCents) },
+          { label: t("glanceMoneyLeft"), value: glance.moneyLeftCents===null?"—":formatCents(glance.moneyLeftCents) },
         ]}
         secondaryStat={glance.drinksCount > 0 ? t("glanceDrinks", { count: glance.drinksCount }) : null}
         caption={glanceCopy.caption}

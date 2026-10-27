@@ -1,6 +1,6 @@
 import type { ProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
 
-export type ProfitGoalBlocker = { kind: "sales" | "fees" | "costs" | "operating"; href: string };
+export type ProfitGoalBlocker = { kind: "sales" | "fees" | "costs" | "operating" | "payroll"; href: string };
 
 /** Show *every* missing prerequisite; priority in the data reader only suppresses the estimate. */
 export function profitGoalBlockers(data: ProfitGoalSimulatorData): ProfitGoalBlocker[] {
@@ -10,5 +10,6 @@ export function profitGoalBlockers(data: ProfitGoalSimulatorData): ProfitGoalBlo
     ...(data.items.some(item => item.unitsSoldInWindow > 0 && item.productCostStatus !== "READY")
       ? [{ kind: "costs" as const, href: "/menu" }] : []),
     ...(data.business.operatingCostsStatus === "missing" ? [{ kind: "operating" as const, href: "/more/bills" }] : []),
+    ...(data.business.payrollCostsStatus === "missing" || data.business.monthlyStaffCostCents === null ? [{kind:"payroll" as const,href:"/staff"}] : []),
   ];
 }

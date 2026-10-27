@@ -6,7 +6,7 @@ import {refreshToastRestaurantInfo} from "./restaurantInfo";
 import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
 import {retryToastRollupRefreshes} from "./rollupRetries";
 import {z} from "zod";
-import {syncToastOptionalSources} from "./optionalSync";
+import {syncToastOptionalSources,ensureToastFirstCatalog} from "./optionalSync";
 import {readAllPages} from "./readAllPages";
 import {reconcileToastDays} from "./reconcile";
 
@@ -225,6 +225,12 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    mustFinish(deadlineAt);
    // A committed import's failed cost refresh is never another order import.
    await retryToastRollupRefreshes(db,deadlineAt,5,m.business_id);
+   });
+
+   // Only the first ever canonical menu copy may precede sales. For an
+   // initialized restaurant, expensive optional work remains AFTER backfill.
+   await isolated("menu",async()=>{
+    await ensureToastFirstCatalog(db,m,now,Math.min(deadlineAt,Date.now()+10000));
    });
    await isolated("daily",async()=>{
    const closed=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);

@@ -30,7 +30,7 @@ export const suppliesTools={
         if(!ownerNamedTarget(ctx.resolveState,itemId,found.name))
           return {source:"product_costs",period:null,agentId:"maya",missing:["targetNotConfirmed"]};
         const choice=resolveEntity("product",found.name,menu.value.filter(row=>row.active),{
-          nameOf:r=>r.name,idOf:r=>r.id,describe:r=>r.category+" · "+(r.priceCents/100).toFixed(2)});
+          nameOf:r=>r.name,idOf:r=>r.id,describe:r=>r.category+" · "+(r.priceCents===null?"open price":(r.priceCents/100).toFixed(2))});
         if(choice.status==="ambiguous"&&!ctx.resolveState.chosenIds.has(itemId.toLowerCase()))
           return {...choicePayload(choice,"product_costs",null),agentId:"maya"};
       }

@@ -54,7 +54,7 @@ describe("Staff rule typed time and overtime settings",()=>{
   const staff=readFileSync(join(process.cwd(),"components/staff/PayrollCostCard.tsx"),"utf8");
   const action=readFileSync(join(process.cwd(),"lib/actions/payrollCosts.ts"),"utf8");
   for(const component of [onboarding,staff]){
-   expect(component).toContain('import { savePayrollCostAssumption } from "@/lib/actions/payrollCosts"');
+   expect(component).toMatch(/import\s*\{[^}]*\bsavePayrollCostAssumption\b[^}]*\}\s*from\s*["']@\/lib\/actions\/payrollCosts["']/);
    expect(component).toContain("savePayrollCostAssumption({ employerCostPercent:");
   }
   expect(onboarding).not.toContain("setPayrollTaxRate(");

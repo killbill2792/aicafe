@@ -9,7 +9,7 @@ const state=vi.hoisted(()=>({
   priceRows:[] as Array<{id:string;ingredient_id:string;effective_from:string;recorded_at:string;cost_per_base_unit_micros:number}>,
   ingredientIds:[] as string[],
   recipeRows:[] as Array<{menu_item_id:string;ingredient_id:string;quantity:number}>,
-  recipeReads:0,
+  recipeReads:0,rollupWageStatus:"actual" as "actual"|"missing",
   canonical:[] as Array<{id:string;units:number}>,
   lines:[] as Array<{id:string;order_id:string;menu_item_id:string|null;
     quantity:number;net_sales_cents:number;modifiers:unknown[]}>,
@@ -31,7 +31,7 @@ vi.mock("@/lib/supabase/admin",()=>({
         if(table==="daily_rollups")return [{
           business_date:"2026-10-05",net_sales_cents:1200,orders_count:1,
           drinks_count:1200,ingredients_cents:0,staff_wages_cents:0,
-          staff_tax_cents:0,staff_tax_status:"estimated",
+          staff_tax_cents:0,staff_tax_status:"estimated",labor_wage_status:state.rollupWageStatus,
           sales_data_status:"actual",card_fees_cents:0,voids_cents:0,
         }];
         if(table==="orders")return [{id:"order-1",pos_order_id:"square:order-1",
@@ -75,7 +75,7 @@ vi.mock("@/lib/supabase/admin",()=>({
   }),
 }));
 beforeEach(()=>{
-  state.covered=true;state.unlinkedCount=0;
+  state.covered=true;state.unlinkedCount=0;state.rollupWageStatus="actual";
   state.sqlNetCents=1200;state.sqlOrderCount=1;state.sqlSyntheticCount=0;
   state.canonical.length=0;state.lines.length=0;
   state.priceRows.length=0;state.ingredientIds.length=0;
@@ -87,6 +87,13 @@ beforeEach(()=>{
   state.canonical.push({id:itemA,units:1000},{id:itemB,units:200});
 });
 describe("M1 canonical item evidence reader",()=>{
+  it("does not promote partial rollups into complete labor or profit",async()=>{
+    state.rollupWageStatus="missing";
+    const day=await readMetricDay("business","2026-10-05",{items:false,hours:false,ingredientIds:[]});
+    expect(day.facts?.laborWageStatus).toBe("missing");
+    expect(computeMetric("labor_cost",{}, {...day,laborCoverageVerified:true}).value).toBeNull();
+    expect(computeMetric("net_profit",{}, {...day,laborCoverageVerified:true,cogsCoverageVerified:true,runningCostsCents:1000}).value).toBeNull();
+  });
   it("collects every detailed line across the production 1000-row response cap",async()=>{
     const day=await readMetricDay("business","2026-10-05",{
       items:true,hours:false,ingredientIds:[],itemIds:[itemA,itemB],

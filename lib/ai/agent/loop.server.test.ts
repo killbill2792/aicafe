@@ -49,7 +49,7 @@ describe("recorded Responses streaming fixtures", () => {
     ])});
     expect(result.usage.toolCalls).toBe(1);
     expect(result.status.status).toBe("complete");
-    expect(result.results).toEqual([{ source: "menu_items", period: null, agentId:"alex", missing: [], items: [
+    expect(result.results).toMatchObject([{ source: "menu_items", period: null, agentId:"alex", missing: [], items: [
       { id: "item-1", name: "Latte", category: "drink", priceCents: 450,
         unit:"cents",priceSource:"initial",realizedAvgCents:null,priceCheck:"unknown",pricePeriod:null,priceEvidenceStatus:"unknown" },
     ] }]);

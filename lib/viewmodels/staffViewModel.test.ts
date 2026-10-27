@@ -118,3 +118,18 @@ describe("On shift now: current roster only", () => {
     expect(vm.onShift[0].clockInIso).toBe("2026-10-23T17:30:00Z");
   });
 });
+
+
+describe("staff efficiency excludes partial wages",()=>{
+  it("omits known-only missing day, but keeps the same complete day",()=>{
+    const base=snapshot("2026-09-09T19:15:00Z",[]);
+    const recorded=base.last7Days[0];
+    const missing={...recorded,wagesCents:1200,staffTaxCents:144,
+      laborWageStatus:"missing" as const};
+    const vm=buildStaffViewModel({...base,last7Days:[missing]},staff);
+    expect(vm.dailyCostPerSalesDollarCents).toEqual([]);
+    const verified=buildStaffViewModel({...base,last7Days:[
+      {...missing,laborWageStatus:"actual"}]},staff);
+    expect(verified.dailyCostPerSalesDollarCents).toHaveLength(1);
+  });
+});

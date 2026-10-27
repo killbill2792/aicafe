@@ -27,7 +27,7 @@ describe("One canonical BusinessCostSummary for Money and Supervisor",()=>{
    const running=runningCostsForPeriodCents(fixture.runningCostLines.map(l=>({
      ...l,monthKey:fixture.monthKey
    })),period.from,period.to);
-   expect(roundHalfUpToCent(totalCostsCentsForPeriod(days,running))).toBe(x.knownTotalCents);
+   expect(roundHalfUpToCent(totalCostsCentsForPeriod(days,running)!)).toBe(x.knownTotalCents);
    expect(x.components).toEqual({
      ingredientsCents:ingredientsCentsForPeriod(days),
      loadedStaffCents:staffCostCentsForPeriod(days),
@@ -77,7 +77,7 @@ describe("One canonical BusinessCostSummary for Money and Supervisor",()=>{
    expect(x.components.loadedStaffCents).toBe(
      staffCostCentsForPeriod(snapshot.monthRecordedDays!));
    const money=buildProfitAndCostsViewModel(snapshot,"month");
-   expect(money.wagesCents+money.staffTaxCents).toBe(x.components.loadedStaffCents);
+   expect(money.wagesCents!+money.staffTaxCents!).toBe(x.components.loadedStaffCents);
    expect(money.totalCostsCents).toBe(x.knownTotalCents);
    expect(x.knownTotalCents).toBe(Object.values(x.components).reduce((a,b)=>a+b,0));
  });
@@ -306,5 +306,28 @@ describe("Historical rollup proof cannot be manufactured by today's newly added 
         source:"historical_recomputation",
         days:days.map(d=>({date:d.date,ingredientsCents:d.ingredientsCents})),
       }}},requested).completeness).toBe("complete");
+  });
+});
+
+
+describe("BusinessCostSummary known-only labor",()=>{
+  it("labels non-null partial wages unknown and cannot claim complete costs",()=>{
+    const date=fixture.monthActualDays[0].date;
+    const partial=fixture.monthActualDays.map(day=>day.date===date?{
+      ...day,wagesCents:1200,staffTaxCents:144,
+      laborWageStatus:"missing" as const}:day);
+    const snapshot={...fixture,monthActualDays:partial,monthRecordedDays:partial};
+    const cost=businessCostSummaryFromSnapshot(snapshot,period);
+    expect(cost.missingInputs).toContain("laborWageUnknown:"+date);
+    expect(cost.completeness).toBe("partial");
+    expect(cost.observed.loadedStaff).toBe(false);
+    expect(cost.components.loadedStaffCents).toBeGreaterThan(1200);
+    expect(cost.knownTotalCents).toBe(
+      Object.values(cost.components).reduce((sum,value)=>sum+value,0));
+    const full=businessCostSummaryFromSnapshot({...fixture,
+      monthRecordedDays:partial.map(day=>day.date===date?{
+        ...day,laborWageStatus:"actual" as const}:day)},period);
+    expect(full.missingInputs).not.toContain("laborWageUnknown:"+date);
+    expect(full.observed.loadedStaff).toBe(true);
   });
 });

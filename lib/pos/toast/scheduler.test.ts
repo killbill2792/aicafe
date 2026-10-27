@@ -1,12 +1,12 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
-const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),
+const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstCatalog:vi.fn(),
  refresh:vi.fn(),costs:vi.fn(),request:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
-vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional}));
+vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional,ensureToastFirstCatalog:m.firstCatalog}));
 vi.mock("./restaurantInfo",()=>({refreshToastRestaurantInfo:m.refresh}));
 vi.mock("./rollupRetries",()=>({retryToastRollupRefreshes:m.costs}));
 vi.mock("./client",()=>{
@@ -120,6 +120,7 @@ beforeEach(()=>{
  for(const fn of Object.values(m))fn.mockReset();
  m.request.mockResolvedValue([]);
  m.optional.mockResolvedValue({menu:"skipped",labor:"skipped"});
+ m.firstCatalog.mockResolvedValue(false);
  m.costs.mockResolvedValue({processed:0,deferred:0});
  m.reconcile.mockResolvedValue(0);
  m.refresh.mockResolvedValue(null);
@@ -130,6 +131,31 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   const f=makeDB();
   expect(await runToastSyncTick(f.db,now,Date.now()+60000)).toEqual({disabled:true});
   expect(f.calls).toEqual([]);
+ });
+ it("a never-synced menu preflight precedes the first sales import",async()=>{
+  const f=makeDB(),events:string[]=[];
+  m.firstCatalog.mockImplementation(async()=>{events.push("first_menu");return true;});
+  const original=m.importDay.getMockImplementation()!;
+  m.importDay.mockImplementation(async(...args:unknown[])=>{
+    events.push("sales");return original(...args);
+  });
+  await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(events[0]).toBe("first_menu");
+  expect(events).toContain("sales");
+  expect(m.firstCatalog).toHaveBeenCalledTimes(1);
+ });
+ it("runs sales/backfill before optional catalog and isolates optional failures",async()=>{
+  const f=makeDB(),order:string[]=[];
+  m.optional.mockImplementation(async()=>{order.push("optional");throw new ToastApiError("unavailable");});
+  const importImpl=m.importDay.getMockImplementation()!;
+  m.importDay.mockImplementation(async(...args:unknown[])=>{
+    order.push("sales");return importImpl(...args);
+  });
+  const result=await runToastSyncTick(f.db,now,Date.now()+60000) as {errors:number};
+  expect(order[0]).toBe("sales");
+  expect(order).toContain("optional");
+  expect(f.imports).toContain(d);
+  expect(result.errors).toBeGreaterThanOrEqual(1);
  });
  it("releases a nonce in finally, and only imports the D-1 date once",async()=>{
   const f=makeDB();
@@ -165,6 +191,24 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   expect(f.runs.find(r=>r.kind==="repull_modified"))
    .toMatchObject({state:"completed",days_done:1});
   expect(f.calls).toContain("toast_release_lease");
+ });
+ it("completes backfill before optional menu/roster/labor phase without spending backfill budget",async()=>{
+  const f=makeDB(),events:string[]=[];
+  f.status.add(d); // Daily is already imported.
+  f.runs.push({id:"early-backfill",kind:"backfill",state:"queued",
+   requested_from:"2026-10-19",requested_to:"2026-10-19",
+   days_done:0,days_total:1,cursor:{},resume_at:null});
+  const originalImport=m.importDay.getMockImplementation()!;
+  m.importDay.mockImplementation(async(...args:unknown[])=>{
+   events.push("backfill");return originalImport(...args);
+  });
+  m.optional.mockImplementation(async()=>{
+   events.push("optional");
+   expect(f.runs.find(r=>r.id==="early-backfill")?.days_done).toBe(1);
+  });
+  await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(events).toEqual(["backfill","optional"]);
+  expect(f.imports).toEqual(["2026-10-19"]);
  });
  it("starts a queued 65-day first backfill before four repulls, within the full single-café tick",async()=>{
   vi.useFakeTimers();vi.setSystemTime(now);

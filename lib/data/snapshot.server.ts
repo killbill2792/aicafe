@@ -55,7 +55,7 @@ export async function getBusinessSnapshotFromDb(
   const { data: rollupRows, error: rollupError } = await supabase
     .from("daily_rollups")
     .select(
-      "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents",
+      "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents",
     )
     .eq("business_id", businessId)
     .gte("business_date", prevMonthStart)

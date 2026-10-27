@@ -1,3 +1,4 @@
+import {laborKnown} from "@/lib/calc";
 import "server-only";
 import { z } from "zod";
 import { formatInTimeZone } from "date-fns-tz";
@@ -256,7 +257,12 @@ export function createSupervisorToolRegistry(context: Context) {
           const slice=await tools.getLaborMetrics(range);
           if(!slice.available) return slice;
           const covered=new Set(slice.value.map(x=>x.date)).size;
-          return {available:true,value:slice.value.reduce((n,d)=>n+d.loadedStaffCostCents,0),
+          if(slice.value.length===0||slice.value.some(d=>
+            !laborKnown({wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
+              laborWageStatus:d.wageStatus})||d.loadedStaffCostCents===null))return {
+            available:false,value:null,quality:{...slice.quality,
+            missingInputs:[...slice.quality.missingInputs,"laborWageUnknown"]}};
+          return {available:true,value:slice.value.reduce((n,d)=>n+(d.loadedStaffCostCents??0),0),
             quality:{...slice.quality,missingInputs:[...slice.quality.missingInputs,
               ...(covered===rangeExpectedDays(range)?[]:["laborCoverage"])]}};
         }
@@ -416,7 +422,8 @@ export function createSupervisorToolRegistry(context: Context) {
             costEstimated:current?.costQuality === "estimated",
             physicalStockKnown:false };
         }) };
-        for (const [i,p] of selected.entries()) addFact(result,prefix+"price"+i,p.name+" price",p.priceCents,"metric",source);
+        for (const [i,p] of selected.entries()) if(p.priceCents!==null)
+          addFact(result,prefix+"price"+i,p.name+" price",p.priceCents,"metric",source);
       }
       return result;
     }
@@ -561,7 +568,12 @@ export function createSupervisorToolRegistry(context: Context) {
           const covered = new Set(labor.value.map(x=>x.date)).size, expected = rangeExpectedDays(range);
           result.coverage = { coveredDays:covered,expectedDays:expected, missingDays:expected-covered };
           if (covered !== expected) { result.status="partial"; result.missingInputs.push("laborCoverage"); }
-          addFact(result,prefix+"labor","Recorded loaded staff cost",labor.value.reduce((n,x)=>n+x.loadedStaffCostCents,0),"metric",source);
+          if(labor.value.length===0||labor.value.some(d=>
+              !laborKnown({wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
+                laborWageStatus:d.wageStatus})||d.loadedStaffCostCents===null)){
+             result.status="partial";result.missingInputs.push("laborWageUnknown");
+           }else addFact(result,prefix+"labor","Recorded loaded staff cost",
+             labor.value.reduce((n,x)=>n+(x.loadedStaffCostCents??0),0),"metric",source);
         }
         return result;
       }

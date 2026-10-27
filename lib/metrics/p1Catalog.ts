@@ -218,7 +218,7 @@ export const values = {
 
 export type SupportedId = keyof typeof values;
 export const PUBLIC_TOOL_METHODS = [
-  "getPeakHours","getEmployeeSales","getPayrollFacts",
+  "getPeakHours","getEmployeeSales","getPayrollFacts","getOwnerMonthlyPayrollExtras","getToastScopeCoverage","getPosImportReviews",
   "getCafeSummary","getProfitability","getBusinessCostSummary","getProductEconomics","getUsageVariance",
   "getSalesTrend","getPricingRecommendation","getExpenseSummary","getMonthlyBills",
   "getRecordedExpenses","getProductSales","getItemSalesCoverage","getMenuCatalog",
@@ -301,6 +301,9 @@ export const classified = {
   getPeakHours:{kind:"restricted",reason:"New POS hourly facts require a dedicated P1 source-purpose policy before registration"},
   getEmployeeSales:{kind:"restricted",reason:"New staff-attributed revenue requires a dedicated P1 source-purpose policy before registration"},
   getPayrollFacts:{kind:"restricted",reason:"Employee pay period facts require a dedicated P1 source-purpose policy before registration"},
+  getOwnerMonthlyPayrollExtras:{kind:"restricted",reason:"Bounded owner-reported payroll amount with private business authorization; available only through authenticated café chat evidence"},
+  getToastScopeCoverage:{kind:"restricted",reason:"Owner-only Toast scope booleans via hardened SQL; never expose integration credentials or cross-café permission data"},
+  getPosImportReviews:{kind:"restricted",reason:"Selected-café pending staff identity/attendance conflict evidence only; no generic P1 model source or authorization to resolve"},
   getSchedulingDraftInputs:{kind:"restricted",reason:"Includes employee wages; exposed only through the read-only draft_week_schedule agent tool"},
   getCafeSummary:{kind:"restricted",reason:"Includes mixed personal and financial state; use bounded projections"},
   getMenuCatalog:{kind:"restricted",reason:"Legacy menu projection coerces missing database price to $0; P1 uses a null-preserving bounded source"},

@@ -45,7 +45,7 @@ export function mealBreakStatus(timecard: Timecard, now: Date = new Date()): Mea
   const warn = shiftHours >= 4.5 && !tookQualifyingBreak;
   const missed = shiftHours > 5 && !tookQualifyingBreak;
 
-  return { shiftHours, warn, missed, penaltyCents: missed ? timecard.hourlyWageCents : 0 };
+  return { shiftHours, warn, missed, penaltyCents: missed ? (timecard.hourlyWageCents??0) : 0 };
 }
 
 /** Early clock-in: clocked in more than 7 minutes before the scheduled start. */

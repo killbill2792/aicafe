@@ -24,7 +24,7 @@ export type MenuItemBreakdown = {
 export function buildMenuViewModel(snapshot: BusinessSnapshot) {
   const totalPrepSecondsSold = snapshot.menuItems.reduce((s, i) => s + i.prepSeconds * i.quantitySoldLast28Days, 0);
   const last28StaffCost = staffCostCentsForPeriod(snapshot.last28Days);
-  const perSecond = staffCostPerPrepSecond(last28StaffCost, totalPrepSecondsSold);
+  const perSecond = last28StaffCost===null?0:staffCostPerPrepSecond(last28StaffCost,totalPrepSecondsSold);
 
   const feeRate = effectiveFeeRate(
     sumCents(snapshot.last28Days, (d) => d.cardFeesCents),

@@ -35,8 +35,9 @@ export function rowToDailyFacts(row: {
   orders_count: number;
   drinks_count: number;
   ingredients_cents: number;
-  staff_wages_cents: number;
-  staff_tax_cents: number;
+  staff_wages_cents: number | null;
+  staff_tax_cents: number | null;
+  labor_wage_status?: "actual" | "estimate" | "missing";
   staff_tax_status?: "estimated" | "actual";
   staff_tax_source?: string;
   sales_data_status?: "actual" | "missing";
@@ -52,6 +53,7 @@ export function rowToDailyFacts(row: {
     ingredientsCents: row.ingredients_cents,
     wagesCents: row.staff_wages_cents,
     staffTaxCents: row.staff_tax_cents,
+    laborWageStatus: row.labor_wage_status ?? (row.staff_wages_cents===null?"missing":"actual"),
     staffTaxStatus: row.staff_tax_status,
     staffTaxSource: row.staff_tax_source,
     salesDataStatus: row.sales_data_status,

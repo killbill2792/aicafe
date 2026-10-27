@@ -179,7 +179,8 @@ export type ShiftForDay = {
   clockIn: string; // HH:mm
   clockOut: string; // HH:mm
   unpaidBreakMinutes: number;
-  hourlyWageCents: number;
+  // Missing Toast wage is unknown, not a numerical zero.
+  hourlyWageCents: number | null;
 };
 
 /** What's already true for one employee on one specific day — a real (confirmed) entry if one
@@ -210,7 +211,7 @@ export async function getShiftForDay(employeeId: string, date: string): Promise<
       clockIn: formatInTimeZone(timecard.clock_in, business.timezone, "HH:mm"),
       clockOut: formatInTimeZone(timecard.clock_out ?? timecard.clock_in, business.timezone, "HH:mm"),
       unpaidBreakMinutes: breakMinutes,
-      hourlyWageCents: timecard.hourly_wage_cents,
+      hourlyWageCents: timecard.hourly_wage_cents == null ? null : Number(timecard.hourly_wage_cents),
     };
   }
 
@@ -237,7 +238,7 @@ export async function getShiftForDay(employeeId: string, date: string): Promise<
     };
   }
 
-  return { source: "none", clockIn: "08:00", clockOut: "16:00", unpaidBreakMinutes: 30, hourlyWageCents: 0 };
+  return { source: "none", clockIn: "08:00", clockOut: "16:00", unpaidBreakMinutes: 30, hourlyWageCents: null };
 }
 
 /** Saves one employee's hours for one specific day — always the single row for that employee+day,
@@ -290,6 +291,10 @@ export async function saveShiftForDay(input: z.infer<typeof ShiftSchema>): Promi
     schedule_id: null,
     source_type: "owner_manual",
     source_provider: "Owner",
+    // Preserve the owner's final say even when this action uses elevated DB
+    // credentials and would bypass the authenticated-role trigger.
+    pos_owner_edited: true,
+    wage_source: "owner",
     clock_in: clockInUtc.toISOString(),
     clock_out: clockOutUtc.toISOString(),
     hourly_wage_cents: parsed.data.hourlyWageCents,

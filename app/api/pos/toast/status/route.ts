@@ -18,7 +18,7 @@ export async function GET(request:Request){
  let fetched;
  try{
   fetched=await Promise.all([
-   db.from("toast_api_credentials").select("state,last_error_category").eq("business_id",id.data).maybeSingle(),
+   db.from("toast_api_credentials").select("state,last_error_category,scopes_available").eq("business_id",id.data).maybeSingle(),
    db.from("toast_location_mappings").select("restaurant_guid,location_id,verified_at,toast_time_zone,toast_start_date,recheck_total").eq("business_id",id.data),
    readAllPages((start,end)=>db.from("toast_sync_runs")
     .select("id,kind,state,days_done,days_total,resume_at,requested_from,requested_to")
@@ -87,6 +87,8 @@ export async function GET(request:Request){
  const recentDates=Array.from({length:14},(_,i)=>new Date(base-(i+1)*86400000).toISOString().slice(0,10));
  const response={
   connection:state,importEnabled:process.env.TOAST_AUTO_IMPORT_ENABLED==="true",
+  missingLaborScope:(c.data?.scopes_available as Record<string,unknown>|undefined)?.labor===false,
+  missingMenuScope:(c.data?.scopes_available as Record<string,unknown>|undefined)?.menus===false,
   errorCategory:c.data?.last_error_category??null,
   lastGoodSyncAt:good,stale:state==="connected"&&!good||Boolean(health.data?.some(x=>x.stale)),
   backfill:{daysDone:active.reduce((n,x)=>n+x.days_done,0),

@@ -136,13 +136,13 @@ export const metricCatalog: Record<MetricKey, Definition> = {
   item_revenue:{key:"item_revenue",unit:"cents",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"revenue")},
   item_margin:{key:"item_margin",unit:"cents",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"margin")},
   cogs_pct:{key:"cogs_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified?ratioBps(d.facts!.ingredientsCents,d.facts!.netSalesCents):missing("cogsCompleteness",Boolean(d.items)||d.itemCoverageInvalidated===true)},
-  labor_cost:{key:"labor_cost",unit:"cents",paramsSchema:empty,compute:d=>d.facts&&d.laborCoverageVerified&&d.facts.staffTaxStatus==="actual"?known(staffCostCentsForPeriod([d.facts])):missing("laborProvenance",Boolean(d.facts&&d.facts.staffTaxStatus!=="actual"))},
-  labor_pct:{key:"labor_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"?ratioBps(staffCostCentsForPeriod([d.facts!]),d.facts!.netSalesCents):missing("laborProvenance",Boolean(d.facts&&d.facts.staffTaxStatus!=="actual"))},
+  labor_cost:{key:"labor_cost",unit:"cents",paramsSchema:empty,compute:d=>d.facts&&d.laborCoverageVerified&&d.facts.staffTaxStatus==="actual"&&staffCostCentsForPeriod([d.facts])!==null?known(staffCostCentsForPeriod([d.facts])!):missing("laborProvenance",Boolean(d.facts&&d.facts.staffTaxStatus!=="actual"))},
+  labor_pct:{key:"labor_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&staffCostCentsForPeriod([d.facts!])!==null?ratioBps(staffCostCentsForPeriod([d.facts!])!,d.facts!.netSalesCents):missing("laborProvenance",Boolean(d.facts&&d.facts.staffTaxStatus!=="actual"))},
   sales_per_labor_hour:{key:"sales_per_labor_hour",unit:"cents",paramsSchema:hours,compute:hourly},
-  operating_margin:{key:"operating_margin",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&d.runningCostsCents!==undefined?
-    ratioBps(ownerProfitCentsForPeriod([d.facts!],d.runningCostsCents),d.facts!.netSalesCents):missing("runningCostsOrSales")},
-  net_profit:{key:"net_profit",unit:"cents",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&d.runningCostsCents!==undefined?
-    known(ownerProfitCentsForPeriod([d.facts!],d.runningCostsCents)):missing("runningCostsOrSales")},
+  operating_margin:{key:"operating_margin",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&staffCostCentsForPeriod([d.facts!])!==null&&d.runningCostsCents!==undefined?
+    ratioBps(ownerProfitCentsForPeriod([d.facts!],d.runningCostsCents)!,d.facts!.netSalesCents):missing("runningCostsOrSales")},
+  net_profit:{key:"net_profit",unit:"cents",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&staffCostCentsForPeriod([d.facts!])!==null&&d.runningCostsCents!==undefined?
+    known(ownerProfitCentsForPeriod([d.facts!],d.runningCostsCents)!):missing("runningCostsOrSales")},
   ingredient_unit_cost:{key:"ingredient_unit_cost",unit:"microcents_per_base_unit",paramsSchema:ingredient,compute:(d,p)=>{
     const raw=d.ingredientPriceMicros?.[String(p.ingredientId)];
     return raw!==undefined&&Number.isSafeInteger(raw)&&raw>=0?known(raw):missing("ingredientPrice",Boolean(d.ingredientPriceMicros));

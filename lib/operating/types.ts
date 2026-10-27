@@ -32,9 +32,10 @@ export type CafePeriodProfitability = {
 
 export type CafeLaborDay = {
   date: string;
-  wagesCents: number;
-  staffTaxCents: number;
-  loadedStaffCostCents: number;
+  wagesCents: number | null;
+  staffTaxCents: number | null;
+  loadedStaffCostCents: number | null;
+  wageStatus?: "actual" | "estimate" | "missing";
 };
 export type KnownSlice<T> = { available: true; value: T; quality: DataQuality } | { available: false; value: null; quality: DataQuality };
 export type CafeState = {

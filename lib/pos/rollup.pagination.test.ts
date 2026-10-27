@@ -14,7 +14,7 @@ describe("large canonical daily rollup preview",()=>{
   const db={from:(table:string)=>{
    const filters:Record<string,unknown>={};
    const chain={
-    select:()=>chain,eq:()=>chain,gte:()=>chain,lte:()=>chain,order:()=>chain,
+    select:()=>chain,eq:()=>chain,gte:()=>chain,lte:()=>chain,lt:()=>chain,or:()=>chain,order:()=>chain,
     in:(key:string,values:string[])=>{filters[key]=values;return chain;},
     range:async(first:number,last:number)=>{
      if(table==="orders")orderRanges.push([first,last]);

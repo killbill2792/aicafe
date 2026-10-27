@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "@/i18n/navigation";
-import { savePayrollCostAssumption } from "@/lib/actions/payrollCosts";
+import { savePayrollCostAssumption,saveMonthlyPayrollExtras } from "@/lib/actions/payrollCosts";
 import { employerCostPercentFromInput } from "@/lib/calc/scheduling/ruleInputValues";
-import {useLocale} from "next-intl";
+import {useLocale,useTranslations} from "next-intl";
 import type { PayrollCostSettings } from "@/lib/data/getPayrollCostSettings";
 
 function sourceLabel(source: string, labels: { owner: string; estimate: string; quickbooks: string; imported: string; connected: string }) {
@@ -46,8 +46,27 @@ export default function PayrollCostCard({
 }) {
   const router = useRouter();
   const locale = useLocale();
+  const extraT=useTranslations("Staff");
   const [value, setValue] = useState(new Intl.NumberFormat(locale,{useGrouping:false,maximumFractionDigits:4}).format(settings.employerCostRate * 100));
   const [isPending, startTransition] = useTransition();
+  const [monthlyExtras,setMonthlyExtras]=useState(settings.monthlyExtrasCents===null?
+    "":(settings.monthlyExtrasCents/100).toFixed(2));
+  const [extrasNotice,setExtrasNotice]=useState<string|null>(null);
+  function saveExtras(){
+    if(readOnly||isPending)return;
+    const raw=monthlyExtras.trim();
+    if(!/^\d+(?:\.\d{1,2})?$/.test(raw)){setExtrasNotice(extraT("payrollMonthlyInvalid"));return;}
+    const amount=Number(raw),cents=Math.round(amount*100);
+    if(!Number.isSafeInteger(cents)||cents<0){setExtrasNotice(extraT("payrollMonthlyInvalid"));return;}
+    setExtrasNotice(null);
+    startTransition(async()=>{
+      try{
+        const result=await saveMonthlyPayrollExtras({monthlyCents:cents});
+        if(!result.ok){setExtrasNotice(extraT("payrollMonthlySaveFailed"));return;}
+        setExtrasNotice(extraT("payrollMonthlySaved"));router.refresh();
+      }catch{setExtrasNotice(extraT("payrollMonthlySaveFailed"));}
+    });
+  }
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const sourceLabels = {
@@ -125,6 +144,23 @@ export default function PayrollCostCard({
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
       {message && <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">{message}</p>}
 
+      <div className="mt-3 border-t border-line pt-4">
+        <h3 className="font-bold text-ink">{extraT("payrollMonthlyTitle")}</h3>
+        <p className="mt-1 text-sm text-ink-muted">{extraT("payrollMonthlyHint")}</p>
+        <label className="mt-3 flex flex-col gap-1 text-sm font-semibold text-ink">
+          {extraT("payrollMonthlyField")}
+          <input type="text" inputMode="decimal" value={monthlyExtras}
+            disabled={readOnly||isPending}
+            onChange={e=>{setMonthlyExtras(e.target.value);setExtrasNotice(null);}}
+            className="min-h-12 rounded-xl border border-line bg-card px-3 text-base"
+            placeholder="0.00"/>
+        </label>
+        {extrasNotice&&<p role="status" className="mt-2 text-sm text-ink-muted">{extrasNotice}</p>}
+        <button type="button" onClick={saveExtras} disabled={readOnly||isPending}
+          className="mt-3 min-h-12 rounded-full border border-line px-4 text-sm font-bold text-ink disabled:opacity-40">
+          {extraT("payrollMonthlySave")}
+        </button>
+      </div>
       <button
         type="button"
         onClick={save}

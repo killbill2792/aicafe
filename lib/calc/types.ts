@@ -21,8 +21,9 @@ export type DailyFacts = {
   ordersCount: number;
   drinksCount: number;
   ingredientsCents: number;
-  wagesCents: number;
-  staffTaxCents: number;
+  wagesCents: number | null;
+  staffTaxCents: number | null;
+  laborWageStatus?: "actual" | "estimate" | "missing";
   staffTaxStatus?: "estimated" | "actual";
   staffTaxSource?: string;
   /** Explicit sales coverage. "missing" means a row may exist for staff/costs but sales are unknown. */
@@ -72,7 +73,8 @@ export type TimecardBreak = {
 export type Timecard = {
   clockIn: string; // ISO timestamp
   clockOut: string | null; // null = on shift now
-  hourlyWageCents: number;
+  hourlyWageCents: number | null;
+  wageSource?: "pos" | "estimate" | "owner" | "unknown";
   breaks: TimecardBreak[];
   /** Non-null rows retain the schedule baseline even when a later actual source reconciles it. */
   scheduleId?: string | null;

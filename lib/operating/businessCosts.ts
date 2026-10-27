@@ -1,7 +1,7 @@
 import type {BusinessSnapshot} from "@/lib/data/types";
 import type {DailyFacts} from "@/lib/calc";
 import {
-  ingredientsCentsForPeriod,staffCostCentsForPeriod,cardFeesCentsForPeriod,
+  ingredientsCentsForPeriod,staffCostCentsForPeriod,cardFeesCentsForPeriod,laborKnown,
   totalCostsCentsForPeriod,runningCostsForPeriodCents,roundHalfUpToCent,
 } from "@/lib/calc";
 import type {BusinessCostSummary,CafeStatePeriod} from "./types";
@@ -101,6 +101,10 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
   // ingredients/fees and recorded rows ONLY for labor, never adding labor twice.
   const ingredient=ingredientsCentsForPeriod(salesDays);
   const staff=staffCostCentsForPeriod(recordedDays);
+  // Partial rollups retain known-only wages. Include them in the explicitly
+  // partial known-cost subtotal, never in a final loaded-staff/profit claim.
+  const knownStaffCents=recordedDays.reduce((sum,day)=>
+    sum+(day.wagesCents??0)+(laborKnown(day)?day.staffTaxCents:0),0);
   const fees=cardFeesCentsForPeriod(salesDays.filter(day=>day.cardFeesStatus!=="missing"||day.netSalesCents===0));
   // Reuse exact Money total-cost helper with cost-only projected contributions.
   const costDays:DailyFacts[]=[
@@ -108,10 +112,15 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
       cardFeesCents:day.cardFeesStatus==="missing"&&day.netSalesCents>0?0:day.cardFeesCents})),
     ...recordedDays.map(day=>({...day,ingredientsCents:0,cardFeesCents:0})),
   ];
-  const knownTotalCents=roundHalfUpToCent(totalCostsCentsForPeriod(costDays,running));
+  const fullTotal=totalCostsCentsForPeriod(costDays,running);
+  // Exclude unknown compensation from the KNOWN subtotal, while reporting it
+  // missing. Never claim the subtotal is the full payroll expense.
+  const knownTotalCents=roundHalfUpToCent(fullTotal??(ingredient+fees+running+knownStaffCents));
   const missingInputs=[
     ...(saleDates.size<expectedDays?["salesCoverage:"+saleDates.size+"/"+expectedDays]:[]),
     ...(laborDates.size<expectedDays?["laborCoverage:"+laborDates.size+"/"+expectedDays]:[]),
+    ...recordedDays.filter(d=>!laborKnown(d))
+      .map(d=>"laborWageUnknown:"+d.date),
     ...missingExpenses.map(x=>"expense:"+x.categoryCode),
     // Money's supported cross-month Week prorates prior-month bills using
     // THIS month's rates. Preserve its subtotal, but do not call assumed
@@ -129,14 +138,21 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
     ...estimatedProducts.map(x=>"productCost:"+x.id),
     ...estimatedFees.map(x=>"cardFees:"+x.date),
     ...estimatedTax.map(x=>"staffTax:"+x.date),
+    ...recordedDays.filter(d=>d.laborWageStatus==="estimate")
+      .map(d=>"laborWageEstimate:"+d.date),
   ];
-  const observed={ingredients:salesDays.length>0,loadedStaff:recordedDays.length>0,
+  const observed={ingredients:salesDays.length>0,
+    loadedStaff:recordedDays.length>0&&staff!==null,
     cardFees:salesDays.length>0,runningCosts:snapshot.runningCostLines.some(line=>!line.isMissing)};
-  const anyKnown=Object.values(observed).some(Boolean);
+  // Partial known wages contribute to the subtotal but never certify the
+  // loadedStaff component for agent/UI readers. Keep all-wage-only periods
+  // partial rather than hiding their known subtotal as unavailable.
+  const anyKnown=Object.values(observed).some(Boolean)||
+    recordedDays.some(day=>day.wagesCents!==null||day.staffTaxCents!==null);
   return {
     period,knownTotalCents:anyKnown?knownTotalCents:0,
     completeness:!anyKnown?"unavailable":missingInputs.length?"partial":"complete",
-    components:{ingredientsCents:ingredient,loadedStaffCents:staff,
+    components:{ingredientsCents:ingredient,loadedStaffCents:staff??knownStaffCents,
       cardFeesCents:fees,runningCostsCents:roundHalfUpToCent(running)},
     observed,missingInputs,estimatedInputs,
     coverage:{salesDays:saleDates.size,laborDays:laborDates.size,expectedDays,

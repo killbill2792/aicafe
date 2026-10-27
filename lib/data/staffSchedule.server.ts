@@ -1,4 +1,5 @@
 import "server-only";
+import {readToastPlannedShifts} from "./toastScheduledShifts.server";
 import {prepareScheduleCopy} from "@/lib/calc/scheduling/scheduleMessages";
 import {peopleWithRetainedShifts} from "@/lib/calc/scheduling/schedulePresentation";
 import {z} from "zod";
@@ -22,7 +23,7 @@ export async function getWeekSchedule(raw:unknown){
  const owner=await staffReadScope();if(!owner.ok)return {ok:false as const,error:"unauthorized"};
  const dates=Array.from({length:7},(_,i)=>plusDays(p.data.weekStart,i));
  if(!owner.supabase||owner.businessId===DEMO_BUSINESS_ID)return {ok:true as const,data:{
-  dates,weekStart:p.data.weekStart,team:[],displayTeam:[],shifts:[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
+  dates,weekStart:p.data.weekStart,team:[],displayTeam:[],shifts:[],posShifts:[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
   gaps:[],adjacentShifts:[],openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],profileAvailability:[],readOnly:true,timezone:owner.timezone,countryCode:null as string|null
  }};
  const [people,shifts,profile,ruleResult,availability,profileAvailability]=await Promise.all([
@@ -39,6 +40,9 @@ export async function getWeekSchedule(raw:unknown){
    .or(`effective_to.is.null,effective_to.gte.${owner.today}`)
  ]);
  if(people.error||shifts.error||profile.error||availability.error||profileAvailability.error||!ruleResult.ok)return {ok:false as const,error:"storage_unavailable"};
+ // External future plans never become approved internal shifts or paid timecards.
+ const posShifts=process.env.TOAST_AUTO_IMPORT_ENABLED==="true"?
+   await readToastPlannedShifts(owner.supabase,owner.businessId,dates[0],dates[6],owner.timezone):[];
  const allEmployees=(people.data??[]).map(p=>({active:p.active as boolean,
    id:p.id as string,name:p.display_name as string,role:p.role as string|null,
    wageCents: p.wage_period==="hour" ? ((p.wage_amount_cents as number|null)??(p.default_hourly_wage_cents as number|null))
@@ -67,7 +71,7 @@ export async function getWeekSchedule(raw:unknown){
  const total=aggregateCosts(inWeek),gaps=coverageGaps(dates,mapped,openHours,
    ruleResult.data.coverage_enabled?ruleResult.data.min_headcount:0);
  return {ok:true as const,data:{
-   dates,team,displayTeam,shifts:inWeek,adjacentShifts:mapped.filter(s=>s.date<dates[0]||s.date>dates[6]),total,gaps,openHours,
+   dates,team,displayTeam,shifts:inWeek,posShifts,adjacentShifts:mapped.filter(s=>s.date<dates[0]||s.date>dates[6]),total,gaps,openHours,
    currency:owner.currency,rules:ruleResult.data,
    availability:availability.data??[],profileAvailability:profileAvailability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone,countryCode:profile.data?.country_code??null
  }};

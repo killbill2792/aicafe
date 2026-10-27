@@ -112,6 +112,21 @@ describe("Olivia bounded reads",()=>{
     expect(r.attendance).toBeNull();
     expect(r.laborDays).toHaveLength(1);
   });
+  it("reports known-only missing wages as unknown rather than a complete formula",async()=>{
+    const r=await staffTools.get_labor.execute({period:"today"},ctx({
+      getLaborMetrics:async()=>({available:true,value:[{date:"2026-10-22",
+        wagesCents:1200,staffTaxCents:144,loadedStaffCostCents:1344,wageStatus:"missing"}],
+        quality:q}),
+      getStaffAttendance:async()=>({available:true,
+        value:{timecardCount:1,onClockCount:0,attendanceTracked:true},quality:q}),
+    }));
+    expect(r.missing).toContain("laborWageUnknown:2026-10-22");
+    expect(r.explain).toEqual([]);
+    expect(r.laborDays).toEqual([expect.objectContaining({
+      wageStatus:"missing",wagesCents:1200,
+    })]);
+  });
+
   it("rejects extraneous owner-supplied scope",async()=>{
     await expect(staffTools.get_staff.execute({businessId:"other"},ctx())).rejects.toThrow();
   });

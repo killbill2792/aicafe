@@ -115,6 +115,57 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       },
     },
     async (requested,input)=>{assertBusiness(requested);return readUsageVariance(input);},
+    async(requested)=>{
+      assertBusiness(requested);
+      const {data,error}=await client.from("businesses")
+        .select("owner_monthly_payroll_extras_cents").eq("id",requested).single();
+      if(error)throw error;
+      if(!data)throw new Error("Owner payroll setting unavailable");
+      const amount=data.owner_monthly_payroll_extras_cents===null?null:
+        Number(data.owner_monthly_payroll_extras_cents);
+      if(amount!==null&&(!Number.isSafeInteger(amount)||amount<0))
+        throw new Error("Invalid owner payroll setting");
+      return {available:true,value:{monthlyCents:amount,
+        source:amount===null?null:"owner_entered" as const},
+        quality:{level:amount===null?"low" as const:"medium" as const,
+          missingInputs:amount===null?["ownerMonthlyPayrollExtrasNotSet"]:[],
+          estimatedInputs:amount===null?[]:["ownerMonthlyPayrollExtras"],
+          staleInputs:[]}};
+    },
+    async(requested)=>{
+      assertBusiness(requested);
+      const {data,error}=await client.rpc("toast_business_scope_summary",{
+        p_business_id:requested
+      });
+      if(error)throw error;
+      const parsed=data as {menus?:unknown;labor?:unknown}|null;
+      const choose=(input:unknown)=>typeof input==="boolean"?input:null;
+      return {available:true,value:{menus:choose(parsed?.menus),labor:choose(parsed?.labor)},
+        quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}};
+    },
+    async(requested)=>{
+      assertBusiness(requested);
+      const {data,error}=await client.from("pos_import_reviews")
+        .select("review_type,source_key,detail")
+        .eq("business_id",requested).eq("provider","toast")
+        .eq("status","needs_owner")
+        .in("review_type",["staff_identity","unlinked_timecard",
+          "overlapping_timecard","shift_corrected"])
+        .order("created_at",{ascending:false}).limit(51);
+      if(error){
+        if(["42P01","PGRST205"].includes(error.code??""))
+          return {available:false,value:null,quality:{level:"low" as const,
+            missingInputs:["posImportReviewsMigrationPending"],estimatedInputs:[],staleInputs:[]}};
+        throw error;
+      }
+      const truncated=(data??[]).length>50;
+      return {available:true,value:(data??[]).slice(0,50).map(row=>({
+        reviewType:row.review_type,sourceKey:row.source_key,
+        detail:row.detail&&typeof row.detail==="object"&&!Array.isArray(row.detail)?
+         row.detail as Record<string,unknown>:{}
+      })),quality:{level:truncated?"medium" as const:"high" as const,
+        missingInputs:truncated?["morePosReviews"]:[],estimatedInputs:[],staleInputs:[]}};
+    },
   );
   return new BusinessScopedCafeTools(tools, businessId);
 }

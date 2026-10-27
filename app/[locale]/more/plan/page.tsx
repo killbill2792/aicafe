@@ -97,13 +97,13 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       readyMeetsTarget: economics("readyMeetsTarget"), readyNeedsIncrease: economics("readyNeedsIncrease"),
       largeChange: economics("largeChange"), unavailableSales: economics("unavailableSales"),
       unavailableFees: economics("unavailableFees"), unavailableCosts: economics("unavailableCosts"),
-      unavailableOperating: economics("unavailableOperating"), targetTested: economics("targetTested"),
+      unavailableOperating: economics("unavailableOperating"), unavailablePayroll:economics("unavailablePayroll"), targetTested: economics("targetTested"),
       item: economics("item"), productCost: economics("productCost"), productCostPct: economics("productCostPct"),
       currentPrice: economics("currentPrice"), simulatedPrice: economics("simulatedPrice"),
       change: economics("change"), unavailableItem: economics("unavailableItem"),
       invalid: economics("invalid"), targetNotFeasible: economics("targetNotFeasible"),
       fixSales: money("uploadSales"), fixFees: money("fixFees"),
-      fixCosts: money("addProductCosts"), fixOperating: money("addBills"),
+      fixCosts: money("addProductCosts"), fixOperating: money("addBills"), fixPayroll:economics("fixPayroll"),
     }} />}
     {tab === "what-if" && snapshot && <section className="rounded-card-lg bg-card p-5">
       {!hasCompletePlanHours(snapshot.business.openHours) && <Link href="/more/cafe-profile?focus=hours"
@@ -116,7 +116,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         items={(snapshot.breakEvenProductCosts ?? snapshot.menuItems).map(item => ({
         id: item.id, name: item.name, priceCents: item.priceCents, costStatus: item.costStatus, category: item.category, active: item.active,
         ingredientsCentsToday: item.ingredientsCentsToday, quantitySoldLast28Days: item.quantitySoldLast28Days,
-      }))} base={recovery ? {
+      }))} base={recovery&&recovery.monthlyStaffCents!==null ? {
         monthlyBillsCents: recovery.monthlyBillsCents, monthlyStaffCents: recovery.monthlyStaffCents,
         breakEvenAvailable: recovery.breakEven.kind === "ready",
         observedSalesCents: sumCents(days, d => d.netSalesCents), observedIngredientCents: costs!.totalCostCents,

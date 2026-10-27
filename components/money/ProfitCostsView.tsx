@@ -4,7 +4,7 @@ import { getTranslations, getLocale } from "next-intl/server";
 import Money from "@/components/shared/Money";
 import EstimatePill from "@/components/shared/EstimatePill";
 import { Link } from "@/i18n/navigation";
-import type { HealthBand } from "@/lib/calc";
+import { laborKnown, type HealthBand } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { Period } from "@/lib/viewmodels/period";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
@@ -81,6 +81,9 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
   // nonsense like "150200000%" the moment a period had no sales yet. 0% reads as "not enough
   // sales to show a ratio" rather than a fabricated number.
   const pct = (n: number) => (vm.salesCents > 0 ? (n / vm.salesCents) * 100 : 0);
+  const knownLabor=laborKnown({wagesCents:vm.wagesCents,staffTaxCents:vm.staffTaxCents,
+    laborWageStatus:vm.businessCosts.missingInputs.some(x=>x.startsWith("laborWageUnknown:"))?"missing":undefined});
+  const knownTotals=vm.totalCostsCents!==null&&knownLabor;
   const runningExCardFees = vm.runningCostLines.reduce((s, l) => s + l.amountCents, 0);
   // No confirmed owner-profit figure to color when nothing's been uploaded yet — the flow bar and
   // summary box fall back to a neutral, non-alarming presentation rather than a precise red loss.
@@ -108,16 +111,16 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
         <div className="flex flex-col gap-2">
           <StepBar label={t("sales")} cents={vm.salesCents} widthPct={100} color="bg-ink" />
           <StepBar label={t("ingredients")} cents={-vm.ingredientsCents} widthPct={pct(vm.ingredientsCents)} color="bg-ingredients" />
-          <StepBar label={t("staff")} cents={-(vm.wagesCents + vm.staffTaxCents)} widthPct={pct(vm.wagesCents + vm.staffTaxCents)} color="bg-staff" />
-          <StepBar
+          {knownLabor&&<StepBar label={t("staff")} cents={-(vm.wagesCents!+vm.staffTaxCents!)} widthPct={pct(vm.wagesCents!+vm.staffTaxCents!)} color="bg-staff" />}
+          {knownTotals&&<StepBar
             label={t("rentAndBills")}
-            cents={-(vm.totalCostsCents - vm.ingredientsCents - vm.wagesCents - vm.staffTaxCents)}
-            widthPct={pct(vm.totalCostsCents - vm.ingredientsCents - vm.wagesCents - vm.staffTaxCents)}
+            cents={-(vm.totalCostsCents! - vm.ingredientsCents - vm.wagesCents! - vm.staffTaxCents!)}
+            widthPct={pct(vm.totalCostsCents! - vm.ingredientsCents - vm.wagesCents! - vm.staffTaxCents!)}
             color="bg-running"
-          />
-          {vm.ownerProfitDisplay.kind!=="unavailable" &&
-            <StepBar label={t("youKeep")} cents={vm.ownerProfitCents}
-              widthPct={flowBarWidthPct(vm.ownerProfitCents, vm.salesCents)}
+          />}
+          {vm.ownerProfitCents!==null&&vm.ownerProfitDisplay.kind!=="unavailable" &&
+            <StepBar label={t("youKeep")} cents={vm.ownerProfitCents!}
+              widthPct={flowBarWidthPct(vm.ownerProfitCents!, vm.salesCents)}
               color="bg-good" tone={tone} />}
         </div>
       </section>
@@ -137,7 +140,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
           <Row name={t("ingredientsAndCups")} cents={vm.ingredientsCents} addLabel={t("add")} />
         </RowGroup>
 
-        <RowGroup label={t("staff")} pct={Math.round(pct(vm.wagesCents + vm.staffTaxCents))} color="bg-staff">
+        <RowGroup label={t("staff")} pct={knownLabor?Math.round(pct(vm.wagesCents!+vm.staffTaxCents!)):null} color="bg-staff">
           <Row name={t("wages")} cents={vm.wagesCents} addLabel={t("add")} />
           <Row name={t("payrollTaxes")} cents={vm.staffTaxCents} addLabel={t("add")} last />
         </RowGroup>
@@ -163,7 +166,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
             ? t("knownCosts") : vm.businessCosts.completeness==="unavailable"
               ? t("costsUnavailable") : t("totalCosts")}</span>
           <span className="text-lg font-extrabold text-warn">
-            {vm.businessCosts.completeness!=="unavailable"
+            {vm.businessCosts.completeness!=="unavailable"&&vm.totalCostsCents!==null
               ? <Money cents={vm.totalCostsCents} /> : "—"}
           </span>
         </div>
@@ -194,8 +197,12 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
           <span className="text-[13px] text-ink-muted">{t("healthCheckSubtitle")}</span>
         </div>
         <HealthRow label={t("ingredients")} pct={vm.ingredientsRatio * 100} band={vm.ingredientsBand} note={t("healthyRange")} bandLabel={bandLabel[vm.ingredientsBand]} />
-        <HealthRow label={t("staff")} pct={vm.staffRatio * 100} band={vm.staffBand} note={t("healthyRange")} bandLabel={bandLabel[vm.staffBand]} />
-        <HealthRow label={t("ingredientsPlusStaff")} pct={vm.combinedRatio * 100} band={vm.combinedBand} note={t("keepUnder")} bandLabel={bandLabel[vm.combinedBand]} />
+        {vm.staffRatio!==null&&vm.staffBand!==null?
+          <HealthRow label={t("staff")} pct={vm.staffRatio * 100} band={vm.staffBand} note={t("healthyRange")} bandLabel={bandLabel[vm.staffBand]} />:
+          <p className="text-sm text-ink-muted">{t("staff")}: {t("ownerProfitWaiting")}</p>}
+        {vm.combinedRatio!==null&&vm.combinedBand!==null?
+          <HealthRow label={t("ingredientsPlusStaff")} pct={vm.combinedRatio * 100} band={vm.combinedBand} note={t("keepUnder")} bandLabel={bandLabel[vm.combinedBand]} />:
+          <p className="text-sm text-ink-muted">{t("ingredientsPlusStaff")}: {t("ownerProfitWaiting")}</p>}
       </section>
 
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
@@ -221,13 +228,13 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
   );
 }
 
-function RowGroup({ label, pct, color, children }: { label: string; pct: number; color: string; children: React.ReactNode }) {
+function RowGroup({ label, pct, color, children }: { label: string; pct: number|null; color: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-2 py-3.5 pb-1.5">
         <span className={`h-3 w-3 rounded-[3px] ${color}`} />
         <span className="flex-1 text-[13px] font-extrabold tracking-wide text-ink-muted">{label.toUpperCase()}</span>
-        <span className="text-[13px] font-bold text-ink-muted">{pct}%</span>
+        <span className="text-[13px] font-bold text-ink-muted">{pct===null?"—":`${pct}%`}</span>
       </div>
       {children}
     </div>

@@ -9,6 +9,7 @@ import { actualDayContributions, dayContributionCents, recoveryBuckets } from ".
  */
 export type TodayGlanceBucketState =
   | { kind: "noSalesYet" }
+  | { kind: "costsUnknown" }
   /** Today has a real rollup, but nothing was left over to put toward bills (a break-even or
    * negative day) — distinct from "noSalesYet" so it doesn't falsely claim nothing was uploaded. */
   | { kind: "noProgressToday" }
@@ -21,7 +22,7 @@ export type TodayGlanceViewModel = {
   salesCents: number;
   ordersCount: number;
   avgOrderValueCents: number;
-  moneyLeftCents: number;
+  moneyLeftCents: number | null;
   drinksCount: number;
   bucketState: TodayGlanceBucketState;
 };
@@ -30,9 +31,11 @@ export function buildTodayGlanceViewModel(snapshot: BusinessSnapshot): TodayGlan
   const today = snapshot.todayDay;
   const buckets = recoveryBuckets(snapshot);
   const contributionCentsToday = dayContributionCents(today);
+  const unknownPriorLabor=(snapshot.monthRecordedDays??snapshot.monthActualDays)
+    .some(day=>day.date<snapshot.todayDateStr&&dayContributionCents(day)===null);
   const cumulativeBeforeToday = snapshot.monthActualDays
     .filter((d) => d.date < snapshot.todayDateStr)
-    .reduce((sum, d) => sum + dayContributionCents(d), 0);
+    .reduce((sum, d) => sum + (dayContributionCents(d)??0), 0);
 
   const base = {
     salesCents: today.netSalesCents,
@@ -42,6 +45,9 @@ export function buildTodayGlanceViewModel(snapshot: BusinessSnapshot): TodayGlan
     drinksCount: today.drinksCount,
   };
 
+  if(contributionCentsToday===null||unknownPriorLabor){
+    return {...base,bucketState:{kind:snapshot.todayHasData?"costsUnknown":"noSalesYet"}};
+  }
   if (!snapshot.todayHasData) {
     return { ...base, bucketState: { kind: "noSalesYet" } };
   }

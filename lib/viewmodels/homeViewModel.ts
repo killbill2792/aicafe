@@ -7,12 +7,14 @@ import {
   ratio,
   roundHalfUpToCent,
   staffCostCentsForPeriod,
+  laborKnown,
   sumCents,
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, recoveryBuckets } from "./costRecoveryShared";
 import {
   daysForPeriod,
+  periodCalendarRange,
   periodCoverage,
   previousPeriodCoverage,
   previousPeriodDays,
@@ -28,17 +30,27 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
   const runningCosts = runningCostsForPeriod(snapshot, period);
   const salesCents = sumCents(days, (d) => d.netSalesCents);
-  const totalCostsCents = salesCents - ownerProfitCentsForPeriod(days, runningCosts);
-  const ownerProfitCents = ownerProfitCentsForPeriod(days, runningCosts);
+  const calendar=periodCalendarRange(snapshot,period);
+  // A staff-only recorded day is absent from sales-day arrays, but missing
+  // wages on that day still make the period's owner profit unknown.
+  const recordedLaborDays=[
+    ...(calendar.start<snapshot.monthKey+"-01"
+      ? (snapshot.previousMonthRecordedDays??snapshot.previousMonthDays):[]),
+    ...(snapshot.monthRecordedDays??snapshot.monthActualDays),
+  ].filter(day=>day.date>=calendar.start&&day.date<=calendar.end);
+  const missingRecordedLabor=recordedLaborDays.some(day=>!laborKnown(day));
+  const ownerProfitCents=missingRecordedLabor?null:ownerProfitCentsForPeriod(days,runningCosts);
+  const totalCostsCents = ownerProfitCents===null?null:salesCents-ownerProfitCents;
   const isEstimate = snapshot.runningCostLines.some((l) => l.isEstimate && l.amountCents > 0);
   const coverage = periodCoverage(snapshot, period);
-  const ownerProfitDisplay = ownerProfitDisplayState(ownerProfitCents, coverage);
+  const ownerProfitDisplay=ownerProfitCents===null?{kind:"unavailable" as const}:
+    ownerProfitDisplayState(ownerProfitCents,coverage);
   const missingProcessingFees = days.some((day) => day.netSalesCents > 0 && day.cardFeesStatus === "missing");
   const missingProductCosts = snapshot.menuItems.some(
     (item) => item.quantitySoldLast28Days > 0 && item.costStatus !== "READY",
   );
   const operatingMargin =
-    ownerProfitDisplay.kind === "unavailable" || salesCents <= 0 || missingProcessingFees || missingProductCosts
+    ownerProfitCents===null || ownerProfitDisplay.kind === "unavailable" || salesCents <= 0 || missingProcessingFees || missingProductCosts
       ? null
       : ratio(ownerProfitCents, salesCents);
   const operatingMarginQuality =
@@ -57,7 +69,7 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   // period are fully covered — comparing 4 of 7 days this week against 1 of 7 last week (or a
   // complete today against a missing yesterday) isn't like-for-like.
   const changeVsLastPeriodPct =
-    comparisonState.kind === "available" && prevOwnerProfitCents !== 0
+    comparisonState.kind === "available" && ownerProfitCents!==null && prevOwnerProfitCents!==null && prevOwnerProfitCents !== 0
       ? ((ownerProfitCents - prevOwnerProfitCents) / Math.abs(prevOwnerProfitCents)) * 100
       : null;
 
@@ -80,15 +92,18 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const last28Fees = sumCents(snapshot.last28Days, (d) => d.cardFeesCents);
   const last28Drinks = sumCents(snapshot.last28Days, (d) => d.drinksCount);
   const avgMoneyLeft = avgMoneyLeftPerDrinkCents(last28Net, last28Ingredients, last28Fees, last28Drinks);
-  const avgDailyStaffCost = snapshot.last28Days.length ? staffCostCentsForPeriod(snapshot.last28Days) / snapshot.last28Days.length : 0;
+  const last28Staff=staffCostCentsForPeriod(snapshot.last28Days);
+  const avgDailyStaffCost=last28Staff===null?null:snapshot.last28Days.length?last28Staff/snapshot.last28Days.length:0;
   const runningPerDay = snapshot.runningCostLines.reduce((s, l) => s + l.amountCents, 0) / snapshot.daysInMonth;
-  const drinksNeeded = drinksNeededPerDay(dailyCostsToCoverCents(runningPerDay, avgDailyStaffCost), avgMoneyLeft);
+  const drinksNeeded=avgDailyStaffCost===null?0:
+    drinksNeededPerDay(dailyCostsToCoverCents(runningPerDay,avgDailyStaffCost),avgMoneyLeft);
 
-  const staffCostToday = today.wagesCents + today.staffTaxCents;
-  const staffCostPerMinuteNow = staffCostToday / (11.5 * 60); // avg operating hours/day; refined once live timecards land
+  const staffCostToday = !laborKnown(today)?null:
+    today.wagesCents+today.staffTaxCents;
+  const staffCostPerMinuteNow=staffCostToday===null?null:staffCostToday/(11.5*60); // avg operating hours/day; refined once live timecards land
 
   const missingCategories = expectedMissingCostLines(snapshot.runningCostLines);
-  const breakEvenUnavailableReason = missingCategories.length > 0
+  const breakEvenUnavailableReason = last28Staff===null?"missing_costs" as const:missingCategories.length > 0
     ? "missing_costs" as const
     : last28Drinks <= 0 || avgMoneyLeft <= 0 || snapshot.last28Days.length === 0
       ? "missing_sales" as const
@@ -111,8 +126,8 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
     comparisonState,
     isEstimate,
     changeVsLastPeriodPct,
-    costsRatio: ratio(totalCostsCents, salesCents),
-    keepRatio: ratio(ownerProfitCents, salesCents),
+    costsRatio: totalCostsCents===null?0:ratio(totalCostsCents,salesCents),
+    keepRatio: ownerProfitCents===null?0:ratio(ownerProfitCents,salesCents),
     operatingMargin,
     operatingMarginQuality,
     targetOperatingMargin: snapshot.business.targetOperatingMargin ?? 0.15,

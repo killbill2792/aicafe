@@ -8,7 +8,7 @@ export type ProfitGoalSimulatorData = {
   currentOperatingMargin: number | null;
   currentMarginQuality: "actual" | "estimated" | "missing";
   canSimulate: boolean;
-  unavailableReason: "NOT_ENOUGH_SALES" | "MISSING_PROCESSING_FEES" | "MISSING_PRODUCT_COSTS" | "MISSING_OPERATING_COSTS" | null;
+  unavailableReason: "NOT_ENOUGH_SALES" | "MISSING_PROCESSING_FEES" | "MISSING_PRODUCT_COSTS" | "MISSING_OPERATING_COSTS" | "MISSING_PAYROLL" | null;
   economics: BusinessEconomicsInput | null;
   items: PricingItemInput[];
   business: PricingBusinessInput;
@@ -44,13 +44,14 @@ export async function getProfitGoalSimulatorData(): Promise<ProfitGoalSimulatorD
   else if (pricing.business.processingFeesStatus === "missing") unavailableReason = "MISSING_PROCESSING_FEES";
   else if (hasMissingProductCosts) unavailableReason = "MISSING_PRODUCT_COSTS";
   else if (pricing.business.operatingCostsStatus === "missing") unavailableReason = "MISSING_OPERATING_COSTS";
+  else if (pricing.business.payrollCostsStatus === "missing" || pricing.business.monthlyStaffCostCents === null) unavailableReason = "MISSING_PAYROLL";
 
   const economics: BusinessEconomicsInput | null =
     unavailableReason === null
       ? {
           monthlyRevenueCents: pricing.business.monthlyRevenueCents,
           monthlyVariableProductCostCents: pricing.business.monthlyVariableProductCostCents,
-          monthlyStaffCostCents: pricing.business.monthlyStaffCostCents,
+          monthlyStaffCostCents: pricing.business.monthlyStaffCostCents!,
           monthlyOperatingCostCents: pricing.business.monthlyOperatingCostCents,
           monthlyProcessingFeesCents: pricing.business.monthlyProcessingFeesCents,
         }

@@ -218,3 +218,19 @@ describe("isValidMonthKey", () => {
     expect(isValidMonthKey(null)).toBe(false);
   });
 });
+
+
+describe("known-only labor on a missing wage day", () => {
+  it("shows a missing performance day, not a profit/loss-colored actual day", () => {
+    const day = {...zeroDailyFacts("2026-10-01"),netSalesCents:5000,
+      wagesCents:1200,staffTaxCents:144,laborWageStatus:"missing" as const};
+    const vm = buildMonthCalendarViewModel({monthData:monthData([day]),
+      recoveryOrder:["rent"],todayDateStr:"2026-10-31",isCurrentMonth:false});
+    expect(vm.cells.find(cell=>cell.date===day.date)?.state.kind).toBe("missing");
+    expect(vm.detailsByDate[day.date].hasData).toBe(false);
+    const complete=buildMonthCalendarViewModel({monthData:monthData([
+      {...day,laborWageStatus:"actual"}]),
+      recoveryOrder:["rent"],todayDateStr:"2026-10-31",isCurrentMonth:false});
+    expect(complete.cells.find(cell=>cell.date===day.date)?.state.kind).toBe("actual");
+  });
+});

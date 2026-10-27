@@ -4,6 +4,7 @@ import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { redirect } from "next/navigation";
 import { addUploadedItemToMenu, matchUploadedItem, resolveCatalogMatch } from "./catalogMatches";
 import { resolveUnmatchedAlertsIfClear } from "@/lib/data/resolveUnmatchedAlerts.server";
+import {recordInitialMenuPrice,setCanonicalMenuPrice} from "@/lib/menu/priceHistory";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
@@ -14,6 +15,10 @@ vi.mock("@/lib/data/resolveUnmatchedAlerts.server", () => ({
 vi.mock("@/lib/supabase/server", () => ({ createServerSupabaseClient: vi.fn() }));
 vi.mock("@/lib/data/getActiveBusinessId", () => ({ getActiveBusinessId: vi.fn() }));
 vi.mock("@/lib/data/queryError", () => ({ logQueryError: vi.fn() }));
+vi.mock("@/lib/menu/priceHistory",()=>({
+  setCanonicalMenuPrice:vi.fn(async()=>true),
+  recordInitialMenuPrice:vi.fn(async()=>{}),
+}));
 vi.mock("@/lib/menu/menuGroups", () => ({
   existingMenuGroups: vi.fn(async () => []),
   normalizeMenuGroup: vi.fn((name: string) => name),
@@ -23,7 +28,7 @@ const BUSINESS = "11111111-1111-4111-8111-111111111111";
 const ITEM = "22222222-2222-4222-8222-222222222222";
 const MATCH = "33333333-3333-4333-8333-333333333333";
 
-function fakeDb(count: number, options?: { failLineBatch?: number; noExistingItem?: boolean; failConfirm?: boolean }) {
+function fakeDb(count: number, options?: { failLineBatch?: number; noExistingItem?: boolean; failConfirm?: boolean; existingPosItemId?:string }) {
   const orders = Array.from({ length: count }, (_, i) => ({
     id: `order-${String(i).padStart(5, "0")}`, business_id: BUSINESS, pos_order_id: `csv-${i}`,
   }));
@@ -31,8 +36,11 @@ function fakeDb(count: number, options?: { failLineBatch?: number; noExistingIte
   const groups = [{ item_name: "Iced mocha", menu_item_id: null as string | null }];
   const match = { id: MATCH, business_id: BUSINESS, provider: "csv", status: "needs_review",
     pos_item_id: "csv-item-iced-mocha", imported_name: "Iced mocha", imported_price_cents: 525,
-    imported_category: null, suggested_menu_item_id: null };
-  const items = options?.noExistingItem ? [] as {id:string;pos_item_id:string|null}[] : [{id:ITEM,pos_item_id:null as string|null}];
+    imported_category: null, suggested_menu_item_id: null as string|null };
+  const items = options?.noExistingItem ? [] as Array<{id:string;pos_item_id:string|null;menu_group:string|null;price_cents:number|null;catalog_source:string|null}> :
+    [{id:ITEM,pos_item_id:options?.existingPosItemId??null,
+      menu_group:null,price_cents:525,catalog_source:options?.existingPosItemId?.startsWith("csv-item-")?"csv":"toast"}];
+  const aliases:Array<{business_id:string;provider:string;pos_item_id:string;menu_item_id:string}>=[];
   const ranges: number[][] = [];
   const lineBatches: number[] = [];
   let failed = false;
@@ -64,9 +72,13 @@ function fakeDb(count: number, options?: { failLineBatch?: number; noExistingIte
       function one() {
         if (insertValue && table === "menu_items") {
           creates++;
-          items.push({id: ITEM, pos_item_id: String(insertValue.pos_item_id)});
+          items.push({id: ITEM, pos_item_id: String(insertValue.pos_item_id),
+            menu_group:null,price_cents:Number(insertValue.price_cents),catalog_source:String(insertValue.catalog_source)});
           return {data:{id:ITEM},error:null};
         }
+        if(table==="pos_item_aliases")return {data:aliases.find(a=>
+          a.business_id===filters.business_id&&a.provider===filters.provider&&
+          a.pos_item_id===filters.pos_item_id)??null,error:null};
         if (table === "pos_catalog_matches" && filters.id === MATCH && match.status === filters.status
           && (!filters.provider || match.provider === filters.provider) && filters.business_id === BUSINESS)
           return {data:match,error:null};
@@ -77,10 +89,14 @@ function fakeDb(count: number, options?: { failLineBatch?: number; noExistingIte
         return {data:null,error:null};
       }
       function runWrite() {
+        if(table==="pos_item_aliases"&&insertValue){
+          aliases.push(insertValue as typeof aliases[number]);
+          return {error:null};
+        }
         if (!patch) return {data:[],error:null};
         if (table === "menu_items") {
           const item = items.find(row => row.id === filters.id);
-          if (item) item.pos_item_id = patch.pos_item_id as string;
+          if (item && Object.hasOwn(patch,"pos_item_id")) item.pos_item_id = patch.pos_item_id as string;
         }
         if (table === "order_lines") {
           const ids = filters.order_id as string[];
@@ -108,7 +124,7 @@ function fakeDb(count: number, options?: { failLineBatch?: number; noExistingIte
     },
   };
   vi.mocked(createServerSupabaseClient).mockResolvedValue(db as unknown as Awaited<ReturnType<typeof createServerSupabaseClient>>);
-  return {lines,groups,match,items,ranges,lineBatches,get creates(){return creates;}};
+  return {lines,groups,match,items,aliases,ranges,lineBatches,get creates(){return creates;}};
 }
 
 beforeEach(() => {
@@ -170,6 +186,49 @@ describe("CSV match backfill", () => {
     );
   });
 
+
+  it("links a CSV review to a Toast item using an alias without replacing Toast identity",async()=>{
+    const toastId="toast:restaurant:latte";
+    const fake=fakeDb(2,{existingPosItemId:toastId});
+    const form=new FormData();form.set("menuItemId",ITEM);
+    await matchUploadedItem(MATCH,form);
+    expect(fake.items[0].pos_item_id).toBe(toastId);
+    expect(fake.aliases).toEqual([{
+      business_id:BUSINESS,menu_item_id:ITEM,provider:"csv",pos_item_id:"csv-item-iced-mocha",
+    }]);
+    expect(fake.match.status).toBe("confirmed");
+    expect(fake.lines.every(line=>line.menu_item_id===ITEM)).toBe(true);
+  });
+
+  it("approved Toast-to-CSV match preserves the old CSV identity as an alias and histories changed price",async()=>{
+    const fake=fakeDb(0,{existingPosItemId:"csv-item-iced-mocha"});
+    fake.match.provider="toast";
+    fake.match.pos_item_id="toast:restaurant:latte";
+    fake.match.suggested_menu_item_id=ITEM;
+    fake.match.imported_price_cents=600;
+    await resolveCatalogMatch(MATCH,"suggested");
+    expect(fake.items[0].pos_item_id).toBe("toast:restaurant:latte");
+    expect(fake.aliases).toEqual([{
+      business_id:BUSINESS,menu_item_id:ITEM,provider:"csv",pos_item_id:"csv-item-iced-mocha",
+    }]);
+    expect(setCanonicalMenuPrice).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({
+      businessId:BUSINESS,menuItemId:ITEM,priceCents:600,sourceProvider:"toast",
+    }));
+    expect(fake.match.status).toBe("confirmed");
+  });
+
+  it("creates new Toast item with initial history rather than a second duplicate on retry",async()=>{
+    const fake=fakeDb(0,{noExistingItem:true});
+    fake.match.provider="toast";
+    fake.match.pos_item_id="toast:restaurant:unknown";
+    fake.match.imported_price_cents=500;
+    await resolveCatalogMatch(MATCH,"new");
+    expect(fake.creates).toBe(1);
+    expect(recordInitialMenuPrice).toHaveBeenCalledWith(expect.anything(),
+      expect.objectContaining({businessId:BUSINESS,menuItemId:ITEM,priceCents:500,
+        sourceProvider:"toast"}));
+    expect(fake.match.status).toBe("confirmed");
+  });
   it("does not confirm an item from another café", async () => {
     const fake = fakeDb(2);
     const form = new FormData();form.set("menuItemId","aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa");

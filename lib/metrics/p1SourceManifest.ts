@@ -113,6 +113,9 @@ export const SOURCE_SURFACES = {
     getOpenAlerts:{restricted:"Owner alert rows need a bounded typed source/status projection"},
     getAlertById:{restricted:"Alert-by-ID requires owner-scope and separate evidence policy"},
   },
+  "lib/data/posImportReviews.server.ts":{
+    getOpenPosStaffImportReviews:{restricted:"Owner-scoped pending Toast staff/timecard reviews with private employee identifiers; read only through bounded Staff UI and labor chat"},
+  },
   "lib/data/getCatalogMatchReview.ts":{
     getCatalogMatchReview:{restricted:"Raw POS mapping review contains private import identity metadata"},
   },
@@ -161,6 +164,13 @@ export const SOURCE_SURFACES = {
   },
   "lib/data/getCafeProfile.ts": {
     getCafeProfile:{capabilities:["business.profile"]},
+  },
+  "lib/data/toastScheduledShifts.server.ts":{
+    readToastPlannedShifts:{restricted:"Owner-scoped read-only Toast planned shifts for Team UI; never a timecard, paid-hour metric, or model-selected P1 projection"},
+  },
+  "lib/data/getUnpricedPublishedMenu.ts":{
+    getUnpricedPublishedMenu:{restricted:"Authenticated current-café Menu UI read of active null-priced POS products and add-on amounts; not a P1 generic metric or unrestricted model capability"},
+    getPublishedModifiersForItems:{restricted:"Owner-session scoped detail-page read of POS groups and prices; no unrestricted model access"},
   },
   "lib/data/getUnpricedProductSizes.ts": {
     getUnpricedProductSizes:{restricted:"Owner-authenticated product size drafts; excludes prices and is not model-exposed evidence"},
@@ -287,6 +297,7 @@ export const SOURCE_SURFACES = {
   },
   "lib/data/getPricingInputs.ts": {
     getPricingInputs:{restricted:"Raw pricing inputs may include cost internals; read through canonical pricing recommendation"},
+    monthlyPayrollFromDays:{restricted:"Pure payroll completeness helper, exported for unit tests; not a database reader or a model-visible P1 capability"},
   },
   "lib/data/getPayrollCostSettings.ts": {
     getPayrollCostSettings:{restricted:"Payroll tax configuration requires separate field authorization; no direct model output"},

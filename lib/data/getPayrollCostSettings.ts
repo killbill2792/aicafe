@@ -6,6 +6,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 
 export type PayrollCostSettings = {
+  monthlyExtrasCents:number|null;
   employerCostRate: number;
   fallbackStatus: "estimated" | "confirmed";
   fallbackSource: string;
@@ -20,6 +21,7 @@ export async function getPayrollCostSettings(): Promise<PayrollCostSettings> {
     fallbackStatus: "estimated",
     fallbackSource: "system_estimate",
     actualSources: [],
+    monthlyExtrasCents:null,
   };
   const supabase = await createServerSupabaseClient();
   const {
@@ -29,10 +31,10 @@ export async function getPayrollCostSettings(): Promise<PayrollCostSettings> {
 
   const businessId=await getActiveBusinessId(user.id);
   const {data:member,error}=await supabase.from("memberships")
-    .select("business_id,businesses(is_demo,timezone,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source)")
+    .select("business_id,businesses(is_demo,timezone,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source,owner_monthly_payroll_extras_cents)")
     .eq("user_id",user.id).eq("business_id",businessId).maybeSingle();
   if(error) throw error;
-  const raw=member?.businesses as unknown as {timezone:string;payroll_tax_rate:number;payroll_tax_rate_status:"estimated"|"confirmed";payroll_tax_rate_source:string}|{timezone:string;payroll_tax_rate:number;payroll_tax_rate_status:"estimated"|"confirmed";payroll_tax_rate_source:string}[]|null|undefined;
+  const raw=member?.businesses as unknown as {timezone:string;payroll_tax_rate:number;payroll_tax_rate_status:"estimated"|"confirmed";payroll_tax_rate_source:string;owner_monthly_payroll_extras_cents:number|null}|{timezone:string;payroll_tax_rate:number;payroll_tax_rate_status:"estimated"|"confirmed";payroll_tax_rate_source:string;owner_monthly_payroll_extras_cents:number|null}[]|null|undefined;
   const business=Array.isArray(raw)?raw[0]:raw;
   if(!member||!business) throw new Error("Café not found.");
   const timezone = business?.timezone ?? "America/Los_Angeles";
@@ -52,6 +54,7 @@ export async function getPayrollCostSettings(): Promise<PayrollCostSettings> {
     employerCostRate: Number(business?.payroll_tax_rate ?? 0.12),
     fallbackStatus: business?.payroll_tax_rate_status ?? "estimated",
     fallbackSource: business?.payroll_tax_rate_source ?? "system_estimate",
+    monthlyExtrasCents:business.owner_monthly_payroll_extras_cents==null?null:Number(business.owner_monthly_payroll_extras_cents),
     actualSources: [...new Set((actualRows ?? []).map((row) => row.staff_tax_source).filter(Boolean))],
   };
 }

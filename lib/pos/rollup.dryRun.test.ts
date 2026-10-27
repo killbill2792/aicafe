@@ -11,7 +11,7 @@ describe("Raj Cafe daily rollup dry-run safety",()=>{
   const from=(table:string)=>{
    accessed.push(table);
    const chain={
-    select:()=>chain,eq:()=>chain,gte:()=>chain,lte:()=>chain,order:()=>chain,
+    select:()=>chain,eq:()=>chain,gte:()=>chain,lte:()=>chain,lt:()=>chain,or:()=>chain,order:()=>chain,
     range:async()=>({data:[],error:null}),
     single:async()=>({data:{timezone:"America/Los_Angeles",payroll_tax_rate:0.12,payroll_tax_rate_source:"system_estimate"},error:null}),
     maybeSingle:async()=>({data:null,error:null}),

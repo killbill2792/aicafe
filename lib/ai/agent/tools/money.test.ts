@@ -1,5 +1,7 @@
 import { describe,expect,it } from "vitest";
 import { moneyTools } from "./money";
+import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
+import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
 import {newResolveState} from "../resolve";
 import type { AgentToolContext } from "./index";
 const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
@@ -163,7 +165,7 @@ describe("Leo scoped money reads",()=>{
       dailyBreakEvenSalesCents:12988,contributionBps:7700,
       processingFeeBps:300,processingFeesIncluded:true,
     });
-    expect(r.missing).toEqual([]);
+    expect(r.missing).toEqual(["ownerMonthlyPayrollExtrasNotSet:estimateExcludesUnknownAdditionalPayroll"]);
   });
   it("does not report complete when contribution is nonpositive or owner's sales days are absent",async()=>{
     const context=ctx({getBreakEven:async()=>({available:true,value:{
@@ -238,5 +240,25 @@ describe("Leo scoped money reads",()=>{
   });
   it("rejects input containing a business id",async()=>{
     await expect(moneyTools.get_bills.execute({businessId:"other"},ctx({}))).rejects.toThrow();
+  });
+});
+
+
+describe("AI known-only wages are not verified zero labor",()=>{
+  it("exposes known subtotal as partial, but hides the incomplete labor component",async()=>{
+    const fixture=getFixtureSnapshot();
+    const day=fixture.monthActualDays[0];
+    const days=fixture.monthActualDays.map(d=>d.date===day.date?{
+      ...d,wagesCents:0,staffTaxCents:0,laborWageStatus:"missing" as const}:d);
+    const snapshot={...fixture,monthRecordedDays:days,monthActualDays:days};
+    const summary=businessCostSummaryFromSnapshot(snapshot,{
+      from:fixture.monthKey+"-01",to:fixture.todayDateStr});
+    expect(summary.completeness).toBe("partial");
+    expect(summary.observed.loadedStaff).toBe(false);
+    const response=await moneyTools.get_cost_summary.execute({period:"month"},
+      ctx({getBusinessCostSummary:async()=>summary}));
+    expect(response.completeness).toBe("partial");
+    expect((response.components as {loadedStaffCents:number|null}).loadedStaffCents).toBeNull();
+    expect(response.missing).toContain("laborWageUnknown:"+day.date);
   });
 });

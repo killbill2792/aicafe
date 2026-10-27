@@ -54,6 +54,15 @@ describe("pricing processing-fee quality", () => {
     expect(result.dataQuality.missingInputs).toContain("operatingCosts");
   });
 
+  it("uses benchmark pricing instead of known-only partial payroll",()=>{
+    const result=buildPricingViewModel({items:[item],business:{
+      ...business,monthlyStaffCostCents:null,payrollCostsStatus:"missing",
+    }})[0].result;
+    expect(result.calculationMode).toBe("BENCHMARK");
+    expect(result.dataQuality.missingInputs).toContain("payrollCosts");
+    expect(result.dataQuality.estimatedInputs).not.toContain("payrollBurden");
+  });
+
   it("reserves estimated fee provenance without treating it as missing", () => {
     const result = buildPricingViewModel({ items: [item], business: { ...business, processingFeesStatus: "estimated" } })[0].result;
     expect(result.calculationMode).toBe("BUSINESS_ADJUSTED");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProfitAndCostsViewModel } from "./moneyViewModel";
+import { buildProfitAndCostsViewModel,buildCostRecoveryViewModel } from "./moneyViewModel";
 import { businessCostSummaryFromSnapshot } from "@/lib/operating/businessCosts";
 import { getFixtureSnapshot } from "@/lib/data/fixtureSnapshot";
 import {totalCostsCentsForPeriod, type DailyFacts} from "@/lib/calc";
@@ -72,7 +72,7 @@ describe("buildProfitAndCostsViewModel — running cost rows match the selected 
     const today = buildProfitAndCostsViewModel(snapshot, "today");
     const month = buildProfitAndCostsViewModel(snapshot, "month");
     expect(month.runningCostLines[0].amountCents).toBeCloseTo(today.runningCostLines[0].amountCents, 6);
-    expect(month.totalCostsCents).toBeCloseTo(today.totalCostsCents, 6);
+    expect(month.totalCostsCents).toBeCloseTo(today.totalCostsCents!, 6);
     expect(month.salesCents).toBe(today.salesCents);
   });
 
@@ -88,7 +88,7 @@ describe("buildProfitAndCostsViewModel — running cost rows match the selected 
     for (const period of ["today", "week", "month"] as const) {
       const vm = buildProfitAndCostsViewModel(snapshot, period);
       const rowsTotal = vm.runningCostLines.reduce((sum, line) => sum + line.amountCents, 0);
-      const expectedNonOperatingCosts = vm.totalCostsCents - vm.ingredientsCents - vm.wagesCents - vm.staffTaxCents - vm.cardFeesCents;
+      const expectedNonOperatingCosts = vm.totalCostsCents! - vm.ingredientsCents - vm.wagesCents! - vm.staffTaxCents! - vm.cardFeesCents;
       expect(rowsTotal).toBeCloseTo(expectedNonOperatingCosts, 6);
     }
   });
@@ -97,9 +97,9 @@ describe("buildProfitAndCostsViewModel — running cost rows match the selected 
     for (const period of ["today", "week", "month"] as const) {
       const vm = buildProfitAndCostsViewModel(snapshot, period);
       const rowsTotal = vm.runningCostLines.reduce((sum, line) => sum + line.amountCents, 0);
-      const recomputedTotalCosts = vm.ingredientsCents + vm.wagesCents + vm.staffTaxCents + vm.cardFeesCents + rowsTotal;
-      expect(recomputedTotalCosts).toBeCloseTo(vm.totalCostsCents, 6);
-      expect(vm.salesCents - recomputedTotalCosts).toBeCloseTo(vm.ownerProfitCents, 6);
+      const recomputedTotalCosts = vm.ingredientsCents + vm.wagesCents! + vm.staffTaxCents! + vm.cardFeesCents + rowsTotal;
+      expect(recomputedTotalCosts).toBeCloseTo(vm.totalCostsCents!, 6);
+      expect(vm.salesCents - recomputedTotalCosts).toBeCloseTo(vm.ownerProfitCents!, 6);
     }
   });
 });
@@ -166,7 +166,7 @@ describe("Money Week spanning previous month remains supported Oct 1–6",()=>{
       const previousDays=7-octoberDay;
       const expectedRunning=Math.round(310000*(previousDays/30+octoberDay/31));
 
-      const expectedTotal=Math.round(totalCostsCentsForPeriod(last7,expectedRunning));
+      const expectedTotal=Math.round(totalCostsCentsForPeriod(last7,expectedRunning)!);
       expect(partial.businessCosts.components.runningCostsCents).toBe(expectedRunning);
       expect(partial.businessCosts.knownTotalCents).toBe(expectedTotal);
       expect(partial.totalCostsCents).toBe(expectedTotal);
@@ -251,7 +251,7 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     );
     expect(previousCosts.completeness).toBe("complete");
     expect(delta.deltaCents).toBe(
-      vm.ownerProfitCents-(previous.netSalesCents-previousCosts.knownTotalCents),
+      vm.ownerProfitCents!-(previous.netSalesCents-previousCosts.knownTotalCents),
     );
   });
   it("previous period complete item proof but missing a staff record: no staff or profit delta",()=>{
@@ -294,5 +294,83 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     expect(vm.ownerProfitDisplay.kind).toBe("complete");
     expect(vm.changes.map(x=>x.key)).toContain("ownerProfit");
     expect(vm.changes.find(x=>x.key==="sales")?.deltaCents).toBe(0);
+  });
+});
+
+
+describe("Money partial-known-wage day",()=>{
+  it("removes wages, staff change and final profit without hiding sales",()=>{
+    const original=getFixtureSnapshot();
+    const date=original.todayDay.date;
+    const changed=(day:DailyFacts)=>day.date===date?{...day,
+      wagesCents:1750,staffTaxCents:210,laborWageStatus:"missing" as const}:day;
+    const snapshot={...original,monthActualDays:original.monthActualDays.map(changed),
+      monthRecordedDays:original.monthActualDays.map(changed),
+      todayDay:changed(original.todayDay)};
+    const vm=buildProfitAndCostsViewModel(snapshot,"today");
+    expect(vm.salesCents).toBeGreaterThan(0);
+    expect(vm.wagesCents).toBeNull();
+    expect(vm.staffTaxCents).toBeNull();
+    expect(vm.staffRatio).toBeNull();
+    expect(vm.combinedRatio).toBeNull();
+    expect(vm.staffBand).toBeNull();
+    expect(vm.combinedBand).toBeNull();
+    expect(vm.ownerProfitCents).toBeNull();
+    expect(vm.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(vm.businessCosts.missingInputs).toContain("laborWageUnknown:"+date);
+    expect(vm.changes.map(row=>row.key)).not.toContain("staff");
+    const complete=buildProfitAndCostsViewModel({...snapshot,
+      monthActualDays:snapshot.monthActualDays.map(d=>d.date===date?{...d,laborWageStatus:"actual" as const}:d),
+      monthRecordedDays:snapshot.monthRecordedDays.map(d=>d.date===date?{...d,laborWageStatus:"actual" as const}:d),
+      todayDay:{...snapshot.todayDay,laborWageStatus:"actual" as const}},"today");
+    expect(complete.wagesCents).not.toBeNull();
+  });
+  it("cost recovery rejects a non-null partial-wage month",()=>{
+    const original=getFixtureSnapshot();
+    const day=original.monthActualDays[0];
+    const changed=original.monthActualDays.map(d=>d.date===day.date?{
+      ...d,wagesCents:1250,staffTaxCents:150,laborWageStatus:"missing" as const}:d);
+    const vm=buildCostRecoveryViewModel({...original,monthRecordedDays:changed,
+      monthActualDays:changed});
+    expect(vm.monthlyStaffCents).toBeNull();
+    expect(vm.breakEven.kind).toBe("unavailable");
+  });
+});
+
+
+describe("Money staff-only missing-wage day",()=>{
+  it("never returns even a raw final profit when partial labor is absent from sales rows",()=>{
+    const fixture=getFixtureSnapshot();
+    const staffOnly={...fixture.monthActualDays[0],wagesCents:1900,
+      staffTaxCents:225,laborWageStatus:"missing" as const,salesDataStatus:"missing" as const};
+    const snapshot={...fixture,
+      monthActualDays:fixture.monthActualDays.slice(1),
+      monthRecordedDays:[staffOnly,...fixture.monthActualDays.slice(1)]};
+    const result=buildProfitAndCostsViewModel(snapshot,"month");
+    expect(result.salesCents).toBeGreaterThan(0);
+    expect(result.businessCosts.missingInputs).toContain("laborWageUnknown:"+staffOnly.date);
+    expect(result.ownerProfitCents).toBeNull();
+    expect(result.ownerProfitDisplay.kind).toBe("unavailable");
+    const restored=buildProfitAndCostsViewModel({...snapshot,
+      monthRecordedDays:snapshot.monthRecordedDays.map(day=>day.date===staffOnly.date?{
+        ...day,laborWageStatus:"actual" as const}:day)},"month");
+    expect(restored.ownerProfitCents).not.toBeNull();
+  });
+});
+
+describe("Recovery with known-only missing wages",()=>{
+  it("cannot claim bills covered or final projected profit",()=>{
+    const fixture=getFixtureSnapshot();
+    const missing=fixture.monthActualDays.map((day,i)=>i===0?{
+      ...day,wagesCents:200,staffTaxCents:25,laborWageStatus:"missing" as const}:day);
+    const partial=buildCostRecoveryViewModel({...fixture,
+      monthActualDays:missing,monthRecordedDays:missing});
+    expect(partial.monthlyStaffCents).toBeNull();
+    expect(partial.allCovered).toBe(false);
+    expect(partial.projectedMonthEndProfitCents).toBeNull();
+    const restored=missing.map((day,i)=>i===0?{
+      ...day,laborWageStatus:"actual" as const}:day);
+    expect(buildCostRecoveryViewModel({...fixture,
+      monthActualDays:restored,monthRecordedDays:restored}).monthlyStaffCents).not.toBeNull();
   });
 });

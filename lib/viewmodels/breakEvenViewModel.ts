@@ -31,12 +31,13 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
 
   const avgMoneyLeft = productCosts.missingProductCosts ? 0 : avgMoneyLeftPerDrinkCents(netSales, ingredients, cardFees, drinks);
   const runningPerDay = snapshot.runningCostLines.reduce((s, l) => s + l.amountCents, 0) / snapshot.daysInMonth;
-  const avgDailyStaffCost = days.length ? staffCostCentsForPeriod(days) / days.length : 0;
+  const laborTotal=staffCostCentsForPeriod(days);
+  const avgDailyStaffCost=laborTotal===null?0:days.length?laborTotal/days.length:0;
   const dailyCosts = dailyCostsToCoverCents(runningPerDay, avgDailyStaffCost);
   const needed = drinksNeededPerDay(dailyCosts, avgMoneyLeft);
   const missingCosts = expectedMissingCostLines(snapshot.runningCostLines);
   const missingCostLabels = missingCosts.map((line) => line.label);
-  const unavailableReason = missingCostLabels.length > 0
+  const unavailableReason = laborTotal===null?"missing_costs" as const:missingCostLabels.length > 0
     ? "missing_costs" as const
     : days.length === 0 || drinks <= 0
       ? "missing_sales" as const

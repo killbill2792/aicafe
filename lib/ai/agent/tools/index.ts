@@ -1,3 +1,4 @@
+import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
 import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard,periodChoicePayload,resolveOwnerPeriod} from "../resolve";
@@ -157,16 +158,53 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
       return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,...summarizeEmployeeSales(slice.value)};
     }
-    const slice=await ctx.tools.getPayrollFacts?.(period);
-    if(!slice?.available)return {source:name,period,agentId:"olivia",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
-    return {source:name,period,agentId:"olivia",missing:slice.quality.missingInputs,...summarizePayrollFacts(slice.value)};
+    const [slice,ownerCosts,labor,toastScopes]=await Promise.all([
+      ctx.tools.getPayrollFacts?.(period),
+      ctx.tools.getOwnerMonthlyPayrollExtras?.(),
+      ctx.tools.getLaborMetrics?.(period),
+      ctx.tools.getToastScopeCoverage?.(),
+    ]);
+    const ownerMonthlyPayrollExtrasCents=ownerCosts?.available?
+      ownerCosts.value.monthlyCents:null;
+    const unknownWageDates=labor?.available?
+      labor.value.filter(day=>!laborKnown({wagesCents:day.wagesCents,staffTaxCents:day.staffTaxCents,
+        laborWageStatus:day.wageStatus})).map(day=>day.date):[];
+    const observedLaborWagesCents=labor?.available&&labor.value.length>0&&unknownWageDates.length===0&&
+      labor.value.every(day=>laborKnown({wagesCents:day.wagesCents,staffTaxCents:day.staffTaxCents,
+        laborWageStatus:day.wageStatus}))?
+      labor.value.reduce((total,day)=>total+day.wagesCents!,0):null;
+    const costEvidence={
+      toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
+      ownerMonthlyPayrollExtrasCents,ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?
+        null:"You told me" as const,
+      ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"estimate",
+      observedLaborWagesCents,
+      observedWageStatus:!labor?.available?"unavailable":unknownWageDates.length||labor.value.length===0?"unknown":"recorded",
+    };
+    if(!slice?.available)return {source:name,period,agentId:"olivia",
+      missing:[...(slice?.quality.missingInputs??["toastPayrollRunsNotAvailable"]),
+        ...(ownerMonthlyPayrollExtrasCents===null?["ownerMonthlyPayrollExtrasNotSet"]:[]),
+        ...unknownWageDates.map(day=>"laborWageUnknown:"+day),
+        ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[])],
+      ...costEvidence};
+    return {source:name,period,agentId:"olivia",
+      missing:[...slice.quality.missingInputs,
+        ...(ownerMonthlyPayrollExtrasCents===null?["ownerMonthlyPayrollExtrasNotSet"]:[]),
+        ...unknownWageDates.map(day=>"laborWageUnknown:"+day),
+        ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[])],
+      ...costEvidence,...summarizePayrollFacts(slice.value)};
   }
   if(name==="get_item_sales")return salesTools.get_item_sales.execute(raw,ctx);
   if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
   if (name === "get_menu_items") {
     const input = menuSchema.parse(raw);
-    const slice = await ctx.tools.getMenuCatalog();
-    if (!slice.available) return absent("menu_items", null, slice.quality.missingInputs);
+    const [slice,toastScopes] = await Promise.all([
+      ctx.tools.getMenuCatalog(),ctx.tools.getToastScopeCoverage?.(),
+    ]);
+    if (!slice.available) return absent("menu_items", null, [
+      ...slice.quality.missingInputs,
+      ...(toastScopes?.available&&toastScopes.value.menus===false?["toastMenuScopeMissing"]:[])
+    ]);
     const active=slice.value.filter(item=>item.active);
     let filtered=active;
     if(input.query){
@@ -174,7 +212,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       if(chosen)filtered=[chosen];
       else{
         const resolved=resolveEntity("product",input.query,active,{nameOf:i=>i.name,idOf:i=>i.id,
-          describe:i=>i.category+" · "+(i.priceCents/100).toFixed(2)});
+          describe:i=>i.category+" · "+(i.priceCents===null?"open price":(i.priceCents/100).toFixed(2))});
         if(resolved.status!=="resolved")return {...choicePayload(resolved,"menu_items",null),agentId:"alex"};
         filtered=[resolved.value];
       }
@@ -185,14 +223,21 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const visible=filtered.slice(0,limit);
     let facts:Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>={};
     let evidenceUnavailable=false;
-    try {if(ctx.menuPriceEvidence)facts=await ctx.menuPriceEvidence(visible);}
+    try {if(ctx.menuPriceEvidence)facts=await ctx.menuPriceEvidence(visible.filter(
+      (item):item is typeof item & {priceCents:number}=>item.priceCents!==null));}
     catch {evidenceUnavailable=true;}
     return { source: "menu_items", period: null, agentId:"alex",
       missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : []),
-        ...(evidenceUnavailable?["menuPriceEvidenceUnavailable"]:[])],
+        ...(evidenceUnavailable?["menuPriceEvidenceUnavailable"]:[]),
+        ...(toastScopes?.available&&toastScopes.value.menus===false?["toastMenuScopeMissing"]:[])],
+      toastMenuScopeAvailable:toastScopes?.available?toastScopes.value.menus:null,
       items: visible.map(item => ({
         id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,unit:"cents",
-        priceSource:evidenceUnavailable?"unknown":facts[item.id]?.priceSource??"initial",
+        baseName:item.baseName,sizeLabel:item.sizeLabel,description:item.description,
+        menuGroup:item.menuGroup,visibility:item.visibility,pricingStrategy:item.pricingStrategy,
+        priceStatus:item.priceCents===null?"open_or_unknown":"fixed",
+        modifierGroups:item.modifierGroups,
+        priceSource:item.priceCents===null?"unknown":evidenceUnavailable?"unknown":facts[item.id]?.priceSource??"initial",
         realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
         priceCheck:facts[item.id]?.priceCheck??"unknown",pricePeriod:facts[item.id]?.pricePeriod??null,
         priceEvidenceStatus:facts[item.id]?.priceEvidenceStatus??"unknown",
