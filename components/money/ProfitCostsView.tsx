@@ -4,7 +4,7 @@ import { getTranslations, getLocale } from "next-intl/server";
 import Money from "@/components/shared/Money";
 import EstimatePill from "@/components/shared/EstimatePill";
 import { Link } from "@/i18n/navigation";
-import type { HealthBand } from "@/lib/calc";
+import { laborKnown, type HealthBand } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { Period } from "@/lib/viewmodels/period";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
@@ -81,7 +81,8 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
   // nonsense like "150200000%" the moment a period had no sales yet. 0% reads as "not enough
   // sales to show a ratio" rather than a fabricated number.
   const pct = (n: number) => (vm.salesCents > 0 ? (n / vm.salesCents) * 100 : 0);
-  const knownLabor=vm.wagesCents!==null&&vm.staffTaxCents!==null;
+  const knownLabor=laborKnown({wagesCents:vm.wagesCents,staffTaxCents:vm.staffTaxCents,
+    laborWageStatus:vm.businessCosts.missingInputs.some(x=>x.startsWith("laborWageUnknown:"))?"missing":undefined});
   const knownTotals=vm.totalCostsCents!==null&&knownLabor;
   const runningExCardFees = vm.runningCostLines.reduce((s, l) => s + l.amountCents, 0);
   // No confirmed owner-profit figure to color when nothing's been uploaded yet — the flow bar and
