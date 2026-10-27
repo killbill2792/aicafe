@@ -90,6 +90,31 @@ alter table public.toast_employee_directory
  add constraint toast_employee_directory_linked_employee_id_fkey
  foreign key(linked_employee_id) references public.employees(id) on delete cascade;
 
+-- A café deletion also deletes its Toast restaurant mapping. Follow those
+-- business-owned identities all the way down to catalog price versions;
+-- original 058 NO ACTION links otherwise prevent a real owner deletion.
+do $toast_identity_cascade$
+declare child text; parent text; columns_sql text; fk record;
+begin
+ for child,parent,columns_sql in
+  select * from (values
+   ('toast_employee_directory','toast_location_mappings','business_id,restaurant_guid'),
+   ('toast_catalog_facts','toast_location_mappings','business_id,restaurant_guid'),
+   ('toast_catalog_price_versions','toast_catalog_facts','business_id,restaurant_guid,kind,provider_guid')
+  ) as v(child,parent,columns_sql)
+ loop
+  for fk in select conname from pg_constraint
+   where conrelid=to_regclass('public.'||child)
+     and confrelid=to_regclass('public.'||parent) and contype='f'
+  loop
+   execute format('alter table public.%I drop constraint %I',child,fk.conname);
+   execute format(
+    'alter table public.%I add constraint %I foreign key(%s) references public.%I(%s) on delete cascade',
+    child,fk.conname,columns_sql,parent,columns_sql);
+  end loop;
+ end loop;
+end $toast_identity_cascade$;
+
 -- Preserve ALL existing import logic and update only the order's canonical extras.
 create or replace function public.toast_import_day(
  p_business_id uuid,p_location_id uuid,p_restaurant_guid uuid,

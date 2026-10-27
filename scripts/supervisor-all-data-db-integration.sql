@@ -140,6 +140,11 @@ begin
   business_id,restaurant_guid,kind,provider_guid,name,linked_modifier_recipe_id)
  values(a,ga,'modifier',toastModifierId,'Linked Toast modifier',toastRecipeId),
        (b,gb,'modifier',foreignModifierId,'Foreign Toast modifier',foreignRecipeId);
+ insert into public.toast_catalog_price_versions(
+  business_id,restaurant_guid,kind,provider_guid,price_fingerprint,
+  price_cents,name)
+ values(a,ga,'modifier',toastModifierId,'modifier-test-price',50,'Linked Toast modifier'),
+       (a,ga,'item',linkedToastItemGuid,'item-test-price',500,'Linked Toast item');
  insert into public.pantry_modifier_links(
   business_id,provider,location_ref,pos_modifier_id,modifier_recipe_id)
  values(a,'square','test-square-location','test-square-modifier',pantryRecipeId);
