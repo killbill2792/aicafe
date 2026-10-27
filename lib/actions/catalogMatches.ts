@@ -146,15 +146,14 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
     }
     if (applied && match.provider === "csv") csvItemId = match.suggested_menu_item_id;
   } else {
-    // A previous CSV attempt may have created the item but failed while updating sales.
-    // Reuse the same item on retry instead of inserting a duplicate and hiding the match.
-    if (match.provider === "csv") {
-      const { data: existing, error: existingError } = await supabase.from("menu_items")
-        .select("id").eq("business_id", businessId).eq("pos_item_id", match.pos_item_id).maybeSingle();
-      if (existingError) { logQueryError("resolveCatalogMatch:csvExisting", existingError); return finishMatch("error"); }
-      csvItemId = existing?.id ?? null;
-    }
-    if (!csvItemId) {
+    // Both CSV and POS reviews may retry after a partial write. The provider
+    // identity is unique per café, so reuse the same row rather than inserting.
+    const {data:previous,error:previousError}=await supabase.from("menu_items")
+      .select("id").eq("business_id",businessId).eq("pos_item_id",match.pos_item_id).maybeSingle();
+    if(previousError){logQueryError("resolveCatalogMatch:prior",previousError);return finishMatch("error");}
+    const priorId=previous?.id as string|undefined;
+    if(match.provider==="csv")csvItemId=priorId??null;
+    if (!priorId) {
       const menuGroup = match.imported_category ? normalizeMenuGroup(match.imported_category, await existingMenuGroups(supabase, businessId)) : null;
       const insertion = supabase.from("menu_items").insert({
         business_id: businessId,
@@ -173,12 +172,38 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
         csvItemId = created?.id ?? null;
         applied = !!csvItemId && !insertError;
       } else {
-        const { error: insertError } = await insertion;
-        if (insertError) logQueryError("resolveCatalogMatch:insert", insertError);
-        applied = !insertError;
+        const {data:created,error:insertError}=await insertion.select("id").single();
+        if(insertError)logQueryError("resolveCatalogMatch:insert",insertError);
+        applied=!!created?.id&&!insertError;
+        if(applied&&match.imported_price_cents!==null&&match.imported_price_cents>0){
+          try{
+            await recordInitialMenuPrice(supabase,{
+              businessId,menuItemId:created!.id,priceCents:match.imported_price_cents,
+              sourceProvider:match.provider,
+            });
+          }catch(error){
+            logQueryError("resolveCatalogMatch:initialHistory",error);applied=false;
+          }
+        }
       }
     } else {
       applied = true;
+      if(match.provider!=="csv"&&match.imported_price_cents!==null&&match.imported_price_cents>0){
+        const {data:history,error:historyError}=await supabase.from("menu_price_history")
+          .select("id").eq("business_id",businessId).eq("menu_item_id",priorId)
+          .limit(1);
+        if(historyError){logQueryError("resolveCatalogMatch:historyRead",historyError);applied=false;}
+        else if(!history?.length){
+          try{
+            await recordInitialMenuPrice(supabase,{
+              businessId,menuItemId:priorId,priceCents:match.imported_price_cents,
+              sourceProvider:match.provider,
+            });
+          }catch(error){
+            logQueryError("resolveCatalogMatch:historyRetry",error);applied=false;
+          }
+        }
+      }
     }
   }
 
