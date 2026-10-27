@@ -15,7 +15,8 @@ const resultError=(error:unknown)=>{if(error)throw error;};
 const normalized=(v:string|null|undefined)=>(v??"").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 
 /** Never let provider identity replace the owner/CSV identity without an alias. */
-export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,adapter:PosAdapter){
+export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,adapter:PosAdapter,
+ options:{restaurantGuid?:string}={}){
  const imported=await adapter.fetchCatalogItems();
  const {data,error}=await db.from("menu_items")
  .select("id,pos_item_id,name,base_name,size_label,price_cents,category,catalog_source,pos_name,is_active,description,menu_group,pos_visibility,pos_pricing_strategy,pos_archived_at,pos_metadata")
@@ -182,6 +183,11 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
  // A complete menu snapshot archives only published items owned by this same provider.
  if(adapter.provider!=="csv"){
   for(const row of rows){
+   // Toast snapshots are restaurant-specific. Never archive another location's
+   // published menu merely because it wasn't in this restaurant's response.
+   if(adapter.provider==="toast"&&
+      (!options.restaurantGuid||!row.pos_item_id?.startsWith("toast:"+options.restaurantGuid+":")))
+     continue;
    if(row.catalog_source!==adapter.provider||!row.pos_item_id||seen.has(row.pos_item_id)||!row.is_active)continue;
    const {error:archError}=await db.from("menu_items").update({
     is_active:false,pos_archived_at:new Date().toISOString()
@@ -189,8 +195,8 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
    resultError(archError);changed++;
   }
  }
- if(adapter.provider==="toast"&&imported.length){
-  const restaurantGuid=imported[0].posItemId.split(":")[1];
+ if(adapter.provider==="toast"&&(options.restaurantGuid||imported.length)){
+  const restaurantGuid=options.restaurantGuid??imported[0].posItemId.split(":")[1];
   const {error:relinkError}=await db.rpc("pos_relink_toast_lines",{
    p_business_id:businessId,p_restaurant_guid:restaurantGuid
   });resultError(relinkError);
