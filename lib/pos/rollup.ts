@@ -134,11 +134,15 @@ export async function recomputeDailyRollup(
 
   const wagesUnknown=timecards.some(tc=>tc.hourly_wage_cents===null);
   const wageEstimated=timecards.some(tc=>tc.wage_source==="estimate");
-  const wagesCents=wagesUnknown?null:timecards.reduce((sum,tc)=>
-    sum+(timecardWagesForLocalDay({
+  // Retain known wages while identifying incomplete days separately. Unknown
+  // wages cannot be assumed zero when calculating total labor or margins.
+  const wagesCents=timecards.reduce((sum,tc)=>{
+    const amount=timecardWagesForLocalDay({
       clockIn:tc.clock_in,clockOut:tc.clock_out,
       hourlyWageCents:tc.hourly_wage_cents,breaks:tc.breaks??[]
-    },businessDate,timezone)??0),0);
+    },businessDate,timezone);
+    return sum+(amount??0);
+  },0);
   const laborWageStatus=wagesUnknown?"missing":wageEstimated?"estimate":"actual";
   const { data: existingRollup, error: existingRollupError } = await supabase
     .from("daily_rollups")
