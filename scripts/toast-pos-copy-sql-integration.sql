@@ -5,6 +5,10 @@ do $$
 declare n integer;
 begin
  select count(*) into n from information_schema.columns
+ where table_schema='public' and table_name='businesses'
+ and column_name in ('owner_monthly_payroll_extras_cents','owner_monthly_payroll_extras_updated_at');
+ if n<>2 then raise exception 'owner monthly payroll setting is missing: %',n;end if;
+ select count(*) into n from information_schema.columns
  where table_schema='public' and table_name='menu_items'
  and column_name in ('description','pos_visibility','pos_pricing_strategy','pos_archived_at','pos_name','pos_metadata');
  if n<>6 then raise exception 'menu_items Toast columns incomplete: %',n;end if;
@@ -56,6 +60,22 @@ insert into public.businesses(id,name,is_demo)
  values('cccccccc-cccc-4ccc-8ccc-cccccccccccc','Toast 101 disposable café',false);
 insert into public.locations(id,business_id,name)
  values('cccccccc-cccc-4ccc-8ccc-cccccccccc01','cccccccc-cccc-4ccc-8ccc-cccccccccccc','Disposable register');
+-- Owner input is separate from Toast hourly wages, can be zero when explicitly
+-- stated, and survives independent attendance re-imports.
+update public.businesses
+ set owner_monthly_payroll_extras_cents=37500,owner_monthly_payroll_extras_updated_at=now()
+ where id='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+do $ begin
+ if (select owner_monthly_payroll_extras_cents from public.businesses
+     where id='cccccccc-cccc-4ccc-8ccc-cccccccccccc')<>37500
+ then raise exception 'owner-stated monthly payroll not saved';end if;
+ begin
+  update public.businesses set owner_monthly_payroll_extras_cents=-1
+   where id='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  raise exception 'negative monthly payroll costs must be rejected';
+ exception when check_violation then null;
+ end;
+end $;
 select public.toast_save_configuration('cccccccc-cccc-4ccc-8ccc-cccccccccccc',
  'https://ws-api.toasttab.com','disposable_test','synthetic_ciphertext',
  '[{"location_id":"cccccccc-cccc-4ccc-8ccc-cccccccccc01","restaurant_guid":"cccccccc-cccc-4ccc-8ccc-ccccccccff01"}]'::jsonb);
