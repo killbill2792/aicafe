@@ -1,5 +1,7 @@
 {
   "ToastConnect": {
+    "laborScopeMissing": "Toast labor access is unavailable. Menu and sales sync can still continue; clocked hours and wages cannot sync until labor permission is granted.",
+    "menuScopeMissing": "Toast menu access is unavailable. Sales can still import; menu items will link when menu permission is granted.",
     "reviewTitle": "Review Toast staff and menu matches",
     "sourceRoster": "Toast staff",
     "sourceMenu": "Toast menu and modifiers",
