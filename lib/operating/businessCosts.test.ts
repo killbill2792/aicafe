@@ -331,4 +331,3 @@ describe("BusinessCostSummary known-only labor",()=>{
     expect(full.observed.loadedStaff).toBe(true);
   });
 });
-
