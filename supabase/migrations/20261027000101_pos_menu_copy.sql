@@ -271,3 +271,21 @@ begin
 end $$;
 revoke all on function public.pos_import_toast_attendance(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.pos_import_toast_attendance(uuid,uuid) to service_role;
+
+-- Expose only scope booleans to the authenticated owner. Never expose keys,
+-- credentials, hosts or permissions belonging to a different café.
+create or replace function public.toast_business_scope_summary(p_business_id uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare v jsonb;
+begin
+ if auth.role() <> 'authenticated' or not public.scheduling_is_owner(p_business_id)
+ then raise exception 'Toast scopes unauthorized' using errcode='42501';end if;
+ select to_jsonb(c.scopes_available) into v from public.toast_api_credentials c
+  where c.business_id=p_business_id;
+ return jsonb_build_object(
+  'menus',case when jsonb_typeof(v->'menus')='boolean' then (v->>'menus')::boolean else null end,
+  'labor',case when jsonb_typeof(v->'labor')='boolean' then (v->>'labor')::boolean else null end
+ );
+end $$;
+revoke all on function public.toast_business_scope_summary(uuid) from public,anon;
+grant execute on function public.toast_business_scope_summary(uuid) to authenticated;
