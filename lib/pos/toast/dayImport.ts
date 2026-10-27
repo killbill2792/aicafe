@@ -102,6 +102,19 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    p_orders:normalized,p_summary:summary,p_run_id:p.runId
   });
   if(error)throw new ToastApiError("unavailable");
+  // After the atomic day commit, link lines to current sizes (or one archived
+  // sold-only GUID). Never classify a post-commit relink failure as a day failure.
+  const {error:linkError}=await db.rpc("pos_relink_toast_lines",{
+   p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid
+  });
+  if(linkError){
+   const {error:phaseError}=await db.from("toast_sync_phase_errors").upsert({
+    business_id:p.businessId,restaurant_guid:p.restaurantGuid,
+    phase:"sales_link",last_error_category:"unavailable",
+    last_failed_at:new Date().toISOString()
+   },{onConflict:"business_id,restaurant_guid,phase"});
+   if(phaseError)throw new ToastApiError("unavailable");
+  }
   // SQL has already committed the complete business day and advanced days_done.
   // A trigger queued cost refresh in the SAME transaction. Never route a
   // post-commit cost failure through the page-import checkpoint handler.
