@@ -82,3 +82,22 @@ describe("shared POS catalog idempotency",()=>{
   expect(f.tables.modifier_recipes).toHaveLength(1);
  });
 });
+
+describe("multi-location catalog archive safety",()=>{
+ it("keeps an item published by another Square location, but archives it after a complete single-location snapshot",async()=>{
+  const f=fixture();let available=true;
+  const adapter={provider:"square",fetchCatalogItems:async()=>available?[{
+   posItemId:"square:location-only",name:"Location special",
+   priceCents:null,category:"drink",description:null
+  } satisfies PosCatalogItem]:[]} as unknown as PosAdapter;
+  await syncCanonicalCatalog(f.db,business,adapter);
+  expect(f.tables.menu_items).toHaveLength(1);
+  available=false;
+  const protectedResult=await syncCanonicalCatalog(f.db,business,adapter,{archiveMissing:false});
+  expect(protectedResult.changed).toBe(0);
+  expect(f.tables.menu_items[0].is_active).toBe(true);
+  const archived=await syncCanonicalCatalog(f.db,business,adapter);
+  expect(archived.changed).toBe(1);
+  expect(f.tables.menu_items[0].is_active).toBe(false);
+ });
+});
