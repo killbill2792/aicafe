@@ -140,7 +140,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
           <Row name={t("ingredientsAndCups")} cents={vm.ingredientsCents} addLabel={t("add")} />
         </RowGroup>
 
-        <RowGroup label={t("staff")} pct={Math.round(pct((vm.wagesCents??0)+(vm.staffTaxCents??0)))} color="bg-staff">
+        <RowGroup label={t("staff")} pct={knownLabor?Math.round(pct(vm.wagesCents!+vm.staffTaxCents!)):null} color="bg-staff">
           <Row name={t("wages")} cents={vm.wagesCents} addLabel={t("add")} />
           <Row name={t("payrollTaxes")} cents={vm.staffTaxCents} addLabel={t("add")} last />
         </RowGroup>
@@ -224,13 +224,13 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
   );
 }
 
-function RowGroup({ label, pct, color, children }: { label: string; pct: number; color: string; children: React.ReactNode }) {
+function RowGroup({ label, pct, color, children }: { label: string; pct: number|null; color: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-2 py-3.5 pb-1.5">
         <span className={`h-3 w-3 rounded-[3px] ${color}`} />
         <span className="flex-1 text-[13px] font-extrabold tracking-wide text-ink-muted">{label.toUpperCase()}</span>
-        <span className="text-[13px] font-bold text-ink-muted">{pct}%</span>
+        <span className="text-[13px] font-bold text-ink-muted">{pct===null?"—":`${pct}%`}</span>
       </div>
       {children}
     </div>
