@@ -437,6 +437,15 @@ create or replace function public.pos_replace_order_lines(
  p_business_id uuid,p_order_id uuid,p_lines jsonb)
 returns void language plpgsql security invoker set search_path=public as $lines$
 begin
+ -- A staff member must not obtain a general order-write capability via RPC.
+ -- Privileged ingestion and the database owner remain able to run migrations/tests.
+ if current_user not in ('postgres','service_role') and
+    not exists(select 1 from public.memberships m
+      where m.business_id=p_business_id and m.user_id=auth.uid()
+      and m.role='owner') then
+  raise exception 'POS order replacement requires café owner'
+    using errcode='42501';
+ end if;
  if p_business_id is null or p_order_id is null or
    jsonb_typeof(p_lines) is distinct from 'array' or
    jsonb_array_length(p_lines)>2000 then
