@@ -32,7 +32,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
   category:r.category,posItemId:r.pos_item_id,catalogSource:r.catalog_source??"manual"
  })));
  let matched=0,needsReview=0,created=0,changed=0;
- const seen=new Set<string>(), groupMap=new Map<string,{name:string;priceCents:number|null;groupId:string}>();
+ const seen=new Set<string>();
  for(const item of imported){
   if(seen.has(item.posItemId))continue;
   seen.add(item.posItemId);
@@ -66,7 +66,9 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
   if(row){
    matched++;itemId=row.id;
    // If the owner renamed the item after the last provider import, preserve it.
-   const preserveName=row.pos_name!==null&&row.name!==row.pos_name;
+   const preserveName=row.pos_name===null?
+    (row.catalog_source==="manual"||row.catalog_source==="csv"):
+    row.name!==row.pos_name;
    const patch=pick(row,{...desired,
     ...(!preserveName?{name:item.name}:{}),
     // A linked POS identity is canonical; CSV's historical ID becomes an alias.
@@ -116,19 +118,29 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
     priceCents:item.priceCents,sourceType:adapter.provider==="csv"?"imported":"connected_pos",
     sourceProvider:adapter.provider});
    const updated=byId.get(itemId);if(updated)updated.price_cents=item.priceCents;
+   changed++;
   }
   if(item.modifierGroups){
+   const {data:oldGroups,error:oldError}=await db.from("menu_item_modifier_groups")
+    .select("pos_group_id,pos_group_name,min_selections,max_selections,required")
+    .eq("business_id",businessId).eq("menu_item_id",itemId);
+   resultError(oldError);
+   const previous=new Map((oldGroups??[]).map(g=>[g.pos_group_id,g]));
    const groupIds:string[]=[];
    for(const group of item.modifierGroups){
     groupIds.push(group.posGroupId);
-    const {error:gError}=await db.from("menu_item_modifier_groups").upsert({
-     business_id:businessId,menu_item_id:itemId,pos_group_id:group.posGroupId,
-     pos_group_name:group.name,min_selections:group.minSelections,
-     max_selections:group.maxSelections,required:group.required
-    },{onConflict:"business_id,menu_item_id,pos_group_id"});
-    resultError(gError);
+    const groupValues={pos_group_name:group.name,min_selections:group.minSelections,
+     max_selections:group.maxSelections,required:group.required};
+    const prior=previous.get(group.posGroupId);
+    if(!prior||!same(Object.fromEntries(Object.keys(groupValues).map(
+     k=>[k,prior[k as keyof typeof prior]])),groupValues)){
+     const {error:gError}=await db.from("menu_item_modifier_groups").upsert({
+      business_id:businessId,menu_item_id:itemId,pos_group_id:group.posGroupId,
+      ...groupValues
+     },{onConflict:"business_id,menu_item_id,pos_group_id"});
+     resultError(gError);changed++;
+    }
     for(const option of group.options){
-     groupMap.set(option.posModifierId,{name:option.name,priceCents:option.priceCents,groupId:group.posGroupId});
      const {data:existing,error:readError}=await db.from("modifier_recipes")
        .select("id,name,price_cents,pos_group_id,pos_group_name,is_active")
        .eq("business_id",businessId).eq("pos_modifier_id",option.posModifierId).maybeSingle();
@@ -149,9 +161,6 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
      }
     }
    }
-   const {data:oldGroups,error:oldError}=await db.from("menu_item_modifier_groups")
-    .select("pos_group_id").eq("business_id",businessId).eq("menu_item_id",itemId);
-   resultError(oldError);
    for(const old of oldGroups??[])if(!groupIds.includes(old.pos_group_id)){
     const {error:delError}=await db.from("menu_item_modifier_groups").delete()
       .eq("business_id",businessId).eq("menu_item_id",itemId).eq("pos_group_id",old.pos_group_id);
