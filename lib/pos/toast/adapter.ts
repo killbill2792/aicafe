@@ -312,10 +312,11 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
             posGroupId:posId(group.guid),name:group.name??"Modifier group",
             minSelections:group.minSelections??null,maxSelections:group.maxSelections??null,
             required:group.requiredMode==="REQUIRED",
+            posMetadata:group as Record<string,unknown>,
             options:group.modifierOptionReferences.map(id=>options[String(id)]).filter((o):o is NonNullable<typeof options[string]>=>Boolean(o)).map(o=>({
               posModifierId:posId(o.guid),name:o.name,
               priceCents:resolvedRulePrice(o.pricingStrategy??"NONE",o.price,o.pricingRules),
-              pricingStrategy:o.pricingStrategy??null
+              pricingStrategy:o.pricingStrategy??null,posMetadata:o as Record<string,unknown>
             }))
           }));
           const resolvedPrice=resolvedRulePrice(i.pricingStrategy,i.price,i.pricingRules);
