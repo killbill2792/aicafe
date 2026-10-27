@@ -47,6 +47,35 @@ describe("Toast published catalog adapter",()=>{
    priceCents:null,pricingStrategy:"OPEN_PRICE",menuGroup:"Drinks / Coffee / Iced"
   });
  });
+ it("reads Toast documented time-specific base price and preserves raw modifier strategy",async()=>{
+  const snapshot=structuredClone(menu) as unknown as {menus:Array<{menuGroups:Array<{
+   menuItems:Record<string,unknown>[]}>}>;modifierOptionReferences:Record<string,Record<string,unknown>>};
+  snapshot.menus[0].menuGroups[0].menuItems.push({
+   guid:op(31),name:"Lunch Soup",price:null,pricingStrategy:"TIME_SPECIFIC_PRICE",
+   pricingRules:{timeSpecificPricingRules:[
+    {timeSpecificPrice:4,basePrice:9,schedule:[]},
+    {timeSpecificPrice:6,basePrice:9,schedule:[]}
+   ]},modifierGroupReferences:[]});
+  snapshot.menus[0].menuGroups[0].menuItems.push({
+   guid:op(32),name:"Different Bases",price:null,pricingStrategy:"TIME_SPECIFIC_PRICE",
+   pricingRules:{timeSpecificPricingRules:[
+    {timeSpecificPrice:4,basePrice:9,schedule:[]},
+    {timeSpecificPrice:5,basePrice:10,schedule:[]}
+   ]},modifierGroupReferences:[]});
+  snapshot.modifierOptionReferences["13"].pricingStrategy="GROUP_PRICE";
+  snapshot.modifierOptionReferences["13"].price=null;
+  request.mockResolvedValue(snapshot);
+  const items=await adapter.fetchCatalogItems();
+  expect(items.find(x=>x.name==="Lunch Soup")).toMatchObject({
+   priceCents:900,pricingStrategy:"TIME_SPECIFIC_PRICE"});
+  expect(items.find(x=>x.name==="Different Bases")).toMatchObject({
+   priceCents:null,pricingStrategy:"TIME_SPECIFIC_PRICE"});
+  expect(items.find(x=>x.name==="Cold Brew")?.priceCents).toBeNull();
+  const oat=items.find(x=>x.baseName==="Latte")?.modifierGroups?.[1].options[0];
+  expect(oat?.priceCents).toBeNull();
+  expect(oat?.pricingStrategy).toBe("GROUP_PRICE");
+  expect(oat?.posMetadata?.guid).toBe(op(13));
+ });
  it("maps Toast job title and wage without excluding deleted staff from roster",async()=>{
   const person="ffffffff-ffff-4fff-8fff-ffffffffffff";
   request.mockImplementation(async(path:string)=>(path??"").includes("/jobs")?
