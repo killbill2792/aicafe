@@ -19,6 +19,7 @@ export interface CafeToolset {
   getEmployeeSales(businessId:string,period:CafeStatePeriod):Promise<KnownSlice<EmployeeSalesFacts>>;
   getPayrollFacts(businessId:string,period:CafeStatePeriod):Promise<KnownSlice<PayrollFacts>>;
   getOwnerMonthlyPayrollExtras(businessId:string):Promise<KnownSlice<{monthlyCents:number|null;source:"owner_entered"|null}>>;
+  getToastScopeCoverage(businessId:string):Promise<KnownSlice<{menus:boolean|null;labor:boolean|null}>>;
   getSchedulingDraftInputs(businessId:string):Promise<KnownSlice<SchedulingDraftInputs>>;
   getCafeSummary(businessId: string): ReturnType<CafeStateService["getCurrentState"]>;
   getProfitability(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafePeriodProfitability>>;
@@ -91,6 +92,7 @@ export class StructuredCafeTools implements CafeToolset {
     },
     private usageReader?:CafeToolset["getUsageVariance"],
     private ownerPayrollReader?:CafeToolset["getOwnerMonthlyPayrollExtras"],
+    private toastScopeReader?:CafeToolset["getToastScopeCoverage"],
   ) {}
 
   getUsageVariance(businessId:string,input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}){return this.usageReader?this.usageReader(businessId,input):Promise.resolve({from:input.from,to:input.to,rows:[],missing:["usageReaderUnavailable"],groupBy:input.groupBy??null});}
@@ -99,6 +101,9 @@ export class StructuredCafeTools implements CafeToolset {
   getPayrollFacts(_businessId:string,period:CafeStatePeriod){return this.posReaders?.payrollFacts(period)??Promise.resolve(missing<PayrollFacts>("payrollFactsUnavailable"));}
   getOwnerMonthlyPayrollExtras(businessId:string){
     return this.ownerPayrollReader?.(businessId)??Promise.resolve(missing<{monthlyCents:number|null;source:"owner_entered"|null}>("ownerPayrollSettingUnavailable"));
+  }
+  getToastScopeCoverage(businessId:string){
+    return this.toastScopeReader?.(businessId)??Promise.resolve(missing<{menus:boolean|null;labor:boolean|null}>("toastScopesUnavailable"));
   }
   getSchedulingDraftInputs(businessId:string){return this.domainReaders?.schedulingDraftInputs(businessId)??Promise.resolve(missing<SchedulingDraftInputs>("scheduleDraftReaderUnavailable"));}
   getCafeSummary(businessId: string) { return this.states.getCurrentState(businessId); }
@@ -219,6 +224,7 @@ export class BusinessScopedCafeTools {
   getEmployeeSales(period:CafeStatePeriod){return this.tools.getEmployeeSales(this.businessId,period);}
   getPayrollFacts(period:CafeStatePeriod){return this.tools.getPayrollFacts(this.businessId,period);}
   getOwnerMonthlyPayrollExtras(){return this.tools.getOwnerMonthlyPayrollExtras(this.businessId);}
+  getToastScopeCoverage(){return this.tools.getToastScopeCoverage(this.businessId);}
   getUsageVariance(input:{from:string;to:string;ingredient?:string|null;groupBy?:"day"|"shift"|"staff"|null}){return this.tools.getUsageVariance(this.businessId,input);}
   getSchedulingDraftInputs(){return this.tools.getSchedulingDraftInputs(this.businessId);}
   getCafeSummary() { return this.tools.getCafeSummary(this.businessId); }
