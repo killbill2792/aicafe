@@ -116,6 +116,10 @@ begin
    hourly_wage_cents,source_type,source_provider)
  values(b,a,'2026-10-27T13:00:00Z','2026-10-27T14:00:00Z',
    2300,'owner_manual','Owner');
+ insert into public.timecards(business_id,employee_id,clock_in,clock_out,
+  hourly_wage_cents,source_type,source_provider)
+ values(b,a,'2026-11-01T09:00:00Z','2026-11-01T11:00:00Z',
+  null,'owner_schedule','Owner');
  insert into public.toast_labor_entries(business_id,restaurant_guid,location_id,
   external_time_entry_id,external_employee_id,clock_in,clock_out,
   hourly_wage_cents,wage_status,breaks,deleted)
@@ -137,14 +141,17 @@ begin
   '2026-10-30T10:00:00Z',null,null,'missing','[]',false),
  (b,r,loc,'cccccccc-cccc-4ccc-8ccc-cccccccc0026',
   'cccccccc-cccc-4ccc-8ccc-cccccccc0012',
-  '2026-10-31T10:00:00Z','2026-10-31T12:00:00Z',2000,'verified','[]',true);
+  '2026-10-31T10:00:00Z','2026-10-31T12:00:00Z',2000,'verified','[]',true),
+ (b,r,loc,'cccccccc-cccc-4ccc-8ccc-cccccccc0027',
+  'cccccccc-cccc-4ccc-8ccc-cccccccc0011',
+  '2026-11-01T09:00:00Z','2026-11-01T11:00:00Z',2000,'verified','[]',false);
  select public.pos_import_toast_attendance(b,r) into changes;
- if (changes->>'changed')::int<>3 or (changes->>'skipped')::int<>1 then
-  raise exception 'attendance must import three valid entries, skip only overlap: %',changes;
+ if (changes->>'changed')::int<>4 or (changes->>'skipped')::int<>1 then
+  raise exception 'attendance must import four valid entries, skip only overlap: %',changes;
  end if;
  select count(*) into n from public.timecards
   where business_id=b and source_provider='Toast';
- if n<>3 then raise exception 'automatic attendance row count: %',n;end if;
+ if n<>4 then raise exception 'automatic attendance row count: %',n;end if;
  if not exists(select 1 from public.timecards
   where business_id=b and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0022'
   and hourly_wage_cents=1500 and wage_source='estimate')
@@ -153,6 +160,13 @@ begin
   where business_id=b and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0023'
   and hourly_wage_cents is null and wage_source='unknown')
  then raise exception 'unknown hourly wage must remain SQL NULL';end if;
+ if exists(select 1 from public.timecards where business_id=b
+  and source_type='owner_schedule' and employee_id=a)
+ then raise exception 'Toast attendance must replace the overlapping owner plan';end if;
+ if not exists(select 1 from public.timecards where business_id=b
+  and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0027'
+  and source_provider='Toast')
+ then raise exception 'actual Toast clock-in must replace owner_schedule';end if;
  if not exists(select 1 from public.pos_import_reviews
   where business_id=b and review_type='overlapping_timecard'
   and source_key='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0024')
