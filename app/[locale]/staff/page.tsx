@@ -2,6 +2,7 @@ import {getTranslations} from "next-intl/server";
 import {requireOwnBusiness} from "@/lib/auth/requireUser";
 import {getWeekSchedule} from "@/lib/actions/schedule";
 import StaffWorkspace from "@/components/staff/StaffWorkspace";
+import PosImportReviewPanel from "@/components/staff/PosImportReviewPanel";
 import OwnerScheduleSendPanel from "@/components/staff/OwnerScheduleSendPanel";
 import PageShell from "@/components/shared/PageShell";
 import TeamLegacyMetrics from "@/components/staff/TeamLegacyMetrics";
@@ -23,6 +24,7 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
   ? ([{ok:true as const,data:createStaffScreenshotFixture(selected)},{ok:true as const,alerts:[]}] as const)
   : await Promise.all([getWeekSchedule({weekStart:selected}),syncStaffRuleAlerts()]);
  return <PageShell className="!max-w-full">{result.ok?<>
+  <PosImportReviewPanel people={result.data.team.map(person=>({id:person.id,name:person.name}))}/>
   <StaffWorkspace key={`${selected}:${date??""}:${employee??""}:${tab??""}:${fix??""}:${clock??""}`} initial={result.data} tab={tab} locale={locale}
    focusDate={validScheduleDate(date)?date:undefined} focusEmployee={employee}
    focusContact={fix==="phone"||fix==="consent"?fix:undefined} focusRule={isStaffRuleKey(fix)?fix:undefined} focusClock={validShiftClock(clock??"")?clock:undefined} teamExtras={<TeamLegacyMetrics/>}
