@@ -13,7 +13,7 @@ export type ToastCopyScope={businessId:string;restaurantGuid:string;locationId:s
  timezone:string;deadlineAt?:number};
 export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope){
  await stageToastCatalog(db,p); // mig 099 usage checks continue reading staging.
- return syncCanonicalCatalog(db,p.businessId,createToastAdapter({db,...p}));
+ return syncCanonicalCatalog(db,p.businessId,createToastAdapter({db,...p}),{restaurantGuid:p.restaurantGuid});
 }
 export async function copyToastStaff(db:SupabaseClient,p:ToastCopyScope){
  await stageToastRoster(db,p); // keeps pilot links and usage checks consistent.
