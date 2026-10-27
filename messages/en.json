@@ -551,6 +551,10 @@
     "seePlan": "See the plan"
   },
   "Menu": {
+    "unpricedPublished": "Published items with variable or unknown prices",
+    "openPrice": "Open price",
+    "visibility": "Visibility",
+    "addOnPrices": "Add-on prices",
     "title": "Menu",
     "placeholder": "True cost per drink will show up here.",
     "headline": "What each drink really costs",
