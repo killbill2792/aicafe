@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProfitAndCostsViewModel } from "./moneyViewModel";
+import { buildProfitAndCostsViewModel,buildCostRecoveryViewModel } from "./moneyViewModel";
 import { businessCostSummaryFromSnapshot } from "@/lib/operating/businessCosts";
 import { getFixtureSnapshot } from "@/lib/data/fixtureSnapshot";
 import {totalCostsCentsForPeriod, type DailyFacts} from "@/lib/calc";
@@ -294,5 +294,41 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     expect(vm.ownerProfitDisplay.kind).toBe("complete");
     expect(vm.changes.map(x=>x.key)).toContain("ownerProfit");
     expect(vm.changes.find(x=>x.key==="sales")?.deltaCents).toBe(0);
+  });
+});
+
+
+describe("Money partial-known-wage day",()=>{
+  it("removes wages, staff change and final profit without hiding sales",()=>{
+    const original=getFixtureSnapshot();
+    const date=original.todayDay.date;
+    const changed=(day:DailyFacts)=>day.date===date?{...day,
+      wagesCents:1750,staffTaxCents:210,laborWageStatus:"missing" as const}:day;
+    const snapshot={...original,monthActualDays:original.monthActualDays.map(changed),
+      monthRecordedDays:original.monthActualDays.map(changed),
+      todayDay:changed(original.todayDay)};
+    const vm=buildProfitAndCostsViewModel(snapshot,"today");
+    expect(vm.salesCents).toBeGreaterThan(0);
+    expect(vm.wagesCents).toBeNull();
+    expect(vm.staffTaxCents).toBeNull();
+    expect(vm.ownerProfitCents).toBeNull();
+    expect(vm.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(vm.businessCosts.missingInputs).toContain("laborWageUnknown:"+date);
+    expect(vm.changes.map(row=>row.key)).not.toContain("staff");
+    const complete=buildProfitAndCostsViewModel({...snapshot,
+      monthActualDays:snapshot.monthActualDays.map(d=>d.date===date?{...d,laborWageStatus:"actual" as const}:d),
+      monthRecordedDays:snapshot.monthRecordedDays.map(d=>d.date===date?{...d,laborWageStatus:"actual" as const}:d),
+      todayDay:{...snapshot.todayDay,laborWageStatus:"actual" as const}},"today");
+    expect(complete.wagesCents).not.toBeNull();
+  });
+  it("cost recovery rejects a non-null partial-wage month",()=>{
+    const original=getFixtureSnapshot();
+    const day=original.monthActualDays[0];
+    const changed=original.monthActualDays.map(d=>d.date===day.date?{
+      ...d,wagesCents:1250,staffTaxCents:150,laborWageStatus:"missing" as const}:d);
+    const vm=buildCostRecoveryViewModel({...original,monthRecordedDays:changed,
+      monthActualDays:changed});
+    expect(vm.monthlyStaffCents).toBeNull();
+    expect(vm.breakEven.kind).toBe("unavailable");
   });
 });
