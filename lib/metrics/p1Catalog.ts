@@ -304,7 +304,6 @@ export const classified = {
   getOwnerMonthlyPayrollExtras:{kind:"restricted",reason:"Bounded owner-reported payroll amount with private business authorization; available only through authenticated café chat evidence"},
   getToastScopeCoverage:{kind:"restricted",reason:"Owner-only Toast scope booleans via hardened SQL; never expose integration credentials or cross-café permission data"},
   getPosImportReviews:{kind:"restricted",reason:"Selected-café pending staff identity/attendance conflict evidence only; no generic P1 model source or authorization to resolve"},
-  getPosImportReviews:{kind:"restricted",reason:"Owner/café-scoped staff identity and shift reviews; private review details, no public P1 metric selector"},
   getSchedulingDraftInputs:{kind:"restricted",reason:"Includes employee wages; exposed only through the read-only draft_week_schedule agent tool"},
   getCafeSummary:{kind:"restricted",reason:"Includes mixed personal and financial state; use bounded projections"},
   getMenuCatalog:{kind:"restricted",reason:"Legacy menu projection coerces missing database price to $0; P1 uses a null-preserving bounded source"},
