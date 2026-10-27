@@ -20,7 +20,7 @@ const tools={
   quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
  getProductSales:async()=>({available:true as const,value:[{id:drink,name:"Latte",category:"drink" as const,units:100}],quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
 };
-const read=async()=>({economics:base,ownerMonthlyPayrollCents:1300000,ownerIngredientRate:.30,
+const read=async()=>({economics:base,ownerMonthlyPayrollExtrasCents:1300000,ownerIngredientRate:.30,
  staff:[{id,displayName:"Maria",role:"barista",wageCents:2000,weeklyHours:28}],
  items:[{id:drink,name:"Latte",category:"ESPRESSO_DRINK" as const,currentPriceCents:2000,
   productCostCents:600,productCostStatus:"READY" as const,unitsSoldInWindow:1000}]

@@ -39,7 +39,7 @@ export const scenarioTools={simulate_scenario:{
    const product=products.find(row=>row.id===v.itemId);
    if(!product)return {source:"scenario",period:null,missing:["itemNotFound"]};
    const choice=resolveEntity("product",product.name,products,{idOf:p=>p.id,nameOf:p=>p.name,
-    describe:p=>p.category+" · "+(p.priceCents/100).toFixed(2)});
+    describe:p=>p.category+" · "+(p.priceCents===null?"price unavailable":(p.priceCents/100).toFixed(2))});
    if(choice.status==="ambiguous"&&!ctx.resolveState?.chosenIds.has(product.id.toLowerCase()))
     return {...choicePayload(choice,"scenario",null),agentId:"leo"};
    if(!ownerNamedTarget(ctx.resolveState,product.id,product.name))
