@@ -336,3 +336,24 @@ describe("Money partial-known-wage day",()=>{
     expect(vm.breakEven.kind).toBe("unavailable");
   });
 });
+
+
+describe("Money staff-only missing-wage day",()=>{
+  it("never returns even a raw final profit when partial labor is absent from sales rows",()=>{
+    const fixture=getFixtureSnapshot();
+    const staffOnly={...fixture.monthActualDays[0],wagesCents:1900,
+      staffTaxCents:225,laborWageStatus:"missing" as const,salesDataStatus:"missing" as const};
+    const snapshot={...fixture,
+      monthActualDays:fixture.monthActualDays.slice(1),
+      monthRecordedDays:[staffOnly,...fixture.monthActualDays.slice(1)]};
+    const result=buildProfitAndCostsViewModel(snapshot,"month");
+    expect(result.salesCents).toBeGreaterThan(0);
+    expect(result.businessCosts.missingInputs).toContain("laborWageUnknown:"+staffOnly.date);
+    expect(result.ownerProfitCents).toBeNull();
+    expect(result.ownerProfitDisplay.kind).toBe("unavailable");
+    const restored=buildProfitAndCostsViewModel({...snapshot,
+      monthRecordedDays:snapshot.monthRecordedDays.map(day=>day.date===staffOnly.date?{
+        ...day,laborWageStatus:"actual" as const}:day)},"month");
+    expect(restored.ownerProfitCents).not.toBeNull();
+  });
+});
