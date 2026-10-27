@@ -65,7 +65,7 @@ export function unifiedBreakEven(input:Economics){
   status,reason,missing};
 }
 export function recommendFullCostPrice(input:{
- ingredientCents:number;packagingCents:number;laborCents:number|null;
+ ingredientCents:number;packagingCents:number|null;laborCents:number|null;
  overheadCents:number|null;units:number|null;feeRate:number|null;targetMargin:number;
 }){
  const valid=(n:number|null)=>n!==null&&Number.isFinite(n)&&n>=0;
@@ -73,17 +73,33 @@ export function recommendFullCostPrice(input:{
   ?input.laborCents!/input.units:null;
  const overheadPerUnit=input.units&&input.units>0&&valid(input.overheadCents)
   ?input.overheadCents!/input.units:null;
- // Keep fractional cents until the final result to avoid compounding rounding.
- const fractionalFullCost=input.ingredientCents+input.packagingCents+(laborPerUnit??0)+(overheadPerUnit??0);
- const fullCostCents=Math.round(fractionalFullCost);
- const fee=input.feeRate??0;
- if(!Number.isFinite(fee)||fee<0||fee>=1||input.targetMargin<0||fee+input.targetMargin>=1)
+ const fee=input.feeRate;
+ const missing=[...(input.packagingCents===null?["packagingCents"]:[]),
+  ...(laborPerUnit===null?["laborPerUnit"]:[]),
+  ...(overheadPerUnit===null?["overheadPerUnit"]:[]),
+  ...(fee===null?["processingFeeRate"]:[])];
+ if((fee!==null&&(!Number.isFinite(fee)||fee<0||fee>=1))||
+  !Number.isFinite(input.targetMargin)||input.targetMargin<0||
+  (fee!==null&&fee+input.targetMargin>=1)){
   return {recommendedPriceCents:null,breakEvenCents:null,fullCostCents:null,
+   knownCostFloorCents:null,knownCostFloorLabel:"floor, not a recommendation",
    missing:["invalidContributionMargin"]};
- const breakEvenCents=Math.ceil(fractionalFullCost/(1-fee));
- const targetPrice=fractionalFullCost/(1-fee-input.targetMargin);
- // Match the saved Menu and coffee profile: category product-cost benchmark
- // and 25-cent nearest-increment recommendations, never below known costs.
+ }
+ // Known-only costs are a LOWER bound. An unknown fee may be omitted only
+ // when computing a floor, never when recommending a selling price.
+ const knownCost=input.ingredientCents+(input.packagingCents??0)+
+  (laborPerUnit??0)+(overheadPerUnit??0);
+ if(missing.length)return {
+  recommendedPriceCents:null,breakEvenCents:null,fullCostCents:null,
+  knownCostFloorCents:Math.ceil(knownCost/(1-(fee??0))),
+  knownCostFloorLabel:"floor, not a recommendation",missing,
+ };
+ // Preserve the original results when all inputs are known.
+ const fractionalFullCost=input.ingredientCents+input.packagingCents!+
+  laborPerUnit!+overheadPerUnit!;
+ const fullCostCents=Math.round(fractionalFullCost);
+ const breakEvenCents=Math.ceil(fractionalFullCost/(1-fee!));
+ const targetPrice=fractionalFullCost/(1-fee!-input.targetMargin);
  const benchmark=baselinePriceCents(input.ingredientCents,COFFEE_SHOP_PROFILE.targetProductCostPercent);
  const {roundingRule}=COFFEE_SHOP_PROFILE;
  const increment=roundingRule.incrementCents;
@@ -91,9 +107,7 @@ export function recommendFullCostPrice(input:{
   applyRounding(Math.max(targetPrice,benchmark),roundingRule),
   Math.ceil(breakEvenCents/increment)*increment);
  return {recommendedPriceCents,breakEvenCents,fullCostCents,
-  missing:[...(laborPerUnit===null?["laborPerUnit"]:[]),
-   ...(overheadPerUnit===null?["overheadPerUnit"]:[]),
-   ...(input.feeRate===null?["processingFeeRate"]:[])]};
+  knownCostFloorCents:null,knownCostFloorLabel:"floor, not a recommendation",missing};
 }
 export type ScenarioDelta=
  |{kind:"bill";monthlyChangeCents:number}

@@ -73,6 +73,8 @@ declare
  linkedToastItemGuid uuid:=gen_random_uuid();
  linkedEmployeeId uuid:=gen_random_uuid();
  linkedToastEmployeeGuid uuid:=gen_random_uuid();
+ replacementLocationId uuid:=gen_random_uuid();
+ replacementRestaurantGuid uuid:=gen_random_uuid();
  usage jsonb;
 begin
  insert into public.businesses(id,name) values(a,'Migration A'),(b,'Migration B');
@@ -145,6 +147,37 @@ begin
   price_cents,name)
  values(a,ga,'modifier',toastModifierId,'modifier-test-price',50,'Linked Toast modifier'),
        (a,ga,'item',linkedToastItemGuid,'item-test-price',500,'Linked Toast item');
+ -- A configuration save must never silently cascade owner-reviewed Toast
+ -- catalog, employee or price-history rows. Only deleting the café may do so.
+ insert into public.locations(id,business_id,name)
+ values(replacementLocationId,a,'Proposed replacement Toast location');
+ duplicateBlocked:=false;
+ begin
+  perform public.toast_save_configuration(a,'https://example.invalid',
+   'replace-should-roll-back','replace-should-roll-back',
+   jsonb_build_array(jsonb_build_object(
+    'location_id',replacementLocationId,'restaurant_guid',replacementRestaurantGuid)));
+ exception when others then
+  if sqlerrm='location has dependent Toast facts: archive with explicit review'
+   then duplicateBlocked:=true;
+  else raise;end if;
+ end;
+ if not duplicateBlocked then
+  raise exception 'Toast configuration silently replaced owner-reviewed staging';
+ end if;
+ if not exists(select 1 from public.toast_location_mappings
+   where business_id=a and restaurant_guid=ga)
+  or exists(select 1 from public.toast_location_mappings
+   where business_id=a and restaurant_guid=replacementRestaurantGuid)
+  or not exists(select 1 from public.toast_catalog_facts
+   where business_id=a and restaurant_guid=ga and linked_modifier_recipe_id=toastRecipeId)
+  or not exists(select 1 from public.toast_employee_directory
+   where business_id=a and restaurant_guid=ga and linked_employee_id=linkedEmployeeId)
+  or not exists(select 1 from public.toast_catalog_price_versions
+   where business_id=a and restaurant_guid=ga and price_fingerprint='modifier-test-price')
+  or not exists(select 1 from public.toast_api_credentials
+   where business_id=a and client_id='integration-a')
+ then raise exception 'Rejected Toast mapping replacement modified links, history, or credentials';end if;
  insert into public.pantry_modifier_links(
   business_id,provider,location_ref,pos_modifier_id,modifier_recipe_id)
  values(a,'square','test-square-location','test-square-modifier',pantryRecipeId);

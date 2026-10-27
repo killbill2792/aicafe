@@ -13,13 +13,13 @@ const schema=z.strictObject({
  target_margin_percent:z.number().min(0).max(60).nullable(),item_name:z.string().trim().max(120).nullable(),ownerInputs:ownerInputsSchema.nullable().optional()
 });
 export const newItemPriceTools={suggest_new_item_price:{
- agentId:"alex",schema,description:"Suggest a price for a new or unsaved item from its ingredient cost, the café's real labor and overhead per item sold, target margin and own menu range. Location is context only: never invent competitor or local prices.",
+ agentId:"alex",schema,description:"Suggest a new-item price using known café costs. If labor, overhead, packaging or processing fees is missing, show a known-cost floor ONLY (floor, not a recommendation) and list missing inputs. Never invent missing costs or local competitor prices.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const v=schema.parse(raw),owner=v.ownerInputs;
   if(ctx.readEconomics){
    const {economics}=await ctx.readEconomics();
    const recommended=recommendFullCostPrice({
-    ingredientCents:v.ingredient_cost_cents,packagingCents:v.packaging_cents??0,
+    ingredientCents:v.ingredient_cost_cents,packagingCents:v.packaging_cents,
     laborCents:economics.monthlyStaff.valueCents,
     overheadCents:economics.monthlyBills.valueCents,units:economics.monthlyUnits,
     feeRate:economics.feeRate,targetMargin:(v.target_margin_percent??(economics.targetMargin*100))/100
@@ -30,12 +30,17 @@ export const newItemPriceTools={suggest_new_item_price:{
     itemName:v.item_name,category:v.category,
     recommendedPriceCents:recommended.recommendedPriceCents,
     breakEvenCents:recommended.breakEvenCents,fullCostCents:recommended.fullCostCents,
+    knownCostFloorCents:recommended.knownCostFloorCents,
+    knownCostFloorLabel:recommended.knownCostFloorLabel,
+    pricingNote:recommended.missing.length?
+     "Only a floor from known costs, not a recommendation. Missing: "+recommended.missing.join(", "):
+     "Full-cost price from known inputs.",
     monthlyLabor:economics.monthlyStaff,monthlyBills:economics.monthlyBills,
     feeRate:economics.feeRate,targetMargin:v.target_margin_percent===null?
      economics.targetMargin:v.target_margin_percent/100,
     missing:recommended.missing,
     numberEstimates:[recommended.recommendedPriceCents,recommended.breakEvenCents,
-      recommended.fullCostCents].filter((value):value is number=>value!==null)
+      recommended.fullCostCents,recommended.knownCostFloorCents].filter((value):value is number=>value!==null)
       .map(value=>({value,unit:"cents" as const,detail:"breakEvenSales"}))};
   }
   const ownerWindow=owner?.salesPeriod?ownerPeriod(owner.salesPeriod,ctx.asOf):null;
@@ -76,7 +81,7 @@ export const newItemPriceTools={suggest_new_item_price:{
   });
   const location=site?.available?{city:site.value.city,region:site.value.region,country:site.value.countryCode}:null;
   const contribution=contributionCoverage({
-    priceCents:calculated.suggestedPriceCents,unitCostCents:v.ingredient_cost_cents,
+    priceCents:packagingMissing?null:calculated.suggestedPriceCents,unitCostCents:v.ingredient_cost_cents,
     packagingCents:v.packaging_cents,laborCents:laborForPeriod,billsCents:billsForPeriod,
     billsComplete,days:periodDays(period),
   });
@@ -84,12 +89,19 @@ export const newItemPriceTools={suggest_new_item_price:{
   return {source:"new_item_price",period,coverageLabel:coverage.label,unit:"cents",...contribution,
    agentId:"alex",draft:true,saved:false,itemName:v.item_name,category:v.category,ownerInputs:owner,
    categoryUnits30d:categoryUnits,location,localCompetitorPrices:null,...calculated,
-   explain:calculated.costPlusPriceCents!==null&&calculated.fullCostCents!==null?
+    ...(packagingMissing?{
+     suggestedPriceCents:null,costPlusPriceCents:null,fullCostCents:null,
+     profitPerItemCents:null,marginPercent:null,
+     result:{...calculated.result,value:null}
+    }:{}),
+    pricingNote:packagingMissing?"Only a floor from known costs, not a recommendation. Missing: packagingCents":null,
+   explain:!packagingMissing&&calculated.costPlusPriceCents!==null&&calculated.fullCostCents!==null?
     [{label:v.item_name??"New item price",inputs:[{name:"fullCost",value:money(calculated.fullCostCents)},
       {name:"targetMargin",value:percent(Math.round((100-calculated.targetMarginPercent)*100))}],
       formula:"divide",result:money(calculated.costPlusPriceCents),period,
       source:"suggest_new_item_price",provenance:v.target_margin_percent===null?"estimate":"ownerProvided"}]:[],
    missing:[...new Set([...missing,...calculated.missing,
+     ...(packagingMissing?["packagingCents"]:[]),
      ...(incompleteOwnerBills?["ownerOverheadIncomplete"]:[])])],
    estimated:[...new Set([...calculated.estimated,...(labor?.quality.estimatedInputs??[]),...(bills?.quality.estimatedInputs??[])])]};
  }

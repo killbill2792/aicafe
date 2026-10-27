@@ -70,6 +70,31 @@ describe("single deterministic supervisor economics model",()=>{
   expect(result.recommendedPriceCents!).toBeGreaterThanOrEqual(result.breakEvenCents!);
   expect(result.recommendedPriceCents).not.toBe(450);
  });
+ it("withholds a full-cost price for unknown labor, overhead, fee, packaging, or units",()=>{
+  const known={ingredientCents:145,packagingCents:40,laborCents:600000,
+    overheadCents:746700,units:6000,feeRate:.029,targetMargin:.15};
+  for(const [change,key] of [
+   [{laborCents:null},"laborPerUnit"],
+   [{overheadCents:null},"overheadPerUnit"],
+   [{feeRate:null},"processingFeeRate"],
+   [{packagingCents:null},"packagingCents"],
+   [{units:null},"laborPerUnit"],
+  ] as const){
+   const result=recommendFullCostPrice({...known,...change});
+   expect(result.recommendedPriceCents).toBeNull();
+   expect(result.breakEvenCents).toBeNull();
+   expect(result.fullCostCents).toBeNull();
+   expect(result.missing).toContain(key);
+   expect(result.knownCostFloorLabel).toBe("floor, not a recommendation");
+   expect(result.knownCostFloorCents).toBeGreaterThan(0);
+  }
+  const allMissing=recommendFullCostPrice({...known,packagingCents:null,
+   laborCents:null,overheadCents:null,feeRate:null});
+  expect(allMissing.knownCostFloorCents).toBe(145);
+  expect(allMissing.missing).toEqual([
+   "packagingCents","laborPerUnit","overheadPerUnit","processingFeeRate"]);
+  expect(recommendFullCostPrice(known).knownCostFloorCents).toBeNull();
+ });
  it("refuses false zero wage/rate and preserves only known bill totals",()=>{
   const unknown={...base,monthlyStaff:figure(null,"missing","not observed"),feeRate:null};
   const change=simulateEconomics(unknown,{kind:"bill",monthlyChangeCents:50000});

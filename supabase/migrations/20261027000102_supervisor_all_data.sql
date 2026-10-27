@@ -115,6 +115,79 @@ begin
  end loop;
 end $toast_identity_cascade$;
 
+-- A configuration replacement is NOT an owner-reviewed archive. The linked
+-- Toast identity hierarchy now cascades only when its restaurant mapping is
+-- deleted; explicitly reject configuration-time removal of any staged catalog,
+-- employee or price-history rows before credentials/mappings can be changed.
+-- Preserve migration 051's validation, credentials, atomic writes and ACLs.
+CREATE OR REPLACE FUNCTION toast_save_configuration(
+ p_business_id uuid,p_origin text,p_client_id text,p_secret_enc text,p_mappings jsonb)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $
+DECLARE n integer;
+BEGIN
+ IF p_origin IS NULL OR length(p_origin)<8 OR p_client_id IS NULL OR p_secret_enc IS NULL
+ OR jsonb_typeof(p_mappings)<>'array' OR jsonb_array_length(p_mappings) NOT BETWEEN 1 AND 50
+ OR NOT EXISTS(SELECT 1 FROM businesses WHERE id=p_business_id AND is_demo=false)
+ THEN RAISE EXCEPTION 'invalid Toast configuration'; END IF;
+ SELECT count(*) INTO n FROM jsonb_to_recordset(p_mappings)
+ AS r(location_id uuid,restaurant_guid uuid);
+ IF n<>(SELECT count(DISTINCT location_id) FROM jsonb_to_recordset(p_mappings)
+    AS r(location_id uuid,restaurant_guid uuid))
+ OR n<>(SELECT count(DISTINCT restaurant_guid) FROM jsonb_to_recordset(p_mappings)
+    AS r(location_id uuid,restaurant_guid uuid))
+ OR n<>(SELECT count(*) FROM jsonb_to_recordset(p_mappings) AS r(location_id uuid,restaurant_guid uuid)
+ JOIN locations l ON l.id=r.location_id AND l.business_id=p_business_id)
+ THEN RAISE EXCEPTION 'cross-tenant or duplicate mappings'; END IF;
+ -- Deliberate explicit check gives a stable failure, and keeps old creds intact on rollback.
+ IF EXISTS (SELECT 1 FROM toast_location_mappings m
+ WHERE m.business_id=p_business_id
+ AND NOT EXISTS(SELECT 1 FROM jsonb_to_recordset(p_mappings)
+    AS r(location_id uuid,restaurant_guid uuid)
+    WHERE r.location_id=m.location_id AND r.restaurant_guid=m.restaurant_guid)
+ AND (EXISTS(SELECT 1 FROM toast_pilot_days x WHERE x.business_id=m.business_id
+             AND x.restaurant_guid=m.restaurant_guid)
+   OR EXISTS(SELECT 1 FROM toast_labor_entries x WHERE x.business_id=m.business_id
+             AND x.restaurant_guid=m.restaurant_guid)
+   OR EXISTS(SELECT 1 FROM toast_order_events x WHERE x.business_id=m.business_id
+             AND x.restaurant_guid=m.restaurant_guid)
+   OR EXISTS(SELECT 1 FROM toast_modified_orders_staging x WHERE x.business_id=m.business_id
+             AND x.restaurant_guid=m.restaurant_guid)
+   OR EXISTS(SELECT 1 FROM toast_sync_health x WHERE x.business_id=m.business_id
+             AND x.restaurant_guid=m.restaurant_guid)
+   OR EXISTS(SELECT 1 FROM toast_poll_leases x WHERE x.business_id=m.business_id
+             AND x.restaurant_guid=m.restaurant_guid)
+   OR EXISTS(SELECT 1 FROM toast_catalog_facts x WHERE x.business_id=m.business_id
+             AND x.restaurant_guid=m.restaurant_guid)
+   OR EXISTS(SELECT 1 FROM toast_employee_directory x WHERE x.business_id=m.business_id
+             AND x.restaurant_guid=m.restaurant_guid)
+   OR EXISTS(SELECT 1 FROM toast_catalog_price_versions x WHERE x.business_id=m.business_id
+             AND x.restaurant_guid=m.restaurant_guid)))
+ THEN RAISE EXCEPTION 'location has dependent Toast facts: archive with explicit review'; END IF;
+ INSERT INTO toast_api_credentials(business_id,api_origin,client_id,client_secret_enc,state)
+ VALUES(p_business_id,p_origin,p_client_id,p_secret_enc,'configured')
+ ON CONFLICT(business_id) DO UPDATE SET api_origin=EXCLUDED.api_origin,
+ client_id=EXCLUDED.client_id,client_secret_enc=EXCLUDED.client_secret_enc,
+ bearer_token_enc=NULL,bearer_expires_at=NULL,auth_lease_until=NULL,auth_lease_nonce=NULL,
+ retry_after=NULL,state='configured',last_verified_at=NULL,last_error_category=NULL,
+ configuration_version=toast_api_credentials.configuration_version+1,updated_at=now();
+ DELETE FROM toast_location_mappings m WHERE business_id=p_business_id
+ AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(p_mappings)
+ AS r(location_id uuid,restaurant_guid uuid)
+ WHERE r.location_id=m.location_id AND r.restaurant_guid=m.restaurant_guid);
+ INSERT INTO toast_location_mappings(business_id,location_id,restaurant_guid,verified_at)
+ SELECT p_business_id,r.location_id,r.restaurant_guid,NULL
+ FROM jsonb_to_recordset(p_mappings) AS r(location_id uuid,restaurant_guid uuid)
+ ON CONFLICT(business_id,restaurant_guid) DO UPDATE
+ SET verified_at=NULL
+ WHERE toast_location_mappings.location_id=EXCLUDED.location_id;
+ IF (SELECT count(*) FROM toast_location_mappings WHERE business_id=p_business_id)<>n
+ THEN RAISE EXCEPTION 'mapping conflict requires manual review'; END IF;
+ UPDATE toast_location_mappings SET verified_at=NULL WHERE business_id=p_business_id;
+END $;
+REVOKE ALL ON FUNCTION toast_save_configuration(uuid,text,text,text,jsonb)
+ FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION toast_save_configuration(uuid,text,text,text,jsonb) TO service_role;
+
 -- Preserve ALL existing import logic and update only the order's canonical extras.
 create or replace function public.toast_import_day(
  p_business_id uuid,p_location_id uuid,p_restaurant_guid uuid,

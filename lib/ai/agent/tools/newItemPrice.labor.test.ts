@@ -25,6 +25,18 @@ function context(wageStatus:"missing"|"actual"):AgentToolContext{
   } as unknown as AgentToolContext;
 }
 describe("new-item pricing labor status",()=>{
+  it("labels absent packaging as missing and shows a floor, not a recommendation",async()=>{
+   const result=await newItemPriceTools.suggest_new_item_price.execute(
+    {...input,packaging_cents:null},context("actual"));
+   expect(result.missing).toContain("packagingCents");
+   expect(result.suggestedPriceCents).toBeNull();
+   expect(result.fullCostCents).toBeNull();
+   expect(result.costPlusPriceCents).toBeNull();
+   expect((result.result as {value:number|null}).value).toBeNull();
+   expect(result.knownCostFloorCents).toBeGreaterThan(0);
+   expect(result.pricingNote).toContain("floor from known costs, not a recommendation");
+   expect(result.explain).toEqual([]);
+  });
   it("rejects non-null known-only missing wages without rejecting complete wages",async()=>{
     const partial=await newItemPriceTools.suggest_new_item_price.execute(input,context("missing"));
     expect(partial.missing).toContain("labor30d");
