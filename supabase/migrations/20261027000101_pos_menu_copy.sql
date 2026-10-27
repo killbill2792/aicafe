@@ -338,13 +338,13 @@ begin
    update public.employees set pos_team_member_id=p_source_key
     where business_id=p_business_id and id=p_employee_id
      and (pos_team_member_id is null or pos_team_member_id=p_source_key);
-   if not found then return false;end if;
+   if not found then raise exception 'Selected employee POS ID changed' using errcode='40001';end if;
    update public.toast_employee_directory set linked_employee_id=p_employee_id,
     linked_at=now()
     where business_id=p_business_id and restaurant_guid=v_restaurant
      and employee_guid=split_part(p_source_key,':',3)::uuid
      and (linked_employee_id is null or linked_employee_id=p_employee_id);
-   if not found then return false;end if;
+   if not found then raise exception 'Toast roster link changed' using errcode='40001';end if;
   else
    v_restaurant:=split_part(p_source_key,':',2)::uuid;
    select l.external_employee_id into v_employee_guid
@@ -357,7 +357,7 @@ begin
     where business_id=p_business_id and id=p_employee_id
      and (pos_team_member_id is null or
       pos_team_member_id='toast:'||v_restaurant::text||':'||v_employee_guid::text);
-   if not found then return false;end if;
+   if not found then raise exception 'Chosen employee changed' using errcode='40001';end if;
    update public.toast_employee_directory set linked_employee_id=p_employee_id,
     linked_at=now()
     where business_id=p_business_id and restaurant_guid=v_restaurant
