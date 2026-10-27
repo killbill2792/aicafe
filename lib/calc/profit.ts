@@ -9,8 +9,16 @@ export function ingredientsCentsForPeriod(days: DailyFacts[]): number {
   return sumCents(days, (d) => d.ingredientsCents);
 }
 
+/** A known-only wage sum on an incomplete day is NOT a complete labor cost.
+ * Estimates remain usable with their separate quality labels. */
+export function laborKnown<T extends Pick<DailyFacts,"wagesCents"|"staffTaxCents"|"laborWageStatus">>(
+  day:T,
+): day is T & {wagesCents:number;staffTaxCents:number} {
+  return day.wagesCents!==null&&day.staffTaxCents!==null&&day.laborWageStatus!=="missing";
+}
+
 export function staffCostCentsForPeriod(days: DailyFacts[]): number | null {
-  if(days.some(d=>d.wagesCents===null||d.staffTaxCents===null||d.laborWageStatus==="missing"))return null;
+  if(days.some(d=>!laborKnown(d)))return null;
   return sumCents(days, (d) => (d.wagesCents??0) + (d.staffTaxCents??0));
 }
 
