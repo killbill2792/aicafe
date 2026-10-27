@@ -23,11 +23,23 @@ export async function syncPosData(
 
   await syncCanonicalCatalog(supabase, businessId, adapter);
 
-  const [orders, employees, timecards] = await Promise.all([
+  const [orders, employees, timecards, scheduledShifts] = await Promise.all([
     adapter.fetchOrders({ since, until }),
     adapter.fetchEmployees(),
     adapter.fetchTimecards({ since, until }),
+    adapter.fetchPosScheduledShifts?.({since:new Date(Date.now()-7*86400000),
+      until:new Date(Date.now()+14*86400000)})??Promise.resolve([]),
   ]);
+  if(scheduledShifts.length){
+    const {error:scheduledError}=await supabase.from("pos_scheduled_shifts").upsert(
+      scheduledShifts.map(s=>({business_id:businessId,location_id:locationId,
+       provider:adapter.provider,external_shift_id:s.externalShiftId,
+       external_employee_id:s.externalEmployeeId,external_job_id:s.externalJobId,
+       scheduled_start:s.scheduledStart,scheduled_end:s.scheduledEnd,deleted:s.deleted,
+       last_synced_at:new Date().toISOString()})),
+      {onConflict:"business_id,provider,external_shift_id"});
+    if(scheduledError)throw scheduledError;
+  }
   // Fetch succeeded across the complete Square pagination before any zero-day proof.
   // Only a full café-local day (or the covered portion of the CURRENT day
   // starting at local midnight) can be explicitly marked actual.

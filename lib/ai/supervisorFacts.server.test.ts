@@ -76,7 +76,7 @@ describe("Supervisor owner-scoped facts", () => {
     const base={last_synced_at:"2026-10-10T23:00:00Z",backfill_completed_at:"2026-10-01T20:00:00Z"};
     expect(resolveItemSalesCoverage([{provider:"toast",...base}],period).covered).toBe(false);
     expect(resolveItemSalesCoverage([{provider:"square",...base}],period))
-      .toMatchObject({covered:true,sources:["square"],from:"2026-10-01",through:"2026-10-10"});
+      .toMatchObject({covered:true,sources:["square_backfill"],from:"2026-10-01",through:"2026-10-10"});
     expect(resolveItemSalesCoverage([{provider:"square",...base,last_synced_at:"2026-10-09T20:00:00Z"}],period).covered).toBe(false);
   });
   it("denies cross-café and empty identifiers before hitting any database reader", async () => {

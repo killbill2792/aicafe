@@ -1,6 +1,6 @@
 import {resolvePeriod as importResolvePeriod} from "@/lib/calc/periods";
 /** Tool-only name resolution. Never let model-provided ids choose between matching records. */
-export type ChoiceCandidate = { id: string; label: string; detail: string };
+export type ChoiceCandidate = { id: string; label: string; detail: string; priceCents?:number };
 export type EntityResolution<T> =
   | { status: "resolved"; value: T }
   | { status: "ambiguous"; candidates: ChoiceCandidate[] }
@@ -30,7 +30,7 @@ export function resolveEntity<T>(
       names.set(name,(names.get(name)??0)+1);
     }
     const labels=new Set<string>();
-    return items.slice(0,4).map(item => {
+    return items.slice(0,12).map(item => {
       const name = field.nameOf(item), detail = field.describe(item);
       const duplicate = (names.get(normalizedName(name))??0)>1;
       let label = duplicate ? name + " — " + detail : name;
@@ -67,6 +67,8 @@ export function resolveEntity<T>(
 export type ResolveState = {
   ownerText: string;
   priorChoice: string | null;
+  /** Last direct assistant suggestion; names are NEVER treated as trusted IDs. */
+  priorAssistantText?:string|null;
   seenIds: Set<string>;
   chosenIds: Set<string>;
   ambiguous: ChoiceCandidate[][];
@@ -88,7 +90,9 @@ export function newResolveState(ownerText: string, history: readonly {role:strin
       if(match&&normalizedName(match[1])===text)chosenIds.add(match[2].trim().toLowerCase());
     }
   }
-  return {ownerText,priorChoice:lastAsk?ownerText:null,seenIds:new Set(),chosenIds,ambiguous:[],asked:false,usageMissing:new Map()};
+  return {ownerText,priorChoice:lastAsk?ownerText:null,
+    priorAssistantText:last?.role==="assistant"?last.content:null,
+    seenIds:new Set(),chosenIds,ambiguous:[],asked:false,usageMissing:new Map()};
 }
 export function choicePayload(result: EntityResolution<unknown>, source: string, period: {from:string;to:string}|null) {
   return result.status==="ambiguous"
@@ -113,6 +117,31 @@ export function ownerNamedTarget(state:ResolveState|undefined,id:string,label:st
   const name=normalizedName(label);
   const words=" "+normalizedName(state.ownerText)+" ";
   return Boolean(name)&&words.includes(" "+name+" ");
+}
+/** Owner confirmation can refer to ONE unique product in the immediately
+ * preceding assistant suggestion, never an arbitrary UUID selected by a model.
+ * This authorizes drafting an inert card only; it never approves its contents.
+ */
+export function ownerConfirmedRecentProduct<T>(
+ state:ResolveState|undefined,targetId:string,rows:readonly T[],
+ idOf:(row:T)=>string,nameOf:(row:T)=>string,
+):boolean{
+ if(!state?.priorAssistantText)return false;
+ const reply=normalizedName(state.ownerText);
+ if(!/^(?:yes|yes do it|do it|go ahead|yes please|make that change|approve|yes make that change|si|si hazlo|hazlo|adelante|نعم|نعم افعل|افعل ذلك)$/u.test(reply))
+   return false;
+ const latest=" "+normalizedName(state.priorAssistantText)+" ";
+ const named=rows.filter(row=>{
+  const name=normalizedName(nameOf(row));
+  return name.length>=3&&latest.includes(" "+name+" ");
+ });
+ // "Iced Latte" also contains "Latte": keep maximal distinct names, but
+ // still reject duplicate size rows and independently named products.
+ const maximal=named.filter(row=>!named.some(other=>{
+  const a=normalizedName(nameOf(row)),b=normalizedName(nameOf(other));
+  return b.length>a.length&&(" "+b+" ").includes(" "+a+" ");
+ }));
+ return maximal.length===1&&idOf(maximal[0]).toLowerCase()===targetId.toLowerCase();
 }
 /** Reject ambiguous writes unless this turn uniquely names the selected candidate
  * or a trusted clarification from the previous turn records its actual ID. */
@@ -167,7 +196,7 @@ export function observeToolResult(state:ResolveState|undefined,result:Record<str
     (result.missing.length===0||result.missing.includes("ownerChoiceRequired"));
   if(validChoice&&Array.isArray(result.candidates)) {
     const candidates=result.candidates.filter((v):v is ChoiceCandidate=>
-      Boolean(v)&&typeof v==="object"&&typeof v.id==="string"&&typeof v.label==="string"&&typeof v.detail==="string").slice(0,4);
+      Boolean(v)&&typeof v==="object"&&typeof v.id==="string"&&typeof v.label==="string"&&typeof v.detail==="string").slice(0,12);
     if(candidates.length>1){
       state.ambiguous.push(candidates);
       for(const candidate of candidates)if(

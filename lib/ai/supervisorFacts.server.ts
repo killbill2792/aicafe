@@ -2,13 +2,12 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 import { totalMonthlyRecurringCostsCents } from "@/lib/expenses/recurringMonthlyTotal";
+import {resolveSalesCoverage} from "@/lib/calc/salesCoverage";
 
 /** Distinct, verified facts. Neither scheduled bills nor elapsed running costs are cash spent. */
 export type MonthlyBills = { totalCents: number };
 export type RecordedExpenses = { totalCents: number };
-export type ItemSalesCoverage = {
-  covered: boolean; sources: string[]; from: string | null; through: string | null;
-};
+export type ItemSalesCoverage = ReturnType<typeof resolveSalesCoverage>;
 export type SoldProduct = { id: string; name: string; category: "drink" | "food"; units: number };
 
 function known<T>(value: T, estimated = false): KnownSlice<T> {
@@ -24,21 +23,10 @@ function missing<T>(reason: string): KnownSlice<T> {
 }
 
 export function resolveItemSalesCoverage(
-  connections: Array<{provider:string;last_synced_at:string|null;backfill_completed_at:string|null}>,
-  period: CafeStatePeriod,
-): ItemSalesCoverage {
-  const covered = connections.filter(connection=>{
-    // Explicit contractual coverage only. Unknown connectors have no inferred 90-day backfill rule.
-    if(connection.provider!=="square") return false;
-    const startDate = connection.backfill_completed_at?.slice(0,10);
-    const lastSynced = connection.last_synced_at?.slice(0,10);
-    if (!startDate || !lastSynced) return false;
-    const earliest = new Date(Date.parse(startDate+"T12:00:00Z")-89*86_400_000)
-      .toISOString().slice(0,10);
-    return earliest<=period.from && lastSynced>=period.to;
-  });
-  return {covered:covered.length>0,sources:[...new Set(covered.map(c=>c.provider))].slice(0,5),
-    from:covered.length ? period.from : null,through:covered.length ? period.to : null};
+ connections:Array<{provider:string;last_synced_at:string|null;backfill_completed_at:string|null}>,
+ period:CafeStatePeriod,actualDays:readonly string[]=[]
+):ItemSalesCoverage{
+ return resolveSalesCoverage(period,actualDays,connections);
 }
 
 /** The same active rows and monthly-equivalent helper used by getRecurringCosts/BillsManager. */
@@ -53,8 +41,17 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       const { data, error } = await client.from("pos_connections")
         .select("provider,last_synced_at,backfill_completed_at").eq("business_id",businessId).eq("status","active");
       if (error) throw error;
-      const coverage = resolveItemSalesCoverage(data ?? [],period);
-      return coverage.covered ? known(coverage) : missing("itemSalesCoverageNotProven");
+      const {data:days,error:daysError}=await client.from("daily_rollups")
+        .select("business_date,sales_data_status").eq("business_id",businessId)
+        .gte("business_date",period.from).lte("business_date",period.to);
+      if(daysError)throw daysError;
+      const coverage=resolveItemSalesCoverage(data??[],period,(days??[])
+        .filter(row=>row.sales_data_status==="actual").map(row=>row.business_date));
+      return coverage.coveredDays?{
+        ...known(coverage),quality:{level:coverage.covered?"high":"medium",
+          missingInputs:coverage.missingDays.map(day=>"salesDay:"+day),
+          estimatedInputs:[],staleInputs:[]}
+      }:missing("itemSalesCoverageNotProven");
     },
     async monthlyBills(businessId: string): Promise<KnownSlice<MonthlyBills>> {
       assertScope(businessId);
@@ -90,12 +87,15 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       assertScope(businessId);
       const { data: connections, error: connectionError } = await client.from("pos_connections")
         .select("provider, last_synced_at, backfill_completed_at")
-        .eq("business_id", businessId).eq("status", "active")
-        .not("last_synced_at", "is", null).not("backfill_completed_at", "is", null);
+        .eq("business_id", businessId).eq("status", "active");
       if (connectionError) throw connectionError;
-      const coverage = resolveItemSalesCoverage(connections ?? [],period);
-      const covered = coverage.covered;
-      if (!covered) return missing("itemSalesCoverage");
+      const {data:days,error:daysError}=await client.from("daily_rollups")
+        .select("business_date,sales_data_status").eq("business_id",businessId)
+        .gte("business_date",period.from).lte("business_date",period.to);
+      if(daysError)throw daysError;
+      const coverage=resolveItemSalesCoverage(connections??[],period,(days??[])
+        .filter(row=>row.sales_data_status==="actual").map(row=>row.business_date));
+      if(!coverage.coveredDays)return missing("itemSalesCoverage");
       const [items, quantities] = await Promise.all([
         client.from("menu_items").select("id, name, category").eq("business_id", businessId),
         client.rpc("menu_item_quantities_sold", {
@@ -108,11 +108,14 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       const byId = new Map<string, number>(quantityRows.map((row) =>
         [row.menu_item_id, Number(row.total_quantity)]));
       // Preserve archived products, as historic sales can include inactive menu items.
-      return known((items.data ?? []).map((item) => ({
+      const sold=(items.data ?? []).map((item) => ({
         id: item.id, name: item.name,
         category: item.category === "food" ? "food" as const : "drink" as const,
         units: byId.get(item.id) ?? 0,
-      })));
+      }));
+      return {available:true,value:sold,quality:{
+        level:coverage.covered?"high":"medium",estimatedInputs:[],staleInputs:[],
+        missingInputs:coverage.missingDays.map(day=>"salesDay:"+day)}};
     },
   };
 }

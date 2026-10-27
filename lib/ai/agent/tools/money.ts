@@ -7,6 +7,8 @@ import {safeSumCents} from "@/lib/calc/explainMath";
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
 import {prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
+import {figure,unifiedBreakEven} from "@/lib/calc/supervisorEconomics";
+import {calendarMonth} from "@/lib/calc/periods";
 
 const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const empty=z.strictObject({});
@@ -74,6 +76,37 @@ export const moneyTools={
     agentId:"leo",schema:breakEvenInput,description:"Read recorded daily fixed costs and calculate break-even sales using the owner's ingredient+packaging percentage and their net sales/days when they supply them. Do not demand imported sales when the owner supplies net sales. Pass null for unknown owner inputs; never invent them. If processing-fee rate is unknown, still calculate but explicitly say this estimate excludes processing fees.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const owner=breakEvenInput.parse(raw),provided=owner.ownerInputs;
+      if(ctx.readEconomics){
+        const {economics}=await ctx.readEconomics();
+        const overridden={...economics};
+        if(provided?.laborCents!==null&&provided?.laborCents!==undefined&&provided.laborPeriod){
+          const range=ownerPeriod(provided.laborPeriod,ctx.asOf);
+          if(range)overridden.monthlyStaff=figure(prorate(provided.laborCents,range,calendarMonth(ctx.asOf)),
+            "owner","You told me: monthly payroll");
+        }
+        if(owner.ownerIngredientPackagingPercent!==null&&owner.ownerIngredientPackagingPercent!==undefined){
+          overridden.ingredientRate=owner.ownerIngredientPackagingPercent/100;
+          overridden.ingredientStatus="owner";
+        }
+        if(owner.ownerProcessingFeePercent!==null&&owner.ownerProcessingFeePercent!==undefined){
+          overridden.feeRate=owner.ownerProcessingFeePercent/100;
+          overridden.feeStatus="owner";
+        }
+        const result=unifiedBreakEven(overridden);
+        const monthly=result.monthlyBreakEven.valueCents;
+        return {source:"break_even",period:calendarMonth(ctx.asOf),agentId:"leo",
+          monthlyBreakEvenCents:monthly,knownCostBreakEvenFloorCents:result.knownCostBreakEvenFloorCents,
+          drinksPerDay:result.drinksPerDay,
+          monthlyBills:result.monthlyBills,monthlyLabor:result.monthlyStaff,
+          ingredientRate:result.ingredientRate,feeRate:result.feeRate,
+          status:result.status,reason:result.reason,missingDays:overridden.missingDays,
+          missing:result.missing,ownerInputs:provided??null,
+          numberEstimates:[...(monthly===null?[]:[{value:monthly,unit:"cents" as const,detail:"breakEvenSales"}]),
+            ...(result.knownCostBreakEvenFloorCents===null?[]:[{value:result.knownCostBreakEvenFloorCents,
+              unit:"cents" as const,detail:"breakEvenSales"}]),
+            ...(result.monthlyFixedKnownCents?[{value:result.monthlyFixedKnownCents,unit:"cents" as const,detail:"dailyOverhead"}]:[])],
+        };
+      }
       const knownOwnerLaborDailyCents=provided?.laborCents!=null&&provided.laborPeriod?
         prorate(provided.laborCents,ownerPeriod(provided.laborPeriod,ctx.asOf)!,{from:ctx.asOf,to:ctx.asOf}):null;
       const ownerPercent=owner.ownerIngredientPackagingPercent;

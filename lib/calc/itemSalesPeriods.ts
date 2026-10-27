@@ -2,7 +2,17 @@ export type ItemSalesPeriodTotals = { today: number | null; days7: number | null
 export type ItemSalesDay = { date: string; quantity: number };
 export type ItemSalesDailyByPeriod = { today: ItemSalesDay[] | null; days7: ItemSalesDay[] | null; days30: ItemSalesDay[] | null };
 export type DatedItemQuantity = { menuItemId: string; businessDate: string; quantity: number };
-export type SalesCoverage = { start: string; end: string };
+export type SalesCoverage = { start: string; end: string } | readonly string[];
+function hasCoverage(coverage:SalesCoverage|null,start:string,today:string):boolean{
+ if(!coverage)return false;
+ if(Array.isArray(coverage)){
+  const dates=new Set(coverage);
+  for(let d=start;d<=today;d=addDays(d,1))if(!dates.has(d))return false;
+  return true;
+ }
+ const range=coverage as {start:string;end:string};
+ return range.start<=start&&range.end>=today;
+}
 
 function addDays(date: string, delta: number): string {
   const [year, month, day] = date.split("-").map(Number);
@@ -12,7 +22,7 @@ function addDays(date: string, delta: number): string {
 
 function totalForPeriod(rows: readonly DatedItemQuantity[], itemId: string, coverage: SalesCoverage | null, today: string, days: number): number | null {
   const start = addDays(today, -(days - 1));
-  if (!coverage || coverage.start > start || coverage.end < today) return null;
+  if (!hasCoverage(coverage,start,today)) return null;
   return rows.filter((row) => row.menuItemId === itemId && row.businessDate >= start && row.businessDate <= today).reduce((sum, row) => sum + row.quantity, 0);
 }
 
@@ -27,7 +37,7 @@ export function itemSalesPeriodTotals(rows: readonly DatedItemQuantity[], covera
 
 function dailyForPeriod(rows: readonly DatedItemQuantity[], itemId: string, coverage: SalesCoverage | null, today: string, days: number): ItemSalesDay[] | null {
   const start = addDays(today, -(days - 1));
-  if (!coverage || coverage.start > start || coverage.end < today) return null;
+  if (!hasCoverage(coverage,start,today)) return null;
   const totals = new Map<string, number>();
   for (const row of rows) {
     if (row.menuItemId === itemId && row.businessDate >= start && row.businessDate <= today) {

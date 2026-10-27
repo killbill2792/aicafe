@@ -20,13 +20,14 @@ import {
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE } from "./queryError";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
+import {resolveSalesCoverage} from "@/lib/calc/salesCoverage";
 import {
   itemSalesDailyByPeriod,
   itemSalesPeriodTotals,
   type DatedItemQuantity,
   type ItemSalesDailyByPeriod,
   type ItemSalesPeriodTotals,
-  type SalesCoverage,
+
 } from "@/lib/calc/itemSalesPeriods";
 
 export type MenuPricingEvidence = {
@@ -133,10 +134,7 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
       .from("pos_connections")
       .select("provider, status, last_synced_at, backfill_completed_at")
       .eq("business_id", businessId)
-      .eq("status", "active")
-      .eq("provider", "square")
-      .not("last_synced_at", "is", null)
-      .not("backfill_completed_at", "is", null),
+      .eq("status", "active"),
   ]);
 
   if (salesResult.error) {
@@ -233,21 +231,12 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
     marketByItem.set(row.menu_item_id, rows);
   }
 
-  // A completed Square backfill is the repository's persisted promise of a continuous sales
-  // window for the Menu's Today/7/30-day display. Price-response analysis is stricter: it only
-  // uses dates explicitly marked sales_data_status=actual, so it never invents zero-sales days.
-  const coverage = (connectionsResult.data ?? []).reduce<SalesCoverage | null>((best, connection) => {
-    const syncedThrough = formatInTimeZone(new Date(connection.last_synced_at), timezone, "yyyy-MM-dd");
-    const backfillDay = formatInTimeZone(new Date(connection.backfill_completed_at), timezone, "yyyy-MM-dd");
-    const coveredFrom = formatInTimeZone(subDays(new Date(`${backfillDay}T12:00:00Z`), 89), "UTC", "yyyy-MM-dd");
-    if (!best) return { start: coveredFrom, end: syncedThrough };
-    return {
-      start: coveredFrom < best.start ? coveredFrom : best.start,
-      end: syncedThrough > best.end ? syncedThrough : best.end,
-    };
-  }, null);
+  // The same provider-neutral actual-day proof powers Menu and chat. Partial
+  // periods stay unknown rather than turning missing days into zero sales.
+  const coverage=resolveSalesCoverage({from:start90,to:today},coveredSalesDates,
+    connectionsResult.data??[]).coveredDates;
 
-  const hasLiveSquareCatalog = (connectionsResult.data ?? []).length > 0;
+  const hasLiveSquareCatalog = (connectionsResult.data ?? []).some(row=>row.provider==="square");
 
   return items.map((item) => {
     const input = inputById.get(item.id);

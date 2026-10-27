@@ -49,6 +49,37 @@ describe("price proposal agent tool",()=>{
   expect(chosen.missing).toEqual([]);
   expect(proposePriceChange).toHaveBeenCalledTimes(1);
  });
+ it("lets an unambiguous 'yes, do it' draft one real price card only",async()=>{
+  const {newResolveState}=await import("../resolve");
+  const proposePriceChange=vi.fn().mockResolvedValue({
+   proposalId:"33333333-3333-4333-8333-333333333333",revision:1,
+   productName:"Latte",oldPriceCents:450,newPriceCents:550
+  });
+  const state=newResolveState("yes, do it",[
+   {role:"user",content:"Should I price Latte at $5.50?"},
+   {role:"assistant",content:"I recommend changing Latte to $5.50."}
+  ]);
+  const result=await proposalTools.propose_price_change.execute(input,{
+   ...minimal,resolveState:state,proposals:{proposePriceChange}
+  });
+  expect(result).toMatchObject({draft:true,proposalId:"33333333-3333-4333-8333-333333333333"});
+  expect(proposePriceChange).toHaveBeenCalledTimes(1);
+ });
+ it("rejects generic assent when multiple product names appear in the last assistant turn",async()=>{
+  const {newResolveState}=await import("../resolve");
+  const rows=[{id:input.product_id,name:"Latte",category:"drink" as const,active:true,priceCents:450},
+   {id:"11111111-1111-4111-8111-111111111111",name:"Mocha",category:"drink" as const,active:true,priceCents:500}];
+  const proposePriceChange=vi.fn();
+  const result=await proposalTools.propose_price_change.execute(input,{
+   ...minimal,tools:{getMenuCatalog:async()=>({available:true as const,value:rows,
+    quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}})} as unknown as AgentToolContext["tools"],
+   resolveState:newResolveState("yes",[
+    {role:"assistant",content:"You could raise Latte to $5.50 or Mocha to $6."}]),
+   proposals:{proposePriceChange}
+  });
+  expect(result.missing).toContain("targetNotConfirmed");
+  expect(proposePriceChange).not.toHaveBeenCalled();
+ });
  it("validates the product UUID and maximum price",async()=>{
   await expect(proposalTools.propose_price_change.execute({...input,product_id:"bad"},minimal)).rejects.toThrow();
   await expect(proposalTools.propose_price_change.execute({...input,new_price_cents:100001},minimal)).rejects.toThrow();

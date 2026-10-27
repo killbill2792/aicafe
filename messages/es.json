@@ -949,7 +949,8 @@
     "payrollMonthlyInvalid": "Introduce un importe válido con hasta dos decimales.",
     "payrollMonthlySave": "Guardar costos mensuales",
     "payrollMonthlySaved": "Guardado como estimación del propietario.",
-    "payrollMonthlySaveFailed": "No se pudieron guardar los costos mensuales."  },
+    "payrollMonthlySaveFailed": "No se pudieron guardar los costos mensuales."
+  },
   "More": {
     "toastConnect": "Conectar Toast",
     "title": "Más",
@@ -1002,7 +1003,8 @@
     "monthlyAmountEstimated": "{amount} al mes (incluye estimaciones)",
     "toastDaysLook": "{count} días por revisar",
     "notConnected": "Conecta tu caja",
-    "connectedSince": "Conectado · sincronizado {time}"
+    "connectedSince": "Conectado · sincronizado {time}",
+    "financialAssumptions": "Supuestos financieros"
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
@@ -3324,5 +3326,18 @@
     "receiptTotal": "Total del recibo",
     "receiptIncomplete": "Revisa el proveedor, total del recibo y costo de la línea antes de aprobar.",
     "reviewOnInventory": "Revisar en la página de Inventario"
+  },
+  "SupervisorFinancialSettings": {
+    "title": "Supuestos financieros",
+    "subtitle": "Para mejorar las estimaciones de Dinero, Menú, Plan y chat",
+    "ingredient": "Costo típico de ingredientes (% de ventas)",
+    "ingredientHint": "Se usa solo cuando las recetas y las ventas no permiten calcular el porcentaje. Déjalo vacío si no lo sabes.",
+    "monthlyPayroll": "Otros gastos mensuales de nómina ($)",
+    "monthlyPayrollHint": "Añade solo salarios, prestaciones y costes no incluidos ya en los sueldos registrados ni impuestos estimados. Se suma una sola vez; no sustituye los salarios.",
+    "save": "Guardar datos financieros",
+    "saving": "Guardando…",
+    "saved": "Datos guardados",
+    "failed": "Revisa los valores e inténtalo de nuevo",
+    "none": "Sin configurar"
   }
 }

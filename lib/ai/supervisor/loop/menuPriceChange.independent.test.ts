@@ -9,18 +9,17 @@ const s=vi.hoisted(()=>({
  authUserId:"44444444-4444-4444-8444-444444444444",
 }));
 vi.mock("next/cache",()=>({revalidatePath:vi.fn()}));
-vi.mock("@/lib/data/getMenuControlCenter",()=>({
- getMenuControlCenter:async()=>[
-  {id:s.coffee,name:"Coffee",active:true,priceCents:s.prices.coffee},
-  {id:s.latte,name:"Latte",active:true,priceCents:s.prices.latte},
- ],
-}));
 vi.mock("@/lib/data/getActiveBusinessId",()=>({getActiveBusinessId:async()=>s.business}));
 vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({
   auth:{getUser:async()=>({data:{user:{id:s.authUserId}}})},
   from:(table:string)=>{
-    const filters={eq:()=>filters,maybeSingle:async()=>({data:table==="memberships"?
-      {role:"owner"}:{currency:"USD",is_demo:false}})};
+    let itemId:string|null=null;
+    const filters={eq:(name:string,v:string)=>{if(name==="id")itemId=v;return filters;},maybeSingle:async()=>({
+      data:table==="memberships"?{role:"owner"}:table==="businesses"?{currency:"USD",is_demo:false}:
+       itemId===s.coffee?{id:s.coffee,name:"Coffee",is_active:true,price_cents:s.prices.coffee}:
+       itemId===s.latte?{id:s.latte,name:"Latte",is_active:true,price_cents:s.prices.latte}:null,
+      error:null,
+    })};
     return {select:()=>filters};
   },
 })}));

@@ -4,6 +4,7 @@ const cents=z.number().int().safe().nonnegative();
 const period=z.union([
  z.strictObject({from:z.iso.date(),to:z.iso.date()}),
  z.strictObject({days:z.number().int().positive().max(3660)}),
+ z.strictObject({unit:z.literal("month")}),
 ]);
 export const ownerInputsSchema=z.strictObject({
  netSalesCents:cents.nullable(),salesPeriod:period.nullable(),
@@ -18,6 +19,7 @@ export const emptyOwnerInputs:OwnerInputs={
 };
 export function ownerPeriod(value:OwnerInputs["salesPeriod"],asOf:string):CalcPeriod|null{
  if(!value)return null;
+ if("unit" in value)return calendarMonth(asOf);
  if("days" in value){
   return {from:dateOffset(asOf,-value.days+1),to:asOf};
  }

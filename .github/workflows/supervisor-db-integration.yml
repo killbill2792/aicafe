@@ -1,0 +1,40 @@
+name: PR202 disposable migration 102 verification
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20261027000102_supervisor_all_data.sql'
+      - 'scripts/supervisor-all-data-db-integration.sql'
+      - '.github/workflows/supervisor-db-integration.yml'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  isolated-supabase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.108.0
+      - name: Initialize ephemeral local Supabase
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+      - name: Start disposable Supabase
+        run: supabase start
+      - name: Replay the entire schema on fresh database
+        run: supabase db reset --local --yes
+      - name: Prove migration idempotency on the isolated database
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f supabase/migrations/20261027000102_supervisor_all_data.sql
+      - name: Verify financial columns, uniqueness, tenant boundaries and function grants
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/supervisor-all-data-db-integration.sql
+      - name: Stop disposable Supabase
+        if: always()
+        run: supabase stop --no-backup

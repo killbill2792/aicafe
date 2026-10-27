@@ -89,6 +89,7 @@ export default async function MorePage() {
     </MoreGroup>
     <MoreGroup title={t("planGoals")}>
       <MoreRow href="/more/plan" Icon={Target} label={t("viewPlan")} />
+      <MoreRow href="/more/financial-settings" Icon={Percent} label={t("financialAssumptions")} />
     </MoreGroup>
     <MoreGroup title={t("alerts")}>
       <MoreRow href="/more/alerts" Icon={AlertTriangle} label={t("viewAlerts")} badge={alertsBadge} />

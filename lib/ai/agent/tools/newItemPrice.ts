@@ -6,6 +6,7 @@ import {requestedPeriod,prorate,periodDays,calendarMonth} from "@/lib/calc/perio
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
 import {resolveCoveredSalesWindow} from "./coverage";
 import {money,percent} from "../explain";
+import {recommendFullCostPrice} from "@/lib/calc/supervisorEconomics";
 const schema=z.strictObject({
  ingredient_cost_cents:z.number().int().positive(),category:z.enum(["drink","food"]),
  packaging_cents:z.number().int().nonnegative().nullable(),
@@ -15,6 +16,28 @@ export const newItemPriceTools={suggest_new_item_price:{
  agentId:"alex",schema,description:"Suggest a price for a new or unsaved item from its ingredient cost, the café's real labor and overhead per item sold, target margin and own menu range. Location is context only: never invent competitor or local prices.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const v=schema.parse(raw),owner=v.ownerInputs;
+  if(ctx.readEconomics){
+   const {economics}=await ctx.readEconomics();
+   const recommended=recommendFullCostPrice({
+    ingredientCents:v.ingredient_cost_cents,packagingCents:v.packaging_cents??0,
+    laborCents:economics.monthlyStaff.valueCents,
+    overheadCents:economics.monthlyBills.valueCents,units:economics.monthlyUnits,
+    feeRate:economics.feeRate,targetMargin:(v.target_margin_percent??(economics.targetMargin*100))/100
+   });
+   return {source:"new_item_price",period:calendarMonth(ctx.asOf),agentId:"alex",
+    status:recommended.missing.length||economics.monthlyStaff.status!=="actual"||
+      economics.monthlyBills.status!=="actual"||economics.feeStatus!=="actual"?"estimate":"actual",saved:false,draft:true,
+    itemName:v.item_name,category:v.category,
+    recommendedPriceCents:recommended.recommendedPriceCents,
+    breakEvenCents:recommended.breakEvenCents,fullCostCents:recommended.fullCostCents,
+    monthlyLabor:economics.monthlyStaff,monthlyBills:economics.monthlyBills,
+    feeRate:economics.feeRate,targetMargin:v.target_margin_percent===null?
+     economics.targetMargin:v.target_margin_percent/100,
+    missing:recommended.missing,
+    numberEstimates:[recommended.recommendedPriceCents,recommended.breakEvenCents,
+      recommended.fullCostCents].filter((value):value is number=>value!==null)
+      .map(value=>({value,unit:"cents" as const,detail:"breakEvenSales"}))};
+  }
   const ownerWindow=owner?.salesPeriod?ownerPeriod(owner.salesPeriod,ctx.asOf):null;
   const coverage=ownerWindow?{period:ownerWindow,label:null}:await resolveCoveredSalesWindow(ctx,requestedPeriod("month",ctx.asOf));
   const period=coverage.period;

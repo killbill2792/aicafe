@@ -1,6 +1,6 @@
 import "server-only";
 import { squarePaginated, squareRequest } from "./client";
-import type { PosAdapter, PosCatalogItem, PosEmployee, PosOrder, PosTimecard } from "../types";
+import type { PosAdapter, PosCatalogItem, PosEmployee, PosOrder, PosTimecard, PosScheduledShift } from "../types";
 
 type SquareMoney = { amount?: number; currency?: string };
 type SquareOrderLineItem = {
@@ -23,6 +23,9 @@ type SquareOrder = {
   net_amounts?: { total_money?: SquareMoney };
   line_items?: SquareOrderLineItem[];
   refunds?: { amount_money?: SquareMoney }[];
+  employee_id?:string;ticket_name?:string;
+  fulfillments?:Array<{type?:string;state?:string}>;
+  tenders?:Array<{employee_id?:string}>;
 };
 type SquarePayment = {
   order_id?: string;
@@ -123,6 +126,10 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         return {
           posOrderId: order.id,
           posLocationId: order.location_id ?? locationId,
+          posEmployeeId: order.employee_id??order.tenders?.find(t=>t.employee_id)?.employee_id??null,
+          diningOption:order.fulfillments?.[0]?.type??null,
+          sourceChannel:order.fulfillments?.[0]?.type??null,
+          guestCount:null,
           closedAt: order.closed_at ?? order.created_at ?? new Date().toISOString(),
           grossSalesCents: gross,
           discountsCents: discounts,
@@ -153,23 +160,71 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
     },
 
     async fetchCatalogItems(): Promise<PosCatalogItem[]> {
-      type Variation={id:string;item_variation_data?:{
-        name?:string;price_money?:SquareMoney;pricing_type?:string}};
-      type CatalogObject={id:string;type:string;item_data?:{
-        name?:string;description?:string;category_id?:string;variations?:Variation[]}};
-      const data=await squareRequest<{objects?:CatalogObject[]}>(
-        accessToken,"/v2/catalog/list?types=ITEM");
-      return (data.objects??[]).filter(o=>o.type==="ITEM").flatMap(o=>{
-        const title=o.item_data?.name??"Item";
-        return (o.item_data?.variations??[]).map(v=>({
-          posItemId:v.id,name:title,baseName:title,
-          sizeLabel:v.item_variation_data?.name??null,
-          priceCents:v.item_variation_data?.price_money?.amount??null,
-          category:o.item_data?.category_id??null,
-          description:o.item_data?.description??null,
-          pricingStrategy:v.item_variation_data?.pricing_type??null
-        }));
-      });
+      type CatalogObject={
+        id:string;type:string;
+        category_data?:{name?:string};
+        modifier_data?:{name?:string;price_money?:SquareMoney};
+        modifier_list_data?:{name?:string;modifiers?:Array<{id?:string;modifier_data?:{name?:string;price_money?:SquareMoney}}>;selection_type?:string};
+        item_variation_data?:{name?:string;item_id?:string;price_money?:SquareMoney;pricing_type?:string;
+          location_overrides?:Array<{location_id?:string;price_money?:SquareMoney;price_overrides?:boolean}>};
+        item_data?:{name?:string;description?:string;category_id?:string;
+          variations?:Array<{id?:string;item_variation_data?:{name?:string;price_money?:SquareMoney;pricing_type?:string;
+          location_overrides?:Array<{location_id?:string;price_money?:SquareMoney;price_overrides?:boolean}>}}>;
+          modifier_list_info?:Array<{modifier_list_id?:string;min_selected_modifiers?:number;max_selected_modifiers?:number}>};
+      };
+      const all:CatalogObject[]=[];
+      let cursor:string|undefined;
+      for(let i=0;i<50;i++){
+        const search=new URLSearchParams({types:"ITEM,ITEM_VARIATION,CATEGORY,MODIFIER_LIST,MODIFIER"});
+        if(cursor)search.set("cursor",cursor);
+        const page=await squareRequest<{objects?:CatalogObject[];cursor?:string}>(
+          accessToken,"/v2/catalog/list?"+search.toString());
+        all.push(...(page.objects??[]));
+        if(!page.cursor)break;
+        cursor=page.cursor;
+        if(i===49)throw new Error("Square catalog pagination incomplete");
+      }
+      const byId=new Map(all.map(row=>[row.id,row]));
+      const categories=new Map(all.filter(row=>row.type==="CATEGORY")
+        .map(row=>[row.id,row.category_data?.name??"Uncategorized"]));
+      const items:PosCatalogItem[]=[];
+      for(const object of all.filter(row=>row.type==="ITEM")){
+        const base=object.item_data?.name??"Item";
+        const infos=object.item_data?.modifier_list_info??[];
+        const modifierGroups=infos.flatMap(info=>{
+          const list=info.modifier_list_id?byId.get(info.modifier_list_id):null;
+          if(!list||list.type!=="MODIFIER_LIST")return [];
+          const options=(list.modifier_list_data?.modifiers??[]).flatMap(option=>{
+            const raw=option.id?byId.get(option.id):null;
+            const data=raw?.modifier_data??option.modifier_data;
+            if(!option.id||!data)return [];
+            return [{posModifierId:option.id,name:data.name??"Modifier",
+              priceCents:data.price_money?.amount??null,pricingStrategy:null}];
+          });
+          return [{posGroupId:list.id,name:list.modifier_list_data?.name??"Modifiers",
+            minSelections:info.min_selected_modifiers??null,
+            maxSelections:info.max_selected_modifiers??null,
+            required:(info.min_selected_modifiers??0)>0,options}];
+        });
+        const variations=object.item_data?.variations??[];
+        for(const variation of variations){
+          const v=variation.id?byId.get(variation.id)?.item_variation_data??variation.item_variation_data:
+            variation.item_variation_data;
+          if(!variation.id)continue;
+          const size=v?.name??null;
+          items.push({posItemId:variation.id,name:base,baseName:base,sizeLabel:size,
+            priceCents:v?.location_overrides?.find(row=>row.location_id===locationId&&row.price_overrides)?.price_money?.amount??v?.price_money?.amount??null,
+            category:categories.get(object.item_data?.category_id??"")??null,
+            description:object.item_data?.description??null,
+            modifierGroups});
+        }
+        if(!variations.length)items.push({
+          posItemId:object.id,name:base,baseName:base,sizeLabel:null,
+          priceCents:null,category:categories.get(object.item_data?.category_id??"")??null,
+          description:object.item_data?.description??null,modifierGroups
+        });
+      }
+      return items;
     },
 
     async fetchEmployees(): Promise<PosEmployee[]> {
@@ -185,6 +240,36 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
       }));
     },
 
+    async fetchPosScheduledShifts({since,until}):Promise<PosScheduledShift[]> {
+      type Raw={id?:string;published_shift_details?:{location_id?:string;team_member_id?:string;
+        job_id?:string;start_at?:string;end_at?:string;is_deleted?:boolean}};
+      const list:Raw[]=[];
+      let cursor:string|undefined;
+      for(let n=0;n<50;n++){
+        const result=await squareRequest<{scheduled_shifts?:Raw[];cursor?:string}>(
+          accessToken,"/v2/labor/scheduled-shifts/search",{
+            method:"POST",body:{query:{filter:{
+              location_ids:[locationId],
+              start:{end_at:until.toISOString()},
+              end:{start_at:since.toISOString()},
+              scheduled_shift_statuses:["PUBLISHED"]
+            }},limit:50,...(cursor?{cursor}:{})}
+          });
+        list.push(...(result.scheduled_shifts??[]));
+        if(!result.cursor)break;
+        cursor=result.cursor;
+        if(n===49)throw new Error("Square scheduled shifts pagination incomplete");
+      }
+      return list.flatMap(shift=>{
+        const d=shift.published_shift_details;
+        if(!shift.id||!d||d.location_id!==locationId||!d.team_member_id||
+          !d.start_at||!d.end_at)return [];
+        if(Date.parse(d.start_at)>=until.getTime()||Date.parse(d.end_at)<=since.getTime())return [];
+        return [{externalShiftId:shift.id,externalEmployeeId:d.team_member_id,
+          externalJobId:d.job_id??null,scheduledStart:d.start_at,scheduledEnd:d.end_at,
+          deleted:d.is_deleted??false}];
+      });
+    },
     async fetchTimecards({ since, until }): Promise<PosTimecard[]> {
       type Timecard = {
         id: string;
@@ -207,7 +292,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
           posTeamMemberId: tc.team_member_id,
           clockIn: tc.start_at!,
           clockOut: tc.end_at ?? null,
-          hourlyWageCents: cents(tc.wage?.hourly_rate),
+          hourlyWageCents: tc.wage?.hourly_rate?.amount ?? null,
           breaks: (tc.breaks ?? [])
             .filter((b) => b.start_at && b.end_at)
             .map((b) => ({ start: b.start_at!, end: b.end_at!, paid: Boolean(b.is_paid) })),

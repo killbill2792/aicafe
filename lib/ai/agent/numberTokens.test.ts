@@ -45,6 +45,11 @@ describe("shared numeric tokenizer",()=>{
    expect(tokens.filter(t=>t.kind==="percent")).toHaveLength(2);
    expect(tokens.filter(t=>t.kind==="count").map(t=>t.value)).toEqual([10]);
  });
+ it.each([["10¢","en"],["10 cents","en"],["10 centavos","es"],["١٠ سنت","ar"]] as const)("treats %s as one 10-cent chip", (source,locale)=>{
+  const tokens=tokenizeNumbers(source,locale);
+  expect(tokens).toHaveLength(1);
+  expect(tokens[0]).toMatchObject({kind:"money",unit:"cents",value:10,start:0,end:source.length});
+ });
  it("never overlaps, including malformed randomized prose",()=>{
   let seed=47;
   const chars="0:31, .$٧٪١-5a| ١٢";
