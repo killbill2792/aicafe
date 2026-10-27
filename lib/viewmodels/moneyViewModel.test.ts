@@ -357,3 +357,20 @@ describe("Money staff-only missing-wage day",()=>{
     expect(restored.ownerProfitCents).not.toBeNull();
   });
 });
+
+describe("Recovery with known-only missing wages",()=>{
+  it("cannot claim bills covered or final projected profit",()=>{
+    const fixture=getFixtureSnapshot();
+    const missing=fixture.monthActualDays.map((day,i)=>i===0?{
+      ...day,wagesCents:200,staffTaxCents:25,laborWageStatus:"missing" as const}:day);
+    const partial=buildCostRecoveryViewModel({...fixture,
+      monthActualDays:missing,monthRecordedDays:missing});
+    expect(partial.monthlyStaffCents).toBeNull();
+    expect(partial.allCovered).toBe(false);
+    expect(partial.projectedMonthEndProfitCents).toBeNull();
+    const restored=missing.map((day,i)=>i===0?{
+      ...day,laborWageStatus:"actual" as const}:day);
+    expect(buildCostRecoveryViewModel({...fixture,
+      monthActualDays:restored,monthRecordedDays:restored}).monthlyStaffCents).not.toBeNull();
+  });
+});
