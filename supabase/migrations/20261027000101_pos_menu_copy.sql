@@ -190,7 +190,7 @@ create or replace function public.pos_import_toast_attendance(p_business_id uuid
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare r record;v_id text;v_wage bigint;v_source text;
  v_existing public.timecards%rowtype; v_count integer:=0;v_skipped integer:=0;
- v_dates jsonb:='[]'::jsonb;
+ v_intervals jsonb:='[]'::jsonb;
 begin
  if auth.role()<>'service_role' or not exists(
   select 1 from public.toast_location_mappings where business_id=p_business_id
@@ -251,12 +251,17 @@ begin
     excluded.hourly_wage_cents,excluded.breaks);
   if found then
    v_count:=v_count+1;
-   v_dates:=v_dates||to_jsonb(r.clock_in::text);
-   if v_existing.clock_in is not null and v_existing.clock_in is distinct from r.clock_in
-   then v_dates:=v_dates||to_jsonb(v_existing.clock_in::text);end if;
+   -- Preserve both affected day ranges (including overnight and changed
+   -- clock-out dates). A correction can remove wages from an old day.
+   v_intervals:=v_intervals||jsonb_build_array(
+    jsonb_build_object('start',r.clock_in,'end',r.clock_out));
+   if v_existing.id is not null then
+    v_intervals:=v_intervals||jsonb_build_array(
+     jsonb_build_object('start',v_existing.clock_in,'end',v_existing.clock_out));
+   end if;
   end if;
  end loop;
- return jsonb_build_object('changed',v_count,'skipped',v_skipped,'changedClockIns',v_dates);
+ return jsonb_build_object('changed',v_count,'skipped',v_skipped,'changedIntervals',v_intervals);
 end $$;
 revoke all on function public.pos_import_toast_attendance(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.pos_import_toast_attendance(uuid,uuid) to service_role;
