@@ -318,7 +318,7 @@ create or replace function public.pos_resolve_staff_import_review(
  p_decision text,p_employee_id uuid default null)
 returns boolean language plpgsql security definer set search_path=public as $$
 declare v_review public.pos_import_reviews%rowtype;
- v_restaurant uuid;v_employee uuid;
+ v_restaurant uuid;v_employee_guid uuid;
 begin
  if auth.role()<>'authenticated' or not public.scheduling_is_owner(p_business_id)
  then raise exception 'staff review unauthorized' using errcode='42501';end if;
@@ -349,13 +349,23 @@ begin
    if not found then return false;end if;
   else
    v_restaurant:=split_part(p_source_key,':',2)::uuid;
-   select d.linked_employee_id into v_employee
-    from public.toast_labor_entries l join public.toast_employee_directory d
-      on d.business_id=l.business_id and d.restaurant_guid=l.restaurant_guid
-      and d.employee_guid=l.external_employee_id
+   select l.external_employee_id into v_employee_guid
+    from public.toast_labor_entries l
     where l.business_id=p_business_id and l.restaurant_guid=v_restaurant
       and l.external_time_entry_id=split_part(p_source_key,':',3)::uuid;
-   if v_employee is distinct from p_employee_id then return false;end if;
+   if not found then return false;end if;
+   update public.employees set pos_team_member_id=
+    'toast:'||v_restaurant::text||':'||v_employee_guid::text
+    where business_id=p_business_id and id=p_employee_id
+     and (pos_team_member_id is null or
+      pos_team_member_id='toast:'||v_restaurant::text||':'||v_employee_guid::text);
+   if not found then return false;end if;
+   update public.toast_employee_directory set linked_employee_id=p_employee_id,
+    linked_at=now()
+    where business_id=p_business_id and restaurant_guid=v_restaurant
+      and employee_guid=v_employee_guid
+      and (linked_employee_id is null or linked_employee_id=p_employee_id);
+   if not found then return false;end if;
   end if;
  elsif p_review_type='shift_corrected' then
   if p_decision='accept_toast' then
