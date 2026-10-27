@@ -14,6 +14,7 @@ import { getProductPhoto } from "@/lib/data/getProductPhoto";
 import {listPantry} from "@/lib/actions/pantry";
 import {getMenuProductAddons} from "@/lib/actions/menuAddons";
 import {getUnpricedProductSizes} from "@/lib/data/getUnpricedProductSizes";
+import {getPublishedModifiersForItems} from "@/lib/data/getUnpricedPublishedMenu";
 import {getMenuComboComponents} from "@/lib/actions/getMenuComboComponents";
 import SavedComboDetail from "@/components/menu/SavedComboDetail";
 
@@ -42,7 +43,7 @@ export default async function MenuItemPage({
   if (!item || !editItem) notFound();
   const siblingSizes = stableSortSizes(controlItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.id !== editItem.id));
   const productEditItems = stableSortSizes(editItems.filter((candidate) => candidate.baseName === editItem.baseName));
-  const [pantry,savedAddons,draftSizes,comboParts] = await Promise.all([listPantry(),getMenuProductAddons(productEditItems.map(product=>product.id)),getUnpricedProductSizes(itemId),getMenuComboComponents(itemId)]);
+  const [pantry,savedAddons,draftSizes,comboParts,posModifierGroups] = await Promise.all([listPantry(),getMenuProductAddons(productEditItems.map(product=>product.id)),getUnpricedProductSizes(itemId),getMenuComboComponents(itemId),getPublishedModifiersForItems(productEditItems.map(product=>product.id))]);
   const initialTab = setupRecipe === "1" ? "recipe" : parseMenuDetailTab(tab);
   const initialPriceItemId = initialTab === "overview" && productEditItems.some((candidate) => candidate.id === editPrice) ? editPrice : undefined;
 
@@ -53,6 +54,7 @@ export default async function MenuItemPage({
         item={item}
         pantry={pantry.map(({id,name,category,baseUnit,costPerBaseMicros})=>({id,name,category,baseUnit,costPerBaseMicros}))}
         savedAddons={savedAddons}
+        posModifierGroups={posModifierGroups}
         draftSizes={draftSizes}
         ingredients={ingredients}
         menuGroupOptions={menuGroupOptions}
