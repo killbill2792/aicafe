@@ -70,3 +70,22 @@ describe("owner-truthful Home inputs", () => {
     expect(buildHomeViewModel(snapshot, "month").isGettingStarted).toBe(true);
   });
 });
+
+
+describe("Home with known-only wages from missing labor day",()=>{
+  it("never shows final profit or today's staff rate; complete days remain known",()=>{
+    const snapshot=getFixtureSnapshot();
+    const missing={...snapshot.todayDay,wagesCents:1500,staffTaxCents:180,
+      laborWageStatus:"missing" as const};
+    snapshot.todayDay=missing;
+    snapshot.monthActualDays=snapshot.monthActualDays.map(day=>day.date===missing.date?missing:day);
+    snapshot.last28Days=snapshot.last28Days.map(day=>day.date===missing.date?missing:day);
+    const vm=buildHomeViewModel(snapshot,"today");
+    expect(vm.ownerProfitCents).toBeNull();
+    expect(vm.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(vm.staffCostPerMinuteNow).toBeNull();
+    expect(buildHomeViewModel({...snapshot,todayDay:{...missing,laborWageStatus:"actual"},
+      monthActualDays:snapshot.monthActualDays.map(day=>day.date===missing.date?{...missing,laborWageStatus:"actual"}:day)},"today")
+      .staffCostPerMinuteNow).not.toBeNull();
+  });
+});
