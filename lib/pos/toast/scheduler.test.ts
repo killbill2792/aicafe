@@ -166,6 +166,24 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
    .toMatchObject({state:"completed",days_done:1});
   expect(f.calls).toContain("toast_release_lease");
  });
+ it("completes backfill before optional menu/roster/labor phase without spending backfill budget",async()=>{
+  const f=makeDB(),events:string[]=[];
+  f.status.add(d); // Daily is already imported.
+  f.runs.push({id:"early-backfill",kind:"backfill",state:"queued",
+   requested_from:"2026-10-19",requested_to:"2026-10-19",
+   days_done:0,days_total:1,cursor:{},resume_at:null});
+  const originalImport=m.importDay.getMockImplementation()!;
+  m.importDay.mockImplementation(async(...args:unknown[])=>{
+   events.push("backfill");return originalImport(...args);
+  });
+  m.optional.mockImplementation(async()=>{
+   events.push("optional");
+   expect(f.runs.find(r=>r.id==="early-backfill")?.days_done).toBe(1);
+  });
+  await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(events).toEqual(["backfill","optional"]);
+  expect(f.imports).toEqual(["2026-10-19"]);
+ });
  it("starts a queued 65-day first backfill before four repulls, within the full single-café tick",async()=>{
   vi.useFakeTimers();vi.setSystemTime(now);
   const f=makeDB();
