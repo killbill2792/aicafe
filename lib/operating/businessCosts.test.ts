@@ -308,3 +308,23 @@ describe("Historical rollup proof cannot be manufactured by today's newly added 
       }}},requested).completeness).toBe("complete");
   });
 });
+
+
+describe("BusinessCostSummary known-only labor",()=>{
+  it("labels non-null partial wages unknown and cannot claim complete costs",()=>{
+    const date=fixture.monthActualDays[0].date;
+    const partial=fixture.monthActualDays.map(day=>day.date===date?{
+      ...day,wagesCents:1200,staffTaxCents:144,
+      laborWageStatus:"missing" as const}:day);
+    const snapshot={...fixture,monthActualDays:partial,monthRecordedDays:partial};
+    const cost=businessCostSummaryFromSnapshot(snapshot,period);
+    expect(cost.missingInputs).toContain("laborWageUnknown:"+date);
+    expect(cost.completeness).toBe("partial");
+    expect(cost.observed.loadedStaff).toBe(false);
+    const full=businessCostSummaryFromSnapshot({...fixture,
+      monthRecordedDays:partial.map(day=>day.date===date?{
+        ...day,laborWageStatus:"actual" as const}:day)},period);
+    expect(full.missingInputs).not.toContain("laborWageUnknown:"+date);
+    expect(full.observed.loadedStaff).toBe(true);
+  });
+});
