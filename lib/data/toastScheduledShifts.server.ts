@@ -24,7 +24,7 @@ export async function readToastPlannedShifts(db:SupabaseClient,businessId:string
   db.from("toast_location_mappings").select("location_id,restaurant_guid")
    .eq("business_id",businessId),
   db.from("toast_employee_directory")
-   .select("restaurant_guid,employee_guid,display_name")
+   .select("restaurant_guid,employee_guid,display_name,linked_employee_id")
    .eq("business_id",businessId).limit(5001),
  ]);
  if(planned.error)throw planned.error;
@@ -33,8 +33,19 @@ export async function readToastPlannedShifts(db:SupabaseClient,businessId:string
  if((planned.data??[]).length>1000||(roster.data??[]).length>5000)
   throw new Error("Toast schedule snapshot truncated");
  const locationMap=new Map((mappings.data??[]).map(r=>[r.location_id,r.restaurant_guid]));
- const employeeNames=new Map((roster.data??[]).map(r=>[
-  r.restaurant_guid+":"+r.employee_guid,r.display_name
+ // Prefer the name the owner uses in Team, including any manual rename.
+ // Toast's roster label is only a fallback for unlinked staff.
+ const linkedIds=[...new Set((roster.data??[])
+  .map(row=>row.linked_employee_id as string|null).filter((id):id is string=>Boolean(id)))];
+ const canonical=linkedIds.length?await db.from("employees").select("id,display_name")
+  .eq("business_id",businessId).in("id",linkedIds).limit(5001):
+  {data:[] as Array<{id:string;display_name:string}>,error:null};
+ if(canonical.error)throw canonical.error;
+ if((canonical.data??[]).length>5000)throw new Error("Toast linked roster truncated");
+ const canonicalNames=new Map((canonical.data??[]).map(row=>[row.id,row.display_name]));
+ const employeeNames=new Map((roster.data??[]).map(row=>[
+  row.restaurant_guid+":"+row.employee_guid,
+  canonicalNames.get(row.linked_employee_id)??row.display_name
  ]));
  return (planned.data??[]).filter(row=>{
   const start=formatInTimeZone(new Date(row.scheduled_start),timezone,"yyyy-MM-dd");
