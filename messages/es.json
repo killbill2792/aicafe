@@ -2813,6 +2813,8 @@
     }
   },
   "StaffSchedule": {
+    "toastPlannedTitle": "Turnos previstos de Toast",
+    "toastPlannedNotPaid": "Turnos de Toast de solo lectura. Son planes, no horas registradas; no se cuentan como salarios pagados ni como horarios aprobados.",
     "nudgeEarlier": "Adelantar {field} 15 minutos",
     "nudgeLater": "Atrasar {field} 15 minutos",
     "breakMinutesLabel": "Minutos",
