@@ -1,5 +1,6 @@
 {
   "ToastConnect": {
+    "ownerPayrollLimitsNote": "Toast comparte las horas trabajadas y los salarios por hora, pero no los impuestos patronales, los beneficios, los salarios fijos ni los pagos de Toast Payroll. Añade una vez los costos mensuales que falten en Equipo → Reglas y costos. AI Cafe los mostrará como estimaciones proporcionadas por ti. Toast tampoco comparte recetas ni costos de ingredientes.",
     "laborScopeMissing": "No hay acceso a los datos laborales de Toast. La sincronización del menú y las ventas puede continuar; las horas y los salarios requieren permiso de personal.",
     "menuScopeMissing": "No hay acceso al menú de Toast. Las ventas pueden importarse; los productos se vincularán cuando se otorgue permiso al menú.",
     "reviewTitle": "Revisar correspondencias de personal y menú de Toast",
