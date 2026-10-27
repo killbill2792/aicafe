@@ -4,6 +4,7 @@ import {
   computeCostRecovery,
   ingredientsHealthBand,
   ownerProfitCentsForPeriod,
+  laborKnown,
   staffCostCentsForPeriod,
   ratio,
   staffHealthBand,
@@ -53,7 +54,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     .reduce((sum, line) => sum + line.amountCents, 0);
 
   const monthRecordedDays = snapshot.monthRecordedDays ?? snapshot.monthActualDays;
-  const missingMonthWage=monthRecordedDays.some(d=>d.wagesCents===null||d.staffTaxCents===null);
+  const missingMonthWage=monthRecordedDays.some(d=>!laborKnown(d));
   const staffSoFarCents=missingMonthWage?null:monthRecordedDays.reduce((sum,day)=>
     sum+(day.wagesCents??0)+(day.staffTaxCents??0),0);
   const todayDay = Number(snapshot.todayDateStr.slice(-2));
@@ -138,7 +139,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     ].filter(day=>day.date>=calendar.start&&day.date<=calendar.end);
   const salesCents = sumCents(days, (d) => d.netSalesCents);
   const ingredientsCents = sumCents(days, (d) => d.ingredientsCents);
-  const wageUnknown=recordedLaborDays.some(d=>d.wagesCents===null||d.staffTaxCents===null);
+  const wageUnknown=recordedLaborDays.some(d=>!laborKnown(d));
   const wagesCents=wageUnknown?null:sumCents(recordedLaborDays,d=>d.wagesCents??0);
   const staffTaxCents=wageUnknown?null:sumCents(recordedLaborDays,d=>d.staffTaxCents??0);
   const cardFeesCents = sumCents(days, (d) => d.cardFeesCents);
@@ -204,7 +205,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     ) + 1;
     const covered = new Set(rows.map(d => d.date)).size === expected &&
       rows.length === expected &&
-      rows.every(d => d.staffTaxStatus !== "estimated" && d.wagesCents!==null && d.staffTaxCents!==null);
+      rows.every(d => d.staffTaxStatus !== "estimated" && laborKnown(d));
     return { covered, costCents: staffCostCentsForPeriod(rows) };
   };
   const currentLabor = observedLabor(calendar);
