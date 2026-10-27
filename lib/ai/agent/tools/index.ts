@@ -200,7 +200,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       if(chosen)filtered=[chosen];
       else{
         const resolved=resolveEntity("product",input.query,active,{nameOf:i=>i.name,idOf:i=>i.id,
-          describe:i=>i.category+" · "+(i.priceCents/100).toFixed(2)});
+          describe:i=>i.category+" · "+(i.priceCents===null?"open price":(i.priceCents/100).toFixed(2))});
         if(resolved.status!=="resolved")return {...choicePayload(resolved,"menu_items",null),agentId:"alex"};
         filtered=[resolved.value];
       }
@@ -211,14 +211,19 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const visible=filtered.slice(0,limit);
     let facts:Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>={};
     let evidenceUnavailable=false;
-    try {if(ctx.menuPriceEvidence)facts=await ctx.menuPriceEvidence(visible);}
+    try {if(ctx.menuPriceEvidence)facts=await ctx.menuPriceEvidence(visible.filter(
+      (item):item is typeof item & {priceCents:number}=>item.priceCents!==null));}
     catch {evidenceUnavailable=true;}
     return { source: "menu_items", period: null, agentId:"alex",
       missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : []),
         ...(evidenceUnavailable?["menuPriceEvidenceUnavailable"]:[])],
       items: visible.map(item => ({
         id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,unit:"cents",
-        priceSource:evidenceUnavailable?"unknown":facts[item.id]?.priceSource??"initial",
+        baseName:item.baseName,sizeLabel:item.sizeLabel,description:item.description,
+        menuGroup:item.menuGroup,visibility:item.visibility,pricingStrategy:item.pricingStrategy,
+        priceStatus:item.priceCents===null?"open_or_unknown":"fixed",
+        modifierGroups:item.modifierGroups,
+        priceSource:item.priceCents===null?"unknown":evidenceUnavailable?"unknown":facts[item.id]?.priceSource??"initial",
         realizedAvgCents:facts[item.id]?.realizedAvgCents??null,
         priceCheck:facts[item.id]?.priceCheck??"unknown",pricePeriod:facts[item.id]?.pricePeriod??null,
         priceEvidenceStatus:facts[item.id]?.priceEvidenceStatus??"unknown",
