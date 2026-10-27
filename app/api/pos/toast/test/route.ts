@@ -19,7 +19,9 @@ export async function POST(request:Request){
   const {data:mappings,error}=await db.from("toast_location_mappings")
     .select("restaurant_guid,verified_at,location_id,toast_time_zone").eq("business_id",businessId);
   if(error||!mappings?.length)return json(400,{error:"no_locations"});
-  const {data:current}=await db.from("toast_api_credentials").select("state").eq("business_id",businessId).maybeSingle();
+  const {data:current,error:credentialError}=await db.from("toast_api_credentials")
+    .select("state").eq("business_id",businessId).maybeSingle();
+  if(credentialError)return json(503,{error:"credential_read_failed"});
   const previouslyVerified=current?.state==="verified"&&mappings.every(l=>l.verified_at);
   const client=createToastClient(db,businessId);
   const start=toToastTimestamp(new Date(Date.now()-60000));
@@ -61,6 +63,17 @@ export async function POST(request:Request){
     // The menu or labor scope may be absent; each failed optional source is isolated.
     let menuPending=false,laborPending=false;
     for(const mapping of mappings){
+      // The cron importer uses this same verified-location lease. Do not race
+      // its alias matching, roster linking or price-history updates.
+      const {data:nonce,error:leaseError}=await db.rpc("toast_acquire_lease",{
+        p_business_id:businessId,p_restaurant_guid:mapping.restaurant_guid,p_seconds:290
+      });
+      if(leaseError||!nonce){
+        menuPending ||= scopesAvailable.menus;
+        laborPending ||= scopesAvailable.labor;
+        continue; // Verification remains successful; cron owns the next sync.
+      }
+      try{
       const scope={businessId,restaurantGuid:mapping.restaurant_guid,
         locationId:mapping.location_id,timezone:mapping.toast_time_zone||"America/Los_Angeles"};
       if(scopesAvailable.menus){
@@ -87,6 +100,14 @@ export async function POST(request:Request){
           laborPending=true;
           try{await recordToastCopyFailure(db,scope,"labor",copyError);}
           catch{laborPending=true;}
+        }
+      }
+      }finally{
+        const {error:releaseError}=await db.rpc("toast_release_lease",{p_nonce:nonce});
+        if(releaseError){
+          // Do not unverify the already-verified café for a secondary failure.
+          menuPending ||= scopesAvailable.menus;
+          laborPending ||= scopesAvailable.labor;
         }
       }
     }
