@@ -218,6 +218,10 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    // A committed import's failed cost refresh is never another order import.
    await retryToastRollupRefreshes(db,deadlineAt,5,m.business_id);
    });
+   await isolated("optional",async()=>{
+   if(Date.now()<deadlineAt)
+    await syncToastOptionalSources(db,m,now,deadlineAt);
+   });
    await isolated("daily",async()=>{
    const closed=eligibleClosedDay(now,m.toast_time_zone,m.closeout_hour);
    if(closed&&Date.now()<deadlineAt){
@@ -292,10 +296,6 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     processed+=done;
     if(run.kind==="backfill")backfillDone+=done;
    }
-   });
-   await isolated("optional",async()=>{
-   if(Date.now()<deadlineAt)
-    await syncToastOptionalSources(db,m,now,deadlineAt);
    });
    await isolated("cleanup",async()=>{
    if(Date.now()<deadlineAt)await db.rpc("toast_cleanup_abandoned_pages");
