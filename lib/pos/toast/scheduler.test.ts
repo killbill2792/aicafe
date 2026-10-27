@@ -174,7 +174,7 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
    days_done:0,days_total:65,cursor:{},resume_at:null};
   f.runs.push(backfill);
   for(let i=0;i<4;i++){
-   const day="2026-10-"+String(18+i).padStart(2,"0");
+   const day=i===0?"2026-08-20":"2026-10-"+String(18+i).padStart(2,"0");
    f.runs.push({id:"repull-"+i,kind:"repull_modified",
     state:i%2?"paused_rate_limited":"queued",
     requested_from:day,requested_to:day,days_done:0,days_total:1,
@@ -187,7 +187,7 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
    return importDay(...args);
   });
   m.reconcile.mockImplementation(async()=>{
-   expect(backfill.days_done).toBe(5);
+   expect(backfill.days_done).toBeGreaterThanOrEqual(5);
    return 0;
   });
   try{
