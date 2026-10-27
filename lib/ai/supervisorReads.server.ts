@@ -27,7 +27,7 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
     async salesTrend(id: string, period: CafeStatePeriod): Promise<KnownSlice<DailyFacts[]>> {
       assertScope(id);
       const { data, error } = await client.from("daily_rollups")
-        .select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents")
+        .select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents")
         .eq("business_id",id).gte("business_date",period.from).lte("business_date",period.to)
         .order("business_date",{ascending:true}).limit(370);
       if (error) throw error;

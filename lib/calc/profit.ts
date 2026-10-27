@@ -9,8 +9,9 @@ export function ingredientsCentsForPeriod(days: DailyFacts[]): number {
   return sumCents(days, (d) => d.ingredientsCents);
 }
 
-export function staffCostCentsForPeriod(days: DailyFacts[]): number {
-  return sumCents(days, (d) => d.wagesCents + d.staffTaxCents);
+export function staffCostCentsForPeriod(days: DailyFacts[]): number | null {
+  if(days.some(d=>d.wagesCents===null||d.staffTaxCents===null))return null;
+  return sumCents(days, (d) => (d.wagesCents??0) + (d.staffTaxCents??0));
 }
 
 export function cardFeesCentsForPeriod(days: DailyFacts[]): number {
@@ -18,18 +19,21 @@ export function cardFeesCentsForPeriod(days: DailyFacts[]): number {
 }
 
 /** Total costs = ingredients + staff cost + card fees + running costs. */
-export function totalCostsCentsForPeriod(days: DailyFacts[], runningCostsCents: number): number {
+export function totalCostsCentsForPeriod(days: DailyFacts[], runningCostsCents: number): number | null {
+  const staff=staffCostCentsForPeriod(days);
+  if(staff===null)return null;
   return (
     ingredientsCentsForPeriod(days) +
-    staffCostCentsForPeriod(days) +
+    staff +
     cardFeesCentsForPeriod(days) +
     runningCostsCents
   );
 }
 
 /** Owner profit = net sales − total costs. */
-export function ownerProfitCentsForPeriod(days: DailyFacts[], runningCostsCents: number): number {
-  return netSalesCentsForPeriod(days) - totalCostsCentsForPeriod(days, runningCostsCents);
+export function ownerProfitCentsForPeriod(days: DailyFacts[], runningCostsCents: number): number | null {
+  const costs=totalCostsCentsForPeriod(days,runningCostsCents);
+  return costs===null?null:netSalesCentsForPeriod(days)-costs;
 }
 
 // Health check bands (docs/05-calculations.md "Health check bands").
