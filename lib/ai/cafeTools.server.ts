@@ -132,6 +132,17 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
           estimatedInputs:amount===null?[]:["ownerMonthlyPayrollExtras"],
           staleInputs:[]}};
     },
+    async(requested)=>{
+      assertBusiness(requested);
+      const {data,error}=await client.rpc("toast_business_scope_summary",{
+        p_business_id:requested
+      });
+      if(error)throw error;
+      const parsed=data as {menus?:unknown;labor?:unknown}|null;
+      const choose=(input:unknown)=>typeof input==="boolean"?input:null;
+      return {available:true,value:{menus:choose(parsed?.menus),labor:choose(parsed?.labor)},
+        quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}};
+    },
   );
   return new BusinessScopedCafeTools(tools, businessId);
 }
