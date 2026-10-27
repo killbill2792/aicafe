@@ -173,4 +173,56 @@ begin
 end
 $integration$;
 
+
+-- G6/G7/G10/G11: sold-only GUIDs are archived once, sized lines recover
+-- after the catalog arrives, and re-link never touches another café's sales.
+do $catalog_link$
+declare b uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+ r uuid:='cccccccc-cccc-4ccc-8ccc-ccccccccff01';
+ loc uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccc01';
+ item_guid text:='cccccccc-cccc-4ccc-8ccc-cccccccc0030';
+ size_guid text:='cccccccc-cccc-4ccc-8ccc-cccccccc0040';
+ pos text;order_id uuid;line_id uuid;archived_id uuid;sized_id uuid;
+ actual_id uuid; n integer;
+begin
+ pos:='toast:'||r::text||':'||item_guid;
+ insert into public.orders(business_id,location_id,pos_order_id,closed_at,
+  business_date,gross_sales_cents,net_sales_cents)
+ values(b,loc,'toast:copy-synthetic-001','2026-10-26T18:00:00Z',
+   '2026-10-26',550,550) returning id into order_id;
+ insert into public.order_lines(order_id,pos_item_id,name,quantity,
+  net_sales_cents,voided,modifiers)
+ values(order_id,pos,'Latte sold before menu import',1,550,false,
+   jsonb_build_array(jsonb_build_object(
+    'posModifierId',size_guid,'name','Large','quantity',1)))
+ returning id into line_id;
+ perform public.pos_relink_toast_lines(b,r);
+ select menu_item_id into archived_id from public.order_lines where id=line_id;
+ if archived_id is null or not exists(select 1 from public.menu_items
+   where id=archived_id and business_id=b and is_active=false
+   and price_cents is null and pos_item_id=pos)
+ then raise exception 'unknown sold-only item must be one archived null-price row';end if;
+ perform public.pos_relink_toast_lines(b,r);
+ select count(*) into n from public.menu_items where business_id=b and pos_item_id=pos;
+ if n<>1 then raise exception 'repeated sold-only relink duplicated menu identity';end if;
+ insert into public.menu_items(business_id,pos_item_id,name,base_name,
+   size_label,price_cents,is_active,catalog_source)
+ values(b,pos||':size:'||size_guid,'Latte','Latte','Large',550,true,'toast')
+ returning id into sized_id;
+ perform public.pos_relink_toast_lines(b,r);
+ select menu_item_id into actual_id from public.order_lines where id=line_id;
+ if actual_id is distinct from sized_id then
+  raise exception 'sold base guid and size modifier did not relink to canonical size';end if;
+ if not exists(select 1 from public.menu_items where id=archived_id
+   and is_active=false)then
+  raise exception 'relink must retain archived item and historical identity';end if;
+ perform public.pos_relink_toast_lines(b,r);
+ if (select menu_item_id from public.order_lines where id=line_id)
+   is distinct from sized_id then
+  raise exception 'second sized relink changed canonical identity';end if;
+ if (select count(*) from public.order_lines where order_id=order_id)<>1 then
+  raise exception 'relink must not duplicate sales lines';end if;
+end
+$catalog_link$;
+
 rollback;
