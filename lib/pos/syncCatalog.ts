@@ -174,7 +174,8 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
    if(/^[0-9a-f-]{36}$/i.test(guid)){
     const {error:linkErr}=await db.from("toast_catalog_facts")
      .update({linked_menu_item_id:itemId})
-     .eq("business_id",businessId).eq("kind","item").eq("provider_guid",guid)
+     .eq("business_id",businessId).eq("restaurant_guid",options.restaurantGuid??item.posItemId.split(":")[1])
+     .eq("kind","item").eq("provider_guid",guid)
      .is("linked_menu_item_id",null);
     resultError(linkErr);
    }
