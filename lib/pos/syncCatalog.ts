@@ -123,14 +123,15 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
   }
   if(item.modifierGroups){
    const {data:oldGroups,error:oldError}=await db.from("menu_item_modifier_groups")
-    .select("pos_group_id,pos_group_name,min_selections,max_selections,required")
+    .select("pos_group_id,pos_group_name,pos_metadata,min_selections,max_selections,required")
     .eq("business_id",businessId).eq("menu_item_id",itemId);
    resultError(oldError);
    const previous=new Map((oldGroups??[]).map(g=>[g.pos_group_id,g]));
    const groupIds:string[]=[];
    for(const group of item.modifierGroups){
     groupIds.push(group.posGroupId);
-    const groupValues={pos_group_name:group.name,min_selections:group.minSelections,
+    const groupValues={pos_group_name:group.name,pos_metadata:group.posMetadata??{},
+     min_selections:group.minSelections,
      max_selections:group.maxSelections,required:group.required};
     const prior=previous.get(group.posGroupId);
     if(!prior||!same(Object.fromEntries(Object.keys(groupValues).map(
@@ -143,10 +144,11 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
     }
     for(const option of group.options){
      const {data:existing,error:readError}=await db.from("modifier_recipes")
-       .select("id,name,price_cents,pos_group_id,pos_group_name,is_active")
+       .select("id,name,price_cents,pos_group_id,pos_group_name,pos_pricing_strategy,pos_metadata,is_active")
        .eq("business_id",businessId).eq("pos_modifier_id",option.posModifierId).maybeSingle();
      resultError(readError);
      const values={name:option.name,price_cents:option.priceCents,
+      pos_pricing_strategy:option.pricingStrategy,pos_metadata:option.posMetadata??{},
       pos_group_id:group.posGroupId,pos_group_name:group.name,is_active:true};
      if(!existing){
       const {error:modifierError}=await db.from("modifier_recipes").upsert({
