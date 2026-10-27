@@ -216,6 +216,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
             priceCents:v?.location_overrides?.find(row=>row.location_id===locationId&&row.price_overrides)?.price_money?.amount??v?.price_money?.amount??null,
             category:categories.get(object.item_data?.category_id??"")??null,
             description:object.item_data?.description??null,
+            pricingStrategy:v?.pricing_type??null,
             modifierGroups});
         }
         if(!variations.length)items.push({

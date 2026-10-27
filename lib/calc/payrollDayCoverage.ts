@@ -25,7 +25,7 @@ export function payrollDayCoverage(cards:readonly ClockedWageEvidence[],
     !dayCards.every(row=>typeof row.clockOut==="string"&&validCents(row.hourlyWageCents))||
     !validCents(rollup.staffWagesCents)||!validCents(rollup.staffTaxCents)||
     !laborKnown({wagesCents:rollup.staffWagesCents,staffTaxCents:rollup.staffTaxCents,
-      laborWageStatus:rollup.laborWageStatus}))continue;
+      laborWageStatus:rollup.laborWageStatus??"missing"}))continue;
   coveredDates.add(date);
   if(rollup.taxStatus!=="actual")taxEstimatedDays.add(date);
  }
