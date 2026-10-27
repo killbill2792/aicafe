@@ -113,6 +113,9 @@ export const SOURCE_SURFACES = {
     getOpenAlerts:{restricted:"Owner alert rows need a bounded typed source/status projection"},
     getAlertById:{restricted:"Alert-by-ID requires owner-scope and separate evidence policy"},
   },
+  "lib/data/posImportReviews.server.ts":{
+    getOpenPosStaffImportReviews:{restricted:"Owner-scoped pending Toast staff/timecard reviews with private employee identifiers; read only through bounded Staff UI and labor chat"},
+  },
   "lib/data/getCatalogMatchReview.ts":{
     getCatalogMatchReview:{restricted:"Raw POS mapping review contains private import identity metadata"},
   },
