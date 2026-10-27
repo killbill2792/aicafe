@@ -206,8 +206,20 @@ export function extractAtomicSnapshot(
     // Daily staff cents have no attendance/wage coverage status in the atomic
     // RPC. A zero may mean missing labor rather than an observed zero.
     // Use source-bound employee wages + burden for what-if labor instead.
-    case "labor.daily_costs":
-      return blocked("labor_attendance_and_wage_coverage_not_proven");
+    case "labor.daily_costs":{
+      // Attendance/coverage is still unverified by this snapshot, so expose
+      // no wage totals. But preserve precise NULL-day and estimated-tax
+      // diagnostics instead of hiding evidence behind a generic error.
+      const seen=snapshot.sources.dailyRollups.filter(row=>
+        query.period&&row.business_date>=query.period.from&&
+        row.business_date<=query.period.to);
+      const unknown=[...new Set(seen.filter(row=>
+        row.staff_wages_cents===null||row.staff_tax_cents===null)
+        .map(row=>"labor_wage_or_tax_missing:"+row.business_date))].sort();
+      return result([],["labor_attendance_and_wage_coverage_not_proven",...unknown],
+        seen.some(row=>row.staff_tax_status==="estimated")?
+         ["estimated_payroll_tax"]:[]);
+    }
     default:return null;
   }
 }
