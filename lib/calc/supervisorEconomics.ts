@@ -7,6 +7,12 @@ export type Figure={valueCents:number|null;status:FigureStatus;reason:string;mis
 export const figure=(valueCents:number|null,status:FigureStatus,reason:string,missingDays:string[]=[]):Figure=>({
  valueCents,status:valueCents===null?"missing":status,reason,missingDays
 });
+/** Owner costs are EXTRAS, never a substitute for known/clocked payroll.
+ * Without a clocked-labor basis, even saved extras cannot certify total payroll. */
+export function addOwnerPayrollExtras(clockedMonthlyCents:number|null,extrasCents:number|null):number|null{
+ if(clockedMonthlyCents===null)return null;
+ return clockedMonthlyCents+(extrasCents??0);
+}
 export type Economics={
  monthlyBills:Figure;monthlyStaff:Figure;monthlyRevenue:Figure;
  ingredientRate:number|null;feeRate:number|null;

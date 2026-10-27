@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {figure,unifiedBreakEven,recommendFullCostPrice,simulateEconomics,type Economics} from "./supervisorEconomics";
+import {figure,unifiedBreakEven,recommendFullCostPrice,simulateEconomics,addOwnerPayrollExtras,type Economics} from "./supervisorEconomics";
 const base:Economics={
  monthlyBills:figure(746700,"actual","Recurring bills"),monthlyStaff:figure(1300000,"owner","You told me",["2026-10-24","2026-10-25","2026-10-26"]),
  monthlyRevenue:figure(3_000_000,"actual","Recorded sales"),
@@ -8,9 +8,15 @@ const base:Economics={
  missingDays:["2026-10-24","2026-10-25","2026-10-26"],
 };
 describe("single deterministic supervisor economics model",()=>{
+ it("adds extras exactly once without substituting for unknown clocked labor",()=>{
+  expect(addOwnerPayrollExtras(500000,25000)).toBe(525000);
+  expect(addOwnerPayrollExtras(500000,null)).toBe(500000);
+  expect(addOwnerPayrollExtras(0,25000)).toBe(25000);
+  expect(addOwnerPayrollExtras(null,25000)).toBeNull();
+ });
  it("includes owner extras on top of clocked wages only once",()=>{
   const extras=25000,clocked=500000;
-  const model={...base,monthlyStaff:figure(clocked+extras,"estimate","Clocked payroll plus owner extras")};
+  const model={...base,monthlyStaff:figure(addOwnerPayrollExtras(clocked,extras),"estimate","Clocked payroll plus owner extras")};
   const result=unifiedBreakEven(model);
   expect(result.monthlyFixedKnownCents).toBe(746700+500000+25000);
   expect(result.monthlyBreakEven.status).toBe("estimate");

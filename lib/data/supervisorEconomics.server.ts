@@ -3,7 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {formatInTimeZone,fromZonedTime} from "date-fns-tz";
 import {normalizeOpenHours,regularHoursStateForDate} from "@/lib/business/openHours";
 import {dateOffset,calendarMonth} from "@/lib/calc/periods";
-import {figure,type Economics} from "@/lib/calc/supervisorEconomics";
+import {figure,addOwnerPayrollExtras,type Economics} from "@/lib/calc/supervisorEconomics";
 import {payrollDayCoverage} from "@/lib/calc/payrollDayCoverage";
 import {totalMonthlyRecurringCostsCents} from "@/lib/expenses/recurringMonthlyTotal";
 import {getPricingInputs,type PricingItemInput} from "./getPricingInputs";
@@ -67,7 +67,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const projectedLabor=laborDays.length?Math.round(wages*dayList.length/laborDays.length):null;
  const ownerMonthlyPayrollExtrasCents=business.data?.owner_monthly_payroll_extras_cents===null||
   business.data?.owner_monthly_payroll_extras_cents===undefined?null:Number(business.data.owner_monthly_payroll_extras_cents);
- const monthlyTotal=projectedLabor===null?null:projectedLabor+(ownerMonthlyPayrollExtrasCents??0);
+ const monthlyTotal=addOwnerPayrollExtras(projectedLabor,ownerMonthlyPayrollExtrasCents);
  const payroll=figure(monthlyTotal,
   ownerMonthlyPayrollExtrasCents!==null||laborMissing.length||estimatedTax?"estimate":"actual",
   laborMissing.length?"Clocked wages incomplete; "+laborMissing.length+" labor days missing; owner extras do not replace wages":
