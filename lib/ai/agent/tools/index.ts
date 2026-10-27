@@ -157,9 +157,35 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
       return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,...summarizeEmployeeSales(slice.value)};
     }
-    const slice=await ctx.tools.getPayrollFacts?.(period);
-    if(!slice?.available)return {source:name,period,agentId:"olivia",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
-    return {source:name,period,agentId:"olivia",missing:slice.quality.missingInputs,...summarizePayrollFacts(slice.value)};
+    const [slice,ownerCosts,labor]=await Promise.all([
+      ctx.tools.getPayrollFacts?.(period),
+      ctx.tools.getOwnerMonthlyPayrollExtras?.(),
+      ctx.tools.getLaborMetrics?.(period),
+    ]);
+    const ownerMonthlyPayrollExtrasCents=ownerCosts?.available?
+      ownerCosts.value.monthlyCents:null;
+    const unknownWageDates=labor?.available?
+      labor.value.filter(day=>day.wagesCents===null).map(day=>day.date):[];
+    const observedToastWagesCents=labor?.available&&unknownWageDates.length===0&&
+      labor.value.every(day=>day.wagesCents!==null)?
+      labor.value.reduce((total,day)=>total+day.wagesCents!,0):null;
+    const costEvidence={
+      ownerMonthlyPayrollExtrasCents,ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?
+        null:"You told me" as const,
+      ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"estimate",
+      observedToastWagesCents,
+      observedWageStatus:unknownWageDates.length?"unknown":"recorded",
+    };
+    if(!slice?.available)return {source:name,period,agentId:"olivia",
+      missing:[...(slice?.quality.missingInputs??["toastPayrollRunsNotAvailable"]),
+        ...(ownerMonthlyPayrollExtrasCents===null?["ownerMonthlyPayrollExtrasNotSet"]:[]),
+        ...unknownWageDates.map(day=>"laborWageUnknown:"+day)],
+      ...costEvidence};
+    return {source:name,period,agentId:"olivia",
+      missing:[...slice.quality.missingInputs,
+        ...(ownerMonthlyPayrollExtrasCents===null?["ownerMonthlyPayrollExtrasNotSet"]:[]),
+        ...unknownWageDates.map(day=>"laborWageUnknown:"+day)],
+      ...costEvidence,...summarizePayrollFacts(slice.value)};
   }
   if(name==="get_item_sales")return salesTools.get_item_sales.execute(raw,ctx);
   if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
