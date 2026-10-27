@@ -89,3 +89,24 @@ describe("Home with known-only wages from missing labor day",()=>{
       .staffCostPerMinuteNow).not.toBeNull();
   });
 });
+
+
+describe("Home staff-only missing-wage day",()=>{
+  it("does not calculate profit or margin from sales days that omitted partial labor",()=>{
+    const fixture=getFixtureSnapshot();
+    const staffOnly={...fixture.monthActualDays[0],wagesCents:1900,
+      staffTaxCents:225,laborWageStatus:"missing" as const,salesDataStatus:"missing" as const};
+    const snapshot={...fixture,
+      monthActualDays:fixture.monthActualDays.slice(1),
+      monthRecordedDays:[staffOnly,...fixture.monthActualDays.slice(1)]};
+    const result=buildHomeViewModel(snapshot,"month");
+    expect(result.salesCents).toBeGreaterThan(0);
+    expect(result.ownerProfitCents).toBeNull();
+    expect(result.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(result.operatingMargin).toBeNull();
+    const complete=buildHomeViewModel({...snapshot,
+      monthRecordedDays:snapshot.monthRecordedDays.map(day=>day.date===staffOnly.date?{
+        ...day,laborWageStatus:"actual" as const}:day)},"month");
+    expect(complete.ownerProfitCents).not.toBeNull();
+  });
+});
