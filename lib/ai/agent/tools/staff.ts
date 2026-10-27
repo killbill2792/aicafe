@@ -87,9 +87,9 @@ export const staffTools = {
         ctx.tools.getPosImportReviews?.(),
       ]);
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
-        ...(labor.available?labor.value.filter(d=>d.wagesCents===null||d.staffTaxCents===null)
+        ...(labor.available?labor.value.filter(d=>d.wageStatus==="missing"||d.wagesCents===null||d.staffTaxCents===null)
          .map(d=>"laborWageUnknown:"+d.date):[])];
-      const explain=labor.available?labor.value.slice(-12).filter(d=>d.loadedStaffCostCents!==null&&d.wagesCents!==null&&d.staffTaxCents!==null&&Number.isSafeInteger(d.loadedStaffCostCents)&&
+      const explain=labor.available?labor.value.slice(-12).filter(d=>d.wageStatus!=="missing"&&d.loadedStaffCostCents!==null&&d.wagesCents!==null&&d.staffTaxCents!==null&&Number.isSafeInteger(d.loadedStaffCostCents)&&
         Number.isSafeInteger(d.wagesCents)&&Number.isSafeInteger(d.staffTaxCents)).map(d=>({
           label:"Labor "+d.date,inputs:[{name:"wages",value:money(d.wagesCents!)},
             {name:"staffTax",value:money(d.staffTaxCents!)}],formula:"sum" as const,

@@ -131,7 +131,7 @@ export function cafeStateFromSnapshot(
   const feeEstimated = days
     .filter((day) => day.cardFeesStatus === "estimated")
     .map((day) => `cardFees:${day.date}`);
-  const unknownLabor = recorded.filter(day=>day.wagesCents===null||day.staffTaxCents===null);
+  const unknownLabor = recorded.filter(day=>day.laborWageStatus==="missing"||day.wagesCents===null||day.staffTaxCents===null);
   const wageEstimated = recorded.filter(day=>day.laborWageStatus==="estimate");
   const taxEstimated = recorded
     .filter((day) => day.staffTaxStatus === "estimated")

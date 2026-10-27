@@ -140,6 +140,21 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
     }
   });
 
+  it("withholds final profit and loaded labor when a day has known-only wages", () => {
+    const partial = fixture.monthActualDays.map((day, i) => i===0
+      ? {...day,laborWageStatus:"missing" as const} : day);
+    const state = cafeStateFromSnapshot({...fixture,monthActualDays:partial,monthRecordedDays:partial});
+    expect(state.profitability.available).toBe(false);
+    expect(state.profitability.quality.missingInputs).toContain("laborWageUnknown:2026-09-01");
+    expect(state.labor.quality.missingInputs).toContain("laborWageUnknown:2026-09-01");
+    expect(state.labor.available).toBe(true);
+    if(state.labor.available){
+      expect(state.labor.value[0].wagesCents).toBe(fixture.monthActualDays[0].wagesCents);
+      expect(state.labor.value[0].wageStatus).toBe("missing");
+      expect(state.labor.value[0].loadedStaffCostCents).toBeNull();
+    }
+  });
+
   it("marks a partial staff history as partial, not a full labor period", () => {
     const snapshot: BusinessSnapshot = {
       ...fixture,

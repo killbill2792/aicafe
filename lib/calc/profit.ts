@@ -10,7 +10,7 @@ export function ingredientsCentsForPeriod(days: DailyFacts[]): number {
 }
 
 export function staffCostCentsForPeriod(days: DailyFacts[]): number | null {
-  if(days.some(d=>d.wagesCents===null||d.staffTaxCents===null))return null;
+  if(days.some(d=>d.wagesCents===null||d.staffTaxCents===null||d.laborWageStatus==="missing"))return null;
   return sumCents(days, (d) => (d.wagesCents??0) + (d.staffTaxCents??0));
 }
 

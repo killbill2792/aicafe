@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { averageOrderValueCents } from "./profit";
+import { averageOrderValueCents, staffCostCentsForPeriod, ownerProfitCentsForPeriod } from "./profit";
+import type { DailyFacts } from "./types";
 
 describe("averageOrderValueCents", () => {
   it("rounds a non-whole division half-up to the cent, never leaking fractional cents", () => {
@@ -20,5 +21,17 @@ describe("averageOrderValueCents", () => {
 
   it("divides evenly when sales split evenly across orders", () => {
     expect(averageOrderValueCents(9_000, 3)).toBe(3_000);
+  });
+});
+
+describe("partial payroll never becomes a final profit", () => {
+  const day: DailyFacts = { date:"2026-10-22",netSalesCents:20000,ordersCount:10,
+    drinksCount:12,ingredientsCents:2000,wagesCents:3500,staffTaxCents:420,
+    laborWageStatus:"missing",cardFeesCents:200,voidsCents:0 };
+  it("retains known cents without treating missing wages as a complete total",()=>{
+    expect(day.wagesCents).toBe(3500);
+    expect(staffCostCentsForPeriod([day])).toBeNull();
+    expect(ownerProfitCentsForPeriod([day],1000)).toBeNull();
+    expect(staffCostCentsForPeriod([{...day,laborWageStatus:"actual"}])).toBe(3920);
   });
 });

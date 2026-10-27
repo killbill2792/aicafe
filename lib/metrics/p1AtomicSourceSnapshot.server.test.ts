@@ -59,6 +59,27 @@ describe("P1 authoritative source adapter never invents a DB revision",()=>{
       {field:"netSalesCents",value:20000}
     ]);
   });
+  it("reports a missing-status day despite known-only numeric wages and tax",async()=>{
+    const date="2026-10-22";
+    const source={...base,sources:{...base.sources,dailyRollups:[{
+      business_date:date,net_sales_cents:24000,orders_count:15,drinks_count:17,
+      ingredients_cents:1600,staff_wages_cents:3300,staff_tax_cents:396,
+      labor_wage_status:"missing",card_fees_cents:100,
+      sales_data_status:"actual",staff_tax_status:"actual",
+    }]}};
+    connect.mockResolvedValue(fakeClient(source));
+    const response=await readAuthorizedAtomicP1SourceSnapshot();
+    expect(response.status).toBe("available");
+    if(response.status!=="available")throw new Error("snapshot should parse");
+    const labor=extractAtomicSnapshot("labor.daily_costs",response.snapshot,
+      {period:{from:date,to:date}},date);
+    expect(labor?.leaves).toEqual([]);
+    expect(labor?.missingInputs).toContain("labor_wage_or_tax_missing:"+date);
+    const sales=extractAtomicSnapshot("sales.daily",response.snapshot,
+      {period:{from:date,to:date}},date);
+    expect(sales?.leaves).toEqual([expect.objectContaining({field:"netSalesCents",value:24000})]);
+  });
+
   it("retains owner-entered total cost provenance without conflating it with recipes",()=>{
     const amount={menu_item_id:cafe,cost_cents:135,status:"confirmed",
       source_type:"owner_manual",source_label:"Owner demo entry",

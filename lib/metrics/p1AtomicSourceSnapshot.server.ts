@@ -51,7 +51,9 @@ export const atomicP1SourceSchema=z.strictObject({
       business_date:day,net_sales_cents:cents,orders_count:cents,drinks_count:cents,
       ingredients_cents:cents,staff_wages_cents:cents.nullable(),staff_tax_cents:cents.nullable(),
       card_fees_cents:cents,sales_data_status:z.enum(["actual","missing"]),
-      staff_tax_status:z.enum(["actual","estimated"])}),367),
+      staff_tax_status:z.enum(["actual","estimated"]),
+      // Older atomic RPCs omit this field: absence never proves complete wages.
+      labor_wage_status:z.enum(["actual","estimate","missing"]).optional()}),367),
     expenses:bounded(z.strictObject({
       id:z.string().uuid(),spent_on:day,amount_cents:cents,
       status:z.enum(["actual","estimated"]),source:z.string(),category_code:z.string()}),501),

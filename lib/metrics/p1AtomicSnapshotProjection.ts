@@ -89,13 +89,15 @@ function daily(snapshot:AtomicP1SourceSnapshot,
   const names=labor?["wagesCents","staffTaxCents"] as const:
     ["netSalesCents"] as const;
   const leaves:SnapshotLeaf[]=[];
-  const missingLaborDays=new Set<string>();
+  const missingLaborDays=new Set<string>(labor?rows.filter(row=>
+    row.labor_wage_status===undefined||row.labor_wage_status==="missing")
+    .map(row=>row.business_date):[]);
   for(let i=0;i<fields.length;i++){
     // An unknown wage/tax must stay missing, never BigInt(null) or zero.
     // Retain known component evidence without claiming the full labor total.
     const known=rows.filter(row=>{
       const n=row[fields[i]];
-      if(n===null){
+      if(n===null||(labor&&row.labor_wage_status!=="actual"&&row.labor_wage_status!=="estimate")){
         if(labor)missingLaborDays.add(row.business_date);
         return false;
       }
@@ -214,7 +216,8 @@ export function extractAtomicSnapshot(
         query.period&&row.business_date>=query.period.from&&
         row.business_date<=query.period.to);
       const unknown=[...new Set(seen.filter(row=>
-        row.staff_wages_cents===null||row.staff_tax_cents===null)
+        row.staff_wages_cents===null||row.staff_tax_cents===null||
+         row.labor_wage_status===undefined||row.labor_wage_status==="missing")
         .map(row=>"labor_wage_or_tax_missing:"+row.business_date))].sort();
       return result([],["labor_attendance_and_wage_coverage_not_proven",...unknown],
         seen.some(row=>row.staff_tax_status==="estimated")?
