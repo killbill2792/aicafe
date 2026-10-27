@@ -254,7 +254,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
           { label: t("glanceSales"), value: formatCents(glance.salesCents) },
           { label: t("glanceOrders"), value: String(glance.ordersCount) },
           { label: t("glanceAvgOrder"), value: formatCents(glance.avgOrderValueCents) },
-          { label: t("glanceMoneyLeft"), value: formatCents(glance.moneyLeftCents) },
+          { label: t("glanceMoneyLeft"), value: glance.moneyLeftCents===null?"—":formatCents(glance.moneyLeftCents) },
         ]}
         secondaryStat={glance.drinksCount > 0 ? t("glanceDrinks", { count: glance.drinksCount }) : null}
         caption={glanceCopy.caption}
