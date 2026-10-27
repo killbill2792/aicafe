@@ -297,6 +297,7 @@ export const SOURCE_SURFACES = {
   },
   "lib/data/getPricingInputs.ts": {
     getPricingInputs:{restricted:"Raw pricing inputs may include cost internals; read through canonical pricing recommendation"},
+    monthlyPayrollFromDays:{restricted:"Pure payroll completeness helper, exported for unit tests; not a database reader or a model-visible P1 capability"},
   },
   "lib/data/getPayrollCostSettings.ts": {
     getPayrollCostSettings:{restricted:"Payroll tax configuration requires separate field authorization; no direct model output"},
