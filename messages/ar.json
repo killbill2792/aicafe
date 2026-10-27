@@ -553,6 +553,10 @@
     "seePlan": "عرض الخطة"
   },
   "Menu": {
+    "posAddOnTitle": "الإضافات المنشورة من نقطة البيع",
+    "posAddOnItemSize": "ينطبق على",
+    "posAddOnRequired": "مطلوب",
+    "posAddOnOptional": "اختياري",
     "unpricedPublished": "الأصناف المنشورة بأسعار متغيرة أو غير معروفة",
     "openPrice": "سعر مفتوح",
     "visibility": "الظهور",
