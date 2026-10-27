@@ -123,7 +123,11 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
     const { error: updateError } = await supabase
       .from("menu_items")
       .update({
-        ...(csvToExistingPos?{}:{pos_item_id:match.pos_item_id,catalog_source:match.provider}),
+        ...(csvToExistingPos?{}:{
+          pos_item_id:match.pos_item_id,catalog_source:match.provider,
+          // Preserve the owner's original display name after approval.
+          ...(match.provider!=="csv"?{pos_name:match.imported_name}:{}),
+        }),
         ...(match.provider==="csv"&&!csvToExistingPos||match.imported_price_cents===null?
           {price_cents:csvToExistingPos?existingItem.price_cents:match.imported_price_cents}:{}),
         menu_group:menuGroup,catalog_last_synced_at:new Date().toISOString(),
