@@ -9,7 +9,12 @@ import type { DailyFacts } from "@/lib/calc";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 import { rangeExpectedDays } from "./conversations/dateRange";
 
-export type MenuCatalogProduct = { id: string; name: string; category: "drink" | "food"; active: boolean; priceCents: number };
+export type MenuCatalogProduct = { id: string; name: string; category: "drink" | "food";
+ active: boolean; priceCents: number|null; baseName:string|null; sizeLabel:string|null;
+ description:string|null; menuGroup:string|null; visibility:string|null;
+ pricingStrategy:string|null; modifierGroups:Array<{id:string;name:string;
+ minSelections:number|null;maxSelections:number|null;required:boolean;
+ options:Array<{name:string;priceCents:number|null}>}> };
 export type StaffAttendance = { timecardCount: number; onClockCount: number | null; attendanceTracked: boolean };
 const quality = (missingInputs: string[] = []) => ({
   level: (missingInputs.length ? "low" : "high") as "low" | "high",
@@ -73,13 +78,56 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
     async menuCatalog(id: string): Promise<KnownSlice<MenuCatalogProduct[]>> {
       assertScope(id);
       const { data, error } = await client.from("menu_items")
-        .select("id, name, category, is_active, price_cents").eq("business_id",id).limit(501);
+        .select("id,name,base_name,size_label,category,is_active,price_cents,description,menu_group,pos_visibility,pos_pricing_strategy")
+        .eq("business_id",id).order("id").limit(501);
       if (error) throw error;
-      return { available:true, value:(data ?? []).slice(0,500).map(row=>({
+      const items=(data??[]).slice(0,500);
+      if(items.length===0)return {available:true,value:[],quality:quality()};
+      // All add-on references remain business-scoped and read-only under RLS.
+      // A truncated result is labeled incomplete, never silently authoritative.
+      const {data:links,error:linksError}=await client.from("menu_item_modifier_groups")
+        .select("menu_item_id,pos_group_id,pos_group_name,min_selections,max_selections,required")
+        .eq("business_id",id).in("menu_item_id",items.map(item=>item.id))
+        .order("menu_item_id").limit(10001);
+      if(linksError)throw linksError;
+      const groupIds=[...new Set((links??[]).map(link=>link.pos_group_id))];
+      const optionRows: Array<{pos_group_id:string|null;name:string;price_cents:number|null;is_active:boolean}>=[];
+      for(let start=0;start<groupIds.length;start+=100){
+        const {data:options,error:optionError}=await client.from("modifier_recipes")
+          .select("pos_group_id,name,price_cents,is_active").eq("business_id",id)
+          .in("pos_group_id",groupIds.slice(start,start+100)).order("id").limit(10001);
+        if(optionError)throw optionError;
+        if((options??[]).length>10000)throw new Error("Menu modifier result truncated");
+        optionRows.push(...(options??[]));
+      }
+      const optionsByGroup=new Map<string,Array<{name:string;priceCents:number|null}>>();
+      for(const option of optionRows){
+        if(!option.is_active||!option.pos_group_id)continue;
+        const list=optionsByGroup.get(option.pos_group_id)??[];
+        list.push({name:option.name,priceCents:option.price_cents});
+        optionsByGroup.set(option.pos_group_id,list);
+      }
+      const linksByItem=new Map<string,NonNullable<typeof links>>();
+      for(const link of links??[]){
+        const list=linksByItem.get(link.menu_item_id)??[];
+        list.push(link);linksByItem.set(link.menu_item_id,list);
+      }
+      return { available:true, value:items.map(row=>({
         id:String(row.id),name:String(row.name).slice(0,120),
-        category:row.category === "food" ? "food" as const : "drink" as const,
-        active:row.is_active !== false,priceCents:Number(row.price_cents ?? 0),
-      })),quality:quality((data ?? []).length > 500 ? ["menuCatalogTruncated"] : []) };
+        category:row.category==="food"?"food" as const:"drink" as const,
+        active:row.is_active!==false,priceCents:row.price_cents===null?null:Number(row.price_cents),
+        baseName:row.base_name??null,sizeLabel:row.size_label??null,
+        description:row.description??null,menuGroup:row.menu_group??null,
+        visibility:row.pos_visibility??null,pricingStrategy:row.pos_pricing_strategy??null,
+        modifierGroups:(linksByItem.get(row.id)??[]).map(link=>({
+          id:link.pos_group_id,name:link.pos_group_name??"Add-ons",
+          minSelections:link.min_selections,maxSelections:link.max_selections,
+          required:link.required,options:optionsByGroup.get(link.pos_group_id)??[]
+        }))
+      })),quality:quality([
+        ...(data??[]).length>500?"menuCatalogTruncated":"",
+        ...(links??[]).length>10000?"menuModifierLinksTruncated":""
+      ].filter(Boolean)) };
     },
     async staffAttendance(id: string, period: CafeStatePeriod, timezone: string): Promise<KnownSlice<StaffAttendance>> {
       assertScope(id);
