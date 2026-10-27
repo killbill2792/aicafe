@@ -320,7 +320,7 @@ describe("BusinessCostSummary known-only labor",()=>{
     const cost=businessCostSummaryFromSnapshot(snapshot,period);
     expect(cost.missingInputs).toContain("laborWageUnknown:"+date);
     expect(cost.completeness).toBe("partial");
-    expect(cost.observed.loadedStaff).toBe(true);
+    expect(cost.observed.loadedStaff).toBe(false);
     expect(cost.components.loadedStaffCents).toBeGreaterThan(1200);
     expect(cost.knownTotalCents).toBe(
       Object.values(cost.components).reduce((sum,value)=>sum+value,0));
@@ -331,3 +331,4 @@ describe("BusinessCostSummary known-only labor",()=>{
     expect(full.observed.loadedStaff).toBe(true);
   });
 });
+
