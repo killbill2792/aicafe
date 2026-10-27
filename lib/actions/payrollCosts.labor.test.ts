@@ -26,9 +26,9 @@ vi.mock("@/lib/supabase/server",()=>({
           select:()=>read,
           update:(payload:Record<string,unknown>)=>{
             state.taxUpdates.push(payload);
-            return {eq:()=>({eq:()=>({eq:()=>({eq:()=>({
+            return {eq:()=>({eq:()=>({eq:()=>({eq:()=>({eq:()=>({
               select:async()=>({data:[{business_date:"2026-10-23"}],error:null}),
-            })})})})};
+            })})})})})};
           },
         };
       }
