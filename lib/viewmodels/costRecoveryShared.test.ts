@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getFixtureSnapshot } from "@/lib/data/fixtureSnapshot";
-import { projectedDayContributions } from "./costRecoveryShared";
+import { projectedDayContributions,dayContributionCents,actualDayContributions } from "./costRecoveryShared";
 
 describe("projectedDayContributions operating hours", () => {
   it("skips future days explicitly configured closed", () => {
@@ -22,5 +22,18 @@ describe("projectedDayContributions operating hours", () => {
       business: { ...snapshot.business, openHours: null },
     });
     expect(projected.length).toBeGreaterThan(0);
+  });
+});
+
+
+describe("known-only labor cost recovery", () => {
+  it("does not count a missing day as a covered contribution or project from it", () => {
+    const snapshot=getFixtureSnapshot();
+    const partial={...snapshot.monthActualDays[0],wagesCents:1200,
+      staffTaxCents:144,laborWageStatus:"missing" as const};
+    expect(dayContributionCents(partial)).toBeNull();
+    const withPartial={...snapshot,monthActualDays:[partial]};
+    expect(actualDayContributions(withPartial)).toEqual([]);
+    expect(dayContributionCents({...partial,laborWageStatus:"actual"})).not.toBeNull();
   });
 });
