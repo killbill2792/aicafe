@@ -41,7 +41,13 @@ begin
  ('pos_relink_toast_lines','pos_import_toast_attendance') and p.prosecdef
  and p.proconfig @> array['search_path=public'];
  if n<>2 then raise exception 'service-only SQL handlers not hardened: %',n;end if;
-end $$;
+ if not exists(select 1 from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
+  where ns.nspname='public' and p.proname='toast_business_scope_summary'
+   and p.prosecdef and p.proconfig @> array['search_path=public'])
+ then raise exception 'Toast owner-only scopes function not secured';end if;
+ if has_function_privilege('anon','public.toast_business_scope_summary(uuid)','EXECUTE')
+ then raise exception 'anonymous role can read Toast scopes';end if;
+end $;
 -- A missing wage round-trips as SQL NULL; there must be no forced-zero fallback.
 do $$
 declare v_default text;
@@ -56,6 +62,15 @@ end $$;
 -- S4-S7: per-entry automatic attendance is idempotent, nullable and isolated.
 -- All fixtures are synthetic and rolled back with the outer transaction.
 select set_config('request.jwt.claim.role','service_role',true);
+-- Owner scope function must never reveal data to the service role or strangers.
+do $
+begin
+ begin
+  perform public.toast_business_scope_summary('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  raise exception 'Toast owner-only scope function accepted service role';
+ exception when sqlstate '42501' then null;
+ end;
+end $;
 insert into public.businesses(id,name,is_demo)
  values('cccccccc-cccc-4ccc-8ccc-cccccccccccc','Toast 101 disposable café',false);
 insert into public.locations(id,business_id,name)
