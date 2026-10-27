@@ -122,22 +122,19 @@ export async function recomputeDailyRollup(
   const dayEndUtc = fromZonedTime(`${businessDate}T23:59:59.999`, timezone).toISOString();
   const timecards=await readAllPosRows((first,last)=>supabase
     .from("timecards")
-    .select("id, clock_in, clock_out, hourly_wage_cents, breaks")
+    .select("id, clock_in, clock_out, hourly_wage_cents, wage_source, breaks")
     .eq("business_id", businessId)
     .gte("clock_in", dayStartUtc)
     .lte("clock_in", dayEndUtc).order("id").range(first,last),"daily timecards");
 
-  const wagesCents = timecards.reduce(
-    (sum, tc) =>
-      sum +
-      wagesCentsForTimecard({
-        clockIn: tc.clock_in,
-        clockOut: tc.clock_out,
-        hourlyWageCents: tc.hourly_wage_cents,
-        breaks: tc.breaks ?? [],
-      }),
-    0,
-  );
+  const wagesUnknown=timecards.some(tc=>tc.hourly_wage_cents===null);
+  const wageEstimated=timecards.some(tc=>tc.wage_source==="estimate");
+  const wagesCents=wagesUnknown?null:timecards.reduce((sum,tc)=>
+    sum+wagesCentsForTimecard({
+      clockIn:tc.clock_in,clockOut:tc.clock_out,
+      hourlyWageCents:tc.hourly_wage_cents as number,breaks:tc.breaks??[]
+    }),0);
+  const laborWageStatus=wagesUnknown?"missing":wageEstimated?"estimate":"actual";
   const { data: existingRollup, error: existingRollupError } = await supabase
     .from("daily_rollups")
     .select("staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status, voids_status, voids_cents")
@@ -151,7 +148,7 @@ export async function recomputeDailyRollup(
   const staffTaxIsActual = existingRollup?.staff_tax_status === "actual";
   const staffTaxCents = staffTaxIsActual
     ? Number(existingRollup.staff_tax_cents)
-    : Math.round(wagesCents * payrollTaxRate);
+    : wagesCents===null?null:Math.round(wagesCents * payrollTaxRate);
   const staffTaxSource = staffTaxIsActual
     ? existingRollup?.staff_tax_source ?? "legacy_actual"
     : payrollTaxRateSource;
@@ -170,7 +167,8 @@ export async function recomputeDailyRollup(
       orders_count: ordersCount,
       drinks_count: drinksCount,
       ingredients_cents: Math.round(ingredientsCents),
-      staff_wages_cents: Math.round(wagesCents),
+      staff_wages_cents: wagesCents===null?null:Math.round(wagesCents),
+      labor_wage_status:laborWageStatus,
       staff_tax_cents: staffTaxCents,
       staff_tax_status: staffTaxIsActual ? "actual" : "estimated",
       staff_tax_source: staffTaxSource,
