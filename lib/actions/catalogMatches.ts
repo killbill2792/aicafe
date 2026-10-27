@@ -9,6 +9,7 @@ import { inferMenuItemCategory } from "@/lib/menu/inferCategory";
 import { logQueryError } from "@/lib/data/queryError";
 import { resolveUnmatchedAlertsIfClear } from "@/lib/data/resolveUnmatchedAlerts.server";
 import { readAllPosRows, posIdBatches } from "@/lib/pos/pagedReads";
+import { setCanonicalMenuPrice,recordInitialMenuPrice } from "@/lib/menu/priceHistory";
 
 /**
  * A CSV item match must link canonical historical sales as well as the staged source groups.
@@ -47,6 +48,28 @@ async function backfillUploadedSales(
   }
 }
 
+/** Keep the historical CSV identity without stealing an existing POS ID.
+ * A unique constraint must reject another row's alias rather than silently
+ * transferring old sales to the wrong product. */
+async function ensureCatalogAlias(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  businessId: string,
+  menuItemId: string,
+  provider: string,
+  posItemId: string,
+): Promise<boolean> {
+  const {data:current,error:readError}=await supabase.from("pos_item_aliases")
+    .select("menu_item_id").eq("business_id",businessId).eq("provider",provider)
+    .eq("pos_item_id",posItemId).maybeSingle();
+  if(readError){logQueryError("ensureCatalogAlias:read",readError);return false;}
+  if(current)return current.menu_item_id===menuItemId;
+  const {error:writeError}=await supabase.from("pos_item_aliases").insert({
+    business_id:businessId,menu_item_id:menuItemId,provider,pos_item_id:posItemId,
+  });
+  if(writeError){logQueryError("ensureCatalogAlias:write",writeError);return false;}
+  return true;
+}
+
 // The review page shows a localized success or error status after revalidation.
 async function finishMatch(result: "matched" | "error"): Promise<never> {
   const locale = await getLocale();
@@ -76,21 +99,51 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
     // that column.
     const { data: existingItem, error: existingItemError } = await supabase
       .from("menu_items")
-      .select("menu_group")
+      .select("menu_group,pos_item_id,catalog_source,price_cents")
       .eq("id", match.suggested_menu_item_id)
       .eq("business_id", businessId)
       .single();
-    if (existingItemError) logQueryError("resolveCatalogMatch:existingItem", existingItemError);
-    const menuGroup = !existingItem?.menu_group && match.imported_category
+    if (existingItemError || !existingItem) {
+      if(existingItemError)logQueryError("resolveCatalogMatch:existingItem",existingItemError);
+      return finishMatch("error");
+    }
+    const oldPos=existingItem.pos_item_id as string|null;
+    const changingIdentity=oldPos!==null&&oldPos!==match.pos_item_id;
+    const csvToPos=changingIdentity&&oldPos!.startsWith("csv-item-")&&match.provider!=="csv";
+    const csvToExistingPos=changingIdentity&&match.provider==="csv";
+    if(changingIdentity&&!csvToPos&&!csvToExistingPos)
+      return finishMatch("error"); // another live POS identity must never be stolen
+    if(csvToPos&&!await ensureCatalogAlias(supabase,businessId,match.suggested_menu_item_id,
+      "csv",oldPos!))return finishMatch("error");
+    if(csvToExistingPos&&!await ensureCatalogAlias(supabase,businessId,match.suggested_menu_item_id,
+      "csv",match.pos_item_id))return finishMatch("error");
+    const menuGroup = !existingItem.menu_group && match.imported_category
       ? normalizeMenuGroup(match.imported_category, await existingMenuGroups(supabase, businessId))
       : existingItem?.menu_group ?? null;
     const { error: updateError } = await supabase
       .from("menu_items")
-      .update({ pos_item_id: match.pos_item_id, price_cents: match.imported_price_cents, menu_group: menuGroup, catalog_source: match.provider, catalog_last_synced_at: new Date().toISOString() })
+      .update({
+        ...(csvToExistingPos?{}:{pos_item_id:match.pos_item_id,catalog_source:match.provider}),
+        ...(match.provider==="csv"&&!csvToExistingPos||match.imported_price_cents===null?
+          {price_cents:csvToExistingPos?existingItem.price_cents:match.imported_price_cents}:{}),
+        menu_group:menuGroup,catalog_last_synced_at:new Date().toISOString(),
+      })
       .eq("id", match.suggested_menu_item_id)
       .eq("business_id", businessId);
     if (updateError) logQueryError("resolveCatalogMatch:update", updateError);
     applied = !updateError;
+    if(applied && match.provider!=="csv" && match.imported_price_cents!==null &&
+      match.imported_price_cents>0 && existingItem.price_cents!==match.imported_price_cents){
+      try{
+        applied=await setCanonicalMenuPrice(supabase,{
+          businessId,menuItemId:match.suggested_menu_item_id,
+          priceCents:match.imported_price_cents,sourceType:"connected_pos",
+          sourceProvider:match.provider,
+        });
+      }catch(error){
+        logQueryError("resolveCatalogMatch:priceHistory",error);applied=false;
+      }
+    }
     if (applied && match.provider === "csv") csvItemId = match.suggested_menu_item_id;
   } else {
     // A previous CSV attempt may have created the item but failed while updating sales.
@@ -160,11 +213,16 @@ export async function matchUploadedItem(matchId: string, formData: FormData): Pr
     supabase.from("menu_items").select("id, pos_item_id").eq("business_id",businessId).eq("id",menuItemId).maybeSingle(),
   ]);
   if (matchError || itemError || !match || !item) return finishMatch("error");
-  if (item.pos_item_id && item.pos_item_id !== match.pos_item_id) return finishMatch("error");
-  const { error: updated } = await supabase.from("menu_items").update({
-    pos_item_id: match.pos_item_id, catalog_source: "csv", catalog_last_synced_at: new Date().toISOString(),
-  }).eq("id",item.id).eq("business_id",businessId);
-  if (updated) { logQueryError("matchUploadedItem:update",updated); return finishMatch("error"); }
+  if(item.pos_item_id && item.pos_item_id !== match.pos_item_id){
+    if(!await ensureCatalogAlias(supabase,businessId,item.id,"csv",match.pos_item_id))
+      return finishMatch("error");
+  }else{
+    const { error: updated } = await supabase.from("menu_items").update({
+      pos_item_id: match.pos_item_id,catalog_source:"csv",
+      catalog_last_synced_at:new Date().toISOString(),
+    }).eq("id",item.id).eq("business_id",businessId);
+    if(updated){logQueryError("matchUploadedItem:update",updated);return finishMatch("error");}
+  }
   if (!await backfillUploadedSales(supabase, businessId, match.imported_name, item.id)) return finishMatch("error");
   const {error: confirmed} = await supabase.from("pos_catalog_matches").update({status:"confirmed"})
     .eq("id",match.id).eq("business_id",businessId).eq("status","needs_review");
