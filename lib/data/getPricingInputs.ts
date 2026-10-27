@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
-import { evaluateRecipeCost, resolveProductCost, monthlyProcessingFeesForWindow, staffCostCentsForPeriod, type DailyFacts, type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
+import { evaluateRecipeCost, resolveProductCost, monthlyProcessingFeesForWindow, type DailyFacts, type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 import { trustedOrderCountForProcessingFeeEstimate } from "@/lib/pos/processingFeeEstimate";
 import { menuPriceSourceBasis, type MenuPriceSourceBasis } from "@/lib/calc/menuPriceSourceBasis";
@@ -16,7 +16,23 @@ import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
  * file now calls that same shared function instead of reimplementing its own cost+completeness
  * check, which previously could disagree with getMenuItemsForEdit's own READY/NO_RECIPE verdict. */
 export type PricingItemInput = { id: string; name: string; category: MenuItemCategoryCode; currentPriceCents: number; productCostCents: number; productCostStatus: RecipeCostStatus; productCostSource?: ProductCostSource | null; productCostQuality?: "actual" | "estimated"; unitsSoldInWindow: number };
-export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyWagesCents?: number; monthlyStaffCostCents: number; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number; monthlyProcessingFeesCents: number; processingFeesStatus: "actual" | "estimated" | "missing"; productCostsStatus?: "actual" | "estimated" | "missing"; targetOperatingMargin?: number; targetOperatingMarginStatus?: "default" | "confirmed"; payrollTaxRateStatus?: "estimated" | "confirmed"; payrollCostsStatus?: "actual" | "estimated"; operatingCostsStatus?: "actual" | "estimated" | "missing" };
+export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyWagesCents?: number | null; monthlyStaffCostCents: number | null; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number; monthlyProcessingFeesCents: number; processingFeesStatus: "actual" | "estimated" | "missing"; productCostsStatus?: "actual" | "estimated" | "missing"; targetOperatingMargin?: number; targetOperatingMarginStatus?: "default" | "confirmed"; payrollTaxRateStatus?: "estimated" | "confirmed"; payrollCostsStatus?: "actual" | "estimated" | "missing"; operatingCostsStatus?: "actual" | "estimated" | "missing" };
+
+/** Known-only rollup wages cannot establish complete monthly payroll. */
+export function monthlyPayrollFromDays(days: Pick<DailyFacts,
+  "wagesCents"|"staffTaxCents"|"laborWageStatus"|"staffTaxStatus">[],scale:number){
+  const complete=days.length>0&&days.every(day=>
+    day.laborWageStatus!=="missing"&&day.laborWageStatus!==undefined&&
+    day.wagesCents!==null&&day.staffTaxCents!==null);
+  if(!complete)return {monthlyWagesCents:null,monthlyStaffCostCents:null,
+    payrollCostsStatus:"missing" as const};
+  const monthlyWagesCents=Math.round(days.reduce((sum,day)=>sum+day.wagesCents!,0)*scale);
+  const monthlyStaffCostCents=Math.round(days.reduce((sum,day)=>
+    sum+day.wagesCents!+day.staffTaxCents!,0)*scale);
+  return {monthlyWagesCents,monthlyStaffCostCents,
+    payrollCostsStatus:days.every(day=>day.staffTaxStatus==="actual"&&day.laborWageStatus==="actual")?
+      "actual" as const:"estimated" as const};
+}
 
 export async function getPricingInputs(supabase: SupabaseClient, businessId: string): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput; menuPriceBasis: MenuPriceSourceBasis }> {
   const { data: businessRow, error: businessError } = await supabase.from("businesses").select("timezone, target_operating_margin, target_operating_margin_status, payroll_tax_rate_status").eq("id", businessId).single();
@@ -32,7 +48,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
   const [itemsResult, rollupsResult, recurringResult, ordersResult, expenseResult, priorExpenseResult] = await Promise.all([
     supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
-    supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, card_fees_cents, card_fees_status, sales_data_status, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
+    supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, card_fees_cents, card_fees_status, sales_data_status, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("recurring_costs").select("amount_cents, category_code, frequency, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
     supabase.from("orders").select("business_date, pos_order_id, net_sales_cents, processing_fee_provider").eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("expenses").select("category_code, amount_cents, status")
@@ -102,19 +118,12 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
       unitsSoldInWindow: units.get(item.id) ?? 0,
     };
   });
-  const days: DailyFacts[] = (rollupsResult.data ?? []).map((row) => ({ date: row.business_date, netSalesCents: row.net_sales_cents, ordersCount: row.orders_count, drinksCount: row.drinks_count, ingredientsCents: row.ingredients_cents, wagesCents: row.staff_wages_cents, staffTaxCents: row.staff_tax_cents, cardFeesCents: row.card_fees_cents, voidsCents: row.voids_cents }));
+  const days: DailyFacts[] = (rollupsResult.data ?? []).map((row) => ({ date: row.business_date, netSalesCents: row.net_sales_cents, ordersCount: row.orders_count, drinksCount: row.drinks_count, ingredientsCents: row.ingredients_cents, wagesCents: row.staff_wages_cents, staffTaxCents: row.staff_tax_cents, laborWageStatus:row.labor_wage_status, staffTaxStatus:row.staff_tax_status, cardFeesCents: row.card_fees_cents, voidsCents: row.voids_cents }));
   const scale = 30 / windowDays;
   const monthlyRevenueCents = Math.round(days.reduce((sum, day) => sum + day.netSalesCents, 0) * scale);
-  const knownWages=days.every(day=>day.wagesCents!==null&&day.staffTaxCents!==null);
-  const monthlyWagesCents = knownWages?Math.round(days.reduce((sum,day)=>sum+(day.wagesCents??0),0)*scale):0;
-  const totalStaff=staffCostCentsForPeriod(days);
-  const monthlyStaffCostCents=totalStaff===null?0:Math.round(totalStaff*scale);
+  const {monthlyWagesCents,monthlyStaffCostCents,payrollCostsStatus} =
+    monthlyPayrollFromDays(days,scale);
   const monthlyProcessingFeesCents = monthlyProcessingFeesForWindow(days.map((day) => day.cardFeesCents), windowDays);
-  const payrollCostsStatus =
-    (rollupsResult.data ?? []).length > 0 &&
-    knownWages && (rollupsResult.data ?? []).every((row) => row.staff_tax_status === "actual")
-      ? "actual" as const
-      : "estimated" as const;
   const salesDayFeeStatuses = (rollupsResult.data ?? []).filter((row) => Number(row.net_sales_cents) > 0).map((row) => row.card_fees_status ?? "missing");
   const processingFeesStatus = salesDayFeeStatuses.length === 0 || salesDayFeeStatuses.includes("missing")
     ? "missing"
@@ -153,6 +162,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
       drinksCount:Number(row.drinks_count),
       wagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
       payrollTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
+       laborWageStatus:row.labor_wage_status,
       payrollTaxStatus:row.staff_tax_status,
       cardFeesCents:Number(row.card_fees_cents),
       cardFeesStatus:row.card_fees_status,

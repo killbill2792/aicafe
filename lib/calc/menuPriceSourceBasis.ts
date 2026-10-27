@@ -9,6 +9,7 @@ export type MenuPriceSourceDay = {
   netSalesCents: number;
   drinksCount: number;
   wagesCents: number | null;
+  laborWageStatus?: "actual" | "estimate" | "missing";
   payrollTaxCents: number | null;
   payrollTaxStatus: "actual" | "estimated" | null;
   cardFeesCents: number;
@@ -154,7 +155,7 @@ export function menuPriceSourceBasis(input:{
     i===0||Date.parse(date+"T00:00:00Z")-
       Date.parse(orderedLaborDates[i-1]+"T00:00:00Z")===86400000);
   const payrollDays=sourceDays.filter(d=>verifiedLaborDates.has(d.businessDate)&&
-    finiteNonnegative(d.wagesCents)&&finiteNonnegative(d.payrollTaxCents));
+    d.laborWageStatus!=="missing"&&finiteNonnegative(d.wagesCents)&&finiteNonnegative(d.payrollTaxCents));
   const payrollCoveredDays=payrollDays.length;
   const payrollCents=payrollDays.reduce((n,d)=>n+(d.wagesCents??0)+(d.payrollTaxCents??0),0);
   const monthlyPayrollCents=payrollCoveredDays>=7&&
