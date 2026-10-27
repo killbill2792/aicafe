@@ -3,7 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { getUnpricedPublishedMenu } from "@/lib/data/getUnpricedPublishedMenu";
-import {formatCents} from "@/lib/utils/money";
+import { formatCents } from "@/lib/calc";
 import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
 import MenuCatalog from "@/components/menu/MenuCatalog";
 import { Link } from "@/i18n/navigation";
