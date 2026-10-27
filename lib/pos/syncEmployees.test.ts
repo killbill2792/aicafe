@@ -29,7 +29,8 @@ function fixture(start:Staff[]=[]){
  const rows=start.map(x=>({...x})),reviews:Array<Record<string,unknown>>=[];
  let writes=0;
  const db={from(table:string){
-  let mode="select",payload:Record<string,unknown>={},filters:Record<string,unknown>={};
+  let mode="select",payload:Record<string,unknown>={};
+  const filters:Record<string,unknown>={};
   const q={
    select:()=>q,
    eq:(key:string,value:unknown)=>{filters[key]=value;return q;},
