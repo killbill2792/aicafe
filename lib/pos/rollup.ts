@@ -2,7 +2,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
 import {readAllPosRows,posIdBatches} from "./pagedReads";
-import { itemIngredientCostCents, wagesCentsForTimecard } from "@/lib/calc";
+import { itemIngredientCostCents } from "@/lib/calc";
+import { timecardWagesForLocalDay } from "./timecardDay";
 import { processingFeeForRollup } from "./processingFees";
 import { ensureOwnerConfirmedProcessingFeeEstimateForDay } from "./processingFeeEstimate.server";
 import { resolveSalesDataStatus, type SalesDataStatus } from "./salesCoverage";
@@ -119,21 +120,25 @@ export async function recomputeDailyRollup(
   // codebase has hit before (see runningCosts.ts's decision note) — found here live, the first
   // time an evening shift actually existed to expose it.
   const dayStartUtc = fromZonedTime(`${businessDate}T00:00:00`, timezone).toISOString();
-  const dayEndUtc = fromZonedTime(`${businessDate}T23:59:59.999`, timezone).toISOString();
+  const nextDay = new Date(Date.parse(businessDate+"T12:00:00Z")+86400000).toISOString().slice(0,10);
+  const dayEndUtc = fromZonedTime(`${nextDay}T00:00:00`, timezone).toISOString();
+  // Include any timecard that overlaps this café-local day, not only shifts
+  // which started today. End is exclusive, including at DST boundaries.
   const timecards=await readAllPosRows((first,last)=>supabase
     .from("timecards")
     .select("id, clock_in, clock_out, hourly_wage_cents, wage_source, breaks")
     .eq("business_id", businessId)
-    .gte("clock_in", dayStartUtc)
-    .lte("clock_in", dayEndUtc).order("id").range(first,last),"daily timecards");
+    .lt("clock_in", dayEndUtc)
+    .or("clock_out.is.null,clock_out.gt."+dayStartUtc)
+    .order("id").range(first,last),"daily timecards");
 
   const wagesUnknown=timecards.some(tc=>tc.hourly_wage_cents===null);
   const wageEstimated=timecards.some(tc=>tc.wage_source==="estimate");
   const wagesCents=wagesUnknown?null:timecards.reduce((sum,tc)=>
-    sum+(wagesCentsForTimecard({
+    sum+(timecardWagesForLocalDay({
       clockIn:tc.clock_in,clockOut:tc.clock_out,
-      hourlyWageCents:tc.hourly_wage_cents as number,breaks:tc.breaks??[]
-    })??0),0);
+      hourlyWageCents:tc.hourly_wage_cents,breaks:tc.breaks??[]
+    },businessDate,timezone)??0),0);
   const laborWageStatus=wagesUnknown?"missing":wageEstimated?"estimate":"actual";
   const { data: existingRollup, error: existingRollupError } = await supabase
     .from("daily_rollups")
@@ -147,7 +152,7 @@ export async function recomputeDailyRollup(
   // Recomputing sales/labor must never replace that actual amount with wages × assumption.
   const staffTaxIsActual = existingRollup?.staff_tax_status === "actual";
   const staffTaxCents = staffTaxIsActual
-    ? Number(existingRollup.staff_tax_cents)
+    ? existingRollup?.staff_tax_cents==null?null:Number(existingRollup.staff_tax_cents)
     : wagesCents===null?null:Math.round(wagesCents * payrollTaxRate);
   const staffTaxSource = staffTaxIsActual
     ? existingRollup?.staff_tax_source ?? "legacy_actual"
