@@ -49,7 +49,7 @@ describe("Toast published catalog adapter",()=>{
  });
  it("maps Toast job title and wage without excluding deleted staff from roster",async()=>{
   const person="ffffffff-ffff-4fff-8fff-ffffffffffff";
-  request.mockImplementation(async(path:string)=>path.includes("/jobs")?
+  request.mockImplementation(async(path:string)=>(path??"").includes("/jobs")?
    [{guid:gid,title:"Barista",defaultWage:18.5,wageFrequency:"HOURLY"}]:
    [{guid:person,firstName:"Maria",lastName:"Lopez",deleted:true,jobReferences:[{guid:gid}]}]);
   expect(await adapter.fetchEmployees()).toEqual([{
