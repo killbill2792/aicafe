@@ -46,7 +46,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     units30d:units??(owner?.itemsSoldPerDay!=null?
       Math.round(owner.itemsSoldPerDay*periodDays(period)):null),
     menuPricesCents:menu.available?menu.value.filter(x=>x.active&&x.category===v.category)
-      .map(x=>x.priceCents):[],
+      .flatMap(x=>x.priceCents===null?[]:[x.priceCents]):[],
   });
   const location=site?.available?{city:site.value.city,region:site.value.region,country:site.value.countryCode}:null;
   const contribution=contributionCoverage({
