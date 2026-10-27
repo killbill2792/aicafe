@@ -24,9 +24,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v3
+      - uses: supabase/setup-cli@v1
         with:
-          version: 2.108.0
+          version: 2.121.0
       - name: Initialize ephemeral local Supabase config
         run: |
           if [ ! -f supabase/config.toml ]; then supabase init --force; fi
