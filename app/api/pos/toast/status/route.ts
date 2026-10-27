@@ -18,7 +18,7 @@ export async function GET(request:Request){
  let fetched;
  try{
   fetched=await Promise.all([
-   db.from("toast_api_credentials").select("state,last_error_category").eq("business_id",id.data).maybeSingle(),
+   db.from("toast_api_credentials").select("state,last_error_category,scopes_available").eq("business_id",id.data).maybeSingle(),
    db.from("toast_location_mappings").select("restaurant_guid,location_id,verified_at,toast_time_zone,toast_start_date,recheck_total").eq("business_id",id.data),
    readAllPages((start,end)=>db.from("toast_sync_runs")
     .select("id,kind,state,days_done,days_total,resume_at,requested_from,requested_to")
