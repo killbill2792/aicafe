@@ -21,7 +21,7 @@ function presentItemSales(rows:readonly SoldProduct[],menu:readonly MenuCatalogP
   const prices=new Map(menu.filter(item=>item.active).map(item=>[item.id,item.priceCents]));
   const displayed=sorted.slice(0,15).map(item=>{
     const price=prices.get(item.id);
-    const illustrativeRevenueCents=price===undefined?null:estimatedItemRevenueCents(item.units,price);
+    const illustrativeRevenueCents=price==null?null:estimatedItemRevenueCents(item.units,price);
     return {...item,illustrativeRevenueCents,currentMenuPriceCents:price??null};
   });
   const explain=displayed.slice(0,12).flatMap(item=>{
@@ -58,7 +58,7 @@ export const salesTools={
         const active=menu.value.filter(row=>row.active);
         const chosen=resolveChosenEntity(ctx.resolveState,active,row=>row.id);
         const named=chosen?{status:"resolved" as const,value:chosen}:resolveEntity("product",input.query,active,{
-          nameOf:r=>r.name,idOf:r=>r.id,describe:r=>r.category+" · "+(r.priceCents/100).toFixed(2)});
+          nameOf:r=>r.name,idOf:r=>r.id,describe:r=>r.category+" · "+(r.priceCents===null?"open price":(r.priceCents/100).toFixed(2)});
         if(named.status!=="resolved")return {...choicePayload(named,"item_sales",p),agentId:"alex"};
         if(!ownerNamedTarget(ctx.resolveState,named.value.id,named.value.name))
           return {source:"item_sales",period:p,agentId:"alex",missing:["targetNotConfirmed"]};
