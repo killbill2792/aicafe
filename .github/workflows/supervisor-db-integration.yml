@@ -45,7 +45,7 @@ jobs:
         run: |
           if [ ! -f supabase/config.toml ]; then supabase init --force; fi
       - name: Start disposable Supabase
-        run: supabase start
+        run: supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       - name: Replay the entire schema on fresh database
         run: supabase db reset --local --yes
       - name: Prove migration idempotency on the isolated database
