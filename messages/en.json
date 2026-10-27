@@ -937,8 +937,14 @@
     "now": "Now",
     "payrollCostsSummary": "Employer costs: {percent}% on top of wages (fallback)",
     "payrollCostsEdit": "Edit in Rules & costs",
-    "payrollSaveFailed": "Could not save employer costs. Try again."
-  },
+    "payrollSaveFailed": "Could not save employer costs. Try again.",
+    "payrollMonthlyTitle": "Monthly payroll costs not in Toast",
+    "payrollMonthlyHint": "Include salaries, benefits and monthly expenses not already counted in clocked wages or employer-cost percentage. If this amount includes payroll taxes, set the percentage above to 0% to avoid double-counting. Owner-reported estimate; not Toast Payroll.",
+    "payrollMonthlyField": "Other monthly payroll costs (USD)",
+    "payrollMonthlyInvalid": "Enter a valid amount with up to two decimals.",
+    "payrollMonthlySave": "Save monthly payroll costs",
+    "payrollMonthlySaved": "Saved as an owner estimate.",
+    "payrollMonthlySaveFailed": "Could not save monthly payroll costs."  },
   "More": {
     "toastConnect": "Connect Toast",
     "title": "More",
