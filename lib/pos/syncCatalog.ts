@@ -3,6 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import type {PosAdapter,PosCatalogItem} from "./types";
 import {matchCatalogItem,type CanonicalMenuCandidate} from "./catalogMatching";
 import {recordInitialMenuPrice,setCanonicalMenuPrice} from "@/lib/menu/priceHistory";
+import {readAllPosRows} from "./pagedReads";
 
 type Row={id:string;pos_item_id:string|null;name:string;base_name:string|null;size_label:string|null;
  price_cents:number|null;category:string|null;catalog_source:string|null;pos_name:string|null;
@@ -34,6 +35,8 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
  })));
  let matched=0,needsReview=0,created=0,changed=0;
  const seen=new Set<string>();
+ const seenModifierIds=new Set(imported.flatMap(item=>
+  (item.modifierGroups??[]).flatMap(group=>group.options.map(option=>option.posModifierId))));
  for(const item of imported){
   if(seen.has(item.posItemId))continue;
   seen.add(item.posItemId);
@@ -196,6 +199,22 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
     is_active:false,pos_archived_at:new Date().toISOString()
    }).eq("business_id",businessId).eq("id",row.id);
    resultError(archError);changed++;
+  }
+ }
+ // Retire only provider-owned options no longer published by this exact
+ // location. Owner ingredient/quantity overrides and historical rows remain.
+ if(adapter.provider==="toast"&&options.restaurantGuid){
+  const prior=await readAllPosRows((from,to)=>db.from("modifier_recipes")
+   .select("id,pos_modifier_id,is_active").eq("business_id",businessId)
+   .eq("catalog_source","toast")
+   .like("pos_modifier_id","toast:"+options.restaurantGuid+":%")
+   .order("id").range(from,to),"Toast modifier snapshot");
+  for(const row of prior){
+   if(!row.is_active||!row.pos_modifier_id||seenModifierIds.has(row.pos_modifier_id))continue;
+   const {error:archiveError}=await db.from("modifier_recipes").update({
+    is_active:false,catalog_last_synced_at:new Date().toISOString()
+   }).eq("business_id",businessId).eq("id",row.id);
+   resultError(archiveError);changed++;
   }
  }
  if(adapter.provider==="toast"&&(options.restaurantGuid||imported.length)){
