@@ -145,7 +145,7 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
           sourceProvider:match.provider,
         });
       }catch(error){
-        logQueryError("resolveCatalogMatch:priceHistory",error);applied=false;
+        logQueryError("resolveCatalogMatch:priceHistory",{message:error instanceof Error?error.message:"Price history unavailable"});applied=false;
       }
     }
     if (applied && match.provider === "csv") csvItemId = match.suggested_menu_item_id;
@@ -186,7 +186,7 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
               sourceProvider:match.provider,
             });
           }catch(error){
-            logQueryError("resolveCatalogMatch:initialHistory",error);applied=false;
+            logQueryError("resolveCatalogMatch:initialHistory",{message:error instanceof Error?error.message:"Initial price history unavailable"});applied=false;
           }
         }
       }
@@ -204,7 +204,7 @@ export async function resolveCatalogMatch(matchId: string, choice: "suggested" |
               sourceProvider:match.provider,
             });
           }catch(error){
-            logQueryError("resolveCatalogMatch:historyRetry",error);applied=false;
+            logQueryError("resolveCatalogMatch:historyRetry",{message:error instanceof Error?error.message:"Historical price check unavailable"});applied=false;
           }
         }
       }
