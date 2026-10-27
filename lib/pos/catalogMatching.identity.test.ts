@@ -52,6 +52,15 @@ describe("provider catalog matching identities",()=>{
    candidate({priceCents:null})
   ])).toMatchObject({status:"needs_review"});
  });
+ it("keeps Arabic names distinct and links equivalent accented Spanish names",()=>{
+  expect(matchCatalogItem(item({name:"قهوة",baseName:"قهوة",priceCents:300}),[
+    candidate({id:"tea",name:"شاي",baseName:"شاي",priceCents:300}),
+    candidate({id:"coffee",name:"قهوة",baseName:"قهوة",priceCents:300}),
+  ])).toMatchObject({status:"matched",candidateId:"coffee"});
+  expect(matchCatalogItem(item({name:"Café con leche",baseName:"Café con leche"}),[
+    candidate({name:"Cafe con leche",baseName:"Cafe con leche"}),
+  ])).toMatchObject({status:"matched",candidateId:"row-1"});
+ });
  it("brand new menu silently returns new when no candidates",()=>{
   expect(matchCatalogItem(item(),[])).toMatchObject({status:"new",candidateId:null});
  });
