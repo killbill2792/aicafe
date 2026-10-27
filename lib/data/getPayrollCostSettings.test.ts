@@ -20,6 +20,7 @@ it("shows a clearly estimated, read-only-compatible payroll fallback without Sup
     fallbackStatus:"estimated",
     fallbackSource:"system_estimate",
     actualSources:[],
+    monthlyExtrasCents:null,
   });
   expect(mock.makeClient).not.toHaveBeenCalled();
 });
