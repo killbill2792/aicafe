@@ -17,6 +17,15 @@ export function laborKnown<T extends Pick<DailyFacts,"wagesCents"|"staffTaxCents
   return day.wagesCents!==null&&day.staffTaxCents!==null&&day.laborWageStatus!=="missing";
 }
 
+/** No clocked attendance is missing payroll evidence, not a verified $0 shift.
+ * Return the provenance for every rollup, keeping any known-only cents separate. */
+export function laborWageStatusFromTimecards(cards:readonly {
+  hourly_wage_cents:number|null;wage_source:string|null
+}[]): "actual"|"estimate"|"missing" {
+  if(cards.length===0||cards.some(card=>card.hourly_wage_cents===null))return "missing";
+  return cards.some(card=>card.wage_source==="estimate")?"estimate":"actual";
+}
+
 export function staffCostCentsForPeriod(days: DailyFacts[]): number | null {
   if(days.some(d=>!laborKnown(d)))return null;
   return sumCents(days, (d) => (d.wagesCents??0) + (d.staffTaxCents??0));

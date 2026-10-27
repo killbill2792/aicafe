@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { averageOrderValueCents, staffCostCentsForPeriod, ownerProfitCentsForPeriod, laborKnown } from "./profit";
+import { averageOrderValueCents, staffCostCentsForPeriod, ownerProfitCentsForPeriod, laborKnown, laborWageStatusFromTimecards } from "./profit";
 import type { DailyFacts } from "./types";
 
 describe("averageOrderValueCents", () => {
@@ -44,5 +44,16 @@ describe("shared labor completeness",()=>{
     expect(laborKnown({...day,laborWageStatus:"actual"})).toBe(true);
     expect(laborKnown({...day,laborWageStatus:"estimate"})).toBe(true);
     expect(laborKnown({...day,staffTaxCents:null})).toBe(false);
+  });
+});
+
+describe("empty attendance does not certify zero labor",()=>{
+  it("marks absent timecards and nullable wages as missing, preserving explicit zero pay",()=>{
+    expect(laborWageStatusFromTimecards([])).toBe("missing");
+    expect(laborWageStatusFromTimecards([
+      {hourly_wage_cents:null,wage_source:"pos"},
+      {hourly_wage_cents:1900,wage_source:"pos"}])).toBe("missing");
+    expect(laborWageStatusFromTimecards([{hourly_wage_cents:0,wage_source:"pos"}])).toBe("actual");
+    expect(laborWageStatusFromTimecards([{hourly_wage_cents:1900,wage_source:"estimate"}])).toBe("estimate");
   });
 });
