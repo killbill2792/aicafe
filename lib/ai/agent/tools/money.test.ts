@@ -163,7 +163,7 @@ describe("Leo scoped money reads",()=>{
       dailyBreakEvenSalesCents:12988,contributionBps:7700,
       processingFeeBps:300,processingFeesIncluded:true,
     });
-    expect(r.missing).toEqual([]);
+    expect(r.missing).toEqual(["ownerMonthlyPayrollExtrasNotSet:estimateExcludesUnknownAdditionalPayroll"]);
   });
   it("does not report complete when contribution is nonpositive or owner's sales days are absent",async()=>{
     const context=ctx({getBreakEven:async()=>({available:true,value:{
