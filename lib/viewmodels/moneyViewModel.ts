@@ -47,7 +47,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const recovery = computeCostRecovery(buckets, [...actual, ...projected]);
 
   const totalCents = buckets.reduce((s, b) => s + b.amountCents, 0);
-  const allCovered = recovery.currentBucketCode === null;
+
 
   const monthlyBillsCents = snapshot.runningCostLines
     .filter((line) => !line.isMissing)
@@ -55,6 +55,8 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
 
   const monthRecordedDays = snapshot.monthRecordedDays ?? snapshot.monthActualDays;
   const missingMonthWage=monthRecordedDays.some(d=>!laborKnown(d));
+  // Known contributions cannot establish final coverage when any recorded wage is partial.
+  const allCovered=!missingMonthWage&&recovery.currentBucketCode===null;
   const staffSoFarCents=missingMonthWage?null:monthRecordedDays.reduce((sum,day)=>
     sum+(day.wagesCents??0)+(day.staffTaxCents??0),0);
   const todayDay = Number(snapshot.todayDateStr.slice(-2));
@@ -112,7 +114,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     buckets: recovery.buckets,
     currentBucketCode: recovery.currentBucketCode,
     yoursSoFarCents: recovery.yoursSoFarCents,
-    projectedMonthEndProfitCents: recovery.projectedMonthEndProfitCents,
+    projectedMonthEndProfitCents: missingMonthWage?null:recovery.projectedMonthEndProfitCents,
     allCovered,
     totalCents,
     actualDays: actual,
