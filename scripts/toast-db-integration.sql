@@ -717,4 +717,58 @@ BEGIN
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
 RESET ROLE;
+
+-- Prompt D: source pages, nested records and incomplete labor remain after staging cleanup.
+DO $keepall$
+DECLARE
+ b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+ loc uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001';
+ run uuid; before_count integer; after_count integer;
+ pay uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0050';
+ chk uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0051';
+ ord uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0052';
+ entry uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0053';
+BEGIN
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state)
+ values(b,r,'daily','queued') returning id into run;
+ insert into public.toast_day_pages(run_id,business_date,page,payload)
+ values(run,'2026-10-18',1,jsonb_build_array(jsonb_build_object(
+  'guid',ord,'checks',jsonb_build_array(jsonb_build_object(
+   'guid',chk,'payments',jsonb_build_array(jsonb_build_object(
+    'guid',pay,'type','CASH','amount',10,'tipAmount',2)))))));
+ select count(*) into before_count from public.toast_raw_records
+ where business_id=b and run_id=run;
+ perform pg_temp.assert_true(before_count=3,'order/check/payment all archived');
+ delete from public.toast_day_pages where run_id=run and business_date='2026-10-18';
+ select count(*) into after_count from public.toast_raw_records
+ where business_id=b and run_id=run;
+ perform pg_temp.assert_true(after_count=before_count,
+  'clearing source pages preserves all immutable Toast payloads');
+ perform pg_temp.assert_true(exists(select 1 from public.toast_payment_summaries
+  where business_id=b and restaurant_guid=r and business_date='2026-10-18'
+  and payment_ref=pay::text and amount_cents=1000 and tip_cents=200),
+  'payment safe reader preserves numeric evidence');
+ insert into public.toast_labor_entries(business_id,restaurant_guid,location_id,
+  external_time_entry_id,external_employee_id,clock_in,clock_out,
+  hourly_wage_cents,wage_status)
+ values(b,r,loc,entry,entry,'2026-10-18T10:00:00Z',null,null,'missing')
+ on conflict (business_id,restaurant_guid,external_time_entry_id)
+ do update set clock_out=null,hourly_wage_cents=null,wage_status='missing';
+ perform pg_temp.assert_true(exists(select 1 from public.cv_labor_entries
+  where business_id=b and source='toast' and status='open'
+  and source_ref='staged-timecard:'||r::text||':'||entry::text
+  and data->>'hourly_wage_cents' is null),
+  'open Toast timecards readable without invented wage rates');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_payments
+  where business_id=b and amount_cents=1000 and tip_cents=200),
+  'canonical payment view uses sanitized row');
+ perform pg_temp.assert_true((select count(*)=15 from information_schema.views
+  where table_schema='public' and table_name like 'cv_%'),
+  'all 15 canonical views exist');
+ perform pg_temp.assert_true(not has_table_privilege('authenticated',
+   'public.toast_raw_records','SELECT'),
+  'raw payment/card payload not exposed to authenticated role');
+END $keepall$;
+
 ROLLBACK;
