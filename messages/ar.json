@@ -3351,6 +3351,7 @@
     "none": "غير محدد"
   },
   "MetricsNotes": {
+    "metricReasonUnknown": "يعتمد هذا الرقم على السجلات المتاحة؛ يلزم تأكيد مصدره.",
     "periodLatestData": "أحدث البيانات: {from}–{to}",
     "laborPartialCoverage": "تم تقدير الرواتب من {covered} من أصل {total} يومًا؛ بقية الأيام غير مسجلة.",
     "laborRecorded": "الأجور وضرائب الرواتب المسجلة.",
