@@ -3351,6 +3351,7 @@
     "none": "Sin configurar"
   },
   "MetricsNotes": {
+    "metricReasonUnknown": "Esta cifra usa los registros disponibles; falta confirmar su origen.",
     "periodLatestData": "Últimos datos: {from}–{to}",
     "laborPartialCoverage": "Nómina proyectada con {covered} de {total} días; faltan registros de otros días.",
     "laborRecorded": "Salarios e impuestos de nómina registrados.",
