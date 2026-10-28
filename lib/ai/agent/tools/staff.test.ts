@@ -127,6 +127,7 @@ describe("Olivia bounded reads",()=>{
     expect(getWeekSchedule).toHaveBeenCalledTimes(1+2+18);
   });
   it("deduplicates Toast overnight assignments returned by two adjacent weeks",async()=>{
+    vi.mocked(getWeekSchedule).mockClear();
     const overnight={id:"toast-night",employeeId:null,employeeName:"Taylor",
       start:"2026-10-26T06:00:00Z",end:"2026-10-26T11:00:00Z",
       locationId:"location-a",source:"toast" as const,paid:false as const};
