@@ -28,7 +28,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   db.from("locations").select("open_hours").eq("business_id",businessId).limit(1),
   db.from("recurring_costs").select("amount_cents,frequency,is_estimate,active_from,active_to")
    .eq("business_id",businessId).lte("active_from",asOf),
-  db.from("daily_rollups").select("business_date,sales_data_status,net_sales_cents,ingredients_cents,card_fees_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,drinks_count,orders_count")
+  db.from("daily_rollups").select("business_date,sales_data_status,net_sales_cents,ingredients_cents,card_fees_cents,card_fees_status,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,drinks_count,orders_count")
    .eq("business_id",businessId).gte("business_date",salesSince).lte("business_date",asOf).limit(500),
   db.from("employees").select("id,display_name,role,default_hourly_wage_cents").eq("business_id",businessId).eq("active",true).limit(500),
   getOwnerConfirmedProcessingFeePlans(db,businessId)
@@ -153,7 +153,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   observedDays:(rollups.data??[]).filter(row=>row.sales_data_status!=="missing")
    .map(row=>({date:row.business_date,netSalesCents:Number(row.net_sales_cents??0),
      ingredientsCents:Number(row.ingredients_cents??0),
-     cardFeesCents:Number(row.card_fees_cents??0),drinksCount:Number(row.drinks_count??0)})),
+     cardFeesCents:Number(row.card_fees_cents??0),
+      cardFeesStatus:row.card_fees_status??"missing",drinksCount:Number(row.drinks_count??0)})),
  },items:pricing.items,ownerMonthlyPayrollExtrasCents,ownerIngredientRate:savedRate,
  staff:(employees.data??[]).map(person=>{
   const worked=(timecards.data??[]).filter(card=>card.source_type!=="owner_schedule"&&
