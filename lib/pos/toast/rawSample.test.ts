@@ -31,7 +31,8 @@ function database(allow=true){
 beforeEach(()=>{
  mocks.request.mockReset();
  process.env.TOAST_CUSTOMER_HASH_KEY="test-only-32-byte-stable-hmac-key!!";
- let i=0;vi.spyOn(Date,"now").mockImplementation(()=>Date.parse("2026-10-20T00:00:00Z")+i++*6000);
+ vi.spyOn(globalThis,"setTimeout").mockImplementation(((fn:()=>void)=>{fn();return 0;}) as typeof setTimeout);
+ let i=0;vi.spyOn(Date,"now").mockImplementation(()=>Date.parse("2026-10-20T00:00:00Z")+i++*1000);
 });
 describe("read-only Toast coverage diagnostics",()=>{
  it("retains business names/times, hours and wages and hashes repeat customer IDs",()=>{
