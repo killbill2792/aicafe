@@ -89,8 +89,12 @@ export async function runAgentTurn(args: {
   const workDeadline = deadline - 12000; // reserve time for the final no-tool answer
   const controller = new AbortController();
   const provider = args.provider ?? openAIProvider;
+  const localDay=new Date(args.context.asOf+"T12:00:00Z");
+  const weekday=new Intl.DateTimeFormat("en-US",{weekday:"long",timeZone:"UTC"}).format(localDay);
   const input: unknown[] = [
     ...(args.memoryFacts ? [{ role: "developer", content: args.memoryFacts }] : []),
+    {role:"developer",content:"Café local date: "+args.context.asOf+" ("+weekday+"), timezone "+
+      (args.context.timezone??"UTC")+"; weeks start Monday"},
     ...(args.history ?? []), { role: "user", content:args.ownerImages?.length?
       [{type:"input_text",text:args.ownerText},...args.ownerImages.map(image=>({
         type:"input_image",image_url:"data:"+image.mimeType+";base64,"+image.base64,detail:"low"

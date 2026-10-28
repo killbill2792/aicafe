@@ -17,35 +17,40 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  Promise<SupervisorEconomicsRead>{
  if(!businessId)throw new Error("Café scope required");
  const month=calendarMonth(asOf);
+ const salesSince=dateOffset(asOf,-364);
  const business=await db.from("businesses").select("timezone,payroll_tax_rate,target_ingredient_cost_rate,target_ingredient_cost_rate_status,owner_monthly_payroll_extras_cents").eq("id",businessId).single();
  if(business.error)throw business.error;
- const [pricing,locations,recurring,rollups,connections,timecards,employees]=await Promise.all([
+ const [pricing,locations,recurring,rollups,connections,employees]=await Promise.all([
   getPricingInputs(db,businessId),
   db.from("locations").select("open_hours").eq("business_id",businessId).limit(1),
   db.from("recurring_costs").select("amount_cents,frequency,is_estimate,active_from,active_to")
    .eq("business_id",businessId).lte("active_from",asOf),
   db.from("daily_rollups").select("business_date,sales_data_status,net_sales_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,drinks_count")
-   .eq("business_id",businessId).gte("business_date",month.from).lte("business_date",asOf).limit(500),
+   .eq("business_id",businessId).gte("business_date",salesSince).lte("business_date",asOf).limit(500),
   db.from("pos_connections").select("provider").eq("business_id",businessId).eq("status","active"),
-  db.from("timecards").select("employee_id,clock_in,clock_out,hourly_wage_cents,source_type")
-   .eq("business_id",businessId).gte("clock_in",fromZonedTime(month.from+"T00:00:00",
-    business.data?.timezone??"America/Los_Angeles").toISOString())
-   .lte("clock_in",fromZonedTime(asOf+"T23:59:59",
-    business.data?.timezone??"America/Los_Angeles").toISOString()).limit(2001),
   db.from("employees").select("id,display_name,role,default_hourly_wage_cents").eq("business_id",businessId).eq("active",true).limit(500)
  ]);
- for(const response of [locations,recurring,rollups,connections,timecards,employees])
+ for(const response of [locations,recurring,rollups,connections,employees])
   if(response.error)throw response.error;
- if((timecards.data??[]).length>2000)throw new Error("Labor timecard page truncated");
  if((employees.data??[]).length>=500)throw new Error("Employee roster page truncated");
  const timezone=business.data?.timezone??"America/Los_Angeles";
  const hours=normalizeOpenHours(locations.data?.[0]?.open_hours);
  const open=(day:string)=>regularHoursStateForDate(hours,day)!=="closed";
- const todayActual=(rollups.data??[]).some(row=>row.business_date===asOf&&row.sales_data_status==="actual");
- const through=todayActual?asOf:dateOffset(asOf,-1);
  const dayList:string[]=[];
  for(let day=month.from;day<=month.to;day=dateOffset(day,1))if(open(day))dayList.push(day);
- const elapsed=dayList.filter(day=>day<=through);
+ const salesDays=(rollups.data??[]).filter(row=>row.sales_data_status==="actual")
+  .map(row=>row.business_date).sort();
+ const latest=salesDays.at(-1);
+ const first=latest?salesDays.find(day=>day>=dateOffset(latest,-29)):undefined;
+ const coveredDates=new Set(salesDays.filter(day=>first&&day>=first&&day<=latest));
+ const laborWindow=[...coveredDates].filter(open);
+ const timecards=await db.from("timecards")
+  .select("employee_id,clock_in,clock_out,hourly_wage_cents,source_type")
+  .eq("business_id",businessId)
+  .gte("clock_in",fromZonedTime((first??month.from)+"T00:00:00",timezone).toISOString())
+  .lte("clock_in",fromZonedTime((latest??asOf)+"T23:59:59",timezone).toISOString()).limit(2001);
+ if(timecards.error)throw timecards.error;
+ if((timecards.data??[]).length>2000)throw new Error("Labor timecard page truncated");
  const payEvidence=payrollDayCoverage(
   (timecards.data??[]).filter(row=>row.source_type!=="owner_schedule").map(row=>({
    businessDate:formatInTimeZone(new Date(row.clock_in),timezone,"yyyy-MM-dd"),
@@ -59,9 +64,9 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   }))
  );
  const recorded=payEvidence.coveredDates;
- const laborDays=elapsed.filter(day=>recorded.has(day));
- const laborMissing=elapsed.filter(day=>!recorded.has(day));
- // Match the numerator to the same elapsed, open, labor-covered dates used by the projection denominator.
+ const laborDays=laborWindow.filter(day=>recorded.has(day));
+ const laborMissing=laborWindow.filter(day=>!recorded.has(day));
+ // Match the numerator to the same covered sales days as the labor projection denominator.
  const payrollRows=(rollups.data??[]).filter(row=>laborDays.includes(row.business_date));
  const wages=payrollRows.reduce((sum,row)=>sum+Number(row.staff_wages_cents)+Number(row.staff_tax_cents),0);
  const estimatedTax=payrollRows.some(row=>payEvidence.taxEstimatedDays.has(row.business_date));
@@ -104,7 +109,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
    Number(feeBasis.processingFeeDenominatorCents):hasToast?.029:null;
  const feeStatus=feeRecorded?feeBasis.feeStatus==="actual"?"actual":"estimate":
   hasToast?"estimate":"missing";
- const salesDates=(rollups.data??[]).filter(row=>row.sales_data_status==="actual");
+ const salesDates=(rollups.data??[]).filter(row=>coveredDates.has(row.business_date));
  const totalDrinks=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.drinks_count??0)),0);
  const observedRevenueCents=salesDates.reduce((sum,row)=>sum+Number(row.net_sales_cents??0),0);
  const salesObserved=salesDates.length>0;
@@ -136,6 +141,6 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
    Date.parse(card.clock_out!)-Date.parse(card.clock_in))/3600000),0);
   return {id:person.id,displayName:person.display_name,role:person.role,
    wageCents:person.default_hourly_wage_cents==null?null:Number(person.default_hourly_wage_cents),
-   weeklyHours:worked.length?hours*7/Math.max(1,elapsed.length):null};
+   weeklyHours:worked.length?hours*7/Math.max(1,laborWindow.length):null};
  })};
 }

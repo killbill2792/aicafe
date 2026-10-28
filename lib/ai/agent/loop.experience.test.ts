@@ -65,7 +65,7 @@ describe("café memory in context (CHAT_MEMORY)", () => {
   it("sends no memory item and no extra tool by default", async () => {
     const { requests, provider } = recording([[text("Hi."), completed]]);
     await runAgentTurn({ ownerText: "Hi", context, provider });
-    expect(JSON.stringify(requests[0].input)).not.toContain("developer");
+    expect(JSON.stringify(requests[0].input)).toContain("Café local date:");
     expect((requests[0].tools as Array<{ name: string }>).some(t => t.name === "remember_cafe_fact")).toBe(false);
   });
 });

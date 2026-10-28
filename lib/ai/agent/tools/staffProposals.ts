@@ -3,6 +3,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 import {ownerChoiceGuard,ownerNamedTarget,resolveEntity,choicePayload,normalizedName} from "../resolve";
 import {getTeam} from "@/lib/actions/schedule";
 import {mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
+import {nextMonday} from "@/lib/calc/scheduling/draftWeek";
 import {scheduleDraftNotice} from "@/lib/calc/scheduling/ownerDeliveryLinks";
 const uuid=z.uuid(),date=z.iso.date(),clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const shift=z.strictObject({employee_id:uuid,date,start:clock,end:clock,
@@ -19,7 +20,7 @@ const rules=[
  "coverage_enabled","min_headcount","prep_minutes_before_open","prep_minutes_after_close"
 ] as const;
 export const staffProposalInputs={
- propose_schedule:z.strictObject({week_start:date,shifts:z.array(shift).max(60)}),
+ propose_schedule:z.strictObject({week_start:date.nullable(),shifts:z.array(shift).max(60)}),
  propose_shift_change:z.strictObject({shift_id:uuid.nullable(),shift,remove:z.boolean()}),
  propose_add_staff:person,
  propose_staff_change:z.strictObject({employee_id:uuid, ...person.shape,active:z.boolean()}),
@@ -32,7 +33,7 @@ export type StaffProposalName=keyof typeof staffProposalInputs;
 export const isStaffProposalName=(value:string):value is StaffProposalName=>
  Object.hasOwn(staffProposalInputs,value);
 const descriptions:Record<StaffProposalName,string>={
- propose_schedule:"Prepare an owner approval card to replace DRAFT shifts in a specific week. Include staff UUIDs, dates, local start/end and breaks. Never claim saved.",
+ propose_schedule:"Prepare an owner approval card to replace DRAFT shifts in a specific week. For 'next week' pass week_start null (resolved to next café-local Monday); ask only if truly ambiguous. Include staff UUIDs, dates, local start/end and breaks. Never claim saved.",
  propose_shift_change:"Prepare a card to add, edit or remove a dated staff shift. Use an existing shift_id for edits; null for creates. No write before approval.",
  propose_add_staff:"Prepare an owner approval card to add a staff member with hourly wage in cents; never directly add.",
  propose_staff_change:"Prepare a card to change an existing staff member's name, role, hourly wage, phone or active status; provide the complete desired profile.",
@@ -44,7 +45,9 @@ export const staffProposalTools=Object.fromEntries(
  (Object.keys(staffProposalInputs) as StaffProposalName[]).map(name=>[name,{
   agentId:"olivia" as const,description:descriptions[name],schema:staffProposalInputs[name],
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-   const input=staffProposalInputs[name].parse(raw);
+   const parsed=staffProposalInputs[name].parse(raw);
+   const input=name==="propose_schedule"&&"week_start" in parsed&&parsed.week_start===null
+    ?{...parsed,week_start:nextMonday(ctx.asOf)}:parsed;
    // The ordinary agent always supplies resolveState. Keep legacy tests that
    // call this handler directly compatible without weakening the live guard.
    if(ctx.resolveState&&name!=="propose_add_staff"&&name!=="propose_rule_change"&&name!=="propose_send_schedule"){

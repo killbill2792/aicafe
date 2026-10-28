@@ -14,21 +14,23 @@ export async function readToastPlannedShifts(db:SupabaseClient,businessId:string
  const last=new Date(to+"T23:59:59Z").getTime()+2*86400000;
  if(!Number.isFinite(first)||!Number.isFinite(last)||from>to)
   throw new Error("Invalid Toast schedule window");
- const [planned,mappings,roster]=await Promise.all([
+ // Check the authorized business has Toast mappings before reading restricted POS tables.
+ const mappings=await db.from("toast_location_mappings").select("location_id,restaurant_guid")
+  .eq("business_id",businessId);
+ if(mappings.error)throw mappings.error;
+ if(!mappings.data?.length)return [];
+ const [planned,roster]=await Promise.all([
   db.from("pos_scheduled_shifts")
    .select("location_id,external_shift_id,external_employee_id,scheduled_start,scheduled_end")
    .eq("business_id",businessId).eq("provider","toast").eq("deleted",false)
    .gte("scheduled_end",new Date(first).toISOString())
    .lte("scheduled_start",new Date(last).toISOString())
    .order("scheduled_start").limit(1001),
-  db.from("toast_location_mappings").select("location_id,restaurant_guid")
-   .eq("business_id",businessId),
-  db.from("toast_employee_directory")
+   db.from("toast_employee_directory")
    .select("restaurant_guid,employee_guid,display_name,linked_employee_id")
    .eq("business_id",businessId).limit(5001),
  ]);
  if(planned.error)throw planned.error;
- if(mappings.error)throw mappings.error;
  if(roster.error)throw roster.error;
  if((planned.data??[]).length>1000||(roster.data??[]).length>5000)
   throw new Error("Toast schedule snapshot truncated");

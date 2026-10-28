@@ -27,6 +27,17 @@ describe("staff owner-approval tool registration",()=>{
     proposalId:"22222222-2222-4222-8222-222222222222",missing:[]});
   }
  });
+ it("resolves next week in café-local context before preparing a card",async()=>{
+  const proposeStaff=vi.fn().mockResolvedValue({proposalId:"22222222-2222-4222-8222-222222222222",
+   revision:1,capabilityId:"olivia.staff_propose_schedule.v2"});
+  const result=await staffProposalTools.propose_schedule.execute({
+   week_start:null,shifts:[{...shift,date:"2026-11-02"}]},
+   {...ctx,asOf:"2026-10-27",timezone:"America/Los_Angeles",
+    proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+  expect(proposeStaff).toHaveBeenCalledWith({name:"propose_schedule",
+   input:{week_start:"2026-11-02",shifts:[{...shift,date:"2026-11-02"}]}});
+  expect(result.missing).toEqual([]);
+ });
  it("says staff messages require an owner action and never asserts delivery",async()=>{
   const result=await staffProposalTools.propose_send_schedule.execute(valid.propose_send_schedule,{
    ...ctx,proposals:{proposePriceChange:vi.fn(),

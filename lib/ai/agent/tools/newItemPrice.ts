@@ -3,10 +3,10 @@ import {laborKnown} from "@/lib/calc";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {calculateNewItemPrice,contributionCoverage} from "@/lib/calc/newItemPrice";
 import {requestedPeriod,prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
-import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
+import {ownerInputsSchema,ownerPeriod,ownerMonthlyAmount} from "./ownerInputs";
 import {resolveCoveredSalesWindow} from "./coverage";
 import {money,percent} from "../explain";
-import {recommendFullCostPrice} from "@/lib/calc/supervisorEconomics";
+import {figure,recommendFullCostPrice} from "@/lib/calc/supervisorEconomics";
 const schema=z.strictObject({
  ingredient_cost_cents:z.number().int().positive(),category:z.enum(["drink","food"]),
  packaging_cents:z.number().int().nonnegative().nullable(),
@@ -18,14 +18,36 @@ export const newItemPriceTools={suggest_new_item_price:{
   const v=schema.parse(raw),owner=v.ownerInputs;
   if(ctx.readEconomics){
    const {economics}=await ctx.readEconomics();
+   const ownerLabor=ownerMonthlyAmount(owner?.laborCents??null,owner?.laborPeriod??null,ctx.asOf);
+   const monthlyStaff=ownerLabor!==null&&
+    (economics.monthlyStaff.valueCents===null||economics.monthlyStaff.status!=="actual")
+     ?figure(ownerLabor,"owner","You told me"):economics.monthlyStaff;
+   const month=calendarMonth(ctx.asOf);
+   let units=owner?.itemsSoldPerDay!=null?
+    Math.round(owner.itemsSoldPerDay*periodDays(month)):economics.monthlyUnits;
+   let coverageLabel:string|null=null;
+   if(units===null){
+    const coverage=await resolveCoveredSalesWindow(ctx,requestedPeriod("month",ctx.asOf));
+    const trend=await ctx.tools.getSalesTrend(coverage.period);
+    const days=trend.available?trend.value.filter(day=>
+     day.date>=coverage.period.from&&day.date<=coverage.period.to):[];
+    const drinks=days.reduce((sum,day)=>sum+Math.max(0,day.drinksCount),0);
+    const orders=days.reduce((sum,day)=>sum+Math.max(0,day.ordersCount),0);
+    const sold=drinks>0?drinks:orders;
+    if(days.length){
+     units=Math.round(sold/days.length*periodDays(month));
+     coverageLabel=coverage.label?coverage.label+", "+coverage.period.to.slice(0,4):
+      "Recorded sales: "+coverage.period.from+"–"+coverage.period.to;
+    }
+   }
    const recommended=recommendFullCostPrice({
     ingredientCents:v.ingredient_cost_cents,packagingCents:v.packaging_cents,
-    laborCents:economics.monthlyStaff.valueCents,
-    overheadCents:economics.monthlyBills.valueCents,units:economics.monthlyUnits,
+    laborCents:monthlyStaff.valueCents,
+    overheadCents:economics.monthlyBills.valueCents,units,
     feeRate:economics.feeRate,targetMargin:(v.target_margin_percent??(economics.targetMargin*100))/100
    });
-   return {source:"new_item_price",period:calendarMonth(ctx.asOf),agentId:"alex",
-    status:recommended.missing.length||economics.monthlyStaff.status!=="actual"||
+   return {source:"new_item_price",period:month,coverageLabel,monthlyUnits:units,agentId:"alex",
+    status:recommended.missing.length||monthlyStaff.status!=="actual"||
       economics.monthlyBills.status!=="actual"||economics.feeStatus!=="actual"?"estimate":"actual",saved:false,draft:true,
     itemName:v.item_name,category:v.category,
     recommendedPriceCents:recommended.recommendedPriceCents,
@@ -35,7 +57,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     pricingNote:recommended.missing.length?
      "Only a floor from known costs, not a recommendation. Missing: "+recommended.missing.join(", "):
      "Full-cost price from known inputs.",
-    monthlyLabor:economics.monthlyStaff,monthlyBills:economics.monthlyBills,
+    monthlyLabor:monthlyStaff,monthlyBills:economics.monthlyBills,
     feeRate:economics.feeRate,targetMargin:v.target_margin_percent===null?
      economics.targetMargin:v.target_margin_percent/100,
     missing:recommended.missing,

@@ -46,6 +46,6 @@ describe("Toast planned shifts never become wages",()=>{
    locationId:location,source:"toast",paid:false,
    start:"2026-10-27T18:00:00Z",end:"2026-10-27T20:00:00Z"}]);
   expect(f.scopeChecks).toEqual([
-   "pos_scheduled_shifts","toast_location_mappings","toast_employee_directory","employees"]);
+   "toast_location_mappings","pos_scheduled_shifts","toast_employee_directory","employees"]);
  });
 });

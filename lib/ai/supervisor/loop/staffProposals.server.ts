@@ -4,10 +4,11 @@ import {cardValueSchema,diffFields,type CardValue,type DiffField} from "@/lib/fo
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import {readStaffProposalToken,readStaffProposalSources,
+import {readStaffProposalToken,readStaffProposalSources,readStaffProposalLocalDate,
  type StaffProposalShift as Shift} from "@/lib/data/staffProposalSources.server";
 import {parseAvailabilityText} from "@/lib/calc/scheduling/parseAvailabilityText";
 import {assertStaffShiftPlan,formatStaffApprovalRuleValue,formatStaffShiftWithBreak} from "@/lib/calc/scheduling/staffProposalValidation";
+import {nextMonday} from "@/lib/calc/scheduling/draftWeek";
 import {staffProposalInputs,type StaffProposalName} from "@/lib/ai/agent/tools/staffProposals";
 import {registerLoopCapability,type OwnerLoopScope} from "./engine";
 
@@ -56,7 +57,9 @@ const fmtShift=(s:Shift)=>when({date:s.local_date,start:s.start_local.slice(0,5)
 function ensure(ok:unknown,msg:string):asserts ok{if(!ok)throw new Error(msg);}
 export {readStaffProposalToken};
 async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
- const input=staffProposalInputs[name].parse(raw);
+ const parsed=staffProposalInputs[name].parse(raw);
+ const input=name==="propose_schedule"&&"week_start" in parsed&&parsed.week_start===null
+  ?{...parsed,week_start:nextMonday(await readStaffProposalLocalDate(scope))}:parsed;
  const copy=({en,es,ar} as const)[scope.locale].StaffApprovalCard;
  const dayCopy=({en,es,ar} as const)[scope.locale].SchedulingAvailability;
  const days=weekdayKeys.map(key=>dayCopy[key]);
@@ -83,7 +86,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
  const localDate=part("year")+"-"+part("month")+"-"+part("day");
  switch(name){
   case "propose_schedule":{
-   const d=input as z.infer<typeof staffProposalInputs.propose_schedule>;
+   const d=input as z.infer<typeof staffProposalInputs.propose_schedule> & {week_start:string};
    ensure(isoDay(d.week_start)===1&&d.week_start>=localDate,"Choose a future Monday");
    const last=add(d.week_start,6),old=shifts.filter(x=>x.local_date>=d.week_start&&x.local_date<=last);
    ensure(old.every(x=>x.status==="draft"),"Sent shifts cannot be replaced");
@@ -105,6 +108,10 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
      const after=d.shifts.filter(x=>x.date===date).map(x=>shown(x.employee_id)+" "+formatStaffShiftWithBreak(x,copy.breakMinutes)).sort().join("\n");
      item("schedule:"+date,copy.week+" "+date,before?text(before):null,after?text(after):null);
    }
+   const unknown=people.filter(p=>p.active&&d.shifts.some(x=>x.employee_id===p.id)&&
+     p.wage_amount_cents===null&&(p.wage_period!=="hour"||p.default_hourly_wage_cents==null));
+   if(unknown.length)item("labor:partial","Labor estimate",null,
+     text("Partial: wages missing for "+unknown.length+" staff"));
    payload={week_start:d.week_start,shifts:d.shifts};break;
   }
   case "propose_shift_change":{
