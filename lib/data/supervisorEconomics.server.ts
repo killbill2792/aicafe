@@ -9,7 +9,8 @@ import {totalMonthlyRecurringCostsCents} from "@/lib/expenses/recurringMonthlyTo
 import {getPricingInputs,type PricingItemInput} from "./getPricingInputs";
 import {getOwnerConfirmedProcessingFeePlans,ownerConfirmedPlanForDate} from "@/lib/pos/processingFeeEstimate.server";
 import {validateOwnerConfirmedProcessingFeePlan} from "@/lib/pos/processingFeeEstimate";
-import {DEFAULT_PROCESSING_FEE_RATE_BPS} from "@/lib/metrics/core/fees";
+import {cardFeesForDays} from "@/lib/metrics/core/fees";
+import {laborForPeriod,type LaborRecord} from "@/lib/metrics/core/labor";
 
 export type SupervisorEconomicsRead={economics:Economics;items:PricingItemInput[];
  ownerMonthlyPayrollExtrasCents:number|null;ownerIngredientRate:number|null;
@@ -70,21 +71,25 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const recorded=payEvidence.coveredDates;
  const laborDays=laborWindow.filter(day=>recorded.has(day));
  const laborMissing=laborWindow.filter(day=>!recorded.has(day));
- // Match the numerator to the same covered sales days as the labor projection denominator.
- const payrollRows=(rollups.data??[]).filter(row=>laborDays.includes(row.business_date));
- const wages=payrollRows.reduce((sum,row)=>sum+Number(row.staff_wages_cents)+Number(row.staff_tax_cents),0);
- const estimatedTax=payrollRows.some(row=>payEvidence.taxEstimatedDays.has(row.business_date));
- const sufficientLabor=laborDays.length>=7&&laborWindow.length>0&&laborDays.length/laborWindow.length>=.5;
- const projectedLabor=sufficientLabor?Math.round(wages*dayList.length/laborDays.length):null;
- const ownerMonthlyPayrollExtrasCents=business.data?.owner_monthly_payroll_extras_cents===null||
-  business.data?.owner_monthly_payroll_extras_cents===undefined?null:Number(business.data.owner_monthly_payroll_extras_cents);
- const monthlyTotal=addOwnerPayrollExtras(projectedLabor,ownerMonthlyPayrollExtrasCents);
- const payroll=figure(monthlyTotal,
-  ownerMonthlyPayrollExtrasCents!==null||laborMissing.length||estimatedTax?"estimate":"actual",
-  !sufficientLabor?"Labor missing: "+laborDays.length+" of "+laborWindow.length+" covered sales days have usable payroll":
-  laborMissing.length?"Clocked wages incomplete; "+laborMissing.length+" labor days missing; owner extras do not replace wages":
-  ownerMonthlyPayrollExtrasCents!==null?"Projected clocked wages plus owner-reported monthly extras (once)":
-  estimatedTax?"Employer payroll tax estimated":"Clocked wages plus payroll tax",laborMissing);
+ const laborRows:LaborRecord[]=(rollups.data??[]).filter(row=>recorded.has(row.business_date))
+  .map(row=>({date:row.business_date,
+   wagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
+   staffTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
+   laborWageStatus:row.labor_wage_status,
+   staffTaxStatus:row.staff_tax_status}));
+ const ownerMonthlyPayrollExtrasCents=business.data?.owner_monthly_payroll_extras_cents==null?
+  null:Number(business.data.owner_monthly_payroll_extras_cents);
+ // Same core as Home/Money: project from every usable payroll day; do not
+ // withhold evidence simply because there are fewer than seven covered days.
+ const laborEvidence=laborForPeriod(dayList.map(date=>({date})),laborRows,null,
+  ownerMonthlyPayrollExtrasCents===null?null:{monthlyCents:ownerMonthlyPayrollExtrasCents,
+   from:month.from,to:month.to});
+ const payroll=figure(laborEvidence.projectedMonthlyLaborCents,
+  laborEvidence.basis==="recorded"?"actual":"estimate",
+  laborEvidence.coveredDays<laborEvidence.totalDays?"laborPartialCoverage":
+    ownerMonthlyPayrollExtrasCents!==null?"laborOwnerExtras":
+    laborEvidence.notes.includes("laborEstimated")?"laborEstimated":"laborRecorded",
+  laborMissing);
  const active=(recurring.data??[]).filter(row=>!row.active_to||row.active_to>=asOf);
  const billTotal=active.length?totalMonthlyRecurringCostsCents(active.map(row=>({
   amountCents:Number(row.amount_cents),frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly"
@@ -111,13 +116,17 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
     business.data?.target_ingredient_cost_rate_status==="confirmed"?"owner":"estimate"):"missing";
  const hasCoveredSales=(rollups.data??[]).some(row=>row.sales_data_status!=="missing"&&
   Number(row.net_sales_cents)>0);
- const feeBasis=pricing.menuPriceBasis;
- const feeRecorded=feeBasis.feeStatus!=="missing"&&
-  (feeBasis.processingFeeDenominatorCents??0)>0;
- const feeRate=feeRecorded?Number(feeBasis.processingFeeNumeratorCents)/
-   Number(feeBasis.processingFeeDenominatorCents):hasCoveredSales?DEFAULT_PROCESSING_FEE_RATE_BPS/10000:null;
- const feeStatus=feeRecorded?feeBasis.feeStatus==="actual"?"actual":"estimate":
-  hasCoveredSales?"estimate":"missing";
+ const allFeeDays=(rollups.data??[]).map(row=>({
+  date:row.business_date,netSalesCents:Number(row.net_sales_cents??0),
+  cardFeesCents:row.card_fees_cents===null?null:Number(row.card_fees_cents),
+  cardFeesStatus:row.card_fees_status,ordersCount:Number(row.orders_count??0),
+  salesDataStatus:row.sales_data_status,
+ }));
+ const coveredFeeDays=allFeeDays.filter(day=>day.salesDataStatus!=="missing");
+ const fees=cardFeesForDays(coveredFeeDays,feePlans);
+ const feeSalesCents=coveredFeeDays.reduce((sum,day)=>sum+day.netSalesCents,0);
+ const feeRate=feeSalesCents>0?fees.amountCents/feeSalesCents:null;
+ const feeStatus=feeRate===null?"missing":fees.basis==="actual"?"actual":"estimate";
  const salesDates=(rollups.data??[]).filter(row=>coveredDates.has(row.business_date));
  const totalDrinks=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.drinks_count??0)),0);
  const totalOrders=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.orders_count??0)),0);
