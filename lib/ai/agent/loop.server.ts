@@ -10,7 +10,7 @@ import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
 import {newResolveState,observeToolResult} from "./resolve";
 import {acceptedExplainLines,type ExplainLine} from "./explain";
-import {verifiedRecommendedPriceInReply} from "./pricingReply";
+import {verifiedRecommendedPriceInReply,forcedPricingClarifyText} from "./pricingReply";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -378,9 +378,7 @@ export async function runAgentTurn(args: {
   if(askedQuestion){
    const priced=results.map(r=>r.result).find(r=>r.source==="new_item_price");
    if(priced&&typeof priced.recommendedPriceCents==="number"){
-    const value=new Intl.NumberFormat(args.context.locale,{style:"currency",currency:"USD"}).format(priced.recommendedPriceCents/100);
-    const copy={en,es,ar}[args.context.locale].SupervisorChat;
-    text=value+". "+String(priced.pricingNote??copy.pricingNoteIncomplete)+". ";
+    text=forcedPricingClarifyText(priced.recommendedPriceCents,args.context.locale,priced.pricingNote);
    }
   }
   usage.latencyMs = now() - started;
