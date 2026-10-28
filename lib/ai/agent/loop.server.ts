@@ -10,6 +10,10 @@ import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
 import {newResolveState,observeToolResult} from "./resolve";
 import {acceptedExplainLines,type ExplainLine} from "./explain";
+import {verifiedRecommendedPriceInReply,forcedPricingClarifyText} from "./pricingReply";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -30,7 +34,7 @@ export function agentInstructions(style: boolean): string {
   return SYSTEM_PROMPT + "\n" + (style ? STYLE_RULES + "\n" : "") + agentLabelsPrompt;
 }
 export function agentPromptCacheKey(style: boolean): string { return style ? "cafe-agent-v4" : "cafe-agent-v3"; }
-export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. When a tool result says needsOwnerChoice or two or more products, people, categories, or periods fit and affect numbers or proposals, call ask_owner with verified options (value = candidate ID returned by a tool; label = candidate name with optional price or size suffix), show Other for remaining matches, and stop. Never guess silently. If one candidate clearly fits, do not ask. Never ask in plain text when ask_owner fits. Use tool numbers. Compute business math only through tools; for any what-if or multi-step calculation call simulate_scenario first. Do not do arithmetic in prose beyond simple addition or subtraction of checked tool numbers. Missing inputs narrow an answer; they do not block a partial estimate. Never ask for a figure a tool returned. Say Estimate or You told me next to each affected number once. Give the best labeled answer and say what is needed to make it exact. Label owner-provided figures as You told me, and model estimates as Estimate. Imported prices are approximate observations, never verified list prices; disclose priceCheck differences. If priceCheck is unknown, do not claim a verified comparison. If a tool result has coverageLabel, say the numbers are for that window, not the period asked. Tool money values are integer cents, never dollars. If a tool returns a safe error code, tell the owner its specific reason and next step. On incomplete evidence explain what is known and missing. For questions about what needs attention, use get_attention_items as the sole source of attention tasks; never infer attention from staff, schedule or sales readings. If there are no attention items, say nothing needs attention. If attendanceTracked is false, say clock-ins are not tracked yet and explain how to connect a time clock or POS; never report zero clocked in. A missing confirmed weekly schedule means no schedule is set, not that coverage gaps are confirmed. Any requested or agreed change, including yes, do it, approve or send it, must invoke its propose_* tool in the same turn, so an approval card appears. Do not claim a card or a change unless that tool succeeded. Mapping: price -> propose_price_change; price test -> propose_price_experiment; supplies -> propose_purchases; weekly schedule -> draft_week_schedule then propose_schedule; one shift -> propose_shift_change; hire -> propose_add_staff; staff edit or retire -> propose_staff_change; availability -> propose_availability_change; labor rule -> propose_rule_change; send team schedule -> propose_send_schedule; check-in -> record_checkin. A schedule table in text requires propose_schedule, too. A what-if is simulate_scenario only, until the owner asks to act. A proposal is not a completed action; say 'I have drafted this for your approval.' Photos explicitly attached by an owner may describe purchases; draft individual proposals for each item using propose_purchases, never silently write them. Do not invent missing units or costs. For owner-approved schedules, messages are NEVER dispatched by AI. Explain that the owner must open their own WhatsApp or SMS composer. A recorded Opened action is NOT proof of delivery. No JSON envelope.";
+export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. When a tool result says needsOwnerChoice or two or more products, people, categories, or periods fit and affect numbers or proposals, call ask_owner with verified options (value = candidate ID returned by a tool; label = candidate name with optional price or size suffix), show Other for remaining matches, and stop. Never guess silently. If one candidate clearly fits, do not ask. Never ask in plain text when ask_owner fits. When suggest_new_item_price returns askOwnerRequired, call ask_owner with 2–4 exact candidate pairs from that result and allowOther=true. The price breakdown is UI-only: NEVER list its components in the chat reply. For follow-up pricing math, re-call suggest_new_item_price with the same owner item inputs. Use tool numbers. Compute business math only through tools; for any what-if or multi-step calculation call simulate_scenario first. Do not do arithmetic in prose beyond simple addition or subtraction of checked tool numbers. Missing inputs narrow an answer; they do not block a partial estimate. Never ask for a figure a tool returned. Say Estimate or You told me next to each affected number once. Give the best labeled answer and say what is needed to make it exact. Label owner-provided figures as You told me, and model estimates as Estimate. Imported prices are approximate observations, never verified list prices; disclose priceCheck differences. If priceCheck is unknown, do not claim a verified comparison. If a tool result has coverageLabel, say the numbers are for that window, not the period asked. Tool money values are integer cents, never dollars. If a tool returns a safe error code, tell the owner its specific reason and next step. On incomplete evidence explain what is known and missing. For questions about what needs attention, use get_attention_items as the sole source of attention tasks; never infer attention from staff, schedule or sales readings. If there are no attention items, say nothing needs attention. If attendanceTracked is false, say clock-ins are not tracked yet and explain how to connect a time clock or POS; never report zero clocked in. A missing confirmed weekly schedule means no schedule is set, not that coverage gaps are confirmed. Any requested or agreed change, including yes, do it, approve or send it, must invoke its propose_* tool in the same turn, so an approval card appears. Do not claim a card or a change unless that tool succeeded. Mapping: price -> propose_price_change; price test -> propose_price_experiment; supplies -> propose_purchases; weekly schedule -> draft_week_schedule then propose_schedule; one shift -> propose_shift_change; hire -> propose_add_staff; staff edit or retire -> propose_staff_change; availability -> propose_availability_change; labor rule -> propose_rule_change; send team schedule -> propose_send_schedule; check-in -> record_checkin. A schedule table in text requires propose_schedule, too. A what-if is simulate_scenario only, until the owner asks to act. A proposal is not a completed action; say 'I have drafted this for your approval.' Photos explicitly attached by an owner may describe purchases; draft individual proposals for each item using propose_purchases, never silently write them. Do not invent missing units or costs. For owner-approved schedules, messages are NEVER dispatched by AI. Explain that the owner must open their own WhatsApp or SMS composer. A recorded Opened action is NOT proof of delivery. No JSON envelope.";
 
 export async function* openAIProvider(params: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<Event> {
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -129,6 +133,7 @@ export async function runAgentTurn(args: {
   };
   const resolveState=newResolveState(args.ownerText,args.history);
   args.context.resolveState=resolveState;
+  args.context.ownerMessages=(args.history??[]).filter(m=>m.role==="user").map(m=>m.content);
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
   const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0, model: undefined as string|undefined };
@@ -272,6 +277,30 @@ export async function runAgentTurn(args: {
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         observeToolResult(resolveState,result);
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
+        // Price inputs can be incomplete even though the product-cost baseline
+        // is useful. Always generate its verified existing ask_owner card.
+        if(tool.name==="suggest_new_item_price"&&result.askOwnerRequired===true&&
+           Array.isArray(result.candidates)&&!resolveState.asked){
+          const kind=result.candidates.some(candidate=>candidate&&typeof candidate==="object"&&candidate.id==="labor-monthly")?
+            "labor":"bills";
+          const options=result.candidates.filter(candidate=>candidate&&typeof candidate==="object"&&
+            typeof candidate.id==="string"&&candidate.id.startsWith(kind+"-")).slice(0,4).flatMap(candidate=>
+            candidate&&typeof candidate==="object"&&
+            typeof candidate.label==="string"&&typeof candidate.id==="string"?
+              [{label:candidate.label,value:candidate.id}]:[]);
+          if(options.length>=2){
+            const copy={en,es,ar}[args.context.locale].SupervisorChat;
+            const question=kind==="labor"?copy.pricingClarifyLabor:copy.pricingClarifyBills;
+            const card=await executeAgentTool("ask_owner",{
+              question,kind:"choice",options,allowOther:true},args.context);
+            if(card.missing.length===0){
+              results.push({callId:"verified-pricing-owner-card",name:"ask_owner",arguments:"{}",result:card});
+              startedTools.push("ask_owner");usage.toolCalls++;
+              askedQuestion=question;finished=true;
+              break;
+            }
+          }
+        }
         if(tool.name==="ask_owner"&&result.missing.length===0&&typeof result.question==="string"){
           askedQuestion=result.question;finished=true;
           for(const skipped of calls.slice(index+1))input.push({type:"function_call_output",call_id:skipped.call_id,output:JSON.stringify({error:"ask_owner_ends_turn"})});
@@ -345,6 +374,13 @@ export async function runAgentTurn(args: {
       } catch { endReason = now() >= deadline ? "timeout" : "provider_error"; }
     }
   } finally { controller.abort(); }
+  // A clarification card must not displace the price the owner requested.
+  if(askedQuestion){
+   const priced=results.map(r=>r.result).find(r=>r.source==="new_item_price");
+   if(priced&&typeof priced.recommendedPriceCents==="number"){
+    text=forcedPricingClarifyText(priced.recommendedPriceCents,args.context.locale,priced.pricingNote);
+   }
+  }
   usage.latencyMs = now() - started;
   const status = statusFromResults(results);
   const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),
@@ -356,7 +392,11 @@ export async function runAgentTurn(args: {
   const candidates=toolResults.flatMap(result=>Array.isArray(result.explain)?
     result.explain.slice(0,12).filter((line):line is ExplainLine=>
       Boolean(line)&&typeof line==="object"&&"source" in line&&typeof line.source==="string") :[]);
-  const explain=askedQuestion?[]:acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale);
+  const priceResult=toolResults.find(r=>r.source==="new_item_price");
+  const price=typeof priceResult?.recommendedPriceCents==="number"&&
+    verifiedRecommendedPriceInReply(text,priceResult.recommendedPriceCents,
+      args.context.locale,unverified)?priceResult.recommendedPriceCents:null;
+  const explain=acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale,price);
   return { text, endReason, status,
     unverified,
     provenance:numberProvenance(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence,unverified),

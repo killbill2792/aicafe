@@ -35,7 +35,7 @@ describe("How I got this disclosure",()=>{
  it("keeps translated explain and clarify key parity",()=>{
   const keys=["howIGotThis","explainYouToldMe","explainEstimate","explainSold",
    "clarifyOther","clarifySend","clarifyYouChose","clarifySkipped","clarifyOtherPlaceholder",
-   "explainMultiply","explainSum","explainDivide","explainRatio","explainProrate","explainSubtract"];
+   "howCalculated","explainMissing","explainMultiply","explainSum","explainDivide","explainRatio","explainProrate","explainSubtract"];
   for(const key of keys)for(const messages of [en,es,ar]){
     expect(Object.hasOwn(messages.SupervisorChat,key)).toBe(true);
     expect(typeof (messages.SupervisorChat as Record<string,unknown>)[key]).toBe("string");

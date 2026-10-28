@@ -7,7 +7,7 @@ import { sumCents } from "@/lib/calc/money";
 export type MenuPrice = {id:string;name:string;priceCents:number};
 export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean};
 export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count";
-  provenance?:"estimate";detail?:"breakEvenSales"|"salesGap"|"dailyOverhead"}>;
+  provenance?:"estimate";detail?:"breakEvenSales"|"salesGap"|"dailyOverhead"|"pricing"}>;
   times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[];
   invalidatedKeys?:string[];invalidatedPriceIds?:string[];
   priceUpdates?:Array<{id:string;priceCents:number}>};
@@ -137,6 +137,29 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       values.push({key:valueKey,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
     };
     walk(r,"",0,rootScope);
+    // Explanations are deterministic tool outputs. Only admit a line number
+    // when its exact typed result was declared in that same tool\'s estimates.
+    if(r.source==="new_item_price"&&Array.isArray(r.explain)&&Array.isArray(r.numberEstimates)){
+      const allowed=r.numberEstimates as Array<{unit?:unknown;value?:unknown}>;
+      for(const [index,line] of r.explain.slice(0,20).entries()){
+        if(!line||typeof line!=="object"||!("result" in line))continue;
+        const inputs=Array.isArray(line.inputs)?line.inputs:[];
+        const entries=[{name:"result",item:line.result},
+          ...inputs.slice(0,8).map((entry:unknown,i:number)=>({name:"input"+i,item:entry&&typeof entry==="object"&&"value" in entry?entry.value:null}))];
+        for(const {name,item} of entries){
+          if(!item||typeof item!=="object")continue;
+          const num=item.kind==="money"?{unit:"cents",value:item.cents}:
+            item.kind==="percent"?{unit:"bps",value:item.bps}:
+            item.kind==="count"?{unit:"count",value:item.n}:null;
+          if(!num||typeof num.value!=="number"||!Number.isSafeInteger(num.value)||
+            !allowed.some(candidate=>candidate.unit===num.unit&&candidate.value===num.value))continue;
+          const key=periodKey+rootScope+"explain:"+index+"/"+name+
+            (num.unit==="cents"?"Cents":num.unit==="bps"?"Bps":"Count");
+          values.push({key,value:num.value,unit:num.unit as "cents"|"bps"|"count"});
+          invalidatedKeys.push(key);
+        }
+      }
+    }
     // A computed amount must remain an estimate in evidence saved for later
     // conversational turns. Match both the trusted comparison and its declared
     // numberEstimates metadata; never mark unrelated numerically equal values.

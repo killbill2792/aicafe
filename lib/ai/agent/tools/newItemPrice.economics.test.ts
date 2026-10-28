@@ -10,7 +10,7 @@ const economics:Economics={
  averagePriceCents:500,monthlyUnits:6000,daysInMonth:31,targetMargin:.15,missingDays:[],
 };
 const input={ingredient_cost_cents:145,category:"drink" as const,
- packaging_cents:0,target_margin_percent:15,item_name:"New Latte",ownerInputs:null};
+ packaging_cents:0,item_name:"New Latte",ownerInputs:null};
 const context=(e:Economics):AgentToolContext=>({
  asOf:"2026-10-27",locale:"en",
  tools:{} as AgentToolContext["tools"],
@@ -20,7 +20,7 @@ const context=(e:Economics):AgentToolContext=>({
 describe("supervisor new-item price evidence",()=>{
  it("recommends a price only with known labor, overhead, fees and packaging",async()=>{
   const result=await newItemPriceTools.suggest_new_item_price.execute(input,context(economics));
-  expect(result.recommendedPriceCents).toBe(475);
+  expect(result.recommendedPriceCents).toBe(500);
   expect(result.breakEvenCents).toBeGreaterThan(0);
   expect(result.knownCostFloorCents).toBeNull();
   expect(result.missing).toEqual([]);
@@ -37,9 +37,10 @@ describe("supervisor new-item price evidence",()=>{
   expect(result.knownCostFloorLabel).toBe("floor, not a recommendation");
   expect(result.missing).toEqual(expect.arrayContaining([
    "packagingCents","laborPerUnit","processingFeeRate"]));
-  expect(result.pricingNote).toContain("Missing:");
-  expect(result.pricingNote).toContain("floor from known costs");
-  expect(result.numberEstimates).toEqual([
-   {value:result.knownCostFloorCents,unit:"cents",detail:"breakEvenSales"}]);
+  expect(result.pricingNote).toContain("drink cost");
+  expect(result.numberEstimates).toEqual(expect.arrayContaining([
+   {value:6000,unit:"count",detail:"pricing"}]));
+  expect(result.explain).toEqual(expect.arrayContaining([
+   expect.objectContaining({label:"Labor/drink",provenance:"missing"})]));
  });
 });

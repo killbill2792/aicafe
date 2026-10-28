@@ -10,7 +10,8 @@ export const explainLineSchema=z.strictObject({
  result:cardValueSchema,
  period:z.strictObject({from:z.iso.date(),to:z.iso.date()}).nullable(),
  source:z.string().min(1).max(100),
- provenance:z.enum(["recorded","ownerProvided","estimate"]),
+ provenance:z.enum(["recorded","ownerProvided","estimate","missing"]),
+ basis:z.string().max(240).optional(),
 });
 export type ExplainLine=z.infer<typeof explainLineSchema>;
 export const money=(cents:number):CardValue=>({kind:"money",cents});
@@ -27,7 +28,8 @@ function numeric(value:CardValue):{unit:"cents"|"bps"|"count";value:number}|null
 /** Accept only numbers with a matching numeric-evidence key and a verified prose
  * token. Tool disclosures never arise by parsing model-proposed formulas. */
 export function acceptedExplainLines(lines:readonly ExplainLine[],evidence:readonly NumericEvidence[],
- reply:string,unverified:readonly {start:number;end:number}[],locale:"en"|"es"|"ar"):ExplainLine[]{
+ reply:string,unverified:readonly {start:number;end:number}[],locale:"en"|"es"|"ar",
+ pricingRecommendationCents?:number|null):ExplainLine[]{
  const sources:Record<string,string>={get_item_sales:"item_sales",get_profit:"profitability",
   get_break_even:"break_even",get_cost_summary:"business_costs",
   get_labor:"labor_and_attendance",get_price_recommendation:"pricing_engine",
@@ -37,7 +39,12 @@ export function acceptedExplainLines(lines:readonly ExplainLine[],evidence:reado
  const selected:ExplainLine[]=[];
  for(const line of lines){
   const result=numeric(line.result);
-  if(!result||!relevant(line).some(e=>e.values.some(v=>
+  if(!result){
+   if(line.source==="suggest_new_item_price"&&line.provenance==="missing"&&
+      line.result.kind==="missing"&&pricingRecommendationCents!=null)selected.push(line);
+   continue;
+  }
+  if(!relevant(line).some(e=>e.values.some(v=>
     v.unit===result.unit&&v.value===result.value&&
     (!line.period||v.key.startsWith(line.period.from+"/"+line.period.to+"/")||
       line.source==="get_labor"&&v.key.includes(line.period.from)))))continue;
@@ -67,7 +74,7 @@ export function acceptedExplainLines(lines:readonly ExplainLine[],evidence:reado
    }
    return false;
   });
-  if(!matched)continue;
+  if(!matched&&!(line.source==="suggest_new_item_price"&&pricingRecommendationCents!=null))continue;
   selected.push(line);
   if(selected.length===20)break;
  }

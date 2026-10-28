@@ -137,4 +137,25 @@ describe("database-safe agent persistence payload", () => {
     expect(result.metadata.unverified.filter(v=>v.source==="unchecked")).toHaveLength(1);
   });
 
+  it("persists the collapsed pricing explanation alongside an owner clarification and on a follow-up",()=>{
+    const line={label:"Recommended price",inputs:[{name:"productCost",value:{kind:"money" as const,cents:145}},
+      {name:"costTarget",value:{kind:"percent" as const,bps:3000}}],
+      formula:"divide" as const,result:{kind:"money" as const,cents:500},
+      period:{from:"2026-10-01",to:"2026-10-31"},
+      source:"suggest_new_item_price",provenance:"estimate" as const,basis:"Drink-cost target"};
+    const pricing={source:"new_item_price",period:null,missing:["laborPerUnit"],
+      recommendedPriceCents:500};
+    const clarification={source:"ask_owner",period:null,missing:[],
+      question:"What is monthly labor?",kind:"choice",
+      options:[{label:"Provide monthly labor",value:"labor-monthly"},
+       {label:"Not yet known",value:"labor-unknown"}],allowOther:true};
+    const first=agentReplyPayload({...turn("Suggested price: $5.00."),
+      results:[pricing,clarification],explain:[line]});
+    expect(first.reply.blocks.some(b=>b.type==="how")).toBe(true);
+    expect(first.reply.blocks.some(b=>b.type==="clarify")).toBe(true);
+    const followUp=agentReplyPayload({...turn("Suggested price: $5.00."),
+      results:[pricing],explain:[line]});
+    expect(followUp.reply.blocks.some(b=>b.type==="how")).toBe(true);
+  });
+
 });

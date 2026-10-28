@@ -42,6 +42,8 @@ export type AgentToolResult = {
 export type AgentToolContext = {
   tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
   timezone?:string;
+  /** Prior owner utterances for verifying explicit pricing percentages. */
+  ownerMessages?:readonly string[];
   resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;

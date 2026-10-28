@@ -83,7 +83,7 @@ export function agentReplyPayload(turn: AgentTurn) {
       result.saved===false&&result.missing.length===0&&
       typeof result.ruleId==="string"&&UUID.test(result.ruleId)
       ?[result.ruleId]:[]))].slice(0,Math.max(0,29-blocks.length-proposalIds.length-experimentIds.length));
-  const explanation=clarify?[]:(turn.explain??[]).flatMap(item=>{
+  const explanation=(turn.explain??[]).flatMap(item=>{
     const parsed=explainLineSchema.safeParse(item);
     return parsed.success?[parsed.data]:[];
   }).slice(0,20);

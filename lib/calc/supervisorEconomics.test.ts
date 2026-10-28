@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {figure,unifiedBreakEven,recommendFullCostPrice,simulateEconomics,addOwnerPayrollExtras,type Economics} from "./supervisorEconomics";
+import {figure,unifiedBreakEven,recommendFullCostPrice,simulateEconomics,addOwnerPayrollExtras,fixedCardFeeForCoveredSales,type Economics} from "./supervisorEconomics";
 const base:Economics={
  monthlyBills:figure(746700,"actual","Recurring bills"),monthlyStaff:figure(1300000,"owner","You told me",["2026-10-24","2026-10-25","2026-10-26"]),
  monthlyRevenue:figure(3_000_000,"actual","Recorded sales"),
@@ -63,12 +63,24 @@ describe("single deterministic supervisor economics model",()=>{
    overheadCents:746700,units:6000,feeRate:.029,targetMargin:.15});
   expect(result.fullCostCents).toBe(145+100+124);
   expect(result.breakEvenCents).toBe(Math.ceil(369/(1-.029)));
-  // Ingredient-cost target ~30% in the café profile: $1.45 / .30
-  // rounds to $4.75, above its approximately $4.50 full-cost target.
-  expect(result.recommendedPriceCents).toBe(475);
+  // Ingredient-cost target ~30%: $1.45 / .30 rounds UP to $5.00.
+  expect(result.recommendedPriceCents).toBe(500);
   expect(result.recommendedPriceCents!%25).toBe(0);
   expect(result.recommendedPriceCents!).toBeGreaterThanOrEqual(result.breakEvenCents!);
   expect(result.recommendedPriceCents).not.toBe(450);
+ });
+ it("allocates an owner-confirmed 2.49% plus 15 cents/order over covered drink and order counts",()=>{
+  const plan={processorLabel:"Card rate",processedSalesShareBps:10000,
+   processedTransactionShareBps:10000,rules:[{percentageBps:249,fixedFeeCents:15,
+    salesMixBps:10000,transactionMixBps:10000}]};
+  const fee=fixedCardFeeForCoveredSales(plan,6000,3000);
+  expect(fee).toMatchObject({percentRate:.0249,fixedFeeCents:15,drinksPerOrder:2});
+  const result=recommendFullCostPrice({ingredientCents:145,packagingCents:0,
+   laborCents:1300000,overheadCents:836000,units:6000,feeRate:fee!.percentRate,
+   fixedFeePerDrinkCents:fee!.fixedFeeCents/fee!.drinksPerOrder,targetMargin:.15});
+  expect(result.breakEvenCents).toBe(Math.ceil((501+7.5)/(1-.0249)));
+  expect(result.recommendedPriceCents).toBe(525);
+  expect(fixedCardFeeForCoveredSales(plan,6000,0)).toBeUndefined();
  });
  it("withholds a full-cost price for unknown labor, overhead, fee, packaging, or units",()=>{
   const known={ingredientCents:145,packagingCents:40,laborCents:600000,
@@ -81,9 +93,11 @@ describe("single deterministic supervisor economics model",()=>{
    [{units:null},"laborPerUnit"],
   ] as const){
    const result=recommendFullCostPrice({...known,...change});
-   expect(result.recommendedPriceCents).toBeNull();
+   expect(result.recommendedPriceCents).toBe(change.packagingCents===null?null:625);
    expect(result.breakEvenCents).toBeNull();
-   expect(result.fullCostCents).toBeNull();
+   // A missing fee does not erase the known loaded unit cost; only the fee-adjusted break-even is incomplete.
+   if(change.feeRate===null)expect(result.fullCostCents).toBeGreaterThan(0);
+   else expect(result.fullCostCents).toBeNull();
    expect(result.missing).toContain(key);
    expect(result.knownCostFloorLabel).toBe("floor, not a recommendation");
    expect(result.knownCostFloorCents).toBeGreaterThan(0);

@@ -20,7 +20,7 @@ describe("owner labor with actual covered sales",()=>{
    }}),
   } as unknown as AgentToolContext;
   const result=await newItemPriceTools.suggest_new_item_price.execute({
-   ingredient_cost_cents:100,category:"drink",packaging_cents:0,target_margin_percent:20,
+   ingredient_cost_cents:100,category:"drink",packaging_cents:0,
    item_name:"Tea",ownerInputs:{netSalesCents:null,salesPeriod:null,laborCents:310000,
     laborPeriod:{unit:"month"},rentCents:null,otherOverheadCents:null,
     overheadPeriod:null,unitCostCents:null,itemsSoldPerDay:null}
@@ -31,6 +31,6 @@ describe("owner labor with actual covered sales",()=>{
   expect(result.coverageLabel).toContain("2026");
   expect(result.missing).toContain("overheadPerUnit");
   expect(result.knownCostFloorCents).toBe(600);
-  expect(result.recommendedPriceCents).toBeNull();
+  expect(result.recommendedPriceCents).toBe(350);
  });
 });
