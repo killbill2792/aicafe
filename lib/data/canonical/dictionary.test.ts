@@ -6,7 +6,7 @@ const source=readFileSync(resolve("supabase/migrations/20261028000112_canonical_
 const docs=readFileSync(resolve("docs/data-dictionary.md"),"utf8");
 describe("canonical view column dictionary contract",()=>{
  it("documents every SQL view column, without phantom columns",()=>{
-  const names=[...source.matchAll(/create or replace view public\.(cv_[a-z_]+) \(([^)]+)\) with \(security_invoker=true\)/g)];
+  const names=[...source.matchAll(/create or replace view public\.(cv_[a-z_]+)\s*\(([^)]+)\)\s*with\s*\(security_invoker=true\)/g)];
   expect(new Set(names.map(m=>m[1]))).toEqual(new Set(canonicalViewNames));
   for(const [,view,columns] of names){
    const expected=Object.keys(canonicalDictionary[view as keyof typeof canonicalDictionary].columns).sort();
