@@ -2,7 +2,7 @@ import { ArrowRight, Coins, Users, Milk, CreditCard } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import BackHeader from "@/components/shared/BackHeader";
-import Money from "@/components/shared/Money";
+import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
 import PageShell from "@/components/shared/PageShell";
 import ProfitGoalSimulator from "@/components/more/ProfitGoalSimulator";
 import TryScenario from "@/components/scenario/TryScenario";
@@ -43,7 +43,8 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
     ...(days.some(day => day.cardFeesStatus === "missing") ? [{ key: "fees", text: money("breakEvenNeedProcessingFees"), action: money("fixFees"), href: "/more/processing-fees" }] : []),
   ];
   const pricing = tab === "profit-goal" ? await getProfitGoalSimulatorData() : null;
-  const moneyFormat = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
+  const currency=snapshot?.business.currency??pricing?.business.currency??null;
+  const formattedMoney=(cents:number)=>formatCafeCurrency(cents,locale,currency).text;
   const numberFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
 
   return <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
@@ -54,10 +55,11 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         {id === "break-even" ? t("planBreakEven") : id === "profit-goal" ? t("planProfitGoal") : t("planWhatIf")}
       </Link>)}
     </nav>
+    {!currency && <p role="note" className="text-[15px] text-ink-muted">{notes("cafeCurrencyMissing")}</p>}
     {tab === "break-even" && snapshot && recovery && drinks && hourly && <>
       <section className="rounded-card-lg bg-card p-5">
         <h2 className="text-[17px] font-bold">{money("monthlyBreakEven")}</h2>
-        <div className="mt-2 font-headline text-[36px] font-bold">{recovery.breakEven.kind === "ready" ? <Money cents={recovery.breakEven.breakEvenSalesCents} /> : "—"}</div>
+        <div className="mt-2 font-headline text-[36px] font-bold">{recovery.breakEven.kind === "ready" ? formattedMoney(recovery.breakEven.breakEvenSalesCents) : "—"}</div>
         {recovery.breakEvenUsesEstimates && recovery.breakEven.kind === "ready" && <p className="text-[15px] text-ink-muted">{money("estimateLower")}</p>}
         <p className="mt-2 text-[17px] text-ink-muted">{money("breakEvenSalesNeeded")}</p>
         {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[17px] text-ink-muted">{notes("breakEvenLaborMissing")}</p>}
@@ -88,7 +90,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           { label: money("processingFeesAtBreakEven"), amount: recovery.breakEven.processingFeesAtBreakEvenCents, href: "/more/processing-fees", Icon: CreditCard, tone: "bg-surface text-ink" },
         ].map(({ label, amount, href, Icon, tone }) => <Link key={href} href={href} className="flex min-h-12 items-center gap-2 border-b border-line py-3 text-[17px] text-ink no-underline last:border-0">
           <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon aria-hidden="true" size={20} /></span>
-          <span className="min-w-0 flex-1">{label}</span><span className="font-bold">{moneyFormat.format(amount / 100)}</span>
+          <span className="min-w-0 flex-1">{label}</span><span className="font-bold">{formattedMoney(amount)}</span>
           <ArrowRight aria-hidden="true" size={18} className="shrink-0 rtl:rotate-180" />
         </Link>)}
       </section>}
