@@ -16,6 +16,7 @@ import {staffTools} from "@/lib/ai/agent/tools/staff";
 import type {AgentToolContext} from "@/lib/ai/agent/tools/index";
 import {figure,type Economics} from "@/lib/calc/supervisorEconomics";
 import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
+import {regularHoursStateForDate} from "@/lib/business/openHours";
 
 const date=(i:number)=>shiftCafeDate("2026-09-01",i);
 function demo(caseName:"complete"|"today_missing"|"fees_missing"|"wage_missing"|"bill_missing"|"actual_toast_fees"){
@@ -100,32 +101,46 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
      {...day,wagesCents:null,laborWageStatus:"missing" as const}:day);
    const snapshot:BusinessSnapshot={...base,monthActualDays:raw,monthRecordedDays:raw,
      last28Days:raw,breakEvenDays:raw.filter(day=>day.date<base.todayDateStr)};
-   const screen=buildProfitAndCostsViewModel(snapshot,"month");
-   const recovery=buildCostRecoveryViewModel(snapshot);
-   const plan=buildBreakEvenViewModel(snapshot);
+   // Independent inputs: the chat fixture receives only raw source facts and
+   // pure core calculations. It must NOT consume a screen viewmodel output.
    const days=snapshot.breakEvenDays??[];
-   const fees=cardFeesForDays(days,(snapshot as BusinessSnapshot&{ownerFeePlans?:{percentageBps:number}[]}).ownerFeePlans??null);
+   const ownerFeePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:{percentageBps:number}[]}).ownerFeePlans??[];
+   const fees=cardFeesForDays(days,ownerFeePlans);
    const sold=summarizeResolvedSoldProductCosts(snapshot.breakEvenProductCosts??snapshot.menuItems);
    const sales=days.reduce((sum,d)=>sum+d.netSalesCents,0);
    const monthlyUnits=days.reduce((sum,d)=>sum+d.drinksCount,0);
+   const monthDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
+      snapshot.monthKey+"-"+String(i+1).padStart(2,"0"))
+     .filter(day=>regularHoursStateForDate(snapshot.business.openHours,day)!=="closed");
+   const directLabor=laborForPeriod(monthDates.map(date=>({date})),raw,null,
+     snapshot.ownerMonthlyPayrollExtrasCents==null?null:{
+       monthlyCents:snapshot.ownerMonthlyPayrollExtrasCents,
+       from:snapshot.monthKey+"-01",to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")});
+   const sourceBills=snapshot.runningCostLines.filter(line=>!line.isMissing)
+     .reduce((sum,line)=>sum+line.amountCents,0);
    const economics:Economics={
-    monthlyBills:figure(recovery.monthlyBillsCents,"actual","billsRecorded"),
-    monthlyStaff:figure(recovery.monthlyStaffCents,"estimate","laborPartialCoverage"),
-    monthlyRevenue:figure(sales,"estimate","monthlyRevenueCovered"),
-    ingredientRate:sales? sold.totalCostCents/sales:null,
-    feeRate:sales?fees.amountCents/sales:null,
-    ingredientStatus:"actual",feeStatus:fees.basis==="actual"?"actual":"estimate",
-    averagePriceCents:monthlyUnits?Math.round(sales/monthlyUnits):null,
-    monthlyUnits,daysInMonth:snapshot.daysInMonth,targetMargin:.15,missingDays:[],
-    asOfDate:snapshot.todayDateStr,observedDays:days,
-    observedIngredientCentsOverride:sold.totalCostCents,
-    missingIngredientCosts:sold.missingProductCosts,
-    ownerFeePlans:(snapshot as BusinessSnapshot&{ownerFeePlans?:{percentageBps:number}[]}).ownerFeePlans??[],
-    laborCoveredDays:raw.filter(d=>d.wagesCents!==null).length,laborWindowDays:raw.length,
+     monthlyBills:figure(sourceBills,"actual","billsRecorded"),
+     monthlyStaff:figure(directLabor.projectedMonthlyLaborCents,"estimate","laborPartialCoverage"),
+     monthlyRevenue:figure(sales,"estimate","monthlyRevenueCovered"),
+     ingredientRate:sales?sold.totalCostCents/sales:null,
+     feeRate:sales?fees.amountCents/sales:null,
+     ingredientStatus:"actual",feeStatus:fees.basis==="actual"?"actual":"estimate",
+     averagePriceCents:monthlyUnits?Math.round(sales/monthlyUnits):null,
+     monthlyUnits,daysInMonth:snapshot.daysInMonth,targetMargin:.15,missingDays:[],
+     asOfDate:snapshot.todayDateStr,observedDays:days,
+     observedIngredientCentsOverride:sold.totalCostCents,
+     missingIngredientCosts:sold.missingProductCosts,ownerFeePlans,
+     laborCoveredDays:directLabor.coveredDays,laborWindowDays:directLabor.totalDays,
+     laborEvidence:{dates:monthDates.map(date=>({date})),records:raw},
    };
+   const screen=buildProfitAndCostsViewModel(snapshot,"month");
+   const recovery=buildCostRecoveryViewModel(snapshot);
+   const plan=buildBreakEvenViewModel(snapshot);
+   expect(directLabor.projectedMonthlyLaborCents).toBe(recovery.monthlyStaffCents);
+   expect(sourceBills).toBe(recovery.monthlyBillsCents);
    const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
    const period={from:snapshot.monthKey+"-01",to:snapshot.todayDateStr};
-   const ctx:AgentToolContext={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",
+   const ctx:AgentToolContext={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",currency:"USD",
     tools:{
      getLaborMetrics:async()=>({available:true as const,value:raw.map(d=>({
        date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
