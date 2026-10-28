@@ -3357,6 +3357,14 @@
     "toastDayStatusUnavailable": "Toast's day-status check failed. Stored numbers may include days not yet checked.",
     "toastExcludedDays": "Toast days not included because their import failed or is missing: {dates}.",
     "toastScheduleReadFailed": "Toast schedule couldn't be read: {reason}. App shifts are still shown.",
-    "scheduleRangeTruncated": "Showing the first 366 days of the requested range; the remaining dates were not read."
+    "scheduleRangeTruncated": "Showing the first 366 days of the requested range; the remaining dates were not read.",
+    "periodExplicit": "{from} to {to}",
+    "periodToday": "Today",
+    "periodWeek": "Last 7 days",
+    "periodMonth": "This month",
+    "periodLastWeek": "Last week",
+    "periodLastMonth": "Last month",
+    "periodYtd": "Year to date",
+    "periodNamedMonth": "{from} to {to}"
   }
 }
