@@ -143,6 +143,22 @@ describe("latest covered sales window",()=>{
   expect(response.dataNote).toContain("Today isn't imported yet");
  });
 
+ it("stored today with a queued import stays visible but unverified",async()=>{
+  const ctx=context(["2026-10-24"]);
+  const read=ctx.tools.getSalesTrend;
+  ctx.tools.getSalesTrend=async(p)=>{
+   const result=await read(p);
+   if(p.from===ctx.asOf&&p.to===ctx.asOf&&result.available)
+    return {...result,quality:{...result.quality,missingInputs:["toastImportIncompleteDays:1:2026-10-24:0"]}};
+   return result;
+  };
+  const result=await resolveCoveredSalesWindow(ctx,{from:ctx.asOf,to:ctx.asOf});
+  expect(result.todayImported).toBeUndefined();
+  expect(result.lastFullDay).toBeNull();
+  expect(result.lastRecordedDay).toBe(ctx.asOf);
+  expect(result.dataNote).toContain("stored");
+  expect(result.dataNote).toContain("not verified");
+ });
  it("no sales rows plus an errored Toast status is a failed today check",async()=>{
   const ctx=context([]);
   ctx.tools.getSalesTrend=async()=>({available:false,value:null,quality:{
