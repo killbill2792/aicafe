@@ -21,10 +21,10 @@ const PAGE_SIZE=100;
 const CHUNK_BYTES=180000;
 const RESTRICTED=/(?:password|secret|token|credential|authorization|api.?key|session|cookie|signature|passcode|pin$|ssn|social.?security|routing|account.?number|pan$|cvv|cvc|first.?6|last.?4|last.?four|cardholder|card.?network.?id|^networkId$|^cardName$|card.?number|card.?digits|^networkTransactionIdentifier$|customer.?name|guest.?name|employee.?name|patron.?name|magstripe|track.?data|expir|email|phone|mobile|fax|birth|first.?name|last.?name|full.?name|chosen.?name|street|address|postal|zip.?code|latitude|longitude|^lat$|^lon$|^lng$|ip.?address|device.?id)/i;
 const FREEFORM=/(?:notes?|memo|comment|message|instructions|^text$|description|receiptText|^tabName$)/i;
-const IDENTIFIER=/(?:^customer(?:Id|Guid)$|^guest(?:Id|Guid)$|^loyalty(?:Id|Guid|AccountId)$|^cardPaymentId$|^cardFingerprint$|^cardTokenId$|^paymentCardId$|^cardId$|^networkTransactionIdentifier$|^maskedLoyaltyIdentifier$|^customerIdentifier$|^loyaltyIdentifier$)/i;
+const IDENTIFIER=/(?:^customer(?:Id|Guid)$|^guest(?:Id|Guid)$|^loyalty(?:Id|Guid|AccountId|AccountGuid|CustomerId|CustomerGuid)$|^cardPaymentId$|^cardFingerprint$|^cardTokenId$|^paymentCardId$|^cardId$|^networkTransactionIdentifier$|^maskedLoyaltyIdentifier$|^customerIdentifier$|^loyaltyIdentifier$)/i;
 const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
 const isLinkableId=(name:string,context:string)=>IDENTIFIER.test(name)||
- /^(?:id|guid|referenceId)$/i.test(name)&&
+ /^(?:id|guid|referenceId|externalId|accountId|accountGuid|fingerprint|tokenId|identifier)$/i.test(name)&&
  /(?:customer|guest|loyalty|card|patron|employee|staff|cashier)/i.test(context);
 function safeString(s:string){return s.length<=100000&&!/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(s)&&!/(?:\b\d{3}[-. ]\d{3}[-. ]\d{4}\b|\b\d{13,19}\b)/.test(s);}
 export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,context="",scope=""):unknown{
@@ -33,7 +33,7 @@ export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,cont
  if(value&&typeof value==="object"){
   const obj=value as Record<string,unknown>;
   return Object.fromEntries(Object.entries(obj).filter(([k])=>KEY.test(k)||/^[0-9]{1,6}$/.test(k))
-   .filter(([k])=>(IDENTIFIER.test(k)||!RESTRICTED.test(k))&&
+   .filter(([k])=>(isLinkableId(k,context)||!RESTRICTED.test(k))&&
      (!FREEFORM.test(k)||k==="description"&&/^(?:config|menus)\//.test(scope)))
    .filter(([k,v])=>{
     const sensitive=/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron|deliveryInfo|contact|billing|shipping|recipient|buyer|payer|cashier|^card$)/i.test(context);
