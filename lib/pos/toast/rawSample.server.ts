@@ -216,19 +216,18 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
    if(typeof group==="string"&&GUID.safeParse(group).success)
     known.set("__management_group__",new Set([group]));
   }catch{/* A missing Analytics connection is recorded by its GET operations. */}
-  // Reuse only pre-existing Analytics report identifiers; never POST to create a report.
-  try{
-   const {data:jobs}=await db.from("toast_analytics_jobs").select("report_request_guid")
-    .eq("business_id",businessId).eq("restaurant_guid",guid)
-    .eq("business_date",businessDate).limit(20);
-   for(const job of jobs??[]){
-    const id=job.report_request_guid;
-    if(typeof id==="string"&&GUID.safeParse(id).success){
-     const found=known.get("__era_report__")??new Set<string>();
-     found.add(id);known.set("__era_report__",found);
-    }
+  const eraFailures=new Map<string,{status:number|null;code:string}>();
+  const pollEra=async(path:string)=>{
+   let result:{status:number;data:unknown}={status:202,data:null};
+   for(let attempt=0;attempt<4;attempt++){
+    if(Date.now()>=requestDeadlineAt)throw new ToastApiError("timeout");
+    result=await analytics.getRaw(path);
+    if(result.status!==202)return result;
+    if(attempt<3)await new Promise(resolve=>setTimeout(resolve,
+     Math.max(0,Math.min(1000,requestDeadlineAt-Date.now()-1000))));
    }
-  }catch{/* Missing optional Analytics configuration is recorded per endpoint. */}
+   return result;
+  };
   const hold=async()=>{
    if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
    if(Date.now()-lastRenew>120000){
@@ -285,11 +284,31 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
    if(leaseLost())break;
    if(s.scope!=="unsupported"&&timeLow()){reason="partial";break;}
    if(s.scope==="unsupported"){
-    await save(s,{},null,null,"method_not_get","This documented operation requires a non-GET method");
+    await save(s,{},null,null,"no_get_operations","No documented GET operations in this API family");
+    continue;
+   }
+   if(s.scope==="era_request"){
+    try{
+     const requested=await analytics.requestRaw(s.path,guid,businessDate);
+     known.set(s.endpoint,new Set([requested.guid]));
+     // Never persist a report GUID, bearer token, or the raw POST response.
+     await save(s,{reportRequested:true},requested.status,1);
+    }catch(e){
+     if(e instanceof ToastApiError&&e.category==="timeout"){reason="partial";break;}
+     const status=e instanceof ToastApiError?e.status??null:null;
+     const code=e instanceof ToastApiError?e.category:"unavailable";
+     eraFailures.set(s.endpoint,{status,code});
+     await save(s,{},status,1,code,code);
+    }
     continue;
    }
    const ids=s.scope==="id"?[...(known.get(s.source??"")??[])]:[undefined];
-   if(!ids.length){await save(s,{},null,null,"missing_resource_guid","No eligible identifier for GET");continue;}
+   if(!ids.length){
+    const prior=eraFailures.get(s.source??"");
+    await save(s,{},prior?.status??null,null,prior?.code??"missing_resource_guid",
+     prior?.code??"No eligible identifier for GET");
+    continue;
+   }
    for(const id of ids){
     let nextToken:string|undefined;
     const seenTokens=new Set<string>();
@@ -300,8 +319,11 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       let http=200;
       let token:string|null=null;
       const requestPath=pathFor(s,businessDate,guid,id,page,nextToken,businessWindow);
-      const raw=s.endpoint.startsWith("era/v1/")?
-        await analytics.getRaw(requestPath).then(result=>{http=result.status;return result.data;}):
+      const isEra=s.endpoint.startsWith("era/v1/");
+      const response=isEra?await pollEra(requestPath):null;
+      if(response)http=response.status;
+      if(isEra&&http===202){await save(s,{},202,1,"not_ready","not_ready");break;}
+      const raw=isEra?response?.data:
         await client.request(requestPath,guid,z.unknown(),
          {deadlineAt:requestDeadlineAt,onResponse:info=>{http=info.status;token=info.nextPageToken;}});
       const obj=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
