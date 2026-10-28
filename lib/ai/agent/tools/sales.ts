@@ -56,7 +56,13 @@ export const salesTools={
       const s=await ctx.tools.getProductSales(p).catch(()=>null);
       if(!s)return {source:"item_sales",period:p,agentId:"alex",...salesPeriodEvidence(selectedWindow),missing:["itemSalesReadFailed"],items:null};
       if(!s.available)return {source:"item_sales",period:p,agentId:"alex",...salesPeriodEvidence(selectedWindow),missing:s.quality.missingInputs,items:null};
-      const menu=await ctx.tools.getMenuCatalog();
+      const menu=await ctx.tools.getMenuCatalog().catch(()=>null);
+      if(!menu){
+       if(input.query)return {source:"item_sales",period:p,agentId:"alex",
+        ...salesPeriodEvidence(selectedWindow),missing:["menuReadFailed"],items:null};
+       return presentItemSales(s.value,[],p,{...s.quality,
+        missingInputs:[...s.quality.missingInputs,"menuReadFailed"]},selectedWindow);
+      }
       if(input.query){
         if(!menu.available)return {source:"item_sales",period:p,agentId:"alex",...salesPeriodEvidence(selectedWindow),
           missing:menu.quality.missingInputs.length?menu.quality.missingInputs:["menuReaderUnavailable"]};
