@@ -1,5 +1,6 @@
 import {calculateBreakEvenSales} from "./breakEvenSales";
 import {breakEvenFor,type BreakEvenDay} from "@/lib/metrics/core/breakEven";
+import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {COFFEE_SHOP_PROFILE} from "@/lib/pricing/profiles";
 export type FigureStatus="actual"|"estimate"|"owner"|"missing";
 export type Figure={valueCents:number|null;status:FigureStatus;reason:string;missingDays:string[]};
@@ -58,29 +59,34 @@ export function unifiedBreakEven(input:Economics){
  const rateKnown=input.ingredientRate!==null&&input.feeRate!==null;
  const effectiveIngredientRate=input.ingredientRate??0;
  const effectiveFeeRate=input.feeRate??0;
- const realDays=input.observedDays?.filter(day=>day.date<input.asOfDate!&&day.salesDataStatus!=="missing")??[];
+ const realDays=input.asOfDate?input.observedDays?.filter(day=>
+   day.date>=shiftCafeDate(input.asOfDate!,-28)&&
+   day.date<input.asOfDate!&&day.salesDataStatus!=="missing")??[]:[];
  const observedSalesCents=realDays.reduce((sum,d)=>sum+d.netSalesCents,0);
  // One shared calculation path and café-local 28-complete-day window when real rows exist.
  // Legacy explicit-rate scenarios without day rows retain the same underlying pure cents function.
- const computed=input.asOfDate&&realDays.length>0?breakEvenFor({
+ const shared=input.asOfDate&&input.observedDays?breakEvenFor({
    days:realDays,asOfDate:input.asOfDate,daysInMonth:input.daysInMonth,
    monthlyBillsCents:input.monthlyBills.valueCents,
    monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
    observedIngredientCents:Math.round(observedSalesCents*effectiveIngredientRate),
    observedProcessingFeesCents:Math.round(observedSalesCents*effectiveFeeRate),
- }).calculation:calculateBreakEvenSales({
+ }):null;
+ const computed=shared?.calculation??(input.observedDays?{kind:"unavailable" as const,reason:"NO_SALES" as const}:
+   calculateBreakEvenSales({
    monthlyBillsCents:input.monthlyBills.valueCents??0,
    monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
    observedSalesCents:100_000_000,
    observedIngredientCents:Math.round(100_000_000*effectiveIngredientRate),
    observedProcessingFeesCents:Math.round(100_000_000*effectiveFeeRate)
- });
- const completeFixed=input.monthlyBills.valueCents!==null&&input.monthlyStaff.valueCents!==null;
+ }));
  const knownCostBreakEvenFloorCents=(fixed.length>0||extrasFloor>0)&&rateKnown&&
   computed.kind==="ready"?computed.breakEvenSalesCents:null;
- const monthlyCents=completeFixed&&rateKnown&&!(input.missingBillCategories?.length)&&
-  computed.kind==="ready"?computed.breakEvenSalesCents:null;
- const drinksPerDay=monthlyCents!==null&&input.averagePriceCents!==null&&input.averagePriceCents>0
+ // Known-cost break-even is a labeled floor whenever a fixed-cost category
+ // is incomplete, never an unqualified fully loaded break-even number.
+ const monthlyCents=rateKnown&&computed.kind==="ready"?computed.breakEvenSalesCents:null;
+ const drinksPerDay=shared?shared.drinksPerDay:
+  monthlyCents!==null&&input.averagePriceCents!==null&&input.averagePriceCents>0
   ?Math.ceil(monthlyCents/input.averagePriceCents/input.daysInMonth):null;
  const status:FigureStatus=missing.length||fixed.some(f=>f.status!=="actual")||
   input.ingredientStatus!=="actual"||input.feeStatus!=="actual"?"estimate":"actual";
