@@ -6,15 +6,16 @@ import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
 
 const daySchema=z.iso.date();
 const LIMIT=5;
+const SAFE_STRING=/^(?:guid|id|restaurantGuid|restaurantId|externalId|type|cardType|cardEntryMode|source|status|paymentStatus|refundStatus|diningOption|jobReference|employeeReference|job|title|inDate|outDate|modifiedDate|businessDate|createdDate|closedDate)$/i;
 const SENSITIVE=/(?:card(?!Type$|EntryMode$)|token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|pan|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|state|country|ip.?address|device.?id|loyalty|gift.?card|notes?|description|display.?name|^name$|^text$|comment|memo|contact|holder|recipient)/i;
 /** Fail closed on sensitive names, including unexpected nested Toast fields. */
-export function redactToastRaw(value:unknown,depth=0):unknown {
+export function redactToastRaw(value:unknown,depth=0,key=""):unknown {
  if(depth>16)return null;
- if(Array.isArray(value))return value.slice(0,LIMIT).map(v=>redactToastRaw(v,depth+1));
+ if(Array.isArray(value))return value.slice(0,LIMIT).map(v=>redactToastRaw(v,depth+1,key));
  if(value&&typeof value==="object"){
   return Object.fromEntries(Object.entries(value as Record<string,unknown>)
    .filter(([key])=>!SENSITIVE.test(key))
-   .map(([key,v])=>[key,redactToastRaw(v,depth+1)]));
+   .map(([key,v])=>[key,redactToastRaw(v,depth+1,key)]));
  }
  if(typeof value==="string"){
   // Never persist freeform content or identifiers that might contain customer PII.
