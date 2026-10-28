@@ -3373,6 +3373,8 @@
     "breakEvenBillsMissing": "بعض الفواتير الشهرية غير معروفة.",
     "breakEvenLaborMissing": "بعض تكاليف العمالة غير معروفة.",
     "breakEvenDrinksMissing": "حجم مبيعات المشروبات غير متاح.",
+    "futureDatesExcluded": "استُبعدت التواريخ المستقبلية؛ تشمل هذه الأرقام التواريخ المسجلة فقط.",
+    "breakEvenCalendarMissing": "عدد أيام الشهر للمقهى غير متاح؛ هدف المشروبات اليومي غير معروف.",
     "NO_SALES": "لا توجد أيام بمبيعات مسجلة.",
     "VARIABLE_COSTS_TOO_HIGH": "التكاليف المتغيرة تستهلك جميع المبيعات.",
     "monthCalendarSparseSales": "تتوفر مبيعات أقل من سبعة أيام؛ التغطية تقدير أولي.",
