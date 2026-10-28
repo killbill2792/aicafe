@@ -217,6 +217,18 @@ describe("read-only Toast coverage diagnostics",()=>{
   expect(staff).toContain('"jobTitle":"Cashier"');
   expect(staff).toContain('"wages":120');
  });
+ it("hashes nested customerInfo and cardInfo GUIDs while retaining business card type",()=>{
+  const raw={customerInfo:{guid:"cust-123",status:"ACTIVE"},
+   payment:{guid:"33333333-3333-4333-8333-333333333333",
+    cardInfo:{guid:"card-123",cardType:"MASTERCARD",last4:"1234"}}};
+  const safe=redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY) as
+   {customerInfo:{guid:string;status:string};payment:{guid:string;cardInfo:{guid:string;cardType:string;last4?:string}}};
+  expect(safe.customerInfo.guid).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(safe.payment.cardInfo.guid).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(safe.payment.guid).toBe(raw.payment.guid);
+  expect(safe.payment.cardInfo.cardType).toBe("MASTERCARD");
+  expect(safe.payment.cardInfo.last4).toBeUndefined();
+ });
  it("keeps paths for nested arrays",()=>{
   expect(toastFieldPaths({items:[{name:"Latte",price:5}]})).toContain("items[].price");
  });
