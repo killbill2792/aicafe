@@ -89,5 +89,5 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
  return {...unchanged,...(!currentFailed?{todayImported:false}:{}),
   lastFullDay,lastRecordedDay:previous?.date??null,
   lastFullDayTotals:lastFullDay?{netSalesCents:amount,ordersCount:previous?.ordersCount??null,
-   drinksCount:previous?.drinksCount??null}:null,dataNote:note};
+   drinksCount:previous?.drinksCount??null}:null,dataNote:safeNote};
 }
