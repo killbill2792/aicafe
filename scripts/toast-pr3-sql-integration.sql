@@ -80,6 +80,23 @@ BEGIN
  PERFORM pg_temp.assert((select days_needing_look=3
   from public.toast_owner_attention_counts_v where business_id=b),
   'More badge counts flagged business dates once even for two locations');
+ -- Verify "Looks right" in a rollback-only subtransaction so the earlier
+ -- "Something's off" fixture and duplicate-answer contract remain unchanged.
+ BEGIN
+  DELETE FROM public.toast_first_import_check WHERE business_id=b;
+  PERFORM public.toast_answer_first_import_check(b,'looks_right',array[]::date[],null);
+  PERFORM pg_temp.assert((SELECT count(*)=7 FROM public.toast_day_status
+   WHERE business_id=b AND business_date BETWEEN '2026-10-01' AND '2026-10-07'
+    AND owner_confirmed_at IS NOT NULL),
+   'looks-right stamps the seven compared days');
+  PERFORM pg_temp.assert((SELECT count(*)=0 FROM public.toast_day_owner_flags
+   WHERE business_id=b AND business_date BETWEEN '2026-10-01' AND '2026-10-07'
+    AND cleared_at IS NULL),
+   'looks-right clears compared-day owner flags');
+  RAISE EXCEPTION 'restore earlier answer fixture';
+ EXCEPTION WHEN OTHERS THEN
+  IF sqlerrm<>'restore earlier answer fixture' THEN RAISE;END IF;
+ END;
  BEGIN
   PERFORM public.toast_answer_first_import_check(b,'looks_right',array[]::date[],null);
   RAISE EXCEPTION 'duplicate first-import answer succeeded';
