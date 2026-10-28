@@ -37,7 +37,7 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
         .order("business_date",{ascending:true}).limit(370);
       if (error) throw error;
       const trust=await readToastDayTrust(client,id,period.from,period.to);
-      const blocked=trust.blocked,toastQuality=[...trust.quality];
+      const toastQuality=[...trust.quality];
       if(process.env.TOAST_AUTO_IMPORT_ENABLED==="true"){
        try{
         const check=await getToastCheckEvidence(client,id);
@@ -47,8 +47,7 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
         }
        }catch{toastQuality.push("toastCheckEvidenceUnavailable");}
       }
-      const days=(data??[]).filter(row=>row.sales_data_status==="actual"&&
-        !blocked.has(row.business_date)).map(rowToDailyFacts);
+      const days=(data??[]).filter(row=>row.sales_data_status==="actual").map(rowToDailyFacts);
       if (!days.length) return {available:false,value:null,quality:quality([...toastQuality,"noCoveredSalesRows"])};
       const expected = rangeExpectedDays(period), covered = new Set(days.map(d=>d.date)).size;
       return { available:true, value:days, quality:quality([
