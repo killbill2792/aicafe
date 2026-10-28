@@ -490,7 +490,7 @@ revoke all on function public.toast_capture_typed_order_trigger() from public,an
 drop trigger if exists toast_raw_order_typed_capture on public.toast_raw_records;
 create trigger toast_raw_order_typed_capture
  after insert on public.toast_raw_records
- for each row when (v_raw.entity='order')
+ for each row when (new.entity='order')
  execute function public.toast_capture_typed_order_trigger();
 
 -- Migration 111 may already hold historical raw rows. Build their typed
@@ -648,7 +648,8 @@ create or replace view public.cv_item_sales (business_id,source,source_ref,statu
   'needs_match'::text,(m.last_checked_at at time zone b.timezone)::date,
   null::bigint,null::numeric,
   jsonb_build_object('kind','modified_order','order_guid',m.order_guid,
-   'reviewed_at',m.last_checked_at,'staging_state',m.state)
+   'reviewed_at',m.last_checked_at,'staging_state',m.state),
+  null::bigint,null::jsonb,null::jsonb
  from public.toast_modified_orders_staging m
  join public.businesses b on b.id=m.business_id
  where m.state='review_required';
