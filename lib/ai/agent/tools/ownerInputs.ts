@@ -32,8 +32,9 @@ export function ownerAmountForPeriod(amount:number|null,source:OwnerInputs["sale
  // Do not present extrapolated sales as a recorded amount for other dates.
  return from&&from.from===target.from&&from.to===target.to?amount:null;
 }
-export function ownerMonthlyAmount(amount:number|null,target:CalcPeriod,asOf:string){
- return amount===null?null:prorate(amount,calendarMonth(asOf),target);
+/** Normalize an owner-provided amount for its stated period to a full café month. */
+export function ownerMonthlyAmount(amount:number|null,source:OwnerInputs["laborPeriod"],asOf:string){
+ return amount===null?null:prorate(amount,ownerPeriod(source,asOf)??calendarMonth(asOf),calendarMonth(asOf));
 }
 export function ownerConflict(recorded:number|null,owner:number|null):boolean{
  return recorded!==null&&owner!==null&&Math.abs(recorded-owner)>0.2*Math.max(1,Math.abs(recorded));
