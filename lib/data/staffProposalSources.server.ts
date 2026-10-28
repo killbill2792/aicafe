@@ -13,6 +13,17 @@ async function verifyOwner(scope:StaffSourceScope){
  if(user.error||user.data.user?.id!==scope.ownerUserId)throw new Error("Owner session changed");
  return owner;
 }
+/** Resolve next-week drafts from the verified owner's café timezone. */
+export async function readStaffProposalLocalDate(scope:StaffSourceScope){
+ const owner=await verifyOwner(scope);
+ const {data,error}=await owner.supabase.from("businesses").select("timezone")
+  .eq("id",scope.businessId).single();
+ if(error||!data?.timezone)throw new Error("Café timezone unavailable");
+ const parts=new Intl.DateTimeFormat("en-US",{timeZone:data.timezone,
+  year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+ const part=(key:string)=>parts.find(p=>p.type===key)?.value??"";
+ return part("year")+"-"+part("month")+"-"+part("day");
+}
 export async function readStaffProposalToken(scope:StaffSourceScope,dependencyScope?:import("@/lib/ai/supervisor/loop/staffProposals.server").StaffDependencyScope){
  await verifyOwner(scope);
  const {data,error}=await createAdminSupabaseClient().rpc(dependencyScope?"supervisor_staff_scoped_token":"supervisor_staff_source_token",dependencyScope?
