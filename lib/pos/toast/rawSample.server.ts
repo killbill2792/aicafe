@@ -170,7 +170,7 @@ function chunks(raw:unknown):unknown[]{
  };
  return split(raw,0);
 }
-export type ToastRawSampleResult={captured:number;skipped:boolean;failed:number;reason?:"invalid_request"|"no_location"|"busy"|"cooldown"|"db_error"|"missing_hash_key"|"lease_lost";};
+export type ToastRawSampleResult={captured:number;skipped:boolean;failed:number;endpoints?:{endpoint:string;status:number|null;count:number}[];reason?:"invalid_request"|"no_location"|"busy"|"cooldown"|"db_error"|"missing_hash_key"|"lease_lost";};
 const skip=(reason:NonNullable<ToastRawSampleResult["reason"]>,failed=0):ToastRawSampleResult=>({captured:0,skipped:true,failed,reason});
 export async function claimToastRawSample(db:Pick<SupabaseClient,"rpc">,businessId:string,restaurantGuid:string,businessDate:string){
  const {data,error}=await db.rpc("toast_claim_raw_sample",{p_business_id:businessId,p_restaurant_guid:restaurantGuid,p_business_date:businessDate});
@@ -221,6 +221,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
  const hashKey=createHmac("sha256",secret).update(businessId).digest("hex");
  let captured=0,failed=0,leaseNonce:string|null=null,reason:ToastRawSampleResult["reason"];
  const captureId=randomUUID();
+ const summaries=new Map<string,{status:number|null;count:number}>();
  try{
   const {data:mappings,error}=await db.from("toast_location_mappings").select("restaurant_guid,toast_time_zone,closeout_hour")
    .eq("business_id",businessId).not("verified_at","is",null)
@@ -272,15 +273,18 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     code:string|null=null,message:string|null=null)=>{
    const safe=redactToastRaw(raw,0,"",hashKey,"",s.endpoint)??{};
    const parts=chunks(safe);
+   const count=code?0:Array.isArray(raw)?raw.length:
+    raw&&typeof raw==="object"&&Array.isArray((raw as {menus?:unknown}).menus)?
+    (raw as {menus:unknown[]}).menus.length:1;
+   const old=summaries.get(s.endpoint);
+   summaries.set(s.endpoint,{status:status??old?.status??null,count:(old?.count??0)+count});
    for(let i=0;i<parts.length;i++){
     await hold();
     const piece=parts[i];
     const {error:err}=await db.from("toast_raw_samples").insert({
      business_id:businessId,restaurant_guid:guid,business_date:businessDate,
      endpoint:s.endpoint,doc_url:s.doc,capture_id:captureId,page_number:page===null?null:page*1000+i,
-     http_status:status,item_count:code||i!==0?0:Array.isArray(raw)?raw.length:
-       raw&&typeof raw==="object"&&Array.isArray((raw as {menus?:unknown}).menus)?
-       (raw as {menus:unknown[]}).menus.length:1,
+     http_status:status,item_count:i===0?count:0,
      sample:piece,field_paths:toastFieldPaths(piece),
      identifier_counts:i===0?identifierCounts(raw):{},error_code:code,error_message:message
     });
@@ -354,5 +358,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
  }finally{
   if(leaseNonce)try{const released=await db.rpc("toast_release_lease",{p_nonce:leaseNonce});if(released.error)failed++;}catch{failed++;}
  }
- return {captured,failed,skipped:captured===0,...(reason?{reason}:{})};
+ return {captured,failed,skipped:captured===0,
+  endpoints:[...summaries].map(([endpoint,v])=>({endpoint,status:v.status,count:v.count})),
+  ...(reason?{reason}:{})};
 }
