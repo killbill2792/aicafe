@@ -130,13 +130,13 @@ revoke all on function public.toast_answer_first_import_check(uuid,text,date[],t
 grant execute on function public.toast_answer_first_import_check(uuid,text,date[],text)
  to service_role;
 
--- An owner-confirmed historical review is no longer a visible warning;
+-- Unparsed evidence is shown separately as missing data, never a financial\n-- mismatch or an automatic owner 'needs a look' flag.\n-- An owner-confirmed historical review is no longer a visible warning;
 -- reopening on re-import is handled by the trigger above.
 create or replace view public.toast_owner_attention_days_v with(security_invoker=true) as
  select business_id,restaurant_guid,business_date from public.toast_day_status
  where owner_confirmed_at is null and
  (import_state='failed' or recon_state in ('mismatch','coverage_invalid')
-  or unparsed_count>0 or (last_error_category is not null and last_error_category not in
+  or (last_error_category is not null and last_error_category not in
    ('analytics_timeout','closeout_changed')))
  union
  select f.business_id,f.restaurant_guid,f.business_date
