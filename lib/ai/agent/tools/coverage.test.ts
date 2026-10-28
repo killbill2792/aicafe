@@ -96,4 +96,39 @@ describe("latest covered sales window",()=>{
   const requested={from:"2026-10-01",to:"2026-10-24"};
   expect(await resolveCoveredSalesWindow(context([]),requested)).toEqual({period:requested,label:null,coverageFallback:null});
  });
+ it("a stored historical day with failed import is not called a full day",async()=>{
+  const ctx=context(["2026-10-23"]);
+  const read=ctx.tools.getSalesTrend;
+  ctx.tools.getSalesTrend=async(p)=>{
+   const result=await read(p);
+   if(p.from==="2026-10-23"&&p.to==="2026-10-23"&&result.available)
+    return {...result,quality:{...result.quality,missingInputs:["toastImportIncompleteDays:1:2026-10-23:0"]}};
+   return result;
+  };
+  const result=await resolveCoveredSalesWindow(ctx,{from:ctx.asOf,to:ctx.asOf});
+  expect(result.lastFullDay).toBeNull();
+  expect(result.lastRecordedDay).toBe("2026-10-23");
+  expect(result.lastFullDayTotals).toBeNull();
+  expect(result.dataNote).toContain("completeness unverified");
+ });
+ it("today's item sales include the missing-import note even when item rows exist",async()=>{
+  const ctx=context(["2026-10-23"]);
+  ctx.tools.getProductSales=async()=>({available:true,value:[
+   {id:"11111111-1111-4111-8111-111111111111",name:"Latte",category:"drink",units:3}
+  ],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}});
+  ctx.tools.getMenuCatalog=async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}});
+  const response=await salesTools.get_item_sales.execute({period:"today",query:null},ctx);
+  expect(response.items).toHaveLength(1);
+  expect(response.lastFullDay).toBe("2026-10-23");
+  expect(response.dataNote).toContain("Today isn't imported yet");
+ });
+ it("item-sales failures preserve the today check caveat",async()=>{
+  const ctx=context(["2026-10-23"]);
+  ctx.tools.getProductSales=async()=>{throw Error("offline");};
+  const response=await salesTools.get_item_sales.execute({period:"today",query:null},ctx);
+  expect(response.missing).toContain("itemSalesReadFailed");
+  expect(response.lastFullDay).toBe("2026-10-23");
+  expect(response.dataNote).toContain("Today isn't imported yet");
+ });
+
 });
