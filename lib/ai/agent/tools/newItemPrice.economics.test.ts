@@ -55,6 +55,8 @@ describe("supervisor new-item price evidence",()=>{
       expect((reply.monthlyLabor as {valueCents:number|null;reasonKey:string;reason:string}).valueCents).toBe(224000);
       expect((reply.monthlyLabor as {valueCents:number|null;reasonKey:string;reason:string}).reasonKey).toBe("laborPartialCoverage");
       expect((reply.monthlyLabor as {valueCents:number|null;reasonKey:string;reason:string}).reason).toContain(locale==="es"?"Nómina":locale==="ar"?"الرواتب":"Payroll");
+      expect((reply.monthlyLabor as {reason:string}).reason).toContain("3");
+      expect((reply.monthlyLabor as {reason:string}).reason).toContain("20");
       expect(reply.breakEvenCents).toBeGreaterThan(0);
       expect(reply.recommendedPriceCents).toBeGreaterThan(0);
       if(locale!=="en")expect((reply.monthlyLabor as {reason:string}).reason).not.toContain("Only");
