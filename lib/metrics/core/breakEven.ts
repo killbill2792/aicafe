@@ -15,6 +15,7 @@ import {cardFeesForDays,type OwnerFeePlan} from "./fees";
 export type BreakEvenDay={
   date:string;netSalesCents:number;ingredientsCents:number;cardFeesCents:number;
   drinksCount:number;salesDataStatus?:"actual"|"missing";
+  cardFeesStatus?:"actual"|"estimated"|"missing";
 };
 export type BreakEvenResult={
   salesPerMonthCents:number|null;drinksPerDay:number|null;calculation:BreakEvenSalesResult;
