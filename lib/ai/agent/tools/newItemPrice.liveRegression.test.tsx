@@ -7,6 +7,7 @@ import {figure,type Economics} from "@/lib/calc/supervisorEconomics";
 import type {AgentToolContext} from "./index";
 import {compactEvidence,checkNumbers} from "../checkNumbers";
 import {acceptedExplainLines,type ExplainLine} from "../explain";
+import {verifiedRecommendedPriceInReply} from "../pricingReply";
 import HowIGotThis from "@/components/home/HowIGotThis";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -86,6 +87,20 @@ describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
     expect(html).toContain(copy.explainYouToldMe);
     if(locale==="ar")expect(html).toContain('dir="rtl"');
   }
+ });
+ it("keeps the full verified breakdown for an ES 5,25 US$ reply but not $15.25",async()=>{
+  const v={...item,ownerInputs:{...emptyOwnerInputs,laborCents:1300000,laborPeriod:{unit:"month" as const}}};
+  const result=await newItemPriceTools.suggest_new_item_price.execute(v,context({},"","es"));
+  const evidence=compactEvidence([result]),lines=result.explain as ExplainLine[];
+  const valid="Precio recomendado: 5,25 US$";
+  expect(verifiedRecommendedPriceInReply(valid,525,"es",[])).toBe(true);
+  expect(acceptedExplainLines(lines,evidence,valid,[],"es",525)).toHaveLength(lines.length);
+  const html=renderToStaticMarkup(createElement(HowIGotThis,{
+   lines:acceptedExplainLines(lines,evidence,valid,[],"es",525),locale:"es",copy:es.SupervisorChat}));
+  expect(html).toContain(es.SupervisorChat.howCalculated);
+  const wrong="$15.25";
+  expect(verifiedRecommendedPriceInReply(wrong,525,"en",[])).toBe(false);
+  expect(acceptedExplainLines(lines,evidence,wrong,[],"en",null)).toEqual([]);
  });
  it("only an explicitly stated 25% owner margin changes the informational profit line",async()=>{
   const v={...item,ownerInputs:{...emptyOwnerInputs,laborCents:1300000,laborPeriod:{unit:"month" as const}},
