@@ -265,19 +265,25 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
  const cache=proofCache(db,p,day,status),cached=await cache.load();
  const rows=await pullDay(db,p,day,deadlineAt,cache,cached);
  const proof=internalOrderProof(rows,p,day,status.orders_snapshot_sha256,status.unparsed_count);
+ let comparison:ReturnType<typeof compareDayMoney>|null=null;
+ const evidence:EvidencePatch={};
  // Independent provider read compared with our LAST COMMITTED day values.
- // If one field is missing, do not manufacture zero or a mismatch.
- if(status.unparsed_count===0&&proof.orders.every(o=>o.normalized!==undefined)){
+ // Unknown source money never becomes a verified zero or owner mismatch.
+ if(status.unparsed_count===0&&proof.orders.length>0&&
+  proof.orders.every(o=>o.normalized!==undefined)){
   const summed=(field:"netSalesCents"|"discountsCents"|"refundsCents"|"taxCents"|"tipCents")=>
    proof.orders.reduce((n,o)=>n+(o.normalized?.[field]??0),0);
-  const comparison=compareDayMoney({
+  comparison=compareDayMoney({
    net_sales_cents:status.net_sales_cents,discounts_cents:status.discounts_cents,
    refunds_cents:status.refunds_cents,tax_cents:status.tax_cents,tip_cents:status.tip_cents
   },{
    net_sales_cents:summed("netSalesCents"),discounts_cents:summed("discountsCents"),
    refunds_cents:summed("refundsCents"),tax_cents:summed("taxCents"),tip_cents:summed("tipCents")
   });
-  proof.reasons.push(...comparison.reasons);
+  evidence.toast_net_sales_cents=comparison.toastNetSalesCents;
+  evidence.toast_discount_cents=summed("discountsCents");
+  evidence.toast_refund_cents=summed("refundsCents");
+  evidence.delta_net_cents=comparison.differences.net_sales_cents??null;
  }
  const client=createToastClient(db,p.businessId);
  // Toast's documented endpoint returns the full GUID list, without paging parameters.
@@ -386,12 +392,21 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
    await writeReconciliation(db,p,day,status,{type:"payment_recovery_queued"});return null;
   }
  }
- const internal=proof.reasons.length?"mismatch":"matched";
- await writeReconciliation(db,p,day,status,{
-  type:"internal_result",result:internal,reasons:proof.reasons,paidOtherDay
- });
+ // Diagnostics, provider shape errors, and a changed checksum remain
+ // incomplete evidence; they are NOT owner-visible money mismatches.
+ const moneyReasons=comparison?.reasons??[];
+ const diagnostics=[...new Set(proof.reasons)];
+ const missing=(comparison?.missing??[]).map(field=>"missing_"+field);
+ const incomplete=!comparison||missing.length>0||diagnostics.length>0;
+ const event:DayCheckEvent=moneyReasons.length
+  ?{type:"internal_result",result:"mismatch",
+    reasons:[...moneyReasons,...diagnostics],paidOtherDay}
+  :incomplete
+   ?{type:"internal_incomplete",reasons:[...diagnostics,...missing],paidOtherDay}
+   :{type:"internal_result",result:"matched",reasons:[],paidOtherDay};
+ await writeReconciliation(db,p,day,status,event,evidence);
  await cache.clear();
- return internal;
+ return moneyReasons.length?"mismatch":incomplete?"pending":"matched";
 }
 export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt:number){
  let mode=await detectToastCheckMode(db,p.businessId,p.restaurantGuid,p.timeZone,deadlineAt);

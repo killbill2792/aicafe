@@ -12,7 +12,10 @@ vi.mock("./checkMode",()=>({detectToastCheckMode:async()=>mocked.mode,setToastCh
 vi.mock("./analyticsClient",()=>({createToastAnalyticsClient:()=>({
  requestDay:mocked.requestDay,getDay:mocked.getDay,persistDay:mocked.persistDay})}));
 vi.mock("./adapter",()=>({toastMoneyCents:(v:number)=>Math.round(v*100)}));
-vi.mock("./dayParser",()=>({parseToastDayPage:()=>({orders:[],unparsed:[]})}));
+vi.mock("./dayParser",()=>({parseToastDayPage:()=>({orders:[{
+ guid:"11111111-1111-4111-8111-111111111111",modifiedDate:"",
+ normalized:{netSalesCents:10000,discountsCents:0,refundsCents:0,taxCents:0,tipCents:0}
+}],unparsed:[]})}));
 import {reconcileToastDays,internalOrderProof} from "./reconcile";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -25,7 +28,8 @@ const p={businessId:business,restaurantGuid:restaurant,locationId:location,
 const checksum=createHash("sha256").update("[]").digest("hex");
 const status=()=>({business_date:day,import_state:"imported",recon_state:"pending",
  orders_snapshot_sha256:checksum,net_sales_cents:10000,order_count:1,
- discounts_cents:0,refunds_cents:0,unparsed_count:0,warnings:{},
+ discounts_cents:0,refunds_cents:0,tax_cents:0,tip_cents:0,
+ unparsed_count:0,warnings:{},
  imported_at:"2026-10-17T10:00:00Z",last_recon_attempt_at:null as string|null,
  recon_source:null as string|null,analytics_state:null as string|null,
  internal_state:null as string|null,internal_reasons:[] as string[],paid_other_day:0,

@@ -110,7 +110,7 @@ export async function GET(request:Request){
   firstImportRows:completeDates.slice(0,7).map(date=>{
    const totals=dayTotals(mappings,s.data,date);
    return {date,oursCents:totals.netSalesCents,
-    toastCents:a.data?.verified_at?totals.toastNetSalesCents:null};
+    toastCents:totals.toastNetSalesCents};
   }),
   recent:recentDates.map(date=>{
    const totals=dayTotals(mappings,s.data,date);
