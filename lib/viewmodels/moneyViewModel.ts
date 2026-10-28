@@ -2,7 +2,6 @@ import {
   combinedHealthBand,
   computeCostRecovery,
   ingredientsHealthBand,
-  ownerProfitCentsForPeriod,
   laborKnown,
   staffCostCentsForPeriod,
   ratio,
@@ -222,6 +221,17 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   };
   const currentLabor = observedLabor(calendar);
   const previousLabor = observedLabor(prevCalendar);
+  const previousFees=cardFeesForDays(prevDays,feePlans??null);
+  const previousProfit=profitForPeriod(prevDays,
+    {amountCents:Math.round(prevRunningCosts),
+      missing:previousBusinessCosts?.missingInputs.filter(k=>k.startsWith("expense:"))??["previousBillsMissing"],
+      estimated:previousBusinessCosts?.estimatedInputs.some(k=>k.startsWith("expense:"))??true},
+    {amountCents:previousFees.amountCents,estimated:previousFees.basis!=="actual"},
+    {amountCents:previousLabor.costCents,
+      missing:previousLabor.covered?[]:["previousLaborMissing"]},
+    {amountCents:sumCents(prevDays,d=>d.ingredientsCents),
+      missing:previousBusinessCosts?.missingInputs.filter(k=>k.startsWith("productCost:")||k==="historicalIngredientCostCoverage")??["previousIngredientsMissing"],
+      estimated:previousBusinessCosts?.estimatedInputs.some(k=>k.startsWith("productCost:"))??true});
 
   // Each row has its own evidence gate. Verified sales comparisons survive
   // missing ingredient/operating costs; profit never leaks from calendar coverage.
@@ -239,9 +249,10 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
           deltaCents: currentLabor.costCents - previousLabor.costCents,
           lowerIsBetter: true,
         }] : []),
-        ...(profitComparisonReady && ownerProfitCents!==null && ownerProfitCentsForPeriod(prevDays,prevRunningCosts)!==null ? [{
+        ...(profitComparisonReady && knownProfit.basis==="complete" &&
+          previousProfit.basis==="complete" && ownerProfitCents!==null && previousProfit.profitCents!==null ? [{
           key: "ownerProfit", label: "Owner profit",
-          deltaCents: ownerProfitCents! - ownerProfitCentsForPeriod(prevDays, prevRunningCosts)!,
+          deltaCents: ownerProfitCents - previousProfit.profitCents,
         }] : []),
       ]
     : [];
