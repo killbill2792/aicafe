@@ -18,7 +18,7 @@ const reports=z.array(z.object({
 }).passthrough());
 type Credential={api_origin:string;client_id:string;client_secret_enc:string;
  management_group_guid:string;bearer_token_enc:string|null;bearer_expires_at:string|null};
-export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,deadlineAt:number){
+export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,deadlineAt:number,waitForRateBudget=false){
  const deadline=()=>{const time=deadlineAt-Date.now();if(time<=0)throw new ToastApiError("timeout");return Math.min(12000,time);};
  async function credentials():Promise<Credential>{
   const {data,error}=await db.from("toast_analytics_credentials")
@@ -60,11 +60,20 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
 
  }
  async function rate(kind:"post"|"get"){
-  const {data,error}=await db.rpc("toast_claim_era_request",{
-   p_business_id:businessId,p_kind:kind});
-  if(error)throw new ToastApiError("unavailable");
-  if(!data)throw new ToastApiError("rate_limited",429,
-   new Date(Date.now()+10000).toISOString());
+  // Diagnostic reads wait for the shared ERA budget; ordinary callers retain
+  // the existing immediate rate-limit response behavior.
+  for(;;){
+   deadline();
+   const {data,error}=await db.rpc("toast_claim_era_request",{
+    p_business_id:businessId,p_kind:kind});
+   if(error)throw new ToastApiError("unavailable");
+   if(data)return;
+   if(!waitForRateBudget)throw new ToastApiError("rate_limited",429,
+    new Date(Date.now()+10000).toISOString());
+   const left=deadlineAt-Date.now();
+   if(left<=600)throw new ToastApiError("timeout");
+   await new Promise(resolve=>setTimeout(resolve,Math.min(1000,left-500)));
+  }
  }
  async function call(kind:"post"|"get",path:string,body?:unknown){
   await rate(kind);
