@@ -3357,6 +3357,14 @@
     "toastDayStatusUnavailable": "Falló la comprobación del estado de los días de Toast. Los datos guardados pueden incluir días aún no verificados.",
     "toastExcludedDays": "Días de Toast excluidos porque su importación falló o falta: {dates}.",
     "toastScheduleReadFailed": "No se pudo leer el horario de Toast: {reason}. Se siguen mostrando los turnos de la aplicación.",
-    "scheduleRangeTruncated": "Se muestran los primeros 366 días del intervalo solicitado; no se consultó el resto."
+    "scheduleRangeTruncated": "Se muestran los primeros 366 días del intervalo solicitado; no se consultó el resto.",
+    "periodExplicit": "Del {from} al {to}",
+    "periodToday": "Hoy",
+    "periodWeek": "Últimos 7 días",
+    "periodMonth": "Este mes",
+    "periodLastWeek": "La semana pasada",
+    "periodLastMonth": "El mes pasado",
+    "periodYtd": "Año hasta la fecha",
+    "periodNamedMonth": "Del {from} al {to}"
   }
 }
