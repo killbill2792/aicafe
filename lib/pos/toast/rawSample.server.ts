@@ -246,7 +246,11 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
   const pace=async()=>{await hold();}; // Client enforces Toast's shared rate budget and endpoint-specific pacing.
   const save=async(s:Entry,raw:unknown,status:number|null,page:number|null,
     code:string|null=null,message:string|null=null)=>{
-   const safe=redactToastRaw(raw,0,"",hashKey,"",s.endpoint)??{};
+   const rootContext=s.endpoint.startsWith("orders/v2/orders")?"orders":
+    s.endpoint.startsWith("orders/v2/payments")||
+    s.endpoint.startsWith("era/v1/guest/payments")?"payments":
+    s.endpoint.startsWith("labor/v1/employees")?"employee":"";
+   const safe=redactToastRaw(raw,0,"",hashKey,rootContext,s.endpoint)??{};
    const parts=chunks(safe);
    const root=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
    const count=code?0:Array.isArray(raw)?raw.length:
