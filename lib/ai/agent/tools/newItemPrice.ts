@@ -36,7 +36,8 @@ export const newItemPriceTools={suggest_new_item_price:{
    const monthlyStaff=ownerLabor!==null?figure(ownerLabor,"owner","laborOwnerProvided"):
     savedLabor?figure(savedLabor.projectedMonthlyLaborCents,
      savedLabor.basis==="recorded"?"actual":"estimate",
-     savedLabor.coveredDays<savedLabor.totalDays?"laborPartialCoverage":"laborRecorded"):
+     savedLabor.coveredDays<savedLabor.totalDays?"laborPartialCoverage":"laborRecorded",
+     [],{covered:savedLabor.coveredDays,total:savedLabor.totalDays}):
     economics.monthlyStaff;
    const month=calendarMonth(ctx.asOf);
    const openDays=economics.daysInMonth||periodDays(month);
