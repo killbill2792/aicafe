@@ -224,7 +224,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const previousFees=cardFeesForDays(prevDays,feePlans??null);
   // The owner payroll setting is a monthly extra, not clocked wages; allocate it
   // over this comparison's exact calendar dates just as the current period does.
-  const previousExtrasCents=ownerExtras===null?0:proratedOwnerPayrollExtrasCents({
+  const previousExtrasCents=ownerExtras==null?0:proratedOwnerPayrollExtrasCents({
     monthlyCents:ownerExtras,from:prevCalendar.start,to:prevCalendar.end,
   });
   const previousProfit=profitForPeriod(prevDays,
