@@ -92,6 +92,8 @@ export async function captureToastRawSample(
   if(!await claimToastRawSample(db,businessId,guid,businessDate))
    return {captured:0,skipped:true,failed:0};
   const client=createToastClient(db,businessId);
+  // Bound requests well inside the 290-second shared restaurant lease.
+  const deadlineAt=Date.now()+240_000;
   const end=new Date(),start=new Date(end.getTime()-7*86400000);
   const monday=new Date(end);
   monday.setUTCDate(end.getUTCDate()-(end.getUTCDay()+6)%7);
@@ -118,11 +120,13 @@ export async function captureToastRawSample(
    if(writeError)failed++;else captured++;
   };
   let previousGet=0;
-  const pace=async()=>{const ms=5000-(Date.now()-previousGet);if(ms>0)await new Promise(resolve=>setTimeout(resolve,ms));previousGet=Date.now();};
+  const pace=async()=>{const ms=Math.max(0,5000-(Date.now()-previousGet));
+   if(Date.now()+ms>=deadlineAt)throw new ToastApiError("timeout");
+   if(ms>0)await new Promise(resolve=>setTimeout(resolve,ms));previousGet=Date.now();};
   for(const [endpoint,path] of specs){
    try{
     await pace();
-    const raw=await client.request(path,guid,z.unknown());
+    const raw=await client.request(path,guid,z.unknown(),{deadlineAt});
     const rows=Array.isArray(raw)?raw.slice(0,LIMIT):raw;
     const sample=endpoint==="menus/v2/menus"?clipMenu(rows):rows;
     await save(endpoint,sample,200,Array.isArray(raw)?raw.length:1);
@@ -132,7 +136,7 @@ export async function captureToastRawSample(
       if(!id||!GUID.safeParse(id).success)continue;
       try{
        await pace();
-       const detail=await client.request("/orders/v2/payments/"+id,guid,z.unknown());
+       const detail=await client.request("/orders/v2/payments/"+id,guid,z.unknown(),{deadlineAt});
        await save("orders/v2/payments/{guid}",detail,200,1);
       }catch(e){
        const status=e instanceof ToastApiError?e.status:null;
