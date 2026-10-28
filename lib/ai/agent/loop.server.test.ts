@@ -26,6 +26,20 @@ function fixture(rounds: Array<Array<Record<string, unknown>>>): AgentProvider {
   };
 }
 describe("recorded Responses streaming fixtures", () => {
+  it("sends café-local date and timezone as a developer input, not cached instructions",async()=>{
+    const seen:Record<string,unknown>[]=[];
+    const provider:AgentProvider=async function*(params){
+      seen.push(params);
+      yield text("Ready");yield completed;
+    };
+    await runAgentTurn({ownerText:"Next week",context:{...context,asOf:"2026-10-27",
+      timezone:"America/Los_Angeles"},provider});
+    expect(seen).toHaveLength(1);
+    expect(seen[0].instructions).not.toContain("Café local date:");
+    expect(seen[0].input).toContainEqual({role:"developer",
+      content:"Café local date: 2026-10-27 (Tuesday), timezone America/Los_Angeles; weeks start Monday"});
+  });
+
   it("answers without tools and tracks usage", async () => {
     const deltas: string[] = [];
     const result = await runAgentTurn({ownerText:"Hello",context,
