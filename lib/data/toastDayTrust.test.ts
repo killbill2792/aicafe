@@ -9,6 +9,14 @@ import {readToastDayTrust,needsLookKey} from "./toastDayTrust.server";
 beforeEach(()=>canonical.mockResolvedValue(new Set()));
 afterEach(()=>{vi.unstubAllEnvs();flags.mockReset();canonical.mockReset();});
 describe("shared Toast day trust",()=>{
+ it("disabled Toast auto-sync still excludes confirmed failed stored sales",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","false");
+  flags.mockResolvedValue([{date:"2026-08-02",status:"failed",needsLook:false}]);
+  canonical.mockResolvedValue(new Set(["2026-08-02"]));
+  const result=await readToastDayTrust({} as never,"business","2026-08-02","2026-08-02");
+  expect([...result.blocked]).toEqual(["2026-08-02"]);
+  expect(result.quality).toContain("toastExcludedDays:2026-08-02");
+ });
  it("status read fails keeps stored days + one note",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
   flags.mockRejectedValue(new Error("status database unavailable"));

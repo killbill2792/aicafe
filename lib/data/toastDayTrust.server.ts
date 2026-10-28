@@ -7,8 +7,8 @@ import {toastDayFlags,unverifiedToastSalesDates} from "@/lib/pos/toast/reporting
  * The warning keys carry dates/counts; the chat translates them via DataNotes. */
 export async function readToastDayTrust(db:SupabaseClient,businessId:string,from:string,to:string):
  Promise<{blocked:Set<string>;quality:string[]}>{
- if(process.env.TOAST_AUTO_IMPORT_ENABLED!=="true")
-  return {blocked:new Set(),quality:[]};
+ // Stored Toast data still needs status evidence if automatic future sync is off.
+ // The sync feature flag must not change the trustworthiness of historical rows.
  try{
   // Only canonical Toast order dates can invalidate a mixed-source aggregate.
   // This existing scoped reader distinguishes Toast staging from Square/CSV sales.
