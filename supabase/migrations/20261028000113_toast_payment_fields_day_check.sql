@@ -319,7 +319,7 @@ grant select on public.cv_card_fees to authenticated,service_role;
 create table if not exists public.toast_order_typed_facts (
  raw_record_id uuid primary key references public.toast_raw_records(id) on delete cascade,
  business_id uuid not null references public.businesses(id) on delete cascade,
- restaurant_guid uuid, business_date date, order_guid uuid,
+ restaurant_guid uuid, business_date date, order_guid uuid,run_id uuid,
  order_duration_seconds bigint,
  check_discounts jsonb not null default '[]'::jsonb,
  item_discounts jsonb not null default '[]'::jsonb,
@@ -454,11 +454,11 @@ begin
   end loop;
  end loop;
  insert into public.toast_order_typed_facts(
-  raw_record_id,business_id,restaurant_guid,business_date,order_guid,
+  raw_record_id,business_id,restaurant_guid,business_date,order_guid,run_id,
   order_duration_seconds,check_discounts,item_discounts,item_taxes,
   modifier_prices,void_details,refund_details)
  values(v_raw.id,v_raw.business_id,v_raw.restaurant_guid,v_raw.business_date,v_raw.entity_guid,
-  duration,check_ds,item_ds,tax_items,mods,voids,refunds)
+  v_raw.run_id,duration,check_ds,item_ds,tax_items,mods,voids,refunds)
  on conflict(raw_record_id) do nothing;
  return;
 end $typed$;
@@ -603,13 +603,12 @@ with (security_invoker=true) as
   t.order_duration_seconds,t.check_discounts,t.item_discounts,
   t.item_taxes,t.modifier_prices,t.void_details,t.refund_details
  from public.toast_order_typed_facts t
- join public.toast_raw_records raw on raw.id=t.raw_record_id
  join public.toast_day_status day on day.business_id=t.business_id
   and day.restaurant_guid=t.restaurant_guid
   and day.business_date=t.business_date
-  and day.import_state='imported' and day.last_import_run_id=raw.run_id
+  and day.import_state='imported' and day.last_import_run_id=t.run_id
  order by t.business_id,t.restaurant_guid,t.business_date,t.order_guid,
-  raw.first_seen desc,raw.id desc;
+  t.captured_at desc,t.raw_record_id desc;
 revoke all on public.toast_current_typed_order_facts_v from public,anon;
 grant select on public.toast_current_typed_order_facts_v to authenticated,service_role;
 
