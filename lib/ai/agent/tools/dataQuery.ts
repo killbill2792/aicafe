@@ -1,6 +1,7 @@
 import "server-only";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {readCanonicalView} from "@/lib/data/canonical/reads.server";
 import {canonicalDictionary,canonicalViewNames,
  isCanonicalColumn,type CanonicalView} from "@/lib/data/canonical/dictionary";
 
@@ -58,6 +59,30 @@ export const dataQueryTools={
     (f.op==="in"&&(!Array.isArray(f.value)||f.value.length===0))||
     (!["between","in"].includes(f.op)&&Array.isArray(f.value))))
     return empty("invalid_filter");
+   // Simple rows use the same bounded canonical reader available to owner screens.
+   // Grouped sums/averages continue through the server-side invoker SQL RPC;
+   // never sum a truncated or partial row slice in JavaScript.
+   if(!(p.filters?.length)&&!(p.group_by?.length)&&!(p.metrics?.length)&&!p.order_by){
+    try{
+     const result=await readCanonicalView(ctx.db,ctx.businessId,p.view,
+      {dateFrom:p.date_from,dateTo:p.date_to},p.limit??200);
+     if(result.error)return empty(result.error);
+     const rows=result.rows.map(row=>p.columns?.length?
+      Object.fromEntries(p.columns.map(column=>[column,row[column]??null])):row);
+     const mix:Record<string,number>={};
+     for(const row of result.rows){
+      const source=typeof row.source==="string"?row.source:"unknown";
+      mix[source]=(mix[source]??0)+1;
+     }
+     const hasIncomplete=result.rows.some(row=>["open","estimated","needs_match"].includes(String(row.status)));
+     return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
+      missing:[...(rows.length===0?["empty"]:[]),
+       ...(hasIncomplete?["incompleteEvidence"]:[]),
+       ...(result.truncated?["result_truncated"]:[])],
+      empty:rows.length===0,error:undefined as string|undefined,
+      rows,rowCount:rows.length,truncated:result.truncated,sourceMix:mix};
+    }catch{return empty("source_read_failed");}
+   }
    // The database independently validates the view and columns. It executes as
    // the authenticated caller, not service_role or a definer.
    try{
