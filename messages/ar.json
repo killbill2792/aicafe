@@ -3352,6 +3352,7 @@
   },
   "DataNotes": {
     "todayNotImported": "لم تُستورد بيانات اليوم بعد. آخر يوم كامل كان {date}: {amount}.",
+    "todayStoredUnverified": "تظهر مبيعات اليوم المحفوظة، لكن لم يتم التحقق من حالة الاستيراد.",
     "todayLastRecordedUnverified": "لم تُستورد بيانات اليوم بعد. آخر يوم مسجل كان {date}: {amount} (لم يتم التحقق من اكتماله).",
     "todayNotImportedNoHistory": "لم تُستورد بيانات اليوم بعد. لا يوجد يوم مبيعات كامل محفوظ.",
     "toastDaysNeedLook": "هناك {count} يومًا يحتاج إلى مراجعة: {dates}{more}.",
