@@ -99,6 +99,32 @@ export const newItemPriceTools={suggest_new_item_price:{
    });
    const source=(s:string):ExplainLine["provenance"]=>s==="owner"?"ownerProvided":
     s==="actual"?"recorded":s==="missing"?"missing":"estimate";
+   const explainTitles:Record<string,string>={
+    "Ingredients + packaging":metrics.itemIngredientsPackaging,
+    "Units/month":metrics.itemUnitsMonth,"Labor/drink":metrics.itemLaborPerDrink,
+    "Bills/drink":metrics.itemBillsPerDrink,"Processing fee":metrics.itemProcessingFee,
+    "Card percentage fee":metrics.itemCardPercentFee,"Full loaded cost":metrics.itemFullCost,
+    "Full cost plus fixed card fee":metrics.itemFullCostPlusFee,
+    "Recommended price":metrics.itemRecommendedPrice,"Break-even":metrics.itemBreakEven,
+    "Profit price (informational)":metrics.itemProfitPrice,
+   };
+   const inputTitles:Record<string,string>={
+    ingredients:metrics.itemInputsIngredients,packaging:metrics.itemInputsPackaging,
+    units:metrics.itemInputsUnits,laborPerMonth:metrics.itemInputsLaborPerMonth,
+    billsPerMonth:metrics.itemInputsBillsPerMonth,fixedPerOrder:metrics.itemInputsFixedPerOrder,
+    drinksPerOrder:metrics.itemInputsDrinksPerOrder,fee:metrics.itemInputsFee,
+    product:metrics.itemInputsProduct,labor:metrics.itemInputsLabor,bills:metrics.itemInputsBills,
+    fullCost:metrics.itemInputsFullCost,fixedPerDrink:metrics.itemInputsFixedPerDrink,
+    productCost:metrics.itemInputsProductCost,drinkCostTarget:metrics.itemInputsDrinkCostTarget,
+    fullCostPlusFixed:metrics.itemInputsFullCost,afterFees:metrics.itemInputsAfterFees,
+    afterFeesAndMargin:metrics.itemInputsAfterFeesMargin,missing:metrics.itemInputsMissing,
+    rate:metrics.itemInputsRate,
+   };
+   const explainTitle=(label:string):string=>ctx.locale==="en"?label:
+    label.startsWith("Processing fee:")?
+     label.replace("Processing fee:",metrics.itemProcessingFee+":")
+       .replaceAll("/order",metrics.itemPerOrder).replaceAll("/drink",metrics.itemPerDrink):
+     explainTitles[label]??label;
    const lines:ExplainLine[]=[];
    const add=(label:string,inputs:ExplainLine["inputs"],formula:ExplainLine["formula"],
     result:ExplainLine["result"],provenance:ExplainLine["provenance"],_basis:string)=>{
@@ -175,7 +201,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     ["Labor/drink",labor.reason],["Bills/drink",monthlyBills.reason],
     ["Full loaded cost","Missing labor or bills"],["Break-even","Missing full costs or fee"],
     ["Profit price (informational)","Missing full costs or fee"]] as const)
-     if(!lines.some(line=>line.label===label))add(label,[{name:"missing",value:{kind:"missing",reason:"none"}}],
+     if(!lines.some(line=>line.label===explainTitle(label)))add(label,[{name:"missing",value:{kind:"missing",reason:"none"}}],
        "sum",{kind:"missing",reason:"none"},"missing",basis);
    const numberEstimates=lines.flatMap(line=>[line.result,...line.inputs.map(i=>i.value)])
     .flatMap<{value:number;unit:"cents"|"count"|"bps"|"ratio";detail:"pricing"}>(value=>value.kind==="money"?[{value:value.cents,unit:"cents",detail:"pricing"}]:
@@ -183,10 +209,10 @@ export const newItemPriceTools={suggest_new_item_price:{
       value.kind==="percent"?[{value:value.bps,unit:"bps",detail:"pricing"}]:[]);
    if(plan)numberEstimates.push({value:plan.drinksPerOrder,unit:"ratio",detail:"pricing"});
    const candidates=[
-    ...(labor.valueCents===null?[{id:"labor-monthly",label:"Provide monthly labor",detail:"Enter monthly labor"},
+    ...(labor.valueCents===null?[{id:"labor-monthly",label:metrics.itemProvideLabor,detail:metrics.itemEnterLabor},
       {id:"labor-unknown",label:"I don't know labor yet",detail:"Keep it incomplete"}]:[]),
-    ...(billsPartial?[{id:"bills-monthly",label:"Provide monthly bills",detail:"Enter monthly costs"},
-      {id:"bills-unknown",label:"Some bills are unknown",detail:"Keep it partial"}]:[])
+    ...(billsPartial?[{id:"bills-monthly",label:metrics.itemProvideBills,detail:metrics.itemEnterCosts},
+      {id:"bills-unknown",label:metrics.itemBillsUnknown,detail:metrics.itemPartial}]:[])
    ];
    const missing=[...recommended.missing,...missingBills.map(category=>"monthlyBill:"+category),
     ...(candidates.length?["ownerChoiceRequired"]:[])];
@@ -197,7 +223,8 @@ export const newItemPriceTools={suggest_new_item_price:{
     breakEvenCents:recommended.breakEvenCents,fullCostCents:recommended.fullCostCents,
     profitPriceCents:recommended.profitPriceCents,
     knownCostFloorCents:recommended.knownCostFloorCents,
-    knownCostFloorLabel:recommended.knownCostFloorLabel,warning:recommended.warning,
+    knownCostFloorLabel:recommended.knownCostFloorLabel?metrics.itemFloorNote:null,
+     warning:recommended.warning,
     pricingNote:recommended.warning==="below_full_cost"?copy.pricingNoteBelowFullCost:
       copy.pricingNoteDrinkCost.replace("{percent}",String(Math.round(costPct*100))),
     monthlyLabor:{...labor,reasonKey:labor.reason,
