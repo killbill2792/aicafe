@@ -3365,6 +3365,7 @@
     "periodLastWeek": "La semana pasada",
     "periodLastMonth": "El mes pasado",
     "periodYtd": "Año hasta la fecha",
-    "periodNamedMonth": "Del {from} al {to}"
+    "periodNamedMonth": "Del {from} al {to}",
+    "toastMoreDays": " y {count} más"
   }
 }
