@@ -55,10 +55,10 @@ describe("StructuredCafeTools read-only evidence boundary", () => {
     expect(summary.available).toBe(true);
   });
 
-  it("rejects a sales trend with gaps rather than claiming zero-sales days", async () => {
+  it("dead sparse-trend branch removed: keeps valid days with a coverage note", async () => {
     const tools = makeTools({ ...fixture, monthActualDays: fixture.monthActualDays.slice(1) });
     const result = await tools.getSalesTrend("fixture-a", period);
-    expect(result.available).toBe(false);
+    expect(result.available).toBe(true);
     expect(result.quality.missingInputs).toContain("salesCoverage:8/9");
   });
 

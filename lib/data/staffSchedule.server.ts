@@ -25,7 +25,7 @@ export async function getWeekSchedule(raw:unknown){
  const dates=Array.from({length:7},(_,i)=>plusDays(p.data.weekStart,i));
  if(!owner.supabase||owner.businessId===DEMO_BUSINESS_ID)return {ok:true as const,data:{
   dates,weekStart:p.data.weekStart,team:[],displayTeam:[],shifts:[],posShifts:[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
-  gaps:[],adjacentShifts:[],openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],profileAvailability:[],readOnly:true,timezone:owner.timezone,countryCode:null as string|null
+  gaps:[],adjacentShifts:[],posScheduleError:null,openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],profileAvailability:[],readOnly:true,timezone:owner.timezone,countryCode:null as string|null
  }};
  const [people,shifts,profile,ruleResult,availability,profileAvailability]=await Promise.all([
   owner.supabase.from("employees").select("id,display_name,role,active,default_hourly_wage_cents,wage_amount_cents,wage_period,available_days,min_weekly_minutes,max_weekly_minutes,phone_e164,whatsapp_opt_in,preferred_language,color_index")
@@ -43,13 +43,15 @@ export async function getWeekSchedule(raw:unknown){
  if(people.error||shifts.error||profile.error||availability.error||profileAvailability.error||!ruleResult.ok)return {ok:false as const,error:"storage_unavailable"};
  // External future plans never become approved internal shifts or paid timecards.
  let posShifts:Awaited<ReturnType<typeof readToastPlannedShifts>>=[];
- if(process.env.TOAST_AUTO_IMPORT_ENABLED==="true"){
+ let posScheduleError:string|null=null;
+ {
   try{
    // staffReadScope established membership; privileged reads remain bound to that business.
    posShifts=await readToastPlannedShifts(createAdminSupabaseClient(),
     owner.businessId,dates[0],dates[6],owner.timezone);
-  }catch{
-   console.warn("toast_schedule_optional_read_failed",{businessId:owner.businessId});
+  }catch(error){
+   posScheduleError=error instanceof Error?error.message:
+    (error&&typeof error==="object"&&"message" in error?String(error.message):"unavailable");
   }
  }
  const allEmployees=(people.data??[]).map(p=>({active:p.active as boolean,
@@ -80,7 +82,7 @@ export async function getWeekSchedule(raw:unknown){
  const total=aggregateCosts(inWeek),gaps=coverageGaps(dates,mapped,openHours,
    ruleResult.data.coverage_enabled?ruleResult.data.min_headcount:0);
  return {ok:true as const,data:{
-   dates,team,displayTeam,shifts:inWeek,posShifts,adjacentShifts:mapped.filter(s=>s.date<dates[0]||s.date>dates[6]),total,gaps,openHours,
+   dates,team,displayTeam,shifts:inWeek,posShifts,posScheduleError,adjacentShifts:mapped.filter(s=>s.date<dates[0]||s.date>dates[6]),total,gaps,openHours,
    currency:owner.currency,rules:ruleResult.data,
    availability:availability.data??[],profileAvailability:profileAvailability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone,countryCode:profile.data?.country_code??null
  }};
@@ -92,6 +94,7 @@ export async function getCoverageGaps(raw:unknown){
 export async function getTeam(raw:unknown){
  const result=await getWeekSchedule(raw);
  return result.ok?{ok:true as const,data:{team:result.data.team,shifts:result.data.shifts,
+   posShifts:result.data.posShifts,posScheduleError:result.data.posScheduleError,timezone:result.data.timezone,
    totals:result.data.total}}:result;
 }
 export async function getShiftCost(raw:unknown){

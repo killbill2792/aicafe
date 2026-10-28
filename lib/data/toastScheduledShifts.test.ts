@@ -42,7 +42,7 @@ describe("Toast planned shifts never become wages",()=>{
   const f=db();
   const rows=await readToastPlannedShifts(f.conn,cafe,"2026-10-26","2026-11-01",
    "America/Los_Angeles");
-  expect(rows).toEqual([{id:"toast-shift-1",employeeName:"María (owner)",
+  expect(rows).toEqual([{id:"toast-shift-1",employeeName:"María (owner)",employeeId:canonicalId,
    locationId:location,source:"toast",paid:false,
    start:"2026-10-27T18:00:00Z",end:"2026-10-27T20:00:00Z"}]);
   expect(f.scopeChecks).toEqual([

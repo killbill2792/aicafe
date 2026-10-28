@@ -52,7 +52,7 @@ vi.mock("@/lib/data/initiatives.server",()=>({
   },
 }));
 const context:AgentToolContext={
-  asOf:"2026-10-22",locale:"en",threadId,ownerMessageId:"55555555-5555-4555-8555-555555555555",
+  timezone:"America/Los_Angeles",asOf:"2026-10-22",locale:"en",threadId,ownerMessageId:"55555555-5555-4555-8555-555555555555",
   tools:{
     getProfitability:async()=>({available:false,value:null,
       quality:{level:"low",missingInputs:["unavailable"],estimatedInputs:[],staleInputs:[]}}),

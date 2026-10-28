@@ -12,7 +12,7 @@ const economics:Economics={
 const input={ingredient_cost_cents:145,category:"drink" as const,
  packaging_cents:0,item_name:"New Latte",ownerInputs:null};
 const context=(e:Economics):AgentToolContext=>({
- asOf:"2026-10-27",locale:"en",
+ timezone:"America/Los_Angeles",asOf:"2026-10-27",locale:"en",
  tools:{} as AgentToolContext["tools"],
  readEconomics:async()=>({economics:e,items:[],staff:[],
   ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})

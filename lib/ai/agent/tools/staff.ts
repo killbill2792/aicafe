@@ -2,9 +2,15 @@ import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {resolveOwnerPeriod,periodChoicePayload} from "../resolve";
 import {money} from "../explain";
-import { scheduleReadTools } from "./scheduleReads";
+import {mergeScheduleShifts,localizedToastScheduleReadError} from "./scheduleReads";
+import {dateOffset} from "@/lib/calc/periods";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import { getWeekSchedule } from "@/lib/actions/schedule";
 
+const failedSlice=(reason:string)=>({available:false as const,value:null,
+ quality:{level:"low" as const,missingInputs:[reason],estimatedInputs:[] as string[],staleInputs:[] as string[]}});
 const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
 const period = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]) });
@@ -21,17 +27,32 @@ export const staffTools = {
     agentId:"olivia",schema:empty,description:"Read only active employees with recorded current shifts; repeating schedule predictions are not clock-ins.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
-      if(!ctx.tools.getCurrentStaff)return missing("current_staff",null,["staffReaderUnavailable"]);
-      const s=await ctx.tools.getCurrentStaff();
-      if(!s.available)return missing("current_staff",null,s.quality.missingInputs);
-      const attendance=ctx.tools.getStaffAttendance&&ctx.timezone?
-        await ctx.tools.getStaffAttendance({from:ctx.asOf,to:ctx.asOf},ctx.timezone):null;
-      const tracked=attendance?.available?attendance.value.attendanceTracked:null;
+      const [s,attendance]=await Promise.all([
+        ctx.tools.getCurrentStaff?
+          ctx.tools.getCurrentStaff().catch(()=>failedSlice("staffReadFailed")):
+          Promise.resolve(failedSlice("staffReaderUnavailable")),
+        ctx.tools.getStaffAttendance?
+          ctx.tools.getStaffAttendance({from:ctx.asOf,to:ctx.asOf},ctx.timezone)
+            .catch(()=>failedSlice("staffAttendanceReadFailed")):
+          Promise.resolve(failedSlice("attendanceReaderUnavailable")),
+      ]);
+      if(!s.available&&!attendance.available)
+        return missing("current_staff",null,[...s.quality.missingInputs,...attendance.quality.missingInputs]);
+      const tracked=attendance.available?attendance.value.attendanceTracked:null;
+      const onClockCount=attendance.available?attendance.value.onClockCount:null;
       return {source:"current_staff",period:null,agentId:"olivia",
-        missing:[...s.quality.missingInputs,...(attendance?.quality.missingInputs??["attendanceReaderUnavailable"])],
-        attendanceTracked:tracked,onClockCount:attendance?.available?attendance.value.onClockCount:null,
-        count:tracked?s.value.count:null,asOf:s.value.asOf,
-        people:tracked?s.value.people.slice(0,15):[]};
+        dataNotes:[
+          ...(!s.available?[{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[]),
+          ...(attendance.quality.missingInputs.includes("staffAttendanceReadFailed")?
+            [{en,es,ar}[ctx.locale].DataNotes.staffAttendanceReadFailed]:[])],
+        missing:[...s.quality.missingInputs,...attendance.quality.missingInputs],
+        attendanceTracked:tracked,onClockCount,
+        // A failed current-shift projection must not hide independently
+        // recorded on-clock staff or invent a zero when attendance is unknown.
+        count:s.available?(tracked||s.value.count>0?s.value.count:null):
+          tracked?onClockCount:null,
+        asOf:s.available?s.value.asOf:null,
+        people:s.available?s.value.people.slice(0,15):null};
     },
   },
   get_schedule: {
@@ -39,52 +60,64 @@ export const staffTools = {
     description:"Read confirmed dated shifts for a business-local week. Old recurring patterns are not confirmed attendance or shifts.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const {from,to}=range.parse(raw),period={from,to};
-      if(from>to||days(from,to)>90)return missing("scheduled_shifts",period,["scheduleRangeInvalid"]);
-      if(from<ctx.asOf)return missing("scheduled_shifts",period,["historicalScheduleNotReconstructable"]);
-      const d=new Date(from+"T12:00:00Z"),day=d.getUTCDay();
-      const monday=new Date(d.getTime()-((day+6)%7)*86400000).toISOString().slice(0,10);
-      const sunday=new Date(Date.parse(monday+"T12:00:00Z")+6*86400000).toISOString().slice(0,10);
-      if(to>sunday)return {...missing("scheduled_shifts",period,["scheduleRangeRequiresWeeklyRead"]),href:"/staff?tab=schedule"};
-      const exactWeek=from===monday&&to===sunday;
-      if (exactWeek) {
-        const confirmed=await scheduleReadTools.get_week_schedule.execute({week_start:monday},ctx);
-        if(!Array.isArray(confirmed.shifts))return {...confirmed,period,href:"/staff?tab=schedule"};
-        return {...confirmed,period,windowHasShifts:confirmed.scheduleSet===true};
+      if(from>to)return missing("scheduled_shifts",period,["scheduleRangeInvalid"]);
+      const capped=days(from,to)>=366,dateEnd=capped?dateOffset(from,365):to;
+      const monday=dateOffset(from,-((new Date(from+"T12:00:00Z").getUTCDay()+6)%7));
+      const notes:string[]=capped?[{en,es,ar}[ctx.locale].DataNotes.scheduleRangeTruncated]:[];
+      const missingInputs:string[]=capped?["scheduleRangeTruncated"]:[];
+      const allShifts:ReturnType<typeof mergeScheduleShifts>=[];
+      let scheduleSet=false;
+      for(let ws=monday;ws<=dateEnd;ws=dateOffset(ws,7)){
+        let response:Awaited<ReturnType<typeof getWeekSchedule>>;
+        try{response=await getWeekSchedule({weekStart:ws});}
+        catch{missingInputs.push("scheduleReadFailed:"+ws);notes.push(
+          {en,es,ar}[ctx.locale].DataNotes.staffScheduleWeekReadFailed.replace("{date}",ws));continue;}
+        if(!response.ok){missingInputs.push("scheduleReadFailed:"+ws+":"+response.error);
+          notes.push({en,es,ar}[ctx.locale].DataNotes.staffScheduleWeekReadFailed.replace("{date}",ws));continue;}
+        if(response.data.posScheduleError){
+          missingInputs.push("toastScheduleReadFailed:"+ws);
+          notes.push(localizedToastScheduleReadError(response.data.posScheduleError,ctx.locale));
+        }
+        const merged=mergeScheduleShifts(response.data);
+        scheduleSet ||= merged.length>0;
+        allShifts.push(...merged.filter(s=>s.date>=from&&s.date<=dateEnd));
       }
-      // The chat weekly tool intentionally caps its public answer at 40 shifts.
-      // A day/window must filter the complete owner-scoped dated source BEFORE
-      // truncating; otherwise an ordinary busy week can look like an empty day.
-      const response=await getWeekSchedule({weekStart:monday});
-      if(!response.ok)return {...missing("scheduled_shifts",period,[response.error]),href:"/staff?tab=schedule"};
-      const activeIds=new Set(response.data.team.map(person=>person.id));
-      const allActiveShifts=response.data.shifts.filter(shift=>activeIds.has(shift.employeeId));
-      const selected=allActiveShifts.filter(shift=>shift.date>=from&&shift.date<=to);
-      const scheduleSet=allActiveShifts.length>0;
-      return {source:"scheduled_shifts",period,agentId:"olivia",href:"/staff?tab=schedule",
-        scheduleSet,windowHasShifts:selected.length>0,
-        shifts:selected.slice(0,40).map(shift=>({
-          id:shift.id,date:shift.date,employeeId:shift.employeeId,start:shift.start,end:shift.end,
-          paidMinutes:shift.paidMinutes,costCents:shift.costCents,estimated:shift.estimated,
-        })),
-        paidMinutes:null,knownWagesCents:null,estimated:null,estimatedShiftCount:null,gaps:[],
-        missing:[...(!scheduleSet?["scheduleNotSet"]:selected.length===0?["noShiftsInRequestedRange"]:[]),
-          ...(selected.length>40?["moreShifts"]:[]),"requestRangeTotalsNotAvailable"]};
+      // Overlapping Toast shifts can occur in both adjacent weekly queries.
+      // Identify an assignment by its source and stable location-scoped shift ID.
+      const seen=new Set<string>();
+      const selected=allShifts.filter(shift=>{
+        const key=shift.source==="toast"?
+          "toast:"+shift.locationId+":"+shift.id:"app:"+shift.id;
+        if(seen.has(key))return false;
+        seen.add(key);return true;
+      }).sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
+      if(!scheduleSet&&!missingInputs.length)missingInputs.push("scheduleNotSet");
+      else if(!selected.length&&!missingInputs.length)missingInputs.push("noShiftsInRequestedRange");
+      if(selected.length>250)missingInputs.push("moreShifts");
+      return {source:"scheduled_shifts+pos_scheduled_shifts",period,agentId:"olivia",
+        href:"/staff?tab=schedule",scheduleSet,windowHasShifts:selected.length>0,
+        shifts:selected.slice(0,250),paidMinutes:null,knownWagesCents:null,
+        estimated:null,estimatedShiftCount:null,gaps:[],
+        missing:[...missingInputs,"requestRangeTotalsNotAvailable"],
+        dataNotes:[...new Set(notes)]};
     },
   },
   get_labor: {
     agentId:"olivia",schema:period,description:"Labor-day costs, including estimated inputs, and recorded attendance for a current period.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const resolved=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
+      const resolved=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(resolved.status!=="resolved")return periodChoicePayload("labor_and_attendance",resolved);
       const p={from:resolved.value.from,to:resolved.value.to};
-      if(!ctx.tools.getLaborMetrics||!ctx.tools.getStaffAttendance||!ctx.timezone)
-        return missing("labor_and_attendance",p,["laborReaderOrTimezoneUnavailable"]);
       const [labor,attendance,ownerPayroll,toastScopes,reviews]=await Promise.all([
-        ctx.tools.getLaborMetrics(p),
-        ctx.tools.getStaffAttendance(p,ctx.timezone),
-        ctx.tools.getOwnerMonthlyPayrollExtras?.(),
-        ctx.tools.getToastScopeCoverage?.(),
-        ctx.tools.getPosImportReviews?.(),
+        ctx.tools.getLaborMetrics?
+          ctx.tools.getLaborMetrics(p).catch(()=>failedSlice("laborReadFailed")):
+          Promise.resolve(failedSlice("laborReaderUnavailable")),
+        ctx.tools.getStaffAttendance?
+          ctx.tools.getStaffAttendance(p,ctx.timezone).catch(()=>failedSlice("staffAttendanceReadFailed")):
+          Promise.resolve(failedSlice("attendanceReaderUnavailable")),
+        ctx.tools.getOwnerMonthlyPayrollExtras?.().catch(()=>failedSlice("payrollExtrasReadFailed")),
+        ctx.tools.getToastScopeCoverage?.().catch(()=>failedSlice("toastScopeReadFailed")),
+        ctx.tools.getPosImportReviews?.().catch(()=>failedSlice("posStaffReviewsReadFailed")),
       ]);
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
         ...(labor.available?labor.value.filter(d=>d.wageStatus==="missing"||d.wagesCents===null||d.staffTaxCents===null)
@@ -98,17 +131,26 @@ export const staffTools = {
         })): [];
       const ownerMonthlyPayrollExtrasCents=ownerPayroll?.available?
         ownerPayroll.value.monthlyCents:null;
-      return {source:"labor_and_attendance",period:p,agentId:"olivia",
+      const payrollReadFailed=ownerPayroll?.quality.missingInputs.includes("payrollExtrasReadFailed")===true;
+      const readFailures=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
+        ...(ownerPayroll?.quality.missingInputs??[]),
+        ...(toastScopes?.quality.missingInputs??[]),
+        ...(reviews?.quality.missingInputs??[])];
+      const failedReaders=["laborReadFailed","laborReaderUnavailable","staffAttendanceReadFailed","attendanceReaderUnavailable",
+        "payrollExtrasReadFailed","toastScopeReadFailed","posStaffReviewsReadFailed"];
+      const dataNotes=readFailures.some(key=>failedReaders.includes(key))?
+        [{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[];
+      return {source:"labor_and_attendance",period:p,agentId:"olivia",dataNotes,
         ownerMonthlyPayrollExtrasCents,
         toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
         pendingPosStaffReviews:reviews?.available?reviews.value:null,
         posReviewHref:"/staff",
         posReviewMissing:reviews?.quality.missingInputs??["toastReviewsUnavailable"],
-        ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
+        ownerMonthlyPayrollStatus:payrollReadFailed?"unavailable":ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
         ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"You told me",
-        missing:[...issues,
+        missing:[...issues,...readFailures.filter(key=>failedReaders.includes(key)),
           ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[]),
-          ...(ownerMonthlyPayrollExtrasCents===null?
+          ...(ownerMonthlyPayrollExtrasCents===null&&!payrollReadFailed?
            ["ownerMonthlyPayrollExtrasNotSet"]:[])],explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs,
           ...(labor.available?labor.value.filter(d=>d.wageStatus==="estimate")
            .map(d=>"laborWageEstimate:"+d.date):[])],
