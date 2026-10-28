@@ -10,9 +10,9 @@ export default function MilkSizePrices({items,fromMilkId,toMilkId,pantry}:{
 }){
   const t=useTranslations("MenuBuilder"),note=useTranslations("MetricsNotes");
   const first=items.find(item=>item.active)??items[0];
-  const grouped=items.filter(item=>item.baseName===first?.baseName);
-  const active=grouped.filter(item=>item.active);
-  const sizes=active.length?active:grouped;
+  // Include ALL saved size variants, including inactive ones, so the owner can
+  // understand a swap before deciding whether to put that size back on sale.
+  const sizes=items.filter(item=>item.baseName===first?.baseName);
   const ml=Object.fromEntries(sizes.map(item=>{
     const line=item.recipe.find(r=>r.ingredientId===fromMilkId)??
       item.recipe.find(r=>pantry.some(p=>p.id===r.ingredientId&&p.category==="milk"));
