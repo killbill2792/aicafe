@@ -71,9 +71,9 @@ describe("read-only Toast coverage diagnostics",()=>{
   await captureToastRawSample(business,"2026-10-20",db);
   const first=writes.find(w=>w.endpoint==="orders/v2/ordersBulk");
   const counts=first?.identifier_counts as Record<string,{present:number;filled:number}>;
-  expect(counts["customer.guid"]).toEqual({present:1,filled:1});
-  expect(counts["card.guid"]).toEqual({present:1,filled:1});
-  expect(counts["*.customerId"]).toEqual({present:1,filled:1});
+  expect(counts["[].customer.guid"]).toEqual({present:1,filled:1});
+  expect(counts["[].card.guid"]).toEqual({present:1,filled:1});
+  expect(counts["[].*.customerId"]).toEqual({present:1,filled:1});
   expect(JSON.stringify(counts)).not.toContain("person@example.com");
  });
  it("matches the complete documented GET inventory without duplicates",()=>{
