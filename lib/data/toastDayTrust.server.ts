@@ -16,8 +16,8 @@ export async function readToastDayTrust(db:SupabaseClient,businessId:string,from
    toastDayFlags(db,businessId,from,to),
    unverifiedToastSalesDates(db,businessId,from,to)
   ]);
-  // Successful imports at one location do not mask missing imports at another.
-  const failed=[...new Set(flags.filter(f=>f.status==="failed"||f.status==="missing").map(f=>f.date))].sort();
+  // Successful imports at one location do not mask queued, failed or missing imports at another.
+  const failed=[...new Set(flags.filter(f=>f.status!=="imported").map(f=>f.date))].sort();
   const withOrders=failed.filter(date=>canonicalToastDays.has(date));
   const otherPosOnly=failed.filter(date=>!canonicalToastDays.has(date));
   const withStatus=new Set(flags.map(f=>f.date));
