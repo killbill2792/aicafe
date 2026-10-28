@@ -182,7 +182,8 @@ export async function readSupervisorCafeIdentity(authorizedBusinessId: string) {
     timeZone:data.timezone,year:"numeric",month:"2-digit",day:"2-digit",
   }).formatToParts(new Date());
   const value = (kind: string) => parts.find(p=>p.type===kind)?.value ?? "";
-  if(!data.currency || !/^[A-Z]{3}$/.test(String(data.currency)))throw new Error("Café currency unavailable");
-  return { cafeName:String(data.name).slice(0,120), timezone:String(data.timezone),currency:String(data.currency),
+  // Missing currency is an owner-facing caveat, not a reason to hide saved café data.
+  const currency=typeof data.currency==="string"&&/^[A-Z]{3}$/.test(data.currency)?data.currency:null;
+  return { cafeName:String(data.name).slice(0,120), timezone:String(data.timezone),currency,
     asOf:value("year")+"-"+value("month")+"-"+value("day") };
 }
