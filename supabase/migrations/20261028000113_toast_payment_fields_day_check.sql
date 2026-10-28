@@ -735,4 +735,3 @@ select m.business_id,m.restaurant_guid,
  (select count(*)::integer from public.toast_day_status s where s.business_id=m.business_id
  and s.restaurant_guid=m.restaurant_guid and s.unparsed_count>0) as days_with_unreadable_orders
 from public.toast_location_mappings m join public.businesses b on b.id=m.business_id;
-
