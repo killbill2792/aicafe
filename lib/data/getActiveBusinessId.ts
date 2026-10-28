@@ -12,7 +12,10 @@ export const ACTIVE_BUSINESS_COOKIE = "active_business_id";
  * user's own business once they have one, otherwise the demo. Trusts only businesses the user is
  * actually a member of (RLS would block anything else regardless, but this avoids a wasted query).
  */
-export const getActiveBusinessId=cache(async function getActiveBusinessId(userId:string):Promise<string>{
+export async function getActiveBusinessId(userId:string):Promise<string>{
+  return getActiveBusinessIdCached(userId);
+}
+const getActiveBusinessIdCached=cache(async function getActiveBusinessIdCached(userId:string):Promise<string>{
   const supabase = await createServerSupabaseClient();
   const { data: memberships } = await supabase
     .from("memberships")

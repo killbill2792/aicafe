@@ -13,8 +13,12 @@ import type { BusinessSnapshot } from "./types";
  * Supabase isn't connected (so the app is fully browsable/demoable before M1's credentials
  * exist) or when the signed-in user isn't resolvable; otherwise queries the real business.
  */
-export const getSnapshot=cache(async function getSnapshot(
-  costPeriod:"today"|"week"|"month"="month"): Promise<BusinessSnapshot> {
+export async function getSnapshot(
+  costPeriod:"today"|"week"|"month"="month"):Promise<BusinessSnapshot>{
+  return getSnapshotCached(costPeriod);
+}
+const getSnapshotCached=cache(async function getSnapshotCached(
+  costPeriod:"today"|"week"|"month"="month"):Promise<BusinessSnapshot>{
   if (!isSupabaseConfigured()) return getFixtureSnapshot();
 
   const supabase = await createServerSupabaseClient();
