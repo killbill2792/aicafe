@@ -17,7 +17,7 @@ describe("canonical view column dictionary contract",()=>{
  });
  it("keeps captured API limitations when the dictionary is regenerated",()=>{
   const notes=readFileSync(resolve("docs/data-dictionary-notes.md"),"utf8").trimEnd();
-  expect(docs.endsWith(notes+"\\n")).toBe(true);
+  expect(docs.endsWith(notes+"\n")).toBe(true);
  });
  it("generated documentation covers every allowed view and column",()=>{
   for(const view of canonicalViewNames){
