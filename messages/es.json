@@ -3373,6 +3373,8 @@
     "breakEvenBillsMissing": "Faltan gastos mensuales.",
     "breakEvenLaborMissing": "Faltan costes laborales.",
     "breakEvenDrinksMissing": "Falta el volumen de bebidas.",
+    "futureDatesExcluded": "Se excluyeron las fechas futuras; estas cifras solo incluyen fechas registradas.",
+    "breakEvenCalendarMissing": "Falta la duración del mes del café; no se puede calcular la meta diaria de bebidas.",
     "NO_SALES": "No hay días con ventas registradas.",
     "VARIABLE_COSTS_TOO_HIGH": "Los costes variables consumen todas las ventas.",
     "monthCalendarSparseSales": "Hay menos de siete días de ventas; la cobertura es una estimación inicial.",
