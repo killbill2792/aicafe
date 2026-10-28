@@ -1,4 +1,4 @@
-/** Run with: npx tsx scripts/toast-raw-sample.ts --business UUID --date YYYY-MM-DD
+/** Run with: NODE_OPTIONS=--conditions=react-server npx tsx scripts/toast-raw-sample.ts --business UUID --date YYYY-MM-DD
  * Requires server environment credentials. No owner session bypass via HTTP. */
 import {createClient} from "@supabase/supabase-js";
 import {z} from "zod";
