@@ -53,7 +53,8 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     expect(hooks.generate).not.toHaveBeenCalled();
     // One snapshot loader (passed to Home and its attention section) has a
     // bounded number of read invocations, not a second full snapshot query set.
-    expect(reads.length).toBeLessThanOrEqual(12);
+    expect(reads).toHaveLength(10);
+    expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
     expect(reads.filter(table=>table==="daily_rollups")).toHaveLength(1);
   });
 });

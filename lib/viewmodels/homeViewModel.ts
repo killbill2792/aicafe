@@ -9,14 +9,11 @@ import {
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, recoveryBuckets } from "./costRecoveryShared";
 import {
-  daysForPeriod,
   previousPeriodCoverage,
   previousPeriodDays,
-  runningCostsForPeriod,
   previousRunningCostsForPeriod,
   type Period,
 } from "./period";
-import { ownerProfitDisplayState } from "./ownerProfitDisplay";
 import { periodComparisonState } from "./periodComparison";
 import { expectedMissingCostLines } from "@/lib/expenses/expectedCosts";
 import {buildProfitAndCostsViewModel} from "./moneyViewModel";
@@ -25,7 +22,6 @@ import {buildBreakEvenViewModel} from "./breakEvenViewModel";
 export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   // Home is a view of the very same shared profit calculation used by Money and chat.
   const money=buildProfitAndCostsViewModel(snapshot,period);
-  const days=daysForPeriod(snapshot,period);
   const salesCents=money.salesCents;
   const ownerProfitCents=money.ownerProfitCents;
   const totalCostsCents=money.totalCostsCents;

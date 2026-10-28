@@ -439,4 +439,3 @@ async function readHistoricalBusinessSnapshot(
       null:Number(business.owner_monthly_payroll_extras_cents),
   };
 }
-
