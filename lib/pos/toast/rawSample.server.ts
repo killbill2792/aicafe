@@ -23,6 +23,8 @@ const RESTRICTED=/(?:password|secret|token|credential|authorization|api.?key|ses
 const FREEFORM=/(?:notes?|memo|comment|message|instructions|^text$|description|receiptText|^tabName$)/i;
 const IDENTIFIER=/(?:^customer(?:Id|Guid)$|^guest(?:Id|Guid)$|^loyalty(?:Id|Guid|AccountId|AccountGuid|CustomerId|CustomerGuid)$|^cardPaymentId$|^cardFingerprint$|^cardTokenId$|^paymentCardId$|^cardId$|^networkTransactionIdentifier$|^maskedLoyaltyIdentifier$|^customerIdentifier$|^loyaltyIdentifier$)/i;
 const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
+const PERSONAL_CONTEXT=/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron|deliveryInfo|contact|billing|shipping|recipient|buyer|payer|cashier|^card$|^payments?$|^checks?$|^orders?$)/i;
+const BUSINESS_CONTEXT=/^(?:selections?|items?|menuItems?|modifiers?|options?|menus?|jobs?|diningOptions?|discounts?|salesCategories?)$/i;
 const isLinkableId=(name:string,context:string)=>IDENTIFIER.test(name)||
  /^(?:id|guid|referenceId|externalId|accountId|accountGuid|fingerprint|tokenId|identifier)$/i.test(name)&&
  /(?:customer|guest|loyalty|card|patron|employee|staff|cashier)/i.test(context);
@@ -36,13 +38,13 @@ export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,cont
    .filter(([k])=>(isLinkableId(k,context)||!RESTRICTED.test(k))&&
      (!FREEFORM.test(k)||k==="description"&&/^(?:config|menus)\//.test(scope)))
    .filter(([k,v])=>{
-    const sensitive=/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron|deliveryInfo|contact|billing|shipping|recipient|buyer|payer|cashier|^card$)/i.test(context);
+    const sensitive=PERSONAL_CONTEXT.test(context);
     if(!sensitive)return true;
     if(/(?:^name$|displayName|nickname|^text$|city|state|country|^fullName$)/i.test(k))return false;
     if(typeof v!=="string")return true;
-    return isLinkableId(k,context)||/^(?:type|status|entityType|cardType|cardEntryMode|jobTitle|jobCode|title|currency)$/i.test(k);
+    return isLinkableId(k,context)||/^(?:type|status|entityType|cardType|cardEntryMode|jobTitle|jobCode|title|currency|source|paymentStatus)$/i.test(k)||/(?:Date|Time|At|Timestamp)$/i.test(k);
    })
-   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron|deliveryInfo|contact|billing|shipping|recipient|buyer|payer|cashier|^card$)/i.test(k)?k:context,scope)])
+   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,BUSINESS_CONTEXT.test(k)?"":PERSONAL_CONTEXT.test(k)?k:context,scope)])
    .filter(([k,v])=>v!==undefined));
  }
  if(isLinkableId(key,context)){
