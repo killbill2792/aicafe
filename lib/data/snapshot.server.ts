@@ -12,6 +12,7 @@ import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
 import {getOwnerConfirmedProcessingFeePlans} from "@/lib/pos/processingFeeEstimate.server";
 import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
+import {hasSalesCoverage} from "@/lib/calc/dayWindows";
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
@@ -68,6 +69,8 @@ export async function getBusinessSnapshotFromDb(
   const allDays=(rollupRows??[]).map(rowToDailyFacts);
   const {monthRecordedDays,monthActualDays,last7Days,last28Days,todayDay,todayHasData}=
     buildDayWindows(allDays,todayDateStr,monthKey);
+  const breakEvenDays=allDays.filter(d=>d.date>=shiftCafeDate(todayDateStr,-28)&&
+    d.date<todayDateStr&&hasSalesCoverage(d));
   const previousMonthRecordedDays=allDays.filter(d=>d.date>=prevMonthStart&&d.date<=prevMonthEnd);
   const previousMonthDays=previousMonthRecordedDays.filter(d=>d.salesDataStatus!=="missing");
   if (recurringResult.error) throw recurringResult.error;
@@ -153,6 +156,7 @@ export async function getBusinessSnapshotFromDb(
     monthRecordedDays,
     monthActualDays,
     last28Days,
+    breakEvenDays,
     last7Days,
     todayDay,
     todayHasData,
