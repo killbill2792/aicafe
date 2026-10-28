@@ -46,7 +46,7 @@ function readOnlyClient(){
         select(){return q;},
         eq(field:string,value:unknown){filters.push({table,field,value});return q;},
         gte(){return q;},lte(){return q;},or(){return q;},order(){return q;},
-        limit(){return q;},
+        limit(){return q;},range(){return q;},
         single(){return Promise.resolve({...result,data:result.data[0]??null});},
         maybeSingle(){return Promise.resolve({...result,data:result.data[0]??null});},
         then(ok:(value:typeof result)=>unknown,fail?:((err:unknown)=>unknown)){
