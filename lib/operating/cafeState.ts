@@ -160,6 +160,8 @@ export function cafeStateFromSnapshot(
     ...(missingSales ? [`salesCoverage:${observedDays}/${expectedDays}`] : []),
   ];
   const observedQuality = quality([...basicMissing, ...feeMissing], [...feeEstimated, ...taxEstimated]);
+  const monthlyExtras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
+    .ownerMonthlyPayrollExtrasCents;
   const financialQuality = quality(
     [...basicMissing, ...feeMissing, ...expenseMissing, ...missingProductCosts,
       ...unknownLabor.map(day=>"laborWageUnknown:"+day.date)],
@@ -224,8 +226,6 @@ export function cafeStateFromSnapshot(
   }));
   const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
   const feeResult=cardFeesForDays(days,feePlans??null);
-  const monthlyExtras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
-    .ownerMonthlyPayrollExtrasCents;
   const laborResult=laborForPeriod(
     Array.from({length:expectedDays},(_,index)=>({
       date:new Date(Date.parse(period.from+"T12:00:00Z")+index*86400000).toISOString().slice(0,10),

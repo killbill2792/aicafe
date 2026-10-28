@@ -69,6 +69,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const missingProcessingFees = salesHistory.some((day) => day.cardFeesStatus === "missing");
   const missingBills = snapshot.runningCostLines.some((line) => line.isMissing && line.isExpected);
 
+  const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
   const sharedBreakEven=breakEvenFor({
     days:salesHistory,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
     monthlyBillsCents,monthlyStaffCents,
