@@ -1,6 +1,7 @@
 import {calculateBreakEvenSales} from "./breakEvenSales";
 import {breakEvenFor,type BreakEvenDay} from "@/lib/metrics/core/breakEven";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
+import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {COFFEE_SHOP_PROFILE} from "@/lib/pricing/profiles";
 export type FigureStatus="actual"|"estimate"|"owner"|"missing";
 export type Figure={valueCents:number|null;status:FigureStatus;reason:string;missingDays:string[]};
@@ -27,6 +28,9 @@ export type Economics={
  /** Expected operating categories without current actual or recurring basis. */
  missingBillCategories?:string[];
  asOfDate?:string;observedDays?:BreakEvenDay[];
+ ownerFeePlans?:readonly OwnerFeePlan[];
+ /** Owner-supplied observations take precedence in this specific calculation only. */
+ ownerNetSalesCents?:number|null;ownerSalesDays?:number|null;
 };
 /** Weighted owner-confirmed processor rate from the SAME covered drinks/order window. */
 export function fixedCardFeeForCoveredSales(plan:{
@@ -63,32 +67,54 @@ export function unifiedBreakEven(input:Economics){
    day.date>=shiftCafeDate(input.asOfDate!,-28)&&
    day.date<input.asOfDate!&&day.salesDataStatus!=="missing")??[]:[];
  const observedSalesCents=realDays.reduce((sum,d)=>sum+d.netSalesCents,0);
- // One shared calculation path and café-local 28-complete-day window when real rows exist.
- // Legacy explicit-rate scenarios without day rows retain the same underlying pure cents function.
- const shared=input.asOfDate&&input.observedDays?breakEvenFor({
+ const ownerSales=input.ownerNetSalesCents??null;
+ if(ownerSales!==null&&(!Number.isSafeInteger(ownerSales)||ownerSales<0))
+   throw new RangeError("Invalid owner sales observation");
+ const calcSales=ownerSales??observedSalesCents;
+ const sourceIngredients=realDays.reduce((sum,day)=>sum+day.ingredientsCents,0);
+ const sourceFees=cardFeesForDays(realDays,input.ownerFeePlans??null).amountCents;
+ // A stated owner percentage overrides imports for this scenario. Otherwise,
+ // retain the real amounts, or scale their effective rates when the owner supplies sales.
+ const ingredientCents=input.ingredientStatus==="owner"&&input.ingredientRate!==null?
+   Math.round(calcSales*input.ingredientRate):
+   observedSalesCents>0?Math.round(sourceIngredients*calcSales/observedSalesCents):
+   Math.round(calcSales*effectiveIngredientRate);
+ const feeCents=input.feeStatus==="owner"&&input.feeRate!==null?
+   Math.round(calcSales*input.feeRate):
+   observedSalesCents>0?Math.round(sourceFees*calcSales/observedSalesCents):
+   Math.round(calcSales*effectiveFeeRate);
+ const shared=ownerSales===null&&input.asOfDate&&input.observedDays?breakEvenFor({
    days:realDays,asOfDate:input.asOfDate,daysInMonth:input.daysInMonth,
    monthlyBillsCents:input.monthlyBills.valueCents,
    monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
-   // The observed rows are the source of truth, not rates reconstructed from them.
-   observedIngredientCents:realDays.reduce((sum,day)=>sum+day.ingredientsCents,0),
-   // Resolve actual/owner/default fee precedence in the shared core.
+   observedIngredientCents:ingredientCents,
+   observedProcessingFeesCents:feeCents,
+   ownerFeePlans:input.ownerFeePlans,
  }):null;
- const computed=shared?.calculation??(input.observedDays?{kind:"unavailable" as const,reason:"NO_SALES" as const}:
+ const computed=shared?.calculation??(
+   ownerSales!==null?calculateBreakEvenSales({
+     monthlyBillsCents:input.monthlyBills.valueCents??0,
+     monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
+     observedSalesCents:calcSales,
+     observedIngredientCents:ingredientCents,
+     observedProcessingFeesCents:feeCents,
+   }):input.observedDays?{kind:"unavailable" as const,reason:"NO_SALES" as const}:
    calculateBreakEvenSales({
-   monthlyBillsCents:input.monthlyBills.valueCents??0,
-   monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
-   observedSalesCents:100_000_000,
-   observedIngredientCents:Math.round(100_000_000*effectiveIngredientRate),
-   observedProcessingFeesCents:Math.round(100_000_000*effectiveFeeRate)
- }));
- const knownCostBreakEvenFloorCents=(fixed.length>0||extrasFloor>0)&&rateKnown&&
-  computed.kind==="ready"?computed.breakEvenSalesCents:null;
- // Known-cost break-even is a labeled floor whenever a fixed-cost category
- // is incomplete, never an unqualified fully loaded break-even number.
- const monthlyCents=rateKnown&&computed.kind==="ready"?computed.breakEvenSalesCents:null;
+     monthlyBillsCents:input.monthlyBills.valueCents??0,
+     monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
+     observedSalesCents:100_000_000,
+     observedIngredientCents:Math.round(100_000_000*effectiveIngredientRate),
+     observedProcessingFeesCents:Math.round(100_000_000*effectiveFeeRate),
+   }));
+ // Observed costs can provide a meaningful known-cost break-even without a saved
+ // percentage. Explicit missing inputs remain disclosed instead of becoming zero.
+ const evidenceReady=ownerSales!==null||shared!==null||rateKnown;
+ const monthlyCents=evidenceReady&&computed.kind==="ready"?computed.breakEvenSalesCents:null;
+ const knownCostBreakEvenFloorCents=(fixed.length>0||extrasFloor>0)&&
+   monthlyCents!==null?monthlyCents:null;
  const drinksPerDay=shared?shared.drinksPerDay:
-  monthlyCents!==null&&input.averagePriceCents!==null&&input.averagePriceCents>0
-  ?Math.ceil(monthlyCents/input.averagePriceCents/input.daysInMonth):null;
+   monthlyCents!==null&&input.averagePriceCents!==null&&input.averagePriceCents>0&&input.daysInMonth>0
+   ?Math.ceil(monthlyCents/input.averagePriceCents/input.daysInMonth):null;
  const status:FigureStatus=missing.length||fixed.some(f=>f.status!=="actual")||
   input.ingredientStatus!=="actual"||input.feeStatus!=="actual"?"estimate":"actual";
  const reason=missing.length?"Known inputs only; missing: "+missing.join(", "):
