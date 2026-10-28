@@ -8,7 +8,7 @@ describe("owner labor with actual covered sales",()=>{
   const days=Array.from({length:14},(_,i)=>
    new Date(Date.UTC(2026,7,22+i)).toISOString().slice(0,10));
   const ctx={
-   asOf:"2026-10-27",timezone:"America/Los_Angeles",locale:"en" as const,
+   asOf:"2026-10-27",timezone:"America/Los_Angeles",locale:"en" as const,currency:"USD",
    tools:{getSalesTrend:async({from,to}:{from:string;to:string})=>{
     const selected=days.filter(date=>date>=from&&date<=to);
     return {available:selected.length>0,value:selected.map(date=>({date,drinksCount:20,ordersCount:12})),quality:q};
