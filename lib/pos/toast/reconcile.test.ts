@@ -651,7 +651,7 @@ it("an unverified remote payment after six hours stays pending, never a fabricat
  });
  await reconcileToastDays(f.db,p,Date.now()+20000);
  expect(f.item.recon_state).toBe("pending");
- expect(f.item.internal_reasons).toContain("unverified_payment_order");
+ expect(f.item.internal_reasons).toContain("unknown_payment_order");
 });
 
 
