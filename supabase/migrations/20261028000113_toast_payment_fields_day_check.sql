@@ -338,8 +338,8 @@ create policy "owner read" on public.toast_order_typed_facts for select
 grant select on public.toast_order_typed_facts to authenticated;
 grant select,insert on public.toast_order_typed_facts to service_role;
 
-create or replace function public.toast_capture_typed_order()
-returns trigger language plpgsql security definer set search_path=public as $typed$
+create or replace function public.toast_capture_typed_order(p_raw_id uuid)
+returns void language plpgsql security definer set search_path=public as $typed$
 declare
  c jsonb;s jsonb;d jsonb;p jsonb;m jsonb;
  check_guid text;selection_guid text;
@@ -348,24 +348,26 @@ declare
  voids jsonb:='[]'::jsonb;refunds jsonb:='[]'::jsonb;
  duration bigint;begin_at timestamptz;close_at timestamptz;
  value_cents bigint; v_amt text;
+ v_raw public.toast_raw_records%rowtype;
 begin
- if new.entity<>'order' then return new;end if;
+ select * into v_raw from public.toast_raw_records where id=p_raw_id;
+ if not found or v_raw.entity<>'order' then return;end if;
  begin
-  begin_at:=(new.payload->>'openedDate')::timestamptz;
-  close_at:=(new.payload->>'closedDate')::timestamptz;
+  begin_at:=(v_raw.payload->>'openedDate')::timestamptz;
+  close_at:=(v_raw.payload->>'closedDate')::timestamptz;
   if close_at>=begin_at then
     duration:=round(extract(epoch from close_at-begin_at))::bigint;
   end if;
  exception when others then duration:=null;
  end;
- if new.payload->>'voided'='true' then
+ if v_raw.payload->>'voided'='true' then
   voids:=voids||jsonb_build_array(jsonb_build_object('level','order',
-   'guid',new.payload->>'guid','businessDate',new.payload->>'voidBusinessDate',
-   'reasonGuid',new.payload->'voidReason'->>'guid'));
+   'guid',v_raw.payload->>'guid','businessDate',v_raw.payload->>'voidBusinessDate',
+   'reasonGuid',v_raw.payload->'voidReason'->>'guid'));
  end if;
  for c in select value from jsonb_array_elements(
-   case when jsonb_typeof(new.payload->'checks')='array'
-    then new.payload->'checks' else '[]'::jsonb end)
+   case when jsonb_typeof(v_raw.payload->'checks')='array'
+    then v_raw.payload->'checks' else '[]'::jsonb end)
  loop
   check_guid:=c->>'guid';
   if c->>'voided'='true' then
@@ -455,22 +457,29 @@ begin
   raw_record_id,business_id,restaurant_guid,business_date,order_guid,
   order_duration_seconds,check_discounts,item_discounts,item_taxes,
   modifier_prices,void_details,refund_details)
- values(new.id,new.business_id,new.restaurant_guid,new.business_date,new.entity_guid,
+ values(v_raw.id,v_raw.business_id,v_raw.restaurant_guid,v_raw.business_date,v_raw.entity_guid,
   duration,check_ds,item_ds,tax_items,mods,voids,refunds)
  on conflict(raw_record_id) do nothing;
- return new;
+ return;
 end $typed$;
-revoke all on function public.toast_capture_typed_order() from public,anon,authenticated;
+revoke all on function public.toast_capture_typed_order(uuid) from public,anon,authenticated;
+grant execute on function public.toast_capture_typed_order(uuid) to service_role;
+
+create or replace function public.toast_capture_typed_order_trigger()
+returns trigger language plpgsql security definer set search_path=public as $trigger$
+begin
+ perform public.toast_capture_typed_order(new.id);
+ return new;
+end $trigger$;
+revoke all on function public.toast_capture_typed_order_trigger() from public,anon,authenticated;
 drop trigger if exists toast_raw_order_typed_capture on public.toast_raw_records;
 create trigger toast_raw_order_typed_capture
  after insert on public.toast_raw_records
- for each row when (new.entity='order')
- execute function public.toast_capture_typed_order();
+ for each row when (v_raw.entity='order')
+ execute function public.toast_capture_typed_order_trigger();
 
 -- Migration 111 may already hold historical raw rows. Build their typed
 -- projections without changing the immutable raw evidence or current sales.
-insert into public.toast_order_typed_facts(raw_record_id,business_id,restaurant_guid,
- business_date,order_guid,order_duration_seconds)
-select id,business_id,restaurant_guid,business_date,entity_guid,null
-from public.toast_raw_records where entity='order'
-on conflict(raw_record_id) do nothing;
+select public.toast_capture_typed_order(id) from public.toast_raw_records
+ where entity='order' and not exists(select 1 from public.toast_order_typed_facts f
+  where f.raw_record_id=toast_raw_records.id);
