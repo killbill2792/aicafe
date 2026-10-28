@@ -3351,6 +3351,7 @@
     "none": "غير محدد"
   },
   "MetricsNotes": {
+    "itemRecordedBusinessCosts": "تكاليف العمل المسجلة",
     "itemIngredientsPackaging": "المكونات والتغليف",
     "itemUnitsMonth": "وحدات شهريًا",
     "itemLaborPerDrink": "العمالة لكل مشروب",
