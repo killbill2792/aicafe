@@ -3351,6 +3351,7 @@
     "none": "Not set"
   },
   "MetricsNotes": {
+    "metricReasonUnknown": "This figure uses available records; its source needs confirmation.",
     "periodLatestData": "Latest data: {from}–{to}",
     "laborPartialCoverage": "Payroll projected from {covered} of {total} days; other days are not recorded.",
     "laborRecorded": "Recorded wages and payroll tax.",
