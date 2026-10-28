@@ -55,6 +55,7 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
  it("excludes confirmed failed Toast days from both sales projections",async()=>{
    vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
    guard.flags.mockResolvedValue([{date:period.from,status:"failed",needsLook:false}]);
+   guard.unverified.mockResolvedValue(new Set([period.from]));
    const h=mockDatabase([{business_date:period.from,hour_local:10,
      location_id:null,net_sales_cents:500,orders_count:1}],"hourly_sales_rollup");
    const staff=mockDatabase([{business_date:period.from,employee_id:"e",net_sales_cents:500,
@@ -69,6 +70,7 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
  it("flags partial verification without claiming the entire range",async()=>{
    vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
    guard.flags.mockResolvedValue([{date:period.from,status:"failed",needsLook:false}]);
+   guard.unverified.mockResolvedValue(new Set([period.from]));
    const longer={from:period.from,to:"2026-08-23"};
    const rows=[{business_date:period.from,hour_local:10,location_id:null,net_sales_cents:500,orders_count:1},
      {business_date:"2026-08-23",hour_local:11,location_id:null,net_sales_cents:700,orders_count:2}];

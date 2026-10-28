@@ -1,9 +1,13 @@
-import {describe,it,expect,vi,afterEach} from "vitest";
+import {describe,it,expect,vi,afterEach,beforeEach} from "vitest";
 vi.mock("server-only",()=>({}));
 const flags=vi.hoisted(()=>vi.fn());
-vi.mock("@/lib/pos/toast/reportingCoverage",()=>({toastDayFlags:flags}));
+const canonical=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/pos/toast/reportingCoverage",()=>({
+ toastDayFlags:flags,unverifiedToastSalesDates:canonical
+}));
 import {readToastDayTrust,needsLookKey} from "./toastDayTrust.server";
-afterEach(()=>{vi.unstubAllEnvs();flags.mockReset();});
+beforeEach(()=>canonical.mockResolvedValue(new Set()));
+afterEach(()=>{vi.unstubAllEnvs();flags.mockReset();canonical.mockReset();});
 describe("shared Toast day trust",()=>{
  it("status read fails keeps stored days + one note",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
@@ -33,6 +37,13 @@ describe("shared Toast day trust",()=>{
   expect(trust.blocked.size).toBe(0);
   expect(trust.quality).toEqual([needsLookKey(["2026-08-01"])]);
  });
+ it("failed Toast staging does not exclude Square or CSV data from the same day",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+  flags.mockResolvedValue([{date:"2026-08-02",status:"failed",needsLook:false}]);
+  const result=await readToastDayTrust({} as never,"business","2026-08-02","2026-08-02");
+  expect(result.blocked.size).toBe(0);
+  expect(result.quality).toEqual(["toastFailedNoCanonicalSales:2026-08-02"]);
+ });
  it("excludes only confirmed missing and failed dates",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
   flags.mockResolvedValue([
@@ -40,6 +51,7 @@ describe("shared Toast day trust",()=>{
    {date:"2026-08-02",status:"failed",needsLook:true},
    {date:"2026-08-03",status:"missing",needsLook:false},
   ]);
+  canonical.mockResolvedValue(new Set(["2026-08-02","2026-08-03"]));
   const result=await readToastDayTrust({} as never,"business","2026-08-01","2026-08-03");
   expect([...result.blocked]).toEqual(["2026-08-02","2026-08-03"]);
   expect(result.quality).toContain("toastExcludedDays:2026-08-02,2026-08-03");

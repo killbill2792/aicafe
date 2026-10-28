@@ -3356,6 +3356,7 @@
     "toastDaysNeedLook": "هناك {count} يومًا يحتاج إلى مراجعة: {dates}{more}.",
     "toastDayStatusUnavailable": "فشل فحص حالة أيام Toast. قد تتضمن الأرقام المحفوظة أيامًا لم تُراجع بعد.",
     "toastExcludedDays": "أيام Toast المستبعدة بسبب فشل الاستيراد أو فقدانه: {dates}.",
+    "toastFailedNoCanonicalSales": "تعذر على Toast استيراد هذه التواريخ: {dates}. لا تزال المبيعات المسجلة من أنظمة نقاط البيع الأخرى ظاهرة.",
     "toastScheduleReadFailed": "تعذرت قراءة جدول Toast: {reason}. ما زالت نوبات التطبيق ظاهرة.",
     "scheduleRangeTruncated": "تُعرض أول 366 يومًا من الفترة المطلوبة؛ لم تُقرأ التواريخ المتبقية.",
     "periodExplicit": "من {from} إلى {to}",

@@ -127,6 +127,8 @@ function localizeQualityNotes(keys:readonly string[],locale:AgentLocale):string[
   }else if(key==="toastDayStatusUnavailable")notes.push(copy.toastDayStatusUnavailable);
   else if(key.startsWith("toastExcludedDays:"))
    notes.push(copy.toastExcludedDays.replace("{dates}",key.slice("toastExcludedDays:".length).replaceAll(",",", ")));
+  else if(key.startsWith("toastFailedNoCanonicalSales:"))
+   notes.push(copy.toastFailedNoCanonicalSales.replace("{dates}",key.slice("toastFailedNoCanonicalSales:".length).replaceAll(",",", ")));
  }
  return [...new Set(notes)];
 }

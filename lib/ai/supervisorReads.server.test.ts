@@ -75,6 +75,15 @@ describe("Toast source-scoped Supervisor coverage without changing aggregate for
   expect(trend.available).toBe(true);
   if(trend.available)expect(trend.value).toMatchObject([{date:day,netSalesCents:4820,ordersCount:12}]);
  });
+ it("keeps Square revenue when the Toast import failed without imported Toast orders",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+  const day="2026-10-12",trend=await pilotReader([row("actual",4800,12,day)],
+   [day],[],false,[{business_date:day,import_state:"failed",recon_state:"mismatch"}])
+   .salesTrend("my-cafe",{from:day,to:day});
+  expect(trend.available).toBe(true);
+  if(trend.available)expect(trend.value).toMatchObject([{date:day,netSalesCents:4800}]);
+  expect(trend.quality.missingInputs).toContain("toastFailedNoCanonicalSales:"+day);
+ });
  it("excludes confirmed failed Toast days from a mixed aggregate",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
   const day="2026-10-12",trend=await pilotReader([row("actual",5800,13,day)],
