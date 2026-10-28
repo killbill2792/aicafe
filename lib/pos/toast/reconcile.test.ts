@@ -12,10 +12,7 @@ vi.mock("./checkMode",()=>({detectToastCheckMode:async()=>mocked.mode,setToastCh
 vi.mock("./analyticsClient",()=>({createToastAnalyticsClient:()=>({
  requestDay:mocked.requestDay,getDay:mocked.getDay,persistDay:mocked.persistDay})}));
 vi.mock("./adapter",()=>({toastMoneyCents:(v:number)=>Math.round(v*100)}));
-vi.mock("./dayParser",()=>({parseToastDayPage:()=>({orders:[{
- guid:"11111111-1111-4111-8111-111111111111",modifiedDate:"",
- normalized:{netSalesCents:10000,discountsCents:0,refundsCents:0,taxCents:0,tipCents:0}
-}],unparsed:[]})}));
+vi.mock("./dayParser",()=>({parseToastDayPage:()=>({orders:[],unparsed:[]})}));
 import {reconcileToastDays,internalOrderProof} from "./reconcile";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -28,8 +25,7 @@ const p={businessId:business,restaurantGuid:restaurant,locationId:location,
 const checksum=createHash("sha256").update("[]").digest("hex");
 const status=()=>({business_date:day,import_state:"imported",recon_state:"pending",
  orders_snapshot_sha256:checksum,net_sales_cents:10000,order_count:1,
- discounts_cents:0,refunds_cents:0,tax_cents:0,tip_cents:0,
- unparsed_count:0,warnings:{},
+ discounts_cents:0,refunds_cents:0,unparsed_count:0,warnings:{},
  imported_at:"2026-10-17T10:00:00Z",last_recon_attempt_at:null as string|null,
  recon_source:null as string|null,analytics_state:null as string|null,
  internal_state:null as string|null,internal_reasons:[] as string[],paid_other_day:0,
@@ -184,13 +180,13 @@ describe("Toast reconciliation paths: ERA 202, matched, mismatch and internal",(
   expect(f.item).toMatchObject({recon_state:"checked_internal",recon_source:"internal"});
   expect(f.calls).toContain("toast_certify_day_voids");
  });
- it("missing API-paid GUID flags mismatch without hiding the imported sales",async()=>{
+ it("missing API-paid GUID is pending rather than invented money mismatch",async()=>{
   const f=fakeDb(false);
   mocked.request.mockImplementation(async(path:string)=>
    path.includes("paidBusinessDate")?[]:path.includes("/payments/")?{guid:payment,orderGuid:"11111111-1111-4111-8111-111111111111",paidBusinessDate:20260901}:orderWithAutoGratAndGiftCard());
   await reconcileToastDays(f.db,p,Date.now()+20000);
-  expect(f.item).toMatchObject({recon_state:"mismatch",import_state:"imported"});
-  expect(f.item.recon_state).toBe("mismatch");
+  expect(f.item).toMatchObject({recon_state:"pending",import_state:"imported"});
+  expect(f.item.recon_state).toBe("pending");
  });
 });
 
@@ -635,4 +631,21 @@ it("P1: reconciliation updates check state without writing source import lifecyc
   }
   expect(f.item.imported_at).toBe("2026-10-17T10:00:00Z");
  }
+});
+
+it("an unverified remote payment after six hours stays pending, never a fabricated amount mismatch",async()=>{
+ const f=fakeDb(false);
+ f.item.payment_repull_at=new Date(Date.now()-7*3600000).toISOString();
+ mocked.request.mockImplementation(async(path:string)=>{
+  if(path.includes("paidBusinessDate"))return [payment,"00000000-0000-4000-8000-000000000099"];
+  if(path.includes("/payments/"))return {
+   guid:"00000000-0000-4000-8000-000000000099",
+   orderGuid:"00000000-0000-4000-8000-000000000098",paidBusinessDate:20261016};
+  if(path.includes("/orders/v2/orders/"))return {
+   guid:"00000000-0000-4000-8000-000000000098",businessDate:20261016};
+  return orderWithAutoGratAndGiftCard();
+ });
+ await reconcileToastDays(f.db,p,Date.now()+20000);
+ expect(f.item.recon_state).toBe("pending");
+ expect(f.item.internal_reasons).toContain("unverified_payment_order");
 });

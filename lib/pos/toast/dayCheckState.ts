@@ -12,10 +12,10 @@ export type DayCheckState={
 };
 export type DayCheckEvent=
  |{type:"internal_result";result:"matched"|"mismatch";reasons:string[];paidOtherDay:number}
- |{type:"internal_incomplete";reasons:string[];paidOtherDay:number}
  |{type:"payment_recovery_queued"}
+ |{type:"internal_missing";reasons:string[];paidOtherDay:number}
  |{type:"era_pending"}
- |{type:"era_result";matched:boolean;sourceIncomplete:boolean;comparisonMatched:boolean}
+ |{type:"era_result";matched:boolean;sourceIncomplete:boolean;comparisonMatched:boolean;moneyMismatch?:boolean}
  |{type:"era_error";category:string;permissionsLost:boolean}
  |{type:"internal_error";category:string}
  |{type:"era_timeout"}
@@ -42,10 +42,8 @@ export function nextDayCheckState(current:DayCheckState,event:DayCheckEvent,at:s
   warnings:{...(current.warnings??{})}};
  const internalVerdict=()=>{
   next.recon_state=externalMismatch?"mismatch":
-   next.internal_state===null?"pending":
    next.internal_state==="mismatch"?"mismatch":"checked_internal";
-  next.recon_source=externalMismatch?"toast_analytics":
-   next.internal_state===null?null:"internal";
+  next.recon_source=externalMismatch?"toast_analytics":"internal";
  };
  const clearTransientWarning=()=>{delete next.warnings.analytics_timeout;};
  switch(event.type){
@@ -57,15 +55,13 @@ export function nextDayCheckState(current:DayCheckState,event:DayCheckEvent,at:s
    for(const reason of event.reasons)next.warnings[reason]=1;
    next.payment_repull_at=null;next.last_error_category=null;
    next.reconciled_at=at;internalVerdict();break;
-  case "internal_incomplete":
-   for(const old of next.internal_reasons)delete next.warnings[old];
+  case "internal_missing":
    next.internal_state=null;next.internal_reasons=[...event.reasons];
    next.paid_other_day=event.paidOtherDay;
    for(const reason of event.reasons)next.warnings[reason]=1;
    next.recon_state=externalMismatch?"mismatch":"pending";
    if(!externalMismatch)next.recon_source=null;
-   next.last_error_category=null;next.reconciled_at=null;
-   break;
+   next.last_error_category=null;next.reconciled_at=null;break;
   case "payment_recovery_queued":
    next.internal_state=null;
    next.payment_repull_at??=at;
@@ -76,7 +72,9 @@ export function nextDayCheckState(current:DayCheckState,event:DayCheckEvent,at:s
    internalVerdict();next.analytics_state="pending";
    next.last_error_category=null;clearTransientWarning();break;
   case "era_result":
-   next.recon_state=event.matched?"matched":"mismatch";
+   next.recon_state=event.moneyMismatch===true?"mismatch":
+    event.moneyMismatch===false?(event.matched?"matched":"pending"):
+    event.matched?"matched":"mismatch";
    next.recon_source="toast_analytics";next.analytics_state="available";
    next.last_error_category=null;next.reconciled_at=at;
    delete next.warnings.reconciliation_mismatch;

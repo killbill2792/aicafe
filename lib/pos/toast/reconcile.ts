@@ -242,10 +242,18 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   importedVoidOrderCount:distinct,analyticsVoidOrderCount:row.voidOrdersCount,
   toleranceCents:tolerance
  });
+ const moneyProof=compareDayMoney({
+  net_sales_cents:status.net_sales_cents,discounts_cents:status.discounts_cents,
+  refunds_cents:status.refunds_cents,tax_cents:null,tip_cents:null
+ },{
+  net_sales_cents:net,discounts_cents:discount,refunds_cents:refunds,
+  tax_cents:null,tip_cents:null
+ });
  await writeReconciliation(db,p,day,status,{
   type:"era_result",
   matched:comparison.matched&&!sourceIncomplete&&status.internal_state==="matched",
-  sourceIncomplete,comparisonMatched:comparison.matched
+  sourceIncomplete,comparisonMatched:comparison.matched,
+  moneyMismatch:moneyProof.needsLook
  },{
   toast_net_sales_cents:net,toast_orders_count:row.ordersCount,
   toast_discount_cents:discount,toast_refund_cents:refunds,
@@ -265,25 +273,19 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
  const cache=proofCache(db,p,day,status),cached=await cache.load();
  const rows=await pullDay(db,p,day,deadlineAt,cache,cached);
  const proof=internalOrderProof(rows,p,day,status.orders_snapshot_sha256,status.unparsed_count);
- let comparison:ReturnType<typeof compareDayMoney>|null=null;
- const evidence:EvidencePatch={};
  // Independent provider read compared with our LAST COMMITTED day values.
- // Unknown source money never becomes a verified zero or owner mismatch.
- if(status.unparsed_count===0&&proof.orders.length>0&&
-  proof.orders.every(o=>o.normalized!==undefined)){
+ // If one field is missing, do not manufacture zero or a mismatch.
+ if(status.unparsed_count===0&&proof.orders.every(o=>o.normalized!==undefined)){
   const summed=(field:"netSalesCents"|"discountsCents"|"refundsCents"|"taxCents"|"tipCents")=>
    proof.orders.reduce((n,o)=>n+(o.normalized?.[field]??0),0);
-  comparison=compareDayMoney({
+  const comparison=compareDayMoney({
    net_sales_cents:status.net_sales_cents,discounts_cents:status.discounts_cents,
    refunds_cents:status.refunds_cents,tax_cents:status.tax_cents,tip_cents:status.tip_cents
   },{
    net_sales_cents:summed("netSalesCents"),discounts_cents:summed("discountsCents"),
    refunds_cents:summed("refundsCents"),tax_cents:summed("taxCents"),tip_cents:summed("tipCents")
   });
-  evidence.toast_net_sales_cents=comparison.toastNetSalesCents;
-  evidence.toast_discount_cents=summed("discountsCents");
-  evidence.toast_refund_cents=summed("refundsCents");
-  evidence.delta_net_cents=comparison.differences.net_sales_cents??null;
+  proof.reasons.push(...comparison.reasons);
  }
  const client=createToastClient(db,p.businessId);
  // Toast's documented endpoint returns the full GUID list, without paging parameters.
@@ -344,16 +346,16 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
     throw new ToastApiError("invalid_response");
   }catch(e){
    if(e instanceof ToastApiError&&e.status===404){
-    proof.reasons.push("unknown_payment_order");continue;
+    unknownOrder=true;otherDays.add(day);continue;
    }
    throw e;
   }
-  if(remoteDate===day){proof.reasons.push("unknown_payment_order");continue;}
+  if(remoteDate===day){unknownOrder=true;otherDays.add(day);continue;}
   const {data:order,error}=await db.from("orders")
    .select("id,business_date,toast_excluded").eq("business_id",p.businessId)
    .eq("pos_order_id","toast:"+p.restaurantGuid+":"+payment.orderGuid).maybeSingle();
   if(error)throw new ToastApiError("unavailable");
-  if(order?.toast_excluded===true){proof.reasons.push("unknown_payment_order");continue;}
+  if(order?.toast_excluded===true){unknownOrder=true;otherDays.add(day);continue;}
   const canonicalDate=order?.business_date as string|null|undefined;
   if(canonicalDate&&canonicalDate!==remoteDate)otherDays.add(canonicalDate);
   if(order&&order.toast_excluded===false&&canonicalDate===remoteDate){
@@ -379,8 +381,11 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
   [...otherDays].every(date=>(otherStatus??[]).some(d=>
    d.business_date===date&&d.imported_at&&Date.parse(d.imported_at)>Date.parse(status.payment_repull_at!)))||
   Date.now()-Date.parse(status.payment_repull_at!)>6*3600000);
-  if(repulled)proof.reasons.push("unknown_payment_order");
-  else {
+  if(repulled){
+   await writeReconciliation(db,p,day,status,{type:"internal_missing",
+    reasons:["unverified_payment_order"],paidOtherDay});
+   return null;
+  }else {
    // Let the modified-order scan import the other day before declaring a mismatch.
    const today=localClock(new Date(),p.timeZone).today;
    for(const date of new Set([...otherDays,day])){
@@ -392,21 +397,20 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
    await writeReconciliation(db,p,day,status,{type:"payment_recovery_queued"});return null;
   }
  }
- // Diagnostics, provider shape errors, and a changed checksum remain
- // incomplete evidence; they are NOT owner-visible money mismatches.
- const moneyReasons=comparison?.reasons??[];
- const diagnostics=[...new Set(proof.reasons)];
- const missing=(comparison?.missing??[]).map(field=>"missing_"+field);
- const incomplete=!comparison||missing.length>0||diagnostics.length>0;
- const event:DayCheckEvent=moneyReasons.length
-  ?{type:"internal_result",result:"mismatch",
-    reasons:[...moneyReasons,...diagnostics],paidOtherDay}
-  :incomplete
-   ?{type:"internal_incomplete",reasons:[...diagnostics,...missing],paidOtherDay}
-   :{type:"internal_result",result:"matched",reasons:[],paidOtherDay};
- await writeReconciliation(db,p,day,status,event,evidence);
+ const measured=proof.reasons.filter(x=>x.includes("_delta_")||
+  ["check_payment_mismatch","check_selection_mismatch"].includes(x));
+ if(proof.reasons.length&&measured.length===0){
+  await writeReconciliation(db,p,day,status,{
+   type:"internal_missing",reasons:proof.reasons,paidOtherDay});
+  await cache.clear();
+  return null;
+ }
+ const internal=measured.length?"mismatch":"matched";
+ await writeReconciliation(db,p,day,status,{
+  type:"internal_result",result:internal,reasons:proof.reasons,paidOtherDay
+ });
  await cache.clear();
- return moneyReasons.length?"mismatch":incomplete?"pending":"matched";
+ return internal;
 }
 export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt:number){
  let mode=await detectToastCheckMode(db,p.businessId,p.restaurantGuid,p.timeZone,deadlineAt);
