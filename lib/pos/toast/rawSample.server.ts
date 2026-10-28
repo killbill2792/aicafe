@@ -6,6 +6,8 @@ import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
 
 const daySchema=z.iso.date();
 const LIMIT=5;
+// Toast schema keys only. Do not persist arbitrary customer-supplied map keys.
+const SAFE_KEY=/^(?:[A-Za-z_][A-Za-z0-9_]{0,63}|[0-9]{1,6})$/;
 const SAFE_STRING=/^(?:type|cardType|cardEntryMode|source|status|paymentStatus|refundStatus|diningOption)$/i;
 const SAFE_NUMBER=/^(?:amount|tipAmount|refundAmount|tipRefundAmount|originalProcessingFee|mcaRepaymentAmount|hourlyWage|defaultWage|wage|price|quantity|hours|totalHours|closeoutHour|taxAmount|serviceCharge|discountAmount|nonCashSales|cashSales|netSales|grossSales)$/i;
 const SENSITIVE=/(?:card(?!Type$|EntryMode$)|token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|pan|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|state|country|ip.?address|device.?id|loyalty|gift.?card|guest|patron|person|buyer|purchaser|notes?|description|display.?name|^name$|^text$|comment|memo|contact|holder|recipient|pin$|security.?code|verification.?code)/i;
@@ -15,7 +17,7 @@ export function redactToastRaw(value:unknown,depth=0,key=""):unknown {
  if(Array.isArray(value))return value.slice(0,LIMIT).map(v=>redactToastRaw(v,depth+1,key));
  if(value&&typeof value==="object"){
   return Object.fromEntries(Object.entries(value as Record<string,unknown>)
-   .filter(([key])=>!SENSITIVE.test(key))
+   .filter(([key])=>SAFE_KEY.test(key)&&!SENSITIVE.test(key))
    .map(([key,v])=>[key,redactToastRaw(v,depth+1,key)]));
  }
  if(typeof value==="number"&&!SAFE_NUMBER.test(key))return "[redacted]";
