@@ -11,6 +11,7 @@ import {readMenuComboCostComponents} from "./comboCosts.server";
 import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
 import {getOwnerConfirmedProcessingFeePlans} from "@/lib/pos/processingFeeEstimate.server";
 import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
+import {shiftCafeDate} from "@/lib/metrics/core/clock";
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
@@ -120,7 +121,7 @@ export async function getBusinessSnapshotFromDb(
   const periodFrom=costPeriod==="today"?todayDateStr:costPeriod==="week"?minusSix:monthStart;
   const [allMenuItemSnapshots,periodItemSales,staffShiftsToday,alertsRead,ownerFeePlans]=
     await Promise.all([
-      getMenuItemSnapshots(supabase,businessId,todayDateStr,last28Days.filter(day=>day.date<todayDateStr).map(day=>day.date)),
+      getMenuItemSnapshots(supabase,businessId,todayDateStr),
       readPeriodItemSales(supabase,businessId,{from:periodFrom,to:todayDateStr}),
       getStaffShiftsToday(supabase,businessId,timezone,todayDateStr),
       supabase.from("alerts").select("impact_cents",{count:"exact"}).eq("business_id",businessId)
@@ -217,7 +218,6 @@ async function getMenuItemSnapshots(
   supabase: SupabaseClient,
   businessId: string,
   todayDateStr: string,
-  last28DateStrs: string[],
 ): Promise<MenuItemSnapshot[]> {
   const { data: items, error: itemsError } = await supabase
     .from("menu_items")
@@ -232,8 +232,8 @@ async function getMenuItemSnapshots(
     supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", itemIds),
     supabase.rpc("menu_item_quantities_sold", {
       p_business_id: businessId,
-      p_from: last28DateStrs[0] ?? todayDateStr,
-      p_to: last28DateStrs[last28DateStrs.length-1] ?? todayDateStr,
+      p_from: shiftCafeDate(todayDateStr,-28),
+      p_to: shiftCafeDate(todayDateStr,-1),
     }),
     supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status").eq("business_id", businessId).in("menu_item_id", itemIds),
   ]);
