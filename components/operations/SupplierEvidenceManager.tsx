@@ -9,7 +9,7 @@ type Quote={id:string;supplierName:string;itemName:string;priceCents:number;
 export type SupplierCopy={
  title:string;description:string;supplier:string;item:string;price:string;count:string;
  unit:string;sourceKind:string;sourceUrl:string;date:string;save:string;saving:string;
- saved:string;error:string;history:string;empty:string;notVerified:string;
+ saved:string;error:string;history:string;empty:string;notVerified:string;currencyMissing:string;
  search:string;searchButton:string;searchUnavailable:string;webNotice:string;comparison:string;
 };
 const field="min-h-12 w-full rounded-xl border border-line bg-surface p-3 text-[17px] text-ink";
