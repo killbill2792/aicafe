@@ -18,7 +18,7 @@ export async function POST(request:Request){
  if(!parsed.success)return reply(400,{error:"invalid_request"});
  const db=await authorizeToastOwner(parsed.data.businessId);
  if(!db)return reply(403,{error:"not_authorized"});
- const result=await captureToastRawSample(parsed.data.businessId,parsed.data.businessDate,db);
+ const result=await captureToastRawSample(parsed.data.businessId,parsed.data.businessDate,db,240_000);
  if(result.reason)return reply(statusByReason[result.reason],{...result,error:result.reason});
  return reply(200,result);
 }
