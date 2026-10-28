@@ -6,6 +6,7 @@ vi.mock("./client",async importOriginal=>{
  return {...original,createToastClient:()=>({request:mocks.request})};
 });
 import {redactToastRaw,toastFieldPaths,claimToastRawSample,captureToastRawSample} from "./rawSample.server";
+import {ToastApiError} from "./client";
 import type {SupabaseClient} from "@supabase/supabase-js";
 const business="11111111-1111-4111-8111-111111111111";
 const restaurant="22222222-2222-4222-8222-222222222222";
@@ -29,7 +30,7 @@ function database(allowed=true){
  } as unknown as SupabaseClient;
  return {db,written,rpc};
 }
-beforeEach(()=>mocks.request.mockReset());
+beforeEach(()=>{mocks.request.mockReset();let tick=0;vi.spyOn(Date,"now").mockImplementation(()=>1700000000000+(tick++)*6000);});
 describe("Toast raw diagnostics",()=>{
  it("redacts PII, card details, auth secrets at all depths",()=>{
   const raw={payments:[{cardType:"VISA",cardEntryMode:"KEYED",tipAmount:3,
@@ -49,11 +50,12 @@ describe("Toast raw diagnostics",()=>{
  });
  it("stores 403 as empty sample and only writes raw sample rows",async()=>{
   const {db,written}=database();
-  mocks.request.mockRejectedValue({status:403});
+  mocks.request.mockRejectedValue(new ToastApiError("missing_permissions",403));
   const result=await captureToastRawSample(business,"2026-10-20",db);
   expect(result.captured).toBe(10);
   expect(written.every(w=>w.table==="toast_raw_samples")).toBe(true);
   expect(written.every(w=>Object.keys(w.row.sample as object).length===0)).toBe(true);
+  expect(written.every(w=>w.row.http_status===403)).toBe(true);
  });
  it("uses a DB-backed cooldown and skips all Toast requests on rejection",async()=>{
   const {db,rpc,written}=database(false);
