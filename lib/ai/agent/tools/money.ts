@@ -81,7 +81,7 @@ export const moneyTools={
         if(provided?.laborCents!==null&&provided?.laborCents!==undefined&&provided.laborPeriod){
           const range=ownerPeriod(provided.laborPeriod,ctx.asOf);
           if(range)overridden.monthlyStaff=figure(prorate(provided.laborCents,range,calendarMonth(ctx.asOf)),
-            "owner","You told me: monthly payroll");
+            "owner","owner_provided");
         }
         if(owner.ownerIngredientPackagingPercent!==null&&owner.ownerIngredientPackagingPercent!==undefined){
           overridden.ingredientRate=owner.ownerIngredientPackagingPercent/100;
@@ -210,8 +210,8 @@ export const moneyTools={
         ownerInputs:provided??null,knownOwnerLaborDailyCents,
         ownerMonthlyPayrollExtrasCents,
         ownerDailyPayrollExtrasCents,
-        ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"You told me",
-        ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
+        ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"owner_provided",
+        ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"estimated",
         // Owner-supplied labor alone is NOT verified full fixed-cost coverage.
         missing,explain:breakEvenExplain,
         ...(fixedCostEstimates.length?{estimated:fixedCostEstimates}:{}),

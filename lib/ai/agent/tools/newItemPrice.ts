@@ -91,8 +91,10 @@ export const newItemPriceTools={suggest_new_item_price:{
     s==="actual"?"recorded":s==="missing"?"missing":"estimate";
    const lines:ExplainLine[]=[];
    const add=(label:string,inputs:ExplainLine["inputs"],formula:ExplainLine["formula"],
-    result:ExplainLine["result"],provenance:ExplainLine["provenance"],basis:string)=>{
-    lines.push({label,inputs,formula,result,period:month,source:"suggest_new_item_price",provenance,basis});
+    result:ExplainLine["result"],provenance:ExplainLine["provenance"],_basis:string)=>{
+    lines.push({label,inputs,formula,result,period:month,source:"suggest_new_item_price",
+      provenance,basis:provenance==="ownerProvided"?"owner_provided":
+      provenance==="recorded"?"recorded":provenance==="estimate"?"estimated":"missing"});
    };
    const product=v.packaging_cents===null?null:v.ingredient_cost_cents+v.packaging_cents;
    if(product!==null)add("Ingredients + packaging",[
@@ -189,16 +191,16 @@ export const newItemPriceTools={suggest_new_item_price:{
     pricingNote:recommended.warning==="below_full_cost"?copy.pricingNoteBelowFullCost:
       copy.pricingNoteDrinkCost.replace("{percent}",String(Math.round(costPct*100))),
     monthlyLabor:labor,monthlyBills,billsPartial,
-    components:{product:{valueCents:product,source:product===null?"missing":"ownerProvided",basis:"Owner item costs"},
-      labor:{valueCents:labor.valueCents,source:source(labor.status),basis:labor.reason},
-      bills:{valueCents:monthlyBills.valueCents,source:billsPartial?"estimate":source(monthlyBills.status),basis:monthlyBills.reason},
-      units:{value:units,source:units===null?"missing":owner?.itemsSoldPerDay!=null?"ownerProvided":"recorded",basis:coverageLabel??"Café sales"},
+    components:{product:{valueCents:product,source:product===null?"missing":"ownerProvided",basis:"owner_provided"},
+      labor:{valueCents:labor.valueCents,source:source(labor.status),basis:labor.status==="owner"?"owner_provided":labor.status==="actual"?"recorded":"estimated"},
+      bills:{valueCents:monthlyBills.valueCents,source:billsPartial?"estimate":source(monthlyBills.status),basis:monthlyBills.status==="owner"?"owner_provided":monthlyBills.status==="actual"?"recorded":"estimated"},
+      units:{value:units,source:units===null?"missing":owner?.itemsSoldPerDay!=null?"ownerProvided":"recorded",basis:"recorded_sales"},
       fee:{value:feeRate,source:plan?"ownerProvided":source(economics.feeStatus),
-        basis:plan?plan.processorLabel+" owner-confirmed fee plan":"Café effective fee rate",
+        basis:plan?"owner_plan":"effective_fee_rate",
         fixedPerDrinkCents:fixedPerDrink,drinksPerOrderRatio:plan?.drinksPerOrder??null},
-      operatingMargin:{value:recommended.operatingMargin,source:marginOwner?"ownerProvided":"estimate",basis:marginOwner?"You told me":"Saved target"},
+      operatingMargin:{value:recommended.operatingMargin,source:marginOwner?"ownerProvided":"estimate",basis:marginOwner?"owner_provided":"saved_target"},
       targetDrinkCost:{value:costPct,source:costOwner||ownerIngredientRate!=null?"ownerProvided":"estimate",
-        basis:ownerIngredientRate!=null?copy.pricingSavedTarget:"Product cost target"}},
+        basis:ownerIngredientRate!=null?"owner_provided":"product_cost_target"}},
     feeRate,targetMargin:recommended.operatingMargin,feePlan:plan??null,
     missing,explain:lines,numberEstimates,
     ...(candidates.length>0?{needsOwnerChoice:true,candidates,allowOther:true,askOwnerRequired:true}: {})};
