@@ -116,7 +116,11 @@ describe("read-only Toast coverage diagnostics",()=>{
    customer:{guid:"private-customer-id",name:"Jane Customer",email:"jane@example.com",phone:"415-555-1234"},
    checks:[{guid:"55555555-5555-4555-8555-555555555555",checkNumber:7,
     name:"Guest Jane",amount:24.50,refundStatus:"REFUNDED",status:"CLOSED",
-    discounts:[{guid:"66666666-6666-4666-8666-666666666666",name:"Loyalty 10%"}],
+    appliedDiscounts:[{guid:"66666666-6666-4666-8666-666666666666",name:"Loyalty 10%",
+     discountAmount:2.5,discountType:"FIXED"}],
+    appliedServiceCharges:[{guid:"88888888-8888-4888-8888-888888888888",
+     name:"Takeout Packaging",chargeAmount:1.25,chargeType:"FIXED",
+     serviceCharge:{guid:"99999999-9999-4999-8999-999999999999"}}],
     selections:[{name:"Cappuccino",unitPrice:6,modifiers:[{name:"Oat Milk",price:1}]}],
     payments:[{guid:"77777777-7777-4777-8777-777777777777",amount:24.50,
      cardType:"VISA",cardEntryMode:"TAP",refundStatus:"NONE",cardNumber:"4111111111111111",
@@ -128,7 +132,7 @@ describe("read-only Toast coverage diagnostics",()=>{
   const safe=redactToastRaw(order,0,"",process.env.TOAST_CUSTOMER_HASH_KEY);
   const text=JSON.stringify(safe);
   for(const kept of ["revenueCenterGuid","serverGuid","employeeGuid","checkNumber",
-   "refundStatus","CLOSED","Loyalty 10%","Cappuccino","Oat Milk","cardEntryMode",
+   "refundStatus","CLOSED","Loyalty 10%","Takeout Packaging","Cappuccino","Oat Milk","cardEntryMode",
    "TAP","2026-10-20T09:00:00Z","77777777-7777-4777-8777-777777777777"])
    expect(text).toContain(kept);
   for(const privateValue of ["Jane Customer","Jane is allergic","4111111111111111",
@@ -140,6 +144,44 @@ describe("read-only Toast coverage diagnostics",()=>{
   expect(payment.customerId).toMatch(/^hmac:[a-f0-9]{64}$/);
   expect(payment.loyaltyId).toMatch(/^hmac:[a-f0-9]{64}$/);
   expect(payment.cardId).toMatch(/^hmac:[a-f0-9]{64}$/);
+ });
+ it("persists real Toast check appliedDiscounts and appliedServiceCharges names, not guest PII",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path.startsWith("/orders/v2/ordersBulk?"))return [{
+    guid:"11111111-1111-4111-8111-111111111112",
+    checks:[{
+     guid:"22222222-2222-4222-8222-222222222223",
+     name:"Private guest tab",
+     displayNumber:"12",
+     paymentStatus:"CLOSED",
+     appliedDiscounts:[{
+      guid:"33333333-3333-4333-8333-333333333334",
+      name:"Happy Hour Discount",discountAmount:3,nonTaxDiscountAmount:3,
+      appliedDiscountReason:{comment:"Private guest instruction"}
+     }],
+     appliedServiceCharges:[{
+      guid:"44444444-4444-4444-8444-444444444445",
+      name:"Large Party Gratuity",chargeAmount:6,chargeType:"PERCENT",
+      serviceCharge:{guid:"55555555-5555-4555-8555-555555555556"},
+      appliedTaxes:[{name:"Sales Tax",taxAmount:0.48}]
+     }]
+    }]
+   }];
+   return [];
+  });
+  await captureToastRawSample(business,"2026-10-20",db);
+  const stored=evidence(writes).find(w=>w.endpoint==="orders/v2/ordersBulk")?.sample;
+  const json=JSON.stringify(stored);
+  expect(json).toContain('"name":"Happy Hour Discount"');
+  expect(json).toContain('"name":"Large Party Gratuity"');
+  expect(json).toContain('"name":"Sales Tax"');
+  expect(json).toContain('"discountAmount":3');
+  expect(json).toContain('"chargeAmount":6');
+  expect(json).toContain('"paymentStatus":"CLOSED"');
+  expect(json).toContain('"displayNumber":"12"');
+  expect(json).not.toContain("Private guest tab");
+  expect(json).not.toContain("Private guest instruction");
  });
  it("runs no-GET families first, then batches one skipped_time_budget row per untried endpoint",async()=>{
   const {db,writes}=database();
