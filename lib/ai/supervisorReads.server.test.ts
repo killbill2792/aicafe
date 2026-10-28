@@ -111,7 +111,8 @@ describe("Toast source-scoped Supervisor coverage without changing aggregate for
  it("Money screen and chat read matching cents from the same failed-import fixture",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
   const date="2026-10-12",fixture=[row("actual",5800,13,date)];
-  const screen=buildDayWindows(fixture.map(rowToDailyFacts),date,"2026-10");
+  const screen=buildDayWindows(fixture.map(item=>rowToDailyFacts({...item,
+   sales_data_status:"actual" as const,staff_tax_status:"actual" as const})),date,"2026-10");
   const chat=await pilotReader(fixture,[date],[date],false,
    [{business_date:date,import_state:"failed",recon_state:"mismatch"}])
    .salesTrend("my-cafe",{from:date,to:date});
