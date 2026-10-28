@@ -23,6 +23,16 @@ describe("shared Toast day trust",()=>{
   expect(result.quality[0]).toContain(":63");
   expect(result.quality[0]).toContain(dates[2]);
  });
+ it("keeps imported partial days when another Toast location failed",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+  flags.mockResolvedValue([
+    {date:"2026-08-01",status:"imported",needsLook:false},
+    {date:"2026-08-01",status:"failed",needsLook:true},
+  ]);
+  const trust=await readToastDayTrust({} as never,"business","2026-08-01","2026-08-01");
+  expect(trust.blocked.size).toBe(0);
+  expect(trust.quality).toEqual([needsLookKey(["2026-08-01"])]);
+ });
  it("excludes only confirmed missing and failed dates",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
   flags.mockResolvedValue([
