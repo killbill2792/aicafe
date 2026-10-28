@@ -5,6 +5,7 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
 import {fromZonedTime} from "date-fns-tz";
 import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
+import {createToastAnalyticsClient} from "./analyticsClient";
 
 type Scope="date"|"window"|"none"|"restaurant"|"id"|"unsupported";
 type Entry={endpoint:string;path:string;doc:string;scope:Scope;page?:boolean;source?:string};
@@ -45,11 +46,11 @@ export const TOAST_READ_ENDPOINTS:readonly Entry[]=[
  entry("kitchen/v1/export/itemFulfillments","/kitchen/v1/export/itemFulfillments","kitchen","itemFulfillmentsGet","date"),
  entry("kitchen/v1/published/prepStations","/kitchen/v1/published/prepStations","kitchen","prepStationsGet","none",true),
  entry("kitchen/v1/published/prepStations/{guid}","/kitchen/v1/published/prepStations/{guid}","kitchen","prepStationsGuidGet","id",false,"kitchen/v1/published/prepStations"),
+ entry("partners/v1/restaurants","/partners/v1/restaurants","partners","restaurantsGet"),
  entry("restaurants/v1/restaurants/{guid}","/restaurants/v1/restaurants/{guid}","restaurants","restaurantsRestaurantGuidGet","restaurant"),
  entry("restaurants/v1/groups/{guid}/restaurants","/restaurants/v1/groups/{guid}/restaurants","restaurants","groupsManagementGroupGuidRestaurantsGet","id",false,"__management_group__"),
  entry("restaurant-availability/v1/availability","/restaurant-availability/v1/availability","rx.availability.service","availabilityGet"),
  entry("packaging/v1/published/packagingConfig","/packaging/v1/published/packagingConfig","packaging","getPackagingConfig"),
- entry("partners/v1/restaurants","/partners/v1/restaurants","partners","restaurantsGet"),
  entry("partners/v1/connectedRestaurants","/partners/v1/connectedRestaurants","partners","connectedRestaurantsGet","none",true),
  entry("device-details/v1/device-info","/device-details/v1/device-info","devicedetails","getDeviceInfo"),
  entry("era/v1/restaurants-information","/era/v1/restaurants-information","analytics","getManagementGroupRestaurantsInformation"),
@@ -241,8 +242,22 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
   if(!await claimToastRawSample(db,businessId,guid,businessDate))return skip("cooldown");
   const client=createToastClient(db,businessId);
   const deadlineAt=Date.now()+27*60*1000;
+  const analytics=createToastAnalyticsClient(db,businessId,deadlineAt);
   let lastRenew=Date.now();
   const known=new Map<string,Set<string>>();
+  // Reuse only pre-existing Analytics report identifiers; never POST to create a report.
+  try{
+   const {data:jobs}=await db.from("toast_analytics_jobs").select("report_request_guid")
+    .eq("business_id",businessId).eq("restaurant_guid",guid)
+    .eq("business_date",businessDate).limit(20);
+   for(const job of jobs??[]){
+    const id=job.report_request_guid;
+    if(typeof id==="string"&&GUID.safeParse(id).success){
+     const found=known.get("__era_report__")??new Set<string>();
+     found.add(id);known.set("__era_report__",found);
+    }
+   }
+  }catch{/* Missing optional Analytics configuration is recorded per endpoint. */}
   const hold=async()=>{
    if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
    if(Date.now()-lastRenew>120000){
@@ -285,8 +300,11 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       await pace();
       let http=200;
       let token:string|null=null;
-      const raw=await client.request(pathFor(s,businessDate,guid,id,page,nextToken,businessWindow),guid,z.unknown(),
-        {deadlineAt,onResponse:info=>{http=info.status;token=info.nextPageToken;}});
+      const requestPath=pathFor(s,businessDate,guid,id,page,nextToken,businessWindow);
+      const raw=s.endpoint.startsWith("era/v1/")?
+        await analytics.getRaw(requestPath).then(result=>{http=result.status;return result.data;}):
+        await client.request(requestPath,guid,z.unknown(),
+         {deadlineAt,onResponse:info=>{http=info.status;token=info.nextPageToken;}});
       const obj=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
       const list=Array.isArray(raw)?raw:Array.isArray(obj?.results)?obj.results as unknown[]:
         Array.isArray(obj?.data)?obj.data as unknown[]:undefined;
