@@ -20,6 +20,21 @@ function mockDatabase(rows:Record<string,unknown>[],tableExpected:string) {
  return {db,ranges};
 }
 describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
+ it("later POS page throw preserves previously loaded facts and marks partial",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","false");
+  const rows=Array.from({length:500},()=>({business_date:period.from,
+    hour_local:10,location_id:null,net_sales_cents:100,orders_count:1}));
+  const db={from:()=>{
+    const query={select:()=>query,eq:()=>query,gte:()=>query,lte:()=>query,order:()=>query,
+      range:async(start:number)=>{if(start>0)throw new Error("network timeout");
+        return {data:rows,error:null};}};
+    return query;
+  }} as unknown as SupabaseClient;
+  const result=await posFactReaders(db,"b").peakHours(period);
+  expect(result.available).toBe(true);
+  if(result.available)expect(result.value.hours).toHaveLength(500);
+  expect(result.quality.missingInputs).toContain("hourlySalesUnavailable");
+ });
  it("paginates hourly facts past 1,000 rows without losing totals",async()=>{
   const rows=Array.from({length:1205},(_,i)=>({business_date:period.from,
    hour_local:i%24,location_id:null,net_sales_cents:100,orders_count:1}));
