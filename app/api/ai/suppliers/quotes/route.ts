@@ -3,6 +3,7 @@ import {conversationError,conversationJson,parseInput,readBoundedJson,requireSam
  from "@/lib/ai/conversations/http.server";
 import {quoteInput} from "@/lib/ai/suppliers/contracts";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
+import {readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const cols="id,supplier_name,item_name,price_cents,package_count,package_unit,source_kind,source_url,quoted_on,evidence_status,created_at";
 type Row={id:string;supplier_name:string;item_name:string;price_cents:number;package_count:number;
