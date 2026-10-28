@@ -18,6 +18,11 @@ describe("known and projected labor",()=>{
     expect(out.projectedMonthlyLaborCents).toBe(22400);
     expect(out.notes).toContain("laborWageUnknown");
   });
+  it("does not present unknown monthly labor as zero",()=>{
+    const out=laborForPeriod(dates,[]);
+    expect(out.projectedMonthlyLaborCents).toBeNull();
+    expect(out.notes).toContain("laborNoCoveredDays");
+  });
   it("lets the owner's monthly payroll win",()=>{
     expect(laborForPeriod(dates,records,28000).projectedMonthlyLaborCents).toBe(28000);
     expect(laborForPeriod(dates,records,28000).basis).toBe("owner_provided");
