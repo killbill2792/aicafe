@@ -26,7 +26,7 @@ describe("break-even resolved product costs", () => {
     const snapshot=getFixtureSnapshot();
     const withExtras={...snapshot,ownerMonthlyPayrollExtrasCents:300000};
     const value=buildBreakEvenViewModel(withExtras);
-    const baseline=buildBreakEvenViewModel({...snapshot,ownerMonthlyPayrollExtrasCents:0});
+    const baseline=buildBreakEvenViewModel({...snapshot,ownerMonthlyPayrollExtrasCents:0} as typeof withExtras);
     expect(value.avgDailyStaffCostCents!-baseline.avgDailyStaffCostCents!).toBeCloseTo(10000,5);
     expect(value.noteKeys).toContain("laborOwnerExtras");
   });
