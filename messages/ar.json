@@ -3355,7 +3355,7 @@
     "todayNotImportedNoHistory": "لم تُستورد بيانات اليوم بعد. لا يوجد يوم مبيعات كامل محفوظ.",
     "toastDaysNeedLook": "هناك {count} يومًا يحتاج إلى مراجعة: {dates}{more}.",
     "toastDayStatusUnavailable": "فشل فحص حالة أيام Toast. قد تتضمن الأرقام المحفوظة أيامًا لم تُراجع بعد.",
-    "toastExcludedDays": "أيام Toast المستبعدة بسبب فشل الاستيراد أو فقدانه: {dates}.",
+    "toastImportIncompleteDays": "فشلت واردات Toast أو كانت مفقودة في {count} أيام: {dates}{more}. تظهر المبيعات المحفوظة، لكن قد تكون الإجماليات غير مكتملة.",
     "toastFailedNoCanonicalSales": "تعذر على Toast استيراد هذه التواريخ: {dates}. لا تزال المبيعات المسجلة من أنظمة نقاط البيع الأخرى ظاهرة.",
     "toastDayStatusMissing": "توجد مبيعات Toast محفوظة لهذه التواريخ دون تسجيل حالة التحقق اليومي: {dates}. قد تكون الأرقام غير مكتملة.",
     "toastScheduleReadFailed": "تعذرت قراءة جدول Toast: {reason}. ما زالت نوبات التطبيق ظاهرة.",
