@@ -256,6 +256,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     lastRenew=Date.now();
    }
   };
+  const leaseLost=()=>reason==="lease_lost";
   const save=async(s:Entry,raw:unknown,status:number|null,page:number|null,
     code:string|null=null,message:string|null=null)=>{
    const rootContext=s.endpoint.startsWith("orders/v2/orders")?"orders":
@@ -309,7 +310,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
    throw new ToastApiError("timeout");
   };
   endpointLoop:for(const [endpointIndex,s] of endpointOrder.entries()){
-   if(reason==="lease_lost")break;
+   if(leaseLost())break;
    if(s.scope!=="unsupported"&&timeLow()){
     reason="partial";incompleteReason="skipped_time_budget";break;
    }
@@ -324,7 +325,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
      known.set(s.endpoint,new Set([requested.guid]));
      await save(s,{reportRequested:true},requested.status,1);
     }catch(e){
-     if(reason==="lease_lost")break;
+     if(leaseLost())break;
      if(e instanceof ToastApiError&&e.category==="timeout"){
       reason="partial";incompleteReason="skipped_time_budget";incomplete.add(s.endpoint);break;
      }
@@ -413,7 +414,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
        reason="partial";
       }
      }catch(e){
-      if(reason==="lease_lost"){incompleteReason="skipped_lease_lost";incomplete.add(s.endpoint);break endpointLoop;}
+      if(leaseLost()){incompleteReason="skipped_lease_lost";incomplete.add(s.endpoint);break endpointLoop;}
       if(e instanceof Error&&e.message==="sample_write_failed"){
        incompleteReason="skipped_interrupted";break endpointLoop;
       }
