@@ -11,9 +11,8 @@ export async function readToastDayTrust(db:SupabaseClient,businessId:string,from
   return {blocked:new Set(),quality:[]};
  try{
   const flags=await toastDayFlags(db,businessId,from,to);
-  const imported=new Set(flags.filter(f=>f.status==="imported").map(f=>f.date));
   const blocked=new Set(flags.filter(f=>f.status==="failed"||f.status==="missing")
-   .map(f=>f.date).filter(date=>!imported.has(date)));
+   .map(f=>f.date));
   const flagged=[...new Set(flags.filter(f=>f.needsLook).map(f=>f.date))].sort();
   const excluded=[...blocked].sort();
   return {blocked,quality:[
