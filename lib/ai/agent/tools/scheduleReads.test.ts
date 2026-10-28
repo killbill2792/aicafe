@@ -36,6 +36,16 @@ describe("Toast and app schedule union",()=>{
   expect(result.missing).not.toContain("scheduleNotSet");
   expect(result.gaps).toEqual([]);
   expect(result.missing).toContain("toastScheduleCoverageUnverified");
+  expect(result.missing).toContain("toastPlannedLaborUnknown");
+  expect(result.knownWagesCents).toBeNull();
+  expect(result.paidMinutes).toBeNull();
+  const team=await scheduleReadTools.get_team.execute({week_start:"2026-10-19",name:null},
+    {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as unknown as AgentToolContext);
+  expect(team.weeklyPaidMinutes).toBeNull();
+  expect(team.knownWagesCents).toBeNull();
+  expect(team.missingWageCount).toBeNull();
+  expect(team.missing).toContain("toastPlannedLaborUnknown");
+  expect(team.dataNotes).toEqual([expect.stringContaining("app-only totals exclude")]);
  });
  it("preserves two unlinked Toast employees with the same name and start time",async()=>{
   vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{
@@ -49,6 +59,31 @@ describe("Toast and app schedule union",()=>{
   const result=await scheduleReadTools.get_week_schedule.execute({week_start:"2026-10-19"},
     {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as unknown as AgentToolContext);
   expect((result.shifts as {id:string}[]).map(s=>s.id)).toEqual(["toast-1","toast-2"]);
+ });
+ it("keeps a separately labeled app-only subtotal when Toast plans add unknown labor",async()=>{
+  vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{
+   team:[{id:"employee-a",name:"Ava",role:"Barista",wageCents:2000}],
+   shifts:[{id:"app-1",employeeId:"employee-a",employeeName:"Ava",date:"2026-10-24",
+    start:"09:00",end:"13:00",paidMinutes:240,costCents:8000,estimated:false}],
+   posShifts:[{id:"toast-1",employeeId:null,employeeName:"Alex",
+    start:"2026-10-24T18:00:00Z",end:"2026-10-24T22:00:00Z",
+    locationId:"location",source:"toast",paid:false}],posScheduleError:null,
+   timezone:"America/Los_Angeles",
+   dates:["2026-10-19","2026-10-20","2026-10-21","2026-10-22","2026-10-23","2026-10-24","2026-10-25"],
+   adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}
+  }} as never);
+  const ctx={asOf:"2026-10-24",locale:"es",timezone:"America/Los_Angeles"} as unknown as AgentToolContext;
+  const team=await scheduleReadTools.get_team.execute({week_start:"2026-10-19",name:null},ctx);
+  const weekResult=await scheduleReadTools.get_week_schedule.execute({week_start:"2026-10-19"},ctx);
+  for(const result of [team,weekResult]){
+    expect(result.missing).toContain("toastPlannedLaborUnknown");
+    expect(result.knownWagesCents).toBeNull();
+    expect(result.appOnlyKnownWagesCents).toBe(8000);
+    expect(result.appOnlyPaidMinutes).toBe(240);
+    expect(result.dataNotes).toEqual(expect.arrayContaining([expect.stringContaining("Los turnos")]));
+  }
+  expect(team.weeklyPaidMinutes).toBeNull();
+  expect(weekResult.paidMinutes).toBeNull();
  });
  it("merges matching employee and start without duplicating app shifts",async()=>{
   vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{

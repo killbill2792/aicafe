@@ -126,6 +126,24 @@ describe("Olivia bounded reads",()=>{
     expect(long.missing).not.toContain("scheduleRangeInvalid");
     expect(getWeekSchedule).toHaveBeenCalledTimes(1+2+18);
   });
+  it("deduplicates Toast overnight assignments returned by two adjacent weeks",async()=>{
+    const overnight={id:"toast-night",employeeId:null,employeeName:"Taylor",
+      start:"2026-10-26T06:00:00Z",end:"2026-10-26T11:00:00Z",
+      locationId:"location-a",source:"toast" as const,paid:false as const};
+    vi.mocked(getWeekSchedule).mockImplementation(async(raw:unknown)=>{
+      const {weekStart}=raw as {weekStart:string};
+      return {ok:true,data:{dates:Array.from({length:7},(_,i)=>new Date(
+        Date.parse(weekStart+"T12:00:00Z")+i*86400000).toISOString().slice(0,10)),
+        team:[],shifts:[],posShifts:[overnight],timezone:"America/Los_Angeles",
+        posScheduleError:null,adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}}} as never;
+    });
+    const result=await staffTools.get_schedule.execute({from:"2026-10-24",to:"2026-10-26"},ctx());
+    const shifts=result.shifts as {id:string;source:string;date:string}[];
+    expect(getWeekSchedule).toHaveBeenCalledTimes(2);
+    expect(shifts).toEqual([expect.objectContaining({id:"toast-night",source:"toast",date:"2026-10-25"})]);
+    expect(result.windowHasShifts).toBe(true);
+    expect(result.missing).not.toContain("moreShifts");
+  });
   it("caps ranges longer than 366 days with a note but preserves shifts",async()=>{
     vi.mocked(getWeekSchedule).mockImplementation(async(raw:unknown)=>{
       const {weekStart}=raw as {weekStart:string};
