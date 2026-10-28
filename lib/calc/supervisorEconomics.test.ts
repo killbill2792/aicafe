@@ -8,6 +8,31 @@ const base:Economics={
  missingDays:["2026-10-24","2026-10-25","2026-10-26"],
 };
 describe("single deterministic supervisor economics model",()=>{
+ it("uses actual observed ingredient/processor cents even without configured rates",()=>{
+  const input:Economics={...base,asOfDate:"2026-10-29",ingredientRate:null,feeRate:null,
+   ingredientStatus:"missing",feeStatus:"missing",
+   observedDays:[{date:"2026-10-28",netSalesCents:100000,
+     ingredientsCents:20000,cardFeesCents:3000,cardFeesStatus:"actual",drinksCount:200}]};
+  const result=unifiedBreakEven(input);
+  expect(result.monthlyBreakEven.valueCents).toBe(Math.round(2046700/.77));
+  expect(result.monthlyBreakEven.status).toBe("estimate");
+  expect(result.missing).toContain("ingredientRate");
+ });
+ it("applies dated owner fee plans after actual fees, rather than defaulting to 2.9%",()=>{
+  const input:Economics={...base,asOfDate:"2026-10-29",feeRate:null,
+   ownerFeePlans:[{effectiveFrom:"2026-10-01",percentageBps:400}],
+   observedDays:[{date:"2026-10-28",netSalesCents:100000,ingredientsCents:20000,
+     cardFeesCents:0,cardFeesStatus:"missing",drinksCount:200}]};
+  expect(unifiedBreakEven(input).monthlyBreakEven.valueCents).toBe(Math.round(2046700/.76));
+ });
+ it("honors explicitly supplied owner sales and variable rates over prior recorded costs",()=>{
+  const input:Economics={...base,asOfDate:"2026-10-29",ownerNetSalesCents:200000,
+   ingredientRate:.25,ingredientStatus:"owner",feeRate:.05,feeStatus:"owner",
+   observedDays:[{date:"2026-10-28",netSalesCents:100000,
+     ingredientsCents:10000,cardFeesCents:2000,cardFeesStatus:"actual",drinksCount:200}]};
+  expect(unifiedBreakEven(input).monthlyBreakEven.valueCents).toBe(Math.round(2046700/.70));
+  expect(unifiedBreakEven({...input,ownerNetSalesCents:0}).monthlyBreakEven.valueCents).toBeNull();
+ });
  it("adds extras exactly once without substituting for unknown clocked labor",()=>{
   expect(addOwnerPayrollExtras(500000,25000)).toBe(525000);
   expect(addOwnerPayrollExtras(500000,null)).toBe(500000);
