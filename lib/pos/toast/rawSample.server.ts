@@ -421,6 +421,14 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       if(e instanceof ToastApiError&&e.category==="timeout"){
        reason="partial";incompleteReason="skipped_time_budget";incomplete.add(s.endpoint);break endpointLoop;
       }
+      // The standard client can reject a request locally when its pacing
+      // deadline would expire. That is a diagnostic budget skip, not a Toast 429.
+      if(e instanceof ToastApiError&&e.category==="rate_limited"&&e.retryAt&&
+       Date.parse(e.retryAt)>=perEndpointDeadline){
+       reason="partial";incomplete.add(s.endpoint);
+       await save(s,{},null,null,"skipped_endpoint_budget","skipped_endpoint_budget");
+       continue endpointLoop;
+      }
       const status=e instanceof ToastApiError?e.status??null:null;
       const code=status===204?"no_content":e instanceof ToastApiError?e.toastCode??e.category:"unavailable";
       const message=e instanceof ToastApiError?e.toastMessage??e.category:"unavailable";
