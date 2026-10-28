@@ -186,16 +186,45 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
  const secret=process.env.TOAST_CUSTOMER_HASH_KEY;
  if(!secret||secret.length<32)return skip("missing_hash_key");
  const hashKey=createHmac("sha256",secret).update(businessId).digest("hex");
- let captured=0,failed=0,leaseNonce:string|null=null,reason:ToastRawSampleResult["reason"];
  const captureId=randomUUID();
+ let captured=0,failed=0,leaseNonce:string|null=null,reason:ToastRawSampleResult["reason"];
+ let incompleteReason:"skipped_time_budget"|"skipped_interrupted"|"skipped_lease_lost"="skipped_interrupted";
+ let finalize:undefined|(()=>Promise<void>);
  const summaries=new Map<string,{status:number|null;count:number}>();
+ const incomplete=new Set<string>();
+ // Run high-level GETs before potentially expensive per-GUID detail requests.
+ const endpointOrder=[
+  ...TOAST_READ_ENDPOINTS.filter(s=>s.scope==="unsupported"),
+  ...TOAST_READ_ENDPOINTS.filter(s=>s.scope!=="unsupported"&&s.scope!=="id"),
+  ...TOAST_READ_ENDPOINTS.filter(s=>s.scope==="id")
+ ];
  try{
-  const {data:mappings,error}=await db.from("toast_location_mappings").select("restaurant_guid,toast_time_zone,closeout_hour")
-   .eq("business_id",businessId).not("verified_at","is",null)
-   .order("restaurant_guid",{ascending:true}).limit(1);
+  const {data:mappings,error}=await db.from("toast_location_mappings")
+   .select("restaurant_guid,toast_time_zone,closeout_hour").eq("business_id",businessId)
+   .not("verified_at","is",null).order("restaurant_guid",{ascending:true}).limit(1);
   if(error)return skip("db_error",1);
   if(!mappings?.length)return skip("no_location");
   const guid=String(mappings[0].restaurant_guid);
+  const acquired=await db.rpc("toast_acquire_raw_sample_lease",{
+   p_business_id:businessId,p_restaurant_guid:guid,p_seconds:290
+  });
+  if(acquired.error)return skip("db_error",1);
+  if(!acquired.data)return skip("busy");
+  leaseNonce=String(acquired.data);
+  if(!await claimToastRawSample(db,businessId,guid,businessDate))return skip("cooldown");
+
+  // Durable baseline: if the worker exits unexpectedly, every endpoint still
+  // has an evidence row in this capture, rather than inheriting stale success.
+  const base=(s:Entry)=>({
+   business_id:businessId,restaurant_guid:guid,business_date:businessDate,
+   endpoint:s.endpoint,doc_url:s.doc,capture_id:captureId,
+   page_number:null as number|null,http_status:null as number|null,item_count:0,
+   sample:{},field_paths:[] as string[],identifier_counts:{},
+   error_code:"not_attempted",error_message:"not_attempted"
+  });
+  const {error:seedError}=await db.from("toast_raw_samples").insert(endpointOrder.map(base));
+  if(seedError)return skip("db_error",1);
+
   const timeZone=typeof mappings[0].toast_time_zone==="string"?mappings[0].toast_time_zone:"UTC";
   const closeout=Number.isInteger(mappings[0].closeout_hour)?mappings[0].closeout_hour:0;
   const clock=String(closeout).padStart(2,"0")+":00:00";
@@ -204,15 +233,11 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
   nextDate.setUTCDate(nextDate.getUTCDate()+1);
   const dayEnd=fromZonedTime(nextDate.toISOString().slice(0,10)+"T"+clock,timeZone);
   const businessWindow={start:dayStart,end:dayEnd};
-  const acquired=await db.rpc("toast_acquire_lease",{p_business_id:businessId,p_restaurant_guid:guid,p_seconds:290});
-  if(acquired.error)return skip("db_error",1);
-  if(!acquired.data)return skip("busy");
-  leaseNonce=String(acquired.data);
-  if(!await claimToastRawSample(db,businessId,guid,businessDate))return skip("cooldown");
-  const client=createToastClient(db,businessId);
   const deadlineAt=Date.now()+Math.max(1000,Math.min(27*60*1000,maxRuntimeMs));
   const requestDeadlineAt=deadlineAt-20_000;
-  const analytics=createToastAnalyticsClient(db,businessId,requestDeadlineAt);
+  const timeLow=()=>Date.now()>=requestDeadlineAt;
+  const client=createToastClient(db,businessId);
+  const analytics=createToastAnalyticsClient(db,businessId,requestDeadlineAt,true);
   let lastRenew=Date.now();
   const known=new Map<string,Set<string>>();
   try{
@@ -221,29 +246,16 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
    const group=analyticsCredentials?.management_group_guid;
    if(typeof group==="string"&&GUID.safeParse(group).success)
     known.set("__management_group__",new Set([group]));
-  }catch{/* A missing Analytics connection is recorded by its GET operations. */}
+  }catch{/* Missing optional Analytics access is recorded for each ERA endpoint. */}
   const eraFailures=new Map<string,{status:number|null;code:string}>();
-  const pollEra=async(path:string)=>{
-   let result:{status:number;data:unknown}={status:202,data:null};
-   for(let attempt=0;attempt<4;attempt++){
-    if(Date.now()>=requestDeadlineAt)throw new ToastApiError("timeout");
-    result=await analytics.getRaw(path);
-    if(result.status!==202)return result;
-    if(attempt<3)await new Promise(resolve=>setTimeout(resolve,
-     Math.max(0,Math.min(1000,requestDeadlineAt-Date.now()-1000))));
-   }
-   return result;
-  };
   const hold=async()=>{
    if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
    if(Date.now()-lastRenew>120000){
     const r=await db.rpc("toast_renew_raw_sample_lease",{p_nonce:leaseNonce,p_seconds:290});
-    if(r.error||r.data!==true){reason="lease_lost";throw new Error("lease_lost");}
+    if(r.error||r.data!==true){reason="lease_lost";throw new ToastApiError("unavailable");}
     lastRenew=Date.now();
    }
   };
-  const leaseLost=()=>reason==="lease_lost";
-  const pace=async()=>{await hold();}; // Client enforces Toast's shared rate budget and endpoint-specific pacing.
   const save=async(s:Entry,raw:unknown,status:number|null,page:number|null,
     code:string|null=null,message:string|null=null)=>{
    const rootContext=s.endpoint.startsWith("orders/v2/orders")?"orders":
@@ -251,60 +263,72 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     s.endpoint.startsWith("era/v1/guest/payments")?"payments":
     s.endpoint.startsWith("labor/v1/employees")?"employee":"";
    const safe=redactToastRaw(raw,0,"",hashKey,rootContext,s.endpoint)??{};
-   const parts=chunks(safe);
-   const root=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
+   const pieces=chunks(safe);
+   const obj=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
    const count=code?0:Array.isArray(raw)?raw.length:
-    Array.isArray(root?.data)?root.data.length:
-    Array.isArray(root?.results)?root.results.length:
-    Array.isArray(root?.menus)?root.menus.length:1;
-   const old=summaries.get(s.endpoint);
-   summaries.set(s.endpoint,{status:status??old?.status??null,count:(old?.count??0)+count});
-   for(let i=0;i<parts.length;i++){
-    const piece=parts[i];
+    Array.isArray(obj?.data)?obj.data.length:
+    Array.isArray(obj?.results)?obj.results.length:
+    Array.isArray(obj?.menus)?obj.menus.length:1;
+   for(let i=0;i<pieces.length;i++){
+    const piece=pieces[i];
     const {error:err}=await db.from("toast_raw_samples").insert({
      business_id:businessId,restaurant_guid:guid,business_date:businessDate,
-     endpoint:s.endpoint,doc_url:s.doc,capture_id:captureId,page_number:page===null?null:page*1000+i,
+     endpoint:s.endpoint,doc_url:s.doc,capture_id:captureId,
+     page_number:page===null?null:page*1000+i,
      http_status:status,item_count:i===0?count:0,
      sample:piece,field_paths:toastFieldPaths(piece),
-     identifier_counts:i===0?identifierCounts(raw):{},error_code:code,error_message:message
+     identifier_counts:i===0?identifierCounts(raw):{},
+     error_code:code,error_message:message
     });
-    if(err)failed++;else captured++;
+    if(err){
+     failed++;reason="partial";incomplete.add(s.endpoint);
+     throw new Error("sample_write_failed");
+    }
+    captured++;
    }
+   const old=summaries.get(s.endpoint);
+   summaries.set(s.endpoint,{status:status??old?.status??null,count:(old?.count??0)+count});
   };
-  const endpointOrder=[
-   ...TOAST_READ_ENDPOINTS.filter(s=>s.scope==="unsupported"),
-   ...TOAST_READ_ENDPOINTS.filter(s=>s.scope!=="unsupported")
-  ];
-  const timeLow=()=>Date.now()>=requestDeadlineAt;
-  const recordRemaining=async()=>{
-   const missing=endpointOrder.filter(s=>!summaries.has(s.endpoint));
-   if(!missing.length)return;
-   const rows=missing.map(s=>({
-    business_id:businessId,restaurant_guid:guid,business_date:businessDate,
-    endpoint:s.endpoint,doc_url:s.doc,capture_id:captureId,page_number:null,
-    http_status:null,item_count:0,sample:{},field_paths:[],identifier_counts:{},
-    error_code:"skipped_time_budget",error_message:"skipped_time_budget"
-   }));
+  finalize=async()=>{
+   const needs=endpointOrder.filter(s=>!summaries.has(s.endpoint)||incomplete.has(s.endpoint));
+   if(!needs.length)return;
+   const rows=needs.map(s=>({...base(s),error_code:incompleteReason,error_message:incompleteReason}));
    const {error}=await db.from("toast_raw_samples").insert(rows);
-   if(error){failed+=rows.length;return;}
+   if(error){failed+=rows.length;return;} // The durable not_attempted seeds remain.
    captured+=rows.length;
-   for(const s of missing)summaries.set(s.endpoint,{status:null,count:0});
+   for(const s of needs)if(!summaries.has(s.endpoint))
+    summaries.set(s.endpoint,{status:null,count:0});
   };
-  for(const s of endpointOrder){
-   if(leaseLost())break;
-   if(s.scope!=="unsupported"&&timeLow()){reason="partial";break;}
+  const pollEra=async(path:string)=>{
+   for(let attempt=0;attempt<4;attempt++){
+    if(timeLow())throw new ToastApiError("timeout");
+    const result=await analytics.getRaw(path);
+    if(result.status!==202||attempt===3)return result;
+    await new Promise(resolve=>setTimeout(resolve,Math.max(0,Math.min(1000,requestDeadlineAt-Date.now()-1000))));
+   }
+   throw new ToastApiError("timeout");
+  };
+  endpointLoop:for(const [endpointIndex,s] of endpointOrder.entries()){
+   if(reason==="lease_lost")break;
+   if(s.scope!=="unsupported"&&timeLow()){
+    reason="partial";incompleteReason="skipped_time_budget";break;
+   }
    if(s.scope==="unsupported"){
     await save(s,{},null,null,"no_get_operations","No documented GET operations in this API family");
     continue;
    }
    if(s.scope==="era_request"){
     try{
+     await hold();
      const requested=await analytics.requestRaw(s.path,guid,businessDate);
      known.set(s.endpoint,new Set([requested.guid]));
-     // Never persist a report GUID, bearer token, or the raw POST response.
      await save(s,{reportRequested:true},requested.status,1);
     }catch(e){
-     if(e instanceof ToastApiError&&e.category==="timeout"){reason="partial";break;}
+     if(reason==="lease_lost")break;
+     if(e instanceof ToastApiError&&e.category==="timeout"){
+      reason="partial";incompleteReason="skipped_time_budget";incomplete.add(s.endpoint);break;
+     }
+     if(e instanceof Error&&e.message==="sample_write_failed")break;
      const status=e instanceof ToastApiError?e.status??null:null;
      const code=e instanceof ToastApiError?e.category:"unavailable";
      eraFailures.set(s.endpoint,{status,code});
@@ -319,26 +343,49 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
      prior?.code??"No eligible identifier for GET");
     continue;
    }
-   for(const id of ids){
+   const perEndpointDeadline=s.scope==="id"?
+    Math.min(requestDeadlineAt,Date.now()+Math.max(3000,
+     Math.floor((requestDeadlineAt-Date.now())/Math.max(1,endpointOrder.length-endpointIndex))*2)):
+    requestDeadlineAt;
+   const variants=s.endpoint==="orders/v2/payments"?
+    ["paidBusinessDate","refundBusinessDate","voidBusinessDate"]:["paidBusinessDate"];
+   const seenPayments=new Set<string>();
+   for(const id of ids)for(const paymentDateField of variants){
     let nextToken:string|undefined;
     const seenTokens=new Set<string>();
     for(let page=1;page<=(s.page?PAGE_CAP:1);page++){
+     if(timeLow()){
+      reason="partial";incompleteReason="skipped_time_budget";incomplete.add(s.endpoint);break endpointLoop;
+     }
+     if(Date.now()>=perEndpointDeadline){
+      incomplete.add(s.endpoint);reason="partial";
+      await save(s,{},null,null,"skipped_endpoint_budget","skipped_endpoint_budget");
+      continue endpointLoop;
+     }
      try{
-      if(timeLow()){reason="partial";break;}
-      await pace();
-      let http=200;
-      let token:string|null=null;
-      const requestPath=pathFor(s,businessDate,guid,id,page,nextToken,businessWindow);
+      await hold();
+      let http=200,token:string|null=null;
+      const requestPath=pathFor(s,businessDate,guid,id,page,nextToken,businessWindow,paymentDateField);
       const isEra=s.endpoint.startsWith("era/v1/");
       const response=isEra?await pollEra(requestPath):null;
       if(response)http=response.status;
-      if(isEra&&http===202){await save(s,{},202,1,"not_ready","not_ready");break;}
-      const raw=isEra?response?.data:
-        await client.request(requestPath,guid,z.unknown(),
-         {deadlineAt:requestDeadlineAt,onResponse:info=>{http=info.status;token=info.nextPageToken;}});
+      if(isEra&&http===202){await save(s,{},202,1,"not_ready","not_ready");continue endpointLoop;}
+      let raw=isEra?response?.data:await client.request(requestPath,guid,z.unknown(),{
+       deadlineAt:Math.min(requestDeadlineAt,perEndpointDeadline),
+       onResponse:info=>{http=info.status;token=info.nextPageToken;}
+      });
+      // Payments GET returns GUIDs and can return the same payment in multiple
+      // paid/refunded/voided date filters. Retain each identifier only once.
+      if(s.endpoint==="orders/v2/payments"&&Array.isArray(raw)){
+       raw=raw.filter(v=>{
+        if(typeof v!=="string")return true;
+        if(seenPayments.has(v))return false;
+        seenPayments.add(v);return true;
+       });
+      }
       const obj=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
       const list=Array.isArray(raw)?raw:Array.isArray(obj?.results)?obj.results as unknown[]:
-        Array.isArray(obj?.data)?obj.data as unknown[]:undefined;
+       Array.isArray(obj?.data)?obj.data as unknown[]:undefined;
       const set=known.get(s.endpoint)??new Set<string>();
       if(s.endpoint==="orders/v2/payments"&&list){
        for(const item of list)if(typeof item==="string"&&GUID.safeParse(item).success)set.add(item);
@@ -346,15 +393,13 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       known.set(s.endpoint,set);
       if(s.endpoint==="partners/v1/restaurants"&&list){
        const groups=known.get("__management_group__")??new Set<string>();
-       for(const item of list){
-        if(item&&typeof item==="object"){
-         const g=(item as Record<string,unknown>).managementGroupGuid;
-         if(typeof g==="string"&&GUID.safeParse(g).success)groups.add(g);
-        }
+       for(const item of list)if(item&&typeof item==="object"){
+        const g=(item as Record<string,unknown>).managementGroupGuid;
+        if(typeof g==="string"&&GUID.safeParse(g).success)groups.add(g);
        }
        known.set("__management_group__",groups);
       }
-      await save(s,raw,http,s.page?page:1);
+      await save(s,raw,http,s.page?page:variants.indexOf(paymentDateField)+1);
       if(!s.page)break;
       if(s.endpoint==="orders/v2/ordersBulk"){
        if(!list||list.length<PAGE_SIZE)break;
@@ -363,10 +408,18 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
        if(!next||seenTokens.has(next))break;
        seenTokens.add(next);nextToken=next;
       }
-      if(page===PAGE_CAP)await save(s,{},null,page,"page_cap","Maximum 20 pages reached");
+      if(page===PAGE_CAP){
+       await save(s,{},null,page,"page_cap","Maximum 20 pages reached");
+       reason="partial";
+      }
      }catch(e){
-      if(leaseLost())break;
-      if(e instanceof ToastApiError&&e.category==="timeout"){reason="partial";break;}
+      if(reason==="lease_lost"){incompleteReason="skipped_lease_lost";incomplete.add(s.endpoint);break endpointLoop;}
+      if(e instanceof Error&&e.message==="sample_write_failed"){
+       incompleteReason="skipped_interrupted";break endpointLoop;
+      }
+      if(e instanceof ToastApiError&&e.category==="timeout"){
+       reason="partial";incompleteReason="skipped_time_budget";incomplete.add(s.endpoint);break endpointLoop;
+      }
       const status=e instanceof ToastApiError?e.status??null:null;
       const code=status===204?"no_content":e instanceof ToastApiError?e.toastCode??e.category:"unavailable";
       const message=e instanceof ToastApiError?e.toastMessage??e.category:"unavailable";
@@ -374,16 +427,20 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       break;
      }
     }
-    if(leaseLost()||reason==="partial")break;
    }
-   if(reason==="partial")break;
   }
-  if(reason==="partial")await recordRemaining();
- }catch(e){
-  if(reason!=="lease_lost"&&reason!=="partial")reason="db_error";
+ }catch{
+  if(reason!=="lease_lost")reason="partial";
   failed++;
  }finally{
-  if(leaseNonce)try{const released=await db.rpc("toast_release_lease",{p_nonce:leaseNonce});if(released.error)failed++;}catch{failed++;}
+  if(finalize&&(reason==="partial"||reason==="lease_lost")){
+   if(reason==="lease_lost")incompleteReason="skipped_lease_lost";
+   try{await finalize();}catch{failed++;}
+  }
+  if(leaseNonce)try{
+   const released=await db.rpc("toast_release_raw_sample_lease",{p_nonce:leaseNonce});
+   if(released.error)failed++;
+  }catch{failed++;}
  }
  return {captured,failed,skipped:captured===0,
   endpoints:[...summaries].map(([endpoint,v])=>({endpoint,status:v.status,count:v.count})),
