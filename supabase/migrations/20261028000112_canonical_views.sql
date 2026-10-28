@@ -1,7 +1,7 @@
 -- Prompt D: owner-readable canonical projections. SECURITY INVOKER means each
 -- query is checked against the authenticated café member's underlying RLS.
 -- Raw Toast JSON is deliberately NOT exposed by these views.
-create or replace view public.cv_sales_days with (security_invoker=true) as
+create or replace view public.cv_sales_days (business_id,source,source_ref,status,business_date,net_sales_cents,orders_count,data) with (security_invoker=true) as
  select d.business_id,'app'::text as source,
    'rollup:'||d.business_date::text as source_ref,
    'actual'::text as status,d.business_date,
@@ -16,7 +16,7 @@ create or replace view public.cv_sales_days with (security_invoker=true) as
     'sales_data_status',to_jsonb(d)->'sales_data_status') as data
  from public.daily_rollups d;
 
-create or replace view public.cv_sales_hours with (security_invoker=true) as
+create or replace view public.cv_sales_hours (business_id,source,source_ref,status,business_date,net_sales_cents,orders_count,data) with (security_invoker=true) as
  select h.business_id,'app'::text as source,
  'hour:'||h.business_date::text||':'||h.hour_local::text||':'||coalesce(h.location_id::text,'all') as source_ref,
  'actual'::text as status,h.business_date,h.net_sales_cents,
@@ -24,7 +24,7 @@ create or replace view public.cv_sales_hours with (security_invoker=true) as
  'location_id',h.location_id,'net_sales_cents',h.net_sales_cents,'orders_count',h.orders_count) as data
  from public.hourly_sales_rollup h;
 
-create or replace view public.cv_item_sales with (security_invoker=true) as
+create or replace view public.cv_item_sales (business_id,source,source_ref,status,business_date,net_sales_cents,quantity,data) with (security_invoker=true) as
  select o.business_id,
  case when o.pos_order_id like 'toast:%' then 'toast' else 'app' end::text as source,
  'line:'||l.id::text as source_ref,'actual'::text as status,
@@ -36,7 +36,7 @@ create or replace view public.cv_item_sales with (security_invoker=true) as
  from public.order_lines l join public.orders o on o.id=l.order_id
  where o.toast_excluded is not true and o.superseded_by is null;
 
-create or replace view public.cv_payments with (security_invoker=true) as
+create or replace view public.cv_payments (business_id,source,source_ref,status,business_date,amount_cents,tip_cents,data) with (security_invoker=true) as
  select p.business_id,'toast'::text as source,
  'payment:'||p.restaurant_guid::text||':'||p.payment_ref as source_ref,
  p.status,p.business_date,p.amount_cents,p.tip_cents,
@@ -44,7 +44,7 @@ create or replace view public.cv_payments with (security_invoker=true) as
   'tip_cents',p.tip_cents,'payment_status',p.payment_status) as data
  from public.toast_payment_summaries p;
 
-create or replace view public.cv_discounts with (security_invoker=true) as
+create or replace view public.cv_discounts (business_id,source,source_ref,status,business_date,amount_cents,data) with (security_invoker=true) as
  select o.business_id,case when o.pos_order_id like 'toast:%' then 'toast' else 'app' end::text as source,
  'order:'||o.id::text as source_ref,'actual'::text as status,
  o.business_date,o.discounts_cents as amount_cents,
@@ -53,7 +53,7 @@ create or replace view public.cv_discounts with (security_invoker=true) as
  where coalesce(o.discounts_cents,0)<>0 and o.toast_excluded is not true
  and o.superseded_by is null;
 
-create or replace view public.cv_voids_refunds with (security_invoker=true) as
+create or replace view public.cv_voids_refunds (business_id,source,source_ref,status,business_date,amount_cents,data) with (security_invoker=true) as
  select v.business_id,'toast'::text as source,
  'void:'||v.selection_guid::text as source_ref,
  case when v.amount_cents is null then 'open' else 'actual' end::text as status,
@@ -68,7 +68,7 @@ create or replace view public.cv_voids_refunds with (security_invoker=true) as
    'order_guid',f.order_guid,'payment_guid',f.payment_guid)
  from public.toast_refund_facts f;
 
-create or replace view public.cv_card_fees with (security_invoker=true) as
+create or replace view public.cv_card_fees (business_id,source,source_ref,status,business_date,amount_cents,data) with (security_invoker=true) as
  select o.business_id,case when o.pos_order_id like 'toast:%' then 'toast' else 'app' end::text as source,
  'order:'||o.id::text as source_ref,
  case when o.processing_fee_status='missing' then 'open'
@@ -80,7 +80,7 @@ create or replace view public.cv_card_fees with (security_invoker=true) as
   'provider',o.processing_fee_provider,'fee_status',o.processing_fee_status) as data
  from public.orders o where o.toast_excluded is not true and o.superseded_by is null;
 
-create or replace view public.cv_labor_entries with (security_invoker=true) as
+create or replace view public.cv_labor_entries (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select t.business_id,
  case when coalesce(to_jsonb(t)->>'pos_time_entry_id','') like 'toast:%'
    then 'toast' else 'app' end::text as source,
@@ -104,7 +104,7 @@ create or replace view public.cv_labor_entries with (security_invoker=true) as
  from public.toast_open_labor_summaries s
  where s.status in ('open','needs_match');
 
-create or replace view public.cv_staff with (security_invoker=true) as
+create or replace view public.cv_staff (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select e.business_id,
  case when coalesce(e.pos_team_member_id,'') like 'toast:%' then 'toast' else 'app' end::text as source,
  'staff:'||e.id::text as source_ref,'actual'::text as status,
@@ -121,7 +121,7 @@ create or replace view public.cv_staff with (security_invoker=true) as
  from public.pos_import_reviews r
  where r.provider='toast' and r.review_type='staff_identity' and r.status='needs_owner';
 
-create or replace view public.cv_shifts with (security_invoker=true) as
+create or replace view public.cv_shifts (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select s.business_id,'app'::text as source,
  'shift:'||s.id::text as source_ref,'actual'::text as status,
  null::date as business_date,
@@ -131,7 +131,7 @@ create or replace view public.cv_shifts with (security_invoker=true) as
   'deleted_at',to_jsonb(s)->'deleted_at') as data
  from public.scheduled_shifts s;
 
-create or replace view public.cv_menu with (security_invoker=true) as
+create or replace view public.cv_menu (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select m.business_id,case when m.catalog_source='toast' then 'toast' else 'app' end::text as source,
  'item:'||m.id::text as source_ref,'actual'::text as status,
  null::date as business_date,
@@ -147,7 +147,7 @@ create or replace view public.cv_menu with (security_invoker=true) as
  and r.review_type in ('catalog_item','menu_identity','item_identity')
  and r.status='needs_owner';
 
-create or replace view public.cv_bills with (security_invoker=true) as
+create or replace view public.cv_bills (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select c.business_id,'app'::text as source,
  'bill:'||c.id::text as source_ref,'actual'::text as status,
  null::date as business_date,
@@ -156,7 +156,7 @@ create or replace view public.cv_bills with (security_invoker=true) as
   'name',to_jsonb(c)->'name') as data
  from public.recurring_costs c;
 
-create or replace view public.cv_inventory with (security_invoker=true) as
+create or replace view public.cv_inventory (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select i.business_id,'app'::text as source,
  'stock:'||i.id::text as source_ref,'actual'::text as status,
  null::date as business_date,
@@ -165,7 +165,7 @@ create or replace view public.cv_inventory with (security_invoker=true) as
   'counted_at',to_jsonb(i)->'counted_at') as data
  from public.pantry_stock_counts i;
 
-create or replace view public.cv_analytics with (security_invoker=true) as
+create or replace view public.cv_analytics (business_id,source,source_ref,status,business_date,value_numeric,data) with (security_invoker=true) as
  select a.business_id,'toast'::text as source,
  'analytics:'||a.restaurant_guid::text||':'||a.report||':'||a.metric||':'||a.business_date::text as source_ref,
  'actual'::text as status,a.business_date,
@@ -180,12 +180,12 @@ create or replace view public.cv_analytics with (security_invoker=true) as
 do $owner$
 begin
  if to_regclass('public.owner_facts') is null then
-  execute $sql$create or replace view public.cv_owner_facts with (security_invoker=true) as
+  execute $sql$create or replace view public.cv_owner_facts (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
    select null::uuid as business_id,'owner'::text as source,
    null::text as source_ref,'owner_provided'::text as status,
    null::date as business_date,'{}'::jsonb as data where false$sql$;
  else
-  execute $sql$create or replace view public.cv_owner_facts with (security_invoker=true) as
+  execute $sql$create or replace view public.cv_owner_facts (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
    select o.business_id,'owner'::text as source,
    coalesce(to_jsonb(o)->>'id',md5(to_jsonb(o)::text)) as source_ref,
    'owner_provided'::text as status,null::date as business_date,
