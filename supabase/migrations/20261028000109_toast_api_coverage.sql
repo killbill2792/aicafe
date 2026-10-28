@@ -37,9 +37,12 @@ select business_id,restaurant_guid,business_date,endpoint,max(doc_url) as doc_ur
  coalesce(max(http_status) filter (where http_status between 200 and 299),
    (array_agg(http_status order by fetched_at desc))[1]) as status,
  bool_or(http_status between 200 and 299) as available,
- case when bool_or(http_status between 200 and 299)
-  then case when bool_or(http_status=204) and not bool_or(http_status between 200 and 203 or http_status between 205 and 299)
-    then 'no_content' else 'available' end
+ case when bool_or(error_code='not_ready') and not bool_or(http_status=200)
+     then 'not_ready'
+  when bool_or(error_code='page_cap') then 'page_cap'
+  when bool_or(http_status=204) and not bool_or(http_status between 200 and 203 or http_status between 205 and 299)
+     then 'no_content'
+  when bool_or(http_status between 200 and 299) then 'available'
   else coalesce((array_remove(array_agg(error_message order by fetched_at desc),null))[1],
    'not_available') end as reason,
  sum(item_count)::bigint as item_count,
