@@ -119,6 +119,7 @@ export const staffTools = {
         })): [];
       const ownerMonthlyPayrollExtrasCents=ownerPayroll?.available?
         ownerPayroll.value.monthlyCents:null;
+      const payrollReadFailed=ownerPayroll?.quality.missingInputs.includes("payrollExtrasReadFailed")===true;
       const readFailures=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
         ...(ownerPayroll?.quality.missingInputs??[]),
         ...(toastScopes?.quality.missingInputs??[]),
@@ -133,11 +134,11 @@ export const staffTools = {
         pendingPosStaffReviews:reviews?.available?reviews.value:null,
         posReviewHref:"/staff",
         posReviewMissing:reviews?.quality.missingInputs??["toastReviewsUnavailable"],
-        ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
+        ownerMonthlyPayrollStatus:payrollReadFailed?"unavailable":ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
         ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"You told me",
         missing:[...issues,...readFailures.filter(key=>failedReaders.includes(key)),
           ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[]),
-          ...(ownerMonthlyPayrollExtrasCents===null?
+          ...(ownerMonthlyPayrollExtrasCents===null&&!payrollReadFailed?
            ["ownerMonthlyPayrollExtrasNotSet"]:[])],explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs,
           ...(labor.available?labor.value.filter(d=>d.wageStatus==="estimate")
            .map(d=>"laborWageEstimate:"+d.date):[])],

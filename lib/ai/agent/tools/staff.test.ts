@@ -199,6 +199,8 @@ describe("Olivia bounded reads",()=>{
     expect(result.laborDays).toMatchObject([{date:"2026-10-22",loadedStaffCostCents:1600}]);
     expect(result.missing).toContain("staffAttendanceReadFailed");
     expect(result.missing).toContain("payrollExtrasReadFailed");
+    expect(result.missing).not.toContain("ownerMonthlyPayrollExtrasNotSet");
+    expect(result.ownerMonthlyPayrollStatus).toBe("unavailable");
     expect(result.dataNotes).toEqual([expect.stringContaining("readers failed")]);
   });
   it("reports known-only missing wages as unknown rather than a complete formula",async()=>{
