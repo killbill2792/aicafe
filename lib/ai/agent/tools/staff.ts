@@ -2,7 +2,11 @@ import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {resolveOwnerPeriod,periodChoicePayload} from "../resolve";
 import {money} from "../explain";
-import { scheduleReadTools } from "./scheduleReads";
+import {mergeScheduleShifts} from "./scheduleReads";
+import {dateOffset} from "@/lib/calc/periods";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import { getWeekSchedule } from "@/lib/actions/schedule";
 
 const empty = z.strictObject({});
@@ -39,36 +43,35 @@ export const staffTools = {
     description:"Read confirmed dated shifts for a business-local week. Old recurring patterns are not confirmed attendance or shifts.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const {from,to}=range.parse(raw),period={from,to};
-      if(from>to||days(from,to)>90)return missing("scheduled_shifts",period,["scheduleRangeInvalid"]);
-      if(from<ctx.asOf)return missing("scheduled_shifts",period,["historicalScheduleNotReconstructable"]);
-      const d=new Date(from+"T12:00:00Z"),day=d.getUTCDay();
-      const monday=new Date(d.getTime()-((day+6)%7)*86400000).toISOString().slice(0,10);
-      const sunday=new Date(Date.parse(monday+"T12:00:00Z")+6*86400000).toISOString().slice(0,10);
-      if(to>sunday)return {...missing("scheduled_shifts",period,["scheduleRangeRequiresWeeklyRead"]),href:"/staff?tab=schedule"};
-      const exactWeek=from===monday&&to===sunday;
-      if (exactWeek) {
-        const confirmed=await scheduleReadTools.get_week_schedule.execute({week_start:monday},ctx);
-        if(!Array.isArray(confirmed.shifts))return {...confirmed,period,href:"/staff?tab=schedule"};
-        return {...confirmed,period,windowHasShifts:confirmed.scheduleSet===true};
+      if(from>to)return missing("scheduled_shifts",period,["scheduleRangeInvalid"]);
+      const capped=days(from,to)>=366,dateEnd=capped?dateOffset(from,365):to;
+      const monday=dateOffset(from,-((new Date(from+"T12:00:00Z").getUTCDay()+6)%7));
+      const notes:string[]=capped?[{en,es,ar}[ctx.locale].DataNotes.scheduleRangeTruncated]:[];
+      const missingInputs:string[]=capped?["scheduleRangeTruncated"]:[];
+      const allShifts:ReturnType<typeof mergeScheduleShifts>=[];
+      let scheduleSet=false;
+      for(let ws=monday;ws<=dateEnd;ws=dateOffset(ws,7)){
+        const response=await getWeekSchedule({weekStart:ws});
+        if(!response.ok){missingInputs.push("scheduleReadFailed:"+ws+":"+response.error);continue;}
+        if(response.data.posScheduleError){
+          missingInputs.push("toastScheduleReadFailed:"+ws);
+          notes.push({en,es,ar}[ctx.locale].DataNotes.toastScheduleReadFailed
+           .replace("{reason}",response.data.posScheduleError));
+        }
+        const merged=mergeScheduleShifts(response.data);
+        scheduleSet ||= merged.length>0;
+        allShifts.push(...merged.filter(s=>s.date>=from&&s.date<=dateEnd));
       }
-      // The chat weekly tool intentionally caps its public answer at 40 shifts.
-      // A day/window must filter the complete owner-scoped dated source BEFORE
-      // truncating; otherwise an ordinary busy week can look like an empty day.
-      const response=await getWeekSchedule({weekStart:monday});
-      if(!response.ok)return {...missing("scheduled_shifts",period,[response.error]),href:"/staff?tab=schedule"};
-      const activeIds=new Set(response.data.team.map(person=>person.id));
-      const allActiveShifts=response.data.shifts.filter(shift=>activeIds.has(shift.employeeId));
-      const selected=allActiveShifts.filter(shift=>shift.date>=from&&shift.date<=to);
-      const scheduleSet=allActiveShifts.length>0;
-      return {source:"scheduled_shifts",period,agentId:"olivia",href:"/staff?tab=schedule",
-        scheduleSet,windowHasShifts:selected.length>0,
-        shifts:selected.slice(0,40).map(shift=>({
-          id:shift.id,date:shift.date,employeeId:shift.employeeId,start:shift.start,end:shift.end,
-          paidMinutes:shift.paidMinutes,costCents:shift.costCents,estimated:shift.estimated,
-        })),
-        paidMinutes:null,knownWagesCents:null,estimated:null,estimatedShiftCount:null,gaps:[],
-        missing:[...(!scheduleSet?["scheduleNotSet"]:selected.length===0?["noShiftsInRequestedRange"]:[]),
-          ...(selected.length>40?["moreShifts"]:[]),"requestRangeTotalsNotAvailable"]};
+      const selected=allShifts.sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
+      if(!scheduleSet&&!missingInputs.length)missingInputs.push("scheduleNotSet");
+      else if(!selected.length&&!missingInputs.length)missingInputs.push("noShiftsInRequestedRange");
+      if(selected.length>250)missingInputs.push("moreShifts");
+      return {source:"scheduled_shifts+pos_scheduled_shifts",period,agentId:"olivia",
+        href:"/staff?tab=schedule",scheduleSet,windowHasShifts:selected.length>0,
+        shifts:selected.slice(0,250),paidMinutes:null,knownWagesCents:null,
+        estimated:null,estimatedShiftCount:null,gaps:[],
+        missing:[...missingInputs,"requestRangeTotalsNotAvailable"],
+        dataNotes:[...new Set(notes)]};
     },
   },
   get_labor: {
