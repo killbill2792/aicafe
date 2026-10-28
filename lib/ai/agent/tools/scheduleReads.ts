@@ -47,13 +47,18 @@ export function mergeScheduleShifts(data:Pick<WeekData,"shifts"|"posShifts"|"tea
    end:formatInTimeZone(new Date(s.end),data.timezone,"HH:mm"),
    paidMinutes:null,costCents:null,estimated:null,locationId:s.locationId,source:"toast" as const,
  }));
- // Only linked identities can be matched to an app shift. Two unlinked
- // Toast staff can share a display name and start time; never erase either.
- const key=(s:(typeof app)[number]|(typeof pos)[number])=>
-  (s.employeeId?"id:"+s.employeeId:s.source+":"+s.id)+"|"+s.date+"|"+s.start;
- const seen=new Set(app.map(key));
- return [...app,...pos.filter(s=>{const k=key(s);if(seen.has(k))return false;seen.add(k);return true;})]
-  .sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
+ // Only exact linked identities and matching start AND end can identify
+ // an app/Toast duplicate. Separate Toast locations may reuse external IDs.
+ const appKey=(s:(typeof app)[number])=>s.employeeId+"|"+s.date+"|"+s.start+"|"+s.end;
+ const appKeys=new Set(app.map(appKey)),seenPos=new Set<string>();
+ return [...app,...pos.filter(s=>{
+  if(s.employeeId&&appKeys.has(s.employeeId+"|"+s.date+"|"+s.start+"|"+s.end))
+   return false;
+  const k=s.locationId+"|"+s.id+"|"+s.start+"|"+s.end;
+  if(seenPos.has(k))return false;
+  seenPos.add(k);
+  return true;
+ })].sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
 }
 export function localizedToastScheduleReadError(reason:string,locale:AgentToolContext["locale"]){
  const copy={en,es,ar}[locale].DataNotes;
