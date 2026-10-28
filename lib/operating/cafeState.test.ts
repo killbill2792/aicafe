@@ -70,8 +70,13 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
     expect(state.profitability.quality.missingInputs).toContain("periodOutsideLoadedMonth");
   });
 
-  it("refuses future dates or invalid calendars", () => {
-    expect(cafeStateFromSnapshot(fixture, { from: "2026-09-09", to: "2026-09-10" }).profitability.available).toBe(false);
+  it("clips future dates with a visible caveat, but refuses invalid calendars", () => {
+    const state=cafeStateFromSnapshot(fixture, { from: "2026-09-09", to: "2026-09-10" });
+    expect(state.period).toEqual({from:"2026-09-09",to:"2026-09-09"});
+    expect(state.profitability.available).toBe(true);
+    expect(state.profitability.quality.missingInputs).toContain("futureDatesExcluded");
+    expect(state.sales.available).toBe(true);
+    if(state.sales.available)expect(state.sales.value).toHaveLength(1);
     expect(cafeStateFromSnapshot(fixture, { from: "2026-09-31", to: "2026-09-31" }).profitability.available).toBe(false);
   });
 
