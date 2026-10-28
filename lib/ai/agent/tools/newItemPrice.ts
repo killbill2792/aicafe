@@ -128,7 +128,9 @@ export const newItemPriceTools={suggest_new_item_price:{
    const lines:ExplainLine[]=[];
    const add=(label:string,inputs:ExplainLine["inputs"],formula:ExplainLine["formula"],
     result:ExplainLine["result"],provenance:ExplainLine["provenance"],_basis:string)=>{
-    lines.push({label,inputs,formula,result,period:month,source:"suggest_new_item_price",
+    lines.push({label:explainTitle(label),inputs:inputs.map(i=>({...i,
+      name:ctx.locale==="en"?i.name:inputTitles[i.name]??i.name})),formula,result,
+      period:month,source:"suggest_new_item_price",
       provenance,basis:provenance==="ownerProvided"?"owner_provided":
       provenance==="recorded"?"recorded":provenance==="estimate"?"estimated":"missing"});
    };
