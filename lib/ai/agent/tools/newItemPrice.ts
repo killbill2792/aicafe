@@ -9,6 +9,7 @@ import {resolveCoveredSalesWindow} from "./coverage";
 import {money,percent,count,type ExplainLine} from "../explain";
 import {COFFEE_SHOP_PROFILE} from "@/lib/pricing/profiles";
 import {figure,recommendFullCostPrice} from "@/lib/calc/supervisorEconomics";
+import {localizedMetricReason} from "@/lib/ai/agent/metricReasons";
 import {ownerSpecifiedMonthlyBills,ownerSpecifiedPercent} from "./pricingOwnerEvidence";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -41,12 +42,13 @@ export const newItemPriceTools={suggest_new_item_price:{
    const openDays=economics.daysInMonth||periodDays(month);
    let units=owner?.itemsSoldPerDay!=null?
     Math.round(owner.itemsSoldPerDay*openDays):economics.monthlyUnits;
+   const metrics={en,es,ar}[ctx.locale].MetricsNotes;
    const coverageDates=economics.salesCoverage;
-   const pretty=(date:string)=>new Intl.DateTimeFormat("en-US",{
+   const pretty=(date:string)=>new Intl.DateTimeFormat(ctx.locale,{
     month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(date+"T12:00:00Z"));
    let coverageLabel:string|null=coverageDates?
-    "drinks sold "+pretty(coverageDates.from)+"–"+pretty(coverageDates.to)+", "+
-    coverageDates.to.slice(0,4)+", scaled to "+openDays+" open days":null;
+    metrics.pricingCoverageScaled.replace("{from}",pretty(coverageDates.from))
+      .replace("{to}",pretty(coverageDates.to)).replace("{days}",String(openDays)):null;
    if(units===null){
     const coverage=await resolveCoveredSalesWindow(ctx,requestedPeriod("month",ctx.asOf));
     const trend=await ctx.tools.getSalesTrend(coverage.period);
@@ -58,7 +60,8 @@ export const newItemPriceTools={suggest_new_item_price:{
     if(days.length){
      units=Math.round(sold/days.length*openDays);
      coverageLabel=coverage.label?coverage.label+", "+coverage.period.to.slice(0,4):
-      "Recorded sales: "+coverage.period.from+"–"+coverage.period.to;
+      metrics.pricingCoverageRecorded.replace("{from}",coverage.period.from)
+       .replace("{to}",coverage.period.to);
     }
    }
    // Only the owner's current message can authorize a different target.
@@ -80,7 +83,7 @@ export const newItemPriceTools={suggest_new_item_price:{
    const ownerBills=explicitBillTotal??(ownerBillsComplete?prorate(
     owner!.rentCents!+owner!.otherOverheadCents!,
     ownerPeriod(owner?.overheadPeriod??null,ctx.asOf)??month,month):null);
-   const monthlyBills=ownerBills!==null?figure(ownerBills,"owner","You told me: total monthly bills"):
+   const monthlyBills=ownerBills!==null?figure(ownerBills,"owner","newItemOwnerBills"):
     economics.monthlyBills;
    const missingBills=ownerBills!==null?[]:(economics.missingBillCategories??[]);
    const billsPartial=missingBills.length>0||monthlyBills.valueCents===null;
@@ -109,7 +112,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     "sum",money(product),"ownerProvided","Your item's ingredient and packaging costs");
    if(units!==null)add("Units/month",[{name:"units",value:count(units)}],
     "sum",count(units),owner?.itemsSoldPerDay!=null?"ownerProvided":"recorded",
-    coverageLabel??"Latest covered café sales");
+    coverageLabel??metrics.pricingLatestCovered);
    if(labor.valueCents!==null&&units&&recommended.laborPerUnitCents!==null)
     add("Labor/drink",[{name:"laborPerMonth",value:money(labor.valueCents)},
      {name:"units",value:count(units)}],"divide",money(Math.round(recommended.laborPerUnitCents)),
@@ -197,7 +200,10 @@ export const newItemPriceTools={suggest_new_item_price:{
     knownCostFloorLabel:recommended.knownCostFloorLabel,warning:recommended.warning,
     pricingNote:recommended.warning==="below_full_cost"?copy.pricingNoteBelowFullCost:
       copy.pricingNoteDrinkCost.replace("{percent}",String(Math.round(costPct*100))),
-    monthlyLabor:labor,monthlyBills,billsPartial,
+    monthlyLabor:{...labor,reasonKey:labor.reason,
+      reason:localizedMetricReason(labor.reason,ctx.locale,labor.reasonParams)},
+    monthlyBills:{...monthlyBills,reasonKey:monthlyBills.reason,
+      reason:localizedMetricReason(monthlyBills.reason,ctx.locale,monthlyBills.reasonParams)},billsPartial,
     components:{product:{valueCents:product,source:product===null?"missing":"ownerProvided",basis:"owner_provided"},
       labor:{valueCents:labor.valueCents,source:source(labor.status),basis:labor.status==="owner"?"owner_provided":labor.status==="actual"?"recorded":"estimated"},
       bills:{valueCents:monthlyBills.valueCents,source:billsPartial?"estimate":source(monthlyBills.status),basis:monthlyBills.status==="owner"?"owner_provided":monthlyBills.status==="actual"?"recorded":"estimated"},
