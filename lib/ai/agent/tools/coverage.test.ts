@@ -6,7 +6,7 @@ import type {AgentToolContext} from "./index";
 const fakeDate=(date:string)=>({date});
 const unavailable=()=>({available:false as const,value:null,quality:{level:"low" as const,missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
 function context(dates:string[]):AgentToolContext{
- return {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles",tools:{
+ return {asOf:"2026-10-24",locale:"en",currency:"USD",timezone:"America/Los_Angeles",tools:{
    getSalesTrend:async({from,to})=>{
     const filtered=dates.filter(d=>d>=from&&d<=to);
     return filtered.length?{available:true,value:filtered.map(fakeDate) as never,
