@@ -23,6 +23,9 @@ export function ownerSpecifiedMonthlyBills(utterances:readonly string[],cents:nu
    const before=line.slice(Math.max(0,start-75),start).split(/[;.!?\n،؛]/u).at(-1)??"";
    const after=(line.slice(finish,Math.min(line.length,finish+25))
     .split(/[;.!?\n،؛]/u)[0]??"");
+   // A preceding wage/payroll label owns its amount unless a more specific
+   // bills label already appears before that same amount.
+   if([...before.matchAll(laborWords)].length&&![...before.matchAll(billWords)].length)continue;
    const nearby=before+match[0]+after;
    const midpoint=before.length;
    const labels=[
