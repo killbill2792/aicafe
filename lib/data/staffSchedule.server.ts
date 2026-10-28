@@ -1,5 +1,6 @@
 import "server-only";
 import {readToastPlannedShifts} from "./toastScheduledShifts.server";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {prepareScheduleCopy} from "@/lib/calc/scheduling/scheduleMessages";
 import {peopleWithRetainedShifts} from "@/lib/calc/scheduling/schedulePresentation";
 import {z} from "zod";
@@ -41,8 +42,16 @@ export async function getWeekSchedule(raw:unknown){
  ]);
  if(people.error||shifts.error||profile.error||availability.error||profileAvailability.error||!ruleResult.ok)return {ok:false as const,error:"storage_unavailable"};
  // External future plans never become approved internal shifts or paid timecards.
- const posShifts=process.env.TOAST_AUTO_IMPORT_ENABLED==="true"?
-   await readToastPlannedShifts(owner.supabase,owner.businessId,dates[0],dates[6],owner.timezone):[];
+ let posShifts:Awaited<ReturnType<typeof readToastPlannedShifts>>=[];
+ if(process.env.TOAST_AUTO_IMPORT_ENABLED==="true"){
+  try{
+   // staffReadScope established membership; privileged reads remain bound to that business.
+   posShifts=await readToastPlannedShifts(createAdminSupabaseClient(),
+    owner.businessId,dates[0],dates[6],owner.timezone);
+  }catch{
+   console.warn("toast_schedule_optional_read_failed",{businessId:owner.businessId});
+  }
+ }
  const allEmployees=(people.data??[]).map(p=>({active:p.active as boolean,
    id:p.id as string,name:p.display_name as string,role:p.role as string|null,
    wageCents: p.wage_period==="hour" ? ((p.wage_amount_cents as number|null)??(p.default_hourly_wage_cents as number|null))
