@@ -16,6 +16,18 @@ describe("Toast payment fee source precedence",()=>{
   for(const type of ["CASH","GIFT_CARD"])
    expect(calc({...base,type},plan)).toEqual({amountCents:0,status:"actual",basis:"cash_or_gift"});
  });
+ it("applies a single owner-confirmed general card rule to a known card and entry mode",()=>{
+  expect(calc(base,[{cardType:"*",cardEntryMode:"*",percentageBps:290,fixedFeeCents:10}]))
+   .toEqual({amountCents:39,status:"estimated",basis:"owner_plan"});
+ });
+ it("does not bill non-card methods or invent a missing card entry mode",()=>{
+  expect(calc({...base,type:"HOUSE_ACCOUNT"},plan).status).toBe("missing");
+  expect(calc({...base,cardEntryMode:null},[{cardType:"*",cardEntryMode:"*",
+   percentageBps:290,fixedFeeCents:10}]).amountCents).toBeNull();
+ });
+ it("ambiguous equally specific owner fee rules are missing rather than double applied",()=>{
+  expect(calc(base,[...plan,...plan]).status).toBe("missing");
+ });
  it("unknown fee stays unknown, never an assumed zero",()=>{
   expect(calc(base,[]).amountCents).toBeNull();
  });

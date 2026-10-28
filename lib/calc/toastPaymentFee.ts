@@ -17,8 +17,17 @@ export function determineToastPaymentFee(p:ToastFeeInput,rules:readonly ToastCar
    return {amountCents:null,status:"missing",basis:"missing"};
   return {amountCents:p.originalProcessingFeeCents,status:"actual",basis:"toast"};
  }
- const matching=rules.filter(r=>r.cardType===p.cardType&&r.cardEntryMode===p.cardEntryMode);
- if(matching.length!==1||p.amountCents===null||!Number.isSafeInteger(p.amountCents)||p.amountCents<0)
+ // A non-card payment without a Toast fee must not be charged the card plan.
+ if(!["CARD","CREDIT","DEBIT","CREDITCARD","DEBITCARD"].includes(type)||
+   !p.cardType||!p.cardEntryMode)
+  return {amountCents:null,status:"missing",basis:"missing"};
+ const matching=rules.filter(r=>(r.cardType===p.cardType||r.cardType==="*")&&
+  (r.cardEntryMode===p.cardEntryMode||r.cardEntryMode==="*"))
+  .sort((a,b)=>Number(b.cardType!=="*")+Number(b.cardEntryMode!=="*")-
+    Number(a.cardType!=="*")-Number(a.cardEntryMode!=="*"));
+ const specificity=(r:ToastCardRule)=>Number(r.cardType!=="*")+Number(r.cardEntryMode!=="*");
+ if(matching.length===0||(matching.length>1&&specificity(matching[0])===specificity(matching[1]))||
+    p.amountCents===null||!Number.isSafeInteger(p.amountCents)||p.amountCents<0)
   return {amountCents:null,status:"missing",basis:"missing"};
  const r=matching[0];
  if(!Number.isInteger(r.percentageBps)||r.percentageBps<0||r.percentageBps>5000||
