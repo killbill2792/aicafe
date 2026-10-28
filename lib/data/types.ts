@@ -5,6 +5,8 @@ export type BusinessSettings = {
   id: string;
   name: string;
   timezone: string;
+  /** Authenticated café ISO 4217 currency; null means unknown, not USD. */
+  currency?: string|null;
   payrollTaxRate: number;
   payrollTaxRateStatus?: "estimated" | "confirmed";
   payrollTaxRateSource?: string;
