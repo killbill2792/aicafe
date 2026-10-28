@@ -52,9 +52,9 @@ describe("supervisor new-item price evidence",()=>{
     for(const locale of ["en","es","ar"] as const){
       const reply=await newItemPriceTools.suggest_new_item_price.execute(input,
         {...context(sparse),locale});
-      expect(reply.monthlyLabor.valueCents).toBe(224000);
-      expect(reply.monthlyLabor.reasonKey).toBe("laborPartialCoverage");
-      expect(reply.monthlyLabor.reason).toContain(locale==="es"?"Nómina":locale==="ar"?"الرواتب":"Payroll");
+      expect((reply.monthlyLabor as {valueCents:number|null;reasonKey:string;reason:string}).valueCents).toBe(224000);
+      expect((reply.monthlyLabor as {valueCents:number|null;reasonKey:string;reason:string}).reasonKey).toBe("laborPartialCoverage");
+      expect((reply.monthlyLabor as {valueCents:number|null;reasonKey:string;reason:string}).reason).toContain(locale==="es"?"Nómina":locale==="ar"?"الرواتب":"Payroll");
       expect(reply.breakEvenCents).toBeGreaterThan(0);
       expect(reply.recommendedPriceCents).toBeGreaterThan(0);
       if(locale!=="en")expect(reply.monthlyLabor.reason).not.toContain("Only");
