@@ -10,6 +10,12 @@ import {profitForPeriod} from "./profit";
 import type {BusinessSnapshot} from "@/lib/data/types";
 import {summarizeResolvedSoldProductCosts,type DailyFacts} from "@/lib/calc";
 import {shiftCafeDate} from "./clock";
+import {moneyTools} from "@/lib/ai/agent/tools/money";
+import {newItemPriceTools} from "@/lib/ai/agent/tools/newItemPrice";
+import {staffTools} from "@/lib/ai/agent/tools/staff";
+import type {AgentToolContext} from "@/lib/ai/agent/tools/index";
+import {figure,type Economics} from "@/lib/calc/supervisorEconomics";
+import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
 
 const date=(i:number)=>shiftCafeDate("2026-09-01",i);
 function demo(caseName:"complete"|"today_missing"|"fees_missing"|"wage_missing"|"bill_missing"|"actual_toast_fees"){
@@ -83,4 +89,82 @@ describe("metricsParity — one observed café through screen and structured cha
       if(scenario==="bill_missing")expect(screen.financialNotes).toContain("profitBillsMissing");
     });
   }
+});
+
+describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
+ const cases=["complete","today_missing","fees_missing","wage_missing","bill_missing","actual_toast_fees","sparse_payroll"] as const;
+ for(const kind of cases){
+  it(kind+": get_break_even and get_labor and new-item pricing match screen cents",async()=>{
+   const base=demo(kind==="sparse_payroll"?"complete":kind);
+   const raw=base.monthActualDays.map((day,i)=>kind==="sparse_payroll"&&i>=3?
+     {...day,wagesCents:null,laborWageStatus:"missing" as const}:day);
+   const snapshot:BusinessSnapshot={...base,monthActualDays:raw,monthRecordedDays:raw,
+     last28Days:raw,breakEvenDays:raw.filter(day=>day.date<base.todayDateStr)};
+   const screen=buildProfitAndCostsViewModel(snapshot,"month");
+   const recovery=buildCostRecoveryViewModel(snapshot);
+   const plan=buildBreakEvenViewModel(snapshot);
+   const days=snapshot.breakEvenDays??[];
+   const fees=cardFeesForDays(days,(snapshot as BusinessSnapshot&{ownerFeePlans?:{percentageBps:number}[]}).ownerFeePlans??null);
+   const sold=summarizeResolvedSoldProductCosts(snapshot.breakEvenProductCosts??snapshot.menuItems);
+   const sales=days.reduce((sum,d)=>sum+d.netSalesCents,0);
+   const monthlyUnits=days.reduce((sum,d)=>sum+d.drinksCount,0);
+   const economics:Economics={
+    monthlyBills:figure(recovery.monthlyBillsCents,"actual","billsRecorded"),
+    monthlyStaff:figure(recovery.monthlyStaffCents,"estimate","laborPartialCoverage"),
+    monthlyRevenue:figure(sales,"estimate","monthlyRevenueCovered"),
+    ingredientRate:sales? sold.totalCostCents/sales:null,
+    feeRate:sales?fees.amountCents/sales:null,
+    ingredientStatus:"actual",feeStatus:fees.basis==="actual"?"actual":"estimate",
+    averagePriceCents:monthlyUnits?Math.round(sales/monthlyUnits):null,
+    monthlyUnits,daysInMonth:snapshot.daysInMonth,targetMargin:.15,missingDays:[],
+    asOfDate:snapshot.todayDateStr,observedDays:days,
+    observedIngredientCentsOverride:sold.totalCostCents,
+    missingIngredientCosts:sold.missingProductCosts,
+    ownerFeePlans:(snapshot as BusinessSnapshot&{ownerFeePlans?:{percentageBps:number}[]}).ownerFeePlans??[],
+    laborCoveredDays:raw.filter(d=>d.wagesCents!==null).length,laborWindowDays:raw.length,
+   };
+   const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
+   const period={from:snapshot.monthKey+"-01",to:snapshot.todayDateStr};
+   const ctx:AgentToolContext={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",
+    tools:{
+     getLaborMetrics:async()=>({available:true as const,value:raw.map(d=>({
+       date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
+       wageStatus:d.laborWageStatus??"actual",
+       loadedStaffCostCents:d.wagesCents===null||d.staffTaxCents===null?
+        null:d.wagesCents+d.staffTaxCents,
+     })),quality}),
+     getBusinessCostSummary:async()=>businessCostSummaryFromSnapshot(snapshot,period),
+    } as AgentToolContext["tools"],
+    readEconomics:async()=>({economics,items:[],staff:[],
+     ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null}),
+   };
+   const chat=await moneyTools.get_break_even.execute({},ctx);
+   const expectedBreakEven=recovery.breakEven.kind==="ready"?
+     recovery.breakEven.breakEvenSalesCents:null;
+   expect(chat.monthlyBreakEvenCents).toBe(expectedBreakEven);
+   expect(chat.drinksPerDay).toBe(plan.drinksNeededPerDay);
+   expect(chat.observedProcessingFeesCents).toBe(recovery.observedProcessingFeesCents);
+   expect(chat.monthlyLabor.valueCents).toBe(recovery.monthlyStaffCents);
+   expect(chat.monthlyBills.valueCents).toBe(recovery.monthlyBillsCents);
+   const laborChat=await staffTools.get_labor.execute({period:"month"},ctx);
+   const knownLabor=(laborChat.laborDays as Array<{loadedStaffCostCents:number|null}>)
+     .reduce((sum,day)=>sum+(day.loadedStaffCostCents??0),0);
+   expect(knownLabor).toBe(screen.wagesCents!+screen.staffTaxCents!);
+   const costChat=await moneyTools.get_cost_summary.execute({period:"month"},ctx);
+   expect(costChat.knownTotalCents).toBeGreaterThanOrEqual(0);
+   const price=await newItemPriceTools.suggest_new_item_price.execute({
+    ingredient_cost_cents:145,category:"drink",packaging_cents:0,item_name:null,ownerInputs:null,
+   },ctx);
+   expect(price.monthlyLabor.valueCents).toBe(recovery.monthlyStaffCents);
+   const profit=cafeStateFromSnapshot(snapshot,period);
+   expect(profit.profitability.available).toBe(true);
+   if(profit.profitability.available)
+     expect(profit.profitability.value.ownerProfitCents).toBe(screen.ownerProfitCents);
+   if(kind==="sparse_payroll"){
+     expect(recovery.monthlyStaffCents).not.toBeNull();
+     expect(chat.monthlyLabor.valueCents).not.toBeNull();
+     expect(plan.noteKeys).toContain("laborCoveragePartial");
+   }
+  });
+ }
 });
