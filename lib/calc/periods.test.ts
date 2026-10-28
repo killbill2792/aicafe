@@ -1,18 +1,21 @@
 import {describe,it,expect} from "vitest";
 import {resolvePeriod,calendarMonth,dailyRate,prorate,coveredWindow,requestedPeriod} from "./periods";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 const base={asOf:"2026-10-24",timezone:"America/Los_Angeles"};
 describe("business-local period resolution",()=>{
  it("preserves the existing trailing seven-day week for financial totals",()=>{
   expect(resolvePeriod("week",{asOf:"2026-10-24",timezone:"America/Los_Angeles"})).toEqual({
-   status:"resolved",value:{from:"2026-10-18",to:"2026-10-24",label:"Last 7 days"}});
+   status:"resolved",value:{from:"2026-10-18",to:"2026-10-24",label:"2026-10-18 – 2026-10-24",labelKey:"periodWeek"}});
  });
  it("resolves last month without guessing a current month",()=>{
   expect(resolvePeriod({preset:"last_month"},base)).toEqual({status:"resolved",
-   value:{from:"2026-09-01",to:"2026-09-30",label:"Last month"}});
+   value:{from:"2026-09-01",to:"2026-09-30",label:"2026-09-01 – 2026-09-30",labelKey:"periodLastMonth"}});
  });
  it("uses explicit owner dates and rejects future ranges",()=>{
   expect(resolvePeriod({from:"2026-03-01",to:"2026-03-31"},base)).toEqual({
-   status:"resolved",value:{from:"2026-03-01",to:"2026-03-31",label:"2026-03-01 – 2026-03-31"}});
+   status:"resolved",value:{from:"2026-03-01",to:"2026-03-31",label:"2026-03-01 – 2026-03-31",labelKey:"periodExplicit"}});
   expect(resolvePeriod({from:"2026-11-01",to:"2026-11-30"},base)).toMatchObject({
    status:"none",missing:["futurePeriod"]});
  });
@@ -21,9 +24,17 @@ describe("business-local period resolution",()=>{
   expect(r.status).toBe("ambiguous");
   if(r.status==="ambiguous")expect(r.candidates.map(c=>c.from)).toEqual(["2025-03-01","2026-03-01"]);
  });
- it("uses the cafe timezone at the UTC day boundary",()=>{
-  expect(resolvePeriod("today",{asOf:"2026-10-24T01:00:00Z",timezone:"America/Los_Angeles"}))
-   .toEqual({status:"resolved",value:{from:"2026-10-23",to:"2026-10-23",label:"Today"}});
+ it("11 PM in UTC-7 uses the local date",()=>{
+  expect(resolvePeriod("today",{asOf:"2026-10-24T06:00:00Z",timezone:"America/Los_Angeles"}))
+   .toEqual({status:"resolved",value:{from:"2026-10-23",to:"2026-10-23",label:"2026-10-23 – 2026-10-23",labelKey:"periodToday"}});
+ });
+ it("labels are keys and render in EN/ES/AR",()=>{
+  const value=resolvePeriod("today",base);
+  expect(value.status).toBe("resolved");
+  if(value.status!=="resolved")return;
+  expect(value.value.labelKey).toBe("periodToday");
+  expect(value.value.label).toBe("2026-10-24 – 2026-10-24");
+  expect([en,es,ar].map(m=>m.DataNotes.periodToday)).toEqual(["Today","Hoy","اليوم"]);
  });
 });
 
