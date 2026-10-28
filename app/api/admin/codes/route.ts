@@ -5,12 +5,14 @@ import {requireAdmin} from "@/lib/admin/auth.server";
 import {insertFreeAccessCode,toggleFreeAccessCode,changeCafeAccess} from "@/lib/data/adminCodes.server";
 import {requireSameOrigin,readBoundedJson} from "@/lib/ai/conversations/http.server";
 import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
+import {cafeToday} from "@/lib/metrics/core/clock";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const uuid=z.uuid();
 const actions=z.discriminatedUnion("action",[
  z.strictObject({action:z.literal("create"),durationMonths:z.number().int().min(1).max(120).nullable(),
    fixedEndDate:z.iso.date().nullable(),maxCafes:z.number().int().min(1).max(100000),
-   note:z.string().trim().max(500),code:z.string().trim().max(32).optional()}),
+   note:z.string().trim().max(500),code:z.string().trim().max(32).optional(),
+    timeZone:z.string().min(1).max(128).optional()}),
  z.strictObject({action:z.literal("toggle"),id:uuid,active:z.boolean()}),
  z.strictObject({action:z.literal("extend"),businessId:uuid,accessEnd:z.iso.date()}),
  z.strictObject({action:z.literal("setMode"),businessId:uuid,mode:z.enum(["grandfathered","paused"])}),
