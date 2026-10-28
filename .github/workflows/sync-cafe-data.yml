@@ -1,0 +1,52 @@
+name: sync-cafe-data
+
+# Incrementally syncs café data from "My café" (seiyunyemenicoffee@gmail.com) into
+# "Test Café" (mail2raj27@gmail.com). Idempotent — only inserts rows new since the
+# last run, never touches anything already modified in Test Café. See
+# scripts/sync-cafe-data.mjs for the full table scope and exclusions.
+#
+# Runs on GitHub's infrastructure, not on anyone's laptop, so it keeps going even if
+# the local machine is off or this chat session has ended.
+#
+# Self-expires after the 14-day window below. To extend, bump SYNC_CUTOFF_DATE.
+# To stop early, disable or delete this workflow from the Actions tab.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check 14-day sync window
+        id: gate
+        env:
+          SYNC_CUTOFF_DATE: "2026-11-11"
+        run: |
+          today=$(date -u +%Y-%m-%d)
+          if [[ "$today" > "$SYNC_CUTOFF_DATE" ]]; then
+            echo "Past the sync window (cutoff $SYNC_CUTOFF_DATE) — skipping. Delete this workflow, or bump SYNC_CUTOFF_DATE to continue."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.skip == 'false'
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.skip == 'false'
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        if: steps.gate.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Run sync
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: node scripts/sync-cafe-data.mjs
