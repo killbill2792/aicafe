@@ -1,6 +1,7 @@
 import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
+import {dataQueryTools,type DataQueryContext} from "./dataQuery";
 import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard,periodChoicePayload,resolveOwnerPeriod} from "../resolve";
 
 import {money,count} from "../explain";
@@ -42,6 +43,8 @@ export type AgentToolResult = {
 export type AgentToolContext = {
   tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
   timezone:string;
+  /** Authenticated owner-scoped reader. Never populated from model arguments. */
+  canonicalData?:()=>Promise<DataQueryContext>;
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
   resolveState?:import("../resolve").ResolveState;
@@ -66,7 +69,7 @@ const posReadTools={
   get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
-export const schemas = { ...askOwnerTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
+export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
   ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...scenarioTools,...proposalTools,...priceExperimentTools,...staffProposalTools,...purchasesTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
@@ -151,6 +154,12 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");
   if(name==="ask_owner")return askOwnerTools.ask_owner.execute(raw,ctx);
+  if(name==="describe_data")return dataQueryTools.describe_data.execute(raw);
+  if(name==="query_data"){
+    if(!ctx.canonicalData)return {source:"canonical_data",period:null,missing:["canonical_reader_unavailable"],rows:[],empty:true};
+    try{return dataQueryTools.query_data.execute(raw,await ctx.canonicalData());}
+    catch{return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};}
+  }
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
   if(name==="simulate_scenario")return scenarioTools.simulate_scenario.execute(raw,ctx);
