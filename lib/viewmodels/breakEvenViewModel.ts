@@ -37,7 +37,12 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const labor=laborForPeriod(dates,days,null,ownerExtras==null?null:{
     monthlyCents:ownerExtras,from:dates[0].date,to:dates[dates.length-1].date,
   });
-  const avgDailyStaffCost=labor.projectedMonthlyLaborCents===null?null:labor.projectedMonthlyLaborCents/28;
+  // Clocked labor is projected from 28 completed days; owner extras are a
+  // calendar-month figure and must not be divided by 28 in a 30/31-day month.
+  const clockedMonthly=labor.projectedMonthlyLaborCents===null?null:
+    labor.projectedMonthlyLaborCents-(ownerExtras??0);
+  const avgDailyStaffCost=clockedMonthly===null?null:
+    clockedMonthly/28+(ownerExtras??0)/snapshot.daysInMonth;
   const dailyCosts=dailyCostsToCoverCents(runningPerDay,avgDailyStaffCost??0);
   const shared=breakEvenFor({days,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
     monthlyBillsCents:Math.round(runningPerDay*snapshot.daysInMonth),
