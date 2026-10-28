@@ -1,7 +1,7 @@
 import {describe,it,expect,vi,beforeEach} from "vitest";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
-  refresh:vi.fn(async()=>({businessDate:"2026-10-28",alertsCreated:0})),
+  refresh:vi.fn(async(..._args:unknown[])=>({businessDate:"2026-10-28",alertsCreated:0})),
   calls:0,
 }));
 vi.mock("@/lib/security/bearer",()=>({verifyBearer:(req:Request,secret:string)=>
