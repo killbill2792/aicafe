@@ -54,7 +54,11 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const monthOpenDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
     snapshot.monthKey+"-"+String(i+1).padStart(2,"0")).filter(date=>
       regularHoursStateForDate(snapshot.business.openHours,date)!=="closed");
-  const monthLabor=laborForPeriod(monthOpenDates.map(date=>({date})),monthRecordedDays);
+  const ownerExtras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
+    .ownerMonthlyPayrollExtrasCents;
+  const monthLabor=laborForPeriod(monthOpenDates.map(date=>({date})),monthRecordedDays,null,
+    ownerExtras==null?null:{monthlyCents:ownerExtras,from:snapshot.monthKey+"-01",
+      to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")});
   const monthlyStaffCents=monthLabor.projectedMonthlyLaborCents;
 
   const salesHistory = snapshot.last28Days;
@@ -126,10 +130,19 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   // This is the same known-cost contract consumed by Supervisor; Money still
   // separately gates any owner-profit claim on the existing strict coverage.
   const coverage=periodCoverage(snapshot,period);
-  const laborResult=laborForPeriod(
+  const ownerExtras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
+    .ownerMonthlyPayrollExtrasCents;
+  const baseLaborResult=laborForPeriod(
     Array.from({length:coverage.expectedDays},(_,i)=>({
       date:new Date(Date.parse(calendar.start+"T12:00:00Z")+i*86400000).toISOString().slice(0,10),
     })),recordedLaborDays);
+  const laborResult=laborForPeriod(
+    Array.from({length:coverage.expectedDays},(_,i)=>({
+      date:new Date(Date.parse(calendar.start+"T12:00:00Z")+i*86400000).toISOString().slice(0,10),
+    })),recordedLaborDays,null,ownerExtras==null?null:{
+      monthlyCents:ownerExtras,from:calendar.start,to:calendar.end,
+    });
+  const ownerPayrollExtrasCents=laborResult.knownLaborCents-baseLaborResult.knownLaborCents;
   const feeMissing=days.some(d=>d.netSalesCents>0&&d.cardFeesStatus==="missing");
   const costMissing=businessCosts.missingInputs.filter(k=>k.startsWith("productCost:")||
     k==="itemSalesCoverage"||k==="historicalIngredientCostCoverage");
@@ -157,8 +170,8 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
   const ingredientsRatio = ratio(ingredientsCents, salesCents);
-  const staffRatio=wageUnknown?null:ratio(wagesCents+staffTaxCents,salesCents);
-  const combinedRatio=wageUnknown?null:ratio(ingredientsCents+wagesCents+staffTaxCents,salesCents);
+  const staffRatio=wageUnknown?null:ratio(laborResult.knownLaborCents,salesCents);
+  const combinedRatio=wageUnknown?null:ratio(ingredientsCents+laborResult.knownLaborCents,salesCents);
 
   const prevDays = previousPeriodDays(snapshot, period);
   const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
@@ -247,7 +260,8 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     businessCosts,
     ownerProfitCents,
     ownerProfitDisplay,
-    financialNotes:knownProfit.notes,
+    financialNotes:[...knownProfit.notes,...laborResult.notes],
+    ownerPayrollExtrasCents,
     comparisonState,
     ingredientsRatio,
     staffRatio,

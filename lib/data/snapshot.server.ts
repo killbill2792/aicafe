@@ -22,7 +22,7 @@ export async function getBusinessSnapshotFromDb(
 ): Promise<BusinessSnapshot> {
   const { data: businessRow, error: businessError } = await supabase
     .from("businesses")
-    .select("id, name, timezone, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status")
+    .select("id, name, timezone, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status, owner_monthly_payroll_extras_cents")
     .eq("id", businessId)
     .single();
   if (businessError || !businessRow) throw new Error(`Business not found: ${businessId}`);
@@ -190,6 +190,8 @@ export async function getBusinessSnapshotFromDb(
     staffShiftsToday,
     staffNowIso: new Date().toISOString(),
     ownerFeePlans,
+    ownerMonthlyPayrollExtrasCents:businessRow.owner_monthly_payroll_extras_cents===null?
+      null:Number(businessRow.owner_monthly_payroll_extras_cents),
   } as BusinessSnapshot;
 }
 
@@ -345,7 +347,8 @@ async function getMenuItemSnapshots(
  */
 async function readHistoricalBusinessSnapshot(
   supabase:SupabaseClient,businessId:string,period:{from:string;to:string},
-):Promise<BusinessSnapshot & {ownerFeePlans:OwnerFeePlan[];historicalPeriod:{
+):Promise<BusinessSnapshot & {ownerFeePlans:OwnerFeePlan[];
+  ownerMonthlyPayrollExtrasCents:number|null;historicalPeriod:{
   days:import("@/lib/calc").DailyFacts[];
   recorded:import("@/lib/calc").DailyFacts[];
   monthlyAmounts:import("@/lib/calc").CategoryMonthlyAmount[];
@@ -356,7 +359,7 @@ async function readHistoricalBusinessSnapshot(
     !/^\d{4}-\d{2}-\d{2}$/.test(period.to)||period.from>period.to)
     throw new Error("Invalid historical café period");
   const {data:business,error:businessError}=await supabase.from("businesses")
-    .select("id,name,timezone,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source,target_operating_margin,target_operating_margin_status")
+    .select("id,name,timezone,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source,target_operating_margin,target_operating_margin_status,owner_monthly_payroll_extras_cents")
     .eq("id",businessId).single();
   if(businessError||!business||!business.timezone)throw new Error("Historical café scope unavailable");
   const today=formatInTimeZone(new Date(),business.timezone,"yyyy-MM-dd");
@@ -455,6 +458,8 @@ async function readHistoricalBusinessSnapshot(
     historicalPeriod:{days:sales,recorded,monthlyAmounts,
       missingExpenseCategories,estimatedExpenseCategories},
     ownerFeePlans,
+    ownerMonthlyPayrollExtrasCents:business.owner_monthly_payroll_extras_cents===null?
+      null:Number(business.owner_monthly_payroll_extras_cents),
   };
 }
 

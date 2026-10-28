@@ -164,7 +164,8 @@ export function cafeStateFromSnapshot(
     [...basicMissing, ...feeMissing, ...expenseMissing, ...missingProductCosts,
       ...unknownLabor.map(day=>"laborWageUnknown:"+day.date)],
     [...expenseEstimated, ...feeEstimated, ...taxEstimated, ...estimatedProductCosts,
-      ...wageEstimated.map(day=>"laborWageEstimate:"+day.date)],
+      ...wageEstimated.map(day=>"laborWageEstimate:"+day.date),
+      ...(monthlyExtras?["laborOwnerExtras"]:[])],
   );
 
   const labor = recorded.map((day) => ({
@@ -223,10 +224,14 @@ export function cafeStateFromSnapshot(
   }));
   const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
   const feeResult=cardFeesForDays(days,feePlans??null);
+  const monthlyExtras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
+    .ownerMonthlyPayrollExtrasCents;
   const laborResult=laborForPeriod(
     Array.from({length:expectedDays},(_,index)=>({
       date:new Date(Date.parse(period.from+"T12:00:00Z")+index*86400000).toISOString().slice(0,10),
-    })),recorded);
+    })),recorded,null,monthlyExtras==null?null:{
+      monthlyCents:monthlyExtras,from:period.from,to:period.to,
+    });
   const knownIngredientCents=days.reduce((sum,day)=>sum+day.ingredientsCents,0);
   const profitResult=profitForPeriod(days,
     {amountCents:roundHalfUpToCent(running),missing:expenseMissing,estimated:expenseEstimated.length>0},
@@ -237,7 +242,7 @@ export function cafeStateFromSnapshot(
     {amountCents:knownIngredientCents,missing:missingProductCosts,
       estimated:estimatedProductCosts.length>0});
   const salesCents=profitResult.netSalesCents;
-  if(historical)businessCosts={...businessCosts,
+  if(historical||monthlyExtras!=null)businessCosts={...businessCosts,
     knownTotalCents:Math.round(Object.values(profitResult.partsUsed).reduce((a,b)=>a+b,0)),
     components:{ingredientsCents:profitResult.partsUsed.productCostsCents,
       loadedStaffCents:profitResult.partsUsed.laborCents,
