@@ -3365,6 +3365,7 @@
     "periodLastWeek": "الأسبوع الماضي",
     "periodLastMonth": "الشهر الماضي",
     "periodYtd": "من بداية السنة إلى اليوم",
-    "periodNamedMonth": "من {from} إلى {to}"
+    "periodNamedMonth": "من {from} إلى {to}",
+    "toastMoreDays": " و{count} يومًا إضافيًا"
   }
 }
