@@ -1,3 +1,4 @@
+import {localizedMetricReason} from "@/lib/ai/agent/metricReasons";
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
@@ -103,7 +104,9 @@ export const moneyTools={
           drinksPerDay:result.drinksPerDay,
           monthlyBills:result.monthlyBills,monthlyLabor:result.monthlyStaff,
           ingredientRate:result.ingredientRate,feeRate:result.feeRate,
-          status:result.status,reason:result.reason,missingDays:overridden.missingDays,
+          status:result.status,reasonKey:result.reason,
+           reason:localizedMetricReason(result.reason,ctx.locale,result.reasonParams),
+           missingDays:overridden.missingDays,
           missing:result.missing,ownerInputs:provided??null,
           numberEstimates:[...(monthly===null?[]:[{value:monthly,unit:"cents" as const,detail:"breakEvenSales"}]),
             ...(result.knownCostBreakEvenFloorCents===null?[]:[{value:result.knownCostBreakEvenFloorCents,
