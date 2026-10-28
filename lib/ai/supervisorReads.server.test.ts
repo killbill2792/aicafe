@@ -2,6 +2,8 @@ import {describe,it,expect,vi,afterEach} from "vitest";
 vi.mock("server-only",()=>({}));
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {supervisorHistoricalReaders} from "./supervisorReads.server";
+import {buildDayWindows} from "@/lib/calc";
+import {rowToDailyFacts} from "@/lib/data/runningCostCatalog";
 type Row={business_date:string;sales_data_status:string|null;net_sales_cents:number;orders_count:number;drinks_count:number;
   ingredients_cents:number;staff_wages_cents:number;staff_tax_cents:number;staff_tax_status:string;
   staff_tax_source:string;card_fees_cents:number;card_fees_status:string;voids_cents:number};
@@ -105,6 +107,21 @@ describe("Toast source-scoped Supervisor coverage without changing aggregate for
      {date:"2026-10-12",netSalesCents:5800}]);
    expect(trend.quality.missingInputs).toContain("toastImportIncompleteDays:1:2026-10-12:0");
   }
+ });
+ it("Money screen and chat read matching cents from the same failed-import fixture",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+  const date="2026-10-12",fixture=[row("actual",5800,13,date)];
+  const screen=buildDayWindows(fixture.map(rowToDailyFacts),date,"2026-10");
+  const chat=await pilotReader(fixture,[date],[date],false,
+   [{business_date:date,import_state:"failed",recon_state:"mismatch"}])
+   .salesTrend("my-cafe",{from:date,to:date});
+  expect(chat.available).toBe(true);
+  if(!chat.available)return;
+  expect(chat.value.map(day=>({date:day.date,netSalesCents:day.netSalesCents,ordersCount:day.ordersCount})))
+   .toEqual(screen.monthActualDays.map(day=>({
+    date:day.date,netSalesCents:day.netSalesCents,ordersCount:day.ordersCount
+   })));
+  expect(chat.quality.missingInputs).toContain("toastImportIncompleteDays:1:"+date+":0");
  });
  it("status read fails keeps stored days + one note",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
