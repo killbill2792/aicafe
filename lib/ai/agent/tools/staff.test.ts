@@ -99,8 +99,11 @@ describe("Olivia bounded reads",()=>{
     expect(r.gaps).toEqual([]);
   });
   it("past, cross-week and 120-day ranges answer",async()=>{
-    vi.mocked(getWeekSchedule).mockImplementation(async({weekStart})=>
-      confirmed([datedShift("planned-"+weekStart,weekStart)]) as never);
+    vi.mocked(getWeekSchedule).mockClear();
+    vi.mocked(getWeekSchedule).mockImplementation(async(raw:unknown)=>{
+      const {weekStart}=raw as {weekStart:string};
+      return confirmed([datedShift("planned-"+weekStart,weekStart)]) as never;
+    });
     const past=await staffTools.get_schedule.execute({from:"2026-10-19",to:"2026-10-20"},ctx());
     expect(past.missing).not.toContain("historicalScheduleNotReconstructable");
     expect(past.windowHasShifts).toBe(true);
@@ -112,8 +115,10 @@ describe("Olivia bounded reads",()=>{
     expect(getWeekSchedule).toHaveBeenCalledTimes(1+2+18);
   });
   it("caps ranges longer than 366 days with a note but preserves shifts",async()=>{
-    vi.mocked(getWeekSchedule).mockImplementation(async({weekStart})=>
-      confirmed([datedShift("planned-"+weekStart,weekStart)]) as never);
+    vi.mocked(getWeekSchedule).mockImplementation(async(raw:unknown)=>{
+      const {weekStart}=raw as {weekStart:string};
+      return confirmed([datedShift("planned-"+weekStart,weekStart)]) as never;
+    });
     const result=await staffTools.get_schedule.execute({from:"2024-01-01",to:"2026-01-01"},ctx());
     expect(result.missing).toContain("scheduleRangeTruncated");
     expect(result.dataNotes).toEqual([expect.stringContaining("first 366 days")]);
