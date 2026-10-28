@@ -602,6 +602,7 @@ with (security_invoker=true) as
     t.pos_timecard_id='toast:'||l.restaurant_guid::text||':'||l.external_time_entry_id::text limit 1),
   t.hourly_wage_cents
  from public.timecards t join public.businesses b on b.id=t.business_id
+ where t.source_type is distinct from 'owner_schedule'
  union all
  select s.business_id,'toast'::text,
  'staged-timecard:'||s.restaurant_guid::text||':'||s.external_time_entry_id::text,
@@ -653,7 +654,7 @@ create or replace view public.cv_item_sales (business_id,source,source_ref,statu
   on t.business_id=o.business_id and t.business_date=o.business_date
   and t.order_guid::text=regexp_replace(o.pos_order_id,'^toast:[^:]+:','')
   and t.restaurant_guid::text=split_part(o.pos_order_id,':',2)
- where o.toast_excluded is not true and o.superseded_by is null
+ where o.toast_excluded is not true and o.superseded_by is null and l.voided=false
  union all
  select m.business_id,'toast'::text,'modified-order:'||m.restaurant_guid::text||':'||m.order_guid::text,
   'needs_match'::text,(m.last_checked_at at time zone b.timezone)::date,

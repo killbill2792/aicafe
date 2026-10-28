@@ -36,7 +36,7 @@ create or replace view public.cv_item_sales (business_id,source,source_ref,statu
   'quantity',l.quantity,'net_sales_cents',l.net_sales_cents,
   'modifiers',l.modifiers,'voided',l.voided) as data
  from public.order_lines l join public.orders o on o.id=l.order_id
- where o.toast_excluded is not true and o.superseded_by is null
+ where o.toast_excluded is not true and o.superseded_by is null and l.voided=false
  union all
  select m.business_id,'toast'::text,'modified-order:'||m.restaurant_guid::text||':'||m.order_guid::text,
   'needs_match'::text,(m.last_checked_at at time zone b.timezone)::date,
@@ -114,6 +114,7 @@ with (security_invoker=true) as
   'pos_timecard_id',t.pos_timecard_id,'regular_minutes',to_jsonb(t)->'regular_minutes',
   'overtime_minutes',to_jsonb(t)->'overtime_minutes') as data
  from public.timecards t join public.businesses b on b.id=t.business_id
+ where t.source_type is distinct from 'owner_schedule'
  union all
  select s.business_id,'toast'::text,
  'staged-timecard:'||s.restaurant_guid::text||':'||s.external_time_entry_id::text,

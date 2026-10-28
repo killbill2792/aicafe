@@ -22,6 +22,16 @@ describe("canonical view column dictionary contract",()=>{
     expect(section).toContain("| "+col+" |");
   }
  });
+ it("sales exclude voided quantities and actual labor excludes owner schedule plans",()=>{
+  const migration112=readFileSync(resolve("supabase/migrations/20261028000112_canonical_views.sql"),"utf8");
+  const migration113=readFileSync(resolve("supabase/migrations/20261028000113_toast_payment_fields_day_check.sql"),"utf8");
+  for(const content of [migration112,migration113]){
+   const item=content.split("create or replace view public.cv_item_sales")[1]?.split("create or replace view public.cv_")[0];
+   const labor=content.split("create or replace view public.cv_labor_entries")[1]?.split("create or replace view public.cv_")[0];
+   expect(item).toContain("and l.voided=false");
+   expect(labor).toContain("where t.source_type is distinct from 'owner_schedule'");
+  }
+ });
  it("does not expose raw provider payloads through a canonical view",()=>{
   expect(source).not.toMatch(/create or replace view public\.cv_[a-z_]+[\s\S]*\bselect\s+\*\s+from\s+public\.toast_raw_records/i);
   expect(source).toContain("security_invoker=true");
