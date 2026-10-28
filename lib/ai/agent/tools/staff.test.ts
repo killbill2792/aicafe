@@ -36,6 +36,18 @@ describe("Olivia bounded reads",()=>{
     expect(data.agentId).toBe("olivia");
     expect(data.people).toHaveLength(1);
   });
+  it("retains independently recorded on-shift staff when attendance check fails",async()=>{
+    const r=await staffTools.get_staff.execute({},ctx({
+      getCurrentStaff:async()=>({available:true,value:{count:1,asOf:"2026-10-22T14:00:00Z",
+        people:[{name:"Casey",role:"Barista",sourceType:"connected_pos",sourceProvider:"Toast",
+          start:"2026-10-22T13:00:00Z",breakStatus:"ok",isSchedulePrediction:false}]},quality:q}),
+      getStaffAttendance:async()=>unavailable,
+    }));
+    expect(r.count).toBe(1);
+    expect(r.people).toMatchObject([{name:"Casey",isSchedulePrediction:false}]);
+    expect(r.onClockCount).toBeNull();
+    expect(r.missing).toContain("notAvailable");
+  });
   it("never invents zero clock-ins for a café with only repeating patterns",async()=>{
     const r=await staffTools.get_staff.execute({},ctx({
       getCurrentStaff:async()=>({available:true,value:{count:0,asOf:"2026-10-22T14:00:00Z",people:[]},quality:q}),
