@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {profitForPeriod} from "./profit";
+import {profitForPeriod,percentChangeFromProfitDelta} from "./profit";
 const known=(amountCents:number)=>({amountCents});
 describe("partial profit",()=>{
   it("returns a partial subtotal with notes when today's import is missing",()=>{
@@ -19,4 +19,12 @@ describe("partial profit",()=>{
     expect(profitForPeriod([{date:"2026-10-01",netSalesCents:0,salesDataStatus:"missing"}],
       known(0),known(0),known(0),known(0)).profitCents).toBeNull();
   });
+});
+
+describe("verified comparative profit percent",()=>{
+ it("uses the actual previous profit rather than a second, legacy profit formula",()=>{
+   expect(percentChangeFromProfitDelta(12000,2000)).toBe(20);
+   expect(percentChangeFromProfitDelta(-5000,-1000)).toBe(-25);
+   expect(percentChangeFromProfitDelta(10000,10000)).toBeNull();
+ });
 });
