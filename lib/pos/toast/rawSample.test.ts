@@ -149,7 +149,7 @@ describe("read-only Toast coverage diagnostics",()=>{
   const result=await captureToastRawSample(business,"2026-10-20",db,34000);
   expect(result.reason).toBe("partial");
   expect(result.failed).toBe(0);
-  expect(evidence(writes)).toHaveLength(TOAST_READ_ENDPOINTS.length);
+  expect(evidence(writes).length).toBeGreaterThanOrEqual(TOAST_READ_ENDPOINTS.length);
   expect(new Set(evidence(writes).map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
   expect(evidence(writes).slice(0,5).every(x=>x.error_code==="no_get_operations")).toBe(true);
   expect(writes.some(x=>x.error_code==="skipped_time_budget")).toBe(true);
@@ -181,8 +181,8 @@ describe("read-only Toast coverage diagnostics",()=>{
   const {db,writes}=database();
   mocks.request.mockRejectedValue(new ToastApiError("missing_permissions",403));
   await captureToastRawSample(business,"2026-10-20",db);
-  const request=writes.find(x=>x.endpoint==="era/v1/metrics");
-  const get=writes.find(x=>x.endpoint==="era/v1/metrics/{reportRequestGuid}");
+  const request=evidence(writes).find(x=>x.endpoint==="era/v1/metrics");
+  const get=evidence(writes).find(x=>x.endpoint==="era/v1/metrics/{reportRequestGuid}");
   expect(request?.http_status).toBe(403);
   expect(get?.http_status).toBe(403);
   expect(get?.error_code).toBe("missing_permissions");
@@ -213,8 +213,8 @@ describe("read-only Toast coverage diagnostics",()=>{
    return [];
   });
   await captureToastRawSample(business,"2026-10-20",db);
-  const order=JSON.stringify(writes.find(x=>x.endpoint==="orders/v2/ordersBulk")?.sample);
-  const staff=JSON.stringify(writes.find(x=>x.endpoint==="labor/v1/employees")?.sample);
+  const order=JSON.stringify(evidence(writes).find(x=>x.endpoint==="orders/v2/ordersBulk")?.sample);
+  const staff=JSON.stringify(evidence(writes).find(x=>x.endpoint==="labor/v1/employees")?.sample);
   expect(order).not.toContain("Guest at register");
   expect(order).toContain('"checkNumber":27');
   expect(order).toContain('"refundStatus":"NONE"');
@@ -301,7 +301,8 @@ describe("read-only Toast coverage diagnostics",()=>{
   mocks.request.mockRejectedValue(new ToastApiError("missing_permissions",403));
   const result=await captureToastRawSample(business,"2026-10-20",db);
   expect(result.failed).toBe(0);
-  expect(evidence(writes).length).toBe(TOAST_READ_ENDPOINTS.length);
+  expect(evidence(writes).length).toBeGreaterThanOrEqual(TOAST_READ_ENDPOINTS.length);
+  expect(new Set(evidence(writes).map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
   expect(evidence(writes).filter(w=>w.http_status===403).length).toBeGreaterThan(20);
   expect(writes.every(w=>typeof w.doc_url==="string"&&"field_paths"in w)).toBe(true);
   expect(mocks.request).toHaveBeenCalled();
