@@ -96,8 +96,7 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
           <button type="button" disabled={disabled || locked(shift)}
             className="min-h-12 min-w-12 rounded-full border border-line disabled:opacity-50"
             aria-label={t("earlier")} onClick={()=>time(index,side,-1)}>−30</button>
-          <span className="text-sm text-center">{local(shift[side],
-            locations[shift.locationId]||"UTC",locale)}</span>
+          <span className="text-sm text-center">{(locations[shift.locationId]?local(shift[side],locations[shift.locationId],locale):t("invalidWallTime"))}</span>
           <button type="button" disabled={disabled || locked(shift)}
             className="min-h-12 min-w-12 rounded-full border border-line disabled:opacity-50"
             aria-label={t("later")} onClick={()=>time(index,side,1)}>+30</button>
