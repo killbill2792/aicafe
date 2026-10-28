@@ -128,6 +128,31 @@ set external_employee_id=excluded.external_employee_id,
  hourly_wage_cents=excluded.hourly_wage_cents,
  wage_status=excluded.wage_status,status=excluded.status;
 
+-- Safe owner-only metadata readers for otherwise staged provider evidence.
+-- The modified order's normalized JSON remains private: SELECT is column-only.
+do $rls$
+begin
+ if to_regclass('public.toast_catalog_price_versions') is not null then
+  execute 'drop policy if exists "canonical owner read" on public.toast_catalog_price_versions';
+  execute 'create policy "canonical owner read" on public.toast_catalog_price_versions
+    for select to authenticated using(public.scheduling_is_owner(business_id))';
+  grant select on public.toast_catalog_price_versions to authenticated;
+ end if;
+ if to_regclass('public.toast_payment_day_events') is not null then
+  execute 'drop policy if exists "canonical owner read" on public.toast_payment_day_events';
+  execute 'create policy "canonical owner read" on public.toast_payment_day_events
+    for select to authenticated using(public.scheduling_is_owner(business_id))';
+  grant select on public.toast_payment_day_events to authenticated;
+ end if;
+ if to_regclass('public.toast_modified_orders_staging') is not null then
+  execute 'drop policy if exists "canonical owner read" on public.toast_modified_orders_staging';
+  execute 'create policy "canonical owner read" on public.toast_modified_orders_staging
+    for select to authenticated using(public.scheduling_is_owner(business_id))';
+  grant select (business_id,restaurant_guid,order_guid,last_checked_at,state)
+    on public.toast_modified_orders_staging to authenticated;
+ end if;
+end $rls$;
+
 -- Capture individual raw orders, including orders the parser cannot recognize.
 -- Source page + 1-based array offset make invalid/missing order GUIDs addressable.
 create or replace function public.toast_archive_page(

@@ -36,7 +36,16 @@ create or replace view public.cv_item_sales (business_id,source,source_ref,statu
   'quantity',l.quantity,'net_sales_cents',l.net_sales_cents,
   'modifiers',l.modifiers,'voided',l.voided) as data
  from public.order_lines l join public.orders o on o.id=l.order_id
- where o.toast_excluded is not true and o.superseded_by is null;
+ where o.toast_excluded is not true and o.superseded_by is null
+ union all
+ select m.business_id,'toast'::text,'modified-order:'||m.restaurant_guid::text||':'||m.order_guid::text,
+  'needs_match'::text,(m.last_checked_at at time zone b.timezone)::date,
+  null::bigint,null::numeric,
+  jsonb_build_object('kind','modified_order','order_guid',m.order_guid,
+   'reviewed_at',m.last_checked_at,'staging_state',m.state)
+ from public.toast_modified_orders_staging m
+ join public.businesses b on b.id=m.business_id
+ where m.state='review_required';
 
 create or replace view public.cv_payments (business_id,source,source_ref,status,business_date,amount_cents,tip_cents,data) with (security_invoker=true) as
  select p.business_id,'toast'::text as source,
@@ -44,7 +53,14 @@ create or replace view public.cv_payments (business_id,source,source_ref,status,
  p.status,p.business_date,p.amount_cents,p.tip_cents,
  jsonb_build_object('type',p.payment_type,'amount_cents',p.amount_cents,
   'tip_cents',p.tip_cents,'payment_status',p.payment_status) as data
- from public.toast_payment_summaries p;
+ from public.toast_payment_summaries p
+ union all
+ select p.business_id,'toast'::text,
+  'payment-event:'||p.restaurant_guid::text||':'||p.payment_guid::text||':'||p.kind||':'||p.event_business_date::text,
+  'actual'::text,p.event_business_date,null::bigint,null::bigint,
+  jsonb_build_object('kind','payment_event','payment_guid',p.payment_guid,
+   'event',p.kind,'observed_at',p.observed_at,'amount_known',false)
+ from public.toast_payment_day_events p;
 
 create or replace view public.cv_discounts (business_id,source,source_ref,status,business_date,amount_cents,data) with (security_invoker=true) as
  select o.business_id,case when o.pos_order_id like 'toast:%' then 'toast' else 'app' end::text as source,
@@ -128,7 +144,7 @@ create or replace view public.cv_staff (business_id,source,source_ref,status,bus
  jsonb_build_object('review_type',r.review_type,'source_key',r.source_key,
   'detail',r.detail)
  from public.pos_import_reviews r
- where r.provider='toast' and r.review_type='staff_identity' and r.status='needs_owner';
+ where r.provider='toast' and r.review_type in ('staff_identity','unlinked_timecard') and r.status='needs_owner';
 
 create or replace view public.cv_shifts (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select s.business_id,'app'::text as source,
@@ -139,7 +155,16 @@ create or replace view public.cv_shifts (business_id,source,source_ref,status,bu
   'start_local',s.start_local,'end_local',s.end_local,
   'day',s.local_date,'shift_status',s.status,'overnight',s.overnight,
   'break_minutes',s.break_minutes) as data
- from public.scheduled_shifts s;
+ from public.scheduled_shifts s
+ union all
+ select p.business_id,'toast'::text,
+ 'toast-shift:'||p.external_shift_id,'actual'::text,
+ (p.scheduled_start at time zone b.timezone)::date,
+ jsonb_build_object('provider','toast','employee_id',p.external_employee_id,
+  'job_id',p.external_job_id,'scheduled_start',p.scheduled_start,
+  'scheduled_end',p.scheduled_end,'location_id',p.location_id)
+ from public.pos_scheduled_shifts p join public.businesses b on b.id=p.business_id
+ where not p.deleted;
 
 create or replace view public.cv_menu (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select m.business_id,case when m.catalog_source='toast' then 'toast' else 'app' end::text as source,
@@ -155,10 +180,18 @@ create or replace view public.cv_menu (business_id,source,source_ref,status,busi
  jsonb_build_object('review_type',r.review_type,'source_key',r.source_key,'detail',r.detail)
  from public.pos_import_reviews r where r.provider='toast'
  and r.review_type in ('catalog_item','menu_identity','item_identity')
- and r.status='needs_owner';
+ and r.status='needs_owner'
+ union all
+ select v.business_id,'toast'::text,
+  'price-version:'||v.restaurant_guid::text||':'||v.kind||':'||v.provider_guid::text||':'||v.price_fingerprint,
+  'actual'::text,null::date,
+  jsonb_build_object('kind','price_version','provider_guid',v.provider_guid,
+   'entity_kind',v.kind,'name',v.name,'category',v.category,
+   'price_cents',v.price_cents,'observed_at',v.observed_at)
+ from public.toast_catalog_price_versions v;
 
 create or replace view public.cv_bills (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
- select c.business_id,'app'::text as source,
+ select c.business_id,coalesce(nullif(to_jsonb(c)->>'source',''),'app')::text as source,
  'bill:'||c.id::text as source_ref,
  case when c.is_estimate then 'estimated' else 'actual' end::text as status,
  null::date as business_date,
@@ -197,7 +230,7 @@ begin
   'select o.business_id, ''owner''::text,
     coalesce(to_jsonb(o)->>''id'',md5(to_jsonb(o)::text)),
     ''owner_provided''::text, null::date,to_jsonb(o) - ''business_id''
-    from public.owner_facts o';
+    from public.owner_facts o where o.superseded_at is null';
 end $owner$;
 revoke all on function public.canonical_owner_facts_rows() from public,anon;
 grant execute on function public.canonical_owner_facts_rows() to authenticated,service_role;
