@@ -55,6 +55,13 @@ export function cardFeesForDays(
   const notes:string[]=[];
   let sum=0,actualDays=0,estimatedDays=0,defaultDays=0,planDays=0;
   for(const day of covered){
+    // Verified fee facts from the payment provider (including actual zero
+    // processing fees) have precedence over every owner estimate or plan.
+    if(day.cardFeesStatus==="actual"&&day.cardFeesCents!=null&&valid(day.cardFeesCents)){
+      sum+=day.cardFeesCents;
+      actualDays++;
+      continue;
+    }
     // Per-date owner plans can change across a long historical range.
     const applicable=plans.filter(plan=>
       (!plan.effectiveFrom||plan.effectiveFrom<=day.date)&&
@@ -69,10 +76,10 @@ export function cardFeesForDays(
       }
       notes.push(amount?.missingFixed?"feeFixedTransactionCountMissing":"feeOwnerPlanInvalid");
     }
-    if(day.cardFeesStatus!=="missing"&&day.cardFeesCents!=null&&valid(day.cardFeesCents)){
+    if(day.cardFeesCents!=null&&valid(day.cardFeesCents)&&day.cardFeesStatus!=="missing"){
+      // Already-persisted estimated daily facts win over the generic default.
       sum+=day.cardFeesCents;
-      if(day.cardFeesStatus==="actual"||day.cardFeesStatus===undefined)actualDays++;
-      else estimatedDays++;
+      estimatedDays++;
     }else{
       sum+=(day.cardSalesCents??day.netSalesCents)*DEFAULT_PROCESSING_FEE_RATE_BPS/10000;
       defaultDays++;
@@ -80,10 +87,11 @@ export function cardFeesForDays(
     }
   }
   if(defaultDays)notes.push("feeDefaultEstimateAskRate");
-  if(plans.length&&planDays!==covered.length)notes.push("feePlanPartialCoverage");
+  if(plans.length&&planDays+actualDays!==covered.length)notes.push("feePlanPartialCoverage");
   if(covered.length<days.length)notes.push("feeSalesDaysMissing");
   return {amountCents:Math.round(sum),
-    basis:planDays===covered.length&&planDays>0?"owner_plan":
+    basis:actualDays===covered.length&&covered.length>0?"actual":
+      planDays===covered.length&&planDays>0?"owner_plan":
       defaultDays===covered.length?"default_estimate":
       defaultDays||estimatedDays?"estimated":"actual",
     actualDays,estimatedDays:estimatedDays+defaultDays,notes:[...new Set(notes)]};

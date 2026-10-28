@@ -12,10 +12,10 @@ import {summarizeResolvedSoldProductCosts,type DailyFacts} from "@/lib/calc";
 import {shiftCafeDate} from "./clock";
 
 const date=(i:number)=>shiftCafeDate("2026-09-01",i);
-function demo(caseName:"complete"|"today_missing"|"fees_missing"|"wage_missing"|"bill_missing"){
+function demo(caseName:"complete"|"today_missing"|"fees_missing"|"wage_missing"|"bill_missing"|"actual_toast_fees"){
   const day=(i:number):DailyFacts=>({
     date:date(i),netSalesCents:240_000,ingredientsCents:65_000,
-    cardFeesCents:caseName==="fees_missing"?0:7_000,
+    cardFeesCents:caseName==="fees_missing"?0:caseName==="actual_toast_fees"?3_641:7_000,
     cardFeesStatus:caseName==="fees_missing"?"missing":"actual",
     wagesCents:caseName==="wage_missing"&&i===0?null:69_600,
     staffTaxCents:8_352,ordersCount:240,drinksCount:480,voidsCents:0,
@@ -37,14 +37,15 @@ function demo(caseName:"complete"|"today_missing"|"fees_missing"|"wage_missing"|
 }
 
 describe("metricsParity — one observed café through screen and structured chat read",()=>{
-  for(const scenario of ["complete","today_missing","fees_missing","wage_missing","bill_missing"] as const){
+  for(const scenario of ["complete","today_missing","fees_missing","wage_missing","bill_missing","actual_toast_fees"] as const){
     it(scenario+" matches cents for fees, labor, break-even, drinks/day, and partial profit",()=>{
       const snapshot=demo(scenario);
       const screen=buildProfitAndCostsViewModel(snapshot,"month");
       const chat=cafeStateFromSnapshot(snapshot,{from:"2026-09-01",to:snapshot.todayDateStr});
       const recovery=buildCostRecoveryViewModel(snapshot);
       const plan=buildBreakEvenViewModel(snapshot);
-      const fee=cardFeesForDays(snapshot.monthActualDays);
+      const fee=cardFeesForDays(snapshot.monthActualDays,
+        scenario==="actual_toast_fees"?{percentageBps:400}:null);
       const dates=Array.from({length:29},(_,i)=>({date:date(i)}));
       const labor=laborForPeriod(dates,snapshot.monthRecordedDays??[]);
       const billCents=screen.runningCostLines.reduce((total,line)=>total+line.amountCents,0);
@@ -72,6 +73,10 @@ describe("metricsParity — one observed café through screen and structured cha
       expect(plan.drinksNeededPerDay).toBe(core.drinksPerDay??0);
       if(scenario==="today_missing")expect(screen.coverage.actualDays).toBe(28);
       if(scenario==="fees_missing")expect(fee.basis).toBe("default_estimate");
+      if(scenario==="actual_toast_fees"){
+        expect(fee.basis).toBe("actual");
+        expect(fee.amountCents).toBe(snapshot.monthActualDays.length*3641);
+      }
       if(scenario==="wage_missing")expect(screen.financialNotes).toContain("profitLaborMissing");
       if(scenario==="bill_missing")expect(screen.financialNotes).toContain("profitBillsMissing");
     });
