@@ -3349,5 +3349,31 @@
     "saved": "Datos guardados",
     "failed": "Revisa los valores e inténtalo de nuevo",
     "none": "Sin configurar"
+  },
+  "MetricsNotes": {
+    "feeDefaultEstimateAskRate": "Comisiones de tarjeta estimadas al 2,9 %; indícame tu tasa real.",
+    "feeSalesDaysMissing": "Faltan días de ventas por importar.",
+    "feeNetSalesProxy": "Sin ventas por tarjeta; se usaron ventas netas para estimar.",
+    "feeFixedTransactionCountMissing": "Falta el número de transacciones para calcular comisiones fijas.",
+    "feeOwnerPlanInvalid": "No se pudo usar el plan guardado; se usaron datos o estimaciones.",
+    "laborCoveragePartial": "Coste laboral proyectado desde los días con nómina registrada.",
+    "laborWageUnknown": "Falta un salario o impuesto de nómina.",
+    "laborEstimated": "Algunos costes laborales son estimados.",
+    "laborNoCoveredDays": "No hay días con costes laborales completos.",
+    "profitSalesDaysMissing": "Algunos días de ventas aún no se han importado.",
+    "profitBillsMissing": "Faltan facturas; el beneficio es parcial.",
+    "profitFeesMissing": "Faltan comisiones de tarjeta; se usa una estimación indicada.",
+    "profitLaborMissing": "Faltan costes laborales; el beneficio es parcial.",
+    "profitProductCostsMissing": "Faltan costes de ingredientes; el beneficio es parcial.",
+    "profitBillsEstimated": "Algunas facturas son estimadas.",
+    "profitFeesEstimated": "Las comisiones incluyen una estimación.",
+    "profitLaborEstimated": "Parte de la nómina es estimada.",
+    "profitProductCostsEstimated": "Algunos costes de producto son estimados.",
+    "breakEvenCoveragePartial": "El punto de equilibrio usa menos de 28 días completos.",
+    "breakEvenBillsMissing": "Faltan gastos mensuales.",
+    "breakEvenLaborMissing": "Faltan costes laborales.",
+    "breakEvenDrinksMissing": "Falta el volumen de bebidas.",
+    "NO_SALES": "No hay días con ventas registradas.",
+    "VARIABLE_COSTS_TOO_HIGH": "Los costes variables consumen todas las ventas."
   }
 }
