@@ -69,7 +69,7 @@ describe("supervisor new-item price evidence",()=>{
       expect(lines.map(x=>x.label)).toContain(locale==="es"?"Personal por bebida":"العمالة لكل مشروب");
       const choices=response.candidates as Array<{label:string}>;
       expect(choices[0].label).toBe(locale==="es"?"Indicar nómina mensual":"تقديم الرواتب الشهرية");
-      expect(response.knownCostFloorLabel).toBeNull();
+      expect(response.knownCostFloorLabel).toBe(locale==="es"?"coste mínimo, no recomendación":"حد تكلفة أدنى وليس توصية");
     }
   });
 });
