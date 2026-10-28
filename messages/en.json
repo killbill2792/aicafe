@@ -3349,5 +3349,14 @@
     "saved": "Financial settings saved",
     "failed": "Check the values and try again",
     "none": "Not set"
+  },
+  "DataNotes": {
+    "todayNotImported": "Today isn't imported yet. The last full day was {date}: {amount}.",
+    "todayNotImportedNoHistory": "Today isn't imported yet. No completed sales day is stored.",
+    "toastDaysNeedLook": "{count} days need a look: {dates}{more}.",
+    "toastDayStatusUnavailable": "Toast's day-status check failed. Stored numbers may include days not yet checked.",
+    "toastExcludedDays": "Toast days not included because their import failed or is missing: {dates}.",
+    "toastScheduleReadFailed": "Toast schedule couldn't be read: {reason}. App shifts are still shown.",
+    "scheduleRangeTruncated": "Showing the first 366 days of the requested range; the remaining dates were not read."
   }
 }

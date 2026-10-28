@@ -129,11 +129,6 @@ export class StructuredCafeTools implements CafeToolset {
     if (this.historicalReaders) return this.historicalReaders.salesTrend(businessId, period);
     const slice = (await this.states.getHistoricalState(businessId, period)).sales;
     if (!slice.available) return slice;
-    // A sparse date series is an observation, not evidence of a real trend. The
-    // Supervisor may describe partial records only via getCafeSummary, never here.
-    if (slice.quality.missingInputs.some((input) => input.startsWith("salesCoverage:"))) {
-      return { available: false, value: null, quality: slice.quality };
-    }
     return slice;
   }
   async getPricingRecommendation(businessId: string, productId: string): Promise<KnownSlice<PricingResult>> {

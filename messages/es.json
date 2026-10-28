@@ -3349,5 +3349,14 @@
     "saved": "Datos guardados",
     "failed": "Revisa los valores e inténtalo de nuevo",
     "none": "Sin configurar"
+  },
+  "DataNotes": {
+    "todayNotImported": "Hoy todavía no se ha importado. El último día completo fue el {date}: {amount}.",
+    "todayNotImportedNoHistory": "Hoy todavía no se ha importado. No hay ningún día completo de ventas guardado.",
+    "toastDaysNeedLook": "Hay {count} días que revisar: {dates}{more}.",
+    "toastDayStatusUnavailable": "Falló la comprobación del estado de los días de Toast. Los datos guardados pueden incluir días aún no verificados.",
+    "toastExcludedDays": "Días de Toast excluidos porque su importación falló o falta: {dates}.",
+    "toastScheduleReadFailed": "No se pudo leer el horario de Toast: {reason}. Se siguen mostrando los turnos de la aplicación.",
+    "scheduleRangeTruncated": "Se muestran los primeros 366 días del intervalo solicitado; no se consultó el resto."
   }
 }

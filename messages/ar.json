@@ -3349,5 +3349,14 @@
     "saved": "تم حفظ الإعدادات",
     "failed": "تحقق من القيم وأعد المحاولة",
     "none": "غير محدد"
+  },
+  "DataNotes": {
+    "todayNotImported": "لم تُستورد بيانات اليوم بعد. آخر يوم كامل كان {date}: {amount}.",
+    "todayNotImportedNoHistory": "لم تُستورد بيانات اليوم بعد. لا يوجد يوم مبيعات كامل محفوظ.",
+    "toastDaysNeedLook": "هناك {count} يومًا يحتاج إلى مراجعة: {dates}{more}.",
+    "toastDayStatusUnavailable": "فشل فحص حالة أيام Toast. قد تتضمن الأرقام المحفوظة أيامًا لم تُراجع بعد.",
+    "toastExcludedDays": "أيام Toast المستبعدة بسبب فشل الاستيراد أو فقدانه: {dates}.",
+    "toastScheduleReadFailed": "تعذرت قراءة جدول Toast: {reason}. ما زالت نوبات التطبيق ظاهرة.",
+    "scheduleRangeTruncated": "تُعرض أول 366 يومًا من الفترة المطلوبة؛ لم تُقرأ التواريخ المتبقية."
   }
 }
