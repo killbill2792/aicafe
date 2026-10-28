@@ -19,7 +19,7 @@ describe("Toast and app schedule union",()=>{
       start:"2026-10-24T16:00:00Z",end:"2026-10-24T20:00:00Z",
       locationId:"location",source:"toast",paid:false}],
     dates:["2026-10-19","2026-10-20","2026-10-21","2026-10-22","2026-10-23","2026-10-24","2026-10-25"],
-    adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}
+    adjacentShifts:[],openHours:{saturday:[["08:00","16:00"]]},rules:{coverage_enabled:true,min_headcount:1}
   }} as never);
   const result=await scheduleReadTools.get_week_schedule.execute({week_start:"2026-10-19"},
    {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as unknown as AgentToolContext);
@@ -28,6 +28,8 @@ describe("Toast and app schedule union",()=>{
   expect(result.shifts).toMatchObject([{date:"2026-10-24",employeeName:"Casey",
     start:"09:00",source:"toast",paidMinutes:null,costCents:null}]);
   expect(result.missing).not.toContain("scheduleNotSet");
+  expect(result.gaps).toEqual([]);
+  expect(result.missing).toContain("toastScheduleCoverageUnverified");
  });
  it("preserves two unlinked Toast employees with the same name and start time",async()=>{
   vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{

@@ -3366,6 +3366,7 @@
     "periodLastMonth": "El mes pasado",
     "periodYtd": "Año hasta la fecha",
     "periodNamedMonth": "Del {from} al {to}",
-    "toastMoreDays": " y {count} más"
+    "toastMoreDays": " y {count} más",
+    "toastScheduleCoverageUnverified": "Aún no se pueden verificar las brechas de cobertura porque los turnos previstos de Toast no se incluyen en el cálculo de cobertura del personal."
   }
 }

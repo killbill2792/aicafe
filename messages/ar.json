@@ -3366,6 +3366,7 @@
     "periodLastMonth": "الشهر الماضي",
     "periodYtd": "من بداية السنة إلى اليوم",
     "periodNamedMonth": "من {from} إلى {to}",
-    "toastMoreDays": " و{count} يومًا إضافيًا"
+    "toastMoreDays": " و{count} يومًا إضافيًا",
+    "toastScheduleCoverageUnverified": "لا يمكن التحقق من فجوات التغطية بعد لأن نوبات Toast المخططة غير مشمولة في حساب تغطية الموظفين."
   }
 }

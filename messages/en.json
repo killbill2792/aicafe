@@ -3366,6 +3366,7 @@
     "periodLastMonth": "Last month",
     "periodYtd": "Year to date",
     "periodNamedMonth": "{from} to {to}",
-    "toastMoreDays": " and {count} more"
+    "toastMoreDays": " and {count} more",
+    "toastScheduleCoverageUnverified": "Coverage gaps cannot be verified yet because Toast planned shifts are not included in staffing coverage calculations."
   }
 }

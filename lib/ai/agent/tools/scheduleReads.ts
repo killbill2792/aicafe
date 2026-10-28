@@ -107,13 +107,14 @@ export const scheduleReadTools={
    const activeShifts=data.shifts.filter(s=>activeIds.has(s.employeeId));
    const combined=mergeScheduleShifts(data);
    const scheduled=combined.length>0,hasCostedShifts=activeShifts.length>0,totals=aggregateCosts(activeShifts);
+   const toastCoverageUnknown=combined.some(s=>s.source==="toast")&&data.rules.coverage_enabled;
    const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
-   const gaps=scheduled?coverageGaps(data.dates,[...adjacent,...activeShifts],
+   const gaps=scheduled&&!toastCoverageUnknown?coverageGaps(data.dates,[...adjacent,...activeShifts],
      data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
    return {source:"scheduled_shifts",period:{from:data.dates[0],to:data.dates[6]},
      agentId:"olivia",scheduleSet:scheduled,href:"/staff?tab=schedule",
-     dataNotes:toastScheduleNotes(data,ctx.locale),
-     missing:[...(data.posScheduleError?["toastScheduleReadFailed"]:[]),...(!scheduled?["scheduleNotSet"]:[]),
+     dataNotes:[...toastScheduleNotes(data,ctx.locale),...(toastCoverageUnknown?[{en,es,ar}[ctx.locale].DataNotes.toastScheduleCoverageUnverified]:[])],
+     missing:[...(toastCoverageUnknown?["toastScheduleCoverageUnverified"]:[]),...(data.posScheduleError?["toastScheduleReadFailed"]:[]),...(!scheduled?["scheduleNotSet"]:[]),
        ...(combined.length>40?["moreShifts"]:[]),
        ...(hasCostedShifts?missingWageInputs(totals):[]),
        ...(!data.rules.coverage_enabled?["coverageDisabled"]:
@@ -146,13 +147,14 @@ export const scheduleReadTools={
    if(!whole.ok)return fail("coverage_gaps",null,whole.error);
    const data=whole.data,activeIds=new Set(data.team.map(p=>p.id));
    const activeShifts=data.shifts.filter(s=>activeIds.has(s.employeeId));
-   const scheduled=mergeScheduleShifts(data).length>0;
+   const combined=mergeScheduleShifts(data),scheduled=combined.length>0;
+   const toastCoverageUnknown=combined.some(s=>s.source==="toast")&&data.rules.coverage_enabled;
    const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
-   const gaps=scheduled?coverageGaps(data.dates,[...adjacent,...activeShifts],
+   const gaps=scheduled&&!toastCoverageUnknown?coverageGaps(data.dates,[...adjacent,...activeShifts],
      data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
    return {source:"scheduled_shifts+locations.open_hours",period:{from:ws,to:data.dates[6]},
     agentId:"olivia",scheduleSet:scheduled,href:"/staff?tab=schedule",
-    dataNotes:toastScheduleNotes(data,ctx.locale),missing:[...(data.posScheduleError?["toastScheduleReadFailed"]:[]),...(!scheduled?["scheduleNotSet"]:[]),
+    dataNotes:[...toastScheduleNotes(data,ctx.locale),...(toastCoverageUnknown?[{en,es,ar}[ctx.locale].DataNotes.toastScheduleCoverageUnverified]:[])],missing:[...(toastCoverageUnknown?["toastScheduleCoverageUnverified"]:[]),...(data.posScheduleError?["toastScheduleReadFailed"]:[]),...(!scheduled?["scheduleNotSet"]:[]),
       ...(!data.rules.coverage_enabled?["coverageDisabled"]:
       uncheckedCoverageDays(data.dates,data.openHours,true).length?["openHoursIncomplete"]:[]),
       ...(gaps.length>30?["moreGaps"]:[])],estimated:false,gaps:gaps.slice(0,30)};
