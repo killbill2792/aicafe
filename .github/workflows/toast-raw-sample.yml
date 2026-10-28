@@ -22,6 +22,7 @@ concurrency:
 
 jobs:
   sample:
+    environment: toast-prod
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
