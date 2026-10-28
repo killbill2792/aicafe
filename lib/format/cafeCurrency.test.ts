@@ -1,3 +1,5 @@
+import {readFileSync} from "node:fs";
+import {resolve} from "node:path";
 import {describe,it,expect} from "vitest";
 import {formatCafeCurrency} from "./cafeCurrency";
 
@@ -18,6 +20,15 @@ describe("business-currency display",()=>{
    const result=formatCafeCurrency(41230,"en",currency);
    expect(result).toEqual({text:"412.30",currencyMissing:true});
    expect(result.text).not.toContain("$");
+  }
+ });
+ it("never hard-codes USD in B-owned Plan displays",()=>{
+  for(const path of ["app/[locale]/more/plan/page.tsx",
+    "components/more/ProfitGoalSimulator.tsx",
+    "components/scenario/TryScenario.tsx",
+    "components/operations/SupplierEvidenceManager.tsx"]){
+   const source=readFileSync(resolve(process.cwd(),path),"utf8");
+   expect(source,path).not.toMatch(/currency:\s*["']USD["']/);
   }
  });
 });
