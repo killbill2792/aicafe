@@ -1,5 +1,6 @@
 import {createHash} from "node:crypto";
 import "server-only";
+import {cafeToday} from "@/lib/metrics/core/clock";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
 import {ProposalRequestConflictError} from "./engine";
@@ -185,8 +186,11 @@ export class SupabaseLoopRepository implements LoopRepository{
       throw new Error("Invalid canonical Supervisor report text");
     // Unique proposal UUID makes repeated cron runs idempotent; a late
     // duplicate cannot send repeated unsolicited owner messages.
+    const {data:business,error:timezoneError}=await db.from("businesses")
+      .select("timezone").eq("id",scope.businessId).single();
+    if(timezoneError||!business?.timezone)throw new Error("Café timezone unavailable");
     const ref={source:"operating_tasks",identifier:"supervisor-report:"+p.id,
-      asOf:new Date().toISOString().slice(0,10)};
+      asOf:cafeToday(business.timezone)};
     // Append a new, stable revision ONLY when the evidence-backed report
     // content changes after a corrected source sync. Same payload => same UUID
     // => duplicate insert safely ignored. Previously delivered messages stay

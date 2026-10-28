@@ -5,6 +5,8 @@ import TypeExpenseForm from "@/components/addcost/TypeExpenseForm";
 import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
 import PageShell from "@/components/shared/PageShell";
 import { validCostCategory, validReturnTo } from "@/components/addcost/routeParams";
+import {getSnapshot} from "@/lib/data/getSnapshot";
+import {cafeToday} from "@/lib/metrics/core/clock";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -13,6 +15,8 @@ export default async function TypeExpensePage({ searchParams }: { searchParams: 
   await requireOwnBusiness();
   const [{ category, returnTo }, t] = await Promise.all([searchParams, getTranslations("AddCost")]);
   const tCommon = await getTranslations("Common");
+  const snapshot = await getSnapshot();
+  const today = cafeToday(snapshot.business.timezone);
   const tCategories = await getTranslations("Categories");
 
   const categoryLabels = Object.fromEntries(EXPENSE_CATEGORY_CODES.map((c) => [c, tCategories(c)])) as Record<
@@ -27,7 +31,7 @@ export default async function TypeExpensePage({ searchParams }: { searchParams: 
         returnTo={validReturnTo(returnTo)}
         initialCategory={validCostCategory(category)}
         categoryLabels={categoryLabels}
-        todayDateStr={new Date().toISOString().slice(0, 10)}
+        todayDateStr={today}
         labels={{
           backspace: t("backspace"),
           saveError: t("manualSaveError"),
