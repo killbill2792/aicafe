@@ -103,9 +103,14 @@ export async function readApprovedScheduleDelivery(source:unknown,
     .select("id,timezone").eq("business_id",owner.businessId).in("id",ids)
     :{data:[],error:null};
   if(locationError||!locations)throw new DeliveryReadError("storage_unavailable");
-  const tzs=new Map(locations.map(l=>[l.id,l.timezone??"UTC"]));
+  const {data:businessZone,error:zoneError}=await db.from("businesses")
+   .select("timezone").eq("id",owner.businessId).single();
+  if(zoneError)throw new DeliveryReadError("storage_unavailable");
+  const fallbackZone=businessZone?.timezone??null;
+  const tzs=new Map(locations.map(l=>[l.id,l.timezone??fallbackZone]));
   shifts=data.map(s=>{
-   const tz=tzs.get(s.location_id)??"UTC";
+   const tz=tzs.get(s.location_id)??fallbackZone;
+   if(!tz)throw new DeliveryReadError("cafeTimezoneMissing");
    const start=localClock(s.starts_at,tz,locale),end=localClock(s.ends_at,tz,locale);
    return {employee_id:s.employee_id,date:start.date,start:start.time,end:end.time};
   });
