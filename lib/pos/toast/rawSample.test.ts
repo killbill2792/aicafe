@@ -56,7 +56,7 @@ describe("Toast raw diagnostics",()=>{
     guest:{guid:"cafe-guest-identifying-id",name:"Private Guest"},
     anonymousReference:{guid:"private-customer-guid",phoneDigits:4567891,
       pin:1234,externalId:"person-identifier",
-      "john@example.com":12,"4242424242424242":"secret"},
+      "john@example.com":12,"4242424242424242":"secret","1234":"should not persist"},
     type:"CREDIT",cardEntryMode:"CONTACTLESS",amount:16.5,originalProcessingFee:0.5
   }));
   expect(json).not.toContain("cafe-guest-identifying-id");
@@ -67,6 +67,8 @@ describe("Toast raw diagnostics",()=>{
   expect(json).not.toContain("person-identifier");
   expect(json).not.toContain("john@example.com");
   expect(json).not.toContain("4242424242424242");
+  expect(json).not.toContain("should not persist");
+  expect(json).not.toContain("\\\"1234\\\"");
   expect(json).toContain("CONTACTLESS");
   expect(json).toContain("originalProcessingFee");
  });
@@ -74,12 +76,13 @@ describe("Toast raw diagnostics",()=>{
   const sample=redactToastRaw({
    regularHours:6.5,overtimeHours:2,totalAmount:185.32,amount:14.5,
    tipAmount:2.1,mcaRepaymentAmount:0.15,originalProcessingFee:0.2,
-   wagesTotal:125,unknownFinancialTotal:250.33,
+   wagesTotal:125,unknownFinancialTotal:250.33,statementTotal:110,spanMinutes:45,
    phoneDigits:1234567890,customerId:1234,cardLast4:1234,
    employee:{hourlyWage:19.25,totalHours:8.5,firstName:"Private"}
   }) as Record<string,unknown>;
   for(const k of ["regularHours","overtimeHours","totalAmount","amount",
-   "tipAmount","mcaRepaymentAmount","originalProcessingFee","wagesTotal","unknownFinancialTotal"])
+   "tipAmount","mcaRepaymentAmount","originalProcessingFee","wagesTotal",
+   "unknownFinancialTotal","statementTotal","spanMinutes"])
    expect(typeof sample[k]).toBe("number");
   expect(JSON.stringify(sample)).not.toContain("1234567890");
   expect(JSON.stringify(sample)).not.toContain("1234");
