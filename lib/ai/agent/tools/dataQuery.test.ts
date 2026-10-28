@@ -46,3 +46,24 @@ it("enforces three years, range bounds and the row cap",async()=>{
   .toBe("invalid_query");
  expect(f.rpc).not.toHaveBeenCalled();
 });
+
+it("does not certify open or estimated facts as complete",async()=>{
+ const rpc=vi.fn(async()=>({data:{
+   rows:[{status:"open",business_date:"2026-10-03",amount_cents:null}],
+   sourceCount:1,hasIncomplete:true,truncated:false,sourceMix:{toast:1}
+ },error:null}));
+ const x=await dataQueryTools.query_data.execute(input(),{
+   db:{rpc} as never,businessId:b});
+ expect(x.empty).toBe(false);
+ expect(x.missing).toContain("incompleteEvidence");
+});
+it("an aggregate null over no matching facts reports empty",async()=>{
+ const rpc=vi.fn(async()=>({data:{
+   rows:[{sum_net_sales_cents:null}],sourceCount:0,hasIncomplete:false,
+   truncated:false,sourceMix:{}
+ },error:null}));
+ const x=await dataQueryTools.query_data.execute(input(),{
+   db:{rpc} as never,businessId:b});
+ expect(x.empty).toBe(true);
+ expect(x.missing).toContain("empty");
+});

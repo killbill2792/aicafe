@@ -47,3 +47,12 @@ describe("canonical authenticated read path",()=>{
   expect(fail.notes).toEqual(["source_read_failed"]);
  });
 });
+
+it("filters dated labor, shifts and inventory by café-local business dates",async()=>{
+ for(const view of ["cv_labor_entries","cv_shifts","cv_inventory"] as const){
+  const x=db([]);
+  await readCanonicalView(x.client,business,view,range);
+  expect(x.calls).toContainEqual([">=business_date",range.dateFrom]);
+  expect(x.calls).toContainEqual(["<=business_date",range.dateTo]);
+ }
+});

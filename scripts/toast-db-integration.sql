@@ -740,7 +740,31 @@ BEGIN
  select count(*) into before_count from public.toast_raw_records
  where business_id=b and run_id=run;
  perform pg_temp.assert_true(before_count=3,'order/check/payment all archived');
+ -- A later version of the SAME source page/run must survive with a new hash.
+ update public.toast_day_pages set payload=jsonb_build_array(
+  jsonb_build_object('guid',ord,'modifiedDate','2026-10-18T12:00:00Z',
+  'checks',jsonb_build_array(jsonb_build_object(
+  'guid',chk,'payments',jsonb_build_array(jsonb_build_object(
+  'guid',pay,'type','CASH','amount',10,'tipAmount',2))))),
+  jsonb_build_object('guid',ord,'modifiedDate','2026-10-18T13:00:00Z',
+  'checks',jsonb_build_array(jsonb_build_object(
+  'guid',chk,'payments',jsonb_build_array(jsonb_build_object(
+  'guid',pay,'type','CASH','amount',12,'tipAmount',2)))))) where run_id=run
+  and business_date='2026-10-18' and page=1;
+ perform pg_temp.assert_true(
+  (select count(*)>before_count from public.toast_raw_records
+   where business_id=b and run_id=run),
+   'changed payload at same page/index archives another revision');
  perform public.toast_rebuild_day_payments(run,b,r,'2026-10-18',true);
+ perform pg_temp.assert_true(
+  (select count(*)=1 from public.toast_payment_summaries
+   where business_id=b and business_date='2026-10-18'),
+   'duplicate payment GUID resolves to one current row');
+ perform pg_temp.assert_true(
+  (select amount_cents=1200 from public.toast_payment_summaries
+   where business_id=b and business_date='2026-10-18'
+    and payment_ref=pay::text),
+   'latest payment revision wins');
  delete from public.toast_day_pages where run_id=run and business_date='2026-10-18';
  select count(*) into after_count from public.toast_raw_records
  where business_id=b and run_id=run;
@@ -748,7 +772,7 @@ BEGIN
   'clearing source pages preserves all immutable Toast payloads');
  perform pg_temp.assert_true(exists(select 1 from public.toast_payment_summaries
   where business_id=b and restaurant_guid=r and business_date='2026-10-18'
-  and payment_ref=pay::text and amount_cents=1000 and tip_cents=200),
+  and payment_ref=pay::text and amount_cents=1200 and tip_cents=200),
   'payment safe reader preserves numeric evidence');
  insert into public.toast_labor_entries(business_id,restaurant_guid,location_id,
   external_time_entry_id,external_employee_id,clock_in,clock_out,
@@ -762,7 +786,7 @@ BEGIN
   and data->>'hourly_wage_cents' is null),
   'open Toast timecards readable without invented wage rates');
  perform pg_temp.assert_true(exists(select 1 from public.cv_payments
-  where business_id=b and amount_cents=1000 and tip_cents=200),
+  where business_id=b and amount_cents=1200 and tip_cents=200),
   'canonical payment view uses sanitized row');
  perform pg_temp.assert_true((select count(*)=15 from information_schema.views
   where table_schema='public' and table_name like 'cv_%'),
