@@ -5,6 +5,8 @@ describe("owner pricing evidence",()=>{
   expect(ownerSpecifiedMonthlyBills(["labor 13000/month"],1300000)).toBe(false);
   expect(ownerSpecifiedMonthlyBills(["wages $13,000 per month"],1300000)).toBe(false);
   expect(ownerSpecifiedMonthlyBills(["payroll $13,000 per month"],1300000)).toBe(false);
+  expect(ownerSpecifiedMonthlyBills(["labor costs $13,000"],1300000)).toBe(false);
+  expect(ownerSpecifiedMonthlyBills(["salary expenses $13,000"],1300000)).toBe(false);
   expect(ownerSpecifiedMonthlyBills(["nómina 13.000 al mes"],1300000)).toBe(false);
   expect(ownerSpecifiedMonthlyBills(["الرواتب ١٣٠٠٠ شهريًا"],1300000)).toBe(false);
  });

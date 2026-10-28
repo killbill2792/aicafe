@@ -10,7 +10,7 @@ function decimal(value:string):number{
  if(fraction<1||fraction>2)return Number(raw.replace(/[.,]/gu,""));
  return Number(raw.slice(0,last).replace(/[.,]/gu,"")+"."+raw.slice(last+1));
 }
-const billWords=/(?:\b(?:bills?|rent|overheads?|utilities|expenses?|facturas?|alquiler|gastos?|servicios|costos?|costes?)\b|(?:فواتير|فاتورة|إيجار|الايجار|الإيجار|مرافق|الكهرباء|المصاريف|النفقات|تكاليف التشغيل))/giu;
+const billWords=/(?:\b(?:bills?|rent|overheads?|utilities|facturas?|alquiler|servicios(?:\s+públicos)?|gastos\s+(?:generales|fijos))\b|(?:فواتير|فاتورة|إيجار|الايجار|الإيجار|مرافق|الكهرباء|المصاريف العامة|التكاليف التشغيلية))/giu;
 const laborWords=/(?:\b(?:labor|labour|wages?|payroll|salar(?:y|ies)|staff|nómina|nomina|salarios?|sueldos?|mano de obra)\b|(?:رواتب|أجور|العمالة|الرواتب|الأجور|الراتب))/giu;
 export function ownerSpecifiedMonthlyBills(utterances:readonly string[],cents:number):boolean{
  if(!Number.isSafeInteger(cents)||cents<0)return false;
