@@ -54,6 +54,16 @@ describe("single deterministic supervisor economics model",()=>{
    knownMonthlyLaborExtrasCents:25000};
   expect(unifiedBreakEven(known).monthlyFixedKnownCents).toBe(746700+525000);
  });
+ it("item-cost scenario updates observed break-even, not just profit",()=>{
+  const observed:Economics={...base,asOfDate:"2026-10-29",
+   observedDays:[{date:"2026-10-28",netSalesCents:100000,ingredientsCents:25000,
+    cardFeesCents:3000,cardFeesStatus:"actual",drinksCount:250}],
+   ingredientRate:.25,ingredientStatus:"actual",feeRate:.03,feeStatus:"actual"};
+  const result=simulateEconomics(observed,{kind:"item_cost",itemId:"test-item",
+   oldCostCents:150,newCostCents:100,weeklyUnits:500,currentPriceCents:500});
+  expect(result.difference.monthlyBreakEvenCents).toBeLessThan(0);
+  expect(result.difference.drinksPerDay).toBeLessThan(0);
+ });
  it("includes owner extras on top of clocked wages only once",()=>{
   const extras=25000,clocked=500000;
   const model={...base,monthlyStaff:figure(addOwnerPayrollExtras(clocked,extras),"estimate","Clocked payroll plus owner extras")};
