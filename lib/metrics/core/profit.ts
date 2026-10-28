@@ -1,4 +1,4 @@
-import {hasSalesCoverage} from "@/lib/calc/dayWindows";
+import {hasCoveredSales} from "./salesCoverage";
 /** One known-component profit subtotal, with structured notes for unknown parts. */
 export type ProfitSalesDay={date:string;netSalesCents:number;salesDataStatus?:"actual"|"missing"};
 export type ProfitPart={amountCents:number|null;missing?:readonly string[];estimated?:boolean};
@@ -10,7 +10,7 @@ export type ProfitResult={
 };
 export function profitForPeriod(days:readonly ProfitSalesDay[],bills:ProfitPart,fees:ProfitPart,
   labor:ProfitPart,productCosts:ProfitPart):ProfitResult{
-  const observed=days.filter(hasSalesCoverage);
+  const observed=days.filter(hasCoveredSales);
   const netSalesCents=observed.reduce((sum,d)=>sum+d.netSalesCents,0);
   const partsUsed={
     billsCents:bills.amountCents??0,feesCents:fees.amountCents??0,

@@ -1,4 +1,4 @@
-import {hasSalesCoverage} from "@/lib/calc/dayWindows";
+import {hasCoveredSales} from "./salesCoverage";
 /** Provider-neutral, cents-only card-processing fee calculation. No database access. */
 export const DEFAULT_PROCESSING_FEE_RATE_BPS=290;
 export type FeeBasis="owner_plan"|"actual"|"estimated"|"default_estimate";
@@ -43,7 +43,7 @@ function planAmount(days:readonly FeeDay[],plan:OwnerFeePlan):{amountCents:numbe
   return {amountCents:Math.round(amount),missingFixed};
 }
 export function cardFeesForDays(days:readonly FeeDay[],ownerPlan:OwnerFeePlan|null=null):FeeResult{
-  const covered=days.filter(hasSalesCoverage);
+  const covered=days.filter(hasCoveredSales);
   if(covered.some(d=>!valid(d.netSalesCents)||d.cardSalesCents!=null&&!valid(d.cardSalesCents)||
       d.ordersCount!=null&&!valid(d.ordersCount)))
     throw new RangeError("Invalid processing fee inputs");
