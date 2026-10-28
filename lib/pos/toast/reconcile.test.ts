@@ -12,7 +12,10 @@ vi.mock("./checkMode",()=>({detectToastCheckMode:async()=>mocked.mode,setToastCh
 vi.mock("./analyticsClient",()=>({createToastAnalyticsClient:()=>({
  requestDay:mocked.requestDay,getDay:mocked.getDay,persistDay:mocked.persistDay})}));
 vi.mock("./adapter",()=>({toastMoneyCents:(v:number)=>Math.round(v*100)}));
-vi.mock("./dayParser",()=>({parseToastDayPage:()=>({orders:[],unparsed:[]})}));
+vi.mock("./dayParser",()=>({parseToastDayPage:()=>({orders:[{
+ guid:"11111111-1111-4111-8111-111111111111",modifiedDate:"",
+ normalized:{netSalesCents:10000,discountsCents:0,refundsCents:0,taxCents:0,tipCents:0}
+}],unparsed:[]})}));
 import {reconcileToastDays,internalOrderProof} from "./reconcile";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -25,7 +28,8 @@ const p={businessId:business,restaurantGuid:restaurant,locationId:location,
 const checksum=createHash("sha256").update("[]").digest("hex");
 const status=()=>({business_date:day,import_state:"imported",recon_state:"pending",
  orders_snapshot_sha256:checksum,net_sales_cents:10000,order_count:1,
- discounts_cents:0,refunds_cents:0,unparsed_count:0,warnings:{},
+ discounts_cents:0,refunds_cents:0,tax_cents:0,tip_cents:0,
+ unparsed_count:0,warnings:{},
  imported_at:"2026-10-17T10:00:00Z",last_recon_attempt_at:null as string|null,
  recon_source:null as string|null,analytics_state:null as string|null,
  internal_state:null as string|null,internal_reasons:[] as string[],paid_other_day:0,
@@ -263,14 +267,14 @@ it("rejects corrupt order checks instead of crashing or certifying",async()=>{
  const f=fakeDb(false),rows=[{guid:"11111111-1111-4111-8111-111111111111",checks:{payments:"malformed"}}];
  mocked.request.mockImplementation(async(path:string)=>path.includes("paidBusinessDate")?[]:rows);
  await reconcileToastDays(f.db,p,Date.now()+20000);
- expect(f.item).toMatchObject({recon_state:"mismatch",last_error_category:null});
+ expect(f.item).toMatchObject({recon_state:"pending",last_error_category:null});
  expect(f.certifiedVoids).toBe(false);
 });
 it("rejects non-array check payments without void certification",async()=>{
  const f=fakeDb(false),rows=[{guid:"11111111-1111-4111-8111-111111111111",checks:[{payments:"broken"}]}];
  mocked.request.mockImplementation(async(path:string)=>path.includes("paidBusinessDate")?[]:rows);
  await reconcileToastDays(f.db,p,Date.now()+20000);
- expect(f.item.recon_state).toBe("mismatch");
+ expect(f.item.recon_state).toBe("pending");
  expect(f.certifiedVoids).toBe(false);
 });
 
@@ -300,8 +304,8 @@ describe("unmatched payment GUID must not certify omitted or stale orders",()=>{
  ] as const)("rejects extra payment attributed to %s",async(_name,excluded,date)=>{
   const f=prepare(excluded,date);
   await reconcileToastDays(f.db,p,Date.now()+20000);
-  expect(f.item.recon_state).toBe("mismatch");
-  expect(f.item.internal_state).toBe("mismatch");
+  expect(f.item.recon_state).toBe("pending");
+  expect(f.item.internal_state).toBeNull();
   expect(f.certifiedVoids).toBe(false);
   expect(f.writes.some(w=>(w.internal_reasons as string[]|undefined)?.includes("unknown_payment_order")))
    .toBe(true);
@@ -329,7 +333,7 @@ describe("unmatched payment GUID must not certify omitted or stale orders",()=>{
  it("rejects a stale canonical cross-day date when live Toast now says same-day",async()=>{
   const f=prepare(false,"2026-10-15","imported",day,1);
   await reconcileToastDays(f.db,p,Date.now()+20000);
-  expect(f.item.recon_state).toBe("mismatch");
+  expect(f.item.recon_state).toBe("pending");
   expect(f.certifiedVoids).toBe(false);
  });
  it("queues both sides of a newly moved order date",async()=>{
@@ -490,7 +494,7 @@ it("escalates cross-day payment recovery at its original deadline even after rei
   return orderWithAutoGratAndGiftCard();
  });
  await reconcileToastDays(f.db,p,Date.now()+20000);
- expect(f.item).toMatchObject({recon_state:"mismatch",internal_state:"mismatch",
+ expect(f.item).toMatchObject({recon_state:"pending",internal_state:null,
   payment_repull_at:null});
  expect(f.writes.some(w=>(w.internal_reasons as string[]|undefined)
   ?.includes("unknown_payment_order"))).toBe(true);
@@ -648,4 +652,19 @@ it("an unverified remote payment after six hours stays pending, never a fabricat
  await reconcileToastDays(f.db,p,Date.now()+20000);
  expect(f.item.recon_state).toBe("pending");
  expect(f.item.internal_reasons).toContain("unverified_payment_order");
+});
+
+
+it("preserves an incomplete payment-GUID diagnostic without a fake financial mismatch",async()=>{
+ const f=fakeDb(false);
+ mocked.request.mockImplementation(async(path:string)=>
+  path.includes("paidBusinessDate")?[]:[
+   {guid:"11111111-1111-4111-8111-111111111111",
+    checks:[{paymentStatus:"CLOSED",amount:100,taxAmount:0,
+     payments:[{paymentStatus:"CLOSED",amount:100,guid:null}]}]}
+  ]);
+ await reconcileToastDays(f.db,p,Date.now()+20000);
+ expect(f.item.recon_state).toBe("pending");
+ expect(f.item.internal_state).toBeNull();
+ expect(f.item.internal_reasons).toContain("missing_payment_guid");
 });
