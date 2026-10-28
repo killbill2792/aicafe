@@ -49,8 +49,7 @@ export const dataQueryTools={
    if(!parsed.success)return empty("invalid_query");
    const p=parsed.data;
    if(!z.uuid().safeParse(ctx.businessId).success||!ctx.db)return empty("invalid_scope");
-   if(p.date_from>p.date_to||
-     p.date_to>(Number(p.date_from.slice(0,4))+3)+p.date_from.slice(4))
+   if(p.date_from>p.date_to
     return empty("invalid_date_range");
    const all=[...(p.columns??[]),...(p.group_by??[]),
     ...(p.filters??[]).map(f=>f.column),...(p.metrics??[]).map(m=>m.column)];
