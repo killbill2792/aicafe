@@ -29,7 +29,7 @@ describe("Toast raw diagnostic owner route",()=>{
   const response=await POST(req());
   expect(response.status).toBe(200);
   expect(mocks.owner).toHaveBeenCalledWith(businessId);
-  expect(mocks.capture).toHaveBeenCalledWith(businessId,"2026-10-20",expect.anything());
+  expect(mocks.capture).toHaveBeenCalledWith(businessId,"2026-10-20",expect.anything(),240_000);
  });
  it("returns distinct HTTP codes and error identifiers for each outcome",async()=>{
   const outcomes=[
@@ -38,6 +38,8 @@ describe("Toast raw diagnostic owner route",()=>{
    {reason:"no_location",code:404,failed:0},
    {reason:"db_error",code:503,failed:1},
    {reason:"invalid_request",code:400,failed:0},
+   {reason:"missing_hash_key",code:503,failed:0},
+   {reason:"lease_lost",code:503,failed:1},
   ] as const;
   for(const {reason,code,failed} of outcomes){
    mocks.capture.mockResolvedValueOnce({captured:0,skipped:true,failed,reason});
