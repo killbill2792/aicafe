@@ -36,7 +36,7 @@ export async function getBusinessSnapshotFromDb(
   if(businessError||!businessRow||!businessRow.timezone)throw new Error("Business unavailable");
   if(locationError)throw locationError;
   const timezone = businessRow.timezone;
-  const todayDateStr = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
+  const todayDateStr = asOfDate??formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
 
   const monthKey = todayDateStr.slice(0, 7);
   const [year, month] = monthKey.split("-").map(Number);
@@ -218,7 +218,7 @@ async function getStaffShiftsToday(
   });
 }
 
-export async function getMenuItemSnapshots(
+async function getMenuItemSnapshots(
   supabase: SupabaseClient,
   businessId: string,
   todayDateStr: string,
