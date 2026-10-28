@@ -218,7 +218,7 @@ async function getStaffShiftsToday(
   });
 }
 
-async function getMenuItemSnapshots(
+export async function getMenuItemSnapshots(
   supabase: SupabaseClient,
   businessId: string,
   todayDateStr: string,
