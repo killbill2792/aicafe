@@ -8,6 +8,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { getSnapshot } from "@/lib/data/getSnapshot";
+import {readHistoricalBusinessSnapshot} from "@/lib/data/snapshot.server";
 import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
 import { projectCurrentStaff, projectBreakEven, projectRecurringSchedule } from "./conversations/domainProjections";
 import type { StaffRosterMember } from "@/lib/viewmodels/staffViewModel";
@@ -19,7 +20,6 @@ import { SupabaseDecisionStore } from "@/lib/operating/supabaseDecisionStore";
 import { BusinessScopedCafeTools, StructuredCafeTools } from "./tools";
 import { supervisorFactReaders } from "./supervisorFacts.server";
 import { supervisorHistoricalReaders } from "./supervisorReads.server";
-import { readPeriodItemSales } from "@/lib/data/periodItemSales.server";
 
 /**
  * The future Supervisor backend must call this authenticated server factory.
@@ -67,14 +67,15 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
   const states = new SnapshotCafeStateService(
     async (requested,period) => {
       assertBusiness(requested);
-      const snapshot = await currentSnapshot();
-      if (snapshot.business.id !== businessId) throw new Error("Café snapshot business mismatch");
-      if(!period||snapshot.periodItemSales?.period.from===period.from&&
-        snapshot.periodItemSales.period.to===period.to)return snapshot;
-      // Target the exact authorized date range; never reuse a month/28-day
-      // quantity as proof for today or another custom window.
-      const periodItemSales=await readPeriodItemSales(client,businessId,period);
-      return {...snapshot,periodItemSales};
+      if(period){
+        // Historical lookups must never materialize shifts or regenerate alerts.
+        const historical=await readHistoricalBusinessSnapshot(client,businessId,period);
+        if(historical.business.id!==businessId)throw new Error("Café snapshot scope mismatch");
+        return historical;
+      }
+      const snapshot=await currentSnapshot();
+      if(snapshot.business.id!==businessId)throw new Error("Café snapshot business mismatch");
+      return snapshot;
     },
     async (requested) => (await pricingMenu(requested)).map(({ id, pricing }) => ({ id, pricing })),
   );
