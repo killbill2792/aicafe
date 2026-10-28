@@ -201,7 +201,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <span className="min-w-24 flex-1"><bdi>{day(row.date)}</bdi></span>
     <span><bdi>{fmt(row.netSalesCents)}</bdi></span>
     <span>{row.orders==null?t("noAmount"):t("ownerOrders",{count:number.format(row.orders)})}</span>
-    <span className="text-ink-muted">{row.status==="checked_internal"?t("ownerState_checked_internal"):row.status==="owner_match"?t("ownerState_owner_match"):row.status==="checked"?t("ownerState_checked"):row.status==="checking"?t("ownerState_checking"):
+    <span className="text-ink-muted">{row.status==="checked_internal"?t("ownerState_checked_internal"):row.status==="owner_confirmed"?t("ownerState_owner_confirmed"):row.status==="owner_match"?t("ownerState_owner_match"):row.status==="checked"?t("ownerState_checked"):row.status==="checking"?t("ownerState_checking"):
      row.status==="missing"?t("ownerState_missing"):t("ownerState_needs_look")}</span>
     {row.paidOtherDay>0&&<p className="w-full text-muted">{t("paidOtherDayInfo",{count:row.paidOtherDay})}</p>}
     <details className="w-full"><summary className="min-h-12 cursor-pointer py-3">{t("summaryTitle")}</summary>

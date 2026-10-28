@@ -25,7 +25,7 @@ export async function GET(request:Request){
     .select("id,kind,state,days_done,days_total,resume_at,requested_from,requested_to")
     .eq("business_id",id.data).order("id").range(start,end)),
    readAllPages((start,end)=>db.from("toast_day_status")
-    .select("business_date,restaurant_guid,import_state,recon_state,net_sales_cents,toast_net_sales_cents,delta_net_cents,order_count,last_error_category,coverage_complete,unparsed_count,paid_other_day,rechecking_reason")
+    .select("business_date,restaurant_guid,import_state,recon_state,net_sales_cents,toast_net_sales_cents,delta_net_cents,order_count,last_error_category,coverage_complete,unparsed_count,paid_other_day,rechecking_reason,owner_confirmed_at")
     .eq("business_id",id.data).order("business_date",{ascending:false})
     .order("restaurant_guid").range(start,end)),
    readAllPages((start,end)=>db.from("toast_day_owner_flags")
@@ -118,6 +118,8 @@ export async function GET(request:Request){
    const problem=needsLook.some(x=>x.date===date&&eligible.some(m=>m.restaurant_guid===x.restaurantGuid));
    return {date,netSalesCents:totals.netSalesCents,orders:totals.orders,paidOtherDay:totals.paidOtherDay,
     status:problem?"needs_look":!totals.complete?"missing":
+     eligible.length>0&&eligible.every(m=>days.some(d=>d.business_date===date&&
+       d.restaurant_guid===m.restaurant_guid&&d.owner_confirmed_at))?"owner_confirmed":
      eligible.length>0&&eligible.every(m=>entries.some(e=>e.restaurant_guid===m.restaurant_guid&&e.business_date===date&&e.comparison==="owner_summary_match"))?"owner_match":
      totals.checked?(days.filter(d=>d.business_date===date&&eligible.some(m=>m.restaurant_guid===d.restaurant_guid)).every(d=>d.recon_state==="matched")?"checked":"checked_internal"):"checking"};
   }),
