@@ -50,14 +50,14 @@ export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,cont
     if(CONTACT_FIELD.test(k)||CARD_SECRET.test(k)||AUTH_SECRET.test(k)||isPersonalContext(context)&&PERSONAL_LOCATION.test(k))return false;
     if(FREEFORM.test(k)&&!(k==="description"&&/^(?:menus|config)\//.test(scope)))return false;
     // "name" on a check/order/payment is the guest tab/payer name, not the
-    // name of the menu item; nested selections/discounts/modifiers are retained.
+    // name of the menu item; nested selections/applied discounts/service charges are retained.
     if(PERSONAL_FIELD.test(k)&&(/^(?:orders?|checks?|payments?|employee|staff|server|cashier)$/i.test(context)||isPersonalContext(context)))return false;
     return true;
    })
    .filter(([k,v])=>!isPersonalContext(context)||typeof v!=="string"||
     isSensitiveId(k,context)||/^(?:type|status|state|currency|cardType|cardEntryMode|jobTitle|jobCode|title|paymentStatus|source)$/i.test(k)||
     /(?:Date|Time|At|Timestamp)$/i.test(k))
-   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,k==="selections"||k==="discounts"||k==="modifiers"||k==="items"||k==="menuItems"?"":(PERSONAL_PARENT.test(k)||/^(?:giftCard|giftCardInfo|orders?|checks?|payments?|employee|staff|server|cashier)$/i.test(k))?k:context,scope)])
+   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,k==="selections"||k==="discounts"||k==="appliedDiscounts"||k==="appliedServiceCharges"||k==="modifiers"||k==="items"||k==="menuItems"?"":(PERSONAL_PARENT.test(k)||/^(?:giftCard|giftCardInfo|orders?|checks?|payments?|employee|staff|server|cashier)$/i.test(k))?k:context,scope)])
    .filter(([,v])=>v!==undefined));
  }
  if(isSensitiveId(key,context)){
