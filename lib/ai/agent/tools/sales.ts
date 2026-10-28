@@ -45,8 +45,7 @@ export const salesTools={
       const resolved=resolveOwnerPeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(resolved.status!=="resolved")return periodChoicePayload("item_sales",resolved);
       const requested={from:resolved.value.from,to:resolved.value.to};
-      const canFallback=typeof input.period==="string"&&["today","week","month"].includes(input.period);
-      const selectedWindow=canFallback?await resolveCoveredSalesWindow(ctx,requested):{period:requested,label:null,coverageFallback:null};
+      const selectedWindow=await resolveCoveredSalesWindow(ctx,requested);
       const p=selectedWindow.period;
       if(!ctx.tools.getProductSales)return {source:"item_sales",period:p,agentId:"alex",coverageLabel:selectedWindow.label,coverageFallback:selectedWindow.coverageFallback,todayImported:selectedWindow.todayImported,lastFullDay:selectedWindow.lastFullDay,lastFullDayTotals:selectedWindow.lastFullDayTotals,dataNote:selectedWindow.dataNote,missing:["itemSalesReaderUnavailable"]};
       const s=await ctx.tools.getProductSales(p);
