@@ -3357,7 +3357,7 @@
     "toastDaysNeedLook": "{count} days need a look: {dates}{more}.",
     "toastDayStatusUnavailable": "Toast's day-status check failed. Stored numbers may include days not yet checked.",
     "toastImportIncompleteDays": "Toast imports are not complete on {count} days: {dates}{more}. Stored sales are shown, but totals may be incomplete.",
-    "toastFailedNoCanonicalSales": "Toast could not import these dates: {dates}. Other recorded POS sales for those dates are still shown.",
+    "toastFailedNoCanonicalSales": "Toast has no completed import for these dates: {dates}. Sales recorded by other POS systems remain visible.",
     "toastDayStatusMissing": "Toast sales for these dates are stored but their day-status checks were not recorded: {dates}. Figures may be incomplete.",
     "toastScheduleReadFailed": "Toast schedule couldn't be read: {reason}. App shifts are still shown.",
     "scheduleRangeTruncated": "Showing the first 366 days of the requested range; the remaining dates were not read.",
