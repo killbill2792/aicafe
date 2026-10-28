@@ -5,7 +5,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 
 export type CoveredSalesWindow={
- period:CalcPeriod;label:string|null;coverageFallback:CoverageFallback|null;
+ period:CalcPeriod;label:string|null;labelKey?:string;labelParams?:{from:string;to:string};coverageFallback:CoverageFallback|null;
  todayImported?:boolean;lastFullDay?:string|null;
  lastFullDayTotals?:{netSalesCents:number|null;ordersCount:number|null;drinksCount:number|null}|null;
  lastRecordedDay?:string|null;
