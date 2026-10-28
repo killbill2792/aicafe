@@ -11,11 +11,13 @@ import {readAllPages} from "./readAllPages";
 import {localClock} from "./scheduleDates";
 import {parseToastDayPage} from "./dayParser";
 import {nextDayCheckState,type DayCheckEvent,type DayCheckState} from "./dayCheckState";
+import {compareDayMoney,DAY_CHECK_TOLERANCE_CENTS} from "@/lib/data/canonical/dayCheck";
 type Location={businessId:string;restaurantGuid:string;locationId:string;
  timeZone:string;closeoutHour:number;expectedImportedAt?:string|null};
 class StaleImportError extends Error{}
 type Status=DayCheckState&{import_state:string;orders_snapshot_sha256:string|null;
  net_sales_cents:number;order_count:number;discounts_cents:number;refunds_cents:number;
+ tax_cents?:number|null;tip_cents?:number|null;
  unparsed_count:number;imported_at:string|null};
 const fail=(deadlineAt:number)=>{if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");};
 const day8=(date:string)=>date.replaceAll("-","");
@@ -66,7 +68,9 @@ export function internalOrderProof(rows:unknown[],p:Location,day:string,
  const checksum=createHash("sha256").update(JSON.stringify(orders)).digest("hex");
  const reasons:string[]=[];
  if(parsed.unparsed.length||unparsed)reasons.push("unparsed_orders");
- if(checksum!==expectedChecksum)reasons.push("changed_snapshot");
+ // A changed hash is provenance only. Owner-facing attention comes from
+ // comparable money fields, never from a change in serialization/checksum.
+ void expectedChecksum;
  const paidGuids=new Set<string>();
  for(const raw of rows){
   if(!raw||typeof raw!=="object")continue;
@@ -225,8 +229,8 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
  const amountGap=row.voidOrdersAmount==null||(voids??[]).some(v=>v.amount_cents==null)
   ?null:toastMoneyCents(row.voidOrdersAmount)-sum((voids??[]).map(v=>Number(v.amount_cents)));
  const maxTolerance=Number(process.env.TOAST_RECON_TOLERANCE_CENTS??5);
- const tolerance=Number.isInteger(maxTolerance)&&maxTolerance>=0&&maxTolerance<=100?
-  maxTolerance:5;
+ const tolerance=DAY_CHECK_TOLERANCE_CENTS;
+ void maxTolerance;
  const sourceIncomplete=status.unparsed_count>0||
   ["missing_check_amount","missing_deferred_price","missing_refund_amount"].some(
    k=>Number(status.warnings?.[k]??0)>0);
@@ -261,6 +265,20 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
  const cache=proofCache(db,p,day,status),cached=await cache.load();
  const rows=await pullDay(db,p,day,deadlineAt,cache,cached);
  const proof=internalOrderProof(rows,p,day,status.orders_snapshot_sha256,status.unparsed_count);
+ // Independent provider read compared with our LAST COMMITTED day values.
+ // If one field is missing, do not manufacture zero or a mismatch.
+ if(status.unparsed_count===0&&proof.orders.every(o=>o.normalized!==undefined)){
+  const summed=(field:"netSalesCents"|"discountsCents"|"refundsCents"|"taxCents"|"tipCents")=>
+   proof.orders.reduce((n,o)=>n+(o.normalized?.[field]??0),0);
+  const comparison=compareDayMoney({
+   net_sales_cents:status.net_sales_cents,discounts_cents:status.discounts_cents,
+   refunds_cents:status.refunds_cents,tax_cents:status.tax_cents,tip_cents:status.tip_cents
+  },{
+   net_sales_cents:summed("netSalesCents"),discounts_cents:summed("discountsCents"),
+   refunds_cents:summed("refundsCents"),tax_cents:summed("taxCents"),tip_cents:summed("tipCents")
+  });
+  proof.reasons.push(...comparison.reasons);
+ }
  const client=createToastClient(db,p.businessId);
  // Toast's documented endpoint returns the full GUID list, without paging parameters.
  const paid=cached.has("paid")?z.array(GUID).parse(cached.get("paid")):
@@ -378,7 +396,7 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
 export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt:number){
  let mode=await detectToastCheckMode(db,p.businessId,p.restaurantGuid,p.timeZone,deadlineAt);
  const {data:days,error:de}=await db.from("toast_day_status")
-  .select("business_date,import_state,recon_state,orders_snapshot_sha256,net_sales_cents,order_count,discounts_cents,refunds_cents,unparsed_count,warnings,imported_at,last_recon_attempt_at,internal_state,internal_reasons,paid_other_day,payment_repull_at,analytics_state,recon_source,reconciled_at,last_error_category")
+  .select("business_date,import_state,recon_state,orders_snapshot_sha256,net_sales_cents,order_count,discounts_cents,refunds_cents,tax_cents,tip_cents,unparsed_count,warnings,imported_at,last_recon_attempt_at,internal_state,internal_reasons,paid_other_day,payment_repull_at,analytics_state,recon_source,reconciled_at,last_error_category")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("import_state","imported").is("rechecking_reason",null)
   // Supabase .or() calls overwrite the same PostgREST "or" query key.
