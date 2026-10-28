@@ -189,6 +189,16 @@ describe("Olivia bounded reads",()=>{
     expect(r.attendance).toBeNull();
     expect(r.laborDays).toHaveLength(1);
   });
+  it("keeps recorded attendance when labor capability is absent",async()=>{
+    const r=await staffTools.get_labor.execute({period:"today"},ctx({
+      getStaffAttendance:async()=>({available:true,value:{
+        timecardCount:3,onClockCount:2,attendanceTracked:true},quality:q}),
+    }));
+    expect(r.attendance).toMatchObject({timecardCount:3,onClockCount:2});
+    expect(r.laborDays).toBeNull();
+    expect(r.missing).toContain("laborReaderUnavailable");
+    expect(r.dataNotes).toEqual([expect.stringContaining("readers failed")]);
+  });
   it("keeps recorded labor when attendance tool is absent",async()=>{
     const result=await staffTools.get_labor.execute({period:"today"},ctx({
       getLaborMetrics:async()=>({available:true,value:[{date:"2026-10-22",
