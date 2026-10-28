@@ -45,7 +45,7 @@ export const newItemPriceTools={suggest_new_item_price:{
    const metrics={en,es,ar}[ctx.locale].MetricsNotes;
    const coverageDates=economics.salesCoverage;
    const pretty=(date:string)=>new Intl.DateTimeFormat(ctx.locale,{
-    month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(date+"T12:00:00Z"));
+    year:"numeric",month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(date+"T12:00:00Z"));
    let coverageLabel:string|null=coverageDates?
     metrics.pricingCoverageScaled.replace("{from}",pretty(coverageDates.from))
       .replace("{to}",pretty(coverageDates.to)).replace("{days}",String(openDays)):null;
