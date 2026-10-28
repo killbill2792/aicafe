@@ -73,6 +73,8 @@ export function nextDayCheckState(current:DayCheckState,event:DayCheckEvent,at:s
    if(!externalMismatch)next.recon_source=null;
    next.reconciled_at=null;break;
   case "payment_recovery_queued":
+   next.internal_reasons=["unknown_payment_order"];
+   next.warnings.unknown_payment_order=1;
    next.internal_state=null;
    next.payment_repull_at??=at;
    next.recon_state=externalMismatch?"mismatch":"pending";
