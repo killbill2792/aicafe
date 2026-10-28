@@ -61,7 +61,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
   let match:ReturnType<typeof matchCatalogItem>|null=null;
   if(!row){
    match=matchCatalogItem(item,candidates(),adapter.provider);
-   if(match.status==="needs_review"){
+   if(match.status==="needs_review"&&adapter.provider!=="toast"){
     needsReview++;
     const {error:reviewError}=await db.from("pos_catalog_matches").upsert({
       business_id:businessId,provider:adapter.provider,pos_item_id:item.posItemId,
@@ -72,7 +72,9 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
     resultError(reviewError);
     continue;
    }
-   if(match.candidateId)row=byId.get(match.candidateId);
+   // Ambiguous manual names never block a distinct published Toast GUID.
+   // Do not silently attach such a GUID to the wrong owner's recipe.
+   if(match.status!=="needs_review"&&match.candidateId)row=byId.get(match.candidateId);
   }
   const desired={
    base_name:item.baseName??item.name,size_label:item.sizeLabel??null,

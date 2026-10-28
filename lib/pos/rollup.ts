@@ -127,7 +127,7 @@ export async function recomputeDailyRollup(
   // which started today. End is exclusive, including at DST boundaries.
   const timecards=await readAllPosRows((first,last)=>supabase
     .from("timecards")
-    .select("id, clock_in, clock_out, hourly_wage_cents, wage_source, breaks")
+    .select("id, clock_in, clock_out, hourly_wage_cents, wage_source, breaks, source_type")
     .eq("business_id", businessId)
     .lt("clock_in", dayEndUtc)
     .or("clock_out.is.null,clock_out.gt."+dayStartUtc)
@@ -136,14 +136,17 @@ export async function recomputeDailyRollup(
 
   // Retain known wages while identifying incomplete days separately. Unknown
   // wages cannot be assumed zero when calculating total labor or margins.
-  const wagesCents=timecards.reduce((sum,tc)=>{
+  // Owner schedules are plans, never clocked payroll evidence.
+  const paidTimecards=timecards.filter(tc=>tc.source_type!=="owner_schedule");
+  const toastSales=netSalesCents>0&&effectiveOrders.some(o=>o.pos_order_id?.startsWith("toast:"));
+  const wagesCents=paidTimecards.length===0&&toastSales?null:paidTimecards.reduce((sum,tc)=>{
     const amount=timecardWagesForLocalDay({
       clockIn:tc.clock_in,clockOut:tc.clock_out,
       hourlyWageCents:tc.hourly_wage_cents,breaks:tc.breaks??[]
     },businessDate,timezone);
     return sum+(amount??0);
   },0);
-  const laborWageStatus=laborWageStatusFromTimecards(timecards);
+  const laborWageStatus=laborWageStatusFromTimecards(paidTimecards);
   const { data: existingRollup, error: existingRollupError } = await supabase
     .from("daily_rollups")
     .select("staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status, voids_status, voids_cents")

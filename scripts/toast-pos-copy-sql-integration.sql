@@ -5,6 +5,16 @@ do $$
 declare n integer;
 begin
  select count(*) into n from information_schema.columns
+ where table_schema='public' and table_name='toast_optional_sync_state'
+  and column_name in ('menu_copied_at','roster_copied_at',
+   'attendance_copied_at','attendance_repair_through');
+ if n<>4 then raise exception 'canonical Toast copy checkpoints incomplete: %',n;end if;
+ if not has_function_privilege('service_role',
+  'public.toast_resolve_linked_timecard_reviews(uuid,uuid)','EXECUTE')
+ or not has_function_privilege('service_role',
+  'public.toast_queue_attendance_repair(uuid,uuid,integer)','EXECUTE')
+ then raise exception 'Toast attendance recovery RPCs missing';end if;
+ select count(*) into n from information_schema.columns
  where table_schema='public' and table_name='businesses'
  and column_name in ('owner_monthly_payroll_extras_cents','owner_monthly_payroll_extras_updated_at');
  if n<>2 then raise exception 'owner monthly payroll setting is missing: %',n;end if;
@@ -152,6 +162,20 @@ begin
  select count(*) into n from public.timecards
   where business_id=b and source_provider='Toast';
  if n<>4 then raise exception 'automatic attendance row count: %',n;end if;
+ -- A stale unlinked review resolves only after the identical Toast GUID is canonical.
+ insert into public.pos_import_reviews(business_id,provider,review_type,source_key,detail)
+ values(b,'toast','unlinked_timecard',
+  'toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0021','{}'::jsonb)
+ on conflict do nothing;
+ n:=public.toast_resolve_linked_timecard_reviews(b,r);
+ if n<>1 or (select status from public.pos_import_reviews
+    where business_id=b and provider='toast' and review_type='unlinked_timecard'
+    and source_key='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0021')
+     <>'resolved'
+ then raise exception 'linked review was not resolved';end if;
+ n:=public.toast_resolve_linked_timecard_reviews(b,r);
+ if n<>0 then raise exception 'resolved review was counted a second time';end if;
+
  if not exists(select 1 from public.timecards
   where business_id=b and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0022'
   and hourly_wage_cents=1500 and wage_source='estimate')
@@ -256,5 +280,40 @@ begin
   raise exception 'relink must not duplicate sales lines';end if;
 end
 $catalog_link$;
+
+-- One-day batches resume without queuing another provider's days or days
+-- already covered by actual Toast shifts.
+do $attendance_repair$
+declare b uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+ r uuid:='cccccccc-cccc-4ccc-8ccc-ccccccccff01';
+ n integer;
+begin
+ insert into public.toast_day_status(business_id,restaurant_guid,business_date,
+  import_state,net_sales_cents,imported_at)
+ values (b,r,'2026-10-01','imported',1000,now()),
+  (b,r,'2026-10-02','imported',2000,now()),
+  (b,r,'2026-10-25','imported',3000,now());
+ -- An actual payroll shift does not depend on a name-based employee match.
+ insert into public.timecards(business_id,clock_in,clock_out,
+  hourly_wage_cents,wage_source,source_type,source_provider)
+ values(b,'2026-10-25T12:00:00Z','2026-10-25T13:00:00Z',
+  2000,'pos','connected_pos','Toast');
+ -- The imported-day trigger already enqueued this date. Remove only that
+ -- disposable fixture job so a new queue entry must come from the repair RPC.
+ delete from public.toast_rollup_refresh_jobs
+ where business_id=b and business_date='2026-10-25';
+ n:=public.toast_queue_attendance_repair(b,r,1);
+ if n<>1 or not exists(select 1 from public.toast_rollup_refresh_jobs
+  where business_id=b and business_date='2026-10-01')
+ then raise exception 'first repair batch did not queue oldest missing-shift day';end if;
+ n:=public.toast_queue_attendance_repair(b,r,1);
+ if n<>1 or not exists(select 1 from public.toast_rollup_refresh_jobs
+  where business_id=b and business_date='2026-10-02')
+ then raise exception 'repair cursor did not resume next local business day';end if;
+ n:=public.toast_queue_attendance_repair(b,r,1);
+ if exists(select 1 from public.toast_rollup_refresh_jobs
+  where business_id=b and business_date='2026-10-25')
+ then raise exception 'actual shift day must not be requeued as missing labor';end if;
+end $attendance_repair$;
 
 rollback;

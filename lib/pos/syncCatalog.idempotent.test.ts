@@ -10,16 +10,16 @@ const modifier="square:modifier-202";
 function fixture(){
  const tables:Record<string,Array<Record<string,unknown>>> = {
   menu_items:[],menu_item_modifier_groups:[],modifier_recipes:[],
-  pos_item_aliases:[],pos_catalog_matches:[],
+  pos_item_aliases:[],pos_catalog_matches:[],toast_catalog_facts:[],
  };
  let writes=0,serial=0;
- const db={from(table:string){
+ const db={rpc:async()=>({error:null}),from(table:string){
   let action:"read"|"upsert"|"update"|"delete"="read";
   let values:Record<string,unknown>={};
   const filters:Record<string,unknown>={};
   const q={
    select:()=>q,eq:(key:string,value:unknown)=>{filters[key]=value;return q;},
-   not:()=>q,order:()=>q,
+   not:()=>q,is:()=>q,like:()=>q,order:()=>q,
    upsert:(v:Record<string,unknown>)=>{action="upsert";values=v;return q;},
    update:(v:Record<string,unknown>)=>{action="update";values=v;return q;},
    delete:()=>{action="delete";return q;},
@@ -99,5 +99,38 @@ describe("multi-location catalog archive safety",()=>{
   const archived=await syncCanonicalCatalog(f.db,business,adapter);
   expect(archived.changed).toBe(1);
   expect(f.tables.menu_items[0].is_active).toBe(false);
+ });
+});
+
+describe("Toast catalog GUID identity without owner clicks",()=>{
+ it("creates distinct published GUIDs on ambiguous names and reruns without duplicates",async()=>{
+  const f=fixture();
+  f.tables.menu_items.push({id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001",
+   business_id:business,pos_item_id:null,name:"Latte",base_name:"Latte",
+   size_label:null,price_cents:500,category:"drink",catalog_source:"manual",
+   pos_name:null,is_active:true});
+  const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const guid="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const itemId="toast:"+restaurant+":"+guid;
+  const optionId="toast:"+restaurant+":dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const catalog:PosCatalogItem={posItemId:itemId,name:"Latte",baseName:"Latte",
+   sizeLabel:null,priceCents:null,category:"drink",
+   modifierGroups:[{posGroupId:"toast:"+restaurant+":group",name:"Milk",
+    minSelections:0,maxSelections:1,required:false,
+    options:[{posModifierId:optionId,name:"Oat",priceCents:75,
+     pricingStrategy:"BASE_PRICE"}]}]};
+  const adapter={provider:"toast",fetchCatalogItems:async()=>[catalog]} as unknown as PosAdapter;
+  const first=await syncCanonicalCatalog(f.db,business,adapter,{restaurantGuid:restaurant});
+  expect(first).toMatchObject({created:1,needsReview:0});
+  expect(f.tables.menu_items).toHaveLength(2);
+  expect(f.tables.menu_items.find(row=>row.pos_item_id===null)?.name).toBe("Latte");
+  expect(f.tables.modifier_recipes).toHaveLength(1);
+  expect(f.tables.menu_item_modifier_groups).toHaveLength(1);
+  const again=await syncCanonicalCatalog(f.db,business,adapter,{restaurantGuid:restaurant});
+  expect(again).toMatchObject({created:0,needsReview:0});
+  expect(f.tables.menu_items).toHaveLength(2);
+  expect(f.tables.modifier_recipes).toHaveLength(1);
+  expect(f.tables.menu_item_modifier_groups).toHaveLength(1);
+  expect(f.tables.pos_catalog_matches).toHaveLength(0);
  });
 });

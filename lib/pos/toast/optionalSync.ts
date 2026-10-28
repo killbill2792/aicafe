@@ -3,7 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {fromZonedTime} from "date-fns-tz";
 import {z} from "zod";
 import {createToastClient,GUID,ToastApiError,type ToastFailure} from "./client";
-import {copyToastPublishedMenu,copyToastStaff,copyToastAttendance} from "./operationalCopy";
+import {copyToastPublishedMenu,copyToastStaff,copyToastAttendance,importStagedToastAttendance} from "./operationalCopy";
 import {syncToastLaborReadOnly} from "./laborSync";
 import {addCalendarDays,localClock} from "./scheduleDates";
 
@@ -24,10 +24,10 @@ export async function ensureToastFirstCatalog(db:SupabaseClient,p:Location,
  now:Date,deadlineAt:number):Promise<boolean>{
  if(Date.now()>=deadlineAt)return false;
  const {data:state,error:stateError}=await db.from("toast_optional_sync_state")
-  .select("menu_last_updated").eq("business_id",p.business_id)
+  .select("menu_copied_at").eq("business_id",p.business_id)
   .eq("restaurant_guid",p.restaurant_guid).maybeSingle();
  if(stateError)throw new ToastApiError("unavailable");
- if(state?.menu_last_updated)return false;
+ if(state?.menu_copied_at)return false;
  const {data:credentials,error:ce}=await db.from("toast_api_credentials")
   .select("scopes_available").eq("business_id",p.business_id).maybeSingle();
  if(ce)throw new ToastApiError("unavailable");
@@ -44,6 +44,7 @@ export async function ensureToastFirstCatalog(db:SupabaseClient,p:Location,
  const {error}=await db.from("toast_optional_sync_state").upsert({
   business_id:p.business_id,restaurant_guid:p.restaurant_guid,
   menu_last_updated:metadata.lastUpdated,menu_checked_local_day:local.today,
+  menu_copied_at:new Date().toISOString(),
  },{onConflict:"business_id,restaurant_guid"});
  if(error)throw new ToastApiError("unavailable");
  return true;
@@ -58,7 +59,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
  const scopes=(credentials?.scopes_available??{}) as Record<string,boolean>;
  const local=localClock(now,p.toast_time_zone);
  const {data:state,error:se}=await db.from("toast_optional_sync_state")
-  .select("menu_last_updated,menu_checked_local_day,roster_local_day,labor_local_day,jobs_local_day,void_reasons_local_day")
+  .select("menu_last_updated,menu_checked_local_day,roster_local_day,labor_local_day,jobs_local_day,void_reasons_local_day,menu_copied_at,roster_copied_at,attendance_copied_at")
   .eq("business_id",p.business_id).eq("restaurant_guid",p.restaurant_guid).maybeSingle();
  if(se)throw new ToastApiError("unavailable");
  const key={business_id:p.business_id,restaurant_guid:p.restaurant_guid};
@@ -75,6 +76,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
    phaseFailures.push(e instanceof ToastApiError?e.category:"unavailable");
  };
  let menu="scope_missing",labor="scope_missing";
+ let staffReady=Boolean(state?.roster_copied_at);
  const scope={businessId:p.business_id,restaurantGuid:p.restaurant_guid,deadlineAt,
   locationId:p.location_id,timezone:p.toast_time_zone};
  if(scopes.menus!==false&&Date.now()<deadlineAt){
@@ -83,16 +85,19 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     .request("/menus/v2/metadata",p.restaurant_guid,dateSchema,{deadlineAt});
    if(meta.restaurantGuid.toLowerCase()!==p.restaurant_guid.toLowerCase())
     throw new ToastApiError("unauthorized_location");
-   if(meta.lastUpdated!==state?.menu_last_updated||state?.menu_checked_local_day!==local.today){
+   if(!state?.menu_copied_at||meta.lastUpdated!==state?.menu_last_updated||state?.menu_checked_local_day!==local.today){
     await copyToastPublishedMenu(db,scope);
+    await update({menu_last_updated:meta.lastUpdated,menu_checked_local_day:local.today,
+     menu_copied_at:new Date().toISOString()});
     menu="updated";
    }else menu="unchanged";
-   await update({menu_last_updated:meta.lastUpdated,menu_checked_local_day:local.today});
+
   }catch(e){recordFailure(e);}
  }
  if(scopes.labor!==false&&Date.now()<deadlineAt){
-  if(state?.roster_local_day!==local.today){
-   try{await copyToastStaff(db,scope);await update({roster_local_day:local.today});}
+  if(!state?.roster_copied_at||state?.roster_local_day!==local.today){
+   try{await copyToastStaff(db,scope);await update({roster_local_day:local.today,
+    roster_copied_at:new Date().toISOString()});staffReady=true;}
    catch(e){recordFailure(e);}
   }
   if(state?.jobs_local_day!==local.today&&Date.now()<deadlineAt){
@@ -109,13 +114,22 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     await update({jobs_local_day:local.today});
    }catch(e){recordFailure(e);}
   }
-  if(state?.labor_local_day!==local.today&&Date.now()<deadlineAt){
+  if(staffReady&&(!state?.attendance_copied_at||state?.labor_local_day!==local.today)&&Date.now()<deadlineAt){
    try{
+    if(!state?.attendance_copied_at){
+     // Legacy checks may have staged months of attendance without linking it.
+     // Import it after the roster copy, before depending on any API response.
+     await importStagedToastAttendance(db,scope);
+     const {error:linkedError}=await db.rpc("toast_resolve_linked_timecard_reviews",{
+      p_business_id:p.business_id,p_restaurant_guid:p.restaurant_guid});
+     if(linkedError)throw new ToastApiError("unavailable");
+    }
     const day=addCalendarDays(local.today,-1);
     const start=fromZonedTime(day+"T"+String(p.closeout_hour).padStart(2,"0")+":00:00",
       p.toast_time_zone);
     const end=fromZonedTime(local.today+"T"+String(p.closeout_hour).padStart(2,"0")+":00:00",
       p.toast_time_zone);
+    // The canonical importer always replays all staged entries after staff linking.
     await copyToastAttendance(db,scope,{since:start,until:end});
     if(Date.now()<deadlineAt)
      await copyToastAttendance(db,scope,
@@ -123,10 +137,20 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     if(Date.now()<deadlineAt)
      await syncToastLaborReadOnly(db,scope,
       {since:new Date(now.getTime()-86400000),until:new Date(now.getTime()+6*86400000)},"schedules");
-    await update({labor_local_day:local.today});
+    const {error:reviewsError}=await db.rpc("toast_resolve_linked_timecard_reviews",{
+     p_business_id:p.business_id,p_restaurant_guid:p.restaurant_guid});
+    if(reviewsError)throw new ToastApiError("unavailable");
+    await update({labor_local_day:local.today,attendance_copied_at:new Date().toISOString()});
     labor="synced";
    }catch(e){recordFailure(e);}
   }
+ }
+ if(scopes.labor!==false&&Date.now()<deadlineAt){
+  try{
+   const {error}=await db.rpc("toast_queue_attendance_repair",{
+    p_business_id:p.business_id,p_restaurant_guid:p.restaurant_guid,p_limit:25});
+   if(error)throw new ToastApiError("unavailable");
+  }catch(e){recordFailure(e);}
  }
  if(scopes.config!==false&&state?.void_reasons_local_day!==local.today&&
   Date.now()<deadlineAt){

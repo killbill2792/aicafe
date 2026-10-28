@@ -34,6 +34,12 @@ jobs:
         run: supabase start
       - name: Replay every migration including 40-51 in exact order
         run: supabase db reset --local --yes
+      - name: Rebuild the fresh disposable database a second time
+        run: supabase db reset --local --yes
+      - name: Reapply additive migration 103 without dropping data
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f supabase/migrations/20261028000103_toast_copy_backfill.sql
       - name: Run real PostgreSQL isolation, rollback and lease integration tests
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \

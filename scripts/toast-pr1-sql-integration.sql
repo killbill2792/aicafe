@@ -57,6 +57,15 @@ SELECT public.toast_import_day(
 SELECT pg_temp.assert((SELECT net_sales_cents=1000 AND sales_data_status='actual' AND voids_status='unknown'
  FROM public.daily_rollups WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
  AND business_date='2026-10-16'),'atomic day rollup, no unearned void completeness');
+SELECT pg_temp.assert((SELECT labor_wage_status='missing' AND staff_wages_cents IS NULL
+ AND staff_tax_cents IS NULL FROM public.daily_rollups
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND business_date='2026-10-16'),
+ 'new Toast imported day has unknown, NULL labor by default');
+UPDATE public.daily_rollups SET labor_wage_status='actual',
+ staff_wages_cents=5500,staff_tax_cents=660
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND business_date='2026-10-16';
 SELECT pg_temp.assert((SELECT count(*)=1 FROM public.toast_void_facts WHERE
  void_business_date='2026-10-17'),'later-day void attribution');
 SELECT pg_temp.assert((SELECT count(*)=1 FROM public.order_lines
@@ -73,6 +82,11 @@ SELECT public.toast_import_day(
  "open_check_count":1,"service_charges_cents":0,"gratuity_cents":0,"unparsed_count":0,
  "warnings":{},"voids":[],"refund_facts":[],"unparsed":[],"snapshot_sha256":"test"}'::jsonb,
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa00e2');
+SELECT pg_temp.assert((SELECT labor_wage_status='actual' AND staff_wages_cents=5500
+ AND staff_tax_cents=660 FROM public.daily_rollups
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND business_date='2026-10-16'),
+ 're-import never overwrites existing labor columns');
 SELECT pg_temp.assert((SELECT count(*)=1 FROM public.orders WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
  AND pos_order_id like 'toast:%'),'idempotent order upsert');
 SELECT pg_temp.assert((SELECT count(*)=0 FROM public.toast_order_revisions),'unchanged day creates no revisions');

@@ -19,17 +19,24 @@ export async function syncCanonicalEmployees(db:SupabaseClient,businessId:string
  for(const person of incoming){
   let row=existing.find(e=>e.pos_team_member_id===person.posTeamMemberId);
   if(!row){
-   const names=existing.filter(e=>normalize(e.display_name)===normalize(person.displayName));
-   // Competing owner/manual staff identities require one review, never a guess.
-   if(names.length>1||names.length===1&&names[0].pos_team_member_id!==null){
-    const {error:re}=await db.from("pos_import_reviews").upsert({
-     business_id:businessId,provider:adapter.provider,review_type:"staff_identity",
-     source_key:person.posTeamMemberId,detail:{
+   if(adapter.provider==="toast"){
+    // A Toast GUID is the identity; duplicate names must never block copying.
+    const names=existing.filter(e=>e.pos_team_member_id===null&&
+     normalize(e.display_name)===normalize(person.displayName));
+    row=names.length===1?names[0]:undefined;
+   }else{
+    // Preserve the other POS providers' explicit ambiguity review behavior.
+    const names=existing.filter(e=>normalize(e.display_name)===normalize(person.displayName));
+    if(names.length>1||names.length===1&&names[0].pos_team_member_id!==null){
+     const {error:re}=await db.from("pos_import_reviews").upsert({
+      business_id:businessId,provider:adapter.provider,review_type:"staff_identity",
+      source_key:person.posTeamMemberId,detail:{
        displayName:person.displayName,candidates:names.map(e=>e.id)}
-    },{onConflict:"business_id,provider,review_type,source_key"});
-    if(re)throw re;review++;continue;
+     },{onConflict:"business_id,provider,review_type,source_key"});
+     if(re)throw re;review++;continue;
+    }
+    row=names.length===1?names[0]:undefined;
    }
-   row=names.length===1?names[0]:undefined;
   }
   const posActive=person.active!==false;
   const wage=person.hourlyWageCents??null;

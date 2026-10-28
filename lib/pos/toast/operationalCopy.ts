@@ -1,4 +1,5 @@
 import "server-only";
+import {randomUUID} from "node:crypto";
 import {affectedLocalDays} from "../timecardDay";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createToastAdapter} from "./adapter";
@@ -6,7 +7,6 @@ import {stageToastCatalog,stageToastRoster} from "./operationalStaging";
 import {syncCanonicalCatalog} from "../syncCatalog";
 import {syncCanonicalEmployees} from "../syncEmployees";
 import {syncToastLaborReadOnly} from "./laborSync";
-import {recomputeDailyRollup} from "../rollup";
 import {ToastApiError} from "./client";
 
 export type ToastCopyScope={businessId:string;restaurantGuid:string;locationId:string;
@@ -23,6 +23,10 @@ export async function copyToastStaff(db:SupabaseClient,p:ToastCopyScope){
 export async function copyToastAttendance(db:SupabaseClient,p:ToastCopyScope,
  range:{since:Date;until:Date},mode:"historical"|"modified"="historical"){
  await syncToastLaborReadOnly(db,p,range,"attendance",mode);
+ return importStagedToastAttendance(db,p);
+}
+/** Promote all already-staged entries, even when the Toast API has no changes. */
+export async function importStagedToastAttendance(db:SupabaseClient,p:ToastCopyScope){
  const {data,error}=await db.rpc("pos_import_toast_attendance",{
   p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid
  });
@@ -33,7 +37,14 @@ export async function copyToastAttendance(db:SupabaseClient,p:ToastCopyScope,
   for(const day of affectedLocalDays(interval.start,interval.end,p.timezone))
    dates.add(day);
  }
- for(const date of dates)await recomputeDailyRollup(db,p.businessId,date);
+ // Durable jobs survive an interrupted cron slice, including corrected old dates.
+ for(const date of dates){
+  const {error:queueError}=await db.from("toast_rollup_refresh_jobs").upsert({
+   business_id:p.businessId,business_date:date,retry_at:new Date().toISOString(),
+   generation:randomUUID()
+  },{onConflict:"business_id,business_date"});
+  if(queueError)throw new ToastApiError("unavailable");
+ }
  return {changed:info.changed??0,skipped:info.skipped??0,affectedDates:[...dates]};
 }
 /** A published menu outage must not unverify credentials or block sales. */

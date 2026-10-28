@@ -33,7 +33,19 @@ function fixture(rows:Row[]){
     return resolve({data:table==="employees"?rows:null,error:null});
    },
    update(values:Record<string,unknown>){pending=values;return q;},
-   async upsert(){return {error:null};},
+   upsert(values:Record<string,unknown>){
+    return {select:()=>({single:async()=>{
+     const id="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+     rows.push({id,display_name:String(values.display_name),
+      pos_team_member_id:String(values.pos_team_member_id),role:String(values.role),
+      active:Boolean(values.active),default_hourly_wage_cents:Number(values.default_hourly_wage_cents),
+      pos_display_name:String(values.pos_display_name),
+      pos_last_role:String(values.pos_last_role),
+      pos_last_wage_cents:Number(values.pos_last_wage_cents),
+      pos_last_active:Boolean(values.pos_last_active)});
+     return {data:{id},error:null};
+    }})};
+   },
   };
   return q;
  }};
@@ -60,7 +72,17 @@ describe("shared POS roster preserves owner-managed staff",()=>{
  });
  it("does not reactivate an owner-disabled manual employee on first link",async()=>{
   const f=fixture([manual("María Lopez",false)]);
-  await syncCanonicalEmployees(f.db,business,adapter("María Lopez"));
+  const result=await syncCanonicalEmployees(f.db,business,adapter("María Lopez"));
+  expect(result).toMatchObject({created:0,linked:1,review:0});
+  expect(f.rows).toHaveLength(1);
+  expect(f.rows[0]).toMatchObject({active:false,pos_team_member_id:posId,
+   display_name:"María Lopez",role:"Lead",default_hourly_wage_cents:2400});
+ });
+ it("does not reactivate an owner-disabled employee already linked by GUID",async()=>{
+  const f=fixture([{...manual("María Lopez",false),
+   pos_team_member_id:posId,pos_display_name:"María Lopez",pos_last_active:true}]);
+  const result=await syncCanonicalEmployees(f.db,business,adapter("María Lopez"));
+  expect(result).toMatchObject({created:0,linked:1});
   expect(f.rows[0].active).toBe(false);
  });
 });
