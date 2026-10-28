@@ -7,7 +7,7 @@ import { sumCents } from "@/lib/calc/money";
 export type MenuPrice = {id:string;name:string;priceCents:number};
 export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean};
 export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count";
-  provenance?:"estimate";detail?:"breakEvenSales"|"salesGap"|"dailyOverhead"}>;
+  provenance?:"estimate";detail?:"breakEvenSales"|"salesGap"|"dailyOverhead"|"pricing"}>;
   times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[];
   invalidatedKeys?:string[];invalidatedPriceIds?:string[];
   priceUpdates?:Array<{id:string;priceCents:number}>};

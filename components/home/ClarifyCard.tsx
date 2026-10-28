@@ -5,7 +5,8 @@ import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import {parseOwnerDecimal} from "@/lib/calc/localeDecimal";
 import {saveUsageEntry} from "@/lib/actions/pantry";
 type Block=z.infer<typeof clarifyBlockSchema>;
-type Copy={clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string};
+type Copy={clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string;
+ pricingLaborPrefix:string;pricingBillsPrefix:string};
 export default function ClarifyCard({block,locale,copy,state,choice,disabled,onSend}:{
  block:Block;locale:"en"|"es"|"ar";copy:Copy;state:"hidden"|"active"|"chosen"|"skipped";choice:string|null;
  disabled:boolean;onSend:(text:string)=>void;
@@ -64,8 +65,8 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
      <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-sm">{String.fromCharCode(65+i)}</span><span>{o.label}</span>
    </button>)}</div>
    {block.allowOther&&(other?<form className="space-y-2" onSubmit={e=>{e.preventDefault();if(typed.trim()&&!disabled){
-     const kind=block.options.some(option=>option.value==="labor-monthly")?"Monthly labor":
-       block.options.some(option=>option.value==="bills-monthly")?"Monthly bills":null;
+     const kind=block.options.some(option=>option.value==="labor-monthly")?copy.pricingLaborPrefix:
+       block.options.some(option=>option.value==="bills-monthly")?copy.pricingBillsPrefix:null;
      onSend(kind?kind+": "+typed.trim():typed.trim());
    }}}>
      <input maxLength={200} value={typed} onChange={e=>setTyped(e.target.value)} aria-label={copy.clarifyOtherPlaceholder}

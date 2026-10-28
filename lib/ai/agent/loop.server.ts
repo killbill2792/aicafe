@@ -10,6 +10,10 @@ import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
 import {newResolveState,observeToolResult} from "./resolve";
 import {acceptedExplainLines,type ExplainLine} from "./explain";
+import {verifiedRecommendedPriceInReply} from "./pricingReply";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -285,8 +289,8 @@ export async function runAgentTurn(args: {
             typeof candidate.label==="string"&&typeof candidate.id==="string"?
               [{label:candidate.label,value:candidate.id}]:[]);
           if(options.length>=2){
-            const question=kind==="labor"?"What is your total monthly labor cost?":
-              "What is your total monthly bills cost, including rent?";
+            const copy={en,es,ar}[args.context.locale].SupervisorChat;
+            const question=kind==="labor"?copy.pricingClarifyLabor:copy.pricingClarifyBills;
             const card=await executeAgentTool("ask_owner",{
               question,kind:"choice",options,allowOther:true},args.context);
             if(card.missing.length===0){
@@ -375,7 +379,8 @@ export async function runAgentTurn(args: {
    const priced=results.map(r=>r.result).find(r=>r.source==="new_item_price");
    if(priced&&typeof priced.recommendedPriceCents==="number"){
     const value=new Intl.NumberFormat(args.context.locale,{style:"currency",currency:"USD"}).format(priced.recommendedPriceCents/100);
-    text=value+". "+String(priced.pricingNote??"Product cost target; full costs may be incomplete")+". ";
+    const copy={en,es,ar}[args.context.locale].SupervisorChat;
+    text=value+". "+String(priced.pricingNote??copy.pricingNoteIncomplete)+". ";
    }
   }
   usage.latencyMs = now() - started;
@@ -391,9 +396,8 @@ export async function runAgentTurn(args: {
       Boolean(line)&&typeof line==="object"&&"source" in line&&typeof line.source==="string") :[]);
   const priceResult=toolResults.find(r=>r.source==="new_item_price");
   const price=typeof priceResult?.recommendedPriceCents==="number"&&
-    text.includes((priceResult.recommendedPriceCents/100).toFixed(2))&&
-    !unverified.some(span=>text.slice(span.start,span.end).includes((priceResult.recommendedPriceCents as number/100).toFixed(2)))?
-    priceResult.recommendedPriceCents:null;
+    verifiedRecommendedPriceInReply(text,priceResult.recommendedPriceCents,
+      args.context.locale,unverified)?priceResult.recommendedPriceCents:null;
   const explain=acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale,price);
   return { text, endReason, status,
     unverified,

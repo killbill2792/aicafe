@@ -56,7 +56,8 @@ export type SupervisorChatCopy = {
   answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string; provenanceOwner:string;provenanceEstimate:string;provenanceUnchecked:string;provenanceBreakEven:string;provenanceSalesGap:string;provenanceLegend:string;provenanceOverhead:string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
   clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string;
-  howIGotThis:string;howCalculated:string;explainMissing:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
+  howIGotThis:string;howCalculated:string;explainMissing:string;
+  pricingLaborPrefix:string;pricingBillsPrefix:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
   explainMultiply:string;explainSum:string;explainDivide:string;explainRatio:string;explainProrate:string;explainSubtract:string;
   feedbackUp: string; feedbackDown: string; feedbackSaved: string; feedbackError: string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
