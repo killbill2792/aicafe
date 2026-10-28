@@ -4,7 +4,7 @@ import {cardValueSchema,diffFields,type CardValue,type DiffField} from "@/lib/fo
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import {readStaffProposalToken,readStaffProposalSources,
+import {readStaffProposalToken,readStaffProposalSources,readStaffProposalLocalDate,
  type StaffProposalShift as Shift} from "@/lib/data/staffProposalSources.server";
 import {parseAvailabilityText} from "@/lib/calc/scheduling/parseAvailabilityText";
 import {assertStaffShiftPlan,formatStaffApprovalRuleValue,formatStaffShiftWithBreak} from "@/lib/calc/scheduling/staffProposalValidation";
@@ -56,20 +56,10 @@ const add=(d:string,n:number)=>new Date(Date.parse(d+"T12:00:00Z")+86400000*n).t
 const fmtShift=(s:Shift)=>when({date:s.local_date,start:s.start_local.slice(0,5),end:s.end_local.slice(0,5)});
 function ensure(ok:unknown,msg:string):asserts ok{if(!ok)throw new Error(msg);}
 export {readStaffProposalToken};
-async function cafeLocalDate(scope:OwnerLoopScope){
- const owner=await import("@/lib/scheduling/foundation.server").then(m=>m.requireSchedulingOwner());
- if(!owner||owner.businessId!==scope.businessId)throw new Error("Café owner scope unavailable");
- const {data,error}=await owner.supabase.from("businesses").select("timezone").eq("id",scope.businessId).single();
- if(error||!data?.timezone)throw new Error("Café timezone unavailable");
- const parts=new Intl.DateTimeFormat("en-US",{timeZone:data.timezone,
-  year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
- const part=(key:string)=>parts.find(p=>p.type===key)?.value??"";
- return part("year")+"-"+part("month")+"-"+part("day");
-}
 async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
  const parsed=staffProposalInputs[name].parse(raw);
  const input=name==="propose_schedule"&&"week_start" in parsed&&parsed.week_start===null
-  ?{...parsed,week_start:nextMonday(await cafeLocalDate(scope))}:parsed;
+  ?{...parsed,week_start:nextMonday(await readStaffProposalLocalDate(scope))}:parsed;
  const copy=({en,es,ar} as const)[scope.locale].StaffApprovalCard;
  const dayCopy=({en,es,ar} as const)[scope.locale].SchedulingAvailability;
  const days=weekdayKeys.map(key=>dayCopy[key]);
