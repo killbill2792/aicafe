@@ -6,8 +6,9 @@ import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
 
 const daySchema=z.iso.date();
 const LIMIT=5;
-const SAFE_STRING=/^(?:guid|id|restaurantGuid|restaurantId|externalId|type|cardType|cardEntryMode|source|status|paymentStatus|refundStatus|diningOption|jobReference|employeeReference|job|title|inDate|outDate|modifiedDate|businessDate|createdDate|closedDate)$/i;
-const SENSITIVE=/(?:card(?!Type$|EntryMode$)|token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|pan|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|state|country|ip.?address|device.?id|loyalty|gift.?card|notes?|description|display.?name|^name$|^text$|comment|memo|contact|holder|recipient)/i;
+const SAFE_STRING=/^(?:type|cardType|cardEntryMode|source|status|paymentStatus|refundStatus|diningOption)$/i;
+const SAFE_NUMBER=/^(?:amount|tipAmount|refundAmount|tipRefundAmount|originalProcessingFee|mcaRepaymentAmount|hourlyWage|defaultWage|wage|price|quantity|hours|totalHours|closeoutHour|taxAmount|serviceCharge|discountAmount|nonCashSales|cashSales|netSales|grossSales)$/i;
+const SENSITIVE=/(?:card(?!Type$|EntryMode$)|token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|pan|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|state|country|ip.?address|device.?id|loyalty|gift.?card|guest|patron|person|buyer|purchaser|notes?|description|display.?name|^name$|^text$|comment|memo|contact|holder|recipient|pin$|security.?code|verification.?code)/i;
 /** Fail closed on sensitive names, including unexpected nested Toast fields. */
 export function redactToastRaw(value:unknown,depth=0,key=""):unknown {
  if(depth>16)return null;
@@ -17,6 +18,7 @@ export function redactToastRaw(value:unknown,depth=0,key=""):unknown {
    .filter(([key])=>!SENSITIVE.test(key))
    .map(([key,v])=>[key,redactToastRaw(v,depth+1,key)]));
  }
+ if(typeof value==="number"&&!SAFE_NUMBER.test(key))return "[redacted]";
  if(typeof value==="string"){
   // Never persist freeform content or identifiers that might contain customer PII.
   if(!SAFE_STRING.test(key)||value.length>120||/@/.test(value)||/\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/.test(value))return "[redacted]";
@@ -74,12 +76,19 @@ export async function captureToastRawSample(
  if(!GUID.safeParse(businessId).success||!daySchema.safeParse(businessDate).success||
   businessDate>new Date().toISOString().slice(0,10))return {captured:0,skipped:true,failed:0};
  let captured=0,failed=0;
+ let leaseNonce:string|null=null;
  try{
   const {data:mappings,error}=await db.from("toast_location_mappings")
    .select("restaurant_guid").eq("business_id",businessId).not("verified_at","is",null)
    .order("restaurant_guid",{ascending:true}).limit(1);
   if(error||!mappings?.length)return {captured:0,skipped:true,failed:0};
   const guid=mappings[0].restaurant_guid as string;
+  const {data:nonce,error:leaseError}=await db.rpc("toast_acquire_lease",{
+   p_business_id:businessId,p_restaurant_guid:guid,p_seconds:290
+  });
+  if(leaseError)return {captured:0,skipped:true,failed:1};
+  if(!nonce)return {captured:0,skipped:true,failed:0};
+  leaseNonce=String(nonce);
   if(!await claimToastRawSample(db,businessId,guid,businessDate))
    return {captured:0,skipped:true,failed:0};
   const client=createToastClient(db,businessId);
@@ -137,5 +146,9 @@ export async function captureToastRawSample(
    }
   }
  }catch{return {captured,skipped:captured===0,failed:failed+1};}
+ finally{
+  if(leaseNonce)try{await db.rpc("toast_release_lease",{p_nonce:leaseNonce});}
+   catch{/* A diagnostic must never throw into cron or the owner route. */}
+ }
  return {captured,skipped:false,failed};
 }
