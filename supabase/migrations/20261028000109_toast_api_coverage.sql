@@ -67,7 +67,7 @@ with latest as (
  select distinct on (business_id,restaurant_guid,business_date)
   business_id,restaurant_guid,business_date,capture_id
  from public.toast_raw_samples
- where capture_id is not null and endpoint<>'__capture__'
+ where capture_id is not null and error_code='not_attempted' and endpoint<>'__capture__'
  order by business_id,restaurant_guid,business_date,fetched_at desc,id desc
 ), records as (
  select s.* from public.toast_raw_samples s join latest l
