@@ -3351,6 +3351,7 @@
     "none": "Sin configurar"
   },
   "MetricsNotes": {
+    "itemRecordedBusinessCosts": "Costes del negocio registrados",
     "itemIngredientsPackaging": "Ingredientes y envase",
     "itemUnitsMonth": "Unidades/mes",
     "itemLaborPerDrink": "Personal por bebida",
