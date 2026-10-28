@@ -41,6 +41,7 @@ describe("shared Toast day trust",()=>{
     {date:"2026-08-01",status:"imported",needsLook:false},
     {date:"2026-08-01",status:"failed",needsLook:true},
   ]);
+  canonical.mockResolvedValue(new Set(["2026-08-01"]));
   const trust=await readToastDayTrust({} as never,"business","2026-08-01","2026-08-01");
   expect(trust.blocked.size).toBe(0);
   expect(trust.quality).toEqual([needsLookKey(["2026-08-01"]),incompleteDayKey(["2026-08-01"])]);
