@@ -3378,6 +3378,11 @@
     "monthCalendarSparseSales": "Fewer than seven sales days are available; coverage is an early estimate.",
     "laborOwnerExtras": "Includes owner-reported monthly payroll extras.",
     "ownerPayrollExtras": "Other payroll costs reported by owner",
-    "feePlanPartialCoverage": "Saved card fee plan covers only part of this period; other fees use recorded data or estimates."
+    "feePlanPartialCoverage": "Saved card fee plan covers only part of this period; other fees use recorded data or estimates.",
+    "modifierSizePrices": "Milk swap costs for each size",
+    "modifierMissingInput": "Missing information",
+    "modifierSuggestedUpcharge": "Suggested upcharge",
+    "modifierMarginKept": "Additional amount kept",
+    "modifierDefaultTarget": "Suggested prices use an estimated 30% product-cost target; confirm your target before changing prices."
   }
 }
