@@ -1,0 +1,67 @@
+name: sync-cafe-data
+
+# Syncs café operating data between two café businesses in this project (ids live in
+# scripts/sync-cafe-data.mjs, not here, to keep account info out of source control).
+# Idempotent and one-directional — see the header comment in that script for the full
+# table scope, exclusions, and the insert-if-missing vs. refresh-window strategy.
+#
+# Runs on GitHub's infrastructure, not on anyone's laptop, so it keeps going even if
+# the local machine is off or the session that set it up has ended.
+#
+# Self-expires after the 14-day window below. To extend, bump SYNC_CUTOFF_DATE.
+# To stop early, disable or delete this workflow from the Actions tab.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      full_copy:
+        description: "Force a full copy of every refresh-window table (orders, rollups, timecards, card-fee facts, Toast day facts), ignoring each table's own current state"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cafe-data-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment: toast-prod
+    timeout-minutes: 15
+    steps:
+      - name: Check 14-day sync window
+        id: gate
+        env:
+          SYNC_CUTOFF_DATE: "2026-11-11"
+        run: |
+          today=$(date -u +%Y-%m-%d)
+          if [[ "$today" > "$SYNC_CUTOFF_DATE" ]]; then
+            echo "Past the sync window (cutoff $SYNC_CUTOFF_DATE) — skipping. Delete this workflow, or bump SYNC_CUTOFF_DATE to continue."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.skip == 'false'
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.skip == 'false'
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        if: steps.gate.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Run sync
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          FULL_COPY: ${{ github.event.inputs.full_copy == 'true' }}
+        run: node scripts/sync-cafe-data.mjs
