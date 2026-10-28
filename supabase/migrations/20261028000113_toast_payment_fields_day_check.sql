@@ -320,7 +320,7 @@ create table if not exists public.toast_order_typed_facts (
  raw_record_id uuid primary key references public.toast_raw_records(id) on delete cascade,
  business_id uuid not null references public.businesses(id) on delete cascade,
  restaurant_guid uuid, business_date date, order_guid uuid,run_id uuid,
- order_duration_seconds bigint,
+ order_duration_seconds bigint,source_seen_at timestamptz,
  check_discounts jsonb not null default '[]'::jsonb,
  item_discounts jsonb not null default '[]'::jsonb,
  item_taxes jsonb not null default '[]'::jsonb,
@@ -343,11 +343,10 @@ grant select,insert on public.toast_order_typed_facts to service_role;
 create or replace function public.toast_safe_business_label(p_label text)
 returns text language sql immutable strict set search_path=public as $safe$
 select case
- when length(p_label)>200 then left(p_label,200)
  when p_label ~* '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
   or p_label ~ '(^|[^[:digit:]])[[:digit:]]{13,19}([^[:digit:]]|$)'
   or p_label ~ '(^|[^[:digit:]])[[:digit:]]{3}[-. ]?[[:digit:]]{3}[-. ]?[[:digit:]]{4}([^[:digit:]]|$)'
- then null else p_label end
+ then null else left(p_label,200) end
 $safe$;
 revoke all on function public.toast_safe_business_label(text) from public,anon;
 
@@ -470,10 +469,10 @@ begin
  end loop;
  insert into public.toast_order_typed_facts(
   raw_record_id,business_id,restaurant_guid,business_date,order_guid,run_id,
-  order_duration_seconds,check_discounts,item_discounts,item_taxes,
+  order_duration_seconds,source_seen_at,check_discounts,item_discounts,item_taxes,
   modifier_prices,void_details,refund_details)
  values(v_raw.id,v_raw.business_id,v_raw.restaurant_guid,v_raw.business_date,v_raw.entity_guid,
-  v_raw.run_id,duration,check_ds,item_ds,tax_items,mods,voids,refunds)
+  v_raw.run_id,duration,v_raw.first_seen,check_ds,item_ds,tax_items,mods,voids,refunds)
  on conflict(raw_record_id) do nothing;
  return;
 end $typed$;
@@ -490,7 +489,7 @@ revoke all on function public.toast_capture_typed_order_trigger() from public,an
 drop trigger if exists toast_raw_order_typed_capture on public.toast_raw_records;
 create trigger toast_raw_order_typed_capture
  after insert on public.toast_raw_records
- for each row when (new.entity='order')
+ for each row when (v_raw.entity='order')
  execute function public.toast_capture_typed_order_trigger();
 
 -- Migration 111 may already hold historical raw rows. Build their typed
@@ -623,7 +622,7 @@ with (security_invoker=true) as
   and day.business_date=t.business_date
   and day.import_state='imported' and day.last_import_run_id=t.run_id
  order by t.business_id,t.restaurant_guid,t.business_date,t.order_guid,
-  t.captured_at desc,t.raw_record_id desc;
+  t.source_seen_at desc nulls last,t.raw_record_id desc;
 revoke all on public.toast_current_typed_order_facts_v from public,anon;
 grant select on public.toast_current_typed_order_facts_v to authenticated,service_role;
 
@@ -648,8 +647,7 @@ create or replace view public.cv_item_sales (business_id,source,source_ref,statu
   'needs_match'::text,(m.last_checked_at at time zone b.timezone)::date,
   null::bigint,null::numeric,
   jsonb_build_object('kind','modified_order','order_guid',m.order_guid,
-   'reviewed_at',m.last_checked_at,'staging_state',m.state),
-  null::bigint,null::jsonb,null::jsonb
+   'reviewed_at',m.last_checked_at,'staging_state',m.state)
  from public.toast_modified_orders_staging m
  join public.businesses b on b.id=m.business_id
  where m.state='review_required';
@@ -690,4 +688,26 @@ create or replace view public.cv_voids_refunds (business_id,source,source_ref,st
   where t.business_id=f.business_id and t.restaurant_guid=f.restaurant_guid
    and t.order_guid=f.order_guid and t.business_date=f.order_business_date limit 1)
  from public.toast_refund_facts f;
+
+-- Health and any other consumer share the same sales-only last-import rule.
+create or replace view public.toast_sync_health_v with(security_invoker=true) as
+select m.business_id,m.restaurant_guid,
+ (select max(d.imported_at) from public.toast_day_status d
+  where d.business_id=m.business_id and d.restaurant_guid=m.restaurant_guid
+    and d.import_state='imported' and d.imported_at is not null) as last_good_sync_at,
+ (select min(s.business_date) from public.toast_day_status s where s.business_id=m.business_id
+ and s.restaurant_guid=m.restaurant_guid and s.import_state='missing') as oldest_missing_day,
+ (select count(*) from public.toast_owner_attention_days_v a where a.business_id=m.business_id
+ and a.restaurant_guid=m.restaurant_guid) as days_needing_look,
+ (select r.state from public.toast_sync_runs r where r.business_id=m.business_id
+ and r.restaurant_guid=m.restaurant_guid order by r.started_at desc nulls last limit 1) as current_run_state,
+ not exists(select 1 from public.toast_day_status d where d.business_id=m.business_id
+ and d.restaurant_guid=m.restaurant_guid and d.import_state='imported'
+ and d.imported_at>=now()-interval '36 hours') as stale,
+ case when m.toast_time_zone is not null and m.toast_time_zone is distinct from b.timezone
+ then jsonb_build_object('time_zone_mismatch',true,'toast_time_zone',m.toast_time_zone,'reporting_time_zone',b.timezone)
+ else '{}'::jsonb end as warnings,
+ (select count(*)::integer from public.toast_day_status s where s.business_id=m.business_id
+ and s.restaurant_guid=m.restaurant_guid and s.unparsed_count>0) as days_with_unreadable_orders
+from public.toast_location_mappings m join public.businesses b on b.id=m.business_id;
 
