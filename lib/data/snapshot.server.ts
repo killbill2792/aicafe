@@ -340,7 +340,8 @@ async function readHistoricalBusinessSnapshot(
     .eq("id",businessId).single();
   if(businessError||!business||!business.timezone)throw new Error("Historical café scope unavailable");
   const today=formatInTimeZone(new Date(),business.timezone,"yyyy-MM-dd");
-  if(period.to>today)throw new Error("Historical period in future");
+  if(period.from>today)throw new Error("Historical period has no completed dates");
+  period={...period,to:period.to>today?today:period.to};
   const first=period.from.slice(0,7)+"-01";
   const last=period.to.slice(0,7);
   const [year,month]=last.split("-").map(Number);
@@ -349,23 +350,39 @@ async function readHistoricalBusinessSnapshot(
     supabase.from("daily_rollups")
       .select("business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,staff_tax_source,sales_data_status,card_fees_cents,card_fees_status,voids_cents")
       .eq("business_id",businessId).gte("business_date",period.from)
-      .lte("business_date",period.to).order("business_date",{ascending:true}).limit(4000),
+      .lte("business_date",period.to).order("business_date",{ascending:true}).range(0,999),
     supabase.from("recurring_costs")
       .select("category_code,amount_cents,is_estimate,active_from,active_to")
       .eq("business_id",businessId).lte("active_from",period.to),
     supabase.from("expenses").select("category_code,amount_cents,status,spent_on")
-      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd).limit(4000),
+      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd).order("spent_on",{ascending:true}).order("category_code",{ascending:true}).range(0,999),
     supabase.from("locations").select("open_hours")
       .eq("business_id",businessId).order("name",{ascending:true}).limit(1),
     readPeriodItemSales(supabase,businessId,period),
   ]);
   for(const result of [rollups,recurring,expenses,locations])
     if(result.error)throw result.error;
-  // PostgreSQL / PostgREST defaults to a 1,000 row cap. Fail closed on possibly
-  // truncated windows rather than representing an incomplete return as complete.
-  if((rollups.data??[]).length>=4000||(expenses.data??[]).length>=4000)
-    throw new Error("Historical period exceeds the supported read window");
-  const recorded=(rollups.data??[]).map(rowToDailyFacts);
+  // Page every historical record. PostgREST commonly caps queries at 1,000 rows.
+  const allRollups=[...(rollups.data??[])];
+  for(let offset=1000;offset<=allRollups.length;offset+=1000){
+    const page=await supabase.from("daily_rollups")
+      .select("business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,staff_tax_source,sales_data_status,card_fees_cents,card_fees_status,voids_cents")
+      .eq("business_id",businessId).gte("business_date",period.from)
+      .lte("business_date",period.to).order("business_date",{ascending:true}).range(offset,offset+999);
+    if(page.error)throw page.error;
+    allRollups.push(...(page.data??[]));
+    if((page.data??[]).length<1000)break;
+  }
+  const allExpenses=[...(expenses.data??[])];
+  for(let offset=1000;offset<=allExpenses.length;offset+=1000){
+    const page=await supabase.from("expenses").select("category_code,amount_cents,status,spent_on")
+      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd)
+      .order("spent_on",{ascending:true}).order("category_code",{ascending:true}).range(offset,offset+999);
+    if(page.error)throw page.error;
+    allExpenses.push(...(page.data??[]));
+    if((page.data??[]).length<1000)break;
+  }
+  const recorded=allRollups.map(rowToDailyFacts);
   const sales=recorded.filter(d=>d.salesDataStatus!=="missing");
   const months:string[]=[];
   let cursor=first;
@@ -374,7 +391,7 @@ async function readHistoricalBusinessSnapshot(
     const [y,m]=cursor.split("-").map(Number);
     const next=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);
     cursor=next+"-01";
-    if(months.length>120)throw new Error("Historical period exceeds 120 months");
+    if(months.length>2400)throw new Error("Historical period exceeds supported calendar bounds");
   }
   const monthlyAmounts:import("@/lib/calc").CategoryMonthlyAmount[]=[];
   const missingExpenseCategories:string[]=[];
@@ -384,7 +401,7 @@ async function readHistoricalBusinessSnapshot(
     const finalDay=key+"-"+String(new Date(Number(key.slice(0,4)),Number(key.slice(5,7)),0)
       .getDate()).padStart(2,"0");
     for(const categoryCode of relevantCodes){
-      const actual=(expenses.data??[]).filter(r=>r.category_code===categoryCode&&
+      const actual=allExpenses.filter(r=>r.category_code===categoryCode&&
         r.spent_on>=key+"-01"&&r.spent_on<=finalDay);
       const configured=(recurring.data??[]).filter(r=>r.category_code===categoryCode&&
         r.active_from<=finalDay&&(!r.active_to||r.active_to>=key+"-01"));
@@ -396,7 +413,7 @@ async function readHistoricalBusinessSnapshot(
       monthlyAmounts.push({monthKey:key,categoryCode,amountCents,isEstimate,isMissing});
       if(isEstimate)estimatedExpenseCategories.push("expense:"+categoryCode+":"+key);
       if(isMissing&&((recurring.data??[]).some(r=>r.category_code===categoryCode)||
-        (expenses.data??[]).some(r=>r.category_code===categoryCode)))
+        allExpenses.some(r=>r.category_code===categoryCode)))
         missingExpenseCategories.push("expense:"+categoryCode+":"+key);
     }
   }
