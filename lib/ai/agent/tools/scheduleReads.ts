@@ -78,12 +78,25 @@ export const scheduleReadTools={
    const input=namedWeek.parse(raw),ws=await localWeek(input.week_start,ctx);
    const result=await getWeekSchedule({weekStart:ws});
    if(!result.ok)return fail("staff_week",null,result.error);
+   const all=mergeScheduleShifts(result.data);
    let selected=result.data.team;
    if(input.name){
      const chosen=resolveChosenEntity(ctx.resolveState,selected,person=>person.id);
      if(chosen)selected=[chosen];
      else{
        const matched=resolveEntity("employee",input.name,selected,{nameOf:person=>person.name,idOf:person=>person.id,describe:person=>person.role??"Team"});
+       if(matched.status==="none"){
+        const namedToast=all.filter(shift=>shift.source==="toast"&&!shift.employeeId&&
+         shift.employeeName.trim().toLocaleLowerCase()===input.name!.trim().toLocaleLowerCase());
+        if(namedToast.length&&ownerNamedTarget(ctx.resolveState,namedToast[0].id,namedToast[0].employeeName))
+         return {source:"employees+scheduled_shifts",period:{from:result.data.dates[0],to:result.data.dates[6]},
+          agentId:"olivia",people:[{id:null,name:namedToast[0].employeeName,role:null,source:"toast"}],
+          shifts:namedToast.slice(0,30),weeklyPaidMinutes:null,knownWagesCents:null,missingWageCount:null,
+          missing:["toastWorkerNotLinked",...(namedToast.length>30?["moreShifts"]:[]),
+           ...(result.data.posScheduleError?["toastScheduleReadFailed"]:[])],
+          dataNotes:[{en,es,ar}[ctx.locale].DataNotes.toastWorkerNotLinked,
+           ...toastScheduleNotes(result.data,ctx.locale)]};
+       }
        if(matched.status!=="resolved")return {...choicePayload(matched,"employees+scheduled_shifts",null),agentId:"olivia"};
        selected=[matched.value];
      }
@@ -91,7 +104,6 @@ export const scheduleReadTools={
    if(input.name&&selected.length===1&&!ownerNamedTarget(ctx.resolveState,selected[0].id,selected[0].name))
      return fail("employees+scheduled_shifts",null,"targetNotConfirmed");
    const activeShifts=result.data.shifts;
-   const all=mergeScheduleShifts(result.data);
    const scoped=input.name?all.filter(shift=>selected.some(person=>
      person.id===shift.employeeId||person.name.toLocaleLowerCase()===shift.employeeName.toLocaleLowerCase())):all;
    const totals=aggregateCosts(activeShifts);

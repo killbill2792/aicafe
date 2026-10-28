@@ -3379,6 +3379,7 @@
     "toastScheduleReasonUnavailable": "the schedule source is unavailable",
     "todaySalesCheckUnavailable": "Today's sales couldn't be checked; the latest full day is unknown.",
     "todaySalesCheckFailedWithHistory": "Today's sales couldn't be checked. The latest stored day was {date}: {amount} (completeness unverified).",
-    "lastFullDayCheckFailed": "Today isn't imported yet; the last full day's totals couldn't be checked."
+    "lastFullDayCheckFailed": "Today isn't imported yet; the last full day's totals couldn't be checked.",
+    "toastWorkerNotLinked": "This worker is scheduled in Toast but is not linked to an app team profile. Their identity and wages are not verified."
   }
 }

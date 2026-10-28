@@ -3379,6 +3379,7 @@
     "toastScheduleReasonUnavailable": "مصدر الجدول غير متاح",
     "todaySalesCheckUnavailable": "تعذّر التحقق من مبيعات اليوم؛ آخر يوم مكتمل غير معروف.",
     "todaySalesCheckFailedWithHistory": "تعذّر التحقق من مبيعات اليوم. آخر يوم محفوظ كان {date}: {amount} (لم يتم التحقق من اكتماله).",
-    "lastFullDayCheckFailed": "لم تُستورد مبيعات اليوم بعد؛ وتعذّر التحقق من إجماليات آخر يوم مكتمل."
+    "lastFullDayCheckFailed": "لم تُستورد مبيعات اليوم بعد؛ وتعذّر التحقق من إجماليات آخر يوم مكتمل.",
+    "toastWorkerNotLinked": "هذا العامل مُدرج في جدول Toast لكنه غير مرتبط بملف موظف في التطبيق. لم يتم التحقق من هويته أو أجره."
   }
 }
