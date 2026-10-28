@@ -18,7 +18,7 @@ vi.mock("@/lib/pos/processingFeeEstimate.server",()=>({
 import {getBusinessSnapshotFromDb} from "./snapshot.server";
 
 const cafeId="00000000-0000-4000-8000-000000000001";
-function readOnlyClient(){
+function readOnlyClient(expenseCount=0){
   const tables:string[]=[];
   const filters:Array<{table:string;field:string;value:unknown}>=[];
   const values:Record<string,unknown[]>={
@@ -36,21 +36,23 @@ function readOnlyClient(){
     })),
     recurring_costs:[{category_code:"rent",amount_cents:300000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
-    expenses:[],
+    expenses:Array.from({length:expenseCount},(_,i)=>({id:"expense-"+i,category_code:"rent",
+      amount_cents:100,status:"actual",spent_on:"2026-09-30"})),
   };
   const client={
     from(table:string){
       tables.push(table);
       const result={data:values[table]??[],error:null};
+      let first=0,last=Number.MAX_SAFE_INTEGER;
       const q={
         select(){return q;},
         eq(field:string,value:unknown){filters.push({table,field,value});return q;},
         gte(){return q;},lte(){return q;},or(){return q;},order(){return q;},
-        limit(){return q;},range(){return q;},
+        limit(){return q;},range(start:number,end:number){first=start;last=end;return q;},
         single(){return Promise.resolve({...result,data:result.data[0]??null});},
         maybeSingle(){return Promise.resolve({...result,data:result.data[0]??null});},
         then(ok:(value:typeof result)=>unknown,fail?:((err:unknown)=>unknown)){
-          return Promise.resolve(result).then(ok,fail);
+          return Promise.resolve({...result,data:result.data.slice(first,last+1)}).then(ok,fail);
         },
         insert(){throw Error("Historical reader tried to write");},
         update(){throw Error("Historical reader tried to write");},
@@ -84,5 +86,16 @@ describe("historical snapshot is genuinely read-only",()=>{
     expect(tables).toEqual(["businesses","daily_rollups","recurring_costs","expenses","locations"]);
     for(const table of tables.filter(name=>name!=="businesses"))
       expect(filters).toContainEqual({table,field:"business_id",value:cafeId});
+  });
+  it("reads past the default 1000-row response cap without dropping money",async()=>{
+    spies.readItems.mockResolvedValue({period:{from:"2026-09-30",to:"2026-10-01"},covered:false,soldItems:[]});
+    spies.plans.mockResolvedValue([]);
+    const {client,tables}=readOnlyClient(1001);
+    const snapshot=await getBusinessSnapshotFromDb(client,cafeId,{from:"2026-09-30",to:"2026-10-01"});
+    const history=(snapshot as typeof snapshot&{historicalPeriod:{monthlyAmounts:Array<{
+      monthKey:string;categoryCode:string;amountCents:number}>}}).historicalPeriod;
+    expect(history.monthlyAmounts.find(row=>row.monthKey==="2026-09"&&row.categoryCode==="rent")?.amountCents)
+      .toBe(100100);
+    expect(tables.filter(name=>name==="expenses")).toHaveLength(2);
   });
 });
