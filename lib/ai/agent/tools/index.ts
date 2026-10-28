@@ -274,8 +274,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(resolved.status!=="resolved")return periodChoicePayload(name,resolved);
   const requested={from:resolved.value.from,to:resolved.value.to};
   // An explicitly requested historical period must never be silently replaced.
-  const canFallback=typeof choice==="string"&&["today","week","month"].includes(choice);
-  const selection=canFallback?await resolveCoveredSalesWindow(ctx,requested):{period:requested,label:null,coverageFallback:null};
+  const selection=await resolveCoveredSalesWindow(ctx,requested);
   const period=selection.period;
   if(name==="get_profit"){
     const slice=await ctx.tools.getProfitability(period);
