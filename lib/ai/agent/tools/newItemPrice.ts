@@ -34,7 +34,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     const drinks=days.reduce((sum,day)=>sum+Math.max(0,day.drinksCount),0);
     const orders=days.reduce((sum,day)=>sum+Math.max(0,day.ordersCount),0);
     const sold=drinks>0?drinks:orders;
-    if(days.length&&sold>0){
+    if(days.length){
      units=Math.round(sold/days.length*periodDays(month));
      coverageLabel=coverage.label?coverage.label+", "+coverage.period.to.slice(0,4):
       "Recorded sales: "+coverage.period.from+"–"+coverage.period.to;
