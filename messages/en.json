@@ -3349,5 +3349,31 @@
     "saved": "Financial settings saved",
     "failed": "Check the values and try again",
     "none": "Not set"
+  },
+  "MetricsNotes": {
+    "feeDefaultEstimateAskRate": "Card fees estimated using 2.9%; tell me your actual rate.",
+    "feeSalesDaysMissing": "Some sales days have not been imported.",
+    "feeNetSalesProxy": "Card-sales amount unavailable; net sales used to estimate fees.",
+    "feeFixedTransactionCountMissing": "Processing plan needs a transaction count for fixed fees.",
+    "feeOwnerPlanInvalid": "Saved fee plan could not be used; stored fee facts or estimates used.",
+    "laborCoveragePartial": "Labor projected from the days with recorded pay.",
+    "laborWageUnknown": "A wage or payroll tax amount is missing.",
+    "laborEstimated": "Some labor amounts are estimates.",
+    "laborNoCoveredDays": "No days have complete recorded labor.",
+    "profitSalesDaysMissing": "Some sales days are not imported yet.",
+    "profitBillsMissing": "Some bills are missing; profit is a known-cost subtotal.",
+    "profitFeesMissing": "Some card fees are missing; profit uses a labeled estimate.",
+    "profitLaborMissing": "Labor is incomplete; profit is a known-cost subtotal.",
+    "profitProductCostsMissing": "Some ingredient costs are missing; profit is a known-cost subtotal.",
+    "profitBillsEstimated": "Some bills are estimated.",
+    "profitFeesEstimated": "Processing fees include an estimate.",
+    "profitLaborEstimated": "Some labor is estimated.",
+    "profitProductCostsEstimated": "Some product costs are estimated.",
+    "breakEvenCoveragePartial": "Break-even uses fewer than 28 complete café days.",
+    "breakEvenBillsMissing": "Some monthly bills are unknown.",
+    "breakEvenLaborMissing": "Some labor costs are unknown.",
+    "breakEvenDrinksMissing": "Drink volume is not available.",
+    "NO_SALES": "No covered sales days are available.",
+    "VARIABLE_COSTS_TOO_HIGH": "Sales after variable costs do not cover any fixed costs."
   }
 }
