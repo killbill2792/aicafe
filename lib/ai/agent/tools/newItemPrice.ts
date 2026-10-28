@@ -55,8 +55,8 @@ export const newItemPriceTools={suggest_new_item_price:{
      const match=line.match(pattern);
      return match&&Math.abs(Number(match[1])-value)<.001;
     });
-   const costOwner=statedPercent(/(?:drink|product|ingredient)\\s*cost\\s*(?:target|of|is|to)?\\s*(\\d+(?:\\.\\d+)?)\\s*%/iu,v.target_drink_cost_percent);
-   const marginOwner=statedPercent(/(?:operating|profit)\\s*margin\\s*(?:of|is|to)?\\s*(\\d+(?:\\.\\d+)?)\\s*%/iu,v.operating_margin_percent);
+   const costOwner=statedPercent(/(?:drink|product|ingredient)\s*cost\s*(?:target|of|is|to)?\s*(\d+(?:\.\d+)?)\s*%/iu,v.target_drink_cost_percent);
+   const marginOwner=statedPercent(/(?:operating|profit)\s*margin\s*(?:of|is|to)?\s*(\d+(?:\.\d+)?)\s*%/iu,v.operating_margin_percent);
    const savedTarget=ownerIngredientRate??COFFEE_SHOP_PROFILE.targetProductCostPercent;
    const costPct=costOwner?v.target_drink_cost_percent!/100:
     Math.max(.25,Math.min(.35,savedTarget));
