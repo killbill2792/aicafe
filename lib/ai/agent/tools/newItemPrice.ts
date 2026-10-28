@@ -216,7 +216,8 @@ export const newItemPriceTools={suggest_new_item_price:{
     ...(billsPartial?[{id:"bills-monthly",label:metrics.itemProvideBills,detail:metrics.itemEnterCosts},
       {id:"bills-unknown",label:metrics.itemBillsUnknown,detail:metrics.itemPartial}]:[])
    ];
-   const missing=[...recommended.missing,...missingBills.map(category=>"monthlyBill:"+category),
+   const missing=[...recommended.missing,...(!ctx.currency?["cafeCurrencyMissing"]:[]),
+    ...missingBills.map(category=>"monthlyBill:"+category),
     ...(candidates.length?["ownerChoiceRequired"]:[])];
    return {source:"new_item_price",period:month,coverageLabel,monthlyUnits:units,agentId:"alex",
     status:missing.length?"estimate":"actual",saved:false,draft:true,
