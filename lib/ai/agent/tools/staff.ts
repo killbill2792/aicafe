@@ -98,11 +98,13 @@ export const staffTools = {
       const resolved=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(resolved.status!=="resolved")return periodChoicePayload("labor_and_attendance",resolved);
       const p={from:resolved.value.from,to:resolved.value.to};
-      if(!ctx.tools.getLaborMetrics||!ctx.tools.getStaffAttendance||!ctx.timezone)
-        return missing("labor_and_attendance",p,["laborReaderOrTimezoneUnavailable"]);
+      if(!ctx.tools.getLaborMetrics)
+        return missing("labor_and_attendance",p,["laborReaderUnavailable"]);
       const [labor,attendance,ownerPayroll,toastScopes,reviews]=await Promise.all([
         ctx.tools.getLaborMetrics(p).catch(()=>failedSlice("laborReadFailed")),
-        ctx.tools.getStaffAttendance(p,ctx.timezone).catch(()=>failedSlice("staffAttendanceReadFailed")),
+        ctx.tools.getStaffAttendance?
+          ctx.tools.getStaffAttendance(p,ctx.timezone).catch(()=>failedSlice("staffAttendanceReadFailed")):
+          Promise.resolve(failedSlice("attendanceReaderUnavailable")),
         ctx.tools.getOwnerMonthlyPayrollExtras?.().catch(()=>failedSlice("payrollExtrasReadFailed")),
         ctx.tools.getToastScopeCoverage?.().catch(()=>failedSlice("toastScopeReadFailed")),
         ctx.tools.getPosImportReviews?.().catch(()=>failedSlice("posStaffReviewsReadFailed")),
@@ -124,7 +126,7 @@ export const staffTools = {
         ...(ownerPayroll?.quality.missingInputs??[]),
         ...(toastScopes?.quality.missingInputs??[]),
         ...(reviews?.quality.missingInputs??[])];
-      const failedReaders=["laborReadFailed","staffAttendanceReadFailed",
+      const failedReaders=["laborReadFailed","staffAttendanceReadFailed","attendanceReaderUnavailable",
         "payrollExtrasReadFailed","toastScopeReadFailed","posStaffReviewsReadFailed"];
       const dataNotes=readFailures.some(key=>failedReaders.includes(key))?
         [{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[];
