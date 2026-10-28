@@ -4,7 +4,9 @@
 create or replace view public.cv_sales_days (business_id,source,source_ref,status,business_date,net_sales_cents,orders_count,data) with (security_invoker=true) as
  select d.business_id,'app'::text as source,
    'rollup:'||d.business_date::text as source_ref,
-   'actual'::text as status,d.business_date,
+   case when to_jsonb(d)->>'sales_data_status' in ('missing','partial') then 'open'
+    when to_jsonb(d)->>'sales_data_status'='estimated' then 'estimated'
+    else 'actual' end::text as status,d.business_date,
    d.net_sales_cents,
    (to_jsonb(d)->>'orders_count')::integer as orders_count,
    jsonb_build_object(
@@ -123,12 +125,13 @@ create or replace view public.cv_staff (business_id,source,source_ref,status,bus
 
 create or replace view public.cv_shifts (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select s.business_id,'app'::text as source,
- 'shift:'||s.id::text as source_ref,'actual'::text as status,
- null::date as business_date,
- jsonb_build_object('id',s.id,'employee_id',to_jsonb(s)->'employee_id',
-  'start_at',to_jsonb(s)->'starts_at','end_at',to_jsonb(s)->'ends_at',
-  'day',to_jsonb(s)->'shift_date',
-  'deleted_at',to_jsonb(s)->'deleted_at') as data
+ 'shift:'||s.id::text as source_ref,
+ case when s.status='draft' then 'open' else 'actual' end::text as status,
+ s.local_date as business_date,
+ jsonb_build_object('id',s.id,'employee_id',s.employee_id,
+  'start_local',s.start_local,'end_local',s.end_local,
+  'day',s.local_date,'shift_status',s.status,'overnight',s.overnight,
+  'break_minutes',s.break_minutes) as data
  from public.scheduled_shifts s;
 
 create or replace view public.cv_menu (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
@@ -159,10 +162,9 @@ create or replace view public.cv_bills (business_id,source,source_ref,status,bus
 create or replace view public.cv_inventory (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select i.business_id,'app'::text as source,
  'stock:'||i.id::text as source_ref,'actual'::text as status,
- null::date as business_date,
- jsonb_build_object('id',i.id,'ingredient_id',to_jsonb(i)->'ingredient_id',
-  'quantity',to_jsonb(i)->'quantity',
-  'counted_at',to_jsonb(i)->'counted_at') as data
+ i.count_date as business_date,
+ jsonb_build_object('id',i.id,'ingredient_id',i.ingredient_id,
+  'quantity_base',i.quantity_base,'count_date',i.count_date) as data
  from public.pantry_stock_counts i;
 
 create or replace view public.cv_analytics (business_id,source,source_ref,status,business_date,value_numeric,data) with (security_invoker=true) as
