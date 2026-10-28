@@ -261,7 +261,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     businessCosts,
     ownerProfitCents,
     ownerProfitDisplay,
-    financialNotes:[...knownProfit.notes,...laborResult.notes],
+    financialNotes:[...new Set([...knownProfit.notes,...feeResult.notes,...laborResult.notes])],
     ownerPayrollExtrasCents,
     comparisonState,
     ingredientsRatio,

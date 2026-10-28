@@ -298,6 +298,19 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
 });
 
 
+describe("Money with missing card fee facts",()=>{
+  it("still shows a partial cents result and asks for the owner's rate",()=>{
+    const fixture=getFixtureSnapshot();
+    const missing=fixture.monthActualDays.map(day=>day.date===fixture.todayDay.date?
+      {...day,cardFeesCents:0,cardFeesStatus:"missing" as const}:day);
+    const snapshot={...fixture,monthActualDays:missing,monthRecordedDays:missing,
+      todayDay:missing.find(day=>day.date===fixture.todayDay.date)!};
+    const vm=buildProfitAndCostsViewModel(snapshot,"today");
+    expect(vm.ownerProfitCents).not.toBeNull();
+    expect(vm.financialNotes).toContain("feeDefaultEstimateAskRate");
+    expect(vm.financialNotes).toContain("profitFeesMissing");
+  });
+});
 describe("Money partial-known-wage day",()=>{
   it("removes wages, staff change and final profit without hiding sales",()=>{
     const original=getFixtureSnapshot();
