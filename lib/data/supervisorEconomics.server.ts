@@ -4,7 +4,7 @@ import {formatInTimeZone,fromZonedTime} from "date-fns-tz";
 import {normalizeOpenHours,regularHoursStateForDate} from "@/lib/business/openHours";
 import {dateOffset,calendarMonth} from "@/lib/calc/periods";
 import {figure,addOwnerPayrollExtras,fixedCardFeeForCoveredSales,type Economics} from "@/lib/calc/supervisorEconomics";
-import {payrollDayCoverage} from "@/lib/calc/payrollDayCoverage";
+import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {totalMonthlyRecurringCostsCents} from "@/lib/expenses/recurringMonthlyTotal";
 import {getPricingInputs,type PricingItemInput} from "./getPricingInputs";
 import {getMenuItemSnapshots} from "./snapshot.server";
@@ -59,27 +59,14 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   .lte("clock_in",fromZonedTime((latest??asOf)+"T23:59:59",timezone).toISOString()).limit(2001);
  if(timecards.error)throw timecards.error;
  if((timecards.data??[]).length>2000)throw new Error("Labor timecard page truncated");
- const payEvidence=payrollDayCoverage(
-  (timecards.data??[]).filter(row=>row.source_type!=="owner_schedule").map(row=>({
-   businessDate:formatInTimeZone(new Date(row.clock_in),timezone,"yyyy-MM-dd"),
-   clockOut:row.clock_out,hourlyWageCents:row.hourly_wage_cents===null?null:Number(row.hourly_wage_cents)
-  })),
-  (rollups.data??[]).map(row=>({
-   businessDate:row.business_date,
-   staffWagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
-   staffTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
-   laborWageStatus:row.labor_wage_status,taxStatus:row.staff_tax_status
-  }))
- );
- const recorded=payEvidence.coveredDates;
+ const laborRows:LaborRecord[]=(rollups.data??[]).map(row=>({date:row.business_date,
+  wagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
+  staffTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
+  laborWageStatus:row.labor_wage_status,staffTaxStatus:row.staff_tax_status}));
+ const recorded=new Set(laborRows.filter(row=>row.wagesCents!==null&&
+  row.staffTaxCents!==null&&row.laborWageStatus!=="missing").map(row=>row.date));
  const laborDays=laborWindow.filter(day=>recorded.has(day));
  const laborMissing=laborWindow.filter(day=>!recorded.has(day));
- const laborRows:LaborRecord[]=(rollups.data??[]).filter(row=>recorded.has(row.business_date))
-  .map(row=>({date:row.business_date,
-   wagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
-   staffTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
-   laborWageStatus:row.labor_wage_status,
-   staffTaxStatus:row.staff_tax_status}));
  const ownerMonthlyPayrollExtrasCents=business.data?.owner_monthly_payroll_extras_cents==null?
   null:Number(business.data.owner_monthly_payroll_extras_cents);
  // Same core as Home/Money: project from every usable payroll day; do not
@@ -124,7 +111,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   cardFeesStatus:row.card_fees_status,ordersCount:Number(row.orders_count??0),
   salesDataStatus:row.sales_data_status,
  }));
- const coveredFeeDays=allFeeDays.filter(day=>day.salesDataStatus!=="missing");
+ const coveredFeeDays=allFeeDays.filter(day=>day.salesDataStatus!=="missing"&&
+  day.date>=shiftCafeDate(asOf,-28)&&day.date<asOf);
  const fees=cardFeesForDays(coveredFeeDays,feePlans);
  const feeSalesCents=coveredFeeDays.reduce((sum,day)=>sum+day.netSalesCents,0);
  const feeRate=feeSalesCents>0?fees.amountCents/feeSalesCents:null;
