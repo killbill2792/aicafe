@@ -53,7 +53,10 @@ describe("confirmed weekly schedule is the only chat schedule",()=>{
     const roster=await scheduleReadTools.get_team.execute({week_start:week,name:null},ctx);
     const confirmed=await scheduleReadTools.get_week_schedule.execute({week_start:week},ctx);
     expect((confirmed.shifts as {employeeId:string}[]).map(s=>s.employeeId)).toEqual(["active","former"]);
-    expect(confirmed.knownWagesCents).toBe(activeShift.costCents+removedShift.costCents);
-    expect(roster.knownWagesCents).toBe(activeShift.costCents+removedShift.costCents);
+    expect(activeShift.costCents).not.toBeNull();
+    expect(removedShift.costCents).not.toBeNull();
+    const actualKnownCosts=activeShift.costCents!+removedShift.costCents!;
+    expect(confirmed.knownWagesCents).toBe(actualKnownCosts);
+    expect(roster.knownWagesCents).toBe(actualKnownCosts);
   });
 });

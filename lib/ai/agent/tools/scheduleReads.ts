@@ -157,7 +157,7 @@ export const scheduleReadTools={
    const activeShifts=data.shifts;
    const combined=mergeScheduleShifts(data),scheduled=combined.length>0;
    const toastCoverageUnknown=combined.some(s=>s.source==="toast")&&data.rules.coverage_enabled;
-   const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
+   const adjacent=data.adjacentShifts;
    const gaps=scheduled&&!toastCoverageUnknown?coverageGaps(data.dates,[...adjacent,...activeShifts],
      data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
    return {source:"scheduled_shifts+locations.open_hours",period:{from:ws,to:data.dates[6]},
