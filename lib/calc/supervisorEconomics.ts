@@ -1,6 +1,4 @@
 import {calculateBreakEvenSales} from "./breakEvenSales";
-import {baselinePriceCents} from "./pricingBaseline";
-import {applyRounding} from "./pricingRounding";
 import {COFFEE_SHOP_PROFILE} from "@/lib/pricing/profiles";
 export type FigureStatus="actual"|"estimate"|"owner"|"missing";
 export type Figure={valueCents:number|null;status:FigureStatus;reason:string;missingDays:string[]};
@@ -21,6 +19,8 @@ export type Economics={
  ingredientStatus:FigureStatus;feeStatus:FigureStatus;
  averagePriceCents:number|null;monthlyUnits:number|null;daysInMonth:number;
  targetMargin:number;missingDays:string[];payrollTaxRate?:number;
+ laborCoveredDays?:number;laborWindowDays?:number;
+ salesCoverage?:{from:string;to:string;openDays:number};
  /** Expected operating categories without current actual or recurring basis. */
  missingBillCategories?:string[];
 };
@@ -64,50 +64,54 @@ export function unifiedBreakEven(input:Economics){
   ingredientRate:input.ingredientRate,feeRate:input.feeRate,
   status,reason,missing};
 }
+/** Drink pricing: product-cost target sets the baseline; fully loaded economics
+ * can only lift that baseline to break-even, never stack a model-selected margin. */
 export function recommendFullCostPrice(input:{
  ingredientCents:number;packagingCents:number|null;laborCents:number|null;
  overheadCents:number|null;units:number|null;feeRate:number|null;targetMargin:number;
+ targetDrinkCostPct?:number;knownOverheadCents?:number|null;
 }){
  const valid=(n:number|null)=>n!==null&&Number.isFinite(n)&&n>=0;
+ const costPct=Math.max(.25,Math.min(.35,input.targetDrinkCostPct??COFFEE_SHOP_PROFILE.targetProductCostPercent));
+ const operatingMargin=Math.max(0,Math.min(.30,input.targetMargin));
+ const increment=COFFEE_SHOP_PROFILE.roundingRule.incrementCents;
+ const roundUp25=(cents:number)=>Math.max(increment,Math.ceil((cents-1e-8)/increment)*increment);
+ const productCost=input.packagingCents===null?null:input.ingredientCents+input.packagingCents;
  const laborPerUnit=input.units&&input.units>0&&valid(input.laborCents)
   ?input.laborCents!/input.units:null;
  const overheadPerUnit=input.units&&input.units>0&&valid(input.overheadCents)
   ?input.overheadCents!/input.units:null;
  const fee=input.feeRate;
- const missing=[...(input.packagingCents===null?["packagingCents"]:[]),
+ const missing=[...(productCost===null?["packagingCents"]:[]),
   ...(laborPerUnit===null?["laborPerUnit"]:[]),
   ...(overheadPerUnit===null?["overheadPerUnit"]:[]),
   ...(fee===null?["processingFeeRate"]:[])];
- if((fee!==null&&(!Number.isFinite(fee)||fee<0||fee>=1))||
-  !Number.isFinite(input.targetMargin)||input.targetMargin<0||
-  (fee!==null&&fee+input.targetMargin>=1)){
+ if(!valid(input.ingredientCents)||fee!==null&&(!valid(fee)||fee>=1)||
+  !Number.isFinite(input.targetMargin)||!Number.isFinite(costPct)){
   return {recommendedPriceCents:null,breakEvenCents:null,fullCostCents:null,
-   knownCostFloorCents:null,knownCostFloorLabel:"floor, not a recommendation",
-   missing:["invalidContributionMargin"]};
+   profitPriceCents:null,knownCostFloorCents:null,knownCostFloorLabel:"floor, not a recommendation",
+   targetDrinkCostPct:costPct,operatingMargin,warning:"invalidInputs",missing:["invalidInputs"],
+   laborPerUnitCents:laborPerUnit,overheadPerUnitCents:overheadPerUnit};
  }
- // Known-only costs are a LOWER bound. An unknown fee may be omitted only
- // when computing a floor, never when recommending a selling price.
  const knownCost=input.ingredientCents+(input.packagingCents??0)+
-  (laborPerUnit??0)+(overheadPerUnit??0);
- if(missing.length)return {
-  recommendedPriceCents:null,breakEvenCents:null,fullCostCents:null,
-  knownCostFloorCents:Math.ceil(knownCost/(1-(fee??0))),
-  knownCostFloorLabel:"floor, not a recommendation",missing,
- };
- // Preserve the original results when all inputs are known.
- const fractionalFullCost=input.ingredientCents+input.packagingCents!+
-  laborPerUnit!+overheadPerUnit!;
- const fullCostCents=Math.round(fractionalFullCost);
- const breakEvenCents=Math.ceil(fractionalFullCost/(1-fee!));
- const targetPrice=fractionalFullCost/(1-fee!-input.targetMargin);
- const benchmark=baselinePriceCents(input.ingredientCents,COFFEE_SHOP_PROFILE.targetProductCostPercent);
- const {roundingRule}=COFFEE_SHOP_PROFILE;
- const increment=roundingRule.incrementCents;
- const recommendedPriceCents=Math.max(increment,
-  applyRounding(Math.max(targetPrice,benchmark),roundingRule),
-  Math.ceil(breakEvenCents/increment)*increment);
- return {recommendedPriceCents,breakEvenCents,fullCostCents,
-  knownCostFloorCents:null,knownCostFloorLabel:"floor, not a recommendation",missing};
+  (laborPerUnit??0)+(overheadPerUnit??(input.units&&input.units>0&&valid(input.knownOverheadCents??null)?
+    input.knownOverheadCents!/input.units:0));
+ const knownCostFloorCents=missing.length?Math.ceil(knownCost/(1-(fee??0))):null;
+ const fullCost=productCost!==null&&laborPerUnit!==null&&overheadPerUnit!==null?
+  productCost+laborPerUnit+overheadPerUnit:null;
+ const breakEvenCents=fullCost!==null&&fee!==null?Math.ceil(fullCost/(1-fee)):null;
+ const baseline=productCost!==null?roundUp25(productCost/costPct):null;
+ const warning=breakEvenCents===null?"full_cost_unknown":
+  baseline!==null&&breakEvenCents>baseline?"below_full_cost":null;
+ const recommendedPriceCents=baseline===null?null:
+  breakEvenCents!==null&&breakEvenCents>baseline?roundUp25(breakEvenCents):baseline;
+ const profitPriceCents=fullCost!==null&&fee!==null&&1-fee-operatingMargin>0?
+  roundUp25(fullCost/(1-fee-operatingMargin)):null;
+ return {recommendedPriceCents,breakEvenCents,
+  fullCostCents:fullCost===null?null:Math.round(fullCost),profitPriceCents,
+  knownCostFloorCents,knownCostFloorLabel:"floor, not a recommendation",
+  targetDrinkCostPct:costPct,operatingMargin,warning,missing,
+  laborPerUnitCents:laborPerUnit,overheadPerUnitCents:overheadPerUnit};
 }
 export type ScenarioDelta=
  |{kind:"bill";monthlyChangeCents:number}

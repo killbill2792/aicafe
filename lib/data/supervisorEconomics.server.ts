@@ -70,7 +70,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const payrollRows=(rollups.data??[]).filter(row=>laborDays.includes(row.business_date));
  const wages=payrollRows.reduce((sum,row)=>sum+Number(row.staff_wages_cents)+Number(row.staff_tax_cents),0);
  const estimatedTax=payrollRows.some(row=>payEvidence.taxEstimatedDays.has(row.business_date));
- const projectedLabor=laborDays.length?Math.round(wages*dayList.length/laborDays.length):null;
+ const sufficientLabor=laborDays.length>=7&&laborWindow.length>0&&laborDays.length/laborWindow.length>=.5;
+ const projectedLabor=sufficientLabor?Math.round(wages*dayList.length/laborDays.length):null;
  const ownerMonthlyPayrollExtrasCents=business.data?.owner_monthly_payroll_extras_cents===null||
   business.data?.owner_monthly_payroll_extras_cents===undefined?null:Number(business.data.owner_monthly_payroll_extras_cents);
  const monthlyTotal=addOwnerPayrollExtras(projectedLabor,ownerMonthlyPayrollExtrasCents);
@@ -88,8 +89,10 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  // category expenses; never add a receipt on top of its scheduled bill.
  const running=pricing.menuPriceBasis;
  const knownBills=running.runningKnownCents>0?running.runningKnownCents:billTotal;
+ const billsPartial=running.missingRunningCategories.length>0;
  const monthlyBills=figure(running.monthlyRunningCents??knownBills,
-  running.runningStatus==="recorded"?"actual":billStatus==="estimate"?"estimate":"estimate",
+  !billsPartial&&running.runningStatus==="recorded"?"actual":billStatus==="estimate"?"estimate":"estimate",
+  billsPartial?"Known running costs only; missing categories: "+running.missingRunningCategories.join(", "):
   running.monthlyRunningCents===null?"Known recurring bills only; additional categories may be missing":
    "Saved running expenses with actual-by-category replacement");
  const revenue=pricing.business.monthlyRevenueCents;
@@ -130,6 +133,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
     "Current month's covered sales projected across open days; not recorded month-end revenue"),
   ingredientRate,feeRate,ingredientStatus,feeStatus,averagePriceCents,monthlyUnits,
   daysInMonth:dayList.length||Number(month.to.slice(-2)),
+  laborCoveredDays:laborDays.length,laborWindowDays:laborWindow.length,
+  salesCoverage:first&&latest?{from:first,to:latest,openDays:salesOpenDays}:undefined,
   targetMargin:pricing.business.targetOperatingMargin??.15,missingDays:laborMissing,
   payrollTaxRate:Number(business.data.payroll_tax_rate??.12),
   missingBillCategories:running.missingRunningCategories,
