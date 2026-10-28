@@ -140,14 +140,22 @@ describe("Toast independent check proof (25, auto-gratuity, deferred gifts)",()=
  });
 });
 describe("Toast reconciliation paths: ERA 202, matched, mismatch and internal",()=>{
- it("marks ERA +4 cents matched, preserving integer-cent delta",async()=>{
+ it("flags ERA +4 cents as a real mismatch beyond one-cent tolerance",async()=>{
   const f=fakeDb(true);mocked.getDay.mockResolvedValue({pending:false,rows:[{
    restaurantGuid:restaurant,businessDate:"20261016",netSalesAmount:100.04,
    ordersCount:1,discountAmount:0,refundAmount:0,voidOrdersCount:0
   }]});
   expect(await reconcileToastDays(f.db,p,Date.now()+20000)).toBe(1);
-  expect(f.item).toMatchObject({recon_state:"matched",delta_net_cents:4});
+  expect(f.item).toMatchObject({recon_state:"mismatch",delta_net_cents:4});
   expect(f.calls).toContain("toast_certify_day_voids");
+ });
+ it("one-cent ERA rounding difference is within the shared day-check tolerance",async()=>{
+  const f=fakeDb(true);mocked.getDay.mockResolvedValue({pending:false,rows:[{
+   restaurantGuid:restaurant,businessDate:"20261016",netSalesAmount:100.01,
+   ordersCount:1,discountAmount:0,refundAmount:0,voidOrdersCount:0
+  }]});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item).toMatchObject({recon_state:"matched",delta_net_cents:1});
  });
  it("keeps a $12.30 ERA mismatch visible with signed delta",async()=>{
   const f=fakeDb(true);mocked.getDay.mockResolvedValue({pending:false,rows:[{
