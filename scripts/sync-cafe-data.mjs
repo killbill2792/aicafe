@@ -42,7 +42,7 @@ const TABLES = [
   t("employees", { remapOwnId: true }),
   t("recurring_costs", { remapOwnId: true }),
   t("recovery_order", { pk: ["business_id", "bucket_code"] }),
-  t("staff_schedules", { remapOwnId: true }),
+  t("staff_schedules", { remapOwnId: true, fk: { employee_id: "employees" } }),
   t("scheduling_qualification_types", { remapOwnId: true }),
   t("ingredient_prices", { remapOwnId: true, joinScope: "ingredients", joinCol: "ingredient_id", fk: { ingredient_id: "ingredients" } }),
   t("modifier_recipes", { remapOwnId: true, fk: { ingredient_id: "ingredients", replaces_ingredient_id: "ingredients" } }),
@@ -79,7 +79,9 @@ const TABLES = [
   t("processing_fee_daily_candidates", { pk: ["business_id", "business_date", "source_type", "provider"] }),
   t("processing_fee_daily_facts", { pk: ["business_id", "business_date"] }),
   t("processing_fee_rate_plans", { remapOwnId: true }),
-  t("product_photos", { remapOwnId: true, fk: { anchor_menu_item_id: "menu_items" } }),
+  // product_photos intentionally excluded: storage_path must start with the row's own
+  // business_id (DB check constraint), and the underlying Supabase Storage object isn't
+  // cloned either — copying the row alone would just produce a broken reference.
   t("pantry_stock_counts", { remapOwnId: true, fk: { ingredient_id: "ingredients" } }),
   t("pantry_stock_purchases", { remapOwnId: true, fk: { ingredient_id: "ingredients", expense_line_id: "expense_lines" } }),
   t("pantry_modifier_links", { pk: ["business_id", "provider", "location_ref", "pos_modifier_id"], fk: { modifier_recipe_id: "modifier_recipes" } }),
@@ -112,6 +114,11 @@ function uuidv5(name) {
 function remapId(targetTable, sourceId) {
   return uuidv5(`${DEST_BUSINESS_ID}|${targetTable}|${sourceId}`);
 }
+
+// Columns backed by a real Postgres array type (smallint[], etc.) rather than jsonb — these
+// must be handed to pg as a native JS array (the driver serializes it as an array literal),
+// never JSON.stringify'd, or Postgres rejects it as an invalid array literal.
+const NATIVE_ARRAY_COLUMNS = new Set(["available_days", "unavailable_weekdays"]);
 
 loadEnvLocal();
 
@@ -173,7 +180,7 @@ async function syncTable(client, cfg) {
     for (const row of chunk) {
       const rowPlaceholders = columns.map(() => `$${p++}`);
       placeholders.push(`(${rowPlaceholders.join(",")})`);
-      for (const c of columns) values.push(toParam(row[c]));
+      for (const c of columns) values.push(toParam(c, row[c]));
     }
     const sql = `insert into ${table} (${columns.join(",")}) values ${placeholders.join(",")} on conflict (${pkColumns.join(",")}) do nothing`;
     const result = await client.query(sql, values);
@@ -182,9 +189,10 @@ async function syncTable(client, cfg) {
   return inserted;
 }
 
-function toParam(value) {
+function toParam(column, value) {
   if (value === null || value === undefined) return null;
   if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value) && NATIVE_ARRAY_COLUMNS.has(column)) return value;
   if (Array.isArray(value) || (typeof value === "object" && !(value instanceof Date))) return JSON.stringify(value);
   return value;
 }
