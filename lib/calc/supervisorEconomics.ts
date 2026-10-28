@@ -31,6 +31,7 @@ export type Economics={
  ownerFeePlans?:readonly OwnerFeePlan[];
  /** Owner-supplied observations take precedence in this specific calculation only. */
  ownerNetSalesCents?:number|null;ownerSalesDays?:number|null;
+ scenarioIngredientRateOverride?:number;
 };
 /** Weighted owner-confirmed processor rate from the SAME covered drinks/order window. */
 export function fixedCardFeeForCoveredSales(plan:{
@@ -75,7 +76,9 @@ export function unifiedBreakEven(input:Economics){
  const sourceFees=cardFeesForDays(realDays,input.ownerFeePlans??null).amountCents;
  // A stated owner percentage overrides imports for this scenario. Otherwise,
  // retain the real amounts, or scale their effective rates when the owner supplies sales.
- const ingredientCents=input.ingredientStatus==="owner"&&input.ingredientRate!==null?
+ const ingredientCents=input.scenarioIngredientRateOverride!==undefined?
+   Math.round(calcSales*input.scenarioIngredientRateOverride):
+   input.ingredientStatus==="owner"&&input.ingredientRate!==null?
    Math.round(calcSales*input.ingredientRate):
    observedSalesCents>0?Math.round(sourceIngredients*calcSales/observedSalesCents):
    Math.round(calcSales*effectiveIngredientRate);
