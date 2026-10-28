@@ -84,6 +84,8 @@ export type BusinessSnapshot = {
   monthActualDays: DailyFacts[];
   /** Last 28 actual days ending today (for effective fee rate, avg drinks/day, etc). */
   last28Days: DailyFacts[];
+  /** Sales-covered 28 COMPLETE café-local dates ending yesterday; same window as sold-item costs. */
+  breakEvenDays?: DailyFacts[];
   /** Actual days whose date falls in the 7 calendar days ending today — not simply "the last 7
    * rows," which drifts from the real week the moment a day in that window has no rollup. */
   last7Days: DailyFacts[];
