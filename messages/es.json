@@ -3369,6 +3369,9 @@
     "toastMoreDays": " y {count} más",
     "toastScheduleCoverageUnverified": "Aún no se pueden verificar las brechas de cobertura porque los turnos previstos de Toast no se incluyen en el cálculo de cobertura del personal.",
     "toastPlannedLaborUnknown": "Los turnos previstos de Toast no tienen horas pagadas ni salarios verificados. Los totales solo de la aplicación excluyen estos turnos.",
+    "staffAttendanceReadFailed": "Falló la consulta de asistencia. Se siguen mostrando los empleados registrados en turno.",
+    "staffReadFailed": "Fallaron algunas consultas de personal o nómina. Se muestran los registros disponibles; los totales desconocidos no son cero.",
+    "staffScheduleWeekReadFailed": "No se pudo leer el horario de la semana del {date}; se siguen mostrando las demás semanas.",
     "toastScheduleReasonPermission": "permiso denegado",
     "toastScheduleReasonTimeout": "se agotó el tiempo de conexión",
     "toastScheduleReasonUnavailable": "la fuente del horario no está disponible"

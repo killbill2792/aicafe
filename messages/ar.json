@@ -3369,6 +3369,9 @@
     "toastMoreDays": " و{count} يومًا إضافيًا",
     "toastScheduleCoverageUnverified": "لا يمكن التحقق من فجوات التغطية بعد لأن نوبات Toast المخططة غير مشمولة في حساب تغطية الموظفين.",
     "toastPlannedLaborUnknown": "نوبات Toast المخططة ليس لها ساعات مدفوعة أو أجور متحقق منها. أي إجماليات خاصة بالتطبيق لا تشمل هذه النوبات.",
+    "staffAttendanceReadFailed": "فشل التحقق من الحضور. لا يزال الموظفون المسجلون في النوبة ظاهرين.",
+    "staffReadFailed": "فشلت بعض قراءات الموظفين أو الرواتب. تُعرض السجلات المتاحة ولا تُعامل الإجماليات المجهولة على أنها صفر.",
+    "staffScheduleWeekReadFailed": "تعذرت قراءة جدول أسبوع {date}؛ ولا تزال الأسابيع الأخرى ظاهرة.",
     "toastScheduleReasonPermission": "تم رفض إذن الوصول",
     "toastScheduleReasonTimeout": "انتهت مهلة الاتصال",
     "toastScheduleReasonUnavailable": "مصدر الجدول غير متاح"

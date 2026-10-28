@@ -9,6 +9,8 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { getWeekSchedule } from "@/lib/actions/schedule";
 
+const failedSlice=(reason:string)=>({available:false as const,value:null,
+ quality:{level:"low" as const,missingInputs:[reason],estimatedInputs:[] as string[],staleInputs:[] as string[]}});
 const empty = z.strictObject({});
 const range = z.strictObject({ from: z.iso.date(), to: z.iso.date() });
 const period = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]) });
@@ -28,10 +30,13 @@ export const staffTools = {
       if(!ctx.tools.getCurrentStaff)return missing("current_staff",null,["staffReaderUnavailable"]);
       const s=await ctx.tools.getCurrentStaff();
       if(!s.available)return missing("current_staff",null,s.quality.missingInputs);
-      const attendance=ctx.tools.getStaffAttendance&&ctx.timezone?
-        await ctx.tools.getStaffAttendance({from:ctx.asOf,to:ctx.asOf},ctx.timezone):null;
+      const attendance=ctx.tools.getStaffAttendance?
+        await ctx.tools.getStaffAttendance({from:ctx.asOf,to:ctx.asOf},ctx.timezone)
+          .catch(()=>failedSlice("staffAttendanceReadFailed")):null;
       const tracked=attendance?.available?attendance.value.attendanceTracked:null;
       return {source:"current_staff",period:null,agentId:"olivia",
+        dataNotes:attendance?.quality.missingInputs.includes("staffAttendanceReadFailed")?
+          [{en,es,ar}[ctx.locale].DataNotes.staffAttendanceReadFailed]:[],
         missing:[...s.quality.missingInputs,...(attendance?.quality.missingInputs??["attendanceReaderUnavailable"])],
         attendanceTracked:tracked,onClockCount:attendance?.available?attendance.value.onClockCount:null,
         // Keep independent, recorded on-shift evidence even if the separate
@@ -53,8 +58,12 @@ export const staffTools = {
       const allShifts:ReturnType<typeof mergeScheduleShifts>=[];
       let scheduleSet=false;
       for(let ws=monday;ws<=dateEnd;ws=dateOffset(ws,7)){
-        const response=await getWeekSchedule({weekStart:ws});
-        if(!response.ok){missingInputs.push("scheduleReadFailed:"+ws+":"+response.error);continue;}
+        let response:Awaited<ReturnType<typeof getWeekSchedule>>;
+        try{response=await getWeekSchedule({weekStart:ws});}
+        catch{missingInputs.push("scheduleReadFailed:"+ws);notes.push(
+          {en,es,ar}[ctx.locale].DataNotes.staffScheduleWeekReadFailed.replace("{date}",ws));continue;}
+        if(!response.ok){missingInputs.push("scheduleReadFailed:"+ws+":"+response.error);
+          notes.push({en,es,ar}[ctx.locale].DataNotes.staffScheduleWeekReadFailed.replace("{date}",ws));continue;}
         if(response.data.posScheduleError){
           missingInputs.push("toastScheduleReadFailed:"+ws);
           notes.push(localizedToastScheduleReadError(response.data.posScheduleError,ctx.locale));
@@ -92,11 +101,11 @@ export const staffTools = {
       if(!ctx.tools.getLaborMetrics||!ctx.tools.getStaffAttendance||!ctx.timezone)
         return missing("labor_and_attendance",p,["laborReaderOrTimezoneUnavailable"]);
       const [labor,attendance,ownerPayroll,toastScopes,reviews]=await Promise.all([
-        ctx.tools.getLaborMetrics(p),
-        ctx.tools.getStaffAttendance(p,ctx.timezone),
-        ctx.tools.getOwnerMonthlyPayrollExtras?.(),
-        ctx.tools.getToastScopeCoverage?.(),
-        ctx.tools.getPosImportReviews?.(),
+        ctx.tools.getLaborMetrics(p).catch(()=>failedSlice("laborReadFailed")),
+        ctx.tools.getStaffAttendance(p,ctx.timezone).catch(()=>failedSlice("staffAttendanceReadFailed")),
+        ctx.tools.getOwnerMonthlyPayrollExtras?.().catch(()=>failedSlice("payrollExtrasReadFailed")),
+        ctx.tools.getToastScopeCoverage?.().catch(()=>failedSlice("toastScopeReadFailed")),
+        ctx.tools.getPosImportReviews?.().catch(()=>failedSlice("posStaffReviewsReadFailed")),
       ]);
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
         ...(labor.available?labor.value.filter(d=>d.wageStatus==="missing"||d.wagesCents===null||d.staffTaxCents===null)
@@ -110,7 +119,15 @@ export const staffTools = {
         })): [];
       const ownerMonthlyPayrollExtrasCents=ownerPayroll?.available?
         ownerPayroll.value.monthlyCents:null;
-      return {source:"labor_and_attendance",period:p,agentId:"olivia",
+      const readFailures=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
+        ...(ownerPayroll?.quality.missingInputs??[]),
+        ...(toastScopes?.quality.missingInputs??[]),
+        ...(reviews?.quality.missingInputs??[])];
+      const failedReaders=["laborReadFailed","staffAttendanceReadFailed",
+        "payrollExtrasReadFailed","toastScopeReadFailed","posStaffReviewsReadFailed"];
+      const dataNotes=readFailures.some(key=>failedReaders.includes(key))?
+        [{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[];
+      return {source:"labor_and_attendance",period:p,agentId:"olivia",dataNotes,
         ownerMonthlyPayrollExtrasCents,
         toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
         pendingPosStaffReviews:reviews?.available?reviews.value:null,
@@ -118,7 +135,7 @@ export const staffTools = {
         posReviewMissing:reviews?.quality.missingInputs??["toastReviewsUnavailable"],
         ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
         ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"You told me",
-        missing:[...issues,
+        missing:[...issues,...readFailures.filter(key=>failedReaders.includes(key)),
           ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[]),
           ...(ownerMonthlyPayrollExtrasCents===null?
            ["ownerMonthlyPayrollExtrasNotSet"]:[])],explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs,

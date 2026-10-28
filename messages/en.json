@@ -3369,6 +3369,9 @@
     "toastMoreDays": " and {count} more",
     "toastScheduleCoverageUnverified": "Coverage gaps cannot be verified yet because Toast planned shifts are not included in staffing coverage calculations.",
     "toastPlannedLaborUnknown": "Toast planned shifts have no verified paid hours or wages. Any app-only totals exclude these shifts.",
+    "staffAttendanceReadFailed": "The attendance check failed. Recorded on-shift staff are still shown.",
+    "staffReadFailed": "Some staff or payroll readers failed. The available records are shown; missing totals are not treated as zero.",
+    "staffScheduleWeekReadFailed": "Schedule for the week of {date} could not be read; other weeks are still shown.",
     "toastScheduleReasonPermission": "permission denied",
     "toastScheduleReasonTimeout": "the connection timed out",
     "toastScheduleReasonUnavailable": "the schedule source is unavailable"
