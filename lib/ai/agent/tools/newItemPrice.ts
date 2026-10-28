@@ -1,5 +1,6 @@
 import {z} from "zod";
 import {laborKnown} from "@/lib/calc";
+import {laborForPeriod as sharedLaborForPeriod} from "@/lib/metrics/core/labor";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {calculateNewItemPrice,contributionCoverage} from "@/lib/calc/newItemPrice";
 import {requestedPeriod,prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
@@ -26,7 +27,16 @@ export const newItemPriceTools={suggest_new_item_price:{
   if(ctx.readEconomics){
    const {economics,ownerIngredientRate}=await ctx.readEconomics();
    const ownerLabor=ownerMonthlyAmount(owner?.laborCents??null,owner?.laborPeriod??null,ctx.asOf);
-   const monthlyStaff=ownerLabor!==null?figure(ownerLabor,"owner","You told me"):economics.monthlyStaff;
+   const savedLabor=economics.laborEvidence?sharedLaborForPeriod(
+    economics.laborEvidence.dates,economics.laborEvidence.records,null,
+    economics.knownMonthlyLaborExtrasCents==null?null:{
+     monthlyCents:economics.knownMonthlyLaborExtrasCents,
+     from:calendarMonth(ctx.asOf).from,to:calendarMonth(ctx.asOf).to}):null;
+   const monthlyStaff=ownerLabor!==null?figure(ownerLabor,"owner","laborOwnerProvided"):
+    savedLabor?figure(savedLabor.projectedMonthlyLaborCents,
+     savedLabor.basis==="recorded"?"actual":"estimate",
+     savedLabor.coveredDays<savedLabor.totalDays?"laborPartialCoverage":"laborRecorded"):
+    economics.monthlyStaff;
    const month=calendarMonth(ctx.asOf);
    const openDays=economics.daysInMonth||periodDays(month);
    let units=owner?.itemsSoldPerDay!=null?
@@ -62,10 +72,7 @@ export const newItemPriceTools={suggest_new_item_price:{
    const costPct=costOwner?v.target_drink_cost_percent!/100:
     Math.max(.25,Math.min(.35,savedTarget));
    const operatingMargin=marginOwner?v.operating_margin_percent!/100:economics.targetMargin;
-   const sparse=economics.laborCoveredDays!=null&&economics.laborWindowDays!=null&&
-    (economics.laborCoveredDays<7||economics.laborCoveredDays/economics.laborWindowDays<.5);
-   const labor=sparse&&ownerLabor===null?figure(null,"missing",
-    "Only "+economics.laborCoveredDays+" of "+economics.laborWindowDays+" days have payroll"):monthlyStaff;
+   const labor=monthlyStaff;
    const explicitBillTotal=v.owner_monthly_bills_cents!=null&&
     ownerSpecifiedMonthlyBills(utterances,v.owner_monthly_bills_cents)?
      v.owner_monthly_bills_cents:null;
