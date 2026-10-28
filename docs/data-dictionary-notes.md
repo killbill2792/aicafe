@@ -1,0 +1,10 @@
+## Capture-only Toast evidence and limitations
+
+`cv_cash`, Toast rows of `cv_inventory`, `cv_kitchen` and `cv_dining_options` are derived from **redacted diagnostic snapshots** in `toast_raw_samples`; they are not continuously imported operational data. A missing capture, failed response or zero returned rows does not establish an operational zero. Repeated captures can record the same underlying event multiple times, so they must not be summed as daily totals without deduplication.
+
+- **Cash:** `cashmgmt/v1/entries` and `cashmgmt/v1/deposits` expose cash entry/deposit amounts and identifiers. Drawer/employee names are not included in these endpoints; separately collected configuration and labor data would be needed for names.
+- **Stock:** `stock/v1/inventory` returns only `OUT_OF_STOCK` or `QUANTITY` menu items. Missing items are not evidence of a zero balance or a confirmed `IN_STOCK` status.
+- **Kitchen:** `kitchen/v1/export/itemFulfillments` and `kitchen/v1/published/prepStations` expose fulfillment timestamps and prep-station data where available. Item fulfillment requires eligible KDS/Toast subscription access; a 204 or no data does not mean preparation took zero time.
+- **Dining options:** `config/v2/diningOptions` provides names only where captured. `cv_orders` exposes stored `orders.dining_option`, `source_channel` and `guest_count` regardless of whether the configuration endpoint is available.
+
+The diagnostic capture is performed by `captureToastRawSample`; it is not automatically run by each day import. Daily operational copies, full Toast-report parity and durable typed cash/stock/kitchen ingestion have not yet been implemented. Apply migrations **114** and **115** manually in order after 110–113. Migration 115 grants owner-authenticated execution of the redacting label helper used by the invoker-RLS view. Never rewrite a previously applied migration.

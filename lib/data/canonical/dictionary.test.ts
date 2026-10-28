@@ -15,6 +15,10 @@ describe("canonical view column dictionary contract",()=>{
    expect(columns.split(",").map(v=>v.trim()).sort()).toEqual(expected);
   }
  });
+ it("keeps captured API limitations when the dictionary is regenerated",()=>{
+  const notes=readFileSync(resolve("docs/data-dictionary-notes.md"),"utf8").trimEnd();
+  expect(docs.endsWith(notes+"\\n")).toBe(true);
+ });
  it("generated documentation covers every allowed view and column",()=>{
   for(const view of canonicalViewNames){
    const section=docs.split("## "+view+"\n")[1]?.split("\n## ")[0];
