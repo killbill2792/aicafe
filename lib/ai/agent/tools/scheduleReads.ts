@@ -1,4 +1,8 @@
 import {z} from "zod";
+import {formatInTimeZone} from "date-fns-tz";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import {getTeam,getWeekSchedule,getShiftCost} from "@/lib/actions/schedule";
 import {getTeamRules} from "@/lib/actions/teamRules";
 import {staffReadScope,mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
@@ -25,13 +29,43 @@ async function localWeek(requested:string|null,ctx:AgentToolContext){
  const today=scope.ok?scope.today:ctx.asOf;
  return mondayOfLocalDate(requested??today);
 }
+type WeekData=Extract<Awaited<ReturnType<typeof getWeekSchedule>>,{ok:true}>["data"];
+/** The Team screen and chat share getWeekSchedule. Toast plans never count as paid labor. */
+export function mergeScheduleShifts(data:Pick<WeekData,"shifts"|"posShifts"|"team"|"timezone">){
+ const ids=new Set(data.team.map(p=>p.id));
+ const app=data.shifts.filter(s=>ids.has(s.employeeId)).map(s=>({
+   id:s.id,date:s.date,employeeId:s.employeeId,employeeName:s.employeeName,
+   start:s.start,end:s.end,paidMinutes:s.paidMinutes,costCents:s.costCents,
+   estimated:s.estimated,source:"app" as const,
+ }));
+ const pos=(data.posShifts??[]).map(s=>({
+   id:s.id,date:formatInTimeZone(new Date(s.start),data.timezone,"yyyy-MM-dd"),
+   employeeId:s.employeeId??null,employeeName:s.employeeName,
+   start:formatInTimeZone(new Date(s.start),data.timezone,"HH:mm"),
+   end:formatInTimeZone(new Date(s.end),data.timezone,"HH:mm"),
+   paidMinutes:null,costCents:null,estimated:null,source:"toast" as const,
+ }));
+ const name=(id:string|null,label:string)=>{
+  const person=id?data.team.find(p=>p.id===id):null;
+  return (person?.name??label).trim().toLocaleLowerCase();
+ };
+ const key=(s:(typeof app)[number]|(typeof pos)[number])=>
+  name(s.employeeId,s.employeeName)+"|"+s.date+"|"+s.start;
+ const seen=new Set(app.map(key));
+ return [...app,...pos.filter(s=>{const k=key(s);if(seen.has(k))return false;seen.add(k);return true;})]
+  .sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
+}
+function toastScheduleNotes(data:Pick<WeekData,"posScheduleError">,locale:AgentToolContext["locale"]){
+ if(!data.posScheduleError)return [];
+ return [{en,es,ar}[locale].DataNotes.toastScheduleReadFailed.replace("{reason}",data.posScheduleError)];
+}
 export const scheduleReadTools={
  get_team:{
   agentId:"olivia",schema:namedWeek,
   description:"Read active team, individual weekly hours and wage estimate flags. Pass week_start as YYYY-MM-DD Monday or null for this business week.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=namedWeek.parse(raw),ws=await localWeek(input.week_start,ctx);
-   const result=await getTeam({weekStart:ws});
+   const result=await getWeekSchedule({weekStart:ws});
    if(!result.ok)return fail("staff_week",null,result.error);
    let selected=result.data.team;
    if(input.name){
@@ -47,18 +81,18 @@ export const scheduleReadTools={
      return fail("employees+scheduled_shifts",null,"targetNotConfirmed");
    const activeIds=new Set(result.data.team.map(person=>person.id));
    const activeShifts=result.data.shifts.filter(shift=>activeIds.has(shift.employeeId));
-   const scoped=input.name?activeShifts.filter(shift=>selected.some(person=>
-     person.id===shift.employeeId)):activeShifts;
+   const all=mergeScheduleShifts(result.data);
+   const scoped=input.name?all.filter(shift=>selected.some(person=>
+     person.id===shift.employeeId||person.name.toLocaleLowerCase()===shift.employeeName.toLocaleLowerCase())):all;
    const totals=aggregateCosts(activeShifts);
    const people=selected.slice(0,30),shifts=scoped.slice(0,30);
    return {source:"employees+scheduled_shifts",period:{from:ws,to:new Date(Date.parse(ws+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
-    agentId:"olivia",missing:[...(selected.length>30?["morePeople"]:[]),
+    agentId:"olivia",dataNotes:toastScheduleNotes(result.data,ctx.locale),missing:[...(result.data.posScheduleError?["toastScheduleReadFailed"]:[]),...(selected.length>30?["morePeople"]:[]),
      ...(scoped.length>30?["moreShifts"]:[]),
      ...(!input.name?missingWageInputs(totals):[])],estimated:input.name?null:totals.estimated,
     people:people.map(p=>({id:p.id,name:p.name,role:p.role,minWeeklyMinutes:p.minWeeklyMinutes,
       maxWeeklyMinutes:p.maxWeeklyMinutes,hasKnownWage:p.wageCents!==null})),
-    shifts:shifts.map(s=>({employeeId:s.employeeId,date:s.date,paidMinutes:s.paidMinutes,
-      costCents:s.costCents,estimated:s.estimated})),
+    shifts:shifts,
     weeklyPaidMinutes:input.name?null:totals.paidMinutes,
     knownWagesCents:input.name?null:totals.knownCostCents,
     missingWageCount:input.name?null:totals.unknownCount};
@@ -73,21 +107,22 @@ export const scheduleReadTools={
    if(!result.ok)return fail("scheduled_shifts",null,result.error);
    const data=result.data,activeIds=new Set(data.team.map(p=>p.id));
    const activeShifts=data.shifts.filter(s=>activeIds.has(s.employeeId));
-   const scheduled=activeShifts.length>0,totals=aggregateCosts(activeShifts);
+   const combined=mergeScheduleShifts(data);
+   const scheduled=combined.length>0,hasCostedShifts=activeShifts.length>0,totals=aggregateCosts(activeShifts);
    const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
    const gaps=scheduled?coverageGaps(data.dates,[...adjacent,...activeShifts],
      data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
    return {source:"scheduled_shifts",period:{from:data.dates[0],to:data.dates[6]},
      agentId:"olivia",scheduleSet:scheduled,href:"/staff?tab=schedule",
-     missing:[...(!scheduled?["scheduleNotSet"]:[]),
-       ...(activeShifts.length>40?["moreShifts"]:[]),
-       ...(scheduled?missingWageInputs(totals):[]),
+     dataNotes:toastScheduleNotes(data,ctx.locale),
+     missing:[...(data.posScheduleError?["toastScheduleReadFailed"]:[]),...(!scheduled?["scheduleNotSet"]:[]),
+       ...(combined.length>40?["moreShifts"]:[]),
+       ...(hasCostedShifts?missingWageInputs(totals):[]),
        ...(!data.rules.coverage_enabled?["coverageDisabled"]:
        uncheckedCoverageDays(data.dates,data.openHours,true).length?["openHoursIncomplete"]:[])],
-     estimated:scheduled?totals.estimated:null,estimatedShiftCount:scheduled?totals.estimateCount:null,
-     paidMinutes:scheduled?totals.paidMinutes:null,knownWagesCents:scheduled?totals.knownCostCents:null,
-     shifts:activeShifts.slice(0,40).map(s=>({id:s.id,date:s.date,employeeId:s.employeeId,
-       start:s.start,end:s.end,paidMinutes:s.paidMinutes,costCents:s.costCents,estimated:s.estimated})),
+     estimated:hasCostedShifts?totals.estimated:null,estimatedShiftCount:hasCostedShifts?totals.estimateCount:null,
+     paidMinutes:hasCostedShifts?totals.paidMinutes:null,knownWagesCents:hasCostedShifts?totals.knownCostCents:null,
+     shifts:combined.slice(0,40),
      gaps:gaps.slice(0,15)};
   }
  },
@@ -113,13 +148,13 @@ export const scheduleReadTools={
    if(!whole.ok)return fail("coverage_gaps",null,whole.error);
    const data=whole.data,activeIds=new Set(data.team.map(p=>p.id));
    const activeShifts=data.shifts.filter(s=>activeIds.has(s.employeeId));
-   const scheduled=activeShifts.length>0;
+   const scheduled=mergeScheduleShifts(data).length>0;
    const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
    const gaps=scheduled?coverageGaps(data.dates,[...adjacent,...activeShifts],
      data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
    return {source:"scheduled_shifts+locations.open_hours",period:{from:ws,to:data.dates[6]},
     agentId:"olivia",scheduleSet:scheduled,href:"/staff?tab=schedule",
-    missing:[...(!scheduled?["scheduleNotSet"]:[]),
+    dataNotes:toastScheduleNotes(data,ctx.locale),missing:[...(data.posScheduleError?["toastScheduleReadFailed"]:[]),...(!scheduled?["scheduleNotSet"]:[]),
       ...(!data.rules.coverage_enabled?["coverageDisabled"]:
       uncheckedCoverageDays(data.dates,data.openHours,true).length?["openHoursIncomplete"]:[]),
       ...(gaps.length>30?["moreGaps"]:[])],estimated:false,gaps:gaps.slice(0,30)};
