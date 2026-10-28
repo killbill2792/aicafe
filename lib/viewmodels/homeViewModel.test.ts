@@ -82,6 +82,7 @@ describe("Home with known-only wages from missing labor day",()=>{
       laborWageStatus:"missing" as const};
     snapshot.todayDay=missing;
     snapshot.monthActualDays=snapshot.monthActualDays.map(day=>day.date===missing.date?missing:day);
+    snapshot.monthRecordedDays=snapshot.monthRecordedDays?.map(day=>day.date===missing.date?missing:day);
     snapshot.last28Days=snapshot.last28Days.map(day=>day.date===missing.date?missing:day);
     const vm=buildHomeViewModel(snapshot,"today");
     expect(vm.ownerProfitCents).not.toBeNull();

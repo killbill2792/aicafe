@@ -11,10 +11,11 @@ describe("Home key-number trust", () => {
     const money = buildProfitAndCostsViewModel(snapshot, "today");
     // Having a sales rollup does not prove ingredient provenance, processing fees,
     // wages, or recurring-cost coverage. The old Home missed this distinction.
-    expect(home.ownerProfitDisplay.kind).toBe("complete");
+    expect(home.ownerProfitDisplay.kind).toBe("partial");
     expect(money.businessCosts.completeness).not.toBe("complete");
     const quality = homeMoneyQuality(home, money);
-    expect(quality.canShowProfit).toBe(false);
+    expect(quality.canShowProfit).toBe(true);
+    expect(quality.hasPartial).toBe(true);
     expect(quality.profitChangePct).toBeNull();
   });
 
@@ -45,7 +46,7 @@ describe("Home key-number trust", () => {
       ownerProfitDisplay:home.ownerProfitDisplay,
       changes:[{ key:"ownerProfit",label:"Owner profit",deltaCents:100 }],
     });
-    expect(quality.canShowProfit).toBe(false);
+    expect(quality.canShowProfit).toBe(true);
     expect(quality.hasPartial).toBe(true);
     expect(quality.profitChangePct).toBeNull();
   });
