@@ -15,4 +15,4 @@ for(const view of canonicalViewNames){
   out.push("| "+[name,col.meaning,col.unit,col.source,col.example].map(v=>String(v).replaceAll("|","/")).join(" | ")+" |");
  out.push("");
 }
-writeFileSync(resolve("docs/data-dictionary.md"),out.join("\n")+"\n");
+writeFileSync(resolve("docs/data-dictionary.md"),out.join("\n").replace(/\n+$/,"")+"\n");

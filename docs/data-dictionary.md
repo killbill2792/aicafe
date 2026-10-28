@@ -208,4 +208,3 @@ Typed Toast ERA measurements
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
 | value_numeric | Numeric ERA measurement; money metrics use cents. | metric-dependent | toast | What did Toast report? |
-
