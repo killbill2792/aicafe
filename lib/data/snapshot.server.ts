@@ -1,8 +1,6 @@
 import "server-only";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { buildDayWindows, evaluateRecipeCost, resolveProductCost, type ExpenseCategoryCode } from "@/lib/calc";
-import { generateAlerts } from "@/lib/alerts/generate";
-import { ensureScheduledShiftsThroughDate } from "./materializeSchedule";
 import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
@@ -24,29 +22,19 @@ export async function getBusinessSnapshotFromDb(
   // Never reach shift-materialization or alert-generation writes in this path.
   if(typeof costPeriod==="object")
     return readHistoricalBusinessSnapshot(supabase,businessId,costPeriod);
-  const { data: businessRow, error: businessError } = await supabase
-    .from("businesses")
-    .select("id, name, timezone, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status, owner_monthly_payroll_extras_cents")
-    .eq("id", businessId)
-    .single();
-  if (businessError || !businessRow) throw new Error(`Business not found: ${businessId}`);
-
-  const { data: locationRow, error: locationError } = await supabase
-    .from("locations")
-    .select("open_hours")
-    .eq("business_id", businessId)
-    .order("name", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (locationError) throw locationError;
-
+  const [businessRead,locationRead]=await Promise.all([
+    supabase.from("businesses").select(
+      "id, name, timezone, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status, owner_monthly_payroll_extras_cents")
+      .eq("id",businessId).single(),
+    supabase.from("locations").select("open_hours").eq("business_id",businessId)
+      .order("name",{ascending:true}).limit(1).maybeSingle(),
+  ]);
+  const {data:businessRow,error:businessError}=businessRead;
+  const {data:locationRow,error:locationError}=locationRead;
+  if(businessError||!businessRow||!businessRow.timezone)throw new Error("Business unavailable");
+  if(locationError)throw locationError;
   const timezone = businessRow.timezone;
   const todayDateStr = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
-
-  // Reconcile the owner's recurring schedules across the current month through today before
-  // reading rollups. This picks up already-entered weekend schedules without requiring re-entry,
-  // and existing manual/POS/imported timecards always win.
-  await ensureScheduledShiftsThroughDate(supabase, businessId, timezone, todayDateStr);
 
   const monthKey = todayDateStr.slice(0, 7);
   const [year, month] = monthKey.split("-").map(Number);
@@ -58,42 +46,29 @@ export async function getBusinessSnapshotFromDb(
   const prevMonthDays = new Date(year, month - 1, 0).getDate();
   const prevMonthEnd = `${prevMonthKey}-${String(prevMonthDays).padStart(2, "0")}`;
 
-  const { data: rollupRows, error: rollupError } = await supabase
-    .from("daily_rollups")
-    .select(
-      "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents",
-    )
-    .eq("business_id", businessId)
-    .gte("business_date", prevMonthStart)
-    .lte("business_date", todayDateStr)
-    .order("business_date", { ascending: true });
-  if (rollupError) throw rollupError;
-
-  const allDays = (rollupRows ?? []).map(rowToDailyFacts);
-  const { monthRecordedDays, monthActualDays, last7Days, last28Days, todayDay, todayHasData } = buildDayWindows(allDays, todayDateStr, monthKey);
-  const previousMonthRecordedDays=allDays.filter(d=>
-    d.date>=prevMonthStart&&d.date<=prevMonthEnd);
-  const previousMonthDays=previousMonthRecordedDays.filter(d=>
-    d.salesDataStatus!=="missing");
-
-  const [recurringResult, expensesResult, priorExpenseResult, recoveryOrderResult] = await Promise.all([
-    supabase
-      .from("recurring_costs")
-      .select("category_code, amount_cents, is_estimate, active_from, active_to")
-      .eq("business_id", businessId),
-    supabase
-      .from("expenses")
-      .select("category_code, amount_cents, status")
-      .eq("business_id", businessId)
-      .gte("spent_on", monthStart)
-      .lte("spent_on", todayDateStr),
-    supabase.from("expenses").select("category_code").eq("business_id", businessId).gte("spent_on", prevMonthStart).lte("spent_on", prevMonthEnd),
-    supabase
-      .from("recovery_order")
-      .select("bucket_code, position")
-      .eq("business_id", businessId)
-      .order("position", { ascending: true }),
-  ]);
+  // All source reads here are independent; no schedule/alert writes on page load.
+  const [rollupResult,recurringResult,expensesResult,priorExpenseResult,recoveryOrderResult]=
+    await Promise.all([
+      supabase.from("daily_rollups").select(
+        "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents")
+        .eq("business_id",businessId).gte("business_date",prevMonthStart)
+        .lte("business_date",todayDateStr).order("business_date",{ascending:true}),
+      supabase.from("recurring_costs").select("category_code, amount_cents, is_estimate, active_from, active_to")
+        .eq("business_id",businessId),
+      supabase.from("expenses").select("category_code, amount_cents, status")
+        .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr),
+      supabase.from("expenses").select("category_code").eq("business_id",businessId)
+        .gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd),
+      supabase.from("recovery_order").select("bucket_code, position")
+        .eq("business_id",businessId).order("position",{ascending:true}),
+    ]);
+  const {data:rollupRows,error:rollupError}=rollupResult;
+  if(rollupError)throw rollupError;
+  const allDays=(rollupRows??[]).map(rowToDailyFacts);
+  const {monthRecordedDays,monthActualDays,last7Days,last28Days,todayDay,todayHasData}=
+    buildDayWindows(allDays,todayDateStr,monthKey);
+  const previousMonthRecordedDays=allDays.filter(d=>d.date>=prevMonthStart&&d.date<=prevMonthEnd);
+  const previousMonthDays=previousMonthRecordedDays.filter(d=>d.salesDataStatus!=="missing");
   if (recurringResult.error) throw recurringResult.error;
   if (expensesResult.error) throw expensesResult.error;
   if (priorExpenseResult.error) throw priorExpenseResult.error;
@@ -140,27 +115,25 @@ export async function getBusinessSnapshotFromDb(
       return { categoryCode: code, label: RUNNING_COST_LABELS[code] ?? code, amountCents: 0, isEstimate: false, isMissing: isExpected, isExpected };
     });
 
-  const allMenuItemSnapshots = await getMenuItemSnapshots(supabase, businessId, todayDateStr, last28Days.map((d) => d.date));
-  // Requested window, not last28Days and not the currently active menu.
+  // Requested period, not last28Days, is the item-cost evidence boundary.
   const minusSix=new Date(Date.parse(todayDateStr+"T12:00:00Z")-6*86_400_000).toISOString().slice(0,10);
   const periodFrom=costPeriod==="today"?todayDateStr:costPeriod==="week"?minusSix:monthStart;
-  const periodItemSales=await readPeriodItemSales(supabase,businessId,
-    {from:periodFrom,to:todayDateStr});
-  const menuItems = allMenuItemSnapshots.filter((item) => item.active !== false);
-  const breakEvenProductCosts = allMenuItemSnapshots.filter((item) => item.quantitySoldLast28Days > 0);
-  const staffShiftsToday = await getStaffShiftsToday(supabase, businessId, timezone, todayDateStr);
+  const [allMenuItemSnapshots,periodItemSales,staffShiftsToday,alertsRead,ownerFeePlans]=
+    await Promise.all([
+      getMenuItemSnapshots(supabase,businessId,todayDateStr,last28Days.map(day=>day.date)),
+      readPeriodItemSales(supabase,businessId,{from:periodFrom,to:todayDateStr}),
+      getStaffShiftsToday(supabase,businessId,timezone,todayDateStr),
+      supabase.from("alerts").select("impact_cents",{count:"exact"}).eq("business_id",businessId)
+        .in("status",["new","seen"]),
+      getOwnerConfirmedProcessingFeePlans(supabase,businessId),
+    ]);
+  if(alertsRead.error)throw alertsRead.error;
+  const menuItems=allMenuItemSnapshots.filter(item=>item.active!==false);
+  const breakEvenProductCosts=allMenuItemSnapshots.filter(item=>item.quantitySoldLast28Days>0);
+  const alertsCount=alertsRead.count;
+  const leakingCents=(alertsRead.data??[]).reduce((sum,alert)=>
+    sum+Math.max(0,alert.impact_cents??0),0);
 
-  // Regenerate alerts opportunistically (no cron yet — see PROGRESS.md) so the Home teaser and
-  // the Alerts screen never disagree, then report how many are open and their $ impact.
-  await generateAlerts(supabase, businessId);
-  const { count: alertsCount, data: alertRows } = await supabase
-    .from("alerts")
-    .select("impact_cents", { count: "exact" })
-    .eq("business_id", businessId)
-    .in("status", ["new", "seen"]);
-  const leakingCents = (alertRows ?? []).reduce((sum, a) => sum + Math.max(0, a.impact_cents ?? 0), 0);
-
-  const ownerFeePlans=await getOwnerConfirmedProcessingFeePlans(supabase,businessId);
   return {
     business: {
       id: businessRow.id,
