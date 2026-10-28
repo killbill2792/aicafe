@@ -30,6 +30,8 @@ export type Economics={
  missingBillCategories?:string[];
  asOfDate?:string;observedDays?:BreakEvenDay[];
  ownerFeePlans?:readonly OwnerFeePlan[];
+ observedIngredientCentsOverride?:number|null;
+ missingIngredientCosts?:boolean;
  laborEvidence?:{dates:readonly {date:string}[];records:readonly LaborRecord[]};
  /** Owner-supplied observations take precedence in this specific calculation only. */
  ownerNetSalesCents?:number|null;ownerSalesDays?:number|null;
@@ -74,7 +76,8 @@ export function unifiedBreakEven(input:Economics){
  if(ownerSales!==null&&(!Number.isSafeInteger(ownerSales)||ownerSales<0))
    throw new RangeError("Invalid owner sales observation");
  const calcSales=ownerSales??observedSalesCents;
- const sourceIngredients=realDays.reduce((sum,day)=>sum+day.ingredientsCents,0);
+ const sourceIngredients=input.observedIngredientCentsOverride??
+   realDays.reduce((sum,day)=>sum+day.ingredientsCents,0);
  const sourceFees=cardFeesForDays(realDays,input.ownerFeePlans??null).amountCents;
  // A stated owner percentage overrides imports for this scenario. Otherwise,
  // retain the real amounts, or scale their effective rates when the owner supplies sales.
