@@ -28,6 +28,10 @@ export default function OliviaPublicationPanel({week,latest,publishedRevision,
   onChanged:()=>Promise<void>;
 }){
   const t=useTranslations("OliviaPlanning"),locale=useLocale();
+  const displayTime=(instant:string,locationId:string)=>{
+    const zone=locations[locationId];
+    return zone?localTime(instant,zone,locale):t("invalidWallTime");
+  };
   const revisionLabel=(status:string)=>t(({
     draft:"revisionDraft",approved:"revisionApproved",
     published:"revisionPublished",superseded:"revisionSuperseded",
@@ -114,9 +118,9 @@ export default function OliviaPublicationPanel({week,latest,publishedRevision,
       {rows!==null && (rows.length?rows.map(row=>
         <div key={row.id} className="rounded-xl border border-line p-3 text-sm">
           <strong>{employees[row.employee_id]??row.employee_id}</strong>
-          <p>{localTime(row.starts_at,locations[row.location_id]??"UTC",locale)}
+          <p>{displayTime(row.starts_at,row.location_id)}
             {" — "}
-            {localTime(row.ends_at,locations[row.location_id]??"UTC",locale)}</p>
+            {displayTime(row.ends_at,row.location_id)}</p>
           <p>{names[row.location_id]??row.location_id}
             {" · "}{t("paidMinutes")}: {row.paid_minutes}</p>
         </div>):<p className="text-sm">{t("noOfficialShifts")}</p>)}
