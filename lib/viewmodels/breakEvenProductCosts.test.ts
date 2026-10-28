@@ -24,8 +24,8 @@ describe("break-even resolved product costs", () => {
   });
   it("monthly owner payroll extras use actual month days, not a 28-day denominator",()=>{
     const snapshot=getFixtureSnapshot();
-    snapshot.ownerMonthlyPayrollExtrasCents=300000;
-    const value=buildBreakEvenViewModel(snapshot);
+    const withExtras={...snapshot,ownerMonthlyPayrollExtrasCents:300000};
+    const value=buildBreakEvenViewModel(withExtras);
     const baseline=buildBreakEvenViewModel({...snapshot,ownerMonthlyPayrollExtrasCents:0});
     expect(value.avgDailyStaffCostCents!-baseline.avgDailyStaffCostCents!).toBeCloseTo(10000,5);
     expect(value.noteKeys).toContain("laborOwnerExtras");
