@@ -7,19 +7,22 @@ import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
 const daySchema=z.iso.date();
 const LIMIT=5;
 // Toast schema keys only. Do not persist arbitrary customer-supplied map keys.
-const SAFE_KEY=/^(?:[A-Za-z_][A-Za-z0-9_]{0,63}|[0-9]{1,6})$/;
+const SAFE_KEY=/^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const MENU_REF_KEY=/^[0-9]{1,6}$/;
 const SAFE_STRING=/^(?:type|cardType|cardEntryMode|source|status|paymentStatus|refundStatus|diningOption)$/i;
 // Keep new Toast financial/labor totals without enumerating every numeric field.
 // Mask numeric identifiers even when their names aren't covered by SENSITIVE.
 const PRIVATE_NUMBER=/(?:^id$|(?:Id|Guid|GUID)$|reference$|number$|digits$|code$|pin$|identifier$)/i;
-const SENSITIVE=/(?:card(?!Type$|EntryMode$)|token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|pan|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|state|country|ip.?address|device.?id|loyalty|gift.?card|guest|patron|person|buyer|purchaser|notes?|description|display.?name|^name$|^text$|comment|memo|contact|holder|recipient|pin$|security.?code|verification.?code)/i;
+const SENSITIVE=/(?:card(?!Type$|EntryMode$)|token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|^pan$|panNumber$|panDigits$|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|^state$|billing|country|ip.?address|device.?id|loyalty|gift.?card|guest|patron|person|buyer|purchaser|notes?|description|display.?name|^name$|^text$|comment|memo|contact|holder|recipient|pin$|security.?code|verification.?code)/i;
 /** Fail closed on sensitive names, including unexpected nested Toast fields. */
 export function redactToastRaw(value:unknown,depth=0,key=""):unknown {
  if(depth>16)return null;
  if(Array.isArray(value))return value.slice(0,LIMIT).map(v=>redactToastRaw(v,depth+1,key));
  if(value&&typeof value==="object"){
   return Object.fromEntries(Object.entries(value as Record<string,unknown>)
-   .filter(([key])=>SAFE_KEY.test(key)&&!SENSITIVE.test(key))
+   .filter(([field])=>(SAFE_KEY.test(field)||
+    (MENU_REF_KEY.test(field)&&/^(?:modifierGroupReferences|modifierOptionReferences)$/.test(key)))
+    &&!SENSITIVE.test(field))
    .map(([key,v])=>[key,redactToastRaw(v,depth+1,key)]));
  }
  if(typeof value==="number"&&PRIVATE_NUMBER.test(key))return "[redacted]";
