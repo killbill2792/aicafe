@@ -33,10 +33,11 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
  if(typeof ctx.tools.getSalesTrend!=="function")
   return {...unchanged,lastFullDay:null,lastFullDayTotals:null,
    dataNote:copy.todaySalesCheckUnavailable};
+ const onlyNoRows=(keys:readonly string[])=>keys.length===1&&keys[0]==="noCoveredSalesRows";
  let currentFailed=false,imported=false;
  try{
   const current=await ctx.tools.getSalesTrend(requested);
-  if(!current.available&&!current.quality.missingInputs.includes("noCoveredSalesRows"))
+  if(!current.available&&!onlyNoRows(current.quality.missingInputs))
    currentFailed=true;
   imported=current.available&&current.value.some(day=>day.date===ctx.asOf);
  }catch{currentFailed=true;}
@@ -47,7 +48,7 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
   const history=await ctx.tools.getSalesTrend({from:dateOffset(ctx.asOf,-364),to:dateOffset(ctx.asOf,-1)});
   if(history.available)previous=[...history.value].filter(day=>day.date<ctx.asOf)
    .sort((a,b)=>a.date.localeCompare(b.date)).at(-1);
-  else if(!history.quality.missingInputs.includes("noCoveredSalesRows"))historicFailed=true;
+  else if(!onlyNoRows(history.quality.missingInputs))historicFailed=true;
  }catch{historicFailed=true;}
  // A historical row alone does not prove that the Toast import finished.
  // Recheck the candidate day so quality flags from unrelated historical dates
