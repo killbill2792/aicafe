@@ -120,7 +120,8 @@ export const newItemPriceTools={suggest_new_item_price:{
       .format(fixedPerDrink/100);
      add("Processing fee: "+rateText+" + "+perOrder+"/order (≈"+perDrink+"/drink)",
       [{name:"fixedPerOrder",value:money(Math.round(plan.fixedFeeCents))},
-       {name:"drinksPerOrder",value:count(Math.round(plan.drinksPerOrder))}],
+       {name:"drinksPerOrder",value:{kind:"text",text:new Intl.NumberFormat(ctx.locale,{
+        minimumFractionDigits:2,maximumFractionDigits:2}).format(plan.drinksPerOrder)}}],
       "divide",money(Math.round(fixedPerDrink)),"ownerProvided",
       plan.processorLabel+" — saved owner-confirmed rate plan; "+plan.drinksPerOrder.toFixed(2)+" drinks/order");
     }else add("Processing fee",[{name:"fee",value:percent(Math.round(feeRate*10000))}],
@@ -165,9 +166,10 @@ export const newItemPriceTools={suggest_new_item_price:{
      if(!lines.some(line=>line.label===label))add(label,[{name:"missing",value:{kind:"missing",reason:"none"}}],
        "sum",{kind:"missing",reason:"none"},"missing",basis);
    const numberEstimates=lines.flatMap(line=>[line.result,...line.inputs.map(i=>i.value)])
-    .flatMap<{value:number;unit:"cents"|"count"|"bps";detail:"pricing"}>(value=>value.kind==="money"?[{value:value.cents,unit:"cents",detail:"pricing"}]:
+    .flatMap<{value:number;unit:"cents"|"count"|"bps"|"ratio";detail:"pricing"}>(value=>value.kind==="money"?[{value:value.cents,unit:"cents",detail:"pricing"}]:
       value.kind==="count"?[{value:value.n,unit:"count",detail:"pricing"}]:
       value.kind==="percent"?[{value:value.bps,unit:"bps",detail:"pricing"}]:[]);
+   if(plan)numberEstimates.push({value:plan.drinksPerOrder,unit:"ratio",detail:"pricing"});
    const candidates=[
     ...(labor.valueCents===null?[{id:"labor-monthly",label:"Provide monthly labor",detail:"Enter monthly labor"},
       {id:"labor-unknown",label:"I don't know labor yet",detail:"Keep it incomplete"}]:[]),
@@ -192,7 +194,8 @@ export const newItemPriceTools={suggest_new_item_price:{
       bills:{valueCents:monthlyBills.valueCents,source:billsPartial?"estimate":source(monthlyBills.status),basis:monthlyBills.reason},
       units:{value:units,source:units===null?"missing":owner?.itemsSoldPerDay!=null?"ownerProvided":"recorded",basis:coverageLabel??"Café sales"},
       fee:{value:feeRate,source:plan?"ownerProvided":source(economics.feeStatus),
-        basis:plan?plan.processorLabel+" owner-confirmed fee plan":"Café effective fee rate",fixedPerDrinkCents:fixedPerDrink},
+        basis:plan?plan.processorLabel+" owner-confirmed fee plan":"Café effective fee rate",
+        fixedPerDrinkCents:fixedPerDrink,drinksPerOrderRatio:plan?.drinksPerOrder??null},
       operatingMargin:{value:recommended.operatingMargin,source:marginOwner?"ownerProvided":"estimate",basis:marginOwner?"You told me":"Saved target"},
       targetDrinkCost:{value:costPct,source:costOwner||ownerIngredientRate!=null?"ownerProvided":"estimate",
         basis:ownerIngredientRate!=null?copy.pricingSavedTarget:"Product cost target"}},

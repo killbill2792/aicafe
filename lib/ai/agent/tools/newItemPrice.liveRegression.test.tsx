@@ -182,6 +182,13 @@ describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
    expect.objectContaining({value:249,unit:"bps",detail:"pricing"})]));
   expect((result.numberEstimates as Array<{detail:string}>).every(v=>v.detail==="pricing")).toBe(true);
   expect(checkNumbers("Suggested $5.25, fee 2.49% and $0.15.","", [result],"en")).toEqual([]);
+  const fractional=await newItemPriceTools.suggest_new_item_price.execute(v,
+   context({feePlan:{...plan,drinksPerOrder:1.5}}));
+  const fractionalFee=(fractional.explain as ExplainLine[]).find(l=>l.label.startsWith("Processing fee:"))!;
+  expect(fractionalFee.inputs[1].value).toEqual({kind:"text",text:"1.50"});
+  expect(fractionalFee.label).toContain("$0.10/drink");
+  expect(fractional.numberEstimates).toEqual(expect.arrayContaining([
+   {value:1.5,unit:"ratio",detail:"pricing"}]));
   const fallback=await newItemPriceTools.suggest_new_item_price.execute(v,context());
   expect(fallback.feeRate).toBe(.023);
   expect(fallback.breakEvenCents).toBe(513);
