@@ -112,9 +112,10 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
    const monthDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
       snapshot.monthKey+"-"+String(i+1).padStart(2,"0"))
      .filter(day=>regularHoursStateForDate(snapshot.business.openHours,day)!=="closed");
+   const extras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null}).ownerMonthlyPayrollExtrasCents;
    const directLabor=laborForPeriod(monthDates.map(date=>({date})),raw,null,
-     snapshot.ownerMonthlyPayrollExtrasCents==null?null:{
-       monthlyCents:snapshot.ownerMonthlyPayrollExtrasCents,
+     extras==null?null:{
+       monthlyCents:extras,
        from:snapshot.monthKey+"-01",to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")});
    const sourceBills=snapshot.runningCostLines.filter(line=>!line.isMissing)
      .reduce((sum,line)=>sum+line.amountCents,0);
