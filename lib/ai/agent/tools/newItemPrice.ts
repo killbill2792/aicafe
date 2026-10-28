@@ -21,9 +21,7 @@ export const newItemPriceTools={suggest_new_item_price:{
   if(ctx.readEconomics){
    const {economics}=await ctx.readEconomics();
    const ownerLabor=ownerMonthlyAmount(owner?.laborCents??null,owner?.laborPeriod??null,ctx.asOf);
-   const monthlyStaff=ownerLabor!==null&&
-    (economics.monthlyStaff.valueCents===null||economics.monthlyStaff.status!=="actual")
-     ?figure(ownerLabor,"owner","You told me"):economics.monthlyStaff;
+   const monthlyStaff=ownerLabor!==null?figure(ownerLabor,"owner","You told me"):economics.monthlyStaff;
    const month=calendarMonth(ctx.asOf);
    let units=owner?.itemsSoldPerDay!=null?
     Math.round(owner.itemsSoldPerDay*periodDays(month)):economics.monthlyUnits;
@@ -44,8 +42,8 @@ export const newItemPriceTools={suggest_new_item_price:{
    }
    // Only the owner's current message can authorize a different target.
    const stated=ctx.resolveState?.ownerText??"";
-   const costOwner=/(?:drink|product|ingredient)\\s*cost|costo|تكلفة/iu.test(stated);
-   const marginOwner=/(?:operating|profit)\\s*margin|margen|هامش/iu.test(stated);
+   const costOwner=/(?:drink|product|ingredient)\s*cost|costo|تكلفة/iu.test(stated);
+   const marginOwner=/(?:operating|profit)\s*margin|margen|هامش/iu.test(stated);
    const costPct=costOwner&&v.target_drink_cost_percent!=null?
     v.target_drink_cost_percent/100:COFFEE_SHOP_PROFILE.targetProductCostPercent;
    const operatingMargin=marginOwner&&v.operating_margin_percent!=null?
@@ -111,8 +109,8 @@ export const newItemPriceTools={suggest_new_item_price:{
     ["Labor/drink",labor.reason],["Bills/drink",economics.monthlyBills.reason],
     ["Full loaded cost","Missing labor or bills"],["Break-even","Missing full costs or fee"],
     ["Profit price (informational)","Missing full costs or fee"]] as const)
-     if(!lines.some(line=>line.label===label))add(label,[{name:"missing",value:count(0)}],
-       "sum",count(0),"missing",basis);
+     if(!lines.some(line=>line.label===label))add(label,[{name:"missing",value:{kind:"missing",reason:"none"}}],
+       "sum",{kind:"missing",reason:"none"},"missing",basis);
    const numberEstimates=lines.flatMap(line=>[line.result,...line.inputs.map(i=>i.value)])
     .flatMap(value=>value.kind==="money"?[{value:value.cents,unit:"cents" as const,detail:"breakEvenSales" as const}]:
       value.kind==="count"?[{value:value.n,unit:"count" as const,detail:"breakEvenSales" as const}]:
@@ -123,7 +121,8 @@ export const newItemPriceTools={suggest_new_item_price:{
     ...(billsPartial?[{id:"bills-monthly",label:"Provide monthly bills",detail:"Enter monthly costs"},
       {id:"bills-unknown",label:"Some bills are unknown",detail:"Keep it partial"}]:[])
    ];
-   const missing=[...recommended.missing,...missingBills.map(category=>"monthlyBill:"+category)];
+   const missing=[...recommended.missing,...missingBills.map(category=>"monthlyBill:"+category),
+    ...(candidates.length?["ownerChoiceRequired"]:[])];
    return {source:"new_item_price",period:month,coverageLabel,monthlyUnits:units,agentId:"alex",
     status:missing.length?"estimate":"actual",saved:false,draft:true,
     itemName:v.item_name,category:v.category,
@@ -144,7 +143,7 @@ export const newItemPriceTools={suggest_new_item_price:{
       targetDrinkCost:{value:costPct,source:costOwner?"ownerProvided":"estimate",basis:"Product cost target"}},
     feeRate:economics.feeRate,targetMargin:recommended.operatingMargin,
     missing,explain:lines,numberEstimates,
-    ...(candidates.length>0?{needsOwnerChoice:true,candidates,allowOther:true}: {})};
+    ...(candidates.length>0?{needsOwnerChoice:true,candidates,allowOther:true,askOwnerRequired:true}: {})};
 
   }
   const ownerWindow=owner?.salesPeriod?ownerPeriod(owner.salesPeriod,ctx.asOf):null;

@@ -39,7 +39,12 @@ export function acceptedExplainLines(lines:readonly ExplainLine[],evidence:reado
  const selected:ExplainLine[]=[];
  for(const line of lines){
   const result=numeric(line.result);
-  if(!result||!relevant(line).some(e=>e.values.some(v=>
+  if(!result){
+   if(line.source==="suggest_new_item_price"&&line.provenance==="missing"&&
+      line.result.kind==="missing"&&pricingRecommendationCents!=null)selected.push(line);
+   continue;
+  }
+  if(!relevant(line).some(e=>e.values.some(v=>
     v.unit===result.unit&&v.value===result.value&&
     (!line.period||v.key.startsWith(line.period.from+"/"+line.period.to+"/")||
       line.source==="get_labor"&&v.key.includes(line.period.from)))))continue;

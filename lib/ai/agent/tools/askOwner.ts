@@ -19,7 +19,7 @@ export const askOwnerSchema=z.strictObject({
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 export const askOwnerTools={ask_owner:{
  agentId:"alex",schema:askOwnerSchema,
- description:"Ask the owner at most once per turn. Use kind choice with 2–4 real options when a tool reported ambiguity. Use kind fill with number fields ONLY when the usage variance tool explicitly reported that exact ingredient's missing purchase or closing count. Every fill field key must be endCount:ingredientUUID:YYYY-MM-DD or purchase:ingredientUUID:YYYY-MM-DD from tool results. Never ask for values a tool can already read.",
+ description:"Ask the owner at most once per turn. When suggest_new_item_price returns askOwnerRequired, use its exact candidate labels/values as a choice card with allowOther=true so the owner can type monthly labor or bills. Never ask for these amounts in prose. Use kind choice with 2–4 real options when a tool reported ambiguity. Use kind fill with number fields ONLY when the usage variance tool explicitly reported that exact ingredient's missing purchase or closing count. Every fill field key must be endCount:ingredientUUID:YYYY-MM-DD or purchase:ingredientUUID:YYYY-MM-DD from tool results. Never ask for values a tool can already read.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const input=askOwnerSchema.parse(raw);
   const state=ctx.resolveState;
