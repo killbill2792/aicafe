@@ -104,15 +104,21 @@ export const scheduleReadTools={
    if(input.name&&selected.length===1&&!ownerNamedTarget(ctx.resolveState,selected[0].id,selected[0].name))
      return fail("employees+scheduled_shifts",null,"targetNotConfirmed");
    const activeShifts=result.data.shifts;
+   const unlinkedNameCollision=Boolean(input.name)&&all.some(shift=>
+    shift.source==="toast"&&!shift.employeeId&&selected.some(person=>
+     person.name.toLocaleLowerCase()===shift.employeeName.toLocaleLowerCase()));
+   // An identical display name does not prove an unlinked Toast worker is
+   // the active app employee; never assign the worker's shifts by name alone.
    const scoped=input.name?all.filter(shift=>selected.some(person=>
-     person.id===shift.employeeId||person.name.toLocaleLowerCase()===shift.employeeName.toLocaleLowerCase())):all;
+     person.id===shift.employeeId)):all;
    const totals=aggregateCosts(activeShifts);
    const toastPlans=scoped.some(s=>s.source==="toast");
    const people=selected.slice(0,30),shifts=scoped.slice(0,30);
    return {source:"employees+scheduled_shifts",period:{from:ws,to:new Date(Date.parse(ws+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
     agentId:"olivia",dataNotes:[...toastScheduleNotes(result.data,ctx.locale),
-     ...(toastPlans?[toastUnknownLaborNote(ctx.locale)]:[])],
-    missing:[...(toastPlans?["toastPlannedLaborUnknown"]:[]),...(result.data.posScheduleError?["toastScheduleReadFailed"]:[]),...(selected.length>30?["morePeople"]:[]),
+     ...(toastPlans?[toastUnknownLaborNote(ctx.locale)]:[]),
+     ...(unlinkedNameCollision?[{en,es,ar}[ctx.locale].DataNotes.toastWorkerNotLinked]:[])],
+    missing:[...(unlinkedNameCollision?["toastWorkerNotLinked"]:[]),...(toastPlans?["toastPlannedLaborUnknown"]:[]),...(result.data.posScheduleError?["toastScheduleReadFailed"]:[]),...(selected.length>30?["morePeople"]:[]),
      ...(scoped.length>30?["moreShifts"]:[]),
      ...(!input.name?missingWageInputs(totals):[])],estimated:input.name||toastPlans?null:totals.estimated,
     people:people.map(p=>({id:p.id,name:p.name,role:p.role,minWeeklyMinutes:p.minWeeklyMinutes,
