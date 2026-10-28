@@ -6,11 +6,45 @@ vi.mock("@/lib/actions/teamRules",()=>({getTeamRules:vi.fn()}));
 vi.mock("@/lib/scheduling/staffScope.server",()=>({
  staffReadScope:vi.fn(),mondayOfLocalDate:vi.fn(()=> "2026-10-19")
 }));
-import {getTeam,getShiftCost} from "@/lib/actions/schedule";
+import {getTeam,getShiftCost,getWeekSchedule} from "@/lib/actions/schedule";
 import {scheduleReadTools} from "./scheduleReads";
 import {newResolveState} from "../resolve";
 import type {AgentToolContext} from "./index";
 const id="11111111-1111-4111-8111-111111111111";
+describe("Toast and app schedule union",()=>{
+ it("Toast-only shifts are listed for Saturday",async()=>{
+  vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{
+    team:[],shifts:[],posScheduleError:null,timezone:"America/Los_Angeles",
+    posShifts:[{id:"toast-1",employeeId:null,employeeName:"Casey",
+      start:"2026-10-24T16:00:00Z",end:"2026-10-24T20:00:00Z",
+      locationId:"location",source:"toast",paid:false}],
+    dates:["2026-10-19","2026-10-20","2026-10-21","2026-10-22","2026-10-23","2026-10-24","2026-10-25"],
+    adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}
+  }} as never);
+  const result=await scheduleReadTools.get_week_schedule.execute({week_start:"2026-10-19"},
+   {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as AgentToolContext);
+  expect(result.scheduleSet).toBe(true);
+  expect(result.paidMinutes).toBeNull();
+  expect(result.shifts).toMatchObject([{date:"2026-10-24",employeeName:"Casey",
+    start:"09:00",source:"toast",paidMinutes:null,costCents:null}]);
+  expect(result.missing).not.toContain("scheduleNotSet");
+ });
+ it("merges matching employee and start without duplicating app shifts",async()=>{
+  vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{
+   team:[{id:"e",name:"Casey"}],shifts:[{id:"app-1",date:"2026-10-24",employeeId:"e",
+    employeeName:"Casey",start:"09:00",end:"13:00",paidMinutes:240,costCents:7200,estimated:false}],
+   posShifts:[{id:"toast-1",employeeId:"e",employeeName:"Casey",
+    start:"2026-10-24T16:00:00Z",end:"2026-10-24T20:00:00Z",
+    locationId:"location",source:"toast",paid:false}],
+   timezone:"America/Los_Angeles",posScheduleError:null,
+   dates:["2026-10-19","2026-10-20","2026-10-21","2026-10-22","2026-10-23","2026-10-24","2026-10-25"],
+   adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}
+  }} as never);
+  const result=await scheduleReadTools.get_week_schedule.execute({week_start:"2026-10-19"},
+    {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as AgentToolContext);
+  expect(result.shifts).toMatchObject([{id:"app-1",source:"app"}]);
+ });
+});
 describe("overnight shift explanations",()=>{
  it("preserves known overnight wages and explicit breaks without crashing",async()=>{
   vi.mocked(getTeam).mockResolvedValue({ok:true,data:{
