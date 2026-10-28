@@ -3,7 +3,7 @@ import { hoursTools } from "./hours";
 import type { AgentToolContext } from "./index";
 const unavailable={available:false as const,value:null,quality:{level:"low" as const,missingInputs:["notAvailable"],estimatedInputs:[],staleInputs:[]}};
 function ctx(hours:AgentToolContext["tools"]["getBusinessHours"]):AgentToolContext{
-  return {asOf:"2026-10-22",locale:"en",tools:{
+  return {timezone:"America/Los_Angeles",asOf:"2026-10-22",locale:"en",tools:{
     getMenuCatalog:async()=>unavailable,getProfitability:async()=>unavailable,
     getSalesTrend:async()=>unavailable,getBusinessHours:hours}};
 }

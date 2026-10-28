@@ -169,8 +169,13 @@ export const SOURCE_SURFACES = {
   "lib/data/getCafeProfile.ts": {
     getCafeProfile:{capabilities:["business.profile"]},
   },
+  "lib/data/toastDayTrust.server.ts":{
+    readToastDayTrust:{restricted:"Café-scoped Toast day-status quality read shared by sales and POS fact readers; reports data uncertainty without granting a model unrestricted reads"},
+    needsLookKey:{restricted:"Pure shared collapsed warning formatter, not an independent database reader"},
+    incompleteDayKey:{restricted:"Pure shared collapsed incomplete-import warning formatter; no separate database or model read"},
+  },
   "lib/data/toastScheduledShifts.server.ts":{
-    readToastPlannedShifts:{restricted:"Owner-scoped read-only Toast planned shifts for Team UI; never a timecard, paid-hour metric, or model-selected P1 projection"},
+    readToastPlannedShifts:{restricted:"Owner-scoped read-only Toast planned shifts shared by Team screen and bounded chat schedule tools; never attendance or paid labor and not an unrestricted P1 metric selector"},
   },
   "lib/data/getUnpricedPublishedMenu.ts":{
     getUnpricedPublishedMenu:{restricted:"Authenticated current-café Menu UI read of active null-priced POS products and add-on amounts; not a P1 generic metric or unrestricted model capability"},

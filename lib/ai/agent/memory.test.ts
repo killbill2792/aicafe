@@ -61,7 +61,7 @@ describe("café memory port", () => {
 });
 
 describe("remember_cafe_fact tool", () => {
-  const ctx = (memory?: AgentToolContext["memory"]): AgentToolContext => ({ locale: "en", asOf: "2026-10-21",
+  const ctx = (memory?: AgentToolContext["memory"]): AgentToolContext => ({ timezone:"America/Los_Angeles",locale: "en", asOf: "2026-10-21",
     tools: {} as AgentToolContext["tools"], ...(memory ? { memory } : {}) });
   it("is not in the default tool list and is strict", () => {
     expect(agentToolDefinitions.some(t => t.name === "remember_cafe_fact")).toBe(false);

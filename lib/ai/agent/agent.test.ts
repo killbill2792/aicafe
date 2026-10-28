@@ -8,7 +8,7 @@ const base = { source: "profitability", period: null, missing: [],
   ownerProfitCents: 12345, operatingMargin: 0.125, coveredSalesDays: 4 };
 describe("numbers, statuses, and strict tool contracts", () => {
   it("keeps an owner's stated sales when recorded profitability is unavailable without inventing profit",async()=>{
-    const ctx:AgentToolContext={asOf:"2026-10-24",locale:"en",tools:{
+    const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-10-24",locale:"en",tools:{
       getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}}),
       getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["noProfitFacts"],estimatedInputs:[],staleInputs:[]}}),
       getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
@@ -24,7 +24,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
   });
 
   it("keeps menu results when price evidence fails, without claiming an initial source",async()=>{
-    const ctx:AgentToolContext={asOf:"2026-10-24",locale:"en",tools:{
+    const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-10-24",locale:"en",tools:{
       getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
       getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
       getMenuCatalog:async()=>({available:true,value:[{id:"a",name:"Latte",category:"drink",active:true,priceCents:500}],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
@@ -134,7 +134,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
   });
   it("reads menu without a user-provided business id", async () => {
     const context: AgentToolContext = {
-      asOf: "2026-10-21", locale: "en",
+      timezone:"America/Los_Angeles",asOf: "2026-10-21", locale: "en",
       tools: {
         getMenuCatalog: async () => ({available:true, value:[
           {id:"a",name:"Latte",category:"drink",active:true,priceCents:450},

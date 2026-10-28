@@ -9,7 +9,7 @@ const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleIn
 const catalog=[{id:hot,name:"Latte",category:"drink" as const,active:true,priceCents:450},
 {id:iced,name:"Latte",category:"drink" as const,active:true,priceCents:500}];
 function context(proposePriceChange=vi.fn()){
- return {asOf:"2026-10-24",locale:"en" as const,
+ return {timezone:"America/Los_Angeles",asOf:"2026-10-24",locale:"en" as const,
   tools:{getMenuCatalog:async()=>({available:true as const,value:catalog,quality}),
    getProfitability:async()=>({available:false as const,value:null,quality:{...quality,missingInputs:["unavailable"]}}),
    getSalesTrend:async()=>({available:false as const,value:null,quality:{...quality,missingInputs:["unavailable"]}})},

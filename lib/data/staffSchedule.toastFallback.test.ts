@@ -15,12 +15,17 @@ function chain(result:{data:unknown;error:unknown}){
 }
 describe("optional Toast schedule reads",()=>{
  afterEach(()=>vi.unstubAllEnvs());
- it("returns the verified café schedule when privileged Toast tables fail",async()=>{
+ it("Toast shift read error returns app shifts + error note",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
   const businessId="11111111-1111-4111-8111-111111111112";
   const from=vi.fn((table:string)=>{
-   if(table==="employees"||table==="scheduled_shifts"||table==="staff_availability_rules")
-    return chain({data:[],error:null});
+   if(table==="employees")return chain({data:[{id:"employee-a",display_name:"Casey",
+     active:true,role:"Barista",default_hourly_wage_cents:1800,wage_period:"hour",
+     wage_amount_cents:null}],error:null});
+   if(table==="scheduled_shifts")return chain({data:[{id:"app-shift",
+     employee_id:"employee-a",local_date:"2026-11-07",start_local:"08:00",end_local:"12:00",
+     overnight:false,break_minutes:0,status:"draft",source:"owner",break_source:"owner"}],error:null});
+   if(table==="staff_availability_rules")return chain({data:[],error:null});
    if(table==="locations")return chain({data:null,error:null});
    throw new Error("Unexpected table: "+table);
   });
@@ -37,7 +42,9 @@ describe("optional Toast schedule reads",()=>{
   expect(result.ok).toBe(true);
   if(!result.ok)return;
   expect(result.data.posShifts).toEqual([]);
-  expect(result.data.team).toEqual([]);
+  expect(result.data.shifts).toHaveLength(1);
+  expect(result.data.shifts[0].id).toBe("app-shift");
+  expect(result.data.posScheduleError).toContain("revoked");
   expect(mocks.admin).toHaveBeenCalledOnce();
   expect(protectedFrom).toHaveBeenCalledWith("toast_location_mappings");
  });

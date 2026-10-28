@@ -1,5 +1,5 @@
 import "server-only";
-import { toastDayFlags, unverifiedToastSalesDates } from "@/lib/pos/toast/reportingCoverage";
+import {readToastDayTrust} from "./toastDayTrust.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 
@@ -16,14 +16,17 @@ type Paged<T>={rows:T[];error:boolean;truncated:boolean};
 async function readPages<T>(load:(start:number,end:number)=>PromiseLike<Page<T>>):Promise<Paged<T>> {
  const rows:T[]=[];
  for(let page=0;page<MAX_PAGES;page++){
-  const {data,error}=await load(page*PAGE_SIZE,(page+1)*PAGE_SIZE-1);
-  if(error)return {rows:[],error:true,truncated:false};
-  if(!data)return {rows:[],error:true,truncated:false};
+  let result:Page<T>;
+  try{result=await load(page*PAGE_SIZE,(page+1)*PAGE_SIZE-1);}
+  catch{return {rows,error:true,truncated:false};}
+  const {data,error}=result;
+  if(error)return {rows,error:true,truncated:false};
+  if(!data)return {rows,error:true,truncated:false};
   rows.push(...data);
   if(data.length<PAGE_SIZE)return {rows,error:false,truncated:false};
  }
  // Never expose a saturated dataset as complete, even if exactly MAX_ROWS.
- return {rows:[],error:false,truncated:true};
+ return {rows,error:false,truncated:true};
 }
 function missing<T>(reason:string):KnownSlice<T> {
  return {available:false,value:null,quality:{level:"low",missingInputs:[reason],estimatedInputs:[],staleInputs:[]}};
@@ -48,69 +51,42 @@ function missingDays(p:CafeStatePeriod,dates:string[],key:string){
  return new Set(dates).size<expected?[key]:[];
 }
 export function posFactReaders(db:SupabaseClient,businessId:string){
- async function toastCoverage(period:CafeStatePeriod):
-   Promise<{blocked:Set<string>;quality:string[]}|null>{
-  if(process.env.TOAST_AUTO_IMPORT_ENABLED!=="true")
-    return {blocked:new Set(),quality:[]};
-  try {
-    const [flags,legacy]=await Promise.all([
-      toastDayFlags(db,businessId,period.from,period.to),
-      unverifiedToastSalesDates(db,businessId,period.from,period.to)
-    ]);
-    const imported=new Set(flags.filter(f=>f.status==="imported").map(f=>f.date));
-    const blocked=new Set([...legacy].filter(d=>!imported.has(d)));
-    for(const f of flags)if(f.status!=="imported")blocked.add(f.date);
-    const quality=flags.filter(f=>f.needsLook).map(f=>"toastDayNeedsLook:"+f.date);
-    return {blocked,quality};
-  }catch{
-    // If the new status reader is temporarily unavailable, preserve non-Toast
-    // data using the legacy canonical Toast-day inventory as a conservative mask.
-    try {
-      const blocked=await unverifiedToastSalesDates(db,businessId,period.from,period.to);
-      return {blocked,quality:blocked.size?["toastSalesVerificationUnavailable"]:[]};
-    }catch{return null;}
-  }
- }
+ const toastCoverage=(period:CafeStatePeriod)=>
+  readToastDayTrust(db,businessId,period.from,period.to);
  return {
   async peakHours(period:CafeStatePeriod):Promise<KnownSlice<PeakHourFacts>>{
    checkPeriod(period);
    const coverage=await toastCoverage(period);
-   const blocked=coverage?.blocked;
-   if(!blocked)return missing("toastSalesVerificationUnavailable");
    const found=await readPages<{business_date:string;hour_local:number;location_id:string|null;net_sales_cents:unknown;orders_count:unknown}>((start,end)=>
      db.from("hourly_sales_rollup").select("business_date,hour_local,location_id,net_sales_cents,orders_count")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
      .order("business_date").order("hour_local").order("location_id")
      .order("net_sales_cents").order("orders_count").range(start,end));
-   if(found.error)return missing("hourlySalesUnavailable");
-   if(found.truncated)return missing("hourlySalesPageLimit");
-   if(!found.rows.length)return missing(blocked.size?"toastSalesAwaitingIndependentReview":"noHourlySalesFacts");
+   if(found.error&&!found.rows.length)return missing("hourlySalesUnavailable");
+   if(found.truncated&&!found.rows.length)return missing("hourlySalesPageLimit");
+   if(!found.rows.length)return missing("noHourlySalesFacts");
    try{
-    const hours=found.rows.filter(r=>!blocked.has(r.business_date)).map(r=>({date:r.business_date,hourLocal:integer(r.hour_local),locationId:r.location_id,
+    const hours=found.rows.map(r=>({date:r.business_date,hourLocal:integer(r.hour_local),locationId:r.location_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
-    if(!hours.length)return missing("toastSalesAwaitingIndependentReview");
     return known({hours},[...missingDays(period,hours.map(r=>r.date),"hourlySalesDatesNotObserved"),
-      ...coverage!.quality,...(blocked.size?["toastSalesAwaitingIndependentReview"]:[])]);
+      ...coverage.quality,...(found.error?["hourlySalesUnavailable"]:[]),...(found.truncated?["hourlySalesPageLimit"]:[])]);
    }catch{return missing("unsafeHourlySalesFacts");}
   },
   async employeeSales(period:CafeStatePeriod):Promise<KnownSlice<EmployeeSalesFacts>>{
    checkPeriod(period);
    const coverage=await toastCoverage(period);
-   const blocked=coverage?.blocked;
-   if(!blocked)return missing("toastSalesVerificationUnavailable");
    const found=await readPages<{business_date:string;employee_id:string;net_sales_cents:unknown;orders_count:unknown}>((start,end)=>
      db.from("employee_sales_rollup").select("business_date,employee_id,net_sales_cents,orders_count")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
      .order("business_date").order("employee_id").order("net_sales_cents").order("orders_count").range(start,end));
-   if(found.error)return missing("employeeSalesUnavailable");
-   if(found.truncated)return missing("employeeSalesPageLimit");
-   if(!found.rows.length)return missing(blocked.size?"toastSalesAwaitingIndependentReview":"noEmployeeSalesFacts");
+   if(found.error&&!found.rows.length)return missing("employeeSalesUnavailable");
+   if(found.truncated&&!found.rows.length)return missing("employeeSalesPageLimit");
+   if(!found.rows.length)return missing("noEmployeeSalesFacts");
    try{
-    const employees=found.rows.filter(r=>!blocked.has(r.business_date)).map(r=>({date:r.business_date,employeeId:r.employee_id,
+    const employees=found.rows.map(r=>({date:r.business_date,employeeId:r.employee_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
-    if(!employees.length)return missing("toastSalesAwaitingIndependentReview");
     return known({employees},[...missingDays(period,employees.map(r=>r.date),"employeeSalesDatesNotObserved"),
-      ...coverage!.quality,...(blocked.size?["toastSalesAwaitingIndependentReview"]:[])]);
+      ...coverage.quality,...(found.error?["employeeSalesUnavailable"]:[]),...(found.truncated?["employeeSalesPageLimit"]:[])]);
    }catch{return missing("unsafeEmployeeSalesFacts");}
   },
   async payrollFacts(period:CafeStatePeriod):Promise<KnownSlice<PayrollFacts>>{
@@ -119,8 +95,8 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
      db.from("employee_pay_period_facts").select("employee_id,pay_period_end,regular_cents,overtime_cents,double_overtime_cents,gross_cents,employee_tax_cents,employer_tax_cents,net_cents,source")
      .eq("business_id",businessId).gte("pay_period_end",period.from).lte("pay_period_end",period.to)
      .order("pay_period_end").order("employee_id").order("id").range(start,end));
-   if(found.error)return missing("payrollFactsUnavailable");
-   if(found.truncated)return missing("payrollFactsPageLimit");
+   if(found.error&&!found.rows.length)return missing("payrollFactsUnavailable");
+   if(found.truncated&&!found.rows.length)return missing("payrollFactsPageLimit");
    if(!found.rows.length)return missing("noPayrollPeriodFacts");
    try{
     const payPeriods=found.rows.map(r=>({employeeId:r.employee_id,payPeriodEnd:r.pay_period_end,
@@ -135,7 +111,7 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
     ] as const;
     const missingInputs=columns.filter(col=>payPeriods.some(row=>row[col]===null))
       .map(col=>"payrollUnknown:"+col);
-    return known({payPeriods},missingInputs);
+    return known({payPeriods},[...missingInputs,...(found.error?["payrollFactsUnavailable"]:[]),...(found.truncated?["payrollFactsPageLimit"]:[])]);
    }catch{return missing("unsafePayrollFacts");}
   }
  };

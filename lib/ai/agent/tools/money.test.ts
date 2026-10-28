@@ -7,7 +7,7 @@ import type { AgentToolContext } from "./index";
 const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,quality:{...q,missingInputs:["missingSource"]}};
 function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
-  return {asOf:"2026-10-22",locale:"en",tools:{
+  return {timezone:"America/Los_Angeles",asOf:"2026-10-22",locale:"en",tools:{
     getProfitability:async()=>unavailable,getSalesTrend:async()=>unavailable,
     getMenuCatalog:async()=>unavailable,...extra}};
 }

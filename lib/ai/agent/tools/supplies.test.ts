@@ -3,7 +3,7 @@ import { suppliesTools } from "./supplies";
 import type { AgentToolContext } from "./index";
 const unavailable={available:false as const,value:null,quality:{level:"low" as const,missingInputs:["missing"],estimatedInputs:[],staleInputs:[]}};
 function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
-  return {asOf:"2026-10-22",locale:"en",tools:{
+  return {timezone:"America/Los_Angeles",asOf:"2026-10-22",locale:"en",tools:{
     getProfitability:async()=>unavailable,getSalesTrend:async()=>unavailable,
     getMenuCatalog:async()=>unavailable,...extra}};
 }

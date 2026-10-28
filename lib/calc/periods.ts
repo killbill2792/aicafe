@@ -1,5 +1,5 @@
 /** Pure calendar resolution; all dates are business-local YYYY-MM-DD, never UTC-now. */
-export type PeriodValue = {from:string;to:string;label:string};
+export type PeriodValue = {from:string;to:string;label:string;labelKey:string};
 export type PeriodInput = {preset:"today"|"week"|"month"|"last_week"|"last_month"|"ytd"}
   | {from:string;to:string} | "today"|"week"|"month"|"last_week"|"last_month"|"ytd"|string;
 export type PeriodResolution =
@@ -28,20 +28,27 @@ export function resolvePeriod(input:PeriodInput, options:{
   if(input&&typeof input==="object"&&"from" in input&&"to" in input){
     if(!parseDate(input.from)||!parseDate(input.to)||input.from>input.to)return {status:"none",suggestions:[],missing:["invalidPeriod"]};
     if(input.to>asOf)return {status:"none",suggestions:[],missing:["futurePeriod"]};
-    return {status:"resolved",value:{from:input.from,to:input.to,label:input.from+" – "+input.to}};
+    return {status:"resolved",value:{from:input.from,to:input.to,label:input.from+" – "+input.to,labelKey:"periodExplicit"}};
   }
   const preset=typeof input==="string"?input:input.preset;
   const month=asOf.slice(0,7)+"-01";
   const previousMonth=offset(month,-1);
   const prevStart=previousMonth.slice(0,7)+"-01";
   const monday=offset(asOf,-((new Date(asOf+"T12:00:00Z").getUTCDay()+6)%7));
+  const periodLabel=(from:string,to:string)=>from+" – "+to;
+  const from0=asOf,to0=asOf;
+  const from1=offset(asOf,-6),to1=asOf;
+  const from2=month,to2=asOf;
+  const from3=offset(monday,-7),to3=offset(monday,-1);
+  const from4=prevStart,to4=offset(month,-1);
+  const from5=asOf.slice(0,4)+"-01-01",to5=asOf;
   const periods:Record<string,PeriodValue>={
-    today:{from:asOf,to:asOf,label:"Today"},
-    week:{from:offset(asOf,-6),to:asOf,label:"Last 7 days"},
-    month:{from:month,to:asOf,label:"This month"},
-    last_week:{from:offset(monday,-7),to:offset(monday,-1),label:"Last week"},
-    last_month:{from:prevStart,to:offset(month,-1),label:"Last month"},
-    ytd:{from:asOf.slice(0,4)+"-01-01",to:asOf,label:"Year to date"},
+    today:{from:asOf,to:asOf,label:periodLabel(from0,to0),labelKey:"periodToday"},
+    week:{from:offset(asOf,-6),to:asOf,label:periodLabel(from1,to1),labelKey:"periodWeek"},
+    month:{from:month,to:asOf,label:periodLabel(from2,to2),labelKey:"periodMonth"},
+    last_week:{from:offset(monday,-7),to:offset(monday,-1),label:periodLabel(from3,to3),labelKey:"periodLastWeek"},
+    last_month:{from:prevStart,to:offset(month,-1),label:periodLabel(from4,to4),labelKey:"periodLastMonth"},
+    ytd:{from:asOf.slice(0,4)+"-01-01",to:asOf,label:periodLabel(from5,to5),labelKey:"periodYtd"},
   };
   if(periods[preset])return {status:"resolved",value:periods[preset]};
   const normalized=preset.trim().toLowerCase();
@@ -57,7 +64,7 @@ export function resolvePeriod(input:PeriodInput, options:{
     const from=year+"-"+String(index+1).padStart(2,"0")+"-01";
     const to=offset(year+"-"+String(index+1).padStart(2,"0")+"-01",0);
     const last=day(new Date(Date.UTC(year,index+1,0,12)));
-    return {from,to:last>asOf?asOf:last,label:names[index][0].toUpperCase()+names[index].slice(1)+" "+year};
+    return {from,to:last>asOf?asOf:last,label:from+" – "+(last>asOf?asOf:last),labelKey:"periodNamedMonth"};
   }).filter(x=>x.from<=x.to&&x.from<=asOf&&(!coverage||x.to>=coverage.from&&x.from<=coverage.to));
   if(candidates.length>1)return {status:"ambiguous",candidates:candidates.slice(0,4)};
   if(candidates.length===1)return {status:"resolved",value:candidates[0]};
