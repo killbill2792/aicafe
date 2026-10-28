@@ -3374,6 +3374,7 @@
     "breakEvenLaborMissing": "بعض تكاليف العمالة غير معروفة.",
     "breakEvenDrinksMissing": "حجم مبيعات المشروبات غير متاح.",
     "NO_SALES": "لا توجد أيام بمبيعات مسجلة.",
-    "VARIABLE_COSTS_TOO_HIGH": "التكاليف المتغيرة تستهلك جميع المبيعات."
+    "VARIABLE_COSTS_TOO_HIGH": "التكاليف المتغيرة تستهلك جميع المبيعات.",
+    "monthCalendarSparseSales": "تتوفر مبيعات أقل من سبعة أيام؛ التغطية تقدير أولي."
   }
 }
