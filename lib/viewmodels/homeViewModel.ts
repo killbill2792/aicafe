@@ -54,7 +54,7 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const bestItem = [...rankableItems].sort((a, b) => keptPerCup(b) - keptPerCup(a))[0] ?? null;
   const worstItem = [...rankableItems].sort((a, b) => keptPerCup(a) - keptPerCup(b))[0] ?? null;
 
-  const completeDays=snapshot.last28Days.filter(day=>day.date<snapshot.todayDateStr);
+  const completeDays=(snapshot.breakEvenDays??snapshot.last28Days).filter(day=>day.date<snapshot.todayDateStr);
   const avgDrinksPerDay=completeDays.length?
     sumCents(completeDays,day=>day.drinksCount)/completeDays.length:0;
   const last28Net=sumCents(completeDays,day=>day.netSalesCents);
