@@ -92,7 +92,17 @@ create or replace view public.cv_labor_entries with (security_invoker=true) as
   'hourly_wage_cents',to_jsonb(t)->'hourly_wage_cents',
   'regular_minutes',to_jsonb(t)->'regular_minutes',
   'overtime_minutes',to_jsonb(t)->'overtime_minutes') as data
- from public.timecards t;
+ from public.timecards t
+ union all
+ select s.business_id,'toast'::text,
+ 'staged-timecard:'||s.restaurant_guid::text||':'||s.external_time_entry_id::text,
+ s.status,null::date,
+ jsonb_build_object('employee_guid',s.external_employee_id,
+  'clock_in',s.clock_in,'clock_out',s.clock_out,
+  'hourly_wage_cents',s.hourly_wage_cents,
+  'wage_status',s.wage_status)
+ from public.toast_open_labor_summaries s
+ where s.status in ('open','needs_match');
 
 create or replace view public.cv_staff with (security_invoker=true) as
  select e.business_id,
@@ -102,7 +112,14 @@ create or replace view public.cv_staff with (security_invoker=true) as
  jsonb_build_object('id',e.id,'display_name',e.display_name,
   'role',e.role,'active',e.active,
   'default_hourly_wage_cents',e.default_hourly_wage_cents) as data
- from public.employees e;
+ from public.employees e
+ union all
+ select r.business_id,'toast'::text,'review:'||r.review_type||':'||r.source_key,
+ 'needs_match'::text,null::date,
+ jsonb_build_object('review_type',r.review_type,'source_key',r.source_key,
+  'detail',r.detail)
+ from public.pos_import_reviews r
+ where r.provider='toast' and r.review_type='staff_identity' and r.status='needs_owner';
 
 create or replace view public.cv_shifts with (security_invoker=true) as
  select s.business_id,'app'::text as source,
@@ -121,7 +138,14 @@ create or replace view public.cv_menu with (security_invoker=true) as
  jsonb_build_object('id',m.id,'name',m.name,'price_cents',m.price_cents,
   'category',m.category,'menu_group',to_jsonb(m)->'menu_group',
   'is_active',m.is_active,'pos_item_id',m.pos_item_id) as data
- from public.menu_items m;
+ from public.menu_items m
+ union all
+ select r.business_id,'toast'::text,'review:'||r.review_type||':'||r.source_key,
+ 'needs_match'::text,null::date,
+ jsonb_build_object('review_type',r.review_type,'source_key',r.source_key,'detail',r.detail)
+ from public.pos_import_reviews r where r.provider='toast'
+ and r.review_type in ('catalog_item','menu_identity','item_identity')
+ and r.status='needs_owner';
 
 create or replace view public.cv_bills with (security_invoker=true) as
  select c.business_id,'app'::text as source,
