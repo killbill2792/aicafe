@@ -36,7 +36,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  for(const response of [locations,recurring,rollups,employees])
   if(response.error)throw response.error;
  if((employees.data??[]).length>=500)throw new Error("Employee roster page truncated");
- const timezone=business.data?.timezone??"America/Los_Angeles";
+ if(!business.data?.timezone)throw new Error("Café timezone missing");
+ const timezone=business.data.timezone;
  const hours=normalizeOpenHours(locations.data?.[0]?.open_hours);
  const open=(day:string)=>regularHoursStateForDate(hours,day)!=="closed";
  const dayList:string[]=[];
