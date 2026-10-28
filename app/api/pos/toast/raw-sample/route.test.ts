@@ -40,6 +40,7 @@ describe("Toast raw diagnostic owner route",()=>{
    {reason:"invalid_request",code:400,failed:0},
    {reason:"missing_hash_key",code:503,failed:0},
    {reason:"lease_lost",code:503,failed:1},
+   {reason:"partial",code:206,failed:0},
   ] as const;
   for(const {reason,code,failed} of outcomes){
    mocks.capture.mockResolvedValueOnce({captured:0,skipped:true,failed,reason});
