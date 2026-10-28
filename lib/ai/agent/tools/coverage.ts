@@ -86,6 +86,7 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
   lastFullDay?copy.todayNotImported.replace("{date}",lastFullDay).replace("{amount}",formatted):
    previous?copy.todayLastRecordedUnverified.replace("{date}",previous.date).replace("{amount}",formatted):
    copy.todayNotImportedNoHistory;
+ const safeNote=!ctx.currency&&amount!==null?note+" "+{en,es,ar}[ctx.locale].MetricsNotes.cafeCurrencyMissing:note;
  return {...unchanged,...(!currentFailed?{todayImported:false}:{}),
   lastFullDay,lastRecordedDay:previous?.date??null,
   lastFullDayTotals:lastFullDay?{netSalesCents:amount,ordersCount:previous?.ordersCount??null,
