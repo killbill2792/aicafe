@@ -3,7 +3,7 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 type StaffSourceScope={businessId:string;ownerUserId:string};
 export type StaffProposalPerson={id:string;display_name:string;role:string|null;active:boolean;
- wage_period:string;wage_amount_cents:number|null;phone_e164:string|null;whatsapp_opt_in:boolean};
+ wage_period:string;wage_amount_cents:number|null;default_hourly_wage_cents?:number|null;phone_e164:string|null;whatsapp_opt_in:boolean};
 export type StaffProposalShift={id:string;employee_id:string;local_date:string;start_local:string;end_local:string;break_minutes:number;status:string;deleted_at:string|null};
 
 async function verifyOwner(scope:StaffSourceScope){
@@ -36,7 +36,7 @@ export async function readStaffProposalSources(scope:StaffSourceScope,from:strin
  await verifyOwner(scope);
  const db=createAdminSupabaseClient();
  const [peopleResult,shiftsResult,rulesResult,availabilityResult,exceptionsResult,locationResult]=await Promise.all([
-  db.from("employees").select("id,display_name,role,active,wage_period,wage_amount_cents,phone_e164,whatsapp_opt_in").eq("business_id",scope.businessId).limit(501),
+  db.from("employees").select("id,display_name,role,active,wage_period,wage_amount_cents,default_hourly_wage_cents,phone_e164,whatsapp_opt_in").eq("business_id",scope.businessId).limit(501),
   from&&to?db.from("scheduled_shifts").select("id,employee_id,local_date,start_local,end_local,break_minutes,status,deleted_at")
     .eq("business_id",scope.businessId).is("deleted_at",null).gte("local_date",from).lte("local_date",to).limit(501)
     :Promise.resolve({data:[],error:null}),
