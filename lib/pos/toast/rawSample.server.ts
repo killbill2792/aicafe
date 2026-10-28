@@ -23,7 +23,10 @@ const RESTRICTED=/(?:password|secret|token|credential|authorization|api.?key|ses
 const FREEFORM=/(?:notes?|memo|comment|message|instructions|^text$|description|receiptText|^tabName$)/i;
 const IDENTIFIER=/(?:^customer(?:Id|Guid)$|^guest(?:Id|Guid)$|^loyalty(?:Id|Guid|AccountId)$|^cardPaymentId$|^cardFingerprint$|^cardTokenId$|^paymentCardId$|^cardId$|^networkTransactionIdentifier$|^maskedLoyaltyIdentifier$|^customerIdentifier$|^loyaltyIdentifier$)/i;
 const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
-function safeString(s:string){return s.length<=10000&&!/@/.test(s)&&!/(?:\b\d{3}[-. ]\d{3}[-. ]\d{4}\b|\b\d{13,19}\b)/.test(s);}
+const isLinkableId=(name:string,context:string)=>IDENTIFIER.test(name)||
+ /^(?:id|guid|referenceId)$/i.test(name)&&
+ /(?:customer|guest|loyalty|card|patron|employee|staff|cashier)/i.test(context);
+function safeString(s:string){return s.length<=100000&&!/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(s)&&!/(?:\b\d{3}[-. ]\d{3}[-. ]\d{4}\b|\b\d{13,19}\b)/.test(s);}
 export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,context="",scope=""):unknown{
  if(depth>32)return null;
  if(Array.isArray(value))return value.map(v=>redactToastRaw(v,depth+1,key,hashKey,context,scope));
@@ -36,7 +39,7 @@ export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,cont
    .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron|deliveryInfo|contact|billing|shipping|recipient|buyer|payer|cashier|^card$)/i.test(k)?k:context,scope)])
    .filter(([k,v])=>v!==undefined));
  }
- if(IDENTIFIER.test(key)||(/^(?:id|guid|referenceId)$/i.test(key)&&/(?:customer|guest|loyalty|card|patron|employee|staff|cashier)/i.test(context))){
+ if(isLinkableId(key,context)){
   if(!hashKey) return undefined;
   if(typeof value!=="string"&&typeof value!=="number")return null;
   return "hmac:"+createHmac("sha256",hashKey).update(String(value)).digest("hex");
@@ -64,7 +67,7 @@ function identifierCounts(value:unknown){
   for(const [k,x] of Object.entries(v)){
    const safeKey=KEY.test(k)||/^[0-9]{1,6}$/.test(k)?k:"*";
    const next=path?path+"."+safeKey:safeKey;
-   if(IDENTIFIER.test(k)){
+   if(isLinkableId(k,path)){
     const s=counts[next]??{present:0,filled:0};
     s.present++;if(x!==null&&x!==undefined&&x!=="")s.filled++;
     counts[next]=s;
@@ -185,6 +188,13 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
   const analytics=createToastAnalyticsClient(db,businessId,deadlineAt);
   let lastRenew=Date.now();
   const known=new Map<string,Set<string>>();
+  try{
+   const {data:analyticsCredentials}=await db.from("toast_analytics_credentials")
+    .select("management_group_guid").eq("business_id",businessId).maybeSingle();
+   const group=analyticsCredentials?.management_group_guid;
+   if(typeof group==="string"&&GUID.safeParse(group).success)
+    known.set("__management_group__",new Set([group]));
+  }catch{/* A missing Analytics connection is recorded by its GET operations. */}
   // Reuse only pre-existing Analytics report identifiers; never POST to create a report.
   try{
    const {data:jobs}=await db.from("toast_analytics_jobs").select("report_request_guid")
@@ -212,9 +222,11 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     code:string|null=null,message:string|null=null)=>{
    const safe=redactToastRaw(raw,0,"",hashKey,"",s.endpoint)??{};
    const parts=chunks(safe);
+   const root=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
    const count=code?0:Array.isArray(raw)?raw.length:
-    raw&&typeof raw==="object"&&Array.isArray((raw as {menus?:unknown}).menus)?
-    (raw as {menus:unknown[]}).menus.length:1;
+    Array.isArray(root?.data)?root.data.length:
+    Array.isArray(root?.results)?root.results.length:
+    Array.isArray(root?.menus)?root.menus.length:1;
    const old=summaries.get(s.endpoint);
    summaries.set(s.endpoint,{status:status??old?.status??null,count:(old?.count??0)+count});
    for(let i=0;i<parts.length;i++){
