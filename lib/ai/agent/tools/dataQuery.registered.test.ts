@@ -30,8 +30,8 @@ describe("canonical data available to authenticated chat, not only standalone to
  });
  it("routes a scoped chat query through the same safe query RPC",async()=>{
   const {rpc,context}=caller();
-  const input={view:"cv_orders",columns:["business_date","guest_count"],filters:null,
-   group_by:null,metrics:null,date_from:"2026-10-20",date_to:"2026-10-20",
+  const input={view:"cv_orders",columns:["business_date"],filters:null,
+   group_by:["business_date"],metrics:[{fn:"count",column:"guest_count"}],date_from:"2026-10-20",date_to:"2026-10-20",
    order_by:null,limit:25};
   const result=await executeAgentTool("query_data",input,context);
   expect(rpc).toHaveBeenCalledTimes(1);
