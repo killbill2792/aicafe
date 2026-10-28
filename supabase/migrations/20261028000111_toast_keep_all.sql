@@ -241,7 +241,8 @@ begin
  end if;
  with source as (
   select item.raw as row,
-   row_number() over(partition by item.raw->>'guid'
+   row_number() over(partition by coalesce(nullif(item.raw->>'guid',''),
+    'guidless:'||page.page::text||':'||item.idx::text)
      order by item.raw->>'modifiedDate' desc nulls last, page.page desc,item.idx desc) rn
   from public.toast_day_pages page
   cross join lateral jsonb_array_elements(page.payload) with ordinality item(raw,idx)

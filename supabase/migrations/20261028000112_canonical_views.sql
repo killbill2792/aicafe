@@ -196,8 +196,8 @@ create or replace view public.cv_bills (business_id,source,source_ref,status,bus
  case when c.is_estimate then 'estimated' else 'actual' end::text as status,
  null::date as business_date,
  jsonb_build_object('id',c.id,'amount_cents',to_jsonb(c)->'amount_cents',
-  'frequency',to_jsonb(c)->'frequency','category',to_jsonb(c)->'category',
-  'name',to_jsonb(c)->'name','is_estimate',c.is_estimate) as data
+  'frequency',to_jsonb(c)->'frequency','category',c.category_code,
+  'name',c.label,'is_estimate',c.is_estimate) as data
  from public.recurring_costs c;
 
 create or replace view public.cv_inventory (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as

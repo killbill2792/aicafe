@@ -499,6 +499,17 @@ select public.toast_capture_typed_order(id) from public.toast_raw_records
   where f.raw_record_id=toast_raw_records.id);
 
 
+-- An explicit Toast deletion must never remain current billable labor.
+-- Keep the historical row, but exclude deleted attendance from canonical labor.
+alter table public.toast_open_labor_summaries
+ add column if not exists deleted boolean not null default false;
+update public.toast_open_labor_summaries as dst
+set deleted=src.deleted
+from public.toast_labor_entries src
+where dst.business_id=src.business_id and dst.restaurant_guid=src.restaurant_guid
+ and dst.external_time_entry_id=src.external_time_entry_id
+ and dst.deleted is distinct from src.deleted;
+
 -- Exactly provider-reported regular/overtime hours, never calculated from a
 -- guessed break or clock-out. Original hourly wage remains in integer cents.
 alter table public.toast_labor_entries
@@ -550,20 +561,21 @@ begin
  then raise exception 'service role only';end if;
  insert into public.toast_open_labor_summaries(
   business_id,restaurant_guid,external_time_entry_id,external_employee_id,
-  clock_in,clock_out,hourly_wage_cents,wage_status,status,provider_regular_hours,provider_overtime_hours)
+  clock_in,clock_out,hourly_wage_cents,wage_status,status,provider_regular_hours,provider_overtime_hours,deleted)
  values(new.business_id,new.restaurant_guid,new.external_time_entry_id,
   new.external_employee_id,new.clock_in,new.clock_out,
   case when new.clock_out is null or new.wage_status='missing'
    then null else new.hourly_wage_cents end,new.wage_status,
   case when new.clock_out is null then 'open'
    when new.wage_status='missing' then 'needs_match' else 'actual' end,
-  new.provider_regular_hours,new.provider_overtime_hours)
+  new.provider_regular_hours,new.provider_overtime_hours,new.deleted)
  on conflict (business_id,restaurant_guid,external_time_entry_id) do update
  set external_employee_id=excluded.external_employee_id,clock_in=excluded.clock_in,
   clock_out=excluded.clock_out,hourly_wage_cents=excluded.hourly_wage_cents,
   wage_status=excluded.wage_status,status=excluded.status,
   provider_regular_hours=excluded.provider_regular_hours,
-  provider_overtime_hours=excluded.provider_overtime_hours;
+  provider_overtime_hours=excluded.provider_overtime_hours,
+  deleted=excluded.deleted;
  return new;
 end $summary$;
 
@@ -603,7 +615,7 @@ with (security_invoker=true) as
  s.provider_regular_hours,s.provider_overtime_hours,s.hourly_wage_cents
  from public.toast_open_labor_summaries s
  join public.businesses b on b.id=s.business_id
- where not exists(select 1 from public.timecards t
+ where s.deleted=false and not exists(select 1 from public.timecards t
    where t.business_id=s.business_id
     and t.pos_timecard_id='toast:'||s.restaurant_guid::text||':'||s.external_time_entry_id::text);
 
