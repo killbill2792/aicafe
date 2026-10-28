@@ -56,7 +56,7 @@ export function mergeScheduleShifts(data:Pick<WeekData,"shifts"|"posShifts"|"tea
 }
 export function localizedToastScheduleReadError(reason:string,locale:AgentToolContext["locale"]){
  const copy={en,es,ar}[locale].DataNotes;
- const why=/permission|revoked|access denied|42501|\\b(?:401|403)\\b/i.test(reason)?
+ const why=/permission|revoked|access denied|42501|\b(?:401|403)\b/i.test(reason)?
   copy.toastScheduleReasonPermission:
   /timeout|timed out|network|ECONN|ETIMEDOUT/i.test(reason)?
    copy.toastScheduleReasonTimeout:copy.toastScheduleReasonUnavailable;
