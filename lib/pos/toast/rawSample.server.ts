@@ -174,14 +174,14 @@ export async function claimToastRawSample(db:Pick<SupabaseClient,"rpc">,business
  const {data,error}=await db.rpc("toast_claim_raw_sample",{p_business_id:businessId,p_restaurant_guid:restaurantGuid,p_business_date:businessDate});
  if(error)throw new ToastApiError("unavailable");return data===true;
 }
-function pathFor(s:Entry,day:string,guid:string,id?:string,page=1,token?:string){
+function pathFor(s:Entry,day:string,guid:string,id?:string,page=1,token?:string,window?:{start:Date;end:Date}){
  let path=s.path.replace("{guid}",id??guid).replace("{reportRequestGuid}",id??guid);
  const params=new URLSearchParams();
  if(s.scope==="date")
   params.set(s.endpoint==="orders/v2/payments"?"paidBusinessDate":"businessDate",day.replaceAll("-",""));
  if(s.scope==="window"){
-  const start=new Date(day+"T00:00:00Z");
-  const end=new Date(start.getTime()+86400000);
+  const start=window?.start??new Date(day+"T00:00:00Z");
+  const end=window?.end??new Date(start.getTime()+86400000);
   params.set("startDate",decodeURIComponent(toToastTimestamp(start)));
   params.set("endDate",decodeURIComponent(toToastTimestamp(end)));
  }
@@ -214,17 +214,26 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
  db:SupabaseClient=createAdminSupabaseClient()):Promise<ToastRawSampleResult>{
  if(!GUID.safeParse(businessId).success||!ISO.safeParse(businessDate).success||
  businessDate>new Date().toISOString().slice(0,10))return skip("invalid_request");
- const hashKey=process.env.TOAST_CUSTOMER_HASH_KEY;
- if(!hashKey||hashKey.length<32)return skip("missing_hash_key");
+ const secret=process.env.TOAST_CUSTOMER_HASH_KEY;
+ if(!secret||secret.length<32)return skip("missing_hash_key");
+ const hashKey=createHmac("sha256",secret).update(businessId).digest("hex");
  let captured=0,failed=0,leaseNonce:string|null=null,reason:ToastRawSampleResult["reason"];
  const captureId=randomUUID();
  try{
-  const {data:mappings,error}=await db.from("toast_location_mappings").select("restaurant_guid")
+  const {data:mappings,error}=await db.from("toast_location_mappings").select("restaurant_guid,toast_time_zone,closeout_hour")
    .eq("business_id",businessId).not("verified_at","is",null)
    .order("restaurant_guid",{ascending:true}).limit(1);
   if(error)return skip("db_error",1);
   if(!mappings?.length)return skip("no_location");
   const guid=String(mappings[0].restaurant_guid);
+  const timeZone=typeof mappings[0].toast_time_zone==="string"?mappings[0].toast_time_zone:"UTC";
+  const closeout=Number.isInteger(mappings[0].closeout_hour)?mappings[0].closeout_hour:0;
+  const clock=String(closeout).padStart(2,"0")+":00:00";
+  const dayStart=fromZonedTime(businessDate+"T"+clock,timeZone);
+  const nextDate=new Date(businessDate+"T12:00:00Z");
+  nextDate.setUTCDate(nextDate.getUTCDate()+1);
+  const dayEnd=fromZonedTime(nextDate.toISOString().slice(0,10)+"T"+clock,timeZone);
+  const businessWindow={start:dayStart,end:dayEnd};
   const acquired=await db.rpc("toast_acquire_lease",{p_business_id:businessId,p_restaurant_guid:guid,p_seconds:290});
   if(acquired.error)return skip("db_error",1);
   if(!acquired.data)return skip("busy");
@@ -253,9 +262,9 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     const {error:err}=await db.from("toast_raw_samples").insert({
      business_id:businessId,restaurant_guid:guid,business_date:businessDate,
      endpoint:s.endpoint,doc_url:s.doc,capture_id:captureId,page_number:page===null?null:page*1000+i,
-     http_status:status,item_count:Array.isArray(piece)?piece.length:status===204?0:1,
+     http_status:status,item_count:code?0:Array.isArray(piece)?piece.length:1,
      sample:piece,field_paths:toastFieldPaths(piece),
-     identifier_counts:identifierCounts(raw),error_code:code,error_message:message
+     identifier_counts:i===0?identifierCounts(raw):{},error_code:code,error_message:message
     });
     if(err)failed++;else captured++;
    }
@@ -276,7 +285,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       await pace();
       let http=200;
       let token:string|null=null;
-      const raw=await client.request(pathFor(s,businessDate,guid,id,page,nextToken),guid,z.unknown(),
+      const raw=await client.request(pathFor(s,businessDate,guid,id,page,nextToken,businessWindow),guid,z.unknown(),
         {deadlineAt,onResponse:info=>{http=info.status;token=info.nextPageToken;}});
       const obj=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
       const list=Array.isArray(raw)?raw:Array.isArray(obj?.results)?obj.results as unknown[]:
