@@ -34,6 +34,11 @@ describe("read-only historical period calculation",()=>{
     expect(output.profitability.available).toBe(true);
     if(!output.profitability.available)throw Error("Expected observed sales");
     expect(output.profitability.value.netSalesCents).toBe(200000);
+    const future=cafeStateFromSnapshot(snapshot,{from:"2026-09-30",to:"2026-11-15"});
+    expect(future.period).toEqual({from:"2026-09-30",to:"2026-10-02"});
+    expect(future.profitability.available).toBe(true);
+    expect(future.dataQuality.missingInputs).toContain("futureDatesExcluded");
+    if(future.profitability.available)expect(future.profitability.value.netSalesCents).toBe(200000);
     expect(output.profitability.value.totalCostsCents).toBe(122000);
     expect(output.profitability.value.ownerProfitCents).toBe(78000);
     expect(output.businessCosts.missingInputs).toContain("historicalIngredientCostCoverage");
