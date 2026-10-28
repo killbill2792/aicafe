@@ -22,18 +22,18 @@ const CHUNK_BYTES=180000;
 // Drop personal, payment-credential and arbitrary note fields. Do not use
 // broad "orders/checks/payments" context allowlists: they lose business data.
 const PERSONAL_FIELD=/(?:^name$|^displayName$|^nickname$|^firstName$|^lastName$|^fullName$|^chosenName$)/i;
-const PERSONAL_PARENT=/(?:^customer$|^guest$|^loyalty$|^patron$|^card$|^cardholder$|^person$|^recipient$|^buyer$|^purchaser$|^payer$|^contact$|^deliveryInfo$|^billing$|^shipping$)/i;
+const PERSONAL_PARENT=/(?:^customer$|^customerInfo$|^customerDetails$|^guest$|^guestInfo$|^loyalty$|^loyaltyAccount$|^patron$|^card$|^cardInfo$|^cardDetails$|^creditCard$|^paymentCard$|^cardholder$|^person$|^recipient$|^buyer$|^purchaser$|^payer$|^contact$|^deliveryInfo$|^billing$|^shipping$)/i;
 const CONTACT_FIELD=/(?:email|phone|mobile|fax|street|address|postal|zipCode|latitude|longitude|^lat$|^lon$|^lng$|ipAddress|birth|^firstName$|^lastName$|^fullName$|^chosenName$|^(?:customer|guest|cardholder|employee|server|cashier|recipient|buyer|purchaser|payer|patron)(?:First|Last|Full|Chosen)?Name$)/i;
 const PERSONAL_LOCATION=/^(?:city|country|state|suite|unit)$/i;
 const CARD_SECRET=/(?:cardNumber|cardLast4|lastFour|last4|first6|firstSix|pan$|cvv|cvc|magstripe|trackData|expiry|expiration|expireDate|cardholderName|cardName|networkId|networkTransactionIdentifier)/i;
 const AUTH_SECRET=/(?:password|secret|authorization|token|apiKey|credential|sessionToken|signature|passcode|pin$|routingNumber|accountNumber|deviceId)/i;
 const FREEFORM=/(?:notes?|memo|comment|message|instructions?|^text$|^tabName$|receiptText|^description$)/i;
-const CUSTOMER_ID=/(?:^customer(?:Id|Guid|Identifier|AccountId|AccountGuid|Number|ExternalId)$|^guest(?:Id|Guid|Identifier)$|^loyalty(?:Id|Guid|Identifier|AccountId|AccountGuid|AccountNumber|CustomerId|CustomerGuid)$|^card(?:Id|Guid|Fingerprint|TokenId)$|^cardPaymentId$|^paymentCardId$|^cardTokenId$|^maskedLoyaltyIdentifier$)/i;
+const CUSTOMER_ID=/(?:^customer(?:Id|Guid|Identifier|AccountId|AccountGuid|Number|ExternalId)$|^guest(?:Id|Guid|Identifier)$|^loyalty(?:Id|Guid|Identifier|AccountId|AccountGuid|AccountNumber|CustomerId|CustomerGuid)$|^card(?:Id|Guid|Fingerprint|TokenId)$|^creditCard(?:Id|Guid|Fingerprint)$|^cardPaymentId$|^paymentCardId$|^cardTokenId$|^maskedLoyaltyIdentifier$)/i;
 const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
 const isPersonalContext=(context:string)=>PERSONAL_PARENT.test(context);
 const isSensitiveId=(key:string,context:string)=>CUSTOMER_ID.test(key)||
  /^(?:id|guid|referenceId|externalId|accountId|accountGuid|fingerprint|identifier|tokenId)$/i.test(key)&&
- /^(?:customer|guest|loyalty|patron|card|cardholder)$/.test(context);
+ /^(?:customer|customerInfo|customerDetails|guest|guestInfo|loyalty|loyaltyAccount|patron|card|cardInfo|cardDetails|creditCard|paymentCard|cardholder)$/.test(context);
 function safeString(s:string){
  return s.length<=100000 &&
  !/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(s) &&
