@@ -96,7 +96,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
  const localDate=part("year")+"-"+part("month")+"-"+part("day");
  switch(name){
   case "propose_schedule":{
-   const d=input as z.infer<typeof staffProposalInputs.propose_schedule>;
+   const d=input as z.infer<typeof staffProposalInputs.propose_schedule> & {week_start:string};
    ensure(isoDay(d.week_start)===1&&d.week_start>=localDate,"Choose a future Monday");
    const last=add(d.week_start,6),old=shifts.filter(x=>x.local_date>=d.week_start&&x.local_date<=last);
    ensure(old.every(x=>x.status==="draft"),"Sent shifts cannot be replaced");
