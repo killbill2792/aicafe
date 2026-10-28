@@ -69,7 +69,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
   for(const item of pages){
    const parsed=parseToastDayPage(item.payload,p.restaurantGuid,p.businessDate,
      m.toast_time_zone,m.closeout_hour);
-   unparsed.push(...parsed.unparsed);
+   unparsed.push(...parsed.unparsed.map(x=>({...x,source_page:item.page})));
    for(const record of parsed.orders){
     const prev=byGuid.get(record.guid);
     if(!prev||prev.modifiedDate<=record.modifiedDate)byGuid.set(record.guid,record);

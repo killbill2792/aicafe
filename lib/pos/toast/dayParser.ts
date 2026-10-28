@@ -83,7 +83,7 @@ export type ToastParsedOrder={guid:string;modifiedDate:string;normalized:PosOrde
  includedChecks:number;openChecks:number;serviceChargesCents:number;gratuityCents:number;
  warnings:Record<string,number>};
 export type ToastUnparsed={order_guid:string|null;business_date:string;
- error_path:string;raw_sha256:string};
+ error_path:string;raw_sha256:string;source_index?:number;source_page?:number};
 export type ToastDayPage={orders:ToastParsedOrder[];unparsed:ToastUnparsed[];
  warnings:Record<string,number>};
 
@@ -257,7 +257,7 @@ export function parseToastDayPage(payload:unknown,restaurantGuid:string,day:stri
  const rows=z.array(z.unknown()).safeParse(payload);
  if(!rows.success)throw new ToastApiError("invalid_response");
  const result:ToastDayPage={orders:[],unparsed:[],warnings:{}};
- for(const row of rows.data){
+ for(const [index,row] of rows.data.entries()){
   try{
    const record=parseToastBusinessOrder(row,restaurantGuid,day,timezone,closeoutHour);
    result.orders.push(record);
@@ -267,7 +267,7 @@ export function parseToastDayPage(payload:unknown,restaurantGuid:string,day:stri
    const rawGuid=typeof row==="object"&&row!==null&&"guid" in row?(row as {guid:unknown}).guid:null;
    result.unparsed.push({order_guid:typeof rawGuid==="string"&&GUID.safeParse(rawGuid).success?rawGuid:null,
     business_date:day,error_path:e instanceof ToastOrderParseError?e.message:"$",
-    raw_sha256:createHash("sha256").update(redact(row)).digest("hex")});
+    raw_sha256:createHash("sha256").update(redact(row)).digest("hex"),source_index:index+1});
   }
  }
  return result;
