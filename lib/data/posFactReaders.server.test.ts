@@ -52,7 +52,7 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
   expect(result.available).toBe(true);
   expect(result.quality.missingInputs).toContain("hourlySalesPageLimit");
  });
- it("excludes confirmed failed Toast days from both sales projections",async()=>{
+ it("retains failed Toast day facts in both sales projections",async()=>{
    vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
    guard.flags.mockResolvedValue([{date:period.from,status:"failed",needsLook:false}]);
    guard.unverified.mockResolvedValue(new Set([period.from]));
@@ -62,10 +62,12 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
      orders_count:1}],"employee_sales_rollup");
    const hourly=await posFactReaders(h.db,"b").peakHours(period);
    const employees=await posFactReaders(staff.db,"b").employeeSales(period);
-   expect(hourly.available).toBe(false);
-   expect(employees.available).toBe(false);
-   expect(hourly.quality.missingInputs).toContain("toastExcludedDays");
-   expect(employees.quality.missingInputs).toContain("toastExcludedDays");
+   expect(hourly.available).toBe(true);
+   expect(employees.available).toBe(true);
+   if(hourly.available)expect(hourly.value.hours[0].netSalesCents).toBe(500);
+   if(employees.available)expect(employees.value.employees[0].netSalesCents).toBe(500);
+   expect(hourly.quality.missingInputs).toContain("toastImportIncompleteDays:1:"+period.from+":0");
+   expect(employees.quality.missingInputs).toContain("toastImportIncompleteDays:1:"+period.from+":0");
  });
  it("flags partial verification without claiming the entire range",async()=>{
    vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
@@ -79,7 +81,7 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
    expect(result.available).toBe(true);
    if(result.available)expect(result.value.hours).toEqual([{date:"2026-08-23",
      hourLocal:11,locationId:null,netSalesCents:700,ordersCount:2}]);
-   expect(result.quality.missingInputs).toContain("toastExcludedDays:2026-08-22");
+   expect(result.quality.missingInputs).toContain("toastImportIncompleteDays:1:2026-08-22:0");
  });
  it("status read fails keeps stored hours with one warning",async()=>{
    vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
