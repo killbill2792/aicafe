@@ -311,3 +311,166 @@ with (security_invoker=true) as
  from public.processing_fee_daily_facts f;
 revoke all on public.cv_card_fees from public,anon;
 grant select on public.cv_card_fees to authenticated,service_role;
+
+
+-- Typed order/detail evidence is derived from the immutable raw archive in the
+-- same transaction as its capture. Only explicit safe scalar fields are copied;
+-- no full guest/check/payment payload is available to the owner-visible table.
+create table if not exists public.toast_order_typed_facts (
+ raw_record_id uuid primary key references public.toast_raw_records(id) on delete cascade,
+ business_id uuid not null references public.businesses(id) on delete cascade,
+ restaurant_guid uuid, business_date date, order_guid uuid,
+ order_duration_seconds bigint,
+ check_discounts jsonb not null default '[]'::jsonb,
+ item_discounts jsonb not null default '[]'::jsonb,
+ item_taxes jsonb not null default '[]'::jsonb,
+ modifier_prices jsonb not null default '[]'::jsonb,
+ void_details jsonb not null default '[]'::jsonb,
+ refund_details jsonb not null default '[]'::jsonb,
+ captured_at timestamptz not null default now()
+);
+create index if not exists toast_order_typed_day_idx
+ on public.toast_order_typed_facts(business_id,restaurant_guid,business_date,order_guid);
+alter table public.toast_order_typed_facts enable row level security;
+revoke all on public.toast_order_typed_facts from public,anon,authenticated;
+create policy "owner read" on public.toast_order_typed_facts for select
+ to authenticated using(public.scheduling_is_owner(business_id));
+grant select on public.toast_order_typed_facts to authenticated;
+grant select,insert on public.toast_order_typed_facts to service_role;
+
+create or replace function public.toast_capture_typed_order()
+returns trigger language plpgsql security definer set search_path=public as $typed$
+declare
+ c jsonb;s jsonb;d jsonb;p jsonb;m jsonb;
+ check_guid text;selection_guid text;
+ check_ds jsonb:='[]'::jsonb;item_ds jsonb:='[]'::jsonb;
+ tax_items jsonb:='[]'::jsonb;mods jsonb:='[]'::jsonb;
+ voids jsonb:='[]'::jsonb;refunds jsonb:='[]'::jsonb;
+ duration bigint;begin_at timestamptz;close_at timestamptz;
+ value_cents bigint; v_amt text;
+begin
+ if new.entity<>'order' then return new;end if;
+ begin
+  begin_at:=(new.payload->>'openedDate')::timestamptz;
+  close_at:=(new.payload->>'closedDate')::timestamptz;
+  if close_at>=begin_at then
+    duration:=round(extract(epoch from close_at-begin_at))::bigint;
+  end if;
+ exception when others then duration:=null;
+ end;
+ if new.payload->>'voided'='true' then
+  voids:=voids||jsonb_build_array(jsonb_build_object('level','order',
+   'guid',new.payload->>'guid','businessDate',new.payload->>'voidBusinessDate',
+   'reasonGuid',new.payload->'voidReason'->>'guid'));
+ end if;
+ for c in select value from jsonb_array_elements(
+   case when jsonb_typeof(new.payload->'checks')='array'
+    then new.payload->'checks' else '[]'::jsonb end)
+ loop
+  check_guid:=c->>'guid';
+  if c->>'voided'='true' then
+   voids:=voids||jsonb_build_array(jsonb_build_object('level','check',
+    'guid',check_guid,'businessDate',c->>'voidBusinessDate',
+    'reasonGuid',c->'voidReason'->>'guid'));
+  end if;
+  for d in select value from jsonb_array_elements(
+   case when jsonb_typeof(c->'appliedDiscounts')='array'
+    then c->'appliedDiscounts' else '[]'::jsonb end)
+  loop
+   v_amt:=case when jsonb_typeof(d->'nonTaxDiscountAmount')='number'
+      then d->>'nonTaxDiscountAmount'
+      when jsonb_typeof(d->'discountAmount')='number'
+      then d->>'discountAmount' else null end;
+   value_cents:=case when v_amt is not null and abs(v_amt::numeric)<100000000
+    then round(v_amt::numeric*100)::bigint else null end;
+   check_ds:=check_ds||jsonb_build_array(jsonb_build_object('checkGuid',check_guid,
+    'name',left(d->>'name',200),'amountCents',value_cents));
+  end loop;
+  for s in select value from jsonb_array_elements(
+   case when jsonb_typeof(c->'selections')='array'
+    then c->'selections' else '[]'::jsonb end)
+  loop
+   selection_guid:=s->>'guid';
+   if s->>'voided'='true' then
+    voids:=voids||jsonb_build_array(jsonb_build_object('level','selection',
+     'guid',selection_guid,'businessDate',s->>'voidBusinessDate',
+     'reasonGuid',s->'voidReason'->>'guid'));
+   end if;
+   v_amt:=case when jsonb_typeof(s->'tax')='number' then s->>'tax' else null end;
+   value_cents:=case when v_amt is not null and abs(v_amt::numeric)<100000000
+    then round(v_amt::numeric*100)::bigint else null end;
+   tax_items:=tax_items||jsonb_build_array(jsonb_build_object(
+    'selectionGuid',selection_guid,'taxAmountCents',value_cents,
+    'taxRate',case when jsonb_typeof(s->'taxRate')='number' then s->'taxRate' else null end));
+   for d in select value from jsonb_array_elements(
+    case when jsonb_typeof(s->'appliedDiscounts')='array'
+     then s->'appliedDiscounts' else '[]'::jsonb end)
+   loop
+    v_amt:=case when jsonb_typeof(d->'discountAmount')='number' then d->>'discountAmount'
+     when jsonb_typeof(d->'nonTaxDiscountAmount')='number'
+      then d->>'nonTaxDiscountAmount' else null end;
+    value_cents:=case when v_amt is not null and abs(v_amt::numeric)<100000000
+     then round(v_amt::numeric*100)::bigint else null end;
+    item_ds:=item_ds||jsonb_build_array(jsonb_build_object(
+      'checkGuid',check_guid,'selectionGuid',selection_guid,
+      'name',left(d->>'name',200),'amountCents',value_cents));
+   end loop;
+   for m in select value from jsonb_array_elements(
+    case when jsonb_typeof(s->'modifiers')='array'
+     then s->'modifiers' else '[]'::jsonb end)
+   loop
+    v_amt:=case when jsonb_typeof(m->'price')='number' then m->>'price' else null end;
+    value_cents:=case when v_amt is not null and abs(v_amt::numeric)<100000000
+     then round(v_amt::numeric*100)::bigint else null end;
+    mods:=mods||jsonb_build_array(jsonb_build_object(
+      'selectionGuid',selection_guid,'modifierGuid',m->'item'->>'guid',
+      'priceCents',value_cents));
+   end loop;
+   if jsonb_typeof(s->'refundDetails')='object' then
+    d:=s->'refundDetails';
+    v_amt:=case when jsonb_typeof(d->'refundAmount')='number' then d->>'refundAmount' else null end;
+    value_cents:=case when v_amt is not null and abs(v_amt::numeric)<100000000
+     then round(v_amt::numeric*100)::bigint else null end;
+    refunds:=refunds||jsonb_build_array(jsonb_build_object('level','selection',
+      'guid',selection_guid,'amountCents',value_cents,
+      'businessDate',d->>'refundBusinessDate'));
+   end if;
+  end loop;
+  for p in select value from jsonb_array_elements(
+   case when jsonb_typeof(c->'payments')='array'
+    then c->'payments' else '[]'::jsonb end)
+  loop
+   if jsonb_typeof(p->'refund')='object' then
+    d:=p->'refund';
+    v_amt:=case when jsonb_typeof(d->'refundAmount')='number' then d->>'refundAmount' else null end;
+    value_cents:=case when v_amt is not null and abs(v_amt::numeric)<100000000
+     then round(v_amt::numeric*100)::bigint else null end;
+    refunds:=refunds||jsonb_build_array(jsonb_build_object('level','payment',
+     'guid',p->>'guid','amountCents',value_cents,
+     'businessDate',d->>'refundBusinessDate'));
+   end if;
+  end loop;
+ end loop;
+ insert into public.toast_order_typed_facts(
+  raw_record_id,business_id,restaurant_guid,business_date,order_guid,
+  order_duration_seconds,check_discounts,item_discounts,item_taxes,
+  modifier_prices,void_details,refund_details)
+ values(new.id,new.business_id,new.restaurant_guid,new.business_date,new.entity_guid,
+  duration,check_ds,item_ds,tax_items,mods,voids,refunds)
+ on conflict(raw_record_id) do nothing;
+ return new;
+end $typed$;
+revoke all on function public.toast_capture_typed_order() from public,anon,authenticated;
+drop trigger if exists toast_raw_order_typed_capture on public.toast_raw_records;
+create trigger toast_raw_order_typed_capture
+ after insert on public.toast_raw_records
+ for each row when (new.entity='order')
+ execute function public.toast_capture_typed_order();
+
+-- Migration 111 may already hold historical raw rows. Build their typed
+-- projections without changing the immutable raw evidence or current sales.
+insert into public.toast_order_typed_facts(raw_record_id,business_id,restaurant_guid,
+ business_date,order_guid,order_duration_seconds)
+select id,business_id,restaurant_guid,business_date,entity_guid,null
+from public.toast_raw_records where entity='order'
+on conflict(raw_record_id) do nothing;
