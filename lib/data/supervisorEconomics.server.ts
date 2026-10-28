@@ -7,6 +7,8 @@ import {figure,addOwnerPayrollExtras,fixedCardFeeForCoveredSales,type Economics}
 import {payrollDayCoverage} from "@/lib/calc/payrollDayCoverage";
 import {totalMonthlyRecurringCostsCents} from "@/lib/expenses/recurringMonthlyTotal";
 import {getPricingInputs,type PricingItemInput} from "./getPricingInputs";
+import {getMenuItemSnapshots} from "./snapshot.server";
+import {summarizeResolvedSoldProductCosts} from "@/lib/calc";
 import {getOwnerConfirmedProcessingFeePlans,ownerConfirmedPlanForDate} from "@/lib/pos/processingFeeEstimate.server";
 import {validateOwnerConfirmedProcessingFeePlan} from "@/lib/pos/processingFeeEstimate";
 import {cardFeesForDays} from "@/lib/metrics/core/fees";
@@ -24,7 +26,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const salesSince=dateOffset(asOf,-364);
  const business=await db.from("businesses").select("timezone,payroll_tax_rate,target_ingredient_cost_rate,target_ingredient_cost_rate_status,owner_monthly_payroll_extras_cents").eq("id",businessId).single();
  if(business.error)throw business.error;
- const [pricing,locations,recurring,rollups,employees,feePlans]=await Promise.all([
+ const [pricing,locations,recurring,rollups,employees,feePlans,resolvedItems]=await Promise.all([
   getPricingInputs(db,businessId),
   db.from("locations").select("open_hours").eq("business_id",businessId).limit(1),
   db.from("recurring_costs").select("amount_cents,frequency,is_estimate,active_from,active_to")
@@ -32,7 +34,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   db.from("daily_rollups").select("business_date,sales_data_status,net_sales_cents,ingredients_cents,card_fees_cents,card_fees_status,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,drinks_count,orders_count")
    .eq("business_id",businessId).gte("business_date",salesSince).lte("business_date",asOf).limit(500),
   db.from("employees").select("id,display_name,role,default_hourly_wage_cents").eq("business_id",businessId).eq("active",true).limit(500),
-  getOwnerConfirmedProcessingFeePlans(db,businessId)
+  getOwnerConfirmedProcessingFeePlans(db,businessId),
+  getMenuItemSnapshots(db,businessId,asOf),
  ]);
  for(const response of [locations,recurring,rollups,employees])
   if(response.error)throw response.error;
@@ -153,6 +156,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
     "monthlyRevenueCovered"),
   ingredientRate,feeRate,ingredientStatus,feeStatus,averagePriceCents,monthlyUnits,feePlan,
   ownerFeePlans:feePlans,
+  observedIngredientCentsOverride:summarizeResolvedSoldProductCosts(resolvedItems.filter(x=>x.quantitySoldLast28Days>0)).totalCostCents,
+  missingIngredientCosts:summarizeResolvedSoldProductCosts(resolvedItems.filter(x=>x.quantitySoldLast28Days>0)).missingProductCosts,
   daysInMonth:dayList.length||Number(month.to.slice(-2)),
   laborCoveredDays:laborDays.length,laborWindowDays:laborWindow.length,
   salesCoverage:first&&latest?{from:first,to:latest,openDays:salesOpenDays}:undefined,
