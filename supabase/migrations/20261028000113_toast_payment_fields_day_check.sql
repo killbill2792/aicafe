@@ -136,6 +136,8 @@ create or replace view public.toast_owner_attention_days_v with(security_invoker
  select business_id,restaurant_guid,business_date from public.toast_day_status
  where owner_confirmed_at is null and
  (import_state='failed' or recon_state in ('mismatch','coverage_invalid')
+  -- Missing source rows need an owner's attention, but are not a money mismatch.
+  or unparsed_count>0
   or (last_error_category is not null and last_error_category not in
    ('analytics_timeout','closeout_changed')))
  union
