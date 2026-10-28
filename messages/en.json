@@ -3365,6 +3365,7 @@
     "periodLastWeek": "Last week",
     "periodLastMonth": "Last month",
     "periodYtd": "Year to date",
-    "periodNamedMonth": "{from} to {to}"
+    "periodNamedMonth": "{from} to {to}",
+    "toastMoreDays": " and {count} more"
   }
 }
