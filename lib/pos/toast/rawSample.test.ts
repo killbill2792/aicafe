@@ -49,6 +49,39 @@ describe("read-only Toast coverage diagnostics",()=>{
    expect(json).toContain(good);
   expect(redactToastRaw(a,0,"",process.env.TOAST_CUSTOMER_HASH_KEY)).toEqual(s);
  });
+ it("removes nested guest, employee and card PII including dynamic-key metadata",async()=>{
+  const raw={customer:{guid:"guest-guid",city:"Private City",nickname:"Private Nick",
+    unrelatedString:"Private Code",regularHours:8.5,totalAmount:28},
+   employee:{guid:"employee-guid",name:"Private Worker",hourlyWage:25,regularHours:8},
+   card:{guid:"card-guid",name:"Private Cardholder",networkId:1234567,cardType:"VISA"},
+   "person@example.com":{customerId:"someone"},itemName:"Latte @ 3pm"};
+  const safe=redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY);
+  const json=JSON.stringify(safe);
+  for(const bad of ["guest-guid","employee-guid","card-guid","Private City",
+   "Private Nick","Private Code","Private Worker","Private Cardholder",
+   "networkId","1234567","person@example.com","someone"])expect(json).not.toContain(bad);
+  expect(json).toContain("Latte @ 3pm");
+  expect(json).toContain("hourlyWage");
+  expect(json).toContain("regularHours");
+  const {db,writes}=database();
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path.startsWith("/orders/v2/ordersBulk?"))return [raw];
+   return [];
+  });
+  await captureToastRawSample(business,"2026-10-20",db);
+  const first=writes.find(w=>w.endpoint==="orders/v2/ordersBulk");
+  const counts=first?.identifier_counts as Record<string,{present:number;filled:number}>;
+  expect(counts["customer.guid"]).toEqual({present:1,filled:1});
+  expect(counts["card.guid"]).toEqual({present:1,filled:1});
+  expect(counts["*.customerId"]).toEqual({present:1,filled:1});
+  expect(JSON.stringify(counts)).not.toContain("person@example.com");
+ });
+ it("matches the complete documented GET inventory without duplicates",()=>{
+  const getters=TOAST_READ_ENDPOINTS.filter(e=>e.scope!=="unsupported");
+  expect(getters).toHaveLength(88);
+  expect(new Set(getters.map(e=>e.endpoint)).size).toBe(88);
+  expect(getters.every(e=>e.doc.startsWith("https://doc.toasttab.com/openapi/"))).toBe(true);
+ });
  it("keeps paths for nested arrays",()=>{
   expect(toastFieldPaths({items:[{name:"Latte",price:5}]})).toContain("items[].price");
  });
