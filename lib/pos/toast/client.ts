@@ -217,9 +217,10 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
         const rawCode=obj?.code??obj?.errorCode;
         const rawMessage=obj?.message??obj?.error;
         const toastCode=typeof rawCode==="string"&&/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(rawCode)?rawCode:undefined;
-        const toastMessage=typeof rawMessage==="string"&&rawMessage.length<=180&&
-          /^[A-Za-z .,:'()-]+$/.test(rawMessage)&&
-          !/(token|key|secret|password|email|name|phone|customer|card|account|credential)/i.test(rawMessage)?
+        // Only generic provider messages are safe to persist. Arbitrary English
+        // error strings can contain a person's name without looking like PII.
+        const toastMessage=typeof rawMessage==="string"&&
+          /^(?:Forbidden|Unauthorized|Not Found|Not Found\\.|Bad Request|No Content|Access Denied|Invalid Request|Internal Server Error|Service Unavailable)$/i.test(rawMessage)?
           rawMessage:undefined;
         throw new ToastApiError(generic.category,generic.status,generic.retryAt,toastCode,toastMessage);
       }
