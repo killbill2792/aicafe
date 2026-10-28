@@ -31,10 +31,19 @@ describe("Toast raw diagnostic owner route",()=>{
   expect(mocks.owner).toHaveBeenCalledWith(businessId);
   expect(mocks.capture).toHaveBeenCalledWith(businessId,"2026-10-20",expect.anything());
  });
- it("distinguishes DB failures from cooldowns",async()=>{
-  mocks.capture.mockResolvedValueOnce({captured:0,skipped:true,failed:1});
-  expect((await POST(req())).status).toBe(503);
-  mocks.capture.mockResolvedValueOnce({captured:0,skipped:true,failed:0});
-  expect((await POST(req())).status).toBe(429);
+ it("returns distinct HTTP codes and error identifiers for each outcome",async()=>{
+  const outcomes=[
+   {reason:"cooldown",code:429,failed:0},
+   {reason:"busy",code:409,failed:0},
+   {reason:"no_location",code:404,failed:0},
+   {reason:"db_error",code:503,failed:1},
+   {reason:"invalid_request",code:400,failed:0},
+  ] as const;
+  for(const {reason,code,failed} of outcomes){
+   mocks.capture.mockResolvedValueOnce({captured:0,skipped:true,failed,reason});
+   const res=await POST(req());
+   expect(res.status).toBe(code);
+   expect((await res.json()).error).toBe(reason);
+  }
  });
 });
