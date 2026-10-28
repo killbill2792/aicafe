@@ -143,4 +143,17 @@ describe("latest covered sales window",()=>{
   expect(response.dataNote).toContain("Today isn't imported yet");
  });
 
+ it("no sales rows plus an errored Toast status is a failed today check",async()=>{
+  const ctx=context([]);
+  ctx.tools.getSalesTrend=async()=>({available:false,value:null,quality:{
+   level:"low",missingInputs:["noCoveredSalesRows","toastDayStatusUnavailable"],
+   estimatedInputs:[],staleInputs:[]
+  }});
+  const result=await resolveCoveredSalesWindow(ctx,{from:ctx.asOf,to:ctx.asOf});
+  expect(result.todayImported).toBeUndefined();
+  expect(result.lastFullDay).toBeNull();
+  expect(result.dataNote).toContain("couldn't be checked");
+  expect(result.dataNote).not.toContain("Today isn't imported yet");
+ });
+
 });
