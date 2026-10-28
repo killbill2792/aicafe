@@ -16,7 +16,10 @@ type Paged<T>={rows:T[];error:boolean;truncated:boolean};
 async function readPages<T>(load:(start:number,end:number)=>PromiseLike<Page<T>>):Promise<Paged<T>> {
  const rows:T[]=[];
  for(let page=0;page<MAX_PAGES;page++){
-  const {data,error}=await load(page*PAGE_SIZE,(page+1)*PAGE_SIZE-1);
+  let result:Page<T>;
+  try{result=await load(page*PAGE_SIZE,(page+1)*PAGE_SIZE-1);}
+  catch{return {rows,error:true,truncated:false};}
+  const {data,error}=result;
   if(error)return {rows,error:true,truncated:false};
   if(!data)return {rows,error:true,truncated:false};
   rows.push(...data);
