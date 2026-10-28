@@ -208,6 +208,7 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
         throw new ToastApiError("rate_limited",429,retryAt);
       }
       if(res.status>=500&&attempt<4){await wait(500*2**attempt+Math.random()*200);continue;}
+      if(res.status===204)throw new ToastApiError("unavailable",204);
       if(res.status===403)throw new ToastApiError("missing_scope_or_location",403);
       if(!res.ok)throw failure(res.status,path.startsWith("/restaurants/v1/")?"restaurant":"resource");
       const raw=await res.json().catch(()=>{throw new ToastApiError("invalid_response");});
