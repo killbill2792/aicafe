@@ -45,6 +45,7 @@ jobs:
           node -e 'if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(process.env.BUSINESS_ID||"")||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(process.env.BUSINESS_DATE||""))process.exit(1)' || { echo 'Invalid workflow inputs'; exit 1; }
           output="$(mktemp)"
           trap 'rm -f "$output"' EXIT
+          set +e
           NODE_OPTIONS=--conditions=react-server npx --no-install tsx scripts/toast-raw-sample.ts --business "$BUSINESS_ID" --date "$BUSINESS_DATE" >"$output" 2>&1
           code=$?
           node - "$output" "$code" <<'NODE'
