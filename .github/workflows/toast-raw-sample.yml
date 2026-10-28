@@ -62,8 +62,8 @@ jobs:
           try { result = JSON.parse(text.trim()); } catch {}
           if (result && typeof result === 'object' && Number.isSafeInteger(result.captured) &&
               Number.isSafeInteger(result.failed) && typeof result.skipped === 'boolean') {
-            const reasons = new Set(['invalid_request','no_location','busy','cooldown','db_error','missing_hash_key','lease_lost']);
-            const status = result.skipped ? 'skipped' : result.failed ? 'partial_failure' : 'completed';
+            const reasons = new Set(['invalid_request','no_location','busy','cooldown','db_error','missing_hash_key','lease_lost','partial']);
+            const status = result.reason === 'partial' ? 'partial' : result.skipped ? 'skipped' : result.failed ? 'partial_failure' : 'completed';
             console.log('Toast sample status: ' + status);
             console.log('Captured endpoint samples: ' + result.captured);
             console.log('Failed endpoint samples: ' + result.failed);
