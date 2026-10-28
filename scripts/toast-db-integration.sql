@@ -798,4 +798,21 @@ BEGIN
   'raw payment/card payload not exposed to authenticated role');
 END $keepall$;
 
+-- Follow-up D issue 9: phase queued was fixed in migration 101.
+-- Confirm that PostgreSQL actually accepts and stores the phase, not just DDL text.
+DO $queued$
+DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+BEGIN
+ insert into public.toast_sync_phase_errors(business_id,restaurant_guid,phase,
+  last_error_category,last_failed_at)
+ values(b,r,'queued','synthetic_queue_check',now())
+ on conflict(business_id,restaurant_guid,phase) do update
+ set last_error_category=excluded.last_error_category,last_failed_at=excluded.last_failed_at;
+ perform pg_temp.assert_true(exists(select 1 from public.toast_sync_phase_errors
+  where business_id=b and restaurant_guid=r and phase='queued'
+   and last_error_category='synthetic_queue_check'),
+  'phase queued is valid and round-trips');
+END $queued$;
+
 ROLLBACK;

@@ -110,7 +110,7 @@ begin
     and cleared_at is null;
  else
   foreach d in array p_days loop
-   if not d=any(v_compared) or not public.toast_is_complete_business_day(p_business_id,d)
+   if not public.toast_is_complete_business_day(p_business_id,d)
     then raise exception 'invalid flagged date';end if;
    for loc in select m.restaurant_guid from public.toast_location_mappings m
     where m.business_id=p_business_id and m.verified_at is not null
