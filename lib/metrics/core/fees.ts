@@ -9,6 +9,7 @@ export type FeeDay={
   salesDataStatus?:"actual"|"missing";
 };
 export type OwnerFeePlan={
+  effectiveFrom?:string;effectiveTo?:string|null;
   percentageBps?:number;fixedFeeCents?:number;
   processedSalesShareBps?:number;processedTransactionShareBps?:number;
   averageProcessedTicketCents?:number|null;
@@ -19,7 +20,7 @@ export type FeeResult={
   notes:string[];
 };
 const valid=(value:number)=>Number.isSafeInteger(value)&&value>=0;
-function planAmount(days:readonly FeeDay[],plan:OwnerFeePlan):{amountCents:number;missingFixed:boolean}|null{
+function planAmount(days:readonly FeeDay[],plan:OwnerFeePlan):{amountCents:number;unroundedCents:number;missingFixed:boolean}|null{
   const rules=plan.rules??[{
     percentageBps:plan.percentageBps??-1,fixedFeeCents:plan.fixedFeeCents??0,
     salesMixBps:10000,transactionMixBps:10000,
@@ -40,36 +41,50 @@ function planAmount(days:readonly FeeDay[],plan:OwnerFeePlan):{amountCents:numbe
     if(transactions===null&&fixed>0)missingFixed=true;
     amount+=revenue*rate+(transactions??0)*fixed;
   }
-  return {amountCents:Math.round(amount),missingFixed};
+  return {amountCents:Math.round(amount),unroundedCents:amount,missingFixed};
 }
-export function cardFeesForDays(days:readonly FeeDay[],ownerPlan:OwnerFeePlan|null=null):FeeResult{
+export function cardFeesForDays(
+  days:readonly FeeDay[],ownerPlan:OwnerFeePlan|readonly OwnerFeePlan[]|null=null,
+):FeeResult{
   const covered=days.filter(hasCoveredSales);
   if(covered.some(d=>!valid(d.netSalesCents)||d.cardSalesCents!=null&&!valid(d.cardSalesCents)||
       d.ordersCount!=null&&!valid(d.ordersCount)))
     throw new RangeError("Invalid processing fee inputs");
+  const plans:readonly OwnerFeePlan[]=ownerPlan===null?[]:
+    Array.isArray(ownerPlan)?ownerPlan:[ownerPlan as OwnerFeePlan];
   const notes:string[]=[];
-  if(covered.some(d=>d.cardSalesCents==null))notes.push("feeNetSalesProxy");
-  if(ownerPlan){
-    const amount=planAmount(covered,ownerPlan);
-    if(amount&&!amount.missingFixed){
-      return {amountCents:amount.amountCents,basis:"owner_plan",actualDays:0,
-        estimatedDays:covered.length,notes};
-    }
-    notes.push(amount?.missingFixed?"feeFixedTransactionCountMissing":"feeOwnerPlanInvalid");
-  }
-  let sum=0,actualDays=0,estimatedDays=0,defaultDays=0;
+  let sum=0,actualDays=0,estimatedDays=0,defaultDays=0,planDays=0;
   for(const day of covered){
+    // Per-date owner plans can change across a long historical range.
+    const applicable=plans.filter(plan=>
+      (!plan.effectiveFrom||plan.effectiveFrom<=day.date)&&
+      (!plan.effectiveTo||plan.effectiveTo>=day.date))
+      .sort((a,b)=>(b.effectiveFrom??"").localeCompare(a.effectiveFrom??""))[0];
+    if(applicable){
+      const amount=planAmount([day],applicable);
+      if(amount&&!amount.missingFixed){
+        sum+=amount.unroundedCents;planDays++;estimatedDays++;
+        if(day.cardSalesCents==null)notes.push("feeNetSalesProxy");
+        continue;
+      }
+      notes.push(amount?.missingFixed?"feeFixedTransactionCountMissing":"feeOwnerPlanInvalid");
+    }
     if(day.cardFeesStatus!=="missing"&&day.cardFeesCents!=null&&valid(day.cardFeesCents)){
       sum+=day.cardFeesCents;
-      if(day.cardFeesStatus==="actual"||day.cardFeesStatus===undefined)actualDays++;else estimatedDays++;
+      if(day.cardFeesStatus==="actual"||day.cardFeesStatus===undefined)actualDays++;
+      else estimatedDays++;
     }else{
       sum+=(day.cardSalesCents??day.netSalesCents)*DEFAULT_PROCESSING_FEE_RATE_BPS/10000;
       defaultDays++;
+      if(day.cardSalesCents==null)notes.push("feeNetSalesProxy");
     }
   }
   if(defaultDays)notes.push("feeDefaultEstimateAskRate");
+  if(plans.length&&planDays!==covered.length)notes.push("feePlanPartialCoverage");
   if(covered.length<days.length)notes.push("feeSalesDaysMissing");
-  return {amountCents:Math.round(sum),basis:defaultDays===covered.length?"default_estimate":
+  return {amountCents:Math.round(sum),
+    basis:planDays===covered.length&&planDays>0?"owner_plan":
+      defaultDays===covered.length?"default_estimate":
       defaultDays||estimatedDays?"estimated":"actual",
-    actualDays,estimatedDays:estimatedDays+defaultDays,notes};
+    actualDays,estimatedDays:estimatedDays+defaultDays,notes:[...new Set(notes)]};
 }
