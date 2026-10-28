@@ -24,7 +24,7 @@ export type LaborRecord={
   staffTaxStatus?:"actual"|"estimated";
 };
 export type LaborResult={
-  knownLaborCents:number;projectedMonthlyLaborCents:number;
+  knownLaborCents:number;projectedMonthlyLaborCents:number|null;
   coveredDays:number;totalDays:number;
   basis:"owner_provided"|"recorded"|"projected"|"partial";
   notes:string[];
@@ -55,8 +55,8 @@ export function laborForPeriod(days:readonly {date:string}[],wages:readonly Labo
       totalDays,basis:"owner_provided",notes};
   }
   return {
-    knownLaborCents,projectedMonthlyLaborCents:(coveredDays>0?
-      Math.round(projectedBase*totalDays/coveredDays):clockedCents)+(ownerExtras?.monthlyCents??0),
+    knownLaborCents,projectedMonthlyLaborCents:coveredDays>0?
+      Math.round(projectedBase*totalDays/coveredDays)+(ownerExtras?.monthlyCents??0):null,
     coveredDays,totalDays,
     basis:coveredDays===0?"partial":coveredDays<totalDays?"projected":"recorded",
     notes,
