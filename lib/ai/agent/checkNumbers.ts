@@ -145,7 +145,7 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
         if(!line||typeof line!=="object"||!("result" in line))continue;
         const inputs=Array.isArray(line.inputs)?line.inputs:[];
         const entries=[{name:"result",item:line.result},
-          ...inputs.slice(0,8).map((entry,i)=>({name:"input"+i,item:entry?.value}))];
+          ...inputs.slice(0,8).map((entry:unknown,i:number)=>({name:"input"+i,item:entry&&typeof entry==="object"&&"value" in entry?entry.value:null}))];
         for(const {name,item} of entries){
           if(!item||typeof item!=="object")continue;
           const num=item.kind==="money"?{unit:"cents",value:item.cents}:
