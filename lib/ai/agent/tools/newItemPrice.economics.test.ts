@@ -43,4 +43,21 @@ describe("supervisor new-item price evidence",()=>{
   expect(result.explain).toEqual(expect.arrayContaining([
    expect.objectContaining({label:"Labor/drink",provenance:"missing"})]));
  });
+  it("sparse 3/20 payroll still prices the item with localized caveat in ES/AR",async()=>{
+    const dates=Array.from({length:20},(_,i)=>({date:"2026-10-"+String(i+1).padStart(2,"0")}));
+    const records=dates.slice(0,3).map(d=>({...d,wagesCents:10000,staffTaxCents:1200,
+      laborWageStatus:"actual" as const,staffTaxStatus:"actual" as const}));
+    const sparse:Economics={...economics,monthlyStaff:figure(null,"missing","laborNoCoveredDays"),
+      laborEvidence:{dates,records},laborCoveredDays:3,laborWindowDays:20};
+    for(const locale of ["en","es","ar"] as const){
+      const reply=await newItemPriceTools.suggest_new_item_price.execute(input,
+        {...context(sparse),locale});
+      expect(reply.monthlyLabor.valueCents).toBe(224000);
+      expect(reply.monthlyLabor.reasonKey).toBe("laborPartialCoverage");
+      expect(reply.monthlyLabor.reason).toContain(locale==="es"?"Nómina":locale==="ar"?"الرواتب":"Payroll");
+      expect(reply.breakEvenCents).toBeGreaterThan(0);
+      expect(reply.recommendedPriceCents).toBeGreaterThan(0);
+      if(locale!=="en")expect(reply.monthlyLabor.reason).not.toContain("Only");
+    }
+  });
 });
