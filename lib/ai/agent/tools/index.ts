@@ -112,6 +112,24 @@ export const agentToolDefinitions=[...baseToolDefinitions,
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
+/** Present the shared Toast trust keys as ONE localized note per issue, while
+ * retaining machine-readable missingInputs for existing quality consumers. */
+function localizeQualityNotes(keys:readonly string[],locale:AgentLocale):string[]{
+ const copy={en,es,ar}[locale].DataNotes;
+ const notes:string[]=[];
+ for(const key of keys){
+  const match=/^toastDaysNeedLook:(\d+):([^:]+):(\d+)$/.exec(key);
+  if(match){
+   const extra=Number(match[3]);
+   notes.push(copy.toastDaysNeedLook.replace("{count}",match[1])
+    .replace("{dates}",match[2].replaceAll(", ",", ").replaceAll(",",", "))
+    .replace("{more}",extra?copy.toastMoreDays.replace("{count}",String(extra)):""));
+  }else if(key==="toastDayStatusUnavailable")notes.push(copy.toastDayStatusUnavailable);
+  else if(key.startsWith("toastExcludedDays:"))
+   notes.push(copy.toastExcludedDays.replace("{dates}",key.slice("toastExcludedDays:".length).replaceAll(",",", ")));
+ }
+ return [...new Set(notes)];
+}
 export const requestedPeriod=calcRequestedPeriod;
 
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
@@ -159,12 +177,12 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     if(name==="get_peak_hours"){
       const slice=await ctx.tools.getPeakHours?.(period);
       if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
-      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,...summarizePeakHours(slice.value)};
+      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),...summarizePeakHours(slice.value)};
     }
     if(name==="get_employee_sales"){
       const slice=await ctx.tools.getEmployeeSales?.(period);
       if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
-      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,...summarizeEmployeeSales(slice.value)};
+      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),...summarizeEmployeeSales(slice.value)};
     }
     const [slice,ownerCosts,labor,toastScopes]=await Promise.all([
       ctx.tools.getPayrollFacts?.(period),
@@ -323,6 +341,6 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   const slice=await ctx.tools.getSalesTrend(period);
   if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote};
   return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,agentId:"alex",unit:"cents",
-    missing:slice.quality.missingInputs,netSalesCents:netSalesCentsForPeriod(slice.value),
+    missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
 }
