@@ -208,6 +208,17 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     historicalIngredientCostProof:{source:"historical_recomputation" as const,
       days:[{date:day.date,ingredientsCents:day.ingredientsCents}]},
   });
+  // Fixture A's default utility bill and fee totals are estimates, so tests
+  // asserting VERIFIED profit require explicit actual evidence for each part.
+  const verifiedSnapshot=():BusinessSnapshot=>{
+    const certifiedDays=fixture.monthActualDays.map(d=>({
+      ...d,salesDataStatus:"actual" as const,cardFeesStatus:"actual" as const,
+      laborWageStatus:"actual" as const,staffTaxStatus:"actual" as const,
+    }));
+    return {...fixture,monthActualDays:certifiedDays,monthRecordedDays:certifiedDays,
+      todayDay:certifiedDays[certifiedDays.length-1],
+      runningCostLines:fixture.runningCostLines.map(line=>({...line,isEstimate:false}))};
+  };
   it("current period partial: no owner-profit or ingredient delta, but sales still compares",()=>{
     const vm=buildProfitAndCostsViewModel({
       ...fixture,
@@ -235,7 +246,7 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     expect(vm.changes.map(x=>x.key)).not.toContain("ingredients");
   });
   it("both dates have independent historical item-cost proof: owner-profit delta remains",()=>{
-    const snapshot:BusinessSnapshot={...fixture,
+    const snapshot:BusinessSnapshot={...verifiedSnapshot(),
       periodItemSales:provenItemPeriod(current),
       comparisonPeriodItemSales:provenItemPeriod(previous),
     };
@@ -279,12 +290,13 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     expect(vm.changes.map(x=>x.key)).not.toContain("staff");
   });
   it("current and comparison both verified-zero sales can still compare real profit",()=>{
+    const verified=verifiedSnapshot();
     const zero=(d:DailyFacts):DailyFacts=>({...d,netSalesCents:0,
       ordersCount:0,ingredientsCents:0,cardFeesCents:0,
       salesDataStatus:"actual",cardFeesStatus:"actual"});
-    const days=fixture.monthActualDays.map(d=>
+    const days=verified.monthActualDays.map(d=>
       d.date===current.date||d.date===previous.date?zero(d):d);
-    const snapshot:BusinessSnapshot={...fixture,
+    const snapshot:BusinessSnapshot={...verified,
       monthActualDays:days,monthRecordedDays:days,
       todayDay:days[days.length-1],
       periodItemSales:undefined,comparisonPeriodItemSales:undefined,
