@@ -64,7 +64,7 @@ export async function GET(request:Request){
  try{good=await lastSalesImportAt(db,id.data);}catch{return send(503,{error:"status_unavailable"});}
  const state=c.data?.state==="verified"&&mappings.length>0&&mappings.every(x=>x.verified_at)?"connected":
   !c.data?"not_connected":"needs_attention";
- const active=(r.data??[]).filter(x=>x.kind==="backfill"&&["queued","running","paused_rate_limited"].includes(x.state));
+ const active=(r.data??[]).filter(x=>["backfill","repull_modified"].includes(x.kind)&&["queued","running","paused_rate_limited"].includes(x.state));
  const flags=new Set((f.data??[]).map(x=>x.restaurant_guid+":"+x.business_date));
  const needing=(s.data??[]).filter(x=>attention.some(a=>a.restaurant_guid===x.restaurant_guid&&a.business_date===x.business_date));
  // Owner flags can precede an import, and must remain visible even with NO status row.
