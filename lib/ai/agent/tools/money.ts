@@ -1,3 +1,6 @@
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import {localizedMetricReason} from "@/lib/ai/agent/metricReasons";
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
