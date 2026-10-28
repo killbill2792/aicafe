@@ -3,7 +3,7 @@ import {formatInTimeZone} from "date-fns-tz";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
 export type ExternalPosShift={
- id:string;employeeName:string;start:string;end:string;
+ id:string;employeeName:string;employeeId:string|null;start:string;end:string;
  source:"toast";paid:false;locationId:string;
 };
 /** Toast's scheduled/planned shifts are NOT timecards. This reader never
@@ -45,6 +45,9 @@ export async function readToastPlannedShifts(db:SupabaseClient,businessId:string
  if(canonical.error)throw canonical.error;
  if((canonical.data??[]).length>5000)throw new Error("Toast linked roster truncated");
  const canonicalNames=new Map((canonical.data??[]).map(row=>[row.id,row.display_name]));
+ const employeesByPos=new Map((roster.data??[]).map(row=>[
+  row.restaurant_guid+":"+row.employee_guid,row.linked_employee_id as string|null
+ ]));
  const employeeNames=new Map((roster.data??[]).map(row=>[
   row.restaurant_guid+":"+row.employee_guid,
   canonicalNames.get(row.linked_employee_id)??row.display_name
@@ -58,6 +61,7 @@ export async function readToastPlannedShifts(db:SupabaseClient,businessId:string
   employeeName:employeeNames.get((locationMap.get(row.location_id)??"")+":"+row.external_employee_id)
    ??"Toast team member",
   start:row.scheduled_start,end:row.scheduled_end,
+  employeeId:employeesByPos.get((locationMap.get(row.location_id)??"")+":"+row.external_employee_id)??null,
   locationId:row.location_id,source:"toast" as const,paid:false as const,
  }));
 }
