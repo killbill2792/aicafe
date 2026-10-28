@@ -13,7 +13,10 @@ const restaurant="22222222-2222-4222-8222-222222222222";
 const payment="33333333-3333-4333-8333-333333333333";
 function database(allowed=true){
  const written:{table:string;row:Record<string,unknown>}[]=[];
- const rpc=vi.fn().mockResolvedValue({data:allowed,error:null});
+ const rpc=vi.fn(async(name:string)=>({
+   data:name==="toast_acquire_lease"?"lease-nonce":name==="toast_claim_raw_sample"?allowed:null,
+   error:null
+ }));
  const db={
   rpc,
   from(table:string){
@@ -43,6 +46,23 @@ describe("Toast raw diagnostics",()=>{
    expect(json).not.toContain(secret);
   expect(json).toContain("cardEntryMode");
   expect(json).toContain("originalProcessingFee");
+  expect(json).toContain("tipAmount");
+ });
+ it("strips unexpected guest and numeric contact identifiers, never persists arbitrary IDs",()=>{
+  const json=JSON.stringify(redactToastRaw({
+    guest:{guid:"cafe-guest-identifying-id",name:"Private Guest"},
+    anonymousReference:{guid:"private-customer-guid",phoneDigits:4567891,
+      pin:1234,externalId:"person-identifier"},
+    type:"CREDIT",cardEntryMode:"CONTACTLESS",amount:16.5,originalProcessingFee:0.5
+  }));
+  expect(json).not.toContain("cafe-guest-identifying-id");
+  expect(json).not.toContain("Private Guest");
+  expect(json).not.toContain("private-customer-guid");
+  expect(json).not.toContain("4567891");
+  expect(json).not.toContain("1234");
+  expect(json).not.toContain("person-identifier");
+  expect(json).toContain("CONTACTLESS");
+  expect(json).toContain("originalProcessingFee");
  });
  it("extracts sorted unique nested field paths",()=>{
   expect(toastFieldPaths({payments:[{cardEntryMode:"TAP",refund:{amount:1}},{cardEntryMode:"SWIPE"}]}))
@@ -61,7 +81,8 @@ describe("Toast raw diagnostics",()=>{
   const {db,rpc,written}=database(false);
   const result=await captureToastRawSample(business,"2026-10-20",db);
   expect(result.skipped).toBe(true);
-  expect(rpc).toHaveBeenCalledOnce();
+  expect(rpc).toHaveBeenCalledWith("toast_acquire_lease",expect.objectContaining({p_business_id:business}));
+  expect(rpc).toHaveBeenCalledWith("toast_release_lease",{p_nonce:"lease-nonce"});
   expect(mocks.request).not.toHaveBeenCalled();
   expect(written).toHaveLength(0);
  });
@@ -74,6 +95,16 @@ describe("Toast raw diagnostics",()=>{
   await captureToastRawSample(business,"2026-10-20",db);
   expect(mocks.request.mock.calls.filter(c=>String(c[0]).startsWith("/orders/v2/payments/"))).toHaveLength(5);
   expect(written.every(w=>w.table==="toast_raw_samples")).toBe(true);
+ });
+ it("holds and releases the shared restaurant sync lease",async()=>{
+  const {db,rpc}=database();
+  mocks.request.mockResolvedValue([]);
+  await captureToastRawSample(business,"2026-10-20",db);
+  const calls=rpc.mock.calls.map(c=>c[0]);
+  expect(calls).toContain("toast_acquire_lease");
+  expect(calls).toContain("toast_release_lease");
+  expect(calls.indexOf("toast_acquire_lease")).toBeLessThan(calls.indexOf("toast_claim_raw_sample"));
+  expect(calls.indexOf("toast_claim_raw_sample")).toBeLessThan(calls.indexOf("toast_release_lease"));
  });
  it("claim uses database function, not a process-local timer",async()=>{
   const {db,rpc}=database();
