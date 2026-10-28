@@ -61,6 +61,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         {recovery.breakEvenUsesEstimates && recovery.breakEven.kind === "ready" && <p className="text-[15px] text-ink-muted">{money("estimateLower")}</p>}
         <p className="mt-2 text-[17px] text-ink-muted">{money("breakEvenSalesNeeded")}</p>
         {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[17px] text-ink-muted">{notes("breakEvenLaborMissing")}</p>}
+        {drinks.noteKeys.includes("laborCoveragePartial") && <p className="mt-2 text-[17px] text-ink-muted">{notes("laborCoveragePartial")}</p>}
       </section>
       {recovery.breakEven.kind === "ready" && !drinks.unavailableReason && <section className="rounded-card-lg bg-card p-5">
         <p className="text-[17px] font-semibold">{t("subtitle")}</p>
