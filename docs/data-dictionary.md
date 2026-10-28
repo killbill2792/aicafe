@@ -46,6 +46,9 @@ Individual sold items
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
 | net_sales_cents | Recorded net sales in integer cents. | cents | app | How much did we sell yesterday? |
 | quantity | Recorded item quantity, including fractional units. | items | app | How many sold? |
+| order_duration_seconds | Time from recorded Toast open to close; repeats on lines of the same order. | seconds | toast | How long were orders open? |
+| item_taxes | Order's selection tax amounts and rates, with selection identifiers. | JSON cents/rate | toast | What tax was charged per item? |
+| modifier_prices | Provider modifier prices linked to each selection; unknown prices stay null. | JSON cents | toast | What did modifiers cost? |
 
 ## cv_payments
 
@@ -82,6 +85,8 @@ Recorded order discounts
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
 | amount_cents | Recorded amount, or null when unknown. | cents | app | How much was it? |
+| check_discounts | Named check-level discounts for this order. | JSON cents | toast | Which discount names were used? |
+| item_discounts | Named item-level discounts for this order. | JSON cents | toast | Which items received discounts? |
 
 ## cv_voids_refunds
 
@@ -96,6 +101,7 @@ Toast void/refund evidence
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
 | amount_cents | Recorded amount, or null when unknown. | cents | app | How much was it? |
+| provider_details | Provider-reported void/refund reasons and amounts from current committed order evidence. | JSON | toast | Why was this item voided? |
 
 ## cv_card_fees
 

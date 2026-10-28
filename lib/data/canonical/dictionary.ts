@@ -128,6 +128,9 @@ export const canonicalDictionary = {
   "cv_item_sales": {
     "meaning": "Individual sold items",
     "columns": {
+      "order_duration_seconds": {"meaning":"Time from recorded Toast open to close; repeats on lines of the same order.","unit":"seconds","source":"toast","example":"How long were orders open?"},
+      "item_taxes": {"meaning":"Order's selection tax amounts and rates, with selection identifiers.","unit":"JSON cents/rate","source":"toast","example":"What tax was charged per item?"},
+      "modifier_prices": {"meaning":"Provider modifier prices linked to each selection; unknown prices stay null.","unit":"JSON cents","source":"toast","example":"What did modifiers cost?"},
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
         "unit": "UUID",
@@ -240,6 +243,8 @@ export const canonicalDictionary = {
   "cv_discounts": {
     "meaning": "Recorded order discounts",
     "columns": {
+      "check_discounts": {"meaning":"Named check-level discounts for this order.","unit":"JSON cents","source":"toast","example":"Which discount names were used?"},
+      "item_discounts": {"meaning":"Named item-level discounts for this order.","unit":"JSON cents","source":"toast","example":"Which items received discounts?"},
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
         "unit": "UUID",
@@ -287,6 +292,7 @@ export const canonicalDictionary = {
   "cv_voids_refunds": {
     "meaning": "Toast void/refund evidence",
     "columns": {
+      "provider_details": {"meaning":"Provider-reported void/refund reasons and amounts from current committed order evidence.","unit":"JSON","source":"toast","example":"Why was this item voided?"},
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
         "unit": "UUID",

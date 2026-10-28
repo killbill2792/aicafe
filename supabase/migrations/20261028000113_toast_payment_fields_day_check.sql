@@ -594,3 +594,85 @@ with (security_invoker=true) as
     and t.pos_timecard_id='toast:'||s.restaurant_guid::text||':'||s.external_time_entry_id::text);
 
 
+-- Only typed evidence from the last COMMITTED import is projected as current;
+-- staging for a failed or in-flight repull remains historical, not certified.
+create or replace view public.toast_current_typed_order_facts_v
+with (security_invoker=true) as
+ select distinct on (t.business_id,t.restaurant_guid,t.business_date,t.order_guid)
+  t.business_id,t.restaurant_guid,t.business_date,t.order_guid,
+  t.order_duration_seconds,t.check_discounts,t.item_discounts,
+  t.item_taxes,t.modifier_prices,t.void_details,t.refund_details
+ from public.toast_order_typed_facts t
+ join public.toast_raw_records raw on raw.id=t.raw_record_id
+ join public.toast_day_status day on day.business_id=t.business_id
+  and day.restaurant_guid=t.restaurant_guid
+  and day.business_date=t.business_date
+  and day.import_state='imported' and day.last_import_run_id=raw.run_id
+ order by t.business_id,t.restaurant_guid,t.business_date,t.order_guid,
+  raw.first_seen desc,raw.id desc;
+revoke all on public.toast_current_typed_order_facts_v from public,anon;
+grant select on public.toast_current_typed_order_facts_v to authenticated,service_role;
+
+create or replace view public.cv_item_sales (business_id,source,source_ref,status,business_date,net_sales_cents,quantity,data,order_duration_seconds,item_taxes,modifier_prices) with (security_invoker=true) as
+ select o.business_id,
+ case when o.pos_order_id like 'toast:%' then 'toast' else 'app' end::text as source,
+ 'line:'||l.id::text as source_ref,'actual'::text as status,
+ o.business_date,l.net_sales_cents,l.quantity as quantity,
+ jsonb_build_object('order_id',o.id,'menu_item_id',l.menu_item_id,
+  'pos_item_id',l.pos_item_id,'name',l.name,'category',l.category,
+  'quantity',l.quantity,'net_sales_cents',l.net_sales_cents,
+  'modifiers',l.modifiers,'voided',l.voided) as data,
+ t.order_duration_seconds,t.item_taxes,t.modifier_prices
+ from public.order_lines l join public.orders o on o.id=l.order_id
+ left join public.toast_current_typed_order_facts_v t
+  on t.business_id=o.business_id and t.business_date=o.business_date
+  and t.order_guid::text=regexp_replace(o.pos_order_id,'^toast:[^:]+:','')
+  and t.restaurant_guid::text=split_part(o.pos_order_id,':',2)
+ where o.toast_excluded is not true and o.superseded_by is null
+ union all
+ select m.business_id,'toast'::text,'modified-order:'||m.restaurant_guid::text||':'||m.order_guid::text,
+  'needs_match'::text,(m.last_checked_at at time zone b.timezone)::date,
+  null::bigint,null::numeric,
+  jsonb_build_object('kind','modified_order','order_guid',m.order_guid,
+   'reviewed_at',m.last_checked_at,'staging_state',m.state)
+ from public.toast_modified_orders_staging m
+ join public.businesses b on b.id=m.business_id
+ where m.state='review_required';
+
+
+create or replace view public.cv_discounts (business_id,source,source_ref,status,business_date,amount_cents,data,check_discounts,item_discounts) with (security_invoker=true) as
+ select o.business_id,case when o.pos_order_id like 'toast:%' then 'toast' else 'app' end::text as source,
+ 'order:'||o.id::text as source_ref,'actual'::text as status,
+ o.business_date,o.discounts_cents as amount_cents,
+ jsonb_build_object('amount_cents',o.discounts_cents,'order_id',o.id) as data,
+ t.check_discounts,t.item_discounts
+ from public.orders o
+ left join public.toast_current_typed_order_facts_v t
+  on t.business_id=o.business_id and t.business_date=o.business_date
+  and t.order_guid::text=regexp_replace(o.pos_order_id,'^toast:[^:]+:','')
+  and t.restaurant_guid::text=split_part(o.pos_order_id,':',2)
+ where coalesce(o.discounts_cents,0)<>0 and o.toast_excluded is not true
+ and o.superseded_by is null;
+
+
+create or replace view public.cv_voids_refunds (business_id,source,source_ref,status,business_date,amount_cents,data,provider_details) with (security_invoker=true) as
+ select v.business_id,'toast'::text as source,
+ 'void:'||v.selection_guid::text as source_ref,
+ case when v.amount_cents is null then 'open' else 'actual' end::text as status,
+ v.void_business_date as business_date,v.amount_cents,
+ jsonb_build_object('kind','void','level',v.level,'amount_cents',v.amount_cents,
+   'amount_basis',v.amount_basis,'order_guid',v.order_guid,'void_reason_guid',v.void_reason_guid) as data,
+ (select t.void_details from public.toast_current_typed_order_facts_v t
+  where t.business_id=v.business_id and t.order_guid=v.order_guid
+   and t.business_date=v.order_business_date limit 1) as provider_details
+ from public.toast_void_facts v
+ union all
+ select f.business_id,'toast'::text,'refund:'||f.id::text,'actual'::text,
+ coalesce(f.refund_business_date,f.order_business_date),f.amount_cents,
+ jsonb_build_object('kind','refund','amount_cents',f.amount_cents,
+   'order_guid',f.order_guid,'payment_guid',f.payment_guid),
+ (select t.refund_details from public.toast_current_typed_order_facts_v t
+  where t.business_id=f.business_id and t.restaurant_guid=f.restaurant_guid
+   and t.order_guid=f.order_guid and t.business_date=f.order_business_date limit 1)
+ from public.toast_refund_facts f;
+
