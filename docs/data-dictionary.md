@@ -1,6 +1,6 @@
 # Canonical café data dictionary
 
-Generated from `lib/data/canonical/dictionary.ts`. Owner-only views never expose raw provider payloads.
+Each row is café-scoped and source-tagged. The view uses invoker RLS; no raw card, guest or credential payload is exposed.
 
 ## cv_sales_days
 
@@ -38,6 +38,9 @@ Individual sold items
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
+| order_duration_seconds | Time from recorded Toast open to close; repeats on lines of the same order. | seconds | toast | How long were orders open? |
+| item_taxes | Order's selection tax amounts and rates, with selection identifiers. | JSON cents/rate | toast | What tax was charged per item? |
+| modifier_prices | Provider modifier prices linked to each selection; unknown prices stay null. | JSON cents | toast | What did modifiers cost? |
 | business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
 | source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
 | source_ref | Stable reference for the underlying fact. | identifier | app | Which record supports it? |
@@ -46,9 +49,6 @@ Individual sold items
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
 | net_sales_cents | Recorded net sales in integer cents. | cents | app | How much did we sell yesterday? |
 | quantity | Recorded item quantity, including fractional units. | items | app | How many sold? |
-| order_duration_seconds | Time from recorded Toast open to close; repeats on lines of the same order. | seconds | toast | How long were orders open? |
-| item_taxes | Order's selection tax amounts and rates, with selection identifiers. | JSON cents/rate | toast | What tax was charged per item? |
-| modifier_prices | Provider modifier prices linked to each selection; unknown prices stay null. | JSON cents | toast | What did modifiers cost? |
 
 ## cv_payments
 
@@ -62,7 +62,6 @@ Sanitized Toast payments
 | original_processing_fee_cents | Original Toast-reported fee, not an estimate. | cents | toast | What fee did Toast report? |
 | processing_fee_cents | Selected fee per payment, or null when unknown. | cents | toast | What were the processing fees? |
 | fee_status | Actual, estimated or missing fee provenance. | label | toast | Which fees are estimates? |
-| Column | Meaning | Unit | Source | Example owner question |
 | business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
 | source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
 | source_ref | Stable reference for the underlying fact. | identifier | app | Which record supports it? |
@@ -78,6 +77,8 @@ Recorded order discounts
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
+| check_discounts | Named check-level discounts for this order. | JSON cents | toast | Which discount names were used? |
+| item_discounts | Named item-level discounts for this order. | JSON cents | toast | Which items received discounts? |
 | business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
 | source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
 | source_ref | Stable reference for the underlying fact. | identifier | app | Which record supports it? |
@@ -85,8 +86,6 @@ Recorded order discounts
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
 | amount_cents | Recorded amount, or null when unknown. | cents | app | How much was it? |
-| check_discounts | Named check-level discounts for this order. | JSON cents | toast | Which discount names were used? |
-| item_discounts | Named item-level discounts for this order. | JSON cents | toast | Which items received discounts? |
 
 ## cv_voids_refunds
 
@@ -94,6 +93,7 @@ Toast void/refund evidence
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
+| provider_details | Provider-reported void/refund reasons and amounts from current committed order evidence. | JSON | toast | Why was this item voided? |
 | business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
 | source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
 | source_ref | Stable reference for the underlying fact. | identifier | app | Which record supports it? |
@@ -101,7 +101,6 @@ Toast void/refund evidence
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
 | amount_cents | Recorded amount, or null when unknown. | cents | app | How much was it? |
-| provider_details | Provider-reported void/refund reasons and amounts from current committed order evidence. | JSON | toast | Why was this item voided? |
 
 ## cv_card_fees
 
@@ -123,15 +122,15 @@ Recorded timecards
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
+| regular_hours | Regular hours exactly supplied by Toast; nullable. | hours | toast | What regular hours did Toast record? |
+| overtime_hours | Overtime hours exactly supplied by Toast; nullable. | hours | toast | What overtime did Toast record? |
+| hourly_wage_cents | Recorded hourly wage in integer cents; nullable when unknown. | cents/hour | toast | What wage did Toast supply? |
 | business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
 | source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
 | source_ref | Stable reference for the underlying fact. | identifier | app | Which record supports it? |
 | status | Actual, estimated, open, needs match or owner provided. | label | app | Which facts are incomplete? |
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
-| regular_hours | Regular hours exactly supplied by Toast; nullable. | hours | toast | What regular hours did Toast record? |
-| overtime_hours | Overtime hours exactly supplied by Toast; nullable. | hours | toast | What overtime did Toast record? |
-| hourly_wage_cents | Recorded hourly wage in integer cents; nullable when unknown. | cents/hour | toast | What wage did Toast supply? |
 
 ## cv_staff
 
