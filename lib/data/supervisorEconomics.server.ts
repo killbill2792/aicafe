@@ -7,7 +7,7 @@ import {figure,addOwnerPayrollExtras,fixedCardFeeForCoveredSales,type Economics}
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {totalMonthlyRecurringCostsCents} from "@/lib/expenses/recurringMonthlyTotal";
 import {getPricingInputs,type PricingItemInput} from "./getPricingInputs";
-import {getMenuItemSnapshots} from "./snapshot.server";
+import {getBusinessSnapshotFromDb} from "./snapshot.server";
 import {summarizeResolvedSoldProductCosts} from "@/lib/calc";
 import {getOwnerConfirmedProcessingFeePlans,ownerConfirmedPlanForDate} from "@/lib/pos/processingFeeEstimate.server";
 import {validateOwnerConfirmedProcessingFeePlan} from "@/lib/pos/processingFeeEstimate";
@@ -144,7 +144,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
     "monthlyRevenueCovered"),
   ingredientRate,feeRate,ingredientStatus,feeStatus,averagePriceCents,monthlyUnits,feePlan,
   ownerFeePlans:feePlans,
-  observedIngredientCentsOverride:summarizeResolvedSoldProductCosts(resolvedItems.filter(x=>x.quantitySoldLast28Days>0)).totalCostCents,
+  observedIngredientCentsOverride:summarizeResolvedSoldProductCosts((resolvedItems.breakEvenProductCosts??resolvedItems.menuItems).filter(x=>x.quantitySoldLast28Days>0)).totalCostCents,
   missingIngredientCosts:summarizeResolvedSoldProductCosts(resolvedItems.filter(x=>x.quantitySoldLast28Days>0)).missingProductCosts,
   daysInMonth:dayList.length||Number(month.to.slice(-2)),
   laborCoveredDays:laborDays.length,laborWindowDays:laborWindow.length,
