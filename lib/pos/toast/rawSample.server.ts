@@ -268,6 +268,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     lastRenew=Date.now();
    }
   };
+  const leaseLost=()=>reason==="lease_lost";
   const pace=async()=>{await hold();}; // Client enforces Toast's shared rate budget and endpoint-specific pacing.
   const save=async(s:Entry,raw:unknown,status:number|null,page:number|null,
     code:string|null=null,message:string|null=null)=>{
@@ -292,7 +293,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
    }
   };
   for(const s of TOAST_READ_ENDPOINTS){
-   if(reason==="lease_lost")break;
+   if(leaseLost())break;
    if(s.scope==="unsupported"){
     await save(s,{},null,null,"method_not_get","This documented operation requires a non-GET method");
     continue;
@@ -341,7 +342,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       }
       if(page===PAGE_CAP)await save(s,{},null,page,"page_cap","Maximum 20 pages reached");
      }catch(e){
-      if(reason==="lease_lost")break;
+      if(leaseLost())break;
       const status=e instanceof ToastApiError?e.status??null:null;
       const code=status===204?"no_content":e instanceof ToastApiError?e.toastCode??e.category:"unavailable";
       const message=e instanceof ToastApiError?e.toastMessage??e.category:"unavailable";
@@ -349,7 +350,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       break;
      }
     }
-    if(reason==="lease_lost")break;
+    if(leaseLost())break;
    }
   }
  }catch(e){
