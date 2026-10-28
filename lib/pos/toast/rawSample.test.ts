@@ -196,6 +196,27 @@ describe("read-only Toast coverage diagnostics",()=>{
   expect(safe.payment).toEqual(raw.payment);
   expect(safe.menuItem).toEqual(raw.menuItem);
  });
+ it("removes root-level guest and employee names from stored Toast payloads",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path.startsWith("/orders/v2/ordersBulk?"))
+    return [{guid:"11111111-1111-4111-8111-111111111112",
+     name:"Guest at register",checkNumber:27,amount:18,refundStatus:"NONE"}];
+   if(path==="/labor/v1/employees")
+    return [{guid:"22222222-2222-4222-8222-222222222223",
+     name:"Private Employee",jobTitle:"Cashier",wages:120}];
+   return [];
+  });
+  await captureToastRawSample(business,"2026-10-20",db);
+  const order=JSON.stringify(writes.find(x=>x.endpoint==="orders/v2/ordersBulk")?.sample);
+  const staff=JSON.stringify(writes.find(x=>x.endpoint==="labor/v1/employees")?.sample);
+  expect(order).not.toContain("Guest at register");
+  expect(order).toContain('"checkNumber":27');
+  expect(order).toContain('"refundStatus":"NONE"');
+  expect(staff).not.toContain("Private Employee");
+  expect(staff).toContain('"jobTitle":"Cashier"');
+  expect(staff).toContain('"wages":120');
+ });
  it("keeps paths for nested arrays",()=>{
   expect(toastFieldPaths({items:[{name:"Latte",price:5}]})).toContain("items[].price");
  });
