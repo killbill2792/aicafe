@@ -34,13 +34,19 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
   return {...unchanged,lastFullDay:null,lastFullDayTotals:null,
    dataNote:copy.todaySalesCheckUnavailable};
  const onlyNoRows=(keys:readonly string[])=>keys.length===1&&keys[0]==="noCoveredSalesRows";
- let currentFailed=false,imported=false;
+ let currentFailed=false,imported=false,importUncertain=false;
  try{
   const current=await ctx.tools.getSalesTrend(requested);
   if(!current.available&&!onlyNoRows(current.quality.missingInputs))
    currentFailed=true;
   imported=current.available&&current.value.some(day=>day.date===ctx.asOf);
+  importUncertain=imported&&current.quality.missingInputs.some(key=>
+   key==="toastDayStatusUnavailable"||key==="toastCheckEvidenceUnavailable"||
+   key.startsWith("toastImportIncompleteDays:")||key.startsWith("toastDayStatusMissing:")||
+   key.startsWith("toastDaysNeedLook:"));
  }catch{currentFailed=true;}
+ if(imported&&importUncertain)return {...unchanged,lastRecordedDay:ctx.asOf,
+  lastFullDay:null,lastFullDayTotals:null,dataNote:copy.todayStoredUnverified};
  if(imported)return {...unchanged,todayImported:true};
  let historicFailed=false;
  let previous:{date:string;netSalesCents?:number|null;ordersCount?:number|null;drinksCount?:number|null}|undefined;
