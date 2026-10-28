@@ -134,7 +134,9 @@ export function unifiedBreakEven(input:Economics){
   drinksPerDay,knownCostBreakEvenFloorCents,monthlyFixedKnownCents:fixedKnown,
   monthlyBills:input.monthlyBills,monthlyStaff:input.monthlyStaff,
   ingredientRate:input.ingredientRate,feeRate:input.feeRate,
-  status,reason,missing};
+  status,reason,reasonParams,missing,
+  observedProcessingFeesCents:feeCents,observedIngredientCents:ingredientCents,
+  observedSalesCents:calcSales};
 }
 /** Drink pricing: product-cost target sets the baseline; fully loaded economics
  * can only lift that baseline to break-even, never stack a model-selected margin. */
