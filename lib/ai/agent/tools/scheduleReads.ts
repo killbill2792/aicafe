@@ -118,7 +118,11 @@ export const scheduleReadTools={
      selected.some(person=>person.id===shift.employeeId)||
      (shift.source==="toast"&&!shift.employeeId&&
       shift.employeeName.trim().toLocaleLowerCase()===input.name!.trim().toLocaleLowerCase())):all;
-   const totals=aggregateCosts(activeShifts);
+   // The same cost engine as Team, restricted to the requested employee
+   // when the owner asks for one person's schedule.
+   const costedShifts=input.name?activeShifts.filter(s=>selected.some(person=>
+     person.id===s.employeeId)):activeShifts;
+   const totals=aggregateCosts(costedShifts);
    const toastPlans=scoped.some(s=>s.source==="toast");
    const people=selected.slice(0,30),shifts=scoped.slice(0,30);
    return {source:"employees+scheduled_shifts",period:{from:ws,to:new Date(Date.parse(ws+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
@@ -127,15 +131,15 @@ export const scheduleReadTools={
      ...(unlinkedNameCollision?[{en,es,ar}[ctx.locale].DataNotes.toastWorkerNotLinked]:[])],
     missing:[...(unlinkedNameCollision?["toastWorkerNotLinked"]:[]),...(toastPlans?["toastPlannedLaborUnknown"]:[]),...(result.data.posScheduleError?["toastScheduleReadFailed"]:[]),...(selected.length>30?["morePeople"]:[]),
      ...(scoped.length>30?["moreShifts"]:[]),
-     ...(!input.name?missingWageInputs(totals):[])],estimated:input.name||toastPlans?null:totals.estimated,
+     ...missingWageInputs(totals)],estimated:toastPlans?null:totals.estimated,
     people:people.map(p=>({id:p.id,name:p.name,role:p.role,minWeeklyMinutes:p.minWeeklyMinutes,
       maxWeeklyMinutes:p.maxWeeklyMinutes,hasKnownWage:p.wageCents!==null})),
     shifts:shifts,
-    weeklyPaidMinutes:input.name||toastPlans?null:totals.paidMinutes,
-    knownWagesCents:input.name||toastPlans?null:totals.knownCostCents,
-    missingWageCount:input.name||toastPlans?null:totals.unknownCount,
-    appOnlyPaidMinutes:!input.name&&toastPlans&&activeShifts.length?totals.paidMinutes:null,
-    appOnlyKnownWagesCents:!input.name&&toastPlans&&activeShifts.length?totals.knownCostCents:null};
+    weeklyPaidMinutes:toastPlans?null:totals.paidMinutes,
+    knownWagesCents:toastPlans?null:totals.knownCostCents,
+    missingWageCount:toastPlans?null:totals.unknownCount,
+    appOnlyPaidMinutes:toastPlans&&costedShifts.length?totals.paidMinutes:null,
+    appOnlyKnownWagesCents:toastPlans&&costedShifts.length?totals.knownCostCents:null};
   }
  },
  get_week_schedule:{

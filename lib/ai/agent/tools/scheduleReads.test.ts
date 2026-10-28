@@ -66,6 +66,27 @@ describe("Toast and app schedule union",()=>{
     {...ctx,resolveState:newResolveState("When is Casey working?")});
   expect(wrong.shifts).toBeUndefined();
  });
+ it("returns selected employee's known labor using the Team cost engine",async()=>{
+   vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{
+     team:[{id:"e1",name:"Jordan",role:"Barista",wageCents:1800},
+       {id:"e2",name:"Casey",role:"Barista",wageCents:2000}],
+     shifts:[{id:"app-1",date:"2026-10-24",employeeId:"e1",employeeName:"Jordan",
+       start:"09:00",end:"13:00",paidMinutes:240,costCents:7200,estimated:false},
+       {id:"app-2",date:"2026-10-24",employeeId:"e2",employeeName:"Casey",
+       start:"08:00",end:"12:00",paidMinutes:240,costCents:8000,estimated:false}],
+     posShifts:[],posScheduleError:null,timezone:"America/Los_Angeles",
+     dates:["2026-10-19","2026-10-20","2026-10-21","2026-10-22","2026-10-23","2026-10-24","2026-10-25"],
+     adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}
+   }} as never);
+   const ctx={asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles",
+     resolveState:newResolveState("How many hours and wages did Jordan have?")} as unknown as AgentToolContext;
+   const result=await scheduleReadTools.get_team.execute({week_start:"2026-10-19",name:"Jordan"},ctx);
+   expect(result.weeklyPaidMinutes).toBe(240);
+   expect(result.knownWagesCents).toBe(7200);
+   expect(result.missingWageCount).toBe(0);
+   expect(result.shifts).toMatchObject([{id:"app-1"}]);
+   expect(result.missing).not.toContain("toastPlannedLaborUnknown");
+ });
  it("does not attribute unlinked Toast shifts by matching employee names",async()=>{
   vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{
     team:[{id:"app-jordan",name:"Jordan",role:"Barista",wageCents:1800}],
