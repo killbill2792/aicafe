@@ -33,10 +33,10 @@ export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,cont
    .filter(([k])=>(IDENTIFIER.test(k)||!RESTRICTED.test(k))&&
      (!FREEFORM.test(k)||k==="description"&&/^(?:config|menus)\//.test(scope)))
    .filter(([k])=>!/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron)/i.test(context)||!/(?:^name$|displayName|nickname|^text$)/i.test(k))
-   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron|deliveryInfo|contact|billing|shipping|recipient|buyer|payer|cashier)/i.test(k)?k:context,scope)])
+   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron|deliveryInfo|contact|billing|shipping|recipient|buyer|payer|cashier|^card$)/i.test(k)?k:context,scope)])
    .filter(([k,v])=>v!==undefined));
  }
- if(IDENTIFIER.test(key)||(/^(?:id|guid|referenceId)$/i.test(key)&&/(?:customer|guest|loyalty|card|patron)/i.test(context))){
+ if(IDENTIFIER.test(key)||(/^(?:id|guid|referenceId)$/i.test(key)&&/(?:customer|guest|loyalty|card|patron|employee|staff|cashier)/i.test(context))){
   if(!hashKey) return undefined;
   if(typeof value!=="string"&&typeof value!=="number")return null;
   return "hmac:"+createHmac("sha256",hashKey).update(String(value)).digest("hex");
@@ -62,7 +62,8 @@ function identifierCounts(value:unknown){
   if(Array.isArray(v)){for(const x of v)walk(x,path+"[]",d+1);return;}
   if(!v||typeof v!=="object")return;
   for(const [k,x] of Object.entries(v)){
-   const next=path?path+"."+k:k;
+   const safeKey=KEY.test(k)||/^[0-9]{1,6}$/.test(k)?k:"*";
+   const next=path?path+"."+safeKey:safeKey;
    if(IDENTIFIER.test(k)){
     const s=counts[next]??{present:0,filled:0};
     s.present++;if(x!==null&&x!==undefined&&x!=="")s.filled++;
