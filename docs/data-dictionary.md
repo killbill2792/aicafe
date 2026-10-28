@@ -186,7 +186,7 @@ Recurring owner costs
 
 ## cv_inventory
 
-Recorded stock counts
+App pantry counts and Toast at-risk menu item stock captured snapshots
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
@@ -196,6 +196,9 @@ Recorded stock counts
 | status | Actual, estimated, open, needs match or owner provided. | label | app | Which facts are incomplete? |
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
+| menu_item_ref | Toast menu-item reference for at-risk stock snapshots; absent items are not zero. | identifier | toast | What was recorded? |
+| stock_status | Toast OUT_OF_STOCK or QUANTITY status; null for app pantry rows. | label | toast | What was recorded? |
+| quantity | Reported quantity when known; pantry base quantity for app rows. | quantity | toast | What was recorded? |
 
 ## cv_owner_facts
 
@@ -223,3 +226,82 @@ Typed Toast ERA measurements
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
 | value_numeric | Numeric ERA measurement; money metrics use cents. | metric-dependent | toast | What did Toast report? |
+
+## cv_orders
+
+Order dining options, source channels and guest counts for stored café orders.
+
+| Column | Meaning | Unit | Source | Example owner question |
+|---|---|---|---|---|
+| business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
+| source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
+| source_ref | Reference to stored evidence, not a guest identity. | identifier | app | Which record supports it? |
+| status | Actual, open or incomplete; capture-only is not live POS coverage. | label | app | Is this record complete? |
+| business_date | Café local business date associated with the record or sample. | local date | app | What happened on this date? |
+| data | Limited non-sensitive fields; no raw POS or customer payload. | JSON | app | Show the provider detail. |
+| order_ref | Stored order reference, not a guest identifier. | identifier | app | What was recorded? |
+| dining_option | Dining option identifier or name from the order when supplied. | label | toast | What was recorded? |
+| source_channel | POS-provided order channel when supplied. | label | toast | What was recorded? |
+| guest_count | Number of guests reported on the order, when available. | count | toast | What was recorded? |
+
+## cv_cash
+
+Cash movements and deposits from redacted Toast diagnostics, not continuous cash sync.
+
+| Column | Meaning | Unit | Source | Example owner question |
+|---|---|---|---|---|
+| business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
+| source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
+| source_ref | Reference to stored evidence, not a guest identity. | identifier | app | Which record supports it? |
+| status | Actual, open or incomplete; capture-only is not live POS coverage. | label | app | Is this record complete? |
+| business_date | Café local business date associated with the record or sample. | local date | app | What happened on this date? |
+| data | Limited non-sensitive fields; no raw POS or customer payload. | JSON | app | Show the provider detail. |
+| entry_type | Cash entry action or deposit type. | label | toast | What was recorded? |
+| amount_cents | Reported cash movement amount in cents; null when missing. | cents | toast | What was recorded? |
+| cash_drawer_ref | Redacted drawer identifier, if supplied. | identifier | toast | What was recorded? |
+| employee_ref | Redacted employee identifier, if supplied. | identifier | toast | What was recorded? |
+
+## cv_kitchen
+
+Toast kitchen fulfillment and prep station diagnostic snapshots; optional KDS/Pro access.
+
+| Column | Meaning | Unit | Source | Example owner question |
+|---|---|---|---|---|
+| business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
+| source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
+| source_ref | Reference to stored evidence, not a guest identity. | identifier | app | Which record supports it? |
+| status | Actual, open or incomplete; capture-only is not live POS coverage. | label | app | Is this record complete? |
+| business_date | Café local business date associated with the record or sample. | local date | app | What happened on this date? |
+| data | Limited non-sensitive fields; no raw POS or customer payload. | JSON | app | Show the provider detail. |
+| order_ref | Toast order reference from fulfillment record. | identifier | toast | What was recorded? |
+| ticket_ref | Kitchen ticket reference. | identifier | toast | What was recorded? |
+| fired_at | Provider ticket-fired timestamp, when recorded. | timestamp text | toast | What was recorded? |
+| started_at | Provider item-start timestamp, when recorded. | timestamp text | toast | What was recorded? |
+| ready_at | Provider item-fulfilled timestamp, when recorded. | timestamp text | toast | What was recorded? |
+| prep_station_ref | Provider prep station reference. | identifier | toast | What was recorded? |
+
+## cv_dining_options
+
+Toast dining-option name configuration from optional redacted captures.
+
+| Column | Meaning | Unit | Source | Example owner question |
+|---|---|---|---|---|
+| business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
+| source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
+| source_ref | Reference to stored evidence, not a guest identity. | identifier | app | Which record supports it? |
+| status | Actual, open or incomplete; capture-only is not live POS coverage. | label | app | Is this record complete? |
+| business_date | Café local business date associated with the record or sample. | local date | app | What happened on this date? |
+| data | Limited non-sensitive fields; no raw POS or customer payload. | JSON | app | Show the provider detail. |
+| dining_option_ref | Toast dining-option reference. | identifier | toast | What was recorded? |
+| dining_option_name | Safe Toast dining-option label when supplied. | label | toast | What was recorded? |
+
+## Capture-only Toast evidence and limitations
+
+`cv_cash`, Toast rows of `cv_inventory`, `cv_kitchen` and `cv_dining_options` are derived from **redacted diagnostic snapshots** in `toast_raw_samples`; they are not continuously imported operational data. A missing capture, failed response or zero returned rows does not establish an operational zero. Repeated captures can record the same underlying event multiple times, so they must not be summed as daily totals without deduplication.
+
+- **Cash:** `cashmgmt/v1/entries` and `cashmgmt/v1/deposits` expose cash entry/deposit amounts and identifiers. Drawer/employee names are not included in these endpoints; separately collected configuration and labor data would be needed for names.
+- **Stock:** `stock/v1/inventory` returns only `OUT_OF_STOCK` or `QUANTITY` menu items. Missing items are not evidence of a zero balance or a confirmed `IN_STOCK` status.
+- **Kitchen:** `kitchen/v1/export/itemFulfillments` and `kitchen/v1/published/prepStations` expose fulfillment timestamps and prep-station data where available. Item fulfillment requires eligible KDS/Toast subscription access; a 204 or no data does not mean preparation took zero time.
+- **Dining options:** `config/v2/diningOptions` provides names only where captured. `cv_orders` exposes stored `orders.dining_option`, `source_channel` and `guest_count` regardless of whether the configuration endpoint is available.
+
+The diagnostic capture is performed by `captureToastRawSample`; it is not automatically run by each day import. Daily operational copies, full Toast-report parity and durable typed cash/stock/kitchen ingestion have not yet been implemented. Apply migration **114** manually after 110–113; never rewrite a previously applied migration.

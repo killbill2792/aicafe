@@ -11,7 +11,7 @@ const bounded=z.object({dateFrom:z.iso.date(),dateTo:z.iso.date()});
 const periodViews=new Set<CanonicalView>([
  "cv_sales_days","cv_sales_hours","cv_item_sales","cv_payments","cv_discounts",
  "cv_voids_refunds","cv_card_fees","cv_analytics","cv_labor_entries",
- "cv_shifts","cv_inventory"
+ "cv_shifts","cv_inventory","cv_orders","cv_cash","cv_kitchen","cv_dining_options"
 ]);
 /** The only canonical view query path for screens and AI.
  * Never accept an arbitrary SQL table or inferred café ID from the model. */
@@ -53,3 +53,7 @@ export const readBills=wrap("cv_bills");
 export const readInventory=wrap("cv_inventory");
 export const readOwnerFacts=wrap("cv_owner_facts");
 export const readAnalytics=wrap("cv_analytics");
+export const readOrders=wrap("cv_orders");
+export const readCash=wrap("cv_cash");
+export const readKitchen=wrap("cv_kitchen");
+export const readDiningOptions=wrap("cv_dining_options");
