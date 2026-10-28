@@ -23,7 +23,8 @@ const CHUNK_BYTES=180000;
 // broad "orders/checks/payments" context allowlists: they lose business data.
 const PERSONAL_FIELD=/(?:^name$|^displayName$|^nickname$|^firstName$|^lastName$|^fullName$|^chosenName$)/i;
 const PERSONAL_PARENT=/(?:^customer$|^guest$|^loyalty$|^patron$|^card$|^cardholder$|^person$|^recipient$|^buyer$|^payer$|^contact$|^deliveryInfo$|^billing$|^shipping$)/i;
-const CONTACT_FIELD=/(?:email|phone|mobile|fax|street|address|postal|zipCode|latitude|longitude|^lat$|^lon$|^lng$|ipAddress|birth|^city$|^country$|^state$|^suite$|^unit$)/i;
+const CONTACT_FIELD=/(?:email|phone|mobile|fax|street|address|postal|zipCode|latitude|longitude|^lat$|^lon$|^lng$|ipAddress|birth|^(?:customer|guest|cardholder|employee|server|cashier|recipient|buyer|payer|patron)(?:First|Last|Full|Chosen)?Name$)/i;
+const PERSONAL_LOCATION=/^(?:city|country|state|suite|unit)$/i;
 const CARD_SECRET=/(?:cardNumber|cardLast4|lastFour|last4|first6|firstSix|pan$|cvv|cvc|magstripe|trackData|expiry|expiration|expireDate|cardholderName|cardName|networkId|networkTransactionIdentifier)/i;
 const AUTH_SECRET=/(?:password|secret|authorization|accessToken|refreshToken|authToken|paymentToken|clientToken|apiKey|credential|sessionToken|signature|passcode|pin$|routingNumber|accountNumber|deviceId)/i;
 const FREEFORM=/(?:notes?|memo|comment|message|instructions?|^text$|^tabName$|receiptText|^description$)/i;
@@ -46,17 +47,17 @@ export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,cont
    .filter(([k])=>KEY.test(k))
    .filter(([k])=>{
     if(isSensitiveId(k,context))return true;
-    if(CONTACT_FIELD.test(k)||CARD_SECRET.test(k)||AUTH_SECRET.test(k))return false;
+    if(CONTACT_FIELD.test(k)||CARD_SECRET.test(k)||AUTH_SECRET.test(k)||isPersonalContext(context)&&PERSONAL_LOCATION.test(k))return false;
     if(FREEFORM.test(k)&&!(k==="description"&&/^(?:menus|config)\//.test(scope)))return false;
     // "name" on a check/order/payment is the guest tab/payer name, not the
     // name of the menu item; nested selections/discounts/modifiers are retained.
-    if(PERSONAL_FIELD.test(k)&&(/^(?:orders?|checks?|payments?)$/i.test(context)||isPersonalContext(context)))return false;
+    if(PERSONAL_FIELD.test(k)&&(/^(?:orders?|checks?|payments?|employee|staff|server|cashier)$/i.test(context)||isPersonalContext(context)))return false;
     return true;
    })
    .filter(([k,v])=>!isPersonalContext(context)||typeof v!=="string"||
     isSensitiveId(k,context)||/^(?:type|status|state|currency|cardType|cardEntryMode|jobTitle|jobCode|title|paymentStatus|source)$/i.test(k)||
     /(?:Date|Time|At|Timestamp)$/i.test(k))
-   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,k==="selections"||k==="discounts"||k==="modifiers"||k==="items"||k==="menuItems"?"":k,scope)])
+   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,k==="selections"||k==="discounts"||k==="modifiers"||k==="items"||k==="menuItems"?"":PERSONAL_PARENT.test(k)||/^(?:orders?|checks?|payments?|employee|staff|server|cashier)$/i.test(k)?k:context,scope)])
    .filter(([,v])=>v!==undefined));
  }
  if(isSensitiveId(key,context)){
