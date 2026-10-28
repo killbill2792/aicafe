@@ -143,17 +143,21 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       const allowed=r.numberEstimates as Array<{unit?:unknown;value?:unknown}>;
       for(const [index,line] of r.explain.slice(0,20).entries()){
         if(!line||typeof line!=="object"||!("result" in line))continue;
-        const item=line.result;
-        if(!item||typeof item!=="object")continue;
-        const num=item.kind==="money"?{unit:"cents",value:item.cents}:
-          item.kind==="percent"?{unit:"bps",value:item.bps}:
-          item.kind==="count"?{unit:"count",value:item.n}:null;
-        if(!num||typeof num.value!=="number"||!Number.isSafeInteger(num.value)||
-          !allowed.some(candidate=>candidate.unit===num.unit&&candidate.value===num.value))continue;
-        const key=periodKey+rootScope+"explain:"+index+"/result"+
-          (num.unit==="cents"?"Cents":num.unit==="bps"?"Bps":"Count");
-        values.push({key,value:num.value,unit:num.unit as "cents"|"bps"|"count"});
-        invalidatedKeys.push(key);
+        const inputs=Array.isArray(line.inputs)?line.inputs:[];
+        const entries=[{name:"result",item:line.result},
+          ...inputs.slice(0,8).map((entry,i)=>({name:"input"+i,item:entry?.value}))];
+        for(const {name,item} of entries){
+          if(!item||typeof item!=="object")continue;
+          const num=item.kind==="money"?{unit:"cents",value:item.cents}:
+            item.kind==="percent"?{unit:"bps",value:item.bps}:
+            item.kind==="count"?{unit:"count",value:item.n}:null;
+          if(!num||typeof num.value!=="number"||!Number.isSafeInteger(num.value)||
+            !allowed.some(candidate=>candidate.unit===num.unit&&candidate.value===num.value))continue;
+          const key=periodKey+rootScope+"explain:"+index+"/"+name+
+            (num.unit==="cents"?"Cents":num.unit==="bps"?"Bps":"Count");
+          values.push({key,value:num.value,unit:num.unit as "cents"|"bps"|"count"});
+          invalidatedKeys.push(key);
+        }
       }
     }
     // A computed amount must remain an estimate in evidence saved for later
