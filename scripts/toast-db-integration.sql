@@ -839,6 +839,23 @@ BEGIN
   where business_id=b and restaurant_guid=r and business_date='2026-10-19'),
  'GUID-less orders retain distinct payment evidence');
 
+ -- Unmatched provider identities remain owner-readable instead of disappearing.
+ insert into public.pos_import_reviews(business_id,provider,review_type,source_key,detail,status)
+ values(b,'toast','staff_identity','d-test-unmatched-employee',
+  '{"provider":"toast","reason":"unknown_employee"}'::jsonb,'needs_owner'),
+       (b,'toast','catalog_item','d-test-unmatched-menu-item',
+  '{"provider":"toast","reason":"unknown_item"}'::jsonb,'needs_owner')
+ on conflict(business_id,provider,review_type,source_key) do update
+ set detail=excluded.detail,status=excluded.status;
+ perform pg_temp.assert_true(exists(select 1 from public.cv_staff
+  where business_id=b and source='toast' and status='needs_match'
+   and source_ref='review:staff_identity:d-test-unmatched-employee'),
+  'unmatched Toast employee remains in canonical staff');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_menu
+  where business_id=b and source='toast' and status='needs_match'
+   and source_ref='review:catalog_item:d-test-unmatched-menu-item'),
+  'unmatched Toast menu item remains in canonical menu');
+
  perform pg_temp.assert_true(exists(select 1 from public.cv_payments
   where business_id=b and amount_cents=1200 and tip_cents=200),
   'canonical payment view uses sanitized row');
