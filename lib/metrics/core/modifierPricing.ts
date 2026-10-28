@@ -65,8 +65,10 @@ export function chatReadyMilkSwap(
   mlPerSize:Readonly<Record<string,SizeMilkVolume|number|null>>,
   costs:Readonly<Record<string,MilkUnitCost|undefined>>,
   targetProductCostPercent:number|null=DEFAULT_TARGET_PRODUCT_COST_PERCENT,
+  targetBasis:ModifierBasis="estimated",
 ){
-  const result=swapCostPerSize(sizes,fromMilk,toMilk,mlPerSize,costs,targetProductCostPercent);
+  const result=swapCostPerSize(sizes,fromMilk,toMilk,mlPerSize,costs,
+    targetProductCostPercent,targetBasis);
   return {source:"modifier_pricing" as const,fromMilk,toMilk,
     rows:result.sizes.map(({sizeId,sizeLabel,milkMl,costDeltaCents,
       suggestedUpchargeCents,marginKeptCents,basis,missing})=>

@@ -24,7 +24,9 @@ function demo(caseName:"complete"|"today_missing"|"fees_missing"|"wage_missing"|
   });
   const current=Array.from({length:caseName==="today_missing"?28:29},(_,i)=>day(i));
   const fixture=getFixtureSnapshot();
-  const snapshot:BusinessSnapshot={...fixture,todayDateStr:date(28),monthKey:"2026-09",daysInMonth:30,
+  const snapshot:BusinessSnapshot & {ownerFeePlans?:{percentageBps:number}[]}={
+    ...fixture,ownerFeePlans:caseName==="actual_toast_fees"?[{percentageBps:400}]:[],
+    todayDateStr:date(28),monthKey:"2026-09",daysInMonth:30,
     monthActualDays:current,monthRecordedDays:current,last28Days:current,
     last7Days:current.slice(-7),todayDay:caseName==="today_missing"?
       {...day(28),netSalesCents:0,salesDataStatus:"missing"}:current[current.length-1],
