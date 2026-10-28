@@ -79,7 +79,9 @@ export function cardFeesForDays(
     if(day.cardFeesCents!=null&&valid(day.cardFeesCents)&&day.cardFeesStatus!=="missing"){
       // Already-persisted estimated daily facts win over the generic default.
       sum+=day.cardFeesCents;
-      estimatedDays++;
+      // Legacy complete rollups omit the status. Retain their recorded value
+      // rather than retroactively labeling a stored zero an estimated fee.
+      if(day.cardFeesStatus==="estimated")estimatedDays++;else actualDays++;
     }else{
       sum+=(day.cardSalesCents??day.netSalesCents)*DEFAULT_PROCESSING_FEE_RATE_BPS/10000;
       defaultDays++;
