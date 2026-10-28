@@ -35,6 +35,7 @@ vi.mock("@/lib/access/access.server",()=>({
 }));
 vi.mock("@/lib/ai/supervisor/loop/supabase.server",()=>({
   SupabaseLoopRepository:class{
+    async cafeTimezone(){return "America/Los_Angeles";}
     async load(_scope:unknown,id:string){
       if(id!==f.id||!f.ownerAllowed)throw Error("not found");
       return row();

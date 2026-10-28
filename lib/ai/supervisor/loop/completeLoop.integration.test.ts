@@ -61,6 +61,7 @@ const bill=registerLoopCapability({
    recommendation:"keep",source:"review_status"}),
 });
 class MemoryRepo implements LoopRepository{
+  async cafeTimezone(){return "America/Los_Angeles";}
  proposal:LoopProposal|null=null;
  samplesList:LoopSample[]=[];
  report:LoopReport|null=null;

@@ -39,6 +39,7 @@ const drinkFixture=registerLoopCapability({
   },
 });
 class MemoryRepo implements LoopRepository{
+  async cafeTimezone(){return "America/Los_Angeles";}
   proposals=new Map<string,LoopProposal>();
   rows=new Map<string,Map<string,LoopSample>>();
   reports=new Map<string,LoopReport>();
