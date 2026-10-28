@@ -56,7 +56,8 @@ export function laborForPeriod(days:readonly {date:string}[],wages:readonly Labo
   }
   return {
     knownLaborCents,projectedMonthlyLaborCents:coveredDays>0?
-      Math.round(projectedBase*totalDays/coveredDays)+(ownerExtras?.monthlyCents??0):null,
+      Math.round(projectedBase*totalDays/coveredDays)+(ownerExtras?.monthlyCents??0):
+      ownerExtras?proratedOwnerPayrollExtrasCents(ownerExtras):null,
     coveredDays,totalDays,
     basis:coveredDays===0?"partial":coveredDays<totalDays?"projected":"recorded",
     notes,
