@@ -5,7 +5,7 @@ import { memoryToolDefinition } from "./tools/memory";
 import type { AgentToolContext } from "./tools";
 
 const context: AgentToolContext = {
-  locale: "en", asOf: "2026-10-21",
+  timezone:"America/Los_Angeles", locale: "en", asOf: "2026-10-21",
   tools: {
     getMenuCatalog: async () => ({ available: true,
       quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] },
