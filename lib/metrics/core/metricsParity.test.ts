@@ -134,7 +134,7 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
         null:d.wagesCents+d.staffTaxCents,
      })),quality}),
      getBusinessCostSummary:async()=>businessCostSummaryFromSnapshot(snapshot,period),
-    } as AgentToolContext["tools"],
+    } as unknown as AgentToolContext["tools"],
     readEconomics:async()=>({economics,items:[],staff:[],
      ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null}),
    };
@@ -162,7 +162,7 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
      expect(profit.profitability.value.ownerProfitCents).toBe(screen.ownerProfitCents);
    if(kind==="sparse_payroll"){
      expect(recovery.monthlyStaffCents).not.toBeNull();
-     expect(chat.monthlyLabor.valueCents).not.toBeNull();
+     expect((chat.monthlyLabor as {valueCents:number|null}).valueCents).not.toBeNull();
      expect(plan.noteKeys).toContain("laborCoveragePartial");
    }
   });
