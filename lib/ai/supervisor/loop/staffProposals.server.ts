@@ -109,7 +109,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
      item("schedule:"+date,copy.week+" "+date,before?text(before):null,after?text(after):null);
    }
    const unknown=people.filter(p=>p.active&&d.shifts.some(x=>x.employee_id===p.id)&&
-     p.wage_amount_cents===null);
+     p.wage_amount_cents===null&&(p.wage_period!=="hour"||p.default_hourly_wage_cents==null));
    if(unknown.length)item("labor:partial","Labor estimate",null,
      text("Partial: wages missing for "+unknown.length+" staff"));
    payload={week_start:d.week_start,shifts:d.shifts};break;
