@@ -1,10 +1,16 @@
 import {describe,expect,it} from "vitest";
-import {breakEvenFor} from "./breakEven";
+import {breakEvenFor,moneyLeftPerDrinkCents,dailyBreakEvenCostsCents,
+  drinksTargetPerDay} from "./breakEven";
 const d=Array.from({length:28},(_,i)=>({
  date:new Date(Date.UTC(2026,8,1+i,12)).toISOString().slice(0,10),
  netSalesCents:240000,ingredientsCents:65000,cardFeesCents:7000,drinksCount:480,
 }));
 describe("28 complete-day break-even",()=>{
+  it("offers one pure scalar math source to legacy what-if callers",()=>{
+    expect(moneyLeftPerDrinkCents(20000,6000,400,20)).toBe(680);
+    expect(dailyBreakEvenCostsCents(1000,2000)).toBe(3000);
+    expect(drinksTargetPerDay(3000,680)).toBe(5);
+  });
   it("matches the source-of-truth 315 drinks/day for demo inputs",()=>{
     const out=breakEvenFor({days:d,asOfDate:"2026-09-29",daysInMonth:30,
       monthlyBillsCents:960000,monthlyStaffCents:77952*30});

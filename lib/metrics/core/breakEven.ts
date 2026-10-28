@@ -1,5 +1,16 @@
 import {calculateBreakEvenSales,type BreakEvenSalesResult} from "@/lib/calc/breakEvenSales";
 import {shiftCafeDate} from "./clock";
+/** Pure scalar break-even primitives used by the B window and legacy what-if API. */
+export function moneyLeftPerDrinkCents(sales:number,ingredients:number,fees:number,drinks:number):number{
+  return drinks===0?0:(sales-ingredients-fees)/drinks;
+}
+export function dailyBreakEvenCostsCents(bills:number,staff:number):number{
+  return bills+staff;
+}
+export function drinksTargetPerDay(dailyCosts:number,moneyLeft:number):number{
+  return moneyLeft<=0?Infinity:Math.ceil(dailyCosts/moneyLeft);
+}
+
 import {cardFeesForDays,type OwnerFeePlan} from "./fees";
 export type BreakEvenDay={
   date:string;netSalesCents:number;ingredientsCents:number;cardFeesCents:number;
@@ -41,9 +52,10 @@ export function breakEvenFor(input:{
       expectedDays:28,notes};
   }
   const monthly=result.breakEvenSalesCents;
-  const avgMoneyLeft=(observedSalesCents-observedIngredientCents-observedProcessingFeesCents)/drinks;
-  const dailyCosts=(result.fixedMonthlyCostsCents/input.daysInMonth);
-  const drinksPerDay=Math.ceil(dailyCosts/avgMoneyLeft);
+  const avgMoneyLeft=moneyLeftPerDrinkCents(
+    observedSalesCents,observedIngredientCents,observedProcessingFeesCents,drinks);
+  const dailyCosts=result.fixedMonthlyCostsCents/input.daysInMonth;
+  const drinksPerDay=drinksTargetPerDay(dailyCosts,avgMoneyLeft);
   return {salesPerMonthCents:monthly,drinksPerDay,calculation:result,
     knownCostFloorCents:notes.some(n=>n.endsWith("Missing"))?monthly:null,
     coveredDays,expectedDays:28,notes};
