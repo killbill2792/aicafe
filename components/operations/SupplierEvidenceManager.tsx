@@ -1,6 +1,6 @@
 "use client";
 import {useEffect,useRef,useState,type FormEvent} from "react";
-import {formatCents} from "@/lib/calc";
+import {useLocale} from "next-intl";
 import {parseSupplierDollars,compareSupplierQuotePrices} from "@/lib/calc/supplierQuotes";
 import type {PublicSource} from "@/lib/ai/suppliers/contracts";
 type Quote={id:string;supplierName:string;itemName:string;priceCents:number;
@@ -14,7 +14,9 @@ export type SupplierCopy={
 };
 const field="min-h-12 w-full rounded-xl border border-line bg-surface p-3 text-[17px] text-ink";
 async function read<T>(resp:Response):Promise<T>{if(!resp.ok)throw new Error();return resp.json() as Promise<T>;}
-export default function SupplierEvidenceManager({copy}:{copy:SupplierCopy}){
+export default function SupplierEvidenceManager({copy,today,currency}:{copy:SupplierCopy;today:string;currency:string}){
+  const locale=useLocale();
+  const formatPrice=(cents:number)=>new Intl.NumberFormat(locale,{style:"currency",currency}).format(cents/100);
  const [supplier,setSupplier]=useState("");
  const [item,setItem]=useState("");
  const [dollars,setDollars]=useState("");
@@ -48,7 +50,7 @@ export default function SupplierEvidenceManager({copy}:{copy:SupplierCopy}){
     method:"POST",headers:{"content-type":"application/json"},
     body:JSON.stringify({requestId:requestId.current,supplierName:supplier,itemName:item,
      priceCents:cents,packageCount:Number(count),packageUnit:unit,sourceKind:kind,
-     sourceUrl:url.trim()||null,quotedOn:quotedOn||new Date().toISOString().slice(0,10)}),
+     sourceUrl:url.trim()||null,quotedOn:quotedOn||today}),
    }));
    setQuotes((prev)=>[result.quote,...prev.filter(q=>q.id!==result.quote.id)]);
    setNotice(copy.saved);setSupplier("");setItem("");setDollars("");setUrl("");
@@ -91,7 +93,7 @@ export default function SupplierEvidenceManager({copy}:{copy:SupplierCopy}){
       onChange={e=>{setUrl(e.target.value);requestId.current=null;}}/></label>
     <label className="text-[17px] font-semibold text-ink">{copy.date}
      <input className={field+" mt-1"} type="date" value={quotedOn}
-      max={new Date().toISOString().slice(0,10)}
+      max={today}
       onChange={e=>{setQuotedOn(e.target.value);requestId.current=null;}}/></label>
    </div>
    <button className="mt-4 min-h-12 rounded-full bg-ink px-5 text-[17px] font-bold text-paper"
@@ -101,10 +103,10 @@ export default function SupplierEvidenceManager({copy}:{copy:SupplierCopy}){
    <h2 className="font-headline text-2xl font-bold text-ink">{copy.history}</h2>
    {!quotes.length&&<p className="mt-2 text-[17px] text-ink-muted">{copy.empty}</p>}
    {comparison?.comparable&&<p className="mt-3 text-[17px] text-ink">
-    {copy.comparison}: {formatCents(comparison.differenceCents)} ({copy.notVerified})</p>}
+    {copy.comparison}: {formatPrice(comparison.differenceCents)} ({copy.notVerified})</p>}
    <ul className="mt-3 space-y-3">{quotes.map(q=><li key={q.id}
     className="rounded-xl border border-line p-3 text-[17px] text-ink">
-    <strong>{q.itemName} · {formatCents(q.priceCents)}</strong>
+    <strong>{q.itemName} · {formatPrice(q.priceCents)}</strong>
     <p>{q.supplierName} · {q.packageCount} {q.packageUnit} · {q.quotedOn}</p>
     <p className="text-ink-muted">{copy.notVerified} · {q.sourceKind}</p>
     {q.sourceUrl&&<a href={q.sourceUrl} rel="noopener noreferrer" target="_blank"
