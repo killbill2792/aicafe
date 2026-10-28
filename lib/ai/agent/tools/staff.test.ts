@@ -61,6 +61,27 @@ describe("Olivia bounded reads",()=>{
     expect(result.missing).toContain("staffAttendanceReadFailed");
     expect(result.dataNotes).toEqual([expect.stringContaining("attendance check failed")]);
   });
+  it("keeps independent attendance when current-staff reader is absent",async()=>{
+    const r=await staffTools.get_staff.execute({},ctx({
+      getStaffAttendance:async()=>({available:true,value:{
+        timecardCount:3,onClockCount:2,attendanceTracked:true},quality:q}),
+    }));
+    expect(r.onClockCount).toBe(2);
+    expect(r.count).toBe(2);
+    expect(r.people).toBeNull();
+    expect(r.missing).toContain("staffReaderUnavailable");
+  });
+  it("keeps independent attendance when current-staff reader throws",async()=>{
+    const r=await staffTools.get_staff.execute({},ctx({
+      getCurrentStaff:async()=>{throw new Error("staff offline");},
+      getStaffAttendance:async()=>({available:true,value:{
+        timecardCount:3,onClockCount:0,attendanceTracked:true},quality:q}),
+    }));
+    expect(r.count).toBe(0);
+    expect(r.onClockCount).toBe(0);
+    expect(r.missing).toContain("staffReadFailed");
+    expect(r.dataNotes).toEqual([expect.stringContaining("readers failed")]);
+  });
   it("never invents zero clock-ins for a café with only repeating patterns",async()=>{
     const r=await staffTools.get_staff.execute({},ctx({
       getCurrentStaff:async()=>({available:true,value:{count:0,asOf:"2026-10-22T14:00:00Z",people:[]},quality:q}),

@@ -27,22 +27,32 @@ export const staffTools = {
     agentId:"olivia",schema:empty,description:"Read only active employees with recorded current shifts; repeating schedule predictions are not clock-ins.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
-      if(!ctx.tools.getCurrentStaff)return missing("current_staff",null,["staffReaderUnavailable"]);
-      const s=await ctx.tools.getCurrentStaff();
-      if(!s.available)return missing("current_staff",null,s.quality.missingInputs);
-      const attendance=ctx.tools.getStaffAttendance?
-        await ctx.tools.getStaffAttendance({from:ctx.asOf,to:ctx.asOf},ctx.timezone)
-          .catch(()=>failedSlice("staffAttendanceReadFailed")):null;
-      const tracked=attendance?.available?attendance.value.attendanceTracked:null;
+      const [s,attendance]=await Promise.all([
+        ctx.tools.getCurrentStaff?
+          ctx.tools.getCurrentStaff().catch(()=>failedSlice("staffReadFailed")):
+          Promise.resolve(failedSlice("staffReaderUnavailable")),
+        ctx.tools.getStaffAttendance?
+          ctx.tools.getStaffAttendance({from:ctx.asOf,to:ctx.asOf},ctx.timezone)
+            .catch(()=>failedSlice("staffAttendanceReadFailed")):
+          Promise.resolve(failedSlice("attendanceReaderUnavailable")),
+      ]);
+      if(!s.available&&!attendance.available)
+        return missing("current_staff",null,[...s.quality.missingInputs,...attendance.quality.missingInputs]);
+      const tracked=attendance.available?attendance.value.attendanceTracked:null;
+      const onClockCount=attendance.available?attendance.value.onClockCount:null;
       return {source:"current_staff",period:null,agentId:"olivia",
-        dataNotes:attendance?.quality.missingInputs.includes("staffAttendanceReadFailed")?
-          [{en,es,ar}[ctx.locale].DataNotes.staffAttendanceReadFailed]:[],
-        missing:[...s.quality.missingInputs,...(attendance?.quality.missingInputs??["attendanceReaderUnavailable"])],
-        attendanceTracked:tracked,onClockCount:attendance?.available?attendance.value.onClockCount:null,
-        // Keep independent, recorded on-shift evidence even if the separate
-        // attendance status read is missing; do not invent zero without evidence.
-        count:tracked||s.value.count>0?s.value.count:null,asOf:s.value.asOf,
-        people:s.value.people.slice(0,15)};
+        dataNotes:[
+          ...(!s.available?[{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[]),
+          ...(attendance.quality.missingInputs.includes("staffAttendanceReadFailed")?
+            [{en,es,ar}[ctx.locale].DataNotes.staffAttendanceReadFailed]:[])],
+        missing:[...s.quality.missingInputs,...attendance.quality.missingInputs],
+        attendanceTracked:tracked,onClockCount,
+        // A failed current-shift projection must not hide independently
+        // recorded on-clock staff or invent a zero when attendance is unknown.
+        count:s.available?(tracked||s.value.count>0?s.value.count:null):
+          tracked?onClockCount:null,
+        asOf:s.available?s.value.asOf:null,
+        people:s.available?s.value.people.slice(0,15):null};
     },
   },
   get_schedule: {
