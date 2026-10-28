@@ -1,12 +1,12 @@
 name: sync-cafe-data
 
-# Incrementally syncs café data from "My café" (seiyunyemenicoffee@gmail.com) into
-# "Test Café" (mail2raj27@gmail.com). Idempotent — only inserts rows new since the
-# last run, never touches anything already modified in Test Café. See
-# scripts/sync-cafe-data.mjs for the full table scope and exclusions.
+# Syncs café operating data between two café businesses in this project (ids live in
+# scripts/sync-cafe-data.mjs, not here, to keep account info out of source control).
+# Idempotent and one-directional — see the header comment in that script for the full
+# table scope, exclusions, and the insert-if-missing vs. refresh-window strategy.
 #
 # Runs on GitHub's infrastructure, not on anyone's laptop, so it keeps going even if
-# the local machine is off or this chat session has ended.
+# the local machine is off or the session that set it up has ended.
 #
 # Self-expires after the 14-day window below. To extend, bump SYNC_CUTOFF_DATE.
 # To stop early, disable or delete this workflow from the Actions tab.
@@ -16,9 +16,17 @@ on:
     - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
+concurrency:
+  group: cafe-data-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check 14-day sync window
         id: gate
