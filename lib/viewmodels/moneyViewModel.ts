@@ -60,7 +60,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
       to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")});
   const monthlyStaffCents=monthLabor.projectedMonthlyLaborCents;
 
-  const salesHistory = snapshot.last28Days;
+  const salesHistory = snapshot.breakEvenDays??snapshot.last28Days;
   const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
   const productCosts = summarizeResolvedSoldProductCosts(breakEvenCostItems);
   const missingProductCosts = productCosts.missingProductCosts;
