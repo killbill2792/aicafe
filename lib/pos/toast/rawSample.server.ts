@@ -25,10 +25,10 @@ const PERSONAL_FIELD=/(?:^name$|^displayName$|^nickname$|^firstName$|^lastName$|
 const PERSONAL_PARENT=/(?:^customer$|^customerInfo$|^customerDetails$|^guest$|^guestInfo$|^loyalty$|^loyaltyAccount$|^patron$|^card$|^cardInfo$|^cardDetails$|^creditCard$|^paymentCard$|^cardholder$|^person$|^recipient$|^buyer$|^purchaser$|^payer$|^contact$|^deliveryInfo$|^billing$|^shipping$)/i;
 const CONTACT_FIELD=/(?:email|phone|mobile|fax|street|address|postal|zipCode|latitude|longitude|^lat$|^lon$|^lng$|ipAddress|birth|^firstName$|^lastName$|^fullName$|^chosenName$|^(?:customer|guest|cardholder|employee|server|cashier|recipient|buyer|purchaser|payer|patron)(?:First|Last|Full|Chosen)?Name$)/i;
 const PERSONAL_LOCATION=/^(?:city|country|state|suite|unit)$/i;
-const CARD_SECRET=/(?:cardNumber|cardLast4|lastFour|last4|first6|firstSix|pan$|cvv|cvc|magstripe|trackData|expiry|expiration|expireDate|cardholderName|cardName|networkId|networkTransactionIdentifier)/i;
+const CARD_SECRET=/(?:cardNumber|cardLast4|lastFour|last4|first5|firstFive|first6|firstSix|pan$|cvv|cvc|magstripe|trackData|expiry|expiration|expireDate|cardholderName|cardName|networkId)/i;
 const AUTH_SECRET=/(?:password|secret|authorization|token|apiKey|credential|sessionToken|signature|passcode|pin$|routingNumber|accountNumber|deviceId)/i;
 const FREEFORM=/(?:notes?|memo|comment|message|instructions?|^text$|^tabName$|receiptText|^description$)/i;
-const CUSTOMER_ID=/(?:^customer(?:Id|Guid|Identifier|AccountId|AccountGuid|Number|ExternalId)$|^guest(?:Id|Guid|Identifier)$|^loyalty(?:Id|Guid|Identifier|AccountId|AccountGuid|AccountNumber|CustomerId|CustomerGuid)$|^card(?:Id|Guid|Fingerprint|TokenId)$|^creditCard(?:Id|Guid|Fingerprint)$|^cardPaymentId$|^paymentCardId$|^cardTokenId$|^maskedLoyaltyIdentifier$)/i;
+const CUSTOMER_ID=/(?:^customer(?:Id|Guid|Identifier|AccountId|AccountGuid|Number|ExternalId)$|^guest(?:Id|Guid|Identifier)$|^loyalty(?:Id|Guid|Identifier|AccountId|AccountGuid|AccountNumber|CustomerId|CustomerGuid)$|^card(?:Id|Guid|Fingerprint|TokenId)$|^creditCard(?:Id|Guid|Fingerprint)$|^cardPaymentId$|^paymentCardId$|^cardTokenId$|^networkTransactionIdentifier$|^tenderTransactionGuid$|^maskedLoyaltyIdentifier$)/i;
 const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
 const isPersonalContext=(context:string)=>PERSONAL_PARENT.test(context);
 const isSensitiveId=(key:string,context:string)=>CUSTOMER_ID.test(key)||
@@ -143,11 +143,11 @@ export async function claimToastRawSample(db:Pick<SupabaseClient,"rpc">,business
  const {data,error}=await db.rpc("toast_claim_raw_sample",{p_business_id:businessId,p_restaurant_guid:restaurantGuid,p_business_date:businessDate});
  if(error)throw new ToastApiError("unavailable");return data===true;
 }
-function pathFor(s:Entry,day:string,guid:string,id?:string,page=1,token?:string,window?:{start:Date;end:Date}){
+function pathFor(s:Entry,day:string,guid:string,id?:string,page=1,token?:string,window?:{start:Date;end:Date},paymentDateField="paidBusinessDate"){
  let path=s.path.replace("{timeRange}","day").replace(/\{(?:guid|employeeId|shiftId|timeEntryId|jobId|restaurantGUID|managementGroupGUID|reportRequestGuid)\}/g,id??guid);
  const params=new URLSearchParams();
  if(s.scope==="date")
-  params.set(s.endpoint==="orders/v2/payments"?"paidBusinessDate":"businessDate",day.replaceAll("-",""));
+  params.set(s.endpoint==="orders/v2/payments"?paymentDateField:"businessDate",day.replaceAll("-",""));
  if(s.scope==="window"){
   const start=window?.start??new Date(day+"T00:00:00Z");
   const end=window?.end??new Date(start.getTime()+86400000);
