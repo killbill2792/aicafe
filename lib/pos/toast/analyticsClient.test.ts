@@ -57,3 +57,32 @@ it("diagnostic GET waits for one exhausted ERA budget slot and retries",async()=
  expect(denied).toBe(false);
  expect(f.rpc.mock.calls.filter(([name])=>name==="toast_claim_era_request")).toHaveLength(2);
 });
+
+
+it("retains an ERA result as immutable raw evidence and six typed measurements",async()=>{
+ const f=fixture();
+ const writes:Array<{table:string;data:unknown;options:unknown}>=[];
+ const original=f.db.from.bind(f.db);
+ const db={...f.db,from(table:string){
+  if(table==="toast_raw_records"||table==="toast_analytics_results")
+   return {upsert:async(data:unknown,options:unknown)=>{
+    writes.push({table,data,options});return {error:null};
+   }};
+  return original(table);
+ }} as unknown as SupabaseClient;
+ const report="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+ const row={restaurantGuid:g,businessDate:"20261020",
+  netSalesAmount:10.25,ordersCount:2,discountAmount:1,
+  refundAmount:0,voidOrdersCount:0,voidOrdersAmount:null};
+ await createToastAnalyticsClient(db,b,Date.now()+20000).persistDay(g,"2026-10-20",report,row);
+ expect(writes).toHaveLength(2);
+ expect(writes[0].table).toBe("toast_raw_records");
+ expect(writes[1].table).toBe("toast_analytics_results");
+ expect(writes[1].data).toEqual(expect.arrayContaining([
+  expect.objectContaining({metric:"net_sales_cents",value_numeric:1025})
+ ]));
+ await expect(createToastAnalyticsClient(db,b,Date.now()+20000).persistDay(
+  "dddddddd-dddd-4ddd-8ddd-dddddddddddd","2026-10-20",report,row))
+  .rejects.toMatchObject({category:"invalid_response"});
+ expect(writes).toHaveLength(2);
+});

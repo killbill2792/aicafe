@@ -213,6 +213,7 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
   x.businessDate===day8(day));
  if(match.length!==1)throw new ToastApiError("invalid_response");
  const row=match[0];
+ await client.persistDay(p.restaurantGuid,day,reportId,row);
  const net=toastMoneyCents(row.netSalesAmount),discount=toastMoneyCents(row.discountAmount);
  const refunds=toastMoneyCents(row.refundAmount);
 

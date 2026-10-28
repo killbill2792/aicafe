@@ -1,7 +1,7 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import {createHash} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
-const mocked=vi.hoisted(()=>({mode:"internal",request:vi.fn(),requestDay:vi.fn(),getDay:vi.fn()}));
+const mocked=vi.hoisted(()=>({mode:"internal",request:vi.fn(),requestDay:vi.fn(),getDay:vi.fn(),persistDay:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./client",async()=>{
  const {z}=await import("zod");
@@ -10,7 +10,7 @@ vi.mock("./client",async()=>{
 });
 vi.mock("./checkMode",()=>({detectToastCheckMode:async()=>mocked.mode,setToastCheckMode:vi.fn(async(_db:unknown,_b:string,mode:string)=>{mocked.mode=mode;return true;})}));
 vi.mock("./analyticsClient",()=>({createToastAnalyticsClient:()=>({
- requestDay:mocked.requestDay,getDay:mocked.getDay})}));
+ requestDay:mocked.requestDay,getDay:mocked.getDay,persistDay:mocked.persistDay})}));
 vi.mock("./adapter",()=>({toastMoneyCents:(v:number)=>Math.round(v*100)}));
 vi.mock("./dayParser",()=>({parseToastDayPage:()=>({orders:[],unparsed:[]})}));
 import {reconcileToastDays,internalOrderProof} from "./reconcile";
@@ -115,7 +115,7 @@ const orderWithAutoGratAndGiftCard=()=>[{
   payments:[{guid:payment,amount:62,tipAmount:3,paymentStatus:"CAPTURED"}]}]
 }];
 beforeEach(()=>{mocked.request.mockReset();mocked.requestDay.mockReset();
- mocked.getDay.mockReset();mocked.requestDay.mockResolvedValue(report);
+ mocked.getDay.mockReset();mocked.persistDay.mockReset();mocked.requestDay.mockResolvedValue(report);
  mocked.request.mockImplementation(async(path:string)=>
   path.includes("paidBusinessDate")?[payment]:orderWithAutoGratAndGiftCard());
 });

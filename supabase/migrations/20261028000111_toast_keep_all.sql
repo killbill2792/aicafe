@@ -32,6 +32,23 @@ grant select,insert on public.toast_raw_records to service_role;
 alter table public.toast_unparsed_orders
  add column if not exists raw_record_id uuid references public.toast_raw_records(id) on delete set null;
 
+-- Current typed ERA values, with immutable versions in toast_raw_records.
+create table if not exists public.toast_analytics_results (
+ business_id uuid not null references public.businesses(id) on delete cascade,
+ restaurant_guid uuid not null, business_date date not null,
+ report text not null, metric text not null, value_numeric numeric,
+ value_json jsonb, fetched_at timestamptz not null default now(),
+ primary key (business_id,restaurant_guid,business_date,report,metric)
+);
+create index if not exists toast_analytics_results_date_idx
+ on public.toast_analytics_results(business_id,business_date);
+alter table public.toast_analytics_results enable row level security;
+revoke all on public.toast_analytics_results from public,anon,authenticated;
+create policy "owner read" on public.toast_analytics_results for select
+ to authenticated using (public.scheduling_is_owner(business_id));
+grant select on public.toast_analytics_results to authenticated;
+grant select,insert,update on public.toast_analytics_results to service_role;
+
 -- Capture individual raw orders, including orders the parser cannot recognize.
 -- Source page + 1-based array offset make invalid/missing order GUIDs addressable.
 create or replace function public.toast_archive_page(
