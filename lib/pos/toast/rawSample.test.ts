@@ -82,6 +82,15 @@ describe("read-only Toast coverage diagnostics",()=>{
   expect(new Set(getters.map(e=>e.endpoint)).size).toBe(88);
   expect(getters.every(e=>e.doc.startsWith("https://doc.toasttab.com/openapi/"))).toBe(true);
  });
+ it("retains menu selections but removes guest check and payment labels",()=>{
+  const raw={checks:[{name:"Guest Alex",openedDate:"2026-10-20T09:05:00Z",
+    selections:[{name:"Latte",price:5.5,modifiers:[{name:"Oat Milk",price:1}]}]}],
+   payments:[{name:"Private card payer",amount:6.5,cardEntryMode:"TAP"}]};
+  const json=JSON.stringify(redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY));
+  for(const privateValue of ["Guest Alex","Private card payer"])expect(json).not.toContain(privateValue);
+  for(const businessValue of ["Latte","Oat Milk","2026-10-20T09:05:00Z","TAP"])
+   expect(json).toContain(businessValue);
+ });
  it("keeps paths for nested arrays",()=>{
   expect(toastFieldPaths({items:[{name:"Latte",price:5}]})).toContain("items[].price");
  });
