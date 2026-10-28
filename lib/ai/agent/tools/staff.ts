@@ -34,8 +34,10 @@ export const staffTools = {
       return {source:"current_staff",period:null,agentId:"olivia",
         missing:[...s.quality.missingInputs,...(attendance?.quality.missingInputs??["attendanceReaderUnavailable"])],
         attendanceTracked:tracked,onClockCount:attendance?.available?attendance.value.onClockCount:null,
-        count:tracked?s.value.count:null,asOf:s.value.asOf,
-        people:tracked?s.value.people.slice(0,15):[]};
+        // Keep independent, recorded on-shift evidence even if the separate
+        // attendance status read is missing; do not invent zero without evidence.
+        count:tracked||s.value.count>0?s.value.count:null,asOf:s.value.asOf,
+        people:s.value.people.slice(0,15)};
     },
   },
   get_schedule: {
