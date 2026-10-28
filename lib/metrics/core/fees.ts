@@ -82,7 +82,8 @@ export function cardFeesForDays(
       sum+=day.cardFeesCents;
       // A positive legacy fee without a status can still be used. An
       // unqualified zero is NOT proof the processor charged nothing.
-      if(day.cardFeesStatus==="estimated")estimatedDays++;else actualDays++;
+      // Untyped legacy positive fees are usable evidence, never certified actuals.
+      estimatedDays++;
     }else{
       sum+=(day.cardSalesCents??day.netSalesCents)*DEFAULT_PROCESSING_FEE_RATE_BPS/10000;
       defaultDays++;
