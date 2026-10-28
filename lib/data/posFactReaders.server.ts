@@ -57,7 +57,6 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
   async peakHours(period:CafeStatePeriod):Promise<KnownSlice<PeakHourFacts>>{
    checkPeriod(period);
    const coverage=await toastCoverage(period);
-   const blocked=coverage.blocked;
    const found=await readPages<{business_date:string;hour_local:number;location_id:string|null;net_sales_cents:unknown;orders_count:unknown}>((start,end)=>
      db.from("hourly_sales_rollup").select("business_date,hour_local,location_id,net_sales_cents,orders_count")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
@@ -67,10 +66,8 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
    if(found.truncated&&!found.rows.length)return missing("hourlySalesPageLimit");
    if(!found.rows.length)return missing("noHourlySalesFacts");
    try{
-    const hours=found.rows.filter(r=>!blocked.has(r.business_date)).map(r=>({date:r.business_date,hourLocal:integer(r.hour_local),locationId:r.location_id,
+    const hours=found.rows.map(r=>({date:r.business_date,hourLocal:integer(r.hour_local),locationId:r.location_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
-    if(!hours.length)return {available:false,value:null,quality:{level:"low",
-      missingInputs:[...coverage.quality,"toastExcludedDays"],estimatedInputs:[],staleInputs:[]}};
     return known({hours},[...missingDays(period,hours.map(r=>r.date),"hourlySalesDatesNotObserved"),
       ...coverage.quality,...(found.error?["hourlySalesUnavailable"]:[]),...(found.truncated?["hourlySalesPageLimit"]:[])]);
    }catch{return missing("unsafeHourlySalesFacts");}
@@ -78,7 +75,6 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
   async employeeSales(period:CafeStatePeriod):Promise<KnownSlice<EmployeeSalesFacts>>{
    checkPeriod(period);
    const coverage=await toastCoverage(period);
-   const blocked=coverage.blocked;
    const found=await readPages<{business_date:string;employee_id:string;net_sales_cents:unknown;orders_count:unknown}>((start,end)=>
      db.from("employee_sales_rollup").select("business_date,employee_id,net_sales_cents,orders_count")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
@@ -87,10 +83,8 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
    if(found.truncated&&!found.rows.length)return missing("employeeSalesPageLimit");
    if(!found.rows.length)return missing("noEmployeeSalesFacts");
    try{
-    const employees=found.rows.filter(r=>!blocked.has(r.business_date)).map(r=>({date:r.business_date,employeeId:r.employee_id,
+    const employees=found.rows.map(r=>({date:r.business_date,employeeId:r.employee_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
-    if(!employees.length)return {available:false,value:null,quality:{level:"low",
-      missingInputs:[...coverage.quality,"toastExcludedDays"],estimatedInputs:[],staleInputs:[]}};
     return known({employees},[...missingDays(period,employees.map(r=>r.date),"employeeSalesDatesNotObserved"),
       ...coverage.quality,...(found.error?["employeeSalesUnavailable"]:[]),...(found.truncated?["employeeSalesPageLimit"]:[])]);
    }catch{return missing("unsafeEmployeeSalesFacts");}
