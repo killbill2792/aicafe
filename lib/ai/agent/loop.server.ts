@@ -129,6 +129,7 @@ export async function runAgentTurn(args: {
   };
   const resolveState=newResolveState(args.ownerText,args.history);
   args.context.resolveState=resolveState;
+  args.context.ownerMessages=(args.history??[]).filter(m=>m.role==="user").map(m=>m.content);
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
   const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0, model: undefined as string|undefined };
@@ -272,6 +273,26 @@ export async function runAgentTurn(args: {
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         observeToolResult(resolveState,result);
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
+        // Price inputs can be incomplete even though the product-cost baseline
+        // is useful. Always generate its verified existing ask_owner card.
+        if(tool.name==="suggest_new_item_price"&&result.askOwnerRequired===true&&
+           Array.isArray(result.candidates)&&!resolveState.asked){
+          const options=result.candidates.slice(0,4).flatMap(candidate=>
+            candidate&&typeof candidate==="object"&&
+            typeof candidate.label==="string"&&typeof candidate.id==="string"?
+              [{label:candidate.label,value:candidate.id}]:[]);
+          if(options.length>=2){
+            const question="Which missing monthly cost can you provide?";
+            const card=await executeAgentTool("ask_owner",{
+              question,kind:"choice",options,allowOther:true},args.context);
+            if(card.missing.length===0){
+              results.push({callId:"verified-pricing-owner-card",name:"ask_owner",arguments:"{}",result:card});
+              startedTools.push("ask_owner");usage.toolCalls++;
+              askedQuestion=question;finished=true;
+              break;
+            }
+          }
+        }
         if(tool.name==="ask_owner"&&result.missing.length===0&&typeof result.question==="string"){
           askedQuestion=result.question;finished=true;
           for(const skipped of calls.slice(index+1))input.push({type:"function_call_output",call_id:skipped.call_id,output:JSON.stringify({error:"ask_owner_ends_turn"})});

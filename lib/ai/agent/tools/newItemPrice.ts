@@ -19,7 +19,7 @@ export const newItemPriceTools={suggest_new_item_price:{
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const v=schema.parse(raw),owner=v.ownerInputs;
   if(ctx.readEconomics){
-   const {economics}=await ctx.readEconomics();
+   const {economics,ownerIngredientRate}=await ctx.readEconomics();
    const ownerLabor=ownerMonthlyAmount(owner?.laborCents??null,owner?.laborPeriod??null,ctx.asOf);
    const monthlyStaff=ownerLabor!==null?figure(ownerLabor,"owner","You told me"):economics.monthlyStaff;
    const month=calendarMonth(ctx.asOf);
@@ -41,13 +41,20 @@ export const newItemPriceTools={suggest_new_item_price:{
     }
    }
    // Only the owner's current message can authorize a different target.
-   const stated=ctx.resolveState?.ownerText??"";
-   const costOwner=/(?:drink|product|ingredient)\s*cost|costo|تكلفة/iu.test(stated);
-   const marginOwner=/(?:operating|profit)\s*margin|margen|هامش/iu.test(stated);
-   const costPct=costOwner&&v.target_drink_cost_percent!=null?
-    v.target_drink_cost_percent/100:COFFEE_SHOP_PROFILE.targetProductCostPercent;
-   const operatingMargin=marginOwner&&v.operating_margin_percent!=null?
-    v.operating_margin_percent/100:economics.targetMargin;
+   // Verify model-supplied percentages against literal owner utterances, never
+   // infer a margin from the agent's proposed target or a previous answer.
+   const utterances=[ctx.resolveState?.ownerText??"",...(ctx.ownerMessages??[])];
+   const statedPercent=(pattern:RegExp,value:number|null|undefined)=>value!=null&&
+    utterances.some(line=>{
+     const match=line.match(pattern);
+     return match&&Math.abs(Number(match[1])-value)<.001;
+    });
+   const costOwner=statedPercent(/(?:drink|product|ingredient)\\s*cost\\s*(?:target|of|is|to)?\\s*(\\d+(?:\\.\\d+)?)\\s*%/iu,v.target_drink_cost_percent);
+   const marginOwner=statedPercent(/(?:operating|profit)\\s*margin\\s*(?:of|is|to)?\\s*(\\d+(?:\\.\\d+)?)\\s*%/iu,v.operating_margin_percent);
+   const savedTarget=ownerIngredientRate??COFFEE_SHOP_PROFILE.targetProductCostPercent;
+   const costPct=costOwner?v.target_drink_cost_percent!/100:
+    Math.max(.25,Math.min(.35,savedTarget));
+   const operatingMargin=marginOwner?v.operating_margin_percent!/100:economics.targetMargin;
    const sparse=economics.laborCoveredDays!=null&&economics.laborWindowDays!=null&&
     (economics.laborCoveredDays<7||economics.laborCoveredDays/economics.laborWindowDays<.5);
    const labor=sparse&&ownerLabor===null?figure(null,"missing",
