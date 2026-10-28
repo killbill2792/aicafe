@@ -67,7 +67,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         {!hourly.closed && <div className="mt-2 font-headline text-[40px] font-bold text-staff">{numberFormat.format(drinks.drinksNeededPerDay)}</div>}
         {!hourly.closed && <p className="text-[17px] font-semibold">{t("drinksToCover")}</p>}
         <p className="mt-2 text-[17px] text-ink-muted">{hourly.closed ? t("closedToday") : t("aboutPerHour", { count: numberFormat.format(hourly.perHour ?? 0) })}</p>
-        {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[17px] text-ink-muted">{notes("breakEvenLaborMissing")}</p>
+        {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[17px] text-ink-muted">{notes("breakEvenLaborMissing")}</p>}
         {hourly.fallback && <Link href="/more/cafe-profile?focus=hours" className="mt-3 inline-flex min-h-12 items-center text-[17px] font-bold text-staff underline">{t("setCafeHours")}</Link>}
       </section>}
       {missing.length > 0 && <section className="rounded-card-lg bg-card p-5">
