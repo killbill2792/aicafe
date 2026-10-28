@@ -3352,6 +3352,7 @@
   },
   "DataNotes": {
     "todayNotImported": "Hoy todavía no se ha importado. El último día completo fue el {date}: {amount}.",
+    "todayStoredUnverified": "Se muestran las ventas guardadas de hoy, pero no se ha verificado el estado de la importación.",
     "todayLastRecordedUnverified": "Hoy todavía no se ha importado. El último día registrado fue el {date}: {amount} (no se ha verificado si está completo).",
     "todayNotImportedNoHistory": "Hoy todavía no se ha importado. No hay ningún día completo de ventas guardado.",
     "toastDaysNeedLook": "Hay {count} días que revisar: {dates}{more}.",
