@@ -6,7 +6,7 @@ import { laborKnown } from "@/lib/calc";
 import { previousMonthKey } from "./period";
 import { profitTone, type ProfitTone } from "./profitTone";
 import {profitForPeriod} from "@/lib/metrics/core/profit";
-import {cardFeesForDays} from "@/lib/metrics/core/fees";
+import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
 
 export type DayCellState =
   | { kind: "actual"; ownerProfitCents: number; tone: ProfitTone; isEstimate: boolean }
@@ -57,6 +57,7 @@ export function buildMonthCalendarViewModel(params: {
   todayDateStr: string;
   isCurrentMonth: boolean;
   projectedDays?: DayContribution[];
+  ownerFeePlans?:readonly OwnerFeePlan[];
 }): MonthCalendarViewModel {
   const { monthData, recoveryOrder, todayDateStr, isCurrentMonth, projectedDays = [] } = params;
   const { monthKey, daysInMonth, days, categoryAmounts, openHours } = monthData;
@@ -89,7 +90,7 @@ export function buildMonthCalendarViewModel(params: {
     if(dayFacts&&hasSalesCoverage(dayFacts)){
       const runningCostShareCents = roundHalfUpToCent(runningCostsForPeriodCents(categoryAmounts, date, date));
       const staffCents=(dayFacts.wagesCents??0)+(dayFacts.staffTaxCents??0);
-      const fees=cardFeesForDays([dayFacts]);
+      const fees=cardFeesForDays([dayFacts],params.ownerFeePlans??null);
       const partial=profitForPeriod([dayFacts],
         {amountCents:runningCostShareCents,missing:categoryAmounts.filter(x=>x.isMissing).map(x=>x.categoryCode),
           estimated:hasEstimatedCosts},

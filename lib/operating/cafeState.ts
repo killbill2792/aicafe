@@ -1,5 +1,5 @@
 import { laborKnown } from "@/lib/calc";
-import {cardFeesForDays} from "@/lib/metrics/core/fees";
+import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {profitForPeriod} from "@/lib/metrics/core/profit";
 import {laborForPeriod} from "@/lib/metrics/core/labor";
 import type {DailyFacts,CategoryMonthlyAmount} from "@/lib/calc";
@@ -221,7 +221,8 @@ export function cafeStateFromSnapshot(
     amountCents:historical!==undefined?allocated.get(line.categoryCode)??0:
       line.isMissing?0:allocated.get(line.categoryCode)??0,
   }));
-  const feeResult=cardFeesForDays(days);
+  const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
+  const feeResult=cardFeesForDays(days,feePlans??null);
   const laborResult=laborForPeriod(
     Array.from({length:expectedDays},(_,index)=>({
       date:new Date(Date.parse(period.from+"T12:00:00Z")+index*86400000).toISOString().slice(0,10),

@@ -12,6 +12,7 @@ import { formatCents } from "@/lib/calc";
 import type { BucketResult } from "@/lib/calc";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import type { BusinessSnapshot } from "@/lib/data/types";
+import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 import { getMonthCalendar } from "@/lib/data/getMonthCalendar";
 import { RUNNING_COST_CODES } from "@/lib/data/runningCostCatalog";
 import { buildCostRecoveryViewModel } from "@/lib/viewmodels/moneyViewModel";
@@ -115,6 +116,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
     todayDateStr: snapshot.todayDateStr,
     isCurrentMonth,
     projectedDays: isCurrentMonth ? vm.projectedDays : [],
+    ownerFeePlans:(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans,
   });
   const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(new Date(`${calMonthKey}-01T00:00:00`));
   const firstWeekday = new Date(`${calMonthKey}-01T00:00:00`).getDay();

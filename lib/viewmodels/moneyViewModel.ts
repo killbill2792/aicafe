@@ -28,7 +28,7 @@ import { regularHoursStateForDate } from "@/lib/business/openHours";
 import { periodComparisonState } from "./periodComparison";
 import { periodCalendarRange } from "./period";
 import { businessCostSummaryFromSnapshot } from "@/lib/operating/businessCosts";
-import {cardFeesForDays} from "@/lib/metrics/core/fees";
+import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {profitForPeriod} from "@/lib/metrics/core/profit";
 import {laborForPeriod} from "@/lib/metrics/core/labor";
 import {breakEvenFor} from "@/lib/metrics/core/breakEven";
@@ -68,7 +68,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const sharedBreakEven=breakEvenFor({
     days:salesHistory,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
     monthlyBillsCents,monthlyStaffCents,
-    observedIngredientCents:productCosts.totalCostCents,
+    observedIngredientCents:productCosts.totalCostCents,ownerFeePlans:feePlans,
   });
   const breakEven=sharedBreakEven.calculation;
   const breakEvenNotes=[...sharedBreakEven.notes,
@@ -120,7 +120,8 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   // Retain observed cents even when other wage rows are unknown; never show unknown as verified zero.
   const wagesCents=sumCents(recordedLaborDays,d=>d.wagesCents??0);
   const staffTaxCents=sumCents(recordedLaborDays,d=>d.staffTaxCents??0);
-  const feeResult=cardFeesForDays(days);
+  const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
+  const feeResult=cardFeesForDays(days,feePlans??null);
   const cardFeesCents=feeResult.amountCents;
   // This is the same known-cost contract consumed by Supervisor; Money still
   // separately gates any owner-profit claim on the existing strict coverage.

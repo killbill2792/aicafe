@@ -1,5 +1,6 @@
 import {calculateBreakEvenSales,type BreakEvenSalesResult} from "@/lib/calc/breakEvenSales";
 import {shiftCafeDate} from "./clock";
+import {cardFeesForDays,type OwnerFeePlan} from "./fees";
 export type BreakEvenDay={
   date:string;netSalesCents:number;ingredientsCents:number;cardFeesCents:number;
   drinksCount:number;salesDataStatus?:"actual"|"missing";
@@ -13,6 +14,7 @@ export function breakEvenFor(input:{
   days:readonly BreakEvenDay[];asOfDate:string;daysInMonth:number;
   monthlyBillsCents:number|null;monthlyStaffCents:number|null;
   observedIngredientCents?:number|null;observedProcessingFeesCents?:number|null;
+  ownerFeePlans?:readonly OwnerFeePlan[];
 }):BreakEvenResult{
   const start=shiftCafeDate(input.asOfDate,-28);
   const end=shiftCafeDate(input.asOfDate,-1);
@@ -24,7 +26,9 @@ export function breakEvenFor(input:{
   if(input.monthlyStaffCents===null)notes.push("breakEvenLaborMissing");
   const observedSalesCents=window.reduce((sum,d)=>sum+d.netSalesCents,0);
   const observedIngredientCents=input.observedIngredientCents??window.reduce((sum,d)=>sum+d.ingredientsCents,0);
-  const observedProcessingFeesCents=input.observedProcessingFeesCents??window.reduce((sum,d)=>sum+d.cardFeesCents,0);
+  const feeResult=cardFeesForDays(window,input.ownerFeePlans??null);
+  const observedProcessingFeesCents=input.observedProcessingFeesCents??feeResult.amountCents;
+  notes.push(...feeResult.notes.filter(key=>key!=="feeNetSalesProxy"));
   const drinks=window.reduce((sum,d)=>sum+d.drinksCount,0);
   const result=calculateBreakEvenSales({
     monthlyBillsCents:input.monthlyBillsCents??0,

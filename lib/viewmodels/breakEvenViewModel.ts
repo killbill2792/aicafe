@@ -10,6 +10,7 @@ import {
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { expectedMissingCostLines } from "@/lib/expenses/expectedCosts";
 import {breakEvenFor} from "@/lib/metrics/core/breakEven";
+import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {laborForPeriod} from "@/lib/metrics/core/labor";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
 
@@ -39,7 +40,8 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const shared=breakEvenFor({days,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
     monthlyBillsCents:Math.round(runningPerDay*snapshot.daysInMonth),
     monthlyStaffCents:labor.coveredDays>0?Math.round(avgDailyStaffCost*snapshot.daysInMonth):null,
-    observedIngredientCents:productCosts.totalCostCents});
+    observedIngredientCents:productCosts.totalCostCents,
+    ownerFeePlans:(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans});
   const needed=shared.drinksPerDay??0;
   const missingCosts = expectedMissingCostLines(snapshot.runningCostLines);
   const missingCostLabels = missingCosts.map((line) => line.label);

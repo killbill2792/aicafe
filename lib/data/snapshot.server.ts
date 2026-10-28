@@ -11,6 +11,8 @@ import { normalizeOpenHours } from "@/lib/business/openHours";
 import { readPeriodItemSales } from "./periodItemSales.server";
 import {readMenuComboCostComponents} from "./comboCosts.server";
 import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
+import {getOwnerConfirmedProcessingFeePlans} from "@/lib/pos/processingFeeEstimate.server";
+import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
@@ -154,6 +156,7 @@ export async function getBusinessSnapshotFromDb(
     .in("status", ["new", "seen"]);
   const leakingCents = (alertRows ?? []).reduce((sum, a) => sum + Math.max(0, a.impact_cents ?? 0), 0);
 
+  const ownerFeePlans=await getOwnerConfirmedProcessingFeePlans(supabase,businessId);
   return {
     business: {
       id: businessRow.id,
@@ -186,7 +189,8 @@ export async function getBusinessSnapshotFromDb(
     alerts: { count: alertsCount ?? 0, leakingCents },
     staffShiftsToday,
     staffNowIso: new Date().toISOString(),
-  };
+    ownerFeePlans,
+  } as BusinessSnapshot;
 }
 
 /** All of today's timecards (business-timezone calendar day), joined to the employee's name/role. */
@@ -341,7 +345,7 @@ async function getMenuItemSnapshots(
  */
 async function readHistoricalBusinessSnapshot(
   supabase:SupabaseClient,businessId:string,period:{from:string;to:string},
-):Promise<BusinessSnapshot & {historicalPeriod:{
+):Promise<BusinessSnapshot & {ownerFeePlans:OwnerFeePlan[];historicalPeriod:{
   days:import("@/lib/calc").DailyFacts[];
   recorded:import("@/lib/calc").DailyFacts[];
   monthlyAmounts:import("@/lib/calc").CategoryMonthlyAmount[];
@@ -424,6 +428,7 @@ async function readHistoricalBusinessSnapshot(
     amountCents:line.amountCents,isEstimate:line.isEstimate,
     isMissing:line.isMissing,isExpected:missingExpenseCategories.some(x=>x.startsWith("expense:"+line.categoryCode+":")),
   }));
+  const ownerFeePlans=await getOwnerConfirmedProcessingFeePlans(supabase,businessId);
   return {
     business:{id:business.id,name:business.name,timezone:business.timezone,
       payrollTaxRate:Number(business.payroll_tax_rate),
@@ -449,6 +454,7 @@ async function readHistoricalBusinessSnapshot(
     alerts:{count:0,leakingCents:0},staffShiftsToday:[],staffNowIso:new Date().toISOString(),
     historicalPeriod:{days:sales,recorded,monthlyAmounts,
       missingExpenseCategories,estimatedExpenseCategories},
+    ownerFeePlans,
   };
 }
 
