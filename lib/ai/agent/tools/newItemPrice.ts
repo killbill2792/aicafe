@@ -121,7 +121,8 @@ export const newItemPriceTools={suggest_new_item_price:{
    const numberEstimates=lines.flatMap(line=>[line.result,...line.inputs.map(i=>i.value)])
     .flatMap(value=>value.kind==="money"?[{value:value.cents,unit:"cents" as const,detail:"breakEvenSales" as const}]:
       value.kind==="count"?[{value:value.n,unit:"count" as const,detail:"breakEvenSales" as const}]:
-      value.kind==="percent"?[{value:value.bps,unit:"bps" as const,detail:"breakEvenSales" as const}]:[]);
+      value.kind==="percent"?[{value:value.bps,unit:"bps" as const,detail:"breakEvenSales" as const}]:
+      [] as Array<{value:number;unit:"cents"|"count"|"bps";detail:"breakEvenSales"}>);
    const candidates=[
     ...(labor.valueCents===null?[{id:"labor-monthly",label:"Provide monthly labor",detail:"Enter monthly labor"},
       {id:"labor-unknown",label:"I don't know labor yet",detail:"Keep it incomplete"}]:[]),
