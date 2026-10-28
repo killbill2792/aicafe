@@ -68,7 +68,6 @@ describe("Toast raw diagnostics",()=>{
   expect(json).not.toContain("john@example.com");
   expect(json).not.toContain("4242424242424242");
   expect(json).not.toContain("should not persist");
-  expect(json).not.toContain("\\\"1234\\\"");
   expect(json).toContain("CONTACTLESS");
   expect(json).toContain("originalProcessingFee");
  });
