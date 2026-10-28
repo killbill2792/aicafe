@@ -393,8 +393,8 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
    d.business_date===date&&d.imported_at&&Date.parse(d.imported_at)>Date.parse(status.payment_repull_at!)))||
   Date.now()-Date.parse(status.payment_repull_at!)>6*3600000);
   if(repulled){
-   await writeReconciliation(db,p,day,status,{type:"internal_missing",
-    reasons:["unverified_payment_order"],paidOtherDay});
+   await writeReconciliation(db,p,day,status,{type:"payment_recovery_exhausted",
+    reasons:["unknown_payment_order"],paidOtherDay});
    return null;
   }else {
    // Let the modified-order scan import the other day before declaring a mismatch.
