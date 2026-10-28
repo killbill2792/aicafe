@@ -49,7 +49,7 @@ const ISO=z.iso.date();
 const PAGE_CAP=20;
 const PAGE_SIZE=100;
 const CHUNK_BYTES=180000;
-const RESTRICTED=/(?:password|secret|token|credential|authorization|api.?key|session|cookie|signature|passcode|pin$|ssn|social.?security|routing|account.?number|pan$|cvv|cvc|first.?6|last.?4|last.?four|cardholder|card.?network.?id|card.?number|card.?digits|magstripe|track.?data|expir|email|phone|mobile|fax|birth|first.?name|last.?name|full.?name|chosen.?name|street|address|postal|zip.?code|latitude|longitude|^lat$|^lon$|^lng$|ip.?address|device.?id)/i;
+const RESTRICTED=/(?:password|secret|token|credential|authorization|api.?key|session|cookie|signature|passcode|pin$|ssn|social.?security|routing|account.?number|pan$|cvv|cvc|first.?6|last.?4|last.?four|cardholder|card.?network.?id|card.?number|card.?digits|customer.?name|guest.?name|employee.?name|patron.?name|magstripe|track.?data|expir|email|phone|mobile|fax|birth|first.?name|last.?name|full.?name|chosen.?name|street|address|postal|zip.?code|latitude|longitude|^lat$|^lon$|^lng$|ip.?address|device.?id)/i;
 const FREEFORM=/(?:notes?|memo|comment|message|instructions|^text$|description|receiptText|displayName)/i;
 const IDENTIFIER=/(?:^customer(?:Id|Guid)$|^guest(?:Id|Guid)$|^loyalty(?:Id|Guid|AccountId)$|^cardPaymentId$|^cardFingerprint$|^cardTokenId$|^paymentCardId$|^cardId$|^customerIdentifier$|^loyaltyIdentifier$)/i;
 const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
@@ -226,7 +226,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
      }catch(e){
       if(reason==="lease_lost")break;
       const status=e instanceof ToastApiError?e.status??null:null;
-      const code=e instanceof ToastApiError?e.category:"unavailable";
+      const code=status===204?"no_content":e instanceof ToastApiError?e.category:"unavailable";
       await save(s,{},status,s.page?page:1,code,code);
       break;
      }
