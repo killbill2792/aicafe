@@ -17,13 +17,13 @@ async function readPages<T>(load:(start:number,end:number)=>PromiseLike<Page<T>>
  const rows:T[]=[];
  for(let page=0;page<MAX_PAGES;page++){
   const {data,error}=await load(page*PAGE_SIZE,(page+1)*PAGE_SIZE-1);
-  if(error)return {rows:[],error:true,truncated:false};
-  if(!data)return {rows:[],error:true,truncated:false};
+  if(error)return {rows,error:true,truncated:false};
+  if(!data)return {rows,error:true,truncated:false};
   rows.push(...data);
   if(data.length<PAGE_SIZE)return {rows,error:false,truncated:false};
  }
  // Never expose a saturated dataset as complete, even if exactly MAX_ROWS.
- return {rows:[],error:false,truncated:true};
+ return {rows,error:false,truncated:true};
 }
 function missing<T>(reason:string):KnownSlice<T> {
  return {available:false,value:null,quality:{level:"low",missingInputs:[reason],estimatedInputs:[],staleInputs:[]}};
@@ -60,15 +60,15 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
      .order("business_date").order("hour_local").order("location_id")
      .order("net_sales_cents").order("orders_count").range(start,end));
-   if(found.error)return missing("hourlySalesUnavailable");
-   if(found.truncated)return missing("hourlySalesPageLimit");
+   if(found.error&&!found.rows.length)return missing("hourlySalesUnavailable");
+   if(found.truncated&&!found.rows.length)return missing("hourlySalesPageLimit");
    if(!found.rows.length)return missing("noHourlySalesFacts");
    try{
     const hours=found.rows.filter(r=>!blocked.has(r.business_date)).map(r=>({date:r.business_date,hourLocal:integer(r.hour_local),locationId:r.location_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
     if(!hours.length)return missing("toastExcludedDays");
     return known({hours},[...missingDays(period,hours.map(r=>r.date),"hourlySalesDatesNotObserved"),
-      ...coverage.quality]);
+      ...coverage.quality,...(found.error?["hourlySalesUnavailable"]:[]),...(found.truncated?["hourlySalesPageLimit"]:[])]);
    }catch{return missing("unsafeHourlySalesFacts");}
   },
   async employeeSales(period:CafeStatePeriod):Promise<KnownSlice<EmployeeSalesFacts>>{
@@ -79,15 +79,15 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
      db.from("employee_sales_rollup").select("business_date,employee_id,net_sales_cents,orders_count")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
      .order("business_date").order("employee_id").order("net_sales_cents").order("orders_count").range(start,end));
-   if(found.error)return missing("employeeSalesUnavailable");
-   if(found.truncated)return missing("employeeSalesPageLimit");
+   if(found.error&&!found.rows.length)return missing("employeeSalesUnavailable");
+   if(found.truncated&&!found.rows.length)return missing("employeeSalesPageLimit");
    if(!found.rows.length)return missing("noEmployeeSalesFacts");
    try{
     const employees=found.rows.filter(r=>!blocked.has(r.business_date)).map(r=>({date:r.business_date,employeeId:r.employee_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
     if(!employees.length)return missing("toastExcludedDays");
     return known({employees},[...missingDays(period,employees.map(r=>r.date),"employeeSalesDatesNotObserved"),
-      ...coverage.quality]);
+      ...coverage.quality,...(found.error?["employeeSalesUnavailable"]:[]),...(found.truncated?["employeeSalesPageLimit"]:[])]);
    }catch{return missing("unsafeEmployeeSalesFacts");}
   },
   async payrollFacts(period:CafeStatePeriod):Promise<KnownSlice<PayrollFacts>>{
@@ -96,8 +96,8 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
      db.from("employee_pay_period_facts").select("employee_id,pay_period_end,regular_cents,overtime_cents,double_overtime_cents,gross_cents,employee_tax_cents,employer_tax_cents,net_cents,source")
      .eq("business_id",businessId).gte("pay_period_end",period.from).lte("pay_period_end",period.to)
      .order("pay_period_end").order("employee_id").order("id").range(start,end));
-   if(found.error)return missing("payrollFactsUnavailable");
-   if(found.truncated)return missing("payrollFactsPageLimit");
+   if(found.error&&!found.rows.length)return missing("payrollFactsUnavailable");
+   if(found.truncated&&!found.rows.length)return missing("payrollFactsPageLimit");
    if(!found.rows.length)return missing("noPayrollPeriodFacts");
    try{
     const payPeriods=found.rows.map(r=>({employeeId:r.employee_id,payPeriodEnd:r.pay_period_end,
@@ -112,7 +112,7 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
     ] as const;
     const missingInputs=columns.filter(col=>payPeriods.some(row=>row[col]===null))
       .map(col=>"payrollUnknown:"+col);
-    return known({payPeriods},missingInputs);
+    return known({payPeriods},[...missingInputs,...(found.error?["payrollFactsUnavailable"]:[]),...(found.truncated?["payrollFactsPageLimit"]:[])]);
    }catch{return missing("unsafePayrollFacts");}
   }
  };
