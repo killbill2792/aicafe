@@ -365,9 +365,10 @@ describe("Recovery with known-only missing wages",()=>{
       ...day,wagesCents:200,staffTaxCents:25,laborWageStatus:"missing" as const}:day);
     const partial=buildCostRecoveryViewModel({...fixture,
       monthActualDays:missing,monthRecordedDays:missing});
-    expect(partial.monthlyStaffCents).toBeNull();
+    expect(partial.monthlyStaffCents).toBeGreaterThan(0);
+    expect(partial.breakEvenNotes).toContain("laborWageUnknown");
     expect(partial.allCovered).toBe(false);
-    expect(partial.projectedMonthEndProfitCents).toBeNull();
+    expect(partial.projectedMonthEndProfitCents).not.toBeNull();
     const restored=missing.map((day,i)=>i===0?{
       ...day,laborWageStatus:"actual" as const}:day);
     expect(buildCostRecoveryViewModel({...fixture,

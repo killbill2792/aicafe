@@ -29,8 +29,9 @@ describe("owner-truthful Home inputs", () => {
     const snapshot = getFixtureSnapshot();
     snapshot.runningCostLines.push({ categoryCode: "water", label: "Water", amountCents: 0, isEstimate: false, isMissing: true, isExpected: true });
     const vm = buildBreakEvenViewModel(snapshot);
-    expect(vm.unavailableReason).toBe("missing_costs");
-    expect(vm.whatIfs).toEqual([]);
+    expect(vm.unavailableReason).toBeNull();
+    expect(vm.drinksNeededPerDay).toBeGreaterThan(0);
+    expect(vm.noteKeys).toContain("breakEvenBillsMissing");
     expect(vm.missingCosts[0]?.categoryCode).toBe("water");
   });
 
