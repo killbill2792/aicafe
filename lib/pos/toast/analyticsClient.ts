@@ -93,8 +93,8 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
     if(res.status===429)throw new ToastApiError("rate_limited",429,retryAt);
    }
    if(res.status===401&&attempt===0){auth=await login(true);continue;}
-   if(res.status===401)throw new ToastApiError("authentication");
-   if(res.status===403)throw new ToastApiError("missing_permissions");
+   if(res.status===401)throw new ToastApiError("authentication",401);
+   if(res.status===403)throw new ToastApiError("missing_permissions",403);
    if(res.status===204)throw new ToastApiError("unavailable",204);
    if(res.status===202)return {pending:true as const,body:await res.json().catch(()=>null)};
    if(res.status===429)throw new ToastApiError("rate_limited",429);
@@ -104,8 +104,34 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
   throw new ToastApiError("authentication");
  }
  return {
-  // Diagnostic API: GET only. Leverages the existing ERA-only credential,
-  // rate budget and authentication without requesting or creating reports.
+  // The documented ERA POST requests schedule read-only reports; they do not
+  // mutate orders or restaurant configuration. Only these nine paths are allowed.
+  async requestRaw(path:string,restaurantGuid:string,businessDate:string){
+   const allowed=new Set([
+    "/era/v1/metrics","/era/v1/metrics/day","/era/v1/check/day",
+    "/era/v1/labor/day","/era/v1/menu/day","/era/v1/payout/day",
+    "/era/v1/payout/payments/day","/era/v1/payout/sales-date/day",
+    "/era/v1/guest/payments/day"
+   ]);
+   if(!allowed.has(path)||!GUID.safeParse(restaurantGuid).success||
+      !/^\\d{4}-\\d{2}-\\d{2}$/.test(businessDate))
+    throw new ToastApiError("invalid_response");
+   const date=Number(businessDate.replaceAll("-",""));
+   const body:Record<string,unknown>={
+    restaurantIds:[restaurantGuid],excludedRestaurantIds:[]
+   };
+   if(path.startsWith("/era/v1/payout/")||path.startsWith("/era/v1/guest/")){
+    body.startDate=date;body.endDate=date;
+   }else{
+    body.startBusinessDate=date;body.endBusinessDate=date;
+   }
+   const result=await call("post",path,body);
+   const guid=reportGuid.safeParse(result.body);
+   if(!guid.success)throw new ToastApiError(result.pending?"timeout":"invalid_response",result.pending?202:200);
+   return {guid:guid.data,status:result.pending?202:200};
+  },
+  // Diagnostic data reads use the same existing ERA credential and rate budget.
+
   async getRaw(path:string){
    if(!/^\/era\/v1\/[A-Za-z0-9/_-]+$/.test(path)||path.includes("..")||
     path.length>250)throw new ToastApiError("invalid_response");
