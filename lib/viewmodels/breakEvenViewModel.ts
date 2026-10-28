@@ -23,7 +23,7 @@ const ASSUMED_ML_MILK_PER_DRINK = 150;
 const GALLON_ML = 3_785;
 
 export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
-  const days=snapshot.last28Days.filter(d=>d.date>=shiftCafeDate(snapshot.todayDateStr,-28)&&d.date<snapshot.todayDateStr);
+  const days=(snapshot.breakEvenDays??snapshot.last28Days).filter(d=>d.date>=shiftCafeDate(snapshot.todayDateStr,-28)&&d.date<snapshot.todayDateStr);
   const netSales = sumCents(days, (d) => d.netSalesCents);
   const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
   const productCosts = summarizeResolvedSoldProductCosts(breakEvenCostItems);
