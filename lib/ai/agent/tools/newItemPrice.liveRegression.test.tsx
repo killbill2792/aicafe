@@ -93,8 +93,10 @@ describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
   const result=await newItemPriceTools.suggest_new_item_price.execute(v,context({},"","es"));
   const evidence=compactEvidence([result]),lines=result.explain as ExplainLine[];
   const valid="Precio recomendado: 5,25 US$";
-  expect(verifiedRecommendedPriceInReply(valid,525,"es",[])).toBe(true);
-  expect(acceptedExplainLines(lines,evidence,valid,[],"es",525)).toHaveLength(lines.length);
+  const unverified=checkNumbers(valid,"",[result],"es");
+  expect(unverified).toEqual([]);
+  expect(verifiedRecommendedPriceInReply(valid,525,"es",unverified)).toBe(true);
+  expect(acceptedExplainLines(lines,evidence,valid,unverified,"es",525)).toHaveLength(lines.length);
   const html=renderToStaticMarkup(createElement(HowIGotThis,{
    lines:acceptedExplainLines(lines,evidence,valid,[],"es",525),locale:"es",copy:es.SupervisorChat}));
   expect(html).toContain(es.SupervisorChat.howCalculated);
