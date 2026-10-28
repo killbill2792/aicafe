@@ -53,6 +53,13 @@ Sanitized Toast payments
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
+| payment_type | Toast payment method (card/cash/gift), when supplied. | label | toast | How much was paid by card? |
+| card_type | Card network/type from Toast, when supplied. | label | toast | What was Visa volume? |
+| card_entry_mode | How the card was entered, from Toast. | label | toast | What were keyed-card fees? |
+| original_processing_fee_cents | Original Toast-reported fee, not an estimate. | cents | toast | What fee did Toast report? |
+| processing_fee_cents | Selected fee per payment, or null when unknown. | cents | toast | What were the processing fees? |
+| fee_status | Actual, estimated or missing fee provenance. | label | toast | Which fees are estimates? |
+| Column | Meaning | Unit | Source | Example owner question |
 | business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
 | source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
 | source_ref | Stable reference for the underlying fact. | identifier | app | Which record supports it? |
@@ -61,12 +68,6 @@ Sanitized Toast payments
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
 | amount_cents | Recorded amount, or null when unknown. | cents | app | How much was it? |
 | tip_cents | Tip portion in integer cents; null when unknown. | cents | toast | What tips were paid? |
-| payment_type | Toast payment method (card/cash/gift), when supplied. | label | toast | How much was paid by card? |
-| card_type | Card network/type from Toast, when supplied. | label | toast | What was Visa volume? |
-| card_entry_mode | How the card was entered, from Toast. | label | toast | What were keyed-card fees? |
-| original_processing_fee_cents | Original Toast-reported fee, not an estimate. | cents | toast | What fee did Toast report? |
-| processing_fee_cents | Selected fee per payment, or null when unknown. | cents | toast | What were the processing fees? |
-| fee_status | Actual, estimated or missing fee provenance. | label | toast | Which fees are estimates? |
 
 ## cv_discounts
 

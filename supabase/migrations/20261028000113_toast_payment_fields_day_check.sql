@@ -271,25 +271,25 @@ revoke all on function public.toast_refresh_typed_payment_facts() from public,an
 -- summaries for days predating raw archival.
 create or replace view public.cv_payments
  (business_id,source,source_ref,status,business_date,amount_cents,tip_cents,
-  payment_type,card_type,card_entry_mode,original_processing_fee_cents,
-  processing_fee_cents,fee_status,data)
+  data,payment_type,card_type,card_entry_mode,original_processing_fee_cents,
+  processing_fee_cents,fee_status)
 with (security_invoker=true) as
  select p.business_id,'toast'::text,
   'payment:'||p.restaurant_guid::text||':'||p.payment_ref,
-  p.status,p.business_date,p.amount_cents,p.tip_cents,p.payment_type,p.card_type,
-  p.card_entry_mode,p.original_processing_fee_cents,p.processing_fee_cents,
-  p.fee_status,
+  p.status,p.business_date,p.amount_cents,p.tip_cents,
   jsonb_build_object('type',p.payment_type,'cardType',p.card_type,
    'cardEntryMode',p.card_entry_mode,
    'originalProcessingFeeCents',p.original_processing_fee_cents,
-   'feeStatus',p.fee_status,'feeBasis',p.fee_basis) as data
+   'feeStatus',p.fee_status,'feeBasis',p.fee_basis) as data,
+  p.payment_type,p.card_type,p.card_entry_mode,p.original_processing_fee_cents,
+  p.processing_fee_cents,p.fee_status
  from public.toast_payment_facts p
  union all
  select s.business_id,'toast'::text,
   'payment:'||s.restaurant_guid::text||':'||s.payment_ref,
-  s.status,s.business_date,s.amount_cents,s.tip_cents,s.payment_type,
-  null::text,null::text,null::bigint,null::bigint,
-  'missing'::text,jsonb_build_object('type',s.payment_type,'legacy',true)
+  s.status,s.business_date,s.amount_cents,s.tip_cents,
+  jsonb_build_object('type',s.payment_type,'legacy',true),
+  s.payment_type,null::text,null::text,null::bigint,null::bigint,'missing'::text
  from public.toast_payment_summaries s
  where not exists(select 1 from public.toast_payment_facts f
   where f.business_id=s.business_id and f.restaurant_guid=s.restaurant_guid
