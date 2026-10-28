@@ -147,8 +147,10 @@ export async function captureToastRawSample(
   }
  }catch{return {captured,skipped:captured===0,failed:failed+1};}
  finally{
-  if(leaseNonce)try{await db.rpc("toast_release_lease",{p_nonce:leaseNonce});}
-   catch{/* A diagnostic must never throw into cron or the owner route. */}
+  if(leaseNonce)try{
+   const {error:releaseError}=await db.rpc("toast_release_lease",{p_nonce:leaseNonce});
+   if(releaseError)failed++;
+  }catch{failed++;/* A diagnostic must never throw into cron or the owner route. */}
  }
  return {captured,skipped:false,failed};
 }
