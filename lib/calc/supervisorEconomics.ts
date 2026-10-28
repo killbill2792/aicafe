@@ -2,6 +2,7 @@ import {calculateBreakEvenSales} from "./breakEvenSales";
 import {breakEvenFor,type BreakEvenDay} from "@/lib/metrics/core/breakEven";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
+import type {LaborRecord} from "@/lib/metrics/core/labor";
 import {COFFEE_SHOP_PROFILE} from "@/lib/pricing/profiles";
 export type FigureStatus="actual"|"estimate"|"owner"|"missing";
 export type Figure={valueCents:number|null;status:FigureStatus;reason:string;missingDays:string[]};
@@ -29,6 +30,7 @@ export type Economics={
  missingBillCategories?:string[];
  asOfDate?:string;observedDays?:BreakEvenDay[];
  ownerFeePlans?:readonly OwnerFeePlan[];
+ laborEvidence?:{dates:readonly {date:string}[];records:readonly LaborRecord[]};
  /** Owner-supplied observations take precedence in this specific calculation only. */
  ownerNetSalesCents?:number|null;ownerSalesDays?:number|null;
  scenarioIngredientRateOverride?:number;
