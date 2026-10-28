@@ -89,7 +89,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   laborEvidence.coveredDays<laborEvidence.totalDays?"laborPartialCoverage":
     ownerMonthlyPayrollExtrasCents!==null?"laborOwnerExtras":
     laborEvidence.notes.includes("laborEstimated")?"laborEstimated":"laborRecorded",
-  laborMissing);
+  laborMissing,{covered:laborDays.length,total:laborWindow.length});
  const active=(recurring.data??[]).filter(row=>!row.active_to||row.active_to>=asOf);
  const billTotal=active.length?totalMonthlyRecurringCostsCents(active.map(row=>({
   amountCents:Number(row.amount_cents),frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly"
@@ -102,9 +102,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const billsPartial=running.missingRunningCategories.length>0;
  const monthlyBills=figure(running.monthlyRunningCents??knownBills,
   !billsPartial&&running.runningStatus==="recorded"?"actual":billStatus==="estimate"?"estimate":"estimate",
-  billsPartial?"Known running costs only; missing categories: "+running.missingRunningCategories.join(", "):
-  running.monthlyRunningCents===null?"Known recurring bills only; additional categories may be missing":
-   "Saved running expenses with actual-by-category replacement");
+  billsPartial?"billsPartial":running.monthlyRunningCents===null?"billsKnownRecurring":"billsRecorded",
+  [],{missing:running.missingRunningCategories.join(", ")});
  const revenue=pricing.business.monthlyRevenueCents;
  const soldCount=pricing.items.reduce((sum,item)=>sum+Math.max(0,item.unitsSoldInWindow),0);
  const recipesReady=pricing.business.productCostsStatus!=="missing"&&revenue>0&&soldCount>0;
@@ -151,7 +150,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   monthlyBills,monthlyStaff:payroll,
   knownMonthlyLaborExtrasCents:ownerMonthlyPayrollExtrasCents,
   monthlyRevenue:figure(monthlyRevenueCents,"estimate",
-    "Current month's covered sales projected across open days; not recorded month-end revenue"),
+    "monthlyRevenueCovered"),
   ingredientRate,feeRate,ingredientStatus,feeStatus,averagePriceCents,monthlyUnits,feePlan,
   ownerFeePlans:feePlans,
   daysInMonth:dayList.length||Number(month.to.slice(-2)),
