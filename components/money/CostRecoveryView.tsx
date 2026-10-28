@@ -96,6 +96,8 @@ function BucketRow({
 
 export default async function CostRecoveryView({ snapshot, calMonthKey, toastConnected }: { snapshot: BusinessSnapshot; calMonthKey: string; toastConnected: boolean }) {
   const t = await getTranslations("Money");
+  const metrics=await getTranslations("MetricsNotes");
+  const noteFor=(key:string)=>metrics.has(key as never)?metrics(key as never):t("partialPill");
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");
   const locale = await getLocale();
@@ -168,6 +170,9 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
           )}
         </div>
 
+        {vm.breakEvenNotes.length>0&&<p className="mt-2 text-sm text-ink-muted">
+          {[...new Set(vm.breakEvenNotes)].map(noteFor).join(" · ")}
+        </p>}
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           <div className="rounded-2xl bg-paper p-3">
             <span className="block text-xs font-semibold text-ink-muted">{t("monthlyBillsTotal")}</span>
@@ -207,6 +212,9 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
         ))}
       </section>
 
+      {calendarVm.noteKeys.length>0&&<p className="text-sm text-ink-muted">
+        {calendarVm.noteKeys.map(noteFor).join(" · ")}
+      </p>}
       <MonthCalendar
         toastConnected={toastConnected}
         monthLabel={monthLabel}

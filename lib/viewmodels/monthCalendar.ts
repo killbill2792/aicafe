@@ -41,6 +41,7 @@ export type MonthCalendarViewModel = {
   daysInMonth: number;
   cells: DayCell[];
   detailsByDate: Record<string, DayDetail>;
+  noteKeys:string[];
   coverageSignal:
     | { kind: "covered"; date: string }
     | { kind: "projected"; date: string }
@@ -155,7 +156,9 @@ export function buildMonthCalendarViewModel(params: {
           ? { kind: "projected" as const, date: finalBucket.projectedCoveredOn }
           : { kind: "not_covered" as const };
 
-  return { monthKey, daysInMonth, cells, detailsByDate, coverageSignal };
+  return {monthKey,daysInMonth,cells,detailsByDate,coverageSignal,
+    noteKeys:isCurrentMonth&&salesCoveredDays.length>0&&salesCoveredDays.length<7?
+      ["monthCalendarSparseSales"]:[]};
 }
 
 export function nextMonthKey(monthKey: string): string {

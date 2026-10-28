@@ -174,7 +174,8 @@ describe("buildMonthCalendarViewModel", () => {
       isCurrentMonth: true,
       projectedDays: [{ date: "2026-10-02", cents: 700, projected: true }],
     });
-    expect(vm.coverageSignal).not.toEqual({ kind: "insufficient" });
+    expect(vm.coverageSignal).toEqual({kind:"projected",date:"2026-10-02"});
+    expect(vm.noteKeys).toContain("monthCalendarSparseSales");
     expect(vm.cells.find((cell) => cell.date === "2026-10-02")?.state).toEqual({ kind: "projected" });
   });
 
