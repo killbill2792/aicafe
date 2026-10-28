@@ -210,7 +210,7 @@ export const newItemPriceTools={suggest_new_item_price:{
    if(plan)numberEstimates.push({value:plan.drinksPerOrder,unit:"ratio",detail:"pricing"});
    const candidates=[
     ...(labor.valueCents===null?[{id:"labor-monthly",label:metrics.itemProvideLabor,detail:metrics.itemEnterLabor},
-      {id:"labor-unknown",label:"I don't know labor yet",detail:"Keep it incomplete"}]:[]),
+      {id:"labor-unknown",label:metrics.itemLaborUnknown,detail:metrics.itemIncomplete}]:[]),
     ...(billsPartial?[{id:"bills-monthly",label:metrics.itemProvideBills,detail:metrics.itemEnterCosts},
       {id:"bills-unknown",label:metrics.itemBillsUnknown,detail:metrics.itemPartial}]:[])
    ];
