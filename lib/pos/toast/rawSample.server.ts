@@ -3,6 +3,7 @@ import {createHmac,randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
+import {fromZonedTime} from "date-fns-tz";
 import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
 
 type Scope="date"|"window"|"none"|"restaurant"|"id"|"unsupported";
@@ -80,9 +81,9 @@ const ISO=z.iso.date();
 const PAGE_CAP=20;
 const PAGE_SIZE=100;
 const CHUNK_BYTES=180000;
-const RESTRICTED=/(?:password|secret|token|credential|authorization|api.?key|session|cookie|signature|passcode|pin$|ssn|social.?security|routing|account.?number|pan$|cvv|cvc|first.?6|last.?4|last.?four|cardholder|card.?network.?id|card.?number|card.?digits|customer.?name|guest.?name|employee.?name|patron.?name|magstripe|track.?data|expir|email|phone|mobile|fax|birth|first.?name|last.?name|full.?name|chosen.?name|street|address|postal|zip.?code|latitude|longitude|^lat$|^lon$|^lng$|ip.?address|device.?id)/i;
-const FREEFORM=/(?:notes?|memo|comment|message|instructions|^text$|description|receiptText|displayName)/i;
-const IDENTIFIER=/(?:^customer(?:Id|Guid)$|^guest(?:Id|Guid)$|^loyalty(?:Id|Guid|AccountId)$|^cardPaymentId$|^cardFingerprint$|^cardTokenId$|^paymentCardId$|^cardId$|^customerIdentifier$|^loyaltyIdentifier$)/i;
+const RESTRICTED=/(?:password|secret|token|credential|authorization|api.?key|session|cookie|signature|passcode|pin$|ssn|social.?security|routing|account.?number|pan$|cvv|cvc|first.?6|last.?4|last.?four|cardholder|card.?network.?id|card.?number|card.?digits|^networkTransactionIdentifier$|customer.?name|guest.?name|employee.?name|patron.?name|magstripe|track.?data|expir|email|phone|mobile|fax|birth|first.?name|last.?name|full.?name|chosen.?name|street|address|postal|zip.?code|latitude|longitude|^lat$|^lon$|^lng$|ip.?address|device.?id)/i;
+const FREEFORM=/(?:notes?|memo|comment|message|instructions|^text$|description|receiptText|^tabName$)/i;
+const IDENTIFIER=/(?:^customer(?:Id|Guid)$|^guest(?:Id|Guid)$|^loyalty(?:Id|Guid|AccountId)$|^cardPaymentId$|^cardFingerprint$|^cardTokenId$|^paymentCardId$|^cardId$|^networkTransactionIdentifier$|^maskedLoyaltyIdentifier$|^customerIdentifier$|^loyaltyIdentifier$)/i;
 const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
 function safeString(s:string){return s.length<=10000&&!/@/.test(s)&&!/(?:\b\d{3}[-. ]\d{3}[-. ]\d{4}\b|\b\d{13,19}\b)/.test(s);}
 export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,context=""):unknown{
@@ -96,7 +97,7 @@ export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,cont
    .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron)/i.test(k)?k:context)])
    .filter(([k,v])=>v!==undefined));
  }
- if(IDENTIFIER.test(key)||(/^(?:id|guid)$/i.test(key)&&/(?:customer|guest|loyalty|card|patron)/i.test(context))){
+ if(IDENTIFIER.test(key)||(/^(?:id|guid|referenceId)$/i.test(key)&&/(?:customer|guest|loyalty|card|patron)/i.test(context))){
   if(!hashKey) return undefined;
   if(typeof value!=="string"&&typeof value!=="number")return null;
   return "hmac:"+createHmac("sha256",hashKey).update(String(value)).digest("hex");
