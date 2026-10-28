@@ -19,6 +19,7 @@ export async function getBusinessSnapshotFromDb(
   supabase: SupabaseClient,
   businessId: string,
   costPeriod: "today"|"week"|"month"|{from:string;to:string}="month",
+  asOfDate?:string,
 ): Promise<BusinessSnapshot> {
   // Historical range is a read-only mode of the existing classified source.
   // Never reach shift-materialization or alert-generation writes in this path.
