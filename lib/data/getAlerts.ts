@@ -27,12 +27,13 @@ export async function getOpenAlerts(): Promise<AlertRow[]> {
   const businessId = await getActiveBusinessId(user.id);
 
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("alerts")
     .select("id, kind, impact_cents, payload, status, created_at")
     .eq("business_id", businessId)
     .in("status", ["new", "seen"])
     .order("created_at", { ascending: false });
+  if (error) throw error;
 
   const alerts: AlertRow[] = (data ?? []).map((a) => ({
     id: a.id,
@@ -57,11 +58,12 @@ export async function getAlertById(id: string): Promise<AlertRow | null> {
   const user=await getOptionalAuthenticatedUser();
   if (!user) return null;
   const businessId = await getActiveBusinessId(user.id);
-  const { data } = await supabase.from("alerts")
+  const { data, error } = await supabase.from("alerts")
     .select("id, kind, impact_cents, payload, status, created_at")
     .eq("business_id", businessId)
     .eq("id", id)
     .maybeSingle();
+  if (error) throw error;
   if (!data) return null;
 
   const payload = (data.payload as Record<string, unknown>) ?? {};
