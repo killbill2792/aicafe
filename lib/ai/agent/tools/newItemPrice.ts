@@ -154,7 +154,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     if(plan){
      const rateText=new Intl.NumberFormat(ctx.locale,{minimumFractionDigits:2,maximumFractionDigits:2})
       .format(feeRate*100)+"%";
-     const perOrder=new Intl.NumberFormat(ctx.locale,{style:"currency",currency:"USD"})
+     const perOrder=new Intl.NumberFormat(ctx.locale,{style:"currency",currency:ctx.currency??"XXX"})
       .format(plan.fixedFeeCents/100);
      const perDrink=new Intl.NumberFormat(ctx.locale,{style:"currency",currency:"USD"})
       .format(fixedPerDrink/100);
