@@ -31,6 +31,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    environment: toast-prod
     timeout-minutes: 15
     steps:
       - name: Check 14-day sync window
