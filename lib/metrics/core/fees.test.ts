@@ -39,6 +39,12 @@ describe("fee priority",()=>{
     expect(cardFeesForDays([days[0]]).basis).toBe("actual");
     expect(cardFeesForDays(days).basis).toBe("estimated");
   });
+  it("does not certify untyped positive legacy fees",()=>{
+    const out=cardFeesForDays([{date:"2026-10-07",netSalesCents:10000,cardFeesCents:155}]);
+    expect(out.amountCents).toBe(155);
+    expect(out.basis).toBe("estimated");
+    expect(out.actualDays).toBe(0);
+  });
   it("never treats unqualified zero fees as verified free card processing",()=>{
     const unknown=cardFeesForDays([{date:"2026-10-10",netSalesCents:10000,
       cardFeesCents:0}]);
