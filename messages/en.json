@@ -3374,6 +3374,7 @@
     "breakEvenLaborMissing": "Some labor costs are unknown.",
     "breakEvenDrinksMissing": "Drink volume is not available.",
     "NO_SALES": "No covered sales days are available.",
-    "VARIABLE_COSTS_TOO_HIGH": "Sales after variable costs do not cover any fixed costs."
+    "VARIABLE_COSTS_TOO_HIGH": "Sales after variable costs do not cover any fixed costs.",
+    "monthCalendarSparseSales": "Fewer than seven sales days are available; coverage is an early estimate."
   }
 }
