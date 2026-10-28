@@ -3349,5 +3349,31 @@
     "saved": "تم حفظ الإعدادات",
     "failed": "تحقق من القيم وأعد المحاولة",
     "none": "غير محدد"
+  },
+  "MetricsNotes": {
+    "feeDefaultEstimateAskRate": "رسوم البطاقات تقديرية بنسبة ٢٫٩٪؛ أخبرني بالمعدل الفعلي.",
+    "feeSalesDaysMissing": "بعض أيام المبيعات لم تُستورد بعد.",
+    "feeNetSalesProxy": "مبيعات البطاقات غير متاحة؛ استُخدمت المبيعات الصافية للتقدير.",
+    "feeFixedTransactionCountMissing": "عدد المعاملات مفقود لحساب الرسوم الثابتة.",
+    "feeOwnerPlanInvalid": "تعذر تطبيق خطة الرسوم المحفوظة؛ استُخدمت البيانات أو التقديرات.",
+    "laborCoveragePartial": "تكلفة العمالة متوقعة من الأيام المسجلة.",
+    "laborWageUnknown": "أجر أو ضريبة رواتب غير معروفة.",
+    "laborEstimated": "بعض تكاليف العمالة تقديرية.",
+    "laborNoCoveredDays": "لا توجد أيام بتكاليف عمالة كاملة.",
+    "profitSalesDaysMissing": "لم تُستورد مبيعات بعض الأيام بعد.",
+    "profitBillsMissing": "بعض الفواتير مفقودة؛ الربح المعروض جزئي.",
+    "profitFeesMissing": "بعض رسوم البطاقات مفقودة؛ استُخدم تقدير مُوضح.",
+    "profitLaborMissing": "العمالة غير مكتملة؛ الربح المعروض جزئي.",
+    "profitProductCostsMissing": "بعض تكاليف المكونات مفقودة؛ الربح المعروض جزئي.",
+    "profitBillsEstimated": "بعض الفواتير تقديرية.",
+    "profitFeesEstimated": "تشمل رسوم البطاقات تقديرًا.",
+    "profitLaborEstimated": "بعض تكاليف العمالة تقديرية.",
+    "profitProductCostsEstimated": "بعض تكاليف المنتجات تقديرية.",
+    "breakEvenCoveragePartial": "حساب التعادل يشمل أقل من ٢٨ يومًا مكتملًا.",
+    "breakEvenBillsMissing": "بعض الفواتير الشهرية غير معروفة.",
+    "breakEvenLaborMissing": "بعض تكاليف العمالة غير معروفة.",
+    "breakEvenDrinksMissing": "حجم مبيعات المشروبات غير متاح.",
+    "NO_SALES": "لا توجد أيام بمبيعات مسجلة.",
+    "VARIABLE_COSTS_TOO_HIGH": "التكاليف المتغيرة تستهلك جميع المبيعات."
   }
 }
