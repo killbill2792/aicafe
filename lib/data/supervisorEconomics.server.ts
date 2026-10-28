@@ -7,6 +7,8 @@ import {figure,addOwnerPayrollExtras,type Economics} from "@/lib/calc/supervisor
 import {payrollDayCoverage} from "@/lib/calc/payrollDayCoverage";
 import {totalMonthlyRecurringCostsCents} from "@/lib/expenses/recurringMonthlyTotal";
 import {getPricingInputs,type PricingItemInput} from "./getPricingInputs";
+import {getOwnerConfirmedProcessingFeePlans,ownerConfirmedPlanForDate} from "@/lib/pos/processingFeeEstimate.server";
+import {validateOwnerConfirmedProcessingFeePlan} from "@/lib/pos/processingFeeEstimate";
 
 export type SupervisorEconomicsRead={economics:Economics;items:PricingItemInput[];
  ownerMonthlyPayrollExtrasCents:number|null;ownerIngredientRate:number|null;
@@ -20,15 +22,16 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const salesSince=dateOffset(asOf,-364);
  const business=await db.from("businesses").select("timezone,payroll_tax_rate,target_ingredient_cost_rate,target_ingredient_cost_rate_status,owner_monthly_payroll_extras_cents").eq("id",businessId).single();
  if(business.error)throw business.error;
- const [pricing,locations,recurring,rollups,connections,employees]=await Promise.all([
+ const [pricing,locations,recurring,rollups,connections,employees,feePlans]=await Promise.all([
   getPricingInputs(db,businessId),
   db.from("locations").select("open_hours").eq("business_id",businessId).limit(1),
   db.from("recurring_costs").select("amount_cents,frequency,is_estimate,active_from,active_to")
    .eq("business_id",businessId).lte("active_from",asOf),
-  db.from("daily_rollups").select("business_date,sales_data_status,net_sales_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,drinks_count")
+  db.from("daily_rollups").select("business_date,sales_data_status,net_sales_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,drinks_count,orders_count")
    .eq("business_id",businessId).gte("business_date",salesSince).lte("business_date",asOf).limit(500),
   db.from("pos_connections").select("provider").eq("business_id",businessId).eq("status","active"),
-  db.from("employees").select("id,display_name,role,default_hourly_wage_cents").eq("business_id",businessId).eq("active",true).limit(500)
+  db.from("employees").select("id,display_name,role,default_hourly_wage_cents").eq("business_id",businessId).eq("active",true).limit(500),
+  getOwnerConfirmedProcessingFeePlans(db,businessId)
  ]);
  for(const response of [locations,recurring,rollups,connections,employees])
   if(response.error)throw response.error;
@@ -77,6 +80,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const monthlyTotal=addOwnerPayrollExtras(projectedLabor,ownerMonthlyPayrollExtrasCents);
  const payroll=figure(monthlyTotal,
   ownerMonthlyPayrollExtrasCents!==null||laborMissing.length||estimatedTax?"estimate":"actual",
+  !sufficientLabor?"Labor missing: "+laborDays.length+" of "+laborWindow.length+" covered sales days have usable payroll":
   laborMissing.length?"Clocked wages incomplete; "+laborMissing.length+" labor days missing; owner extras do not replace wages":
   ownerMonthlyPayrollExtrasCents!==null?"Projected clocked wages plus owner-reported monthly extras (once)":
   estimatedTax?"Employer payroll tax estimated":"Clocked wages plus payroll tax",laborMissing);
@@ -114,6 +118,17 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   hasToast?"estimate":"missing";
  const salesDates=(rollups.data??[]).filter(row=>coveredDates.has(row.business_date));
  const totalDrinks=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.drinks_count??0)),0);
+ const totalOrders=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.orders_count??0)),0);
+ const drinksPerOrder=totalDrinks>0&&totalOrders>0?totalDrinks/totalOrders:null;
+ const plan=ownerConfirmedPlanForDate(feePlans,asOf);
+ const ratePlan=plan&&validateOwnerConfirmedProcessingFeePlan(plan)===null&&drinksPerOrder!==null?
+  {percentRate:plan.processedSalesShareBps/10000*plan.rules.reduce((sum,rule)=>
+    sum+rule.percentageBps/10000*rule.salesMixBps/10000,0),
+   fixedFeeCents:plan.processedTransactionShareBps/10000*plan.rules.reduce((sum,rule)=>
+    sum+rule.fixedFeeCents*rule.transactionMixBps/10000,0),
+   drinksPerOrder,processorLabel:plan.processorLabel}:null;
+ // Without usable covered sales/order evidence, retain the recorded effective rate.
+ const feePlan=ratePlan&&ratePlan.fixedFeeCents>0?ratePlan:undefined;
  const observedRevenueCents=salesDates.reduce((sum,row)=>sum+Number(row.net_sales_cents??0),0);
  const salesObserved=salesDates.length>0;
  const salesOpenDays=salesDates.filter(row=>open(row.business_date)).length;
@@ -131,7 +146,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   knownMonthlyLaborExtrasCents:ownerMonthlyPayrollExtrasCents,
   monthlyRevenue:figure(monthlyRevenueCents,"estimate",
     "Current month's covered sales projected across open days; not recorded month-end revenue"),
-  ingredientRate,feeRate,ingredientStatus,feeStatus,averagePriceCents,monthlyUnits,
+  ingredientRate,feeRate,ingredientStatus,feeStatus,averagePriceCents,monthlyUnits,feePlan,
   daysInMonth:dayList.length||Number(month.to.slice(-2)),
   laborCoveredDays:laborDays.length,laborWindowDays:laborWindow.length,
   salesCoverage:first&&latest?{from:first,to:latest,openDays:salesOpenDays}:undefined,

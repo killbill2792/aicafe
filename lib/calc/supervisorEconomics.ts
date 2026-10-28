@@ -21,6 +21,7 @@ export type Economics={
  targetMargin:number;missingDays:string[];payrollTaxRate?:number;
  laborCoveredDays?:number;laborWindowDays?:number;
  salesCoverage?:{from:string;to:string;openDays:number};
+ feePlan?:{percentRate:number;fixedFeeCents:number;drinksPerOrder:number;processorLabel:string};
  /** Expected operating categories without current actual or recurring basis. */
  missingBillCategories?:string[];
 };
@@ -69,7 +70,7 @@ export function unifiedBreakEven(input:Economics){
 export function recommendFullCostPrice(input:{
  ingredientCents:number;packagingCents:number|null;laborCents:number|null;
  overheadCents:number|null;units:number|null;feeRate:number|null;targetMargin:number;
- targetDrinkCostPct?:number;knownOverheadCents?:number|null;
+ targetDrinkCostPct?:number;knownOverheadCents?:number|null;fixedFeePerDrinkCents?:number;
 }){
  const valid=(n:number|null)=>n!==null&&Number.isFinite(n)&&n>=0;
  const costPct=Math.max(.25,Math.min(.35,input.targetDrinkCostPct??COFFEE_SHOP_PROFILE.targetProductCostPercent));
@@ -82,12 +83,14 @@ export function recommendFullCostPrice(input:{
  const overheadPerUnit=input.units&&input.units>0&&valid(input.overheadCents)
   ?input.overheadCents!/input.units:null;
  const fee=input.feeRate;
+ const fixedPerDrink=input.fixedFeePerDrinkCents??0;
  const missing=[...(productCost===null?["packagingCents"]:[]),
   ...(laborPerUnit===null?["laborPerUnit"]:[]),
   ...(overheadPerUnit===null?["overheadPerUnit"]:[]),
   ...(fee===null?["processingFeeRate"]:[])];
  if(!valid(input.ingredientCents)||fee!==null&&(!valid(fee)||fee>=1)||
-  !Number.isFinite(input.targetMargin)||!Number.isFinite(costPct)){
+  !Number.isFinite(input.targetMargin)||!Number.isFinite(costPct)||
+  !Number.isFinite(fixedPerDrink)||fixedPerDrink<0){
   return {recommendedPriceCents:null,breakEvenCents:null,fullCostCents:null,
    profitPriceCents:null,knownCostFloorCents:null,knownCostFloorLabel:"floor, not a recommendation",
    targetDrinkCostPct:costPct,operatingMargin,warning:"invalidInputs",missing:["invalidInputs"],
@@ -96,22 +99,23 @@ export function recommendFullCostPrice(input:{
  const knownCost=input.ingredientCents+(input.packagingCents??0)+
   (laborPerUnit??0)+(overheadPerUnit??(input.units&&input.units>0&&valid(input.knownOverheadCents??null)?
     input.knownOverheadCents!/input.units:0));
- const knownCostFloorCents=missing.length?Math.ceil(knownCost/(1-(fee??0))):null;
+ const knownCostFloorCents=missing.length?Math.ceil((knownCost+fixedPerDrink)/(1-(fee??0))):null;
  const fullCost=productCost!==null&&laborPerUnit!==null&&overheadPerUnit!==null?
   productCost+laborPerUnit+overheadPerUnit:null;
- const breakEvenCents=fullCost!==null&&fee!==null?Math.ceil(fullCost/(1-fee)):null;
+ const breakEvenCents=fullCost!==null&&fee!==null?Math.ceil((fullCost+fixedPerDrink)/(1-fee)):null;
  const baseline=productCost!==null?roundUp25(productCost/costPct):null;
  const warning=breakEvenCents===null?"full_cost_unknown":
   baseline!==null&&breakEvenCents>baseline?"below_full_cost":null;
  const recommendedPriceCents=baseline===null?null:
   breakEvenCents!==null&&breakEvenCents>baseline?roundUp25(breakEvenCents):baseline;
  const profitPriceCents=fullCost!==null&&fee!==null&&1-fee-operatingMargin>0?
-  roundUp25(fullCost/(1-fee-operatingMargin)):null;
+  roundUp25((fullCost+fixedPerDrink)/(1-fee-operatingMargin)):null;
  return {recommendedPriceCents,breakEvenCents,
   fullCostCents:fullCost===null?null:Math.round(fullCost),profitPriceCents,
   knownCostFloorCents,knownCostFloorLabel:"floor, not a recommendation",
   targetDrinkCostPct:costPct,operatingMargin,warning,missing,
-  laborPerUnitCents:laborPerUnit,overheadPerUnitCents:overheadPerUnit};
+  laborPerUnitCents:laborPerUnit,overheadPerUnitCents:overheadPerUnit,
+  fixedFeePerDrinkCents:fixedPerDrink};
 }
 export type ScenarioDelta=
  |{kind:"bill";monthlyChangeCents:number}
