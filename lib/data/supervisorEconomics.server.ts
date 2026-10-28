@@ -3,7 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {formatInTimeZone,fromZonedTime} from "date-fns-tz";
 import {normalizeOpenHours,regularHoursStateForDate} from "@/lib/business/openHours";
 import {dateOffset,calendarMonth} from "@/lib/calc/periods";
-import {figure,addOwnerPayrollExtras,type Economics} from "@/lib/calc/supervisorEconomics";
+import {figure,addOwnerPayrollExtras,fixedCardFeeForCoveredSales,type Economics} from "@/lib/calc/supervisorEconomics";
 import {payrollDayCoverage} from "@/lib/calc/payrollDayCoverage";
 import {totalMonthlyRecurringCostsCents} from "@/lib/expenses/recurringMonthlyTotal";
 import {getPricingInputs,type PricingItemInput} from "./getPricingInputs";
@@ -119,16 +119,11 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const salesDates=(rollups.data??[]).filter(row=>coveredDates.has(row.business_date));
  const totalDrinks=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.drinks_count??0)),0);
  const totalOrders=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.orders_count??0)),0);
- const drinksPerOrder=totalDrinks>0&&totalOrders>0?totalDrinks/totalOrders:null;
  const plan=ownerConfirmedPlanForDate(feePlans,asOf);
- const ratePlan=plan&&validateOwnerConfirmedProcessingFeePlan(plan)===null&&drinksPerOrder!==null?
-  {percentRate:plan.processedSalesShareBps/10000*plan.rules.reduce((sum,rule)=>
-    sum+rule.percentageBps/10000*rule.salesMixBps/10000,0),
-   fixedFeeCents:plan.processedTransactionShareBps/10000*plan.rules.reduce((sum,rule)=>
-    sum+rule.fixedFeeCents*rule.transactionMixBps/10000,0),
-   drinksPerOrder,processorLabel:plan.processorLabel}:null;
- // Without usable covered sales/order evidence, retain the recorded effective rate.
- const feePlan=ratePlan&&ratePlan.fixedFeeCents>0?ratePlan:undefined;
+ // Owner-confirmed plan overrides the observed effective rate only when the
+ // café has actual covered drinks and orders for fixed-fee allocation.
+ const feePlan=plan&&validateOwnerConfirmedProcessingFeePlan(plan)===null?
+  fixedCardFeeForCoveredSales(plan,totalDrinks,totalOrders):undefined;
  const observedRevenueCents=salesDates.reduce((sum,row)=>sum+Number(row.net_sales_cents??0),0);
  const salesObserved=salesDates.length>0;
  const salesOpenDays=salesDates.filter(row=>open(row.business_date)).length;

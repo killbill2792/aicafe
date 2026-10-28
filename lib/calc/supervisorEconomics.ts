@@ -25,6 +25,22 @@ export type Economics={
  /** Expected operating categories without current actual or recurring basis. */
  missingBillCategories?:string[];
 };
+/** Weighted owner-confirmed processor rate from the SAME covered drinks/order window. */
+export function fixedCardFeeForCoveredSales(plan:{
+ processorLabel:string;processedSalesShareBps:number;processedTransactionShareBps:number;
+ rules:readonly {percentageBps:number;fixedFeeCents:number;salesMixBps:number;transactionMixBps:number}[];
+},drinksCount:number,ordersCount:number):Economics["feePlan"]{
+ if(!Number.isFinite(drinksCount)||!Number.isFinite(ordersCount)||
+  drinksCount<=0||ordersCount<=0)return undefined;
+ const percentRate=plan.processedSalesShareBps/10000*plan.rules.reduce((sum,r)=>
+  sum+r.percentageBps/10000*r.salesMixBps/10000,0);
+ const fixedFeeCents=plan.processedTransactionShareBps/10000*plan.rules.reduce((sum,r)=>
+  sum+r.fixedFeeCents*r.transactionMixBps/10000,0);
+ if(!Number.isFinite(percentRate)||percentRate<0||percentRate>=1||
+  !Number.isFinite(fixedFeeCents)||fixedFeeCents<=0)return undefined;
+ return {percentRate,fixedFeeCents,drinksPerOrder:drinksCount/ordersCount,
+  processorLabel:plan.processorLabel};
+}
 /** Money, Plan and chat must use the same monthly contribution math.
  * Missing variable costs never silently become zero; known fixed costs survive partial payroll. */
 export function unifiedBreakEven(input:Economics){
