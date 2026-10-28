@@ -69,8 +69,9 @@ export function unifiedBreakEven(input:Economics){
    days:realDays,asOfDate:input.asOfDate,daysInMonth:input.daysInMonth,
    monthlyBillsCents:input.monthlyBills.valueCents,
    monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
-   observedIngredientCents:Math.round(observedSalesCents*effectiveIngredientRate),
-   observedProcessingFeesCents:Math.round(observedSalesCents*effectiveFeeRate),
+   // The observed rows are the source of truth, not rates reconstructed from them.
+   observedIngredientCents:realDays.reduce((sum,day)=>sum+day.ingredientsCents,0),
+   observedProcessingFeesCents:realDays.reduce((sum,day)=>sum+day.cardFeesCents,0),
  }):null;
  const computed=shared?.calculation??(input.observedDays?{kind:"unavailable" as const,reason:"NO_SALES" as const}:
    calculateBreakEvenSales({
