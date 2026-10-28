@@ -81,7 +81,9 @@ describe("Toast and app schedule union",()=>{
   const ctx={asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles",
     resolveState:newResolveState("When is Jordan working?")} as unknown as AgentToolContext;
   const result=await scheduleReadTools.get_team.execute({week_start:"2026-10-19",name:"Jordan"},ctx);
-  expect((result.shifts as {id:string}[]).map(s=>s.id)).toEqual(["app-shift"]);
+  expect((result.shifts as {id:string}[]).map(s=>s.id)).toEqual(["app-shift","toast-other"]);
+  expect(result.shifts).toMatchObject([{employeeId:"app-jordan",source:"app"},
+    {employeeId:null,source:"toast"}]);
   expect(result.missing).toContain("toastWorkerNotLinked");
  });
  it("preserves two unlinked Toast employees with the same name and start time",async()=>{

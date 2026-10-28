@@ -109,8 +109,10 @@ export const scheduleReadTools={
      person.name.toLocaleLowerCase()===shift.employeeName.toLocaleLowerCase()));
    // An identical display name does not prove an unlinked Toast worker is
    // the active app employee; never assign the worker's shifts by name alone.
-   const scoped=input.name?all.filter(shift=>selected.some(person=>
-     person.id===shift.employeeId)):all;
+   const scoped=input.name?all.filter(shift=>
+     selected.some(person=>person.id===shift.employeeId)||
+     (shift.source==="toast"&&!shift.employeeId&&
+      shift.employeeName.trim().toLocaleLowerCase()===input.name!.trim().toLocaleLowerCase())):all;
    const totals=aggregateCosts(activeShifts);
    const toastPlans=scoped.some(s=>s.source==="toast");
    const people=selected.slice(0,30),shifts=scoped.slice(0,30);
