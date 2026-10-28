@@ -3375,6 +3375,9 @@
     "breakEvenDrinksMissing": "Drink volume is not available.",
     "NO_SALES": "No covered sales days are available.",
     "VARIABLE_COSTS_TOO_HIGH": "Sales after variable costs do not cover any fixed costs.",
-    "monthCalendarSparseSales": "Fewer than seven sales days are available; coverage is an early estimate."
+    "monthCalendarSparseSales": "Fewer than seven sales days are available; coverage is an early estimate.",
+    "laborOwnerExtras": "Includes owner-reported monthly payroll extras.",
+    "ownerPayrollExtras": "Other payroll costs reported by owner",
+    "feePlanPartialCoverage": "Saved card fee plan covers only part of this period; other fees use recorded data or estimates."
   }
 }
