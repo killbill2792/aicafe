@@ -19,8 +19,10 @@ export function ownerSpecifiedMonthlyBills(utterances:readonly string[],cents:nu
    if(!Number.isFinite(decimal(match[0]))||Math.round(decimal(match[0])*100)!==cents)continue;
    const start=match.index,finish=start+match[0].length;
    if(/^\s*[%٪]/u.test(line.slice(finish)))continue;
-   const before=line.slice(Math.max(0,start-75),start);
-   const after=line.slice(finish,Math.min(line.length,finish+25));
+   // Do not borrow a bills label from another clause ("labor $13k; bills $8k").
+   const before=line.slice(Math.max(0,start-75),start).split(/[;.!?\n،؛]/u).at(-1)??"";
+   const after=(line.slice(finish,Math.min(line.length,finish+25))
+    .split(/[;.!?\n،؛]/u)[0]??"");
    const nearby=before+match[0]+after;
    const midpoint=before.length;
    const labels=[

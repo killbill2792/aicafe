@@ -39,7 +39,7 @@ describe("supervisor new-item price evidence",()=>{
    "packagingCents","laborPerUnit","processingFeeRate"]));
   expect(result.pricingNote).toContain("drink cost");
   expect(result.numberEstimates).toEqual(expect.arrayContaining([
-   {value:6000,unit:"count",detail:"breakEvenSales"}]));
+   {value:6000,unit:"count",detail:"pricing"}]));
   expect(result.explain).toEqual(expect.arrayContaining([
    expect.objectContaining({label:"Labor/drink",provenance:"missing"})]));
  });
