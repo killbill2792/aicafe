@@ -184,6 +184,18 @@ describe("read-only Toast coverage diagnostics",()=>{
   expect(mocks.eraGet.mock.calls.filter(([path])=>String(path).includes("reportRequestGuid"))).toHaveLength(0);
   expect(mocks.eraGet).toHaveBeenCalledTimes(1);
  });
+ it("hashes primitive customer GUIDs and loyalty account numbers without dropping business data",()=>{
+  const raw={customer:"11111111-1111-4111-8111-111111111111",
+   guest:"Private Guest",loyaltyAccountNumber:"LOYALTY-PERSON-ID",
+   payment:{guid:"22222222-2222-4222-8222-222222222222",state:"SETTLED",amount:14},
+   menuItem:{name:"Flat White"}};
+  const safe=redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY) as Record<string,unknown>;
+  expect(String(safe.customer)).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(safe.guest).toBe("[redacted]");
+  expect(String(safe.loyaltyAccountNumber)).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(safe.payment).toEqual(raw.payment);
+  expect(safe.menuItem).toEqual(raw.menuItem);
+ });
  it("keeps paths for nested arrays",()=>{
   expect(toastFieldPaths({items:[{name:"Latte",price:5}]})).toContain("items[].price");
  });
