@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
+import path from "node:path";
 import {
   uuidv5,
   remapId,
@@ -11,6 +12,9 @@ import {
   SOURCE_BUSINESS_ID,
   DEST_BUSINESS_ID,
 } from "./sync-cafe-data.mjs";
+import { extractUniqueConstraints } from "./migrationConstraints.mjs";
+
+const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "..", "supabase", "migrations");
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -143,6 +147,82 @@ describe("table configuration sanity", () => {
 
   it("source and destination business ids are distinct", () => {
     expect(SOURCE_BUSINESS_ID).not.toBe(DEST_BUSINESS_ID);
+  });
+
+  it("employee_sales_rollup and hourly_sales_rollup use plain inserts, not an ON CONFLICT target that doesn't exist in migrations", () => {
+    for (const name of ["employee_sales_rollup", "hourly_sales_rollup"]) {
+      const cfg = REFRESH_WINDOW_TABLES.find((c) => c.table === name);
+      expect(cfg?.conflictMode).toBe("plain");
+    }
+  });
+
+  it("ingredient_unit_conversions uses a targetless ON CONFLICT (it has two overlapping unique constraints)", () => {
+    const cfg = INSERT_IF_MISSING_TABLES.find((c) => c.table === "ingredient_unit_conversions");
+    expect(cfg?.conflictMode).toBe("none");
+  });
+
+  it("toast_location_mappings resets verified_at and every scheduler tick/lease column, even on an existing row", () => {
+    const cfg = INSERT_IF_MISSING_TABLES.find((c) => c.table === "toast_location_mappings");
+    expect(cfg?.nullOut).toEqual(expect.arrayContaining(["verified_at", "info_refreshed_at", "last_tick_started_at"]));
+    expect(cfg?.setValues).toEqual({ recheck_total: 0 });
+    expect(cfg?.conflictMode).toBe("updateSafetyColumns");
+    expect(cfg?.updateColumnsOnConflict).toEqual(expect.arrayContaining(["verified_at", "info_refreshed_at", "last_tick_started_at", "recheck_total"]));
+  });
+
+  it("toast_day_status, toast_day_owner_flags and pos_scheduled_shifts live in the refresh window, not insert-if-missing", () => {
+    for (const name of ["toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts"]) {
+      expect(REFRESH_WINDOW_TABLES.some((c) => c.table === name)).toBe(true);
+      expect(INSERT_IF_MISSING_TABLES.some((c) => c.table === name)).toBe(false);
+    }
+  });
+
+  it("timecards and pos_scheduled_shifts window against their own timestamp column, not business_date", () => {
+    expect(REFRESH_WINDOW_TABLES.find((c) => c.table === "timecards")?.dateColumn).toBe("clock_in");
+    expect(REFRESH_WINDOW_TABLES.find((c) => c.table === "pos_scheduled_shifts")?.dateColumn).toBe("scheduled_start");
+  });
+
+  it("order_lines has no date column of its own — must be windowed by its parent order's business_date", () => {
+    const orderLines = REFRESH_WINDOW_TABLES.find((c) => c.table === "order_lines");
+    expect(orderLines?.joinScope).toBe("orders");
+    expect(orderLines?.dateColumn).toBe("business_date");
+  });
+});
+
+describe("remapRow: setValues", () => {
+  it("forces a literal value after remap and nullOut, regardless of the source value", () => {
+    const cfg = { nullOut: [], setValues: { recheck_total: 0 } };
+    const out = remapRow("toast_location_mappings", { business_id: SOURCE_BUSINESS_ID, recheck_total: 42 }, cfg);
+    expect(out.recheck_total).toBe(0);
+  });
+});
+
+describe("every configured ON CONFLICT target matches a real constraint declared in supabase/migrations", () => {
+  const constraintsByTable: Map<string, string[][]> = extractUniqueConstraints(MIGRATIONS_DIR);
+
+  function assertHasMatchingConstraint(cfg: { table: string; pk: string[] }) {
+    const expected = [...cfg.pk].map((c) => c.toLowerCase()).sort();
+    const candidates: string[][] = constraintsByTable.get(cfg.table.toLowerCase()) ?? [];
+    const matches = candidates.some((cols) => cols.length === expected.length && cols.every((c, i) => c === expected[i]));
+    expect(matches, `${cfg.table}: configured pk [${expected.join(",")}] has no matching PRIMARY KEY/UNIQUE constraint among ${JSON.stringify(candidates)} in supabase/migrations`).toBe(true);
+  }
+
+  it("holds for every insert-if-missing table using a named conflict target", () => {
+    for (const cfg of INSERT_IF_MISSING_TABLES) {
+      if (cfg.conflictMode === "none" || cfg.conflictMode === "plain") continue;
+      assertHasMatchingConstraint(cfg);
+    }
+  });
+
+  it("holds for every refresh-window table using a named conflict target", () => {
+    for (const cfg of REFRESH_WINDOW_TABLES) {
+      if (cfg.conflictMode === "none" || cfg.conflictMode === "plain") continue;
+      assertHasMatchingConstraint(cfg);
+    }
+  });
+
+  it("confirms employee_sales_rollup and hourly_sales_rollup genuinely have no such constraint (why they use plain inserts instead)", () => {
+    expect(constraintsByTable.get("employee_sales_rollup")).toBeUndefined();
+    expect(constraintsByTable.get("hourly_sales_rollup")).toBeUndefined();
   });
 });
 

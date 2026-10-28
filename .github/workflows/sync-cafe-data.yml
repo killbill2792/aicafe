@@ -14,7 +14,12 @@ name: sync-cafe-data
 on:
   schedule:
     - cron: "*/30 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      full_copy:
+        description: "Force a full copy of every refresh-window table (orders, rollups, timecards, card-fee facts, Toast day facts), ignoring each table's own current state"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -57,4 +62,5 @@ jobs:
         if: steps.gate.outputs.skip == 'false'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          FULL_COPY: ${{ github.event.inputs.full_copy == 'true' }}
         run: node scripts/sync-cafe-data.mjs

@@ -93,9 +93,20 @@ function t(table, opts = {}) {
     remapOwnId: opts.remapOwnId ?? false,
     fk: opts.fk ?? {},
     nullOut: opts.nullOut ?? [],
+    setValues: opts.setValues ?? {}, // literal values forced after remap, e.g. resetting a NOT NULL scheduler counter
     joinScope: opts.joinScope ?? null, // parent table to scope by, for tables with no business_id column
     joinCol: opts.joinCol ?? null, // this table's column that references joinScope.id
     matchColumn: opts.matchColumn ?? null, // dedupe against an existing dest row sharing this column's value
+    dateColumn: opts.dateColumn ?? "business_date", // refresh-window tables only: column compared against the cutoff
+    // "target": on conflict (pk) do nothing — pk must match a real constraint (see migrationConstraints.mjs test).
+    // "none": on conflict do nothing, no target — use when the exact constraint shape shouldn't be hard-coded.
+    // "plain": no on-conflict clause at all — only safe when the row range was already deleted in this transaction.
+    // "updateSafetyColumns": on conflict (pk) do update set <updateColumnsOnConflict> — for an
+    // insert-if-missing table where a handful of columns are a safety reset (e.g. keeping a
+    // background scheduler from ever touching the destination), not owner data, so they must be
+    // re-applied even to a row that already existed before this safety rule was added.
+    conflictMode: opts.conflictMode ?? "target",
+    updateColumnsOnConflict: opts.updateColumnsOnConflict ?? null,
   };
 }
 
@@ -139,7 +150,6 @@ export const INSERT_IF_MISSING_TABLES = [
   t("staff_scheduling_preferences", { remapOwnId: true, fk: { employee_id: "employees" } }),
   t("scheduling_coverage_requirements", { remapOwnId: true, fk: { location_id: "locations" } }),
   t("employee_pay_period_facts", { remapOwnId: true, fk: { employee_id: "employees" } }),
-  t("pos_scheduled_shifts", { pk: ["business_id", "provider", "external_shift_id"], fk: { location_id: "locations" } }),
   t("expenses", { remapOwnId: true, fk: { recurring_cost_id: "recurring_costs" } }),
   t("expense_lines", { remapOwnId: true, joinScope: "expenses", joinCol: "expense_id", fk: { expense_id: "expenses", ingredient_id: "ingredients" } }),
   t("vendor_rules", { pk: ["business_id", "normalized_vendor"] }),
@@ -151,18 +161,33 @@ export const INSERT_IF_MISSING_TABLES = [
   t("operating_tasks", { pk: ["business_id", "id"] }),
   t("operating_task_responses", { remapOwnId: true, fk: { employee_id: "employees" } }),
   // Toast integration *data* (no credentials). toast_location_mappings depends on a
-  // toast_api_credentials row existing for the business (see ensureToastCredentialsPlaceholder),
-  // and toast_day_status / toast_day_owner_flags depend on toast_location_mappings — keep this order.
+  // toast_api_credentials row existing for the business (see ensureToastCredentialsPlaceholder).
+  // toast_day_status / toast_day_owner_flags also depend on it (FK on business_id+restaurant_guid)
+  // but are synced later, in the refresh-window group — this insert-if-missing pass still has to
+  // run first so that FK target exists by then.
   // restaurant_guid is remapped too (via the synthetic "toast_restaurant_guid" namespace, not a
   // real table): a global unique index (toast_one_cafe_per_restaurant_uidx) allows only one
   // business in the whole system to be linked to a given real Toast restaurant, and Test Café
   // isn't actually connected to Toast — copying the source's real restaurant_guid unchanged
   // would try to claim that same real-world POS connection for a second business.
-  t("toast_location_mappings", { pk: ["business_id", "restaurant_guid"], fk: { location_id: "locations", restaurant_guid: "toast_restaurant_guid" } }),
-  t("toast_day_status", { pk: ["business_id", "restaurant_guid", "business_date"], fk: { restaurant_guid: "toast_restaurant_guid" }, nullOut: ["last_import_run_id"] }),
-  t("toast_day_owner_flags", { pk: ["business_id", "restaurant_guid", "business_date"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
+  // verified_at and the scheduler tick/lease columns (info_refreshed_at, last_tick_started_at,
+  // recheck_total) are reset so Toast's background scheduler has no reason to ever pick up and
+  // poll the test café — it was never actually verified or ticked here.
+  t("toast_location_mappings", {
+    pk: ["business_id", "restaurant_guid"],
+    fk: { location_id: "locations", restaurant_guid: "toast_restaurant_guid" },
+    nullOut: ["verified_at", "info_refreshed_at", "last_tick_started_at"],
+    setValues: { recheck_total: 0 }, // NOT NULL with a default of 0 — null would violate the column, reset instead
+    // These 4 columns are a safety reset, not owner data — re-apply them even to a row that
+    // already existed before this rule was added, rather than silently leaving stale values in
+    // place the way plain "insert if missing" would.
+    conflictMode: "updateSafetyColumns",
+    updateColumnsOnConflict: ["verified_at", "info_refreshed_at", "last_tick_started_at", "recheck_total"],
+  }),
   t("toast_first_import_check", { pk: ["business_id"] }),
-  t("ingredient_unit_conversions", { remapOwnId: true, joinScope: "ingredients", joinCol: "ingredient_id", fk: { ingredient_id: "ingredients" } }),
+  // No real unique/PK target to name here (see migrationConstraints test) — a plain conflict
+  // target would need to assume a specific index shape; skip naming one instead.
+  t("ingredient_unit_conversions", { remapOwnId: true, joinScope: "ingredients", joinCol: "ingredient_id", fk: { ingredient_id: "ingredients" }, conflictMode: "none" }),
 ];
 
 // Sales/labor/Toast-derived facts: fully copied on the first run, then refreshed (deleted +
@@ -171,14 +196,25 @@ export const INSERT_IF_MISSING_TABLES = [
 // children on insert.
 export const REFRESH_WINDOW_TABLES = [
   t("orders", { remapOwnId: true, fk: { location_id: "locations", employee_id: "employees" } }),
-  // order_lines has no business_id/business_date of its own — scoped via its parent order.
+  // order_lines has no business_id/business_date of its own — scoped via its parent order, and
+  // its cutoff always mirrors orders' own decision (see runRefreshWindowSync), never its own.
   t("order_lines", { remapOwnId: true, joinScope: "orders", joinCol: "order_id", fk: { order_id: "orders", menu_item_id: "menu_items" } }),
-  t("employee_sales_rollup", { pk: ["business_id", "business_date", "employee_id"], fk: { employee_id: "employees" } }),
-  t("hourly_sales_rollup", { pk: ["business_id", "business_date", "hour_local"], fk: { location_id: "locations" } }),
+  // Neither table has a primary key or unique constraint in the migrations that create them
+  // (confirmed against supabase/migrations, not just the live database — see
+  // sync-cafe-data.test.ts). A named ON CONFLICT target would error outright on a database built
+  // fresh from migrations. Plain insert is safe here because the whole 8-day window (or all rows,
+  // on a first/full copy) is always deleted earlier in the same transaction first.
+  t("employee_sales_rollup", { pk: ["business_id", "business_date", "employee_id"], fk: { employee_id: "employees" }, conflictMode: "plain" }),
+  t("hourly_sales_rollup", { pk: ["business_id", "business_date", "hour_local"], fk: { location_id: "locations" }, conflictMode: "plain" }),
   t("daily_rollups", { pk: ["business_id", "business_date"] }),
-  t("timecards", { remapOwnId: true, fk: { employee_id: "employees", schedule_id: "staff_schedules" } }),
+  t("timecards", { remapOwnId: true, fk: { employee_id: "employees", schedule_id: "staff_schedules" }, dateColumn: "clock_in" }),
   t("processing_fee_daily_candidates", { pk: ["business_id", "business_date", "source_type", "provider"] }),
   t("processing_fee_daily_facts", { pk: ["business_id", "business_date"] }),
+  // Moved here from insert-if-missing: these are Toast-derived day-level facts that should track
+  // the same rolling window as the rest of the day's sales data, not be seeded once and left stale.
+  t("toast_day_status", { pk: ["business_id", "restaurant_guid", "business_date"], fk: { restaurant_guid: "toast_restaurant_guid" }, nullOut: ["last_import_run_id"] }),
+  t("toast_day_owner_flags", { pk: ["business_id", "restaurant_guid", "business_date"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
+  t("pos_scheduled_shifts", { pk: ["business_id", "provider", "external_shift_id"], fk: { location_id: "locations" }, dateColumn: "scheduled_start" }),
 ];
 
 export function remapRow(table, row, cfg) {
@@ -189,13 +225,25 @@ export function remapRow(table, row, cfg) {
     if (out[col] != null) out[col] = remapId(targetTable, row[col]);
   }
   for (const col of cfg.nullOut ?? []) out[col] = null;
+  for (const [col, value] of Object.entries(cfg.setValues ?? {})) out[col] = value;
   return out;
 }
 
-async function chunkedInsert(client, table, rows, pkColumns) {
+function conflictClause(conflictMode, pkColumns, updateColumnsOnConflict) {
+  if (conflictMode === "plain") return "";
+  if (conflictMode === "none") return "on conflict do nothing";
+  if (conflictMode === "updateSafetyColumns") {
+    const sets = updateColumnsOnConflict.map((c) => `${c} = excluded.${c}`).join(",");
+    return `on conflict (${pkColumns.join(",")}) do update set ${sets}`;
+  }
+  return `on conflict (${pkColumns.join(",")}) do nothing`;
+}
+
+async function chunkedInsert(client, table, rows, pkColumns, conflictMode = "target", updateColumnsOnConflict = null) {
   if (rows.length === 0) return 0;
   const columns = Object.keys(rows[0]);
   const chunkSize = Math.max(1, Math.floor(1000 / columns.length)); // stay under postgres's 65535 bind-param limit
+  const onConflict = conflictClause(conflictMode, pkColumns, updateColumnsOnConflict);
   let inserted = 0;
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
@@ -206,7 +254,7 @@ async function chunkedInsert(client, table, rows, pkColumns) {
       placeholders.push(`(${columns.map(() => `$${p++}`).join(",")})`);
       for (const c of columns) values.push(toParam(c, row[c]));
     }
-    const sql = `insert into ${table} (${columns.join(",")}) values ${placeholders.join(",")} on conflict (${pkColumns.join(",")}) do nothing`;
+    const sql = `insert into ${table} (${columns.join(",")}) values ${placeholders.join(",")} ${onConflict}`;
     const result = await client.query(sql, values);
     inserted += result.rowCount;
   }
@@ -214,7 +262,7 @@ async function chunkedInsert(client, table, rows, pkColumns) {
 }
 
 async function syncTable(client, cfg) {
-  const { table, pk, remapOwnId, joinScope, joinCol, matchColumn } = cfg;
+  const { table, pk, joinScope, joinCol, matchColumn, conflictMode, updateColumnsOnConflict } = cfg;
 
   let matchMap = null;
   if (matchColumn) {
@@ -237,8 +285,7 @@ async function syncTable(client, cfg) {
     rowsToInsert.push(remapRow(table, row, cfg));
   }
 
-  const pkColumns = pk.map((c) => (c === "id" && remapOwnId ? "id" : c));
-  return chunkedInsert(client, table, rowsToInsert, pkColumns);
+  return chunkedInsert(client, table, rowsToInsert, pk, conflictMode, updateColumnsOnConflict);
 }
 
 // Ensures a (credential-free) toast_api_credentials row exists for DEST_BUSINESS_ID, purely to
@@ -273,40 +320,57 @@ async function syncTimezoneAndHours(client) {
   }
 }
 
-async function getRefreshWindowCutoff(client) {
-  const { rows: destCountRows } = await client.query(`select count(*)::int as c from orders where business_id = $1`, [DEST_BUSINESS_ID]);
-  const firstRun = destCountRows[0].c === 0;
-  if (firstRun) return { firstRun, cutoff: null };
+// Full-copy vs. refresh-window is decided per table (whether THAT table is empty in the
+// destination), not from one global signal like "does the destination have any orders yet" —
+// tables can genuinely be in different states (e.g. a prior run could add a brand new table
+// before the destination has caught up on it). GitHub Actions' workflow_dispatch "full_copy"
+// input forces every refresh-window table to a full copy regardless of its current state.
+const FORCE_FULL_COPY = process.env.FULL_COPY === "true";
 
-  const { rows: maxDateRows } = await client.query(`select max(business_date) as maxd from orders where business_id = $1`, [SOURCE_BUSINESS_ID]);
-  const maxDate = maxDateRows[0].maxd;
-  if (!maxDate) return { firstRun: false, cutoff: null };
+async function isDestEmpty(client, table) {
+  const { rows } = await client.query(`select count(*)::int as c from ${table} where business_id = $1`, [DEST_BUSINESS_ID]);
+  return rows[0].c === 0;
+}
 
+// The shared date anchor every refresh-window table's cutoff is computed from: the source's own
+// most recent order. Each table still independently decides whether to apply that cutoff at all
+// (see isDestEmpty) or copy everything, so this is just "where would the window start if this
+// table ends up windowed" — not itself a decision about whether windowing happens.
+async function getSharedCutoffDate(client) {
+  const { rows } = await client.query(`select max(business_date) as maxd from orders where business_id = $1`, [SOURCE_BUSINESS_ID]);
+  const maxDate = rows[0].maxd;
+  if (!maxDate) return null;
   const cutoff = new Date(maxDate);
   cutoff.setUTCDate(cutoff.getUTCDate() - (REFRESH_WINDOW_DAYS - 1));
-  return { firstRun: false, cutoff };
+  return cutoff;
+}
+
+// `cutoff` governs what's copied FROM the source (null = everything, a date = only that window).
+// `deleteMode` governs what's removed from the destination first, which is a separate decision:
+// an empty destination has nothing to delete either way, but a FORCE_FULL_COPY on a destination
+// that already has historical data must wipe ALL of it before the full re-copy, not skip
+// deleting just because the copy itself is unwindowed.
+async function getPlanForTable(client, table, sharedCutoff) {
+  const empty = await isDestEmpty(client, table);
+  if (empty) return { cutoff: null, deleteMode: "skip" };
+  if (FORCE_FULL_COPY) return { cutoff: null, deleteMode: "all" };
+  return { cutoff: sharedCutoff, deleteMode: "window" };
 }
 
 async function copyRefreshTable(client, cfg, cutoff) {
-  const { table, pk, joinScope, joinCol } = cfg;
+  const { table, pk, joinScope, joinCol, dateColumn, conflictMode } = cfg;
   let selectSql;
   const params = [SOURCE_BUSINESS_ID];
   if (joinScope) {
     selectSql = `select t.* from ${table} t join ${joinScope} p on t.${joinCol} = p.id where p.business_id = $1`;
     if (cutoff) {
-      selectSql += ` and p.business_date >= $2`;
-      params.push(cutoff);
-    }
-  } else if (table === "timecards") {
-    selectSql = `select * from ${table} where business_id = $1`;
-    if (cutoff) {
-      selectSql += ` and clock_in >= $2`;
+      selectSql += ` and p.${dateColumn} >= $2`;
       params.push(cutoff);
     }
   } else {
     selectSql = `select * from ${table} where business_id = $1`;
     if (cutoff) {
-      selectSql += ` and business_date >= $2`;
+      selectSql += ` and ${dateColumn} >= $2`;
       params.push(cutoff);
     }
   }
@@ -314,18 +378,18 @@ async function copyRefreshTable(client, cfg, cutoff) {
   const { rows } = await client.query(selectSql, params);
   if (rows.length === 0) return 0;
   const rowsToInsert = rows.map((row) => remapRow(table, row, cfg));
-  const pkColumns = pk.map((c) => (c === "id" && cfg.remapOwnId ? "id" : c));
-  return chunkedInsert(client, table, rowsToInsert, pkColumns);
+  return chunkedInsert(client, table, rowsToInsert, pk, conflictMode);
 }
 
-async function deleteDestWindow(client, table, cutoff, { viaOrders = false } = {}) {
-  if (!cutoff) return; // first run: destination has nothing to delete yet
-  if (viaOrders) {
-    await client.query(`delete from ${table} where order_id in (select id from orders where business_id = $1 and business_date >= $2)`, [DEST_BUSINESS_ID, cutoff]);
-  } else if (table === "timecards") {
-    await client.query(`delete from ${table} where business_id = $1 and clock_in >= $2`, [DEST_BUSINESS_ID, cutoff]);
+async function deleteDestWindow(client, cfg, plan) {
+  if (plan.deleteMode === "skip") return; // destination already has nothing for this table
+  const { table, joinScope, joinCol, dateColumn } = cfg;
+  const dateFilter = plan.deleteMode === "all" ? "" : ` and ${joinScope ? "p." : ""}${dateColumn} >= $2`;
+  const params = plan.deleteMode === "all" ? [DEST_BUSINESS_ID] : [DEST_BUSINESS_ID, plan.cutoff];
+  if (joinScope) {
+    await client.query(`delete from ${table} where ${joinCol} in (select id from ${joinScope} p where p.business_id = $1${dateFilter})`, params);
   } else {
-    await client.query(`delete from ${table} where business_id = $1 and business_date >= $2`, [DEST_BUSINESS_ID, cutoff]);
+    await client.query(`delete from ${table} where business_id = $1${dateFilter}`, params);
   }
 }
 
@@ -333,21 +397,25 @@ async function deleteDestWindow(client, table, cutoff, { viaOrders = false } = {
 // failure partway through never leaves the destination with some tables refreshed and others not.
 async function runRefreshWindowSync(client, counts) {
   const byTable = Object.fromEntries(REFRESH_WINDOW_TABLES.map((cfg) => [cfg.table, cfg]));
-  const { cutoff } = await getRefreshWindowCutoff(client);
+  const sharedCutoff = await getSharedCutoffDate(client);
+
+  const plans = {};
+  for (const tableName of Object.keys(byTable)) {
+    if (tableName === "order_lines") continue; // decided below: must mirror orders', not its own state
+    plans[tableName] = await getPlanForTable(client, tableName, sharedCutoff);
+  }
+  // order_lines has no business_id/business_date of its own and is entirely derived from its
+  // parent order — it must be windowed exactly like orders, never decided independently.
+  plans.order_lines = plans.orders;
 
   await client.query("begin");
   try {
-    await deleteDestWindow(client, "order_lines", cutoff, { viaOrders: true });
-    await deleteDestWindow(client, "orders", cutoff);
-    await deleteDestWindow(client, "employee_sales_rollup", cutoff);
-    await deleteDestWindow(client, "hourly_sales_rollup", cutoff);
-    await deleteDestWindow(client, "daily_rollups", cutoff);
-    await deleteDestWindow(client, "timecards", cutoff);
-    await deleteDestWindow(client, "processing_fee_daily_candidates", cutoff);
-    await deleteDestWindow(client, "processing_fee_daily_facts", cutoff);
+    for (const tableName of ["order_lines", "orders", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts", "toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts"]) {
+      await deleteDestWindow(client, byTable[tableName], plans[tableName]);
+    }
 
-    for (const tableName of ["orders", "order_lines", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts"]) {
-      counts[tableName] = await copyRefreshTable(client, byTable[tableName], cutoff);
+    for (const tableName of ["orders", "order_lines", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts", "toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts"]) {
+      counts[tableName] = await copyRefreshTable(client, byTable[tableName], plans[tableName].cutoff);
     }
 
     await client.query("commit");
