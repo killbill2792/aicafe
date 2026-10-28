@@ -305,7 +305,7 @@ begin
   -- Aggregate-only requests cannot add ungrouped columns.
   if coalesce(array_length(p_columns,1),0)>0 then raise exception 'columns require group by';end if;
  elsif exists(select 1 from unnest(p_columns) c where c<>all(p_group_by)) then
-  raise exception 'ungrouped columns';end if;
+  raise exception 'ungrouped columns';
  end if;
  if v_group<>'' then v_group:=' group by '||v_group;end if;
  if p_order_by is not null then
