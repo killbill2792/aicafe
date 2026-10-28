@@ -5,9 +5,9 @@ import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
 import type {LaborRecord} from "@/lib/metrics/core/labor";
 import {COFFEE_SHOP_PROFILE} from "@/lib/pricing/profiles";
 export type FigureStatus="actual"|"estimate"|"owner"|"missing";
-export type Figure={valueCents:number|null;status:FigureStatus;reason:string;missingDays:string[]};
-export const figure=(valueCents:number|null,status:FigureStatus,reason:string,missingDays:string[]=[]):Figure=>({
- valueCents,status:valueCents===null?"missing":status,reason,missingDays
+export type Figure={valueCents:number|null;status:FigureStatus;reason:string;missingDays:string[];reasonParams?:Record<string,string|number>};
+export const figure=(valueCents:number|null,status:FigureStatus,reason:string,missingDays:string[]=[],reasonParams?:Record<string,string|number>):Figure=>({
+ valueCents,status:valueCents===null?"missing":status,reason,missingDays,reasonParams
 });
 /** Owner costs are EXTRAS, never a substitute for known/clocked payroll.
  * Without a clocked-labor basis, even saved extras cannot certify total payroll. */
@@ -122,10 +122,12 @@ export function unifiedBreakEven(input:Economics){
    ?Math.ceil(monthlyCents/input.averagePriceCents/input.daysInMonth):null;
  const status:FigureStatus=missing.length||fixed.some(f=>f.status!=="actual")||
   input.ingredientStatus!=="actual"||input.feeStatus!=="actual"?"estimate":"actual";
- const reason=missing.length?"Known inputs only; missing: "+missing.join(", "):
-  input.monthlyStaff.missingDays.length?"estimate: "+input.monthlyStaff.missingDays.length+" labor days missing":
-  status==="actual"?"Recorded costs and sales":"Includes estimates or owner-entered figures";
- return {monthlyBreakEven:figure(monthlyCents,status,reason,input.missingDays),
+ const reason=missing.length?"breakEvenKnownInputs":
+  input.monthlyStaff.missingDays.length?"laborPartialCoverage":
+  status==="actual"?"laborRecorded":"profitFeesEstimated";
+ const reasonParams={missing:missing.join(", "),covered:input.laborCoveredDays??0,
+  total:input.laborWindowDays??0};
+ return {monthlyBreakEven:figure(monthlyCents,status,reason,input.missingDays,reasonParams),
   drinksPerDay,knownCostBreakEvenFloorCents,monthlyFixedKnownCents:fixedKnown,
   monthlyBills:input.monthlyBills,monthlyStaff:input.monthlyStaff,
   ingredientRate:input.ingredientRate,feeRate:input.feeRate,
