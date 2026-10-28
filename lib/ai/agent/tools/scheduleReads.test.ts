@@ -29,6 +29,19 @@ describe("Toast and app schedule union",()=>{
     start:"09:00",source:"toast",paidMinutes:null,costCents:null}]);
   expect(result.missing).not.toContain("scheduleNotSet");
  });
+ it("preserves two unlinked Toast employees with the same name and start time",async()=>{
+  vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{
+    team:[],shifts:[],posScheduleError:null,timezone:"America/Los_Angeles",
+    posShifts:["toast-1","toast-2"].map(id=>({id,employeeId:null,employeeName:"Jordan",
+      start:"2026-10-24T16:00:00Z",end:"2026-10-24T20:00:00Z",
+      locationId:"location",source:"toast",paid:false})),
+    dates:["2026-10-19","2026-10-20","2026-10-21","2026-10-22","2026-10-23","2026-10-24","2026-10-25"],
+    adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}
+  }} as never);
+  const result=await scheduleReadTools.get_week_schedule.execute({week_start:"2026-10-19"},
+    {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as unknown as AgentToolContext);
+  expect((result.shifts as {id:string}[]).map(s=>s.id)).toEqual(["toast-1","toast-2"]);
+ });
  it("merges matching employee and start without duplicating app shifts",async()=>{
   vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{
    team:[{id:"e",name:"Casey"}],shifts:[{id:"app-1",date:"2026-10-24",employeeId:"e",
