@@ -48,6 +48,8 @@ function clipMenu(value:unknown):unknown {
  if(!value||typeof value!=="object"||Array.isArray(value))return value;
  const v=value as Record<string,unknown>;
  const menus=Array.isArray(v.menus)?v.menus.slice(0,3):[];
+ const firstThreeRefs=(refs:unknown)=>refs&&typeof refs==="object"&&!Array.isArray(refs)
+  ?Object.fromEntries(Object.entries(refs).slice(0,3)):{};
  const clipGroups=(groups:unknown):unknown[]=>Array.isArray(groups)
   ?groups.slice(0,3).map(g=>{
     if(!g||typeof g!=="object")return g;
@@ -59,7 +61,8 @@ function clipMenu(value:unknown):unknown {
    if(!m||typeof m!=="object")return m;
    const menu=m as Record<string,unknown>;
    return {...menu,menuGroups:clipGroups(menu.menuGroups)};
- }),modifierGroupReferences:{},modifierOptionReferences:{}};
+ }),modifierGroupReferences:firstThreeRefs(v.modifierGroupReferences),
+  modifierOptionReferences:firstThreeRefs(v.modifierOptionReferences)};
 }
 type Writer=Pick<SupabaseClient,"from"|"rpc">;
 export async function claimToastRawSample(db:Writer,businessId:string,restaurantGuid:string,businessDate:string){
