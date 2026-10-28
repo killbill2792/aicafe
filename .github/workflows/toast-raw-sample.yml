@@ -62,11 +62,20 @@ jobs:
           try { result = JSON.parse(text.trim()); } catch {}
           if (result && typeof result === 'object' && Number.isSafeInteger(result.captured) &&
               Number.isSafeInteger(result.failed) && typeof result.skipped === 'boolean') {
-            const reasons = new Set(['invalid_request','no_location','busy','cooldown','db_error']);
+            const reasons = new Set(['invalid_request','no_location','busy','cooldown','db_error','missing_hash_key','lease_lost']);
             const status = result.skipped ? 'skipped' : result.failed ? 'partial_failure' : 'completed';
             console.log('Toast sample status: ' + status);
             console.log('Captured endpoint samples: ' + result.captured);
             console.log('Failed endpoint samples: ' + result.failed);
+            if (Array.isArray(result.endpoints)) {
+              for (const e of result.endpoints) {
+                if (!e || !/^[a-zA-Z0-9/{}._-]{1,120}$/.test(e.endpoint) ||
+                    !(e.status === null || Number.isInteger(e.status) && e.status >= 100 && e.status <= 599) ||
+                    !Number.isSafeInteger(e.count) || e.count < 0) continue;
+                console.log('Toast endpoint ' + e.endpoint + ' status=' +
+                  (e.status === null ? 'none' : e.status) + ' count=' + e.count);
+              }
+            }
             if (reasons.has(result.reason)) console.log('Status reason: ' + result.reason);
           } else {
             console.log('Toast sample status: failed (details suppressed)');
