@@ -14,7 +14,7 @@ export function drinksTargetPerDay(dailyCosts:number,moneyLeft:number):number{
 import {cardFeesForDays,type OwnerFeePlan} from "./fees";
 export type BreakEvenDay={
   date:string;netSalesCents:number;ingredientsCents:number;cardFeesCents:number;
-  drinksCount:number;salesDataStatus?:"actual"|"missing";
+  drinksCount:number;ordersCount?:number|null;salesDataStatus?:"actual"|"missing";
   cardFeesStatus?:"actual"|"estimated"|"missing";
 };
 export type BreakEvenResult={
@@ -40,7 +40,7 @@ export function breakEvenFor(input:{
   const observedIngredientCents=input.observedIngredientCents??window.reduce((sum,d)=>sum+d.ingredientsCents,0);
   const feeResult=cardFeesForDays(window,input.ownerFeePlans??null);
   const observedProcessingFeesCents=input.observedProcessingFeesCents??feeResult.amountCents;
-  notes.push(...feeResult.notes.filter(key=>key!=="feeNetSalesProxy"));
+  notes.push(...feeResult.notes);
   const drinks=window.reduce((sum,d)=>sum+d.drinksCount,0);
   const result=calculateBreakEvenSales({
     monthlyBillsCents:input.monthlyBillsCents??0,
