@@ -57,7 +57,7 @@ describe("supervisor new-item price evidence",()=>{
       expect((reply.monthlyLabor as {valueCents:number|null;reasonKey:string;reason:string}).reason).toContain(locale==="es"?"Nómina":locale==="ar"?"الرواتب":"Payroll");
       expect(reply.breakEvenCents).toBeGreaterThan(0);
       expect(reply.recommendedPriceCents).toBeGreaterThan(0);
-      if(locale!=="en")expect(reply.monthlyLabor.reason).not.toContain("Only");
+      if(locale!=="en")expect((reply.monthlyLabor as {reason:string}).reason).not.toContain("Only");
     }
   });
 });
