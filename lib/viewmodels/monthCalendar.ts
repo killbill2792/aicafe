@@ -5,6 +5,8 @@ import { dayContributionCents, recoveryBucketsFromAmounts } from "./costRecovery
 import { laborKnown } from "@/lib/calc";
 import { previousMonthKey } from "./period";
 import { profitTone, type ProfitTone } from "./profitTone";
+import {profitForPeriod} from "@/lib/metrics/core/profit";
+import {cardFeesForDays} from "@/lib/metrics/core/fees";
 
 export type DayCellState =
   | { kind: "actual"; ownerProfitCents: number; tone: ProfitTone; isEstimate: boolean }
@@ -84,13 +86,22 @@ export function buildMonthCalendarViewModel(params: {
 
     // Only explicit sales coverage makes this an actual performance day. A staff-only rollup is
     // still Missing sales and must never become a red "loss" day.
-    if (dayFacts && hasSalesCoverage(dayFacts) && laborKnown(dayFacts)) {
+    if(dayFacts&&hasSalesCoverage(dayFacts)){
       const runningCostShareCents = roundHalfUpToCent(runningCostsForPeriodCents(categoryAmounts, date, date));
-      const staffCents = dayFacts.wagesCents + dayFacts.staffTaxCents;
-      const ownerProfitCents = dayFacts.netSalesCents - dayFacts.ingredientsCents - staffCents - dayFacts.cardFeesCents - runningCostShareCents;
-      const tone = profitTone(ownerProfitCents);
+      const staffCents=(dayFacts.wagesCents??0)+(dayFacts.staffTaxCents??0);
+      const fees=cardFeesForDays([dayFacts]);
+      const partial=profitForPeriod([dayFacts],
+        {amountCents:runningCostShareCents,missing:categoryAmounts.filter(x=>x.isMissing).map(x=>x.categoryCode),
+          estimated:hasEstimatedCosts},
+        {amountCents:fees.amountCents,missing:dayFacts.cardFeesStatus==="missing"?["feeMissing"]:[],
+          estimated:fees.basis!=="actual"},
+        {amountCents:staffCents,missing:laborKnown(dayFacts)?[]:["laborMissing"]},
+        {amountCents:dayFacts.ingredientsCents});
+      const ownerProfitCents=partial.profitCents!;
+      const tone=profitTone(ownerProfitCents);
 
-      cells.push({ date, day, state: { kind: "actual", ownerProfitCents, tone, isEstimate: hasEstimatedCosts }, milestoneBucketCodes });
+      cells.push({date,day,state:{kind:"actual",ownerProfitCents,tone,
+        isEstimate:hasEstimatedCosts||partial.basis!=="complete"},milestoneBucketCodes});
       detailsByDate[date] = {
         date,
         hasData: true,
@@ -98,7 +109,7 @@ export function buildMonthCalendarViewModel(params: {
         salesCents: dayFacts.netSalesCents,
         ingredientsCents: dayFacts.ingredientsCents,
         staffCents,
-        cardFeesCents: dayFacts.cardFeesCents,
+        cardFeesCents:fees.amountCents,
         runningCostShareCents,
         runningCostShareIsEstimate: hasEstimatedCosts,
         ownerProfitCents,
