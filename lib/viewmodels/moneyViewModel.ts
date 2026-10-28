@@ -36,7 +36,7 @@ import {breakEvenFor} from "@/lib/metrics/core/breakEven";
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const buckets = recoveryBuckets(snapshot);
   const actual = actualDayContributions(snapshot);
-  const projected = snapshot.last28Days.length >= 7 ? projectedDayContributions(snapshot) : [];
+  const projected = snapshot.last28Days.length ? projectedDayContributions(snapshot) : [];
   const recovery = computeCostRecovery(buckets, [...actual, ...projected]);
 
   const totalCents = buckets.reduce((s, b) => s + b.amountCents, 0);
@@ -55,7 +55,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     snapshot.monthKey+"-"+String(i+1).padStart(2,"0")).filter(date=>
       regularHoursStateForDate(snapshot.business.openHours,date)!=="closed");
   const monthLabor=laborForPeriod(monthOpenDates.map(date=>({date})),monthRecordedDays);
-  const monthlyStaffCents=monthLabor.coveredDays>0?monthLabor.projectedMonthlyLaborCents:null;
+  const monthlyStaffCents=monthLabor.projectedMonthlyLaborCents;
 
   const salesHistory = snapshot.last28Days;
   const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
@@ -87,7 +87,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     buckets: recovery.buckets,
     currentBucketCode: recovery.currentBucketCode,
     yoursSoFarCents: recovery.yoursSoFarCents,
-    projectedMonthEndProfitCents: missingMonthWage?null:recovery.projectedMonthEndProfitCents,
+    projectedMonthEndProfitCents:recovery.projectedMonthEndProfitCents,
     allCovered,
     totalCents,
     actualDays: actual,
@@ -155,8 +155,8 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
   const ingredientsRatio = ratio(ingredientsCents, salesCents);
-  const staffRatio=wagesCents===null||staffTaxCents===null?null:ratio(wagesCents+staffTaxCents,salesCents);
-  const combinedRatio=wagesCents===null||staffTaxCents===null?null:ratio(ingredientsCents+wagesCents+staffTaxCents,salesCents);
+  const staffRatio=wageUnknown?null:ratio(wagesCents+staffTaxCents,salesCents);
+  const combinedRatio=wageUnknown?null:ratio(ingredientsCents+wagesCents+staffTaxCents,salesCents);
 
   const prevDays = previousPeriodDays(snapshot, period);
   const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);

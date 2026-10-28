@@ -309,8 +309,8 @@ describe("Money partial-known-wage day",()=>{
       todayDay:changed(original.todayDay)};
     const vm=buildProfitAndCostsViewModel(snapshot,"today");
     expect(vm.salesCents).toBeGreaterThan(0);
-    expect(vm.wagesCents).toBeNull();
-    expect(vm.staffTaxCents).toBeNull();
+    expect(vm.wagesCents).toBe(1750);
+    expect(vm.staffTaxCents).toBe(210);
     expect(vm.staffRatio).toBeNull();
     expect(vm.combinedRatio).toBeNull();
     expect(vm.staffBand).toBeNull();
@@ -332,8 +332,8 @@ describe("Money partial-known-wage day",()=>{
       ...d,wagesCents:1250,staffTaxCents:150,laborWageStatus:"missing" as const}:d);
     const vm=buildCostRecoveryViewModel({...original,monthRecordedDays:changed,
       monthActualDays:changed});
-    expect(vm.monthlyStaffCents).toBeNull();
-    expect(vm.breakEven.kind).toBe("unavailable");
+    expect(vm.monthlyStaffCents).toBeGreaterThan(0);
+    expect(vm.breakEvenNotes).toContain("laborWageUnknown");
   });
 });
 
