@@ -18,8 +18,12 @@ import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 export async function getBusinessSnapshotFromDb(
   supabase: SupabaseClient,
   businessId: string,
-  costPeriod: "today"|"week"|"month"="month",
+  costPeriod: "today"|"week"|"month"|{from:string;to:string}="month",
 ): Promise<BusinessSnapshot> {
+  // Historical range is a read-only mode of the existing classified source.
+  // Never reach shift-materialization or alert-generation writes in this path.
+  if(typeof costPeriod==="object")
+    return readHistoricalBusinessSnapshot(supabase,businessId,costPeriod);
   const { data: businessRow, error: businessError } = await supabase
     .from("businesses")
     .select("id, name, timezone, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status, owner_monthly_payroll_extras_cents")
@@ -463,6 +467,3 @@ async function readHistoricalBusinessSnapshot(
   };
 }
 
-// The existing snapshot export remains the public source boundary and owns the
-// read-only historical method. Do not introduce an unclassified new data export.
-getBusinessSnapshotFromDb.readHistorical=readHistoricalBusinessSnapshot;

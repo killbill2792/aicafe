@@ -69,7 +69,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       assertBusiness(requested);
       if(period){
         // Historical lookups must never materialize shifts or regenerate alerts.
-        const historical=await getBusinessSnapshotFromDb.readHistorical(client,businessId,period);
+        const historical=await getBusinessSnapshotFromDb(client,businessId,period);
         if(historical.business.id!==businessId)throw new Error("Café snapshot scope mismatch");
         return historical;
       }
