@@ -35,7 +35,7 @@ describe("Leo scoped money reads",()=>{
     expect(noImports.monthlyBreakEvenCents).toBe(Math.round(60000/.70));
   });
   it("does not quietly use UTC when café timezone is unavailable",async()=>{
-    const missingZone={...ctx({}),timezone:undefined};
+    const missingZone={...ctx({}),timezone:undefined} as unknown as AgentToolContext;
     const expense=await moneyTools.get_expenses.execute(
       {period:"month",category:null},missingZone);
     const costs=await moneyTools.get_cost_summary.execute(

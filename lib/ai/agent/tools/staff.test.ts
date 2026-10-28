@@ -36,6 +36,52 @@ describe("Olivia bounded reads",()=>{
     expect(data.agentId).toBe("olivia");
     expect(data.people).toHaveLength(1);
   });
+  it("retains independently recorded on-shift staff when attendance check fails",async()=>{
+    const r=await staffTools.get_staff.execute({},ctx({
+      getCurrentStaff:async()=>({available:true,value:{count:1,asOf:"2026-10-22T14:00:00Z",
+        people:[{name:"Casey",role:"Barista",sourceType:"connected_pos",sourceProvider:"Toast",
+          start:"2026-10-22T13:00:00Z",breakStatus:"ok",isSchedulePrediction:false}]},quality:q}),
+      getStaffAttendance:async()=>unavailable,
+    }));
+    expect(r.count).toBe(1);
+    expect(r.people).toMatchObject([{name:"Casey",isSchedulePrediction:false}]);
+    expect(r.onClockCount).toBeNull();
+    expect(r.missing).toContain("notAvailable");
+  });
+  it("keeps recorded on-shift staff when attendance read throws",async()=>{
+    const result=await staffTools.get_staff.execute({},ctx({
+      getCurrentStaff:async()=>({available:true,value:{count:1,asOf:"2026-10-22T14:00:00Z",
+        people:[{name:"Casey",role:"Barista",sourceType:"connected_pos",sourceProvider:"Toast",
+          start:"2026-10-22T13:00:00Z",breakStatus:"ok",isSchedulePrediction:false}]},quality:q}),
+      getStaffAttendance:async()=>{throw new Error("database offline");},
+    }));
+    expect(result.people).toMatchObject([{name:"Casey"}]);
+    expect(result.count).toBe(1);
+    expect(result.onClockCount).toBeNull();
+    expect(result.missing).toContain("staffAttendanceReadFailed");
+    expect(result.dataNotes).toEqual([expect.stringContaining("attendance check failed")]);
+  });
+  it("keeps independent attendance when current-staff reader is absent",async()=>{
+    const r=await staffTools.get_staff.execute({},ctx({
+      getStaffAttendance:async()=>({available:true,value:{
+        timecardCount:3,onClockCount:2,attendanceTracked:true},quality:q}),
+    }));
+    expect(r.onClockCount).toBe(2);
+    expect(r.count).toBe(2);
+    expect(r.people).toBeNull();
+    expect(r.missing).toContain("staffReaderUnavailable");
+  });
+  it("keeps independent attendance when current-staff reader throws",async()=>{
+    const r=await staffTools.get_staff.execute({},ctx({
+      getCurrentStaff:async()=>{throw new Error("staff offline");},
+      getStaffAttendance:async()=>({available:true,value:{
+        timecardCount:3,onClockCount:0,attendanceTracked:true},quality:q}),
+    }));
+    expect(r.count).toBe(0);
+    expect(r.onClockCount).toBe(0);
+    expect(r.missing).toContain("staffReadFailed");
+    expect(r.dataNotes).toEqual([expect.stringContaining("readers failed")]);
+  });
   it("never invents zero clock-ins for a café with only repeating patterns",async()=>{
     const r=await staffTools.get_staff.execute({},ctx({
       getCurrentStaff:async()=>({available:true,value:{count:0,asOf:"2026-10-22T14:00:00Z",people:[]},quality:q}),
@@ -52,7 +98,7 @@ describe("Olivia bounded reads",()=>{
     vi.mocked(getWeekSchedule).mockResolvedValue(confirmed([datedShift("mon",week)]) as never);
     const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
     expect(getWeekSchedule).toHaveBeenCalledWith({weekStart:week});
-    expect(r.source).toBe("scheduled_shifts");
+    expect(r.source).toBe("scheduled_shifts+pos_scheduled_shifts");
     expect(r.scheduleSet).toBe(true);
     expect(r.windowHasShifts).toBe(false);
     expect(r.shifts).toEqual([]);
@@ -74,11 +120,11 @@ describe("Olivia bounded reads",()=>{
     const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
     expect(r.scheduleSet).toBe(true);
     expect(r.windowHasShifts).toBe(true);
-    expect((r.shifts as {id:string}[]).map(s=>s.id)).toEqual(["thu"]);
+    expect((r.shifts as {id:string}[]).map(s=>s.id)).toEqual(["thu","inactive"]);
     expect(r.missing).not.toContain("noShiftsInRequestedRange");
     expect(r.missing).not.toContain("moreShifts");
     expect(r.paidMinutes).toBeNull();
-    expect(JSON.stringify(r)).not.toContain("inactive");
+    expect(JSON.stringify(r)).toContain("inactive");
   });
   it("marks a large selected window as truncated without hiding its shifts",async()=>{
     vi.mocked(getWeekSchedule).mockResolvedValue(confirmed(
@@ -86,8 +132,8 @@ describe("Olivia bounded reads",()=>{
     ) as never);
     const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
     expect(r.windowHasShifts).toBe(true);
-    expect((r.shifts as unknown[]).length).toBe(40);
-    expect(r.missing).toContain("moreShifts");
+    expect((r.shifts as unknown[]).length).toBe(43);
+    expect(r.missing).not.toContain("moreShifts");
   });
   it("reports an entirely unset week without invented coverage",async()=>{
     vi.mocked(getWeekSchedule).mockResolvedValue(confirmed([]) as never);
@@ -98,9 +144,61 @@ describe("Olivia bounded reads",()=>{
     expect(r.missing).not.toContain("noShiftsInRequestedRange");
     expect(r.gaps).toEqual([]);
   });
-  it("does not reconstruct historical recurring schedules",async()=>{
-    const r=await staffTools.get_schedule.execute({from:"2026-10-21",to:"2026-10-22"},ctx());
-    expect(r.missing).toEqual(["historicalScheduleNotReconstructable"]);
+  it("past, cross-week and 120-day ranges answer",async()=>{
+    vi.mocked(getWeekSchedule).mockClear();
+    vi.mocked(getWeekSchedule).mockImplementation(async(raw:unknown)=>{
+      const {weekStart}=raw as {weekStart:string};
+      return confirmed([datedShift("planned-"+weekStart,weekStart)]) as never;
+    });
+    const past=await staffTools.get_schedule.execute({from:"2026-10-19",to:"2026-10-20"},ctx());
+    expect(past.missing).not.toContain("historicalScheduleNotReconstructable");
+    expect(past.windowHasShifts).toBe(true);
+    const cross=await staffTools.get_schedule.execute({from:"2026-10-24",to:"2026-10-26"},ctx());
+    expect(cross.missing).not.toContain("scheduleRangeRequiresWeeklyRead");
+    const long=await staffTools.get_schedule.execute({from:"2026-06-01",to:"2026-09-28"},ctx());
+    expect(long.period).toEqual({from:"2026-06-01",to:"2026-09-28"});
+    expect(long.missing).not.toContain("scheduleRangeInvalid");
+    expect(getWeekSchedule).toHaveBeenCalledTimes(1+2+18);
+  });
+  it("deduplicates Toast overnight assignments returned by two adjacent weeks",async()=>{
+    vi.mocked(getWeekSchedule).mockClear();
+    const overnight={id:"toast-night",employeeId:null,employeeName:"Taylor",
+      start:"2026-10-26T06:00:00Z",end:"2026-10-26T11:00:00Z",
+      locationId:"location-a",source:"toast" as const,paid:false as const};
+    vi.mocked(getWeekSchedule).mockImplementation(async(raw:unknown)=>{
+      const {weekStart}=raw as {weekStart:string};
+      return {ok:true,data:{dates:Array.from({length:7},(_,i)=>new Date(
+        Date.parse(weekStart+"T12:00:00Z")+i*86400000).toISOString().slice(0,10)),
+        team:[],shifts:[],posShifts:[overnight],timezone:"America/Los_Angeles",
+        posScheduleError:null,adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}}} as never;
+    });
+    const result=await staffTools.get_schedule.execute({from:"2026-10-24",to:"2026-10-26"},ctx());
+    const shifts=result.shifts as {id:string;source:string;date:string}[];
+    expect(getWeekSchedule).toHaveBeenCalledTimes(2);
+    expect(shifts).toEqual([expect.objectContaining({id:"toast-night",source:"toast",date:"2026-10-25"})]);
+    expect(result.windowHasShifts).toBe(true);
+    expect(result.missing).not.toContain("moreShifts");
+  });
+  it("continues to other weeks when one schedule reader throws",async()=>{
+    vi.mocked(getWeekSchedule).mockImplementation(async(raw:unknown)=>{
+      const {weekStart}=raw as {weekStart:string};
+      if(weekStart==="2026-10-19")throw new Error("temporary failure");
+      return confirmed([datedShift("mon","2026-10-26")]) as never;
+    });
+    const result=await staffTools.get_schedule.execute({from:"2026-10-24",to:"2026-10-27"},ctx());
+    expect(result.shifts).toMatchObject([{id:"mon",date:"2026-10-26"}]);
+    expect(result.missing).toContain("scheduleReadFailed:2026-10-19");
+    expect(result.dataNotes).toEqual([expect.stringContaining("week of 2026-10-19")]);
+  });
+  it("caps ranges longer than 366 days with a note but preserves shifts",async()=>{
+    vi.mocked(getWeekSchedule).mockImplementation(async(raw:unknown)=>{
+      const {weekStart}=raw as {weekStart:string};
+      return confirmed([datedShift("planned-"+weekStart,weekStart)]) as never;
+    });
+    const result=await staffTools.get_schedule.execute({from:"2024-01-01",to:"2026-01-01"},ctx());
+    expect(result.missing).toContain("scheduleRangeTruncated");
+    expect(result.dataNotes).toEqual([expect.stringContaining("first 366 days")]);
+    expect((result.shifts as unknown[]).length).toBeGreaterThan(0);
   });
   it("keeps attendance unavailable separate from labor",async()=>{
     const r=await staffTools.get_labor.execute({period:"today"},ctx({
@@ -111,6 +209,40 @@ describe("Olivia bounded reads",()=>{
     expect(r.missing).toContain("notAvailable");
     expect(r.attendance).toBeNull();
     expect(r.laborDays).toHaveLength(1);
+  });
+  it("keeps recorded attendance when labor capability is absent",async()=>{
+    const r=await staffTools.get_labor.execute({period:"today"},ctx({
+      getStaffAttendance:async()=>({available:true,value:{
+        timecardCount:3,onClockCount:2,attendanceTracked:true},quality:q}),
+    }));
+    expect(r.attendance).toMatchObject({timecardCount:3,onClockCount:2});
+    expect(r.laborDays).toBeNull();
+    expect(r.missing).toContain("laborReaderUnavailable");
+    expect(r.dataNotes).toEqual([expect.stringContaining("readers failed")]);
+  });
+  it("keeps recorded labor when attendance tool is absent",async()=>{
+    const result=await staffTools.get_labor.execute({period:"today"},ctx({
+      getLaborMetrics:async()=>({available:true,value:[{date:"2026-10-22",
+        wagesCents:1500,staffTaxCents:100,loadedStaffCostCents:1600,wageStatus:"actual"}],quality:q}),
+    }));
+    expect(result.laborDays).toMatchObject([{date:"2026-10-22",loadedStaffCostCents:1600}]);
+    expect(result.missing).toContain("attendanceReaderUnavailable");
+    expect(result.attendance).toBeNull();
+    expect(result.dataNotes).toEqual([expect.stringContaining("readers failed")]);
+  });
+  it("keeps labor days when attendance or optional payroll reads throw",async()=>{
+    const result=await staffTools.get_labor.execute({period:"today"},ctx({
+      getLaborMetrics:async()=>({available:true,value:[{date:"2026-10-22",
+        wagesCents:1500,staffTaxCents:100,loadedStaffCostCents:1600,wageStatus:"actual"}],quality:q}),
+      getStaffAttendance:async()=>{throw new Error("attendance offline");},
+      getOwnerMonthlyPayrollExtras:async()=>{throw new Error("payroll offline");},
+    }));
+    expect(result.laborDays).toMatchObject([{date:"2026-10-22",loadedStaffCostCents:1600}]);
+    expect(result.missing).toContain("staffAttendanceReadFailed");
+    expect(result.missing).toContain("payrollExtrasReadFailed");
+    expect(result.missing).not.toContain("ownerMonthlyPayrollExtrasNotSet");
+    expect(result.ownerMonthlyPayrollStatus).toBe("unavailable");
+    expect(result.dataNotes).toEqual([expect.stringContaining("readers failed")]);
   });
   it("reports known-only missing wages as unknown rather than a complete formula",async()=>{
     const r=await staffTools.get_labor.execute({period:"today"},ctx({

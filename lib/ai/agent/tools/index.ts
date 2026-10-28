@@ -26,7 +26,7 @@ import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.serve
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import {ToolError} from "../toolErrors";
 import {requestedPeriod as calcRequestedPeriod} from "@/lib/calc/periods";
-import {resolveCoveredSalesWindow} from "./coverage";
+import {resolveCoveredSalesWindow,type CoveredSalesWindow} from "./coverage";
 import {summarizePeakHours,summarizeEmployeeSales,summarizePayrollFacts} from "@/lib/calc/posFactSummaries";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { CafeStatePeriod } from "@/lib/operating/types";
@@ -41,7 +41,7 @@ export type AgentToolResult = {
 };
 export type AgentToolContext = {
   tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
-  timezone?:string;
+  timezone:string;
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
   resolveState?:import("../resolve").ResolveState;
@@ -112,6 +112,31 @@ export const agentToolDefinitions=[...baseToolDefinitions,
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
+/** Present the shared Toast trust keys as ONE localized note per issue, while
+ * retaining machine-readable missingInputs for existing quality consumers. */
+function localizeQualityNotes(keys:readonly string[],locale:AgentLocale):string[]{
+ const copy={en,es,ar}[locale].DataNotes;
+ const notes:string[]=[];
+ for(const key of keys){
+  const match=/^toastDaysNeedLook:(\d+):([^:]+):(\d+)$/.exec(key);
+  if(match){
+   const extra=Number(match[3]);
+   notes.push(copy.toastDaysNeedLook.replace("{count}",match[1])
+    .replace("{dates}",match[2].replaceAll(", ",", ").replaceAll(",",", "))
+    .replace("{more}",extra?copy.toastMoreDays.replace("{count}",String(extra)):""));
+  }else if(key.startsWith("toastImportIncompleteDays:")){
+   const match=/^toastImportIncompleteDays:(\d+):([^:]+):(\d+)$/.exec(key);
+   if(match)notes.push(copy.toastImportIncompleteDays.replace("{count}",match[1])
+    .replace("{dates}",match[2].replaceAll(",",", "))
+    .replace("{more}",Number(match[3])?copy.toastMoreDays.replace("{count}",match[3]):""));
+  }else if(key==="toastDayStatusUnavailable")notes.push(copy.toastDayStatusUnavailable);
+  else if(key.startsWith("toastFailedNoCanonicalSales:"))
+   notes.push(copy.toastFailedNoCanonicalSales.replace("{dates}",key.slice("toastFailedNoCanonicalSales:".length).replaceAll(",",", ")));
+  else if(key.startsWith("toastDayStatusMissing:"))
+   notes.push(copy.toastDayStatusMissing.replace("{dates}",key.slice("toastDayStatusMissing:".length).replaceAll(",",", ")));
+ }
+ return [...new Set(notes)];
+}
 export const requestedPeriod=calcRequestedPeriod;
 
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
@@ -153,18 +178,18 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw);
   if(name==="get_peak_hours"||name==="get_employee_sales"||name==="get_payroll_facts"){
     const input=posPeriodSchema.parse(raw);
-    const checked=resolveOwnerPeriod(input,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
+    const checked=resolveOwnerPeriod(input,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
     if(checked.status!=="resolved")return periodChoicePayload(name,checked);
     const period={from:checked.value.from,to:checked.value.to};
     if(name==="get_peak_hours"){
       const slice=await ctx.tools.getPeakHours?.(period);
-      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
-      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,...summarizePeakHours(slice.value)};
+      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes(slice?.quality.missingInputs??[],ctx.locale)};
+      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),...summarizePeakHours(slice.value)};
     }
     if(name==="get_employee_sales"){
       const slice=await ctx.tools.getEmployeeSales?.(period);
-      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"]};
-      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,...summarizeEmployeeSales(slice.value)};
+      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes(slice?.quality.missingInputs??[],ctx.locale)};
+      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),...summarizeEmployeeSales(slice.value)};
     }
     const [slice,ownerCosts,labor,toastScopes]=await Promise.all([
       ctx.tools.getPayrollFacts?.(period),
@@ -252,12 +277,13 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       })) };
   }
   const {period:choice,ownerInputs}=periodSchema.parse(raw);
-  const resolved=resolveOwnerPeriod(choice,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
+  const resolved=resolveOwnerPeriod(choice,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
   if(resolved.status!=="resolved")return periodChoicePayload(name,resolved);
   const requested={from:resolved.value.from,to:resolved.value.to};
   // An explicitly requested historical period must never be silently replaced.
-  const canFallback=typeof choice==="string"&&["today","week","month"].includes(choice);
-  const selection=canFallback?await resolveCoveredSalesWindow(ctx,requested):{period:requested,label:null,coverageFallback:null};
+  const selection:CoveredSalesWindow=requested.from===ctx.asOf&&requested.to===ctx.asOf?
+    await resolveCoveredSalesWindow(ctx,requested):
+    {period:requested,label:null,coverageFallback:null};
   const period=selection.period;
   if(name==="get_profit"){
     const slice=await ctx.tools.getProfitability(period);
@@ -270,12 +296,12 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     if(slice.available&&hasPriorSalesChoice&&!replay)
       return {source:"profitability",period,agentId:"leo",
         missing:["sourceChoiceExpired"],needsOwnerChoice:false,
-        coverageLabel:selection.label,coverageFallback:selection.coverageFallback};
+        coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote};
     const suppliedSales=ownerInputs?.netSalesCents!=null?
       ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
     const ownerSales=suppliedSales??(ownerInputs?.netSalesCents==null?replay?.ownerCents??null:null);
     if(!slice.available)return {source:"profitability",period,agentId:"leo",
-      coverageLabel:selection.label,coverageFallback:selection.coverageFallback,unit:"cents",ownerInputs:ownerInputs??null,
+      coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,unit:"cents",ownerInputs:ownerInputs??null,
       ownerReportedSalesCents:ownerInputs?.netSalesCents??null,
       ownerReportedSalesPeriod:ownerInputs?.salesPeriod??null,
       netSalesCents:suppliedSales,netSalesProvenance:suppliedSales!==null?"ownerProvided":null,
@@ -287,21 +313,21 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       moneyChoiceCandidates("sales",identity,recordedSales,ownerSales,ctx.locale):null;
     const selected=candidates?
       chosenMoneySource(ctx.resolveState,candidates)??(replay?.ownerCents===ownerSales?replay.source:null):null;
-    if(conflict&&selected===null)return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
+    if(conflict&&selected===null)return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
       agentId:"leo",unit:"cents",ownerInputs:ownerInputs??null,
       ownerSalesConflict:{recordedCents:recordedSales,ownerCents:ownerSales},
       recordedNetSalesCents:recordedSales,ownerReportedSalesCents:ownerSales,
       netSalesCents:null,totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
       needsOwnerChoice:true,candidates,missing:[...slice.quality.missingInputs,"ownerChoiceRequired"],
       estimated:slice.quality.estimatedInputs,explain:[]};
-    if(conflict&&selected==="owner")return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
+    if(conflict&&selected==="owner")return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
       agentId:"leo",unit:"cents",ownerInputs:ownerInputs??null,
       selectedMoneySource:"ownerProvided",ownerReportedSalesCents:ownerSales,
       recordedNetSalesCents:recordedSales,netSalesCents:ownerSales,netSalesProvenance:"ownerProvided",
       totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
       needsOwnerChoice:false,missing:[...slice.quality.missingInputs,"recordedProfitNotApplicable"],
       estimated:slice.quality.estimatedInputs,explain:[]};
-    return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,agentId:"leo",unit:"cents",
+    return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,agentId:"leo",unit:"cents",
       missing:[...slice.quality.missingInputs,
         ...(ownerInputs?.netSalesCents!=null&&suppliedSales===null?["ownerSalesPeriodMismatch"]:[])],
       ownerReportedSalesCents:ownerInputs?.netSalesCents??replay?.ownerCents??null,
@@ -321,8 +347,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   }
   if(name!=="get_sales")throw new ToolError("not_supported");
   const slice=await ctx.tools.getSalesTrend(period);
-  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),coverageLabel:selection.label,coverageFallback:selection.coverageFallback};
-  return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,agentId:"alex",unit:"cents",
-    missing:slice.quality.missingInputs,netSalesCents:netSalesCentsForPeriod(slice.value),
+  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote};
+  return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,agentId:"alex",unit:"cents",
+    missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
 }

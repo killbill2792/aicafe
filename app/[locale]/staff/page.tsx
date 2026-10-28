@@ -1,3 +1,5 @@
+import {formatInTimeZone} from "date-fns-tz";
+import {getCafeProfile} from "@/lib/data/getCafeProfile";
 import {getTranslations} from "next-intl/server";
 import {requireOwnBusiness} from "@/lib/auth/requireUser";
 import {getWeekSchedule} from "@/lib/actions/schedule";
@@ -17,11 +19,11 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
  await requireOwnBusiness();
  const [{locale},{tab,week,date,employee,fix,clock,fixture,sendFixture}]=await Promise.all([params,searchParams]);
  const [scope,t]=await Promise.all([staffReadScope(),getTranslations("StaffSchedule")]);
- const selected=scheduleWeekForDate(date,week,mondayOfLocalDate(scope.ok?scope.today:new Date().toISOString().slice(0,10)));
+ const selected=scheduleWeekForDate(date,week,mondayOfLocalDate(scope.ok?scope.today:formatInTimeZone(new Date(),(await getCafeProfile()).timezone,"yyyy-MM-dd")));
  const useFixture=process.env.NODE_ENV==="development"&&process.env.STAFF_VISUAL_FIXTURES==="true"&&fixture==="1";
  const showSendFixture=useFixture&&sendFixture==="1";
  const [result,alerts]=useFixture
-  ? ([{ok:true as const,data:createStaffScreenshotFixture(selected)},{ok:true as const,alerts:[]}] as const)
+  ? ([{ok:true as const,data:{...createStaffScreenshotFixture(selected),posScheduleError:null}},{ok:true as const,alerts:[]}] as const)
   : await Promise.all([getWeekSchedule({weekStart:selected}),syncStaffRuleAlerts()]);
  return <PageShell className="!max-w-full">{result.ok?<>
   <PosImportReviewPanel people={result.data.team.map(person=>({id:person.id,name:person.name}))}/>

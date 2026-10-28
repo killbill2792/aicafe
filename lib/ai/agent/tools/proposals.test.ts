@@ -8,7 +8,7 @@ const minimal={
    value:[{id:input.product_id,name:"Latte",category:"drink" as const,active:true,priceCents:450}],
    quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}
  })} as unknown as AgentToolContext["tools"],
- asOf:"2026-10-22",locale:"en" as const,
+ timezone:"America/Los_Angeles",asOf:"2026-10-22",locale:"en" as const,
 };
 describe("price proposal agent tool",()=>{
  it("fails closed when proposal capability is missing",async()=>{

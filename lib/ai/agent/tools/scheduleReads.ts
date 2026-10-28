@@ -1,4 +1,8 @@
 import {z} from "zod";
+import {formatInTimeZone} from "date-fns-tz";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import {getTeam,getWeekSchedule,getShiftCost} from "@/lib/actions/schedule";
 import {getTeamRules} from "@/lib/actions/teamRules";
 import {staffReadScope,mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
@@ -21,9 +25,55 @@ const fail=(source:string,period:{from:string;to:string}|null,why:string):AgentT
  source,period,agentId:"olivia",missing:[why],estimated:false
 });
 async function localWeek(requested:string|null,ctx:AgentToolContext){
+ if(requested)return mondayOfLocalDate(requested);
  const scope=await staffReadScope();
  const today=scope.ok?scope.today:ctx.asOf;
- return mondayOfLocalDate(requested??today);
+ return mondayOfLocalDate(today);
+}
+type WeekData=Extract<Awaited<ReturnType<typeof getWeekSchedule>>,{ok:true}>["data"];
+/** The Team screen and chat share getWeekSchedule. Toast plans never count as paid labor. */
+export function mergeScheduleShifts(data:Pick<WeekData,"shifts"|"posShifts"|"team"|"timezone">){
+ // Retired employees are retained in the Team screen for dated historical shifts.
+ // A current active-team filter must not erase their stored assignments in chat.
+ const app=data.shifts.map(s=>({
+   id:s.id,date:s.date,employeeId:s.employeeId,employeeName:s.employeeName,
+   start:s.start,end:s.end,paidMinutes:s.paidMinutes,costCents:s.costCents,
+   estimated:s.estimated,source:"app" as const,
+ }));
+ const pos=(data.posShifts??[]).map(s=>({
+   id:s.id,date:formatInTimeZone(new Date(s.start),data.timezone,"yyyy-MM-dd"),
+   employeeId:s.employeeId??null,employeeName:s.employeeName,
+   start:formatInTimeZone(new Date(s.start),data.timezone,"HH:mm"),
+   end:formatInTimeZone(new Date(s.end),data.timezone,"HH:mm"),
+   paidMinutes:null,costCents:null,estimated:null,locationId:s.locationId,source:"toast" as const,
+ }));
+ // Only exact linked identities and matching start AND end can identify
+ // an app/Toast duplicate. Separate Toast locations may reuse external IDs.
+ const appKey=(s:(typeof app)[number])=>s.employeeId+"|"+s.date+"|"+s.start+"|"+s.end;
+ const appKeys=new Set(app.map(appKey)),seenPos=new Set<string>();
+ return [...app,...pos.filter(s=>{
+  if(s.employeeId&&appKeys.has(s.employeeId+"|"+s.date+"|"+s.start+"|"+s.end))
+   return false;
+  const k=s.locationId+"|"+s.id+"|"+s.start+"|"+s.end;
+  if(seenPos.has(k))return false;
+  seenPos.add(k);
+  return true;
+ })].sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
+}
+export function localizedToastScheduleReadError(reason:string,locale:AgentToolContext["locale"]){
+ const copy={en,es,ar}[locale].DataNotes;
+ const why=/permission|revoked|access denied|42501|\b(?:401|403)\b/i.test(reason)?
+  copy.toastScheduleReasonPermission:
+  /timeout|timed out|network|ECONN|ETIMEDOUT/i.test(reason)?
+   copy.toastScheduleReasonTimeout:copy.toastScheduleReasonUnavailable;
+ return copy.toastScheduleReadFailed.replace("{reason}",why);
+}
+function toastUnknownLaborNote(locale:AgentToolContext["locale"]){
+ return {en,es,ar}[locale].DataNotes.toastPlannedLaborUnknown;
+}
+function toastScheduleNotes(data:Pick<WeekData,"posScheduleError">,locale:AgentToolContext["locale"]){
+ if(!data.posScheduleError)return [];
+ return [localizedToastScheduleReadError(data.posScheduleError,locale)];
 }
 export const scheduleReadTools={
  get_team:{
@@ -31,37 +81,65 @@ export const scheduleReadTools={
   description:"Read active team, individual weekly hours and wage estimate flags. Pass week_start as YYYY-MM-DD Monday or null for this business week.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=namedWeek.parse(raw),ws=await localWeek(input.week_start,ctx);
-   const result=await getTeam({weekStart:ws});
+   const result=await getWeekSchedule({weekStart:ws});
    if(!result.ok)return fail("staff_week",null,result.error);
+   const all=mergeScheduleShifts(result.data);
    let selected=result.data.team;
    if(input.name){
      const chosen=resolveChosenEntity(ctx.resolveState,selected,person=>person.id);
      if(chosen)selected=[chosen];
      else{
        const matched=resolveEntity("employee",input.name,selected,{nameOf:person=>person.name,idOf:person=>person.id,describe:person=>person.role??"Team"});
+       if(matched.status==="none"){
+        const namedToast=all.filter(shift=>shift.source==="toast"&&!shift.employeeId&&
+         shift.employeeName.trim().toLocaleLowerCase()===input.name!.trim().toLocaleLowerCase());
+        if(namedToast.length&&ownerNamedTarget(ctx.resolveState,namedToast[0].id,namedToast[0].employeeName))
+         return {source:"employees+scheduled_shifts",period:{from:result.data.dates[0],to:result.data.dates[6]},
+          agentId:"olivia",people:[{id:null,name:namedToast[0].employeeName,role:null,source:"toast"}],
+          shifts:namedToast.slice(0,30),weeklyPaidMinutes:null,knownWagesCents:null,missingWageCount:null,
+          missing:["toastWorkerNotLinked",...(namedToast.length>30?["moreShifts"]:[]),
+           ...(result.data.posScheduleError?["toastScheduleReadFailed"]:[])],
+          dataNotes:[{en,es,ar}[ctx.locale].DataNotes.toastWorkerNotLinked,
+           ...toastScheduleNotes(result.data,ctx.locale)]};
+       }
        if(matched.status!=="resolved")return {...choicePayload(matched,"employees+scheduled_shifts",null),agentId:"olivia"};
        selected=[matched.value];
      }
    }
    if(input.name&&selected.length===1&&!ownerNamedTarget(ctx.resolveState,selected[0].id,selected[0].name))
      return fail("employees+scheduled_shifts",null,"targetNotConfirmed");
-   const activeIds=new Set(result.data.team.map(person=>person.id));
-   const activeShifts=result.data.shifts.filter(shift=>activeIds.has(shift.employeeId));
-   const scoped=input.name?activeShifts.filter(shift=>selected.some(person=>
-     person.id===shift.employeeId)):activeShifts;
-   const totals=aggregateCosts(activeShifts);
+   const activeShifts=result.data.shifts;
+   const unlinkedNameCollision=Boolean(input.name)&&all.some(shift=>
+    shift.source==="toast"&&!shift.employeeId&&selected.some(person=>
+     person.name.toLocaleLowerCase()===shift.employeeName.toLocaleLowerCase()));
+   // An identical display name does not prove an unlinked Toast worker is
+   // the active app employee; never assign the worker's shifts by name alone.
+   const scoped=input.name?all.filter(shift=>
+     selected.some(person=>person.id===shift.employeeId)||
+     (shift.source==="toast"&&!shift.employeeId&&
+      shift.employeeName.trim().toLocaleLowerCase()===input.name!.trim().toLocaleLowerCase())):all;
+   // The same cost engine as Team, restricted to the requested employee
+   // when the owner asks for one person's schedule.
+   const costedShifts=input.name?activeShifts.filter(s=>selected.some(person=>
+     person.id===s.employeeId)):activeShifts;
+   const totals=aggregateCosts(costedShifts);
+   const toastPlans=scoped.some(s=>s.source==="toast");
    const people=selected.slice(0,30),shifts=scoped.slice(0,30);
    return {source:"employees+scheduled_shifts",period:{from:ws,to:new Date(Date.parse(ws+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
-    agentId:"olivia",missing:[...(selected.length>30?["morePeople"]:[]),
+    agentId:"olivia",dataNotes:[...toastScheduleNotes(result.data,ctx.locale),
+     ...(toastPlans?[toastUnknownLaborNote(ctx.locale)]:[]),
+     ...(unlinkedNameCollision?[{en,es,ar}[ctx.locale].DataNotes.toastWorkerNotLinked]:[])],
+    missing:[...(unlinkedNameCollision?["toastWorkerNotLinked"]:[]),...(toastPlans?["toastPlannedLaborUnknown"]:[]),...(result.data.posScheduleError?["toastScheduleReadFailed"]:[]),...(selected.length>30?["morePeople"]:[]),
      ...(scoped.length>30?["moreShifts"]:[]),
-     ...(!input.name?missingWageInputs(totals):[])],estimated:input.name?null:totals.estimated,
+     ...missingWageInputs(totals)],estimated:toastPlans?null:totals.estimated,
     people:people.map(p=>({id:p.id,name:p.name,role:p.role,minWeeklyMinutes:p.minWeeklyMinutes,
       maxWeeklyMinutes:p.maxWeeklyMinutes,hasKnownWage:p.wageCents!==null})),
-    shifts:shifts.map(s=>({employeeId:s.employeeId,date:s.date,paidMinutes:s.paidMinutes,
-      costCents:s.costCents,estimated:s.estimated})),
-    weeklyPaidMinutes:input.name?null:totals.paidMinutes,
-    knownWagesCents:input.name?null:totals.knownCostCents,
-    missingWageCount:input.name?null:totals.unknownCount};
+    shifts:shifts,
+    weeklyPaidMinutes:toastPlans?null:totals.paidMinutes,
+    knownWagesCents:toastPlans?null:totals.knownCostCents,
+    missingWageCount:toastPlans?null:totals.unknownCount,
+    appOnlyPaidMinutes:toastPlans&&costedShifts.length?totals.paidMinutes:null,
+    appOnlyKnownWagesCents:toastPlans&&costedShifts.length?totals.knownCostCents:null};
   }
  },
  get_week_schedule:{
@@ -71,23 +149,31 @@ export const scheduleReadTools={
    const p=week.parse(raw),ws=await localWeek(p.week_start,ctx);
    const result=await getWeekSchedule({weekStart:ws});
    if(!result.ok)return fail("scheduled_shifts",null,result.error);
-   const data=result.data,activeIds=new Set(data.team.map(p=>p.id));
-   const activeShifts=data.shifts.filter(s=>activeIds.has(s.employeeId));
-   const scheduled=activeShifts.length>0,totals=aggregateCosts(activeShifts);
-   const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
-   const gaps=scheduled?coverageGaps(data.dates,[...adjacent,...activeShifts],
+   const data=result.data;
+   const activeShifts=data.shifts;
+   const combined=mergeScheduleShifts(data);
+   const scheduled=combined.length>0,hasCostedShifts=activeShifts.length>0,
+    toastPlans=combined.some(s=>s.source==="toast"),totals=aggregateCosts(activeShifts);
+   const toastCoverageUnknown=combined.some(s=>s.source==="toast")&&data.rules.coverage_enabled;
+   const adjacent=data.adjacentShifts;
+   const gaps=scheduled&&!toastCoverageUnknown?coverageGaps(data.dates,[...adjacent,...activeShifts],
      data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
    return {source:"scheduled_shifts",period:{from:data.dates[0],to:data.dates[6]},
      agentId:"olivia",scheduleSet:scheduled,href:"/staff?tab=schedule",
-     missing:[...(!scheduled?["scheduleNotSet"]:[]),
-       ...(activeShifts.length>40?["moreShifts"]:[]),
-       ...(scheduled?missingWageInputs(totals):[]),
+     dataNotes:[...toastScheduleNotes(data,ctx.locale),...(toastPlans?[toastUnknownLaborNote(ctx.locale)]:[]),
+      ...(toastCoverageUnknown?[{en,es,ar}[ctx.locale].DataNotes.toastScheduleCoverageUnverified]:[])],
+     missing:[...(toastPlans?["toastPlannedLaborUnknown"]:[]),...(toastCoverageUnknown?["toastScheduleCoverageUnverified"]:[]),...(data.posScheduleError?["toastScheduleReadFailed"]:[]),...(!scheduled?["scheduleNotSet"]:[]),
+       ...(combined.length>40?["moreShifts"]:[]),
+       ...(hasCostedShifts?missingWageInputs(totals):[]),
        ...(!data.rules.coverage_enabled?["coverageDisabled"]:
        uncheckedCoverageDays(data.dates,data.openHours,true).length?["openHoursIncomplete"]:[])],
-     estimated:scheduled?totals.estimated:null,estimatedShiftCount:scheduled?totals.estimateCount:null,
-     paidMinutes:scheduled?totals.paidMinutes:null,knownWagesCents:scheduled?totals.knownCostCents:null,
-     shifts:activeShifts.slice(0,40).map(s=>({id:s.id,date:s.date,employeeId:s.employeeId,
-       start:s.start,end:s.end,paidMinutes:s.paidMinutes,costCents:s.costCents,estimated:s.estimated})),
+     estimated:hasCostedShifts&&!toastPlans?totals.estimated:null,
+     estimatedShiftCount:hasCostedShifts&&!toastPlans?totals.estimateCount:null,
+     paidMinutes:hasCostedShifts&&!toastPlans?totals.paidMinutes:null,
+     knownWagesCents:hasCostedShifts&&!toastPlans?totals.knownCostCents:null,
+     appOnlyPaidMinutes:toastPlans&&hasCostedShifts?totals.paidMinutes:null,
+     appOnlyKnownWagesCents:toastPlans&&hasCostedShifts?totals.knownCostCents:null,
+     shifts:combined.slice(0,40),
      gaps:gaps.slice(0,15)};
   }
  },
@@ -111,15 +197,16 @@ export const scheduleReadTools={
    const p=week.parse(raw),ws=await localWeek(p.week_start,ctx);
    const whole=await getWeekSchedule({weekStart:ws});
    if(!whole.ok)return fail("coverage_gaps",null,whole.error);
-   const data=whole.data,activeIds=new Set(data.team.map(p=>p.id));
-   const activeShifts=data.shifts.filter(s=>activeIds.has(s.employeeId));
-   const scheduled=activeShifts.length>0;
-   const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
-   const gaps=scheduled?coverageGaps(data.dates,[...adjacent,...activeShifts],
+   const data=whole.data;
+   const activeShifts=data.shifts;
+   const combined=mergeScheduleShifts(data),scheduled=combined.length>0;
+   const toastCoverageUnknown=combined.some(s=>s.source==="toast")&&data.rules.coverage_enabled;
+   const adjacent=data.adjacentShifts;
+   const gaps=scheduled&&!toastCoverageUnknown?coverageGaps(data.dates,[...adjacent,...activeShifts],
      data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
    return {source:"scheduled_shifts+locations.open_hours",period:{from:ws,to:data.dates[6]},
     agentId:"olivia",scheduleSet:scheduled,href:"/staff?tab=schedule",
-    missing:[...(!scheduled?["scheduleNotSet"]:[]),
+    dataNotes:[...toastScheduleNotes(data,ctx.locale),...(toastCoverageUnknown?[{en,es,ar}[ctx.locale].DataNotes.toastScheduleCoverageUnverified]:[])],missing:[...(toastCoverageUnknown?["toastScheduleCoverageUnverified"]:[]),...(data.posScheduleError?["toastScheduleReadFailed"]:[]),...(!scheduled?["scheduleNotSet"]:[]),
       ...(!data.rules.coverage_enabled?["coverageDisabled"]:
       uncheckedCoverageDays(data.dates,data.openHours,true).length?["openHoursIncomplete"]:[]),
       ...(gaps.length>30?["moreGaps"]:[])],estimated:false,gaps:gaps.slice(0,30)};

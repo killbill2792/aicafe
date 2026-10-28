@@ -12,7 +12,7 @@ const valid={
  propose_rule_change:{rule:"prep_minutes_before_open",boolean_value:null,number_value:30},
  propose_send_schedule:{week_start:"2026-10-26"},
 } as const;
-const ctx={tools:{} as AgentToolContext["tools"],asOf:"2026-10-23",locale:"en" as const};
+const ctx={tools:{} as AgentToolContext["tools"],timezone:"America/Los_Angeles",asOf:"2026-10-23",locale:"en" as const};
 describe("staff owner-approval tool registration",()=>{
  it("has a strict schema and emits an inert persisted card for all seven tools",async()=>{
   for(const name of Object.keys(valid) as Array<keyof typeof valid>){
