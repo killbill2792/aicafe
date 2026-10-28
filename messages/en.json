@@ -3351,6 +3351,7 @@
     "none": "Not set"
   },
   "MetricsNotes": {
+    "cafeCurrencyMissing": "Café currency is not set; ask the owner to confirm it.",
     "itemRecordedBusinessCosts": "Recorded business costs",
     "itemIngredientsPackaging": "Ingredients + packaging",
     "itemUnitsMonth": "Units/month",
