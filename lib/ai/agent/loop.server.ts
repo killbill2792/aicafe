@@ -277,12 +277,16 @@ export async function runAgentTurn(args: {
         // is useful. Always generate its verified existing ask_owner card.
         if(tool.name==="suggest_new_item_price"&&result.askOwnerRequired===true&&
            Array.isArray(result.candidates)&&!resolveState.asked){
-          const options=result.candidates.slice(0,4).flatMap(candidate=>
+          const kind=result.candidates.some(candidate=>candidate&&typeof candidate==="object"&&candidate.id==="labor-monthly")?
+            "labor":"bills";
+          const options=result.candidates.filter(candidate=>candidate&&typeof candidate==="object"&&
+            typeof candidate.id==="string"&&candidate.id.startsWith(kind+"-")).slice(0,4).flatMap(candidate=>
             candidate&&typeof candidate==="object"&&
             typeof candidate.label==="string"&&typeof candidate.id==="string"?
               [{label:candidate.label,value:candidate.id}]:[]);
           if(options.length>=2){
-            const question="Which missing monthly cost can you provide?";
+            const question=kind==="labor"?"What is your total monthly labor cost?":
+              "What is your total monthly bills cost, including rent?";
             const card=await executeAgentTool("ask_owner",{
               question,kind:"choice",options,allowOther:true},args.context);
             if(card.missing.length===0){

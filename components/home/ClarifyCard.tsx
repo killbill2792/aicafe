@@ -63,7 +63,11 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
      onClick={()=>onSend(o.label)} className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-line bg-surface2 px-3 text-start text-[17px] font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
      <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-sm">{String.fromCharCode(65+i)}</span><span>{o.label}</span>
    </button>)}</div>
-   {block.allowOther&&(other?<form className="space-y-2" onSubmit={e=>{e.preventDefault();if(typed.trim()&&!disabled)onSend(typed.trim());}}>
+   {block.allowOther&&(other?<form className="space-y-2" onSubmit={e=>{e.preventDefault();if(typed.trim()&&!disabled){
+     const kind=block.options.some(option=>option.value==="labor-monthly")?"Monthly labor":
+       block.options.some(option=>option.value==="bills-monthly")?"Monthly bills":null;
+     onSend(kind?kind+": "+typed.trim():typed.trim());
+   }}}>
      <input maxLength={200} value={typed} onChange={e=>setTyped(e.target.value)} aria-label={copy.clarifyOtherPlaceholder}
        placeholder={copy.clarifyOtherPlaceholder} className="min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[17px] text-ink"/>
      <button type="submit" disabled={disabled||!typed.trim()} className="min-h-12 w-full rounded-xl bg-accent px-4 text-[17px] font-bold text-on-accent disabled:opacity-50">{copy.clarifySend}</button>

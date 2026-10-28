@@ -12,7 +12,8 @@ const schema=z.strictObject({
  ingredient_cost_cents:z.number().int().positive(),category:z.enum(["drink","food"]),
  packaging_cents:z.number().int().nonnegative().nullable(),
  target_drink_cost_percent:z.number().min(25).max(35).nullable().optional(),
- operating_margin_percent:z.number().min(0).max(30).nullable().optional(),item_name:z.string().trim().max(120).nullable(),ownerInputs:ownerInputsSchema.nullable().optional()
+ operating_margin_percent:z.number().min(0).max(30).nullable().optional(),
+ owner_monthly_bills_cents:z.number().int().nonnegative().nullable().optional(),item_name:z.string().trim().max(120).nullable(),ownerInputs:ownerInputsSchema.nullable().optional()
 });
 export const newItemPriceTools={suggest_new_item_price:{
  agentId:"alex",schema,description:"Suggest a drink price using the product-cost target (default 30 percent), lifting only to complete break-even. Never choose an operating margin: only pass an explicit owner-stated operating margin, capped at 30 percent, for the informational profit price. Reply with the recommended price and one short qualifier; never list components in prose. For follow-up math questions, call this tool again with the same item inputs.",
@@ -65,9 +66,16 @@ export const newItemPriceTools={suggest_new_item_price:{
     (economics.laborCoveredDays<7||economics.laborCoveredDays/economics.laborWindowDays<.5);
    const labor=sparse&&ownerLabor===null?figure(null,"missing",
     "Only "+economics.laborCoveredDays+" of "+economics.laborWindowDays+" days have payroll"):monthlyStaff;
+   const statedDollarAmount=(cents:number)=>utterances.some(line=>{
+    const amounts=line.match(/\\$?\\s*\\d[\\d,]*(?:\\.\\d{1,2})?/gu)??[];
+    return amounts.some(token=>Math.round(Number(token.replace(/[$,\\s]/gu,""))*100)===cents);
+   });
+   const explicitBillTotal=v.owner_monthly_bills_cents!=null&&
+    statedDollarAmount(v.owner_monthly_bills_cents)?v.owner_monthly_bills_cents:null;
    const ownerBillsComplete=owner?.rentCents!=null&&owner?.otherOverheadCents!=null;
-   const ownerBills=ownerBillsComplete?prorate(owner!.rentCents!+owner!.otherOverheadCents!,
-    ownerPeriod(owner?.overheadPeriod??null,ctx.asOf)??month,month):null;
+   const ownerBills=explicitBillTotal??(ownerBillsComplete?prorate(
+    owner!.rentCents!+owner!.otherOverheadCents!,
+    ownerPeriod(owner?.overheadPeriod??null,ctx.asOf)??month,month):null);
    const monthlyBills=ownerBills!==null?figure(ownerBills,"owner","You told me: monthly rent and other bills"):
     economics.monthlyBills;
    const missingBills=ownerBillsComplete?[]:(economics.missingBillCategories??[]);
