@@ -127,21 +127,11 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
   const totalPaidBackCents = Math.max(0, vm.totalCents - totalCentsToGo);
   const overallPctCovered = vm.totalCents === 0 ? 100 : (totalPaidBackCents / vm.totalCents) * 100;
 
-  const breakEvenUnavailable =
-    vm.breakEven.kind === "unavailable"
-      ? vm.breakEven.reason === "NOT_ENOUGH_SALES"
-        ? t("breakEvenNeedSales")
-        : vm.breakEven.reason === "MISSING_BILLS"
-          ? t("breakEvenNeedBills")
-          : vm.breakEven.reason === "MISSING_PRODUCT_COSTS"
-            ? t("breakEvenNeedProductCosts")
-            : vm.breakEven.reason === "MISSING_PROCESSING_FEES"
-              ? t("breakEvenNeedProcessingFees")
-              : t("breakEvenUnavailable")
-      : null;
+  const breakEvenUnavailable=vm.breakEven.kind==="unavailable"?
+    vm.breakEven.reason==="NO_SALES"?t("breakEvenNeedSales"):t("breakEvenUnavailable"):null;
 
-  const recoveryAction = vm.breakEven.kind === "unavailable"
-    ? breakEvenAction(vm.breakEven.reason, toastConnected, snapshot.runningCostLines) : null;
+  const recoveryAction=vm.breakEven.kind==="unavailable"&&vm.breakEven.reason==="NO_SALES"?
+    breakEvenAction("NOT_ENOUGH_SALES",toastConnected,snapshot.runningCostLines):null;
 
   return (
     <div className="flex flex-col gap-3.5">

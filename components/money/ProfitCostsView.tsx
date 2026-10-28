@@ -4,6 +4,7 @@ import { getTranslations, getLocale } from "next-intl/server";
 import Money from "@/components/shared/Money";
 import EstimatePill from "@/components/shared/EstimatePill";
 import { Link } from "@/i18n/navigation";
+import type {HealthBand} from "@/lib/calc";
 
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { Period } from "@/lib/viewmodels/period";

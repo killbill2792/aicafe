@@ -418,8 +418,9 @@ export async function readHistoricalBusinessSnapshot(
   }
   const monthKey=last;
   const lastAmounts=monthlyAmounts.filter(r=>r.monthKey===monthKey);
-  const runningCostLines=lastAmounts.map(line=>({
-    categoryCode:line.categoryCode,label:RUNNING_COST_LABELS[line.categoryCode]??line.categoryCode,
+  const runningCostLines:RunningCostLine[]=lastAmounts.map(line=>({
+    categoryCode:line.categoryCode as ExpenseCategoryCode,
+    label:RUNNING_COST_LABELS[line.categoryCode as ExpenseCategoryCode]??line.categoryCode,
     amountCents:line.amountCents,isEstimate:line.isEstimate,
     isMissing:line.isMissing,isExpected:missingExpenseCategories.some(x=>x.startsWith("expense:"+line.categoryCode+":")),
   }));
