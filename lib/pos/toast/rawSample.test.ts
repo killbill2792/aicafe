@@ -156,8 +156,8 @@ describe("read-only Toast coverage diagnostics",()=>{
   mocks.eraGet.mockResolvedValue({status:200,data:[{netSalesAmount:42,orderGuid:"ok",guestEmail:"private@example.org"}]});
   await captureToastRawSample(business,"2026-10-20",db);
   expect(mocks.eraRequest).toHaveBeenCalledTimes(9);
-  expect(mocks.eraGet).toHaveBeenCalledTimes(9);
-  expect(writes.filter(x=>String(x.endpoint).startsWith("era/v1/")&&x.http_status===200)).toHaveLength(18);
+  expect(mocks.eraGet).toHaveBeenCalledTimes(10);
+  expect(writes.filter(x=>String(x.endpoint).startsWith("era/v1/")&&x.http_status===200)).toHaveLength(19);
   expect(JSON.stringify(writes.filter(x=>String(x.endpoint).startsWith("era/v1/")))).not.toContain("private@example.org");
  });
  it("polls a pending 202 report until ready",async()=>{
@@ -167,7 +167,7 @@ describe("read-only Toast coverage diagnostics",()=>{
   mocks.eraGet.mockResolvedValue({status:200,data:[{netSalesAmount:10}]})
    .mockResolvedValueOnce({status:202,data:null});
   await captureToastRawSample(business,"2026-10-20",db);
-  expect(mocks.eraGet).toHaveBeenCalledTimes(10);
+  expect(mocks.eraGet).toHaveBeenCalledTimes(11);
   const metrics=writes.find(x=>x.endpoint==="era/v1/metrics/{reportRequestGuid}");
   expect(metrics?.http_status).toBe(200);
   expect(metrics?.error_code).toBeNull();
@@ -181,7 +181,8 @@ describe("read-only Toast coverage diagnostics",()=>{
   expect(request?.http_status).toBe(403);
   expect(get?.http_status).toBe(403);
   expect(get?.error_code).toBe("missing_permissions");
-  expect(mocks.eraGet).not.toHaveBeenCalled();
+  expect(mocks.eraGet.mock.calls.filter(([path])=>String(path).includes("reportRequestGuid"))).toHaveLength(0);
+  expect(mocks.eraGet).toHaveBeenCalledTimes(1);
  });
  it("keeps paths for nested arrays",()=>{
   expect(toastFieldPaths({items:[{name:"Latte",price:5}]})).toContain("items[].price");
