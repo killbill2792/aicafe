@@ -91,14 +91,38 @@ describe("shared POS employee identity and owner-protection",()=>{
   expect(f.rows[0]).toMatchObject({id:"owner-maria",display_name:"  MARIA  ",
    pos_team_member_id:pos("maria"),pos_display_name:"Maria",active:false});
  });
- it("creates one review, not a duplicate, when manual names are ambiguous",async()=>{
+ it("links a unique inactive manual name without creating or reactivating anyone",async()=>{
+  const f=fixture([manual("owner-disabled","Maria",{active:false})]);
+  const result=await syncCanonicalEmployees(f.db,business,adapter(),
+   [person("maria","Maria")],{restaurantGuid:location});
+  expect(result).toMatchObject({created:0,linked:1,review:0});
+  expect(f.rows).toHaveLength(1);
+  expect(f.rows[0]).toMatchObject({
+   id:"owner-disabled",active:false,pos_team_member_id:pos("maria")
+  });
+  const rerun=await syncCanonicalEmployees(f.db,business,adapter(),
+   [person("maria","Maria")],{restaurantGuid:location});
+  expect(rerun).toMatchObject({created:0,linked:1,updated:0,review:0});
+  expect(f.rows).toHaveLength(1);
+ });
+ it("auto-creates a GUID-linked employee when manual names are ambiguous",async()=>{
   const f=fixture([manual("a","Maria"),manual("b","maria")]);
   const result=await syncCanonicalEmployees(f.db,business,adapter(),
    [person("maria","Maria")],{restaurantGuid:location});
-  expect(result).toMatchObject({created:0,review:1});
+  expect(result).toMatchObject({created:1,review:0});
+  expect(f.rows).toHaveLength(3);
+  expect(f.reviews).toHaveLength(0);
+ });
+ it("keeps distinct Toast GUIDs with identical names distinct across reruns",async()=>{
+  const f=fixture();
+  const people=[person("guid-one","Alex"),person("guid-two","Alex")];
+  expect((await syncCanonicalEmployees(f.db,business,adapter(),people,
+   {restaurantGuid:location})).created).toBe(2);
+  expect(new Set(f.rows.map(r=>r.pos_team_member_id)).size).toBe(2);
+  expect((await syncCanonicalEmployees(f.db,business,adapter(),people,
+   {restaurantGuid:location}))).toMatchObject({created:0,review:0});
   expect(f.rows).toHaveLength(2);
-  expect(f.reviews).toHaveLength(1);
-  expect(f.reviews[0].review_type).toBe("staff_identity");
+  expect(f.reviews).toHaveLength(0);
  });
  it("preserves an owner's name, role, wage, and inactive decision",async()=>{
   const f=fixture([manual("a","My Maria",{
@@ -121,6 +145,15 @@ describe("shared POS employee identity and owner-protection",()=>{
    {restaurantGuid:location});
   expect(f.rows[0].active).toBe(true);
   expect(f.writes).toBe(0);
+ });
+ it("preserves Square's manual-review behavior for ambiguous names",async()=>{
+  const f=fixture([manual("a","Alex"),manual("b","alex")]);
+  const squarePerson={...person("unused","Alex"),posTeamMemberId:"square:alex"};
+  const result=await syncCanonicalEmployees(f.db,business,adapter("square"),[squarePerson]);
+  expect(result).toMatchObject({created:0,review:1});
+  expect(f.rows).toHaveLength(2);
+  expect(f.reviews).toHaveLength(1);
+  expect(f.reviews[0].review_type).toBe("staff_identity");
  });
  it("Square import never blanks an owner's role when source role is missing",async()=>{
   const f=fixture([manual("square-id","Owner role",{pos_team_member_id:"square:1",
