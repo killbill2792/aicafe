@@ -3351,6 +3351,7 @@
     "none": "غير محدد"
   },
   "MetricsNotes": {
+    "cafeCurrencyMissing": "عملة المقهى غير محددة؛ اطلب من المالك تأكيدها.",
     "itemRecordedBusinessCosts": "تكاليف العمل المسجلة",
     "itemIngredientsPackaging": "المكونات والتغليف",
     "itemUnitsMonth": "وحدات شهريًا",
