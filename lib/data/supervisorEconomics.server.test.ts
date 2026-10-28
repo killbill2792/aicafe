@@ -7,7 +7,7 @@ const stubs=vi.hoisted(()=>({
  plans:vi.fn(),pricing:vi.fn(),items:vi.fn(),
 }));
 vi.mock("./getPricingInputs",()=>({getPricingInputs:stubs.pricing}));
-vi.mock("./snapshot.server",()=>({getMenuItemSnapshots:stubs.items}));
+vi.mock("./snapshot.server",()=>({getBusinessSnapshotFromDb:stubs.items}));
 vi.mock("@/lib/pos/processingFeeEstimate.server",()=>({
  getOwnerConfirmedProcessingFeePlans:stubs.plans,
  ownerConfirmedPlanForDate:()=>null,
@@ -46,7 +46,7 @@ describe("Supervisor economics shares Money metrics/core evidence",()=>{
    monthlyVariableProductCostCents:400000,productCostsStatus:"actual",
    targetOperatingMargin:.15},menuPriceBasis:{runningKnownCents:30000,
     runningStatus:"recorded",monthlyRunningCents:30000,missingRunningCategories:[]}});
-  stubs.items.mockResolvedValue([]);
+  stubs.items.mockResolvedValue({menuItems:[],breakEvenProductCosts:[]});
   stubs.plans.mockResolvedValue([{effectiveFrom:"2026-10-01",percentageBps:400}]);
   const read=await readSupervisorEconomics(fixtureDb(rows),"test-business","2026-10-21");
   const direct=laborForPeriod(read.economics.laborEvidence!.dates,read.economics.laborEvidence!.records);
