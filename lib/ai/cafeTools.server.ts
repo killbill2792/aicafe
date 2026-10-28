@@ -174,7 +174,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
 /** Owner-scoped calendar and café identity without loading the mutable Home snapshot. */
 export async function readSupervisorCafeIdentity(authorizedBusinessId: string) {
   const client = await createServerSupabaseClient();
-  const { data, error } = await client.from("businesses").select("id,name,timezone")
+  const { data, error } = await client.from("businesses").select("id,name,timezone,currency")
     .eq("id",authorizedBusinessId).single();
   if (error || !data || data.id !== authorizedBusinessId) throw new Error("Café identity unavailable");
   // en-CA has historically varied by Node ICU; formatToParts yields an invariant ISO date.
@@ -182,6 +182,7 @@ export async function readSupervisorCafeIdentity(authorizedBusinessId: string) {
     timeZone:data.timezone,year:"numeric",month:"2-digit",day:"2-digit",
   }).formatToParts(new Date());
   const value = (kind: string) => parts.find(p=>p.type===kind)?.value ?? "";
-  return { cafeName:String(data.name).slice(0,120), timezone:String(data.timezone),
+  if(!data.currency || !/^[A-Z]{3}$/.test(String(data.currency)))throw new Error("Café currency unavailable");
+  return { cafeName:String(data.name).slice(0,120), timezone:String(data.timezone),currency:String(data.currency),
     asOf:value("year")+"-"+value("month")+"-"+value("day") };
 }
