@@ -31,6 +31,9 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
+      # tsx is not a locked project dependency; install a pinned runner explicitly.
+      - run: npm install --no-save --package-lock=false --ignore-scripts tsx@4.20.6
+      - run: test -x node_modules/.bin/tsx
       - name: Capture sample (redacted logs)
         shell: bash
         env:
@@ -46,7 +49,7 @@ jobs:
           output="$(mktemp)"
           trap 'rm -f "$output"' EXIT
           set +e
-          NODE_OPTIONS=--conditions=react-server npx --no-install tsx scripts/toast-raw-sample.ts --business "$BUSINESS_ID" --date "$BUSINESS_DATE" >"$output" 2>&1
+          NODE_OPTIONS=--conditions=react-server ./node_modules/.bin/tsx scripts/toast-raw-sample.ts --business "$BUSINESS_ID" --date "$BUSINESS_DATE" >"$output" 2>&1
           code=$?
           node - "$output" "$code" <<'NODE'
           const fs = require('node:fs');
