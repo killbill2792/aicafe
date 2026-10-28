@@ -3374,6 +3374,7 @@
     "breakEvenLaborMissing": "Faltan costes laborales.",
     "breakEvenDrinksMissing": "Falta el volumen de bebidas.",
     "NO_SALES": "No hay días con ventas registradas.",
-    "VARIABLE_COSTS_TOO_HIGH": "Los costes variables consumen todas las ventas."
+    "VARIABLE_COSTS_TOO_HIGH": "Los costes variables consumen todas las ventas.",
+    "monthCalendarSparseSales": "Hay menos de siete días de ventas; la cobertura es una estimación inicial."
   }
 }
