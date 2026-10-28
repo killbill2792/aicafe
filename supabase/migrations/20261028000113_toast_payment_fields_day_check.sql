@@ -293,7 +293,16 @@ with (security_invoker=true) as
  from public.toast_payment_summaries s
  where not exists(select 1 from public.toast_payment_facts f
   where f.business_id=s.business_id and f.restaurant_guid=s.restaurant_guid
-   and f.business_date=s.business_date);
+   and f.business_date=s.business_date)
+ union all
+ -- A refund/void payment-day event is retained as incomplete evidence, never a zero amount.
+ select e.business_id,'toast'::text,
+  'payment-event:'||e.restaurant_guid::text||':'||e.payment_guid::text||':'||e.kind||':'||e.event_business_date::text,
+  'open'::text,e.event_business_date,null::bigint,null::bigint,
+  jsonb_build_object('kind','payment_event','payment_guid',e.payment_guid,
+   'event',e.kind,'observed_at',e.observed_at,'amount_known',false),
+  null::text,null::text,null::text,null::bigint,null::bigint,'missing'::text
+ from public.toast_payment_day_events e;
 revoke all on public.cv_payments from public,anon;
 grant select on public.cv_payments to authenticated,service_role;
 
@@ -489,7 +498,7 @@ revoke all on function public.toast_capture_typed_order_trigger() from public,an
 drop trigger if exists toast_raw_order_typed_capture on public.toast_raw_records;
 create trigger toast_raw_order_typed_capture
  after insert on public.toast_raw_records
- for each row when (v_raw.entity='order')
+ for each row when (new.entity='order')
  execute function public.toast_capture_typed_order_trigger();
 
 -- Migration 111 may already hold historical raw rows. Build their typed
@@ -660,7 +669,8 @@ create or replace view public.cv_item_sales (business_id,source,source_ref,statu
   'needs_match'::text,(m.last_checked_at at time zone b.timezone)::date,
   null::bigint,null::numeric,
   jsonb_build_object('kind','modified_order','order_guid',m.order_guid,
-   'reviewed_at',m.last_checked_at,'staging_state',m.state)
+   'reviewed_at',m.last_checked_at,'staging_state',m.state),
+  null::bigint,null::jsonb,null::jsonb
  from public.toast_modified_orders_staging m
  join public.businesses b on b.id=m.business_id
  where m.state='review_required';
