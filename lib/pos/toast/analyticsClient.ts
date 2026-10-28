@@ -18,7 +18,7 @@ const reports=z.array(z.object({
 }).passthrough());
 type Credential={api_origin:string;client_id:string;client_secret_enc:string;
  management_group_guid:string;bearer_token_enc:string|null;bearer_expires_at:string|null};
-export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,deadlineAt:number){
+export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,deadlineAt:number,waitForRateBudget=false){
  const deadline=()=>{const time=deadlineAt-Date.now();if(time<=0)throw new ToastApiError("timeout");return Math.min(12000,time);};
  async function credentials():Promise<Credential>{
   const {data,error}=await db.from("toast_analytics_credentials")
@@ -43,8 +43,8 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
     body:JSON.stringify({clientId:c.client_id,clientSecret:decryptToken(c.client_secret_enc),
       userAccessType:"TOAST_MACHINE_CLIENT"})
   });}catch{throw new ToastApiError("unavailable");}
-  if(res.status===401)throw new ToastApiError("authentication");
-  if(res.status===403)throw new ToastApiError("missing_permissions");
+  if(res.status===401)throw new ToastApiError("authentication",401);
+  if(res.status===403)throw new ToastApiError("missing_permissions",403);
   if(!res.ok)throw new ToastApiError("unavailable");
   const parsed=tokenSchema.safeParse(await res.json().catch(()=>null));
   if(!parsed.success)throw new ToastApiError("invalid_response");
@@ -60,11 +60,20 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
 
  }
  async function rate(kind:"post"|"get"){
-  const {data,error}=await db.rpc("toast_claim_era_request",{
-   p_business_id:businessId,p_kind:kind});
-  if(error)throw new ToastApiError("unavailable");
-  if(!data)throw new ToastApiError("rate_limited",429,
-   new Date(Date.now()+10000).toISOString());
+  // Diagnostic reads wait for the shared ERA budget; ordinary callers retain
+  // the existing immediate rate-limit response behavior.
+  for(;;){
+   deadline();
+   const {data,error}=await db.rpc("toast_claim_era_request",{
+    p_business_id:businessId,p_kind:kind});
+   if(error)throw new ToastApiError("unavailable");
+   if(data)return;
+   if(!waitForRateBudget)throw new ToastApiError("rate_limited",429,
+    new Date(Date.now()+10000).toISOString());
+   const left=deadlineAt-Date.now();
+   if(left<=600)throw new ToastApiError("timeout");
+   await new Promise(resolve=>setTimeout(resolve,Math.min(1000,left-500)));
+  }
  }
  async function call(kind:"post"|"get",path:string,body?:unknown){
   await rate(kind);
@@ -93,8 +102,9 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
     if(res.status===429)throw new ToastApiError("rate_limited",429,retryAt);
    }
    if(res.status===401&&attempt===0){auth=await login(true);continue;}
-   if(res.status===401)throw new ToastApiError("authentication");
-   if(res.status===403)throw new ToastApiError("missing_permissions");
+   if(res.status===401)throw new ToastApiError("authentication",401);
+   if(res.status===403)throw new ToastApiError("missing_permissions",403);
+   if(res.status===204)throw new ToastApiError("unavailable",204);
    if(res.status===202)return {pending:true as const,body:await res.json().catch(()=>null)};
    if(res.status===429)throw new ToastApiError("rate_limited",429);
    if(!res.ok)throw new ToastApiError("unavailable",res.status);
@@ -103,6 +113,40 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
   throw new ToastApiError("authentication");
  }
  return {
+  // The documented ERA POST requests schedule read-only reports; they do not
+  // mutate orders or restaurant configuration. Only these nine paths are allowed.
+  async requestRaw(path:string,restaurantGuid:string,businessDate:string){
+   const allowed=new Set([
+    "/era/v1/metrics","/era/v1/metrics/day","/era/v1/check/day",
+    "/era/v1/labor/day","/era/v1/menu/day","/era/v1/payout/day",
+    "/era/v1/payout/payments/day","/era/v1/payout/sales-date/day",
+    "/era/v1/guest/payments/day"
+   ]);
+   if(!allowed.has(path)||!GUID.safeParse(restaurantGuid).success||
+      !/^\d{4}-\d{2}-\d{2}$/.test(businessDate))
+    throw new ToastApiError("invalid_response");
+   const date=Number(businessDate.replaceAll("-",""));
+   const body:Record<string,unknown>={
+    restaurantIds:[restaurantGuid],excludedRestaurantIds:[]
+   };
+   if(path.startsWith("/era/v1/payout/")||path.startsWith("/era/v1/guest/")){
+    body.startDate=date;body.endDate=date;
+   }else{
+    body.startBusinessDate=date;body.endBusinessDate=date;
+   }
+   const result=await call("post",path,body);
+   const guid=reportGuid.safeParse(result.body);
+   if(!guid.success)throw new ToastApiError(result.pending?"timeout":"invalid_response",result.pending?202:200);
+   return {guid:guid.data,status:result.pending?202:200};
+  },
+  // Diagnostic data reads use the same existing ERA credential and rate budget.
+
+  async getRaw(path:string){
+   if(!/^\/era\/v1\/[A-Za-z0-9/_-]+$/.test(path)||path.includes("..")||
+    path.length>250)throw new ToastApiError("invalid_response");
+   const result=await call("get",path);
+   return {status:result.pending?202:200,data:result.body};
+  },
   async test(restaurantGuid:string,businessDate:string){
    const expected=await credentials();
    const id=await this.requestDay(restaurantGuid,businessDate);

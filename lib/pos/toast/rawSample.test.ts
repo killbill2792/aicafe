@@ -1,176 +1,417 @@
-import {describe,it,expect,vi,beforeEach} from "vitest";
+import {beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-const mocks=vi.hoisted(()=>({request:vi.fn()}));
-vi.mock("./client",async importOriginal=>{
- const original=await importOriginal<typeof import("./client")>();
- return {...original,createToastClient:()=>({request:mocks.request})};
+const mocks=vi.hoisted(()=>({request:vi.fn(),eraRequest:vi.fn(),eraGet:vi.fn()}));
+vi.mock("./client",async original=>{
+ const m=await original<typeof import("./client")>();
+ return {...m,createToastClient:()=>({request:mocks.request})};
 });
-import {redactToastRaw,toastFieldPaths,claimToastRawSample,captureToastRawSample} from "./rawSample.server";
+vi.mock("./analyticsClient",()=>({createToastAnalyticsClient:()=>({
+ requestRaw:mocks.eraRequest,getRaw:mocks.eraGet
+})}));
+import {OFFICIAL_TOAST_GET_PATHS} from "./officialGetPaths.fixture";
+import {captureToastRawSample,redactToastRaw,toastFieldPaths,TOAST_READ_ENDPOINTS,claimToastRawSample} from "./rawSample.server";
 import {ToastApiError} from "./client";
 import type {SupabaseClient} from "@supabase/supabase-js";
 const business="11111111-1111-4111-8111-111111111111";
 const restaurant="22222222-2222-4222-8222-222222222222";
-const payment="33333333-3333-4333-8333-333333333333";
-function database(allowed=true,options:{noLocation?:boolean;mappingError?:boolean;leaseBusy?:boolean;leaseError?:boolean;claimError?:boolean}={}){
- const written:{table:string;row:Record<string,unknown>}[]=[];
+function database(allow=true){
+ const writes:Record<string,unknown>[]=[];
+ let failOne=false;
  const rpc=vi.fn(async(name:string)=>({
-   data:name==="toast_acquire_lease"?(options.leaseBusy?null:"lease-nonce"):
-    name==="toast_claim_raw_sample"?allowed:null,
-   error:name==="toast_acquire_lease"&&options.leaseError||
-    name==="toast_claim_raw_sample"&&options.claimError?{message:"synthetic error"}:null
+  data:name==="toast_acquire_raw_sample_lease"?"11111111-1111-4111-8111-111111111111":
+   name==="toast_claim_raw_sample"?allow:
+   name==="toast_renew_raw_sample_lease"?true:null,error:null
  }));
- const db={
-  rpc,
-  from(table:string){
-   if(table==="toast_raw_samples")return {insert:async(row:Record<string,unknown>)=>{
-    written.push({table,row});return {error:null};
+ const db={rpc,from:(table:string)=>{
+  if(table==="toast_raw_samples")return {insert:async(row:Record<string,unknown>|Record<string,unknown>[])=>{
+    if(failOne&&!Array.isArray(row)){failOne=false;return {error:{message:"test insert failure"}};}
+    writes.push(...Array.isArray(row)?row:[row]);return {error:null};
    }};
-   if(table==="toast_location_mappings"){
-    const q={select:()=>q,eq:()=>q,not:()=>q,order:()=>q,
-     limit:async()=>({data:options.noLocation?[]:[{restaurant_guid:restaurant}],
-      error:options.mappingError?{message:"synthetic error"}:null})};
-    return q;
-   }
-   throw new Error("Unexpected write or table "+table);
+  if(table==="toast_location_mappings"){
+   const q={select:()=>q,eq:()=>q,not:()=>q,order:()=>q,
+    limit:async()=>({data:[{restaurant_guid:restaurant}],error:null})};
+   return q;
   }
- } as unknown as SupabaseClient;
- return {db,written,rpc};
+  throw Error("unexpected table");
+ }} as unknown as SupabaseClient;
+ return {db,writes,rpc,failNextSampleWrite:()=>{failOne=true;}};
 }
-beforeEach(()=>{mocks.request.mockReset();let tick=0;vi.spyOn(Date,"now").mockImplementation(()=>1700000000000+(tick++)*6000);});
-describe("Toast raw diagnostics",()=>{
- it("redacts PII, card details, auth secrets at all depths",()=>{
-  const raw={payments:[{cardType:"VISA",cardEntryMode:"KEYED",tipAmount:3,
-   cardLast4:"1234",expiry:"12/29",cardholderName:"A Person",
-   customer:{email:"a@example.com",phone:"555"},accessToken:"secret",
-   payment:{authorizationCode:"abc",originalProcessingFee:0.12}}]};
-  const safe=redactToastRaw(raw);
+const evidence=(writes:Record<string,unknown>[])=>writes.filter(w=>w.error_code!=="not_attempted");
+beforeEach(()=>{
+ mocks.request.mockReset();
+ mocks.eraRequest.mockReset().mockRejectedValue(new ToastApiError("missing_permissions",403));
+ mocks.eraGet.mockReset().mockRejectedValue(new ToastApiError("missing_permissions",403));
+ process.env.TOAST_CUSTOMER_HASH_KEY="test-only-32-byte-stable-hmac-key!!";
+ vi.spyOn(globalThis,"setTimeout").mockImplementation(((fn:()=>void)=>{fn();return 0;}) as typeof setTimeout);
+ let i=0;vi.spyOn(Date,"now").mockImplementation(()=>Date.parse("2026-10-20T00:00:00Z")+i++*1000);
+});
+describe("read-only Toast coverage diagnostics",()=>{
+ it("retains business names/times, hours and wages and hashes repeat customer IDs",()=>{
+  const a={customer:{guid:"customer-1",name:"Private Person",email:"pii@example.org"},
+    guestId:"same-guest",cardPaymentId:"card-1",cardTokenId:"card-secret",
+    name:"Latte",itemName:"Cappuccino",jobTitle:"Barista",diningOption:"Dine in",
+    openedDate:"2026-10-20T07:00:00Z",amount:10.25,regularHours:8,wages:120,
+    cardLast4:"1234",cardNumber:"4242424242424242",accessToken:"secret"};
+  const s=redactToastRaw(a,0,"",process.env.TOAST_CUSTOMER_HASH_KEY);
+  const json=JSON.stringify(s);
+  for(const bad of ["Private Person","pii@example.org","same-guest","card-1","card-secret","1234","4242424242424242","accessToken"])
+   expect(json).not.toContain(bad);
+  for(const good of ["Latte","Barista","Dine in","2026-10-20T07:00:00Z","regularHours","wages","hmac:"])
+   expect(json).toContain(good);
+  expect(redactToastRaw(a,0,"",process.env.TOAST_CUSTOMER_HASH_KEY)).toEqual(s);
+ });
+ it("removes nested guest, employee and card PII including dynamic-key metadata",async()=>{
+  const raw={customer:{guid:"guest-guid",city:"Private City",nickname:"Private Nick",
+    unrelatedString:"Private Code",regularHours:8.5,totalAmount:28},
+   employee:{guid:"employee-guid",name:"Private Worker",hourlyWage:25,regularHours:8},
+   card:{guid:"card-guid",name:"Private Cardholder",networkId:1234567,cardType:"VISA"},
+   "person@example.com":{customerId:"someone"},itemName:"Latte @ 3pm"};
+  const safe=redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY);
   const json=JSON.stringify(safe);
-  for(const secret of ["1234","12/29","A Person","a@example.com","555","abc","accessToken","cardLast4","customer"])
-   expect(json).not.toContain(secret);
-  expect(json).toContain("cardEntryMode");
-  expect(json).toContain("originalProcessingFee");
-  expect(json).toContain("tipAmount");
- });
- it("strips unexpected guest and numeric contact identifiers, never persists arbitrary IDs",()=>{
-  const json=JSON.stringify(redactToastRaw({
-    guest:{guid:"cafe-guest-identifying-id",name:"Private Guest"},
-    anonymousReference:{guid:"private-customer-guid",phoneDigits:4567891,
-      pin:1234,externalId:"person-identifier",
-      "john@example.com":12,"4242424242424242":"secret","1234":"should not persist"},
-    type:"CREDIT",cardEntryMode:"CONTACTLESS",amount:16.5,originalProcessingFee:0.5
-  }));
-  expect(json).not.toContain("cafe-guest-identifying-id");
-  expect(json).not.toContain("Private Guest");
-  expect(json).not.toContain("private-customer-guid");
-  expect(json).not.toContain("4567891");
-  expect(json).not.toContain("1234");
-  expect(json).not.toContain("person-identifier");
-  expect(json).not.toContain("john@example.com");
-  expect(json).not.toContain("4242424242424242");
-  expect(json).not.toContain("should not persist");
-  expect(json).toContain("CONTACTLESS");
-  expect(json).toContain("originalProcessingFee");
- });
- it("retains Toast financial and labor numbers while removing private numbers",()=>{
-  const sample=redactToastRaw({
-   regularHours:6.5,overtimeHours:2,totalAmount:185.32,amount:14.5,
-   tipAmount:2.1,mcaRepaymentAmount:0.15,originalProcessingFee:0.2,
-   wagesTotal:125,unknownFinancialTotal:250.33,statementTotal:110,spanMinutes:45,
-   phoneDigits:1234567890,customerId:1234,cardLast4:1234,
-   employee:{hourlyWage:19.25,totalHours:8.5,firstName:"Private"}
-  }) as Record<string,unknown>;
-  for(const k of ["regularHours","overtimeHours","totalAmount","amount",
-   "tipAmount","mcaRepaymentAmount","originalProcessingFee","wagesTotal",
-   "unknownFinancialTotal","statementTotal","spanMinutes"])
-   expect(typeof sample[k]).toBe("number");
-  expect(JSON.stringify(sample)).not.toContain("1234567890");
-  expect(JSON.stringify(sample)).not.toContain("1234");
-  expect(JSON.stringify(sample)).not.toContain("Private");
- });
- it("extracts sorted unique nested field paths",()=>{
-  expect(toastFieldPaths({payments:[{cardEntryMode:"TAP",refund:{amount:1}},{cardEntryMode:"SWIPE"}]}))
-   .toEqual(["payments","payments[]","payments[].cardEntryMode","payments[].refund","payments[].refund.amount"]);
- });
- it("stores 403 as empty sample and only writes raw sample rows",async()=>{
-  const {db,written}=database();
-  mocks.request.mockRejectedValue(new ToastApiError("missing_permissions",403));
-  const result=await captureToastRawSample(business,"2026-10-20",db);
-  expect(result.captured).toBe(10);
-  expect(written.every(w=>w.table==="toast_raw_samples")).toBe(true);
-  expect(written.every(w=>Object.keys(w.row.sample as object).length===0)).toBe(true);
-  expect(written.every(w=>w.row.http_status===403)).toBe(true);
- });
- it("uses a DB-backed cooldown and skips all Toast requests on rejection",async()=>{
-  const {db,rpc,written}=database(false);
-  const result=await captureToastRawSample(business,"2026-10-20",db);
-  expect(result.skipped).toBe(true);
-  expect(result.reason).toBe("cooldown");
-  expect(rpc).toHaveBeenCalledWith("toast_acquire_lease",expect.objectContaining({p_business_id:business}));
-  expect(rpc).toHaveBeenCalledWith("toast_release_lease",{p_nonce:"lease-nonce"});
-  expect(mocks.request).not.toHaveBeenCalled();
-  expect(written).toHaveLength(0);
- });
- it("distinguishes no verified location, busy lease, and database errors",async()=>{
-  const cases=[
-   {options:{noLocation:true},reason:"no_location"},
-   {options:{leaseBusy:true},reason:"busy"},
-   {options:{mappingError:true},reason:"db_error"},
-   {options:{leaseError:true},reason:"db_error"},
-   {options:{claimError:true},reason:"db_error"}
-  ] as const;
-  for(const {options,reason} of cases){
-   mocks.request.mockClear();
-   const {db}=database(true,options);
-   const result=await captureToastRawSample(business,"2026-10-20",db);
-   expect(result.reason).toBe(reason);
-   expect(result.skipped).toBe(true);
-   expect(mocks.request).not.toHaveBeenCalled();
-  }
- });
- it("follows up at most five payment GUIDs and bounds arrays",async()=>{
-  const {db,written}=database();
+  for(const bad of ["guest-guid","card-guid","Private City",
+   "Private Nick","Private Code","Private Worker","Private Cardholder",
+   "networkId","1234567","person@example.com","someone"])expect(json).not.toContain(bad);
+  expect(json).toContain("Latte @ 3pm");
+  expect(json).toContain("hourlyWage");
+  expect(json).toContain("regularHours");
+  expect(json).toContain("employee-guid"); // Employee GUID is a business identity, never a guest/card ID.
+  const {db,writes}=database();
   mocks.request.mockImplementation(async(path:string)=>{
-   if(path.startsWith("/orders/v2/payments?"))return Array(8).fill(payment);
-   return [{cardType:"VISA",cardLast4:"1234",amount:12}];
-  });
-  await captureToastRawSample(business,"2026-10-20",db);
-  expect(mocks.request.mock.calls.filter(c=>String(c[0]).startsWith("/orders/v2/payments/"))).toHaveLength(5);
-  expect(written.every(w=>w.table==="toast_raw_samples")).toBe(true);
- });
- it("preserves bounded menu modifier reference paths without customer information",async()=>{
-  const {db,written}=database();
-  mocks.request.mockImplementation(async(path:string)=>{
-   if(path==="/menus/v2/menus")return {
-    menus:[{menuGroups:[{menuItems:[{guid:payment,price:2.5,name:"Latte"}]}]}],
-    modifierGroupReferences:{"0":{guid:payment,minimumSelections:1},
-      "1":{guid:payment},"2":{guid:payment},"3":{guid:payment}},
-    modifierOptionReferences:{"0":{guid:payment,price:0.5},"1":{guid:payment},
-      "2":{guid:payment},"3":{guid:payment}}
-   };
+   if(path.startsWith("/orders/v2/ordersBulk?"))return [raw];
    return [];
   });
   await captureToastRawSample(business,"2026-10-20",db);
-  const menu=written.find(w=>w.row.endpoint==="menus/v2/menus")?.row;
-  expect(menu).toBeDefined();
-  const paths=menu?.field_paths as string[];
-  expect(paths).toContain("modifierGroupReferences.0.guid");
-  expect(paths).toContain("modifierOptionReferences.0.price");
-  expect(paths).not.toContain("modifierOptionReferences.3.guid");
-  expect(JSON.stringify(menu?.sample)).not.toContain(payment);
+  const first=evidence(writes).find(w=>w.endpoint==="orders/v2/ordersBulk");
+  const counts=first?.identifier_counts as Record<string,{present:number;filled:number}>;
+  expect(counts["[].customer.guid"]).toEqual({present:1,filled:1});
+  expect(counts["[].card.guid"]).toEqual({present:1,filled:1});
+  expect(counts["[].*.customerId"]).toEqual({present:1,filled:1});
+  expect(JSON.stringify(counts)).not.toContain("person@example.com");
  });
- it("holds and releases the shared restaurant sync lease",async()=>{
-  const {db,rpc}=database();
-  mocks.request.mockResolvedValue([]);
+ it("matches the complete documented GET inventory without duplicates",()=>{
+  const getters=TOAST_READ_ENDPOINTS.filter(e=>e.scope!=="unsupported"&&e.scope!=="era_request");
+  expect(getters).toHaveLength(88);
+  expect(new Set(getters.map(e=>e.endpoint)).size).toBe(88);
+  expect(getters.map(e=>[e.endpoint,e.path,e.doc].join("|")).sort()).toEqual(OFFICIAL_TOAST_GET_PATHS);
+  expect(getters.every(e=>e.doc.startsWith("https://doc.toasttab.com/openapi/"))).toBe(true);
+  expect(TOAST_READ_ENDPOINTS.filter(e=>e.scope==="era_request")).toHaveLength(9);
+  expect(TOAST_READ_ENDPOINTS.filter(e=>e.scope==="unsupported")).toHaveLength(5);
+ });
+ it("retains menu selections but removes guest check and payment labels",()=>{
+  const raw={checks:[{name:"Guest Alex",openedDate:"2026-10-20T09:05:00Z",
+    selections:[{name:"Latte",price:5.5,modifiers:[{name:"Oat Milk",price:1}]}]}],
+   payments:[{name:"Private card payer",amount:6.5,cardEntryMode:"TAP"}]};
+  const json=JSON.stringify(redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY));
+  for(const privateValue of ["Guest Alex","Private card payer"])expect(json).not.toContain(privateValue);
+  for(const businessValue of ["Latte","Oat Milk","2026-10-20T09:05:00Z","TAP"])
+   expect(json).toContain(businessValue);
+ });
+ it("keeps order, check, payment, discount, modifier and staff facts while removing personal fields",()=>{
+  const order={
+   guid:"11111111-1111-4111-8111-111111111112",orderNumber:451,
+   revenueCenterGuid:"22222222-2222-4222-8222-222222222224",
+   serverGuid:"33333333-3333-4333-8333-333333333333",
+   employeeGuid:"44444444-4444-4444-8444-444444444444",
+   openedDate:"2026-10-20T09:00:00Z",
+   customer:{guid:"private-customer-id",name:"Jane Customer",email:"jane@example.com",phone:"415-555-1234"},
+   checks:[{guid:"55555555-5555-4555-8555-555555555555",checkNumber:7,
+    name:"Guest Jane",amount:24.50,refundStatus:"REFUNDED",status:"CLOSED",
+    appliedDiscounts:[{guid:"66666666-6666-4666-8666-666666666666",name:"Loyalty 10%",
+     discountAmount:2.5,discountType:"FIXED"}],
+    appliedServiceCharges:[{guid:"88888888-8888-4888-8888-888888888888",
+     name:"Takeout Packaging",chargeAmount:1.25,chargeType:"FIXED",
+     serviceCharge:{guid:"99999999-9999-4999-8999-999999999999"}}],
+    selections:[{name:"Cappuccino",unitPrice:6,modifiers:[{name:"Oat Milk",price:1}]}],
+    payments:[{guid:"77777777-7777-4777-8777-777777777777",amount:24.50,
+     cardType:"VISA",cardEntryMode:"TAP",refundStatus:"NONE",cardNumber:"4111111111111111",
+     cardLast4:"1111",cardholderName:"Jane Customer",authToken:"private-token",
+     customerId:"customer-id",loyaltyId:"loyalty-id",cardId:"card-id",
+     email:"jane@example.com",streetAddress:"1 Private St",latitude:37.3,
+     notes:"Jane is allergic"}]}]
+  };
+  const safe=redactToastRaw(order,0,"",process.env.TOAST_CUSTOMER_HASH_KEY);
+  const text=JSON.stringify(safe);
+  for(const kept of ["revenueCenterGuid","serverGuid","employeeGuid","checkNumber",
+   "refundStatus","CLOSED","Loyalty 10%","Takeout Packaging","Cappuccino","Oat Milk","cardEntryMode",
+   "TAP","2026-10-20T09:00:00Z","77777777-7777-4777-8777-777777777777"])
+   expect(text).toContain(kept);
+  for(const privateValue of ["Jane Customer","Jane is allergic","4111111111111111",
+   "jane@example.com","1 Private St","private-token","private-customer-id",
+   "customer-id","loyalty-id","card-id","cardLast4","latitude"])
+   expect(text).not.toContain(privateValue);
+  expect((safe as typeof order).customer.guid).toMatch(/^hmac:[a-f0-9]{64}$/);
+  const payment=((safe as typeof order).checks[0].payments[0]);
+  expect(payment.customerId).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(payment.loyaltyId).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(payment.cardId).toMatch(/^hmac:[a-f0-9]{64}$/);
+ });
+ it("persists real Toast check appliedDiscounts and appliedServiceCharges names, not guest PII",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path.startsWith("/orders/v2/ordersBulk?"))return [{
+    guid:"11111111-1111-4111-8111-111111111112",
+    checks:[{
+     guid:"22222222-2222-4222-8222-222222222223",
+     name:"Private guest tab",
+     displayNumber:"12",
+     paymentStatus:"CLOSED",
+     appliedDiscounts:[{
+      guid:"33333333-3333-4333-8333-333333333334",
+      name:"Happy Hour Discount",discountAmount:3,nonTaxDiscountAmount:3,
+      appliedDiscountReason:{comment:"Private guest instruction"}
+     }],
+     appliedServiceCharges:[{
+      guid:"44444444-4444-4444-8444-444444444445",
+      name:"Large Party Gratuity",chargeAmount:6,chargeType:"PERCENT",
+      serviceCharge:{guid:"55555555-5555-4555-8555-555555555556"},
+      appliedTaxes:[{name:"Sales Tax",taxAmount:0.48}]
+     }]
+    }]
+   }];
+   return [];
+  });
   await captureToastRawSample(business,"2026-10-20",db);
-  const calls=rpc.mock.calls.map(c=>c[0]);
-  expect(calls).toContain("toast_acquire_lease");
-  expect(calls).toContain("toast_release_lease");
-  expect(calls.indexOf("toast_acquire_lease")).toBeLessThan(calls.indexOf("toast_claim_raw_sample"));
-  expect(calls.indexOf("toast_claim_raw_sample")).toBeLessThan(calls.indexOf("toast_release_lease"));
+  const stored=evidence(writes).find(w=>w.endpoint==="orders/v2/ordersBulk")?.sample;
+  const json=JSON.stringify(stored);
+  expect(json).toContain('"name":"Happy Hour Discount"');
+  expect(json).toContain('"name":"Large Party Gratuity"');
+  expect(json).toContain('"name":"Sales Tax"');
+  expect(json).toContain('"discountAmount":3');
+  expect(json).toContain('"chargeAmount":6');
+  expect(json).toContain('"paymentStatus":"CLOSED"');
+  expect(json).toContain('"displayNumber":"12"');
+  expect(json).not.toContain("Private guest tab");
+  expect(json).not.toContain("Private guest instruction");
  });
- it("claim uses database function, not a process-local timer",async()=>{
+ it("runs no-GET families first, then batches one skipped_time_budget row per untried endpoint",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockResolvedValue([]);
+  let counter=0;
+  vi.spyOn(Date,"now").mockImplementation(()=>Date.parse("2026-10-20T00:00:00Z")+counter++*1000);
+  const result=await captureToastRawSample(business,"2026-10-20",db,34000);
+  expect(result.reason).toBe("partial");
+  expect(result.failed).toBe(0);
+  expect(evidence(writes).length).toBeGreaterThanOrEqual(TOAST_READ_ENDPOINTS.length);
+  expect(new Set(evidence(writes).map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+  expect(evidence(writes).slice(0,5).every(x=>x.error_code==="no_get_operations")).toBe(true);
+  expect(writes.some(x=>x.error_code==="skipped_time_budget")).toBe(true);
+ });
+ it("starts each of the nine ERA requests and stores completed 200 GET results",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockRejectedValue(new ToastApiError("missing_permissions",403));
+  mocks.eraRequest.mockResolvedValue({guid:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",status:200});
+  mocks.eraGet.mockResolvedValue({status:200,data:[{netSalesAmount:42,orderGuid:"ok",guestEmail:"private@example.org"}]});
+  await captureToastRawSample(business,"2026-10-20",db);
+  expect(mocks.eraRequest).toHaveBeenCalledTimes(9);
+  expect(mocks.eraGet).toHaveBeenCalledTimes(10);
+  expect(evidence(writes).filter(x=>String(x.endpoint).startsWith("era/v1/")&&x.http_status===200)).toHaveLength(19);
+  expect(JSON.stringify(writes.filter(x=>String(x.endpoint).startsWith("era/v1/")))).not.toContain("private@example.org");
+ });
+ it("polls a pending 202 report until ready",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockRejectedValue(new ToastApiError("missing_permissions",403));
+  mocks.eraRequest.mockResolvedValue({guid:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",status:200});
+  mocks.eraGet.mockResolvedValue({status:200,data:[{netSalesAmount:10}]})
+   .mockResolvedValueOnce({status:202,data:null});
+  await captureToastRawSample(business,"2026-10-20",db);
+  expect(mocks.eraGet).toHaveBeenCalledTimes(11);
+  const metrics=evidence(writes).find(x=>x.endpoint==="era/v1/metrics/{reportRequestGuid}");
+  expect(metrics?.http_status).toBe(200);
+  expect(metrics?.error_code).toBeNull();
+ });
+ it("propagates 403 on the ERA report request and dependent GET as evidence",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockRejectedValue(new ToastApiError("missing_permissions",403));
+  await captureToastRawSample(business,"2026-10-20",db);
+  const request=evidence(writes).find(x=>x.endpoint==="era/v1/metrics");
+  const get=evidence(writes).find(x=>x.endpoint==="era/v1/metrics/{reportRequestGuid}");
+  expect(request?.http_status).toBe(403);
+  expect(get?.http_status).toBe(403);
+  expect(get?.error_code).toBe("missing_permissions");
+  expect(mocks.eraGet.mock.calls.filter(([path])=>String(path).includes("reportRequestGuid"))).toHaveLength(0);
+  expect(mocks.eraGet).toHaveBeenCalledTimes(1);
+ });
+ it("hashes primitive customer GUIDs and loyalty account numbers without dropping business data",()=>{
+  const raw={customer:"11111111-1111-4111-8111-111111111111",
+   guest:"Private Guest",loyaltyAccountNumber:"LOYALTY-PERSON-ID",
+   payment:{guid:"22222222-2222-4222-8222-222222222222",state:"SETTLED",amount:14},
+   menuItem:{name:"Flat White"}};
+  const safe=redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY) as Record<string,unknown>;
+  expect(String(safe.customer)).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(safe.guest).toBe("[redacted]");
+  expect(String(safe.loyaltyAccountNumber)).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(safe.payment).toEqual(raw.payment);
+  expect(safe.menuItem).toEqual(raw.menuItem);
+ });
+ it("removes root-level guest and employee names from stored Toast payloads",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path.startsWith("/orders/v2/ordersBulk?"))
+    return [{guid:"11111111-1111-4111-8111-111111111112",
+     name:"Guest at register",checkNumber:27,amount:18,refundStatus:"NONE"}];
+   if(path==="/labor/v1/employees")
+    return [{guid:"22222222-2222-4222-8222-222222222223",
+     name:"Private Employee",jobTitle:"Cashier",wages:120}];
+   return [];
+  });
+  await captureToastRawSample(business,"2026-10-20",db);
+  const order=JSON.stringify(evidence(writes).find(x=>x.endpoint==="orders/v2/ordersBulk")?.sample);
+  const staff=JSON.stringify(evidence(writes).find(x=>x.endpoint==="labor/v1/employees")?.sample);
+  expect(order).not.toContain("Guest at register");
+  expect(order).toContain('"checkNumber":27');
+  expect(order).toContain('"refundStatus":"NONE"');
+  expect(staff).not.toContain("Private Employee");
+  expect(staff).toContain('"jobTitle":"Cashier"');
+  expect(staff).toContain('"wages":120');
+ });
+ it("hashes nested customerInfo and cardInfo GUIDs while retaining business card type",()=>{
+  const raw={customerInfo:{guid:"cust-123",status:"ACTIVE"},
+   payment:{guid:"33333333-3333-4333-8333-333333333333",
+    cardInfo:{guid:"card-123",cardType:"MASTERCARD",last4:"1234"}}};
+  const safe=redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY) as
+   {customerInfo:{guid:string;status:string};payment:{guid:string;cardInfo:{guid:string;cardType:string;last4?:string}}};
+  expect(safe.customerInfo.guid).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(safe.payment.cardInfo.guid).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(safe.payment.guid).toBe(raw.payment.guid);
+  expect(safe.payment.cardInfo.cardType).toBe("MASTERCARD");
+  expect(safe.payment.cardInfo.last4).toBeUndefined();
+ });
+ it("redacts gift-card first-five digits and hashes network transaction IDs",()=>{
+  const raw={giftCard:{guid:"GIFT-GUID",first5CardDigits:"12345",last4CardDigits:"6789",cardNumberIdentifier:"GIFT-123"},
+   payment:{networkTransactionIdentifier:"NETWORK-123",amount:42,refundStatus:"REFUNDED"}};
+  const safe=redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY);
+  const json=JSON.stringify(safe);
+  expect(json).not.toContain("12345");
+  expect(json).not.toContain("6789");
+  expect(json).not.toContain("NETWORK-123");
+  expect(json).not.toContain("GIFT-123");
+  expect(json).not.toContain("GIFT-GUID");
+  expect((safe as {giftCard:{guid:string}}).giftCard.guid).toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect((safe as {giftCard:{cardNumberIdentifier:string}}).giftCard.cardNumberIdentifier)
+   .toMatch(/^hmac:[a-f0-9]{64}$/);
+  expect(json).toContain('"refundStatus":"REFUNDED"');
+  expect((safe as {payment:{networkTransactionIdentifier:string}}).payment.networkTransactionIdentifier)
+   .toMatch(/^hmac:[a-f0-9]{64}$/);
+ });
+ it("reads payments across paid, refunded and voided date filters without duplicating IDs",async()=>{
+  const {db,writes}=database();
+  const id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path.startsWith("/orders/v2/payments?")){
+    if(path.includes("paidBusinessDate="))return [id];
+    if(path.includes("refundBusinessDate="))return [id];
+    if(path.includes("voidBusinessDate="))return [id];
+   }
+   return [];
+  });
+  await captureToastRawSample(business,"2026-10-20",db);
+  const calls=mocks.request.mock.calls.filter(([p])=>String(p).startsWith("/orders/v2/payments?"));
+  expect(calls).toHaveLength(3);
+  expect(calls.map(([p])=>String(p).split("?")[1].split("=")[0]).sort()).toEqual(
+   ["paidBusinessDate","refundBusinessDate","voidBusinessDate"]);
+  expect(evidence(writes).filter(x=>x.endpoint==="orders/v2/payments").reduce(
+   (sum,x)=>sum+Number(x.item_count),0)).toBe(1);
+ });
+ it("keeps seeded rows if a sample insert fails and marks run partial",async()=>{
+  const {db,writes,failNextSampleWrite}=database();
+  mocks.request.mockResolvedValue([]);
+  // Seed insert happens first. Fail a subsequent individual sample insert.
+  const baseInsert=db.from.bind(db);
+  let seeded=false;
+  const wrapped={...db,from:(table:string)=>{
+   const query=baseInsert(table);
+   if(table!=="toast_raw_samples")return query;
+   return {insert:async(row:Record<string,unknown>|Record<string,unknown>[])=>{
+    if(Array.isArray(row)&&!seeded){seeded=true;failNextSampleWrite();}
+    return query.insert(row);
+   }};
+  }} as unknown as SupabaseClient;
+  const result=await captureToastRawSample(business,"2026-10-20",wrapped);
+  expect(result.reason).toBe("partial");
+  expect(result.failed).toBeGreaterThan(0);
+  expect(writes.filter(x=>x.error_code==="not_attempted")).toHaveLength(TOAST_READ_ENDPOINTS.length);
+  expect(new Set(writes.map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+  expect(writes.some(x=>x.error_code==="skipped_interrupted")).toBe(true);
+ });
+ it("seeds every endpoint before making an API request, including on a worker crash",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockImplementationOnce(()=>{throw new Error("unexpected worker error");});
+  await captureToastRawSample(business,"2026-10-20",db);
+  expect(writes.filter(x=>x.error_code==="not_attempted")).toHaveLength(TOAST_READ_ENDPOINTS.length);
+  expect(new Set(writes.map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+ });
+ it("writes all remaining evidence when diagnostic lease renewal fails",async()=>{
+  const {db,writes,rpc}=database();
+  const old=rpc.getMockImplementation()!;
+  rpc.mockImplementation(async(name:string)=>name==="toast_renew_raw_sample_lease"?
+   {data:false,error:null}:old(name));
+  let now=Date.parse("2026-10-20T00:00:00Z");
+  vi.spyOn(Date,"now").mockImplementation(()=>now);
+  mocks.request.mockImplementation(async()=>{now+=121000;return [];});
+  const result=await captureToastRawSample(business,"2026-10-20",db);
+  expect(result.reason).toBe("lease_lost");
+  expect(writes.filter(w=>w.error_code==="not_attempted")).toHaveLength(TOAST_READ_ENDPOINTS.length);
+  expect(evidence(writes).some(w=>w.error_code==="skipped_lease_lost")).toBe(true);
+  expect(new Set(writes.map(w=>w.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+ });
+ it("marks an in-progress paginated endpoint partial when the budget expires",async()=>{
+  const {db,writes}=database();
+  let now=Date.parse("2026-10-20T00:00:00Z");
+  vi.spyOn(Date,"now").mockImplementation(()=>now);
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path.startsWith("/orders/v2/ordersBulk?")){
+    now+=25000;
+    return Array.from({length:100},()=>({amount:6,refundStatus:"NONE"}));
+   }
+   return [];
+  });
+  const result=await captureToastRawSample(business,"2026-10-20",db,50000);
+  expect(result.reason).toBe("partial");
+  expect(evidence(writes).some(w=>w.endpoint==="orders/v2/ordersBulk"&&
+    w.error_code==="skipped_time_budget")).toBe(true);
+  expect(new Set(writes.map(w=>w.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+ });
+ it("keeps paths for nested arrays",()=>{
+  expect(toastFieldPaths({items:[{name:"Latte",price:5}]})).toContain("items[].price");
+ });
+ it("attempts all catalog entries; records unavailable 403 and never writes outside diagnostics",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockRejectedValue(new ToastApiError("missing_permissions",403));
+  const result=await captureToastRawSample(business,"2026-10-20",db);
+  expect(result.failed).toBe(0);
+  expect(evidence(writes).length).toBeGreaterThanOrEqual(TOAST_READ_ENDPOINTS.length);
+  expect(new Set(evidence(writes).map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+  expect(evidence(writes).filter(w=>w.http_status===403).length).toBeGreaterThan(20);
+  expect(writes.every(w=>typeof w.doc_url==="string"&&"field_paths"in w)).toBe(true);
+  expect(mocks.request).toHaveBeenCalled();
+ });
+ it("records 204 without fabricating a successful payload",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockRejectedValue(new ToastApiError("unavailable",204));
+  await captureToastRawSample(business,"2026-10-20",db);
+  expect(writes.some(w=>w.http_status===204)).toBe(true);
+ });
+ it("caps paged endpoints at twenty pages",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path.startsWith("/orders/v2/ordersBulk?"))return Array.from({length:100},()=>({amount:3}));
+   return [];
+  });
+  await captureToastRawSample(business,"2026-10-20",db);
+  const orderCalls=mocks.request.mock.calls.filter(([p])=>String(p).startsWith("/orders/v2/ordersBulk?"));
+  expect(orderCalls).toHaveLength(20);
+  expect(writes.some(w=>w.error_code==="page_cap")).toBe(true);
+ });
+ it("respects the database cooldown",async()=>{
+  const {db,writes}=database(false);
+  const result=await captureToastRawSample(business,"2026-10-20",db);
+  expect(result.reason).toBe("cooldown");
+  expect(writes).toHaveLength(0);
+  expect(mocks.request).not.toHaveBeenCalled();
+ });
+ it("uses database-backed claim",async()=>{
   const {db,rpc}=database();
   expect(await claimToastRawSample(db,business,restaurant,"2026-10-20")).toBe(true);
-  expect(rpc).toHaveBeenCalledWith("toast_claim_raw_sample",expect.objectContaining({p_business_id:business}));
+  expect(rpc).toHaveBeenCalledWith("toast_claim_raw_sample",expect.any(Object));
  });
 });

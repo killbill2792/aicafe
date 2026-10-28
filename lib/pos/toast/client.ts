@@ -6,7 +6,7 @@ import {decryptToken,encryptToken} from "@/lib/security/tokenCrypto";
 
 export type ToastFailure = "invalid_host"|"authentication"|"missing_permissions"|"missing_scope_or_location"|"unauthorized_location"|"rate_limited"|"timeout"|"unavailable"|"invalid_response"|"not_configured"|"too_many_payments";
 export class ToastApiError extends Error {
-  constructor(public readonly category:ToastFailure, public readonly status?:number, public readonly retryAt?:string) {
+  constructor(public readonly category:ToastFailure, public readonly status?:number, public readonly retryAt?:string, public readonly toastCode?:string, public readonly toastMessage?:string) {
     super("Toast request failed: "+category);
     this.name="ToastApiError";
   }
@@ -152,7 +152,7 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     if(!response&&data)throw new ToastApiError("rate_limited",429,String(data));
   }
   async function request<T>(path:string,restaurantGuid:string,schema:z.ZodType<T>,
-     opts:{allowUnverified?:boolean;deadlineAt?:number}={}):Promise<T> {
+     opts:{allowUnverified?:boolean;deadlineAt?:number;onResponse?:(meta:{status:number;nextPageToken:string|null})=>void}={}):Promise<T> {
     const guid=GUID.safeParse(restaurantGuid);
     if(!guid.success||!path.startsWith("/")||path.startsWith("//")||path.includes("..")||path.includes("://")||
       path.includes("#")||path.includes("\\"))
@@ -208,8 +208,23 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
         throw new ToastApiError("rate_limited",429,retryAt);
       }
       if(res.status>=500&&attempt<4){await wait(500*2**attempt+Math.random()*200);continue;}
-      if(res.status===403)throw new ToastApiError("missing_scope_or_location",403);
-      if(!res.ok)throw failure(res.status,path.startsWith("/restaurants/v1/")?"restaurant":"resource");
+      if(res.status===204)throw new ToastApiError("unavailable",204);
+      if(!res.ok){
+        const generic=res.status===403?new ToastApiError("missing_scope_or_location",403):
+          failure(res.status,path.startsWith("/restaurants/v1/")?"restaurant":"resource");
+        const body=await res.json().catch(()=>null);
+        const obj=body&&typeof body==="object"&&!Array.isArray(body)?body as Record<string,unknown>:null;
+        const rawCode=obj?.code??obj?.errorCode;
+        const rawMessage=obj?.message??obj?.error;
+        const toastCode=typeof rawCode==="string"&&/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(rawCode)?rawCode:undefined;
+        // Only generic provider messages are safe to persist. Arbitrary English
+        // error strings can contain a person's name without looking like PII.
+        const toastMessage=typeof rawMessage==="string"&&
+          /^(?:Forbidden|Unauthorized|Not Found|Not Found\\.|Bad Request|No Content|Access Denied|Invalid Request|Internal Server Error|Service Unavailable)$/i.test(rawMessage)?
+          rawMessage:undefined;
+        throw new ToastApiError(generic.category,generic.status,generic.retryAt,toastCode,toastMessage);
+      }
+      opts.onResponse?.({status:res.status,nextPageToken:res.headers.get("Toast-Next-Page-Token")});
       const raw=await res.json().catch(()=>{throw new ToastApiError("invalid_response");});
       const parsed=schema.safeParse(raw);
       if(!parsed.success)throw new ToastApiError("invalid_response");
