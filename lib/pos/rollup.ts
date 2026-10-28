@@ -7,6 +7,7 @@ import { timecardWagesForLocalDay } from "./timecardDay";
 import {laborWageStatusFromTimecards} from "@/lib/calc/profit";
 import { processingFeeForRollup } from "./processingFees";
 import { ensureOwnerConfirmedProcessingFeeEstimateForDay } from "./processingFeeEstimate.server";
+import {refreshToastPaymentFeeForDay} from "./toast/paymentFeeFacts.server";
 import { resolveSalesDataStatus, type SalesDataStatus } from "./salesCoverage";
 
 /**
@@ -51,6 +52,11 @@ export async function recomputeDailyRollup(
       processingFeeProvider: order.processing_fee_provider,
     })),
   });
+
+  // Follow-up D: retain Toast's per-payment actual fees, or a checked owner
+  // estimate, before selecting the shared daily fee fact. Non-Toast POS unaffected.
+  if (!options.dryRun && effectiveOrders.some(o => o.pos_order_id.startsWith("toast:")))
+    await refreshToastPaymentFeeForDay(supabase,businessId,businessDate);
 
   const { data: processingFeeFact, error: processingFeeError } = await supabase
     .from("processing_fee_daily_facts")
