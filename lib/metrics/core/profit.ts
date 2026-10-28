@@ -31,3 +31,9 @@ export function profitForPeriod(days:readonly ProfitSalesDay[],bills:ProfitPart,
     netSalesCents,partsUsed,coveredSalesDays:new Set(observed.map(d=>d.date)).size,
     expectedSalesDays:new Set(days.map(d=>d.date)).size,notes,basis};
 }
+
+/** A comparison percentage requires a verified prior-period profit; zero has no denominator. */
+export function percentChangeFromProfitDelta(currentCents:number,deltaCents:number):number|null{
+  const previousCents=currentCents-deltaCents;
+  return previousCents===0?null:deltaCents/Math.abs(previousCents)*100;
+}
