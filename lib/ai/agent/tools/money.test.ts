@@ -36,8 +36,11 @@ describe("Leo scoped money reads",()=>{
   });
   it("get_cost_summary renders the ledger label in EN ES and AR",async()=>{
     const snapshot=getFixtureSnapshot();
-    const source=businessCostSummaryFromSnapshot(snapshot,{from:snapshot.monthKey+"-01",to:snapshot.todayDateStr});
-    if(source.completeness!=="complete")return;
+    const observed=businessCostSummaryFromSnapshot(snapshot,{from:snapshot.monthKey+"-01",to:snapshot.todayDateStr});
+    const sum=Object.values(observed.components).reduce((total,n)=>total+n,0);
+    const source={...observed,completeness:"complete" as const,knownTotalCents:sum,
+      observed:{ingredients:true,loadedStaff:true,cardFees:true,runningCosts:true},
+      estimatedInputs:[]};
     for(const [locale,label] of [["en","Recorded business costs"],["es","Costes del negocio registrados"],["ar","تكاليف العمل المسجلة"]] as const){
       const c={...ctx({getBusinessCostSummary:async()=>source}),locale,currency:"EUR"};
       const answer=await moneyTools.get_cost_summary.execute({period:"month"},c);
