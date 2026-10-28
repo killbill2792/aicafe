@@ -810,6 +810,35 @@ BEGIN
   and source_ref='staged-timecard:'||r::text||':'||entry::text
   and data->>'hourly_wage_cents' is null),
   'open Toast timecards readable without invented wage rates');
+ -- Deleted timecards remain retained but must NOT appear as current billable labor.
+ update public.toast_labor_entries set deleted=true
+  where business_id=b and restaurant_guid=r and external_time_entry_id=entry;
+ perform pg_temp.assert_true(exists(select 1 from public.toast_open_labor_summaries
+  where business_id=b and restaurant_guid=r and external_time_entry_id=entry
+   and deleted=true),'deleted labor retained as historical staged evidence');
+ perform pg_temp.assert_true(not exists(select 1 from public.cv_labor_entries
+  where business_id=b and
+   source_ref='staged-timecard:'||r::text||':'||entry::text),
+   'deleted attendance cannot be displayed as active labor');
+ -- Two GUID-less raw orders with different payments must remain two orders;
+ -- a null partition must NOT collapse them into a single "latest" row.
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state)
+ values(b,r,'daily','queued') returning id into run;
+ insert into public.toast_day_pages(run_id,business_date,page,payload)
+ values(run,'2026-10-19',1,
+  jsonb_build_array(
+   jsonb_build_object('checks',jsonb_build_array(jsonb_build_object(
+    'payments',jsonb_build_array(jsonb_build_object(
+     'guid','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0081','amount',4.0))))),
+   jsonb_build_object('checks',jsonb_build_array(jsonb_build_object(
+    'payments',jsonb_build_array(jsonb_build_object(
+     'guid','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0082','amount',6.0)))))));
+ perform public.toast_rebuild_day_payments(run,b,r,'2026-10-19',true);
+ perform pg_temp.assert_true(
+ (select count(*)=2 from public.toast_payment_summaries
+  where business_id=b and restaurant_guid=r and business_date='2026-10-19'),
+ 'GUID-less orders retain distinct payment evidence');
+
  perform pg_temp.assert_true(exists(select 1 from public.cv_payments
   where business_id=b and amount_cents=1200 and tip_cents=200),
   'canonical payment view uses sanitized row');
