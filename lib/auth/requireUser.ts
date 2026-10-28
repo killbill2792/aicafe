@@ -10,15 +10,17 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
  * Before Supabase is connected (see PROGRESS.md "Needs connecting"), this is a no-op so the
  * rest of the app stays browsable instead of crashing.
  */
+/** Shared per-request auth fact for Home, Money and alerts. */
+export const getOptionalAuthenticatedUser=cache(async function getOptionalAuthenticatedUser(){
+  if(!isSupabaseConfigured())return null;
+  const supabase=await createServerSupabaseClient();
+  const {data:{user},error}=await supabase.auth.getUser();
+  if(error)return null;
+  return user;
+});
 export const requireUser=cache(async function requireUser(){
-  if (!isSupabaseConfigured()) return null;
-
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const user=await getOptionalAuthenticatedUser();
+  if(!user&&isSupabaseConfigured()){
     const locale = await getLocale();
     redirect(`/${locale}/login`);
   }

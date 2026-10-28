@@ -2,6 +2,7 @@ import "server-only";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
+import {getOptionalAuthenticatedUser} from "@/lib/auth/requireUser";
 import { summarizeVoidsRollups, type VoidsSummary } from "@/lib/calc/voidsReview";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -21,9 +22,7 @@ export type AlertRow = {
 export async function getOpenAlerts(): Promise<AlertRow[]> {
   if (!isSupabaseConfigured()) return [];
   const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user=await getOptionalAuthenticatedUser();
   if (!user) return [];
   const businessId = await getActiveBusinessId(user.id);
 
@@ -55,7 +54,7 @@ export async function getOpenAlerts(): Promise<AlertRow[]> {
 export async function getAlertById(id: string): Promise<AlertRow | null> {
   if (!isSupabaseConfigured()) return null;
   const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user=await getOptionalAuthenticatedUser();
   if (!user) return null;
   const businessId = await getActiveBusinessId(user.id);
   const { data } = await supabase.from("alerts")

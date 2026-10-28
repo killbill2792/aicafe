@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
 import { getFixtureSnapshot } from "./fixtureSnapshot";
 import { getBusinessSnapshotFromDb } from "./snapshot.server";
+import {getOptionalAuthenticatedUser} from "@/lib/auth/requireUser";
 import type { BusinessSnapshot } from "./types";
 
 /**
@@ -17,9 +18,7 @@ export const getSnapshot=cache(async function getSnapshot(
   if (!isSupabaseConfigured()) return getFixtureSnapshot();
 
   const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user=await getOptionalAuthenticatedUser();
   if (!user) return getFixtureSnapshot();
 
   const businessId = await getActiveBusinessId(user.id);
