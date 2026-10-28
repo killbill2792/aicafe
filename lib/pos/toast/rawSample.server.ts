@@ -5,7 +5,7 @@ import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
 
 const daySchema=z.iso.date();
 const LIMIT=5;
-const SENSITIVE=/(?:token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|pan|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|state|country|ip.?address|device.?id|loyalty|gift.?card|notes?|description|display.?name|^name$|^text$|comment|memo|contact|holder|recipient)/i;
+const SENSITIVE=/(?:card(?!Type$|EntryMode$)|token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|pan|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|state|country|ip.?address|device.?id|loyalty|gift.?card|notes?|description|display.?name|^name$|^text$|comment|memo|contact|holder|recipient)/i;
 /** Fail closed on sensitive names, including unexpected nested Toast fields. */
 export function redactToastRaw(value:unknown,depth=0):unknown {
  if(depth>16)return null;
@@ -56,10 +56,6 @@ function clipMenu(value:unknown):unknown {
    const menu=m as Record<string,unknown>;
    return {...menu,menuGroups:clipGroups(menu.menuGroups)};
  }),modifierGroupReferences:{},modifierOptionReferences:{}};
-}
-function addDays(day:string,days:number) {
- const d=new Date(day+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+days);
- return d.toISOString().slice(0,10);
 }
 type Writer=Pick<SupabaseClient,"from"|"rpc">;
 export async function claimToastRawSample(db:Writer,businessId:string,restaurantGuid:string,businessDate:string){
