@@ -3383,6 +3383,10 @@
     "modifierMissingInput": "Missing information",
     "modifierSuggestedUpcharge": "Suggested upcharge",
     "modifierMarginKept": "Additional amount kept",
-    "modifierDefaultTarget": "Suggested prices use an estimated 30% product-cost target; confirm your target before changing prices."
+    "modifierDefaultTarget": "Suggested prices use an estimated 30% product-cost target; confirm your target before changing prices.",
+    "modifierUnknownMilk": "unknown milk",
+    "modifierMilkCostMissing": "Cost for {milk}",
+    "modifierMilkVolumeMissing": "Milk amount for {size}",
+    "modifierProductCostTargetMissing": "Product-cost target"
   }
 }

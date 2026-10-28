@@ -3383,6 +3383,10 @@
     "modifierMissingInput": "معلومات ناقصة",
     "modifierSuggestedUpcharge": "الزيادة المقترحة",
     "modifierMarginKept": "المبلغ الإضافي المحتفظ به",
-    "modifierDefaultTarget": "تستخدم الأسعار المقترحة هدفًا تقديريًا لتكلفة المنتج بنسبة ٣٠٪؛ أكّد هدفك قبل تعديل الأسعار."
+    "modifierDefaultTarget": "تستخدم الأسعار المقترحة هدفًا تقديريًا لتكلفة المنتج بنسبة ٣٠٪؛ أكّد هدفك قبل تعديل الأسعار.",
+    "modifierUnknownMilk": "حليب غير معروف",
+    "modifierMilkCostMissing": "تكلفة {milk}",
+    "modifierMilkVolumeMissing": "كمية الحليب لحجم {size}",
+    "modifierProductCostTargetMissing": "هدف تكلفة المنتج"
   }
 }

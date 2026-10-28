@@ -3383,6 +3383,10 @@
     "modifierMissingInput": "Faltan datos",
     "modifierSuggestedUpcharge": "Recargo sugerido",
     "modifierMarginKept": "Importe adicional conservado",
-    "modifierDefaultTarget": "Los precios sugeridos usan un objetivo estimado del 30 % para el costo del producto; confirma tu objetivo antes de cambiar los precios."
+    "modifierDefaultTarget": "Los precios sugeridos usan un objetivo estimado del 30 % para el costo del producto; confirma tu objetivo antes de cambiar los precios.",
+    "modifierUnknownMilk": "leche desconocida",
+    "modifierMilkCostMissing": "Costo de {milk}",
+    "modifierMilkVolumeMissing": "Cantidad de leche para {size}",
+    "modifierProductCostTargetMissing": "Objetivo de costo del producto"
   }
 }

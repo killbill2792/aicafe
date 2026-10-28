@@ -26,16 +26,26 @@ export default function MilkSizePrices({items,fromMilkId,toMilkId,pantry}:{
     basis:p.baseUnit==="ml"&&p.costPerBaseMicros!==null?
       "recorded" as const:"missing" as const,
   }]));
+  const missingLabel=(key:string):string=>{
+    if(key.startsWith("milk_cost:")){
+      const milkId=key.slice("milk_cost:".length);
+      const name=pantry.find(item=>item.id===milkId)?.name??note("modifierUnknownMilk");
+      return note("modifierMilkCostMissing",{milk:name});
+    }
+    if(key.startsWith("milk_ml:"))
+      return note("modifierMilkVolumeMissing",{size:key.slice("milk_ml:".length)});
+    return note("modifierProductCostTargetMissing");
+  };
   const prices=swapCostPerSize(sizes.map(item=>({
     id:item.id,label:item.sizeLabel??item.name,
   })),fromMilkId??"unknown",toMilkId,ml,costs,DEFAULT_TARGET_PRODUCT_COST_PERCENT);
   return <div className="mt-2 space-y-2" aria-label={note("modifierSizePrices")}>
     {prices.sizes.map(size=><section key={size.sizeId}
-      className="rounded-xl border border-line bg-paper p-2 text-base"
+      className="rounded-xl border border-line bg-paper p-2 text-[17px]"
       data-size-label={size.sizeLabel}>
       <p className="font-bold">{t("costBasisForSize",{size:size.sizeLabel})}</p>
       {size.costDeltaCents===null?
-        <p className="text-ink-muted">{note("modifierMissingInput")}: {size.missing.join(", ")}</p>:
+        <p className="text-ink-muted">{note("modifierMissingInput")}: {size.missing.map(missingLabel).join(" · ")}</p>:
         <>
           <p>{size.costDeltaCents===0?t("aboutSame"):
             size.costDeltaCents<0?t("savesYou",{amount:formatCents(Math.abs(size.costDeltaCents))}):
@@ -44,6 +54,6 @@ export default function MilkSizePrices({items,fromMilkId,toMilkId,pantry}:{
           <p>{note("modifierMarginKept")}: {formatCents(size.marginKeptCents!)}</p>
         </>}
     </section>)}
-    <p className="text-sm text-ink-muted">{note("modifierDefaultTarget")}</p>
+    <p className="text-[17px] text-ink-muted">{note("modifierDefaultTarget")}</p>
   </div>;
 }

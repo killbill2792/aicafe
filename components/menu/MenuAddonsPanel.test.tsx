@@ -28,7 +28,9 @@ describe("MenuAddonsPanel",()=>{
       pantry={[{id:"whole",name:"Whole milk",category:"milk",baseUnit:"ml",costPerBaseMicros:100000},
         {id:"oat",name:"Oat milk",category:"milk",baseUnit:"ml",costPerBaseMicros:null}]}
       saved={[]} conversions={{}}/>);
-    expect(html).toContain("milk_cost:oat");
-    expect(html).toContain("milk_ml:16oz");
+    expect(html).toContain("modifierMilkCostMissing");
+    expect(html).toContain("modifierMilkVolumeMissing");
+    expect(html).not.toContain("milk_cost:oat");
+    expect(html).not.toContain("milk_ml:16oz");
   });
 });
