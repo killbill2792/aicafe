@@ -95,6 +95,7 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
    if(res.status===401&&attempt===0){auth=await login(true);continue;}
    if(res.status===401)throw new ToastApiError("authentication");
    if(res.status===403)throw new ToastApiError("missing_permissions");
+   if(res.status===204)throw new ToastApiError("unavailable",204);
    if(res.status===202)return {pending:true as const,body:await res.json().catch(()=>null)};
    if(res.status===429)throw new ToastApiError("rate_limited",429);
    if(!res.ok)throw new ToastApiError("unavailable",res.status);
