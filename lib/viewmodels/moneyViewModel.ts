@@ -100,6 +100,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     monthlyBillsCents,
     monthlyStaffCents,
     breakEven,
+    observedProcessingFeesCents:cardFeesForDays(salesHistory,feePlans??null).amountCents,
     breakEvenNotes,
     breakEvenUsesEstimates,
   };
