@@ -119,7 +119,7 @@ export const newItemPriceTools={suggest_new_item_price:{
      if(!lines.some(line=>line.label===label))add(label,[{name:"missing",value:{kind:"missing",reason:"none"}}],
        "sum",{kind:"missing",reason:"none"},"missing",basis);
    const numberEstimates=lines.flatMap(line=>[line.result,...line.inputs.map(i=>i.value)])
-    .flatMap(value=>value.kind==="money"?[{value:value.cents,unit:"cents" as const,detail:"breakEvenSales" as const}]:
+    .flatMap<{value:number;unit:"cents"|"count"|"bps";detail:"breakEvenSales"}>(value=>value.kind==="money"?[{value:value.cents,unit:"cents" as const,detail:"breakEvenSales" as const}]:
       value.kind==="count"?[{value:value.n,unit:"count" as const,detail:"breakEvenSales" as const}]:
       value.kind==="percent"?[{value:value.bps,unit:"bps" as const,detail:"breakEvenSales" as const}]:
       [] as Array<{value:number;unit:"cents"|"count"|"bps";detail:"breakEvenSales"}>);
