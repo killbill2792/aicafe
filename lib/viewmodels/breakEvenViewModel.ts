@@ -38,7 +38,8 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const dailyCosts=dailyCostsToCoverCents(runningPerDay,avgDailyStaffCost);
   const shared=breakEvenFor({days,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
     monthlyBillsCents:Math.round(runningPerDay*snapshot.daysInMonth),
-    monthlyStaffCents:labor.coveredDays>0?Math.round(avgDailyStaffCost*snapshot.daysInMonth):null});
+    monthlyStaffCents:labor.coveredDays>0?Math.round(avgDailyStaffCost*snapshot.daysInMonth):null,
+    observedIngredientCents:productCosts.totalCostCents});
   const needed=shared.drinksPerDay??0;
   const missingCosts = expectedMissingCostLines(snapshot.runningCostLines);
   const missingCostLabels = missingCosts.map((line) => line.label);

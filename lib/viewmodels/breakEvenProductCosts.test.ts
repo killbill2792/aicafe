@@ -25,7 +25,8 @@ describe("break-even resolved product costs", () => {
       quantitySoldLast28Days: sold,
     }];
 
-    const observedSales = snapshot.last28Days.reduce((sum, day) => sum + day.netSalesCents, 0);
+    const observedSales=snapshot.last28Days.filter(day=>day.date<snapshot.todayDateStr)
+      .reduce((sum,day)=>sum+day.netSalesCents,0);
     const expectedRate = (sold * costPerItem) / observedSales;
     const vm = buildCostRecoveryViewModel(snapshot);
     expect(vm.breakEven.kind).toBe("ready");
@@ -50,8 +51,10 @@ describe("break-even resolved product costs", () => {
       costDifferenceCents: null,
       quantitySoldLast28Days: 20,
     }];
-    expect(buildCostRecoveryViewModel(snapshot).breakEven).toEqual({ kind: "unavailable", reason: "MISSING_PRODUCT_COSTS" });
-    expect(buildBreakEvenViewModel(snapshot).unavailableReason).toBe("missing_product_costs");
+    const partial=buildCostRecoveryViewModel(snapshot);
+    expect(partial.breakEven.kind).toBe("ready");
+    expect(partial.breakEvenNotes).toContain("profitProductCostsMissing");
+    expect(buildBreakEvenViewModel(snapshot).noteKeys).toContain("profitProductCostsMissing");
   });
 });
 
@@ -75,7 +78,8 @@ describe("break-even archived sold items", () => {
       costQuality: "actual",
       quantitySoldLast28Days: 10,
     }];
-    const observedSales = snapshot.last28Days.reduce((sum, day) => sum + day.netSalesCents, 0);
+    const observedSales=snapshot.last28Days.filter(day=>day.date<snapshot.todayDateStr)
+      .reduce((sum,day)=>sum+day.netSalesCents,0);
     const vm = buildCostRecoveryViewModel(snapshot);
     expect(vm.breakEven.kind).toBe("ready");
     if (vm.breakEven.kind === "ready") {

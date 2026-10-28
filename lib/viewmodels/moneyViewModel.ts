@@ -68,6 +68,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const sharedBreakEven=breakEvenFor({
     days:salesHistory,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
     monthlyBillsCents,monthlyStaffCents,
+    observedIngredientCents:productCosts.totalCostCents,
   });
   const breakEven=sharedBreakEven.calculation;
   const breakEvenNotes=[...sharedBreakEven.notes,
@@ -149,7 +150,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const baselineProfitDisplay=ownerProfitCents===null?{kind:"unavailable" as const}:
     ownerProfitDisplayState(ownerProfitCents,coverage);
   const ownerProfitDisplay=baselineProfitDisplay.kind==="complete"&&
-      (knownProfit.basis!=="complete"||businessCosts.completeness!=="complete")?
+      (knownProfit.basis==="partial"||businessCosts.completeness!=="complete")?
       {kind:"partial" as const,ownerProfitCents:ownerProfitCents!,tone:baselineProfitDisplay.tone}
       :baselineProfitDisplay;
   const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
