@@ -131,7 +131,7 @@ function chunks(raw:unknown):unknown[]{
  };
  return split(raw,0);
 }
-export type ToastRawSampleResult={captured:number;skipped:boolean;failed:number;endpoints?:{endpoint:string;status:number|null;count:number}[];reason?:"invalid_request"|"no_location"|"busy"|"cooldown"|"db_error"|"missing_hash_key"|"lease_lost";};
+export type ToastRawSampleResult={captured:number;skipped:boolean;failed:number;endpoints?:{endpoint:string;status:number|null;count:number}[];reason?:"invalid_request"|"no_location"|"busy"|"cooldown"|"db_error"|"missing_hash_key"|"lease_lost"|"partial";};
 const skip=(reason:NonNullable<ToastRawSampleResult["reason"]>,failed=0):ToastRawSampleResult=>({captured:0,skipped:true,failed,reason});
 export async function claimToastRawSample(db:Pick<SupabaseClient,"rpc">,businessId:string,restaurantGuid:string,businessDate:string){
  const {data,error}=await db.rpc("toast_claim_raw_sample",{p_business_id:businessId,p_restaurant_guid:restaurantGuid,p_business_date:businessDate});
@@ -204,8 +204,9 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
   leaseNonce=String(acquired.data);
   if(!await claimToastRawSample(db,businessId,guid,businessDate))return skip("cooldown");
   const client=createToastClient(db,businessId);
-  const deadlineAt=Date.now()+Math.max(60000,Math.min(27*60*1000,maxRuntimeMs));
-  const analytics=createToastAnalyticsClient(db,businessId,deadlineAt);
+  const deadlineAt=Date.now()+Math.max(1000,Math.min(27*60*1000,maxRuntimeMs));
+  const requestDeadlineAt=deadlineAt-20_000;
+  const analytics=createToastAnalyticsClient(db,businessId,requestDeadlineAt);
   let lastRenew=Date.now();
   const known=new Map<string,Set<string>>();
   try{
@@ -250,7 +251,6 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
    const old=summaries.get(s.endpoint);
    summaries.set(s.endpoint,{status:status??old?.status??null,count:(old?.count??0)+count});
    for(let i=0;i<parts.length;i++){
-    await hold();
     const piece=parts[i];
     const {error:err}=await db.from("toast_raw_samples").insert({
      business_id:businessId,restaurant_guid:guid,business_date:businessDate,
@@ -262,8 +262,28 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     if(err)failed++;else captured++;
    }
   };
-  for(const s of TOAST_READ_ENDPOINTS){
+  const endpointOrder=[
+   ...TOAST_READ_ENDPOINTS.filter(s=>s.scope==="unsupported"),
+   ...TOAST_READ_ENDPOINTS.filter(s=>s.scope!=="unsupported")
+  ];
+  const timeLow=()=>Date.now()>=requestDeadlineAt;
+  const recordRemaining=async()=>{
+   const missing=endpointOrder.filter(s=>!summaries.has(s.endpoint));
+   if(!missing.length)return;
+   const rows=missing.map(s=>({
+    business_id:businessId,restaurant_guid:guid,business_date:businessDate,
+    endpoint:s.endpoint,doc_url:s.doc,capture_id:captureId,page_number:null,
+    http_status:null,item_count:0,sample:{},field_paths:[],identifier_counts:{},
+    error_code:"skipped_time_budget",error_message:"skipped_time_budget"
+   }));
+   const {error}=await db.from("toast_raw_samples").insert(rows);
+   if(error){failed+=rows.length;return;}
+   captured+=rows.length;
+   for(const s of missing)summaries.set(s.endpoint,{status:null,count:0});
+  };
+  for(const s of endpointOrder){
    if(leaseLost())break;
+   if(s.scope!=="unsupported"&&timeLow()){reason="partial";break;}
    if(s.scope==="unsupported"){
     await save(s,{},null,null,"method_not_get","This documented operation requires a non-GET method");
     continue;
@@ -275,6 +295,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     const seenTokens=new Set<string>();
     for(let page=1;page<=(s.page?PAGE_CAP:1);page++){
      try{
+      if(timeLow()){reason="partial";break;}
       await pace();
       let http=200;
       let token:string|null=null;
@@ -282,7 +303,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       const raw=s.endpoint.startsWith("era/v1/")?
         await analytics.getRaw(requestPath).then(result=>{http=result.status;return result.data;}):
         await client.request(requestPath,guid,z.unknown(),
-         {deadlineAt,onResponse:info=>{http=info.status;token=info.nextPageToken;}});
+         {deadlineAt:requestDeadlineAt,onResponse:info=>{http=info.status;token=info.nextPageToken;}});
       const obj=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
       const list=Array.isArray(raw)?raw:Array.isArray(obj?.results)?obj.results as unknown[]:
         Array.isArray(obj?.data)?obj.data as unknown[]:undefined;
@@ -313,6 +334,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       if(page===PAGE_CAP)await save(s,{},null,page,"page_cap","Maximum 20 pages reached");
      }catch(e){
       if(leaseLost())break;
+      if(e instanceof ToastApiError&&e.category==="timeout"){reason="partial";break;}
       const status=e instanceof ToastApiError?e.status??null:null;
       const code=status===204?"no_content":e instanceof ToastApiError?e.toastCode??e.category:"unavailable";
       const message=e instanceof ToastApiError?e.toastMessage??e.category:"unavailable";
@@ -320,11 +342,13 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
       break;
      }
     }
-    if(leaseLost())break;
+    if(leaseLost()||reason==="partial")break;
    }
+   if(reason==="partial")break;
   }
+  if(reason==="partial")await recordRemaining();
  }catch(e){
-  if(reason!=="lease_lost")reason="db_error";
+  if(reason!=="lease_lost"&&reason!=="partial")reason="db_error";
   failed++;
  }finally{
   if(leaseNonce)try{const released=await db.rpc("toast_release_lease",{p_nonce:leaseNonce});if(released.error)failed++;}catch{failed++;}
