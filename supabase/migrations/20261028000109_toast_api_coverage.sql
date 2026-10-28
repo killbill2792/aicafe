@@ -83,6 +83,7 @@ select business_id,restaurant_guid,business_date,endpoint,max(doc_url) as doc_ur
   when bool_or(error_code='skipped_time_budget') then 'skipped_time_budget'
   when bool_or(error_code='skipped_endpoint_budget') then 'skipped_endpoint_budget'
   when bool_or(error_code='skipped_lease_lost') then 'skipped_lease_lost'
+  when bool_or(error_code='skipped_interrupted') then 'skipped_interrupted'
   when bool_or(error_code='sample_write_failed') then 'sample_write_failed'
   when bool_or(error_code='page_cap') then 'page_cap'
   when bool_or(error_code='not_ready') and not coalesce(bool_or(http_status=200),false) then 'not_ready'
