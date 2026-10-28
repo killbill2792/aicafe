@@ -70,11 +70,13 @@ export const dataQueryTools={
     });
     if(error)return empty("source_read_failed");
     const result=data as {rows?:unknown[];rowCount?:number;truncated?:boolean;
-      sourceMix?:Record<string,number>}|null;
+      sourceMix?:Record<string,number>;sourceCount?:number;hasIncomplete?:boolean}|null;
     const rows=Array.isArray(result?.rows)?result.rows:[];
     return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
-     missing:rows.length===0?["empty"]:result?.truncated?["result_truncated"]:[],
-     empty:rows.length===0,error:undefined as string|undefined,rows,rowCount:rows.length,
+     missing:[...(rows.length===0||result?.sourceCount===0?["empty"]:[]),
+      ...(result?.hasIncomplete?["incompleteEvidence"]:[]),
+      ...(result?.truncated?["result_truncated"]:[])],
+     empty:rows.length===0||result?.sourceCount===0,error:undefined as string|undefined,rows,rowCount:rows.length,
      truncated:result?.truncated===true,sourceMix:result?.sourceMix??{}};
    }catch{return empty("source_read_failed");}
   }

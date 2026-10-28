@@ -10,7 +10,7 @@ create table if not exists public.toast_raw_records (
  business_date date,
  payload jsonb not null,
  payload_sha256 text not null check (payload_sha256 ~ '^[0-9a-f]{64}$'),
- first_seen timestamptz not null default now(),
+ first_seen timestamptz not null default clock_timestamp(),
  last_seen timestamptz not null default now(),
  superseded_by uuid,
  run_id uuid, -- intentionally NOT an FK: raw evidence survives run cleanup
@@ -146,39 +146,11 @@ begin
    p_business_date,item.raw,
    encode(sha256(convert_to(item.raw::text,'UTF8')),'hex'),
    p_run_id,p_page,item.idx::integer,
-   'page:'||p_run_id::text||':'||p_business_date::text||':'||p_page::text||':'||item.idx::text
+   'page:'||p_run_id::text||':'||p_business_date::text||':'||p_page::text||':'||item.idx::text||':'||encode(sha256(convert_to(item.raw::text,'UTF8')),'hex')
  from public.toast_sync_runs s
  cross join lateral jsonb_array_elements(p_payload) with ordinality as item(raw,idx)
  where s.id=p_run_id
  on conflict (business_id,capture_key) do nothing;
- -- Whitelist payment aggregates; never expose cards, names or other raw fields.
- insert into public.toast_payment_summaries(
-  business_id,restaurant_guid,business_date,payment_ref,payment_type,
-  payment_status,amount_cents,tip_cents,status)
- select sync.business_id,sync.restaurant_guid,p_business_date,
-  coalesce(nullif(pay.payment->>'guid',''),
-   encode(sha256(convert_to(p_run_id::text||':'||p_page::text||':'||
-     ord.idx::text||':'||chk.cidx::text||':'||pay.pidx::text,'UTF8')),'hex')),
-  left(pay.payment->>'type',100),
-  left(pay.payment->>'paymentStatus',100),
-  case when jsonb_typeof(pay.payment->'amount')='number'
-   then round((pay.payment->>'amount')::numeric*100)::bigint else null end,
-  case when jsonb_typeof(pay.payment->'tipAmount')='number'
-   then round((pay.payment->>'tipAmount')::numeric*100)::bigint else null end,
-  case when jsonb_typeof(pay.payment->'amount')='number' then 'actual' else 'open' end
- from public.toast_sync_runs sync
- cross join lateral jsonb_array_elements(p_payload) with ordinality ord(raw,idx)
- cross join lateral jsonb_array_elements(case when jsonb_typeof(ord.raw->'checks')='array'
-   then ord.raw->'checks' else '[]'::jsonb end) with ordinality chk(check_row,cidx)
- cross join lateral jsonb_array_elements(case when jsonb_typeof(chk.check_row->'payments')='array'
-   then chk.check_row->'payments' else '[]'::jsonb end) with ordinality pay(payment,pidx)
- where sync.id=p_run_id
- on conflict (business_id,restaurant_guid,business_date,payment_ref) do update
- set payment_type=excluded.payment_type,
-  payment_status=excluded.payment_status,
-  amount_cents=excluded.amount_cents,
-  tip_cents=excluded.tip_cents,
-  status=excluded.status;
  -- Preserve nested checks as independent immutable raw entities.
  insert into public.toast_raw_records(business_id,restaurant_guid,entity,entity_guid,business_date,payload,payload_sha256,run_id,source_page,source_index,capture_key)
  select s.business_id,s.restaurant_guid,'check',
@@ -224,6 +196,70 @@ begin
 end $archive$;
 revoke all on function public.toast_archive_day_pages(uuid,date) from public,anon,authenticated;
 grant execute on function public.toast_archive_day_pages(uuid,date) to service_role;
+
+
+-- Projection is reconciled from the full completed-day snapshot, not page-by-page.
+-- Immutable raw snapshots are never removed, including superseded payments.
+create or replace function public.toast_rebuild_day_payments(
+ p_run_id uuid,p_business_id uuid,p_restaurant_guid uuid,p_business_date date,
+ p_complete boolean
+) returns void language plpgsql security definer set search_path=public as $payments$
+begin
+ if auth.role()<>'service_role' or not exists(
+  select 1 from public.toast_sync_runs where id=p_run_id
+   and business_id=p_business_id and restaurant_guid=p_restaurant_guid)
+ then raise exception 'unauthorized payments rebuild';end if;
+ if p_complete then
+  delete from public.toast_payment_summaries
+  where business_id=p_business_id and restaurant_guid=p_restaurant_guid
+   and business_date=p_business_date;
+ end if;
+ with source as (
+  select item.raw as row,
+   row_number() over(partition by item.raw->>'guid'
+     order by item.raw->>'modifiedDate' desc nulls last, page.page desc,item.idx desc) rn
+  from public.toast_day_pages page
+  cross join lateral jsonb_array_elements(page.payload) with ordinality item(raw,idx)
+  where page.run_id=p_run_id and page.business_date=p_business_date
+ ), checks as (
+  select s.row as original,c.value as check_row,c.ordinality as check_idx
+  from source s cross join lateral jsonb_array_elements(
+   case when jsonb_typeof(s.row->'checks')='array' then s.row->'checks' else '[]'::jsonb end)
+    with ordinality as c(value,ordinality)
+  where s.rn=1
+ ), payments as (
+  select
+   coalesce(nullif(pay.value->>'guid',''),
+    encode(sha256(convert_to(coalesce(c.original->>'guid','unknown')||':'||
+    coalesce(c.check_row->>'guid',c.check_idx::text)||':'||pay.ordinality::text,'UTF8')),'hex')) as payment_ref,
+   pay.value as payment,coalesce(c.original->>'modifiedDate','') as modified_at
+  from checks c cross join lateral jsonb_array_elements(
+   case when jsonb_typeof(c.check_row->'payments')='array'
+   then c.check_row->'payments' else '[]'::jsonb end)
+   with ordinality as pay(value,ordinality)
+ ), dedup as (
+  select distinct on(payment_ref) payment_ref,payment
+  from payments order by payment_ref,modified_at desc
+ )
+ insert into public.toast_payment_summaries(business_id,restaurant_guid,
+ business_date,payment_ref,payment_type,payment_status,amount_cents,tip_cents,status)
+ select p_business_id,p_restaurant_guid,p_business_date,p.payment_ref,
+  left(p.payment->>'type',100),left(p.payment->>'paymentStatus',100),
+  case when jsonb_typeof(p.payment->'amount')='number'
+   then round((p.payment->>'amount')::numeric*100)::bigint else null end,
+  case when jsonb_typeof(p.payment->'tipAmount')='number'
+   then round((p.payment->>'tipAmount')::numeric*100)::bigint else null end,
+  case when jsonb_typeof(p.payment->'amount')='number' then 'actual' else 'open' end
+ from dedup p
+ on conflict(business_id,restaurant_guid,business_date,payment_ref) do update
+ set payment_type=excluded.payment_type,payment_status=excluded.payment_status,
+ amount_cents=excluded.amount_cents,tip_cents=excluded.tip_cents,
+ status=excluded.status;
+end $payments$;
+revoke all on function public.toast_rebuild_day_payments(uuid,uuid,uuid,date,boolean)
+ from public,anon,authenticated;
+grant execute on function public.toast_rebuild_day_payments(uuid,uuid,uuid,date,boolean)
+ to service_role;
 
 -- Capture on stage write, not only on a successful import: failed/abandoned
 -- imports and other legacy cleanup paths may also delete staged pages.
@@ -598,6 +634,8 @@ begin
   finished_at=case when days_total>0 and days_done+1>=days_total then now() else null end
  where id=p_run_id;
  -- Lossless archive happens in the SAME transaction, before staged pages are cleared.
+ perform public.toast_rebuild_day_payments(p_run_id,p_business_id,p_restaurant_guid,p_business_date,
+  coalesce((p_summary->>'unparsed_count')::integer,0)=0);
  perform public.toast_archive_day_pages(p_run_id,p_business_date);
  -- The parser uses 1-based source indexes; even orders without a valid GUID link exactly.
  update public.toast_unparsed_orders u set raw_record_id=r.id
@@ -607,6 +645,12 @@ begin
    on r.run_id=p_run_id and r.business_date=p_business_date
    and r.source_page=x.source_page and r.source_index=x.source_index
    and r.entity='order' and r.business_id=p_business_id
+   and r.first_seen = (
+    select max(latest.first_seen) from public.toast_raw_records latest
+    where latest.business_id=p_business_id and latest.run_id=p_run_id
+     and latest.business_date=p_business_date and latest.entity='order'
+     and latest.source_page=x.source_page and latest.source_index=x.source_index
+   )
  where u.business_id=p_business_id and u.restaurant_guid=p_restaurant_guid
    and u.business_date=p_business_date and u.raw_sha256=x.raw_sha256
    and u.raw_record_id is distinct from r.id;

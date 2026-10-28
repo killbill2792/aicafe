@@ -10,7 +10,8 @@ export type CanonicalRead={rows:CanonicalRow[];notes:string[];empty:boolean;
 const bounded=z.object({dateFrom:z.iso.date(),dateTo:z.iso.date()});
 const periodViews=new Set<CanonicalView>([
  "cv_sales_days","cv_sales_hours","cv_item_sales","cv_payments","cv_discounts",
- "cv_voids_refunds","cv_card_fees","cv_analytics"
+ "cv_voids_refunds","cv_card_fees","cv_analytics","cv_labor_entries",
+ "cv_shifts","cv_inventory"
 ]);
 /** The only canonical view query path for screens and AI.
  * Never accept an arbitrary SQL table or inferred café ID from the model. */

@@ -82,29 +82,36 @@ create or replace view public.cv_card_fees (business_id,source,source_ref,status
   'provider',o.processing_fee_provider,'fee_status',o.processing_fee_status) as data
  from public.orders o where o.toast_excluded is not true and o.superseded_by is null;
 
-create or replace view public.cv_labor_entries (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
+create or replace view public.cv_labor_entries (business_id,source,source_ref,status,business_date,data)
+with (security_invoker=true) as
  select t.business_id,
- case when coalesce(to_jsonb(t)->>'pos_time_entry_id','') like 'toast:%'
-   then 'toast' else 'app' end::text as source,
+ case when coalesce(t.pos_timecard_id,'') like 'toast:%' then 'toast' else 'app' end::text as source,
  'timecard:'||t.id::text as source_ref,
- case when to_jsonb(t)->>'clock_out' is null then 'open' else 'actual' end::text as status,
- null::date as business_date,
- jsonb_build_object('id',t.id,'employee_id',to_jsonb(t)->'employee_id',
-  'clock_in',to_jsonb(t)->'clock_in','clock_out',to_jsonb(t)->'clock_out',
-  'hourly_wage_cents',to_jsonb(t)->'hourly_wage_cents',
-  'regular_minutes',to_jsonb(t)->'regular_minutes',
+ case when t.clock_out is null then 'open'
+  when t.wage_source='estimate' then 'estimated'
+  when t.wage_source='unknown' or t.hourly_wage_cents is null then 'needs_match'
+  else 'actual' end::text as status,
+ (t.clock_in at time zone b.timezone)::date as business_date,
+ jsonb_build_object('id',t.id,'employee_id',t.employee_id,
+  'clock_in',t.clock_in,'clock_out',t.clock_out,
+  'hourly_wage_cents',t.hourly_wage_cents,'wage_source',t.wage_source,
+  'pos_timecard_id',t.pos_timecard_id,'regular_minutes',to_jsonb(t)->'regular_minutes',
   'overtime_minutes',to_jsonb(t)->'overtime_minutes') as data
- from public.timecards t
+ from public.timecards t join public.businesses b on b.id=t.business_id
  union all
  select s.business_id,'toast'::text,
  'staged-timecard:'||s.restaurant_guid::text||':'||s.external_time_entry_id::text,
- s.status,null::date,
+ case when s.clock_out is null then 'open'
+  when s.wage_status='missing' then 'needs_match' else 'actual' end::text,
+ (s.clock_in at time zone b.timezone)::date,
  jsonb_build_object('employee_guid',s.external_employee_id,
   'clock_in',s.clock_in,'clock_out',s.clock_out,
-  'hourly_wage_cents',s.hourly_wage_cents,
-  'wage_status',s.wage_status)
+  'hourly_wage_cents',s.hourly_wage_cents,'wage_status',s.wage_status)
  from public.toast_open_labor_summaries s
- where s.status in ('open','needs_match');
+ join public.businesses b on b.id=s.business_id
+ where not exists(select 1 from public.timecards t
+   where t.business_id=s.business_id
+    and t.pos_timecard_id='toast:'||s.restaurant_guid::text||':'||s.external_time_entry_id::text);
 
 create or replace view public.cv_staff (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select e.business_id,
@@ -152,11 +159,12 @@ create or replace view public.cv_menu (business_id,source,source_ref,status,busi
 
 create or replace view public.cv_bills (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
  select c.business_id,'app'::text as source,
- 'bill:'||c.id::text as source_ref,'actual'::text as status,
+ 'bill:'||c.id::text as source_ref,
+ case when c.is_estimate then 'estimated' else 'actual' end::text as status,
  null::date as business_date,
  jsonb_build_object('id',c.id,'amount_cents',to_jsonb(c)->'amount_cents',
   'frequency',to_jsonb(c)->'frequency','category',to_jsonb(c)->'category',
-  'name',to_jsonb(c)->'name') as data
+  'name',to_jsonb(c)->'name','is_estimate',c.is_estimate) as data
  from public.recurring_costs c;
 
 create or replace view public.cv_inventory (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
@@ -177,24 +185,24 @@ create or replace view public.cv_analytics (business_id,source,source_ref,status
  'fetched_at',a.fetched_at) as data
  from public.toast_analytics_results a;
 
--- Prompt C migration 110 defines owner_facts. This branch can be tested
--- independently before C merges; once 110 is applied, this view resolves to it.
-do $owner$
+-- Resolves owner_facts at query time. This cannot become a permanently empty
+-- placeholder when migration 110 is applied after 112 in a development DB.
+-- The function is INVOKER and dynamic SELECT retains the caller's RLS.
+create or replace function public.canonical_owner_facts_rows()
+returns table (business_id uuid,source text,source_ref text,status text,business_date date,data jsonb)
+language plpgsql stable security invoker set search_path=public as $owner$
 begin
- if to_regclass('public.owner_facts') is null then
-  execute $sql$create or replace view public.cv_owner_facts (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
-   select null::uuid as business_id,'owner'::text as source,
-   null::text as source_ref,'owner_provided'::text as status,
-   null::date as business_date,'{}'::jsonb as data where false$sql$;
- else
-  execute $sql$create or replace view public.cv_owner_facts (business_id,source,source_ref,status,business_date,data) with (security_invoker=true) as
-   select o.business_id,'owner'::text as source,
-   coalesce(to_jsonb(o)->>'id',md5(to_jsonb(o)::text)) as source_ref,
-   'owner_provided'::text as status,null::date as business_date,
-   to_jsonb(o) - 'business_id' as data
-   from public.owner_facts o$sql$;
- end if;
+ if to_regclass('public.owner_facts') is null then return;end if;
+ return query execute
+  'select o.business_id, ''owner''::text,
+    coalesce(to_jsonb(o)->>''id'',md5(to_jsonb(o)::text)),
+    ''owner_provided''::text, null::date,to_jsonb(o) - ''business_id''
+    from public.owner_facts o';
 end $owner$;
+revoke all on function public.canonical_owner_facts_rows() from public,anon;
+grant execute on function public.canonical_owner_facts_rows() to authenticated,service_role;
+create or replace view public.cv_owner_facts (business_id,source,source_ref,status,business_date,data)
+with (security_invoker=true) as select * from public.canonical_owner_facts_rows();
 
 -- No anonymous or public access to canonical business data.
 do $grants$
@@ -226,6 +234,7 @@ declare
  v_where text:='business_id = $1';v_select text:='';v_group text:='';
  v_sql text;v_rows jsonb;v_mix jsonb;v_limit integer;v_n integer;
  v_order text:='';v_field text;v_dir text;
+ v_source_count bigint;v_incomplete boolean;
 begin
  if p_view is null or not (p_view=any(allowed_views)) then raise exception 'invalid view';end if;
  if p_business_id is null or p_date_from is null or p_date_to is null or
@@ -244,8 +253,11 @@ begin
     where c.table_schema='public' and c.table_name=p_view and c.column_name=v_col)
    then raise exception 'invalid column';end if;
  end loop;
- v_where:=v_where||format(' and (business_date is null or (business_date >= %L and business_date <= %L))',
-  p_date_from,p_date_to);
+ if p_view in ('cv_sales_days','cv_sales_hours','cv_item_sales','cv_payments',
+ 'cv_discounts','cv_voids_refunds','cv_card_fees','cv_labor_entries','cv_shifts',
+ 'cv_inventory','cv_analytics') then
+ v_where:=v_where||format(' and business_date between %L and %L',p_date_from,p_date_to);
+ end if;
  for v_filter in select value from jsonb_array_elements(coalesce(p_filters,'[]'::jsonb)) loop
   v_col:=v_filter->>'column';v_op:=v_filter->>'op';v_val:=v_filter->'value';
   if not exists(select 1 from information_schema.columns c
@@ -317,11 +329,14 @@ begin
     select value from jsonb_array_elements(v_rows) with ordinality as v(value,idx)
     where idx<=p_limit order by idx) limited);
  end if;
+ execute format('select count(*),coalesce(bool_or(status in (''open'',''estimated'',''needs_match'')),false) from public.%I where %s',p_view,v_where)
+ into v_source_count,v_incomplete using p_business_id;
  execute format('select coalesce(jsonb_object_agg(source,n),''{}''::jsonb) from
  (select source,count(*) n from public.%I where %s group by source) mix',p_view,v_where)
  into v_mix using p_business_id;
  return jsonb_build_object('rows',v_rows,'rowCount',jsonb_array_length(v_rows),
-  'truncated',v_n>p_limit,'sourceMix',v_mix);
+  'truncated',v_n>p_limit,'sourceMix',v_mix,
+  'sourceCount',v_source_count,'hasIncomplete',v_incomplete);
 end $query$;
 revoke all on function public.ai_query_view(uuid,text,text[],jsonb,text[],jsonb,date,date,jsonb,integer)
  from public,anon,authenticated;

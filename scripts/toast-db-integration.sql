@@ -740,6 +740,7 @@ BEGIN
  select count(*) into before_count from public.toast_raw_records
  where business_id=b and run_id=run;
  perform pg_temp.assert_true(before_count=3,'order/check/payment all archived');
+ perform public.toast_rebuild_day_payments(run,b,r,'2026-10-18',true);
  delete from public.toast_day_pages where run_id=run and business_date='2026-10-18';
  select count(*) into after_count from public.toast_raw_records
  where business_id=b and run_id=run;
