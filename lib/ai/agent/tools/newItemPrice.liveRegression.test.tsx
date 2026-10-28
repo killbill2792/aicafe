@@ -112,4 +112,19 @@ describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
    lines:r.explain as ExplainLine[],locale:"en",copy:en.SupervisorChat}));
   expect(html).toContain(en.SupervisorChat.explainMissing);
  });
+ it("accepts verified owner total bills from the Other amount follow-up",async()=>{
+  const v={...item,ownerInputs:{...emptyOwnerInputs,laborCents:1300000,laborPeriod:{unit:"month" as const}},
+   owner_monthly_bills_cents:836000};
+  const r=await newItemPriceTools.suggest_new_item_price.execute(v,
+   context({monthlyBills:figure(null,"missing","Missing rent and utilities"),
+    missingBillCategories:["rent","utilities"]},"Monthly bills: $8360"));
+  expect(r.billsPartial).toBe(false);
+  expect(r.monthlyBills).toMatchObject({valueCents:836000,status:"owner"});
+  expect(r.recommendedPriceCents).toBe(525);
+  expect(r.breakEvenCents).toBe(513);
+  const noEvidence=await newItemPriceTools.suggest_new_item_price.execute(v,
+   context({missingBillCategories:["rent"]},"I did not enter an amount"));
+  expect(noEvidence.billsPartial).toBe(true);
+ });
+
 });
