@@ -1,0 +1,37 @@
+import {describe,it,expect,vi,afterEach} from "vitest";
+vi.mock("server-only",()=>({}));
+const flags=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/pos/toast/reportingCoverage",()=>({toastDayFlags:flags}));
+import {readToastDayTrust,needsLookKey} from "./toastDayTrust.server";
+afterEach(()=>{vi.unstubAllEnvs();flags.mockReset();});
+describe("shared Toast day trust",()=>{
+ it("status read fails keeps stored days + one note",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+  flags.mockRejectedValue(new Error("status database unavailable"));
+  const result=await readToastDayTrust({} as never,"business","2026-08-01","2026-08-10");
+  expect(result.blocked.size).toBe(0);
+  expect(result.quality).toEqual(["toastDayStatusUnavailable"]);
+ });
+ it("66 needs-look days collapse to one note",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+  const dates=Array.from({length:66},(_,i)=>new Date(Date.UTC(2026,7,1+i)).toISOString().slice(0,10));
+  flags.mockResolvedValue(dates.map(date=>({date,status:"imported",needsLook:true})));
+  const result=await readToastDayTrust({} as never,"business",dates[0],dates.at(-1)!);
+  expect(result.blocked.size).toBe(0);
+  expect(result.quality).toEqual([needsLookKey(dates)]);
+  expect(result.quality[0]).toContain("66:");
+  expect(result.quality[0]).toContain(":63");
+  expect(result.quality[0]).toContain(dates[2]);
+ });
+ it("excludes only confirmed missing and failed dates",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+  flags.mockResolvedValue([
+   {date:"2026-08-01",status:"imported",needsLook:false},
+   {date:"2026-08-02",status:"failed",needsLook:true},
+   {date:"2026-08-03",status:"missing",needsLook:false},
+  ]);
+  const result=await readToastDayTrust({} as never,"business","2026-08-01","2026-08-03");
+  expect([...result.blocked]).toEqual(["2026-08-02","2026-08-03"]);
+  expect(result.quality).toContain("toastExcludedDays:2026-08-02,2026-08-03");
+ });
+});
