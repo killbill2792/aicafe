@@ -147,8 +147,8 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
    expect(chat.monthlyLabor.valueCents).toBe(recovery.monthlyStaffCents);
    expect(chat.monthlyBills.valueCents).toBe(recovery.monthlyBillsCents);
    const laborChat=await staffTools.get_labor.execute({period:"month"},ctx);
-   const knownLabor=(laborChat.laborDays as Array<{loadedStaffCostCents:number|null}>)
-     .reduce((sum,day)=>sum+(day.loadedStaffCostCents??0),0);
+   const knownLabor=(laborChat.laborDays as Array<{wagesCents:number|null;staffTaxCents:number|null}>)
+     .reduce((sum,day)=>sum+(day.wagesCents??0)+(day.staffTaxCents??0),0);
    expect(knownLabor).toBe(screen.wagesCents!+screen.staffTaxCents!);
    const costChat=await moneyTools.get_cost_summary.execute({period:"month"},ctx);
    expect(costChat.knownTotalCents).toBeGreaterThanOrEqual(0);
