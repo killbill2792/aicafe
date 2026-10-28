@@ -27,8 +27,12 @@ export async function POST(request:Request){
   if(input.action==="create"){
    if((input.durationMonths===null)===(input.fixedEndDate===null))
     return NextResponse.json({error:"select_one_duration_type"},{status:422});
-   if(input.fixedEndDate && input.fixedEndDate<new Date().toISOString().slice(0,10))
-    return NextResponse.json({error:"end_date_in_past"},{status:422});
+   if(input.fixedEndDate){
+    if(!input.timeZone)return NextResponse.json({error:"time_zone_required"},{status:422});
+    let today:string;
+    try{today=cafeToday(input.timeZone);}catch{return NextResponse.json({error:"invalid_time_zone"},{status:422});}
+    if(input.fixedEndDate<today)return NextResponse.json({error:"end_date_in_past"},{status:422});
+   }
    // Generate with CSPRNG; only the hash persists. The raw value is shown once.
    const code=input.code?.trim() || "CAFE-"+randomBytes(8).toString("hex").toUpperCase();
    const status=await insertFreeAccessCode({code,durationMonths:input.durationMonths,
