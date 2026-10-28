@@ -49,6 +49,26 @@ create policy "owner read" on public.toast_analytics_results for select
 grant select on public.toast_analytics_results to authenticated;
 grant select,insert,update on public.toast_analytics_results to service_role;
 
+-- Sanitized per-payment facts. Owner/AI reads these, NEVER the raw PII archive.
+create table if not exists public.toast_payment_summaries (
+ business_id uuid not null references public.businesses(id) on delete cascade,
+ restaurant_guid uuid not null,
+ business_date date not null,
+ payment_ref text not null,
+ payment_type text,
+ payment_status text,
+ amount_cents bigint,
+ tip_cents bigint,
+ status text not null check(status in ('actual','estimated','open','needs_match','owner_provided')),
+ primary key(business_id,restaurant_guid,business_date,payment_ref)
+);
+alter table public.toast_payment_summaries enable row level security;
+revoke all on public.toast_payment_summaries from public,anon,authenticated;
+create policy "owner read" on public.toast_payment_summaries for select
+ to authenticated using (public.scheduling_is_owner(business_id));
+grant select on public.toast_payment_summaries to authenticated;
+grant select,insert,update on public.toast_payment_summaries to service_role;
+
 -- Capture individual raw orders, including orders the parser cannot recognize.
 -- Source page + 1-based array offset make invalid/missing order GUIDs addressable.
 create or replace function public.toast_archive_page(
@@ -72,6 +92,34 @@ begin
  cross join lateral jsonb_array_elements(p_payload) with ordinality as item(raw,idx)
  where s.id=p_run_id
  on conflict (business_id,capture_key) do nothing;
+ -- Whitelist payment aggregates; never expose cards, names or other raw fields.
+ insert into public.toast_payment_summaries(
+  business_id,restaurant_guid,business_date,payment_ref,payment_type,
+  payment_status,amount_cents,tip_cents,status)
+ select sync.business_id,sync.restaurant_guid,p_business_date,
+  coalesce(nullif(pay.payment->>'guid',''),
+   encode(sha256(convert_to(p_run_id::text||':'||p_page::text||':'||
+     ord.idx::text||':'||chk.cidx::text||':'||pay.pidx::text,'UTF8')),'hex')),
+  left(pay.payment->>'type',100),
+  left(pay.payment->>'paymentStatus',100),
+  case when jsonb_typeof(pay.payment->'amount')='number'
+   then round((pay.payment->>'amount')::numeric*100)::bigint else null end,
+  case when jsonb_typeof(pay.payment->'tipAmount')='number'
+   then round((pay.payment->>'tipAmount')::numeric*100)::bigint else null end,
+  case when jsonb_typeof(pay.payment->'amount')='number' then 'actual' else 'open' end
+ from public.toast_sync_runs sync
+ cross join lateral jsonb_array_elements(p_payload) with ordinality ord(raw,idx)
+ cross join lateral jsonb_array_elements(case when jsonb_typeof(ord.raw->'checks')='array'
+   then ord.raw->'checks' else '[]'::jsonb end) with ordinality chk(check_row,cidx)
+ cross join lateral jsonb_array_elements(case when jsonb_typeof(chk.check_row->'payments')='array'
+   then chk.check_row->'payments' else '[]'::jsonb end) with ordinality pay(payment,pidx)
+ where sync.id=p_run_id
+ on conflict (business_id,restaurant_guid,business_date,payment_ref) do update
+ set payment_type=excluded.payment_type,
+  payment_status=excluded.payment_status,
+  amount_cents=excluded.amount_cents,
+  tip_cents=excluded.tip_cents,
+  status=excluded.status;
 end $archive$;
 revoke all on function public.toast_archive_page(uuid,date,integer,jsonb) from public,anon,authenticated;
 grant execute on function public.toast_archive_page(uuid,date,integer,jsonb) to service_role;
