@@ -880,6 +880,12 @@ export const canonicalDictionary = {
         "unit": "count",
         "source": "toast",
         "example": "What was recorded?"
+      },
+      "net_sales_cents": {
+        "meaning": "Current recorded order net sales in cents; null when the order is excluded or superseded (the original amount remains in data for review).",
+        "unit": "cents",
+        "source": "app",
+        "example": "What were sales by channel?"
       }
     }
   },

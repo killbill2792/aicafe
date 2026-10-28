@@ -906,6 +906,18 @@ BEGIN
   where business_id=b and source='toast' and dining_option='DINE_IN'
    and source_channel='IN_STORE' and guest_count=2 and status='needs_match'),
   'excluded order evidence remains visible with caveat');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_orders
+  where business_id=b and source_channel='IN_STORE' and status='needs_match'
+   and net_sales_cents is null and (data->>'recorded_net_sales_cents')::bigint=1000),
+  'excluded order preserves original amount for review but does not inflate sales');
+ insert into public.orders(business_id,location_id,pos_order_id,closed_at,business_date,
+ gross_sales_cents,net_sales_cents,dining_option,source_channel,guest_count)
+ values(b,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001','toast:optional-view-current',
+ '2026-10-26T19:00:00Z','2026-10-26',450,450,'DINE_IN','IN_STORE',1);
+ perform pg_temp.assert_true(exists(select 1 from public.cv_orders
+  where business_id=b and source='toast' and source_channel='IN_STORE'
+  and net_sales_cents=450 and status='actual'),
+  'channel query reads a single stored current order amount');
 
  insert into public.toast_raw_samples(business_id,restaurant_guid,endpoint,business_date,
  http_status,item_count,sample,field_paths) values

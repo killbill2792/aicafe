@@ -244,6 +244,8 @@ Order dining options, source channels and guest counts for stored café orders.
 | source_channel | POS-provided order channel when supplied. | label | toast | What was recorded? |
 | guest_count | Number of guests reported on the order, when available. | count | toast | What was recorded? |
 
+| net_sales_cents | Current recorded order net sales in cents; null when the order is excluded or superseded (the original amount remains in data for review). | cents | app | What were sales by channel? |
+
 ## cv_cash
 
 Cash movements and deposits from redacted Toast diagnostics, not continuous cash sync.
