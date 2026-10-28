@@ -14,8 +14,8 @@ function monthData(days: MonthCalendarData["days"], openHours: OpenHours | null 
 
 describe("buildMonthCalendarViewModel", () => {
   it("colors a profitable actual day green and an unprofitable one red, not by sales alone", () => {
-    const goodDay = { ...zeroDailyFacts("2026-10-01"), netSalesCents: 5_000 };
-    const badDay = { ...zeroDailyFacts("2026-10-02"), netSalesCents: 500 };
+    const goodDay = { ...zeroDailyFacts("2026-10-01"), netSalesCents: 5_000, cardFeesStatus: "actual" as const };
+    const badDay = { ...zeroDailyFacts("2026-10-02"), netSalesCents: 500, cardFeesStatus: "actual" as const };
     const vm = buildMonthCalendarViewModel({
       monthData: monthData([goodDay, badDay]),
       recoveryOrder: ["rent"],
@@ -27,7 +27,7 @@ describe("buildMonthCalendarViewModel", () => {
   });
 
   it("flags a day's profit when a running-cost input is estimated", () => {
-    const day = { ...zeroDailyFacts("2026-10-01"), netSalesCents: 5_000 };
+    const day = { ...zeroDailyFacts("2026-10-01"), netSalesCents: 5_000, cardFeesStatus: "actual" as const };
     const vm = buildMonthCalendarViewModel({
       monthData: {
         ...monthData([day]),
@@ -45,7 +45,7 @@ describe("buildMonthCalendarViewModel", () => {
   });
 
   it("does not flag a day when every contributing category is actual", () => {
-    const day = { ...zeroDailyFacts("2026-10-01"), netSalesCents: 5_000 };
+    const day = { ...zeroDailyFacts("2026-10-01"), netSalesCents: 5_000, cardFeesStatus: "actual" as const };
     const vm = buildMonthCalendarViewModel({
       monthData: monthData([day]),
       recoveryOrder: ["rent"],
