@@ -11,11 +11,13 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 const business="11111111-1111-4111-8111-111111111111";
 const restaurant="22222222-2222-4222-8222-222222222222";
 const payment="33333333-3333-4333-8333-333333333333";
-function database(allowed=true){
+function database(allowed=true,options:{noLocation?:boolean;mappingError?:boolean;leaseBusy?:boolean;leaseError?:boolean;claimError?:boolean}={}){
  const written:{table:string;row:Record<string,unknown>}[]=[];
  const rpc=vi.fn(async(name:string)=>({
-   data:name==="toast_acquire_lease"?"lease-nonce":name==="toast_claim_raw_sample"?allowed:null,
-   error:null
+   data:name==="toast_acquire_lease"?(options.leaseBusy?null:"lease-nonce"):
+    name==="toast_claim_raw_sample"?allowed:null,
+   error:name==="toast_acquire_lease"&&options.leaseError||
+    name==="toast_claim_raw_sample"&&options.claimError?{message:"synthetic error"}:null
  }));
  const db={
   rpc,
@@ -25,7 +27,8 @@ function database(allowed=true){
    }};
    if(table==="toast_location_mappings"){
     const q={select:()=>q,eq:()=>q,not:()=>q,order:()=>q,
-     limit:async()=>({data:[{restaurant_guid:restaurant}],error:null})};
+     limit:async()=>({data:options.noLocation?[]:[{restaurant_guid:restaurant}],
+      error:options.mappingError?{message:"synthetic error"}:null})};
     return q;
    }
    throw new Error("Unexpected write or table "+table);
@@ -67,6 +70,21 @@ describe("Toast raw diagnostics",()=>{
   expect(json).toContain("CONTACTLESS");
   expect(json).toContain("originalProcessingFee");
  });
+ it("retains Toast financial and labor numbers while removing private numbers",()=>{
+  const sample=redactToastRaw({
+   regularHours:6.5,overtimeHours:2,totalAmount:185.32,amount:14.5,
+   tipAmount:2.1,mcaRepaymentAmount:0.15,originalProcessingFee:0.2,
+   wagesTotal:125,unknownFinancialTotal:250.33,
+   phoneDigits:1234567890,customerId:1234,cardLast4:1234,
+   employee:{hourlyWage:19.25,totalHours:8.5,firstName:"Private"}
+  }) as Record<string,unknown>;
+  for(const k of ["regularHours","overtimeHours","totalAmount","amount",
+   "tipAmount","mcaRepaymentAmount","originalProcessingFee","wagesTotal","unknownFinancialTotal"])
+   expect(typeof sample[k]).toBe("number");
+  expect(JSON.stringify(sample)).not.toContain("1234567890");
+  expect(JSON.stringify(sample)).not.toContain("1234");
+  expect(JSON.stringify(sample)).not.toContain("Private");
+ });
  it("extracts sorted unique nested field paths",()=>{
   expect(toastFieldPaths({payments:[{cardEntryMode:"TAP",refund:{amount:1}},{cardEntryMode:"SWIPE"}]}))
    .toEqual(["payments","payments[]","payments[].cardEntryMode","payments[].refund","payments[].refund.amount"]);
@@ -84,10 +102,28 @@ describe("Toast raw diagnostics",()=>{
   const {db,rpc,written}=database(false);
   const result=await captureToastRawSample(business,"2026-10-20",db);
   expect(result.skipped).toBe(true);
+  expect(result.reason).toBe("cooldown");
   expect(rpc).toHaveBeenCalledWith("toast_acquire_lease",expect.objectContaining({p_business_id:business}));
   expect(rpc).toHaveBeenCalledWith("toast_release_lease",{p_nonce:"lease-nonce"});
   expect(mocks.request).not.toHaveBeenCalled();
   expect(written).toHaveLength(0);
+ });
+ it("distinguishes no verified location, busy lease, and database errors",async()=>{
+  const cases=[
+   {options:{noLocation:true},reason:"no_location"},
+   {options:{leaseBusy:true},reason:"busy"},
+   {options:{mappingError:true},reason:"db_error"},
+   {options:{leaseError:true},reason:"db_error"},
+   {options:{claimError:true},reason:"db_error"}
+  ] as const;
+  for(const {options,reason} of cases){
+   mocks.request.mockClear();
+   const {db}=database(true,options);
+   const result=await captureToastRawSample(business,"2026-10-20",db);
+   expect(result.reason).toBe(reason);
+   expect(result.skipped).toBe(true);
+   expect(mocks.request).not.toHaveBeenCalled();
+  }
  });
  it("follows up at most five payment GUIDs and bounds arrays",async()=>{
   const {db,written}=database();
