@@ -76,11 +76,12 @@ export function cardFeesForDays(
       }
       notes.push(amount?.missingFixed?"feeFixedTransactionCountMissing":"feeOwnerPlanInvalid");
     }
-    if(day.cardFeesCents!=null&&valid(day.cardFeesCents)&&day.cardFeesStatus!=="missing"){
+    if(day.cardFeesCents!=null&&valid(day.cardFeesCents)&&
+      (day.cardFeesStatus==="estimated"||day.cardFeesStatus===undefined&&day.cardFeesCents>0)){
       // Already-persisted estimated daily facts win over the generic default.
       sum+=day.cardFeesCents;
-      // Legacy complete rollups omit the status. Retain their recorded value
-      // rather than retroactively labeling a stored zero an estimated fee.
+      // A positive legacy fee without a status can still be used. An
+      // unqualified zero is NOT proof the processor charged nothing.
       if(day.cardFeesStatus==="estimated")estimatedDays++;else actualDays++;
     }else{
       sum+=(day.cardSalesCents??day.netSalesCents)*DEFAULT_PROCESSING_FEE_RATE_BPS/10000;

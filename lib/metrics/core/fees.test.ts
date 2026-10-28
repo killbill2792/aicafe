@@ -39,6 +39,15 @@ describe("fee priority",()=>{
     expect(cardFeesForDays([days[0]]).basis).toBe("actual");
     expect(cardFeesForDays(days).basis).toBe("estimated");
   });
+  it("never treats unqualified zero fees as verified free card processing",()=>{
+    const unknown=cardFeesForDays([{date:"2026-10-10",netSalesCents:10000,
+      cardFeesCents:0}]);
+    expect(unknown.amountCents).toBe(DEFAULT_PROCESSING_FEE_RATE_BPS);
+    expect(unknown.basis).toBe("default_estimate");
+    expect(cardFeesForDays([{date:"2026-10-10",netSalesCents:10000,
+      cardFeesCents:0,cardFeesStatus:"actual"}])).toMatchObject({
+      amountCents:0,basis:"actual"});
+  });
   it("labels the named default for absent rows and does not hide actual fee cents",()=>{
     const out=cardFeesForDays([{date:"2026-10-03",netSalesCents:10000}]);
     expect(out.amountCents).toBe(DEFAULT_PROCESSING_FEE_RATE_BPS);
