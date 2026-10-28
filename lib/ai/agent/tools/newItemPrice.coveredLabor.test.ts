@@ -25,7 +25,7 @@ describe("owner labor with actual covered sales",()=>{
     laborPeriod:{unit:"month"},rentCents:null,otherOverheadCents:null,
     overheadPeriod:null,unitCostCents:null,itemsSoldPerDay:null}
   },ctx);
-  expect(result.monthlyLabor).toMatchObject({valueCents:310000,status:"owner",reason:"You told me"});
+  expect(result.monthlyLabor).toMatchObject({valueCents:310000,status:"owner",reason:"laborOwnerProvided"});
   expect(result.monthlyUnits).toBe(620);
   expect(result.coverageLabel).toContain("Aug 22–Sep 4");
   expect(result.coverageLabel).toContain("2026");
