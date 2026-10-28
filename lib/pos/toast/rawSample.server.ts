@@ -135,15 +135,38 @@ function identifierCounts(value:unknown){
  walk(value,"",0);return counts;
 }
 function chunks(raw:unknown):unknown[]{
- if(!Array.isArray(raw))return [raw];
- const out:unknown[]=[];let group:unknown[]=[];let bytes=0;
- for(const item of raw){
-  const size=JSON.stringify(item).length;
-  if(group.length&&bytes+size>CHUNK_BYTES){out.push(group);group=[];bytes=0;}
-  group.push(item);bytes+=size;
- }
- if(group.length||!out.length)out.push(group);
- return out;
+ const bytes=(v:unknown)=>Buffer.byteLength(JSON.stringify(v)??"null","utf8");
+ const split=(v:unknown,depth:number):unknown[]=>{
+  if(bytes(v)<=CHUNK_BYTES||depth>40)return [v];
+  if(Array.isArray(v)){
+   const out:unknown[]=[];let batch:unknown[]=[];
+   for(const item of v){
+    if(bytes(item)>CHUNK_BYTES){
+     if(batch.length){out.push(batch);batch=[];}
+     for(const piece of split(item,depth+1))out.push([piece]);
+    }else if(batch.length&&bytes([...batch,item])>CHUNK_BYTES){out.push(batch);batch=[item];}
+    else batch.push(item);
+   }
+   if(batch.length)out.push(batch);
+   return out;
+  }
+  if(v&&typeof v==="object"){
+   const out:unknown[]=[];let batch:Record<string,unknown>={};
+   for(const [key,child] of Object.entries(v)){
+    const leaf={[key]:child};
+    if(bytes(leaf)>CHUNK_BYTES){
+     if(Object.keys(batch).length){out.push(batch);batch={};}
+     for(const piece of split(child,depth+1))out.push({[key]:piece});
+    }else if(Object.keys(batch).length&&bytes({...batch,[key]:child})>CHUNK_BYTES){
+     out.push(batch);batch=leaf;
+    }else batch[key]=child;
+   }
+   if(Object.keys(batch).length)out.push(batch);
+   return out;
+  }
+  return [v];
+ };
+ return split(raw,0);
 }
 export type ToastRawSampleResult={captured:number;skipped:boolean;failed:number;reason?:"invalid_request"|"no_location"|"busy"|"cooldown"|"db_error"|"missing_hash_key"|"lease_lost";};
 const skip=(reason:NonNullable<ToastRawSampleResult["reason"]>,failed=0):ToastRawSampleResult=>({captured:0,skipped:true,failed,reason});
