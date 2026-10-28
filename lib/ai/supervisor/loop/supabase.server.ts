@@ -26,6 +26,13 @@ const failed=(error:unknown,code:string):never=>{throw new Error(code,{cause:err
  * a scope; the database transition RPC locks revision/actor/effect hash atomically.
  * Authenticated callers can read only their own rows via RLS, never write them. */
 export class SupabaseLoopRepository implements LoopRepository{
+  async cafeTimezone(scope:OwnerLoopScope):Promise<string>{
+    const db=createAdminSupabaseClient();
+    const {data,error}=await db.from("businesses").select("timezone")
+      .eq("id",scope.businessId).single();
+    if(error||!data?.timezone)throw new Error("Café timezone unavailable");
+    return data.timezone;
+  }
   async create(scope:OwnerLoopScope,key:string,p:LoopCreate):Promise<LoopProposal>{
     uuid.parse(key);
     const db=createAdminSupabaseClient();
