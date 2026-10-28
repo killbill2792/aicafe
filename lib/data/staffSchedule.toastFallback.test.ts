@@ -9,7 +9,7 @@ import {DEFAULT_TEAM_RULES} from "@/lib/calc/scheduling/teamRuleDefaults";
 
 function chain(result:{data:unknown;error:unknown}){
  const query={then:(resolve:(value:unknown)=>unknown)=>Promise.resolve(result).then(resolve)} as Record<string,unknown>;
- for(const method of ["select","eq","gte","lte","is","order","limit","maybeSingle","single"])
+ for(const method of ["select","eq","gte","lte","is","order","limit","maybeSingle","single","or"])
   query[method]=()=>query;
  return query;
 }
