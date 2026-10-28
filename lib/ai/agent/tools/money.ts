@@ -268,7 +268,7 @@ export const moneyTools={
       const sum=safeSumCents(costs);
       const explain=s.completeness==="complete"&&
         Object.values(s.observed).every(Boolean)&&sum===s.knownTotalCents?
-        [{label:{en:"Recorded business costs",es:"Costes del negocio registrados",ar:"تكاليف العمل المسجلة"}[ctx.locale],inputs:[
+        [{label:{en,es,ar}[ctx.locale].MetricsNotes.itemRecordedBusinessCosts,inputs:[
           {name:"ingredients",value:money(costs[0])},{name:"staff",value:money(costs[1])},
           {name:"fees",value:money(costs[2])},{name:"overhead",value:money(costs[3])}],
           formula:"sum" as const,result:money(s.knownTotalCents),period:p,source:"get_cost_summary",
