@@ -26,9 +26,11 @@ grant select on public.toast_raw_samples to authenticated;
 grant select, insert, update, delete on public.toast_raw_samples to service_role;
 
 -- Atomic, database-backed ten-minute limiter; only the service role can claim.
+-- Remove the old text overload if this draft migration was applied early.
+drop function if exists public.toast_claim_raw_sample(uuid,text,date);
 -- The marker also makes a failed/aborted capture count towards the cooldown.
 create or replace function public.toast_claim_raw_sample(
-  p_business_id uuid, p_restaurant_guid text, p_business_date date
+  p_business_id uuid, p_restaurant_guid uuid, p_business_date date
 ) returns boolean language plpgsql security invoker
 set search_path=public as $$
 begin
@@ -49,9 +51,9 @@ begin
   end if;
   insert into public.toast_raw_samples
     (business_id,restaurant_guid,endpoint,business_date,http_status,item_count,sample,field_paths)
-  values (p_business_id,p_restaurant_guid,'__capture__',p_business_date,202,0,'{}'::jsonb,array[]::text[]);
+  values (p_business_id,p_restaurant_guid::text,'__capture__',p_business_date,202,0,'{}'::jsonb,array[]::text[]);
   return true;
 end;
 $$;
-revoke all on function public.toast_claim_raw_sample(uuid,text,date) from public, anon, authenticated;
-grant execute on function public.toast_claim_raw_sample(uuid,text,date) to service_role;
+revoke all on function public.toast_claim_raw_sample(uuid,uuid,date) from public, anon, authenticated;
+grant execute on function public.toast_claim_raw_sample(uuid,uuid,date) to service_role;
