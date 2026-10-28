@@ -3376,6 +3376,9 @@
     "staffScheduleWeekReadFailed": "No se pudo leer el horario de la semana del {date}; se siguen mostrando las demás semanas.",
     "toastScheduleReasonPermission": "permiso denegado",
     "toastScheduleReasonTimeout": "se agotó el tiempo de conexión",
-    "toastScheduleReasonUnavailable": "la fuente del horario no está disponible"
+    "toastScheduleReasonUnavailable": "la fuente del horario no está disponible",
+    "todaySalesCheckUnavailable": "No se pudieron verificar las ventas de hoy; se desconoce el último día completo.",
+    "todaySalesCheckFailedWithHistory": "No se pudieron verificar las ventas de hoy. El último día guardado fue {date}: {amount} (sin confirmar si está completo).",
+    "lastFullDayCheckFailed": "Todavía no se han importado las ventas de hoy; no se pudieron verificar los totales del último día completo."
   }
 }

@@ -41,6 +41,35 @@ describe("latest covered sales window",()=>{
    expect(result.dataNote).toContain("Today isn't imported yet");
   }
  });
+ it("today lookup outage keeps last-day evidence and labels uncertainty",async()=>{
+  const ctx=context(["2026-10-23"]);
+  const original=ctx.tools.getSalesTrend;
+  let calls=0;
+  ctx.tools.getSalesTrend=async(p)=>{if(++calls===1)throw Error("db down");return original(p);};
+  const result=await resolveCoveredSalesWindow(ctx,{from:ctx.asOf,to:ctx.asOf});
+  expect(result.period).toEqual({from:ctx.asOf,to:ctx.asOf});
+  expect(result.todayImported).toBeUndefined();
+  expect(result.lastFullDay).toBe("2026-10-23");
+  expect(result.dataNote).toContain("couldn't be checked");
+ });
+ it("failed last-day reader never crashes an honest today response",async()=>{
+  const ctx=context([]);
+  const original=ctx.tools.getSalesTrend;
+  ctx.tools.getSalesTrend=async(p)=>{
+   if(p.to<ctx.asOf)throw Error("history unavailable");
+   return original(p);
+  };
+  const result=await resolveCoveredSalesWindow(ctx,{from:ctx.asOf,to:ctx.asOf});
+  expect(result).toMatchObject({period:{from:ctx.asOf,to:ctx.asOf},
+   todayImported:false,lastFullDay:null});
+  expect(result.dataNote).toContain("couldn't be checked");
+ });
+ it("pricing fallback read errors preserve the requested pricing window",async()=>{
+  const ctx=context([]);
+  ctx.tools.getSalesTrend=async()=>{throw Error("offline");};
+  const result=await resolveCoveredSalesWindow(ctx,{from:"2026-10-01",to:"2026-10-24"});
+  expect(result).toMatchObject({period:{from:"2026-10-01",to:"2026-10-24"},coverageFallback:null});
+ });
  it("preserves the requested period when the optional trend reader is absent",async()=>{
   const ctx=context([]);
   const tools={...ctx.tools};

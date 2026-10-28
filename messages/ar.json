@@ -3376,6 +3376,9 @@
     "staffScheduleWeekReadFailed": "تعذرت قراءة جدول أسبوع {date}؛ ولا تزال الأسابيع الأخرى ظاهرة.",
     "toastScheduleReasonPermission": "تم رفض إذن الوصول",
     "toastScheduleReasonTimeout": "انتهت مهلة الاتصال",
-    "toastScheduleReasonUnavailable": "مصدر الجدول غير متاح"
+    "toastScheduleReasonUnavailable": "مصدر الجدول غير متاح",
+    "todaySalesCheckUnavailable": "تعذّر التحقق من مبيعات اليوم؛ آخر يوم مكتمل غير معروف.",
+    "todaySalesCheckFailedWithHistory": "تعذّر التحقق من مبيعات اليوم. آخر يوم محفوظ كان {date}: {amount} (لم يتم التحقق من اكتماله).",
+    "lastFullDayCheckFailed": "لم تُستورد مبيعات اليوم بعد؛ وتعذّر التحقق من إجماليات آخر يوم مكتمل."
   }
 }

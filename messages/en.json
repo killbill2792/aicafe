@@ -3376,6 +3376,9 @@
     "staffScheduleWeekReadFailed": "Schedule for the week of {date} could not be read; other weeks are still shown.",
     "toastScheduleReasonPermission": "permission denied",
     "toastScheduleReasonTimeout": "the connection timed out",
-    "toastScheduleReasonUnavailable": "the schedule source is unavailable"
+    "toastScheduleReasonUnavailable": "the schedule source is unavailable",
+    "todaySalesCheckUnavailable": "Today's sales couldn't be checked; the latest full day is unknown.",
+    "todaySalesCheckFailedWithHistory": "Today's sales couldn't be checked. The latest stored day was {date}: {amount} (completeness unverified).",
+    "lastFullDayCheckFailed": "Today isn't imported yet; the last full day's totals couldn't be checked."
   }
 }
