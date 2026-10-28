@@ -15,5 +15,6 @@ export async function POST(request:Request){
  const db=await authorizeToastOwner(parsed.data.businessId);
  if(!db)return reply(403,{error:"not_authorized"});
  const result=await captureToastRawSample(parsed.data.businessId,parsed.data.businessDate,db);
+ if(result.failed>0&&result.captured===0)return reply(503,{error:"sample_unavailable",...result});
  return reply(result.skipped?429:200,result.skipped?{error:"rate_limited_or_not_configured"}:result);
 }
