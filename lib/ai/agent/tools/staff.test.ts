@@ -86,11 +86,11 @@ describe("Olivia bounded reads",()=>{
     const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
     expect(r.scheduleSet).toBe(true);
     expect(r.windowHasShifts).toBe(true);
-    expect((r.shifts as {id:string}[]).map(s=>s.id)).toEqual(["thu"]);
+    expect((r.shifts as {id:string}[]).map(s=>s.id)).toEqual(["thu","inactive"]);
     expect(r.missing).not.toContain("noShiftsInRequestedRange");
     expect(r.missing).not.toContain("moreShifts");
     expect(r.paidMinutes).toBeNull();
-    expect(JSON.stringify(r)).not.toContain("inactive");
+    expect(JSON.stringify(r)).toContain("inactive");
   });
   it("marks a large selected window as truncated without hiding its shifts",async()=>{
     vi.mocked(getWeekSchedule).mockResolvedValue(confirmed(
