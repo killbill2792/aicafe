@@ -4,6 +4,24 @@ import { buildCostRecoveryViewModel } from "./moneyViewModel";
 import { buildBreakEvenViewModel } from "./breakEvenViewModel";
 
 describe("break-even resolved product costs", () => {
+  it("uses the exact 28 completed days when live snapshot provides them",()=>{
+    const snapshot=getFixtureSnapshot();
+    const first=snapshot.last28Days[0];
+    // Ordinary rolling UI data includes today; sold-item evidence does not.
+    snapshot.breakEvenDays=[{...first,date:"2026-08-12"},
+      ...snapshot.last28Days.filter(d=>d.date<snapshot.todayDateStr)];
+    expect(snapshot.breakEvenDays).toHaveLength(28);
+    const screen=buildCostRecoveryViewModel(snapshot);
+    const plan=buildBreakEvenViewModel(snapshot);
+    expect(screen.breakEven.kind).toBe("ready");
+    if(screen.breakEven.kind==="ready"){
+      const expectedSales=snapshot.breakEvenDays.reduce((sum,d)=>sum+d.netSalesCents,0);
+      const expectedCost=(snapshot.breakEvenProductCosts??snapshot.menuItems)
+        .reduce((sum,item)=>sum+item.quantitySoldLast28Days*item.ingredientsCentsToday,0);
+      expect(screen.breakEven.ingredientRate).toBeCloseTo(expectedCost/expectedSales,8);
+    }
+    expect(plan.noteKeys).not.toContain("breakEvenCoveragePartial");
+  });
   it("uses owner-total resolved costs instead of recipe-only rollup ingredients", () => {
     const snapshot = getFixtureSnapshot();
     const sold = 100;
