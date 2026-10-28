@@ -5,8 +5,7 @@ import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
 
 const daySchema=z.iso.date();
 const LIMIT=5;
-const SENSITIVE=/(?:token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|pan|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|state|country|ip.?address|device.?id|loyalty|gift.?card|notes?|description)/i;
-const SAFE_TEXT=/^(guid|id|type|cardType|cardEntryMode|source|status|paymentStatus|refundStatus|diningOption|name|title|job|jobReference|employeeReference|restaurantGuid|restaurantId|externalId|hourlyWage|defaultWage|wage|wageOverrides|amount|tipAmount|originalProcessingFee|mcaRepaymentAmount|refund|refundAmount|paid|deleted|voided|inDate|outDate|modifiedDate|businessDate|createdDate|closedDate)$/i;
+const SENSITIVE=/(?:token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|pan|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|state|country|ip.?address|device.?id|loyalty|gift.?card|notes?|description|display.?name|^name$|^text$|comment|memo|contact|holder|recipient)/i;
 /** Fail closed on sensitive names, including unexpected nested Toast fields. */
 export function redactToastRaw(value:unknown,depth=0):unknown {
  if(depth>16)return null;
@@ -111,8 +110,11 @@ export async function captureToastRawSample(
    });
    if(writeError)failed++;else captured++;
   };
+  let previousGet=0;
+  const pace=async()=>{const ms=5000-(Date.now()-previousGet);if(ms>0)await new Promise(resolve=>setTimeout(resolve,ms));previousGet=Date.now();};
   for(const [endpoint,path] of specs){
    try{
+    await pace();
     const raw=await client.request(path,guid,z.unknown());
     const rows=Array.isArray(raw)?raw.slice(0,LIMIT):raw;
     const sample=endpoint==="menus/v2/menus"?clipMenu(rows):rows;
@@ -122,6 +124,7 @@ export async function captureToastRawSample(
       const id=typeof item==="string"?item:null;
       if(!id||!GUID.safeParse(id).success)continue;
       try{
+       await pace();
        const detail=await client.request("/orders/v2/payments/"+id,guid,z.unknown());
        await save("orders/v2/payments/{guid}",detail,200,1);
       }catch(e){
