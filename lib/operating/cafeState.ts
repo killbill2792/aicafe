@@ -108,14 +108,17 @@ export function cafeStateFromSnapshot(
   canonicalPricing?: CanonicalPricingItem[],
 ): CafeState {
   const historical=(snapshot as BusinessSnapshot & {historicalPeriod?:HistoricalData}).historicalPeriod;
-  const inRange=supportedPeriod(snapshot,period);
+  const requestedFuture=period.to>snapshot.todayDateStr;
+  const effectivePeriod: CafeStatePeriod=requestedFuture?
+    {from:period.from,to:snapshot.todayDateStr}:period;
+  const inRange=supportedPeriod(snapshot,effectivePeriod);
   const days=inRange?(historical?.days??snapshot.monthActualDays)
-    .filter(day=>day.date>=period.from&&day.date<=period.to&&day.salesDataStatus!=="missing"):[];
-  const expectedDays = inRange ? expectedCalendarDays(period.from, period.to) : 0;
+    .filter(day=>day.date>=effectivePeriod.from&&day.date<=effectivePeriod.to&&day.salesDataStatus!=="missing"):[];
+  const expectedDays = inRange ? expectedCalendarDays(effectivePeriod.from, effectivePeriod.to) : 0;
   const observedDays = new Set(days.map((day) => day.date)).size;
   const missingSales = inRange && observedDays !== expectedDays;
   const recorded=inRange?(historical?.recorded??snapshot.monthRecordedDays??snapshot.monthActualDays)
-    .filter(day=>day.date>=period.from&&day.date<=period.to):[];
+    .filter(day=>day.date>=effectivePeriod.from&&day.date<=effectivePeriod.to):[];
 
   const expenseMissing=historical?.missingExpenseCategories??
     snapshot.runningCostLines.filter(line=>line.isMissing&&line.isExpected)
@@ -123,9 +126,9 @@ export function cafeStateFromSnapshot(
   const expenseEstimated=historical?.estimatedExpenseCategories??
     snapshot.runningCostLines.filter(line=>line.isEstimate&&line.amountCents>0)
       .map(line=>`expense:${line.categoryCode}`);
-  let businessCosts=businessCostSummaryFromSnapshot(snapshot,period);
+  let businessCosts=businessCostSummaryFromSnapshot(snapshot,effectivePeriod);
   if(historical){
-    businessCosts={...businessCosts,period,
+    businessCosts={...businessCosts,period:effectivePeriod,
       completeness:days.length?"partial":"unavailable",
       observed:{ingredients:days.length>0,loadedStaff:recorded.length>0,
         cardFees:days.length>0,runningCosts:historical.monthlyAmounts.some(row=>!row.isMissing)},
@@ -156,6 +159,7 @@ export function cafeStateFromSnapshot(
     .filter((day) => day.staffTaxStatus === "estimated")
     .map((day) => `staffTax:${day.date}`);
   const basicMissing = [
+    ...(requestedFuture?["futureDatesExcluded"]:[]),
     ...(!inRange ? ["periodOutsideLoadedMonth"] : []),
     ...(missingSales ? [`salesCoverage:${observedDays}/${expectedDays}`] : []),
   ];
@@ -207,12 +211,12 @@ export function cafeStateFromSnapshot(
     categoryCode:line.categoryCode,monthKey:snapshot.monthKey,amountCents:line.amountCents,
     isEstimate:line.isEstimate,isMissing:line.isMissing,
   }));
-  const running = inRange ? runningCostsForPeriodCents(monthlyLines, period.from, period.to) : 0;
+  const running = inRange ? runningCostsForPeriodCents(monthlyLines, effectivePeriod.from, effectivePeriod.to) : 0;
   // Reuse the SAME cent-safe largest-remainder allocator used by Money's category
   // breakdown, so an arbitrary supported range's detail rows reconcile to the
   // aggregate rounded operating costs even when individual lines have fractional cents.
   const rawByCategory = inRange
-    ? runningCostsForPeriodCentsByCategory(monthlyLines, period.from, period.to)
+    ? runningCostsForPeriodCentsByCategory(monthlyLines, effectivePeriod.from, effectivePeriod.to)
     : new Map<string, number>();
   const allocated = allocateIntegerCentsByCategory(new Map(
     snapshot.runningCostLines
@@ -228,9 +232,9 @@ export function cafeStateFromSnapshot(
   const feeResult=cardFeesForDays(days,feePlans??null);
   const laborResult=laborForPeriod(
     Array.from({length:expectedDays},(_,index)=>({
-      date:new Date(Date.parse(period.from+"T12:00:00Z")+index*86400000).toISOString().slice(0,10),
+      date:new Date(Date.parse(effectivePeriod.from+"T12:00:00Z")+index*86400000).toISOString().slice(0,10),
     })),recorded,null,monthlyExtras==null?null:{
-      monthlyCents:monthlyExtras,from:period.from,to:period.to,
+      monthlyCents:monthlyExtras,from:effectivePeriod.from,to:effectivePeriod.to,
     });
   const knownIngredientCents=days.reduce((sum,day)=>sum+day.ingredientsCents,0);
   const profitResult=profitForPeriod(days,
@@ -259,7 +263,7 @@ export function cafeStateFromSnapshot(
 
   return {
     asOf: snapshot.todayDateStr,
-    period,
+    period:effectivePeriod,
     business: snapshot.business,
     products: known(snapshot.menuItems, quality(missingProductCosts, estimatedProductCosts)),
     sales: !inRange ? unavailable("periodOutsideLoadedMonth") : days.length ? known(days, observedQuality) : unavailable(...basicMissing, "salesHistory"),
