@@ -40,3 +40,20 @@ it("bad Analytics login cannot create false verification",async()=>{
   .rejects.toMatchObject({category:"authentication"});
  expect(f.row.verified_at).toBeNull();
 });
+
+it("diagnostic GET waits for one exhausted ERA budget slot and retries",async()=>{
+ const f=fixture(),original=f.rpc.getMockImplementation()!;
+ let denied=true;
+ f.rpc.mockImplementation(async(name:string)=>{
+  if(name==="toast_claim_era_request"&&denied){denied=false;return {data:false,error:null};}
+  return original(name);
+ });
+ vi.stubGlobal("fetch",vi.fn(async(url:string)=>url.includes("/authentication/")?
+  new Response(JSON.stringify({token:{accessToken:"bearer",expiresIn:3600}})):
+  new Response(JSON.stringify([{netSalesAmount:42}]),{status:200})));
+ const result=await createToastAnalyticsClient(f.db,b,Date.now()+20000,true)
+  .getRaw("/era/v1/restaurants-information");
+ expect(result.status).toBe(200);
+ expect(denied).toBe(false);
+ expect(f.rpc.mock.calls.filter(([name])=>name==="toast_claim_era_request")).toHaveLength(2);
+});
