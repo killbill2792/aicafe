@@ -3356,7 +3356,7 @@
     "todayNotImportedNoHistory": "Today isn't imported yet. No completed sales day is stored.",
     "toastDaysNeedLook": "{count} days need a look: {dates}{more}.",
     "toastDayStatusUnavailable": "Toast's day-status check failed. Stored numbers may include days not yet checked.",
-    "toastImportIncompleteDays": "Toast imports failed or were missing on {count} days: {dates}{more}. Stored sales are shown, but totals may be incomplete.",
+    "toastImportIncompleteDays": "Toast imports are not complete on {count} days: {dates}{more}. Stored sales are shown, but totals may be incomplete.",
     "toastFailedNoCanonicalSales": "Toast could not import these dates: {dates}. Other recorded POS sales for those dates are still shown.",
     "toastDayStatusMissing": "Toast sales for these dates are stored but their day-status checks were not recorded: {dates}. Figures may be incomplete.",
     "toastScheduleReadFailed": "Toast schedule couldn't be read: {reason}. App shifts are still shown.",
