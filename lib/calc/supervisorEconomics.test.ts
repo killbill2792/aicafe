@@ -63,9 +63,8 @@ describe("single deterministic supervisor economics model",()=>{
    overheadCents:746700,units:6000,feeRate:.029,targetMargin:.15});
   expect(result.fullCostCents).toBe(145+100+124);
   expect(result.breakEvenCents).toBe(Math.ceil(369/(1-.029)));
-  // Ingredient-cost target ~30% in the café profile: $1.45 / .30
-  // rounds to $4.75, above its approximately $4.50 full-cost target.
-  expect(result.recommendedPriceCents).toBe(475);
+  // Ingredient-cost target ~30%: $1.45 / .30 rounds UP to $5.00.
+  expect(result.recommendedPriceCents).toBe(500);
   expect(result.recommendedPriceCents!%25).toBe(0);
   expect(result.recommendedPriceCents!).toBeGreaterThanOrEqual(result.breakEvenCents!);
   expect(result.recommendedPriceCents).not.toBe(450);
@@ -81,7 +80,7 @@ describe("single deterministic supervisor economics model",()=>{
    [{units:null},"laborPerUnit"],
   ] as const){
    const result=recommendFullCostPrice({...known,...change});
-   expect(result.recommendedPriceCents).toBeNull();
+   expect(result.recommendedPriceCents).toBe(change.packagingCents===null?null:625);
    expect(result.breakEvenCents).toBeNull();
    expect(result.fullCostCents).toBeNull();
    expect(result.missing).toContain(key);

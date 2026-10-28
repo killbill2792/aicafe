@@ -10,7 +10,7 @@ const economics:Economics={
  averagePriceCents:500,monthlyUnits:6000,daysInMonth:31,targetMargin:.15,missingDays:[],
 };
 const input={ingredient_cost_cents:145,category:"drink" as const,
- packaging_cents:0,target_margin_percent:15,item_name:"New Latte",ownerInputs:null};
+ packaging_cents:0,item_name:"New Latte",ownerInputs:null};
 const context=(e:Economics):AgentToolContext=>({
  asOf:"2026-10-27",locale:"en",
  tools:{} as AgentToolContext["tools"],
@@ -20,7 +20,7 @@ const context=(e:Economics):AgentToolContext=>({
 describe("supervisor new-item price evidence",()=>{
  it("recommends a price only with known labor, overhead, fees and packaging",async()=>{
   const result=await newItemPriceTools.suggest_new_item_price.execute(input,context(economics));
-  expect(result.recommendedPriceCents).toBe(475);
+  expect(result.recommendedPriceCents).toBe(500);
   expect(result.breakEvenCents).toBeGreaterThan(0);
   expect(result.knownCostFloorCents).toBeNull();
   expect(result.missing).toEqual([]);

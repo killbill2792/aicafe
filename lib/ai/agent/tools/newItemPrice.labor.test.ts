@@ -10,7 +10,7 @@ import {newItemPriceTools} from "./newItemPrice";
 
 const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const input={ingredient_cost_cents:100,category:"drink" as const,
-  packaging_cents:0,target_margin_percent:20,item_name:"Tea",ownerInputs:null};
+  packaging_cents:0,item_name:"Tea",ownerInputs:null};
 function context(wageStatus:"missing"|"actual"):AgentToolContext{
   const day={date:"2026-10-22",wagesCents:1200,staffTaxCents:144,
     loadedStaffCostCents:1344,wageStatus};
