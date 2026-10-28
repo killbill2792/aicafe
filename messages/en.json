@@ -3367,6 +3367,9 @@
     "periodYtd": "Year to date",
     "periodNamedMonth": "{from} to {to}",
     "toastMoreDays": " and {count} more",
-    "toastScheduleCoverageUnverified": "Coverage gaps cannot be verified yet because Toast planned shifts are not included in staffing coverage calculations."
+    "toastScheduleCoverageUnverified": "Coverage gaps cannot be verified yet because Toast planned shifts are not included in staffing coverage calculations.",
+    "toastScheduleReasonPermission": "permission denied",
+    "toastScheduleReasonTimeout": "the connection timed out",
+    "toastScheduleReasonUnavailable": "the schedule source is unavailable"
   }
 }

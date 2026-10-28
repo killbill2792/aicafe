@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {resolveOwnerPeriod,periodChoicePayload} from "../resolve";
 import {money} from "../explain";
-import {mergeScheduleShifts} from "./scheduleReads";
+import {mergeScheduleShifts,localizedToastScheduleReadError} from "./scheduleReads";
 import {dateOffset} from "@/lib/calc/periods";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -57,8 +57,7 @@ export const staffTools = {
         if(!response.ok){missingInputs.push("scheduleReadFailed:"+ws+":"+response.error);continue;}
         if(response.data.posScheduleError){
           missingInputs.push("toastScheduleReadFailed:"+ws);
-          notes.push({en,es,ar}[ctx.locale].DataNotes.toastScheduleReadFailed
-           .replace("{reason}",response.data.posScheduleError));
+          notes.push(localizedToastScheduleReadError(response.data.posScheduleError,ctx.locale));
         }
         const merged=mergeScheduleShifts(response.data);
         scheduleSet ||= merged.length>0;

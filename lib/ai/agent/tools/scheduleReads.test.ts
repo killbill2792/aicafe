@@ -7,11 +7,17 @@ vi.mock("@/lib/scheduling/staffScope.server",()=>({
  staffReadScope:vi.fn(),mondayOfLocalDate:vi.fn(()=> "2026-10-19")
 }));
 import {getTeam,getShiftCost,getWeekSchedule} from "@/lib/actions/schedule";
-import {scheduleReadTools} from "./scheduleReads";
+import {scheduleReadTools,localizedToastScheduleReadError} from "./scheduleReads";
 import {newResolveState} from "../resolve";
 import type {AgentToolContext} from "./index";
 const id="11111111-1111-4111-8111-111111111111";
 describe("Toast and app schedule union",()=>{
+ it("localizes Toast read error reasons in EN, ES and AR",()=>{
+   expect(localizedToastScheduleReadError("revoked","en")).toContain("permission denied");
+   expect(localizedToastScheduleReadError("revoked","es")).toContain("permiso denegado");
+   expect(localizedToastScheduleReadError("revoked","ar")).toContain("تم رفض");
+   expect(localizedToastScheduleReadError("timeout","es")).toContain("se agotó");
+ });
  it("Toast-only shifts are listed for Saturday",async()=>{
   vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{
     team:[],shifts:[],posScheduleError:null,timezone:"America/Los_Angeles",

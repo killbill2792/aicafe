@@ -54,9 +54,17 @@ export function mergeScheduleShifts(data:Pick<WeekData,"shifts"|"posShifts"|"tea
  return [...app,...pos.filter(s=>{const k=key(s);if(seen.has(k))return false;seen.add(k);return true;})]
   .sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
 }
+export function localizedToastScheduleReadError(reason:string,locale:AgentToolContext["locale"]){
+ const copy={en,es,ar}[locale].DataNotes;
+ const why=/permission|revoked|access denied|42501|\\b(?:401|403)\\b/i.test(reason)?
+  copy.toastScheduleReasonPermission:
+  /timeout|timed out|network|ECONN|ETIMEDOUT/i.test(reason)?
+   copy.toastScheduleReasonTimeout:copy.toastScheduleReasonUnavailable;
+ return copy.toastScheduleReadFailed.replace("{reason}",why);
+}
 function toastScheduleNotes(data:Pick<WeekData,"posScheduleError">,locale:AgentToolContext["locale"]){
  if(!data.posScheduleError)return [];
- return [{en,es,ar}[locale].DataNotes.toastScheduleReadFailed.replace("{reason}",data.posScheduleError)];
+ return [localizedToastScheduleReadError(data.posScheduleError,locale)];
 }
 export const scheduleReadTools={
  get_team:{
