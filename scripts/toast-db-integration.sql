@@ -765,6 +765,8 @@ BEGIN
    where business_id=b and business_date='2026-10-18'
     and payment_ref=pay::text),
    'latest payment revision wins');
+ select count(*) into before_count from public.toast_raw_records
+  where business_id=b and run_id=run;
  delete from public.toast_day_pages where run_id=run and business_date='2026-10-18';
  select count(*) into after_count from public.toast_raw_records
  where business_id=b and run_id=run;
