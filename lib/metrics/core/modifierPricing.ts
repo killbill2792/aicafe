@@ -41,7 +41,7 @@ export function swapCostPerSize(
     if(!(volume.ml!==null&&Number.isFinite(volume.ml)&&volume.ml>0))
       missing.push("milk_ml:"+size.label);
     if(!(targetProductCostPercent!==null&&Number.isFinite(targetProductCostPercent)&&
-      targetProductCostPercent>=0&&targetProductCostPercent<1))
+      targetProductCostPercent>0&&targetProductCostPercent<=1))
       missing.push("target_product_cost_percent");
     let costDeltaCents:number|null=null,suggestedUpchargeCents:number|null=null;
     let marginKeptCents:number|null=null;
@@ -49,7 +49,7 @@ export function swapCostPerSize(
       // Microcents/ml source basis; round to integer cents only after multiplying the portion.
       costDeltaCents=Math.round(volume.ml!*(to!.costPerMlMicros!-from!.costPerMlMicros!)/1_000_000);
       suggestedUpchargeCents=Math.ceil(Math.max(0,costDeltaCents)/
-        (1-targetProductCostPercent!)/5)*5;
+        targetProductCostPercent!/5)*5;
       marginKeptCents=keepFromAddon(suggestedUpchargeCents,costDeltaCents);
     }
     return {sizeId:size.id,sizeLabel:size.label,milkMl:volume.ml,
