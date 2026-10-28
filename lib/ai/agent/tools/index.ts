@@ -26,7 +26,7 @@ import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.serve
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import {ToolError} from "../toolErrors";
 import {requestedPeriod as calcRequestedPeriod} from "@/lib/calc/periods";
-import {resolveCoveredSalesWindow} from "./coverage";
+import {resolveCoveredSalesWindow,type CoveredSalesWindow} from "./coverage";
 import {summarizePeakHours,summarizeEmployeeSales,summarizePayrollFacts} from "@/lib/calc/posFactSummaries";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { CafeStatePeriod } from "@/lib/operating/types";
@@ -274,7 +274,9 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(resolved.status!=="resolved")return periodChoicePayload(name,resolved);
   const requested={from:resolved.value.from,to:resolved.value.to};
   // An explicitly requested historical period must never be silently replaced.
-  const selection=await resolveCoveredSalesWindow(ctx,requested);
+  const selection:CoveredSalesWindow=requested.from===ctx.asOf&&requested.to===ctx.asOf?
+    await resolveCoveredSalesWindow(ctx,requested):
+    {period:requested,label:null,coverageFallback:null};
   const period=selection.period;
   if(name==="get_profit"){
     const slice=await ctx.tools.getProfitability(period);

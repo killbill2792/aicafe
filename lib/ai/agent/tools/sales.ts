@@ -9,7 +9,7 @@ import {safeDifferenceCents} from "@/lib/calc/explainMath";
 import {money,count} from "../explain";
 import {ownerInputsSchema,ownerConflict} from "./ownerInputs";
 import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../resolveMoney";
-import {resolveCoveredSalesWindow} from "./coverage";
+import {resolveCoveredSalesWindow,type CoveredSalesWindow} from "./coverage";
 import type {CoverageFallback} from "@/lib/calc/periods";
 
 const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]),query:z.string().trim().max(120).nullable().optional()});
@@ -45,7 +45,9 @@ export const salesTools={
       const resolved=resolveOwnerPeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(resolved.status!=="resolved")return periodChoicePayload("item_sales",resolved);
       const requested={from:resolved.value.from,to:resolved.value.to};
-      const selectedWindow=await resolveCoveredSalesWindow(ctx,requested);
+      const selectedWindow:CoveredSalesWindow=requested.from===ctx.asOf&&requested.to===ctx.asOf?
+    await resolveCoveredSalesWindow(ctx,requested):
+    {period:requested,label:null,coverageFallback:null};
       const p=selectedWindow.period;
       if(!ctx.tools.getProductSales)return {source:"item_sales",period:p,agentId:"alex",coverageLabel:selectedWindow.label,coverageFallback:selectedWindow.coverageFallback,todayImported:selectedWindow.todayImported,lastFullDay:selectedWindow.lastFullDay,lastFullDayTotals:selectedWindow.lastFullDayTotals,dataNote:selectedWindow.dataNote,missing:["itemSalesReaderUnavailable"]};
       const s=await ctx.tools.getProductSales(p);

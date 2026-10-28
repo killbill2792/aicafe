@@ -1,5 +1,5 @@
 import type {AgentToolContext} from "./index";
-import {dateOffset,type CalcPeriod,type CoverageFallback} from "@/lib/calc/periods";
+import {coveredWindow,dateOffset,type CalcPeriod,type CoverageFallback} from "@/lib/calc/periods";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -15,7 +15,18 @@ export type CoveredSalesWindow={
 export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:CalcPeriod):
  Promise<CoveredSalesWindow>{
  const unchanged={period:requested,label:null,coverageFallback:null};
- if(requested.from!==ctx.asOf||requested.to!==ctx.asOf)return unchanged;
+ if(requested.from!==ctx.asOf||requested.to!==ctx.asOf){
+  // Keep the legacy historical coverage lookup for pricing's explicitly
+  // separate denominator evidence. Reporting callers do not adopt this period.
+  if(typeof ctx.tools.getSalesTrend!=="function")return unchanged;
+  const current=await ctx.tools.getSalesTrend(requested);
+  if(current.available&&current.value.length)return unchanged;
+  const history=await ctx.tools.getSalesTrend({
+    from:dateOffset(requested.to,-364),to:requested.to,
+  });
+  if(!history.available||!history.value.length)return unchanged;
+  return coveredWindow(requested,history.value.map(day=>day.date));
+ }
  if(typeof ctx.tools.getSalesTrend!=="function")
   return {...unchanged,todayImported:false,lastFullDay:null,lastFullDayTotals:null};
  const current=await ctx.tools.getSalesTrend(requested);

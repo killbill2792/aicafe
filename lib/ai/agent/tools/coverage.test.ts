@@ -49,9 +49,15 @@ describe("latest covered sales window",()=>{
     {from:"2026-10-18",to:"2026-10-24"})).toEqual({
       period:{from:"2026-10-18",to:"2026-10-24"},label:null,coverageFallback:null});
  });
- it("keeps historical request boundaries even if older data exists",async()=>{
-  const r=await resolveCoveredSalesWindow(context(["2026-08-22","2026-09-04"]),{from:"2026-10-01",to:"2026-10-24"});
-  expect(r).toEqual({period:{from:"2026-10-01",to:"2026-10-24"},label:null,coverageFallback:null});
+ it("keeps legacy historical coverage for pricing without swapping chat periods",async()=>{
+  const old=["2026-09-01","2026-09-02"];
+  const r=await resolveCoveredSalesWindow(context(old),{from:"2026-10-01",to:"2026-10-24"});
+  expect(r).toMatchObject({period:{from:"2026-09-01",to:"2026-09-02"},
+    coverageFallback:{requested:{from:"2026-10-01",to:"2026-10-24"},
+      used:{from:"2026-09-01",to:"2026-09-02"}}});
+  const chat=await executeAgentTool("get_profit",{period:"month",ownerInputs:null},context(old));
+  expect(chat.period).toEqual({from:"2026-10-01",to:"2026-10-24"});
+  expect(chat.coverageFallback).toBeNull();
  });
  it("keeps a currently covered period",async()=>{
   expect(await resolveCoveredSalesWindow(context(["2026-10-24"]),{from:"2026-10-01",to:"2026-10-24"})).toEqual({
