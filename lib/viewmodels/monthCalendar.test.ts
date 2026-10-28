@@ -227,8 +227,9 @@ describe("known-only labor on a missing wage day", () => {
       wagesCents:1200,staffTaxCents:144,laborWageStatus:"missing" as const};
     const vm = buildMonthCalendarViewModel({monthData:monthData([day]),
       recoveryOrder:["rent"],todayDateStr:"2026-10-31",isCurrentMonth:false});
-    expect(vm.cells.find(cell=>cell.date===day.date)?.state.kind).toBe("missing");
-    expect(vm.detailsByDate[day.date].hasData).toBe(false);
+    expect(vm.cells.find(cell=>cell.date===day.date)?.state).toMatchObject({
+      kind:"actual",isEstimate:true});
+    expect(vm.detailsByDate[day.date].hasData).toBe(true);
     const complete=buildMonthCalendarViewModel({monthData:monthData([
       {...day,laborWageStatus:"actual"}]),
       recoveryOrder:["rent"],todayDateStr:"2026-10-31",isCurrentMonth:false});

@@ -8,7 +8,7 @@ import {cardFeesForDays} from "./fees";
 import {laborForPeriod} from "./labor";
 import {profitForPeriod} from "./profit";
 import type {BusinessSnapshot} from "@/lib/data/types";
-import type {DailyFacts} from "@/lib/calc";
+import {summarizeResolvedSoldProductCosts,type DailyFacts} from "@/lib/calc";
 import {shiftCafeDate} from "./clock";
 
 const date=(i:number)=>shiftCafeDate("2026-09-01",i);
@@ -60,9 +60,11 @@ describe("metricsParity — one observed café through screen and structured cha
       expect(chat.profitability.value.ownerProfitCents).toBe(screen.ownerProfitCents);
       expect(chat.profitability.value.totalCostsCents).toBe(screen.totalCostsCents);
       expect(p.profitCents).toBe(screen.ownerProfitCents);
+      const productCostEvidence=summarizeResolvedSoldProductCosts(snapshot.breakEvenProductCosts??snapshot.menuItems);
       const core=breakEvenFor({days:snapshot.last28Days,asOfDate:snapshot.todayDateStr,
         daysInMonth:30,monthlyBillsCents:recovery.monthlyBillsCents,
-        monthlyStaffCents:recovery.monthlyStaffCents});
+        monthlyStaffCents:recovery.monthlyStaffCents,
+        observedIngredientCents:productCostEvidence.totalCostCents});
       expect(recovery.breakEven.kind).toBe(core.calculation.kind);
       if(recovery.breakEven.kind==="ready"&&core.calculation.kind==="ready"){
         expect(recovery.breakEven.breakEvenSalesCents).toBe(core.calculation.breakEvenSalesCents);
