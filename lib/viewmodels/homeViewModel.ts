@@ -1,6 +1,5 @@
 import {
   computeCostRecovery,
-  ownerProfitCentsForPeriod,
   ratio,
   roundHalfUpToCent,
   laborKnown,
@@ -10,14 +9,13 @@ import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, recoveryBuckets } from "./costRecoveryShared";
 import {
   previousPeriodCoverage,
-  previousPeriodDays,
-  previousRunningCostsForPeriod,
   type Period,
 } from "./period";
 import { periodComparisonState } from "./periodComparison";
 import { expectedMissingCostLines } from "@/lib/expenses/expectedCosts";
 import {buildProfitAndCostsViewModel} from "./moneyViewModel";
 import {buildBreakEvenViewModel} from "./breakEvenViewModel";
+import {percentChangeFromProfitDelta} from "@/lib/metrics/core/profit";
 
 export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   // Home is a view of the very same shared profit calculation used by Money and chat.
@@ -36,15 +34,13 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
     isEstimate?"estimated" as const:"actual" as const;
   const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
-  const prevDays = previousPeriodDays(snapshot, period);
-  const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
-  const prevOwnerProfitCents = ownerProfitCentsForPeriod(prevDays, prevRunningCosts);
+  const verifiedProfitChange=money.changes.find(change=>change.key==="ownerProfit");
   // A "vs last period" comparison only means something when both this period and the comparison
   // period are fully covered — comparing 4 of 7 days this week against 1 of 7 last week (or a
   // complete today against a missing yesterday) isn't like-for-like.
   const changeVsLastPeriodPct =
-    comparisonState.kind === "available" && ownerProfitCents!==null && prevOwnerProfitCents!==null && prevOwnerProfitCents !== 0
-      ? ((ownerProfitCents - prevOwnerProfitCents) / Math.abs(prevOwnerProfitCents)) * 100
+    comparisonState.kind === "available" && ownerProfitCents!==null && verifiedProfitChange
+      ? percentChangeFromProfitDelta(ownerProfitCents,verifiedProfitChange.deltaCents)
       : null;
 
   const buckets = recoveryBuckets(snapshot);
