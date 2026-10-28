@@ -8,7 +8,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { getSnapshot } from "@/lib/data/getSnapshot";
-import {readHistoricalBusinessSnapshot} from "@/lib/data/snapshot.server";
+import {getBusinessSnapshotFromDb} from "@/lib/data/snapshot.server";
 import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
 import { projectCurrentStaff, projectBreakEven, projectRecurringSchedule } from "./conversations/domainProjections";
 import type { StaffRosterMember } from "@/lib/viewmodels/staffViewModel";
@@ -69,7 +69,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       assertBusiness(requested);
       if(period){
         // Historical lookups must never materialize shifts or regenerate alerts.
-        const historical=await readHistoricalBusinessSnapshot(client,businessId,period);
+        const historical=await getBusinessSnapshotFromDb.readHistorical(client,businessId,period);
         if(historical.business.id!==businessId)throw new Error("Café snapshot scope mismatch");
         return historical;
       }

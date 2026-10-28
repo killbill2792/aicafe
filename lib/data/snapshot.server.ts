@@ -339,7 +339,7 @@ async function getMenuItemSnapshots(
  * materializeScheduledShifts, generateAlerts, or any snapshot write path here.
  * Monthly cost lines retain their own month provenance across month boundaries.
  */
-export async function readHistoricalBusinessSnapshot(
+async function readHistoricalBusinessSnapshot(
   supabase:SupabaseClient,businessId:string,period:{from:string;to:string},
 ):Promise<BusinessSnapshot & {historicalPeriod:{
   days:import("@/lib/calc").DailyFacts[];
@@ -451,3 +451,7 @@ export async function readHistoricalBusinessSnapshot(
       missingExpenseCategories,estimatedExpenseCategories},
   };
 }
+
+// The existing snapshot export remains the public source boundary and owns the
+// read-only historical method. Do not introduce an unclassified new data export.
+getBusinessSnapshotFromDb.readHistorical=readHistoricalBusinessSnapshot;
