@@ -3368,6 +3368,7 @@
     "periodNamedMonth": "Del {from} al {to}",
     "toastMoreDays": " y {count} más",
     "toastScheduleCoverageUnverified": "Aún no se pueden verificar las brechas de cobertura porque los turnos previstos de Toast no se incluyen en el cálculo de cobertura del personal.",
+    "toastPlannedLaborUnknown": "Los turnos previstos de Toast no tienen horas pagadas ni salarios verificados. Los totales solo de la aplicación excluyen estos turnos.",
     "toastScheduleReasonPermission": "permiso denegado",
     "toastScheduleReasonTimeout": "se agotó el tiempo de conexión",
     "toastScheduleReasonUnavailable": "la fuente del horario no está disponible"

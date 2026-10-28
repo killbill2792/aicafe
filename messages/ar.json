@@ -3368,6 +3368,7 @@
     "periodNamedMonth": "من {from} إلى {to}",
     "toastMoreDays": " و{count} يومًا إضافيًا",
     "toastScheduleCoverageUnverified": "لا يمكن التحقق من فجوات التغطية بعد لأن نوبات Toast المخططة غير مشمولة في حساب تغطية الموظفين.",
+    "toastPlannedLaborUnknown": "نوبات Toast المخططة ليس لها ساعات مدفوعة أو أجور متحقق منها. أي إجماليات خاصة بالتطبيق لا تشمل هذه النوبات.",
     "toastScheduleReasonPermission": "تم رفض إذن الوصول",
     "toastScheduleReasonTimeout": "انتهت مهلة الاتصال",
     "toastScheduleReasonUnavailable": "مصدر الجدول غير متاح"

@@ -63,7 +63,15 @@ export const staffTools = {
         scheduleSet ||= merged.length>0;
         allShifts.push(...merged.filter(s=>s.date>=from&&s.date<=dateEnd));
       }
-      const selected=allShifts.sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
+      // Overlapping Toast shifts can occur in both adjacent weekly queries.
+      // Identify an assignment by its source and stable location-scoped shift ID.
+      const seen=new Set<string>();
+      const selected=allShifts.filter(shift=>{
+        const key=shift.source==="toast"?
+          "toast:"+shift.locationId+":"+shift.id:"app:"+shift.id;
+        if(seen.has(key))return false;
+        seen.add(key);return true;
+      }).sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
       if(!scheduleSet&&!missingInputs.length)missingInputs.push("scheduleNotSet");
       else if(!selected.length&&!missingInputs.length)missingInputs.push("noShiftsInRequestedRange");
       if(selected.length>250)missingInputs.push("moreShifts");

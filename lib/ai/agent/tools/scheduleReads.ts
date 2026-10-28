@@ -45,7 +45,7 @@ export function mergeScheduleShifts(data:Pick<WeekData,"shifts"|"posShifts"|"tea
    employeeId:s.employeeId??null,employeeName:s.employeeName,
    start:formatInTimeZone(new Date(s.start),data.timezone,"HH:mm"),
    end:formatInTimeZone(new Date(s.end),data.timezone,"HH:mm"),
-   paidMinutes:null,costCents:null,estimated:null,source:"toast" as const,
+   paidMinutes:null,costCents:null,estimated:null,locationId:s.locationId,source:"toast" as const,
  }));
  // Only linked identities can be matched to an app shift. Two unlinked
  // Toast staff can share a display name and start time; never erase either.
@@ -62,6 +62,9 @@ export function localizedToastScheduleReadError(reason:string,locale:AgentToolCo
   /timeout|timed out|network|ECONN|ETIMEDOUT/i.test(reason)?
    copy.toastScheduleReasonTimeout:copy.toastScheduleReasonUnavailable;
  return copy.toastScheduleReadFailed.replace("{reason}",why);
+}
+function toastUnknownLaborNote(locale:AgentToolContext["locale"]){
+ return {en,es,ar}[locale].DataNotes.toastPlannedLaborUnknown;
 }
 function toastScheduleNotes(data:Pick<WeekData,"posScheduleError">,locale:AgentToolContext["locale"]){
  if(!data.posScheduleError)return [];
@@ -92,17 +95,22 @@ export const scheduleReadTools={
    const scoped=input.name?all.filter(shift=>selected.some(person=>
      person.id===shift.employeeId||person.name.toLocaleLowerCase()===shift.employeeName.toLocaleLowerCase())):all;
    const totals=aggregateCosts(activeShifts);
+   const toastPlans=scoped.some(s=>s.source==="toast");
    const people=selected.slice(0,30),shifts=scoped.slice(0,30);
    return {source:"employees+scheduled_shifts",period:{from:ws,to:new Date(Date.parse(ws+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
-    agentId:"olivia",dataNotes:toastScheduleNotes(result.data,ctx.locale),missing:[...(result.data.posScheduleError?["toastScheduleReadFailed"]:[]),...(selected.length>30?["morePeople"]:[]),
+    agentId:"olivia",dataNotes:[...toastScheduleNotes(result.data,ctx.locale),
+     ...(toastPlans?[toastUnknownLaborNote(ctx.locale)]:[])],
+    missing:[...(toastPlans?["toastPlannedLaborUnknown"]:[]),...(result.data.posScheduleError?["toastScheduleReadFailed"]:[]),...(selected.length>30?["morePeople"]:[]),
      ...(scoped.length>30?["moreShifts"]:[]),
-     ...(!input.name?missingWageInputs(totals):[])],estimated:input.name?null:totals.estimated,
+     ...(!input.name?missingWageInputs(totals):[])],estimated:input.name||toastPlans?null:totals.estimated,
     people:people.map(p=>({id:p.id,name:p.name,role:p.role,minWeeklyMinutes:p.minWeeklyMinutes,
       maxWeeklyMinutes:p.maxWeeklyMinutes,hasKnownWage:p.wageCents!==null})),
     shifts:shifts,
-    weeklyPaidMinutes:input.name?null:totals.paidMinutes,
-    knownWagesCents:input.name?null:totals.knownCostCents,
-    missingWageCount:input.name?null:totals.unknownCount};
+    weeklyPaidMinutes:input.name||toastPlans?null:totals.paidMinutes,
+    knownWagesCents:input.name||toastPlans?null:totals.knownCostCents,
+    missingWageCount:input.name||toastPlans?null:totals.unknownCount,
+    appOnlyPaidMinutes:!input.name&&toastPlans&&activeShifts.length?totals.paidMinutes:null,
+    appOnlyKnownWagesCents:!input.name&&toastPlans&&activeShifts.length?totals.knownCostCents:null};
   }
  },
  get_week_schedule:{
@@ -115,21 +123,27 @@ export const scheduleReadTools={
    const data=result.data;
    const activeShifts=data.shifts;
    const combined=mergeScheduleShifts(data);
-   const scheduled=combined.length>0,hasCostedShifts=activeShifts.length>0,totals=aggregateCosts(activeShifts);
+   const scheduled=combined.length>0,hasCostedShifts=activeShifts.length>0,
+    toastPlans=combined.some(s=>s.source==="toast"),totals=aggregateCosts(activeShifts);
    const toastCoverageUnknown=combined.some(s=>s.source==="toast")&&data.rules.coverage_enabled;
    const adjacent=data.adjacentShifts;
    const gaps=scheduled&&!toastCoverageUnknown?coverageGaps(data.dates,[...adjacent,...activeShifts],
      data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
    return {source:"scheduled_shifts",period:{from:data.dates[0],to:data.dates[6]},
      agentId:"olivia",scheduleSet:scheduled,href:"/staff?tab=schedule",
-     dataNotes:[...toastScheduleNotes(data,ctx.locale),...(toastCoverageUnknown?[{en,es,ar}[ctx.locale].DataNotes.toastScheduleCoverageUnverified]:[])],
-     missing:[...(toastCoverageUnknown?["toastScheduleCoverageUnverified"]:[]),...(data.posScheduleError?["toastScheduleReadFailed"]:[]),...(!scheduled?["scheduleNotSet"]:[]),
+     dataNotes:[...toastScheduleNotes(data,ctx.locale),...(toastPlans?[toastUnknownLaborNote(ctx.locale)]:[]),
+      ...(toastCoverageUnknown?[{en,es,ar}[ctx.locale].DataNotes.toastScheduleCoverageUnverified]:[])],
+     missing:[...(toastPlans?["toastPlannedLaborUnknown"]:[]),...(toastCoverageUnknown?["toastScheduleCoverageUnverified"]:[]),...(data.posScheduleError?["toastScheduleReadFailed"]:[]),...(!scheduled?["scheduleNotSet"]:[]),
        ...(combined.length>40?["moreShifts"]:[]),
        ...(hasCostedShifts?missingWageInputs(totals):[]),
        ...(!data.rules.coverage_enabled?["coverageDisabled"]:
        uncheckedCoverageDays(data.dates,data.openHours,true).length?["openHoursIncomplete"]:[])],
-     estimated:hasCostedShifts?totals.estimated:null,estimatedShiftCount:hasCostedShifts?totals.estimateCount:null,
-     paidMinutes:hasCostedShifts?totals.paidMinutes:null,knownWagesCents:hasCostedShifts?totals.knownCostCents:null,
+     estimated:hasCostedShifts&&!toastPlans?totals.estimated:null,
+     estimatedShiftCount:hasCostedShifts&&!toastPlans?totals.estimateCount:null,
+     paidMinutes:hasCostedShifts&&!toastPlans?totals.paidMinutes:null,
+     knownWagesCents:hasCostedShifts&&!toastPlans?totals.knownCostCents:null,
+     appOnlyPaidMinutes:toastPlans&&hasCostedShifts?totals.paidMinutes:null,
+     appOnlyKnownWagesCents:toastPlans&&hasCostedShifts?totals.knownCostCents:null,
      shifts:combined.slice(0,40),
      gaps:gaps.slice(0,15)};
   }

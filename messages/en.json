@@ -3368,6 +3368,7 @@
     "periodNamedMonth": "{from} to {to}",
     "toastMoreDays": " and {count} more",
     "toastScheduleCoverageUnverified": "Coverage gaps cannot be verified yet because Toast planned shifts are not included in staffing coverage calculations.",
+    "toastPlannedLaborUnknown": "Toast planned shifts have no verified paid hours or wages. Any app-only totals exclude these shifts.",
     "toastScheduleReasonPermission": "permission denied",
     "toastScheduleReasonTimeout": "the connection timed out",
     "toastScheduleReasonUnavailable": "the schedule source is unavailable"
