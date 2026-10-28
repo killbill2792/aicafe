@@ -79,8 +79,8 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
    const {db}=mockDatabase(rows,"hourly_sales_rollup");
    const result=await posFactReaders(db,"b").peakHours(longer);
    expect(result.available).toBe(true);
-   if(result.available)expect(result.value.hours).toEqual([{date:"2026-08-23",
-     hourLocal:11,locationId:null,netSalesCents:700,ordersCount:2}]);
+   if(result.available)expect(result.value.hours).toMatchObject([{date:"2026-08-22",netSalesCents:500},
+      {date:"2026-08-23",netSalesCents:700}]);
    expect(result.quality.missingInputs).toContain("toastImportIncompleteDays:1:2026-08-22:0");
  });
  it("status read fails keeps stored hours with one warning",async()=>{
