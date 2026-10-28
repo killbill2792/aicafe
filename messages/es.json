@@ -3378,6 +3378,11 @@
     "monthCalendarSparseSales": "Hay menos de siete días de ventas; la cobertura es una estimación inicial.",
     "laborOwnerExtras": "Incluye otros costes de nómina mensuales informados por el dueño.",
     "ownerPayrollExtras": "Otros costes de nómina informados por el dueño",
-    "feePlanPartialCoverage": "El plan de comisiones cubre solo parte del período; se usan datos o estimaciones para el resto."
+    "feePlanPartialCoverage": "El plan de comisiones cubre solo parte del período; se usan datos o estimaciones para el resto.",
+    "modifierSizePrices": "Costo del cambio de leche por tamaño",
+    "modifierMissingInput": "Faltan datos",
+    "modifierSuggestedUpcharge": "Recargo sugerido",
+    "modifierMarginKept": "Importe adicional conservado",
+    "modifierDefaultTarget": "Los precios sugeridos usan un objetivo estimado del 30 % para el costo del producto; confirma tu objetivo antes de cambiar los precios."
   }
 }
