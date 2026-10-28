@@ -9,7 +9,9 @@ const LIMIT=5;
 // Toast schema keys only. Do not persist arbitrary customer-supplied map keys.
 const SAFE_KEY=/^(?:[A-Za-z_][A-Za-z0-9_]{0,63}|[0-9]{1,6})$/;
 const SAFE_STRING=/^(?:type|cardType|cardEntryMode|source|status|paymentStatus|refundStatus|diningOption)$/i;
-const SAFE_NUMBER=/^(?:amount|tipAmount|refundAmount|tipRefundAmount|originalProcessingFee|mcaRepaymentAmount|hourlyWage|defaultWage|wage|price|quantity|hours|totalHours|closeoutHour|taxAmount|serviceCharge|discountAmount|nonCashSales|cashSales|netSales|grossSales)$/i;
+// Keep new Toast financial/labor totals without enumerating every numeric field.
+// Mask numeric identifiers even when their names aren't covered by SENSITIVE.
+const PRIVATE_NUMBER=/(?:^id$|(?:Id|Guid|GUID)$|reference$|number$|digits$|code$|pin$|identifier$)/i;
 const SENSITIVE=/(?:card(?!Type$|EntryMode$)|token|secret|authorization|password|credential|api.?key|cookie|session|signature|last.?4|last.?four|expir|card.?holder|e.?mail|phone|address|customer|first.?name|last.?name|chosen.?name|full.?name|birth|ssn|social.?security|account.?number|routing|pan|cvv|cvc|track.?data|magstripe|postal|zip.?code|street|city|state|country|ip.?address|device.?id|loyalty|gift.?card|guest|patron|person|buyer|purchaser|notes?|description|display.?name|^name$|^text$|comment|memo|contact|holder|recipient|pin$|security.?code|verification.?code)/i;
 /** Fail closed on sensitive names, including unexpected nested Toast fields. */
 export function redactToastRaw(value:unknown,depth=0,key=""):unknown {
@@ -20,7 +22,7 @@ export function redactToastRaw(value:unknown,depth=0,key=""):unknown {
    .filter(([key])=>SAFE_KEY.test(key)&&!SENSITIVE.test(key))
    .map(([key,v])=>[key,redactToastRaw(v,depth+1,key)]));
  }
- if(typeof value==="number"&&!SAFE_NUMBER.test(key))return "[redacted]";
+ if(typeof value==="number"&&PRIVATE_NUMBER.test(key))return "[redacted]";
  if(typeof value==="string"){
   // Never persist freeform content or identifiers that might contain customer PII.
   if(!SAFE_STRING.test(key)||value.length>120||/@/.test(value)||/\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/.test(value))return "[redacted]";
@@ -67,6 +69,13 @@ function clipMenu(value:unknown):unknown {
   modifierOptionReferences:firstThreeRefs(v.modifierOptionReferences)};
 }
 type Writer=Pick<SupabaseClient,"from"|"rpc">;
+export type ToastRawSampleResult={
+ captured:number;skipped:boolean;failed:number;
+ reason?:"invalid_request"|"no_location"|"busy"|"cooldown"|"db_error";
+};
+const skip=(reason:NonNullable<ToastRawSampleResult["reason"]>,failed=0):ToastRawSampleResult=>
+ ({captured:0,skipped:true,failed,reason});
+
 export async function claimToastRawSample(db:Writer,businessId:string,restaurantGuid:string,businessDate:string){
  const {data,error}=await db.rpc("toast_claim_raw_sample",{
   p_business_id:businessId,p_restaurant_guid:restaurantGuid,p_business_date:businessDate
@@ -77,25 +86,26 @@ export async function claimToastRawSample(db:Writer,businessId:string,restaurant
 /** Never throws: diagnostics cannot disrupt import or cron. */
 export async function captureToastRawSample(
  businessId:string,businessDate:string,db:SupabaseClient=createAdminSupabaseClient()
-):Promise<{captured:number;skipped:boolean;failed:number}> {
+):Promise<ToastRawSampleResult> {
  if(!GUID.safeParse(businessId).success||!daySchema.safeParse(businessDate).success||
-  businessDate>new Date().toISOString().slice(0,10))return {captured:0,skipped:true,failed:0};
+  businessDate>new Date().toISOString().slice(0,10))return skip("invalid_request");
  let captured=0,failed=0;
  let leaseNonce:string|null=null;
  try{
   const {data:mappings,error}=await db.from("toast_location_mappings")
    .select("restaurant_guid").eq("business_id",businessId).not("verified_at","is",null)
    .order("restaurant_guid",{ascending:true}).limit(1);
-  if(error||!mappings?.length)return {captured:0,skipped:true,failed:0};
+  if(error)return skip("db_error",1);
+  if(!mappings?.length)return skip("no_location");
   const guid=mappings[0].restaurant_guid as string;
   const {data:nonce,error:leaseError}=await db.rpc("toast_acquire_lease",{
    p_business_id:businessId,p_restaurant_guid:guid,p_seconds:290
   });
-  if(leaseError)return {captured:0,skipped:true,failed:1};
-  if(!nonce)return {captured:0,skipped:true,failed:0};
+  if(leaseError)return skip("db_error",1);
+  if(!nonce)return skip("busy");
   leaseNonce=String(nonce);
   if(!await claimToastRawSample(db,businessId,guid,businessDate))
-   return {captured:0,skipped:true,failed:0};
+   return skip("cooldown");
   const client=createToastClient(db,businessId);
   // Bound requests well inside the 290-second shared restaurant lease.
   const deadlineAt=Date.now()+240_000;
@@ -154,12 +164,12 @@ export async function captureToastRawSample(
     await save(endpoint,{},status??null,0);
    }
   }
- }catch{return {captured,skipped:captured===0,failed:failed+1};}
+ }catch{return {captured,skipped:captured===0,failed:failed+1,reason:"db_error"};}
  finally{
   if(leaseNonce)try{
    const {error:releaseError}=await db.rpc("toast_release_lease",{p_nonce:leaseNonce});
    if(releaseError)failed++;
   }catch{failed++;/* A diagnostic must never throw into cron or the owner route. */}
  }
- return {captured,skipped:false,failed};
+ return {captured,skipped:false,failed,...(failed>0?{reason:"db_error" as const}:{})};
 }
