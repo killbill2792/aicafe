@@ -8,6 +8,7 @@ vi.mock("@/lib/scheduling/staffScope.server",()=>({
 }));
 import {getTeam,getShiftCost,getWeekSchedule} from "@/lib/actions/schedule";
 import {scheduleReadTools,localizedToastScheduleReadError} from "./scheduleReads";
+import {aggregateCosts} from "@/lib/calc/scheduling/shiftCost";
 import {newResolveState} from "../resolve";
 import type {AgentToolContext} from "./index";
 const id="11111111-1111-4111-8111-111111111111";
@@ -17,6 +18,31 @@ describe("Toast and app schedule union",()=>{
    expect(localizedToastScheduleReadError("revoked","es")).toContain("permiso denegado");
    expect(localizedToastScheduleReadError("revoked","ar")).toContain("تم رفض");
    expect(localizedToastScheduleReadError("timeout","es")).toContain("se agotó");
+ });
+ it("Team screen and chat totals agree on exactly the same week fixture",async()=>{
+  const appShifts=[{id:"scheduled-1",date:"2026-10-24",employeeId:"employee",
+    employeeName:"Ava",start:"09:00",end:"13:00",paidMinutes:240,
+    costCents:8000,estimated:false,unknown:false}];
+  const screenFixture={ok:true as const,data:{
+    team:[{id:"employee",name:"Ava",role:"Barista",wageCents:2000}],
+    shifts:appShifts,posShifts:[],posScheduleError:null,timezone:"America/Los_Angeles",
+    total:aggregateCosts(appShifts),
+    dates:["2026-10-19","2026-10-20","2026-10-21","2026-10-22","2026-10-23","2026-10-24","2026-10-25"],
+    adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}
+  }};
+  vi.mocked(getWeekSchedule).mockResolvedValue(screenFixture as never);
+  const ctx={asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as AgentToolContext;
+  const screen=await getWeekSchedule({weekStart:"2026-10-19"});
+  const chatWeek=await scheduleReadTools.get_week_schedule.execute({week_start:"2026-10-19"},ctx);
+  const chatTeam=await scheduleReadTools.get_team.execute({week_start:"2026-10-19",name:null},ctx);
+  expect(screen.ok).toBe(true);
+  if(screen.ok){
+    expect(chatWeek.paidMinutes).toBe(screen.data.total.paidMinutes);
+    expect(chatWeek.knownWagesCents).toBe(screen.data.total.knownCostCents);
+    expect(chatTeam.weeklyPaidMinutes).toBe(screen.data.total.paidMinutes);
+    expect(chatTeam.knownWagesCents).toBe(screen.data.total.knownCostCents);
+  }
+  expect(chatWeek.shifts).toMatchObject([{id:"scheduled-1",source:"app"}]);
  });
  it("Toast-only shifts are listed for Saturday",async()=>{
   vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:{
