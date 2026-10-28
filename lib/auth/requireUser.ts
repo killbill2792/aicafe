@@ -1,4 +1,5 @@
 import "server-only";
+import {cache} from "react";
 import { redirect } from "next/navigation";
 import { getLocale } from "next-intl/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -9,7 +10,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
  * Before Supabase is connected (see PROGRESS.md "Needs connecting"), this is a no-op so the
  * rest of the app stays browsable instead of crashing.
  */
-export async function requireUser() {
+export const requireUser=cache(async function requireUser(){
   if (!isSupabaseConfigured()) return null;
 
   const supabase = await createServerSupabaseClient();
@@ -23,7 +24,7 @@ export async function requireUser() {
   }
 
   return user;
-}
+});
 
 /**
  * Same as requireUser(), plus: sends a signed-in owner straight to onboarding until they've set
@@ -37,7 +38,7 @@ export async function requireUser() {
  * plain requireUser() only on /onboarding itself, /more (needs to stay reachable to get *to*
  * onboarding and to sign out), and /more/delete-account.
  */
-export async function requireOwnBusiness() {
+export const requireOwnBusiness=cache(async function requireOwnBusiness(){
   const user = await requireUser();
   if (!isSupabaseConfigured() || !user) return user;
 
@@ -55,4 +56,4 @@ export async function requireOwnBusiness() {
   }
 
   return user;
-}
+});

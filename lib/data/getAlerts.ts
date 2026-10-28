@@ -2,10 +2,8 @@ import "server-only";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
-import { generateAlerts } from "@/lib/alerts/generate";
 import { summarizeVoidsRollups, type VoidsSummary } from "@/lib/calc/voidsReview";
 import { formatInTimeZone } from "date-fns-tz";
-import { DEMO_BUSINESS_ID } from "@/lib/constants";
 
 export type AlertKind = "missing_bill" | "voids" | "meal_break" | "early_clockin" | "underpriced" | "overstaffed" | "covered_milestone" | "unmatched_sales_items";
 
@@ -19,8 +17,7 @@ export type AlertRow = {
   voidsReview?: { ok: true; summary: VoidsSummary } | { ok: false };
 };
 
-/** Regenerates alerts from current data, then returns the open ones. No cron yet (see
- * PROGRESS.md) — this is the trigger point until a scheduled job exists. */
+/** Read-only alert listing. The 15-minute refresh-derived cron owns generation. */
 export async function getOpenAlerts(): Promise<AlertRow[]> {
   if (!isSupabaseConfigured()) return [];
   const supabase = await createServerSupabaseClient();
@@ -30,8 +27,6 @@ export async function getOpenAlerts(): Promise<AlertRow[]> {
   if (!user) return [];
   const businessId = await getActiveBusinessId(user.id);
 
-  // The shared demo is read-only: a visit must never mutate other owners’ alerts.
-  if (businessId !== DEMO_BUSINESS_ID) await generateAlerts(supabase, businessId);
 
   const { data } = await supabase
     .from("alerts")
