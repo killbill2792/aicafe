@@ -272,7 +272,7 @@ declare
 begin
  if p_view is null or not (p_view=any(allowed_views)) then raise exception 'invalid view';end if;
  if p_business_id is null or p_date_from is null or p_date_to is null or
- p_date_to < p_date_from or p_date_to > (p_date_from+interval '3 years')::date
+ p_date_to < p_date_from
  then raise exception 'invalid date range';end if;
  if p_limit is null or p_limit<1 or p_limit>1000 then raise exception 'invalid limit';end if;
  if coalesce(array_length(p_columns,1),0)>20 or
