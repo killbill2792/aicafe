@@ -3373,6 +3373,8 @@
     "breakEvenBillsMissing": "Some monthly bills are unknown.",
     "breakEvenLaborMissing": "Some labor costs are unknown.",
     "breakEvenDrinksMissing": "Drink volume is not available.",
+    "futureDatesExcluded": "Future dates were excluded; these figures cover recorded dates only.",
+    "breakEvenCalendarMissing": "The café's month length is not available; the daily drink target is unknown.",
     "NO_SALES": "No covered sales days are available.",
     "VARIABLE_COSTS_TOO_HIGH": "Sales after variable costs do not cover any fixed costs.",
     "monthCalendarSparseSales": "Fewer than seven sales days are available; coverage is an early estimate.",
