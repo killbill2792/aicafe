@@ -272,8 +272,8 @@ export const moneyTools={
       const explain=s.completeness==="complete"&&
         Object.values(s.observed).every(Boolean)&&sum===s.knownTotalCents?
         [{label:{en,es,ar}[ctx.locale].MetricsNotes.itemRecordedBusinessCosts,inputs:[
-          {name:"ingredients",value:money(costs[0])},{name:"staff",value:money(costs[1])},
-          {name:"fees",value:money(costs[2])},{name:"overhead",value:money(costs[3])}],
+          {name:{en,es,ar}[ctx.locale].MetricsNotes.itemInputsIngredients,value:money(costs[0])},{name:{en,es,ar}[ctx.locale].MetricsNotes.itemInputsLabor,value:money(costs[1])},
+          {name:{en,es,ar}[ctx.locale].MetricsNotes.itemInputsFee,value:money(costs[2])},{name:{en,es,ar}[ctx.locale].MetricsNotes.itemInputsBills,value:money(costs[3])}],
           formula:"sum" as const,result:money(s.knownTotalCents),period:p,source:"get_cost_summary",
           provenance:s.estimatedInputs.length?"estimate" as const:"recorded" as const}]:[];
       return {source:"business_costs",period:p,agentId:"leo",missing:s.missingInputs,explain,
