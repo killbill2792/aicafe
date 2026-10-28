@@ -102,6 +102,8 @@ export const moneyTools={
         return {source:"break_even",period:calendarMonth(ctx.asOf),agentId:"leo",
           monthlyBreakEvenCents:monthly,knownCostBreakEvenFloorCents:result.knownCostBreakEvenFloorCents,
           drinksPerDay:result.drinksPerDay,
+          observedProcessingFeesCents:result.observedProcessingFeesCents,
+          observedIngredientCents:result.observedIngredientCents,
           monthlyBills:result.monthlyBills,monthlyLabor:result.monthlyStaff,
           ingredientRate:result.ingredientRate,feeRate:result.feeRate,
           status:result.status,reasonKey:result.reason,
