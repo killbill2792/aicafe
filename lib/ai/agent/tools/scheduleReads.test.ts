@@ -22,7 +22,7 @@ describe("Toast and app schedule union",()=>{
     adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}
   }} as never);
   const result=await scheduleReadTools.get_week_schedule.execute({week_start:"2026-10-19"},
-   {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as AgentToolContext);
+   {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as unknown as AgentToolContext);
   expect(result.scheduleSet).toBe(true);
   expect(result.paidMinutes).toBeNull();
   expect(result.shifts).toMatchObject([{date:"2026-10-24",employeeName:"Casey",
@@ -41,7 +41,7 @@ describe("Toast and app schedule union",()=>{
    adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}
   }} as never);
   const result=await scheduleReadTools.get_week_schedule.execute({week_start:"2026-10-19"},
-    {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as AgentToolContext);
+    {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles"} as unknown as AgentToolContext);
   expect(result.shifts).toMatchObject([{id:"app-1",source:"app"}]);
  });
 });
