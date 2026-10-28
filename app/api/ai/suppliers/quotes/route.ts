@@ -26,9 +26,10 @@ export async function POST(request:Request){
  try{
   requireSameOrigin(request);
   const x=parseInput(quoteInput,await readBoundedJson(request));
-  if(x.quotedOn>new Date().toISOString().slice(0,10))
-   throw new ConversationApiError(422,"future_quote_date");
   const {scope}=await authenticatedConversationContext();
+  const identity=await readSupervisorCafeIdentity(scope.businessId);
+  if(x.quotedOn>identity.asOf)
+   throw new ConversationApiError(422,"future_quote_date");
   const db=await createServerSupabaseClient();
   const payload={
    business_id:scope.businessId,owner_user_id:scope.ownerUserId,
