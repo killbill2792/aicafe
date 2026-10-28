@@ -866,9 +866,9 @@ BEGIN
  perform pg_temp.assert_true(exists(select 1 from public.cv_payments
   where business_id=b and amount_cents=1200 and tip_cents=200),
   'canonical payment view uses sanitized row');
- perform pg_temp.assert_true((select count(*)=15 from information_schema.views
+ perform pg_temp.assert_true((select count(*)=19 from information_schema.views
   where table_schema='public' and table_name like 'cv_%'),
-  'all 15 canonical views exist');
+  'all 19 canonical views exist');
  perform pg_temp.assert_true(not has_table_privilege('authenticated',
    'public.toast_raw_records','SELECT'),
   'raw payment/card payload not exposed to authenticated role');
