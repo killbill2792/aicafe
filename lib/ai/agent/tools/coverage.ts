@@ -72,7 +72,7 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
  }
  const amount=previous&&Number.isSafeInteger(previous.netSalesCents)?previous.netSalesCents!:null;
  const formatted=amount===null?"—":new Intl.NumberFormat(ctx.locale,{
-  minimumFractionDigits:2,maximumFractionDigits:2}).format(amount/100);
+  style:"currency",currency:"USD"}).format(amount/100);
  const note=currentFailed?
   (previous?copy.todaySalesCheckFailedWithHistory.replace("{date}",previous.date).replace("{amount}",formatted):
    copy.todaySalesCheckUnavailable):
