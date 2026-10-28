@@ -296,6 +296,37 @@ describe("read-only Toast coverage diagnostics",()=>{
   expect(writes.filter(x=>x.error_code==="not_attempted")).toHaveLength(TOAST_READ_ENDPOINTS.length);
   expect(new Set(writes.map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
  });
+ it("writes all remaining evidence when diagnostic lease renewal fails",async()=>{
+  const {db,writes,rpc}=database();
+  const old=rpc.getMockImplementation()!;
+  rpc.mockImplementation(async(name:string)=>name==="toast_renew_raw_sample_lease"?
+   {data:false,error:null}:old(name));
+  let now=Date.parse("2026-10-20T00:00:00Z");
+  vi.spyOn(Date,"now").mockImplementation(()=>now);
+  mocks.request.mockImplementation(async()=>{now+=121000;return [];});
+  const result=await captureToastRawSample(business,"2026-10-20",db);
+  expect(result.reason).toBe("lease_lost");
+  expect(writes.filter(w=>w.error_code==="not_attempted")).toHaveLength(TOAST_READ_ENDPOINTS.length);
+  expect(evidence(writes).some(w=>w.error_code==="skipped_lease_lost")).toBe(true);
+  expect(new Set(writes.map(w=>w.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+ });
+ it("marks an in-progress paginated endpoint partial when the budget expires",async()=>{
+  const {db,writes}=database();
+  let now=Date.parse("2026-10-20T00:00:00Z");
+  vi.spyOn(Date,"now").mockImplementation(()=>now);
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path.startsWith("/orders/v2/ordersBulk?")){
+    now+=25000;
+    return Array.from({length:100},()=>({amount:6,refundStatus:"NONE"}));
+   }
+   return [];
+  });
+  const result=await captureToastRawSample(business,"2026-10-20",db,50000);
+  expect(result.reason).toBe("partial");
+  expect(evidence(writes).some(w=>w.endpoint==="orders/v2/ordersBulk"&&
+    w.error_code==="skipped_time_budget")).toBe(true);
+  expect(new Set(writes.map(w=>w.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+ });
  it("keeps paths for nested arrays",()=>{
   expect(toastFieldPaths({items:[{name:"Latte",price:5}]})).toContain("items[].price");
  });
