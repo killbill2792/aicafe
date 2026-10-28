@@ -90,4 +90,12 @@ describe("shared Toast day trust",()=>{
   expect(result.quality).toEqual([incompleteDayKey(dates)]);
   expect(result.quality[0]).toContain(":63");
  });
+ it("a queued Toast import cannot hide stored sales or be mistaken for complete",async()=>{
+  flags.mockResolvedValue([{date:"2026-08-05",status:"queued",needsLook:false}]);
+  canonical.mockResolvedValue(new Set(["2026-08-05"]));
+  const r=await readToastDayTrust({} as never,"b","2026-08-05","2026-08-05");
+  expect(r.blocked.size).toBe(0);
+  expect(r.quality).toContain(incompleteDayKey(["2026-08-05"]));
+ });
+
 });
