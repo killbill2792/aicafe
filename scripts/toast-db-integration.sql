@@ -891,4 +891,71 @@ BEGIN
   'phase queued is valid and round-trips');
 END $queued$;
 
+-- Verify new views return actual scoped PostgreSQL rows, not merely valid SQL text.
+DO $optional_views$
+DECLARE
+ b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ other_b uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+ r text:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+BEGIN
+ insert into public.orders(business_id,location_id,pos_order_id,closed_at,business_date,
+ gross_sales_cents,net_sales_cents,dining_option,source_channel,guest_count,toast_excluded)
+ values(b,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001','toast:optional-view-proof',
+ '2026-10-26T19:00:00Z','2026-10-26',1000,1000,'DINE_IN','IN_STORE',2,true);
+ perform pg_temp.assert_true(exists(select 1 from public.cv_orders
+  where business_id=b and source='toast' and dining_option='DINE_IN'
+   and source_channel='IN_STORE' and guest_count=2 and status='needs_match'),
+  'excluded order evidence remains visible with caveat');
+
+ insert into public.toast_raw_samples(business_id,restaurant_guid,endpoint,business_date,
+ http_status,item_count,sample,field_paths) values
+ (b,r,'stock/v1/inventory','2026-10-26',200,2,
+  '[{"guid":"stock-a","status":"QUANTITY","quantity":3.5},
+    {"guid":"stock-b","status":"OUT_OF_STOCK","quantity":null}]'::jsonb,ARRAY['status','quantity']),
+ (b,r,'cashmgmt/v1/entries','2026-10-26',200,1,
+  '[{"guid":"entry-a","type":"CASH_IN","amount":12.50,
+     "cashDrawer":{"guid":"drawer-a"},"employee1":{"guid":"employee-a"}}]'::jsonb,ARRAY['type','amount']),
+ (b,r,'cashmgmt/v1/deposits','2026-10-26',200,1,
+  '[{"guid":"deposit-a","amount":19.75,"employee":{"guid":"employee-a"}}]'::jsonb,ARRAY['amount']),
+ (b,r,'kitchen/v1/export/itemFulfillments','2026-10-26',200,1,
+  '[{"orderGuid":"order-a","ticketGuid":"ticket-a",
+     "ticketFiredAt":"2026-10-26T10:00:00Z",
+     "itemStartedAt":"2026-10-26T10:01:00Z",
+     "itemFulfilledAt":"2026-10-26T10:04:00Z",
+     "prepStationGuid":"station-a"}]'::jsonb,ARRAY['ticketFiredAt','itemFulfilledAt']),
+ (b,r,'config/v2/diningOptions','2026-10-26',200,1,
+  '[{"guid":"option-a","name":"Dine In","behavior":"DINE_IN"}]'::jsonb,ARRAY['name']);
+
+ perform pg_temp.assert_true(exists(select 1 from public.cv_inventory
+  where business_id=b and source='toast' and menu_item_ref='stock-a'
+    and stock_status='QUANTITY' and quantity=3.5),
+  'Toast stock quantity exposed alongside app stock');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_inventory
+  where business_id=b and source='toast' and menu_item_ref='stock-b'
+    and stock_status='OUT_OF_STOCK' and quantity is null),
+  'out of stock does not fabricate a zero quantity');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_cash
+  where business_id=b and source='toast' and entry_type='CASH_IN'
+  and amount_cents=1250 and cash_drawer_ref='drawer-a'
+  and employee_ref='employee-a'),
+  'cash entries project numeric cents and identifiers');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_cash
+  where business_id=b and entry_type='deposit' and amount_cents=1975),
+  'cash deposits project numeric cents without invented drawers');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_kitchen
+  where business_id=b and ticket_ref='ticket-a' and
+    fired_at='2026-10-26T10:00:00Z' and ready_at='2026-10-26T10:04:00Z'),
+  'Toast fulfillment timestamps remain queryable');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_dining_options
+  where business_id=b and dining_option_ref='option-a'
+   and dining_option_name='Dine In'),
+  'config dining option names are redacted and queryable');
+ perform pg_temp.assert_true(not exists(select 1 from public.cv_cash
+  where business_id=other_b and amount_cents=1250),
+  'cross-cafe cash projection does not leak source rows');
+ perform pg_temp.assert_true(has_function_privilege('authenticated',
+  'public.toast_safe_business_label(text)','EXECUTE'),
+  'authenticated invoker can execute the redacting dining label helper');
+END $optional_views$;
+
 ROLLBACK;
