@@ -734,12 +734,35 @@ BEGIN
  values(b,r,'daily','queued') returning id into run;
  insert into public.toast_day_pages(run_id,business_date,page,payload)
  values(run,'2026-10-18',1,jsonb_build_array(jsonb_build_object(
-  'guid',ord,'checks',jsonb_build_array(jsonb_build_object(
-   'guid',chk,'payments',jsonb_build_array(jsonb_build_object(
+  'guid',ord,'openedDate','2026-10-18T10:00:00Z',
+  'closedDate','2026-10-18T10:10:00Z',
+  'checks',jsonb_build_array(jsonb_build_object(
+   'guid',chk,
+   'appliedDiscounts',jsonb_build_array(jsonb_build_object(
+     'name','Owner Loyalty','discountAmount',1.25)),
+   'selections',jsonb_build_array(jsonb_build_object(
+     'guid','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0054',
+     'tax',0.2,'taxRate',0.08,
+     'modifiers',jsonb_build_array(jsonb_build_object(
+       'item',jsonb_build_object('guid','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0055'),
+       'price',0.75)))),
+   'payments',jsonb_build_array(jsonb_build_object(
     'guid',pay,'type','CASH','amount',10,'tipAmount',2)))))));
  select count(*) into before_count from public.toast_raw_records
  where business_id=b and run_id=run;
  perform pg_temp.assert_true(before_count=3,'order/check/payment all archived');
+ perform pg_temp.assert_true(exists(
+  select 1 from public.toast_order_typed_facts t
+  where t.business_id=b and t.order_guid=ord
+   and t.order_duration_seconds=600
+   and t.check_discounts->0->>'name'='Owner Loyalty'
+   and (t.check_discounts->0->>'amountCents')::bigint=125
+   and (t.item_taxes->0->>'taxAmountCents')::bigint=20
+   and (t.modifier_prices->0->>'priceCents')::bigint=75),
+  'typed order fields captured in same transaction as raw provider order');
+ perform pg_temp.assert_true(not has_table_privilege('anon',
+  'public.toast_order_typed_facts','SELECT'),
+  'anonymous cannot read sanitized order details');
  -- A later version of the SAME source page/run must survive with a new hash.
  update public.toast_day_pages set payload=jsonb_build_array(
   jsonb_build_object('guid',ord,'modifiedDate','2026-10-18T12:00:00Z',
