@@ -156,7 +156,7 @@ export const newItemPriceTools={suggest_new_item_price:{
       .format(feeRate*100)+"%";
      const perOrder=new Intl.NumberFormat(ctx.locale,{style:"currency",currency:ctx.currency??"XXX"})
       .format(plan.fixedFeeCents/100);
-     const perDrink=new Intl.NumberFormat(ctx.locale,{style:"currency",currency:"USD"})
+     const perDrink=new Intl.NumberFormat(ctx.locale,{style:"currency",currency:ctx.currency??"XXX"})
       .format(fixedPerDrink/100);
      add("Processing fee: "+rateText+" + "+perOrder+"/order (≈"+perDrink+"/drink)",
       [{name:"fixedPerOrder",value:money(Math.round(plan.fixedFeeCents))},
