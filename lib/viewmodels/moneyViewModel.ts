@@ -33,6 +33,7 @@ import { businessCostSummaryFromSnapshot } from "@/lib/operating/businessCosts";
 import {cardFeesForDays} from "@/lib/metrics/core/fees";
 import {profitForPeriod} from "@/lib/metrics/core/profit";
 import {laborForPeriod} from "@/lib/metrics/core/labor";
+import {breakEvenFor} from "@/lib/metrics/core/breakEven";
 
 function countOperatingDays(snapshot: BusinessSnapshot, throughDay: number): number {
     let count = 0;
@@ -63,48 +64,30 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const staffSoFarCents=missingMonthWage?null:monthRecordedDays.reduce((sum,day)=>
     sum+(day.wagesCents??0)+(day.staffTaxCents??0),0);
   const todayDay = Number(snapshot.todayDateStr.slice(-2));
-  const elapsedOperatingDays = countOperatingDays(snapshot, todayDay);
-  const fullMonthOperatingDays = countOperatingDays(snapshot, snapshot.daysInMonth);
-  const monthlyStaffCents =
-    staffSoFarCents===null?null:elapsedOperatingDays > 0
-      ? Math.round(staffSoFarCents * (fullMonthOperatingDays / elapsedOperatingDays))
-      : 0;
+  const monthOpenDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
+    snapshot.monthKey+"-"+String(i+1).padStart(2,"0")).filter(date=>
+      regularHoursStateForDate(snapshot.business.openHours,date)!=="closed");
+  const monthLabor=laborForPeriod(monthOpenDates.map(date=>({date})),monthRecordedDays);
+  const monthlyStaffCents=monthLabor.coveredDays>0?monthLabor.projectedMonthlyLaborCents:null;
 
   const salesHistory = snapshot.last28Days;
-  const observedSalesCents = sumCents(salesHistory, (day) => day.netSalesCents);
   const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
   const productCosts = summarizeResolvedSoldProductCosts(breakEvenCostItems);
   const missingProductCosts = productCosts.missingProductCosts;
   // Use the same pure sold-item product-cost aggregation as the drinks/day break-even surface.
-  const observedIngredientCents = productCosts.totalCostCents;
-  const observedProcessingFeesCents = sumCents(salesHistory, (day) => day.cardFeesCents);
   const missingProcessingFees = salesHistory.some((day) => day.cardFeesStatus === "missing");
   const missingBills = snapshot.runningCostLines.some((line) => line.isMissing && line.isExpected);
-  const enoughSales = salesHistory.length >= 7;
 
-  const calculatedBreakEven =
-    monthlyStaffCents!==null&&enoughSales && !missingProductCosts && !missingProcessingFees && !missingBills
-      ? calculateBreakEvenSales({
-          monthlyBillsCents,
-          monthlyStaffCents,
-          observedSalesCents,
-          observedIngredientCents,
-          observedProcessingFeesCents,
-        })
-      : null;
-
-  const breakEven =
-    !enoughSales||monthlyStaffCents===null
-      ? { kind: "unavailable" as const, reason: "NOT_ENOUGH_SALES" as const }
-      : missingBills
-        ? { kind: "unavailable" as const, reason: "MISSING_BILLS" as const }
-        : missingProductCosts
-          ? { kind: "unavailable" as const, reason: "MISSING_PRODUCT_COSTS" as const }
-          : missingProcessingFees
-            ? { kind: "unavailable" as const, reason: "MISSING_PROCESSING_FEES" as const }
-            : calculatedBreakEven?.kind === "ready"
-              ? calculatedBreakEven
-              : { kind: "unavailable" as const, reason: "VARIABLE_COSTS_TOO_HIGH" as const };
+  const sharedBreakEven=breakEvenFor({
+    days:salesHistory,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
+    monthlyBillsCents,monthlyStaffCents,
+  });
+  const breakEven=sharedBreakEven.calculation;
+  const breakEvenNotes=[...sharedBreakEven.notes,
+    ...(missingBills?["breakEvenBillsMissing"]:[]),
+    ...(missingProductCosts?["profitProductCostsMissing"]:[]),
+    ...(missingProcessingFees?["profitFeesMissing"]:[]),
+    ...monthLabor.notes];
 
   const breakEvenUsesEstimates =
     todayDay < snapshot.daysInMonth ||
@@ -125,6 +108,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     monthlyBillsCents,
     monthlyStaffCents,
     breakEven,
+    breakEvenNotes,
     breakEvenUsesEstimates,
   };
 }

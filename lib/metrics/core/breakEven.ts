@@ -1,11 +1,11 @@
-import {calculateBreakEvenSales} from "@/lib/calc/breakEvenSales";
+import {calculateBreakEvenSales,type BreakEvenSalesResult} from "@/lib/calc/breakEvenSales";
 import {shiftCafeDate} from "./clock";
 export type BreakEvenDay={
   date:string;netSalesCents:number;ingredientsCents:number;cardFeesCents:number;
   drinksCount:number;salesDataStatus?:"actual"|"missing";
 };
 export type BreakEvenResult={
-  salesPerMonthCents:number|null;drinksPerDay:number|null;
+  salesPerMonthCents:number|null;drinksPerDay:number|null;calculation:BreakEvenSalesResult;
   knownCostFloorCents:number|null;coveredDays:number;expectedDays:28;
   notes:string[];
 };
@@ -33,14 +33,14 @@ export function breakEvenFor(input:{
   });
   if(result.kind!=="ready"||drinks<=0||input.daysInMonth<=0){
     notes.push(result.kind==="unavailable"?result.reason:"breakEvenDrinksMissing");
-    return {salesPerMonthCents:null,drinksPerDay:null,knownCostFloorCents:null,coveredDays,
+    return {salesPerMonthCents:null,drinksPerDay:null,calculation:result,knownCostFloorCents:null,coveredDays,
       expectedDays:28,notes};
   }
   const monthly=result.breakEvenSalesCents;
   const avgMoneyLeft=(observedSalesCents-observedIngredientCents-observedProcessingFeesCents)/drinks;
   const dailyCosts=(result.fixedMonthlyCostsCents/input.daysInMonth);
   const drinksPerDay=Math.ceil(dailyCosts/avgMoneyLeft);
-  return {salesPerMonthCents:monthly,drinksPerDay,
+  return {salesPerMonthCents:monthly,drinksPerDay,calculation:result,
     knownCostFloorCents:notes.some(n=>n.endsWith("Missing"))?monthly:null,
     coveredDays,expectedDays:28,notes};
 }
