@@ -57,7 +57,7 @@ export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,cont
    .filter(([k,v])=>!isPersonalContext(context)||typeof v!=="string"||
     isSensitiveId(k,context)||/^(?:type|status|state|currency|cardType|cardEntryMode|jobTitle|jobCode|title|paymentStatus|source)$/i.test(k)||
     /(?:Date|Time|At|Timestamp)$/i.test(k))
-   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,k==="selections"||k==="discounts"||k==="modifiers"||k==="items"||k==="menuItems"?"":PERSONAL_PARENT.test(k)||/^(?:orders?|checks?|payments?|employee|staff|server|cashier)$/i.test(k)?k:context,scope)])
+   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,k==="selections"||k==="discounts"||k==="modifiers"||k==="items"||k==="menuItems"?"":(PERSONAL_PARENT.test(k)||/^(?:giftCard|giftCardInfo|orders?|checks?|payments?|employee|staff|server|cashier)$/i.test(k))?k:context,scope)])
    .filter(([,v])=>v!==undefined));
  }
  if(isSensitiveId(key,context)){
