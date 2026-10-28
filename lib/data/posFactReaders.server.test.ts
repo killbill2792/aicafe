@@ -34,12 +34,12 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
    location_id:null,net_sales_cents:100,orders_count:1}));
   const {db}=mockDatabase(rows,"hourly_sales_rollup");
   const result=await posFactReaders(db,"b").peakHours(period);
-  expect(result.available).toBe(false);
+  expect(result.available).toBe(true);
   expect(result.quality.missingInputs).toContain("hourlySalesPageLimit");
  });
- it("excludes independently unverified Toast days from both sales projections",async()=>{
+ it("excludes confirmed failed Toast days from both sales projections",async()=>{
    vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
-   guard.unverified.mockResolvedValue(new Set([period.from]));
+   guard.flags.mockResolvedValue([{date:period.from,status:"failed",needsLook:false}]);
    const h=mockDatabase([{business_date:period.from,hour_local:10,
      location_id:null,net_sales_cents:500,orders_count:1}],"hourly_sales_rollup");
    const staff=mockDatabase([{business_date:period.from,employee_id:"e",net_sales_cents:500,
@@ -48,12 +48,12 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
    const employees=await posFactReaders(staff.db,"b").employeeSales(period);
    expect(hourly.available).toBe(false);
    expect(employees.available).toBe(false);
-   expect(hourly.quality.missingInputs).toContain("toastSalesAwaitingIndependentReview");
-   expect(employees.quality.missingInputs).toContain("toastSalesAwaitingIndependentReview");
+   expect(hourly.quality.missingInputs).toContain("toastExcludedDays");
+   expect(employees.quality.missingInputs).toContain("toastExcludedDays");
  });
  it("flags partial verification without claiming the entire range",async()=>{
    vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
-   guard.unverified.mockResolvedValue(new Set([period.from]));
+   guard.flags.mockResolvedValue([{date:period.from,status:"failed",needsLook:false}]);
    const longer={from:period.from,to:"2026-08-23"};
    const rows=[{business_date:period.from,hour_local:10,location_id:null,net_sales_cents:500,orders_count:1},
      {business_date:"2026-08-23",hour_local:11,location_id:null,net_sales_cents:700,orders_count:2}];
@@ -62,15 +62,17 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
    expect(result.available).toBe(true);
    if(result.available)expect(result.value.hours).toEqual([{date:"2026-08-23",
      hourLocal:11,locationId:null,netSalesCents:700,ordersCount:2}]);
-   expect(result.quality.missingInputs).toContain("toastSalesAwaitingIndependentReview");
+   expect(result.quality.missingInputs).toContain("toastExcludedDays:2026-08-22");
  });
- it("fails closed if Toast verification is unavailable",async()=>{
+ it("status read fails keeps stored hours with one warning",async()=>{
    vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
-   guard.unverified.mockRejectedValue(new Error("verification down"));
-   const {db}=mockDatabase([],"hourly_sales_rollup");
+   guard.flags.mockRejectedValue(new Error("status down"));
+   const {db}=mockDatabase([{business_date:period.from,hour_local:10,
+     location_id:null,net_sales_cents:500,orders_count:1}],"hourly_sales_rollup");
    const result=await posFactReaders(db,"b").peakHours(period);
-   expect(result.available).toBe(false);
-   expect(result.quality.missingInputs).toEqual(["toastSalesVerificationUnavailable"]);
+   expect(result.available).toBe(true);
+   if(result.available)expect(result.value.hours).toHaveLength(1);
+   expect(result.quality.missingInputs).toEqual(["toastDayStatusUnavailable"]);
  });
  it("keeps an imported Toast day in projections with an explicit mismatch warning",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
@@ -81,7 +83,20 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
   const result=await posFactReaders(db,"b").peakHours(period);
   expect(result.available).toBe(true);
   if(result.available)expect(result.value.hours).toHaveLength(1);
-  expect(result.quality.missingInputs).toContain("toastDayNeedsLook:"+period.from);
+  expect(result.quality.missingInputs).toContain("toastDaysNeedLook:1:"+period.from+":0");
+ });
+ it("keeps successfully loaded first page when second page fails",async()=>{
+  const rows=Array.from({length:500},()=>({business_date:period.from,
+   hour_local:10,location_id:null,net_sales_cents:125,orders_count:1}));
+  const db={from:()=>{
+   const q={select:()=>q,eq:()=>q,gte:()=>q,lte:()=>q,order:()=>q,
+    range:async(start:number)=>start===0?{data:rows,error:null}:{data:null,error:{message:"network failed"}}};
+   return q;
+  }} as unknown as SupabaseClient;
+  const result=await posFactReaders(db,"business").peakHours(period);
+  expect(result.available).toBe(true);
+  if(result.available)expect(result.value.hours).toHaveLength(500);
+  expect(result.quality.missingInputs).toContain("hourlySalesUnavailable");
  });
  it("preserves nullable payroll evidence and paginates it",async()=>{
   const rows=Array.from({length:1001},(_,i)=>({employee_id:"e",pay_period_end:period.from,
