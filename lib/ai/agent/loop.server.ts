@@ -356,7 +356,12 @@ export async function runAgentTurn(args: {
   const candidates=toolResults.flatMap(result=>Array.isArray(result.explain)?
     result.explain.slice(0,12).filter((line):line is ExplainLine=>
       Boolean(line)&&typeof line==="object"&&"source" in line&&typeof line.source==="string") :[]);
-  const explain=askedQuestion?[]:acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale);
+  const priceResult=toolResults.find(r=>r.source==="new_item_price");
+  const price=typeof priceResult?.recommendedPriceCents==="number"&&
+    text.includes((priceResult.recommendedPriceCents/100).toFixed(2))&&
+    !unverified.some(span=>text.slice(span.start,span.end).includes((priceResult.recommendedPriceCents as number/100).toFixed(2)))?
+    priceResult.recommendedPriceCents:null;
+  const explain=acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale,price);
   return { text, endReason, status,
     unverified,
     provenance:numberProvenance(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence,unverified),

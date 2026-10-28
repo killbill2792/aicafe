@@ -1850,6 +1850,8 @@
     "clarifyYouChose": "You chose: {choice}",
     "clarifySkipped": "Skipped",
     "clarifyOtherPlaceholder": "Type your answer",
+    "howCalculated": "How this was calculated",
+    "explainMissing": "Missing",
     "howIGotThis": "How I got this",
     "explainYouToldMe": "You told me",
     "explainEstimate": "Estimate",

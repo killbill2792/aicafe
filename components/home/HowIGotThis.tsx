@@ -2,7 +2,7 @@
 import {formatCardValue} from "@/lib/format/values";
 import type {ExplainLine} from "@/lib/ai/agent/explain";
 type Locale="en"|"es"|"ar";
-type Copy={howIGotThis:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
+type Copy={howIGotThis:string;howCalculated:string;explainMissing:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
  explainMultiply:string;explainSum:string;explainDivide:string;explainRatio:string;explainProrate:string;explainSubtract:string};
 const connector:Record<ExplainLine["formula"],string>={
  multiply:"×",sum:"+",divide:"÷",ratio:"÷",prorate:"×",subtract:"−",
@@ -19,7 +19,7 @@ export default function HowIGotThis({lines,locale,copy,currency="USD"}:{
 }){
  if(!lines.length)return null;
  return <details dir={locale==="ar"?"rtl":"ltr"} className="rounded-xl border border-line bg-surface2 text-ink">
-   <summary className="flex min-h-12 cursor-pointer items-center rounded-xl px-4 py-3 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{copy.howIGotThis}</summary>
+   <summary className="flex min-h-12 cursor-pointer items-center rounded-xl px-4 py-3 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{lines.some(line=>line.source==="suggest_new_item_price")?copy.howCalculated:copy.howIGotThis}</summary>
    <div className="space-y-3 border-t border-line px-4 py-3">{lines.map((line,i)=><p key={i} className="break-words text-[17px] leading-relaxed">
      <span className="font-semibold">{line.label}: </span>
      <bdi dir="ltr">{line.inputs.map((input,j)=><span key={j}>
@@ -28,8 +28,9 @@ export default function HowIGotThis({lines,locale,copy,currency="USD"}:{
        {input.name==="qtySold"?" "+copy.explainSold:""}
      </span>)} {"="} {formatCardValue(line.result,locale,currency)}</bdi>
      {line.period&&<span className="text-ink-muted"> · {dates(line.period,locale)}</span>}
+     {line.basis&&<span className="ms-2 text-ink-muted"> · {line.basis}</span>}
      {line.provenance!=="recorded"&&<span className="ms-2 rounded-full bg-surface px-2 py-1 text-sm font-semibold text-ink-muted">
-       {line.provenance==="ownerProvided"?copy.explainYouToldMe:copy.explainEstimate}
+       {line.provenance==="ownerProvided"?copy.explainYouToldMe:line.provenance==="missing"?copy.explainMissing:copy.explainEstimate}
      </span>}
    </p>)}</div>
  </details>;

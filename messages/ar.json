@@ -1850,6 +1850,8 @@
     "clarifyYouChose": "اخترت: {choice}",
     "clarifySkipped": "تم التخطي",
     "clarifyOtherPlaceholder": "اكتب إجابتك",
+    "howCalculated": "كيف تم الحساب",
+    "explainMissing": "مفقود",
     "howIGotThis": "كيف حسبت ذلك",
     "explainYouToldMe": "أخبرتني",
     "explainEstimate": "تقدير",
