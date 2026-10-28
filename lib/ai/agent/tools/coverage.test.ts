@@ -31,6 +31,16 @@ describe("latest covered sales window",()=>{
     todayImported:false,lastFullDay:"2026-10-23",coverageFallback:null});
   expect(result.dataNote).toContain("Today isn't imported yet");
  });
+ it("returns honest today for preset objects and explicit local dates",async()=>{
+  const ctx=context(["2026-10-23"]);
+  const preset=await executeAgentTool("get_sales",{period:{preset:"today"},ownerInputs:null},ctx);
+  const explicit=await executeAgentTool("get_sales",{period:{from:ctx.asOf,to:ctx.asOf},ownerInputs:null},ctx);
+  for(const result of [preset,explicit]){
+   expect(result).toMatchObject({period:{from:ctx.asOf,to:ctx.asOf},
+    todayImported:false,lastFullDay:"2026-10-23"});
+   expect(result.dataNote).toContain("Today isn't imported yet");
+  }
+ });
  it("preserves the requested period when the optional trend reader is absent",async()=>{
   const ctx=context([]);
   const tools={...ctx.tools};
