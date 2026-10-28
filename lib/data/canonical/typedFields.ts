@@ -3,7 +3,10 @@
 type JsonRow=Record<string,unknown>;
 const row=(x:unknown):JsonRow=>x!==null&&typeof x==="object"&&!Array.isArray(x)?x as JsonRow:{};
 const list=(x:unknown):unknown[]=>Array.isArray(x)?x.slice(0,10000):[];
-const text=(x:unknown):string|null=>typeof x==="string"?x.slice(0,200):null;
+const text=(x:unknown):string|null=>typeof x==="string"&&
+ !/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(x)&&
+ !/(?:\b\d{3}[-. ]?\d{3}[-. ]?\d{4}\b|\b\d{13,19}\b)/.test(x)
+ ?x.slice(0,200):null;
 const guid=(x:unknown):string|null=>typeof x==="string"&&
  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x)?x:null;
 const cents=(x:unknown):number|null=>{

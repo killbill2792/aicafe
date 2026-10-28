@@ -35,3 +35,11 @@ it("preserves Toast regular/overtime hours and exact hourly wage",()=>{
  expect(extractToastTypedTimeEntryFields({})).toEqual({
   regularHours:null,overtimeHours:null,hourlyWageCents:null});
 });
+
+it("redacts contact and card-like values embedded in a discount name",()=>{
+ const x=parse({checks:[{appliedDiscounts:[
+  {name:"guest@example.com",discountAmount:1},
+  {name:"4111111111111111",discountAmount:1},
+  {name:"Staff Discount",discountAmount:1}]}]});
+ expect(x.checkDiscounts.map(x=>x.name)).toEqual([null,null,"Staff Discount"]);
+});

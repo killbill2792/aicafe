@@ -338,6 +338,19 @@ create policy "owner read" on public.toast_order_typed_facts for select
 grant select on public.toast_order_typed_facts to authenticated;
 grant select,insert on public.toast_order_typed_facts to service_role;
 
+-- Discount names are merchant-facing labels but can occasionally contain
+-- guest contact/card data; never copy such strings into authenticated views.
+create or replace function public.toast_safe_business_label(p_label text)
+returns text language sql immutable strict set search_path=public as $safe$
+select case
+ when length(p_label)>200 then left(p_label,200)
+ when p_label ~* '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+  or p_label ~ '(^|[^[:digit:]])[[:digit:]]{13,19}([^[:digit:]]|$)'
+  or p_label ~ '(^|[^[:digit:]])[[:digit:]]{3}[-. ]?[[:digit:]]{3}[-. ]?[[:digit:]]{4}([^[:digit:]]|$)'
+ then null else p_label end
+$safe$;
+revoke all on function public.toast_safe_business_label(text) from public,anon;
+
 create or replace function public.toast_capture_typed_order(p_raw_id uuid)
 returns void language plpgsql security definer set search_path=public as $typed$
 declare
@@ -386,7 +399,7 @@ begin
    value_cents:=case when v_amt is not null and abs(v_amt::numeric)<100000000
     then round(v_amt::numeric*100)::bigint else null end;
    check_ds:=check_ds||jsonb_build_array(jsonb_build_object('checkGuid',check_guid,
-    'name',left(d->>'name',200),'amountCents',value_cents));
+    'name',public.toast_safe_business_label(d->>'name'),'amountCents',value_cents));
   end loop;
   for s in select value from jsonb_array_elements(
    case when jsonb_typeof(c->'selections')='array'
@@ -398,7 +411,9 @@ begin
      'guid',selection_guid,'businessDate',s->>'voidBusinessDate',
      'reasonGuid',s->'voidReason'->>'guid'));
    end if;
-   v_amt:=case when jsonb_typeof(s->'tax')='number' then s->>'tax' else null end;
+   v_amt:=case when jsonb_typeof(s->'tax')='number' then s->>'tax'
+    when jsonb_typeof(s->'taxAmount')='number' then s->>'taxAmount'
+    else null end;
    value_cents:=case when v_amt is not null and abs(v_amt::numeric)<100000000
     then round(v_amt::numeric*100)::bigint else null end;
    tax_items:=tax_items||jsonb_build_array(jsonb_build_object(
@@ -415,7 +430,7 @@ begin
      then round(v_amt::numeric*100)::bigint else null end;
     item_ds:=item_ds||jsonb_build_array(jsonb_build_object(
       'checkGuid',check_guid,'selectionGuid',selection_guid,
-      'name',left(d->>'name',200),'amountCents',value_cents));
+      'name',public.toast_safe_business_label(d->>'name'),'amountCents',value_cents));
    end loop;
    for m in select value from jsonb_array_elements(
     case when jsonb_typeof(s->'modifiers')='array'
