@@ -131,4 +131,16 @@ describe("latest covered sales window",()=>{
   expect(response.dataNote).toContain("Today isn't imported yet");
  });
 
+ it("item-sales stays partial and labeled when menu lookup throws",async()=>{
+  const ctx=context(["2026-10-23"]);
+  ctx.tools.getProductSales=async()=>({available:true,value:[
+   {id:"11111111-1111-4111-8111-111111111111",name:"Latte",category:"drink",units:2}
+  ],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}});
+  ctx.tools.getMenuCatalog=async()=>{throw Error("menu unavailable");};
+  const response=await salesTools.get_item_sales.execute({period:"today",query:null},ctx);
+  expect(response.items).toHaveLength(1);
+  expect(response.missing).toContain("menuReadFailed");
+  expect(response.dataNote).toContain("Today isn't imported yet");
+ });
+
 });
