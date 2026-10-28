@@ -29,7 +29,7 @@ import { periodCalendarRange } from "./period";
 import { businessCostSummaryFromSnapshot } from "@/lib/operating/businessCosts";
 import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {profitForPeriod} from "@/lib/metrics/core/profit";
-import {laborForPeriod} from "@/lib/metrics/core/labor";
+import {laborForPeriod,proratedOwnerPayrollExtrasCents} from "@/lib/metrics/core/labor";
 import {breakEvenFor} from "@/lib/metrics/core/breakEven";
 
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
@@ -222,13 +222,19 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const currentLabor = observedLabor(calendar);
   const previousLabor = observedLabor(prevCalendar);
   const previousFees=cardFeesForDays(prevDays,feePlans??null);
+  // The owner payroll setting is a monthly extra, not clocked wages; allocate it
+  // over this comparison's exact calendar dates just as the current period does.
+  const previousExtrasCents=ownerExtras===null?0:proratedOwnerPayrollExtrasCents({
+    monthlyCents:ownerExtras,from:prevCalendar.start,to:prevCalendar.end,
+  });
   const previousProfit=profitForPeriod(prevDays,
     {amountCents:Math.round(prevRunningCosts),
       missing:previousBusinessCosts?.missingInputs.filter(k=>k.startsWith("expense:"))??["previousBillsMissing"],
       estimated:previousBusinessCosts?.estimatedInputs.some(k=>k.startsWith("expense:"))??true},
     {amountCents:previousFees.amountCents,estimated:previousFees.basis!=="actual"},
-    {amountCents:previousLabor.costCents,
-      missing:previousLabor.covered?[]:["previousLaborMissing"]},
+    {amountCents:previousLabor.costCents===null?null:previousLabor.costCents+previousExtrasCents,
+      missing:previousLabor.covered?[]:["previousLaborMissing"],
+      estimated:previousExtrasCents>0},
     {amountCents:sumCents(prevDays,d=>d.ingredientsCents),
       missing:previousBusinessCosts?.missingInputs.filter(k=>k.startsWith("productCost:")||k==="historicalIngredientCostCoverage")??["previousIngredientsMissing"],
       estimated:previousBusinessCosts?.estimatedInputs.some(k=>k.startsWith("productCost:"))??true});
