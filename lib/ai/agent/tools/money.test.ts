@@ -3,6 +3,7 @@ import { moneyTools } from "./money";
 import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
 import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
 import {newResolveState} from "../resolve";
+import {figure,type Economics} from "@/lib/calc/supervisorEconomics";
 import type { AgentToolContext } from "./index";
 const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,quality:{...q,missingInputs:["missingSource"]}};
@@ -12,6 +13,27 @@ function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
     getMenuCatalog:async()=>unavailable,...extra}};
 }
 describe("Leo scoped money reads",()=>{
+  it("passes owner sales and percentage overrides into the authenticated calculation",async()=>{
+    const economics:Economics={
+      monthlyBills:figure(30000,"actual","rent"),monthlyStaff:figure(30000,"actual","payroll"),
+      monthlyRevenue:figure(100000,"actual","recorded"),ingredientRate:.1,feeRate:.02,
+      ingredientStatus:"actual",feeStatus:"actual",averagePriceCents:500,monthlyUnits:200,
+      daysInMonth:31,targetMargin:.15,missingDays:[],asOfDate:"2026-10-22",
+      observedDays:[{date:"2026-10-21",netSalesCents:100000,ingredientsCents:10000,
+        cardFeesCents:2000,cardFeesStatus:"actual",drinksCount:200}],
+    };
+    const context:AgentToolContext={...ctx({}),readEconomics:async()=>({economics,items:[],
+      staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
+    const result=await moneyTools.get_break_even.execute({ownerNetSalesCents:200000,
+      ownerSalesDays:2,ownerIngredientPackagingPercent:25,ownerProcessingFeePercent:5},context);
+    expect(result.monthlyBreakEvenCents).toBe(Math.round(60000/.70));
+    expect(result.status).toBe("estimate");
+    const noImports=await moneyTools.get_break_even.execute({ownerNetSalesCents:200000,
+      ownerSalesDays:2,ownerIngredientPackagingPercent:25,ownerProcessingFeePercent:5},
+      {...context,readEconomics:async()=>({...await context.readEconomics!(),
+        economics:{...economics,observedDays:[]}})});
+    expect(noImports.monthlyBreakEvenCents).toBe(Math.round(60000/.70));
+  });
   it("does not quietly use UTC when café timezone is unavailable",async()=>{
     const missingZone={...ctx({}),timezone:undefined};
     const expense=await moneyTools.get_expenses.execute(
