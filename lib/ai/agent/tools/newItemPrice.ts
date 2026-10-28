@@ -126,6 +126,10 @@ export const newItemPriceTools={suggest_new_item_price:{
     }else add("Processing fee",[{name:"fee",value:percent(Math.round(feeRate*10000))}],
       "sum",percent(Math.round(feeRate*10000)),source(economics.feeStatus),"Café effective processing fee rate");
    }
+   if(plan&&feeRate!==null)add("Card percentage fee",[
+     {name:"rate",value:percent(Math.round(feeRate*10000))}],
+     "sum",percent(Math.round(feeRate*10000)),"ownerProvided",
+     plan.processorLabel+" — saved owner-confirmed rate plan");
    if(recommended.fullCostCents!==null)add("Full loaded cost",[
       {name:"product",value:money(product!)},
       {name:"labor",value:money(Math.round(recommended.laborPerUnitCents!))},
