@@ -79,6 +79,10 @@ export const moneyTools={
       if(ctx.readEconomics){
         const {economics}=await ctx.readEconomics();
         const overridden={...economics};
+        // Owner-provided figures belong to this answer, never silently fall back
+        // to the import window. No persistence or POS mutation is performed here.
+        overridden.ownerNetSalesCents=owner.ownerNetSalesCents??provided?.netSalesCents??null;
+        overridden.ownerSalesDays=owner.ownerSalesDays??null;
         if(provided?.laborCents!==null&&provided?.laborCents!==undefined&&provided.laborPeriod){
           const range=ownerPeriod(provided.laborPeriod,ctx.asOf);
           if(range)overridden.monthlyStaff=figure(prorate(provided.laborCents,range,calendarMonth(ctx.asOf)),
