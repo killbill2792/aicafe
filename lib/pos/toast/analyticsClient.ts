@@ -114,7 +114,7 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
     "/era/v1/guest/payments/day"
    ]);
    if(!allowed.has(path)||!GUID.safeParse(restaurantGuid).success||
-      !/^\\d{4}-\\d{2}-\\d{2}$/.test(businessDate))
+      !/^\d{4}-\d{2}-\d{2}$/.test(businessDate))
     throw new ToastApiError("invalid_response");
    const date=Number(businessDate.replaceAll("-",""));
    const body:Record<string,unknown>={
