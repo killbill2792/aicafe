@@ -1,4 +1,5 @@
 import {getToastCheckEvidence} from "@/lib/data/getToastCheckEvidence";
+import {lastSalesImportAt} from "@/lib/data/canonical/lastSalesImport.server";
 import {NextResponse} from "next/server";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
 import {GUID} from "@/lib/pos/toast/client";
@@ -59,7 +60,8 @@ export async function GET(request:Request){
  catch{return send(503,{error:"status_unavailable"});}
  const health=await db.from("toast_sync_health_v").select("last_good_sync_at,stale,warnings,days_with_unreadable_orders").eq("business_id",id.data);
  if(health.error)return send(503,{error:"status_unavailable"});
- const good=(health.data??[]).map(h=>h.last_good_sync_at).filter(Boolean).sort().at(-1)??null;
+ let good:string|null;
+ try{good=await lastSalesImportAt(db,id.data);}catch{return send(503,{error:"status_unavailable"});}
  const state=c.data?.state==="verified"&&mappings.length>0&&mappings.every(x=>x.verified_at)?"connected":
   !c.data?"not_connected":"needs_attention";
  const active=(r.data??[]).filter(x=>x.kind==="backfill"&&["queued","running","paused_rate_limited"].includes(x.state));
