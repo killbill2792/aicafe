@@ -45,12 +45,10 @@ export function mergeScheduleShifts(data:Pick<WeekData,"shifts"|"posShifts"|"tea
    end:formatInTimeZone(new Date(s.end),data.timezone,"HH:mm"),
    paidMinutes:null,costCents:null,estimated:null,source:"toast" as const,
  }));
- const name=(id:string|null,label:string)=>{
-  const person=id?data.team.find(p=>p.id===id):null;
-  return (person?.name??label).trim().toLocaleLowerCase();
- };
+ // Only linked identities can be matched to an app shift. Two unlinked
+ // Toast staff can share a display name and start time; never erase either.
  const key=(s:(typeof app)[number]|(typeof pos)[number])=>
-  name(s.employeeId,s.employeeName)+"|"+s.date+"|"+s.start;
+  (s.employeeId?"id:"+s.employeeId:s.source+":"+s.id)+"|"+s.date+"|"+s.start;
  const seen=new Set(app.map(key));
  return [...app,...pos.filter(s=>{const k=key(s);if(seen.has(k))return false;seen.add(k);return true;})]
   .sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
