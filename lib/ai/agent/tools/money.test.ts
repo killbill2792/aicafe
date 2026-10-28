@@ -44,8 +44,9 @@ describe("Leo scoped money reads",()=>{
     for(const [locale,label] of [["en","Recorded business costs"],["es","Costes del negocio registrados"],["ar","تكاليف العمل المسجلة"]] as const){
       const c={...ctx({getBusinessCostSummary:async()=>source}),locale,currency:"EUR"};
       const answer=await moneyTools.get_cost_summary.execute({period:"month"},c);
-      const lines=answer.explain as Array<{label:string}>;
+      const lines=answer.explain as Array<{label:string;inputs:Array<{name:string}>}>;
       expect(lines[0].label).toBe(label);
+      if(locale!=="en")expect(lines[0].inputs.map(x=>x.name)).not.toContain("ingredients");
     }
   });
   it("does not quietly use UTC when café timezone is unavailable",async()=>{
