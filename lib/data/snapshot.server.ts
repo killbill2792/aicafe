@@ -333,3 +333,120 @@ async function getMenuItemSnapshots(
     };
   });
 }
+
+
+/** Read-only historical snapshot for a café-scoped arbitrary range. Never call
+ * materializeScheduledShifts, generateAlerts, or any snapshot write path here.
+ * Monthly cost lines retain their own month provenance across month boundaries.
+ */
+export async function readHistoricalBusinessSnapshot(
+  supabase:SupabaseClient,businessId:string,period:{from:string;to:string},
+):Promise<BusinessSnapshot & {historicalPeriod:{
+  days:import("@/lib/calc").DailyFacts[];
+  recorded:import("@/lib/calc").DailyFacts[];
+  monthlyAmounts:import("@/lib/calc").CategoryMonthlyAmount[];
+  missingExpenseCategories:string[];
+  estimatedExpenseCategories:string[];
+}}>{
+  if(!businessId||!/^\d{4}-\d{2}-\d{2}$/.test(period.from)||
+    !/^\d{4}-\d{2}-\d{2}$/.test(period.to)||period.from>period.to)
+    throw new Error("Invalid historical café period");
+  const {data:business,error:businessError}=await supabase.from("businesses")
+    .select("id,name,timezone,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source,target_operating_margin,target_operating_margin_status")
+    .eq("id",businessId).single();
+  if(businessError||!business||!business.timezone)throw new Error("Historical café scope unavailable");
+  const today=formatInTimeZone(new Date(),business.timezone,"yyyy-MM-dd");
+  if(period.to>today)throw new Error("Historical period in future");
+  const first=period.from.slice(0,7)+"-01";
+  const last=period.to.slice(0,7);
+  const [year,month]=last.split("-").map(Number);
+  const monthEnd=last+"-"+String(new Date(year,month,0).getDate()).padStart(2,"0");
+  const [rollups,recurring,expenses,locations,itemSales]=await Promise.all([
+    supabase.from("daily_rollups")
+      .select("business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,staff_tax_source,sales_data_status,card_fees_cents,card_fees_status,voids_cents")
+      .eq("business_id",businessId).gte("business_date",period.from)
+      .lte("business_date",period.to).order("business_date",{ascending:true}).limit(4000),
+    supabase.from("recurring_costs")
+      .select("category_code,amount_cents,is_estimate,active_from,active_to")
+      .eq("business_id",businessId).lte("active_from",period.to),
+    supabase.from("expenses").select("category_code,amount_cents,status,spent_on")
+      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd).limit(4000),
+    supabase.from("locations").select("open_hours")
+      .eq("business_id",businessId).order("name",{ascending:true}).limit(1),
+    readPeriodItemSales(supabase,businessId,period),
+  ]);
+  for(const result of [rollups,recurring,expenses,locations])
+    if(result.error)throw result.error;
+  // PostgreSQL / PostgREST defaults to a 1,000 row cap. Fail closed on possibly
+  // truncated windows rather than representing an incomplete return as complete.
+  if((rollups.data??[]).length>=4000||(expenses.data??[]).length>=4000)
+    throw new Error("Historical period exceeds the supported read window");
+  const recorded=(rollups.data??[]).map(rowToDailyFacts);
+  const sales=recorded.filter(d=>d.salesDataStatus!=="missing");
+  const months:string[]=[];
+  let cursor=first;
+  while(cursor<=last+"-01"){
+    months.push(cursor.slice(0,7));
+    const [y,m]=cursor.split("-").map(Number);
+    const next=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);
+    cursor=next+"-01";
+    if(months.length>120)throw new Error("Historical period exceeds 120 months");
+  }
+  const monthlyAmounts:import("@/lib/calc").CategoryMonthlyAmount[]=[];
+  const missingExpenseCategories:string[]=[];
+  const estimatedExpenseCategories:string[]=[];
+  const relevantCodes=RUNNING_COST_CODES;
+  for(const key of months){
+    const finalDay=key+"-"+String(new Date(Number(key.slice(0,4)),Number(key.slice(5,7)),0)
+      .getDate()).padStart(2,"0");
+    for(const categoryCode of relevantCodes){
+      const actual=(expenses.data??[]).filter(r=>r.category_code===categoryCode&&
+        r.spent_on>=key+"-01"&&r.spent_on<=finalDay);
+      const configured=(recurring.data??[]).filter(r=>r.category_code===categoryCode&&
+        r.active_from<=finalDay&&(!r.active_to||r.active_to>=key+"-01"));
+      const rows=actual.length?actual:configured;
+      const amountCents=rows.reduce((sum,r)=>sum+Number(r.amount_cents),0);
+      const isEstimate=actual.length?actual.some(r=>r.status==="estimated"):
+        configured.some(r=>r.is_estimate);
+      const isMissing=rows.length===0;
+      monthlyAmounts.push({monthKey:key,categoryCode,amountCents,isEstimate,isMissing});
+      if(isEstimate)estimatedExpenseCategories.push("expense:"+categoryCode+":"+key);
+      if(isMissing&&((recurring.data??[]).some(r=>r.category_code===categoryCode)||
+        (expenses.data??[]).some(r=>r.category_code===categoryCode)))
+        missingExpenseCategories.push("expense:"+categoryCode+":"+key);
+    }
+  }
+  const monthKey=last;
+  const lastAmounts=monthlyAmounts.filter(r=>r.monthKey===monthKey);
+  const runningCostLines=lastAmounts.map(line=>({
+    categoryCode:line.categoryCode,label:RUNNING_COST_LABELS[line.categoryCode]??line.categoryCode,
+    amountCents:line.amountCents,isEstimate:line.isEstimate,
+    isMissing:line.isMissing,isExpected:missingExpenseCategories.some(x=>x.startsWith("expense:"+line.categoryCode+":")),
+  }));
+  return {
+    business:{id:business.id,name:business.name,timezone:business.timezone,
+      payrollTaxRate:Number(business.payroll_tax_rate),
+      payrollTaxRateStatus:business.payroll_tax_rate_status,
+      payrollTaxRateSource:business.payroll_tax_rate_source,
+      targetOperatingMargin:Number(business.target_operating_margin??.15),
+      targetOperatingMarginStatus:business.target_operating_margin_status,
+      openHours:normalizeOpenHours(locations.data?.[0]?.open_hours)},
+    todayDateStr:today,monthKey,daysInMonth:new Date(year,month,0).getDate(),
+    monthActualDays:sales.filter(d=>d.date.slice(0,7)===monthKey),
+    monthRecordedDays:recorded.filter(d=>d.date.slice(0,7)===monthKey),
+    last28Days:[],last7Days:[],
+    todayDay:recorded.find(d=>d.date===today)??{
+      date:today,netSalesCents:0,ordersCount:0,drinksCount:0,ingredientsCents:0,
+      wagesCents:null,staffTaxCents:null,cardFeesCents:0,voidsCents:0,
+      salesDataStatus:"missing" as const,cardFeesStatus:"missing" as const,
+    },
+    todayHasData:recorded.some(d=>d.date===today&&d.salesDataStatus!=="missing"),
+    previousMonthDays:sales.filter(d=>d.date.slice(0,7)!==monthKey),
+    previousMonthRecordedDays:recorded.filter(d=>d.date.slice(0,7)!==monthKey),
+    runningCostLines,recoveryOrder:RUNNING_COST_CODES,
+    menuItems:[],allCostProducts:[],periodItemSales:itemSales,breakEvenProductCosts:[],
+    alerts:{count:0,leakingCents:0},staffShiftsToday:[],staffNowIso:new Date().toISOString(),
+    historicalPeriod:{days:sales,recorded,monthlyAmounts,
+      missingExpenseCategories,estimatedExpenseCategories},
+  };
+}
