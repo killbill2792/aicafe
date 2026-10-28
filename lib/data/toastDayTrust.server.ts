@@ -2,7 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {toastDayFlags,unverifiedToastSalesDates} from "@/lib/pos/toast/reportingCoverage";
 
-/** Shared Toast day policy: only explicit failed/missing status excludes a day.
+/** Shared Toast day policy: failed status is a caveat, never a reason to hide stored rows.
  * A failed status lookup is uncertainty, not evidence that stored facts disappeared.
  * The warning keys carry dates/counts; the chat translates them via DataNotes. */
 export async function readToastDayTrust(db:SupabaseClient,businessId:string,from:string,to:string):
@@ -16,22 +16,18 @@ export async function readToastDayTrust(db:SupabaseClient,businessId:string,from
    toastDayFlags(db,businessId,from,to),
    unverifiedToastSalesDates(db,businessId,from,to)
   ]);
-  // If at least one location imported on a date, retain stored facts from it.
-  // The failed/missing location remains a caveat, not a reason to hide the day.
-  const imported=new Set(flags.filter(f=>f.status==="imported").map(f=>f.date));
-  const failed=new Set(flags.filter(f=>f.status==="failed"||f.status==="missing")
-   .map(f=>f.date).filter(date=>!imported.has(date)));
-  const blocked=new Set([...failed].filter(date=>canonicalToastDays.has(date)));
-  const otherPosOnly=[...failed].filter(date=>!canonicalToastDays.has(date)).sort();
+  // Successful imports at one location do not mask missing imports at another.
+  const failed=[...new Set(flags.filter(f=>f.status==="failed"||f.status==="missing").map(f=>f.date))].sort();
+  const withOrders=failed.filter(date=>canonicalToastDays.has(date));
+  const otherPosOnly=failed.filter(date=>!canonicalToastDays.has(date));
   const withStatus=new Set(flags.map(f=>f.date));
   const notChecked=[...canonicalToastDays].filter(date=>!withStatus.has(date)).sort();
   const flagged=[...new Set(flags.filter(f=>f.needsLook).map(f=>f.date))].sort();
-  const excluded=[...blocked].sort();
-  return {blocked,quality:[
+  return {blocked:new Set<string>(),quality:[
    ...(flagged.length?[needsLookKey(flagged)]:[]),
+   ...(withOrders.length?[incompleteDayKey(withOrders)]:[]),
    ...(otherPosOnly.length?["toastFailedNoCanonicalSales:"+otherPosOnly.join(",")]:[]),
-   ...(notChecked.length?["toastDayStatusMissing:"+notChecked.join(",")]:[]),
-   ...(excluded.length?["toastExcludedDays:"+excluded.join(",")]:[])
+   ...(notChecked.length?["toastDayStatusMissing:"+notChecked.join(",")]:[])
   ]};
  }catch{
   return {blocked:new Set(),quality:["toastDayStatusUnavailable"]};
@@ -40,4 +36,9 @@ export async function readToastDayTrust(db:SupabaseClient,businessId:string,from
 export function needsLookKey(dates:readonly string[]):string{
  const unique=[...new Set(dates)].sort(),more=Math.max(0,unique.length-3);
  return "toastDaysNeedLook:"+unique.length+":"+unique.slice(0,3).join(",")+":"+more;
+}
+
+export function incompleteDayKey(dates:readonly string[]):string{
+ const unique=[...new Set(dates)].sort(),more=Math.max(0,unique.length-3);
+ return "toastImportIncompleteDays:"+unique.length+":"+unique.slice(0,3).join(",")+":"+more;
 }
