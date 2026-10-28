@@ -37,7 +37,8 @@ export function monthlyPayrollFromDays(days: Pick<DailyFacts,
 export async function getPricingInputs(supabase: SupabaseClient, businessId: string): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput; menuPriceBasis: MenuPriceSourceBasis }> {
   const { data: businessRow, error: businessError } = await supabase.from("businesses").select("timezone, target_operating_margin, target_operating_margin_status, payroll_tax_rate_status").eq("id", businessId).single();
   if (businessError) throw businessError;
-  const timezone = businessRow?.timezone ?? "America/Los_Angeles";
+  if (!businessRow?.timezone) throw new Error("Café timezone missing");
+  const timezone = businessRow.timezone;
   const today = new Date();
   const todayDateStr = formatInTimeZone(today, timezone, "yyyy-MM-dd");
   const firstOfMonth = todayDateStr.slice(0,7)+"-01";
