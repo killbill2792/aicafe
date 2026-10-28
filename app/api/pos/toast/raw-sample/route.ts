@@ -10,7 +10,7 @@ export const maxDuration=300;
 const input=z.object({businessId:GUID,businessDate:z.iso.date()}).strict();
 const reply=(status:number,body:unknown)=>NextResponse.json(body,{status,headers:{"Cache-Control":"no-store"}});
 const statusByReason:Record<NonNullable<ToastRawSampleResult["reason"]>,number>={
- invalid_request:400,no_location:404,busy:409,cooldown:429,db_error:503,missing_hash_key:503,lease_lost:503
+ invalid_request:400,no_location:404,busy:409,cooldown:429,db_error:503,missing_hash_key:503,lease_lost:503,partial:206
 };
 export async function POST(request:Request){
  if(request.headers.get("content-type")?.split(";")[0]!=="application/json")return reply(415,{error:"invalid_request"});
