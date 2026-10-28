@@ -43,8 +43,8 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
     body:JSON.stringify({clientId:c.client_id,clientSecret:decryptToken(c.client_secret_enc),
       userAccessType:"TOAST_MACHINE_CLIENT"})
   });}catch{throw new ToastApiError("unavailable");}
-  if(res.status===401)throw new ToastApiError("authentication");
-  if(res.status===403)throw new ToastApiError("missing_permissions");
+  if(res.status===401)throw new ToastApiError("authentication",401);
+  if(res.status===403)throw new ToastApiError("missing_permissions",403);
   if(!res.ok)throw new ToastApiError("unavailable");
   const parsed=tokenSchema.safeParse(await res.json().catch(()=>null));
   if(!parsed.success)throw new ToastApiError("invalid_response");
@@ -103,6 +103,14 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
   throw new ToastApiError("authentication");
  }
  return {
+  // Diagnostic API: GET only. Leverages the existing ERA-only credential,
+  // rate budget and authentication without requesting or creating reports.
+  async getRaw(path:string){
+   if(!/^\/era\/v1\/[A-Za-z0-9/_-]+$/.test(path)||path.includes("..")||
+    path.length>250)throw new ToastApiError("invalid_response");
+   const result=await call("get",path);
+   return {status:result.pending?202:200,data:result.body};
+  },
   async test(restaurantGuid:string,businessDate:string){
    const expected=await credentials();
    const id=await this.requestDay(restaurantGuid,businessDate);
