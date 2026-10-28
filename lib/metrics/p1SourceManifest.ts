@@ -22,6 +22,7 @@ export const SOURCE_SURFACES = {
     readMenuPriceEvidence:{restricted:"Authenticated, selected-cafe menu price provenance and observed sales read; accessible only through an owner-scoped strict agent tool, not a generic P1 metric selector"},
   },
   "lib/data/staffProposalSources.server.ts":{
+    readStaffProposalLocalDate:{restricted:"Owner-verified current café local date for a nullable next-week schedule approval; never model-readable"},
     readStaffProposalToken:{restricted:"Owner-authenticated staff source revision token for proposal CAS, not a model-readable source"},
     readStaffProposalSources:{restricted:"Owner and cafe scoped private staff schedule and availability reader for inert approval previews"},
   },
