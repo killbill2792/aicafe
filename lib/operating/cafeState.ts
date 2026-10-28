@@ -5,9 +5,6 @@ import {laborForPeriod} from "@/lib/metrics/core/labor";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { PricingResult, DataQuality } from "@/lib/calc";
 import {
-  netSalesCentsForPeriod,
-  totalCostsCentsForPeriod,
-  ownerProfitCentsForPeriod,
   runningCostsForPeriodCents,
   runningCostsForPeriodCentsByCategory,
   allocateIntegerCentsByCategory,

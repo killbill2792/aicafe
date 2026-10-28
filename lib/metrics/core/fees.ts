@@ -60,7 +60,7 @@ export function cardFeesForDays(days:readonly FeeDay[],ownerPlan:OwnerFeePlan|nu
   for(const day of covered){
     if(day.cardFeesStatus!=="missing"&&day.cardFeesCents!=null&&valid(day.cardFeesCents)){
       sum+=day.cardFeesCents;
-      if(day.cardFeesStatus==="actual")actualDays++;else estimatedDays++;
+      if(day.cardFeesStatus==="actual"||day.cardFeesStatus===undefined)actualDays++;else estimatedDays++;
     }else{
       sum+=(day.cardSalesCents??day.netSalesCents)*DEFAULT_PROCESSING_FEE_RATE_BPS/10000;
       defaultDays++;

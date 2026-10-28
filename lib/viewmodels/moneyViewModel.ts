@@ -1,5 +1,4 @@
 import {
-  calculateBreakEvenSales,
   combinedHealthBand,
   computeCostRecovery,
   ingredientsHealthBand,
@@ -10,7 +9,6 @@ import {
   staffHealthBand,
   summarizeResolvedSoldProductCosts,
   sumCents,
-  totalCostsCentsForPeriod,
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, projectedDayContributions, recoveryBuckets } from "./costRecoveryShared";

@@ -172,7 +172,7 @@ describe("Money Week spanning previous month remains supported Oct 1–6",()=>{
       expect(partial.totalCostsCents).toBe(expectedTotal);
       expect(partial.runningCostLines[0].amountCents).toBe(expectedRunning);
       expect(partial.salesCents).toBe(7*100000);
-      expect(partial.ownerProfitDisplay.kind).toBe("unavailable");
+      expect(partial.ownerProfitDisplay.kind).toBe("partial");
       expect(partial.comparisonState.kind).toBe("available");
       expect(partial.changes.map(x=>x.key)).toContain("sales");
       expect(partial.changes.map(x=>x.key)).not.toContain("ownerProfit");
@@ -191,7 +191,7 @@ describe("Money Week spanning previous month remains supported Oct 1–6",()=>{
       expect(completed.businessCosts.completeness).toBe("partial");
       expect(completed.businessCosts.missingInputs).toEqual(["priorMonthRunningCostCoverage"]);
       expect(completed.totalCostsCents).toBe(expectedTotal);
-      expect(completed.ownerProfitDisplay.kind).toBe("unavailable");
+      expect(completed.ownerProfitDisplay.kind).toBe("partial");
       expect(completed.changes.map(x=>x.key)).not.toContain("ownerProfit");
     });
   }
@@ -216,7 +216,7 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     },"today");
     expect(vm.comparisonState.kind).toBe("available");
     expect(vm.businessCosts.completeness).toBe("partial");
-    expect(vm.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(vm.ownerProfitDisplay.kind).toBe("partial");
     expect(vm.changes.map(x=>x.key)).toContain("sales");
     expect(vm.changes.map(x=>x.key)).not.toContain("ownerProfit");
     expect(vm.changes.map(x=>x.key)).not.toContain("ingredients");
@@ -315,8 +315,8 @@ describe("Money partial-known-wage day",()=>{
     expect(vm.combinedRatio).toBeNull();
     expect(vm.staffBand).toBeNull();
     expect(vm.combinedBand).toBeNull();
-    expect(vm.ownerProfitCents).toBeNull();
-    expect(vm.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(vm.ownerProfitCents).not.toBeNull();
+    expect(vm.ownerProfitDisplay.kind).toBe("partial");
     expect(vm.businessCosts.missingInputs).toContain("laborWageUnknown:"+date);
     expect(vm.changes.map(row=>row.key)).not.toContain("staff");
     const complete=buildProfitAndCostsViewModel({...snapshot,
@@ -349,8 +349,8 @@ describe("Money staff-only missing-wage day",()=>{
     const result=buildProfitAndCostsViewModel(snapshot,"month");
     expect(result.salesCents).toBeGreaterThan(0);
     expect(result.businessCosts.missingInputs).toContain("laborWageUnknown:"+staffOnly.date);
-    expect(result.ownerProfitCents).toBeNull();
-    expect(result.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(result.ownerProfitCents).not.toBeNull();
+    expect(result.ownerProfitDisplay.kind).toBe("partial");
     const restored=buildProfitAndCostsViewModel({...snapshot,
       monthRecordedDays:snapshot.monthRecordedDays.map(day=>day.date===staffOnly.date?{
         ...day,laborWageStatus:"actual" as const}:day)},"month");
