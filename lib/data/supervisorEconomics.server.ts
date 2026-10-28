@@ -144,6 +144,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   monthlyRevenue:figure(monthlyRevenueCents,"estimate",
     "Current month's covered sales projected across open days; not recorded month-end revenue"),
   ingredientRate,feeRate,ingredientStatus,feeStatus,averagePriceCents,monthlyUnits,feePlan,
+  ownerFeePlans:feePlans,
   daysInMonth:dayList.length||Number(month.to.slice(-2)),
   laborCoveredDays:laborDays.length,laborWindowDays:laborWindow.length,
   salesCoverage:first&&latest?{from:first,to:latest,openDays:salesOpenDays}:undefined,
@@ -155,7 +156,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
    .map(row=>({date:row.business_date,netSalesCents:Number(row.net_sales_cents??0),
      ingredientsCents:Number(row.ingredients_cents??0),
      cardFeesCents:Number(row.card_fees_cents??0),
-      cardFeesStatus:row.card_fees_status??"missing",drinksCount:Number(row.drinks_count??0)})),
+      cardFeesStatus:row.card_fees_status??"missing",
+      ordersCount:Number(row.orders_count??0),drinksCount:Number(row.drinks_count??0)})),
  },items:pricing.items,ownerMonthlyPayrollExtrasCents,ownerIngredientRate:savedRate,
  staff:(employees.data??[]).map(person=>{
   const worked=(timecards.data??[]).filter(card=>card.source_type!=="owner_schedule"&&
