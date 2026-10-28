@@ -3,6 +3,21 @@
 alter table public.toast_day_status
  add column if not exists owner_confirmed_at timestamptz;
 
+-- Durable bounded labor-history checkpoint. A chunk is marked complete ONLY
+-- after staging and canonical copy both commit; retries may safely replay it.
+create table if not exists public.toast_labor_backfill_progress (
+ business_id uuid not null,restaurant_guid uuid not null,
+ next_at timestamptz not null,updated_at timestamptz not null default now(),
+ primary key(business_id,restaurant_guid),
+ foreign key(business_id,restaurant_guid)
+ references public.toast_location_mappings(business_id,restaurant_guid)
+);
+alter table public.toast_labor_backfill_progress enable row level security;
+revoke all on public.toast_labor_backfill_progress from public,anon,authenticated;
+grant select,insert,update on public.toast_labor_backfill_progress to service_role;
+
+
+
 -- Owner acknowledgement never overwrites independent Toast financial evidence.
 -- Re-import invalidates only the old acknowledgement, not historical raw facts.
 create or replace function public.toast_owner_confirmation_on_reimport()
