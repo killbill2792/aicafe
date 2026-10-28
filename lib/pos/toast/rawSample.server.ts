@@ -1,5 +1,5 @@
 import "server-only";
-import {createHmac} from "node:crypto";
+import {createHmac,randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
@@ -45,13 +45,13 @@ export const TOAST_READ_ENDPOINTS:readonly Entry[]=[
  entry("kitchen/v1/published/prepStations","/kitchen/v1/published/prepStations","kitchen","prepStationsGet","none",true),
  entry("kitchen/v1/published/prepStations/{guid}","/kitchen/v1/published/prepStations/{guid}","kitchen","prepStationsGuidGet","id",false,"kitchen/v1/published/prepStations"),
  entry("restaurants/v1/restaurants/{guid}","/restaurants/v1/restaurants/{guid}","restaurants","restaurantsRestaurantGuidGet","restaurant"),
- entry("restaurants/v1/groups/{guid}/restaurants","/restaurants/v1/groups/{guid}/restaurants","restaurants","restaurantsGet","restaurant"),
+ entry("restaurants/v1/groups/{guid}/restaurants","/restaurants/v1/groups/{guid}/restaurants","restaurants","groupsManagementGroupGuidRestaurantsGet","id",false,"__management_group__"),
  entry("restaurant-availability/v1/availability","/restaurant-availability/v1/availability","rx.availability.service","availabilityGet"),
  entry("packaging/v1/published/packagingConfig","/packaging/v1/published/packagingConfig","packaging","getPackagingConfig"),
  entry("partners/v1/restaurants","/partners/v1/restaurants","partners","restaurantsGet"),
  entry("partners/v1/connectedRestaurants","/partners/v1/connectedRestaurants","partners","connectedRestaurantsGet","none",true),
  entry("device-details/v1/device-info","/device-details/v1/device-info","devicedetails","getDeviceInfo"),
- entry("era/v1/restaurants","/era/v1/restaurants","analytics","getRestaurantInformation"),
+ entry("era/v1/restaurants-information","/era/v1/restaurants-information","analytics","getManagementGroupRestaurantsInformation"),
  ...[
   ["era/v1/metrics/{reportRequestGuid}","getMetricsReportingData"],
   ["era/v1/metrics/day/{reportRequestGuid}","getMetricsReportingDataSpecificTimeRange"],
@@ -61,7 +61,7 @@ export const TOAST_READ_ENDPOINTS:readonly Entry[]=[
   ["era/v1/payout/{reportRequestGuid}","getPayoutSettledDateReportingData"],
   ["era/v1/payout/payments/{reportRequestGuid}","getPayoutPaymentsReportingData"],
   ["era/v1/payout/sales-date/{reportRequestGuid}","getPayoutSalesDateReportingData"],
-  ["era/v1/guest/payments/{reportRequestGuid}","getGuestPaymentsReportingData"]
+  ["era/v1/guest/payment/{reportRequestGuid}","getGuestByPaymentDateReportingData"]
  ].map(([p,op])=>entry(p,"/"+p,"analytics",op,"id",false,"__era_report__")),
  ...[
   ["era/v1/metrics/day","postMetricsReportingDataSpecificTimeRange"],
@@ -150,19 +150,23 @@ export async function claimToastRawSample(db:Pick<SupabaseClient,"rpc">,business
  const {data,error}=await db.rpc("toast_claim_raw_sample",{p_business_id:businessId,p_restaurant_guid:restaurantGuid,p_business_date:businessDate});
  if(error)throw new ToastApiError("unavailable");return data===true;
 }
-function pathFor(s:Entry,day:string,guid:string,id?:string,page=1){
- let path=s.path.replace("{guid}",id??guid);
+function pathFor(s:Entry,day:string,guid:string,id?:string,page=1,token?:string){
+ let path=s.path.replace("{guid}",id??guid).replace("{reportRequestGuid}",id??guid);
  const params=new URLSearchParams();
- if(s.scope==="date"){
-  params.set(s.endpoint.includes("payments")?"paidBusinessDate":"businessDate",day.replaceAll("-",""));
- }
+ if(s.scope==="date")
+  params.set(s.endpoint==="orders/v2/payments"?"paidBusinessDate":"businessDate",day.replaceAll("-",""));
  if(s.scope==="window"){
   const start=new Date(day+"T00:00:00Z");
   const end=new Date(start.getTime()+86400000);
   params.set("startDate",decodeURIComponent(toToastTimestamp(start)));
   params.set("endDate",decodeURIComponent(toToastTimestamp(end)));
  }
- if(s.page){params.set("pageSize",String(PAGE_SIZE));params.set("page",String(page));}
+ if(s.page&&s.endpoint==="orders/v2/ordersBulk"){
+  params.set("pageSize",String(PAGE_SIZE));params.set("page",String(page));
+ }else if(s.page){
+  if(s.endpoint==="partners/v1/connectedRestaurants")params.set("pageSize",String(PAGE_SIZE));
+  if(token)params.set("pageToken",token);
+ }
  if(params.size)path+="?"+params.toString();
  return path;
 }
@@ -189,6 +193,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
  const hashKey=process.env.TOAST_CUSTOMER_HASH_KEY;
  if(!hashKey||hashKey.length<32)return skip("missing_hash_key");
  let captured=0,failed=0,leaseNonce:string|null=null,reason:ToastRawSampleResult["reason"];
+ const captureId=randomUUID();
  try{
   const {data:mappings,error}=await db.from("toast_location_mappings").select("restaurant_guid")
    .eq("business_id",businessId).not("verified_at","is",null)
@@ -203,7 +208,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
   if(!await claimToastRawSample(db,businessId,guid,businessDate))return skip("cooldown");
   const client=createToastClient(db,businessId);
   const deadlineAt=Date.now()+27*60*1000;
-  let lastRenew=Date.now(),lastGet=0;
+  let lastRenew=Date.now();
   const known=new Map<string,Set<string>>();
   const hold=async()=>{
    if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
@@ -213,12 +218,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     lastRenew=Date.now();
    }
   };
-  const pace=async()=>{
-   await hold();
-   const delay=Math.max(0,5000-(Date.now()-lastGet));
-   if(delay)await new Promise(resolve=>setTimeout(resolve,delay));
-   await hold();lastGet=Date.now();
-  };
+  const pace=async()=>{await hold();}; // Client enforces Toast's shared rate budget and endpoint-specific pacing.
   const save=async(s:Entry,raw:unknown,status:number|null,page:number|null,
     code:string|null=null,message:string|null=null)=>{
    const safe=redactToastRaw(raw,0,"",hashKey)??{};
@@ -228,7 +228,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     const piece=parts[i];
     const {error:err}=await db.from("toast_raw_samples").insert({
      business_id:businessId,restaurant_guid:guid,business_date:businessDate,
-     endpoint:s.endpoint,doc_url:s.doc,page_number:page===null?null:page*1000+i,
+     endpoint:s.endpoint,doc_url:s.doc,capture_id:captureId,page_number:page===null?null:page*1000+i,
      http_status:status,item_count:Array.isArray(piece)?piece.length:status===204?0:1,
      sample:piece,field_paths:toastFieldPaths(piece),
      identifier_counts:identifierCounts(raw),error_code:code,error_message:message
@@ -243,22 +243,51 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     continue;
    }
    const ids=s.scope==="id"?[...(known.get(s.source??"")??[])]:[undefined];
-   if(!ids.length){await save(s,{},null,null,"missing_resource_guid","No identifier discovered in source response");continue;}
+   if(!ids.length){await save(s,{},null,null,"missing_resource_guid","No eligible identifier for GET");continue;}
    for(const id of ids){
+    let nextToken:string|undefined;
+    const seenTokens=new Set<string>();
     for(let page=1;page<=(s.page?PAGE_CAP:1);page++){
      try{
       await pace();
-      const raw=await client.request(pathFor(s,businessDate,guid,id,page),guid,z.unknown(),{deadlineAt});
-      const list=Array.isArray(raw)?raw:raw&&typeof raw==="object"&&Array.isArray((raw as {data?:unknown}).data)?(raw as {data:unknown[]}).data:undefined;
-      if(list){const set=known.get(s.endpoint)??new Set<string>();for(const value of list)for(const found of discoveredIds(value))set.add(found);known.set(s.endpoint,set);}
-      await save(s,raw,200,s.page?page:1);
-      if(!s.page||!list||list.length<PAGE_SIZE)break;
-      if(page===PAGE_CAP)await save(s,{},null,page,"page_cap","Pagination capped at 20 pages");
+      let http=200;
+      let token:string|null=null;
+      const raw=await client.request(pathFor(s,businessDate,guid,id,page,nextToken),guid,z.unknown(),
+        {deadlineAt,onResponse:info=>{http=info.status;token=info.nextPageToken;}});
+      const obj=raw&&typeof raw==="object"&&!Array.isArray(raw)?raw as Record<string,unknown>:null;
+      const list=Array.isArray(raw)?raw:Array.isArray(obj?.results)?obj.results as unknown[]:
+        Array.isArray(obj?.data)?obj.data as unknown[]:undefined;
+      const set=known.get(s.endpoint)??new Set<string>();
+      if(s.endpoint==="orders/v2/payments"&&list){
+       for(const item of list)if(typeof item==="string"&&GUID.safeParse(item).success)set.add(item);
+      }else if(list)for(const item of list)for(const found of discoveredIds(item))set.add(found);
+      known.set(s.endpoint,set);
+      if(s.endpoint==="partners/v1/restaurants"&&list){
+       const groups=known.get("__management_group__")??new Set<string>();
+       for(const item of list){
+        if(item&&typeof item==="object"){
+         const g=(item as Record<string,unknown>).managementGroupGuid;
+         if(typeof g==="string"&&GUID.safeParse(g).success)groups.add(g);
+        }
+       }
+       known.set("__management_group__",groups);
+      }
+      await save(s,raw,http,s.page?page:1);
+      if(!s.page)break;
+      if(s.endpoint==="orders/v2/ordersBulk"){
+       if(!list||list.length<PAGE_SIZE)break;
+      }else{
+       const next=token??(typeof obj?.nextPageToken==="string"?obj.nextPageToken:null);
+       if(!next||seenTokens.has(next))break;
+       seenTokens.add(next);nextToken=next;
+      }
+      if(page===PAGE_CAP)await save(s,{},null,page,"page_cap","Maximum 20 pages reached");
      }catch(e){
       if(reason==="lease_lost")break;
       const status=e instanceof ToastApiError?e.status??null:null;
-      const code=status===204?"no_content":e instanceof ToastApiError?e.category:"unavailable";
-      await save(s,{},status,s.page?page:1,code,code);
+      const code=status===204?"no_content":e instanceof ToastApiError?e.toastCode??e.category:"unavailable";
+      const message=e instanceof ToastApiError?e.toastMessage??e.category:"unavailable";
+      await save(s,{},status,s.page?page:1,code,message);
       break;
      }
     }
