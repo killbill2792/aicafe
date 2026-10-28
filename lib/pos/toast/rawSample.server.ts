@@ -87,15 +87,16 @@ const FREEFORM=/(?:notes?|memo|comment|message|instructions|^text$|description|r
 const IDENTIFIER=/(?:^customer(?:Id|Guid)$|^guest(?:Id|Guid)$|^loyalty(?:Id|Guid|AccountId)$|^cardPaymentId$|^cardFingerprint$|^cardTokenId$|^paymentCardId$|^cardId$|^networkTransactionIdentifier$|^maskedLoyaltyIdentifier$|^customerIdentifier$|^loyaltyIdentifier$)/i;
 const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
 function safeString(s:string){return s.length<=10000&&!/@/.test(s)&&!/(?:\b\d{3}[-. ]\d{3}[-. ]\d{4}\b|\b\d{13,19}\b)/.test(s);}
-export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,context=""):unknown{
+export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,context="",scope=""):unknown{
  if(depth>32)return null;
- if(Array.isArray(value))return value.map(v=>redactToastRaw(v,depth+1,key,hashKey,context));
+ if(Array.isArray(value))return value.map(v=>redactToastRaw(v,depth+1,key,hashKey,context,scope));
  if(value&&typeof value==="object"){
   const obj=value as Record<string,unknown>;
   return Object.fromEntries(Object.entries(obj).filter(([k])=>KEY.test(k)||/^[0-9]{1,6}$/.test(k))
-   .filter(([k])=>(IDENTIFIER.test(k)||!RESTRICTED.test(k))&&!FREEFORM.test(k))
+   .filter(([k])=>(IDENTIFIER.test(k)||!RESTRICTED.test(k))&&
+     (!FREEFORM.test(k)||k==="description"&&/^(?:config|menus)\//.test(scope)))
    .filter(([k])=>!/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron)/i.test(context)||!/(?:^name$|displayName|nickname|^text$)/i.test(k))
-   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron)/i.test(k)?k:context)])
+   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,/(?:customer|guest|employee|staff|person|cardholder|loyalty|patron|deliveryInfo|contact|billing|shipping|recipient|buyer|payer|cashier)/i.test(k)?k:context,scope)])
    .filter(([k,v])=>v!==undefined));
  }
  if(IDENTIFIER.test(key)||(/^(?:id|guid|referenceId)$/i.test(key)&&/(?:customer|guest|loyalty|card|patron)/i.test(context))){
@@ -269,7 +270,7 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
   const pace=async()=>{await hold();}; // Client enforces Toast's shared rate budget and endpoint-specific pacing.
   const save=async(s:Entry,raw:unknown,status:number|null,page:number|null,
     code:string|null=null,message:string|null=null)=>{
-   const safe=redactToastRaw(raw,0,"",hashKey)??{};
+   const safe=redactToastRaw(raw,0,"",hashKey,"",s.endpoint)??{};
    const parts=chunks(safe);
    for(let i=0;i<parts.length;i++){
     await hold();
@@ -277,7 +278,9 @@ export async function captureToastRawSample(businessId:string,businessDate:strin
     const {error:err}=await db.from("toast_raw_samples").insert({
      business_id:businessId,restaurant_guid:guid,business_date:businessDate,
      endpoint:s.endpoint,doc_url:s.doc,capture_id:captureId,page_number:page===null?null:page*1000+i,
-     http_status:status,item_count:code?0:Array.isArray(piece)?piece.length:1,
+     http_status:status,item_count:code||i!==0?0:Array.isArray(raw)?raw.length:
+       raw&&typeof raw==="object"&&Array.isArray((raw as {menus?:unknown}).menus)?
+       (raw as {menus:unknown[]}).menus.length:1,
      sample:piece,field_paths:toastFieldPaths(piece),
      identifier_counts:i===0?identifierCounts(raw):{},error_code:code,error_message:message
     });
