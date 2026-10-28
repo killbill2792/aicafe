@@ -69,6 +69,65 @@ create policy "owner read" on public.toast_payment_summaries for select
 grant select on public.toast_payment_summaries to authenticated;
 grant select,insert,update on public.toast_payment_summaries to service_role;
 
+-- Preserve incomplete Toast timecards without inventing wage rates or treating
+-- unclocked work as paid time. Closed ones remain in canonical timecards.
+create table if not exists public.toast_open_labor_summaries(
+ business_id uuid not null references public.businesses(id) on delete cascade,
+ restaurant_guid uuid not null,
+ external_time_entry_id uuid not null,
+ external_employee_id uuid not null,
+ clock_in timestamptz not null,
+ clock_out timestamptz,
+ hourly_wage_cents bigint,
+ wage_status text not null,
+ status text not null check(status in ('actual','estimated','open','needs_match','owner_provided')),
+ primary key(business_id,restaurant_guid,external_time_entry_id)
+);
+alter table public.toast_open_labor_summaries enable row level security;
+revoke all on public.toast_open_labor_summaries from public,anon,authenticated;
+create policy "owner read" on public.toast_open_labor_summaries
+ for select to authenticated using (public.scheduling_is_owner(business_id));
+grant select on public.toast_open_labor_summaries to authenticated;
+grant select,insert,update on public.toast_open_labor_summaries to service_role;
+
+create or replace function public.toast_sync_open_labor_summary()
+returns trigger language plpgsql security definer set search_path=public as $summary$
+begin
+ if auth.role() <> 'service_role' and current_user not in ('postgres','supabase_admin')
+ then raise exception 'service role only';end if;
+ insert into public.toast_open_labor_summaries(
+  business_id,restaurant_guid,external_time_entry_id,external_employee_id,
+  clock_in,clock_out,hourly_wage_cents,wage_status,status)
+ values(new.business_id,new.restaurant_guid,new.external_time_entry_id,
+  new.external_employee_id,new.clock_in,new.clock_out,
+  case when new.clock_out is null or new.wage_status='missing'
+   then null else new.hourly_wage_cents end,new.wage_status,
+  case when new.clock_out is null then 'open'
+   when new.wage_status='missing' then 'needs_match' else 'actual' end)
+ on conflict (business_id,restaurant_guid,external_time_entry_id) do update
+ set external_employee_id=excluded.external_employee_id,clock_in=excluded.clock_in,
+  clock_out=excluded.clock_out,hourly_wage_cents=excluded.hourly_wage_cents,
+  wage_status=excluded.wage_status,status=excluded.status;
+ return new;
+end $summary$;
+drop trigger if exists toast_open_labor_copy on public.toast_labor_entries;
+create trigger toast_open_labor_copy after insert or update on public.toast_labor_entries
+ for each row execute function public.toast_sync_open_labor_summary();
+insert into public.toast_open_labor_summaries(
+ business_id,restaurant_guid,external_time_entry_id,external_employee_id,
+ clock_in,clock_out,hourly_wage_cents,wage_status,status)
+select business_id,restaurant_guid,external_time_entry_id,external_employee_id,
+ clock_in,clock_out,case when clock_out is null or wage_status='missing'
+ then null else hourly_wage_cents end,wage_status,
+ case when clock_out is null then 'open'
+  when wage_status='missing' then 'needs_match' else 'actual' end
+from public.toast_labor_entries
+on conflict (business_id,restaurant_guid,external_time_entry_id) do update
+set external_employee_id=excluded.external_employee_id,
+ clock_in=excluded.clock_in,clock_out=excluded.clock_out,
+ hourly_wage_cents=excluded.hourly_wage_cents,
+ wage_status=excluded.wage_status,status=excluded.status;
+
 -- Capture individual raw orders, including orders the parser cannot recognize.
 -- Source page + 1-based array offset make invalid/missing order GUIDs addressable.
 create or replace function public.toast_archive_page(
