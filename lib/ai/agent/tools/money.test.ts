@@ -7,11 +7,22 @@ import type { AgentToolContext } from "./index";
 const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,quality:{...q,missingInputs:["missingSource"]}};
 function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
-  return {asOf:"2026-10-22",locale:"en",tools:{
+  return {asOf:"2026-10-22",timezone:"America/Los_Angeles",locale:"en",tools:{
     getProfitability:async()=>unavailable,getSalesTrend:async()=>unavailable,
     getMenuCatalog:async()=>unavailable,...extra}};
 }
 describe("Leo scoped money reads",()=>{
+  it("does not quietly use UTC when café timezone is unavailable",async()=>{
+    const missingZone={...ctx({}),timezone:undefined};
+    const expense=await moneyTools.get_expenses.execute(
+      {period:"month",category:null},missingZone);
+    const costs=await moneyTools.get_cost_summary.execute(
+      {period:"month"},missingZone);
+    expect(expense.missing).toContain("cafeTimezoneMissing");
+    expect(costs.missing).toContain("cafeTimezoneMissing");
+    expect(expense.period).toBeNull();
+    expect(costs.period).toBeNull();
+  });
   it("allows only the category selected in the previous trusted clarification",async()=>{
     const state=newResolveState("Supplies — supplies",[
       {role:"assistant",content:"Asked: Which category? Options: Supplies — supplies (supplies); Supplies — other (other)"}]);
