@@ -112,7 +112,8 @@ describe("Toast source-scoped Supervisor coverage without changing aggregate for
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
   const date="2026-10-12",fixture=[row("actual",5800,13,date)];
   const screen=buildDayWindows(fixture.map(item=>rowToDailyFacts({...item,
-   sales_data_status:"actual" as const,staff_tax_status:"actual" as const})),date,"2026-10");
+   sales_data_status:"actual" as const,staff_tax_status:"actual" as const,
+   card_fees_status:"missing" as const})),date,"2026-10");
   const chat=await pilotReader(fixture,[date],[date],false,
    [{business_date:date,import_state:"failed",recon_state:"mismatch"}])
    .salesTrend("my-cafe",{from:date,to:date});
