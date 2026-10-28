@@ -273,12 +273,15 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
  const cache=proofCache(db,p,day,status),cached=await cache.load();
  const rows=await pullDay(db,p,day,deadlineAt,cache,cached);
  const proof=internalOrderProof(rows,p,day,status.orders_snapshot_sha256,status.unparsed_count);
+ let comparison:ReturnType<typeof compareDayMoney>|null=null;
+ const evidence:EvidencePatch={};
  // Independent provider read compared with our LAST COMMITTED day values.
  // If one field is missing, do not manufacture zero or a mismatch.
- if(status.unparsed_count===0&&proof.orders.every(o=>o.normalized!==undefined)){
+ if(status.unparsed_count===0&&(proof.orders.length>0||
+   (rows.length===0&&status.order_count===0))&&proof.orders.every(o=>o.normalized!==undefined)){
   const summed=(field:"netSalesCents"|"discountsCents"|"refundsCents"|"taxCents"|"tipCents")=>
    proof.orders.reduce((n,o)=>n+(o.normalized?.[field]??0),0);
-  const comparison=compareDayMoney({
+  comparison=compareDayMoney({
    net_sales_cents:status.net_sales_cents,discounts_cents:status.discounts_cents,
    refunds_cents:status.refunds_cents,tax_cents:status.tax_cents,tip_cents:status.tip_cents
   },{
@@ -286,6 +289,14 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
    refunds_cents:summed("refundsCents"),tax_cents:summed("taxCents"),tip_cents:summed("tipCents")
   });
   proof.reasons.push(...comparison.reasons);
+  proof.reasons.push(...comparison.missing.map(field=>"missing_"+field));
+  // Official Toast Analytics money stays authoritative when available.
+  if(status.recon_source!=="toast_analytics"){
+   evidence.toast_net_sales_cents=comparison.toastNetSalesCents;
+   evidence.toast_discount_cents=summed("discountsCents");
+   evidence.toast_refund_cents=summed("refundsCents");
+   evidence.delta_net_cents=comparison.differences.net_sales_cents??null;
+  }
  }
  const client=createToastClient(db,p.businessId);
  // Toast's documented endpoint returns the full GUID list, without paging parameters.
@@ -397,18 +408,19 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
    await writeReconciliation(db,p,day,status,{type:"payment_recovery_queued"});return null;
   }
  }
- const measured=proof.reasons.filter(x=>x.includes("_delta_")||
-  ["check_payment_mismatch","check_selection_mismatch"].includes(x));
- if(proof.reasons.length&&measured.length===0){
+ // Only the shared day money comparison can produce an owner mismatch.
+ // Diagnostic check details are retained as missing evidence, not money flags.
+ const measured=proof.reasons.filter(x=>x.includes("_delta_"));
+ if((!comparison||proof.reasons.length>0)&&measured.length===0){
   await writeReconciliation(db,p,day,status,{
-   type:"internal_missing",reasons:proof.reasons,paidOtherDay});
+   type:"internal_missing",reasons:proof.reasons.length?proof.reasons:["no_comparable_money"],paidOtherDay},evidence);
   await cache.clear();
   return null;
  }
  const internal=measured.length?"mismatch":"matched";
  await writeReconciliation(db,p,day,status,{
   type:"internal_result",result:internal,reasons:proof.reasons,paidOtherDay
- });
+ },evidence);
  await cache.clear();
  return internal;
 }

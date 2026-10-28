@@ -6,7 +6,7 @@ const current:DayCheckState={recon_state:"pending",recon_source:null,internal_st
  internal_reasons:[],paid_other_day:0};
 it("keeps unknown payment evidence incomplete rather than inventing a money mismatch",()=>{
  const r=nextDayCheckState(current,{
-  type:"internal_incomplete",reasons:["unknown_payment_order"],paidOtherDay:0
+  type:"internal_missing",reasons:["unknown_payment_order"],paidOtherDay:0
  },"2026-10-28T12:00:00Z");
  expect(r.recon_state).toBe("pending");
  expect(r.internal_state).toBeNull();
@@ -15,7 +15,7 @@ it("keeps unknown payment evidence incomplete rather than inventing a money mism
 it("retains independently confirmed ERA mismatches",()=>{
  const r=nextDayCheckState({...current,recon_state:"mismatch",
   recon_source:"toast_analytics"},{
-  type:"internal_incomplete",reasons:["missing_tax_cents"],paidOtherDay:0
+  type:"internal_missing",reasons:["missing_tax_cents"],paidOtherDay:0
  },"2026-10-28T12:00:00Z");
  expect(r.recon_state).toBe("mismatch");
  expect(r.recon_source).toBe("toast_analytics");
