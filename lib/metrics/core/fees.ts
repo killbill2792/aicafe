@@ -50,12 +50,11 @@ export function cardFeesForDays(days:readonly FeeDay[],ownerPlan:OwnerFeePlan|nu
   if(covered.some(d=>d.cardSalesCents==null))notes.push("feeNetSalesProxy");
   if(ownerPlan){
     const amount=planAmount(covered,ownerPlan);
-    if(amount){
-      if(amount.missingFixed)notes.push("feeFixedTransactionCountMissing");
+    if(amount&&!amount.missingFixed){
       return {amountCents:amount.amountCents,basis:"owner_plan",actualDays:0,
         estimatedDays:covered.length,notes};
     }
-    notes.push("feeOwnerPlanInvalid");
+    notes.push(amount?.missingFixed?"feeFixedTransactionCountMissing":"feeOwnerPlanInvalid");
   }
   let sum=0,actualDays=0,estimatedDays=0,defaultDays=0;
   for(const day of covered){
