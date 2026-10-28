@@ -381,6 +381,9 @@ export const canonicalDictionary = {
   "cv_labor_entries": {
     "meaning": "Recorded timecards",
     "columns": {
+      "regular_hours": {"meaning":"Regular hours exactly supplied by Toast; nullable.","unit":"hours","source":"toast","example":"What regular hours did Toast record?"},
+      "overtime_hours": {"meaning":"Overtime hours exactly supplied by Toast; nullable.","unit":"hours","source":"toast","example":"What overtime did Toast record?"},
+      "hourly_wage_cents": {"meaning":"Recorded hourly wage in integer cents; nullable when unknown.","unit":"cents/hour","source":"toast","example":"What wage did Toast supply?"},
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
         "unit": "UUID",

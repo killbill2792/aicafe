@@ -123,6 +123,9 @@ Recorded timecards
 | status | Actual, estimated, open, needs match or owner provided. | label | app | Which facts are incomplete? |
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
+| regular_hours | Regular hours exactly supplied by Toast; nullable. | hours | toast | What regular hours did Toast record? |
+| overtime_hours | Overtime hours exactly supplied by Toast; nullable. | hours | toast | What overtime did Toast record? |
+| hourly_wage_cents | Recorded hourly wage in integer cents; nullable when unknown. | cents/hour | toast | What wage did Toast supply? |
 
 ## cv_staff
 

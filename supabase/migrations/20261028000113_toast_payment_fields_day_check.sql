@@ -483,3 +483,114 @@ create trigger toast_raw_order_typed_capture
 select public.toast_capture_typed_order(id) from public.toast_raw_records
  where entity='order' and not exists(select 1 from public.toast_order_typed_facts f
   where f.raw_record_id=toast_raw_records.id);
+
+
+-- Exactly provider-reported regular/overtime hours, never calculated from a
+-- guessed break or clock-out. Original hourly wage remains in integer cents.
+alter table public.toast_labor_entries
+ add column if not exists provider_regular_hours numeric,
+ add column if not exists provider_overtime_hours numeric;
+alter table public.toast_open_labor_summaries
+ add column if not exists provider_regular_hours numeric,
+ add column if not exists provider_overtime_hours numeric;
+
+CREATE OR REPLACE FUNCTION toast_stage_labor_entries(p_business_id uuid,p_restaurant_guid uuid,
+ p_location_id uuid,p_rows jsonb) RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE n integer;
+BEGIN
+ IF jsonb_typeof(p_rows)<>'array' OR jsonb_array_length(p_rows)>100
+ OR NOT EXISTS (SELECT 1 FROM toast_location_mappings WHERE business_id=p_business_id
+  AND restaurant_guid=p_restaurant_guid AND location_id=p_location_id AND verified_at IS NOT NULL)
+ THEN RAISE EXCEPTION 'invalid labor batch'; END IF;
+ INSERT INTO toast_labor_entries(
+  business_id,restaurant_guid,location_id,external_time_entry_id,external_employee_id,
+  clock_in,clock_out,hourly_wage_cents,wage_status,breaks,deleted,provider_modified_at,fetched_at,
+  provider_regular_hours,provider_overtime_hours)
+ SELECT p_business_id,p_restaurant_guid,p_location_id,t.external_time_entry_id,t.external_employee_id,
+  t.clock_in,t.clock_out,t.hourly_wage_cents,t.wage_status,t.breaks,t.deleted,
+  t.provider_modified_at,now(),t.provider_regular_hours,t.provider_overtime_hours
+ FROM jsonb_to_recordset(p_rows) AS t (
+  external_time_entry_id uuid,external_employee_id uuid,clock_in timestamptz,clock_out timestamptz,
+  hourly_wage_cents bigint,wage_status text,breaks jsonb,deleted boolean,provider_modified_at timestamptz,
+  provider_regular_hours numeric,provider_overtime_hours numeric)
+ ON CONFLICT (business_id,restaurant_guid,external_time_entry_id) DO UPDATE SET
+  external_employee_id=EXCLUDED.external_employee_id,clock_in=EXCLUDED.clock_in,
+  clock_out=EXCLUDED.clock_out,hourly_wage_cents=EXCLUDED.hourly_wage_cents,
+  wage_status=EXCLUDED.wage_status,breaks=EXCLUDED.breaks,deleted=EXCLUDED.deleted,
+  provider_modified_at=EXCLUDED.provider_modified_at,fetched_at=now(),
+  provider_regular_hours=EXCLUDED.provider_regular_hours,
+  provider_overtime_hours=EXCLUDED.provider_overtime_hours
+ WHERE (EXCLUDED.provider_modified_at IS NOT NULL AND
+      (toast_labor_entries.provider_modified_at IS NULL OR
+       EXCLUDED.provider_modified_at>=toast_labor_entries.provider_modified_at))
+ OR (EXCLUDED.provider_modified_at IS NULL AND toast_labor_entries.provider_modified_at IS NULL);
+ GET DIAGNOSTICS n=ROW_COUNT;
+ RETURN n;
+END $$;
+
+create or replace function public.toast_sync_open_labor_summary()
+returns trigger language plpgsql security definer set search_path=public as $summary$
+begin
+ if auth.role() <> 'service_role' and current_user not in ('postgres','supabase_admin')
+ then raise exception 'service role only';end if;
+ insert into public.toast_open_labor_summaries(
+  business_id,restaurant_guid,external_time_entry_id,external_employee_id,
+  clock_in,clock_out,hourly_wage_cents,wage_status,status,provider_regular_hours,provider_overtime_hours)
+ values(new.business_id,new.restaurant_guid,new.external_time_entry_id,
+  new.external_employee_id,new.clock_in,new.clock_out,
+  case when new.clock_out is null or new.wage_status='missing'
+   then null else new.hourly_wage_cents end,new.wage_status,
+  case when new.clock_out is null then 'open'
+   when new.wage_status='missing' then 'needs_match' else 'actual' end,
+  new.provider_regular_hours,new.provider_overtime_hours)
+ on conflict (business_id,restaurant_guid,external_time_entry_id) do update
+ set external_employee_id=excluded.external_employee_id,clock_in=excluded.clock_in,
+  clock_out=excluded.clock_out,hourly_wage_cents=excluded.hourly_wage_cents,
+  wage_status=excluded.wage_status,status=excluded.status,
+  provider_regular_hours=excluded.provider_regular_hours,
+  provider_overtime_hours=excluded.provider_overtime_hours;
+ return new;
+end $summary$;
+
+create or replace view public.cv_labor_entries (business_id,source,source_ref,status,business_date,data,regular_hours,overtime_hours,hourly_wage_cents)
+with (security_invoker=true) as
+ select t.business_id,
+ case when coalesce(t.pos_timecard_id,'') like 'toast:%' then 'toast' else 'app' end::text as source,
+ 'timecard:'||t.id::text as source_ref,
+ case when t.clock_out is null then 'open'
+  when t.wage_source='estimate' then 'estimated'
+  when t.wage_source='unknown' or t.hourly_wage_cents is null then 'needs_match'
+  else 'actual' end::text as status,
+ (t.clock_in at time zone b.timezone)::date as business_date,
+ jsonb_build_object('id',t.id,'employee_id',t.employee_id,
+  'clock_in',t.clock_in,'clock_out',t.clock_out,
+  'hourly_wage_cents',t.hourly_wage_cents,'wage_source',t.wage_source,
+  'pos_timecard_id',t.pos_timecard_id,'regular_minutes',to_jsonb(t)->'regular_minutes',
+  'overtime_minutes',to_jsonb(t)->'overtime_minutes') as data,
+  (select l.provider_regular_hours from public.toast_open_labor_summaries l
+   where l.business_id=t.business_id and
+    t.pos_timecard_id='toast:'||l.restaurant_guid::text||':'||l.external_time_entry_id::text limit 1),
+  (select l.provider_overtime_hours from public.toast_open_labor_summaries l
+   where l.business_id=t.business_id and
+    t.pos_timecard_id='toast:'||l.restaurant_guid::text||':'||l.external_time_entry_id::text limit 1),
+  t.hourly_wage_cents
+ from public.timecards t join public.businesses b on b.id=t.business_id
+ union all
+ select s.business_id,'toast'::text,
+ 'staged-timecard:'||s.restaurant_guid::text||':'||s.external_time_entry_id::text,
+ case when s.clock_out is null then 'open'
+  when s.wage_status='missing' then 'needs_match' else 'actual' end::text,
+ (s.clock_in at time zone b.timezone)::date,
+ jsonb_build_object('employee_guid',s.external_employee_id,
+  'clock_in',s.clock_in,'clock_out',s.clock_out,
+  'hourly_wage_cents',s.hourly_wage_cents,'wage_status',s.wage_status,
+  'regularHours',s.provider_regular_hours,'overtimeHours',s.provider_overtime_hours),
+ s.provider_regular_hours,s.provider_overtime_hours,s.hourly_wage_cents
+ from public.toast_open_labor_summaries s
+ join public.businesses b on b.id=s.business_id
+ where not exists(select 1 from public.timecards t
+   where t.business_id=s.business_id
+    and t.pos_timecard_id='toast:'||s.restaurant_guid::text||':'||s.external_time_entry_id::text);
+
+
