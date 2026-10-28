@@ -25,9 +25,10 @@ const fail=(source:string,period:{from:string;to:string}|null,why:string):AgentT
  source,period,agentId:"olivia",missing:[why],estimated:false
 });
 async function localWeek(requested:string|null,ctx:AgentToolContext){
+ if(requested)return mondayOfLocalDate(requested);
  const scope=await staffReadScope();
  const today=scope.ok?scope.today:ctx.asOf;
- return mondayOfLocalDate(requested??today);
+ return mondayOfLocalDate(today);
 }
 type WeekData=Extract<Awaited<ReturnType<typeof getWeekSchedule>>,{ok:true}>["data"];
 /** The Team screen and chat share getWeekSchedule. Toast plans never count as paid labor. */
