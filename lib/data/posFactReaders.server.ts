@@ -69,7 +69,8 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
    try{
     const hours=found.rows.filter(r=>!blocked.has(r.business_date)).map(r=>({date:r.business_date,hourLocal:integer(r.hour_local),locationId:r.location_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
-    if(!hours.length)return missing("toastExcludedDays");
+    if(!hours.length)return {available:false,value:null,quality:{level:"low",
+      missingInputs:[...coverage.quality,"toastExcludedDays"],estimatedInputs:[],staleInputs:[]}};
     return known({hours},[...missingDays(period,hours.map(r=>r.date),"hourlySalesDatesNotObserved"),
       ...coverage.quality,...(found.error?["hourlySalesUnavailable"]:[]),...(found.truncated?["hourlySalesPageLimit"]:[])]);
    }catch{return missing("unsafeHourlySalesFacts");}
@@ -88,7 +89,8 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
    try{
     const employees=found.rows.filter(r=>!blocked.has(r.business_date)).map(r=>({date:r.business_date,employeeId:r.employee_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
-    if(!employees.length)return missing("toastExcludedDays");
+    if(!employees.length)return {available:false,value:null,quality:{level:"low",
+      missingInputs:[...coverage.quality,"toastExcludedDays"],estimatedInputs:[],staleInputs:[]}};
     return known({employees},[...missingDays(period,employees.map(r=>r.date),"employeeSalesDatesNotObserved"),
       ...coverage.quality,...(found.error?["employeeSalesUnavailable"]:[]),...(found.truncated?["employeeSalesPageLimit"]:[])]);
    }catch{return missing("unsafeEmployeeSalesFacts");}
