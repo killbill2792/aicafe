@@ -14,9 +14,11 @@ export type SupplierCopy={
 };
 const field="min-h-12 w-full rounded-xl border border-line bg-surface p-3 text-[17px] text-ink";
 async function read<T>(resp:Response):Promise<T>{if(!resp.ok)throw new Error();return resp.json() as Promise<T>;}
-export default function SupplierEvidenceManager({copy,today,currency}:{copy:SupplierCopy;today:string;currency:string}){
+export default function SupplierEvidenceManager({copy,today,currency}:{copy:SupplierCopy;today:string;currency:string|null}){
   const locale=useLocale();
-  const formatPrice=(cents:number)=>new Intl.NumberFormat(locale,{style:"currency",currency}).format(cents/100);
+  const formatPrice=(cents:number)=>currency?
+    new Intl.NumberFormat(locale,{style:"currency",currency}).format(cents/100):
+    new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100)+" ("+copy.currencyMissing+")";
  const [supplier,setSupplier]=useState("");
  const [item,setItem]=useState("");
  const [dollars,setDollars]=useState("");
