@@ -32,8 +32,9 @@ async function localWeek(requested:string|null,ctx:AgentToolContext){
 type WeekData=Extract<Awaited<ReturnType<typeof getWeekSchedule>>,{ok:true}>["data"];
 /** The Team screen and chat share getWeekSchedule. Toast plans never count as paid labor. */
 export function mergeScheduleShifts(data:Pick<WeekData,"shifts"|"posShifts"|"team"|"timezone">){
- const ids=new Set(data.team.map(p=>p.id));
- const app=data.shifts.filter(s=>ids.has(s.employeeId)).map(s=>({
+ // Retired employees are retained in the Team screen for dated historical shifts.
+ // A current active-team filter must not erase their stored assignments in chat.
+ const app=data.shifts.map(s=>({
    id:s.id,date:s.date,employeeId:s.employeeId,employeeName:s.employeeName,
    start:s.start,end:s.end,paidMinutes:s.paidMinutes,costCents:s.costCents,
    estimated:s.estimated,source:"app" as const,
@@ -77,8 +78,7 @@ export const scheduleReadTools={
    }
    if(input.name&&selected.length===1&&!ownerNamedTarget(ctx.resolveState,selected[0].id,selected[0].name))
      return fail("employees+scheduled_shifts",null,"targetNotConfirmed");
-   const activeIds=new Set(result.data.team.map(person=>person.id));
-   const activeShifts=result.data.shifts.filter(shift=>activeIds.has(shift.employeeId));
+   const activeShifts=result.data.shifts;
    const all=mergeScheduleShifts(result.data);
    const scoped=input.name?all.filter(shift=>selected.some(person=>
      person.id===shift.employeeId||person.name.toLocaleLowerCase()===shift.employeeName.toLocaleLowerCase())):all;
@@ -103,12 +103,12 @@ export const scheduleReadTools={
    const p=week.parse(raw),ws=await localWeek(p.week_start,ctx);
    const result=await getWeekSchedule({weekStart:ws});
    if(!result.ok)return fail("scheduled_shifts",null,result.error);
-   const data=result.data,activeIds=new Set(data.team.map(p=>p.id));
-   const activeShifts=data.shifts.filter(s=>activeIds.has(s.employeeId));
+   const data=result.data;
+   const activeShifts=data.shifts;
    const combined=mergeScheduleShifts(data);
    const scheduled=combined.length>0,hasCostedShifts=activeShifts.length>0,totals=aggregateCosts(activeShifts);
    const toastCoverageUnknown=combined.some(s=>s.source==="toast")&&data.rules.coverage_enabled;
-   const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
+   const adjacent=data.adjacentShifts;
    const gaps=scheduled&&!toastCoverageUnknown?coverageGaps(data.dates,[...adjacent,...activeShifts],
      data.openHours,data.rules.coverage_enabled?data.rules.min_headcount:0):[];
    return {source:"scheduled_shifts",period:{from:data.dates[0],to:data.dates[6]},
@@ -145,8 +145,8 @@ export const scheduleReadTools={
    const p=week.parse(raw),ws=await localWeek(p.week_start,ctx);
    const whole=await getWeekSchedule({weekStart:ws});
    if(!whole.ok)return fail("coverage_gaps",null,whole.error);
-   const data=whole.data,activeIds=new Set(data.team.map(p=>p.id));
-   const activeShifts=data.shifts.filter(s=>activeIds.has(s.employeeId));
+   const data=whole.data;
+   const activeShifts=data.shifts;
    const combined=mergeScheduleShifts(data),scheduled=combined.length>0;
    const toastCoverageUnknown=combined.some(s=>s.source==="toast")&&data.rules.coverage_enabled;
    const adjacent=data.adjacentShifts.filter(s=>activeIds.has(s.employeeId));
