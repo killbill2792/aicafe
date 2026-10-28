@@ -24,13 +24,14 @@ const economics:Economics={
 };
 const item={ingredient_cost_cents:145,packaging_cents:0,category:"drink" as const,
  item_name:"New Latte",ownerInputs:null};
-function context(override:Partial<Economics>={},ownerText=""):AgentToolContext{
- return {asOf:"2026-10-27",locale:"en",
+function context(override:Partial<Economics>={},ownerText="",
+ locale:"en"|"es"|"ar"="en",savedTarget:number|null=null):AgentToolContext{
+ return {asOf:"2026-10-27",locale,
   resolveState:{ownerText,ambiguous:[],seenIds:new Set(),chosenIds:new Set(),
    priorChoice:null,asked:false,usageMissing:new Map()},
   tools:{} as AgentToolContext["tools"],
   readEconomics:async()=>({economics:{...economics,...override},
-    items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})
+    items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:savedTarget})
  } as AgentToolContext;
 }
 describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
@@ -125,6 +126,69 @@ describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
   const noEvidence=await newItemPriceTools.suggest_new_item_price.execute(v,
    context({missingBillCategories:["rent"]},"I did not enter an amount"));
   expect(noEvidence.billsPartial).toBe(true);
+ });
+
+ it("does not turn an owner's $13,000 labor statement into $13,000 bills",async()=>{
+  const v={...item,ownerInputs:{...emptyOwnerInputs,laborCents:1300000,laborPeriod:{unit:"month" as const}},
+   owner_monthly_bills_cents:1300000};
+  const result=await newItemPriceTools.suggest_new_item_price.execute(v,context({},"labor 13000/month"));
+  expect(result.monthlyBills).toMatchObject({valueCents:836000,status:"actual"});
+  expect(result.recommendedPriceCents).toBe(525);
+  expect(result.breakEvenCents).toBe(513);
+  expect(result.components).toMatchObject({bills:{source:"recorded"}});
+  for(const [text,locale] of [["Facturas mensuales: 13000","es"],
+   ["الفواتير الشهرية: ١٣٠٠٠","ar"]] as const){
+   const valid=await newItemPriceTools.suggest_new_item_price.execute(v,context({},text,locale));
+   expect(valid.monthlyBills).toMatchObject({status:"owner",valueCents:1300000});
+  }
+ });
+ it("accounts for the saved 2.49% plus $0.15/order plan over two drinks per order",async()=>{
+  const v={...item,ownerInputs:{...emptyOwnerInputs,laborCents:1300000,laborPeriod:{unit:"month" as const}}};
+  const plan={percentRate:.0249,fixedFeeCents:15,drinksPerOrder:2,processorLabel:"Owner card fees"};
+  const result=await newItemPriceTools.suggest_new_item_price.execute(v,context({feePlan:plan}));
+  expect(result.feeRate).toBe(.0249);
+  expect(result.feePlan).toEqual(plan);
+  const full=145+1300000/6000+836000/6000;
+  expect(result.breakEvenCents).toBe(Math.ceil((full+7.5)/(1-.0249)));
+  expect(result.recommendedPriceCents).toBe(525);
+  expect(result.profitPriceCents).toBe(625);
+  const lines=result.explain as ExplainLine[];
+  const fee=lines.find(l=>l.label.startsWith("Processing fee:"))!;
+  expect(fee.label).toContain("2.49%");
+  expect(fee.label).toContain("$0.15/order");
+  expect(fee.label).toContain("$0.08/drink");
+  expect(fee.basis).toContain("Owner card fees");
+  expect(fee.provenance).toBe("ownerProvided");
+  expect((result.components as {fee:{source:string}}).fee.source).toBe("ownerProvided");
+  expect(result.numberEstimates).toEqual(expect.arrayContaining([
+   expect.objectContaining({value:15,unit:"cents",detail:"pricing"}),
+   expect.objectContaining({value:249,unit:"bps",detail:"pricing"})]));
+  expect((result.numberEstimates as Array<{detail:string}>).every(v=>v.detail==="pricing")).toBe(true);
+  expect(checkNumbers("Suggested $5.25, fee 2.49% and $0.15.","", [result],"en")).toEqual([]);
+  const fallback=await newItemPriceTools.suggest_new_item_price.execute(v,context());
+  expect(fallback.feeRate).toBe(.023);
+  expect(fallback.breakEvenCents).toBe(513);
+ });
+ it("labels a saved drink-cost target as owner-provided and localizes the short price note",async()=>{
+  const v={...item,ownerInputs:{...emptyOwnerInputs,laborCents:1300000,laborPeriod:{unit:"month" as const}}};
+  for(const [locale,copy] of [["en",en.SupervisorChat],["es",es.SupervisorChat],
+   ["ar",ar.SupervisorChat]] as const){
+   const r=await newItemPriceTools.suggest_new_item_price.execute(v,context({},"",locale,.30));
+   expect(r.pricingNote).toBe(copy.pricingNoteBelowFullCost);
+   expect((r.components as {targetDrinkCost:{source:string,basis:string}}).targetDrinkCost)
+    .toMatchObject({source:"ownerProvided",basis:copy.pricingSavedTarget});
+   const missing=await newItemPriceTools.suggest_new_item_price.execute(item,context({},"",locale));
+   expect(missing.pricingNote).toBe(copy.pricingNoteDrinkCost.replace("{percent}","30"));
+  }
+ });
+ it("recognizes Spanish and Arabic explicit percentages only for informational profit",async()=>{
+  const v={...item,ownerInputs:{...emptyOwnerInputs,laborCents:1300000,laborPeriod:{unit:"month" as const}},
+   operating_margin_percent:25};
+  for(const [text,locale] of [["margen operativo 25%","es"],["هامش الربح ٢٥٪","ar"]] as const){
+   const r=await newItemPriceTools.suggest_new_item_price.execute(v,context({},text,locale));
+   expect(r.profitPriceCents).toBe(700);
+   expect(r.recommendedPriceCents).toBe(525);
+  }
  });
 
 });
