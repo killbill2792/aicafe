@@ -4,6 +4,12 @@ import {resolve} from "node:path";
 const sql=readFileSync(resolve("supabase/migrations/20261028000114_toast_optional_canonical_views.sql"),"utf8");
 const view=(name:string)=>sql.split("create or replace view public."+name)[1]?.split("create or replace view public.")[0]??"";
 describe("Toast optional canonical SQL contracts",()=>{
+ it("preparation station configuration GUID and name are not silently omitted",()=>{
+  const recent=readFileSync(resolve("supabase/migrations/20261028000118_toast_kitchen_prep_station.sql"),"utf8");
+  expect(recent).toContain("coalesce(x.item->>'prepStationGuid',x.item->>'guid')");
+  expect(recent).toContain("coalesce(x.item->>'prepStationName',x.item->>'name')");
+  expect(recent).toContain("public.toast_safe_business_label");
+ });
  it("keeps dining option, channel and guest count on the order projection",()=>{
   expect(view("cv_orders")).toMatch(/o\.dining_option/);
   expect(view("cv_orders")).toMatch(/o\.source_channel/);

@@ -918,6 +918,13 @@ BEGIN
   where business_id=b and source='toast' and source_channel='IN_STORE'
   and net_sales_cents=450 and status='actual'),
   'channel query reads a single stored current order amount');
+ perform pg_temp.assert_true((
+  public.ai_query_view(b,'cv_orders',array[]::text[],
+  '[{"column":"source_channel","op":"=","value":"IN_STORE"}]'::jsonb,
+  array['source_channel'],
+  '[{"fn":"sum","column":"net_sales_cents"}]'::jsonb,
+  '2026-10-26','2026-10-26',null,100)->'rows'->0->>'sum_net_sales_cents'
+ )::bigint=450,'real café-scoped RPC groups current channel sales without excluded rows');
 
  insert into public.toast_raw_samples(business_id,restaurant_guid,endpoint,business_date,
  http_status,item_count,sample,field_paths) values
@@ -936,7 +943,9 @@ BEGIN
      "itemFulfilledAt":"2026-10-26T10:04:00Z",
      "prepStationGuid":"station-a"}]'::jsonb,ARRAY['ticketFiredAt','itemFulfilledAt']),
  (b,r,'config/v2/diningOptions','2026-10-26',200,1,
-  '[{"guid":"option-a","name":"Dine In","behavior":"DINE_IN"}]'::jsonb,ARRAY['name']);
+  '[{"guid":"option-a","name":"Dine In","behavior":"DINE_IN"}]'::jsonb,ARRAY['name']),
+ (b,r,'kitchen/v1/published/prepStations','2026-10-26',200,1,
+  '[{"guid":"station-b","name":"Cold Bar","printingMode":"ON"}]'::jsonb,ARRAY['name']);
 
  perform pg_temp.assert_true(exists(select 1 from public.cv_inventory
   where business_id=b and source='toast' and menu_item_ref='stock-a'
@@ -958,6 +967,10 @@ BEGIN
   where business_id=b and ticket_ref='ticket-a' and
     fired_at='2026-10-26T10:00:00Z' and ready_at='2026-10-26T10:04:00Z'),
   'Toast fulfillment timestamps remain queryable');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_kitchen
+  where business_id=b and prep_station_ref='station-b'
+  and data->>'prep_station_name'='Cold Bar'),
+  'prep station configuration GUID/name are exposed');
  perform pg_temp.assert_true(exists(select 1 from public.cv_dining_options
   where business_id=b and dining_option_ref='option-a'
    and dining_option_name='Dine In'),
