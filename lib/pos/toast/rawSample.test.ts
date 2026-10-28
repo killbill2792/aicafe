@@ -87,7 +87,7 @@ describe("read-only Toast coverage diagnostics",()=>{
   const getters=TOAST_READ_ENDPOINTS.filter(e=>e.scope!=="unsupported"&&e.scope!=="era_request");
   expect(getters).toHaveLength(88);
   expect(new Set(getters.map(e=>e.endpoint)).size).toBe(88);
-  expect(getters.map(e=>[e.endpoint,e.path,e.doc].join("|")).sort()).toEqual(OFFICIAL_TOAST_GET_PATHS); 
+  expect(getters.map(e=>[e.endpoint,e.path,e.doc].join("|")).sort()).toEqual(OFFICIAL_TOAST_GET_PATHS);
   expect(getters.every(e=>e.doc.startsWith("https://doc.toasttab.com/openapi/"))).toBe(true);
   expect(TOAST_READ_ENDPOINTS.filter(e=>e.scope==="era_request")).toHaveLength(9);
   expect(TOAST_READ_ENDPOINTS.filter(e=>e.scope==="unsupported")).toHaveLength(5);
