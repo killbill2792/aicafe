@@ -158,3 +158,156 @@ grant select on public.toast_owner_attention_days_v to service_role;
 -- Issue 9 already fixed by migration 101. Owner verification query:
 -- select pg_get_constraintdef(oid) from pg_constraint
 -- where conname='toast_sync_phase_errors_phase_check';
+
+
+-- Complete sanitized payment projection from retained Toast raw payloads.
+-- This table stores NO card PAN, guest name, or billing details.
+create table if not exists public.toast_payment_facts(
+ business_id uuid not null references public.businesses(id) on delete cascade,
+ restaurant_guid uuid not null,business_date date not null,
+ payment_ref text not null,
+ payment_type text,card_type text,card_entry_mode text,
+ payment_status text,amount_cents bigint,tip_cents bigint,
+ original_processing_fee_cents bigint,
+ processing_fee_cents bigint,
+ fee_status text not null default 'missing'
+  check(fee_status in ('actual','estimated','missing')),
+ fee_basis text not null default 'missing'
+  check(fee_basis in ('toast','owner_plan','cash_or_gift','missing')),
+ status text not null default 'actual'
+  check(status in ('actual','estimated','open','needs_match','owner_provided')),
+ first_seen timestamptz not null default now(),
+ primary key(business_id,restaurant_guid,business_date,payment_ref)
+);
+create index if not exists toast_payment_facts_day
+ on public.toast_payment_facts(business_id,business_date);
+alter table public.toast_payment_facts enable row level security;
+revoke all on public.toast_payment_facts from public,anon,authenticated;
+create policy "owner read" on public.toast_payment_facts for select
+ to authenticated using(public.scheduling_is_owner(business_id));
+grant select on public.toast_payment_facts to authenticated;
+grant select,insert,update,delete on public.toast_payment_facts to service_role;
+
+-- The import transaction has already archived every raw nested payment from
+-- every source page. Complete snapshots replace only the CURRENT typed rows.
+-- Retained raw records are never updated or removed.
+create or replace function public.toast_refresh_typed_payment_facts()
+returns trigger language plpgsql security definer set search_path=public as $facts$
+begin
+ if auth.role()<>'service_role' and current_user not in ('postgres','supabase_admin')
+ then raise exception 'service role only';end if;
+ if new.import_state<>'imported' or new.last_import_run_id is null
+  or (tg_op='UPDATE' and new.imported_at is not distinct from old.imported_at)
+ then return new;end if;
+ if new.unparsed_count=0 then
+  delete from public.toast_payment_facts
+  where business_id=new.business_id and restaurant_guid=new.restaurant_guid
+   and business_date=new.business_date;
+ else
+  update public.toast_payment_facts set status='needs_match'
+  where business_id=new.business_id and restaurant_guid=new.restaurant_guid
+   and business_date=new.business_date;
+ end if;
+ with raw as (
+  select distinct on (
+   coalesce(entity_guid::text,
+    regexp_replace(capture_key,':[0-9a-f]{64}$','')))
+   coalesce(entity_guid::text,
+    regexp_replace(capture_key,':[0-9a-f]{64}$','')) as ref,
+   payload,first_seen
+  from public.toast_raw_records
+  where business_id=new.business_id and restaurant_guid=new.restaurant_guid
+   and business_date=new.business_date and run_id=new.last_import_run_id
+   and entity='payment'
+  order by coalesce(entity_guid::text,
+   regexp_replace(capture_key,':[0-9a-f]{64}$','')),
+    first_seen desc, capture_key desc
+ )
+ insert into public.toast_payment_facts(
+ business_id,restaurant_guid,business_date,payment_ref,payment_type,card_type,
+ card_entry_mode,payment_status,amount_cents,tip_cents,
+ original_processing_fee_cents,processing_fee_cents,fee_status,fee_basis,status,first_seen)
+ select new.business_id,new.restaurant_guid,new.business_date,r.ref,
+ left(r.payload->>'type',80),left(r.payload->>'cardType',80),
+ left(r.payload->>'cardEntryMode',80),left(r.payload->>'paymentStatus',80),
+ case when jsonb_typeof(r.payload->'amount')='number'
+  then round((r.payload->>'amount')::numeric*100)::bigint else null end,
+ case when jsonb_typeof(r.payload->'tipAmount')='number'
+  then round((r.payload->>'tipAmount')::numeric*100)::bigint else null end,
+ case when jsonb_typeof(r.payload->'originalProcessingFee')='number'
+  then round((r.payload->>'originalProcessingFee')::numeric*100)::bigint else null end,
+ case when upper(regexp_replace(coalesce(r.payload->>'type',''),'[^a-zA-Z]','','g'))
+  in ('CASH','GIFTCARD','GIFTCERTIFICATE') then 0
+  when jsonb_typeof(r.payload->'originalProcessingFee')='number'
+  then round((r.payload->>'originalProcessingFee')::numeric*100)::bigint else null end,
+ case when upper(regexp_replace(coalesce(r.payload->>'type',''),'[^a-zA-Z]','','g'))
+  in ('CASH','GIFTCARD','GIFTCERTIFICATE')
+  or jsonb_typeof(r.payload->'originalProcessingFee')='number' then 'actual'
+  else 'missing' end,
+ case when upper(regexp_replace(coalesce(r.payload->>'type',''),'[^a-zA-Z]','','g'))
+  in ('CASH','GIFTCARD','GIFTCERTIFICATE') then 'cash_or_gift'
+  when jsonb_typeof(r.payload->'originalProcessingFee')='number' then 'toast'
+  else 'missing' end,
+ case when jsonb_typeof(r.payload->'amount')='number' then 'actual'
+  else 'open' end,r.first_seen
+ from raw r
+ on conflict(business_id,restaurant_guid,business_date,payment_ref) do update
+ set payment_type=excluded.payment_type,card_type=excluded.card_type,
+ card_entry_mode=excluded.card_entry_mode,payment_status=excluded.payment_status,
+ amount_cents=excluded.amount_cents,tip_cents=excluded.tip_cents,
+ original_processing_fee_cents=excluded.original_processing_fee_cents,
+ processing_fee_cents=excluded.processing_fee_cents,
+ fee_status=excluded.fee_status,fee_basis=excluded.fee_basis,
+ status=excluded.status,first_seen=excluded.first_seen;
+ return new;
+end $facts$;
+drop trigger if exists toast_payment_facts_current_on_import on public.toast_day_status;
+create trigger toast_payment_facts_current_on_import
+ after insert or update of imported_at on public.toast_day_status
+ for each row execute function public.toast_refresh_typed_payment_facts();
+revoke all on function public.toast_refresh_typed_payment_facts() from public,anon,authenticated;
+
+-- Prefer typed current payment fields, but retain existing sanitized legacy
+-- summaries for days predating raw archival.
+create or replace view public.cv_payments
+ (business_id,source,source_ref,status,business_date,amount_cents,tip_cents,
+  payment_type,card_type,card_entry_mode,original_processing_fee_cents,
+  processing_fee_cents,fee_status,data)
+with (security_invoker=true) as
+ select p.business_id,'toast'::text,
+  'payment:'||p.restaurant_guid::text||':'||p.payment_ref,
+  p.status,p.business_date,p.amount_cents,p.tip_cents,p.payment_type,p.card_type,
+  p.card_entry_mode,p.original_processing_fee_cents,p.processing_fee_cents,
+  p.fee_status,
+  jsonb_build_object('type',p.payment_type,'cardType',p.card_type,
+   'cardEntryMode',p.card_entry_mode,
+   'originalProcessingFeeCents',p.original_processing_fee_cents,
+   'feeStatus',p.fee_status,'feeBasis',p.fee_basis) as data
+ from public.toast_payment_facts p
+ union all
+ select s.business_id,'toast'::text,
+  'payment:'||s.restaurant_guid::text||':'||s.payment_ref,
+  s.status,s.business_date,s.amount_cents,s.tip_cents,s.payment_type,
+  null::text,null::text,null::bigint,null::bigint,
+  'missing'::text,jsonb_build_object('type',s.payment_type,'legacy',true)
+ from public.toast_payment_summaries s
+ where not exists(select 1 from public.toast_payment_facts f
+  where f.business_id=s.business_id and f.restaurant_guid=s.restaurant_guid
+   and f.business_date=s.business_date);
+revoke all on public.cv_payments from public,anon;
+grant select on public.cv_payments to authenticated,service_role;
+
+-- One selected canonical daily fee fact, not fabricated per-order fee zeros.
+create or replace view public.cv_card_fees
+ (business_id,source,source_ref,status,business_date,amount_cents,data)
+with (security_invoker=true) as
+ select f.business_id,
+ case when f.provider='Toast' then 'toast' else 'app' end::text,
+ 'fee:'||f.business_date::text,
+ case when f.status='estimated' then 'estimated' else 'actual' end::text,
+ f.business_date,f.amount_cents,
+ jsonb_build_object('provider',f.provider,'sourceType',f.source_type,
+  'sourceReference',f.source_reference,'basis',f.metadata->>'basis') as data
+ from public.processing_fee_daily_facts f;
+revoke all on public.cv_card_fees from public,anon;
+grant select on public.cv_card_fees to authenticated,service_role;

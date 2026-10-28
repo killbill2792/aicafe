@@ -181,6 +181,12 @@ export const canonicalDictionary = {
   "cv_payments": {
     "meaning": "Sanitized Toast payments",
     "columns": {
+      "payment_type": {"meaning":"Toast payment method (card/cash/gift), when supplied.","unit":"label","source":"toast","example":"How much was paid by card?"},
+      "card_type": {"meaning":"Card network/type from Toast, when supplied.","unit":"label","source":"toast","example":"What was Visa volume?"},
+      "card_entry_mode": {"meaning":"How the card was entered, from Toast.","unit":"label","source":"toast","example":"What were keyed-card fees?"},
+      "original_processing_fee_cents": {"meaning":"Original Toast-reported fee, not an estimate.","unit":"cents","source":"toast","example":"What fee did Toast report?"},
+      "processing_fee_cents": {"meaning":"Selected fee per payment, or null when unknown.","unit":"cents","source":"toast","example":"What were the processing fees?"},
+      "fee_status": {"meaning":"Actual, estimated or missing fee provenance.","unit":"label","source":"toast","example":"Which fees are estimates?"},
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
         "unit": "UUID",
