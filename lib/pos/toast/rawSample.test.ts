@@ -235,7 +235,7 @@ describe("read-only Toast coverage diagnostics",()=>{
   expect(safe.payment.cardInfo.last4).toBeUndefined();
  });
  it("redacts gift-card first-five digits and hashes network transaction IDs",()=>{
-  const raw={giftCard:{first5CardDigits:"12345",last4CardDigits:"6789",cardNumberIdentifier:"GIFT-123"},
+  const raw={giftCard:{guid:"GIFT-GUID",first5CardDigits:"12345",last4CardDigits:"6789",cardNumberIdentifier:"GIFT-123"},
    payment:{networkTransactionIdentifier:"NETWORK-123",amount:42,refundStatus:"REFUNDED"}};
   const safe=redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY);
   const json=JSON.stringify(safe);
@@ -243,6 +243,8 @@ describe("read-only Toast coverage diagnostics",()=>{
   expect(json).not.toContain("6789");
   expect(json).not.toContain("NETWORK-123");
   expect(json).not.toContain("GIFT-123");
+  expect(json).not.toContain("GIFT-GUID");
+  expect((safe as {giftCard:{guid:string}}).giftCard.guid).toMatch(/^hmac:[a-f0-9]{64}$/);
   expect((safe as {giftCard:{cardNumberIdentifier:string}}).giftCard.cardNumberIdentifier)
    .toMatch(/^hmac:[a-f0-9]{64}$/);
   expect(json).toContain('"refundStatus":"REFUNDED"');
