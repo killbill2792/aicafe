@@ -352,10 +352,10 @@ async function readHistoricalBusinessSnapshot(
       .eq("business_id",businessId).gte("business_date",period.from)
       .lte("business_date",period.to).order("business_date",{ascending:true}).range(0,999),
     supabase.from("recurring_costs")
-      .select("category_code,amount_cents,is_estimate,active_from,active_to")
-      .eq("business_id",businessId).lte("active_from",period.to),
-    supabase.from("expenses").select("category_code,amount_cents,status,spent_on")
-      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd).order("spent_on",{ascending:true}).order("category_code",{ascending:true}).range(0,999),
+      .select("id,category_code,amount_cents,is_estimate,active_from,active_to")
+      .eq("business_id",businessId).lte("active_from",period.to).order("id",{ascending:true}).range(0,999),
+    supabase.from("expenses").select("id,category_code,amount_cents,status,spent_on")
+      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd).order("spent_on",{ascending:true}).order("category_code",{ascending:true}).order("id",{ascending:true}).range(0,999),
     supabase.from("locations").select("open_hours")
       .eq("business_id",businessId).order("name",{ascending:true}).limit(1),
     readPeriodItemSales(supabase,businessId,period),
@@ -382,6 +382,16 @@ async function readHistoricalBusinessSnapshot(
     allExpenses.push(...(page.data??[]));
     if((page.data??[]).length<1000)break;
   }
+  const allRecurring=[...(recurring.data??[])];
+  for(let offset=1000;offset<=allRecurring.length;offset+=1000){
+    const page=await supabase.from("recurring_costs")
+      .select("id,category_code,amount_cents,is_estimate,active_from,active_to")
+      .eq("business_id",businessId).lte("active_from",period.to)
+      .order("id",{ascending:true}).range(offset,offset+999);
+    if(page.error)throw page.error;
+    allRecurring.push(...(page.data??[]));
+    if((page.data??[]).length<1000)break;
+  }
   const recorded=allRollups.map(rowToDailyFacts);
   const sales=recorded.filter(d=>d.salesDataStatus!=="missing");
   const months:string[]=[];
@@ -403,7 +413,7 @@ async function readHistoricalBusinessSnapshot(
     for(const categoryCode of relevantCodes){
       const actual=allExpenses.filter(r=>r.category_code===categoryCode&&
         r.spent_on>=key+"-01"&&r.spent_on<=finalDay);
-      const configured=(recurring.data??[]).filter(r=>r.category_code===categoryCode&&
+      const configured=allRecurring.filter(r=>r.category_code===categoryCode&&
         r.active_from<=finalDay&&(!r.active_to||r.active_to>=key+"-01"));
       const rows=actual.length?actual:configured;
       const amountCents=rows.reduce((sum,r)=>sum+Number(r.amount_cents),0);
@@ -412,7 +422,7 @@ async function readHistoricalBusinessSnapshot(
       const isMissing=rows.length===0;
       monthlyAmounts.push({monthKey:key,categoryCode,amountCents,isEstimate,isMissing});
       if(isEstimate)estimatedExpenseCategories.push("expense:"+categoryCode+":"+key);
-      if(isMissing&&((recurring.data??[]).some(r=>r.category_code===categoryCode)||
+      if(isMissing&&(allRecurring.some(r=>r.category_code===categoryCode)||
         allExpenses.some(r=>r.category_code===categoryCode)))
         missingExpenseCategories.push("expense:"+categoryCode+":"+key);
     }
