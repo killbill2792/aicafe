@@ -27,7 +27,7 @@ export async function getBusinessSnapshotFromDb(
     return readHistoricalBusinessSnapshot(supabase,businessId,costPeriod);
   const [businessRead,locationRead]=await Promise.all([
     supabase.from("businesses").select(
-      "id, name, timezone, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status, owner_monthly_payroll_extras_cents")
+      "id, name, timezone, currency, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status, owner_monthly_payroll_extras_cents")
       .eq("id",businessId).single(),
     supabase.from("locations").select("open_hours").eq("business_id",businessId)
       .order("name",{ascending:true}).limit(1).maybeSingle(),
@@ -144,6 +144,7 @@ export async function getBusinessSnapshotFromDb(
       id: businessRow.id,
       name: businessRow.name,
       timezone,
+      currency:businessRow.currency??null,
       payrollTaxRate: Number(businessRow.payroll_tax_rate),
       payrollTaxRateStatus: businessRow.payroll_tax_rate_status ?? "estimated",
       payrollTaxRateSource: businessRow.payroll_tax_rate_source ?? "system_estimate",
@@ -341,7 +342,7 @@ async function readHistoricalBusinessSnapshot(
     !/^\d{4}-\d{2}-\d{2}$/.test(period.to)||period.from>period.to)
     throw new Error("Invalid historical café period");
   const {data:business,error:businessError}=await supabase.from("businesses")
-    .select("id,name,timezone,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source,target_operating_margin,target_operating_margin_status,owner_monthly_payroll_extras_cents")
+    .select("id,name,timezone,currency,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source,target_operating_margin,target_operating_margin_status,owner_monthly_payroll_extras_cents")
     .eq("id",businessId).single();
   if(businessError||!business||!business.timezone)throw new Error("Historical café scope unavailable");
   const today=formatInTimeZone(new Date(),business.timezone,"yyyy-MM-dd");
@@ -443,6 +444,7 @@ async function readHistoricalBusinessSnapshot(
   const ownerFeePlans=await getOwnerConfirmedProcessingFeePlans(supabase,businessId);
   return {
     business:{id:business.id,name:business.name,timezone:business.timezone,
+      currency:business.currency??null,
       payrollTaxRate:Number(business.payroll_tax_rate),
       payrollTaxRateStatus:business.payroll_tax_rate_status,
       payrollTaxRateSource:business.payroll_tax_rate_source,
