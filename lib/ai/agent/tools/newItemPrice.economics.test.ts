@@ -12,7 +12,7 @@ const economics:Economics={
 const input={ingredient_cost_cents:145,category:"drink" as const,
  packaging_cents:0,item_name:"New Latte",ownerInputs:null};
 const context=(e:Economics):AgentToolContext=>({
- timezone:"America/Los_Angeles",asOf:"2026-10-27",locale:"en",
+ timezone:"America/Los_Angeles",asOf:"2026-10-27",locale:"en",currency:"USD",
  tools:{} as AgentToolContext["tools"],
  readEconomics:async()=>({economics:e,items:[],staff:[],
   ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})
@@ -60,12 +60,22 @@ describe("supervisor new-item price evidence",()=>{
       if(locale!=="en")expect((reply.monthlyLabor as {reason:string}).reason).not.toContain("Only");
     }
   });
+  it("uses a café EUR fee plan without hardcoded USD in localized pricing",async()=>{
+   const withPlan:Economics={...economics,feePlan:{percentRate:.02,fixedFeeCents:25,
+      drinksPerOrder:2,processorLabel:"Processor"}};
+   const reply=await newItemPriceTools.suggest_new_item_price.execute(input,
+     {...context(withPlan),locale:"es",currency:"EUR"});
+   const lines=reply.explain as Array<{label:string}>;
+   expect(lines.some(row=>row.label.includes("€"))).toBe(true);
+   expect(lines.some(row=>row.label.includes("US$"))).toBe(false);
+  });
   it("does not leak English explain titles or owner choices into ES and AR",async()=>{
     for(const locale of ["es","ar"] as const){
       const ctx={...context({...economics,monthlyStaff:figure(null,"missing","laborNoCoveredDays")}),locale};
       const response=await newItemPriceTools.suggest_new_item_price.execute(input,ctx);
       const lines=response.explain as Array<{label:string}>;
       expect(lines.map(x=>x.label)).not.toContain("Labor/drink");
+      expect(lines.map(x=>x.label)).not.toContain("Recorded business costs");
       expect(lines.map(x=>x.label)).toContain(locale==="es"?"Personal por bebida":"العمالة لكل مشروب");
       const choices=response.candidates as Array<{label:string}>;
       expect(choices[0].label).toBe(locale==="es"?"Indicar nómina mensual":"تقديم الرواتب الشهرية");
