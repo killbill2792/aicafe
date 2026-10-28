@@ -33,15 +33,6 @@ import {profitForPeriod} from "@/lib/metrics/core/profit";
 import {laborForPeriod} from "@/lib/metrics/core/labor";
 import {breakEvenFor} from "@/lib/metrics/core/breakEven";
 
-function countOperatingDays(snapshot: BusinessSnapshot, throughDay: number): number {
-    let count = 0;
-  for (let day = 1; day <= throughDay; day++) {
-    const date = `${snapshot.monthKey}-${String(day).padStart(2, "0")}`;
-    if (regularHoursStateForDate(snapshot.business.openHours, date) !== "closed") count += 1;
-  }
-  return count;
-}
-
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const buckets = recoveryBuckets(snapshot);
   const actual = actualDayContributions(snapshot);
@@ -59,8 +50,6 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const missingMonthWage=monthRecordedDays.some(d=>!laborKnown(d));
   // Known contributions cannot establish final coverage when any recorded wage is partial.
   const allCovered=!missingMonthWage&&recovery.currentBucketCode===null;
-  const staffSoFarCents=missingMonthWage?null:monthRecordedDays.reduce((sum,day)=>
-    sum+(day.wagesCents??0)+(day.staffTaxCents??0),0);
   const todayDay = Number(snapshot.todayDateStr.slice(-2));
   const monthOpenDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
     snapshot.monthKey+"-"+String(i+1).padStart(2,"0")).filter(date=>
