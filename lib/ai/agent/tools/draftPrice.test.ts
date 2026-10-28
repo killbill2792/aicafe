@@ -18,7 +18,7 @@ describe("agent read only capabilities",()=>{
   }
   await expect(executeAgentTool("draft_week_schedule",{week_start:null,write:true},ctx())).rejects.toThrow();
   await expect(executeAgentTool("draft_week_schedule",{week_start:"2026-10-27"},ctx())).rejects.toThrow();
-  await expect(executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:0,category:"drink",packaging_cents:null,target_margin_percent:null,item_name:null},ctx())).rejects.toThrow();
+  await expect(executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:0,category:"drink",packaging_cents:null,item_name:null},ctx())).rejects.toThrow();
  });
  it("returns a draft and explicit missing business hours",async()=>{
   const r=await executeAgentTool("draft_week_schedule",{week_start:null},ctx());
@@ -28,7 +28,7 @@ describe("agent read only capabilities",()=>{
  it("keeps pricing available if the optional location reader throws",async()=>{
   const context=ctx();
   context.tools.getSchedulingDraftInputs=async()=>{throw new Error("Location database temporarily unavailable");};
-  const r=await executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:140,category:"drink",packaging_cents:20,target_margin_percent:null,item_name:null},context);
+  const r=await executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:140,category:"drink",packaging_cents:20,item_name:null},context);
   expect(r.suggestedPriceCents).toBe(475);
   expect(r.location).toBeNull();
   expect(r.missing).toContain("locationUnavailable");
@@ -43,7 +43,7 @@ describe("agent read only capabilities",()=>{
     overheadPeriod:{from:"2026-10-01",to:"2026-10-31"},
     unitCostCents:null,itemsSoldPerDay:null};
   const r=await executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:100,
-    category:"drink",packaging_cents:300,target_margin_percent:null,item_name:"Latte",
+    category:"drink",packaging_cents:300,item_name:"Latte",
     ownerInputs},context);
   expect(r.overheadCoverage).toBe("partial");
   expect(r.overheadPerDayCents).toBeNull();
@@ -56,7 +56,7 @@ describe("agent read only capabilities",()=>{
   expect(r.suggestedPriceCents).toBeGreaterThanOrEqual(r.knownUnitCostCents as number);
  });
  it("returns full pricing components without competitor fabrication",async()=>{
-  const r=await executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:140,category:"drink",packaging_cents:20,target_margin_percent:null,item_name:"Latte"},ctx());
+  const r=await executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:140,category:"drink",packaging_cents:20,item_name:"Latte"},ctx());
   expect(r).toMatchObject({agentId:"alex",saved:false,suggestedPriceCents:475,categoryUnits30d:1000,localCompetitorPrices:null,location:{city:"SF"}});
   expect(r.missing).toContain("localCompetitorPricesNotAvailable");
  });

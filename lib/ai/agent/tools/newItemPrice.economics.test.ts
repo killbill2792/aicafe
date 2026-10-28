@@ -37,9 +37,10 @@ describe("supervisor new-item price evidence",()=>{
   expect(result.knownCostFloorLabel).toBe("floor, not a recommendation");
   expect(result.missing).toEqual(expect.arrayContaining([
    "packagingCents","laborPerUnit","processingFeeRate"]));
-  expect(result.pricingNote).toContain("Missing:");
-  expect(result.pricingNote).toContain("floor from known costs");
-  expect(result.numberEstimates).toEqual([
-   {value:result.knownCostFloorCents,unit:"cents",detail:"breakEvenSales"}]);
+  expect(result.pricingNote).toContain("drink cost");
+  expect(result.numberEstimates).toEqual(expect.arrayContaining([
+   {value:6000,unit:"count",detail:"breakEvenSales"}]));
+  expect(result.explain).toEqual(expect.arrayContaining([
+   expect.objectContaining({label:"Labor/drink",provenance:"missing"})]));
  });
 });

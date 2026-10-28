@@ -82,7 +82,9 @@ describe("single deterministic supervisor economics model",()=>{
    const result=recommendFullCostPrice({...known,...change});
    expect(result.recommendedPriceCents).toBe(change.packagingCents===null?null:625);
    expect(result.breakEvenCents).toBeNull();
-   expect(result.fullCostCents).toBeNull();
+   // A missing fee does not erase the known loaded unit cost; only the fee-adjusted break-even is incomplete.
+   if(change.feeRate===null)expect(result.fullCostCents).toBeGreaterThan(0);
+   else expect(result.fullCostCents).toBeNull();
    expect(result.missing).toContain(key);
    expect(result.knownCostFloorLabel).toBe("floor, not a recommendation");
    expect(result.knownCostFloorCents).toBeGreaterThan(0);
