@@ -74,7 +74,7 @@ export const dataQueryTools={
     const rows=Array.isArray(result?.rows)?result.rows:[];
     return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
      missing:rows.length===0?["empty"]:result?.truncated?["result_truncated"]:[],
-     empty:rows.length===0,rows,rowCount:rows.length,
+     empty:rows.length===0,error:undefined as string|undefined,rows,rowCount:rows.length,
      truncated:result?.truncated===true,sourceMix:result?.sourceMix??{}};
    }catch{return empty("source_read_failed");}
   }
