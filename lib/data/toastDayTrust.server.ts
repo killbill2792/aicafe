@@ -23,11 +23,14 @@ export async function readToastDayTrust(db:SupabaseClient,businessId:string,from
    .map(f=>f.date).filter(date=>!imported.has(date)));
   const blocked=new Set([...failed].filter(date=>canonicalToastDays.has(date)));
   const otherPosOnly=[...failed].filter(date=>!canonicalToastDays.has(date)).sort();
+  const withStatus=new Set(flags.map(f=>f.date));
+  const notChecked=[...canonicalToastDays].filter(date=>!withStatus.has(date)).sort();
   const flagged=[...new Set(flags.filter(f=>f.needsLook).map(f=>f.date))].sort();
   const excluded=[...blocked].sort();
   return {blocked,quality:[
    ...(flagged.length?[needsLookKey(flagged)]:[]),
    ...(otherPosOnly.length?["toastFailedNoCanonicalSales:"+otherPosOnly.join(",")]:[]),
+   ...(notChecked.length?["toastDayStatusMissing:"+notChecked.join(",")]:[]),
    ...(excluded.length?["toastExcludedDays:"+excluded.join(",")]:[])
   ]};
  }catch{

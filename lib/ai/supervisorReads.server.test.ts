@@ -112,6 +112,14 @@ describe("Toast source-scoped Supervisor coverage without changing aggregate for
   if(trend.available)expect(trend.value[0].netSalesCents).toBe(2500);
   expect(trend.quality.missingInputs).toEqual(["toastDayStatusUnavailable"]);
  });
+ it("unstatused historical Toast orders stay visible but are labeled unchecked",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+  const day="2026-10-12",trend=await pilotReader([row("actual",5500,6,day)],
+   [day],[day]).salesTrend("my-cafe",{from:day,to:day});
+  expect(trend.available).toBe(true);
+  if(trend.available)expect(trend.value).toMatchObject([{date:day,netSalesCents:5500}]);
+  expect(trend.quality.missingInputs).toEqual(["toastDayStatusMissing:"+day]);
+ });
  it("includes imported Toast sales despite legacy gate and marks mismatches",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
   const day="2026-10-12",trend=await pilotReader(

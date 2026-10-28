@@ -37,6 +37,14 @@ describe("shared Toast day trust",()=>{
   expect(trust.blocked.size).toBe(0);
   expect(trust.quality).toEqual([needsLookKey(["2026-08-01"])]);
  });
+ it("legacy canonical Toast rows without status are visible with one caveat",async()=>{
+  vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
+  flags.mockResolvedValue([]);
+  canonical.mockResolvedValue(new Set(["2026-08-02"]));
+  const result=await readToastDayTrust({} as never,"business","2026-08-02","2026-08-02");
+  expect(result.blocked.size).toBe(0);
+  expect(result.quality).toEqual(["toastDayStatusMissing:2026-08-02"]);
+ });
  it("failed Toast staging does not exclude Square or CSV data from the same day",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
   flags.mockResolvedValue([{date:"2026-08-02",status:"failed",needsLook:false}]);
