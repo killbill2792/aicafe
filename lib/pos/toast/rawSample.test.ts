@@ -16,13 +16,17 @@ const business="11111111-1111-4111-8111-111111111111";
 const restaurant="22222222-2222-4222-8222-222222222222";
 function database(allow=true){
  const writes:Record<string,unknown>[]=[];
+ let failOne=false;
  const rpc=vi.fn(async(name:string)=>({
-  data:name==="toast_acquire_lease"?"11111111-1111-4111-8111-111111111111":
+  data:name==="toast_acquire_raw_sample_lease"?"11111111-1111-4111-8111-111111111111":
    name==="toast_claim_raw_sample"?allow:
    name==="toast_renew_raw_sample_lease"?true:null,error:null
  }));
  const db={rpc,from:(table:string)=>{
-  if(table==="toast_raw_samples")return {insert:async(row:Record<string,unknown>|Record<string,unknown>[])=>{writes.push(...Array.isArray(row)?row:[row]);return {error:null};}};
+  if(table==="toast_raw_samples")return {insert:async(row:Record<string,unknown>|Record<string,unknown>[])=>{
+    if(failOne&&!Array.isArray(row)){failOne=false;return {error:{message:"test insert failure"}};}
+    writes.push(...Array.isArray(row)?row:[row]);return {error:null};
+   }};
   if(table==="toast_location_mappings"){
    const q={select:()=>q,eq:()=>q,not:()=>q,order:()=>q,
     limit:async()=>({data:[{restaurant_guid:restaurant}],error:null})};
@@ -30,8 +34,9 @@ function database(allow=true){
   }
   throw Error("unexpected table");
  }} as unknown as SupabaseClient;
- return {db,writes,rpc};
+ return {db,writes,rpc,failNextSampleWrite:()=>{failOne=true;}};
 }
+const evidence=(writes:Record<string,unknown>[])=>writes.filter(w=>w.error_code!=="not_attempted");
 beforeEach(()=>{
  mocks.request.mockReset();
  mocks.eraRequest.mockReset().mockRejectedValue(new ToastApiError("missing_permissions",403));
@@ -76,7 +81,7 @@ describe("read-only Toast coverage diagnostics",()=>{
    return [];
   });
   await captureToastRawSample(business,"2026-10-20",db);
-  const first=writes.find(w=>w.endpoint==="orders/v2/ordersBulk");
+  const first=evidence(writes).find(w=>w.endpoint==="orders/v2/ordersBulk");
   const counts=first?.identifier_counts as Record<string,{present:number;filled:number}>;
   expect(counts["[].customer.guid"]).toEqual({present:1,filled:1});
   expect(counts["[].card.guid"]).toEqual({present:1,filled:1});
@@ -144,9 +149,9 @@ describe("read-only Toast coverage diagnostics",()=>{
   const result=await captureToastRawSample(business,"2026-10-20",db,34000);
   expect(result.reason).toBe("partial");
   expect(result.failed).toBe(0);
-  expect(writes).toHaveLength(TOAST_READ_ENDPOINTS.length);
-  expect(new Set(writes.map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
-  expect(writes.slice(0,5).every(x=>x.error_code==="no_get_operations")).toBe(true);
+  expect(evidence(writes)).toHaveLength(TOAST_READ_ENDPOINTS.length);
+  expect(new Set(evidence(writes).map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+  expect(evidence(writes).slice(0,5).every(x=>x.error_code==="no_get_operations")).toBe(true);
   expect(writes.some(x=>x.error_code==="skipped_time_budget")).toBe(true);
  });
  it("starts each of the nine ERA requests and stores completed 200 GET results",async()=>{
@@ -157,7 +162,7 @@ describe("read-only Toast coverage diagnostics",()=>{
   await captureToastRawSample(business,"2026-10-20",db);
   expect(mocks.eraRequest).toHaveBeenCalledTimes(9);
   expect(mocks.eraGet).toHaveBeenCalledTimes(10);
-  expect(writes.filter(x=>String(x.endpoint).startsWith("era/v1/")&&x.http_status===200)).toHaveLength(19);
+  expect(evidence(writes).filter(x=>String(x.endpoint).startsWith("era/v1/")&&x.http_status===200)).toHaveLength(19);
   expect(JSON.stringify(writes.filter(x=>String(x.endpoint).startsWith("era/v1/")))).not.toContain("private@example.org");
  });
  it("polls a pending 202 report until ready",async()=>{
@@ -168,7 +173,7 @@ describe("read-only Toast coverage diagnostics",()=>{
    .mockResolvedValueOnce({status:202,data:null});
   await captureToastRawSample(business,"2026-10-20",db);
   expect(mocks.eraGet).toHaveBeenCalledTimes(11);
-  const metrics=writes.find(x=>x.endpoint==="era/v1/metrics/{reportRequestGuid}");
+  const metrics=evidence(writes).find(x=>x.endpoint==="era/v1/metrics/{reportRequestGuid}");
   expect(metrics?.http_status).toBe(200);
   expect(metrics?.error_code).toBeNull();
  });
@@ -229,6 +234,65 @@ describe("read-only Toast coverage diagnostics",()=>{
   expect(safe.payment.cardInfo.cardType).toBe("MASTERCARD");
   expect(safe.payment.cardInfo.last4).toBeUndefined();
  });
+ it("redacts gift-card first-five digits and hashes network transaction IDs",()=>{
+  const raw={giftCard:{first5CardDigits:"12345",last4CardDigits:"6789"},
+   payment:{networkTransactionIdentifier:"NETWORK-123",amount:42,refundStatus:"REFUNDED"}};
+  const safe=redactToastRaw(raw,0,"",process.env.TOAST_CUSTOMER_HASH_KEY);
+  const json=JSON.stringify(safe);
+  expect(json).not.toContain("12345");
+  expect(json).not.toContain("6789");
+  expect(json).not.toContain("NETWORK-123");
+  expect(json).toContain('"refundStatus":"REFUNDED"');
+  expect((safe as {payment:{networkTransactionIdentifier:string}}).payment.networkTransactionIdentifier)
+   .toMatch(/^hmac:[a-f0-9]{64}$/);
+ });
+ it("reads payments across paid, refunded and voided date filters without duplicating IDs",async()=>{
+  const {db,writes}=database();
+  const id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path.startsWith("/orders/v2/payments?")){
+    if(path.includes("paidBusinessDate="))return [id];
+    if(path.includes("refundBusinessDate="))return [id];
+    if(path.includes("voidBusinessDate="))return [id];
+   }
+   return [];
+  });
+  await captureToastRawSample(business,"2026-10-20",db);
+  const calls=mocks.request.mock.calls.filter(([p])=>String(p).startsWith("/orders/v2/payments?"));
+  expect(calls).toHaveLength(3);
+  expect(calls.map(([p])=>String(p).split("?")[1].split("=")[0]).sort()).toEqual(
+   ["paidBusinessDate","refundBusinessDate","voidBusinessDate"]);
+  expect(evidence(writes).filter(x=>x.endpoint==="orders/v2/payments").reduce(
+   (sum,x)=>sum+Number(x.item_count),0)).toBe(1);
+ });
+ it("keeps seeded rows if a sample insert fails and marks run partial",async()=>{
+  const {db,writes,failNextSampleWrite}=database();
+  mocks.request.mockResolvedValue([]);
+  // Seed insert happens first. Fail a subsequent individual sample insert.
+  const baseInsert=db.from.bind(db);
+  let seeded=false;
+  const wrapped={...db,from:(table:string)=>{
+   const query=baseInsert(table);
+   if(table!=="toast_raw_samples")return query;
+   return {insert:async(row:Record<string,unknown>|Record<string,unknown>[])=>{
+    if(Array.isArray(row)&&!seeded){seeded=true;failNextSampleWrite();}
+    return query.insert(row);
+   }};
+  }} as unknown as SupabaseClient;
+  const result=await captureToastRawSample(business,"2026-10-20",wrapped);
+  expect(result.reason).toBe("partial");
+  expect(result.failed).toBeGreaterThan(0);
+  expect(writes.filter(x=>x.error_code==="not_attempted")).toHaveLength(TOAST_READ_ENDPOINTS.length);
+  expect(new Set(writes.map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+  expect(writes.some(x=>x.error_code==="skipped_interrupted")).toBe(true);
+ });
+ it("seeds every endpoint before making an API request, including on a worker crash",async()=>{
+  const {db,writes}=database();
+  mocks.request.mockImplementationOnce(()=>{throw new Error("unexpected worker error");});
+  await captureToastRawSample(business,"2026-10-20",db);
+  expect(writes.filter(x=>x.error_code==="not_attempted")).toHaveLength(TOAST_READ_ENDPOINTS.length);
+  expect(new Set(writes.map(x=>x.endpoint)).size).toBe(TOAST_READ_ENDPOINTS.length);
+ });
  it("keeps paths for nested arrays",()=>{
   expect(toastFieldPaths({items:[{name:"Latte",price:5}]})).toContain("items[].price");
  });
@@ -237,8 +301,8 @@ describe("read-only Toast coverage diagnostics",()=>{
   mocks.request.mockRejectedValue(new ToastApiError("missing_permissions",403));
   const result=await captureToastRawSample(business,"2026-10-20",db);
   expect(result.failed).toBe(0);
-  expect(writes.length).toBe(TOAST_READ_ENDPOINTS.length);
-  expect(writes.filter(w=>w.http_status===403).length).toBeGreaterThan(20);
+  expect(evidence(writes).length).toBe(TOAST_READ_ENDPOINTS.length);
+  expect(evidence(writes).filter(w=>w.http_status===403).length).toBeGreaterThan(20);
   expect(writes.every(w=>typeof w.doc_url==="string"&&"field_paths"in w)).toBe(true);
   expect(mocks.request).toHaveBeenCalled();
  });
