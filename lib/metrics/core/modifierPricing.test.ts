@@ -11,8 +11,8 @@ describe("milk swap cost per size",()=>{
     const result=swapCostPerSize(sizes,"regular","oat",ml,costs,.3,"owner_provided");
     expect(result.missing).toEqual([]);
     expect(result.sizes.map(s=>s.costDeltaCents)).toEqual([12,18,24]);
-    expect(result.sizes.map(s=>s.suggestedUpchargeCents)).toEqual([20,30,35]);
-    expect(result.sizes.map(s=>s.marginKeptCents)).toEqual([8,12,11]);
+    expect(result.sizes.map(s=>s.suggestedUpchargeCents)).toEqual([40,60,80]);
+    expect(result.sizes.map(s=>s.marginKeptCents)).toEqual([28,42,56]);
     expect(result.sizes[2].basis).toEqual({
       fromMilk:"recorded",toMilk:"recorded",milkMl:"owner_provided",
       targetProductCost:"owner_provided"});
