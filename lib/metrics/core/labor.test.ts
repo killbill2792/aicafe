@@ -23,7 +23,19 @@ describe("known and projected labor",()=>{
     expect(out.projectedMonthlyLaborCents).toBeNull();
     expect(out.notes).toContain("laborNoCoveredDays");
   });
-  it("lets the owner's monthly payroll win",()=>{
+  it("3 of 20 payroll days produces a partial monthly projection, not null",()=>{
+  const days=Array.from({length:20},(_,i)=>({date:"2026-10-"+String(i+1).padStart(2,"0")}));
+  const wages=days.slice(0,3).map(d=>({...d,wagesCents:10000,staffTaxCents:1200}));
+  const r=laborForPeriod(days,wages);
+  expect(r.projectedMonthlyLaborCents).toBe(224000);
+  expect(r.coveredDays).toBe(3);
+  expect(r.totalDays).toBe(20);
+  expect(r.notes).toContain("laborCoveragePartial");
+  const known=laborForPeriod(days,[],null,{monthlyCents:31000,from:"2026-10-01",to:"2026-10-31"});
+  expect(known.projectedMonthlyLaborCents).toBe(31000);
+  expect(known.notes).toContain("laborNoCoveredDays");
+ });
+ it("lets the owner's monthly payroll win",()=>{
     expect(laborForPeriod(dates,records,28000).projectedMonthlyLaborCents).toBe(28000);
     expect(laborForPeriod(dates,records,28000).basis).toBe("owner_provided");
   });
