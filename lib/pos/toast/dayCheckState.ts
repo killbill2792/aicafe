@@ -14,6 +14,7 @@ export type DayCheckEvent=
  |{type:"internal_result";result:"matched"|"mismatch";reasons:string[];paidOtherDay:number}
  |{type:"payment_recovery_queued"}
  |{type:"internal_missing";reasons:string[];paidOtherDay:number}
+ |{type:"payment_recovery_exhausted";reasons:string[];paidOtherDay:number}
  |{type:"era_pending"}
  |{type:"era_result";matched:boolean;sourceIncomplete:boolean;comparisonMatched:boolean;moneyMismatch?:boolean}
  |{type:"era_error";category:string;permissionsLost:boolean}
@@ -62,6 +63,15 @@ export function nextDayCheckState(current:DayCheckState,event:DayCheckEvent,at:s
    next.recon_state=externalMismatch?"mismatch":"pending";
    if(!externalMismatch)next.recon_source=null;
    next.last_error_category=null;next.reconciled_at=null;break;
+  case "payment_recovery_exhausted":
+   next.internal_state=null;next.internal_reasons=[...event.reasons];
+   next.paid_other_day=event.paidOtherDay;
+   for(const reason of event.reasons)next.warnings[reason]=1;
+   next.payment_repull_at=null;
+   next.last_error_category="unverified_payment_order";
+   next.recon_state=externalMismatch?"mismatch":"pending";
+   if(!externalMismatch)next.recon_source=null;
+   next.reconciled_at=null;break;
   case "payment_recovery_queued":
    next.internal_state=null;
    next.payment_repull_at??=at;
