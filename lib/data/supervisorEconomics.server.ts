@@ -35,7 +35,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
    .eq("business_id",businessId).gte("business_date",salesSince).lte("business_date",asOf).limit(500),
   db.from("employees").select("id,display_name,role,default_hourly_wage_cents").eq("business_id",businessId).eq("active",true).limit(500),
   getOwnerConfirmedProcessingFeePlans(db,businessId),
-  getMenuItemSnapshots(db,businessId,asOf),
+  getBusinessSnapshotFromDb(db,businessId,"month",asOf),
  ]);
  for(const response of [locations,recurring,rollups,employees])
   if(response.error)throw response.error;
