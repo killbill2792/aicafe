@@ -26,7 +26,13 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
     from:dateOffset(requested.to,-364),to:requested.to,
    });
    if(!history.available||!history.value.length)return unchanged;
-   return coveredWindow(requested,history.value.map(day=>day.date));
+   const window=coveredWindow(requested,history.value.map(day=>day.date));
+   if(!window.labelKey||!window.labelParams)return window;
+   const format=(value:string)=>new Intl.DateTimeFormat(ctx.locale,{
+    month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(value+"T12:00:00Z"));
+   const template={en,es,ar}[ctx.locale].MetricsNotes.periodLatestData;
+   return {...window,label:template.replace("{from}",format(window.labelParams.from))
+    .replace("{to}",format(window.labelParams.to))};
   }catch{return unchanged;}
  }
  const copy={en,es,ar}[ctx.locale].DataNotes;
