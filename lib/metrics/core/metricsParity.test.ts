@@ -144,8 +144,8 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
    expect(chat.monthlyBreakEvenCents).toBe(expectedBreakEven);
    expect(chat.drinksPerDay).toBe(plan.drinksNeededPerDay);
    expect(chat.observedProcessingFeesCents).toBe(recovery.observedProcessingFeesCents);
-   expect(chat.monthlyLabor.valueCents).toBe(recovery.monthlyStaffCents);
-   expect(chat.monthlyBills.valueCents).toBe(recovery.monthlyBillsCents);
+   expect((chat.monthlyLabor as {valueCents:number|null}).valueCents).toBe(recovery.monthlyStaffCents);
+   expect((chat.monthlyBills as {valueCents:number|null}).valueCents).toBe(recovery.monthlyBillsCents);
    const laborChat=await staffTools.get_labor.execute({period:"month"},ctx);
    const knownLabor=(laborChat.laborDays as Array<{wagesCents:number|null;staffTaxCents:number|null}>)
      .reduce((sum,day)=>sum+(day.wagesCents??0)+(day.staffTaxCents??0),0);
@@ -155,7 +155,7 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
    const price=await newItemPriceTools.suggest_new_item_price.execute({
     ingredient_cost_cents:145,category:"drink",packaging_cents:0,item_name:null,ownerInputs:null,
    },ctx);
-   expect(price.monthlyLabor.valueCents).toBe(recovery.monthlyStaffCents);
+   expect((price.monthlyLabor as {valueCents:number|null}).valueCents).toBe(recovery.monthlyStaffCents);
    const profit=cafeStateFromSnapshot(snapshot,period);
    expect(profit.profitability.available).toBe(true);
    if(profit.profitability.available)
