@@ -96,6 +96,27 @@ describe("Toast raw diagnostics",()=>{
   expect(mocks.request.mock.calls.filter(c=>String(c[0]).startsWith("/orders/v2/payments/"))).toHaveLength(5);
   expect(written.every(w=>w.table==="toast_raw_samples")).toBe(true);
  });
+ it("preserves bounded menu modifier reference paths without customer information",async()=>{
+  const {db,written}=database();
+  mocks.request.mockImplementation(async(path:string)=>{
+   if(path==="/menus/v2/menus")return {
+    menus:[{menuGroups:[{menuItems:[{guid:payment,price:2.5,name:"Latte"}]}]}],
+    modifierGroupReferences:{"0":{guid:payment,minimumSelections:1},
+      "1":{guid:payment},"2":{guid:payment},"3":{guid:payment}},
+    modifierOptionReferences:{"0":{guid:payment,price:0.5},"1":{guid:payment},
+      "2":{guid:payment},"3":{guid:payment}}
+   };
+   return [];
+  });
+  await captureToastRawSample(business,"2026-10-20",db);
+  const menu=written.find(w=>w.row.endpoint==="menus/v2/menus")?.row;
+  expect(menu).toBeDefined();
+  const paths=menu?.field_paths as string[];
+  expect(paths).toContain("modifierGroupReferences.0.guid");
+  expect(paths).toContain("modifierOptionReferences.0.price");
+  expect(paths).not.toContain("modifierOptionReferences.3.guid");
+  expect(JSON.stringify(menu?.sample)).not.toContain(payment);
+ });
  it("holds and releases the shared restaurant sync lease",async()=>{
   const {db,rpc}=database();
   mocks.request.mockResolvedValue([]);
