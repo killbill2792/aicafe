@@ -37,11 +37,11 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const labor=laborForPeriod(dates,days,null,ownerExtras==null?null:{
     monthlyCents:ownerExtras,from:dates[0].date,to:dates[dates.length-1].date,
   });
-  const avgDailyStaffCost=labor.projectedMonthlyLaborCents===null?0:labor.projectedMonthlyLaborCents/28;
-  const dailyCosts=dailyCostsToCoverCents(runningPerDay,avgDailyStaffCost);
+  const avgDailyStaffCost=labor.projectedMonthlyLaborCents===null?null:labor.projectedMonthlyLaborCents/28;
+  const dailyCosts=dailyCostsToCoverCents(runningPerDay,avgDailyStaffCost??0);
   const shared=breakEvenFor({days,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
     monthlyBillsCents:Math.round(runningPerDay*snapshot.daysInMonth),
-    monthlyStaffCents:labor.coveredDays>0?Math.round(avgDailyStaffCost*snapshot.daysInMonth):null,
+    monthlyStaffCents:avgDailyStaffCost===null?null:Math.round(avgDailyStaffCost*snapshot.daysInMonth),
     observedIngredientCents:productCosts.totalCostCents,
     ownerFeePlans:(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans});
   const avgMoneyLeft=productCosts.missingProductCosts?0:moneyLeftPerDrinkCents(netSales,ingredients,
