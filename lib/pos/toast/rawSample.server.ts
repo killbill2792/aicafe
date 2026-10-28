@@ -1,5 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
 import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "./client";
 
@@ -67,7 +68,7 @@ export async function claimToastRawSample(db:Writer,businessId:string,restaurant
 }
 /** Never throws: diagnostics cannot disrupt import or cron. */
 export async function captureToastRawSample(
- businessId:string,businessDate:string,db:SupabaseClient
+ businessId:string,businessDate:string,db:SupabaseClient=createAdminSupabaseClient()
 ):Promise<{captured:number;skipped:boolean;failed:number}> {
  if(!GUID.safeParse(businessId).success||!daySchema.safeParse(businessDate).success||
   businessDate>new Date().toISOString().slice(0,10))return {captured:0,skipped:true,failed:0};
