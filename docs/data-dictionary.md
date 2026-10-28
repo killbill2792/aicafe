@@ -243,7 +243,6 @@ Order dining options, source channels and guest counts for stored café orders.
 | dining_option | Dining option identifier or name from the order when supplied. | label | toast | What was recorded? |
 | source_channel | POS-provided order channel when supplied. | label | toast | What was recorded? |
 | guest_count | Number of guests reported on the order, when available. | count | toast | What was recorded? |
-
 | net_sales_cents | Current recorded order net sales in cents; null when the order is excluded or superseded (the original amount remains in data for review). | cents | app | What were sales by channel? |
 
 ## cv_cash
@@ -307,4 +306,4 @@ Toast dining-option name configuration from optional redacted captures.
 - **Excluded/superseded orders:** `cv_orders` retains these non-current rows with `status='needs_match'` and review flags instead of hiding them. They are available for explanation but must not be summed into current sales totals.
 - **Dining options:** `config/v2/diningOptions` provides names only where captured. `cv_orders` exposes stored `orders.dining_option`, `source_channel` and `guest_count` regardless of whether the configuration endpoint is available.
 
-The diagnostic capture is performed by `captureToastRawSample`; it is not automatically run by each day import. Daily operational copies, full Toast-report parity and durable typed cash/stock/kitchen ingestion have not yet been implemented. Apply migrations **114**, **115** and **116** manually in order after 110–113. Migration 115 grants owner-authenticated execution of the redacting label helper used by the invoker-RLS view; migration 116 preserves excluded/superseded order evidence. Never rewrite a previously applied migration.
+The diagnostic capture is performed by `captureToastRawSample`; it is not automatically run by each day import. Daily operational copies, full Toast-report parity and durable typed cash/stock/kitchen ingestion have not yet been implemented. Apply migrations **114**, **115**, **116** and **117** manually in order after 110–113. Migration 115 grants owner-authenticated execution of the redacting label helper used by the invoker-RLS view; migration 116 preserves excluded/superseded order evidence; migration 117 exposes non-duplicated stored current order sales by channel. Never rewrite a previously applied migration.
