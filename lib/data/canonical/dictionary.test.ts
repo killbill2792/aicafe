@@ -4,7 +4,8 @@ import {resolve} from "node:path";
 import {canonicalDictionary,canonicalViewNames} from "./dictionary";
 const source=[readFileSync(resolve("supabase/migrations/20261028000112_canonical_views.sql"),"utf8"),
  readFileSync(resolve("supabase/migrations/20261028000113_toast_payment_fields_day_check.sql"),"utf8"),
- readFileSync(resolve("supabase/migrations/20261028000114_toast_optional_canonical_views.sql"),"utf8")].join("\n");
+ readFileSync(resolve("supabase/migrations/20261028000114_toast_optional_canonical_views.sql"),"utf8"),
+ readFileSync(resolve("supabase/migrations/20261028000116_toast_orders_review_rows.sql"),"utf8")].join("\n");
 const docs=readFileSync(resolve("docs/data-dictionary.md"),"utf8");
 describe("canonical view column dictionary contract",()=>{
  it("documents every SQL view column, without phantom columns",()=>{
