@@ -22,6 +22,14 @@ describe("break-even resolved product costs", () => {
     }
     expect(plan.noteKeys).not.toContain("breakEvenCoveragePartial");
   });
+  it("monthly owner payroll extras use actual month days, not a 28-day denominator",()=>{
+    const snapshot=getFixtureSnapshot();
+    snapshot.ownerMonthlyPayrollExtrasCents=300000;
+    const value=buildBreakEvenViewModel(snapshot);
+    const baseline=buildBreakEvenViewModel({...snapshot,ownerMonthlyPayrollExtrasCents:0});
+    expect(value.avgDailyStaffCostCents!-baseline.avgDailyStaffCostCents!).toBeCloseTo(10000,5);
+    expect(value.noteKeys).toContain("laborOwnerExtras");
+  });
   it("uses owner-total resolved costs instead of recipe-only rollup ingredients", () => {
     const snapshot = getFixtureSnapshot();
     const sold = 100;
