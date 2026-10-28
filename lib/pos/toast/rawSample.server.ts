@@ -19,7 +19,7 @@ export function redactToastRaw(value:unknown,depth=0,key=""):unknown {
  }
  if(typeof value==="string"){
   // Never persist freeform content or identifiers that might contain customer PII.
-  if(value.length>120||/@/.test(value)||/\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/.test(value))return "[redacted]";
+  if(!SAFE_STRING.test(key)||value.length>120||/@/.test(value)||/\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/.test(value))return "[redacted]";
   return value;
  }
  return value;
