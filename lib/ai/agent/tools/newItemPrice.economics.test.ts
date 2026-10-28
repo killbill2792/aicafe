@@ -60,4 +60,16 @@ describe("supervisor new-item price evidence",()=>{
       if(locale!=="en")expect((reply.monthlyLabor as {reason:string}).reason).not.toContain("Only");
     }
   });
+  it("does not leak English explain titles or owner choices into ES and AR",async()=>{
+    for(const locale of ["es","ar"] as const){
+      const ctx={...context({...economics,monthlyStaff:figure(null,"missing","laborNoCoveredDays")}),locale};
+      const response=await newItemPriceTools.suggest_new_item_price.execute(input,ctx);
+      const lines=response.explain as Array<{label:string}>;
+      expect(lines.map(x=>x.label)).not.toContain("Labor/drink");
+      expect(lines.map(x=>x.label)).toContain(locale==="es"?"Personal por bebida":"العمالة لكل مشروب");
+      const choices=response.candidates as Array<{label:string}>;
+      expect(choices[0].label).toBe(locale==="es"?"Indicar nómina mensual":"تقديم الرواتب الشهرية");
+      expect(response.knownCostFloorLabel).toBeNull();
+    }
+  });
 });
