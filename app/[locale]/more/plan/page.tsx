@@ -23,9 +23,9 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   await requireOwnBusiness();
   const { tab: queryTab } = await searchParams;
   const tab: PlanTab = TABS.includes(queryTab as PlanTab) ? queryTab as PlanTab : "break-even";
-  const [t, money, economics, common, categories, locale] = await Promise.all([
+  const [t, money, economics, common, categories, notes, locale] = await Promise.all([
     getTranslations("BreakEven"), getTranslations("Money"), getTranslations("Economics"),
-    getTranslations("Common"), getTranslations("Categories"), getLocale(),
+    getTranslations("Common"), getTranslations("Categories"), getTranslations("MetricsNotes"), getLocale(),
   ]);
   const snapshot = tab !== "profit-goal" ? await getSnapshot() : null;
   const recovery = snapshot ? buildCostRecoveryViewModel(snapshot) : null;
@@ -39,6 +39,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       key: line.categoryCode, text: categories(line.categoryCode), action: isBillCategory(line.categoryCode) ? money("addBills") : common("addCost"), href: missingCostDestination(line.categoryCode),
     })) ?? []),
     ...(costs?.missingProductCosts ? [{ key: "products", text: money("breakEvenNeedProductCosts"), action: money("addProductCosts"), href: "/menu" }] : []),
+    ...(drinks?.noteKeys.includes("breakEvenLaborMissing")||drinks?.noteKeys.includes("laborNoCoveredDays") ? [{ key: "labor", text: notes("breakEvenLaborMissing"), action: t("plannedStaffRow"), href: "/staff" }] : []),
     ...(days.some(day => day.cardFeesStatus === "missing") ? [{ key: "fees", text: money("breakEvenNeedProcessingFees"), action: money("fixFees"), href: "/more/processing-fees" }] : []),
   ];
   const pricing = tab === "profit-goal" ? await getProfitGoalSimulatorData() : null;
@@ -59,12 +60,14 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         <div className="mt-2 font-headline text-[36px] font-bold">{recovery.breakEven.kind === "ready" ? <Money cents={recovery.breakEven.breakEvenSalesCents} /> : "—"}</div>
         {recovery.breakEvenUsesEstimates && recovery.breakEven.kind === "ready" && <p className="text-[15px] text-ink-muted">{money("estimateLower")}</p>}
         <p className="mt-2 text-[17px] text-ink-muted">{money("breakEvenSalesNeeded")}</p>
+        {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[17px] text-ink-muted">{notes("breakEvenLaborMissing")}</p>}
       </section>
       {recovery.breakEven.kind === "ready" && !drinks.unavailableReason && <section className="rounded-card-lg bg-card p-5">
         <p className="text-[17px] font-semibold">{t("subtitle")}</p>
         {!hourly.closed && <div className="mt-2 font-headline text-[40px] font-bold text-staff">{numberFormat.format(drinks.drinksNeededPerDay)}</div>}
         {!hourly.closed && <p className="text-[17px] font-semibold">{t("drinksToCover")}</p>}
         <p className="mt-2 text-[17px] text-ink-muted">{hourly.closed ? t("closedToday") : t("aboutPerHour", { count: numberFormat.format(hourly.perHour ?? 0) })}</p>
+        {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[17px] text-ink-muted">{notes("breakEvenLaborMissing")}</p>
         {hourly.fallback && <Link href="/more/cafe-profile?focus=hours" className="mt-3 inline-flex min-h-12 items-center text-[17px] font-bold text-staff underline">{t("setCafeHours")}</Link>}
       </section>}
       {missing.length > 0 && <section className="rounded-card-lg bg-card p-5">
