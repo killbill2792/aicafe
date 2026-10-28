@@ -515,6 +515,13 @@ SELECT pg_temp.assert_true(
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','2025-01-10','refunded',
   '["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0029"]'::jsonb)=0,
  'duplicate refund event is idempotent');
+SELECT pg_temp.assert_true(EXISTS(
+ SELECT 1 FROM public.cv_payments WHERE
+ business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND source_ref LIKE 'payment-event:%' AND business_date='2025-01-10'
+ AND status='open' AND amount_cents IS NULL AND tip_cents IS NULL
+ AND (data->>'amount_known')::boolean=false),
+ 'payment-day event remains readable as incomplete canonical evidence');
 SELECT pg_temp.assert_true((SELECT net_sales_cents=1100 FROM orders
  WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
  AND pos_order_id LIKE 'toast:aaaaaaaa-aaaa-4aaa%'),
