@@ -67,8 +67,8 @@ export const newItemPriceTools={suggest_new_item_price:{
    const labor=sparse&&ownerLabor===null?figure(null,"missing",
     "Only "+economics.laborCoveredDays+" of "+economics.laborWindowDays+" days have payroll"):monthlyStaff;
    const statedDollarAmount=(cents:number)=>utterances.some(line=>{
-    const amounts=line.match(/\\$?\\s*\\d[\\d,]*(?:\\.\\d{1,2})?/gu)??[];
-    return amounts.some(token=>Math.round(Number(token.replace(/[$,\\s]/gu,""))*100)===cents);
+    const amounts=line.match(/\$?\s*\d[\d,]*(?:\.\d{1,2})?/gu)??[];
+    return amounts.some(token=>Math.round(Number(token.replace(/[$,\s]/gu,""))*100)===cents);
    });
    const explicitBillTotal=v.owner_monthly_bills_cents!=null&&
     statedDollarAmount(v.owner_monthly_bills_cents)?v.owner_monthly_bills_cents:null;
@@ -76,9 +76,9 @@ export const newItemPriceTools={suggest_new_item_price:{
    const ownerBills=explicitBillTotal??(ownerBillsComplete?prorate(
     owner!.rentCents!+owner!.otherOverheadCents!,
     ownerPeriod(owner?.overheadPeriod??null,ctx.asOf)??month,month):null);
-   const monthlyBills=ownerBills!==null?figure(ownerBills,"owner","You told me: monthly rent and other bills"):
+   const monthlyBills=ownerBills!==null?figure(ownerBills,"owner","You told me: total monthly bills"):
     economics.monthlyBills;
-   const missingBills=ownerBillsComplete?[]:(economics.missingBillCategories??[]);
+   const missingBills=ownerBills!==null?[]:(economics.missingBillCategories??[]);
    const billsPartial=missingBills.length>0||monthlyBills.valueCents===null;
    const recommended=recommendFullCostPrice({
     ingredientCents:v.ingredient_cost_cents,packagingCents:v.packaging_cents,
