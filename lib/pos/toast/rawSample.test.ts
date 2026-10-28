@@ -52,7 +52,8 @@ describe("Toast raw diagnostics",()=>{
   const json=JSON.stringify(redactToastRaw({
     guest:{guid:"cafe-guest-identifying-id",name:"Private Guest"},
     anonymousReference:{guid:"private-customer-guid",phoneDigits:4567891,
-      pin:1234,externalId:"person-identifier"},
+      pin:1234,externalId:"person-identifier",
+      "john@example.com":12,"4242424242424242":"secret"},
     type:"CREDIT",cardEntryMode:"CONTACTLESS",amount:16.5,originalProcessingFee:0.5
   }));
   expect(json).not.toContain("cafe-guest-identifying-id");
@@ -61,6 +62,8 @@ describe("Toast raw diagnostics",()=>{
   expect(json).not.toContain("4567891");
   expect(json).not.toContain("1234");
   expect(json).not.toContain("person-identifier");
+  expect(json).not.toContain("john@example.com");
+  expect(json).not.toContain("4242424242424242");
   expect(json).toContain("CONTACTLESS");
   expect(json).toContain("originalProcessingFee");
  });
