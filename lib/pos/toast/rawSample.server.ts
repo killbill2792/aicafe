@@ -60,7 +60,7 @@ export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string):unk
  if(value&&typeof value==="object"){
   const obj=value as Record<string,unknown>;
   return Object.fromEntries(Object.entries(obj).filter(([k])=>KEY.test(k)||/^[0-9]{1,6}$/.test(k))
-   .filter(([k])=>!RESTRICTED.test(k)&&!FREEFORM.test(k))
+   .filter(([k])=>(IDENTIFIER.test(k)||!RESTRICTED.test(k))&&!FREEFORM.test(k))
    .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey)])
    .filter(([k,v])=>v!==undefined));
  }
@@ -127,8 +127,8 @@ function pathFor(s:Entry,day:string,guid:string,id?:string,page=1){
  if(s.scope==="window"){
   const start=new Date(day+"T00:00:00Z");
   const end=new Date(start.getTime()+86400000);
-  params.set("startDate",toToastTimestamp(start));
-  params.set("endDate",toToastTimestamp(end));
+  params.set("startDate",decodeURIComponent(toToastTimestamp(start)));
+  params.set("endDate",decodeURIComponent(toToastTimestamp(end)));
  }
  if(s.page){params.set("pageSize",String(PAGE_SIZE));params.set("page",String(page));}
  if(params.size)path+="?"+params.toString();
