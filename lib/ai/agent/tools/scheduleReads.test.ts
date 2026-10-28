@@ -8,7 +8,7 @@ vi.mock("@/lib/scheduling/staffScope.server",()=>({
 }));
 import {getTeam,getShiftCost,getWeekSchedule} from "@/lib/actions/schedule";
 import {scheduleReadTools,localizedToastScheduleReadError} from "./scheduleReads";
-import {aggregateCosts} from "@/lib/calc/scheduling/shiftCost";
+import {aggregateCosts,shiftCost} from "@/lib/calc/scheduling/shiftCost";
 import {newResolveState} from "../resolve";
 import type {AgentToolContext} from "./index";
 const id="11111111-1111-4111-8111-111111111111";
@@ -20,9 +20,9 @@ describe("Toast and app schedule union",()=>{
    expect(localizedToastScheduleReadError("timeout","es")).toContain("se agotó");
  });
  it("Team screen and chat totals agree on exactly the same week fixture",async()=>{
-  const appShifts=[{id:"scheduled-1",date:"2026-10-24",employeeId:"employee",
-    employeeName:"Ava",start:"09:00",end:"13:00",paidMinutes:240,
-    costCents:8000,estimated:false,unknown:false}];
+  const appShifts=[{...shiftCost({employeeId:"employee",date:"2026-10-24",
+    start:"09:00",end:"13:00",breakMinutes:0,wageCents:2000}),
+    id:"scheduled-1",employeeName:"Ava"}];
   const screenFixture={ok:true as const,data:{
     team:[{id:"employee",name:"Ava",role:"Barista",wageCents:2000}],
     shifts:appShifts,posShifts:[],posScheduleError:null,timezone:"America/Los_Angeles",
