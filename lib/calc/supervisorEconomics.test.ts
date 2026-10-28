@@ -20,7 +20,8 @@ describe("single deterministic supervisor economics model",()=>{
   const answer=unifiedBreakEven(unknown);
   expect(answer.monthlyFixedKnownCents).toBe(746700+25000);
   expect(answer.knownCostBreakEvenFloorCents).toBeGreaterThan(0);
-  expect(answer.monthlyBreakEven.valueCents).toBeNull();
+  expect(answer.monthlyBreakEven.valueCents).toBeGreaterThan(0);
+   expect(answer.monthlyBreakEven.status).toBe("estimate");
   expect(answer.missing).toContain("monthlyLabor");
  });
  it("does not count owner extras twice when clocked payroll is known",()=>{
@@ -49,12 +50,14 @@ describe("single deterministic supervisor economics model",()=>{
   expect(actual.monthlyFixedKnownCents).toBe(746700);
   expect(actual.monthlyBills.valueCents).toBe(746700);
   expect(actual.missing).toContain("monthlyLabor");
-  expect(actual.monthlyBreakEven.valueCents).toBeNull();
+  expect(actual.monthlyBreakEven.valueCents).toBeGreaterThan(0);
+   expect(actual.monthlyBreakEven.status).toBe("estimate");
  });
  it("shows a known-cost floor without claiming a complete break-even when a bill category is missing",()=>{
   const partial={...base,missingBillCategories:["utilities_power"]};
   const answer=unifiedBreakEven(partial);
-  expect(answer.monthlyBreakEven.valueCents).toBeNull();
+  expect(answer.monthlyBreakEven.valueCents).toBeGreaterThan(0);
+   expect(answer.monthlyBreakEven.status).toBe("estimate");
   expect(answer.knownCostBreakEvenFloorCents).toBeGreaterThan(0);
   expect(answer.missing).toContain("monthlyBill:utilities_power");
  });
