@@ -120,7 +120,7 @@ export async function getBusinessSnapshotFromDb(
   const periodFrom=costPeriod==="today"?todayDateStr:costPeriod==="week"?minusSix:monthStart;
   const [allMenuItemSnapshots,periodItemSales,staffShiftsToday,alertsRead,ownerFeePlans]=
     await Promise.all([
-      getMenuItemSnapshots(supabase,businessId,todayDateStr,last28Days.map(day=>day.date)),
+      getMenuItemSnapshots(supabase,businessId,todayDateStr,last28Days.filter(day=>day.date<todayDateStr).map(day=>day.date)),
       readPeriodItemSales(supabase,businessId,{from:periodFrom,to:todayDateStr}),
       getStaffShiftsToday(supabase,businessId,timezone,todayDateStr),
       supabase.from("alerts").select("impact_cents",{count:"exact"}).eq("business_id",businessId)
@@ -233,7 +233,7 @@ async function getMenuItemSnapshots(
     supabase.rpc("menu_item_quantities_sold", {
       p_business_id: businessId,
       p_from: last28DateStrs[0] ?? todayDateStr,
-      p_to: todayDateStr,
+      p_to: last28DateStrs[last28DateStrs.length-1] ?? todayDateStr,
     }),
     supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status").eq("business_id", businessId).in("menu_item_id", itemIds),
   ]);
