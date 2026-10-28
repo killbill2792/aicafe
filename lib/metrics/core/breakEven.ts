@@ -46,7 +46,7 @@ export function breakEvenFor(input:{
     monthlyStaffCents:input.monthlyStaffCents??0,
     observedSalesCents,observedIngredientCents,observedProcessingFeesCents,
   });
-  if(result.kind!=="ready"||drinks<=0||input.daysInMonth<=0){
+  if(result.kind!=="ready"){
     notes.push(result.kind==="unavailable"?result.reason:"breakEvenDrinksMissing");
     return {salesPerMonthCents:null,drinksPerDay:null,calculation:result,knownCostFloorCents:null,coveredDays,
       expectedDays:28,notes};
@@ -54,8 +54,10 @@ export function breakEvenFor(input:{
   const monthly=result.breakEvenSalesCents;
   const avgMoneyLeft=moneyLeftPerDrinkCents(
     observedSalesCents,observedIngredientCents,observedProcessingFeesCents,drinks);
-  const dailyCosts=result.fixedMonthlyCostsCents/input.daysInMonth;
-  const drinksPerDay=drinksTargetPerDay(dailyCosts,avgMoneyLeft);
+  const dailyCosts=input.daysInMonth>0?result.fixedMonthlyCostsCents/input.daysInMonth:0;
+  const drinksPerDay=drinks>0&&input.daysInMonth>0?drinksTargetPerDay(dailyCosts,avgMoneyLeft):null;
+  if(drinks<=0)notes.push("breakEvenDrinksMissing");
+  if(input.daysInMonth<=0)notes.push("breakEvenCalendarMissing");
   return {salesPerMonthCents:monthly,drinksPerDay,calculation:result,
     knownCostFloorCents:notes.some(n=>n.endsWith("Missing"))?monthly:null,
     coveredDays,expectedDays:28,notes};
