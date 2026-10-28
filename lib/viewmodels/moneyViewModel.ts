@@ -30,6 +30,9 @@ import { regularHoursStateForDate } from "@/lib/business/openHours";
 import { periodComparisonState } from "./periodComparison";
 import { periodCalendarRange } from "./period";
 import { businessCostSummaryFromSnapshot } from "@/lib/operating/businessCosts";
+import {cardFeesForDays} from "@/lib/metrics/core/fees";
+import {profitForPeriod} from "@/lib/metrics/core/profit";
+import {laborForPeriod} from "@/lib/metrics/core/labor";
 
 function countOperatingDays(snapshot: BusinessSnapshot, throughDay: number): number {
     let count = 0;
@@ -142,22 +145,42 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const salesCents = sumCents(days, (d) => d.netSalesCents);
   const ingredientsCents = sumCents(days, (d) => d.ingredientsCents);
   const wageUnknown=recordedLaborDays.some(d=>!laborKnown(d));
-  const wagesCents=wageUnknown?null:sumCents(recordedLaborDays,d=>d.wagesCents??0);
-  const staffTaxCents=wageUnknown?null:sumCents(recordedLaborDays,d=>d.staffTaxCents??0);
-  const cardFeesCents = sumCents(days, (d) => d.cardFeesCents);
+  // Retain observed cents even when other wage rows are unknown; never show unknown as verified zero.
+  const wagesCents=sumCents(recordedLaborDays,d=>d.wagesCents??0);
+  const staffTaxCents=sumCents(recordedLaborDays,d=>d.staffTaxCents??0);
+  const feeResult=cardFeesForDays(days);
+  const cardFeesCents=feeResult.amountCents;
   // This is the same known-cost contract consumed by Supervisor; Money still
   // separately gates any owner-profit claim on the existing strict coverage.
-  const totalCostsCents=businessCosts.completeness==="unavailable"
-    ? totalCostsCentsForPeriod(days,runningCosts) : businessCosts.knownTotalCents;
-  const ownerProfitCents = wageUnknown?null:ownerProfitCentsForPeriod(days, runningCosts);
-  const coverage = periodCoverage(snapshot, period);
+  const coverage=periodCoverage(snapshot,period);
+  const laborResult=laborForPeriod(
+    Array.from({length:coverage.expectedDays},(_,i)=>({
+      date:new Date(Date.parse(calendar.start+"T12:00:00Z")+i*86400000).toISOString().slice(0,10),
+    })),recordedLaborDays);
+  const feeMissing=days.some(d=>d.netSalesCents>0&&d.cardFeesStatus==="missing");
+  const costMissing=businessCosts.missingInputs.filter(k=>k.startsWith("productCost:")||
+    k==="itemSalesCoverage"||k==="historicalIngredientCostCoverage");
+  const knownProfit=profitForPeriod(
+    days,
+    {amountCents:Math.round(runningCosts),
+      missing:businessCosts.missingInputs.filter(k=>k.startsWith("expense:")||
+        k==="priorMonthRunningCostCoverage"),estimated:businessCosts.estimatedInputs.some(k=>k.startsWith("expense:"))},
+    {amountCents:cardFeesCents,missing:feeMissing?["cardFeesMissing"]:[],estimated:feeResult.basis!=="actual"},
+    {amountCents:laborResult.knownLaborCents,
+      missing:laborResult.coveredDays===coverage.expectedDays?[]:["laborCoveragePartial"],
+      estimated:laborResult.basis!=="recorded"},
+    {amountCents:ingredientsCents,missing:costMissing,
+      estimated:businessCosts.estimatedInputs.some(k=>k.startsWith("productCost:"))},
+  );
+  const ownerProfitCents=knownProfit.profitCents;
+  const totalCostsCents=knownProfit.profitCents===null?null:
+    Math.round(Object.values(knownProfit.partsUsed).reduce((a,b)=>a+b,0));
   const baselineProfitDisplay=ownerProfitCents===null?{kind:"unavailable" as const}:
     ownerProfitDisplayState(ownerProfitCents,coverage);
-  // A sales-complete period does not prove complete owner profit when costs are
-  // unknown. Keep the math, but never present it as confirmed owner profit.
-  const ownerProfitDisplay=businessCosts.completeness!=="complete"&&
-    baselineProfitDisplay.kind==="complete"
-    ? {kind:"unavailable" as const}:baselineProfitDisplay;
+  const ownerProfitDisplay=baselineProfitDisplay.kind==="complete"&&
+      (knownProfit.basis!=="complete"||businessCosts.completeness!=="complete")?
+      {kind:"partial" as const,ownerProfitCents:ownerProfitCents!,tone:baselineProfitDisplay.tone}
+      :baselineProfitDisplay;
   const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
   const ingredientsRatio = ratio(ingredientsCents, salesCents);
@@ -251,6 +274,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     businessCosts,
     ownerProfitCents,
     ownerProfitDisplay,
+    financialNotes:knownProfit.notes,
     comparisonState,
     ingredientsRatio,
     staffRatio,

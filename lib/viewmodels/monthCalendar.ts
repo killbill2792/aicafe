@@ -147,7 +147,7 @@ export function buildMonthCalendarViewModel(params: {
 
   const finalBucket = recovery.buckets.at(-1);
   const coverageSignal =
-    !finalBucket || salesCoveredDays.length === 0 || (isCurrentMonth && salesCoveredDays.length < 7)
+    !finalBucket || salesCoveredDays.length === 0
       ? { kind: "insufficient" as const }
       : finalBucket.coveredOn
         ? { kind: "covered" as const, date: finalBucket.coveredOn }

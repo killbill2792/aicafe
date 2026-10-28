@@ -1,4 +1,7 @@
 import { laborKnown } from "@/lib/calc";
+import {cardFeesForDays} from "@/lib/metrics/core/fees";
+import {profitForPeriod} from "@/lib/metrics/core/profit";
+import {laborForPeriod} from "@/lib/metrics/core/labor";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { PricingResult, DataQuality } from "@/lib/calc";
 import {
@@ -205,17 +208,28 @@ export function cafeStateFromSnapshot(
     ...line,
     amountCents: line.isMissing ? 0 : allocated.get(line.categoryCode) ?? 0,
   }));
-  const salesCents = netSalesCentsForPeriod(days);
-  const totalCosts = totalCostsCentsForPeriod(days, running);
-  const profit = ownerProfitCentsForPeriod(days, running);
-  const financials = {
-    netSalesCents: salesCents,
-    // This object is never exposed when financialQuality marks wages missing.
-    totalCostsCents: totalCosts===null?0:roundHalfUpToCent(totalCosts),
-    ownerProfitCents: profit===null?0:roundHalfUpToCent(profit),
-    operatingMargin: profit===null?0:ratio(profit, salesCents),
-    coveredSalesDays: observedDays,
-    expectedSalesDays: expectedDays,
+  const feeResult=cardFeesForDays(days);
+  const laborResult=laborForPeriod(
+    Array.from({length:expectedDays},(_,index)=>({
+      date:new Date(Date.parse(period.from+"T12:00:00Z")+index*86400000).toISOString().slice(0,10),
+    })),recorded);
+  const knownIngredientCents=days.reduce((sum,day)=>sum+day.ingredientsCents,0);
+  const profitResult=profitForPeriod(days,
+    {amountCents:roundHalfUpToCent(running),missing:expenseMissing,estimated:expenseEstimated.length>0},
+    {amountCents:feeResult.amountCents,missing:feeMissing,estimated:feeResult.basis!=="actual"},
+    {amountCents:laborResult.knownLaborCents,
+      missing:laborResult.coveredDays===expectedDays?[]:["laborCoveragePartial"],
+      estimated:laborResult.basis!=="recorded"},
+    {amountCents:knownIngredientCents,missing:missingProductCosts,
+      estimated:estimatedProductCosts.length>0});
+  const salesCents=profitResult.netSalesCents;
+  const financials={
+    netSalesCents:salesCents,
+    totalCostsCents:Math.round(Object.values(profitResult.partsUsed).reduce((a,b)=>a+b,0)),
+    ownerProfitCents:profitResult.profitCents??0,
+    operatingMargin:ratio(profitResult.profitCents??0,salesCents),
+    coveredSalesDays:observedDays,
+    expectedSalesDays:expectedDays,
   };
 
   return {
@@ -226,9 +240,9 @@ export function cafeStateFromSnapshot(
     sales: !inRange ? unavailable("periodOutsideLoadedMonth") : days.length ? known(days, observedQuality) : unavailable(...basicMissing, "salesHistory"),
     expenses: !inRange ? unavailable("periodOutsideLoadedMonth") : known(periodExpenses, quality(expenseMissing, expenseEstimated)),
     businessCosts,
-    profitability: financialQuality.missingInputs.length || observedDays === 0
-      ? { available: false, value: null, quality: financialQuality }
-      : known(financials, financialQuality),
+    profitability: profitResult.profitCents===null
+      ? {available:false,value:null,quality:financialQuality}
+      : known(financials,financialQuality),
     labor: !inRange ? unavailable("periodOutsideLoadedMonth") : labor.length ? known(labor, laborQuality) : unavailable("laborHistory"),
     pricingRecommendations: canonicalPricing === undefined
       ? unavailable("pricingRecommendations")

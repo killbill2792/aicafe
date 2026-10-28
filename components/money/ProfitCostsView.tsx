@@ -63,6 +63,8 @@ function HealthRow({ label, pct, band, note, bandLabel }: { label: string; pct: 
 export default async function ProfitCostsView({ snapshot, period, salesSources }: { snapshot: BusinessSnapshot; period: Period; salesSources: SalesSource[] }) {
   const t = await getTranslations("Money");
   const tCommon = await getTranslations("Common");
+  const metrics=await getTranslations("MetricsNotes");
+  const tMetrics=(key:string)=>metrics.has(key as never)?metrics(key as never):t("partialPill");
   const bandLabel: Record<HealthBand, string> = { healthy: t("bandHealthy"), watch: t("bandWatch"), high: t("bandHigh") };
   const vm = buildProfitAndCostsViewModel(snapshot, period);
   const currentLocale=await getLocale();
@@ -81,8 +83,8 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
   // nonsense like "150200000%" the moment a period had no sales yet. 0% reads as "not enough
   // sales to show a ratio" rather than a fabricated number.
   const pct = (n: number) => (vm.salesCents > 0 ? (n / vm.salesCents) * 100 : 0);
-  const knownLabor=laborKnown({wagesCents:vm.wagesCents,staffTaxCents:vm.staffTaxCents,
-    laborWageStatus:vm.businessCosts.missingInputs.some(x=>x.startsWith("laborWageUnknown:"))?"missing":undefined});
+  const knownLabor=!vm.businessCosts.missingInputs.some(x=>
+    x.startsWith("laborWageUnknown:")||x.startsWith("laborCoverage:"));
   const knownTotals=vm.totalCostsCents!==null&&knownLabor;
   const runningExCardFees = vm.runningCostLines.reduce((s, l) => s + l.amountCents, 0);
   // No confirmed owner-profit figure to color when nothing's been uploaded yet — the flow bar and
@@ -171,6 +173,9 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
           </span>
         </div>
         {costLimitation && <p className="mb-3 text-sm text-ink-muted">{costLimitation}</p>}
+        {vm.financialNotes.length>0&&<p className="mb-3 text-sm text-ink-muted">
+          {vm.financialNotes.map(key=>tMetrics(key)).join(" · ")}
+        </p>}
         <div className={`mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl px-3.5 py-3 ${tone === "good" ? "bg-good-tint" : tone === "warn" ? "bg-warn-tint" : "bg-surface"}`}>
           <span className={`flex items-center gap-1.5 text-[17px] font-extrabold ${tone === "good" ? "text-fg" : profitToneTextClass(tone)}`}>
             {t("youKeep")}
