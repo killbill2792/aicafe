@@ -23,10 +23,10 @@ const CHUNK_BYTES=180000;
 // broad "orders/checks/payments" context allowlists: they lose business data.
 const PERSONAL_FIELD=/(?:^name$|^displayName$|^nickname$|^firstName$|^lastName$|^fullName$|^chosenName$)/i;
 const PERSONAL_PARENT=/(?:^customer$|^guest$|^loyalty$|^patron$|^card$|^cardholder$|^person$|^recipient$|^buyer$|^payer$|^contact$|^deliveryInfo$|^billing$|^shipping$)/i;
-const CONTACT_FIELD=/(?:email|phone|mobile|fax|street|address|postal|zipCode|latitude|longitude|^lat$|^lon$|^lng$|ipAddress|birth|^(?:customer|guest|cardholder|employee|server|cashier|recipient|buyer|payer|patron)(?:First|Last|Full|Chosen)?Name$)/i;
+const CONTACT_FIELD=/(?:email|phone|mobile|fax|street|address|postal|zipCode|latitude|longitude|^lat$|^lon$|^lng$|ipAddress|birth|^firstName$|^lastName$|^fullName$|^chosenName$|^(?:customer|guest|cardholder|employee|server|cashier|recipient|buyer|payer|patron)(?:First|Last|Full|Chosen)?Name$)/i;
 const PERSONAL_LOCATION=/^(?:city|country|state|suite|unit)$/i;
 const CARD_SECRET=/(?:cardNumber|cardLast4|lastFour|last4|first6|firstSix|pan$|cvv|cvc|magstripe|trackData|expiry|expiration|expireDate|cardholderName|cardName|networkId|networkTransactionIdentifier)/i;
-const AUTH_SECRET=/(?:password|secret|authorization|accessToken|refreshToken|authToken|paymentToken|clientToken|apiKey|credential|sessionToken|signature|passcode|pin$|routingNumber|accountNumber|deviceId)/i;
+const AUTH_SECRET=/(?:password|secret|authorization|token|apiKey|credential|sessionToken|signature|passcode|pin$|routingNumber|accountNumber|deviceId)/i;
 const FREEFORM=/(?:notes?|memo|comment|message|instructions?|^text$|^tabName$|receiptText|^description$)/i;
 const CUSTOMER_ID=/(?:^customer(?:Id|Guid|Identifier|AccountId|AccountGuid)$|^guest(?:Id|Guid|Identifier)$|^loyalty(?:Id|Guid|Identifier|AccountId|AccountGuid|CustomerId|CustomerGuid)$|^card(?:Id|Guid|Fingerprint|TokenId)$|^cardPaymentId$|^paymentCardId$|^cardTokenId$|^maskedLoyaltyIdentifier$)/i;
 const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
