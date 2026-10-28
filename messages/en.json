@@ -3352,6 +3352,7 @@
   },
   "DataNotes": {
     "todayNotImported": "Today isn't imported yet. The last full day was {date}: {amount}.",
+    "todayLastRecordedUnverified": "Today isn't imported yet. The latest recorded day was {date}: {amount} (completeness unverified).",
     "todayNotImportedNoHistory": "Today isn't imported yet. No completed sales day is stored.",
     "toastDaysNeedLook": "{count} days need a look: {dates}{more}.",
     "toastDayStatusUnavailable": "Toast's day-status check failed. Stored numbers may include days not yet checked.",
