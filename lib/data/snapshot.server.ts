@@ -379,7 +379,7 @@ async function readHistoricalBusinessSnapshot(
   }
   const allExpenses=[...(expenses.data??[])];
   for(let offset=1000;offset<=allExpenses.length;offset+=1000){
-    const page=await supabase.from("expenses").select("category_code,amount_cents,status,spent_on")
+    const page=await supabase.from("expenses").select("id,category_code,amount_cents,status,spent_on")
       .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd)
       .order("spent_on",{ascending:true}).order("category_code",{ascending:true}).range(offset,offset+999);
     if(page.error)throw page.error;
