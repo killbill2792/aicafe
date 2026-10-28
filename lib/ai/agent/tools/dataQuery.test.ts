@@ -38,13 +38,15 @@ it("empty and failed queries are explicit, not invented zero totals",async()=>{
  expect(failed.error).toBe("source_read_failed");
  expect(JSON.stringify(failed)).not.toContain("sensitive");
 });
-it("enforces three years, range bounds and the row cap",async()=>{
+it("reads retained history without arbitrary caps and still enforces range and row bounds",async()=>{
  const f=testDb(),ctx={db:f.db,businessId:b};
- expect((await dataQueryTools.query_data.execute({...input(),date_to:"2030-10-11"},ctx)).error)
+ expect((await dataQueryTools.query_data.execute({...input(),date_from:"2030-10-11"},ctx)).error)
   .toBe("invalid_date_range");
+ expect((await dataQueryTools.query_data.execute({...input(),date_to:"2030-10-11"},ctx)).error)
+  .toBeUndefined();
  expect((await dataQueryTools.query_data.execute({...input(),limit:1001},ctx)).error)
   .toBe("invalid_query");
- expect(f.rpc).not.toHaveBeenCalled();
+ expect(f.rpc).toHaveBeenCalledTimes(1);
 });
 
 it("does not certify open or estimated facts as complete",async()=>{
