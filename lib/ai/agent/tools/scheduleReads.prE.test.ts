@@ -43,7 +43,7 @@ describe("confirmed weekly schedule is the only chat schedule",()=>{
     expect(gaps.gaps).toEqual([]);
     expect(JSON.stringify([scheduleRead,gaps])).not.toContain("Dawn");
   });
-  it("filters removed people before summing wages and publishing shifts",async()=>{
+  it("retains former staff historical shifts and matches Team screen wage totals",async()=>{
     const activeShift=fakeShift("current","active","08:00");
     const removedShift=fakeShift("removed","former","07:00");
     vi.mocked(getWeekSchedule).mockResolvedValue(schedule([activeShift,removedShift]) as never);
@@ -52,9 +52,8 @@ describe("confirmed weekly schedule is the only chat schedule",()=>{
     } as never);
     const roster=await scheduleReadTools.get_team.execute({week_start:week,name:null},ctx);
     const confirmed=await scheduleReadTools.get_week_schedule.execute({week_start:week},ctx);
-    expect(JSON.stringify([roster,confirmed])).not.toContain("former");
-    expect((confirmed.shifts as {employeeId:string}[]).map(s=>s.employeeId)).toEqual(["active"]);
-    expect(confirmed.knownWagesCents).toBe(activeShift.costCents);
-    expect(roster.knownWagesCents).toBe(activeShift.costCents);
+    expect((confirmed.shifts as {employeeId:string}[]).map(s=>s.employeeId)).toEqual(["active","former"]);
+    expect(confirmed.knownWagesCents).toBe(activeShift.costCents+removedShift.costCents);
+    expect(roster.knownWagesCents).toBe(activeShift.costCents+removedShift.costCents);
   });
 });
