@@ -10,7 +10,7 @@ export type MoreBadgeInputs = {
   missingFeeDays?: number | null;
   bills?: RecurringCostRow[];
   alertCount?: number | null;
-  currency?: string;
+  currency?: string | null;
 };
 
 export function buildMoreBadges(input: MoreBadgeInputs) {

@@ -1,3 +1,4 @@
+import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
 import { AlertTriangle, ChevronRight, CreditCard, FileText, Languages, Menu as MenuIcon, Percent, Receipt, Shield, SlidersHorizontal, Store, Target, Trash2, UserRound, Users, type LucideIcon } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { cookies } from "next/headers";
@@ -46,8 +47,7 @@ export default async function MorePage() {
   const badges = buildMoreBadges(evidence);
   const number = new Intl.NumberFormat(locale);
   const amount = badges.monthlyBills === null ? null :
-    new Intl.NumberFormat(locale, { style: "currency", currency: evidence.currency || "USD" })
-      .format(badges.monthlyBills.amountCents / 100);
+    formatCafeCurrency(badges.monthlyBills.amountCents, locale, evidence.currency).text;
   const hoursBadge: FixBadge | undefined = badges.hoursNotSet
     ? { label: t("hoursNotSet"), href: "/more/cafe-profile?focus=hours", warning: true } : undefined;
   const toastCheck=await getTranslations("ToastConnect");

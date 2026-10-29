@@ -82,7 +82,7 @@ type SourceSummary = {
   processorCount: number;
   actualProviders: string[];
   actualFeeCents: number;
-  currency: string;
+  currency: string | null;
   trustedOrderDays: number;
   untrustedFeeDates: string[];
 };
@@ -157,7 +157,11 @@ export default function ProcessingFeeEstimateForm({
   const router = useRouter();
   const locale = useLocale();
   const fmt = (number: number) => new Intl.NumberFormat(locale).format(number);
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: sourceSummary.currency || "USD" });
+  // An unset café currency shows plain amounts with no symbol, never an assumed USD.
+  const currencyCode = sourceSummary.currency && /^[A-Z]{3}$/.test(sourceSummary.currency) ? sourceSummary.currency : null;
+  const currency = currencyCode
+    ? new Intl.NumberFormat(locale, { style: "currency", currency: currencyCode })
+    : new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
   const borderError = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
