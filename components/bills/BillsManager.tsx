@@ -9,6 +9,7 @@ import type { RecurringCostRow } from "@/lib/data/getRecurringCosts";
 import type { ExpenseCategoryCode } from "@/lib/constants";
 import { recurringCostAmountCentsFromInput } from "@/lib/expenses/recurringCostAmount";
 import { totalMonthlyRecurringCostsCents } from "@/lib/expenses/recurringMonthlyTotal";
+import { formatCafeCurrency } from "@/lib/format/cafeCurrency";
 
 const SINGLE_SLOT_CATEGORIES: ExpenseCategoryCode[] = ["rent", "utilities_power", "water", "internet", "insurance", "loan", "software"];
 const OTHER_CATEGORY: ExpenseCategoryCode = "other";
@@ -155,14 +156,18 @@ export default function BillsManager({
   categoryLabels,
   labels,
   initialCategory = null,
+  currency,
+  currencyMissingLabel,
 }: {
   bills: RecurringCostRow[];
   categoryLabels: Record<ExpenseCategoryCode, string>;
   labels: BillFormLabels & { addHint: string; missing: string; edit: string; addAnother: string; totalMonthly: string; variableCostHint: string };
   initialCategory?: ExpenseCategoryCode | null;
+  currency: string | null | undefined;
+  currencyMissingLabel: string;
 }) {
   const locale = useLocale();
-  const money = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
+  const money = (cents: number) => formatCafeCurrency(cents, locale, currency).text;
   const firstOtherBill = bills.find((bill) => bill.categoryCode === OTHER_CATEGORY);
   const initialOpenKey = initialCategory === OTHER_CATEGORY ? firstOtherBill?.id ?? NEW_OTHER_KEY : initialCategory;
   const [openKey, setOpenKey] = useState<string | null>(initialOpenKey);
@@ -184,10 +189,11 @@ export default function BillsManager({
 
   return (
     <div className="flex flex-col gap-2.5">
+      {!currency&&<p role="note" className="text-sm text-ink-muted">{currencyMissingLabel}</p>}
       <section className="rounded-card-lg bg-good-tint p-4">
         <span className="block text-sm font-semibold text-ink-muted">{labels.totalMonthly}</span>
         <strong className="mt-1 block font-headline text-3xl text-ink">
-          {money.format(totalMonthlyCents / 100)}
+          {money(totalMonthlyCents)}
         </strong>
       </section>
       {SINGLE_SLOT_CATEGORIES.map((category) => {
@@ -200,7 +206,7 @@ export default function BillsManager({
               <span className="flex-1 text-start text-[17px] font-bold">{categoryLabels[category]}</span>
               {existing ? (
                 <span className="flex flex-wrap items-center justify-end gap-2 text-[17px] font-bold">
-                  {money.format(existing.amountCents / 100)}
+                  {money(existing.amountCents)}
                   {existing.isEstimate && <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[13px] font-semibold text-warn">{labels.estimateBadge}</span>}
                 </span>
               ) : (
@@ -234,7 +240,7 @@ export default function BillsManager({
               <PlainIcon code={OTHER_CATEGORY} size={32} color="currentColor" />
               <span className="min-w-0 flex-1 truncate text-start text-[17px] font-bold">{bill.label}</span>
               <span className="flex flex-wrap items-center justify-end gap-2 text-[17px] font-bold">
-                {money.format(bill.amountCents / 100)}
+                {money(bill.amountCents)}
                 {bill.isEstimate && <span className="rounded-full bg-warn-tint px-2.5 py-1 text-[13px] font-semibold text-warn">{labels.estimateBadge}</span>}
               </span>
             </button>
