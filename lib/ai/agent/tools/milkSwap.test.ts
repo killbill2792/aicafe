@@ -34,6 +34,7 @@ describe("milk_swap_price strict tool",()=>{
    },context);
    expect(read).toHaveBeenCalledWith(context,"oat milk",null,["16 oz"]);
    expect(result.missing).toEqual([]);
+   expect(result.currency).toBe("EUR");
    expect(result.rows).toMatchObject([{additionalCostCents:50,suggestedUpchargeCents:170}]);
    expect(result.explain).toEqual(expect.arrayContaining([
     expect.objectContaining({inputs:expect.arrayContaining([
