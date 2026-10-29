@@ -2,6 +2,7 @@ import {describe,it,expect} from "vitest";
 import {askOwnerSchema,askOwnerTools} from "./askOwner";
 import {newResolveState,observeToolResult} from "../resolve";
 import type {AgentToolContext} from "./index";
+import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 const hot="11111111-1111-4111-8111-111111111111",iced="22222222-2222-4222-8222-222222222222";
 const options=[{label:"Latte — Hot",value:hot},{label:"Latte — Iced",value:iced}];
 function context(){
@@ -24,6 +25,30 @@ describe("ask_owner tool",()=>{
   expect(label).toContain("16 oz");
   expect(label).not.toContain("{milk}");
   expect(label).not.toContain("Unsafe model label");
+ });
+ it("drops choices:null from facts fields so the clarify card can be saved",async()=>{
+  const ctx={resolveState:newResolveState("How many seats do we have?"),locale:"en"} as AgentToolContext;
+  const card=await askOwnerTools.ask_owner.execute({kind:"facts",question:"How many seats?",
+   options:[],allowOther:false,fields:[{key:"seat_count",label:"Seats",inputType:"number",
+    units:[],defaultUnit:"",choices:null}]},ctx);
+  expect(card.missing).toEqual([]);
+  const fields=card.fields as Array<Record<string,unknown>>;
+  expect(fields).toHaveLength(1);
+  expect(Object.hasOwn(fields[0],"choices")).toBe(false);
+  expect(clarifyBlockSchema.safeParse({type:"clarify",kind:"facts",questionId:card.questionId,
+   question:card.question,fields}).success).toBe(true);
+ });
+ it("drops choices from fill fields so the clarify card can be saved",async()=>{
+  const id="33333333-3333-4333-8333-333333333333",date="2026-10-25";
+  const ctx={resolveState:newResolveState("How much milk remains?")} as AgentToolContext;
+  observeToolResult(ctx.resolveState,{source:"usage_variance",period:{from:date,to:date},
+   missing:["endCount:"+date],rows:[{ingredientId:id,name:"Milk",unit:"ml",missing:["endCount:"+date]}]});
+  const card=await askOwnerTools.ask_owner.execute({kind:"fill",question:"How much milk remains?",
+   options:[],allowOther:false,fields:[{key:"endCount:"+id+":"+date,label:"Milk at closing",
+    inputType:"number",units:["ml","l"],defaultUnit:"ml",choices:null}]},ctx);
+  expect(card).toMatchObject({kind:"fill",missing:[]});
+  expect(clarifyBlockSchema.safeParse({type:"clarify",kind:"fill",question:card.question,
+   fields:card.fields}).success).toBe(true);
  });
  it.each(["unitCostCents","unit_cost_cents"])("rejects unsavable %s cards without consuming the owner question",async(key)=>{
   const ctx={resolveState:newResolveState("What does the latte cost?"),locale:"en"} as AgentToolContext;
