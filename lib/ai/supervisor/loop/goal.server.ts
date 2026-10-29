@@ -93,8 +93,8 @@ export const goalCapability=registerLoopCapability({
     }
     return {businessDate,observation,source:"metric_catalog"};
   },
-  report:async(scope,effect,samples,windowComplete)=>{
-    const outcome=scoreGoal(effect,samples,windowComplete);
+  report:async(scope,effect,samples,windowComplete,window)=>{
+    const outcome=scoreGoal(effect,samples,windowComplete,window);
     // Messages are capped at 1200 characters; the caveat sentence is the last part.
     // Check-in answers are qualitative: reported next to the numbers, never scored.
     const checkins=effect.checkin&&outcome.status!=="in_progress"

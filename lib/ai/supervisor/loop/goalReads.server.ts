@@ -35,7 +35,10 @@ export async function readGoalStatus(db:SupabaseClient,scope:OwnerScope&{locale:
   const samples=w.start?await new SupabaseLoopRepository().samples({...scope,threadId:p.thread_id},p.id):[];
   const inWindow=samples.filter(s=>w.start&&w.end&&s.businessDate>=w.start&&s.businessDate<=w.end);
   const complete=Boolean(w.end&&today>w.end);
-  const outcome=scoreGoal(effect,inWindow,complete);
+  // Scored through yesterday (or the last goal day): unsampled days count as missing.
+  const yesterday=addDays(today,-1);
+  const through=w.end&&yesterday>w.end?w.end:yesterday;
+  const outcome=scoreGoal(effect,inWindow,complete,w.start&&through>=w.start?{start:w.start,through}:undefined);
   const text=complete?goalReportText(effect,outcome,scope.locale):goalMidRunText(effect,outcome,scope.locale);
   return {proposal:p,effect,window:w,outcome,text,sampledDays:inWindow.length};
 }

@@ -55,6 +55,14 @@ describe("goal spec",()=>{
       values:{primary:{value:null,coverage:0},guardrail1:{value:null,coverage:0}}}});
     expect(scoreGoal(effect,s,true)).toMatchObject({status:"insufficient_evidence"});
   });
+  it("counts days with no sample as missing, so one day never passes for a whole goal",()=>{
+    const window={start:"2026-10-02",through:"2026-10-08"};
+    expect(scoreGoal(effect,samples(840,100).slice(0,1),true,window)).toMatchObject({status:"insufficient_evidence",asOf:"2026-10-08"});
+    expect(scoreGoal(effect,samples(840,100),true,window)).toMatchObject({status:"complete",recommendation:"keep"});
+    // Samples outside the window are ignored.
+    expect(scoreGoal(effect,samples(840,100),true,{start:"2026-10-02",through:"2026-10-03"}).evaluation.results.primary)
+      .toMatchObject({current:840});
+  });
   it("stays in progress before the last day",()=>{
     expect(scoreGoal(effect,samples(840,100).slice(0,3),false).status).toBe("in_progress");
   });
