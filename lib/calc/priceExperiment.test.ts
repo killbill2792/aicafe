@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {evaluatePriceExperiment,simulatePriceExperiment,priceExperimentEstimatedUplift} from "./priceExperiment";
 const base=simulatePriceExperiment({productId:"latte",productName:"Latte",currentPriceCents:500,
-  increaseCents:10,ingredientCostCents:125,units7Days:70})!;
+  increaseCents:10,ingredientCostCents:125,units7Days:70,currency:"USD"})!;
 describe("price experiment: canonical integer-cent scenarios",()=>{
   it("projects conditional unchanged-volume contribution, not invented profit",()=>{
     expect(base.beforeContributionCents).toBe(375);
@@ -40,13 +40,13 @@ describe("price experiment: canonical integer-cent scenarios",()=>{
       status:"in_progress",observedRevenueCents:0,units:0});
   });
   it("caps increases relative to price",()=>{
-    const run=(increaseCents:number)=>simulatePriceExperiment({productId:"x",productName:"X",currentPriceCents:145,increaseCents,ingredientCostCents:60,units7Days:70});
+    const run=(increaseCents:number)=>simulatePriceExperiment({productId:"x",productName:"X",currentPriceCents:145,increaseCents,ingredientCostCents:60,units7Days:70,currency:"USD"});
     expect(run(100000)).toBeNull();
     expect(run(73)).toBeNull();
     expect(run(72)?.newPriceCents).toBe(217);
   });
   it("rejects impossible cent/volume inputs",()=>{
     expect(simulatePriceExperiment({productId:"x",productName:"X",currentPriceCents:500,
-      increaseCents:0.1,ingredientCostCents:5,units7Days:10})).toBeNull();
+      increaseCents:0.1,ingredientCostCents:5,units7Days:10,currency:"USD"})).toBeNull();
   });
 });

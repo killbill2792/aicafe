@@ -7,7 +7,7 @@ import {registerLoopCapability,loopRegistry,proposeLoop,approveLoop,commitLoop,
   type LoopProposal,type LoopSample,type LoopReport,type OwnerLoopScope,type LoopCreate} from "./engine";
 const scope:OwnerLoopScope={businessId:"business-a",ownerUserId:"owner-a",threadId:"thread-a",locale:"en"};
 const calc=simulatePriceExperiment({productId:"latte-12oz",productName:"Latte 12oz",
-  currentPriceCents:500,increaseCents:10,ingredientCostCents:125,units7Days:70})!;
+  currentPriceCents:500,increaseCents:10,ingredientCostCents:125,units7Days:70,currency:"USD"})!;
 const {beforeContributionCents:before,afterContributionCents:after,
   estimatedAdditionalRevenue7DaysCents:uplift,
   estimatedAdditionalContribution7DaysCents:_projected,...effect}=calc;

@@ -21,7 +21,7 @@ const cents=z.number().int().safe().nonnegative();
 const baseline=z.strictObject({
   productId:z.uuid(),productName:z.string().min(1).max(200),
   oldPriceCents:cents,newPriceCents:cents,ingredientCostCents:cents,
-  baselineUnits7Days:cents,currency:z.literal("USD"),
+  baselineUnits7Days:cents,currency:z.string().regex(/^[A-Z]{3}$/),
   estimateKind:z.literal("conditional_unchanged_demand"),preview:z.array(diffFieldSchema).optional(),
 });
 export const priceExperimentCapabilityId="alex.drink_price_experiment.v1";
@@ -39,7 +39,10 @@ export const priceExperimentCapability=registerLoopCapability({
     if(await getActiveBusinessId(user.id)!==scope.businessId)throw new ToolError("scope_mismatch");
     const {data:membership}=await client.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle();
     const {data:business}=await client.from("businesses").select("currency,is_demo").eq("id",scope.businessId).maybeSingle();
-    if(membership?.role!=="owner"||business?.currency!=="USD"||business?.is_demo)throw new ToolError("unauthorized");
+    if(membership?.role!=="owner"||business?.is_demo)throw new ToolError("unauthorized");
+    // Any café currency works; an unset or invalid currency cannot label money.
+    const currency=typeof business?.currency==="string"&&/^[A-Z]{3}$/.test(business.currency)?business.currency:null;
+    if(!currency)throw new ToolError("validation","Set your café currency in Café profile before starting a price experiment.");
     const matches=(await getMenuControlCenter()).filter(x=>x.active&&x.id===input.productId);
     if(matches.length!==1)throw new ToolError("not_found");
     const item=matches[0];
@@ -47,7 +50,7 @@ export const priceExperimentCapability=registerLoopCapability({
     const result=simulatePriceExperiment({productId:item.id,productName:item.name,
       currentPriceCents:item.priceCents,increaseCents:input.increaseCents,
       ingredientCostCents:item.pricing?.productCostCents??null,
-      units7Days:verifiedUnits});
+      units7Days:verifiedUnits,currency});
     if(!result)throw new ToolError("validation","This experiment needs covered sales and a known recipe cost. Add those facts and try again.");
     const {beforeContributionCents,afterContributionCents,
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,...effect}=result;
