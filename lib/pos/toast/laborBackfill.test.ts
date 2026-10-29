@@ -4,18 +4,18 @@ import {backfillToastStoredLabor} from "./laborBackfill";
 const b="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",r="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const p={businessId:b,restaurantGuid:r,locationId:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
  timezone:"America/Los_Angeles",timeZone:"America/Los_Angeles"};
-function makeDb(){
- let saved:string|null=null;
+function makeDb(first={value:"2026-08-01"}){
+ let saved:{next_at:string;covered_from?:string}|null=null;
  const db={from(table:string){
   let ascending=true;
   const q={select(){return q;},eq(){return q;},order(_key:string,opts:{ascending:boolean}){
     ascending=opts.ascending;return q;},limit(){return q;},
    maybeSingle:async()=>({data:table==="toast_day_status"?
-    {business_date:ascending?"2026-08-01":"2026-10-06"}:saved?{next_at:saved}:null,error:null}),
-   upsert:async(data:{next_at:string})=>{saved=data.next_at;return {error:null};}};
+    {business_date:ascending?first.value:"2026-10-06"}:saved,error:null}),
+   upsert:async(data:{next_at:string;covered_from?:string})=>{saved=data;return {error:null};}};
   return q;
  }};
- return {db:db as never,get saved(){return saved;}};
+ return {db:db as never,get saved(){return saved?.next_at??null;},get coveredFrom(){return saved?.covered_from??null;}};
 }
 it("67 recorded days are imported in 3 non-overlapping <=30-day chunks",async()=>{
  const f=makeDb(),ranges:Array<[number,number]>=[];
@@ -42,4 +42,21 @@ it("resumes after a timeout without duplicating the committed first chunk",async
  expect(visited).toHaveLength(4);
  expect(visited[1]).toBe(visited[2]);
  expect(visited[0]).not.toBe(visited[2]);
+});
+it("reads history the owner adds before an already-completed backfill",async()=>{
+ const first={value:"2026-08-01"},f=makeDb(first);
+ const done=await backfillToastStoredLabor(f.db,p,Date.now()+60000,async()=>{},5);
+ expect(done.complete).toBe(true);
+ const finishedAt=f.saved;
+ first.value="2026-07-01";
+ const ranges:Array<[string,string]>=[];
+ const again=await backfillToastStoredLabor(f.db,p,Date.now()+60000,async(_db,_p,range)=>{
+  ranges.push([range.since.toISOString(),range.until.toISOString()]);
+ },5);
+ expect(again.complete).toBe(true);
+ // Only the new July gap is read, backwards from the old start, and the end cursor is kept.
+ expect(ranges).toEqual([["2026-07-02T07:00:00.000Z","2026-08-01T07:00:00.000Z"],
+  ["2026-07-01T07:00:00.000Z","2026-07-02T07:00:00.000Z"]]);
+ expect(f.saved).toBe(finishedAt);
+ expect(f.coveredFrom).toBe("2026-07-01T07:00:00.000Z");
 });
