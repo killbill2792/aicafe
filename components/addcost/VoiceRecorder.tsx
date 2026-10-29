@@ -29,8 +29,10 @@ function getSpeechRecognition(): (new () => SpeechRecognitionLike) | null {
 export default function VoiceRecorder({
   categoryLabels,
   labels,
+  currency,
 }: {
   categoryLabels: Record<ExpenseCategoryCode, string>;
+  currency: string | null;
   labels: { holdToTalk: string; listening: string; notSupported: string; typeItInstead: string; confirm: string; saved: string; transcriptLabel: string };
 }) {
   const router = useRouter();
@@ -134,7 +136,7 @@ export default function VoiceRecorder({
       {result && "amount_cents" in result && (
         <div className="w-full flex-col gap-3 rounded-card-lg bg-card p-4">
           <div className="flex items-center justify-between">
-            <span className="font-headline text-2xl font-bold">{formatCents(result.amount_cents)}</span>
+            <span className="font-headline text-2xl font-bold">{formatCents(result.amount_cents, undefined, currency)}</span>
             <span className="text-base font-semibold">{categoryLabels[result.category]}</span>
           </div>
           {result.vendor && <span className="text-sm text-ink-muted">{result.vendor}</span>}
