@@ -80,7 +80,7 @@ export function usStateOptions(translations: Record<string, string>): { value: s
   }));
 }
 
-/** Grouped ISO 4217 defaults for common territories and countries; unmapped countries keep USD. */
+/** Grouped ISO 4217 suggestions for known territories; unknown countries must be chosen by the owner. */
 const COUNTRY_CURRENCIES: Record<string, string> = Object.fromEntries(
   Object.entries({
     USD: "US AS GU MP PR VI EC SV PA TL FM MH PW TC VG BQ IO UM", EUR: "AD AT AX BE BG BL CY DE EE ES FI FR GF GP GR HR IE IT LT LU LV MC ME MF MQ MT NL PM PT RE SI SK SM TF VA YT",
@@ -108,7 +108,7 @@ const COUNTRY_CURRENCIES: Record<string, string> = Object.fromEntries(
 );
 
 export function currencyForCountry(code: string): string {
-  return COUNTRY_CURRENCIES[code.toUpperCase()] ?? "USD";
+  return COUNTRY_CURRENCIES[code.toUpperCase()] ?? "";
 }
 
 export function copyMondayToWeekdays(hours: WeeklyHoursInput): WeeklyHoursInput {
