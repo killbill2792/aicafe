@@ -30,6 +30,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
   const tCategories = await getTranslations("Categories");
   const categoryLabels = Object.fromEntries(EXPENSE_CATEGORY_CODES.map((c) => [c, tCategories(c)])) as Record<ExpenseCategoryCode, string>;
   const content = describeAlert(alert, t, (code) => categoryLabels[code as ExpenseCategoryCode] ?? code);
+  const money = (cents: number) => formatCents(cents, locale, snapshot.business.currency);
   const voids = alert.voidsReview ?? null;
   const displayedImpact = alert.kind === "voids" ? (voids?.ok ? voids.summary.thisMonthCents : null) : alert.impactCents;
 
@@ -42,12 +43,13 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
     <PageShell className="flex flex-col gap-4 px-4 py-6 pb-10">
       <BackHeader title={content.title} backHref="/more/alerts" backLabel={tCommon("back")} />
 
+      {!snapshot.business.currency&&<p role="note" className="text-sm text-ink-muted">{tCommon("currencyNotSet")}</p>}
       <section className="flex flex-col items-center gap-3 rounded-card-lg bg-card p-6 text-center">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-warn-tint text-warn">
           <PlainIcon code={content.icon as ExpenseIconCode} size={26} color="rgb(var(--c-warn-text))" />
         </span>
         {displayedImpact !== null && (
-          <><span className="text-sm font-bold text-warn">{t("potentialImpact")}</span><span className="font-headline text-[44px] font-bold leading-none text-warn">{formatCents(displayedImpact, locale)}</span></>
+          <><span className="text-sm font-bold text-warn">{t("potentialImpact")}</span><span className="font-headline text-[44px] font-bold leading-none text-warn">{money(displayedImpact)}</span></>
         )}
         <p className="text-base leading-snug text-ink">{content.subtitle}</p>
       </section>
@@ -70,15 +72,15 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
             label={voids.summary.monthKey === formatInTimeZone(new Date(), snapshot.business.timezone, "yyyy-MM")
               ? t("voidsThisMonth")
               : t("voidsAlertMonth", { month: formatBusinessMonth(voids.summary.monthKey, locale) })}
-            value={voids.summary.thisMonthCents === null ? t("voidsUnknown") : formatCents(voids.summary.thisMonthCents, locale)}
+            value={voids.summary.thisMonthCents === null ? t("voidsUnknown") : money(voids.summary.thisMonthCents)}
           />
           <Detail label={t("voidsAverage")} value={voids.summary.previousThreeMonthAverageCents === null
-            ? t("voidsUnknown") : formatCents(voids.summary.previousThreeMonthAverageCents, locale)} />
+            ? t("voidsUnknown") : money(voids.summary.previousThreeMonthAverageCents)} />
           {voids.summary.previousThreeMonthAverageCents === null && <p className="text-sm text-ink-muted">{t("voidsMissingHistory")}</p>}
           <h3 className="font-semibold">{t("voidsByDay")}</h3>
           {voids.summary.days.length === 0 ? <p className="text-sm text-ink-muted">{t("voidsNoData")}</p> :
             <div className="flex flex-col gap-2">{voids.summary.days.map((day) =>
-              <Detail key={day.date} label={formatBusinessDate(day.date, locale)} value={formatCents(day.cents, locale)} />
+              <Detail key={day.date} label={formatBusinessDate(day.date, locale)} value={money(day.cents)} />
             )}</div>}
           <p className="text-sm text-ink-muted">{t("voidsCoverageNote")}</p>
           <p className="text-sm text-ink-muted">{t("voidsPeopleUnavailable")}</p>
