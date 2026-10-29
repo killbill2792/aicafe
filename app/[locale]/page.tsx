@@ -39,7 +39,7 @@ import type { Period } from "@/lib/viewmodels/period";
 import {readOperatingBoard} from "@/lib/operating/board.server";
 import {boardHref} from "@/lib/operating/board";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
-import {readSavedTodayLive,currentTodayBusinessDay,todaySoFarForBusiness} from "@/lib/data/todayLive.server";
+import {readSavedTodayLive,currentTodayBusinessDay,readHomeTodayLiveFallback} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {liveSalesView,needsHomeLiveReading,needsHomeLiveFallback} from "@/components/home/liveSales";
 import {timeReader} from "@/lib/perf/timeReader.server";
@@ -107,24 +107,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     live=await timeReader("Home","readSavedTodayLive",()=>readSavedTodayLive(liveDb,businessId))
       .catch(()=>{console.error("home.today_live.saved_read_failed");return null;});
     if(needsHomeLiveFallback(live,liveDay)){
-      // No saved reading for this business day: try the canonical live reader.
-      // Do not delay Home longer than four seconds for the network/POS.
-      let timer:ReturnType<typeof setTimeout>|undefined;
-      const fresh=await Promise.race([
-        timeReader("Home","todaySoFarForBusiness",()=>todaySoFarForBusiness(
-          createAdminSupabaseClient(),businessId)).catch(()=>{
-          console.error("home.today_live.fallback_failed");return null;
-        }),
-        new Promise<null>(resolve=>{
-          timer=setTimeout(()=>{console.error("home.today_live.fallback_timeout");resolve(null);},4_000);
-        }),
-      ]);
-      if(timer)clearTimeout(timer);
-      if(fresh?.available){
-        live={value:fresh.value,ageMs:Math.max(0,Date.now()-Date.parse(fresh.value.readAt))};
-      }else if(fresh&&!fresh.available){
-        console.error("home.today_live.fallback_unavailable");
-      }
+      // A bounded retry through the existing canonical live reading.
+      live=await timeReader("Home","todaySoFarForBusiness",()=>readHomeTodayLiveFallback(
+        createAdminSupabaseClient(),businessId)).catch(()=>{
+        console.error("home.today_live.fallback_error");return null;
+      });
     }
   }
   const liveView=needsLive?liveSalesView(live,identity?.timezone??null,locale,liveDay):null;
