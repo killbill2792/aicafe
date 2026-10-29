@@ -24,7 +24,7 @@ export type ProcessingFeeEstimateSetup = {
     processorCount: number;
     actualProviders: string[];
     actualFeeCents: number;
-    currency: string;
+    currency: string | null;
     trustedOrderDays: number;
     untrustedFeeDates: string[];
   };
@@ -37,7 +37,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       plan: null,
       coverageDays: [],
       coverage: { salesDays: 0, actualDays: 0, estimatedDays: 0, missingDays: 0 },
-      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, currency: "USD", trustedOrderDays: 0, untrustedFeeDates: [] },
+      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, currency: null, trustedOrderDays: 0, untrustedFeeDates: [] },
     };
   }
 
@@ -51,7 +51,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       plan: null,
       coverageDays: [],
       coverage: { salesDays: 0, actualDays: 0, estimatedDays: 0, missingDays: 0 },
-      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, currency: "USD", trustedOrderDays: 0, untrustedFeeDates: [] },
+      sourceSummary: { connectedProvider: null, processorCount: 0, actualProviders: [], actualFeeCents: 0, currency: null, trustedOrderDays: 0, untrustedFeeDates: [] },
     };
   }
 
@@ -75,7 +75,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
   const business = Array.isArray(rawBusiness) ? rawBusiness[0] : rawBusiness;
   const businessId = own.business_id;
   const timezone = business?.timezone ?? "America/Los_Angeles";
-  const currency = business?.currency || "USD";
+  const currency = /^[A-Z]{3}$/.test(business?.currency ?? "") ? business!.currency : null;
   const today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
   const fromDate = formatInTimeZone(subDays(new Date(`${today}T12:00:00Z`), 89), "UTC", "yyyy-MM-dd");
 

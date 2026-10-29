@@ -230,7 +230,8 @@
     "next": "التالي",
     "noSalesToday": "لا توجد مبيعات مسجّلة لليوم حتى الآن.",
     "salesCoverageWeek": "تتوفر بيانات مبيعات لـ {actual} من {expected} أيام هذا الأسبوع.",
-    "salesCoverageMonth": "تتوفر بيانات مبيعات لـ {actual} من {expected} أيام هذا الشهر."
+    "salesCoverageMonth": "تتوفر بيانات مبيعات لـ {actual} من {expected} أيام هذا الشهر.",
+    "currencyNotSet": "العملة غير محددة — أضفها في ملف المقهى"
   },
   "AddCost": {
     "manualSaveError": "تعذّر حفظ هذا المصروف. حاول مرة أخرى.",

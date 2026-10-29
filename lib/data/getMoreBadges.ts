@@ -90,7 +90,8 @@ export async function getMoreBadgeInputs(userId: string | undefined): Promise<Mo
     membership.role === "owner" ? readToastState(businessId) : Promise.resolve(undefined),
   ]);
 
-  const result: MoreBadgeInputs = { currency: business.currency || "USD" };
+  // Unknown currency stays unknown; the page shows a plain amount, never an assumed USD.
+  const result: MoreBadgeInputs = { currency: /^[A-Z]{3}$/.test(business.currency ?? "") ? business.currency : null };
   if (hours.status === "fulfilled" && !hours.value.error)
     result.openHours = normalizeOpenHours(hours.value.data?.open_hours);
   if (uploads.status === "fulfilled") result.uploads = uploads.value;

@@ -1,3 +1,4 @@
+import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
 import { AlertTriangle, ChevronRight, CreditCard, FileText, Languages, Menu as MenuIcon, Percent, Receipt, Shield, SlidersHorizontal, Store, Target, Trash2, UserRound, Users, type LucideIcon } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { cookies } from "next/headers";
@@ -40,14 +41,16 @@ function MoreGroup({ title, children }: { title: string; children: React.ReactNo
 
 export default async function MorePage() {
   const user = await requireUser();
-  const [cookieStore, t, locale, evidence] = await Promise.all([
-    cookies(), getTranslations("More"), getLocale(), getMoreBadgeInputs(user?.id),
+  const [cookieStore, t, locale, evidence, tCommon] = await Promise.all([
+    cookies(), getTranslations("More"), getLocale(), getMoreBadgeInputs(user?.id), getTranslations("Common"),
   ]);
   const badges = buildMoreBadges(evidence);
   const number = new Intl.NumberFormat(locale);
   const amount = badges.monthlyBills === null ? null :
-    new Intl.NumberFormat(locale, { style: "currency", currency: evidence.currency || "USD" })
-      .format(badges.monthlyBills.amountCents / 100);
+    (() => {
+      const f = formatCafeCurrency(badges.monthlyBills.amountCents, locale, evidence.currency);
+      return f.currencyMissing ? f.text + " (" + tCommon("currencyNotSet") + ")" : f.text;
+    })();
   const hoursBadge: FixBadge | undefined = badges.hoursNotSet
     ? { label: t("hoursNotSet"), href: "/more/cafe-profile?focus=hours", warning: true } : undefined;
   const toastCheck=await getTranslations("ToastConnect");

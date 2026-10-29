@@ -73,6 +73,7 @@ export default async function ProcessingFeesPage() {
           saved: t("saved"),
           coverageTitle: t("coverageTitle"),
           coverageActual: t("coverageActual"),
+          currencyNotSet: tCommon("currencyNotSet"),
           coverageEstimated: t("coverageEstimated"),
           coverageMissing: t("coverageMissing"),
           coverageSalesDays: t("coverageSalesDays"),

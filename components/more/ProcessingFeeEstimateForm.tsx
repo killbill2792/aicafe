@@ -58,6 +58,7 @@ type Labels = {
   saved: string;
   coverageTitle: string;
   coverageActual: string;
+  currencyNotSet: string;
   coverageEstimated: string;
   coverageMissing: string;
   coverageSalesDays: string;
@@ -82,7 +83,7 @@ type SourceSummary = {
   processorCount: number;
   actualProviders: string[];
   actualFeeCents: number;
-  currency: string;
+  currency: string | null;
   trustedOrderDays: number;
   untrustedFeeDates: string[];
 };
@@ -157,7 +158,11 @@ export default function ProcessingFeeEstimateForm({
   const router = useRouter();
   const locale = useLocale();
   const fmt = (number: number) => new Intl.NumberFormat(locale).format(number);
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: sourceSummary.currency || "USD" });
+  // An unset café currency shows plain amounts with no symbol, never an assumed USD.
+  const currencyCode = sourceSummary.currency && /^[A-Z]{3}$/.test(sourceSummary.currency) ? sourceSummary.currency : null;
+  const currency = currencyCode
+    ? new Intl.NumberFormat(locale, { style: "currency", currency: currencyCode })
+    : new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
   const borderError = (key: string) => fieldErrors[key] ? " !border-red-600 ring-1 ring-red-600" : "";
@@ -359,6 +364,7 @@ export default function ProcessingFeeEstimateForm({
       <section className="rounded-card-lg bg-good-tint p-4 text-sm leading-snug text-ink">
         {labels.assumptionBanner}
       </section>
+      {!currencyCode && <p role="status" className="rounded-xl border border-line bg-surface2 p-3 text-sm text-ink">{labels.currencyNotSet}</p>}
 
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
         <div>
