@@ -140,7 +140,7 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
    expect(sourceBills).toBe(recovery.monthlyBillsCents);
    const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
    const period={from:snapshot.monthKey+"-01",to:snapshot.todayDateStr};
-   const ctx:AgentToolContext={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",currency:"USD",
+   const ctx:AgentToolContext={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",currency:snapshot.business.currency??null,
     tools:{
      getLaborMetrics:async()=>({available:true as const,value:raw.map(d=>({
        date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,

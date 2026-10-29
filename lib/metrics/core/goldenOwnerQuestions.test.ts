@@ -41,7 +41,7 @@ async function answers(kind:Case){
   const period={from:"2026-09-01",to:snapshot.todayDateStr};
   const screen=buildProfitAndCostsViewModel(snapshot,"month");
   const state=cafeStateFromSnapshot(snapshot,period);
-  const ctx={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",currency:"USD",
+  const ctx={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",currency:snapshot.business.currency??null,
     tools:{getBusinessCostSummary:async()=>cafeStateFromSnapshot(snapshot,period).businessCosts},
   } as unknown as AgentToolContext;
   const costs=await moneyTools.get_cost_summary.execute({period:"month"},ctx) as unknown as {
