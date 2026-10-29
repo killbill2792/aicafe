@@ -1,6 +1,6 @@
 import { formatCents } from "@/lib/calc";
 
-/** Money is always formatted in Western digits with $, in every language (docs/02-design-system.md). */
-export default function Money({ cents, className }: { cents: number; className?: string }) {
-  return <span className={className}>{formatCents(cents)}</span>;
+/** Format an amount using the café currency, never an implicit USD. */
+export default function Money({ cents, className, currency }: { cents: number; className?: string; currency?: string | null }) {
+  return <span className={className}>{formatCents(cents, undefined, currency)}</span>;
 }
