@@ -9,7 +9,7 @@ import {localDateInZone} from "@/lib/scheduling/localDate";
 export async function staffReadScope(){
  if(!isSupabaseConfigured())return {
   ok:true as const, supabase:null,businessId:DEMO_BUSINESS_ID,
-  readOnly:true,timezone:"America/Los_Angeles",currency:"USD",today:localDateInZone(new Date(),"America/Los_Angeles")
+  readOnly:true,timezone:"America/Los_Angeles",currency:"",today:localDateInZone(new Date(),"America/Los_Angeles")
  };
  const supabase=await createServerSupabaseClient();
  const {data:{user}}=await supabase.auth.getUser();
@@ -23,7 +23,7 @@ export async function staffReadScope(){
  const timezone=business.data.timezone as string||"America/Los_Angeles";
  return {ok:true as const,supabase,businessId,
   readOnly:membership.data.role!=="owner"||business.data.is_demo===true||businessId===DEMO_BUSINESS_ID,
-  timezone,currency:(business.data.currency as string)||"USD",
+  timezone,currency:(business.data.currency as string)||"",
   today:localDateInZone(new Date(),timezone)};
 }
 export function mondayOfLocalDate(localDate:string){
