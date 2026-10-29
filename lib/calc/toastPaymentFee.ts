@@ -1,3 +1,4 @@
+import {defaultCardFeeCents} from "@/lib/metrics/core/fees";
 /** Pure classification of per-transaction Toast fees. Never turn a missing
  * fee or unconfirmed rate plan into an actual zero-dollar charge. */
 export type ToastFeeInput={
@@ -8,9 +9,7 @@ export type ToastCardRule={cardType:string;cardEntryMode:string;
  percentageBps:number;fixedFeeCents:number};
 export type ToastFeeDecision={amountCents:number|null;
  status:"actual"|"estimated"|"missing";basis:"toast"|"owner_plan"|"default_rate"|"cash_or_gift"|"missing"};
-/** Card rate used only for the few card payments Toast sent without a fee and
- * no owner rate plan covers (same default as the café-level fee estimate). */
-export const DEFAULT_CARD_FEE_BPS=290;
+
 export function determineToastPaymentFee(p:ToastFeeInput,rules:readonly ToastCardRule[]):ToastFeeDecision{
  const type=(p.type??"").toUpperCase().replace(/[^A-Z]/g,"");
  if(type==="CASH"||type==="GIFTCARD"||type==="GIFTCERTIFICATE")
@@ -36,7 +35,7 @@ export function determineToastPaymentFee(p:ToastFeeInput,rules:readonly ToastCar
   return {amountCents:null,status:"missing",basis:"missing"};
  // No single owner rule fits: estimate this one card payment at the default rate.
  if(matching.length===0||(matching.length>1&&specificity(matching[0])===specificity(matching[1])))
-  return {amountCents:Math.round(p.amountCents*DEFAULT_CARD_FEE_BPS/10000),status:"estimated",basis:"default_rate"};
+  return {amountCents:defaultCardFeeCents(p.amountCents),status:"estimated",basis:"default_rate"};
  const r=matching[0];
  if(!Number.isInteger(r.percentageBps)||r.percentageBps<0||r.percentageBps>5000||
   !Number.isInteger(r.fixedFeeCents)||r.fixedFeeCents<0||r.fixedFeeCents>5000)

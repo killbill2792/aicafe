@@ -50,6 +50,12 @@ it("uses Toast's fee for each payment and estimates only the ones without",async
  const result=await refreshToastPaymentFeeForDay(f.db,b,"2026-10-20");
  expect(result).toMatchObject({status:"estimated",amountCents:33+29,count:4});
 });
+it("never charges a fee on a declined or voided attempt",async()=>{
+ const f=db([{...visa,payment_ref:"ok",original_processing_fee_cents:300,payment_status:"CAPTURED"},
+  {...visa,payment_ref:"no",amount_cents:10000,original_processing_fee_cents:null,payment_status:"DENIED"}]);
+ const result=await refreshToastPaymentFeeForDay(f.db,b,"2026-10-20");
+ expect(result).toMatchObject({status:"actual",amountCents:300,count:1});
+});
 it("keeps a payment with an unknown tender type missing",async()=>{
  const f=db([{...visa,payment_ref:"a"},{payment_ref:"x",payment_type:"UNDETERMINED",card_type:null,
   card_entry_mode:null,amount_cents:500,original_processing_fee_cents:null}]);

@@ -1,6 +1,10 @@
 import {hasCoveredSales} from "./salesCoverage";
 /** Provider-neutral, cents-only card-processing fee calculation. No database access. */
 export const DEFAULT_PROCESSING_FEE_RATE_BPS=290;
+/** The default card fee on one payment, for a card payment with no known fee. */
+export function defaultCardFeeCents(amountCents:number):number{
+  return Math.round(amountCents*DEFAULT_PROCESSING_FEE_RATE_BPS/10000);
+}
 export type FeeBasis="owner_plan"|"actual"|"estimated"|"default_estimate";
 export type FeeDay={
   date:string;netSalesCents:number;cardSalesCents?:number|null;
