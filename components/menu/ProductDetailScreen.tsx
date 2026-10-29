@@ -44,7 +44,7 @@ export default function ProductDetailScreen({item,pantry,savedAddons,posModifier
       <div className="grid gap-3 md:grid-cols-2">{posModifierGroups.map((group,index)=><div key={group.itemId+group.id+index} className="rounded-xl bg-paper p-3">
         <p className="font-bold">{group.name}</p><p className="text-sm text-ink-muted">{t("posAddOnItemSize")}: {productEditItems.find(x=>x.id===group.itemId)?.sizeLabel??item.name}</p>
         <p className="text-sm text-ink-muted">{group.required?t("posAddOnRequired"):t("posAddOnOptional")} · {group.minSelections??0}–{group.maxSelections??"∞"}</p>
-        <ul className="mt-2 space-y-1">{group.options.map((option,j)=><li key={j} className="flex justify-between gap-2 text-sm"><span>{option.name}</span><span>{option.priceCents===null?builder("priceNotSet"):formatCents(option.priceCents)}</span></li>)}</ul>
+        <ul className="mt-2 space-y-1">{group.options.map((option,j)=><li key={j} className="flex justify-between gap-2 text-sm"><span>{option.name}</span><span>{option.priceCents===null?builder("priceNotSet"):formatCents(option.priceCents, undefined, item.currency)}</span></li>)}</ul>
       </div>)}</div>
     </section>}</>}
   {tab==="recipe"&&<>
