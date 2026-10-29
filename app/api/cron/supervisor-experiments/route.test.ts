@@ -5,6 +5,7 @@ const mocks=vi.hoisted(()=>({
   seen:vi.fn(),
   transition:vi.fn(),
   sampled:[] as string[],
+  incomplete:[] as string[],
 }));
 vi.mock("date-fns-tz",()=>({formatInTimeZone:()=> "2026-11-15"}));
 vi.mock("@/lib/ai/supervisor/loop/engine",async origin=>({
@@ -17,7 +18,8 @@ vi.mock("@/lib/ai/supervisor/loop/engine",async origin=>({
 }));
 vi.mock("@/lib/ai/supervisor/loop/supabase.server",()=>({
   SupabaseLoopRepository:class {
-    samples=async()=>mocks.sampled.map(businessDate=>({businessDate,observation:{},source:"test"}));
+    samples=async()=>mocks.sampled.map(businessDate=>({businessDate,source:"test",
+      observation:{values:{primary:{value:1,coverage:mocks.incomplete.includes(businessDate)?0:1}},baseline:{}}}));
     transition=async(_scope:unknown,_id:string,_rev:number,action:string)=>{
       mocks.events.push("transition:"+action);
       return mocks.transition(action);
@@ -72,7 +74,8 @@ describe("delayed Supervisor monitor archival",()=>{
     mocks.events.length=0;mocks.seen.mockClear();mocks.transition.mockReset();
     process.env.CRON_SECRET="test-secret";
     mocks.transition.mockResolvedValue({});
-    mocks.sampled=[];
+    mocks.sampled=[];mocks.incomplete=[];
+    row.monitor_spec={durationDays:7,metricScope:"latte"};row.monitoring_start_date="2026-10-01";
   });
   it("regenerates all actual-window samples and the terminal report before archiving a delayed proposal",async()=>{
     const res=await GET(new Request("https://cafe.test/api/cron/supervisor-experiments",{
@@ -86,15 +89,33 @@ describe("delayed Supervisor monitor archival",()=>{
     expect(mocks.events.indexOf("monitor:2026-11-14")).toBeLessThan(
       mocks.events.indexOf("transition:finish_monitor"));
   });
-  it("does not re-read days older than a week that already have a sample",async()=>{
-    mocks.sampled=["2026-10-01","2026-10-02","2026-10-03","2026-10-04","2026-10-05","2026-10-06","2026-10-07"];
+  const run=async()=>{
     const res=await GET(new Request("https://cafe.test/api/cron/supervisor-experiments",{
       headers:{authorization:"Bearer test-secret"},
     }));
     expect(res.status).toBe(200);
+  };
+  const days=(from:string,n:number)=>Array.from({length:n},(_,i)=>new Date(Date.parse(from+"T12:00:00Z")+i*86_400_000).toISOString().slice(0,10));
+  it("re-reads every day of a short window, sampled or not",async()=>{
+    mocks.sampled=days("2026-10-01",7);
+    await run();
+    expect(mocks.seen).toHaveBeenCalledWith("2026-10-03");
+  });
+  it("on a long goal, skips old complete days but re-reads incomplete ones",async()=>{
+    row.monitor_spec={durationDays:30,metricScope:"goal:orders"};
+    mocks.sampled=days("2026-10-01",30);mocks.incomplete=["2026-10-05"];
+    await run();
     expect(mocks.seen).not.toHaveBeenCalledWith("2026-10-03");
+    expect(mocks.seen).toHaveBeenCalledWith("2026-10-05");
     // The terminal report is still published before archiving.
     expect(mocks.seen).toHaveBeenCalledWith("2026-11-14");
     expect(mocks.events.at(-1)).toBe("transition:finish_monitor");
+  });
+  it("re-reads every day of a long goal once a week, on its start weekday",async()=>{
+    // 15 November 2026 and 4 October 2026 are both Sundays.
+    row.monitor_spec={durationDays:30,metricScope:"goal:orders"};row.monitoring_start_date="2026-10-04";
+    mocks.sampled=days("2026-10-04",30);
+    await run();
+    expect(mocks.seen).toHaveBeenCalledWith("2026-10-06");
   });
 });
