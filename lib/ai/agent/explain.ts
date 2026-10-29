@@ -9,6 +9,7 @@ export const explainLineSchema=z.strictObject({
  formula:z.enum(["multiply","sum","divide","ratio","prorate","subtract"]),
  result:cardValueSchema,
  period:z.strictObject({from:z.iso.date(),to:z.iso.date()}).nullable(),
+ periodLabelKey:z.string().max(50).optional(),
  source:z.string().min(1).max(100),
  provenance:z.enum(["recorded","ownerProvided","estimate","missing"]),
  basis:z.string().max(240).optional(),

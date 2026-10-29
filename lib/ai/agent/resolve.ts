@@ -1,4 +1,27 @@
 import {resolvePeriod as importResolvePeriod} from "@/lib/calc/periods";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
+/** Translate a trusted period key; unknown keys retain the original raw label. */
+export function localizedPeriodLabel(
+ period:{from:string;to:string;label?:string;labelKey?:string},
+ locale:"en"|"es"|"ar"
+):string{
+ const copy=({en,es,ar}[locale]).OwnerQuestions as Record<string,string>;
+ const key=period.labelKey??"";
+ const title=Object.hasOwn(copy,key)?copy[key]:null;
+ if(!title)return period.label??period.from+" – "+period.to;
+ const culture=locale==="en"?"en-US":locale==="es"?"es-ES":"ar";
+ const read=(d:string,mode:"first"|"last")=>{
+  const sameMonth=period.from.slice(0,7)===period.to.slice(0,7);
+  const opts:Intl.DateTimeFormatOptions={day:"numeric",timeZone:"UTC",
+    ...(mode==="first"||!sameMonth?{month:"short"}:{})};
+  return new Intl.DateTimeFormat(culture,opts).format(new Date(d+"T12:00:00Z"));
+ };
+ const range=period.from===period.to?read(period.from,"first"):
+   read(period.from,"first")+" – "+read(period.to,"last");
+ return title+" ("+range+")";
+}
 /** Tool-only name resolution. Never let model-provided ids choose between matching records. */
 export type ChoiceCandidate = { id: string; label: string; detail: string; priceCents?:number };
 export type EntityResolution<T> =

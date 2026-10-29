@@ -11,6 +11,40 @@ const line:ExplainLine={label:"Latte",inputs:[
  formula:"multiply",result:money(5600000),period:{from:"2026-08-22",to:"2026-09-04"},
  source:"get_item_sales",provenance:"estimate"};
 describe("How I got this disclosure",()=>{
+ it.each([["en","Last month"],["es","El mes pasado"],["ar","الشهر الماضي"]] as const)(
+  "renders the period labelKey with dates in %s",(locale,expected)=>{
+   const copy={en,es,ar}[locale].SupervisorChat;
+   const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{
+     ...line,period:{from:"2026-09-01",to:"2026-09-30"},periodLabelKey:"periodLastMonth"
+   }],locale,copy}));
+   expect(html).toContain(expected);
+   expect(html).toContain("30");
+ });
+ it("unknown labelKey uses the raw localized date label",()=>{
+  const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{
+    ...line,periodLabelKey:"unknownPeriodKey"
+  }],locale:"en",copy:en.SupervisorChat}));
+  expect(html).toContain("Aug 22, 2026");
+  expect(html).not.toContain("unknownPeriodKey");
+ });
+ it("translates owner/actual/estimate/default/projected basis in three locales",()=>{
+  const bases=["owner_provided","actual","estimated","default_estimate","projected"];
+  for(const [locale,copy] of [["en",en.SupervisorChat],["es",es.SupervisorChat],["ar",ar.SupervisorChat]] as const)
+   for(const basis of bases){
+    const markup=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{...line,basis}],locale,copy}));
+    expect(markup).not.toContain(" · "+basis+"</span>");
+   }
+ });
+
+ it("never renders an English free-text basis in Spanish or Arabic",()=>{
+  for(const [locale,copy] of [["es",es.SupervisorChat],["ar",ar.SupervisorChat]] as const){
+   const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{
+    ...line,label:"Unknown English input",basis:"Product cost / target drink cost percentage"
+   }],locale,copy}));
+   expect(html).not.toContain("Product cost / target");
+   expect(html).not.toContain("Unknown English input");
+  }
+ });
  it("is native collapsed details with 48px target and formatted recorded inputs",()=>{
   const markup=renderToStaticMarkup(createElement(HowIGotThis,{lines:[line],locale:"en",copy:en.SupervisorChat}));
   expect(markup).toContain("<details");

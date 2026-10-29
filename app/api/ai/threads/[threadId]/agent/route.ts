@@ -29,6 +29,7 @@ import { assertCafeAiAccess } from "@/lib/access/access.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
+import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -117,9 +118,12 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
   let completedTurn: AgentTurn | undefined;
   let steps: Promise<void> = Promise.resolve();
   try {
-    const [tools, identity, page, memory] = await Promise.all([
+    const [tools, identity, page, memory, ownerFactRead] = await Promise.all([
       createAuthenticatedCafeTools(), readSupervisorCafeIdentity(scope.businessId), p.service.listMessages(id, 0),
       flags.memory ? loadMemory() : Promise.resolve(null),
+       loadOwnerFacts(scope.businessId)
+         .then(facts => ({facts,failed:false}))
+         .catch(() => {console.error('owner_facts_read_failed'); return {facts:[],failed:true};}),
     ]);
     const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id).slice(-8);
     const previousEvidence:NumericEvidence[]=priorAssistant.flatMap(m=>{
@@ -141,7 +145,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
         content: m.text ?? (m.blocks ?? []).flatMap(b => b && typeof b === "object" && "text" in b ?
           [String(b.text)] : b && typeof b === "object" && "type" in b && b.type==="clarify" && "question" in b && "options" in b && Array.isArray(b.options) ?
           ["Asked: "+String(b.question)+" Options: "+b.options.map(o=>o&&typeof o==="object"&&"label" in o&&"value" in o?String(o.label)+" ("+String(o.value)+")":"").join("; ")] : []).join(" ") })).filter(m => m.content);
-    const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
+    const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf),
       readEconomics:async()=>readSupervisorEconomics(await createServerSupabaseClient(),scope.businessId,identity.asOf),
       threadId:id,ownerMessageId:owner.id,
@@ -214,7 +218,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
     const ownerImages=await readOwnerImages(scope,id,p.attachmentIds??[]);
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages, history, context,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
-      previousEvidence,
+      previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
       onTool:(name,agentId)=>{
         emit("tool",{name,agentId});
         // Ordered, best-effort persistence so a reloaded page can show the same steps.

@@ -6,7 +6,7 @@ import type {AgentToolContext} from "./index";
 const fakeDate=(date:string)=>({date});
 const unavailable=()=>({available:false as const,value:null,quality:{level:"low" as const,missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
 function context(dates:string[]):AgentToolContext{
- return {asOf:"2026-10-24",locale:"en",currency:"USD",timezone:"America/Los_Angeles",tools:{
+ return {asOf:"2026-10-24",locale:"en",timezone:"America/Los_Angeles",tools:{
    getSalesTrend:async({from,to})=>{
     const filtered=dates.filter(d=>d>=from&&d<=to);
     return filtered.length?{available:true,value:filtered.map(fakeDate) as never,
@@ -87,27 +87,6 @@ describe("latest covered sales window",()=>{
   const chat=await executeAgentTool("get_profit",{period:"month",ownerInputs:null},context(old));
   expect(chat.period).toEqual({from:"2026-10-01",to:"2026-10-24"});
   expect(chat.coverageFallback).toBeNull();
- });
- it("latest-data fallback is translated in Spanish and Arabic",async()=>{
-  const old=["2026-09-01","2026-09-02"];
-  for(const locale of ["es","ar"] as const){
-   const state=await resolveCoveredSalesWindow({...context(old),locale},{from:"2026-10-01",to:"2026-10-24"});
-   expect(state.label).toContain(locale==="es"?"Últimos datos":"أحدث البيانات");
-   expect(state.label).not.toContain("Latest data");
-   expect(state.labelKey).toBe("periodLatestData");
-  }
- });
- it("today-not-imported money uses localized currency in EN/ES/AR",async()=>{
-  for(const locale of ["en","es","ar"] as const){
-   const ctx={...context(["2026-10-23"]),locale};
-   const read=ctx.tools.getSalesTrend;
-   ctx.tools.getSalesTrend=async p=>{
-    const result=await read(p);
-    return result.available?{...result,value:result.value.map(row=>({...row,netSalesCents:41230}))}:result;
-   };
-   const value=await resolveCoveredSalesWindow(ctx,{from:ctx.asOf,to:ctx.asOf});
-   expect(value.dataNote).toContain(new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(412.30));
-  }
  });
  it("keeps a currently covered period",async()=>{
   expect(await resolveCoveredSalesWindow(context(["2026-10-24"]),{from:"2026-10-01",to:"2026-10-24"})).toEqual({

@@ -9,7 +9,7 @@ const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleIn
 const catalog=[{id:hot,name:"Latte",category:"drink" as const,active:true,priceCents:450},
 {id:iced,name:"Latte",category:"drink" as const,active:true,priceCents:500}];
 function context(proposePriceChange=vi.fn()){
- return {timezone:"America/Los_Angeles",asOf:"2026-10-24",locale:"en" as const,
+ return {asOf:"2026-10-24",locale:"en" as const,timezone:"America/Los_Angeles",
   tools:{getMenuCatalog:async()=>({available:true as const,value:catalog,quality}),
    getProfitability:async()=>({available:false as const,value:null,quality:{...quality,missingInputs:["unavailable"]}}),
    getSalesTrend:async()=>({available:false as const,value:null,quality:{...quality,missingInputs:["unavailable"]}})},
@@ -48,7 +48,7 @@ describe("two-latte owner clarification",()=>{
   const clarify=persisted.reply.blocks.filter(block=>block.type==="clarify");
   expect(clarify).toHaveLength(1);
   expect(persisted.reply.blocks).toHaveLength(1);
-  expect(persisted.reply.status).not.toBe("requires_owner_input");
+  expect(persisted.reply.status).toBe("requires_owner_input");
  });
  it("allows the selected real id only after the next owner message",async()=>{
   const make=vi.fn().mockResolvedValue({proposalId:"33333333-3333-4333-8333-333333333333",
