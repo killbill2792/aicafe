@@ -444,7 +444,16 @@
     "chatStartLeoRole": "Dinero",
     "chatStartMayaRole": "Insumos",
     "chatStartOliviaRole": "Personal",
-    "chatStartExperimentPrompt": "Quiero probar un experimento de precio de bebidas"
+    "chatStartExperimentPrompt": "Quiero probar un experimento de precio de bebidas",
+    "boardRunning": "En marcha",
+    "boardReports": "Informes recientes",
+    "boardWaiting": "{item}: cámbialo a {price} en tu TPV y avísame",
+    "boardMonitoring": "{item}: {old} → {new} · día {day} de {days}",
+    "boardMonitoringStarts": "{item}: {old} → {new} · el seguimiento empieza mañana",
+    "boardReportKeep": "{item}: informe listo · mantén el nuevo precio",
+    "boardReportRevert": "{item}: informe listo · vuelve al precio anterior",
+    "boardReportAdjust": "{item}: informe listo · ajusta y prueba de nuevo",
+    "boardReportInsufficient": "{item}: informe listo · no hay ventas suficientes para decidir"
   },
   "Money": {
     "title": "Dinero",

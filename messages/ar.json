@@ -444,7 +444,16 @@
     "chatStartLeoRole": "المال",
     "chatStartMayaRole": "الإمدادات",
     "chatStartOliviaRole": "الموظفون",
-    "chatStartExperimentPrompt": "أريد تجربة تغيير سعر مشروب"
+    "chatStartExperimentPrompt": "أريد تجربة تغيير سعر مشروب",
+    "boardRunning": "قيد التشغيل",
+    "boardReports": "تقارير حديثة",
+    "boardWaiting": "{item}: غيّر السعر إلى {price} في نظام نقاط البيع ثم أخبرني",
+    "boardMonitoring": "{item}: {old} ← {new} · اليوم {day} من {days}",
+    "boardMonitoringStarts": "{item}: {old} ← {new} · تبدأ المتابعة غدًا",
+    "boardReportKeep": "{item}: التقرير جاهز · احتفظ بالسعر الجديد",
+    "boardReportRevert": "{item}: التقرير جاهز · عُد إلى السعر القديم",
+    "boardReportAdjust": "{item}: التقرير جاهز · عدّل وجرّب مرة أخرى",
+    "boardReportInsufficient": "{item}: التقرير جاهز · لا توجد مبيعات كافية لاتخاذ قرار"
   },
   "Money": {
     "title": "المال",
