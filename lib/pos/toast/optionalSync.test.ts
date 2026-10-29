@@ -12,6 +12,8 @@ vi.mock("./operationalCopy",()=>({
  importStagedToastAttendance:m.staged
 }));
 vi.mock("./laborSync",()=>({syncToastLaborReadOnly:m.labor}));
+// Historical backfill has its own fixture; keep this suite scoped to optional phases.
+vi.mock("./laborBackfill",()=>({backfillToastStoredLabor:vi.fn(async()=>({chunks:0,complete:true,nextAt:null}))}));
 import {syncToastOptionalSources,ensureToastFirstCatalog} from "./optionalSync";
 import {ToastApiError} from "./client";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

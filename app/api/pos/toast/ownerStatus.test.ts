@@ -39,7 +39,7 @@ function dbWith(mappings:Row[],days:Row[],flags:Row[]=[],runs:Row[]=[]){
    const rows=tables[table]??[];
    const query={
     select(_fields:string){return query;},eq(_field:string,_value:unknown){return query;},
-    is(_field:string,_value:unknown){return query;},
+    is(_field:string,_value:unknown){return query;},not(_field:string,_op:string,_value:unknown){return query;},limit(_count:number){return query;},
     order(_field:string,_options?:unknown){return query;},
     range(start:number,end:number){pages[table]=(pages[table]??0)+1;
      return Promise.resolve({data:rows.slice(start,end+1),error:null});},

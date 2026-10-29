@@ -48,6 +48,8 @@ const selection=z.object({
 }).passthrough();
 const payment=z.object({
   guid:GUID.nullish(),paymentStatus:z.string().nullish(),voided:z.boolean().nullish(),
+  amount:money,type:z.string().nullish(),cardType:z.string().nullish(),
+  cardEntryMode:z.string().nullish(),originalProcessingFee:money,
   tipAmount:money,refundStatus:z.string().nullish(),paidBusinessDate:z.number().int().nullish(),
   refund:z.object({refundAmount:money,tipRefundAmount:money,refundBusinessDate:z.number().int().nullish()}).passthrough().nullish()
 }).passthrough();
@@ -78,12 +80,16 @@ export type ToastVoidFact={
 };
 export type ToastRefundFact={payment_guid:string;order_guid:string;
  order_business_date:string;refund_business_date:string|null;amount_cents:number};
+export type ToastParsedPayment={paymentGuid:string|null;orderGuid:string;businessDate:string;
+ amountCents:number|null;type:string|null;cardType:string|null;cardEntryMode:string|null;
+ originalProcessingFeeCents:number|null};
 export type ToastParsedOrder={guid:string;modifiedDate:string;normalized:PosOrder|null;
+ paymentFacts:ToastParsedPayment[];
  voids:ToastVoidFact[];refundFacts:ToastRefundFact[];
  includedChecks:number;openChecks:number;serviceChargesCents:number;gratuityCents:number;
  warnings:Record<string,number>};
 export type ToastUnparsed={order_guid:string|null;business_date:string;
- error_path:string;raw_sha256:string};
+ error_path:string;raw_sha256:string;source_index?:number;source_page?:number};
 export type ToastDayPage={orders:ToastParsedOrder[];unparsed:ToastUnparsed[];
  warnings:Record<string,number>};
 
@@ -147,6 +153,7 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
  if(!date8(o.businessDate))warn(w,"business_date_fallback");
  if(day!==requestedDay)throw new ToastOrderParseError("businessDate_mismatch");
  const voids:ToastVoidFact[]=[],refundFacts:ToastRefundFact[]=[];
+ const paymentFacts:ToastParsedPayment[]=[];
  let before=0,discounts=0,refunds=0,tax=0,tips=0,gratuity=0,services=0;
  let includedChecks=0,openChecks=0;
  const lines:PosOrder["lines"]=[];
@@ -220,6 +227,10 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
   }
   if(!active)continue;
   for(const p of c.payments??[]){
+   paymentFacts.push({paymentGuid:p.guid??null,orderGuid:o.guid,businessDate:day,
+    amountCents:p.amount==null?null:toastMoneyCents(p.amount),
+    type:p.type??null,cardType:p.cardType??null,cardEntryMode:p.cardEntryMode??null,
+    originalProcessingFeeCents:p.originalProcessingFee==null?null:toastMoneyCents(p.originalProcessingFee)});
    known(w,p.paymentStatus,["OPEN","PAID","CLOSED","AUTHORIZED","CAPTURED","VOIDED","DENIED","CANCELLED","ERROR","ERROR_NETWORK"]);
    const invalid=p.voided||["VOIDED","DENIED","CANCELLED","ERROR","ERROR_NETWORK"].includes(p.paymentStatus??"");
    if(invalid)continue;
@@ -248,7 +259,7 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
   processingFeeCents:0,processingFeeStatus:"missing",lines
  }:null;
  return {guid:o.guid,modifiedDate:isoDate(o.modifiedDate)||"",
-  normalized,voids,refundFacts,includedChecks,openChecks,
+  normalized,voids,refundFacts,paymentFacts,includedChecks,openChecks,
   serviceChargesCents:services,gratuityCents:gratuity,warnings:w};
 }
 export class ToastOrderParseError extends Error{}
@@ -257,7 +268,7 @@ export function parseToastDayPage(payload:unknown,restaurantGuid:string,day:stri
  const rows=z.array(z.unknown()).safeParse(payload);
  if(!rows.success)throw new ToastApiError("invalid_response");
  const result:ToastDayPage={orders:[],unparsed:[],warnings:{}};
- for(const row of rows.data){
+ for(const [index,row] of rows.data.entries()){
   try{
    const record=parseToastBusinessOrder(row,restaurantGuid,day,timezone,closeoutHour);
    result.orders.push(record);
@@ -267,7 +278,7 @@ export function parseToastDayPage(payload:unknown,restaurantGuid:string,day:stri
    const rawGuid=typeof row==="object"&&row!==null&&"guid" in row?(row as {guid:unknown}).guid:null;
    result.unparsed.push({order_guid:typeof rawGuid==="string"&&GUID.safeParse(rawGuid).success?rawGuid:null,
     business_date:day,error_path:e instanceof ToastOrderParseError?e.message:"$",
-    raw_sha256:createHash("sha256").update(redact(row)).digest("hex")});
+    raw_sha256:createHash("sha256").update(redact(row)).digest("hex"),source_index:index+1});
   }
  }
  return result;

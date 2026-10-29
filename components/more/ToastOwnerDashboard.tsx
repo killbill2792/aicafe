@@ -188,7 +188,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
      row.reason==="analytics_timeout"?t("ownerReasonTimeout"):row.reason==="coverage_invalid"?t("ownerReasonCoverage"):t("ownerReasonOther")}</p>
     <div className="mt-2 flex flex-wrap gap-2">
      <button disabled={!canRepullToastDay(data.importEnabled,busy,row.date,yesterday,data.queuedRanges)} className="min-h-12 rounded-full border border-line px-4"
-      onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date})}>{t("ownerRepull")}</button>
+      onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date,repull:true})}>{t("ownerRepull")}</button>
      <button disabled={busy} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/day-flag",{restaurantGuid:row.restaurantGuid,date:row.date,
        action:row.reason==="owner_flag"?"clear":"flag",note})}>{t(row.reason==="owner_flag"?"ownerClearFlag":"ownerFlagDay")}</button>
@@ -201,7 +201,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <span className="min-w-24 flex-1"><bdi>{day(row.date)}</bdi></span>
     <span><bdi>{fmt(row.netSalesCents)}</bdi></span>
     <span>{row.orders==null?t("noAmount"):t("ownerOrders",{count:number.format(row.orders)})}</span>
-    <span className="text-ink-muted">{row.status==="checked_internal"?t("ownerState_checked_internal"):row.status==="owner_match"?t("ownerState_owner_match"):row.status==="checked"?t("ownerState_checked"):row.status==="checking"?t("ownerState_checking"):
+    <span className="text-ink-muted">{row.status==="checked_internal"?t("ownerState_checked_internal"):row.status==="owner_confirmed"?t("ownerState_owner_confirmed"):row.status==="owner_match"?t("ownerState_owner_match"):row.status==="checked"?t("ownerState_checked"):row.status==="checking"?t("ownerState_checking"):
      row.status==="missing"?t("ownerState_missing"):t("ownerState_needs_look")}</span>
     {row.paidOtherDay>0&&<p className="w-full text-muted">{t("paidOtherDayInfo",{count:row.paidOtherDay})}</p>}
     <details className="w-full"><summary className="min-h-12 cursor-pointer py-3">{t("summaryTitle")}</summary>

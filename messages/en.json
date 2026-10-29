@@ -120,6 +120,7 @@
     "ownerFlagDay": "Flag this day",
     "ownerRecent": "Recent days",
     "ownerOrders": "{count} orders",
+    "ownerState_owner_confirmed": "Confirmed by owner",
     "ownerState_checked": "Checked against Toast",
     "ownerState_checking": "Checking",
     "ownerState_needs_look": "Needs a look",
