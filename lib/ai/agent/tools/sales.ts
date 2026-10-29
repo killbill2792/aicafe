@@ -111,7 +111,7 @@ export const salesTools={
       const ownerCost=ownerInputs?.unitCostCents??replay?.ownerCents??null;
       const costConflict=ownerConflict(v.productCostCents,ownerCost);
       const candidates=costConflict&&v.productCostCents!==null&&ownerCost!==null?
-        moneyChoiceCandidates("unitCost",itemId,v.productCostCents,ownerCost,ctx.locale):null;
+        moneyChoiceCandidates("unitCost",itemId,v.productCostCents,ownerCost,ctx.locale,ctx.currency):null;
       const selected=candidates?
         chosenMoneySource(ctx.resolveState,candidates)??(replay?.ownerCents===ownerCost?replay.source:null):null;
       const grossProfitPerItemCents=v.currentPriceCents!==null&&v.productCostCents!==null?

@@ -1,13 +1,10 @@
-import en from "@/messages/en.json";
-import es from "@/messages/es.json";
-import ar from "@/messages/ar.json";
 /** Match a tool-verified price in the reply, never a numeric substring. */
 export function verifiedRecommendedPriceInReply(reply:string,cents:number,
- locale:"en"|"es"|"ar",unverified:readonly {start:number;end:number}[]):boolean{
+ locale:"en"|"es"|"ar",unverified:readonly {start:number;end:number}[],currency:string|undefined):boolean{
  if(!Number.isSafeInteger(cents)||cents<0)return false;
  const amount=cents/100;
  const tokens=[new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(amount),
-  new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(amount)];
+  ...(currency?[new Intl.NumberFormat(locale,{style:"currency",currency}).format(amount)]:[])];
  const isDigit=(char:string)=>/[\p{N}]/u.test(char);
  for(const token of tokens){
   // Strip only bidi controls; retain locale's decimal and grouping characters.
@@ -29,8 +26,3 @@ export function verifiedRecommendedPriceInReply(reply:string,cents:number,
  return false;
 }
 
-export function forcedPricingClarifyText(cents:number,locale:"en"|"es"|"ar",note:unknown):string{
- const copy={en,es,ar}[locale].SupervisorChat;
- const price=new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(cents/100);
- return price+". "+(typeof note==="string"?note:copy.pricingNoteIncomplete)+".";
-}

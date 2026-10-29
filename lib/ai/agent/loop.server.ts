@@ -474,7 +474,7 @@ export async function runAgentTurn(args: {
   const priceResult=toolResults.find(r=>r.source==="new_item_price");
   const price=typeof priceResult?.recommendedPriceCents==="number"&&
     verifiedRecommendedPriceInReply(text,priceResult.recommendedPriceCents,
-      args.context.locale,unverified)?priceResult.recommendedPriceCents:null;
+      args.context.locale,unverified,args.context.currency)?priceResult.recommendedPriceCents:null;
   const accepted=acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale,price);
   // The deterministic milk adapter's inputs, results and formulas come ONLY
   // from existing shared calculators, not model prose. Preserve all verified
