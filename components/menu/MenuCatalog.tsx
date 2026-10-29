@@ -61,15 +61,15 @@ export default function MenuCatalog({ items, photos }: { items: MenuControlItem[
   const groups = useMemo(() => groupMenuCatalogItems(visible), [visible]);
 
   function renderPrice(group: GroupedMenuCatalogItem) {
-    if (group.priceRange.allSame) return formatCents(group.priceRange.minCents);
-    return t("priceRange", { low: formatCents(group.priceRange.minCents), high: formatCents(group.priceRange.maxCents) });
+    if (group.priceRange.allSame) return formatCents(group.priceRange.minCents, undefined, group.representativeItem.currency);
+    return t("priceRange", { low: formatCents(group.priceRange.minCents, undefined, group.representativeItem.currency), high: formatCents(group.priceRange.maxCents, undefined, group.representativeItem.currency) });
   }
 
   function renderStatus(group: GroupedMenuCatalogItem) {
     if (group.isSingleSize) {
       const chip = statusChip(group.representativeItem);
       const status = group.pricingStatus;
-      const suggested = status.kind === "needs_review_one" ? ` · ${t("suggested")} ${formatCents(status.suggestedPriceCents)}` : "";
+      const suggested = status.kind === "needs_review_one" ? ` · ${t("suggested")} ${formatCents(status.suggestedPriceCents, undefined, group.representativeItem.currency)}` : "";
       return <StatusLine good={chip.good} label={`${chip.label}${suggested}`} />;
     }
     const status = group.pricingStatus;
@@ -86,7 +86,7 @@ export default function MenuCatalog({ items, photos }: { items: MenuControlItem[
         return (
           <StatusLine
             good={false}
-            label={`${t(status.direction === "low" ? "sizePriceMayBeLow" : "sizePriceMayBeHigh", { size: status.sizeLabel ?? group.baseName })} · ${t("suggested")} ${formatCents(status.suggestedPriceCents)}`}
+            label={`${t(status.direction === "low" ? "sizePriceMayBeLow" : "sizePriceMayBeHigh", { size: status.sizeLabel ?? group.baseName })} · ${t("suggested")} ${formatCents(status.suggestedPriceCents, undefined, group.representativeItem.currency)}`}
           />
         );
     }
