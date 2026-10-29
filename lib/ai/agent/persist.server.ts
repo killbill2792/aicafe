@@ -1,4 +1,5 @@
 import "server-only";
+import { ZodError } from "zod";
 import { persistGroundedSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
 import { recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import type { ConversationMessage, ConversationScope, GroundedSupervisorReply } from "@/lib/ai/conversations/contracts";
@@ -136,7 +137,13 @@ export async function persistAgentReply(scope: ConversationScope, owner: Convers
   const { reply, metadata } = agentReplyPayload(turn);
   let saved: ConversationMessage;
   try { saved = await persistGroundedSupervisorReply(scope, owner, reply, metadata); }
-  catch { throw new AgentReplyStorageError(); }
+  catch (error) {
+    // Field paths and issue codes only (never reply text), so a rejected card can be traced.
+    const issues = error instanceof ZodError ? error.issues.slice(0, 5).map(i => i.path.join(".") + ":" + i.code) : [];
+    const dbCode = !(error instanceof ZodError) && error && typeof error === "object" && "code" in error ? String(error.code) : null;
+    console.error("agent_reply_storage_failed", { issues, dbCode });
+    throw new AgentReplyStorageError();
+  }
   return saved;
 }
 /** One invocation per model-run turn, including blank and failed persistence.
