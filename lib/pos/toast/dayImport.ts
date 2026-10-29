@@ -5,6 +5,7 @@ import {z} from "zod";
 import {createToastClient,GUID,ToastApiError} from "./client";
 import {parseToastDayPage,type ToastParsedOrder,type ToastUnparsed,type ToastVoidFact} from "./dayParser";
 import {recomputeDailyRollup} from "../rollup";
+import {afterToastImport} from "./afterImport";
 
 const daySchema=z.iso.date();
 type Params={businessId:string;locationId:string;restaurantGuid:string;businessDate:string;runId:string;deadlineAt?:number};
@@ -69,7 +70,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
   for(const item of pages){
    const parsed=parseToastDayPage(item.payload,p.restaurantGuid,p.businessDate,
      m.toast_time_zone,m.closeout_hour);
-   unparsed.push(...parsed.unparsed);
+   unparsed.push(...parsed.unparsed.map(x=>({...x,source_page:item.page})));
    for(const record of parsed.orders){
     const prev=byGuid.get(record.guid);
     if(!prev||prev.modifiedDate<=record.modifiedDate)byGuid.set(record.guid,record);
@@ -102,6 +103,11 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    p_orders:normalized,p_summary:summary,p_run_id:p.runId
   });
   if(error)throw new ToastApiError("unavailable");
+  // The database day transaction has committed. Derived refresh failures must
+  // NEVER enter the outer import error/checkpoint path or replay a good day.
+  let derivedRefresh={derivedRefreshPending:true,derivedRefreshNote:"derived_refresh_unavailable" as string|null};
+  try{derivedRefresh=await afterToastImport(db,p.businessId,m.toast_time_zone);}
+  catch{console.warn("toast_derived_refresh_pending");}
   // After the atomic day commit, link lines to current sizes (or one archived
   // sold-only GUID). Never classify a post-commit relink failure as a day failure.
   const {error:linkError}=await db.rpc("pos_relink_toast_lines",{
@@ -119,7 +125,8 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
   // A trigger queued cost refresh in the SAME transaction. Never route a
   // post-commit cost failure through the page-import checkpoint handler.
   const imported={orders:summary.order_count,unparsed:summary.unparsed_count,
-   netSalesCents:summary.net_sales_cents,checksum:summary.snapshot_sha256,result};
+   netSalesCents:summary.net_sales_cents,checksum:summary.snapshot_sha256,result,
+   ...derivedRefresh};
   // SQL queued a generation-bound cost refresh in the same transaction.
   // The global 240s budget also bounds this derivative; never start it late.
   if(Date.now()>=deadlineAt)return {...imported,costsPending:true};

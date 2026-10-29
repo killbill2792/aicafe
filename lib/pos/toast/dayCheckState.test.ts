@@ -17,6 +17,8 @@ const cases:Array<{label:string;event:DayCheckEvent}>= [
  {label:"internal match",event:{type:"internal_result",result:"matched",reasons:[],paidOtherDay:0}},
  {label:"internal mismatch",event:{type:"internal_result",result:"mismatch",reasons:["invalid_checks"],paidOtherDay:0}},
  {label:"payment recovery",event:{type:"payment_recovery_queued"}},
+ {label:"exhausted payment recovery",event:{type:"payment_recovery_exhausted",
+  reasons:["unknown_payment_order"],paidOtherDay:0}},
  {label:"ERA pending",event:{type:"era_pending"}},
  {label:"ERA matching result",event:{type:"era_result",matched:true,comparisonMatched:true,sourceIncomplete:false}},
  {label:"ERA mismatching result",event:{type:"era_result",matched:false,comparisonMatched:false,sourceIncomplete:false}},
@@ -145,4 +147,22 @@ it("internal API failures preserve official proof without fabricating Analytics 
  const result=nextDayCheckState(current,{type:"internal_error",category:"unavailable"},at);
  expect(result).toMatchObject({recon_state:"mismatch",recon_source:"toast_analytics",
   analytics_state:"available",last_error_category:"unavailable"});
+});
+
+
+describe("unresolved payment recovery remains visible",()=>{
+ it("queues a missing-order reason without inventing a money mismatch",()=>{
+  const result=nextDayCheckState(day({recon_state:"pending",recon_source:null}),
+   {type:"payment_recovery_queued"},at);
+  expect(result.internal_reasons).toContain("unknown_payment_order");
+  expect(result.warnings.unknown_payment_order).toBe(1);
+  expect(result.recon_state).toBe("pending");
+ });
+ it("ends exhausted retries with a visible error and clears the old deadline",()=>{
+  const result=nextDayCheckState(day({recon_state:"pending",recon_source:null}),
+   {type:"payment_recovery_exhausted",reasons:["unknown_payment_order"],paidOtherDay:1},at);
+  expect(result).toMatchObject({recon_state:"pending",payment_repull_at:null,
+   last_error_category:"unverified_payment_order",paid_other_day:1});
+  expect(result.internal_reasons).toContain("unknown_payment_order");
+ });
 });

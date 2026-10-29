@@ -4,6 +4,7 @@ import {createHash} from "node:crypto";
 import {z} from "zod";
 import {decryptToken,encryptToken} from "@/lib/security/tokenCrypto";
 import {GUID,ToastApiError,trustedToastOrigin,toastRetryAt} from "./client";
+import {toastMoneyCents} from "./adapter";
 
 const tokenSchema=z.object({token:z.object({
  accessToken:z.string().min(1),expiresIn:z.number().positive()
@@ -167,6 +168,40 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
    const parsed=reportGuid.safeParse(result.body);
    if(!parsed.success){if(result.pending)return null;throw new ToastApiError("invalid_response");}
    return parsed.data;
+  },
+  /** ERA responses can contain other restaurants: store only the selected row. */
+  async persistDay(restaurantGuid:string,businessDate:string,reportRequestGuid:string,
+   row:z.infer<typeof reports>[number]){
+   if(!GUID.safeParse(restaurantGuid).success||
+      !GUID.safeParse(reportRequestGuid).success||
+      !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)||
+      row.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase()||
+      row.businessDate!==businessDate.replaceAll("-",""))
+    throw new ToastApiError("invalid_response");
+   const raw=JSON.stringify(row);
+   const hash=createHash("sha256").update(raw).digest("hex");
+   const {error:archiveError}=await db.from("toast_raw_records").upsert({
+    business_id:businessId,restaurant_guid:restaurantGuid,entity:"analytics_report",
+    entity_guid:reportRequestGuid,business_date:businessDate,
+    payload:row,payload_sha256:hash,
+    capture_key:"era:"+reportRequestGuid+":"+restaurantGuid+":"+businessDate+":"+hash
+   },{onConflict:"business_id,capture_key",ignoreDuplicates:true});
+   if(archiveError)throw new ToastApiError("unavailable");
+   const metrics=[
+    ["net_sales_cents",toastMoneyCents(row.netSalesAmount),"cents"],
+    ["orders_count",row.ordersCount,"count"],
+    ["discount_cents",toastMoneyCents(row.discountAmount),"cents"],
+    ["refund_cents",toastMoneyCents(row.refundAmount),"cents"],
+    ["void_orders_count",row.voidOrdersCount,"count"],
+    ["void_orders_amount_cents",row.voidOrdersAmount==null?null:toastMoneyCents(row.voidOrdersAmount),"cents"]
+   ] as const;
+   const {error}=await db.from("toast_analytics_results").upsert(metrics.map(
+    ([metric,value,unit])=>({
+     business_id:businessId,restaurant_guid:restaurantGuid,business_date:businessDate,
+     report:"metrics/day",metric,value_numeric:value,value_json:{value,unit,requestGuid:reportRequestGuid},
+     fetched_at:new Date().toISOString()
+    })),{onConflict:"business_id,restaurant_guid,business_date,report,metric"});
+   if(error)throw new ToastApiError("unavailable");
   },
   async getDay(reportRequestGuid:string){
    if(!reportGuid.safeParse(reportRequestGuid).success)

@@ -38,6 +38,7 @@ const employeesSchema=z.array(z.object({guid:GUID,firstName:z.string().nullish()
 const timeEntriesSchema=z.array(z.object({guid:GUID,modifiedDate:z.string().nullish(),employeeReference:z.object({guid:GUID}),
   jobReference:z.object({guid:GUID}).nullish(),
   inDate:z.string(),outDate:z.string().nullish(),hourlyWage:z.number().nullish(),
+  regularHours:z.number().finite().nullish(),overtimeHours:z.number().finite().nullish(),
   deleted:z.boolean().nullish(),breaks:z.array(z.object({
     inDate:z.string().nullish(),outDate:z.string().nullish(),
     paid:z.boolean().nullish(),missed:z.boolean().nullish()})).nullish()}));
@@ -155,6 +156,7 @@ export type ToastScheduledShift={externalShiftId:string;externalEmployeeId:strin
   scheduledStart:string;scheduledEnd:string;externalJobId:string|null;deleted:boolean;sourceProvider:"toast"};
 export type ToastAttendanceFact={externalTimeEntryId:string;externalEmployeeId:string;
   externalLocationId:string;clockIn:string;clockOut:string|null;hourlyWageCents:number|null;
+  providerRegularHours?:number|null;providerOvertimeHours?:number|null;
   breaks:PosTimecard["breaks"];deleted:boolean;modifiedAt?:string|null;sourceProvider:"toast"};
 export type ToastOrderState="completed"|"open"|"reopened"|"voided"|"deleted"|"refunded"|"ambiguous";
 export type ToastOrderFact={orderGuid:string;restaurantGuid:string;modifiedAt:string;state:ToastOrderState;normalizedOrder:PosOrder|null};
@@ -256,6 +258,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       externalLocationId:restaurantGuid,modifiedAt:r.modifiedDate?timestamp(r.modifiedDate):null,
       clockIn:timestamp(r.inDate),clockOut:r.outDate?timestamp(r.outDate):null,
       hourlyWageCents:r.hourlyWage==null?null:cents(r.hourlyWage),
+      providerRegularHours:r.regularHours??null,providerOvertimeHours:r.overtimeHours??null,
       deleted:Boolean(r.deleted),sourceProvider:"toast" as const,
       breaks:(r.breaks??[]).filter(b=>b.missed===false&&b.inDate&&b.outDate)
         .map(b=>({start:timestamp(b.inDate!),end:timestamp(b.outDate!),paid:b.paid===true}))

@@ -23,7 +23,7 @@ export const statusSchema=z.object({
   deltaCents:money.nullable(),unreadableOrders:z.number().int(),reason:z.string()})),
  firstImportRows:z.array(z.object({date:day,oursCents:money.nullable(),toastCents:money.nullable()})),
  recent:z.array(z.object({date:day,netSalesCents:money.nullable(),orders:z.number().int().nullable(),paidOtherDay:z.number().int().nonnegative(),
-  status:z.enum(["checked","checked_internal","owner_match","checking","needs_look","missing"])})),
+  status:z.enum(["checked","checked_internal","owner_match","owner_confirmed","checking","needs_look","missing"])})),
  analytics:z.object({connected:z.boolean(),verified:z.boolean(),errorCategory:z.string().nullable()}),
  missingLaborScope:z.boolean().optional(),missingMenuScope:z.boolean().optional(),
  firstImportCheck:z.enum(["hidden","due","answered"]),
@@ -45,6 +45,7 @@ export const toastOwnerDbRows=z.object({
   import_state:z.enum(["missing","imported","failed"]),recon_state:z.string(),
   net_sales_cents:money.nullable(),toast_net_sales_cents:money.nullable(),
   delta_net_cents:money.nullable(),order_count:z.number().int().nonnegative().nullable(),
-  last_error_category:z.string().nullable(),coverage_complete:z.boolean(),unparsed_count:z.number().int().default(0),paid_other_day:z.number().int().default(0),rechecking_reason:z.string().nullable().default(null)})),
+  last_error_category:z.string().nullable(),coverage_complete:z.boolean(),unparsed_count:z.number().int().default(0),paid_other_day:z.number().int().default(0),rechecking_reason:z.string().nullable().default(null),
+  owner_confirmed_at:z.string().nullable().default(null)})),
  flags:z.array(z.object({restaurant_guid:GUID,business_date:day,cleared_at:z.string().nullable()}))
 });

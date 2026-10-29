@@ -120,6 +120,7 @@
     "ownerFlagDay": "Marcar este día",
     "ownerRecent": "Días recientes",
     "ownerOrders": "{count} pedidos",
+    "ownerState_owner_confirmed": "Confirmado por el propietario",
     "ownerState_checked": "Comprobado con Toast",
     "ownerState_checking": "Comprobando",
     "ownerState_needs_look": "Revisar",

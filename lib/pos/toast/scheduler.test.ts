@@ -340,3 +340,18 @@ it("resumes an exact 1,200-order scan across short slices without skipping the t
   expect(paths).toHaveLength(13);
  }finally{vi.useRealTimers();}
 });
+
+
+it("re-pulls a previously imported day through the same guarded importer",async()=>{
+ const f=makeDB();f.status.add(d);
+ f.runs.push({id:"owner-repull",kind:"repull_modified",state:"queued",
+  requested_from:d,requested_to:d,days_done:0,days_total:1,cursor:{},resume_at:null});
+ await runToastSyncTick(f.db,now,Date.now()+60000);
+ expect(m.importDay).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({
+  businessId:b,restaurantGuid:g,runId:"owner-repull",businessDate:d
+ }));
+ expect(f.runs.find(run=>run.id==="owner-repull")).toMatchObject({
+  state:"completed",days_done:1
+ });
+ expect(m.reconcile).toHaveBeenCalled();
+});

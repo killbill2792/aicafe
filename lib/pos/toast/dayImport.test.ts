@@ -1,7 +1,7 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
-const mocked=vi.hoisted(()=>({request:vi.fn(),recompute:vi.fn()}));
+const mocked=vi.hoisted(()=>({request:vi.fn(),recompute:vi.fn(),refresh:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./client",async()=>{
  const {z}=await import("zod");
@@ -11,6 +11,7 @@ vi.mock("./client",async()=>{
  return {GUID:z.uuid(),ToastApiError,createToastClient:()=>({request:mocked.request})};
 });
 vi.mock("../rollup",()=>({recomputeDailyRollup:mocked.recompute}));
+vi.mock("./afterImport",()=>({afterToastImport:mocked.refresh}));
 import {ToastApiError} from "./client";
 import {importToastBusinessDay} from "./dayImport";
 import {deriveNextRunDay} from "./scheduleDates";
@@ -91,8 +92,31 @@ function fakeDatabase(daysTotal=1,initialImportedDays:string[]=[],postCommitHook
  };
  return {db:db as unknown as SupabaseClient,stored,pendingCosts,imports,operations,run,dayStatuses};
 }
-beforeEach(()=>{mocked.request.mockReset();mocked.recompute.mockReset();
- mocked.recompute.mockResolvedValue(undefined);});
+beforeEach(()=>{mocked.request.mockReset();mocked.recompute.mockReset();mocked.refresh.mockReset();
+ mocked.recompute.mockResolvedValue(undefined);
+ mocked.refresh.mockResolvedValue({derivedRefreshPending:false,derivedRefreshNote:null});});
+
+describe("post-commit derived refresh contract",()=>{
+ it("refreshes exactly once after a committed day, with its timezone",async()=>{
+  const f=fakeDatabase();mocked.request.mockResolvedValue([]);
+  await importToastBusinessDay(f.db,params("2026-10-16"));
+  expect(f.operations).toContain("toast_import_day");
+  expect(mocked.refresh).toHaveBeenCalledExactlyOnceWith(f.db,business,"America/Los_Angeles");
+ });
+ it("a refresh rejection never fails, checkpoints or re-imports a committed day",async()=>{
+  const f=fakeDatabase();mocked.request.mockResolvedValue([]);
+  mocked.refresh.mockRejectedValueOnce(new Error("private derived error"));
+  const spy=vi.spyOn(console,"warn").mockImplementation(()=>{});
+  try{
+   const result=await importToastBusinessDay(f.db,params("2026-10-16"));
+   expect(result.derivedRefreshPending).toBe(true);
+   expect(result.derivedRefreshNote).toBe("derived_refresh_unavailable");
+   expect(f.imports).toHaveLength(1);
+   expect(f.operations).not.toContain("toast_checkpoint_day");
+   expect(spy).toHaveBeenCalledWith("toast_derived_refresh_pending");
+  }finally{spy.mockRestore();}
+ });
+});
 
 describe("resumable Toast day importer",()=>{
  it("resumes page 2 after 429 without re-fetching staged page 1",async()=>{

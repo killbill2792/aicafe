@@ -5,6 +5,7 @@ import {z} from "zod";
 import {createToastClient,GUID,ToastApiError,type ToastFailure} from "./client";
 import {copyToastPublishedMenu,copyToastStaff,copyToastAttendance,importStagedToastAttendance} from "./operationalCopy";
 import {syncToastLaborReadOnly} from "./laborSync";
+import {backfillToastStoredLabor} from "./laborBackfill";
 import {addCalendarDays,localClock} from "./scheduleDates";
 
 type Location={business_id:string;restaurant_guid:string;location_id:string;
@@ -144,6 +145,12 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     labor="synced";
    }catch(e){recordFailure(e);}
   }
+ }
+ if(scopes.labor!==false&&staffReady&&Date.now()<deadlineAt){
+  try{
+   await backfillToastStoredLabor(db,{...scope,timeZone:p.toast_time_zone},
+    deadlineAt);
+  }catch(e){recordFailure(e);}
  }
  if(scopes.labor!==false&&Date.now()<deadlineAt){
   try{
