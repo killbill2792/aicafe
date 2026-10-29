@@ -24,13 +24,15 @@ export default function TryScenario({ items, base, currency, hoursComplete = tru
   const [staffAfternoonOnly, setStaffAfternoonOnly] = useState(false);
   const [presetKind, setPresetKind] = useState<"allPrices" | "milk" | null>(null);
   const money = {format:(value:number)=>formatCafeCurrency(Math.round(value*100),locale,currency).text};
-  const historyBlocker = base && base.salesDaysCovered > 0 ? null : scenarioHistoryBlocker(kind, {
+  // Short history no longer blocks; closed-day sales and coverage gaps still do, because
+  // item quantities and covered operating days must describe the same dates.
+  const historyBlocker = scenarioHistoryBlocker(kind, {
     salesCoverageGaps, closedDaySales, salesDaysCovered: base?.salesDaysCovered,
   });
   // A staffing cost change remains valid without item-sale history, but
   // the break-even amount still needs reliable product/sales coverage.
   const breakEvenHistoryUnreliable = kind === "staff" &&
-    (closedDaySales || salesCoverageGaps) && (base?.salesDaysCovered ?? 0) === 0;
+    (closedDaySales || salesCoverageGaps);
   const invalid = !Number.isFinite(Number(value)) || value.trim() === "" || Number(value) < 0 || Number(value) > 100000;
   const result = useMemo(() => base && !invalid && !historyBlocker ? simulatePlanChange({
     base, type: kind, item: picked, items, preset: presetKind,

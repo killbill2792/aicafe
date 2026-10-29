@@ -40,15 +40,21 @@ export async function getProfitGoalSimulatorData(): Promise<ProfitGoalSimulatorD
   );
 
   let unavailableReason: ProfitGoalSimulatorData["unavailableReason"] = null;
+  // Short history is allowed (labeled estimated below). Missing cost inputs are not:
+  // treating unknown payroll, fees, product or operating costs as zero would inflate
+  // the margin and could claim the target is already met.
   if (pricing.business.daysWithSalesInWindow === 0) unavailableReason = "NOT_ENOUGH_SALES";
-
+  else if (pricing.business.processingFeesStatus === "missing") unavailableReason = "MISSING_PROCESSING_FEES";
+  else if (hasMissingProductCosts) unavailableReason = "MISSING_PRODUCT_COSTS";
+  else if (pricing.business.operatingCostsStatus === "missing") unavailableReason = "MISSING_OPERATING_COSTS";
+  else if (pricing.business.payrollCostsStatus === "missing" || pricing.business.monthlyStaffCostCents === null) unavailableReason = "MISSING_PAYROLL";
 
   const economics: BusinessEconomicsInput | null =
     unavailableReason === null
       ? {
           monthlyRevenueCents: pricing.business.monthlyRevenueCents,
           monthlyVariableProductCostCents: pricing.business.monthlyVariableProductCostCents,
-          monthlyStaffCostCents: pricing.business.monthlyStaffCostCents ?? 0, // partial lower-bound estimate: missing payroll is separately disclosed
+          monthlyStaffCostCents: pricing.business.monthlyStaffCostCents!,
           monthlyOperatingCostCents: pricing.business.monthlyOperatingCostCents,
           monthlyProcessingFeesCents: pricing.business.monthlyProcessingFeesCents,
         }
