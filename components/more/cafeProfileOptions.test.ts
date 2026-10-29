@@ -55,6 +55,7 @@ describe("café profile redesign", () => {
     expect(countryOptions("es").find((item) => item.value === "ES")?.label).toBeTruthy();
     expect(currencyOptions("ar").find((item) => item.value === "USD")?.value).toBe("USD");
     expect(currencyForCountry("US")).toBe("USD");
+    expect(currencyForCountry("ZZ")).toBe(""); // Unknown countries must not silently select USD.
     expect(currencyForCountry("ES")).toBe("EUR");
     expect(currencyForCountry("GB")).toBe("GBP");
     expect(currencyForCountry("SA")).toBe("SAR");
