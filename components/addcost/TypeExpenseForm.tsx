@@ -9,6 +9,7 @@ import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import { addManualExpense } from "@/lib/actions/expenses";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import { validReturnTo } from "@/components/addcost/routeParams";
+import { formatCafeCurrency } from "@/lib/format/cafeCurrency";
 
 const CATEGORY_ICONS: Record<ExpenseCategoryCode, ExpenseIconCode> = {
   rent: "rent",
@@ -32,11 +33,15 @@ export default function TypeExpenseForm({
   labels,
   initialCategory,
   returnTo,
+  currency,
+  currencyMissingLabel,
 }: {
   categoryLabels: Record<ExpenseCategoryCode, string>;
   todayDateStr: string;
   initialCategory: ExpenseCategoryCode | null;
   returnTo?: string | null;
+  currency: string | null | undefined;
+  currencyMissingLabel: string;
   labels: {
     backspace: string;
     saveError: string;
@@ -108,8 +113,9 @@ export default function TypeExpenseForm({
 
   return (
     <div className="flex flex-col gap-5">
+      {!currency&&<p role="note" className="text-sm text-ink-muted">{currencyMissingLabel}</p>}
       <section className="flex flex-col items-center gap-4 rounded-card-lg bg-card p-5">
-        <span className="font-headline text-money-sm font-bold">{new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(amountCents / 100)}</span>
+        <span className="font-headline text-money-sm font-bold">{formatCafeCurrency(amountCents, locale, currency).text}</span>
         <div className="grid w-full grid-cols-3 gap-2">
           {KEYPAD_KEYS.map((key, i) =>
             key === "" ? (
