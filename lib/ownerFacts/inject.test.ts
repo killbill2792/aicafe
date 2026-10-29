@@ -1,8 +1,18 @@
 import {describe,it,expect} from "vitest";
-import {injectSavedOwnerInputs,formatSavedOwnerFacts} from "./inject";
+import {injectSavedOwnerInputs,formatSavedOwnerFacts,itemCostFactKey} from "./inject";
 import {ownerInputsSchema} from "@/lib/ai/agent/tools/ownerInputs";
 const facts=[{fact_key:"monthly_payroll_cents",value_json:1300000,created_at:"2026-10-28T12:00:00Z",unit:"cents",period_scope:"month"}];
 describe("owner facts injection",()=>{
+ it("latte cost is injected only for the same item, never a sandwich or a global legacy key",()=>{
+  const template=facts[0];
+  const saved=[{...template,fact_key:"unit_cost_cents",value_json:99},
+   {...template,fact_key:"unit_cost_cents:item:latte-id",value_json:125}];
+  const latte=injectSavedOwnerInputs({itemId:"latte-id",ownerInputs:null},saved) as {ownerInputs:{unitCostCents:number|null}};
+  const sandwich=injectSavedOwnerInputs({itemId:"sandwich-id",ownerInputs:null},saved) as {ownerInputs:{unitCostCents:number|null}};
+  expect(latte.ownerInputs.unitCostCents).toBe(125);
+  expect(sandwich.ownerInputs.unitCostCents).toBeNull();
+  expect(itemCostFactKey("latte-id")).toBe("unit_cost_cents:item:latte-id");
+ });
  it("populates strict existing ownerInputs without overwriting explicit values",()=>{
   const next=injectSavedOwnerInputs({period:"month",ownerInputs:null},facts) as {ownerInputs:unknown};
   const parsed=ownerInputsSchema.parse(next.ownerInputs);

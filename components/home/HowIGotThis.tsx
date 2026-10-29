@@ -45,6 +45,7 @@ const calcLabels:Record<string,keyof typeof en.OwnerQuestions>={
  "baseMilkCost":"milkBaseCost","oatMilkCost":"milkOatCost","targetMilkCost":"milkAlternativeCost",
  "baseMilkPrice":"howPrice","oatMilkPrice":"howPrice",
  "remainingShare":"howRemainingShare",
+ "targetProductCostPercent":"howTarget","roundingStepCents":"howRoundingStep",
  "ingredients":"howIngredients","packaging":"howIngredients",
  "wages":"howLabor","staffTax":"howLabor","paidTime":"howLabor",
  "hourlyWage":"howLabor","fixedPerOrder":"cardFixedFee",
@@ -55,7 +56,8 @@ function localizedLabel(label:string,locale:Locale):string{
  const copy={en,es,ar}[locale].OwnerQuestions;
  const dynamic=label.startsWith("Processing fee:")?"howFees":null;
  const key=dynamic??calcLabels[label];
- return key?copy[key]:(locale==="en"?label:copy.generic);
+ // A tool may have already translated this label. Never replace it with an unrelated generic key.
+  return key?copy[key]:label;
 }
 function localizedSource(source:string,locale:Locale):string{
  const copy={en,es,ar}[locale].OwnerQuestions;
@@ -73,7 +75,7 @@ function dates(p:{from:string;to:string}|null,locale:Locale){
  const read=(v:string)=>format.format(new Date(v+"T12:00:00Z"));
  return p.from===p.to?read(p.from):read(p.from)+" – "+read(p.to);
 }
-export default function HowIGotThis({lines,locale,copy,currency="USD"}:{
+export default function HowIGotThis({lines,locale,copy,currency="XXX"}:{
  lines:readonly ExplainLine[];locale:Locale;copy:Copy;currency?:string;
 }){
  if(!lines.length)return null;
@@ -81,11 +83,14 @@ export default function HowIGotThis({lines,locale,copy,currency="USD"}:{
    <summary className="flex min-h-12 cursor-pointer items-center rounded-xl px-4 py-3 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{lines.some(line=>line.source==="suggest_new_item_price")?copy.howCalculated:copy.howIGotThis}</summary>
    <div className="space-y-3 border-t border-line px-4 py-3">{lines.map((line,i)=><p key={i} className="break-words text-[17px] leading-relaxed">
      <span className="font-semibold">{localizedLabel(line.label,locale)}: </span>
-     <bdi dir="ltr">{line.inputs.map((input,j)=><span key={j}>
-       {j>0?" "+(connector[line.formula]||copy.explainSum)+" ":""}
-       {localizedLabel(input.name,locale)}: {formatCardValue(input.value,locale,currency)}
-       {input.name==="qtySold"?" "+copy.explainSold:""}
-     </span>)} {"="} {formatCardValue(line.result,locale,currency)}</bdi>
+     {line.source==="milk_swap"&&line.inputs.length===3&&line.inputs[2].name==="roundingStepCents"?
+       <><span className="text-ink-muted">{({en,es,ar}[locale]).OwnerQuestions.howRoundUp}: </span>
+       <bdi dir="ltr">ceil(max(0, {formatCardValue(line.inputs[0].value,locale,currency)}) ÷ {formatCardValue(line.inputs[1].value,locale,currency)} ÷ {formatCardValue(line.inputs[2].value,locale,currency)}) × {formatCardValue(line.inputs[2].value,locale,currency)} {"="} {formatCardValue(line.result,locale,currency)}</bdi></>:
+       <bdi dir="ltr">{line.inputs.map((input,j)=><span key={j}>
+         {j>0?" "+(connector[line.formula]||copy.explainSum)+" ":""}
+         {localizedLabel(input.name,locale)}: {formatCardValue(input.value,locale,currency)}
+         {input.name==="qtySold"?" "+copy.explainSold:""}
+       </span>)} {"="} {formatCardValue(line.result,locale,currency)}</bdi>}
      {line.period&&<span className="text-ink-muted"> · {line.periodLabelKey?
        localizedPeriodLabel({...line.period,labelKey:line.periodLabelKey,label:dates(line.period,locale)??undefined},locale):
        dates(line.period,locale)}</span>}

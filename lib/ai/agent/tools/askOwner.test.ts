@@ -25,6 +25,16 @@ describe("ask_owner tool",()=>{
   expect(label).not.toContain("{milk}");
   expect(label).not.toContain("Unsafe model label");
  });
+ it.each(["unitCostCents","unit_cost_cents"])("rejects unsavable %s cards without consuming the owner question",async(key)=>{
+  const ctx={resolveState:newResolveState("What does the latte cost?"),locale:"en"} as AgentToolContext;
+  const input={kind:"facts",question:"Cost?",options:[],allowOther:false,
+   fields:[{key,label:"Cost",inputType:"money",units:[],defaultUnit:""}]};
+  const rejected=await askOwnerTools.ask_owner.execute(input,ctx);
+  expect(rejected).toMatchObject({error:"invalidFactFields"});
+  expect(ctx.resolveState!.asked).toBe(false);
+  const scoped=await askOwnerTools.ask_owner.execute({...input,fields:[{...input.fields[0],key:"unit_cost_cents:item:latte"}]},ctx);
+  expect(scoped).toMatchObject({kind:"facts",missing:[]});
+ });
  it("supports six typed fields for a new noncatalog question",async()=>{
   const ctx={resolveState:newResolveState("Tell me about deliveries"),locale:"es"} as AgentToolContext;
   const kinds=["number","money","percent","text","date","choice"] as const;

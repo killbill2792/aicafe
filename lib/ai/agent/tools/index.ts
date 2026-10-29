@@ -14,6 +14,7 @@ import { suppliesTools } from "./supplies";
 import { salesTools } from "./sales";
 import {draftScheduleTools} from "./draftSchedule";
 import {newItemPriceTools} from "./newItemPrice";
+import {milkSwapTools} from "./milkSwap";
 import {proposalTools} from "./proposals";
 import {purchasesTools,purchaseToolInput} from "./purchases";
 import {priceExperimentTools} from "./priceExperiment";
@@ -69,7 +70,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...scenarioTools,...proposalTools,...priceExperimentTools,...staffProposalTools,...purchasesTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...proposalTools,...priceExperimentTools,...staffProposalTools,...purchasesTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -155,6 +156,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="ask_owner")return askOwnerTools.ask_owner.execute(raw,ctx);
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
+  if(name==="milk_swap_price")return milkSwapTools.milk_swap_price.execute(raw,ctx);
   if(name==="simulate_scenario")return scenarioTools.simulate_scenario.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
    if(name==="propose_purchases")return purchasesTools.propose_purchases.execute(raw,ctx);

@@ -1,5 +1,12 @@
+import {createHash} from "node:crypto";
 import {emptyOwnerInputs,type OwnerInputs} from "@/lib/ai/agent/tools/ownerInputs";
 export type SavedFact={fact_key:string;value_json:unknown;created_at:string;unit:string|null;period_scope:string|null};
+export function itemCostFactKey(itemId:string|null,itemName:string|null=null):string|null{
+ const id=itemId?.trim();
+ if(id&&/^[a-zA-Z0-9_-]{1,64}$/.test(id))return "unit_cost_cents:item:"+id;
+ const name=itemName?.trim().toLocaleLowerCase("und");
+ return name?"unit_cost_cents:item:new_"+createHash("sha256").update(name).digest("hex").slice(0,20):null;
+}
 export function savedValue(facts:readonly SavedFact[],key:string):unknown{
  return facts.find(f=>f.fact_key===key)?.value_json;
 }
@@ -14,7 +21,12 @@ export function injectSavedOwnerInputs(raw:unknown,facts:readonly SavedFact[],su
  const existing=(original??{}) as Partial<OwnerInputs>;
  const value=(key:string)=>{const n=savedValue(facts,key);return typeof n==="number"&&Number.isSafeInteger(n)&&n>=0?n:null;};
  const labor=value("monthly_payroll_cents"),rent=value("rent_monthly_cents");
- const cost=value("unit_cost_cents");
+ const itemId=typeof obj.itemId==="string"?obj.itemId:
+   typeof obj.item_id==="string"?obj.item_id:null;
+ const itemName=typeof obj.item_name==="string"?obj.item_name:
+   typeof obj.itemName==="string"?obj.itemName:null;
+ const key=itemCostFactKey(itemId,itemName);
+ const cost=key?value(key):null;
  if(!("ownerInputs" in obj)&&labor===null&&rent===null&&cost===null)return raw;
  const injected:OwnerInputs={...emptyOwnerInputs,...existing};
  if(injected.laborCents==null&&labor!==null){injected.laborCents=labor;injected.laborPeriod={unit:"month"};}
@@ -22,6 +34,7 @@ export function injectSavedOwnerInputs(raw:unknown,facts:readonly SavedFact[],su
  // A saved *total* bill is not the tool's 'other overhead' field.
  // The screen-visible recurring-cost read remains authoritative; SQL writes
  // through only when doing so cannot double-count itemized expenses.
+ // Never use the unscoped legacy cost for another item.
  if(injected.unitCostCents==null&&cost!==null)injected.unitCostCents=cost;
  return {...obj,ownerInputs:injected};
 }

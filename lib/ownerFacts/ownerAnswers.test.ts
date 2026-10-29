@@ -10,6 +10,14 @@ const fields=[
   choices:[{label:"A",value:"a"},{label:"B",value:"b"}]}
 ];
 describe("structured owner card answers",()=>{
+ it("rejects a café-wide unit cost but accepts a scoped per-item cost",()=>{
+  const global=[{key:"unitCostCents",inputType:"money",units:[],defaultUnit:""}];
+  expect(()=>validateOwnerAnswers(global,[{fieldKey:"unitCostCents",value:"1.25"}],"en"))
+   .toThrow("unscoped_item_cost");
+  const scoped=[{key:"unit_cost_cents:item:latte-id",inputType:"money",units:[],defaultUnit:""}];
+  expect(validateOwnerAnswers(scoped,[{fieldKey:scoped[0].key,value:"1.25"}],"en"))
+   .toMatchObject([{fieldKey:scoped[0].key,value:125}]);
+ });
  it("parses six typed fields including Arabic digits",()=>{
   const answers=["١٣٠٠٫٥٠","٣","٢٫٥","Supplier","2026-10-29","a"].map((value,i)=>({fieldKey:fields[i].key,value}));
   const parsed=validateOwnerAnswers(fields,answers,"ar");

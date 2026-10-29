@@ -124,7 +124,8 @@ function observedMicros(name:string,results:readonly AgentToolResult[]):number|n
 export type MilkSwapLine={sizeId:string;sizeLabel:string;volumeMl:number|null;
  baseServingCents:number|null;oatServingCents:number|null;targetServingCents:number|null;additionalCostCents:number|null;
  suggestedUpchargeCents:number|null;basis:"estimated"|"missing";
- inputBasis:"owner_provided"|"recorded"|"mixed"|"unknown"};
+ inputBasis:"owner_provided"|"recorded"|"mixed"|"unknown";
+ targetProductCostPercent?:number|null;roundingStepCents?:number};
 export type MilkSwapAnswer={source:"milk_swap";period:null;missing:string[];targetMilk:string|null;
  rows:MilkSwapLine[];explain:ExplainLine[];numberEstimates:{value:number;unit:"cents";detail:"pricing"}[]};
 /** ASCII keys are stable for menu names in any script and scoped to the milk. */
@@ -164,9 +165,9 @@ function servingMicros(cents:number|null,volume:number|null):number|null{
  return Number.isSafeInteger(value)&&value>=0?value:null;
 }
 export function milkSwapFromFacts(sizes:readonly MilkSize[],facts:readonly SavedFact[],
- results:readonly AgentToolResult[],targetMilk:string|null=null):MilkSwapAnswer{
+ results:readonly AgentToolResult[],targetMilk:string|null=null,baseMilk:string|null=null):MilkSwapAnswer{
  const milkType=savedValue(facts,"milk_base_type");
- const fromMilk=typeof milkType==="string"&&milkType.trim()?milkType.trim():null;
+ const fromMilk=baseMilk?.trim()||(typeof milkType==="string"&&milkType.trim()?milkType.trim():null);
  const fromMicros=fromMilk?observedMicros(fromMilk,results):null;
  const savedTarget=savedValue(facts,"milk_target_type");
  const toMilk=targetMilk?.trim()||(typeof savedTarget==="string"&&savedTarget.trim()?savedTarget.trim():null);
@@ -179,7 +180,10 @@ export function milkSwapFromFacts(sizes:readonly MilkSize[],facts:readonly Saved
   const recordedVolume=observedVolume(size,results);
   const v=recordedVolume??costFromFacts(facts,volumeKey(size.id));
   const volume=v!==null&&v>0?v:null;
-  const baseCost=sharedServingCost(volume,fromMicros)??storedServingCost(facts,"base",size.id);
+  const savedBaseName=typeof milkType==="string"?milkType.trim().toLocaleLowerCase("und"):"";
+  const matchesSavedBase=!!fromMilk&&fromMilk.toLocaleLowerCase("und")===savedBaseName;
+  const baseCost=sharedServingCost(volume,fromMicros)??(fromMilk?
+   (matchesSavedBase?storedServingCost(facts,"base",size.id):storedServingCost(facts,fromMilk,size.id)):null);
   const oatCost=sharedServingCost(volume,toMicros)??(toMilk?storedServingCost(facts,toMilk,size.id):null);
   const inputs=[recordedVolume!==null?"recorded":volume!==null?"owner_provided":"unknown",
     fromMicros!==null?"recorded":baseCost!==null?"owner_provided":"unknown",
@@ -190,7 +194,7 @@ export function milkSwapFromFacts(sizes:readonly MilkSize[],facts:readonly Saved
   if(volume===null)missing.add(volumeKey(size.id));
   // When the café has recorded per-mL costs, the only missing input may be
   // serving volume. Don't ask twice for prices that can be derived afterward.
-  if(baseCost===null&&fromMicros===null)missing.add(servingKey("base",size.id));
+  if(baseCost===null&&fromMicros===null)missing.add(servingKey(matchesSavedBase?"base":fromMilk??"base",size.id));
   if(toMilk&&oatCost===null&&toMicros===null)missing.add(servingKey(toMilk,size.id));
   if(!fromMilk||!toMilk||volume===null||baseCost===null||oatCost===null)
    return {sizeId:size.id,sizeLabel:size.label,volumeMl:volume,
@@ -211,7 +215,8 @@ export function milkSwapFromFacts(sizes:readonly MilkSize[],facts:readonly Saved
   return {sizeId:size.id,sizeLabel:size.label,volumeMl:volume,
    baseServingCents:baseCost,oatServingCents:oatCost,targetServingCents:oatCost,
    additionalCostCents:priced.costDeltaCents,
-   suggestedUpchargeCents:priced.suggestedUpchargeCents,basis:"estimated" as const,inputBasis};
+   suggestedUpchargeCents:priced.suggestedUpchargeCents,basis:"estimated" as const,inputBasis,
+   targetProductCostPercent:priced.targetProductCostPercent,roundingStepCents:priced.roundingStepCents};
  });
  const explain:ExplainLine[]=rows.flatMap(row=>row.suggestedUpchargeCents===null?[]:[
    ...((row.oatServingCents!-row.baseServingCents!)===row.additionalCostCents?[
@@ -223,7 +228,8 @@ export function milkSwapFromFacts(sizes:readonly MilkSize[],facts:readonly Saved
    ]:[]),
    {label:"Suggested upcharge",inputs:[
      {name:"costDeltaCents",value:money(row.additionalCostCents!)},
-     {name:"remainingShare",value:{kind:"percent" as const,bps:7000}}],
+     {name:"targetProductCostPercent",value:{kind:"percent" as const,bps:Math.round(row.targetProductCostPercent!*10000)}},
+     {name:"roundingStepCents",value:money(row.roundingStepCents!)}],
     formula:"divide" as const,result:money(row.suggestedUpchargeCents),
     period:null,source:"milk_swap",provenance:"estimate" as const,basis:"estimated"}
  ]);

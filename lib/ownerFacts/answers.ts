@@ -39,6 +39,8 @@ export function validateOwnerAnswers(
   // with a misleading type (for example a text answer into monthly bills).
   if(definition.labelKey!=="generic"&&definition.type!==field.inputType)throw new Error("mismatched_owner_fact_type");
   const factKey=definition.factKey;
+  // Global legacy item costs can be read as hints but never saved anew.
+  if(factKey==="unit_cost_cents")throw new Error("unscoped_item_cost");
   if(!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(factKey))
    throw new Error("invalid_owner_key");
   return {fieldKey:factKey,value,unit,periodScope:field.inputType==="money"&&

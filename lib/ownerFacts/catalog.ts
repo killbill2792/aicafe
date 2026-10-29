@@ -39,6 +39,10 @@ const entries:Record<string,FactDefinition>={
 export function catalogForMissing(key:string):FactDefinition{
   if(/^schedule:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/.test(key))
     return {factKey:key,type:"text",labelKey:"schedule",target:"owner_facts"};
+  if(/^unit_cost_cents:item:(?:[a-zA-Z0-9_-]{1,64})$/.test(key))
+    return {factKey:key,type:"money",labelKey:"itemCost",target:"owner_facts"};
+  if(key==="milk_requested_size")
+    return {factKey:key,type:"text",labelKey:"milkNoSize",target:"owner_facts"};
   if(/^milk_ml:[0-9]{1,2}oz$/.test(key))
     return {factKey:key,type:"number",labelKey:"milkVolume",target:"owner_facts"};
   if(/^milk_base_serving_cost_cents:[0-9]{1,2}oz$/.test(key))

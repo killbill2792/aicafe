@@ -3,7 +3,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {catalogForMissing} from "./catalog";
-import {savedValue,type SavedFact} from "./inject";
+import {savedValue,itemCostFactKey,type SavedFact} from "./inject";
 import type {AskReason} from "./needsAsk";
 import type {AgentToolResult,AgentLocale} from "@/lib/ai/agent/tools";
 const copyByLocale={en:en.OwnerQuestions,es:es.OwnerQuestions,ar:ar.OwnerQuestions};
@@ -12,7 +12,7 @@ const labels:Record<string,keyof typeof en.OwnerQuestions>={
  cardSalesShare:"cardSalesShare",cardTransactionsShare:"cardTransactionsShare",
  cardFixedFee:"cardFixedFee",averageTicket:"averageTicket",processor:"processor",
  itemCost:"itemCost",hours:"hours",schedule:"schedule",generic:"generic",
- milkBase:"milkBase",milkTarget:"milkTarget",milkVolume:"milkVolume",milkBaseCost:"milkBaseCost",milkOatCost:"milkOatCost",milkTargetCost:"milkTargetCost"
+ milkBase:"milkBase",milkTarget:"milkTarget",milkNoSize:"milkNoSize",milkVolume:"milkVolume",milkBaseCost:"milkBaseCost",milkOatCost:"milkOatCost",milkTargetCost:"milkTargetCost"
 };
 export function ownerFactLabel(key:string,labelKey:string,locale:AgentLocale):string{
  const copy=copyByLocale[locale];
@@ -48,6 +48,20 @@ export function scopedOwnerQuestionKey(
  reason:AskReason,results:readonly AgentToolResult[],ownerText:string
 ):string{
  const tool=reason.tool??"";
+ if(catalogForMissing(reason.key).factKey==="unit_cost_cents"){
+  const candidates=results.filter(r=>r.source!=="ask_owner"&&
+   (typeof r.itemId==="string"||typeof r.itemName==="string"));
+  const scoped=results.filter(r=>r.source===tool&&
+   (typeof r.itemId==="string"||typeof r.itemName==="string"));
+  const identities=new Set((scoped.length?scoped:candidates).map(r=>
+   itemCostFactKey(typeof r.itemId==="string"?r.itemId:null,
+    typeof r.itemName==="string"?r.itemName:null)).filter(Boolean));
+  // A model's rejected global card may use a verified item from another tool,
+  // but never choose arbitrarily between two different menu items.
+  const key=identities.size===1?[...identities][0]:null;
+  // Unresolved items must never receive a café-wide saved unit cost.
+  return key??genericQuestionKey("unresolved-item-cost:"+ownerText);
+ }
  const period=results.find(r=>r.source===tool)?.period;
  if(period&&/^\d{4}-\d{2}-\d{2}$/.test(period.from)&&
    /^\d{4}-\d{2}-\d{2}$/.test(period.to)&&
@@ -106,7 +120,7 @@ export function localizedToolNote(results:readonly AgentToolResult[],locale:Agen
  * Render the stored value with explicit owner provenance, never as a POS actual. */
 export function answerFromSavedReasons(
  reasons:readonly AskReason[],results:readonly AgentToolResult[],
- ownerText:string,facts:readonly SavedFact[],locale:AgentLocale
+ ownerText:string,facts:readonly SavedFact[],locale:AgentLocale,currency="XXX"
 ):string|null{
  const copy=copyByLocale[locale];
  const seen=new Set<string>();
@@ -122,7 +136,7 @@ export function answerFromSavedReasons(
   if(typeof value==="number"&&Number.isFinite(value)){
    const number=def.type==="money"?value/100:value;
    display=new Intl.NumberFormat(locale==="en"?"en-US":locale==="es"?"es-ES":"ar",
-    def.type==="money"?{style:"currency",currency:"USD"}:
+    def.type==="money"?{style:"currency",currency}:
      {maximumFractionDigits:2}).format(number)+(def.type==="percent"?"%":"");
   }else if(typeof value==="string")display=value;
   else return [];

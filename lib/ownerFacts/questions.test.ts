@@ -3,7 +3,40 @@ import {scopedOwnerQuestionKey,questionFromReasons,answerFromSavedReasons} from 
 import type {AskReason} from "./needsAsk";
 import type {AgentToolResult} from "@/lib/ai/agent/tools";
 
+describe("rejected global cost card recovery",()=>{
+ it("uses the unique verified menu item instead of a global cost",()=>{
+  const reasons=[{kind:"missing" as const,key:"unitCostCents",tool:"ask_owner"}];
+  const results:AgentToolResult[]=[
+   {source:"pricing_engine",period:null,missing:[],itemId:"latte-id"},
+   {source:"ask_owner",period:null,missing:["unitCostCents"],error:"invalidFactFields"}
+  ];
+  const card=questionFromReasons(reasons,results,"What does the latte cost?","en",[]);
+  expect(card?.fields[0]).toMatchObject({key:"unit_cost_cents:item:latte-id",inputType:"money"});
+  const ambiguous=questionFromReasons(reasons,[
+   {...results[0],itemId:"sandwich-id"},results[0],results[1]
+  ],"Which item cost?","en",[]);
+  expect(ambiguous?.fields[0].inputType).toBe("text");
+ });
+});
 describe("dated owner questions",()=>{
+ it("saves a cost under the resolved item ID, not across the whole café",()=>{
+  const reason:AskReason={kind:"missing",key:"unitCostCents",tool:"pricing_engine"};
+  const latte:AgentToolResult={source:"pricing_engine",period:null,missing:["unitCostCents"],itemId:"latte-id"};
+  const sandwich:AgentToolResult={source:"pricing_engine",period:null,missing:["unitCostCents"],itemId:"sandwich-id"};
+  const first=questionFromReasons([reason],[latte],"What does the latte cost?","en",[]);
+  const factKey=first?.fields[0].key;
+  expect(first?.fields[0]).toMatchObject({key:"unit_cost_cents:item:latte-id",inputType:"money"});
+  const stored=[{fact_key:factKey!,value_json:125,unit:"cents",period_scope:null,created_at:"2026-10-28T00:00:00Z"}];
+  const next=questionFromReasons([reason],[sandwich],"What does the sandwich cost?","en",stored);
+  expect(next?.fields[0].key).toBe("unit_cost_cents:item:sandwich-id");
+ });
+ it.each(["en","es","ar"] as const)("formats saved EUR answers in %s",locale=>{
+  const reason:AskReason={kind:"missing",key:"payrollMissing",tool:"get_profit"};
+  const stored=[{fact_key:"monthly_payroll_cents",value_json:12345,unit:"cents",period_scope:"month",created_at:"2026-10-28T00:00:00Z"}];
+  const answer=answerFromSavedReasons([reason],[],"Payroll?",stored,locale,"EUR");
+  expect(answer).toContain("€");
+  expect(answer).not.toContain("$");
+ });
  it.each([["en","almond milk"],["es","leche de almendra"],["ar","حليب اللوز"]] as const)(
   "milk cost card names the exact target in %s",(locale,translated)=>{
    const reason:AskReason={kind:"missing",

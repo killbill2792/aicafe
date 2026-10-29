@@ -42,11 +42,11 @@ describe("How I got this disclosure",()=>{
     ...line,label:"Unknown English input",basis:"Product cost / target drink cost percentage"
    }],locale,copy}));
    expect(html).not.toContain("Product cost / target");
-   expect(html).not.toContain("Unknown English input");
+   expect(html).toContain("Unknown English input");
   }
  });
  it("is native collapsed details with 48px target and formatted recorded inputs",()=>{
-  const markup=renderToStaticMarkup(createElement(HowIGotThis,{lines:[line],locale:"en",copy:en.SupervisorChat}));
+  const markup=renderToStaticMarkup(createElement(HowIGotThis,{lines:[line],locale:"en",copy:en.SupervisorChat,currency:"USD"}));
   expect(markup).toContain("<details");
   expect(markup).not.toContain("<details open");
   expect(markup).toContain("min-h-12");
@@ -62,9 +62,31 @@ describe("How I got this disclosure",()=>{
   expect(markup).toContain('<bdi dir="ltr">');
  });
  it("uses locale-aware Spanish currency formatting",()=>{
-  const markup=renderToStaticMarkup(createElement(HowIGotThis,{lines:[line],locale:"es",copy:es.SupervisorChat}));
+  const markup=renderToStaticMarkup(createElement(HowIGotThis,{lines:[line],locale:"es",copy:es.SupervisorChat,currency:"USD"}));
   expect(markup).toContain("56.000,00");
   expect(markup).toContain("US$");
+ });
+ it.each([["es",es],["ar",ar]] as const)("preserves localized new-item-price labels in %s",(locale,messages)=>{
+  const translated=messages.MetricsNotes.itemIngredientsPackaging;
+  const input=messages.MetricsNotes.itemInputsIngredients;
+  const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{
+   ...line,label:translated,inputs:[{name:input,value:money(125)}]
+  }],locale,copy:messages.SupervisorChat,currency:"EUR"}));
+  expect(html).toContain(translated);
+  expect(html).toContain(input);
+  expect(html).not.toContain(messages.OwnerQuestions.generic+":");
+ });
+ it("renders the exact 5-cent ceiling formula in the disclosure",()=>{
+  const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{
+   ...line,source:"milk_swap",label:"Suggested upcharge",
+   formula:"divide",inputs:[{name:"costDeltaCents",value:money(50)},
+    {name:"targetProductCostPercent",value:{kind:"percent",bps:3000}},
+    {name:"roundingStepCents",value:money(5)}],result:money(170)
+  }],locale:"en",copy:en.SupervisorChat,currency:"EUR"}));
+  expect(html).toContain("ceil(max(0,");
+  expect(html).toContain("30%");
+  expect(html).toContain("€1.70");
+  expect(html).not.toContain("70%");
  });
  it("keeps translated explain and clarify key parity",()=>{
   const keys=["howIGotThis","explainYouToldMe","explainEstimate","explainSold",

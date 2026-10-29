@@ -32,7 +32,8 @@ export function classifyNeedsAsk(results:readonly AgentToolResult[],finalText:st
  const reasons:AskReason[]=[];
  for(const r of results){
   if(r.source==="ask_owner"&&!r.error)continue;
-  if(typeof r.error==="string")reasons.push({kind:"failed",key:r.source,tool:r.source});
+  if(typeof r.error==="string"&&!(r.source==="ask_owner"&&r.error==="invalidFactFields"&&r.missing.includes("unitCostCents")))
+   reasons.push({kind:"failed",key:r.source,tool:r.source});
   for(const missing of r.missing)if(missing && missing!=="none"){
     reasons.push({kind:"missing",key:missing,tool:r.source});
   }

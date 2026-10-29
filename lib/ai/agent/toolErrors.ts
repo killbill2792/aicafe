@@ -34,7 +34,7 @@ export function safeToolError(error:unknown,deadline=false,
   const copy={en,es,ar}[locale].OwnerQuestions;
   const what=readableSource(context?.source??"generic",locale);
   const period=context?.period??copy.period;
-  return {code,what,period,reason:copy.error.replace("{source}",what).replace("{period}",period)};
+  return {code,what,period,reason:(code==="write_failed"?copy.errorSave:copy.error).replace("{source}",what).replace("{period}",period)};
 }
 export function toolErrorResult(source:string,error:unknown,deadline=false,
  locale:"en"|"es"|"ar"="en",period?:{from:string;to:string}){

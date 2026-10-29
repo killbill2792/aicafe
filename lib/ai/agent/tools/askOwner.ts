@@ -37,6 +37,9 @@ export const askOwnerTools={ask_owner:{
     const fields=input.fields.map(field=>{
       const entry=catalogForMissing(field.key);
       if(entry.labelKey!=="generic"&&entry.type!==field.inputType)return null;
+      // Reject unscoped model cards before marking the turn as asked.
+      // This allows the agent to recover with an item-specific question.
+      if(entry.factKey==="unit_cost_cents")return null;
       return {...field,key:entry.factKey,
         label:entry.labelKey!=="generic"?ownerFactLabel(entry.factKey,entry.labelKey,ctx.locale):field.label};
     });
