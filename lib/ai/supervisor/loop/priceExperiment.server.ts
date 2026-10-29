@@ -124,11 +124,15 @@ export const priceExperimentCapability=registerLoopCapability({
       estimatedAdditionalRevenue7DaysCents:estimatedUplift};
     const pct=(v:number,signed:boolean)=>new Intl.NumberFormat(_scope.locale,{maximumFractionDigits:1,
       signDisplay:signed?"exceptZero":"never"}).format(v);
+    // Always say how many days the orders comparison covered; never imply a
+    // whole-test result from a few comparable days.
+    const n=(v:number)=>new Intl.NumberFormat(_scope.locale).format(v);
+    const coverage=(t:string)=>t.replace("{counted}",n(guard.countedDays)).replace("{total}",n(samples.length));
     const guardText=guard.status==="broken"
-      ?copy.guardrailBroken.replace("{change}",pct(guard.changePct,false))
-        .replace("{now}",new Intl.NumberFormat(_scope.locale).format(guard.ordersNow))
-        .replace("{before}",new Intl.NumberFormat(_scope.locale).format(guard.ordersBefore))
-      :guard.status==="ok"?copy.guardrailOk.replace("{change}",pct(guard.changePct,true)):null;
+      ?coverage(copy.guardrailBroken.replace("{change}",pct(guard.changePct,false))
+        .replace("{now}",n(guard.ordersNow)).replace("{before}",n(guard.ordersBefore)))
+      :guard.status==="ok"?coverage(copy.guardrailOk.replace("{change}",pct(guard.changePct,true)))
+      :samples.length>0?copy.guardrailUnknown:null;
     const text=[copy.reportThread,
       copy.reportTask.replace("{item}",effect.productName)+".",
       copy.reportOldPrice.replace("{value}",money(effect.oldPriceCents)),
@@ -159,9 +163,9 @@ export const priceExperimentCapability=registerLoopCapability({
           observedIngredientContributionCents:trial.observedIngredientContributionCents,
           estimatedAdditionalRevenue7DaysCents:trial.estimatedAdditionalRevenue7DaysCents,
           estimateIsConditional:true,coveredDays:result.coveredDays,ordersGuardrail:guard.status,
-          ordersChangePct:guard.status==="unknown"?null:guard.changePct},
+          ordersChangePct:guard.status==="unknown"?null:guard.changePct,ordersComparedDays:guard.countedDays},
         evidence:[{source:"order_lines",facts:{coveredDays:result.coveredDays,
-          status:result.status,nonCausal:true,ordersGuardrail:guard.status}}],
+          status:result.status,nonCausal:true,ordersGuardrail:guard.status,ordersComparedDays:guard.countedDays}}],
         threadText:text},
     };
   },

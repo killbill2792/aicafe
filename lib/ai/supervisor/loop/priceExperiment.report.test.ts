@@ -58,13 +58,22 @@ describe("price test orders guardrail in the report",()=>{
   it("keeps a good test when café orders held",async()=>{
     const r=await priceExperimentCapability.report(scope,effect,week(99),true);
     expect(r.recommendation).toBe("keep");
-    expect(r.delivery?.threadText).toContain("Total café orders held: -1% vs the same weekdays before the test.");
+    expect(r.delivery?.threadText).toContain("Total café orders held: -1% vs the same weekdays before the test (7 of 7 days compared).");
     expect(r.delivery?.payload).toMatchObject({ordersGuardrail:"ok",ordersChangePct:-1});
+  });
+  it("says how many days were compared, and when orders could not be checked at all",async()=>{
+    const partial=week(100).map((x,i)=>i===0?x:{...x,observation:{...x.observation,
+      cafeOrders:{...x.observation.cafeOrders,value:null}}});
+    const r=await priceExperimentCapability.report(scope,effect,partial,true);
+    expect(r.delivery?.threadText).toContain("(1 of 7 days compared)");
+    expect(r.delivery?.payload).toMatchObject({ordersComparedDays:1});
+    const none=await priceExperimentCapability.report(scope,effect,samples,true);
+    expect(none.delivery?.threadText).toContain("Total café orders not checked");
   });
   it("never says keep when café orders fell 10% or more, and warns halfway",async()=>{
     const r=await priceExperimentCapability.report(scope,effect,week(85),true);
     expect(r.recommendation).toBe("adjust");
-    expect(r.delivery?.threadText).toContain("Watch out: total café orders were 15% lower than the same weekdays before the test (595 vs 700).");
+    expect(r.delivery?.threadText).toContain("Watch out: total café orders were 15% lower than the same weekdays before the test (595 vs 700; 7 of 7 days compared).");
     const running=await priceExperimentCapability.report(scope,effect,week(85).slice(0,4),false);
     expect(running.midRunText).toMatch(/Watch out: total café orders were 15% lower/);
   });
