@@ -38,3 +38,22 @@ export async function queueToastBackfillChunks(
  }
  return queuedChunks;
 }
+
+/** What the owner sees after an action: the exact result, never a generic
+ * "unable to save". Keys live in the ToastConnect messages. */
+export type ToastActionKind="repull"|"first_check"|"flag"|"retry";
+export type ToastActionResult={ok:boolean;key:string};
+export function toastActionResult(kind:ToastActionKind,status:number,body:unknown):ToastActionResult{
+ const b=(body&&typeof body==="object"?body:{}) as {error?:unknown;disabled?:unknown};
+ const error=typeof b.error==="string"?b.error:"";
+ if(status>=200&&status<300)
+  return {ok:true,key:kind==="repull"?"ownerRepullQueued":kind==="flag"?"ownerSaved":kind==="retry"?"ownerQueued":"ownerSaved"};
+ if(kind==="first_check"&&error==="already_answered")return {ok:true,key:"ownerAlreadyAnswered"};
+ if(b.disabled===true)return {ok:false,key:"ownerImportOff"};
+ if(error==="not_ready")return {ok:false,key:"ownerNotReady"};
+ if(error==="unverified_locations")return {ok:false,key:"ownerReconnect"};
+ if(error==="not_authorized"||error==="not_found"&&status===403)return {ok:false,key:"ownerNotAuthorized"};
+ if(error==="invalid_range"||error==="future_day"||error==="invalid_dates")return {ok:false,key:"ownerInvalidDate"};
+ if(error==="select_days")return {ok:false,key:"ownerSelectDays"};
+ return {ok:false,key:"ownerError"};
+}
