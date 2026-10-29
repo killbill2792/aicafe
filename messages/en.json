@@ -3518,6 +3518,8 @@
     "howSourceOwner": "Owner-provided",
     "howSourceApp": "Recorded data",
     "howTarget": "Target product cost",
+    "howRoundingStep": "Rounding increment",
+    "howRoundUp": "Divide by the product-cost target, then round up to the next 5¢",
     "averageTicket": "average card transaction amount",
     "cardSalesShare": "percentage of sales paid by card",
     "cardTransactionsShare": "percentage of transactions paid by card",
