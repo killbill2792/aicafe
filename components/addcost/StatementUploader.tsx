@@ -22,11 +22,9 @@ export default function StatementUploader({
   labels,
   returnTo,
   currency,
-  currencyMissingLabel,
 }: {
   returnTo?: string | null;
   currency: string | null | undefined;
-  currencyMissingLabel: string;
   categoryLabels: Record<ExpenseCategoryCode, string>;
   labels: {
     uploadPrompt: string;
