@@ -11,7 +11,8 @@ const call=(name:string,args:unknown,call_id:string)=>({type:"response.output_it
 const base:AgentToolContext={locale:"en",timezone:"Europe/Madrid",asOf:"2026-10-28",currency:"EUR",
  tools:{
   getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
-  getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["payroll"],estimatedInputs:[],staleInputs:[]}})
+  getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["payroll"],estimatedInputs:[],staleInputs:[]}}),
+  getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["salesNotAvailable"],estimatedInputs:[],staleInputs:[]}})
  }};
 function stream(rounds:unknown[][]):AgentProvider {
  let i=0;
