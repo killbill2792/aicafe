@@ -17,6 +17,11 @@ describe("fee priority",()=>{
     expect(fallback).toMatchObject({amountCents:290,basis:"default_estimate"});
     expect(fallback.notes).toContain("feeDefaultEstimateAskRate");
   });
+  it("never counts an estimated $0 on a day with sales as the fee",()=>{
+    const day={date:"2026-10-05",netSalesCents:10000,ordersCount:5,
+      cardFeesStatus:"estimated" as const,cardFeesCents:0};
+    expect(cardFeesForDays([day])).toMatchObject({amountCents:290,basis:"default_estimate"});
+  });
   it("uses the effective owner plan for each date in a cross-month range",()=>{
     const plans=[
       {effectiveFrom:"2026-09-01",effectiveTo:"2026-09-30",percentageBps:200},

@@ -1,6 +1,10 @@
 import {hasCoveredSales} from "./salesCoverage";
 /** Provider-neutral, cents-only card-processing fee calculation. No database access. */
 export const DEFAULT_PROCESSING_FEE_RATE_BPS=290;
+/** The default card fee on one payment, for a card payment with no known fee. */
+export function defaultCardFeeCents(amountCents:number):number{
+  return Math.round(amountCents*DEFAULT_PROCESSING_FEE_RATE_BPS/10000);
+}
 export type FeeBasis="owner_plan"|"actual"|"estimated"|"default_estimate";
 export type FeeDay={
   date:string;netSalesCents:number;cardSalesCents?:number|null;
@@ -98,8 +102,10 @@ export function cardFeesForDays(
       }
       notes.push(amount?.missingFixed?"feeFixedTransactionCountMissing":"feeOwnerPlanInvalid");
     }
-    if(day.cardFeesCents!=null&&valid(day.cardFeesCents)&&
-      (day.cardFeesStatus==="estimated"||day.cardFeesStatus===undefined&&day.cardFeesCents>0)){
+    // An estimated $0 on a day with sales is a placeholder, not a fee: an
+    // all-cash day is saved as an actual $0 from Toast's payments instead.
+    if(day.cardFeesCents!=null&&valid(day.cardFeesCents)&&day.cardFeesCents>0&&
+      (day.cardFeesStatus==="estimated"||day.cardFeesStatus===undefined)){
       // Already-persisted estimated daily facts win over the generic default.
       sum+=day.cardFeesCents;
       // A positive legacy fee without a status can still be used. An

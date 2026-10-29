@@ -5,7 +5,7 @@ import {getOwnerConfirmedProcessingFeePlans,ownerConfirmedPlanForDate} from "../
 import {upsertProcessingFeeDailyFact,setProcessingFeeCandidateEligibility} from "../processingFees";
 import {readAllPages} from "./readAllPages";
 
-type Row={payment_ref:string;payment_type:string|null;card_type:string|null;
+type Row={payment_ref:string;payment_type:string|null;payment_status:string|null;card_type:string|null;
  card_entry_mode:string|null;amount_cents:number|null;
  original_processing_fee_cents:number|null};
 type RawRule=Record<string,unknown>;
@@ -44,14 +44,14 @@ async function paymentCoverageComplete(db:SupabaseClient,businessId:string,busin
 export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
  businessId:string,businessDate:string){
  const raw=await db.from("toast_payment_facts").select(
-  "payment_ref,payment_type,card_type,card_entry_mode,amount_cents,original_processing_fee_cents")
+  "payment_ref,payment_type,payment_status,card_type,card_entry_mode,amount_cents,original_processing_fee_cents")
   .eq("business_id",businessId).eq("business_date",businessDate)
   .order("payment_ref").range(0,0);
  if(raw.error && ["42P01","PGRST205"].includes(String(raw.error.code??"")))
   return {status:"not_installed" as const};
  if(raw.error)throw raw.error;
  const rows=await readAllPages((start,end)=>db.from("toast_payment_facts").select(
-  "payment_ref,payment_type,card_type,card_entry_mode,amount_cents,original_processing_fee_cents")
+  "payment_ref,payment_type,payment_status,card_type,card_entry_mode,amount_cents,original_processing_fee_cents")
   .eq("business_id",businessId).eq("business_date",businessDate)
   .order("payment_ref").range(start,end)) as Row[];
  const plans=await getOwnerConfirmedProcessingFeePlans(db,businessId);
@@ -63,7 +63,10 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
   if(error)throw error;
   rules=parseCardRules(data?.rules,plan.rules.length===1);
  }
- const decisions=rows.map(row=>({
+ // Declined, voided or failed attempts were never charged; only the payment
+ // that went through carries a fee (same rule the parser uses for tips/refunds).
+ const failed=new Set(["VOIDED","DENIED","CANCELLED","ERROR","ERROR_NETWORK"]);
+ const decisions=rows.filter(row=>!failed.has(String(row.payment_status??"").toUpperCase())).map(row=>({
   row,decision:determineToastPaymentFee({
    amountCents:row.amount_cents,type:row.payment_type,
    cardType:row.card_type,cardEntryMode:row.card_entry_mode,
@@ -73,7 +76,9 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
  for(const {row,decision} of decisions){
   const {error}=await db.from("toast_payment_facts").update({
     processing_fee_cents:decision.amountCents,fee_status:decision.status,
-    fee_basis:decision.basis
+    // The stored basis list predates the default card rate; it is recorded as
+    // an estimate with no rule basis (fee_status says "estimated").
+    fee_basis:decision.basis==="default_rate"?"missing":decision.basis
   }).eq("business_id",businessId).eq("business_date",businessDate)
    .eq("payment_ref",row.payment_ref);
   if(error)throw error;
@@ -94,7 +99,9 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
   status:estimated?"estimated":"actual",
   sourceType:estimated?"owner_confirmed_estimate":"connected_pos_actual",
   provider:"Toast",sourceReference:"toast-payment-facts:"+businessDate,
-  metadata:{basis:estimated?"owner_plan":"toast",transactions:decisions.length}
+  metadata:{basis:estimated?"owner_plan":"toast",transactions:decisions.length,
+   toastFeeTransactions:decisions.filter(x=>x.decision.basis==="toast").length,
+   estimatedTransactions:decisions.filter(x=>x.decision.status==="estimated").length}
  });
  // A newly estimated day must not retain a previously certified actual.
  if(estimated)await setProcessingFeeCandidateEligibility(db,{

@@ -10,7 +10,8 @@ describe("Toast payment fee source precedence",()=>{
  });
  it("uses the matching card type and entry mode only when rate is owner-confirmed",()=>{
   expect(calc(base,plan)).toEqual({amountCents:39,status:"estimated",basis:"owner_plan"});
-  expect(calc({...base,cardEntryMode:"MANUAL"},plan).status).toBe("missing");
+  // No owner rule for this entry mode: that one payment is estimated at the default card rate.
+  expect(calc({...base,cardEntryMode:"MANUAL"},plan)).toMatchObject({status:"estimated",basis:"default_rate"});
  });
  it("cash and gift card never have a processing fee",()=>{
   for(const type of ["CASH","GIFT_CARD"])
@@ -20,16 +21,21 @@ describe("Toast payment fee source precedence",()=>{
   expect(calc(base,[{cardType:"*",cardEntryMode:"*",percentageBps:290,fixedFeeCents:10}]))
    .toEqual({amountCents:39,status:"estimated",basis:"owner_plan"});
  });
- it("does not bill non-card methods or invent a missing card entry mode",()=>{
-  expect(calc({...base,type:"HOUSE_ACCOUNT"},plan).status).toBe("missing");
+ it("does not bill non-card methods; an unknown tender stays missing",()=>{
+  expect(calc({...base,type:"HOUSE_ACCOUNT"},plan)).toEqual({amountCents:0,status:"actual",basis:"cash_or_gift"});
+  expect(calc({...base,type:"UNDETERMINED"},plan).amountCents).toBeNull();
+  // A general owner rule still applies when Toast omits the entry mode.
   expect(calc({...base,cardEntryMode:null},[{cardType:"*",cardEntryMode:"*",
-   percentageBps:290,fixedFeeCents:10}]).amountCents).toBeNull();
+   percentageBps:290,fixedFeeCents:10}]).status).toBe("estimated");
  });
- it("ambiguous equally specific owner fee rules are missing rather than double applied",()=>{
-  expect(calc(base,[...plan,...plan]).status).toBe("missing");
+ it("ambiguous owner fee rules are never double applied: the default rate is used",()=>{
+  expect(calc(base,[...plan,...plan])).toMatchObject({status:"estimated",basis:"default_rate"});
  });
- it("unknown fee stays unknown, never an assumed zero",()=>{
-  expect(calc(base,[]).amountCents).toBeNull();
+ it("a card payment without a Toast fee is an estimate, never an assumed zero",()=>{
+  // 2.9% of the payment, labelled estimated.
+  const r=calc(base,[]);
+  expect(r.status).toBe("estimated");
+  expect(r.amountCents).toBeGreaterThan(0);
  });
 });
 describe("Toast parser typed payment preservation",()=>{
