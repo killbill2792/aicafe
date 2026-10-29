@@ -130,6 +130,23 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(requestedPeriod("week","2026-10-21")).toEqual({from:"2026-10-15",to:"2026-10-21"});
     expect(requestedPeriod("month","2026-10-21")).toEqual({from:"2026-10-01",to:"2026-10-21"});
   });
+  it("lists every property as required in nested objects too (OpenAI strict mode rejects the whole request otherwise)", () => {
+    const gaps:string[]=[];
+    const walk=(node:unknown,path:string)=>{
+      if(Array.isArray(node)){node.forEach((n,i)=>walk(n,path+"["+i+"]"));return;}
+      if(!node||typeof node!=="object")return;
+      const o=node as Record<string,unknown>;
+      if(o.properties&&typeof o.properties==="object"){
+        const keys=Object.keys(o.properties).sort();
+        const required=[...((o.required as string[]|undefined)??[])].sort();
+        if(JSON.stringify(keys)!==JSON.stringify(required))gaps.push(path);
+        if(o.additionalProperties!==false)gaps.push(path+" additionalProperties");
+      }
+      for(const [k,v] of Object.entries(o))walk(v,path+"."+k);
+    };
+    for(const tool of agentToolDefinitions)walk(tool.parameters,tool.name);
+    expect(gaps).toEqual([]);
+  });
   it("reads menu without a user-provided business id", async () => {
     const context: AgentToolContext = {
       timezone:"America/Los_Angeles",asOf: "2026-10-21", locale: "en",

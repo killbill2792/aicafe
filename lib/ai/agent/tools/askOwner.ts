@@ -14,7 +14,7 @@ export const askOwnerSchema=z.strictObject({
    inputType:z.enum(["number","money","percent","text","date","choice"]),
    units:z.array(z.string().min(1).max(20)).max(8),
    defaultUnit:z.string().max(20),
-   choices:z.array(z.strictObject({label:z.string().trim().min(1).max(80),value:z.string().min(1).max(100)})).max(12).optional(),
+   choices:z.array(z.strictObject({label:z.string().trim().min(1).max(80),value:z.string().min(1).max(100)})).max(12).nullable().optional(),
  })).max(6).optional(),
 }).superRefine((input,ctx)=>{
  // Choice-mode contracts remain strict while fill-mode accepts no choices.
