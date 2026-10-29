@@ -53,11 +53,11 @@ function isPeriod(value: string | undefined): value is Period {
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string; thread?: string; experiment?: string }> }) {
   const signedInUser = await requireOwnBusiness();
-  const requestedLocale = await getLocale();
+  const [requestedLocale, chatReadiness, {period:periodParam,thread:initialThread,experiment:initialExperiment}] = await Promise.all([
+    getLocale(), getSupervisorChatReadiness(Boolean(signedInUser)), searchParams,
+  ]);
   const locale = requestedLocale === "es" || requestedLocale === "ar" ? requestedLocale : "en";
-  const chatReadiness = await getSupervisorChatReadiness(Boolean(signedInUser));
   const cafeAccess=signedInUser ? await getCafeAccess(await getActiveBusinessId(signedInUser.id)) : null;
-  const { period: periodParam,thread:initialThread,experiment:initialExperiment } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
   // Match Money’s selected-period evidence; the default month snapshot cannot prove Today or Week ingredient coverage.
@@ -68,13 +68,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   // Money and Supervisor agree on known costs and their evidence. Home must not
   // bypass that canonical completeness gate when showing owner profit.
   const moneyVm = buildProfitAndCostsViewModel(snapshot, period);
-  const [t, tChat, tCommon] = await Promise.all([
-    getTranslations("Home"), getTranslations("SupervisorChat"), getTranslations("Common"),
+  const [t,tChat,tCommon,tAccess,tGoals,items,businessId]=await Promise.all([
+    getTranslations("Home"),getTranslations("SupervisorChat"),getTranslations("Common"),
+    getTranslations("FreeAccess"),getTranslations("Goals"),
+    getAttentionItems({period,locale,snapshot,menu}),
+    signedInUser?getActiveBusinessId(signedInUser.id):Promise.resolve(null),
   ]);
-  const tAccess=await getTranslations("FreeAccess");
-  const tGoals=await getTranslations("Goals");
-  const items=await getAttentionItems({period,locale,snapshot,menu});
-  const businessId=signedInUser?await getActiveBusinessId(signedInUser.id):null;
   const board=businessId&&identity&&signedInUser
     ?await readOperatingBoard(await createServerSupabaseClient(),{businessId,ownerUserId:signedInUser.id},identity.asOf):null;
   const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
