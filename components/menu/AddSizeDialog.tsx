@@ -18,6 +18,7 @@ export default function AddSizeDialog({
   siblingSizes,
   onDone,
   onClose,
+  currency,
 }: {
   baseName: string;
   category: MenuItemCategoryCode;
@@ -25,6 +26,7 @@ export default function AddSizeDialog({
   siblingSizes: SizeSibling[];
   onDone: (newItemId: string, copiedFromLabel: string | null) => void;
   onClose: () => void;
+  currency: string | null;
 }) {
   const t = useTranslations("ManageMenu");
   const [sizeLabel, setSizeLabel] = useState("");
@@ -95,7 +97,7 @@ export default function AddSizeDialog({
                   {t("copyRecipeFrom", { size: sibling.sizeLabel ?? sibling.name })}
                   {index === 0 && <span className="ms-1.5 text-xs font-semibold opacity-70">({t("recommended")})</span>}
                 </span>
-                <span className="shrink-0 font-semibold">{formatCents(sibling.priceCents)}</span>
+                <span className="shrink-0 font-semibold">{formatCents(sibling.priceCents, undefined, currency)}</span>
               </label>
             ))}
             <label className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm ${copyFrom === "" ? "border-good bg-good-tint text-good" : "border-line text-ink"}`}>
