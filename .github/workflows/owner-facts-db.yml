@@ -40,4 +40,3 @@ jobs:
         env:
           OWNER_FACTS_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/ownerfacts_test
         run: npx vitest run
-
