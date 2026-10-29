@@ -231,3 +231,38 @@ describe("latest covered sales window",()=>{
  });
 
 });
+describe("today's sales use the live reading until the closeout import is in",()=>{
+ const reading={provisional:true as const,businessDate:"2026-10-24",readAt:"2026-10-24T18:30:00.000Z",
+  netSalesCents:45_600,grossSalesCents:47_000,discountsCents:1_400,refundsCents:0,tipCents:3_000,
+  orders:52,openChecks:3,unparsedOrders:0,topItems:[],locationsRead:1,locationsFailed:0,truncated:false};
+ const withLive=(dates:string[],read?:AgentToolContext["readTodaySoFar"]):AgentToolContext=>
+  ({...context(dates),readTodaySoFar:read});
+ it("attaches the provisional live reading and its read time to get_sales and get_profit",async()=>{
+  const ctx=withLive(["2026-10-23"],async()=>({available:true,value:reading}));
+  for(const tool of ["get_sales","get_profit"]){
+   const r=await executeAgentTool(tool,{period:"today",ownerInputs:null},ctx);
+   expect(r).toMatchObject({todayImported:false,todaySoFar:{provisional:true,available:true,
+    businessDate:"2026-10-24",readAt:"2026-10-24T18:30:00.000Z",netSalesCents:45_600,orders:52,openChecks:3,missing:[]}});
+  }
+ });
+ it("does not read live once today is imported",async()=>{
+  let calls=0;
+  const r=await executeAgentTool("get_sales",{period:"today",ownerInputs:null},
+   withLive(["2026-10-24"],async()=>{calls++;return {available:true,value:reading};}));
+  expect(r.todayImported).toBe(true);
+  expect(r.todaySoFar).toBeUndefined();
+  expect(calls).toBe(0);
+ });
+ it("says why when the live read fails, and still answers",async()=>{
+  const r=await executeAgentTool("get_sales",{period:"today",ownerInputs:null},
+   withLive(["2026-10-23"],async()=>{throw new Error("toast down");}));
+  expect(r).toMatchObject({todayImported:false,lastFullDay:"2026-10-23",
+   todaySoFar:{provisional:true,available:false,missing:["todayLiveReadFailed"]}});
+ });
+ it("does not read live for a past period",async()=>{
+  let calls=0;
+  await executeAgentTool("get_sales",{period:{from:"2026-10-23",to:"2026-10-23"},ownerInputs:null},
+   withLive(["2026-10-23"],async()=>{calls++;return {available:true,value:reading};}));
+  expect(calls).toBe(0);
+ });
+});

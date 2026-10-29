@@ -105,7 +105,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
-  get_sales: "Read covered daily sales in a current calendar period.",
+  get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar live provisional reading is attached when today is not imported.",
   get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
 };
 const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
@@ -315,12 +315,12 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     if(slice.available&&hasPriorSalesChoice&&!replay)
       return {source:"profitability",period,agentId:"leo",
         missing:["sourceChoiceExpired"],needsOwnerChoice:false,
-        coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote};
+        coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar};
     const suppliedSales=ownerInputs?.netSalesCents!=null?
       ownerAmountForPeriod(ownerInputs.netSalesCents,ownerInputs.salesPeriod,period,ctx.asOf):null;
     const ownerSales=suppliedSales??(ownerInputs?.netSalesCents==null?replay?.ownerCents??null:null);
     if(!slice.available)return {source:"profitability",period,agentId:"leo",
-      coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,unit:"cents",ownerInputs:ownerInputs??null,
+      coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,unit:"cents",ownerInputs:ownerInputs??null,
       ownerReportedSalesCents:ownerInputs?.netSalesCents??null,
       ownerReportedSalesPeriod:ownerInputs?.salesPeriod??null,
       netSalesCents:suppliedSales,netSalesProvenance:suppliedSales!==null?"ownerProvided":null,
@@ -332,21 +332,21 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       moneyChoiceCandidates("sales",identity,recordedSales,ownerSales,ctx.locale):null;
     const selected=candidates?
       chosenMoneySource(ctx.resolveState,candidates)??(replay?.ownerCents===ownerSales?replay.source:null):null;
-    if(conflict&&selected===null)return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
+    if(conflict&&selected===null)return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,
       agentId:"leo",unit:"cents",ownerInputs:ownerInputs??null,
       ownerSalesConflict:{recordedCents:recordedSales,ownerCents:ownerSales},
       recordedNetSalesCents:recordedSales,ownerReportedSalesCents:ownerSales,
       netSalesCents:null,totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
       needsOwnerChoice:true,candidates,missing:[...slice.quality.missingInputs,"ownerChoiceRequired"],
       estimated:slice.quality.estimatedInputs,explain:[]};
-    if(conflict&&selected==="owner")return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
+    if(conflict&&selected==="owner")return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,
       agentId:"leo",unit:"cents",ownerInputs:ownerInputs??null,
       selectedMoneySource:"ownerProvided",ownerReportedSalesCents:ownerSales,
       recordedNetSalesCents:recordedSales,netSalesCents:ownerSales,netSalesProvenance:"ownerProvided",
       totalCostsCents:null,ownerProfitCents:null,operatingMargin:null,
       needsOwnerChoice:false,missing:[...slice.quality.missingInputs,"recordedProfitNotApplicable"],
       estimated:slice.quality.estimatedInputs,explain:[]};
-    return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,agentId:"leo",unit:"cents",
+    return {source:"profitability",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,agentId:"leo",unit:"cents",
       missing:[...slice.quality.missingInputs,
         ...(ownerInputs?.netSalesCents!=null&&suppliedSales===null?["ownerSalesPeriodMismatch"]:[])],
       ownerReportedSalesCents:ownerInputs?.netSalesCents??replay?.ownerCents??null,
@@ -367,8 +367,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name!=="get_sales")throw new ToolError("not_supported");
   const slice=await ctx.tools.getSalesTrend(period);
   const salesNotes=localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale);
-  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:salesNotes,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote};
-  return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,agentId:"alex",unit:"cents",
+  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:salesNotes,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar};
+  return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,agentId:"alex",unit:"cents",
     missing:slice.quality.missingInputs,dataNotes:salesNotes,netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
 }
