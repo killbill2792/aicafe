@@ -12,7 +12,7 @@ const labels:Record<string,keyof typeof en.OwnerQuestions>={
  cardSalesShare:"cardSalesShare",cardTransactionsShare:"cardTransactionsShare",
  cardFixedFee:"cardFixedFee",averageTicket:"averageTicket",processor:"processor",
  itemCost:"itemCost",hours:"hours",schedule:"schedule",generic:"generic",
- milkBase:"milkBase",milkTarget:"milkTarget",milkVolume:"milkVolume",milkBaseCost:"milkBaseCost",milkOatCost:"milkOatCost",milkTargetCost:"milkTargetCost"
+ milkBase:"milkBase",milkTarget:"milkTarget",milkNoSize:"milkNoSize",milkVolume:"milkVolume",milkBaseCost:"milkBaseCost",milkOatCost:"milkOatCost",milkTargetCost:"milkTargetCost"
 };
 export function ownerFactLabel(key:string,labelKey:string,locale:AgentLocale):string{
  const copy=copyByLocale[locale];
@@ -48,6 +48,14 @@ export function scopedOwnerQuestionKey(
  reason:AskReason,results:readonly AgentToolResult[],ownerText:string
 ):string{
  const tool=reason.tool??"";
+ if(catalogForMissing(reason.key).factKey==="unit_cost_cents"){
+  const identified=results.find(r=>r.source===tool&&
+   (typeof r.itemId==="string"||typeof r.itemName==="string"));
+  const key=itemCostFactKey(typeof identified?.itemId==="string"?identified.itemId:null,
+   typeof identified?.itemName==="string"?identified.itemName:null);
+  // Unresolved items must never receive a café-wide saved unit cost.
+  return key??genericQuestionKey("unresolved-item-cost:"+ownerText);
+ }
  const period=results.find(r=>r.source===tool)?.period;
  if(period&&/^\d{4}-\d{2}-\d{2}$/.test(period.from)&&
    /^\d{4}-\d{2}-\d{2}$/.test(period.to)&&
