@@ -3,7 +3,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {catalogForMissing} from "./catalog";
-import {savedValue,type SavedFact} from "./inject";
+import {savedValue,itemCostFactKey,type SavedFact} from "./inject";
 import type {AskReason} from "./needsAsk";
 import type {AgentToolResult,AgentLocale} from "@/lib/ai/agent/tools";
 const copyByLocale={en:en.OwnerQuestions,es:es.OwnerQuestions,ar:ar.OwnerQuestions};
