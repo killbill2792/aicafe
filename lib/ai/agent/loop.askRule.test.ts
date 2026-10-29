@@ -58,7 +58,8 @@ describe("main-loop mandatory owner question",()=>{
    ownerFactsReadFailed:true,provider:fixture([[say("No data."),completed]])});
   expect(turn.results.some(r=>r.source==="owner_facts"&&r.error==="owner_facts_read_failed")).toBe(true);
   expect(turn.results.some(r=>r.source==="ask_owner"&&r.kind==="facts")).toBe(true);
-  expect(turn.text).toContain("I couldn't read");
+  expect(turn.text).toBe("No data.");
+  expect(agentReplyPayload(turn).reply.blocks.some(block=>block.type==="clarify")).toBe(true);
  });
  it.each([["es","No tengo esa información."],["ar","لا توجد بيانات."]] as const)(
   "model refusal in %s is preserved",async(locale,reply)=>{
