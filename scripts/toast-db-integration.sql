@@ -981,6 +981,19 @@ BEGIN
  perform pg_temp.assert_true(has_function_privilege('authenticated',
   'public.toast_safe_business_label(text)','EXECUTE'),
   'authenticated invoker can execute the redacting dining label helper');
+ -- A second capture of the same business date (manual run + scheduled capture)
+ -- must not double-count: views read only the newest successful capture.
+ insert into public.toast_raw_samples(business_id,restaurant_guid,endpoint,business_date,
+ fetched_at,http_status,item_count,sample,field_paths,capture_id) values
+ (b,r,'cashmgmt/v1/entries','2026-10-26',clock_timestamp()+interval '1 minute',200,1,
+  '[{"guid":"entry-a","type":"CASH_IN","amount":12.50,
+     "cashDrawer":{"guid":"drawer-a"},"employee1":{"guid":"employee-a"}}]'::jsonb,
+  ARRAY['type','amount'],gen_random_uuid()),
+ (b,r,'cashmgmt/v1/entries','2026-10-26',clock_timestamp()+interval '2 minute',429,0,
+  '{}'::jsonb,ARRAY[]::text[],gen_random_uuid());
+ perform pg_temp.assert_true((select sum(amount_cents) from public.cv_cash
+  where business_id=b and business_date='2026-10-26' and entry_type='CASH_IN')=1250,
+  'a re-captured cash entry is counted once and a newer failed capture is ignored');
 END $optional_views$;
 
 ROLLBACK;
