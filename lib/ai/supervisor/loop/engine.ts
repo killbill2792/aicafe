@@ -27,8 +27,8 @@ export type LoopSimulation={
 export type LoopCommitResult=
   |{status:"requires_manual_action";instructionKey:string;instructions:Record<string,string>}
   |{status:"verified";evidenceSource:string};
-/** The monitored days a report covers, first to last (inclusive). */
-export type LoopWindow={start:string;through:string};
+/** The monitored days a report covers, first to last (inclusive), and the proposal it is for. */
+export type LoopWindow={start:string;through:string;proposalId?:string};
 export type LoopSample={businessDate:string;observation:Record<string,unknown>;source:string};
 export type LoopReport={status:"in_progress"|"complete"|"insufficient_evidence";
   result:Record<string,unknown>;recommendation:"keep"|"revert"|"adjust";
@@ -246,7 +246,7 @@ export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
     .filter(x=>x.businessDate>=p.monitoringStartDate!&&x.businessDate<=end);
   // The days the report covers: every one counts, sampled or not.
   const generated=await def.report(reportScope,effect,samples,businessDate>=end,
-    {start:p.monitoringStartDate,through:businessDate<end?businessDate:end});
+    {start:p.monitoringStartDate,through:businessDate<end?businessDate:end,proposalId:p.id});
   // "In progress" is a window property, not evidence of a future zero-sales day.
   // At the end, missing actual-coverage observations become a durable
   // insufficient-evidence report rather than an endlessly open experiment.

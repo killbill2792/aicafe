@@ -5,6 +5,9 @@ import {monitorLoop,midRunDay,utcDateOffset,type LoopProposal,type OwnerLoopScop
   from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
+import {postGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
+import {goalEffectSchema,checkinDue} from "@/lib/calc/goals/goalSpec";
 const sameWeekday=(a:string,b:string)=>new Date(a+"T12:00:00Z").getUTCDay()===new Date(b+"T12:00:00Z").getUTCDay();
 /** A stored day is complete when every reading in it is certified: a price
  * test day has actual coverage, a goal day full coverage on every metric. */
@@ -71,6 +74,13 @@ export async function GET(request:Request){
       const report=await monitorLoop(scope,supervisorLoopRegistry,repo,p,day);
       sampled++;
       if(report)reported++;
+   }
+   // Goal check-ins: today's question, once, on its cadence day. A failed
+   // post never blocks the goal's numbers; the next run retries it.
+   if(p.capabilityId===goalCapabilityId){
+     const goal=goalEffectSchema.safeParse(p.canonicalEffectPayload);
+     if(goal.success&&checkinDue(goal.data,start,today))
+       await postGoalCheckin(db,{...scope},p.id,goal.data,today).catch(()=>{failed++;});
    }
    // One mid-run update once the first half has passed (sent at most once:
    // the message id is stable per experiment).

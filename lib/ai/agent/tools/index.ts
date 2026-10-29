@@ -174,6 +174,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);
   if(name==="propose_goal")return goalTools.propose_goal.execute(raw,ctx);
   if(name==="get_goal_status")return goalTools.get_goal_status.execute(raw,ctx);
+  if(name==="record_checkin")return goalTools.record_checkin.execute(raw,ctx);
   if(Object.hasOwn(staffProposalTools,name))return staffProposalTools[name as keyof typeof staffProposalTools].execute(raw,ctx);
   if(name==="get_attention_items")return attentionTools.get_attention_items.execute(raw,ctx);
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);

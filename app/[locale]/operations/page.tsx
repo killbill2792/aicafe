@@ -106,7 +106,7 @@ function taskHref(task: OperatingTask): string {
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
-  if ((task.kind === "daily_brief" || task.kind === "goal_report") && typeof task.payload.threadId === "string")
+  if ((task.kind === "daily_brief" || task.kind === "goal_report" || task.kind === "goal_checkin") && typeof task.payload.threadId === "string")
     return "/?thread=" + encodeURIComponent(task.payload.threadId);
   return "/more/uploads/ingredients";
 }
@@ -122,10 +122,11 @@ function TaskList({ tasks, empty, names, t, tExperiment, tBrief, tGoals, categor
     const direction = price ? priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents)) : null;
     const brief = task.kind === "daily_brief";
     const goalReport = task.kind === "goal_report";
+    const goalCheckin = task.kind === "goal_checkin";
     const goalTitle = String(task.payload.goalTitle ?? task.payload.itemName ?? "");
-    const title = goalReport ? tGoals(task.payload.midRun === true ? "taskMidRunTitle" : "taskTitle", { title: goalTitle }) : brief ? tBrief("taskTitle") : experiment ? tExperiment(midRun?"midRunTask":"reportTask",{item:String(task.payload.itemName??"")}) : price ? t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }) : t("mayaWatching");
-    const detail = goalReport || brief ? String(task.payload.text ?? "") : experiment ? tExperiment(midRun?"midRunDetail":"reportDetail") : price ? t("priceTaskReason") : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("supplySignal") : t("staffTaskReason");
-    const action = goalReport ? tGoals("taskAction") : brief ? tBrief("taskAction") : experiment ? tExperiment("reportAction") : price ? t("reviewItem", { item: String(task.payload.itemName).split(" · ")[0] }) : task.kind === "staff_coverage" ? t("openStaff") : task.kind === "data_quality" ? t("openBills") : t("openIngredientCosts");
+    const title = goalCheckin ? tGoals("taskCheckinTitle", { question: String(task.payload.question ?? "") }) : goalReport ? tGoals(task.payload.midRun === true ? "taskMidRunTitle" : "taskTitle", { title: goalTitle }) : brief ? tBrief("taskTitle") : experiment ? tExperiment(midRun?"midRunTask":"reportTask",{item:String(task.payload.itemName??"")}) : price ? t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }) : t("mayaWatching");
+    const detail = goalCheckin ? goalTitle : goalReport || brief ? String(task.payload.text ?? "") : experiment ? tExperiment(midRun?"midRunDetail":"reportDetail") : price ? t("priceTaskReason") : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("supplySignal") : t("staffTaskReason");
+    const action = goalCheckin ? tGoals("taskCheckinAction") : goalReport ? tGoals("taskAction") : brief ? tBrief("taskAction") : experiment ? tExperiment("reportAction") : price ? t("reviewItem", { item: String(task.payload.itemName).split(" · ")[0] }) : task.kind === "staff_coverage" ? t("openStaff") : task.kind === "data_quality" ? t("openBills") : t("openIngredientCosts");
     const selected=task.id===selectedTaskId;
     return <article key={task.id} id={selected?"selected-task":undefined} tabIndex={selected?-1:undefined}
       data-selected-task={selected?"true":undefined}
@@ -138,6 +139,8 @@ function TaskList({ tasks, empty, names, t, tExperiment, tBrief, tGoals, categor
           formatCents(task.payload.observedRevenueCents):tExperiment("notAvailable")})}</p>
         <p>{tExperiment("reportDifference",{value:typeof task.payload.realizedRevenueDifferenceCents==="number"?
           formatCents(task.payload.realizedRevenueDifferenceCents):tExperiment("notAvailable")})}</p>
+        {task.payload.ordersGuardrail==="broken"&&typeof task.payload.ordersChangePct==="number"&&
+          <p className="font-semibold text-ink">{tExperiment("guardrailTask",{change:Math.abs(task.payload.ordersChangePct)})}</p>}
         {!midRun&&<p className="font-semibold">{tExperiment("recommendation",{choice:tExperiment(
           task.payload.recommendation==="keep"?"keep":task.payload.recommendation==="revert"?"revert":"adjust")})}</p>}
         {!midRun&&<p className="text-ink-muted">{tExperiment(task.payload.outcomeStatus==="complete"?"reportCompletedCaveat":"reportUncertain")}</p>}

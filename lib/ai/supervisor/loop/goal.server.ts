@@ -12,6 +12,9 @@ import {GOAL_METRICS,GOAL_MIN_DAYS,GOAL_MAX_DAYS,BASELINE_DAYS,MAX_GUARDRAILS,IT
   type GoalEffect,type GoalObservation} from "@/lib/calc/goals/goalSpec";
 import {goalTitle,goalPreview,goalMidRunText,goalReportText} from "@/lib/calc/goals/goalText";
 import {registerLoopCapability} from "./engine";
+import {readGoalCheckins} from "./goalCheckins.server";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {tallyCheckins,goalCheckinSchema} from "@/lib/calc/goals/goalSpec";
 
 export const goalCapabilityId="leo.goal.v1";
 const metric=z.enum(GOAL_METRICS);
@@ -21,6 +24,7 @@ export const goalInputSchema=z.strictObject({
   days:z.number().int().min(GOAL_MIN_DAYS).max(GOAL_MAX_DAYS),
   guardrails:z.array(z.strictObject({metric,itemId:z.uuid().nullable(),
     direction:z.enum(["not_below","not_above"]),percent:z.number().finite().positive().max(100)})).max(MAX_GUARDRAILS),
+  checkin:goalCheckinSchema.nullable().optional(),
 }).refine(v=>v.targetKind!=="percent"||v.target<=500,"A percent target is at most 500%");
 export type GoalInput=z.infer<typeof goalInputSchema>;
 
@@ -70,6 +74,7 @@ export const goalCapability=registerLoopCapability({
     const effect=goalEffectSchema.parse({
       title:goalTitle(metrics[0],scope.locale,currency),metrics,days:input.days,proposedOn:today,
       baselineFrom:addDays(today,-BASELINE_DAYS),baselineTo:addDays(today,-1),currency,
+      ...(input.checkin?{checkin:input.checkin}:{}),
     });
     return {effect:{...effect},baseline:{source:"metric_catalog",preview:goalPreview(effect,scope.locale)},
       monitorSpec:{durationDays:input.days,metricScope:"goal:"+metrics[0].metricKey+(metrics[0].itemId?":"+metrics[0].itemId:"")}};
@@ -91,7 +96,10 @@ export const goalCapability=registerLoopCapability({
   report:async(scope,effect,samples,windowComplete,window)=>{
     const outcome=scoreGoal(effect,samples,windowComplete,window);
     // Messages are capped at 1200 characters; the caveat sentence is the last part.
-    const full=outcome.status==="in_progress"?goalMidRunText(effect,outcome,scope.locale):goalReportText(effect,outcome,scope.locale);
+    // Check-in answers are qualitative: reported next to the numbers, never scored.
+    const checkins=effect.checkin&&outcome.status!=="in_progress"&&window?.proposalId
+      ?await readGoalCheckins(createAdminSupabaseClient(),scope.businessId,window.proposalId).then(tallyCheckins).catch(()=>undefined):undefined;
+    const full=outcome.status==="in_progress"?goalMidRunText(effect,outcome,scope.locale):goalReportText(effect,outcome,scope.locale,checkins);
     const text=full.length<=1200?full:full.slice(0,1199)+"…";
     return {status:outcome.status,recommendation:outcome.recommendation,source:"metric_catalog",
       result:{title:effect.title,evaluationStatus:outcome.evaluation.status,asOf:outcome.asOf,

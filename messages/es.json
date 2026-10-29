@@ -2454,6 +2454,10 @@
     "statusInsufficient": "Faltan datos diarios de ventas verificados",
     "midRunUpdate": "Actualización a mitad de prueba de {item}: {covered} de {days} días contados a {price}. {units} vendidos, ventas netas {revenue}, {difference} frente al precio anterior con el mismo volumen. Lectura temprana, no final. El informe completo llega después del día {days}.",
     "midRunNoData": "Actualización a mitad de prueba de {item}: todavía no hay días con ventas verificadas a {price}. Seguiré revisando. El informe completo llega después del día {days}.",
+    "guardrailBroken": "Atención: los pedidos totales del café bajaron un {change}% frente a los mismos días antes de la prueba ({now} frente a {before}; {counted} de {total} días comparados).",
+    "guardrailOk": "Los pedidos totales del café se mantuvieron: {change}% frente a los mismos días antes de la prueba ({counted} de {total} días comparados).",
+    "guardrailUnknown": "Pedidos totales del café sin revisar: ningún día tenía pedidos verificados para comparar con las semanas anteriores.",
+    "guardrailTask": "Los pedidos totales del café bajaron un {change}% frente a antes de la prueba.",
     "midRunTask": "Actualización a mitad de prueba de {item}",
     "midRunDetail": "Lectura temprana mientras la prueba sigue. No es final; el informe completo llega al terminar."
   },
@@ -2793,7 +2797,8 @@
       "propose_price_change": "Preparé un cambio de precio para que lo apruebes",
       "remember_cafe_fact": "Preparé una nota para que la apruebes",
       "propose_goal": "Preparé tu meta",
-      "get_goal_status": "Revisé tus metas"
+      "get_goal_status": "Revisé tus metas",
+      "record_checkin": "Guardé tu respuesta"
     },
     "agents": {
       "supervisor": "Revisé los datos de tu café",
@@ -3622,6 +3627,22 @@
     "taskTitle": "Informe de meta: {title}",
     "taskMidRunTitle": "Actualización a mitad: {title}",
     "taskAction": "Abrir en el chat",
-    "cardTracking": "En seguimiento"
+    "cardTracking": "En seguimiento",
+    "checkinOwner": "Seguimiento de {title}: {question} Responde sí, algo o no, y añade una nota si quieres.",
+    "checkinStaff": "Seguimiento de {title}. Pregunta a tu equipo (copia esto): \"{question}\" Luego dime sí, algo o no, con una nota si quieres.",
+    "checkinSummary": "Seguimientos: {yes} sí, {somewhat} algo, {no} no ({answered} de {asked} respondidos).",
+    "previewCheckin": "Seguimiento",
+    "previewCheckinValue": "{question} ({cadence}, {audience})",
+    "cadence": {
+      "daily": "diario",
+      "every_3_days": "cada 3 días",
+      "weekly": "semanal"
+    },
+    "audience": {
+      "owner": "respondes tú",
+      "staff": "pregunta a tu equipo"
+    },
+    "taskCheckinTitle": "Seguimiento: {question}",
+    "taskCheckinAction": "Responder en el chat"
   }
 }

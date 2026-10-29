@@ -2454,6 +2454,10 @@
     "statusInsufficient": "نحتاج إلى بيانات مبيعات يومية موثقة إضافية",
     "midRunUpdate": "تحديث منتصف التجربة لـ {item}: تم احتساب {covered} من {days} أيام بسعر {price}. بيع {units}، وصافي المبيعات {revenue}، والفرق {difference} مقارنة بالسعر القديم بنفس الكمية. قراءة مبكرة وليست نهائية. يصل التقرير الكامل بعد اليوم {days}.",
     "midRunNoData": "تحديث منتصف التجربة لـ {item}: لا توجد أيام مبيعات مؤكدة بعد بسعر {price}. سأواصل المتابعة. يصل التقرير الكامل بعد اليوم {days}.",
+    "guardrailBroken": "انتبه: انخفض إجمالي طلبات المقهى بنسبة {change}% مقارنة بنفس أيام الأسبوع قبل التجربة ({now} مقابل {before}؛ تمت مقارنة {counted} من {total} أيام).",
+    "guardrailOk": "حافظ إجمالي طلبات المقهى على مستواه: {change}% مقارنة بنفس أيام الأسبوع قبل التجربة (تمت مقارنة {counted} من {total} أيام).",
+    "guardrailUnknown": "لم يتم فحص إجمالي طلبات المقهى: لا يوجد يوم بطلبات موثقة للمقارنة مع الأسابيع السابقة.",
+    "guardrailTask": "انخفض إجمالي طلبات المقهى بنسبة {change}% مقارنة بما قبل التجربة.",
     "midRunTask": "تحديث منتصف التجربة لـ {item}",
     "midRunDetail": "قراءة مبكرة أثناء التجربة. ليست نهائية؛ يصل التقرير الكامل في النهاية."
   },
@@ -2793,7 +2797,8 @@
       "propose_price_change": "جهّزتُ تغيير سعر لتوافق عليه",
       "remember_cafe_fact": "جهّزتُ ملاحظة لتوافق عليها",
       "propose_goal": "أعددت هدفك",
-      "get_goal_status": "راجعت أهدافك"
+      "get_goal_status": "راجعت أهدافك",
+      "record_checkin": "حفظت إجابتك"
     },
     "agents": {
       "supervisor": "راجعتُ بيانات مقهاك",
@@ -3622,6 +3627,22 @@
     "taskTitle": "تقرير الهدف: {title}",
     "taskMidRunTitle": "تحديث المنتصف: {title}",
     "taskAction": "افتح في المحادثة",
-    "cardTracking": "قيد المتابعة"
+    "cardTracking": "قيد المتابعة",
+    "checkinOwner": "متابعة الهدف {title}: {question} أجب بنعم أو إلى حد ما أو لا، وأضف ملاحظة إن أردت.",
+    "checkinStaff": "متابعة الهدف {title}. اسأل فريقك (انسخ هذا): \"{question}\" ثم أخبرني بنعم أو إلى حد ما أو لا، مع ملاحظة إن أردت.",
+    "checkinSummary": "المتابعات: {yes} نعم، {somewhat} إلى حد ما، {no} لا (تمت الإجابة على {answered} من {asked}).",
+    "previewCheckin": "متابعة",
+    "previewCheckinValue": "{question} ({cadence}، {audience})",
+    "cadence": {
+      "daily": "يوميًا",
+      "every_3_days": "كل 3 أيام",
+      "weekly": "أسبوعيًا"
+    },
+    "audience": {
+      "owner": "تجيب أنت",
+      "staff": "اسأل فريقك"
+    },
+    "taskCheckinTitle": "متابعة: {question}",
+    "taskCheckinAction": "أجب في المحادثة"
   }
 }

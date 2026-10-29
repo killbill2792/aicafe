@@ -18,11 +18,20 @@ export const goalMetricSchema=z.strictObject({
   target:z.number().finite(),
 }).refine(m=>ITEM_METRICS.has(m.metricKey)===(m.itemId!==null),"Item metrics need an item, café metrics none");
 export type GoalMetricSpec=z.infer<typeof goalMetricSchema>;
+/** A question the operator asks during the goal, for what the numbers cannot show. */
+export const goalCheckinSchema=z.strictObject({
+  question:z.string().trim().min(3).max(200),cadence:z.enum(["daily","every_3_days","weekly"]),
+  audience:z.enum(["owner","staff"]),
+});
+export type GoalCheckin=z.infer<typeof goalCheckinSchema>;
+export const CHECKIN_ANSWERS=["yes","somewhat","no"] as const;
+export type CheckinAnswer=typeof CHECKIN_ANSWERS[number];
 export const goalEffectSchema=z.strictObject({
   title:z.string().min(1).max(200),metrics:z.array(goalMetricSchema).min(1).max(1+MAX_GUARDRAILS),
   days:z.number().int().min(GOAL_MIN_DAYS).max(GOAL_MAX_DAYS),
   proposedOn:z.iso.date(),baselineFrom:z.iso.date(),baselineTo:z.iso.date(),
   currency:z.string().regex(/^[A-Z]{3}$/).nullable(),
+  checkin:goalCheckinSchema.nullable().optional(),
 }).refine(e=>e.metrics.filter(m=>m.role==="primary").length===1,"Exactly one primary metric");
 export type GoalEffect=z.infer<typeof goalEffectSchema>;
 
@@ -102,4 +111,19 @@ export function scoreGoal(effect:GoalEffect,samples:ReadonlyArray<{businessDate:
   const status=!windowComplete?"in_progress":evaluation.status==="insufficient_data"?"insufficient_evidence":"complete";
   const r=evaluation.recommendation;
   return {evaluation,asOf,status,recommendation:r==="keep"||r==="revert"?r:"adjust"};
+}
+
+/** Check-in days, counted from the first goal day: daily, every third day, or weekly. */
+export function checkinDue(effect:GoalEffect,start:string,date:string):boolean{
+  if(!effect.checkin)return false;
+  const day=Math.round((Date.parse(date+"T12:00:00Z")-Date.parse(start+"T12:00:00Z"))/86_400_000);
+  if(day<0||day>=effect.days)return false;
+  const step=effect.checkin.cadence==="daily"?1:effect.checkin.cadence==="every_3_days"?3:7;
+  return day%step===0;
+}
+export type CheckinTally={asked:number;answered:number;yes:number;somewhat:number;no:number};
+export function tallyCheckins(rows:ReadonlyArray<{answer:CheckinAnswer|null}>):CheckinTally{
+  const t={asked:rows.length,answered:0,yes:0,somewhat:0,no:0};
+  for(const r of rows)if(r.answer){t.answered++;t[r.answer]++;}
+  return t;
 }
