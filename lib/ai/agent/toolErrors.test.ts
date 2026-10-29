@@ -11,6 +11,11 @@ describe("safe tool failures",()=>{
   expect(failed.reason).not.toContain("private database token");
   expect(failed.reason).not.toContain("Something went wrong");
  });
+ it("keeps owner-facing approval errors for existing proposal cards",()=>{
+   expect(new ToolError("unauthorized").message).toContain("signed in");
+   expect(new ToolError("not_found").message).toContain("could not be found");
+   expect(new ToolError("scope_mismatch").message).toContain("does not match");
+ });
  it.each(toolErrorCodes)("preserves known code %s",code=>{
   const detail=safeToolError(new ToolError(code));
   expect(detail.code).toBe(code);expect(detail.reason.length).toBeGreaterThan(10);
