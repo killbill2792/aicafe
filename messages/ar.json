@@ -216,6 +216,11 @@
     "more": "المزيد"
   },
   "Common": {
+    "basedOnDays": "استنادًا إلى {days} أيام من المبيعات",
+    "partialPeriod": "مقارنة بين فترتين جزئيتين؛ تُفسَّر بحذر",
+    "lowConfidence": "ثقة منخفضة — أضف المزيد من بيانات المبيعات",
+    "beforeAfterDays": "استنادًا إلى {before}/{after} أيام قبل التغيير وبعده",
+    "basedOnCompetitors": "استنادًا إلى {count} منافسين قريبين",
     "periodSwitchLabel": "الفترة الزمنية",
     "today": "اليوم",
     "week": "الأسبوع",
