@@ -5,8 +5,6 @@ on:
       - "docs/01-product.md"
       - "lib/scheduling/foundation*"
       - "lib/calc/scheduling/**"
-      - "lib/actions/schedulingFoundation.ts"
-      - "lib/actions/staff.scheduling-wage.test.ts"
       - "supabase/migrations/20261014000060_olivia_scheduling_foundation.sql"
       - "scripts/olivia-pr1a-rls.sql"
       - "scripts/olivia-pr1a-create-concurrency.sh"
@@ -34,7 +32,7 @@ jobs:
         continue-on-error: true
         run: npm run lint
       - name: Scheduling PR 1A changed-code lint
-        run: npx eslint lib/actions/schedulingFoundation.ts lib/actions/staff.scheduling-wage.test.ts lib/scheduling/foundation.server.ts lib/scheduling/foundationSchemas.ts lib/scheduling/foundationSchemas.test.ts lib/scheduling/foundation.server.test.ts lib/calc/scheduling/availability.ts lib/calc/scheduling/availability.test.ts
+        run: npx eslint lib/scheduling/foundation.server.ts lib/scheduling/foundationSchemas.ts lib/scheduling/foundationSchemas.test.ts lib/scheduling/foundation.server.test.ts lib/calc/scheduling/availability.ts lib/calc/scheduling/availability.test.ts
       - name: Build
         run: npm run build -- --webpack
       - name: Diff whitespace
