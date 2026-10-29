@@ -106,6 +106,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
 
   return (
     <div className="flex flex-col gap-3.5">
+      {!snapshot.business.currency&&<p role="note" className="mx-1 text-sm text-ink-muted">{tCommon("currencyNotSet")}</p>}
       {coverageNote && <p className="mx-1 text-sm text-ink-muted">{coverageNote}</p>}
 
       <section className="flex flex-col gap-3.5 rounded-card-lg bg-card p-[18px]">
