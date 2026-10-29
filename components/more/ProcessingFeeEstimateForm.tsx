@@ -58,6 +58,7 @@ type Labels = {
   saved: string;
   coverageTitle: string;
   coverageActual: string;
+  currencyNotSet: string;
   coverageEstimated: string;
   coverageMissing: string;
   coverageSalesDays: string;
@@ -363,6 +364,7 @@ export default function ProcessingFeeEstimateForm({
       <section className="rounded-card-lg bg-good-tint p-4 text-sm leading-snug text-ink">
         {labels.assumptionBanner}
       </section>
+      {!currencyCode && <p role="status" className="rounded-xl border border-line bg-surface2 p-3 text-sm text-ink">{labels.currencyNotSet}</p>}
 
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
         <div>

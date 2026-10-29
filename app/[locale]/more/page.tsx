@@ -41,13 +41,16 @@ function MoreGroup({ title, children }: { title: string; children: React.ReactNo
 
 export default async function MorePage() {
   const user = await requireUser();
-  const [cookieStore, t, locale, evidence] = await Promise.all([
-    cookies(), getTranslations("More"), getLocale(), getMoreBadgeInputs(user?.id),
+  const [cookieStore, t, locale, evidence, tCommon] = await Promise.all([
+    cookies(), getTranslations("More"), getLocale(), getMoreBadgeInputs(user?.id), getTranslations("Common"),
   ]);
   const badges = buildMoreBadges(evidence);
   const number = new Intl.NumberFormat(locale);
   const amount = badges.monthlyBills === null ? null :
-    formatCafeCurrency(badges.monthlyBills.amountCents, locale, evidence.currency).text;
+    (() => {
+      const f = formatCafeCurrency(badges.monthlyBills.amountCents, locale, evidence.currency);
+      return f.currencyMissing ? f.text + " (" + tCommon("currencyNotSet") + ")" : f.text;
+    })();
   const hoursBadge: FixBadge | undefined = badges.hoursNotSet
     ? { label: t("hoursNotSet"), href: "/more/cafe-profile?focus=hours", warning: true } : undefined;
   const toastCheck=await getTranslations("ToastConnect");

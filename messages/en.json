@@ -230,7 +230,8 @@
     "next": "Next",
     "noSalesToday": "No sales recorded for today yet.",
     "salesCoverageWeek": "Sales data available for {actual} of {expected} days this week.",
-    "salesCoverageMonth": "Sales data available for {actual} of {expected} days this month."
+    "salesCoverageMonth": "Sales data available for {actual} of {expected} days this month.",
+    "currencyNotSet": "currency not set — add it in Café profile"
   },
   "AddCost": {
     "manualSaveError": "Could not save this cost. Please try again.",

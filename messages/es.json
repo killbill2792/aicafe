@@ -230,7 +230,8 @@
     "next": "Siguiente",
     "noSalesToday": "Todavía no hay ventas registradas hoy.",
     "salesCoverageWeek": "Hay ventas registradas para {actual} de {expected} días esta semana.",
-    "salesCoverageMonth": "Hay ventas registradas para {actual} de {expected} días este mes."
+    "salesCoverageMonth": "Hay ventas registradas para {actual} de {expected} días este mes.",
+    "currencyNotSet": "moneda sin configurar — agrégala en Perfil del café"
   },
   "AddCost": {
     "manualSaveError": "No se pudo guardar este gasto. Inténtalo de nuevo.",
