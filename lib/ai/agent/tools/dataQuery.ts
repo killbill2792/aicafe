@@ -6,6 +6,7 @@ import {canonicalDictionary,canonicalViewNames,
  isCanonicalColumn,type CanonicalView} from "@/lib/data/canonical/dictionary";
 
 export type DataQueryContext={db:SupabaseClient;businessId:string};
+const DEFAULT_ROWS=50,MAX_ROWS=100;
 const atom=z.union([z.string().max(256),z.number().finite(),z.boolean()]);
 const filter=z.strictObject({column:z.string().max(100),
  op:z.enum(["=","!=","<","<=",">",">=","in","between","ilike"]),
@@ -21,7 +22,9 @@ export const dataQuerySchema=z.strictObject({
  date_from:z.iso.date(),date_to:z.iso.date(),
  order_by:z.strictObject({column:z.string().max(100),
    direction:z.enum(["asc","desc"])}).nullable(),
- limit:z.number().int().min(1).max(1000).nullable()
+ // A tool result must stay compact (AGENTS.md: about 1.5k tokens). Ask for totals
+ // with group_by/metrics instead of paging through raw rows.
+ limit:z.number().int().min(1).max(MAX_ROWS).nullable()
 });
 const empty=(code:string)=>({source:"canonical_data",period:null,
  missing:[code],empty:true,error:code,rows:[],rowCount:0,truncated:false,sourceMix:{}});
@@ -44,7 +47,7 @@ export const dataQueryTools={
  },
  query_data:{
   agentId:"alex" as const,schema:dataQuerySchema,
-  description:"Read and aggregate ONLY allowlisted canonical views through a café-scoped, RLS-invoker RPC. Supply dates and null for omitted filters/grouping.",
+  description:"Read and aggregate ONLY allowlisted canonical views through a café-scoped, RLS-invoker RPC. Supply dates and null for omitted filters/grouping. Returns at most 100 rows (50 by default): prefer group_by and metrics for totals.",
   execute:async(raw:unknown,ctx:DataQueryContext)=>{
    const parsed=dataQuerySchema.safeParse(raw);
    if(!parsed.success)return empty("invalid_query");
@@ -65,7 +68,7 @@ export const dataQueryTools={
    if(!(p.filters?.length)&&!(p.group_by?.length)&&!(p.metrics?.length)&&!p.order_by){
     try{
      const result=await readCanonicalView(ctx.db,ctx.businessId,p.view,
-      {dateFrom:p.date_from,dateTo:p.date_to},p.limit??200);
+      {dateFrom:p.date_from,dateTo:p.date_to},p.limit??DEFAULT_ROWS);
      if(result.error)return empty(result.error);
      const rows=result.rows.map(row=>p.columns?.length?
       Object.fromEntries(p.columns.map(column=>[column,row[column]??null])):row);
@@ -90,7 +93,7 @@ export const dataQueryTools={
      p_business_id:ctx.businessId,p_view:p.view,p_columns:p.columns,
      p_filters:p.filters??[],p_group_by:p.group_by??[],
      p_metrics:p.metrics??[],p_date_from:p.date_from,p_date_to:p.date_to,
-     p_order_by:p.order_by,p_limit:p.limit??200
+     p_order_by:p.order_by,p_limit:p.limit??DEFAULT_ROWS
     });
     if(error)return empty("source_read_failed");
     const result=data as {rows?:unknown[];rowCount?:number;truncated?:boolean;
