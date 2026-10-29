@@ -39,7 +39,7 @@ export function achievableWeekdayBaselineCoverage(
 const weekday = (s:string)=>new Date(s+"T12:00:00Z").getUTCDay();
 const average = (nums:number[])=>nums.reduce((a,b)=>a+b,0)/nums.length;
 /** Match every test day to the closest covered baseline of the same weekday. */
-export function evaluateInitiative(
+export function evaluateGoal(
   metrics:GoalMetric[],asOf:string,endsOn:string,minCoverage=0.8,kind:"goal"|"experiment"="experiment",
 ):Evaluation {
   const results:Evaluation["results"]={};

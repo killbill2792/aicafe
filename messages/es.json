@@ -2471,26 +2471,6 @@
     "days": "Ventas diarias",
     "missing": "Datos faltantes"
   },
-  "Initiatives": {
-    "checkinDefault": "Comparte el resultado.",
-    "checkin": "Revisión de {title} del {date}.",
-    "evaluation": "Progreso de {title} al {date}:",
-    "status": {
-      "on_track": "Va bien",
-      "off_track": "Necesita atención",
-      "met": "Objetivo alcanzado",
-      "missed": "Objetivo no alcanzado",
-      "insufficient_data": "No hay suficientes datos fiables"
-    },
-    "recommendation": {
-      "keep": "Seguir observando",
-      "revert": "Considera revertir el cambio",
-      "adjust": "Revisar y ajustar",
-      "extend": "Considera ampliar el plazo",
-      "none": "Se necesitan más datos"
-    },
-    "confirmChange": "¿Hiciste el cambio el {date}?"
-  },
   "Ui": {
     "theme": "Tema",
     "themeDescription": "Elige cómo se ve tu cafetería.",
@@ -2811,9 +2791,6 @@
       "draft_week_schedule": "Preparé un horario semanal",
       "suggest_new_item_price": "Calculé un precio para el nuevo producto",
       "propose_price_change": "Preparé un cambio de precio para que lo apruebes",
-      "get_initiatives": "Revisé tus planes",
-      "get_initiative_status": "Revisé cómo va tu plan",
-      "record_checkin": "Anoté tu seguimiento",
       "remember_cafe_fact": "Preparé una nota para que la apruebes"
     },
     "agents": {

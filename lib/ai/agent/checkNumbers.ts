@@ -27,28 +27,28 @@ const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalU
 const trustedCountKey=(key:string)=>COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
   COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,""));
 
-/** Initiative detail has generic "current / baseline / target / value" fields.
+/** Goal detail has generic "current / baseline / target / value" fields.
  * They are not evidence until their metric identity, catalog unit and
  * completeness are validated. Never scan arbitrary objects for numeric facts.
  */
-function appendInitiativeNumericEvidence(
+function appendGoalNumericEvidence(
   result:AgentToolResult,
   values:NumericEvidence["values"],invalidatedKeys:string[],
 ):void {
-  if(result.source!=="owner_initiatives"||!result.metricDetail||
+  if(result.source!=="goals"||!result.metricDetail||
     typeof result.metricDetail!=="object"||Array.isArray(result.metricDetail)||
-    !result.initiative||typeof result.initiative!=="object"||
-    Array.isArray(result.initiative))return;
+    !result.goal||typeof result.goal!=="object"||
+    Array.isArray(result.goal))return;
   const detail=result.metricDetail as Record<string,unknown>;
-  const initiative=result.initiative as Record<string,unknown>;
+  const goal=result.goal as Record<string,unknown>;
   const keyParsed=metricKeySchema.safeParse(detail.metricKey);
   if(!keyParsed.success||detail.source!=="computed"||
-    typeof initiative.id!=="string"||typeof detail.id!=="string"||
+    typeof goal.id!=="string"||typeof detail.id!=="string"||
     !detail.params||typeof detail.params!=="object"||
     !metricCatalog[keyParsed.data].paramsSchema.safeParse(detail.params).success)return;
   const unit=metricCatalog[keyParsed.data].unit;
   if(detail.unit!==unit||unit==="microcents_per_base_unit")return;
-  const metricRoot="initiative:"+initiative.id+"/metric:"+detail.id+"/key:"+keyParsed.data+"/";
+  const metricRoot="goal:"+goal.id+"/metric:"+detail.id+"/key:"+keyParsed.data+"/";
   // Relative improvement targets are themselves percentages, not an
   // implicit dollar/count threshold. Treat the owner's approved spec as
   // typed percentage evidence, separate from the computed test target.
@@ -181,7 +181,7 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
         if(observed){observed.provenance="estimate";observed.detail=detail;}
       }
     }
-    appendInitiativeNumericEvidence(r,values,invalidatedKeys);
+    appendGoalNumericEvidence(r,values,invalidatedKeys);
     const times=[...observedHours([r]),...observedShifts([r])].slice(0,60);
     let timeScope:TimeScope|undefined;
     if(r.source==="locations.open_hours"){
@@ -792,10 +792,10 @@ function datedFinancialScope(text:string,start:number,end:number):{date:string|n
 function evidenceSupportsDatedMoney(evidence:readonly NumericEvidence[],
   date:string,cents:number,metric:string):boolean {
   return evidence.some(entry=>{
-    // Initiative observations carry their *validated* metric identity
+    // Goal observations carry their *validated* metric identity
     // alongside the date. Money from item margin or per-hour sales cannot
     // prove TOTAL daily sales just because the cent amounts happen to match.
-    if(entry.tool==="owner_initiatives"){
+    if(entry.tool==="goals"){
       const allowedKey=metric==="sales"?"net_sales":
         metric==="labor"?"labor_cost":metric==="profit"?"net_profit":null;
       return allowedKey!==null&&entry.values.some(v=>
