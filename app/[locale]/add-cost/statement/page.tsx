@@ -25,6 +25,7 @@ export default async function StatementUploadPage({ searchParams }: { searchPara
   return (
     <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("optionStatement")} backHref="/add-cost" backLabel={tCommon("back")} />
+      {!profile.currency&&<p role="note" className="text-sm text-ink-muted">{tCommon("currencyNotSet")}</p>}
       <StatementUploader returnTo={validReturnTo(returnTo)}
         currency={profile.currency} currencyMissingLabel={tCommon("currencyNotSet")}
         categoryLabels={categoryLabels}
