@@ -20,7 +20,7 @@ export default function AlertCard({
   subtitle: string;
   impactCents: number | null;
   locale: string;
-  currency: string | null;
+  currency?: string | null;
   reviewLabel?: string;
 }) {
   return (
