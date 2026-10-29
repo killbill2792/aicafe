@@ -28,6 +28,7 @@ export default async function TypeExpensePage({ searchParams }: { searchParams: 
     <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("optionType")} backHref="/add-cost" backLabel={tCommon("back")} />
       <TypeExpenseForm key={category ?? "none"}
+        currency={snapshot.business.currency} currencyMissingLabel={tCommon("currencyNotSet")}
         returnTo={validReturnTo(returnTo)}
         initialCategory={validCostCategory(category)}
         categoryLabels={categoryLabels}
