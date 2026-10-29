@@ -12,9 +12,10 @@ type SupervisorCopy = {
 
 /** One conversation surface, not a dashboard card around another chat card. */
 export default function SupervisorHomePanel({
-  copy, chatCopy, chatEnabled, chatUnavailableReason, canUseAi=true, locale, languageSwitch, initialThreadId, initialProposalId, chatStartData, chatStartCopy,
+  copy, chatCopy, chatEnabled, chatUnavailableReason, canUseAi=true, locale, languageSwitch, initialThreadId, initialProposalId, chatStartData, chatStartCopy, cafeCurrency,
 }: {
   copy: SupervisorCopy;
+  cafeCurrency:string|null;
   chatCopy: Omit<SupervisorChatCopy, keyof SupervisorCopy>;
   chatStartData: ChatStartData;
   chatStartCopy: Omit<ChatStartCopy, "suggestions">;
@@ -29,7 +30,7 @@ export default function SupervisorHomePanel({
     // Search-param navigation can reuse this component on Home. A linked proposal
     // must select its own conversation even when a different one is open.
     key={(initialThreadId ?? "new") + ":" + (initialProposalId ?? "")}
-    enabled={chatEnabled} canUseAi={canUseAi} unavailableReason={chatUnavailableReason}
+    enabled={chatEnabled} canUseAi={canUseAi} unavailableReason={chatUnavailableReason} cafeCurrency={cafeCurrency}
      locale={locale} languageSwitch={languageSwitch}
     initialThreadId={initialThreadId} initialProposalId={initialProposalId} copy={{ ...copy, ...chatCopy }}
     chatStartData={chatStartData} chatStartCopy={chatStartCopy}

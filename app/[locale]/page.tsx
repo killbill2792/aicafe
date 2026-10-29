@@ -22,7 +22,8 @@ import { homeMoneyQuality } from "@/components/home/homeMoneyQuality";
 
 
 
-import { formatCents } from "@/lib/calc";
+import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
+import {readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 
 
 
@@ -54,7 +55,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
   // Match Money’s selected-period evidence; the default month snapshot cannot prove Today or Week ingredient coverage.
-  const [snapshot, menu] = await Promise.all([getSnapshot(period), getMenuControlCenter()]);
+  const [snapshot, menu, identity] = await Promise.all([getSnapshot(period), getMenuControlCenter(),
+    readSupervisorCafeIdentity(await getActiveBusinessId(signedInUser.id))]);
+  const cafeCurrency=identity.currency;
   const vm = buildHomeViewModel(snapshot, period);
   // Money and Supervisor agree on known costs and their evidence. Home must not
   // bypass that canonical completeness gate when showing owner profit.
@@ -65,7 +68,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const tAccess=await getTranslations("FreeAccess");
   const items=await getAttentionItems({period,locale,snapshot,menu});
   const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
-  const money=(cents:number)=>formatCents(cents,locale);
+  const money=(cents:number)=>formatCafeCurrency(cents,locale,cafeCurrency).text;
   const sales=vm.coverage.actualDays===0?"—":money(moneyVm.salesCents);
   const costs=costCompleteness==="unavailable"||moneyVm.totalCostsCents===null?"—":money(moneyVm.totalCostsCents);
   const kept=canShowProfit&&moneyVm.ownerProfitCents!==null?money(moneyVm.ownerProfitCents):"—";
@@ -83,7 +86,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
       {" "}<Link href="/pricing" className="underline">{tAccess("haveCode")}</Link>
     </p>}
-    <SupervisorHomePanel
+    <SupervisorHomePanel cafeCurrency={cafeCurrency}
       chatStartData={{
         period,sales,costs,kept,attention:items,
         partial:hasPartial,estimated:hasEstimatedCosts,

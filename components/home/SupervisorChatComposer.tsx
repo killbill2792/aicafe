@@ -132,8 +132,8 @@ function isOwnerConfirmation(message:ConversationMessage){
   const state=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
   return state.success&&state.data.stage==="confirm";
 }
-function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, onFacts, clarifyState, clarifyChoice, disabled, linkedThreadId, linkedProposalId }: {
-  message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale;
+function SupervisorMessage({ message, copy, locale, cafeCurrency, onOwnerResponse, onClarify, onFacts, clarifyState, clarifyChoice, disabled, linkedThreadId, linkedProposalId }: {
+  message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale; cafeCurrency:string|null;
   disabled:boolean;
   linkedThreadId?:string; linkedProposalId?:string;
   onClarify:(text:string)=>void;
@@ -174,7 +174,7 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, 
             const parsed=explainLineSchema.safeParse(line);
             return parsed.success?[parsed.data]:[];
           });
-          return lines.length?<HowIGotThis key={i} lines={lines} locale={locale} copy={copy}/>:null;
+          return lines.length?<HowIGotThis key={i} lines={lines} locale={locale} copy={copy} currency={cafeCurrency}/>:null;
         }
         const clarify=clarifyBlockSchema.safeParse(group.block);
         if(clarify.success)return <ClarifyCard key={i} block={clarify.data} locale={locale} copy={copy}
@@ -227,10 +227,10 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
   </div>;
 }
 export default function SupervisorChatComposer({
-  enabled, canUseAi=true, locale, copy, languageSwitch, onActivityChange, initialThreadId, initialProposalId, chatStartData,chatStartCopy,
+  enabled, canUseAi=true, locale, cafeCurrency, copy, languageSwitch, onActivityChange, initialThreadId, initialProposalId, chatStartData,chatStartCopy,
 }: {
   enabled: boolean; canUseAi?: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
-  locale: Locale; copy: SupervisorChatCopy;
+  locale: Locale; copy: SupervisorChatCopy; cafeCurrency:string|null;
   chatStartData?: ChatStartData;
   chatStartCopy?: Omit<ChatStartCopy,"suggestions">;
   initialThreadId?:string;initialProposalId?:string;
@@ -855,7 +855,7 @@ export default function SupervisorChatComposer({
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
       {displayedMessages.map((message,messageIndex) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
-        <SupervisorMessage message={message} copy={copy} locale={locale}
+        <SupervisorMessage message={message} copy={copy} locale={locale} cafeCurrency={cafeCurrency}
           linkedThreadId={threadId===initialThreadId?initialThreadId:undefined}
           linkedProposalId={threadId===initialThreadId?initialProposalId:undefined}
           clarifyState={chosenClarify[message.id]&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state==="skipped"?

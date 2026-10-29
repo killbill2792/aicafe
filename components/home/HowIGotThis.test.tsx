@@ -16,14 +16,14 @@ describe("How I got this disclosure",()=>{
    const copy={en,es,ar}[locale].SupervisorChat;
    const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{
      ...line,period:{from:"2026-09-01",to:"2026-09-30"},periodLabelKey:"periodLastMonth"
-   }],locale,copy}));
+   }],locale,copy,currency:"EUR"}));
    expect(html).toContain(expected);
    expect(html).toContain("30");
  });
  it("unknown labelKey uses the raw localized date label",()=>{
   const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{
     ...line,periodLabelKey:"unknownPeriodKey"
-  }],locale:"en",copy:en.SupervisorChat}));
+  }],locale:"en",copy:en.SupervisorChat,currency:"EUR"}));
   expect(html).toContain("Aug 22, 2026");
   expect(html).not.toContain("unknownPeriodKey");
  });
@@ -31,7 +31,7 @@ describe("How I got this disclosure",()=>{
   const bases=["owner_provided","actual","estimated","default_estimate","projected"];
   for(const [locale,copy] of [["en",en.SupervisorChat],["es",es.SupervisorChat],["ar",ar.SupervisorChat]] as const)
    for(const basis of bases){
-    const markup=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{...line,basis}],locale,copy}));
+    const markup=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{...line,basis}],locale,copy,currency:"EUR"}));
     expect(markup).not.toContain(" · "+basis+"</span>");
    }
  });
@@ -40,7 +40,7 @@ describe("How I got this disclosure",()=>{
   for(const [locale,copy] of [["es",es.SupervisorChat],["ar",ar.SupervisorChat]] as const){
    const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[{
     ...line,label:"Unknown English input",basis:"Product cost / target drink cost percentage"
-   }],locale,copy}));
+   }],locale,copy,currency:"EUR"}));
    expect(html).not.toContain("Product cost / target");
    expect(html).toContain("Unknown English input");
   }
@@ -57,7 +57,7 @@ describe("How I got this disclosure",()=>{
   expect(markup).toContain("Estimate");
  });
  it("uses RTL and isolated left-to-right mathematics for Arabic",()=>{
-  const markup=renderToStaticMarkup(createElement(HowIGotThis,{lines:[line],locale:"ar",copy:ar.SupervisorChat}));
+  const markup=renderToStaticMarkup(createElement(HowIGotThis,{lines:[line],locale:"ar",copy:ar.SupervisorChat,currency:"EUR"}));
   expect(markup).toContain('dir="rtl"');
   expect(markup).toContain('<bdi dir="ltr">');
  });
