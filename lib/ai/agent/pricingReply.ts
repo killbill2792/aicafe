@@ -25,4 +25,3 @@ export function verifiedRecommendedPriceInReply(reply:string,cents:number,
  }
  return false;
 }
-

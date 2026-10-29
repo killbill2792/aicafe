@@ -19,4 +19,3 @@ describe("answer style rules", () => {
     expect(styleReport("- Mon: Ana. Opens.\n- Tue: Leo. Closes.\n- Wed: Ana. Opens.\n- Thu: Sam. Closes. Then more.").tooLong).toBe(false);
   });
 });
-

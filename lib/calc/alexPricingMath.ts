@@ -17,4 +17,3 @@ export function ingredientOnlyEconomics(rawCostCents: number, priceCents: number
     ingredientContributionCents:priceCents - ingredientCostCents,
     ingredientContributionBasisPoints:10000-ratio};
 }
-

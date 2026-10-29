@@ -225,7 +225,6 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       },
       onDelta: delta => emit("delta", { text: delta }),
       onReset: discardChars => emit("reset", { discardChars }),
-      
       ...(memory ? { memoryFacts: memory.facts, extraTools: [memory.tool] } : {}),
       ...(job && jobs ? {
         takeFollowUps: (max: number): Promise<OwnerFollowUp[]> => jobs.takeAgentJobInbox(job.id, max),
