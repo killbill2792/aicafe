@@ -124,7 +124,8 @@ function observedMicros(name:string,results:readonly AgentToolResult[]):number|n
 export type MilkSwapLine={sizeId:string;sizeLabel:string;volumeMl:number|null;
  baseServingCents:number|null;oatServingCents:number|null;targetServingCents:number|null;additionalCostCents:number|null;
  suggestedUpchargeCents:number|null;basis:"estimated"|"missing";
- inputBasis:"owner_provided"|"recorded"|"mixed"|"unknown"};
+ inputBasis:"owner_provided"|"recorded"|"mixed"|"unknown";
+ targetProductCostPercent?:number|null;roundingStepCents?:number};
 export type MilkSwapAnswer={source:"milk_swap";period:null;missing:string[];targetMilk:string|null;
  rows:MilkSwapLine[];explain:ExplainLine[];numberEstimates:{value:number;unit:"cents";detail:"pricing"}[]};
 /** ASCII keys are stable for menu names in any script and scoped to the milk. */
@@ -164,9 +165,9 @@ function servingMicros(cents:number|null,volume:number|null):number|null{
  return Number.isSafeInteger(value)&&value>=0?value:null;
 }
 export function milkSwapFromFacts(sizes:readonly MilkSize[],facts:readonly SavedFact[],
- results:readonly AgentToolResult[],targetMilk:string|null=null):MilkSwapAnswer{
+ results:readonly AgentToolResult[],targetMilk:string|null=null,baseMilk:string|null=null):MilkSwapAnswer{
  const milkType=savedValue(facts,"milk_base_type");
- const fromMilk=typeof milkType==="string"&&milkType.trim()?milkType.trim():null;
+ const fromMilk=baseMilk?.trim()||(typeof milkType==="string"&&milkType.trim()?milkType.trim():null);
  const fromMicros=fromMilk?observedMicros(fromMilk,results):null;
  const savedTarget=savedValue(facts,"milk_target_type");
  const toMilk=targetMilk?.trim()||(typeof savedTarget==="string"&&savedTarget.trim()?savedTarget.trim():null);
@@ -211,7 +212,8 @@ export function milkSwapFromFacts(sizes:readonly MilkSize[],facts:readonly Saved
   return {sizeId:size.id,sizeLabel:size.label,volumeMl:volume,
    baseServingCents:baseCost,oatServingCents:oatCost,targetServingCents:oatCost,
    additionalCostCents:priced.costDeltaCents,
-   suggestedUpchargeCents:priced.suggestedUpchargeCents,basis:"estimated" as const,inputBasis};
+   suggestedUpchargeCents:priced.suggestedUpchargeCents,basis:"estimated" as const,inputBasis,
+   targetProductCostPercent:priced.targetProductCostPercent,roundingStepCents:priced.roundingStepCents};
  });
  const explain:ExplainLine[]=rows.flatMap(row=>row.suggestedUpchargeCents===null?[]:[
    ...((row.oatServingCents!-row.baseServingCents!)===row.additionalCostCents?[
@@ -223,7 +225,8 @@ export function milkSwapFromFacts(sizes:readonly MilkSize[],facts:readonly Saved
    ]:[]),
    {label:"Suggested upcharge",inputs:[
      {name:"costDeltaCents",value:money(row.additionalCostCents!)},
-     {name:"remainingShare",value:{kind:"percent" as const,bps:7000}}],
+     {name:"targetProductCostPercent",value:{kind:"percent" as const,bps:Math.round(row.targetProductCostPercent!*10000)}},
+     {name:"roundingStepCents",value:money(row.roundingStepCents!)}],
     formula:"divide" as const,result:money(row.suggestedUpchargeCents),
     period:null,source:"milk_swap",provenance:"estimate" as const,basis:"estimated"}
  ]);
