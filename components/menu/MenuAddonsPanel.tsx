@@ -12,7 +12,7 @@ import MilkSizePrices from "./MilkSizePrices";
 import {formatCents} from "@/lib/calc";
 export type PricedPantry={id:string;name:string;category:string|null;baseUnit:BaseUnit;costPerBaseMicros:number|null};
 export default function MenuAddonsPanel({itemId,items,pantry,saved,conversions,currency}:{
- itemId:string;items:MenuItemForEdit[];pantry:PricedPantry[];saved:MenuAddon[];conversions:Record<string,IngredientUnitConversion[]>;currency:string|null;
+ itemId:string;items:MenuItemForEdit[];pantry:PricedPantry[];saved:MenuAddon[];conversions:Record<string,IngredientUnitConversion[]>;currency?:string|null;
 }){
  const t=useTranslations("MenuBuilder"),router=useRouter();
  const money=(cents:number)=>formatCents(cents,undefined,currency);const [pending,start]=useTransition(),[message,setMessage]=useState("");
