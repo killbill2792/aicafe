@@ -42,6 +42,7 @@ export type MenuPricingBasis = MenuPriceSourceBasis & {
   targetMarginStatus: "default" | "confirmed";
 };
 export type MenuControlItem = MenuItemForEdit & {
+  currency?: string | null;
   pricingBasis?: MenuPricingBasis;
   pricing: PricingResult | null;
   pricingEvidence?: MenuPricingEvidence;
@@ -255,6 +256,7 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
 
     return {
       ...item,
+      currency: pricingInputs.business.currency ?? null,
       pricing,
       pricingBasis,
       pricingEvidence: {
