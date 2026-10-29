@@ -75,6 +75,32 @@ describe("ask_owner tool",()=>{
   expect(askOwnerSchema.safeParse({question:"Which?",options:options.slice(0,1),allowOther:true}).success).toBe(false);
   expect(askOwnerSchema.safeParse({question:"Which?",options:Array.from({length:13},(_,i)=>({label:"Latte "+i,value:String(i)})),allowOther:true}).success).toBe(false);
  });
+ it("refuses a choice card with more than four options without using up the question",async()=>{
+  // A menu search can return up to 12 matches; the saved card holds at most 4.
+  const ids=Array.from({length:5},(_,i)=>"5555555"+i+"-5555-4555-8555-555555555555");
+  const ctx={resolveState:newResolveState("raise latte price")} as AgentToolContext;
+  observeToolResult(ctx.resolveState,{source:"menu_items",missing:[],needsOwnerChoice:true,
+   candidates:ids.map((id,i)=>({id,label:"Latte "+i,detail:"Drinks"}))});
+  const many=ids.map((id,i)=>({label:"Latte "+i,value:id}));
+  const rejected=await askOwnerTools.ask_owner.execute({question:"Which latte?",options:many,allowOther:true},ctx);
+  expect(rejected).toMatchObject({missing:["tooManyOptions"],error:"tooManyOptions"});
+  expect(ctx.resolveState!.asked).toBe(false);
+  const card=await askOwnerTools.ask_owner.execute({question:"Which latte?",options:many.slice(0,4),allowOther:true},ctx);
+  expect(card.missing).toEqual([]);
+  expect(clarifyBlockSchema.safeParse({type:"clarify",question:card.question,options:card.options,
+   allowOther:card.allowOther}).success).toBe(true);
+ });
+ it("refuses a fill card with more than two fields",async()=>{
+  const id="33333333-3333-4333-8333-333333333333",date="2026-10-25";
+  const ctx={resolveState:newResolveState("How much milk remains?")} as AgentToolContext;
+  observeToolResult(ctx.resolveState,{source:"usage_variance",period:{from:date,to:date},
+   missing:["endCount:"+date],rows:[{ingredientId:id,name:"Milk",unit:"ml",missing:["endCount:"+date]}]});
+  const field={key:"endCount:"+id+":"+date,label:"Milk at closing",inputType:"number",units:["ml"],defaultUnit:"ml"};
+  const rejected=await askOwnerTools.ask_owner.execute({kind:"fill",question:"Milk?",options:[],allowOther:false,
+   fields:[field,{...field,key:field.key+"b"},{...field,key:field.key+"c"}]},ctx);
+  expect(rejected).toMatchObject({error:"invalidFillFields"});
+  expect(ctx.resolveState!.asked).toBe(false);
+ });
  it("refuses invented UUIDs and duplicate labels",async()=>{
   const ctx=context();
   const invented=await askOwnerTools.ask_owner.execute({question:"Which?",options:[
