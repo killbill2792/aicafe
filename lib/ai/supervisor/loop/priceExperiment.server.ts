@@ -108,7 +108,15 @@ export const priceExperimentCapability=registerLoopCapability({
       copy.reportIngredientOnly.replace("{value}",money(trial.observedIngredientContributionCents)),
       copy.recommendation.replace("{choice}",recommendation),
       result.status==="complete"?copy.reportCompletedCaveat:copy.reportUncertain].join(" ");
-    return {status:result.status,result:trial,recommendation:result.recommendation,source:"order_lines",
+    const count=(v:number)=>new Intl.NumberFormat(_scope.locale).format(v);
+    const midRunText=windowComplete?undefined:result.coveredDays>0&&result.units!==null
+      ?copy.midRunUpdate.replace("{item}",effect.productName).replace("{covered}",count(result.coveredDays))
+        .replaceAll("{days}",count(7)).replace("{price}",money(effect.newPriceCents))
+        .replace("{units}",count(result.units)).replace("{revenue}",money(result.observedRevenueCents))
+        .replace("{difference}",money(result.realizedRevenueDifferenceCents))
+      :copy.midRunNoData.replace("{item}",effect.productName).replace("{price}",money(effect.newPriceCents))
+        .replaceAll("{days}",count(7));
+    return {status:result.status,result:trial,recommendation:result.recommendation,source:"order_lines",midRunText,
       delivery:{agentId:"alex" as const,taskKind:"price_experiment_report" as const,
         entityType:"menu_item",entityId:effect.productId,
         confidence:result.status==="complete"?"high" as const:"low" as const,
