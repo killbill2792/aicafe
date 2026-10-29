@@ -2,7 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
 import {readToastTodaySoFar,type TodaySoFarRead} from "@/lib/pos/toast/todaySoFar.server";
-import type {TodaySoFar} from "@/lib/pos/toast/todaySoFar";
+import {currentToastBusinessDay,type TodaySoFar} from "@/lib/pos/toast/todaySoFar";
 
 /** The ONE path for "today so far": a live Toast reading saved every 15
  * minutes (cron) or when the chat needs a fresher one. Home and the chat both
@@ -32,12 +32,22 @@ export async function saveTodayLive(admin:SupabaseClient,businessId:string,value
   updated_at:new Date().toISOString()},{onConflict:"business_id"});
  if(error&&!missingTable(error.code))throw error;
 }
-/** A fresh saved reading, else a new live read from Toast (saved for everyone). */
+/** Toast's current business day for the café (before closeout, the previous date). */
+export async function currentTodayBusinessDay(db:SupabaseClient,businessId:string,now=new Date()):Promise<string|null>{
+ const {data,error}=await db.from("toast_location_mappings").select("toast_time_zone,closeout_hour")
+  .eq("business_id",businessId).not("verified_at","is",null).limit(1).maybeSingle();
+ if(error||!data?.toast_time_zone||data.closeout_hour==null)return null;
+ return currentToastBusinessDay(now,String(data.toast_time_zone),Number(data.closeout_hour));
+}
+/** A fresh saved reading for the CURRENT business day, else a new live read from
+ * Toast (saved for everyone). A reading from before closeout is never reused. */
 export async function todaySoFarForBusiness(admin:SupabaseClient,businessId:string,
  opts:{now?:Date;maxAgeMs?:number}={}):Promise<TodaySoFarRead>{
  const now=opts.now??new Date();
- const saved=await readSavedTodayLive(admin,businessId,now).catch(()=>null);
- if(saved&&saved.ageMs<(opts.maxAgeMs??TODAY_LIVE_FRESH_MS))return {available:true,value:saved.value};
+ const [saved,businessDay]=await Promise.all([readSavedTodayLive(admin,businessId,now).catch(()=>null),
+  currentTodayBusinessDay(admin,businessId,now).catch(()=>null)]);
+ if(saved&&businessDay&&saved.value.businessDate===businessDay&&saved.ageMs<(opts.maxAgeMs??TODAY_LIVE_FRESH_MS))
+  return {available:true,value:saved.value};
  const read=await readToastTodaySoFar(admin,businessId,now);
  // Only a complete reading replaces the saved one.
  if(read.available&&!read.value.locationsFailed&&!read.value.truncated)

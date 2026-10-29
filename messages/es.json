@@ -357,6 +357,7 @@
     "ofSales": "{pct}% de las ventas",
     "liveSales": "En vivo · actualizado {time}",
     "liveSalesStale": "Sin conexión en vivo · última lectura {time}",
+    "liveSalesUnread": "{count, plural, one {# pedido no se pudo leer y no está incluido} other {# pedidos no se pudieron leer y no están incluidos}}",
     "missingCostBannerText": "{category} aún no se ha agregado.",
     "missingCostBannerAction": "Agregar",
     "coveredOn": "{label} ✓ {date}",
