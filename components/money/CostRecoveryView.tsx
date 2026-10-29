@@ -113,10 +113,11 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
     netSalesCents: liveToday.sales.netSalesCents, orders: liveToday.orders,
   } : null);
   const glanceCopy = todayGlanceCopy(glance, t, tCommon, labelFor, formatMoney);
+  const hasTodaySales = Boolean(liveToday) || snapshot.todayHasData;
   const glanceCaption = liveToday
     ? [t(liveToday.sales.fresh ? "glanceLive" : "glanceLiveStale", {time: liveToday.sales.time}),
        ...(liveToday.sales.unreadOrders > 0 ? [t("glanceLiveUnread", {count: liveToday.sales.unreadOrders})] : [])].join(" · ")
-    : glanceCopy.caption;
+    : hasTodaySales ? glanceCopy.caption : t("ownerProfitWaiting");
 
   const isCurrentMonth = calMonthKey === snapshot.monthKey;
   const monthData = await getMonthCalendar(calMonthKey, snapshot);
@@ -265,10 +266,10 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
       <TodayAtAGlanceCard
         title={t("glanceTitle")}
         stats={[
-          { label: t("glanceSales"), value: glance.salesCents === null ? "—" : formatMoney(glance.salesCents) },
-          { label: t("glanceOrders"), value: glance.ordersCount === null ? "—" : new Intl.NumberFormat(locale).format(glance.ordersCount) },
-          { label: t("glanceAvgOrder"), value: glance.avgOrderValueCents === null ? "—" : formatMoney(glance.avgOrderValueCents) },
-          { label: t("glanceMoneyLeft"), value: glance.moneyLeftCents === null ? "—" : formatMoney(glance.moneyLeftCents) },
+          { label: t("glanceSales"), value: !hasTodaySales || glance.salesCents === null ? "—" : formatMoney(glance.salesCents) },
+          { label: t("glanceOrders"), value: !hasTodaySales || glance.ordersCount === null ? "—" : new Intl.NumberFormat(locale).format(glance.ordersCount) },
+          { label: t("glanceAvgOrder"), value: !hasTodaySales || glance.avgOrderValueCents === null ? "—" : formatMoney(glance.avgOrderValueCents) },
+          { label: t("glanceMoneyLeft"), value: !hasTodaySales || glance.moneyLeftCents === null ? "—" : formatMoney(glance.moneyLeftCents) },
         ]}
         secondaryStat={glance.drinksCount > 0 ? t("glanceDrinks", { count: glance.drinksCount }) : null}
         caption={[glanceCaption, ...(currencyMissing ? [tCommon("currencyNotSet")] : [])].join(" · ")}
