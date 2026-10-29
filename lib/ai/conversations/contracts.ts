@@ -67,6 +67,7 @@ export type EvidenceReference = {
 export type SupervisorReplyBlock =
   | {type:"clarify";question:string;options:{label:string;value:string}[];allowOther:boolean;kind?:"choice"}
   | {type:"clarify";kind:"fill";question:string;fields:{key:string;label:string;inputType:"number";units:string[];defaultUnit:string}[]}
+  | {type:"clarify";kind:"facts";questionId:string;question:string;fields:{key:string;label:string;inputType:"number"|"money"|"percent"|"text"|"date"|"choice";units:string[];defaultUnit:string;choices?:{label:string;value:string}[]}[]}
   | {type:"how";lines:ExplainLine[]}
   | OwnerQuestion
   | { type: "proposal_card"; proposalId: string }
@@ -108,7 +109,16 @@ export const clarifyBlockSchema=z.union([
  z.strictObject({type:z.literal("clarify"),kind:z.literal("fill"),question:z.string().min(1).max(200),
    fields:z.array(z.strictObject({key:z.string().max(90),label:z.string().min(1).max(100),
      inputType:z.literal("number"),units:z.array(z.string().min(1).max(20)).min(1).max(8),
-     defaultUnit:z.string().min(1).max(20)})).min(1).max(2)})
+     defaultUnit:z.string().min(1).max(20)})).min(1).max(2)}),
+ z.strictObject({type:z.literal("clarify"),kind:z.literal("facts"),questionId:z.uuid(),
+   question:z.string().min(1).max(200),
+   fields:z.array(z.strictObject({
+     key:z.string().min(1).max(90),label:z.string().min(1).max(100),
+     inputType:z.enum(["number","money","percent","text","date","choice"]),
+     units:z.array(z.string().min(1).max(20)).max(8),
+     defaultUnit:z.string().max(20),
+     choices:z.array(z.strictObject({label:z.string().min(1).max(80),value:z.string().min(1).max(100)})).max(12).optional()
+   })).min(1).max(6)})
 ]);
 const howBlockSchema=z.strictObject({type:z.literal("how"),lines:z.array(explainLineSchema).min(1).max(20)});
 const proposalCardSchema=z.strictObject({type:z.literal("proposal_card"),proposalId:z.uuid()});

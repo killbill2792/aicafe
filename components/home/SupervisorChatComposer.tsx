@@ -55,7 +55,7 @@ export type SupervisorChatCopy = {
   needsYou: string; handled: string; watching: string;
   answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string; provenanceOwner:string;provenanceEstimate:string;provenanceUnchecked:string;provenanceBreakEven:string;provenanceSalesGap:string;provenanceLegend:string;provenanceOverhead:string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
-  clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string;
+  clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifySaveError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string;
   howIGotThis:string;howCalculated:string;explainMissing:string;
   pricingLaborPrefix:string;pricingBillsPrefix:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
   explainMultiply:string;explainSum:string;explainDivide:string;explainRatio:string;explainProrate:string;explainSubtract:string;
@@ -131,11 +131,12 @@ function isOwnerConfirmation(message:ConversationMessage){
   const state=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
   return state.success&&state.data.stage==="confirm";
 }
-function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, clarifyState, clarifyChoice, disabled, linkedThreadId, linkedProposalId }: {
+function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, onFacts, clarifyState, clarifyChoice, disabled, linkedThreadId, linkedProposalId }: {
   message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale;
   disabled:boolean;
   linkedThreadId?:string; linkedProposalId?:string;
   onClarify:(text:string)=>void;
+  onFacts:(questionId:string,answers:{fieldKey:string;value:string}[])=>Promise<void>;
   clarifyState:"hidden"|"active"|"chosen"|"skipped";clarifyChoice:string|null;
   onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
 }) {
@@ -176,7 +177,7 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, 
         }
         const clarify=clarifyBlockSchema.safeParse(group.block);
         if(clarify.success)return <ClarifyCard key={i} block={clarify.data} locale={locale} copy={copy}
-          state={clarifyState} choice={clarifyChoice} disabled={disabled} onSend={onClarify}/>;
+          state={clarifyState} choice={clarifyChoice} disabled={disabled} onSend={onClarify} onFacts={onFacts}/>;
         const candidate=ownerQuestionSchema.safeParse(group.block);
         if (candidate.success) return <ReplyBlock key={i} block={{type:"text",text:candidate.data.title[locale]}} copy={copy} locale={locale}/>;
         const originalIndex=originalReplyBlockIndex(originalBlocks,group.block);
@@ -860,6 +861,20 @@ export default function SupervisorChatComposer({
             "chosen":clarifyCardState(clarifyVisibilityMessages,messageIndex).state}
           clarifyChoice={chosenClarify[message.id]??clarifyCardState(clarifyVisibilityMessages,messageIndex).choice}
           onClarify={value=>{setChosenClarify(old=>({...old,[message.id]:value}));void sendText(value);}}
+          onFacts={async(questionId,answers)=>{
+            if(!threadId||message.threadId!==threadId)throw new Error("thread_unavailable");
+            const response=await fetch("/api/ai/threads/"+encodeURIComponent(threadId)+"/owner-answer",{
+              method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({questionId,answers,locale})
+            });
+            if(!response.ok)throw new Error("owner_answer_save_failed");
+            const result=await response.json() as {saved:boolean;writeThroughApplied:boolean};
+            if(!result.saved)throw new Error("owner_answer_save_failed");
+            const savedCopy=({en,es,ar}[locale]).OwnerQuestions;
+            const responseText=result.writeThroughApplied?savedCopy.saved:savedCopy.savedBut;
+            setChosenClarify(old=>({...old,[message.id]:responseText}));
+            await sendText(responseText);
+          }}
           disabled={sending||!enabled||!canUseAi||
           (message.role==="supervisor"&&message.id!==activeQuestionMessageId&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state!=="active")}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{

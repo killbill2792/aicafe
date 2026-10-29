@@ -3,7 +3,7 @@ import { runAgentTurn, type AgentProvider } from "./loop.server";
 import type { AgentToolContext } from "./tools";
 
 const context: AgentToolContext = {
-  timezone:"America/Los_Angeles", locale: "en", asOf: "2026-10-21",
+  locale: "en", asOf: "2026-10-21", timezone: "America/Los_Angeles",
   tools: {
     getMenuCatalog: async () => ({ available: true,
       quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] },
@@ -26,6 +26,23 @@ function fixture(rounds: Array<Array<Record<string, unknown>>>): AgentProvider {
   };
 }
 describe("recorded Responses streaming fixtures", () => {
+  it("keeps a successful menu answer when profit read fails, with a named dated note",async()=>{
+    const failing:AgentToolContext={...context,tools:{...context.tools,
+      getProfitability:async()=>{throw new Error("private SQL connection details");}
+    }};
+    const turn=await runAgentTurn({ownerText:"Show latte pricing and last month's profit",
+      context:failing,provider:fixture([
+        [call("get_menu_items",'{"query":null,"limit":null}',"menu-ok"),
+         call("get_profit",'{"period":"last_month","ownerInputs":null}',"profit-fail"),completed],
+        [text("The menu lists Latte at $4.50."),completed]
+      ])});
+    expect(turn.results.some(x=>x.source==="menu_items"&&x.missing.length===0)).toBe(true);
+    expect(turn.results.some(x=>x.source==="get_profit"&&x.error==="internal")).toBe(true);
+    expect(turn.text).toContain("Latte");
+    expect(turn.text).toContain("profit");
+    expect(turn.text).toContain("2026-09-01");
+    expect(turn.text).not.toContain("private SQL");
+  });
   it("sends café-local date and timezone as a developer input, not cached instructions",async()=>{
     const seen:Record<string,unknown>[]=[];
     const provider:AgentProvider=async function*(params){
@@ -182,7 +199,8 @@ describe("recorded Responses streaming fixtures", () => {
       const result = await runAgentTurn({ownerText:"Menu?",context,provider,onReset:n=>resets.push(n)});
       expect(requests).toHaveLength(3);
       expect(requests[2].tool_choice).toBe("none");
-      expect(result.text).toBe("");
+      expect(result.text.length).toBeGreaterThan(0);
+      expect(result.results.some(r=>r.source==="ask_owner"&&r.missing.length===0)).toBe(true);
       expect(resets).toEqual(["Partial final answer.".length]);
       expect(result.endReason).toBe("provider_error");
     });
@@ -246,7 +264,8 @@ describe("recorded Responses streaming fixtures", () => {
       expect(result.usage.modelCalls).toBe(2);
       expect(result.usage.toolCalls).toBe(1);
       expect(result.endReason).toBe("timeout");
-      expect(result.text).toBe("The menu read timed out; I cannot verify it yet.");
+      expect(result.text).toContain("The menu read timed out; I cannot verify it yet.");
+      expect(result.results.some(r=>r.source==="ask_owner"&&r.missing.length===0)).toBe(true);
       expect(result.results[0].missing).toContain("deadline_exceeded");
       expect(result.usage.latencyMs).toBe(48000);
     } finally { vi.useRealTimers(); }

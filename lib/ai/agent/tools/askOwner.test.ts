@@ -11,6 +11,31 @@ function context(){
  return {resolveState} as AgentToolContext;
 }
 describe("ask_owner tool",()=>{
+ it.each([
+  ["en","almond milk"],["es","leche de almendra"],["ar","حليب اللوز"]
+ ] as const)("renders the resolved milk label in %s without raw template",async(locale,milk)=>{
+  const ctx={resolveState:newResolveState("Switch 16 oz to almond milk"),locale} as AgentToolContext;
+  const card=await askOwnerTools.ask_owner.execute({kind:"facts",question:"What cost?",
+   options:[],allowOther:false,fields:[{key:"milk_almond_serving_cost_cents:16oz",
+    label:"Unsafe model label",inputType:"money",units:[],defaultUnit:""}]},ctx);
+  expect(card.missing).toEqual([]);
+  const label=(card.fields as Array<{label:string}>)[0].label;
+  expect(label).toContain(milk);
+  expect(label).toContain("16 oz");
+  expect(label).not.toContain("{milk}");
+  expect(label).not.toContain("Unsafe model label");
+ });
+ it("supports six typed fields for a new noncatalog question",async()=>{
+  const ctx={resolveState:newResolveState("Tell me about deliveries"),locale:"es"} as AgentToolContext;
+  const kinds=["number","money","percent","text","date","choice"] as const;
+  const fields=kinds.map((kind,i)=>({key:"supplier_"+i,label:"Field "+i,inputType:kind,units:[],defaultUnit:"",
+    ...(kind==="choice"?{choices:[{label:"A",value:"a"},{label:"B",value:"b"}]}:{})}));
+  const card=await askOwnerTools.ask_owner.execute({kind:"facts",question:"¿Datos?",options:[],allowOther:false,fields},ctx);
+  expect(card).toMatchObject({kind:"facts",missing:[]});
+  expect(Array.isArray(card.fields)&&card.fields.length).toBe(6);
+  expect(typeof card.questionId).toBe("string");
+ });
+
  it("rejects fewer than two or more than twelve options",()=>{
   expect(askOwnerSchema.safeParse({question:"Which?",options:options.slice(0,1),allowOther:true}).success).toBe(false);
   expect(askOwnerSchema.safeParse({question:"Which?",options:Array.from({length:13},(_,i)=>({label:"Latte "+i,value:String(i)})),allowOther:true}).success).toBe(false);
