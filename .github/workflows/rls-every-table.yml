@@ -1,0 +1,40 @@
+name: Row level security on every table
+
+# AGENTS.md section 8: every public table has RLS. Runs whenever a migration changes,
+# because only migrations can create a table or change its RLS setting.
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/rls-all-public-tables.sql'
+      - '.github/workflows/rls-every-table.yml'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Initialize ephemeral local Supabase config
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+      - name: Start disposable local Supabase (never production)
+        run: supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - name: Replay every migration in order
+        run: supabase db reset --local --yes
+      - name: Every public table has row level security
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/rls-all-public-tables.sql
+      - name: Stop disposable Supabase
+        if: always()
+        run: supabase stop --no-backup
