@@ -52,7 +52,7 @@ function operatingTaskHref(task: OperatingTask): string {
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
-  if (task.kind === "daily_brief" && typeof task.payload.threadId === "string")
+  if ((task.kind === "daily_brief" || task.kind === "goal_report") && typeof task.payload.threadId === "string")
     return "/?thread=" + encodeURIComponent(task.payload.threadId);
   // Supply questions need the existing Team inbox; an ingredient-cost upload is not a
   // response to a staff/member stock check, and this UI must never imply it is.
@@ -74,10 +74,10 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
   const usageRead=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to})
     .then(r=>({over:r.rows.filter(x=>x.status==="over"),unavailable:false}))
     .catch(()=>({over:[],unavailable:true}));
-  const [t,tOperations,tCategories,tExperiment,tAlerts,tReconnect,tBrief]=await Promise.all([
+  const [t,tOperations,tCategories,tExperiment,tAlerts,tReconnect,tBrief,tGoals]=await Promise.all([
     getTranslations("Home"),getTranslations("Operations"),getTranslations("Categories"),
     getTranslations("SupervisorExperiment"),getTranslations("Alerts"),getTranslations("Reconnect"),
-    getTranslations("DailyBrief"),
+    getTranslations("DailyBrief"),getTranslations("Goals"),
   ]);
   const posStatus=await getPosConnectionStatus();
   const squareReconnectReady=isSquareConfigured()&&Boolean(process.env.SQUARE_REDIRECT_URI);
@@ -100,6 +100,8 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       title=tExperiment("reportTask",{item:itemName});
     }else if(task.kind==="daily_brief"){
       title=tBrief("taskTitle");
+    }else if(task.kind==="goal_report"){
+      title=tGoals(task.payload.midRun===true?"taskMidRunTitle":"taskTitle",{title:String(task.payload.goalTitle??"")});
     }else if (task.status === "handled" && task.kind === "price_review") {
       // Handled covers both "keep current" and a separately verified price application.
       // Never describe a verified price change as a decision to keep the old price.
@@ -233,6 +235,8 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       if(task.kind==="price_experiment_report"){key=task.payload.midRun===true?"SupervisorExperiment.midRunTask":
         "SupervisorExperiment.reportTask";params={item:itemName};}
       else if(task.kind==="daily_brief"){key="DailyBrief.taskTitle";}
+      else if(task.kind==="goal_report"){key=task.payload.midRun===true?"Goals.taskMidRunTitle":"Goals.taskTitle";
+        params={title:String(task.payload.goalTitle??"")};}
       else if(task.status==="handled" && task.kind==="price_review"){
         key=task.payload.priceAppliedToPos===true?"Operations.homeVerifiedPriceApplied":
           task.payload.ownerChoice==="keep_price"?"Operations.homeHandledPrice":"Operations.homePriceReviewClosed";

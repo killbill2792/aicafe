@@ -93,6 +93,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const staff=value.capabilityId?.startsWith("olivia.staff_")===true;
   const purchase=value.capabilityId==="maya.inventory_purchase.v1";
   const experiment=value.capabilityId==="alex.drink_price_experiment.v1";
+  const goal=value.capabilityId==="leo.goal.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
   if(purchase&&value.purchase){
     const copy=dict[locale].InventoryApprovalCard;
@@ -222,7 +223,8 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   }
   const rows:ApprovalPreviewRow[]=value.preview?.length?value.preview:((value.oldPriceCents!=null&&value.newPriceCents!=null)?diffFields([{field:"price",label:"Price",value:{kind:"money",cents:value.oldPriceCents}}],[{field:"price",label:"Price",value:{kind:"money",cents:value.newPriceCents}}]):[]);
   const pending=value.state==="pending"&&!busy;
-  const statuses={...copy.states,...(experiment?{manual_pending:copy.manualPending}:{})} as Record<string,string>;
+  const statuses={...copy.states,...(experiment?{manual_pending:copy.manualPending}:{}),
+    ...(goal?{tracking:dict[locale].Goals.cardTracking}:{})} as Record<string,string>;
   const button="min-h-12 min-w-12 rounded-xl px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={copy.title}
     className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
@@ -239,7 +241,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     {pending&&<div className="mt-4 flex flex-wrap gap-2">
       <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}
         onClick={()=>void invoke("approve")}>{copy.approve}</button>
-      {!experiment&&<button type="button" disabled={busy} className={button+" border border-line"}
+      {!experiment&&!goal&&<button type="button" disabled={busy} className={button+" border border-line"}
         onClick={()=>{setEditing(x=>!x);setPrice(priceEditString(value.newPriceCents!));}}>{copy.edit}</button>}
       <button type="button" disabled={busy} className={button+" border border-line"}
         onClick={()=>void invoke("cancel")}>{copy.cancel}</button>

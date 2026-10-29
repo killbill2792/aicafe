@@ -16,6 +16,9 @@ import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
 import {readSupervisorEconomics} from "@/lib/data/supervisorEconomics.server";
 import {readToastTodaySoFar} from "@/lib/pos/toast/todaySoFar.server";
+import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
+import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
+import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
@@ -152,6 +155,34 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       readTodaySoFar:()=>readToastTodaySoFar(createAdminSupabaseClient(),scope.businessId),
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
+      goals:{
+        propose:async(input)=>{
+          const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,goal:input}));
+          const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},supervisorLoopRegistry,
+            new SupabaseLoopRepository(),goalCapabilityId,input,key);
+          return {proposalId:proposal.id,revision:proposal.revision,
+            title:String((proposal.canonicalEffectPayload as {title:string}).title)};
+        },
+        status:async(goalId)=>{
+          const db=await createServerSupabaseClient();
+          const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
+          if(!goalId)return {goals:await listOwnerGoals(db,owner)};
+          const read=await readGoalStatus(db,{...owner,locale:p.locale},goalId,identity.asOf);
+          if(!read)return {missing:["goalNotFound"]};
+          const primary=read.effect.metrics.find(m=>m.role==="primary")!;
+          const r=read.outcome.evaluation.results[primary.id];
+          return {goal:{id:read.proposal.id,title:read.effect.title,status:read.proposal.status,
+              startsOn:read.window.start,endsOn:read.window.end},
+            evaluation:{status:read.outcome.evaluation.status,recommendation:read.outcome.recommendation,asOf:read.outcome.asOf},
+            summary:read.text,sampledDays:read.sampledDays,
+            metricDetail:{id:primary.id,metricKey:primary.metricKey,source:"computed",
+              params:primary.itemId?{itemId:primary.itemId}:{},unit:metricCatalog[primary.metricKey].unit,
+              comparator:primary.comparator,targetKind:primary.targetKind,target:primary.target},
+            metricEvaluation:r?{current:roundForUnit(read.effect,primary.id,r.current),
+              baseline:roundForUnit(read.effect,primary.id,r.baseline),
+              target:roundForUnit(read.effect,primary.id,r.target),coverage:r.coverage}:null};
+        },
+      },
       proposals:{proposePriceChange:async({productId,newPriceCents})=>{
         const stable=JSON.stringify({ownerMessageId:owner.id,productId,newPriceCents});
         // RFC 4122 UUIDv5: the thread UUID is the namespace.

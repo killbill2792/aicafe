@@ -2790,7 +2790,9 @@
       "draft_week_schedule": "جهّزتُ جدول أسبوع",
       "suggest_new_item_price": "حسبتُ سعرًا للصنف الجديد",
       "propose_price_change": "جهّزتُ تغيير سعر لتوافق عليه",
-      "remember_cafe_fact": "جهّزتُ ملاحظة لتوافق عليها"
+      "remember_cafe_fact": "جهّزتُ ملاحظة لتوافق عليها",
+      "propose_goal": "أعددت هدفك",
+      "get_goal_status": "راجعت أهدافك"
     },
     "agents": {
       "supervisor": "راجعتُ بيانات مقهاك",
@@ -3576,5 +3578,49 @@
     "currencyMissing": "لم يتم تعيين عملة المقهى، لذا هذه المبالغ بلا عملة.",
     "taskTitle": "ملخص الصباح",
     "taskAction": "افتح في المحادثة"
+  },
+  "Goals": {
+    "metric": {
+      "net_sales": "المبيعات اليومية",
+      "orders": "الطلبات يوميًا",
+      "avg_ticket": "متوسط الفاتورة",
+      "item_units": "المباع يوميًا من {item}",
+      "item_revenue": "مبيعات {item} يوميًا"
+    },
+    "titleUpPercent": "{metric} يرتفع {pct}%",
+    "titleDownPercent": "{metric} ينخفض {pct}%",
+    "titleAtLeast": "{metric} لا يقل عن {value}",
+    "titleAtMost": "{metric} لا يزيد عن {value}",
+    "guardrailNotBelow": "يجب ألا ينخفض {metric} أكثر من {pct}%",
+    "guardrailNotAbove": "يجب ألا يرتفع {metric} أكثر من {pct}%",
+    "guardrailWord": "حد أمان",
+    "previewGoal": "الهدف",
+    "previewMetric": "يُقاس بـ",
+    "previewDays": "المدة",
+    "previewGuardrail": "حد أمان",
+    "line": "{metric}: {current} مقابل {baseline} قبل (الهدف {target})، {status}",
+    "lineNoBaseline": "{metric}: {current}، {status}",
+    "lineMissing": "{metric}: لا توجد أيام مؤكدة كافية بعد",
+    "met": "على الهدف",
+    "notMet": "دون الهدف",
+    "unknown": "لم يُقيَّم بعد",
+    "midRun": "تحديث منتصف الهدف {title}: {lines}. قراءة مبكرة وليست نهائية؛ يصل التقرير الكامل بعد اليوم {days}.",
+    "reportMet": "تقرير الهدف {title}: تحقق.",
+    "reportMissed": "تقرير الهدف {title}: لم يتحقق.",
+    "reportInsufficient": "تقرير الهدف {title}: لا توجد أيام مبيعات مؤكدة كافية للحكم.",
+    "recommendKeep": "التوصية: استمر فيما غيّرته.",
+    "recommendRevert": "التوصية: تم تجاوز حد أمان، فتراجع عن التغيير الذي سببه.",
+    "recommendAdjust": "التوصية: عدّل الخطة وجرّب مرة أخرى.",
+    "recommendInsufficient": "التوصية: تأكد من استيراد المبيعات ثم أعد تشغيل الهدف.",
+    "reportCaveat": "قيم ما قبل هي نفس أيام الأسبوع في الأسبوعين السابقين للهدف؛ هذه مقارنة أيام ولا تثبت السبب.",
+    "boardGoal": "{title}: اليوم {day} من {days}",
+    "boardGoalStarts": "{title}: تبدأ المتابعة غدًا",
+    "boardGoalMet": "{title}: تحقق الهدف",
+    "boardGoalMissed": "{title}: لم يتحقق الهدف",
+    "boardGoalInsufficient": "{title}: لا توجد بيانات كافية",
+    "taskTitle": "تقرير الهدف: {title}",
+    "taskMidRunTitle": "تحديث المنتصف: {title}",
+    "taskAction": "افتح في المحادثة",
+    "cardTracking": "قيد المتابعة"
   }
 }

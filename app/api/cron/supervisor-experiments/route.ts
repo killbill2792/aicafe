@@ -48,7 +48,12 @@ export async function GET(request:Request){
    // insufficient-evidence report, not strand the proposal in this queue.
    // Revisit missed dates, not only yesterday; actual coverage is checked on
    // each day and samples are uniquely idempotent by proposal/business date.
+   // Goals run up to 90 days: re-read the last week every run (POS corrections
+   // land there) and older days only when they still have no sample.
+   const sampledDates=new Set((await repo.samples(scope,p.id)).map(s=>s.businessDate));
+   const recheckFrom=utcDateOffset(yesterday,-6);
    for(let day=start;day<=yesterday&&day<=end;day=utcDateOffset(day,1)){
+      if(day<recheckFrom&&sampledDates.has(day))continue;
       const report=await monitorLoop(scope,supervisorLoopRegistry,repo,p,day);
       sampled++;
       if(report)reported++;

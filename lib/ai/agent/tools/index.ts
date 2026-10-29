@@ -12,6 +12,7 @@ import { moneyTools } from "./money";
 import { suppliesTools } from "./supplies";
 import { salesTools } from "./sales";
 import {todayTools} from "./today";
+import {goalTools,type GoalPort} from "./goals";
 import {draftScheduleTools} from "./draftSchedule";
 import {newItemPriceTools} from "./newItemPrice";
 import {milkSwapTools} from "./milkSwap";
@@ -55,6 +56,8 @@ export type AgentToolContext = {
   /** Authenticated canonical screen read, bound to session membership rather than model args. */
   readEconomics?:()=>Promise<SupervisorEconomicsRead>;
   /** Live, provisional read of today's POS orders for the session's café. */
+  /** Goals in the Supervisor loop, bound to the authenticated owner. */
+  goals?:GoalPort;
   readTodaySoFar?:()=>Promise<import("@/lib/pos/toast/todaySoFar.server").TodaySoFarRead>;
   menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
@@ -72,7 +75,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...proposalTools,...priceExperimentTools,...staffProposalTools,...purchasesTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...proposalTools,...priceExperimentTools,...goalTools,...staffProposalTools,...purchasesTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -96,7 +99,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   suggest_new_item_price:["category"]
 };
 
-export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
+export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period.",
@@ -160,6 +163,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
    if(name==="propose_purchases")return purchasesTools.propose_purchases.execute(raw,ctx);
   if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);
+  if(name==="propose_goal")return goalTools.propose_goal.execute(raw,ctx);
+  if(name==="get_goal_status")return goalTools.get_goal_status.execute(raw,ctx);
   if(Object.hasOwn(staffProposalTools,name))return staffProposalTools[name as keyof typeof staffProposalTools].execute(raw,ctx);
   if(name==="get_attention_items")return attentionTools.get_attention_items.execute(raw,ctx);
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);

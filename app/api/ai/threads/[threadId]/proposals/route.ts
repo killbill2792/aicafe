@@ -14,6 +14,7 @@ import {menuPriceChangeCapabilityId,StaleProposalError}
   from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {isStaffCapabilityId,readStaffProposalToken} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId,purchaseCapability} from "@/lib/ai/supervisor/loop/purchases.server";
+import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type Params={params:Promise<{threadId:string}>};
@@ -80,6 +81,14 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
     }
     return {...data,state:p.status==="approved"?"conflict":data.state};
   }
+  if(p.capabilityId===goalCapabilityId){
+    // Goal effects carry their title; the card rows were built in the owner's language at proposal time.
+    const effect=supervisorLoopRegistry.get(goalCapabilityId).parseEffect(p.canonicalEffectPayload) as {title:string};
+    const preview=Array.isArray(p.baseline.preview)?p.baseline.preview:[];
+    const state=({draft:"pending",approved:"applying",executing:"applying",committed:"tracking",
+      monitored:"applied",rejected:"cancelled",expired:"cancelled"} as Record<string,string>)[p.status]??"failed";
+    return {...card(p,state),productName:effect.title,preview};
+  }
   if(p.capabilityId===priceExperimentCapabilityId){
     const effect=supervisorLoopRegistry.get(priceExperimentCapabilityId).parseEffect(p.canonicalEffectPayload);
     const preview=Array.isArray(effect.preview)?effect.preview:[
@@ -137,7 +146,8 @@ export async function POST(request:Request,{params}:Params){
     assertProposalScope(scope,p);
     const staff=isStaffCapabilityId(p.capabilityId);
     const purchase=p.capabilityId===purchaseCapabilityId;
-    if(!staff&&!purchase&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId)
+    if(!staff&&!purchase&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
+      p.capabilityId!==goalCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
     if(purchase){
       if(p.status==="committed")
@@ -229,6 +239,21 @@ export async function POST(request:Request,{params}:Params){
           return conversationJson({state:"conflict",proposal:await view(scope,repo,latest)},409);
         return conversationJson({error:"staff_approval_failed",
           proposal:await view(scope,repo,latest)},409);
+      }
+    }
+    if(p.capabilityId===goalCapabilityId){
+      // Confirming a goal only starts tracking; the commit hook has no side effect.
+      if(p.revision!==input.revision||p.status!=="draft")
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      if(input.action!=="approve"&&input.action!=="cancel")return conversationJson({error:"goal_edit_not_supported"},422);
+      try{
+        if(input.action==="cancel")
+          return conversationJson({proposal:await view(scope,repo,await repo.transition(scope,p.id,p.revision,"reject"))});
+        const approved=await approveLoop(scope,repo,p.id,p.revision);
+        const committed=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision);
+        return conversationJson({proposal:await view(scope,repo,committed.proposal)});
+      }catch{
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,await repo.load(scope,p.id))},409);
       }
     }
     if(p.capabilityId===priceExperimentCapabilityId){

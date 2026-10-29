@@ -16,6 +16,7 @@ import {registerLoopCapability,loopRegistry} from "./engine";
 import {menuPriceChangeCapability} from "./menuPriceChange.server";
 import {staffCapabilities} from "./staffProposals.server";
 import {purchaseCapability} from "./purchases.server";
+import {goalCapability} from "./goal.server";
 
 const cents=z.number().int().safe().nonnegative();
 const baseline=z.strictObject({
@@ -132,4 +133,4 @@ export const priceExperimentCapability=registerLoopCapability({
     };
   },
 });
-export const supervisorLoopRegistry=loopRegistry(priceExperimentCapability,menuPriceChangeCapability,purchaseCapability,...staffCapabilities);
+export const supervisorLoopRegistry=loopRegistry(priceExperimentCapability,menuPriceChangeCapability,purchaseCapability,goalCapability,...staffCapabilities);

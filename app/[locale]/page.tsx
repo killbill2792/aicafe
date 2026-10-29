@@ -69,6 +69,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     getTranslations("Home"), getTranslations("SupervisorChat"), getTranslations("Common"),
   ]);
   const tAccess=await getTranslations("FreeAccess");
+  const tGoals=await getTranslations("Goals");
   const items=await getAttentionItems({period,locale,snapshot,menu});
   const businessId=signedInUser?await getActiveBusinessId(signedInUser.id):null;
   const board=businessId&&identity&&signedInUser
@@ -101,13 +102,17 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         board:board?{
           running:board.running.map(r=>({key:r.proposalId,
             href:boardHref(r),
-            text:r.stage==="waitingOnOwner"?t("boardWaiting",{item:r.productName,price:money(r.newPriceCents)})
+            text:r.goal?(r.day!==null&&r.day>=1?tGoals("boardGoal",{title:r.productName,day:number(r.day),days:number(r.days??0)})
+                :tGoals("boardGoalStarts",{title:r.productName}))
+              :r.stage==="waitingOnOwner"?t("boardWaiting",{item:r.productName,price:money(r.newPriceCents)})
               :r.day!==null&&r.day>=1?t("boardMonitoring",{item:r.productName,old:money(r.oldPriceCents),
                 new:money(r.newPriceCents),day:number(r.day),days:number(r.days??0)})
               :t("boardMonitoringStarts",{item:r.productName,old:money(r.oldPriceCents),new:money(r.newPriceCents)})})),
           reports:board.recentReports.map(r=>({key:r.proposalId,
             href:boardHref(r),
-            text:r.status==="insufficient_evidence"?t("boardReportInsufficient",{item:r.productName})
+            text:r.goal?(r.status==="insufficient_evidence"||r.goal.met===null?tGoals("boardGoalInsufficient",{title:r.productName})
+                :r.goal.met?tGoals("boardGoalMet",{title:r.productName}):tGoals("boardGoalMissed",{title:r.productName}))
+              :r.status==="insufficient_evidence"?t("boardReportInsufficient",{item:r.productName})
               :r.recommendation==="keep"?t("boardReportKeep",{item:r.productName})
               :r.recommendation==="revert"?t("boardReportRevert",{item:r.productName})
               :t("boardReportAdjust",{item:r.productName})})),

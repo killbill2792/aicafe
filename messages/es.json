@@ -2790,7 +2790,9 @@
       "draft_week_schedule": "Preparé un horario semanal",
       "suggest_new_item_price": "Calculé un precio para el nuevo producto",
       "propose_price_change": "Preparé un cambio de precio para que lo apruebes",
-      "remember_cafe_fact": "Preparé una nota para que la apruebes"
+      "remember_cafe_fact": "Preparé una nota para que la apruebes",
+      "propose_goal": "Preparé tu meta",
+      "get_goal_status": "Revisé tus metas"
     },
     "agents": {
       "supervisor": "Revisé los datos de tu café",
@@ -3576,5 +3578,49 @@
     "currencyMissing": "La moneda de tu café no está configurada, así que estos importes no tienen moneda.",
     "taskTitle": "Resumen de la mañana",
     "taskAction": "Abrir en el chat"
+  },
+  "Goals": {
+    "metric": {
+      "net_sales": "Ventas diarias",
+      "orders": "Pedidos al día",
+      "avg_ticket": "Ticket medio",
+      "item_units": "{item} vendidos al día",
+      "item_revenue": "Ventas de {item} al día"
+    },
+    "titleUpPercent": "{metric} sube {pct}%",
+    "titleDownPercent": "{metric} baja {pct}%",
+    "titleAtLeast": "{metric} al menos {value}",
+    "titleAtMost": "{metric} como máximo {value}",
+    "guardrailNotBelow": "{metric} no debe bajar más de {pct}%",
+    "guardrailNotAbove": "{metric} no debe subir más de {pct}%",
+    "guardrailWord": "límite",
+    "previewGoal": "Meta",
+    "previewMetric": "Se mide con",
+    "previewDays": "Duración",
+    "previewGuardrail": "Límite",
+    "line": "{metric}: {current} frente a {baseline} antes (meta {target}), {status}",
+    "lineNoBaseline": "{metric}: {current}, {status}",
+    "lineMissing": "{metric}: aún no hay suficientes días verificados",
+    "met": "en meta",
+    "notMet": "por debajo de la meta",
+    "unknown": "aún sin evaluar",
+    "midRun": "Actualización a mitad de {title}: {lines}. Lectura temprana, no final; el informe completo llega después del día {days}.",
+    "reportMet": "Informe de la meta {title}: cumplida.",
+    "reportMissed": "Informe de la meta {title}: no cumplida.",
+    "reportInsufficient": "Informe de la meta {title}: no hay suficientes días de ventas verificados para evaluarla.",
+    "recommendKeep": "Recomendación: sigue con lo que cambiaste.",
+    "recommendRevert": "Recomendación: se rompió un límite, así que deshaz el cambio que lo causó.",
+    "recommendAdjust": "Recomendación: ajusta el plan y vuelve a intentarlo.",
+    "recommendInsufficient": "Recomendación: revisa que las ventas se estén importando y vuelve a lanzar la meta.",
+    "reportCaveat": "Los valores de antes son los mismos días de la semana de las dos semanas previas; compara días, no demuestra la causa.",
+    "boardGoal": "{title}: día {day} de {days}",
+    "boardGoalStarts": "{title}: el seguimiento empieza mañana",
+    "boardGoalMet": "{title}: meta cumplida",
+    "boardGoalMissed": "{title}: meta no cumplida",
+    "boardGoalInsufficient": "{title}: no hay datos suficientes",
+    "taskTitle": "Informe de meta: {title}",
+    "taskMidRunTitle": "Actualización a mitad: {title}",
+    "taskAction": "Abrir en el chat",
+    "cardTracking": "En seguimiento"
   }
 }

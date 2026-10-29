@@ -12,10 +12,14 @@ export type BoardRunning={
   proposalId:string;threadId:string;capabilityId:string;productName:string;oldPriceCents:number;newPriceCents:number;
   /** waitingOnOwner: the owner still has to change the price in the POS. */
   stage:"waitingOnOwner"|"monitoring";day:number|null;days:number|null;
+  /** Set for goals: productName holds the goal title and the prices are 0. */
+  goal?:true;
 };
 export type BoardReport={
   proposalId:string;threadId:string;capabilityId:string;productName:string;
   status:"complete"|"insufficient_evidence";recommendation:"keep"|"revert"|"adjust"|null;generatedAt:string;
+  /** Goals only: whether the goal was met. */
+  goal?:{met:boolean|null};
 };
 export type OperatingBoard={running:BoardRunning[];recentReports:BoardReport[]};
 
@@ -32,7 +36,16 @@ export function boardHref(r:{threadId:string;proposalId:string;capabilityId:stri
 const RECENT_REPORT_DAYS=14;
 const MAX_ITEMS=3;
 
-function priceEffect(payload:unknown){
+export const GOAL_CAPABILITY="leo.goal.v1";
+function goalTitle(payload:unknown){
+  const t=payload&&typeof payload==="object"?(payload as {title?:unknown}).title:null;
+  return typeof t==="string"&&t.length>0?t:null;
+}
+function priceEffect(payload:unknown,capabilityId?:string){
+  if(capabilityId===GOAL_CAPABILITY){
+    const title=goalTitle(payload);
+    return title?{productName:title,oldPriceCents:0,newPriceCents:0,goal:true as const}:null;
+  }
   if(!payload||typeof payload!=="object")return null;
   const p=payload as Record<string,unknown>;
   return typeof p.productName==="string"&&Number.isSafeInteger(p.oldPriceCents)&&Number.isSafeInteger(p.newPriceCents)
@@ -49,7 +62,7 @@ export function buildOperatingBoard(proposals:readonly BoardProposalRow[],report
   today:string):OperatingBoard{
   const byId=new Map(proposals.map(p=>[p.id,p]));
   const running=proposals.flatMap((p):BoardRunning[]=>{
-    const effect=priceEffect(p.canonical_effect_payload);
+    const effect=priceEffect(p.canonical_effect_payload,p.capability_id);
     if(!effect)return [];
     if(p.status==="manual_pending")
       return [{proposalId:p.id,threadId:p.thread_id,capabilityId:p.capability_id,...effect,stage:"waitingOnOwner",day:null,days:null}];
@@ -64,12 +77,14 @@ export function buildOperatingBoard(proposals:readonly BoardProposalRow[],report
   const cutoff=Date.parse(today+"T00:00:00Z")-RECENT_REPORT_DAYS*86_400_000;
   const recentReports=reports.flatMap((r):BoardReport[]=>{
     const p=byId.get(r.proposal_id);
-    const effect=p?priceEffect(p.canonical_effect_payload):null;
+    const effect=p?priceEffect(p.canonical_effect_payload,p.capability_id):null;
     if(!p||!effect||(r.status!=="complete"&&r.status!=="insufficient_evidence"))return [];
     if(!(Date.parse(r.generated_at)>=cutoff))return [];
-    const rec=r.report&&typeof r.report==="object"?(r.report as {recommendation?:unknown}).recommendation:null;
+    const report=r.report&&typeof r.report==="object"?r.report as {recommendation?:unknown;evaluationStatus?:unknown}:{};
+    const rec=report.recommendation;
     return [{proposalId:p.id,threadId:p.thread_id,capabilityId:p.capability_id,productName:effect.productName,status:r.status,
-      recommendation:rec==="keep"||rec==="revert"||rec==="adjust"?rec:null,generatedAt:r.generated_at}];
+      recommendation:rec==="keep"||rec==="revert"||rec==="adjust"?rec:null,generatedAt:r.generated_at,
+      ...("goal" in effect?{goal:{met:report.evaluationStatus==="met"?true:report.evaluationStatus==="missed"?false:null}}:{})}];
   }).sort((a,b)=>b.generatedAt.localeCompare(a.generatedAt)).slice(0,MAX_ITEMS);
   return {running,recentReports};
 }
