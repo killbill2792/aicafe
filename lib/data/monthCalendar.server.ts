@@ -1,4 +1,5 @@
 import "server-only";
+import { readDailyFactRows } from "./dailyFacts.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CategoryMonthlyAmount, DailyFacts, ExpenseCategoryCode } from "@/lib/calc";
 import { RUNNING_COST_CODES, rowToDailyFacts } from "./runningCostCatalog";
@@ -41,15 +42,8 @@ export async function getMonthCalendarFromDb(
   const monthEnd = `${monthKey}-${String(daysInMonth).padStart(2, "0")}`;
 
   const [rollupResult, expensesResult, recurringResult, locationResult] = await Promise.all([
-    supabase
-      .from("daily_rollups")
-      .select(
-        "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents",
-      )
-      .eq("business_id", businessId)
-      .gte("business_date", monthStart)
-      .lte("business_date", monthEnd)
-      .order("business_date", { ascending: true }),
+    readDailyFactRows(supabase, businessId, monthStart, monthEnd)
+      .then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
     supabase
       .from("expenses")
       .select("category_code, amount_cents, status")

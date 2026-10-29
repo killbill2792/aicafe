@@ -1,4 +1,5 @@
 import "server-only";
+import { readDailyFactRows } from "./dailyFacts.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
@@ -51,7 +52,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
   const [itemsResult, rollupsResult, recurringResult, ordersResult, expenseResult, priorExpenseResult] = await Promise.all([
     supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
-    supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, card_fees_cents, card_fees_status, sales_data_status, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
+    readDailyFactRows(supabase, businessId, fromDateStr, todayDateStr).then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
     supabase.from("recurring_costs").select("amount_cents, category_code, frequency, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
     supabase.from("orders").select("business_date, pos_order_id, net_sales_cents, processing_fee_provider").eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("expenses").select("category_code, amount_cents, status")
@@ -171,15 +172,15 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const menuPriceBasis = menuPriceSourceBasis({
     days:(rollupsResult.data??[]).map(row=>({
       businessDate:row.business_date,
-      salesStatus:row.sales_data_status,
+      salesStatus:row.sales_data_status??null,
       netSalesCents:Number(row.net_sales_cents),
       drinksCount:Number(row.drinks_count),
       wagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
       payrollTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
        laborWageStatus:row.labor_wage_status,
-      payrollTaxStatus:row.staff_tax_status,
+      payrollTaxStatus:row.staff_tax_status??null,
       cardFeesCents:Number(row.card_fees_cents),
-      cardFeesStatus:row.card_fees_status,
+      cardFeesStatus:row.card_fees_status??null,
     })),
     recurring:activeOperatingCosts.map(row=>({
       categoryCode:row.category_code,

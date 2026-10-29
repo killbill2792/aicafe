@@ -1,4 +1,5 @@
 import "server-only";
+import {readDailyFactRows} from "./dailyFacts.server";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {formatInTimeZone,fromZonedTime} from "date-fns-tz";
 import {normalizeOpenHours,regularHoursStateForDate} from "@/lib/business/openHours";
@@ -31,8 +32,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   db.from("locations").select("open_hours").eq("business_id",businessId).limit(1),
   db.from("recurring_costs").select("amount_cents,frequency,is_estimate,active_from,active_to")
    .eq("business_id",businessId).lte("active_from",asOf),
-  db.from("daily_rollups").select("business_date,sales_data_status,net_sales_cents,ingredients_cents,card_fees_cents,card_fees_status,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,drinks_count,orders_count")
-   .eq("business_id",businessId).gte("business_date",salesSince).lte("business_date",asOf).limit(500),
+  readDailyFactRows(db,businessId,salesSince,asOf).then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
   db.from("employees").select("id,display_name,role,default_hourly_wage_cents").eq("business_id",businessId).eq("active",true).limit(500),
   getOwnerConfirmedProcessingFeePlans(db,businessId),
   getBusinessSnapshotFromDb(db,businessId,"month",asOf),
@@ -50,7 +50,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   .map(row=>row.business_date).sort();
  const latest=salesDays.at(-1);
  const first=latest?salesDays.find(day=>day>=dateOffset(latest,-29)):undefined;
- const coveredDates=new Set(salesDays.filter(day=>first&&day>=first&&day<=latest));
+ const coveredDates=new Set(salesDays.filter(day=>first&&latest&&day>=first&&day<=latest));
  const laborWindow=[...coveredDates].filter(open);
  const timecards=await db.from("timecards")
   .select("employee_id,clock_in,clock_out,hourly_wage_cents,source_type")

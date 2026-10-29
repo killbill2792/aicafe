@@ -26,7 +26,7 @@ function fixtureDb(rows:Record<string,unknown>[]):SupabaseClient{
   const res={data,error:null};
   const q={
    select(){return q;},eq(){return q;},gte(){return q;},lte(){return q;},
-   order(){return q;},limit(){return q;},single(){return Promise.resolve({...res,data:data[0]??null});},
+   order(){return q;},limit(){return q;},range(){return q;},single(){return Promise.resolve({...res,data:data[0]??null});},
    then(ok:(result:typeof res)=>unknown){return Promise.resolve(res).then(ok);},
   };
   return q;
