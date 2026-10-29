@@ -1,17 +1,40 @@
-## Now
-- [ ] Review M1: generic owner goals/experiments, check-ins, monitoring, approval and RLS; run CI and live smoke before merge.
-- [ ] Deploy approved M0/M1 migrations separately; neither is applied by this PR.
-- [ ] Run a live owner agent smoke test with credentials before production release.
+Direction: an AI operator that runs the café through the Supervisor chat (see AGENTS.md sections 1–5).
+Each item below is one small PR, in order. Do not start an item from "Next" before "Now" is done.
 
-## Next
-- [ ] Add grounded quick-reply chips and reconcile remaining AI usage ledger limits.
-- [ ] Review eight-theme UI foundation for screen contrast and owner RTL behavior.
-- [ ] Add an actual owner-click approval card and persistence in UI; only then enable production propose_initiative registration (backend-only M1 deliberately gates it).
-- [ ] Add staff WhatsApp check-in handling in W2; no staff messaging in M1.
-- [ ] Add rolling conversation summaries and remove unused legacy routes.
+## Now
+- [ ] Review and merge #217 (these rules) and #216 (cleanup; all checks green locally, awaiting CI and review). Set `OPENAI_API_KEY` in production before deploying #216.
+- [ ] Security: enable RLS on `businesses` (the only table without it) and add a CI check that fails if any `public` table has RLS off. Verify production first: `select relrowsecurity from pg_class where relname='businesses';`
+- [ ] Golden owner questions: ~10 fixed fixture questions with exact expected numbers on both chat and screen paths; replace the `>= 0` cost check in `metricsParity.test.ts` with exact equality.
+
+## Next — the AI reads all POS data (AGENTS.md 4b)
+- [ ] 4a. Capture every Toast endpoint daily: run the #210 sampler on a schedule per café and store every page in `toast_raw_records` (from #212).
+- [ ] 4b. Point the canonical views (#212) at that store, so cash, stock, kitchen and dining options are fresh; add views for the remaining endpoints.
+- [ ] 4c. Merge `describe_data` / `query_data` (#212) with a dictionary entry for every source; screens move to the same readers.
+- [ ] 4d. "Today so far" live layer: refresh changed orders, payments, time entries, stock and cash every 10–15 minutes while open; provisional, replaced at closeout. First review why the old 5-minute poll was turned off and reuse what is safe.
+
+## Next — the operator loop (AGENTS.md 4–5)
+- [ ] One experiment system: keep the Supervisor loop (propose → approve → monitor → report already works); fold in or delete owner initiatives.
+- [ ] Operating Board: add "Running" (active experiments/monitors, day X of Y, early read) and "Recent reports" to `ChatStart`, reading the same data as the chat tools.
+- [ ] Inbox + notifications: every proactive finding, experiment update and report becomes an `operating_tasks` item plus a chat message, with an unread badge on the board.
+- [ ] Proactive monitor: daily findings plus live checks every ~30 minutes while open; duplicate suppression and daily cap.
+- [ ] Mid-run experiment updates (not only the final report).
+
+## Later
+- [ ] Email delivery of inbox items.
+- [ ] Currency: remove the remaining hard-coded USD listed in `lib/ai/agent/bannedPatterns.test.ts` (`formatCents` callers, BillsManager, etc.).
+- [ ] Merge duplicate money formulas listed in `lib/metrics/core/canonicalOnly.test.ts` into `lib/metrics/core`, with parity tests.
+- [ ] Rolling conversation summary; tool-result size cap enforced in code.
+- [ ] Add `npm run smoke:agent` (live owner smoke test run by the owner before release).
+- [ ] Browser push, Toast webhooks, "always allow" per action type, WhatsApp/SMS sending once a verified business sender exists.
 
 ## Done (last 10)
-- PR #150 merged: pantry starter ingredients, recipe-size templates and pricing helpers; deployment remains separate.
-- PR #147 merged: team_updates owner-scoped storage and service-role writer.
-- PR #146 merged: streaming agent with bounded calls and verified money extraction.
-- Existing P1 source inventory and business data boundary remain enforced.
+- PR #215: model-driven milk tool, fact-card resume, scoped costs and localization.
+- PR #214: owner fact cards, saved new-thread answers and milk-swap adapter.
+- PR #211: shared café math, partial results and read-only refresh.
+- PR #213: stored Toast facts and schedules exposed in chat.
+- PR #210: Toast read-only diagnostics across all documented GET APIs.
+- PR #209: manual Toast raw sample workflow.
+- PR #208: Toast raw data samples.
+- PR #207: GitHub Actions cron for Test Cafe sync.
+- PR #206: new-drink pricing explanation fix.
+- PR #150: pantry starter ingredients, recipe-size templates and pricing helpers.
