@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildTodayGlanceViewModel } from "./todayGlance";
 import { zeroDailyFacts } from "@/lib/calc";
+import { liveSalesView } from "@/components/home/liveSales";
 import type { BusinessSnapshot } from "@/lib/data/types";
 
 const BUCKETS: BusinessSnapshot["runningCostLines"] = [
@@ -58,6 +59,43 @@ describe("buildTodayGlanceViewModel", () => {
     expect(vm.moneyLeftCents).toBeNull();
     expect(vm.bucketState.kind).toBe("costsUnknown");
   });
+  it("Money's live Today sales exactly equal Home's saved-reading sales, without claiming money left", () => {
+    const saved = {
+      value: {netSalesCents: 84_250, orders: 61, unparsedOrders: 2,
+        readAt: "2026-10-03T17:15:00Z", businessDate: "2026-10-03"},
+      ageMs: 5 * 60_000,
+    };
+    const home = liveSalesView(saved, "America/Los_Angeles", "en-US", "2026-10-03");
+    expect(home?.netSalesCents).toBe(84_250);
+    const money = buildTodayGlanceViewModel(buildSnapshot({todayHasData: false}), {
+      netSalesCents: home!.netSalesCents, orders: saved.value.orders,
+    });
+    expect(money.salesCents).toBe(home!.netSalesCents);
+    expect(money.ordersCount).toBe(61);
+    expect(money.avgOrderValueCents).toBe(1381);
+    expect(money.moneyLeftCents).toBeNull();
+    expect(money.bucketState).toEqual({kind: "costsUnknown"});
+    expect(money.drinksCount).toBe(0);
+  });
+
+  it("does not mistake an all-unreadable live day for zero sales or zero orders", () => {
+    const saved = {
+      value: {netSalesCents: 0, orders: 0, unparsedOrders: 4,
+        readAt: "2026-10-03T17:15:00Z", businessDate: "2026-10-03"},
+      ageMs: 5 * 60_000,
+    };
+    const home = liveSalesView(saved, "America/Los_Angeles", "en-US", "2026-10-03");
+    expect(home?.netSalesCents).toBeNull();
+    const money = buildTodayGlanceViewModel(buildSnapshot({todayHasData: false}), {
+      netSalesCents: home!.netSalesCents, orders: saved.value.orders,
+    });
+    expect(money.salesCents).toBeNull();
+    expect(money.ordersCount).toBeNull();
+    expect(money.avgOrderValueCents).toBeNull();
+    expect(money.moneyLeftCents).toBeNull();
+    expect(money.bucketState).toEqual({kind: "costsUnknown"});
+  });
+
   it("is 'noSalesYet' when today has no rollup at all — not a substituted stale day", () => {
     const snapshot = buildSnapshot({ todayHasData: false });
     const vm = buildTodayGlanceViewModel(snapshot);
