@@ -27,7 +27,7 @@ export default function ReceiptUploader({
   currency,
 }: {
   categoryLabels: Record<ExpenseCategoryCode, string>;
-  currency: string | null;
+  currency?: string | null;
   labels: { prompt: string; takePhoto: string; reading: string; looksRight: string; saved: string };
 }) {
   const router = useRouter();
