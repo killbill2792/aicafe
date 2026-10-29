@@ -48,9 +48,9 @@ export default function ProductDetailScreen({item,pantry,savedAddons,posModifier
       </div>)}</div>
     </section>}</>}
   {tab==="recipe"&&<>
-   {productEditItems.some(entry=>entry.recipe.length===0)&&<AggregateProductCostEditor items={productEditItems.filter(entry=>entry.recipe.length===0)}
+   {productEditItems.some(entry=>entry.recipe.length===0)&&<AggregateProductCostEditor currency={item.currency??null} items={productEditItems.filter(entry=>entry.recipe.length===0)}
      labels={{title:t("aggregateCostTitle"),help:t("aggregateCostHelp"),perSize:t("aggregateCostPerSize"),input:t("aggregateCostInput"),save:t("aggregateCostSave"),remove:t("aggregateCostRemove"),saved:t("aggregateCostSaved"),usingOwner:t("aggregateCostOwnerActive"),usingOwnerEstimate:t("aggregateCostOwnerEstimateActive"),usingImported:t("aggregateCostImportedActive"),usingImportedEstimate:t("aggregateCostImportedEstimateActive"),usingRecipe:t("aggregateCostRecipeActive"),recipeOnly:t("aggregateCostRecipeOnly"),missing:t("aggregateCostMissing"),recipeHigher:t("aggregateCostRecipeHigher"),recipeLower:t("aggregateCostRecipeLower"),same:t("aggregateCostSame"),invalid:t("aggregateCostInvalid"),error:t("aggregateCostError")}}/>}
-   <AllSizesRecipe key={productEditItems.map(size=>`${size.id}:${size.active}:${size.priceCents}:${size.recipe.map(line=>`${line.ingredientId}-${line.quantity}-${line.displayUnit}-${line.displayQuantity}`).join(",")}`).join("|")} items={productEditItems} ingredients={ingredients} conversions={ingredientConversions} pantry={pantry} draftSizes={draftSizes}/>
+   <AllSizesRecipe currency={item.currency??null} key={productEditItems.map(size=>`${size.id}:${size.active}:${size.priceCents}:${size.recipe.map(line=>`${line.ingredientId}-${line.quantity}-${line.displayUnit}-${line.displayQuantity}`).join(",")}`).join("|")} items={productEditItems} ingredients={ingredients} conversions={ingredientConversions} pantry={pantry} draftSizes={draftSizes}/>
   </>}
  </>;
 }
