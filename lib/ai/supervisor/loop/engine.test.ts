@@ -3,7 +3,7 @@ import {z} from "zod";
 import {evaluatePriceExperiment,simulatePriceExperiment} from "@/lib/calc/priceExperiment";
 import {billReviewFixtureCapability} from "./reviewBillFixture";
 import {registerLoopCapability,loopRegistry,proposeLoop,approveLoop,commitLoop,
-  confirmManualLoop,monitorLoop,simulateLoop,utcDateOffset,type LoopRepository,
+  confirmManualLoop,monitorLoop,midRunDay,simulateLoop,utcDateOffset,type LoopRepository,
   type LoopProposal,type LoopSample,type LoopReport,type OwnerLoopScope,type LoopCreate} from "./engine";
 const scope:OwnerLoopScope={businessId:"business-a",ownerUserId:"owner-a",threadId:"thread-a",locale:"en"};
 const calc=simulatePriceExperiment({productId:"latte-12oz",productName:"Latte 12oz",
@@ -81,7 +81,9 @@ class MemoryRepo implements LoopRepository{
   }
   async clearSample(_s:OwnerLoopScope,id:string,date:string){this.rows.get(id)?.delete(date);}
   async samples(_s:OwnerLoopScope,id:string){return [...(this.rows.get(id)?.values()??[])];}
-  async saveReport(_s:OwnerLoopScope,p:LoopProposal,report:LoopReport){this.reports.set(p.id,report);}
+  midRuns:string[]=[];
+  async saveReport(_s:OwnerLoopScope,p:LoopProposal,report:LoopReport,opts?:{midRun?:boolean}){
+    this.reports.set(p.id,report);if(opts?.midRun)this.midRuns.push(p.id);}
 }
 const registry=loopRegistry(drinkFixture,billReviewFixtureCapability);
 describe("end-to-end universal Supervisor execution loop",()=>{
@@ -119,7 +121,16 @@ describe("end-to-end universal Supervisor execution loop",()=>{
       const day=utcDateOffset("2026-10-21",i);
       expect(await monitorLoop(scope,registry,repo,confirmed,day)).toBeNull();
     }
-    const final=await monitorLoop(scope,registry,repo,confirmed,"2026-10-27");
+    // The halfway day of a 7-day window is its third day; only an explicit
+    // mid-run request asks the repository to post the update.
+    expect(midRunDay("2026-10-21",7)).toBe("2026-10-23");
+    expect(repo.midRuns).toEqual([]);
+    const early=await monitorLoop(scope,registry,repo,confirmed,"2026-10-23",true,true);
+    expect(early?.status).toBe("in_progress");
+    expect(repo.midRuns).toEqual([draft.id]);
+    const final=await monitorLoop(scope,registry,repo,confirmed,"2026-10-27",false,true);
+    // A final report never counts as the mid-run update.
+    expect(repo.midRuns).toEqual([draft.id]);
     expect(final).toMatchObject({status:"complete",recommendation:"keep",
       result:{units:70,observedRevenueCents:35700,
         observedIngredientContributionCents:26950,

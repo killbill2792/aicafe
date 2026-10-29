@@ -230,7 +230,8 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
     let params:Record<string,string|number>={};
     if(task){
       const itemName=String(task.payload.itemName??"").replace(" · "," ");
-      if(task.kind==="price_experiment_report"){key="SupervisorExperiment.reportTask";params={item:itemName};}
+      if(task.kind==="price_experiment_report"){key=task.payload.midRun===true?"SupervisorExperiment.midRunTask":
+        "SupervisorExperiment.reportTask";params={item:itemName};}
       else if(task.kind==="daily_brief"){key="DailyBrief.taskTitle";}
       else if(task.status==="handled" && task.kind==="price_review"){
         key=task.payload.priceAppliedToPos===true?"Operations.homeVerifiedPriceApplied":

@@ -1,7 +1,7 @@
 import {NextResponse} from "next/server";
 import {formatInTimeZone} from "date-fns-tz";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {monitorLoop,utcDateOffset,type LoopProposal,type OwnerLoopScope}
+import {monitorLoop,midRunDay,utcDateOffset,type LoopProposal,type OwnerLoopScope}
   from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -53,6 +53,10 @@ export async function GET(request:Request){
       sampled++;
       if(report)reported++;
    }
+   // One mid-run update once the first half has passed (sent at most once:
+   // the message id is stable per experiment).
+   if(yesterday>=midRunDay(start,p.monitorSpec.durationDays)&&yesterday<end)
+      await monitorLoop(scope,supervisorLoopRegistry,repo,p,yesterday,true,true);
    // Even when some dates have no actual coverage, publish the honest
    // insufficient-evidence outcome when the full window has elapsed.
    if(yesterday>end&&start<=yesterday){

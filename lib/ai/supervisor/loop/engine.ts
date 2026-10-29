@@ -31,6 +31,9 @@ export type LoopSample={businessDate:string;observation:Record<string,unknown>;s
 export type LoopReport={status:"in_progress"|"complete"|"insufficient_evidence";
   result:Record<string,unknown>;recommendation:"keep"|"revert"|"adjust";
   source:string;
+  /** Short owner message for the one mid-run update; only sent when the
+   * monitor asks for it (see monitorLoop's midRun flag). */
+  midRunText?:string;
   /** Domain-owned delivery into the existing Operations inbox and owner thread.
    * No platform branch may assume a drink, task kind or specialist identity. */
   delivery?:{
@@ -112,7 +115,7 @@ export interface LoopRepository{
   addSample(scope:OwnerLoopScope,id:string,sample:LoopSample):Promise<void>;
   clearSample(scope:OwnerLoopScope,id:string,businessDate:string):Promise<void>;
   samples(scope:OwnerLoopScope,id:string):Promise<LoopSample[]>;
-  saveReport(scope:OwnerLoopScope,proposal:LoopProposal,report:LoopReport):Promise<void>;
+  saveReport(scope:OwnerLoopScope,proposal:LoopProposal,report:LoopReport,opts?:{midRun?:boolean}):Promise<void>;
 }
 /** Canonical content fingerprint; order of JSON object properties must not
  * change the approval's meaning or consume the wrong effect on retry. */
@@ -207,8 +210,14 @@ export function utcDateOffset(day:string,n:number):string{
   date.setUTCDate(date.getUTCDate()+n);
   return date.toISOString().slice(0,10);
 }
+/** The business day after which the one mid-run update is sent: the end of the
+ * first half of the window (day 3 of 7). */
+export function midRunDay(start:string,durationDays:number):string{
+  return utcDateOffset(start,Math.max(1,Math.floor(durationDays/2))-1);
+}
 export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeof loopRegistry>,
-  repo:LoopRepository,p:LoopProposal,businessDate:string,allowEarlyReport=false):Promise<LoopReport|null>{
+  repo:LoopRepository,p:LoopProposal,businessDate:string,allowEarlyReport=false,
+  midRun=false):Promise<LoopReport|null>{
   assertProposalScope(scope,p);
   if(!["manual_confirmed","committed"].includes(p.status)||!p.monitoringStartDate)return null;
   // The proposal captured the owner locale when created. Subsequent cron/API
@@ -242,6 +251,6 @@ export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
   const report:LoopReport={...generated,status:finalStatus,
     recommendation:finalStatus==="complete"?generated.recommendation:"adjust",
     result:{...generated.result,status:finalStatus}};
-  await repo.saveReport(reportScope,p,report);
+  await repo.saveReport(reportScope,p,report,{midRun:midRun&&finalStatus==="in_progress"});
   return report;
 }

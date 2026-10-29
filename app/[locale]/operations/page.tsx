@@ -116,11 +116,12 @@ function TaskList({ tasks, empty, names, t, tExperiment, tBrief, category, selec
     const visual = agentVisuals[task.agentId];
     const price = task.kind === "price_review";
     const experiment=task.kind==="price_experiment_report";
+    const midRun=experiment&&task.payload.midRun===true;
     const itemName = String(task.payload.itemName).replace(" · ", " ");
     const direction = price ? priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents)) : null;
     const brief = task.kind === "daily_brief";
-    const title = brief ? tBrief("taskTitle") : experiment ? tExperiment("reportTask",{item:String(task.payload.itemName??"")}) : price ? t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }) : t("mayaWatching");
-    const detail = brief ? String(task.payload.text ?? "") : experiment ? tExperiment("reportDetail") : price ? t("priceTaskReason") : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("supplySignal") : t("staffTaskReason");
+    const title = brief ? tBrief("taskTitle") : experiment ? tExperiment(midRun?"midRunTask":"reportTask",{item:String(task.payload.itemName??"")}) : price ? t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }) : t("mayaWatching");
+    const detail = brief ? String(task.payload.text ?? "") : experiment ? tExperiment(midRun?"midRunDetail":"reportDetail") : price ? t("priceTaskReason") : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("supplySignal") : t("staffTaskReason");
     const action = brief ? tBrief("taskAction") : experiment ? tExperiment("reportAction") : price ? t("reviewItem", { item: String(task.payload.itemName).split(" · ")[0] }) : task.kind === "staff_coverage" ? t("openStaff") : task.kind === "data_quality" ? t("openBills") : t("openIngredientCosts");
     const selected=task.id===selectedTaskId;
     return <article key={task.id} id={selected?"selected-task":undefined} tabIndex={selected?-1:undefined}
@@ -134,9 +135,9 @@ function TaskList({ tasks, empty, names, t, tExperiment, tBrief, category, selec
           formatCents(task.payload.observedRevenueCents):tExperiment("notAvailable")})}</p>
         <p>{tExperiment("reportDifference",{value:typeof task.payload.realizedRevenueDifferenceCents==="number"?
           formatCents(task.payload.realizedRevenueDifferenceCents):tExperiment("notAvailable")})}</p>
-        <p className="font-semibold">{tExperiment("recommendation",{choice:tExperiment(
-          task.payload.recommendation==="keep"?"keep":task.payload.recommendation==="revert"?"revert":"adjust")})}</p>
-        <p className="text-ink-muted">{tExperiment(task.payload.outcomeStatus==="complete"?"reportCompletedCaveat":"reportUncertain")}</p>
+        {!midRun&&<p className="font-semibold">{tExperiment("recommendation",{choice:tExperiment(
+          task.payload.recommendation==="keep"?"keep":task.payload.recommendation==="revert"?"revert":"adjust")})}</p>}
+        {!midRun&&<p className="text-ink-muted">{tExperiment(task.payload.outcomeStatus==="complete"?"reportCompletedCaveat":"reportUncertain")}</p>}
       </div>}
       <Link href={taskHref(task)} className="mt-3 flex min-h-12 items-center justify-center rounded-full bg-accent px-4 text-center font-bold text-on-accent no-underline">{action}</Link>
       {price && task.status === "needs_owner" && <PriceReviewActions taskId={task.id} keepLabel={t("keepCurrent")} laterLabel={t("later")} snoozeLabels={{ seven: t("remind7"), thirty: t("remind30"), change: t("remindChange") }} cancelLabel={t("cancel")} errorLabel={t("decisionError")} />}
