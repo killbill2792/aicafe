@@ -1,4 +1,5 @@
 import "server-only";
+import {readDailyFactRows} from "./dailyFacts.server";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { buildDayWindows, evaluateRecipeCost, resolveProductCost, type ExpenseCategoryCode } from "@/lib/calc";
 import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
@@ -52,10 +53,8 @@ export async function getBusinessSnapshotFromDb(
   // All source reads here are independent; no schedule/alert writes on page load.
   const [rollupResult,recurringResult,expensesResult,priorExpenseResult,recoveryOrderResult]=
     await Promise.all([
-      supabase.from("daily_rollups").select(
-        "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents")
-        .eq("business_id",businessId).gte("business_date",prevMonthStart)
-        .lte("business_date",todayDateStr).order("business_date",{ascending:true}),
+      readDailyFactRows(supabase,businessId,prevMonthStart,todayDateStr)
+        .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
       supabase.from("recurring_costs").select("category_code, amount_cents, is_estimate, active_from, active_to")
         .eq("business_id",businessId),
       supabase.from("expenses").select("category_code, amount_cents, status")
@@ -353,10 +352,8 @@ async function readHistoricalBusinessSnapshot(
   const [year,month]=last.split("-").map(Number);
   const monthEnd=last+"-"+String(new Date(year,month,0).getDate()).padStart(2,"0");
   const [rollups,recurring,expenses,locations,itemSales]=await Promise.all([
-    supabase.from("daily_rollups")
-      .select("business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,staff_tax_source,sales_data_status,card_fees_cents,card_fees_status,voids_cents")
-      .eq("business_id",businessId).gte("business_date",period.from)
-      .lte("business_date",period.to).order("business_date",{ascending:true}).range(0,999),
+    readDailyFactRows(supabase,businessId,period.from,period.to)
+      .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
     supabase.from("recurring_costs")
       .select("id,category_code,amount_cents,is_estimate,active_from,active_to")
       .eq("business_id",businessId).lte("active_from",period.to).order("id",{ascending:true}).range(0,999),
@@ -369,16 +366,8 @@ async function readHistoricalBusinessSnapshot(
   for(const result of [rollups,recurring,expenses,locations])
     if(result.error)throw result.error;
   // Page every historical record. PostgREST commonly caps queries at 1,000 rows.
+  // The shared daily reader already reads every page.
   const allRollups=[...(rollups.data??[])];
-  for(let offset=1000;offset<=allRollups.length;offset+=1000){
-    const page=await supabase.from("daily_rollups")
-      .select("business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,staff_tax_source,sales_data_status,card_fees_cents,card_fees_status,voids_cents")
-      .eq("business_id",businessId).gte("business_date",period.from)
-      .lte("business_date",period.to).order("business_date",{ascending:true}).range(offset,offset+999);
-    if(page.error)throw page.error;
-    allRollups.push(...(page.data??[]));
-    if((page.data??[]).length<1000)break;
-  }
   const allExpenses=[...(expenses.data??[])];
   for(let offset=1000;offset<=allExpenses.length;offset+=1000){
     const page=await supabase.from("expenses").select("id,category_code,amount_cents,status,spent_on")

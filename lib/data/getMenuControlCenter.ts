@@ -1,4 +1,5 @@
 import "server-only";
+import { readDailyFactRows } from "./dailyFacts.server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
@@ -111,12 +112,8 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
       .gte("orders.business_date", start90)
       .lte("orders.business_date", today)
       .eq("voided", false),
-    supabase
-      .from("daily_rollups")
-      .select("business_date, sales_data_status")
-      .eq("business_id", businessId)
-      .gte("business_date", start90)
-      .lte("business_date", today),
+    readDailyFactRows(supabase, businessId, start90, today)
+      .then((data) => ({ data, error: null }), (error: { message: string }) => ({ data: null, error })),
     supabase
       .from("menu_price_history")
       .select("menu_item_id, old_price_cents, new_price_cents, source_type, source_provider, changed_at")

@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 import {canStartToastImport,canRepullToastDay,commitToastOwnerAction,queueToastBackfillChunks,PartialToastQueueError} from "./toastOwnerActionState";
+import {toastActionResult} from "./toastOwnerActionState";
 describe("owner sees only actionable Toast import controls",()=>{
  it("setup enabled without auto-import does not allow the owner to launch a dead-end import",()=>{
   expect(canStartToastImport(false,false,"2026-10-01","2026-10-23")).toBe(false);
@@ -61,5 +62,22 @@ describe("backfill chunks across real calendar and month boundaries",()=>{
    expect((error as PartialToastQueueError).queuedChunks).toBe(1);
    expect((error as PartialToastQueueError).resumeFrom).toBe(addDay("2024-01-01",400));
   }
+ });
+});
+
+describe("owner action results say exactly what happened",()=>{
+ it("a queued re-pull says when it runs",()=>{
+  expect(toastActionResult("repull",202,{runIds:["r"]})).toEqual({ok:true,key:"ownerRepullQueued"});
+ });
+ it("an earlier 'looks right' answer is a success, not an error",()=>{
+  expect(toastActionResult("first_check",409,{error:"already_answered"})).toEqual({ok:true,key:"ownerAlreadyAnswered"});
+ });
+ it("names the reason a re-pull could not run",()=>{
+  expect(toastActionResult("repull",503,{disabled:true}).key).toBe("ownerImportOff");
+  expect(toastActionResult("repull",400,{error:"unverified_locations"}).key).toBe("ownerReconnect");
+  expect(toastActionResult("repull",400,{error:"invalid_range"}).key).toBe("ownerInvalidDate");
+  expect(toastActionResult("repull",403,{error:"not_authorized"}).key).toBe("ownerNotAuthorized");
+  expect(toastActionResult("first_check",409,{error:"not_ready"}).key).toBe("ownerNotReady");
+  expect(toastActionResult("repull",503,{error:"queue_unavailable"})).toEqual({ok:false,key:"ownerError"});
  });
 });

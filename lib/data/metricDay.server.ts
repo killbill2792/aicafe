@@ -3,6 +3,7 @@ import {z} from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import {reconcileAttributedItemRevenue,reconcileItemUnitsToCanonical} from "@/lib/calc/metrics/reconcileItemRevenue";
 import { readPeriodItemSales } from "./periodItemSales.server";
+import { readDailyFactRows } from "./dailyFacts.server";
 import { latestEffectiveIngredientPrice } from "@/lib/calc/ingredientPriceSelection";
 import { verifiedDailyCogs, type MetricDailyInput, type ItemEvidence } from "@/lib/calc/metrics/catalog";
 import type { Timecard, RecipeLine } from "@/lib/calc/types";
@@ -14,10 +15,7 @@ export async function readMetricDay(businessId:string,date:string,
   opts:{items:boolean;hours:boolean;ingredientIds:string[];itemIds?:string[];costs?:boolean},
   signal?:AbortSignal):Promise<MetricDailyInput> {
   const db=createAdminSupabaseClient(signal);
-  const day=await db.from("daily_rollups").select(
-    "business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,sales_data_status,card_fees_cents,voids_cents"
-  ).eq("business_id",businessId).eq("business_date",date).maybeSingle();
-  if(day.error)throw day.error;
+  const day={data:(await readDailyFactRows(db,businessId,date,date))[0]??null};
   const facts=day.data?{
     date:day.data.business_date,netSalesCents:Number(day.data.net_sales_cents),
     ordersCount:Number(day.data.orders_count),drinksCount:Number(day.data.drinks_count),

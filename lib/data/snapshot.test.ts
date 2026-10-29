@@ -29,7 +29,7 @@ function mockDb(){
     const payload={data:data[table]??[],error:null,count:0};
     const builder={
       select(){return builder},eq(){return builder},gte(){return builder},lte(){return builder},
-      in(){return builder},order(){return builder},limit(){return builder},
+      in(){return builder},order(){return builder},limit(){return builder},range(){return builder},
       single:async()=>({...payload,data:payload.data[0]??null}),
       maybeSingle:async()=>({...payload,data:payload.data[0]??null}),
       insert(){writes.push("insert");throw Error("Write in page load")},

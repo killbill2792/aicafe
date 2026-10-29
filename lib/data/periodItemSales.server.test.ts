@@ -24,7 +24,7 @@ function db(connections:Connection[],quantities:unknown[]=[],failure=false,unlin
     then:(resolve:(x:unknown)=>unknown)=>Promise.resolve({count:unlinkedCount,error:null}).then(resolve),
   };
   const rollups={
-    select:()=>rollups,eq:()=>rollups,gte:()=>rollups,lte:()=>rollups,
+    select:()=>rollups,eq:()=>rollups,gte:()=>rollups,lte:()=>rollups,order:()=>rollups,range:()=>rollups,
     then:(resolve:(x:unknown)=>unknown)=>Promise.resolve({
       data:actualDates.map(business_date=>({business_date,sales_data_status:"actual"})),error:null,
     }).then(resolve),

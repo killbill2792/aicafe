@@ -1,4 +1,5 @@
 import "server-only";
+import {readCoveredSalesDates} from "@/lib/data/dailyFacts.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 import { totalMonthlyRecurringCostsCents } from "@/lib/expenses/recurringMonthlyTotal";
@@ -41,12 +42,8 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       const { data, error } = await client.from("pos_connections")
         .select("provider,last_synced_at,backfill_completed_at").eq("business_id",businessId).eq("status","active");
       if (error) throw error;
-      const {data:days,error:daysError}=await client.from("daily_rollups")
-        .select("business_date,sales_data_status").eq("business_id",businessId)
-        .gte("business_date",period.from).lte("business_date",period.to);
-      if(daysError)throw daysError;
-      const coverage=resolveItemSalesCoverage(data??[],period,(days??[])
-        .filter(row=>row.sales_data_status==="actual").map(row=>row.business_date));
+      const covered=await readCoveredSalesDates(client,businessId,period.from,period.to);
+      const coverage=resolveItemSalesCoverage(data??[],period,covered);
       return coverage.coveredDays?{
         ...known(coverage),quality:{level:coverage.covered?"high":"medium",
           missingInputs:coverage.missingDays.map(day=>"salesDay:"+day),
@@ -89,12 +86,8 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
         .select("provider, last_synced_at, backfill_completed_at")
         .eq("business_id", businessId).eq("status", "active");
       if (connectionError) throw connectionError;
-      const {data:days,error:daysError}=await client.from("daily_rollups")
-        .select("business_date,sales_data_status").eq("business_id",businessId)
-        .gte("business_date",period.from).lte("business_date",period.to);
-      if(daysError)throw daysError;
-      const coverage=resolveItemSalesCoverage(connections??[],period,(days??[])
-        .filter(row=>row.sales_data_status==="actual").map(row=>row.business_date));
+      const covered=await readCoveredSalesDates(client,businessId,period.from,period.to);
+      const coverage=resolveItemSalesCoverage(connections??[],period,covered);
       if(!coverage.coveredDays)return missing("itemSalesCoverage");
       const [items, quantities] = await Promise.all([
         client.from("menu_items").select("id, name, category").eq("business_id", businessId),

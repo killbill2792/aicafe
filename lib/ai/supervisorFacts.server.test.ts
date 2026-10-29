@@ -9,7 +9,7 @@ type Result = { data: unknown; error: null };
 function query(result: Result) {
   const q = {
     select: () => q, eq: () => q, is: () => q,
-    gte: () => q, lte: () => q, not: () => q,
+    gte: () => q, lte: () => q, not: () => q, order: () => q, range: () => q,
     then: (resolve: (value: Result) => void) => Promise.resolve(result).then(resolve),
   };
   return q;

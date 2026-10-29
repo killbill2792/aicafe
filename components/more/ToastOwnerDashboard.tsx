@@ -4,7 +4,7 @@ import {useLocale,useTranslations} from "next-intl";
 import ToastSummaryComparison from "./ToastSummaryComparison";
 import {statusSchema} from "@/lib/pos/toast/statusSchema";
 import {subscribeToastConnectionChanges,createToastStatusRequestGate} from "./toastConnectionEvents";
-import {canStartToastImport,canRepullToastDay,commitToastOwnerAction,queueToastBackfillChunks,PartialToastQueueError} from "./toastOwnerActionState";
+import {canStartToastImport,canRepullToastDay,commitToastOwnerAction,queueToastBackfillChunks,PartialToastQueueError,toastActionResult,type ToastActionKind} from "./toastOwnerActionState";
 import type {z} from "zod";
 type Snapshot=z.infer<typeof statusSchema>;
 const dateShift=(d:string,days:number)=>new Date(Date.parse(d+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
@@ -68,17 +68,27 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   refresh();
   return()=>{unsubscribe();gate.invalidate();};
  },[load,reloadKey]);
- async function post(url:string,payload:unknown){
+ async function post(url:string,payload:unknown,kind:ToastActionKind){
   if(busy)return false;setBusy(true);setMessage("");
+  let result={ok:false,key:"ownerError"};
   try{
    await commitToastOwnerAction(async()=>{
     const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
      body:JSON.stringify({businessId,...(payload as object)})});
-    if(!response.ok)throw Error("unavailable");
+    result=toastActionResult(kind,response.status,await response.json().catch(()=>null));
+    if(!result.ok)throw Error(result.key);
    },load);
-   setMessage(t("ownerSaved"));return true;
-  }catch{setMessage(t("ownerError"));return false;}finally{setBusy(false);}
+  }catch{/* result says why */}
+  finally{setBusy(false);}
+  setMessage(t(result.key));return result.ok;
  }
+ // While a re-pull is queued, refresh the page every 30 seconds so its result shows up.
+ const pending=(data?.queuedRanges.length??0)>0;
+ useEffect(()=>{
+  if(!pending)return;
+  const id=setInterval(()=>{void load().catch(()=>{});},30_000);
+  return()=>clearInterval(id);
+ },[pending,load]);
  async function backfill(){
   if(!data)return;const end=dateShift(localDate(data.timeZone,Date.now()),-1);
   if(start>end||start<"2015-12-02"){setMessage(t("ownerInvalidDate"));return;}
@@ -148,7 +158,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    </>}
    {data.backfill.resumeAt&&<p className="text-warn">{t("ownerPaused",{time:new Date(data.backfill.resumeAt).toLocaleString(locale)})}</p>}
    {data.failedRuns>0&&<button disabled={busy||!data.importEnabled} className="mt-3 min-h-12 rounded-full border border-line px-5"
-     onClick={()=>void post("/api/pos/toast/retry",{})}>{t("ownerTryAgain")}</button>}
+     onClick={()=>void post("/api/pos/toast/retry",{},"retry")}>{t("ownerTryAgain")}</button>}
   </section>
   {data.firstImportCheck==="due"&&<section className="rounded-card-lg bg-card p-5">
    <h2 className="text-xl font-bold">{t("ownerFirstCheck")}</h2>
@@ -169,9 +179,9 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     className="mt-3 min-h-20 w-full rounded-xl border border-line p-3"/>
    <div className="mt-3 flex flex-wrap gap-2">
     <button disabled={busy} className="min-h-12 rounded-full bg-good-tint px-5 text-good"
-     onClick={()=>void post("/api/pos/toast/first-import-check",{answer:"looks_right",flaggedDates:[]})}>{t("ownerLooksRight")}</button>
+     onClick={()=>void post("/api/pos/toast/first-import-check",{answer:"looks_right",flaggedDates:[]},"first_check")}>{t("ownerLooksRight")}</button>
     <button disabled={busy||!selected.length} className="min-h-12 rounded-full bg-warn-tint px-5 text-warn"
-     onClick={()=>void post("/api/pos/toast/first-import-check",{answer:"something_off",flaggedDates:selected,note})}>{t("ownerSomethingOff")}</button>
+     onClick={()=>void post("/api/pos/toast/first-import-check",{answer:"something_off",flaggedDates:selected,note},"first_check")}>{t("ownerSomethingOff")}</button>
    </div>
   </section>}
   <ToastSummaryComparison restaurantNames={data.restaurantNames} businessId={businessId} days={data.comparisonDays} currency={currency} onSaved={load}/>
@@ -187,11 +197,13 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     <p className="text-warn">{t("ownerReviewReason")}: {row.reason==="owner_flag"?t("ownerReasonOwner"):row.reason==="unparsed_orders"?t("unreadableOrders",{count:row.unreadableOrders}):row.reason==="owner_summary_mismatch"?t("summaryMismatch"):row.reason==="mismatch"?t("ownerReasonMismatch"):
      row.reason==="analytics_timeout"?t("ownerReasonTimeout"):row.reason==="coverage_invalid"?t("ownerReasonCoverage"):t("ownerReasonOther")}</p>
     <div className="mt-2 flex flex-wrap gap-2">
-     <button disabled={!canRepullToastDay(data.importEnabled,busy,row.date,yesterday,data.queuedRanges)} className="min-h-12 rounded-full border border-line px-4"
-      onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date,repull:true})}>{t("ownerRepull")}</button>
+     {data.queuedRanges.some(range=>range.from<=row.date&&range.to>=row.date)
+      ?<p role="status" className="flex min-h-12 items-center text-ink-muted">{t("ownerRepullRunning")}</p>
+      :<button disabled={!canRepullToastDay(data.importEnabled,busy,row.date,yesterday,data.queuedRanges)} className="min-h-12 rounded-full border border-line px-4"
+      onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date,repull:true},"repull")}>{t("ownerRepull")}</button>}
      <button disabled={busy} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/day-flag",{restaurantGuid:row.restaurantGuid,date:row.date,
-       action:row.reason==="owner_flag"?"clear":"flag",note})}>{t(row.reason==="owner_flag"?"ownerClearFlag":"ownerFlagDay")}</button>
+       action:row.reason==="owner_flag"?"clear":"flag",note},"flag")}>{t(row.reason==="owner_flag"?"ownerClearFlag":"ownerFlagDay")}</button>
     </div>
    </div>)}
   </section>
