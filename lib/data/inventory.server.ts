@@ -37,7 +37,7 @@ export async function readPurchaseMonth(rawMonth:string):Promise<{month:string;r
     baseQuantity:Number(row.quantity_base),baseUnit:info?.base_unit??"",
     costCents:row.cost_cents,source:row.source,sourceRef:row.source_ref,voided:row.voided_at!==null,updatedAt:row.updated_at,revision:Number(row.revision)};
   }));
-  if(data.length<500)return {month,rows:all,currency:b?.currency??"USD"};
+  if(data.length<500)return {month,rows:all,currency:b?.currency??""};
  }
  throw new Error("Inventory history is too large to display safely");
 }
