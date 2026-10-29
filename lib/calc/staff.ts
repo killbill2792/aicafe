@@ -36,22 +36,6 @@ export function staffCostLoadedCents(wagesCents: number, staffTaxCents: number):
   return wagesCents + staffTaxCents;
 }
 
-/** Total hours a weekly schedule commits to, across every day it's on — used to convert a
- * monthly/yearly salary into an hourly-equivalent rate. A day whose end time is on/before its
- * start time (e.g. a closing shift "18:00"–"01:00") is treated as crossing midnight rather than
- * as a zero/negative-length shift. */
-export function weeklyScheduledHours(days: { startTime: string; endTime: string; unpaidBreakMinutes: number }[]): number {
-  return days.reduce((sum, d) => {
-    const [startH, startM] = d.startTime.split(":").map(Number);
-    const [endH, endM] = d.endTime.split(":").map(Number);
-    const startMinutes = startH * 60 + startM;
-    let endMinutes = endH * 60 + endM;
-    if (endMinutes <= startMinutes) endMinutes += 24 * 60;
-    const minutes = endMinutes - startMinutes - d.unpaidBreakMinutes;
-    return sum + Math.max(0, minutes) / 60;
-  }, 0);
-}
-
 /** An hourly wage is already what it is. A monthly or yearly salary needs a weekly-hours figure
  * to convert — 52 weeks/year, month = 1/12 of a year. Returns 0 (not Infinity/NaN) when
  * `hoursPerWeek` is 0 for a salaried period, since there's no rate to derive without hours — the

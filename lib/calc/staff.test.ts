@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hourlyWageCentsFromSalary, paidHoursForTimecard, payrollTaxCents, wagesCentsForTimecard, weeklyScheduledHours } from "./staff";
+import { hourlyWageCentsFromSalary, paidHoursForTimecard, payrollTaxCents, wagesCentsForTimecard } from "./staff";
 
 describe("staff", () => {
   it("counts paid hours across an unpaid break, and pays for a paid break", () => {
@@ -40,13 +40,6 @@ describe("staff", () => {
     expect(payrollTaxCents(69_600, 0.12)).toBeCloseTo(8_352, 6);
   });
 
-  it("weeklyScheduledHours sums each day's hours minus its unpaid break", () => {
-    const days = [
-      { startTime: "08:00", endTime: "16:00", unpaidBreakMinutes: 30 }, // 7.5h
-      { startTime: "09:00", endTime: "13:00", unpaidBreakMinutes: 0 }, // 4h
-    ];
-    expect(weeklyScheduledHours(days)).toBeCloseTo(11.5, 6);
-  });
 
   it("hourlyWageCentsFromSalary passes an hourly wage through unchanged", () => {
     expect(hourlyWageCentsFromSalary(2_500, "hour", 40)).toBe(2_500);
@@ -66,8 +59,4 @@ describe("staff", () => {
     expect(hourlyWageCentsFromSalary(5_200_000, "year", 0)).toBe(0);
   });
 
-  it("weeklyScheduledHours treats an end time on/before the start time as crossing midnight", () => {
-    const days = [{ startTime: "18:00", endTime: "01:00", unpaidBreakMinutes: 0 }]; // closing shift, 7h
-    expect(weeklyScheduledHours(days)).toBeCloseTo(7, 6);
-  });
 });

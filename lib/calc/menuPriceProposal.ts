@@ -1,10 +1,5 @@
 /** Business arithmetic for menu-price cards and observed post-change sales.
  * Values remain integer cents; incomplete observations are not zero days. */
-export function menuPriceDelta(oldPriceCents:number,newPriceCents:number){
-  if(!Number.isSafeInteger(oldPriceCents)||!Number.isSafeInteger(newPriceCents))
-    throw new Error("Invalid integer prices");
-  return {deltaCents:newPriceCents-oldPriceCents,increased:newPriceCents>oldPriceCents};
-}
 export function priceInputCents(raw:string):number|null{
   if(!/^\d+(?:\.\d{1,2})?$/.test(raw))return null;
   const amount=Math.round(Number(raw)*100);
