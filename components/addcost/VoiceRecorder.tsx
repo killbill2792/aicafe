@@ -32,7 +32,7 @@ export default function VoiceRecorder({
   currency,
 }: {
   categoryLabels: Record<ExpenseCategoryCode, string>;
-  currency: string | null;
+  currency?: string | null;
   labels: { holdToTalk: string; listening: string; notSupported: string; typeItInstead: string; confirm: string; saved: string; transcriptLabel: string };
 }) {
   const router = useRouter();
