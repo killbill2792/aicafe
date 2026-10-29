@@ -31,8 +31,9 @@ async function readPages<T>(load:(start:number,end:number)=>PromiseLike<Page<T>>
 function missing<T>(reason:string):KnownSlice<T> {
  return {available:false,value:null,quality:{level:"low",missingInputs:[reason],estimatedInputs:[],staleInputs:[]}};
 }
-function known<T>(value:T, missingInputs:string[]=[]):KnownSlice<T> {
- return {available:true,value,quality:{level:missingInputs.length?"medium":"high",missingInputs,estimatedInputs:[],staleInputs:[]}};
+function known<T>(value:T, missingInputs:string[]=[],notes:string[]=[]):KnownSlice<T> {
+ return {available:true,value,quality:{level:missingInputs.length?"medium":"high",missingInputs,estimatedInputs:[],staleInputs:[],
+  ...(notes.length?{notes}:{})}};
 }
 const date=/^\d{4}-\d{2}-\d{2}$/;
 function checkPeriod(p:CafeStatePeriod){
@@ -69,7 +70,7 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
     const hours=found.rows.map(r=>({date:r.business_date,hourLocal:integer(r.hour_local),locationId:r.location_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
     return known({hours},[...missingDays(period,hours.map(r=>r.date),"hourlySalesDatesNotObserved"),
-      ...coverage.quality,...(found.error?["hourlySalesUnavailable"]:[]),...(found.truncated?["hourlySalesPageLimit"]:[])]);
+      ...coverage.quality,...(found.error?["hourlySalesUnavailable"]:[]),...(found.truncated?["hourlySalesPageLimit"]:[])],coverage.notes);
    }catch{return missing("unsafeHourlySalesFacts");}
   },
   async employeeSales(period:CafeStatePeriod):Promise<KnownSlice<EmployeeSalesFacts>>{
@@ -86,7 +87,7 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
     const employees=found.rows.map(r=>({date:r.business_date,employeeId:r.employee_id,
       netSalesCents:integer(r.net_sales_cents),ordersCount:integer(r.orders_count)}));
     return known({employees},[...missingDays(period,employees.map(r=>r.date),"employeeSalesDatesNotObserved"),
-      ...coverage.quality,...(found.error?["employeeSalesUnavailable"]:[]),...(found.truncated?["employeeSalesPageLimit"]:[])]);
+      ...coverage.quality,...(found.error?["employeeSalesUnavailable"]:[]),...(found.truncated?["employeeSalesPageLimit"]:[])],coverage.notes);
    }catch{return missing("unsafeEmployeeSalesFacts");}
   },
   async payrollFacts(period:CafeStatePeriod):Promise<KnownSlice<PayrollFacts>>{

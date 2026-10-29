@@ -4,9 +4,11 @@ import {toastDayFlags,unverifiedToastSalesDates} from "@/lib/pos/toast/reporting
 
 /** Shared Toast day policy: failed status is a caveat, never a reason to hide stored rows.
  * A failed status lookup is uncertainty, not evidence that stored facts disappeared.
- * The warning keys carry dates/counts; the chat translates them via DataNotes. */
+ * The warning keys carry dates/counts; the chat translates them via DataNotes.
+ * `quality` lists real gaps (a day not imported, status unknown). `notes` are
+ * caveats only: an imported Toast day flagged for review still has its numbers. */
 export async function readToastDayTrust(db:SupabaseClient,businessId:string,from:string,to:string):
- Promise<{blocked:Set<string>;quality:string[]}>{
+ Promise<{blocked:Set<string>;quality:string[];notes:string[]}>{
  // Stored Toast data still needs status evidence if automatic future sync is off.
  // The sync feature flag must not change the trustworthiness of historical rows.
  try{
@@ -23,14 +25,13 @@ export async function readToastDayTrust(db:SupabaseClient,businessId:string,from
   const withStatus=new Set(flags.map(f=>f.date));
   const notChecked=[...canonicalToastDays].filter(date=>!withStatus.has(date)).sort();
   const flagged=[...new Set(flags.filter(f=>f.needsLook).map(f=>f.date))].sort();
-  return {blocked:new Set<string>(),quality:[
-   ...(flagged.length?[needsLookKey(flagged)]:[]),
+  return {blocked:new Set<string>(),notes:flagged.length?[needsLookKey(flagged)]:[],quality:[
    ...(withOrders.length?[incompleteDayKey(withOrders)]:[]),
    ...(otherPosOnly.length?["toastFailedNoCanonicalSales:"+otherPosOnly.join(",")]:[]),
    ...(notChecked.length?["toastDayStatusMissing:"+notChecked.join(",")]:[])
   ]};
  }catch{
-  return {blocked:new Set(),quality:["toastDayStatusUnavailable"]};
+  return {blocked:new Set(),quality:["toastDayStatusUnavailable"],notes:[]};
  }
 }
 export function needsLookKey(dates:readonly string[]):string{

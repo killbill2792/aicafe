@@ -365,8 +365,9 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   }
   if(name!=="get_sales")throw new ToolError("not_supported");
   const slice=await ctx.tools.getSalesTrend(period);
-  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote};
+  const salesNotes=localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale);
+  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:salesNotes,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote};
   return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,agentId:"alex",unit:"cents",
-    missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),netSalesCents:netSalesCentsForPeriod(slice.value),
+    missing:slice.quality.missingInputs,dataNotes:salesNotes,netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
 }

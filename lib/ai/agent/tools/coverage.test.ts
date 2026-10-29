@@ -15,6 +15,26 @@ function context(dates:string[]):AgentToolContext{
    getProfitability:async()=>unavailable(),getMenuCatalog:async()=>unavailable(),
  }};
 }
+describe("days flagged for review still answer",()=>{
+ // Imported Toast days with a "needs a look" flag carry it as a note, never as missing data.
+ const flagged:AgentToolContext={asOf:"2026-10-29",locale:"en",currency:"USD",timezone:"America/Los_Angeles",tools:{
+   getSalesTrend:async({from,to})=>{
+    const days=[{date:"2026-10-28",netSalesCents:123_400}].filter(d=>d.date>=from&&d.date<=to);
+    return days.length?{available:true,value:days as never,quality:{level:"high" as const,missingInputs:[],
+      estimatedInputs:[],staleInputs:[],notes:["toastDaysNeedLook:1:2026-10-28:0"]}}:unavailable();
+   },
+   getProfitability:async()=>unavailable(),getMenuCatalog:async()=>unavailable(),
+ }};
+ it("uses yesterday as the last full day when it is only flagged",async()=>{
+  const result=await resolveCoveredSalesWindow(flagged,{from:"2026-10-29",to:"2026-10-29"});
+  expect(result).toMatchObject({lastFullDay:"2026-10-28",lastFullDayTotals:{netSalesCents:123_400}});
+ });
+ it("answers yesterday's sales with the number and one note, nothing missing",async()=>{
+  const r=await executeAgentTool("get_sales",{period:{from:"2026-10-28",to:"2026-10-28"},ownerInputs:null},flagged);
+  expect(r).toMatchObject({netSalesCents:123_400,missing:[]});
+  expect(r.dataNotes).toEqual(["1 days need a look: 2026-10-28."]);
+ });
+});
 describe("latest covered sales window",()=>{
  it("does not substitute an older period for month in profit or item-sales",async()=>{
   const dates=["2026-09-01","2026-09-02"];

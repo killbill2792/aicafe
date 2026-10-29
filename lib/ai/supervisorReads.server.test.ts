@@ -149,7 +149,8 @@ describe("Toast source-scoped Supervisor coverage without changing aggregate for
   ).salesTrend("my-cafe",{from:day,to:day});
   expect(trend.available).toBe(true);
   if(trend.available)expect(trend.value[0].netSalesCents).toBe(8500);
-  expect(trend.quality.missingInputs).toContain("toastDaysNeedLook:1:"+day+":0");
+  expect(trend.quality.missingInputs).not.toContain("toastDaysNeedLook:1:"+day+":0");
+  expect(trend.quality.notes).toContain("toastDaysNeedLook:1:"+day+":0");
  });
  it("never turns a staff-only or Toast-modified-empty day into verified zero",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
