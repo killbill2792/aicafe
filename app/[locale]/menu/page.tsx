@@ -10,6 +10,7 @@ import { Link } from "@/i18n/navigation";
 import PageShell from "@/components/shared/PageShell";
 import { getLocale } from "next-intl/server";
 import { getMenuCatalogPhotos } from "@/lib/data/getProductPhoto";
+import { getSnapshot } from "@/lib/data/getSnapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export default async function MenuPage() {
   const [items, pendingMatches, t, menuBuilderT, locale, unpriced] = await Promise.all([getMenuControlCenter(), getCatalogMatchReview(), getTranslations("Menu"), getTranslations("MenuBuilder"), getLocale(), getUnpricedPublishedMenu()]);
   const photos = await getMenuCatalogPhotos(items);
   const common = await getTranslations("Common");
-  const currency = items[0]?.currency ?? null;
+  const currency = items[0]?.currency ?? (await getSnapshot().catch(()=>null))?.business.currency ?? null;
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
       <header className="flex flex-col gap-3 px-1 md:flex-row md:items-start md:justify-between">
