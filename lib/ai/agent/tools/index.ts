@@ -4,7 +4,6 @@ import {askOwnerTools} from "./askOwner";
 import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard,periodChoicePayload,resolveOwnerPeriod} from "../resolve";
 
 import {money,count} from "../explain";
-import { initiativeToolDefinitions,isInitiativeTool,executeInitiativeTool } from "./initiatives";
 import { staffTools } from "./staff";
 import { attentionTools } from "./attention";
 import {scheduleReadTools} from "./scheduleReads";
@@ -113,8 +112,8 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
     description: "description" in schemas[name] ? schemas[name].description : descriptions[name],
     strict: true as const, parameters:{...parameters,required} };
 });
-export const agentToolDefinitions=[...baseToolDefinitions,
-  ...initiativeToolDefinitions.filter(tool=>tool.name!=="propose_initiative")];
+/** Function names stay plain strings: memory and capability gating add or filter by name. */
+export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=[...baseToolDefinitions];
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
@@ -150,9 +149,6 @@ function absent(source: string, period: CafeStatePeriod | null, missing: string[
     missing: missing.length ? missing : ["sourceUnavailable"] };
 }
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
-  // Backend-only: do not register proposal creation until a real approval surface is available.
-  if(name==="propose_initiative")throw new ToolError("not_supported");
-  if(isInitiativeTool(name))return executeInitiativeTool(name,raw,ctx);
   // Flag-gated extra tool: only offered to the model when CHAT_MEMORY is on.
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");

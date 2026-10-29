@@ -6,7 +6,6 @@ const guardedRoutes=[
  "app/api/ai/threads/[threadId]/attachments/route.ts",
  "app/api/ai/threads/[threadId]/experiments/route.ts",
  "app/api/ai/threads/[threadId]/proposals/route.ts",
- "app/api/ai/initiatives/[id]/approve/route.ts",
  "app/api/ai/suppliers/research/route.ts",
 ];
 describe("paid provider operations and approval writes require server-side entitlement",()=>{

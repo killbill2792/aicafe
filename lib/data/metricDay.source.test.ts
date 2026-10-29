@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import {computeMetric} from "@/lib/calc/metrics/catalog";
-import {readMetricDay} from "./initiatives.server";
+import {readMetricDay} from "./metricDay.server";
 const itemA="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const itemB="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const state=vi.hoisted(()=>({

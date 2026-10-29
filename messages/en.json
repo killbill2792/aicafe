@@ -2470,26 +2470,6 @@
     "days": "Daily sales",
     "missing": "Missing information"
   },
-  "Initiatives": {
-    "checkinDefault": "Please share the result.",
-    "checkin": "Check-in for {title} on {date}.",
-    "evaluation": "Progress on {title} as of {date}:",
-    "status": {
-      "on_track": "On track",
-      "off_track": "Needs attention",
-      "met": "Goal met",
-      "missed": "Goal not met",
-      "insufficient_data": "Not enough reliable data"
-    },
-    "recommendation": {
-      "keep": "Keep watching",
-      "revert": "Consider reverting the change",
-      "adjust": "Review and adjust",
-      "extend": "Consider a longer window",
-      "none": "More information needed"
-    },
-    "confirmChange": "Did you make the change on {date}?"
-  },
   "Ui": {
     "theme": "Theme",
     "themeDescription": "Choose how your café looks.",
@@ -2810,9 +2790,6 @@
       "draft_week_schedule": "Drafted a week schedule",
       "suggest_new_item_price": "Worked out a price for the new item",
       "propose_price_change": "Prepared a price change for you to approve",
-      "get_initiatives": "Checked your plans",
-      "get_initiative_status": "Checked how your plan is going",
-      "record_checkin": "Noted your check-in",
       "remember_cafe_fact": "Prepared a note for you to approve"
     },
     "agents": {
