@@ -1,7 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getRecurringCosts } from "@/lib/data/getRecurringCosts";
-import { getCafeProfile } from "@/lib/data/getCafeProfile";
+import { getSnapshot } from "@/lib/data/getSnapshot";
 import BackHeader from "@/components/shared/BackHeader";
 import BillsManager from "@/components/bills/BillsManager";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function BillsPage({ searchParams }: { searchParams: Promise<{ category?: string }> }) {
   await requireOwnBusiness();
-  const [{ category }, bills, profile] = await Promise.all([searchParams, getRecurringCosts(), getCafeProfile()]);
+  const [{ category }, bills, profile] = await Promise.all([searchParams, getRecurringCosts(), getSnapshot()]);
   const t = await getTranslations("Bills");
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");
@@ -28,7 +28,7 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
       <BillsManager key={category ?? "none"}
         bills={bills}
-        currency={profile.currency}
+        currency={profile.business.currency}
         currencyMissingLabel={tCommon("currencyNotSet")}
         initialCategory={EXPENSE_CATEGORY_CODES.includes(category as ExpenseCategoryCode) && isBillCategory(category as ExpenseCategoryCode) ? category as ExpenseCategoryCode : null}
         categoryLabels={categoryLabels}
