@@ -83,7 +83,7 @@ export default function AddSizeDialog({
         <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
           {t("priceLabel")}
           <div className="flex items-center gap-1.5">
-            <span className="text-lg font-bold text-ink-muted">$</span>
+            <span className="text-lg font-bold text-ink-muted">{currency??""}</span>
             <input type="number" inputMode="decimal" min="0" step="0.01" value={price} onChange={(event) => setPrice(event.target.value)} className="h-12 w-full rounded-xl border border-line px-3 text-base text-ink" />
           </div>
         </label>
