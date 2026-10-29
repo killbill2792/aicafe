@@ -180,7 +180,10 @@ export function milkSwapFromFacts(sizes:readonly MilkSize[],facts:readonly Saved
   const recordedVolume=observedVolume(size,results);
   const v=recordedVolume??costFromFacts(facts,volumeKey(size.id));
   const volume=v!==null&&v>0?v:null;
-  const baseCost=sharedServingCost(volume,fromMicros)??storedServingCost(facts,"base",size.id);
+  const savedBaseName=typeof milkType==="string"?milkType.trim().toLocaleLowerCase("und"):"";
+  const matchesSavedBase=!!fromMilk&&fromMilk.toLocaleLowerCase("und")===savedBaseName;
+  const baseCost=sharedServingCost(volume,fromMicros)??(fromMilk?
+   (matchesSavedBase?storedServingCost(facts,"base",size.id):storedServingCost(facts,fromMilk,size.id)):null);
   const oatCost=sharedServingCost(volume,toMicros)??(toMilk?storedServingCost(facts,toMilk,size.id):null);
   const inputs=[recordedVolume!==null?"recorded":volume!==null?"owner_provided":"unknown",
     fromMicros!==null?"recorded":baseCost!==null?"owner_provided":"unknown",
@@ -191,7 +194,7 @@ export function milkSwapFromFacts(sizes:readonly MilkSize[],facts:readonly Saved
   if(volume===null)missing.add(volumeKey(size.id));
   // When the café has recorded per-mL costs, the only missing input may be
   // serving volume. Don't ask twice for prices that can be derived afterward.
-  if(baseCost===null&&fromMicros===null)missing.add(servingKey("base",size.id));
+  if(baseCost===null&&fromMicros===null)missing.add(servingKey(matchesSavedBase?"base":fromMilk??"base",size.id));
   if(toMilk&&oatCost===null&&toMicros===null)missing.add(servingKey(toMilk,size.id));
   if(!fromMilk||!toMilk||volume===null||baseCost===null||oatCost===null)
    return {sizeId:size.id,sizeLabel:size.label,volumeMl:volume,
