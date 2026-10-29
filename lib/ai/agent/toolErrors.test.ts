@@ -1,6 +1,14 @@
 import {describe,it,expect} from "vitest";
 import {ToolError,safeToolError,toolErrorCodes,toolErrorResult} from "./toolErrors";
 describe("safe tool failures",()=>{
+ it.each([["en","couldn't save"],["es","guardar"],["ar","حفظ"]] as const)(
+  "separates write_failed from read failures in %s",(locale,expected)=>{
+   const write=safeToolError(new ToolError("write_failed"),false,{source:"propose_price_change",locale});
+   const read=safeToolError(new Error("private"),false,{source:"get_profit",locale});
+   expect(write.reason).toContain(expected);
+   expect(read.reason).not.toContain(expected);
+   expect(write.reason).not.toContain("private");
+  });
  it.each(["en","es","ar"] as const)("names a failed labor read and its dates in %s",locale=>{
   const failed=safeToolError(new Error("private database token"),false,
     {source:"get_labor",locale,period:"2026-10-01 – 2026-10-07"});
