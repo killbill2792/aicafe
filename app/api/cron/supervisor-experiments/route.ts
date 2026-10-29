@@ -5,6 +5,9 @@ import {monitorLoop,midRunDay,utcDateOffset,type LoopProposal,type OwnerLoopScop
   from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
+import {postGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
+import {goalEffectSchema,checkinDue} from "@/lib/calc/goals/goalSpec";
 export const runtime="nodejs";export const dynamic="force-dynamic";export const maxDuration=120;
 const respond=(status:number,result:unknown)=>NextResponse.json(result,{status,headers:{"Cache-Control":"no-store"}});
 /** Authenticated server cron; reauthz every owner and reread observed source per day.
@@ -57,6 +60,13 @@ export async function GET(request:Request){
       const report=await monitorLoop(scope,supervisorLoopRegistry,repo,p,day);
       sampled++;
       if(report)reported++;
+   }
+   // Goal check-ins: today's question, once, on its cadence day. A failed
+   // post never blocks the goal's numbers; the next run retries it.
+   if(p.capabilityId===goalCapabilityId){
+     const goal=goalEffectSchema.safeParse(p.canonicalEffectPayload);
+     if(goal.success&&checkinDue(goal.data,start,today))
+       await postGoalCheckin(db,{...scope},p.id,goal.data,today).catch(()=>{failed++;});
    }
    // One mid-run update once the first half has passed (sent at most once:
    // the message id is stable per experiment).

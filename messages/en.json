@@ -2793,7 +2793,8 @@
       "propose_price_change": "Prepared a price change for you to approve",
       "remember_cafe_fact": "Prepared a note for you to approve",
       "propose_goal": "Drafted your goal",
-      "get_goal_status": "Checked your goals"
+      "get_goal_status": "Checked your goals",
+      "record_checkin": "Saved your check-in"
     },
     "agents": {
       "supervisor": "Checked your café data",
@@ -3622,6 +3623,22 @@
     "taskTitle": "Goal report: {title}",
     "taskMidRunTitle": "Halfway update: {title}",
     "taskAction": "Open in chat",
-    "cardTracking": "Tracking"
+    "cardTracking": "Tracking",
+    "checkinOwner": "Check-in for {title}: {question} Reply yes, somewhat or no, and add a note if you like.",
+    "checkinStaff": "Check-in for {title}. Ask your team (copy this): \"{question}\" Then tell me yes, somewhat or no, with a note if you like.",
+    "checkinSummary": "Check-ins: {yes} yes, {somewhat} somewhat, {no} no ({answered} of {asked} answered).",
+    "previewCheckin": "Check-in",
+    "previewCheckinValue": "{question} ({cadence}, {audience})",
+    "cadence": {
+      "daily": "daily",
+      "every_3_days": "every 3 days",
+      "weekly": "weekly"
+    },
+    "audience": {
+      "owner": "you answer",
+      "staff": "ask your team"
+    },
+    "taskCheckinTitle": "Check-in: {question}",
+    "taskCheckinAction": "Answer in chat"
   }
 }

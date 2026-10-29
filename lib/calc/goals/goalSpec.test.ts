@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
-import {goalMetricsFromRequest,baselineDatesFor,scoreGoal,goalEffectSchema,type GoalEffect,type GoalObservation} from "./goalSpec";
-import {goalTitle,goalReportText,goalMidRunText,goalPreview} from "./goalText";
+import {goalMetricsFromRequest,baselineDatesFor,scoreGoal,goalEffectSchema,checkinDue,tallyCheckins,type GoalEffect,type GoalObservation} from "./goalSpec";
+import {goalTitle,goalReportText,goalMidRunText,goalPreview,goalCheckinText} from "./goalText";
 
 const latte="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const metrics=goalMetricsFromRequest({metric:"avg_ticket",itemId:null,direction:"up",targetKind:"percent",target:5,days:7,
@@ -76,5 +76,30 @@ describe("goal text",()=>{
     const text=goalMidRunText(effect,scoreGoal(effect,samples(840,100).slice(0,3),false),"es");
     expect(text).toMatch(/^Actualización a mitad de Average ticket up 5%/);
     expect(text).toContain("después del día 7");
+  });
+});
+
+describe("goal check-ins",()=>{
+  const withCheckin=(cadence:"daily"|"every_3_days"|"weekly",audience:"owner"|"staff"="owner"):GoalEffect=>
+    ({...effect,days:14,checkin:{question:"Did guests ask about the new pastry?",cadence,audience}});
+  it("is due on the cadence days inside the goal window only",()=>{
+    const due=(e:GoalEffect)=>Array.from({length:16},(_,i)=>"2026-10-"+String(i+2).padStart(2,"0"))
+      .filter(d=>checkinDue(e,"2026-10-02",d));
+    expect(due(withCheckin("weekly"))).toEqual(["2026-10-02","2026-10-09"]);
+    expect(due(withCheckin("every_3_days"))).toEqual(["2026-10-02","2026-10-05","2026-10-08","2026-10-11","2026-10-14"]);
+    expect(due(withCheckin("daily"))).toHaveLength(14);
+    expect(checkinDue(effect,"2026-10-02","2026-10-02")).toBe(false);
+    expect(checkinDue(withCheckin("daily"),"2026-10-02","2026-10-01")).toBe(false);
+  });
+  it("counts answers and leaves unanswered days out",()=>{
+    expect(tallyCheckins([{answer:"yes"},{answer:"yes"},{answer:"no"},{answer:null}]))
+      .toEqual({asked:4,answered:3,yes:2,somewhat:0,no:1});
+  });
+  it("adds the check-in tally to the final report, and staff questions are copy-ready",()=>{
+    const e=withCheckin("weekly","staff");
+    const report=goalReportText(effect,scoreGoal(effect,samples(840,100),true),"en",{asked:2,answered:1,yes:1,somewhat:0,no:0});
+    expect(report).toContain("Check-ins: 1 yes, 0 somewhat, 0 no (1 of 2 answered).");
+    expect(goalCheckinText(e,"en")).toContain("(copy this): \"Did guests ask about the new pastry?\"");
+    expect(goalPreview(e,"en").at(-1)?.field).toBe("checkin");
   });
 });
