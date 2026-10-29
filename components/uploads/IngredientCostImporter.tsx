@@ -28,10 +28,12 @@ export default function IngredientCostImporter({
   existingNames,
   todayDateStr,
   labels,
+  currency,
 }: {
   initialMapping: IngredientCostColumnMapping | null;
   existingNames: string[];
   todayDateStr: string;
+  currency: string | null;
   labels: {
     uploadPrompt: string;
     chooseFile: string;
@@ -175,7 +177,7 @@ export default function IngredientCostImporter({
           {parsedRows.slice(0, 8).map((r, i) => (
             <div key={i} className="flex items-center justify-between text-sm">
               <span className="truncate">{r.name}</span>
-              <span className="font-semibold">{formatCents(r.costPerUnitCents)}</span>
+              <span className="font-semibold">{formatCents(r.costPerUnitCents, undefined, currency)}</span>
             </div>
           ))}
         </section>
