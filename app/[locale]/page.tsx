@@ -39,9 +39,9 @@ import type { Period } from "@/lib/viewmodels/period";
 import {readOperatingBoard} from "@/lib/operating/board.server";
 import {boardHref} from "@/lib/operating/board";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
-import {readSavedTodayLive,currentTodayBusinessDay} from "@/lib/data/todayLive.server";
+import {readSavedTodayLive,currentTodayBusinessDay,todaySoFarForBusiness} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {liveSalesView} from "@/components/home/liveSales";
+import {liveSalesView,needsHomeLiveReading,needsHomeLiveFallback} from "@/components/home/liveSales";
 import {timeReader} from "@/lib/perf/timeReader.server";
 
 
@@ -90,14 +90,44 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {businessId,ownerUserId:signedInUser.id},identity.asOf)):null;
   const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
   const money=(cents:number)=>formatCafeCurrency(cents,locale,cafeCurrency).text;
-  // Today: until the closeout import, Sales is the live Toast reading the chat also uses.
-  const liveDb=period==="today"&&businessId&&vm.coverage.actualDays===0
+  // The existence of a rollup row does not mean today's closeout was imported.
+  // Match Toast's business date (which can be yesterday before closeout), not UTC.
+  const liveDb=period==="today"&&businessId
     ?await timeReader("Home","createServerSupabaseClient",createServerSupabaseClient):null;
-  const [live,liveDay]=liveDb&&businessId?await Promise.all([
-    timeReader("Home","readSavedTodayLive",()=>readSavedTodayLive(liveDb,businessId)).catch(()=>null),
-    // Location settings are server-only; the café is the signed-in owner's own.
-    timeReader("Home","currentTodayBusinessDay",()=>currentTodayBusinessDay(createAdminSupabaseClient(),businessId)).catch(()=>null)]):[null,null];
-  const liveView=liveSalesView(live,identity?.timezone??null,locale,liveDay);
+  const liveDay=liveDb&&businessId
+    ?await timeReader("Home","currentTodayBusinessDay",()=>currentTodayBusinessDay(
+      createAdminSupabaseClient(),businessId)).catch(()=>{
+      console.error("home.today_live.business_day_failed");return null;
+    }):null;
+  const recordedDays=[...(snapshot.previousMonthRecordedDays??snapshot.previousMonthDays),
+    ...(snapshot.monthRecordedDays??snapshot.monthActualDays)];
+  const needsLive=Boolean(liveDb&&businessId)&&needsHomeLiveReading(liveDay,recordedDays);
+  let live:Awaited<ReturnType<typeof readSavedTodayLive>>=null;
+  if(needsLive&&liveDb&&businessId){
+    live=await timeReader("Home","readSavedTodayLive",()=>readSavedTodayLive(liveDb,businessId))
+      .catch(()=>{console.error("home.today_live.saved_read_failed");return null;});
+    if(needsHomeLiveFallback(live,liveDay)){
+      // No saved reading for this business day: try the canonical live reader.
+      // Do not delay Home longer than four seconds for the network/POS.
+      let timer:ReturnType<typeof setTimeout>|undefined;
+      const fresh=await Promise.race([
+        timeReader("Home","todaySoFarForBusiness",()=>todaySoFarForBusiness(
+          createAdminSupabaseClient(),businessId)).catch(()=>{
+          console.error("home.today_live.fallback_failed");return null;
+        }),
+        new Promise<null>(resolve=>{
+          timer=setTimeout(()=>{console.error("home.today_live.fallback_timeout");resolve(null);},4_000);
+        }),
+      ]);
+      if(timer)clearTimeout(timer);
+      if(fresh?.available){
+        live={value:fresh.value,ageMs:Math.max(0,Date.now()-Date.parse(fresh.value.readAt))};
+      }else if(fresh&&!fresh.available){
+        console.error("home.today_live.fallback_unavailable");
+      }
+    }
+  }
+  const liveView=needsLive?liveSalesView(live,identity?.timezone??null,locale,liveDay):null;
   const sales=liveView?(liveView.netSalesCents===null?"—":money(liveView.netSalesCents))
     :vm.coverage.actualDays===0?"—":money(moneyVm.salesCents);
   const salesCaption=liveView?[t(liveView.fresh?"liveSales":"liveSalesStale",{time:liveView.time}),
