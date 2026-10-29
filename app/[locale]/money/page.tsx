@@ -39,43 +39,55 @@ export default async function MoneyPage({
   const period: Period = isPeriod(periodParam) ? periodParam : "month";
   const view = viewParam === "profit" ? "profit" : "recovery";
 
-  const snapshot = await timeReader("Money","getSnapshot",()=>getSnapshot(period));
-  const t = await timeReader("Money","getTranslations.Money",()=>getTranslations("Money"));
-  const locale = await timeReader("Money","getLocale",getLocale);
+  const [snapshot,t,locale] = await Promise.all([
+    timeReader("Money","getSnapshot",()=>getSnapshot(period)),
+    timeReader("Money","getTranslations.Money",()=>getTranslations("Money")),
+    timeReader("Money","getLocale",getLocale),
+  ]);
   let toastConnected = false;
   let liveToday: {sales: LiveSalesView; orders: number} | null = null;
   let salesSources: ReturnType<typeof salesSourcesForOrders> = ["unknown"];
   if (user && isSupabaseConfigured()) {
-    const db = await timeReader("Money","createServerSupabaseClient",createServerSupabaseClient);
-    const businessId = await timeReader("Money","getActiveBusinessId",()=>getActiveBusinessId(user.id));
+    const [db,businessId] = await Promise.all([
+      timeReader("Money","createServerSupabaseClient",createServerSupabaseClient),
+      timeReader("Money","getActiveBusinessId",()=>getActiveBusinessId(user.id)),
+    ]);
     const range = periodCalendarRange(snapshot, period);
-    const orders = await timeReader("Money","readAllPosRows.salesSources",()=>readAllPosRows<SalesOrderEvidence>((first, last) => db.from("orders")
-      .select("pos_order_id, processing_fee_provider")
-      .eq("business_id", businessId).eq("toast_excluded",false).is("superseded_by",null).gte("business_date", range.start)
-      .lte("business_date", range.end).order("id").range(first, last), "money sales sources"));
+    // Toast credentials have no authenticated RLS grants. Only read them after the
+    // user's active-business membership has been checked.
+    const canReadAdmin = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) &&
+      businessId === snapshot.business.id;
+    const [orders,todayPair,verifiedLocation] = await Promise.all([
+      timeReader("Money","readAllPosRows.salesSources",()=>readAllPosRows<SalesOrderEvidence>((first, last) => db.from("orders")
+        .select("pos_order_id, processing_fee_provider")
+        .eq("business_id", businessId).eq("toast_excluded",false).is("superseded_by",null).gte("business_date", range.start)
+        .lte("business_date", range.end).order("id").range(first, last), "money sales sources")),
+      // Same saved, business-day-checked reading as Home. Never replace a finalized
+      // daily row with provisional sales, or silently use yesterday's reading.
+      !snapshot.todayHasData && canReadAdmin
+        ? Promise.all([
+          timeReader("Money","readSavedTodayLive",()=>readSavedTodayLive(db, businessId)).catch(() => null),
+          timeReader("Money","currentTodayBusinessDay",()=>currentTodayBusinessDay(createAdminSupabaseClient(), businessId)).catch(() => null),
+        ])
+        : Promise.resolve(null),
+      // The credential and verified-location reads keep their order.
+      canReadAdmin ? (async () => {
+        const admin = createAdminSupabaseClient();
+        const {data:credentials} = await timeReader("Money","toastCredentials",async()=>admin.from("toast_api_credentials")
+          .select("state").eq("business_id",businessId).maybeSingle());
+        if (credentials?.state !== "verified") return false;
+        const {data:location} = await timeReader("Money","verifiedToastLocations",async()=>admin.from("toast_location_mappings")
+          .select("verified_at").eq("business_id",businessId).not("verified_at","is",null).limit(1));
+        return Boolean(location?.length);
+      })() : Promise.resolve(false),
+    ]);
     salesSources = salesSourcesForOrders(orders);
-    // Use the same saved, business-day-checked reading as Home. Never replace a
-    // finalized daily row with provisional sales, or silently use yesterday's reading.
-    if (!snapshot.todayHasData && businessId === snapshot.business.id && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      const [saved, businessDay] = await Promise.all([
-        timeReader("Money","readSavedTodayLive",()=>readSavedTodayLive(db, businessId)).catch(() => null),
-        timeReader("Money","currentTodayBusinessDay",()=>currentTodayBusinessDay(createAdminSupabaseClient(), businessId)).catch(() => null),
-      ]);
-      const sales = liveSalesView(saved, snapshot.business.timezone, locale, businessDay);
-      if (saved && sales) liveToday = {sales, orders: saved.value.orders};
+    if (todayPair) {
+      const [saved,businessDay] = todayPair;
+      const sales = liveSalesView(saved,snapshot.business.timezone,locale,businessDay);
+      if (saved && sales) liveToday = {sales,orders:saved.value.orders};
     }
-    // Toast credentials have no authenticated RLS grants. Only read a verified
-    // state after the user's active-business membership has been checked.
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY && businessId === snapshot.business.id) {
-      const admin = createAdminSupabaseClient();
-      const { data: credentials } = await timeReader("Money","toastCredentials",async()=>admin.from("toast_api_credentials")
-        .select("state").eq("business_id", businessId).maybeSingle());
-      if (credentials?.state === "verified") {
-        const { data: location } = await timeReader("Money","verifiedToastLocations",async()=>admin.from("toast_location_mappings")
-          .select("verified_at").eq("business_id", businessId).not("verified_at", "is", null).limit(1));
-        toastConnected = Boolean(location?.length);
-      }
-    }
+    toastConnected = verifiedLocation;
   }
   // Never past the current calendar month — "previous months" navigation only goes backward.
   const calMonthKey = isValidMonthKey(calMonthParam) && calMonthParam <= snapshot.monthKey ? calMonthParam : snapshot.monthKey;
