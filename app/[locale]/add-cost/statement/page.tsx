@@ -5,13 +5,14 @@ import StatementUploader from "@/components/addcost/StatementUploader";
 import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
 import PageShell from "@/components/shared/PageShell";
 import { validReturnTo } from "@/components/addcost/routeParams";
+import { getCafeProfile } from "@/lib/data/getCafeProfile";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
 export default async function StatementUploadPage({ searchParams }: { searchParams: Promise<{ returnTo?: string }> }) {
   await requireOwnBusiness();
-  const { returnTo } = await searchParams;
+  const [{ returnTo }, profile] = await Promise.all([searchParams, getCafeProfile()]);
   const t = await getTranslations("AddCost");
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");
@@ -25,6 +26,7 @@ export default async function StatementUploadPage({ searchParams }: { searchPara
     <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("optionStatement")} backHref="/add-cost" backLabel={tCommon("back")} />
       <StatementUploader returnTo={validReturnTo(returnTo)}
+        currency={profile.currency} currencyMissingLabel={tCommon("currencyNotSet")}
         categoryLabels={categoryLabels}
         labels={{
           uploadPrompt: t("statementUploadPrompt"),
