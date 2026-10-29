@@ -2454,6 +2454,9 @@
     "statusInsufficient": "More verified daily sales data is needed",
     "midRunUpdate": "Halfway update on {item}: {covered} of {days} days counted at {price}. {units} sold, net sales {revenue}, {difference} compared with the old price at the same volume. Early read, not final. The full report comes after day {days}.",
     "midRunNoData": "Halfway update on {item}: no verified sales days yet at {price}. I'll keep checking. The full report comes after day {days}.",
+    "guardrailBroken": "Watch out: total café orders were {change}% lower than the same weekdays before the test ({now} vs {before}).",
+    "guardrailOk": "Total café orders held: {change}% vs the same weekdays before the test.",
+    "guardrailTask": "Total café orders fell {change}% compared with before the test.",
     "midRunTask": "Halfway update for {item}",
     "midRunDetail": "Early read while the experiment runs. Not final; the full report comes at the end."
   },

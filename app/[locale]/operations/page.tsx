@@ -139,6 +139,8 @@ function TaskList({ tasks, empty, names, t, tExperiment, tBrief, tGoals, categor
           formatCents(task.payload.observedRevenueCents):tExperiment("notAvailable")})}</p>
         <p>{tExperiment("reportDifference",{value:typeof task.payload.realizedRevenueDifferenceCents==="number"?
           formatCents(task.payload.realizedRevenueDifferenceCents):tExperiment("notAvailable")})}</p>
+        {task.payload.ordersGuardrail==="broken"&&typeof task.payload.ordersChangePct==="number"&&
+          <p className="font-semibold text-ink">{tExperiment("guardrailTask",{change:Math.abs(task.payload.ordersChangePct)})}</p>}
         {!midRun&&<p className="font-semibold">{tExperiment("recommendation",{choice:tExperiment(
           task.payload.recommendation==="keep"?"keep":task.payload.recommendation==="revert"?"revert":"adjust")})}</p>}
         {!midRun&&<p className="text-ink-muted">{tExperiment(task.payload.outcomeStatus==="complete"?"reportCompletedCaveat":"reportUncertain")}</p>}

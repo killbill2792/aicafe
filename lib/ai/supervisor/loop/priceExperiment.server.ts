@@ -17,6 +17,21 @@ import {menuPriceChangeCapability} from "./menuPriceChange.server";
 import {staffCapabilities} from "./staffProposals.server";
 import {purchaseCapability} from "./purchases.server";
 import {goalCapability} from "./goal.server";
+import {readMetricDay} from "@/lib/data/metricDay.server";
+import {computeMetric} from "@/lib/calc/metrics/catalog";
+import {addDays} from "@/lib/calc/goals/goalSpec";
+import {cafeOrdersSchema,ordersGuardrail,type CafeOrdersReading} from "@/lib/calc/priceExperimentGuardrail";
+
+/** Certified café orders for the day and the same weekday 7 and 14 days earlier.
+ * null when the reading fails: the guardrail is a warning, never a blocker. */
+async function readCafeOrders(businessId:string,date:string):Promise<CafeOrdersReading|null>{
+  const orders=async(d:string)=>computeMetric("orders",{},await readMetricDay(businessId,d,
+    {items:false,hours:false,ingredientIds:[],itemIds:[],costs:false})).value;
+  try{
+    const [value,w1,w2]=await Promise.all([orders(date),orders(addDays(date,-7)),orders(addDays(date,-14))]);
+    return {value,baseline:[{date:addDays(date,-7),value:w1},{date:addDays(date,-14),value:w2}]};
+  }catch{return null;}
+}
 
 const cents=z.number().int().safe().nonnegative();
 const baseline=z.strictObject({
@@ -73,7 +88,8 @@ export const priceExperimentCapability=registerLoopCapability({
     const observed=await readPriceExperimentSalesDays(scope.businessId,effect.productId,businessDate,1);
     const day=observed[0];
     if(!day)return null;
-    return {businessDate,observation:{...day},source:day.source};
+    const cafeOrders=await readCafeOrders(scope.businessId,businessDate);
+    return {businessDate,observation:{...day,...(cafeOrders?{cafeOrders}:{})},source:day.source};
   },
   report:async(_scope,effect,samples,windowComplete)=>{
     const observed:PriceExperimentDay[]=samples.map(s=>{
@@ -82,7 +98,14 @@ export const priceExperimentCapability=registerLoopCapability({
         netSalesCents:Number(d.netSalesCents),
         coverage:d.coverage==="actual"?"actual":"unavailable",source:s.source};
     });
-    const measured=evaluatePriceExperiment(effect as PriceExperimentBaseline,observed,7);
+    const evaluated=evaluatePriceExperiment(effect as PriceExperimentBaseline,observed,7);
+    const guard=ordersGuardrail(samples.map(s=>{
+      const r=cafeOrdersSchema.safeParse(s.observation.cafeOrders);
+      return r.success?r.data:null;
+    }));
+    // Fewer customers overall outweighs a better item number: never "keep" then.
+    const measured=guard.status==="broken"&&evaluated.recommendation==="keep"
+      ?{...evaluated,recommendation:"adjust" as const}:evaluated;
     // A terminal, partially covered window is insufficient evidence, not
     // an ongoing trial. Use the SAME finalized status in every domain-owned
     // delivery surface (Operations payload, source facts, and thread report).
@@ -99,6 +122,13 @@ export const priceExperimentCapability=registerLoopCapability({
       oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
       productName:effect.productName,
       estimatedAdditionalRevenue7DaysCents:estimatedUplift};
+    const pct=(v:number,signed:boolean)=>new Intl.NumberFormat(_scope.locale,{maximumFractionDigits:1,
+      signDisplay:signed?"exceptZero":"never"}).format(v);
+    const guardText=guard.status==="broken"
+      ?copy.guardrailBroken.replace("{change}",pct(guard.changePct,false))
+        .replace("{now}",new Intl.NumberFormat(_scope.locale).format(guard.ordersNow))
+        .replace("{before}",new Intl.NumberFormat(_scope.locale).format(guard.ordersBefore))
+      :guard.status==="ok"?copy.guardrailOk.replace("{change}",pct(guard.changePct,true)):null;
     const text=[copy.reportThread,
       copy.reportTask.replace("{item}",effect.productName)+".",
       copy.reportOldPrice.replace("{value}",money(effect.oldPriceCents)),
@@ -107,6 +137,7 @@ export const priceExperimentCapability=registerLoopCapability({
       copy.reportRevenue.replace("{value}",money(trial.observedRevenueCents)),
       copy.reportDifference.replace("{value}",money(trial.realizedRevenueDifferenceCents)),
       copy.reportIngredientOnly.replace("{value}",money(trial.observedIngredientContributionCents)),
+      ...(guardText?[guardText]:[]),
       copy.recommendation.replace("{choice}",recommendation),
       result.status==="complete"?copy.reportCompletedCaveat:copy.reportUncertain].join(" ");
     const count=(v:number)=>new Intl.NumberFormat(_scope.locale).format(v);
@@ -117,7 +148,8 @@ export const priceExperimentCapability=registerLoopCapability({
         .replace("{difference}",money(result.realizedRevenueDifferenceCents))
       :copy.midRunNoData.replace("{item}",effect.productName).replace("{price}",money(effect.newPriceCents))
         .replaceAll("{days}",count(7));
-    return {status:result.status,result:trial,recommendation:result.recommendation,source:"order_lines",midRunText,
+    const midRun=midRunText&&guard.status==="broken"&&guardText?midRunText+" "+guardText:midRunText;
+    return {status:result.status,result:trial,recommendation:result.recommendation,source:"order_lines",midRunText:midRun,
       delivery:{agentId:"alex" as const,taskKind:"price_experiment_report" as const,
         entityType:"menu_item",entityId:effect.productId,
         confidence:result.status==="complete"?"high" as const:"low" as const,
@@ -126,9 +158,10 @@ export const priceExperimentCapability=registerLoopCapability({
           realizedRevenueDifferenceCents:trial.realizedRevenueDifferenceCents,
           observedIngredientContributionCents:trial.observedIngredientContributionCents,
           estimatedAdditionalRevenue7DaysCents:trial.estimatedAdditionalRevenue7DaysCents,
-          estimateIsConditional:true,coveredDays:result.coveredDays},
+          estimateIsConditional:true,coveredDays:result.coveredDays,ordersGuardrail:guard.status,
+          ordersChangePct:guard.status==="unknown"?null:guard.changePct},
         evidence:[{source:"order_lines",facts:{coveredDays:result.coveredDays,
-          status:result.status,nonCausal:true}}],
+          status:result.status,nonCausal:true,ordersGuardrail:guard.status}}],
         threadText:text},
     };
   },
