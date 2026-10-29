@@ -2793,7 +2793,8 @@
       "propose_price_change": "Preparé un cambio de precio para que lo apruebes",
       "remember_cafe_fact": "Preparé una nota para que la apruebes",
       "propose_goal": "Preparé tu meta",
-      "get_goal_status": "Revisé tus metas"
+      "get_goal_status": "Revisé tus metas",
+      "record_checkin": "Guardé tu respuesta"
     },
     "agents": {
       "supervisor": "Revisé los datos de tu café",
@@ -3622,6 +3623,22 @@
     "taskTitle": "Informe de meta: {title}",
     "taskMidRunTitle": "Actualización a mitad: {title}",
     "taskAction": "Abrir en el chat",
-    "cardTracking": "En seguimiento"
+    "cardTracking": "En seguimiento",
+    "checkinOwner": "Seguimiento de {title}: {question} Responde sí, algo o no, y añade una nota si quieres.",
+    "checkinStaff": "Seguimiento de {title}. Pregunta a tu equipo (copia esto): \"{question}\" Luego dime sí, algo o no, con una nota si quieres.",
+    "checkinSummary": "Seguimientos: {yes} sí, {somewhat} algo, {no} no ({answered} de {asked} respondidos).",
+    "previewCheckin": "Seguimiento",
+    "previewCheckinValue": "{question} ({cadence}, {audience})",
+    "cadence": {
+      "daily": "diario",
+      "every_3_days": "cada 3 días",
+      "weekly": "semanal"
+    },
+    "audience": {
+      "owner": "respondes tú",
+      "staff": "pregunta a tu equipo"
+    },
+    "taskCheckinTitle": "Seguimiento: {question}",
+    "taskCheckinAction": "Responder en el chat"
   }
 }

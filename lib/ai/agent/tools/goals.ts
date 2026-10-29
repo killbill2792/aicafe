@@ -1,5 +1,5 @@
 import {z} from "zod";
-import {GOAL_METRICS,GOAL_MIN_DAYS,GOAL_MAX_DAYS,MAX_GUARDRAILS} from "@/lib/calc/goals/goalSpec";
+import {GOAL_METRICS,GOAL_MIN_DAYS,GOAL_MAX_DAYS,MAX_GUARDRAILS,CHECKIN_ANSWERS,type GoalCheckin,type CheckinAnswer} from "@/lib/calc/goals/goalSpec";
 import type {AgentToolContext,AgentToolResult} from "./index";
 
 const metric=z.enum(GOAL_METRICS);
@@ -11,16 +11,24 @@ export const proposeGoalSchema=z.strictObject({
   days:z.number().int().min(GOAL_MIN_DAYS).max(GOAL_MAX_DAYS),
   guardrails:z.array(z.strictObject({metric,item_id:z.uuid().nullable(),
     direction:z.enum(["not_below","not_above"]),percent:z.number().finite().positive().max(100)})).max(MAX_GUARDRAILS),
+  /** A question for what numbers cannot show; staff questions come back as copy-ready text for the owner. */
+  checkin:z.strictObject({question:z.string().trim().min(3).max(200),cadence:z.enum(["daily","every_3_days","weekly"]),
+    audience:z.enum(["owner","staff"])}).nullable(),
 });
+export const recordCheckinSchema=z.strictObject({goal_id:z.uuid(),date:z.iso.date().nullable(),
+  answer:z.enum(CHECKIN_ANSWERS),note:z.string().trim().max(500).nullable()});
 export const goalStatusSchema=z.strictObject({goal_id:z.uuid().nullable()});
 
 export type GoalPort={
   propose(input:{metric:z.infer<typeof metric>;itemId:string|null;direction:"up"|"down";
     targetKind:"percent"|"absolute";target:number;days:number;
-    guardrails:Array<{metric:z.infer<typeof metric>;itemId:string|null;direction:"not_below"|"not_above";percent:number}>}):
+    guardrails:Array<{metric:z.infer<typeof metric>;itemId:string|null;direction:"not_below"|"not_above";percent:number}>;
+    checkin:GoalCheckin|null}):
     Promise<{proposalId:string;revision:number;title:string}>;
   /** goalId null lists the owner's goals; an id returns that goal's live score. */
   status(goalId:string|null):Promise<Record<string,unknown>>;
+  /** Saves the owner's answer to the goal's open (or dated) check-in. */
+  recordCheckin(goalId:string,date:string|null,answer:CheckinAnswer,note:string|null):Promise<Record<string,unknown>>;
 };
 
 export const goalTools={
@@ -32,8 +40,18 @@ export const goalTools={
       if(!ctx.goals)return {source:"goal_proposal",period:null,missing:["not_supported"]};
       const result=await ctx.goals.propose({metric:v.metric,itemId:v.item_id,direction:v.direction,
         targetKind:v.target_kind,target:v.target,days:v.days,
-        guardrails:v.guardrails.map(g=>({metric:g.metric,itemId:g.item_id,direction:g.direction,percent:g.percent}))});
+        guardrails:v.guardrails.map(g=>({metric:g.metric,itemId:g.item_id,direction:g.direction,percent:g.percent})),
+        checkin:v.checkin});
       return {source:"goal_proposal",period:null,agentId:"leo",missing:[],draft:true,saved:false,...result};
+    },
+  },
+  record_checkin:{
+    agentId:"leo",schema:recordCheckinSchema,
+    description:"Save the owner's answer (yes, somewhat or no, plus an optional note) to a goal check-in question they were asked in chat. Use the goal_id from get_goal_status; date null means the latest open check-in.",
+    execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+      const v=recordCheckinSchema.parse(raw);
+      if(!ctx.goals)return {source:"goal_checkin",period:null,missing:["not_supported"]};
+      return {source:"goal_checkin",period:null,agentId:"leo",missing:[],...await ctx.goals.recordCheckin(v.goal_id,v.date,v.answer,v.note)};
     },
   },
   get_goal_status:{

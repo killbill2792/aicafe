@@ -3,7 +3,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
 import {diffFields,type DiffField} from "@/lib/format/values";
-import {unitOf,type GoalEffect,type GoalMetricSpec,type GoalOutcome} from "./goalSpec";
+import {unitOf,type GoalEffect,type GoalMetricSpec,type GoalOutcome,type CheckinTally} from "./goalSpec";
 
 export type GoalLocale="en"|"es"|"ar";
 const copyFor=(l:GoalLocale)=>({en,es,ar} as const)[l].Goals;
@@ -42,6 +42,8 @@ export function goalPreview(effect:GoalEffect,locale:GoalLocale):DiffField[]{
     {field:"days",label:c.previewDays,value:{kind:"count",n:effect.days,unit:"days"}},
     ...effect.metrics.filter(m=>m.role==="guardrail").map(g=>(
       {field:g.id,label:c.previewGuardrail,value:{kind:"text" as const,text:guardrailText(g,locale)}})),
+    ...(effect.checkin?[{field:"checkin",label:c.previewCheckin,value:{kind:"text" as const,text:fill(c.previewCheckinValue,{
+      question:effect.checkin.question,cadence:c.cadence[effect.checkin.cadence],audience:c.audience[effect.checkin.audience]})}}]:[]),
   ]);
 }
 function lines(effect:GoalEffect,outcome:GoalOutcome,locale:GoalLocale):string[]{
@@ -62,11 +64,22 @@ export function goalMidRunText(effect:GoalEffect,outcome:GoalOutcome,locale:Goal
   return fill(c.midRun,{title:effect.title,lines:lines(effect,outcome,locale).join("; "),
     days:new Intl.NumberFormat(locale).format(effect.days)});
 }
-export function goalReportText(effect:GoalEffect,outcome:GoalOutcome,locale:GoalLocale):string{
+/** The check-in question, posted in the goal's thread. Staff questions come as copy-ready text. */
+export function goalCheckinText(effect:GoalEffect,locale:GoalLocale):string{
+  const c=copyFor(locale);
+  if(!effect.checkin)return "";
+  return fill(effect.checkin.audience==="staff"?c.checkinStaff:c.checkinOwner,{title:effect.title,question:effect.checkin.question});
+}
+export function checkinSummaryText(t:CheckinTally,locale:GoalLocale):string{
+  const n=(x:number)=>new Intl.NumberFormat(locale).format(x);
+  return fill(copyFor(locale).checkinSummary,{yes:n(t.yes),somewhat:n(t.somewhat),no:n(t.no),answered:n(t.answered),asked:n(t.asked)});
+}
+export function goalReportText(effect:GoalEffect,outcome:GoalOutcome,locale:GoalLocale,checkins?:CheckinTally):string{
   const c=copyFor(locale);
   const head=outcome.status==="insufficient_evidence"?c.reportInsufficient:
     outcome.evaluation.status==="met"?c.reportMet:c.reportMissed;
   const rec=outcome.status==="insufficient_evidence"?c.recommendInsufficient:
     outcome.recommendation==="keep"?c.recommendKeep:outcome.recommendation==="revert"?c.recommendRevert:c.recommendAdjust;
-  return [fill(head,{title:effect.title}),lines(effect,outcome,locale).join("; ")+".",rec,c.reportCaveat].join(" ");
+  return [fill(head,{title:effect.title}),lines(effect,outcome,locale).join("; ")+".",
+    ...(checkins&&checkins.asked>0?[checkinSummaryText(checkins,locale)]:[]),rec,c.reportCaveat].join(" ");
 }

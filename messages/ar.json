@@ -2793,7 +2793,8 @@
       "propose_price_change": "جهّزتُ تغيير سعر لتوافق عليه",
       "remember_cafe_fact": "جهّزتُ ملاحظة لتوافق عليها",
       "propose_goal": "أعددت هدفك",
-      "get_goal_status": "راجعت أهدافك"
+      "get_goal_status": "راجعت أهدافك",
+      "record_checkin": "حفظت إجابتك"
     },
     "agents": {
       "supervisor": "راجعتُ بيانات مقهاك",
@@ -3622,6 +3623,22 @@
     "taskTitle": "تقرير الهدف: {title}",
     "taskMidRunTitle": "تحديث المنتصف: {title}",
     "taskAction": "افتح في المحادثة",
-    "cardTracking": "قيد المتابعة"
+    "cardTracking": "قيد المتابعة",
+    "checkinOwner": "متابعة الهدف {title}: {question} أجب بنعم أو إلى حد ما أو لا، وأضف ملاحظة إن أردت.",
+    "checkinStaff": "متابعة الهدف {title}. اسأل فريقك (انسخ هذا): \"{question}\" ثم أخبرني بنعم أو إلى حد ما أو لا، مع ملاحظة إن أردت.",
+    "checkinSummary": "المتابعات: {yes} نعم، {somewhat} إلى حد ما، {no} لا (تمت الإجابة على {answered} من {asked}).",
+    "previewCheckin": "متابعة",
+    "previewCheckinValue": "{question} ({cadence}، {audience})",
+    "cadence": {
+      "daily": "يوميًا",
+      "every_3_days": "كل 3 أيام",
+      "weekly": "أسبوعيًا"
+    },
+    "audience": {
+      "owner": "تجيب أنت",
+      "staff": "اسأل فريقك"
+    },
+    "taskCheckinTitle": "متابعة: {question}",
+    "taskCheckinAction": "أجب في المحادثة"
   }
 }
