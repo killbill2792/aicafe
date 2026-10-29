@@ -1,0 +1,69 @@
+name: Toast daily capture
+
+# Captures every Toast endpoint for each verified café's last three closed business
+# days that are not yet complete (AGENTS.md section 4b, PROGRESS step 4a). Complete
+# days are skipped, so the extra runs only retry partial or missed captures.
+# Scheduled runs start only after the owner sets the repository variable
+# TOAST_DAILY_CAPTURE_ENABLED=true; a manual run is always allowed.
+on:
+  schedule:
+    - cron: "17 11 * * *"
+    - cron: "17 15 * * *"
+    - cron: "17 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: toast-raw-capture-daily
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: github.event_name == 'workflow_dispatch' || vars.TOAST_DAILY_CAPTURE_ENABLED == 'true'
+    environment: toast-prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 58
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # tsx is not a locked project dependency; install a pinned runner explicitly.
+      - run: npm install --no-save --package-lock=false --ignore-scripts tsx@4.20.6
+      - run: test -x node_modules/.bin/tsx
+      - name: Capture (counts only; raw output suppressed)
+        shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TOAST_CUSTOMER_HASH_KEY: ${{ secrets.TOAST_CUSTOMER_HASH_KEY }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+          TOAST_ALLOWED_API_HOSTS: ${{ secrets.TOAST_ALLOWED_API_HOSTS }}
+        run: |
+          set +x
+          output="$(mktemp)"
+          trap 'rm -f "$output"' EXIT
+          set +e
+          NODE_OPTIONS=--conditions=react-server ./node_modules/.bin/tsx scripts/toast-raw-capture-daily.ts >"$output" 2>&1
+          code=$?
+          node - "$output" "$code" <<'NODE'
+          const fs = require('node:fs');
+          const text = fs.readFileSync(process.argv[2], 'utf8');
+          const exitCode = Number(process.argv[3]);
+          // Never print raw stdout/stderr: exceptions may contain credentials or payloads.
+          let s;
+          try { s = JSON.parse(text.trim().split('\n').pop()); } catch {}
+          const keys = ['planned','completed','partial','skipped','failed','deferred'];
+          if (s && typeof s === 'object' && keys.every(k => Number.isSafeInteger(s[k]))) {
+            for (const k of keys) console.log('Toast capture ' + k + ': ' + s[k]);
+            const reasons = Array.isArray(s.reasons) ? s.reasons.filter(r => /^[a-z_]{1,40}$/.test(r)) : [];
+            if (reasons.length) console.log('Reasons: ' + reasons.join(', '));
+          } else {
+            console.log('Toast capture: failed (details suppressed)');
+          }
+          if (exitCode !== 0 || !s || s.failed) process.exit(1);
+          NODE
