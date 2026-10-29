@@ -34,24 +34,17 @@ function inbox(batches: OwnerFollowUp[][]) {
   return { asked, take: async (max: number) => { asked.push(max); return (batches.shift() ?? []).slice(0, max); } };
 }
 
-describe("answer style (CHAT_STYLE_V2)", () => {
-  it("keeps the old prompt and cache key when off", async () => {
-    const { requests, provider } = recording([[text("Hi."), completed]]);
-    await runAgentTurn({ ownerText: "Hi", context, provider });
-    expect(requests[0].prompt_cache_key).toBe(agentPromptCacheKey(false));
-    expect(String(requests[0].instructions)).not.toContain(STYLE_RULES);
-    expect(requests[0].instructions).toBe(agentInstructions(false));
-  });
+describe("answer style ()", () => {
   it("adds the style rules with a new cache key when on", async () => {
     const { requests, provider } = recording([[text("Hi."), completed]]);
-    await runAgentTurn({ ownerText: "Hi", context, provider, style: true });
+    await runAgentTurn({ ownerText: "Hi", context, provider });
     expect(requests[0].prompt_cache_key).toBe("cafe-agent-v4");
     expect(String(requests[0].instructions)).toContain(STYLE_RULES);
-    expect(agentPromptCacheKey(true)).not.toBe(agentPromptCacheKey(false));
+    expect(agentPromptCacheKey()).toBe("cafe-agent-v4");
   });
 });
 
-describe("café memory in context (CHAT_MEMORY)", () => {
+describe("café memory in context ()", () => {
   it("sends approved facts as the first input item and appends the memory tool", async () => {
     const { requests, provider } = recording([[text("Noted."), completed]]);
     await runAgentTurn({ ownerText: "Hi", context, provider, memoryFacts: "Café facts…\n- [all] We close at 3pm on Sundays",
@@ -70,7 +63,7 @@ describe("café memory in context (CHAT_MEMORY)", () => {
   });
 });
 
-describe("mid-run follow-ups (CHAT_JOBS)", () => {
+describe("mid-run follow-ups ()", () => {
   it("reads a follow-up before the next model call and reports it as answered", async () => {
     const { requests, provider } = recording([
       [call("get_menu_items", '{"query":null,"limit":null}', "c1"), completed],

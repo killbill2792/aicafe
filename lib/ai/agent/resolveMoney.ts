@@ -11,9 +11,9 @@ type Locale="en"|"es"|"ar";
  * They originate in an authenticated business tool result, never model-provided IDs.
  * A stale selection cannot substitute an old amount for newly changed owner data. */
 export function moneyChoiceCandidates(metric:MoneyMetric,identity:string,
-  recordedCents:number,ownerCents:number,locale:Locale):[ChoiceCandidate,ChoiceCandidate]{
+  recordedCents:number,ownerCents:number,locale:Locale,currency?:string|null):[ChoiceCandidate,ChoiceCandidate]{
   const labels=({en,es,ar} as const)[locale].AgentFields;
-  const money=(cents:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(cents/100);
+  const money=(cents:number)=>new Intl.NumberFormat(locale,currency?{style:"currency",currency}:{maximumFractionDigits:2}).format(cents/100);
   const detail=metric==="sales"?labels.netSalesCents:labels.totalCostsCents;
   const key=metric+":"+identity.toLowerCase()+":"+recordedCents+":"+ownerCents;
   return [

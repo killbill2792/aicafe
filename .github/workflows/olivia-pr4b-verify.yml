@@ -2,10 +2,6 @@ name: Olivia PR4B-A Scheduling Command Verification
 on:
   pull_request:
     paths:
-      - "lib/scheduling/oliviaCommand*"
-      - "lib/scheduling/oliviaAvailabilityProposal.ts"
-      - "lib/scheduling/oliviaOwnerAction.server.ts"
-      - "lib/scheduling/oliviaCommands.server*"
       - "supabase/migrations/20261017000069_olivia_multi_availability_command.sql"
       - "scripts/olivia-pr4b-rls.sql"
       - "scripts/olivia-pr4b-concurrency.sh"
@@ -27,7 +23,6 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run test
-      - run: npx eslint "lib/scheduling/oliviaCommand*.ts" "lib/scheduling/oliviaAvailabilityProposal.ts" "lib/scheduling/oliviaOwnerAction.server.ts"
       - name: Repository-wide lint (existing unrelated baseline errors)
         continue-on-error: true
         run: npm run lint

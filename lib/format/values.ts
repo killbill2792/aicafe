@@ -72,10 +72,10 @@ export function formatCardField(field:string,label:string,locale:CardLocale):str
  return labels[key]??label;
 }
 /** The one formatter used by owner approval cards. A missing value is never a zero or dash. */
-export function formatCardValue(value:CardValue,locale:CardLocale,currency:string):string{
+export function formatCardValue(value:CardValue,locale:CardLocale,currency:string|null):string{
  const t=messages[locale].CardValues;
  const money=(cents:number)=>new Intl.NumberFormat(locale==="ar"?"en-US":locale,{
-  style:"currency",currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100);
+  ...(currency?{style:"currency" as const,currency}:{}),minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100);
  switch(value.kind){
   case "money":return money(value.cents);
   case "moneyRate":{

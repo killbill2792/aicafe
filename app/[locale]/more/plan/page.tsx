@@ -34,7 +34,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const days = snapshot?.last28Days ?? [];
   const costs = snapshot ? summarizeResolvedSoldProductCosts(snapshot.breakEvenProductCosts ?? snapshot.menuItems) : null;
   const missing = [
-    ...(snapshot && (days.length < 7 || drinks?.unavailableReason === "missing_sales") ? [{ key: "sales", text: money("breakEvenNeedSales"), action: money("uploadSales"), href: "/more/uploads/sales" }] : []),
+    ...(snapshot && (days.length === 0 || drinks?.unavailableReason === "missing_sales") ? [{ key: "sales", text: money("breakEvenNeedSales"), action: money("uploadSales"), href: "/more/uploads/sales" }] : []),
     ...(snapshot?.runningCostLines.filter(line => line.isMissing && line.isExpected).map(line => ({
       key: line.categoryCode, text: categories(line.categoryCode), action: isBillCategory(line.categoryCode) ? money("addBills") : common("addCost"), href: missingCostDestination(line.categoryCode),
     })) ?? []),
@@ -48,6 +48,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const numberFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
 
   return <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
+    {days.length>0 && days.length<7 && <p role="note" className="text-[17px] text-ink-muted">{common("basedOnDays",{days:days.length})}</p>}
     <BackHeader title={t("planTitle")} subtitle={t("planSubtitle")} backHref="/more" backLabel={common("back")} />
     <nav aria-label={t("planTitle")} className="grid grid-cols-3 gap-1 rounded-2xl bg-surface p-1">
       {TABS.map(id => <Link key={id} href={`/more/plan?tab=${id}`} aria-current={tab === id ? "page" : undefined}

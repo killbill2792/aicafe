@@ -44,29 +44,29 @@ describe("main-loop mandatory owner question",()=>{
    provider:fixture([[tool("get_menu_items",{query:null,limit:null},"menu"),completed],[say("No recorded items."),completed]])});
   expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
  });
- it("a saved fact replaces model no-data refusal without repeating the card",async()=>{
+ it("a saved fact suppresses duplicate cards without changing model text",async()=>{
   const saved=[{fact_key:scopedMenuKey,value_json:"Owner says three items",
    unit:null,period_scope:null,created_at:"2026-10-28T00:00:00Z"}];
   const turn=await runAgentTurn({ownerText:"What menu items can I price?",context:{...base},
    ownerFacts:saved,provider:fixture([[tool("get_menu_items",{query:null,limit:null},"menu"),completed],
     [say("No data."),completed]])});
   expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
-  expect(turn.text).toContain("Owner says three items");
-  expect(turn.text).not.toContain("No data.");
+  expect(turn.text).toBe("No data.");
  });
  it("owner-fact database outage remains an explicit tool failure",async()=>{
   const turn=await runAgentTurn({ownerText:"What is our payroll?",context:{...base},
    ownerFactsReadFailed:true,provider:fixture([[say("No data."),completed]])});
   expect(turn.results.some(r=>r.source==="owner_facts"&&r.error==="owner_facts_read_failed")).toBe(true);
   expect(turn.results.some(r=>r.source==="ask_owner"&&r.kind==="facts")).toBe(true);
-  expect(turn.text).toContain("I couldn't read");
+  expect(turn.text).toBe("No data.");
+  expect(agentReplyPayload(turn).reply.blocks.some(block=>block.type==="clarify")).toBe(true);
  });
  it.each([["es","No tengo esa información."],["ar","لا توجد بيانات."]] as const)(
-  "model refusal in %s is replaced with an owner card",async(locale,reply)=>{
+  "model refusal in %s is preserved",async(locale,reply)=>{
    const turn=await runAgentTurn({ownerText:locale==="es"?"¿Cuánto cuesta?":"كم السعر؟",
     context:{...base,locale},provider:fixture([[say(reply),completed]])});
-   expect(turn.results.some(r=>r.source==="ask_owner"&&r.kind==="facts")).toBe(true);
-   expect(turn.text).not.toContain(reply);
+   expect(turn.text).toBe(reply);
+   expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
   });
  it("model may voluntarily ask a noncatalog text fact",async()=>{
   const turn=await runAgentTurn({ownerText:"Where do we store delivery crates?",

@@ -216,6 +216,11 @@
     "more": "More"
   },
   "Common": {
+    "basedOnDays": "Based on {days} days of sales",
+    "partialPeriod": "Partial-period comparison; use with caution",
+    "lowConfidence": "Low confidence — add more sales data",
+    "beforeAfterDays": "Based on {before}/{after} days before and after the change",
+    "basedOnCompetitors": "Based on {count} nearby competitors",
     "periodSwitchLabel": "Time period",
     "today": "Today",
     "week": "Week",

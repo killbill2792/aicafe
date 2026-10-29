@@ -47,12 +47,6 @@ export function totalCostsCentsForPeriod(days: DailyFacts[], runningCostsCents: 
   );
 }
 
-/** Owner profit = net sales − total costs. */
-export function ownerProfitCentsForPeriod(days: DailyFacts[], runningCostsCents: number): number | null {
-  const costs=totalCostsCentsForPeriod(days,runningCostsCents);
-  return costs===null?null:netSalesCentsForPeriod(days)-costs;
-}
-
 // Health check bands (docs/05-calculations.md "Health check bands").
 function bandFor(ratio: number, watchAt: number, highAt: number): HealthBand {
   if (ratio > highAt) return "high";

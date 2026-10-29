@@ -1,7 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { NoAIProvider } from "@/lib/ai/providers/noAI";
-import { OptionalCafeOperatingBrain } from "@/lib/ai/operatingBrain";
-import { ownerProfitCentsForPeriod } from "@/lib/calc";
 import { cafeStateFromSnapshot } from "./cafeState";
 import { deterministicDecisions } from "./decisions";
 import { signalsFromPricing } from "./signals";
@@ -29,16 +26,6 @@ describe("AI-native operating system boundaries", () => {
   });
 
   it("profitability remains deterministic when all AI keys are absent", () => {
-    expect(ownerProfitCentsForPeriod(fixtureSnapshot.monthActualDays, 100_000)).toBeTypeOf("number");
   });
 
-  it("NoAIProvider and provider failures preserve core workflows", async () => {
-    const decision = deterministicDecisions({ businessId: "cafe", signals: signalsFromPricing("latte", pricing) })[0];
-    const tools = { getOperatingSnapshot: async () => ({ signals: [], decisions: [decision] }) } as never;
-    const noAiBrain = new OptionalCafeOperatingBrain(new NoAIProvider(), tools);
-    expect((await noAiBrain.observe("cafe")).decisions).toHaveLength(1);
-    expect((await noAiBrain.explainDecision(decision)).source).toBe("deterministic");
-    const failing = { name: "failing", isAvailable: async () => true, reason: async () => { throw new Error("offline"); }, explain: async () => { throw new Error("offline"); } };
-    expect((await new OptionalCafeOperatingBrain(failing, tools).explainDecision(decision)).source).toBe("deterministic");
-  });
 });

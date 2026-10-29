@@ -1,4 +1,4 @@
-export type AiProviderName = "anthropic" | "openai" | "moonshot";
+export type AiProviderName = "openai";
 
 export type AiUsage = { inputTokens: number; outputTokens: number };
 
@@ -17,10 +17,7 @@ export function parseDataUrl(dataUrl: string): { mediaType: string; base64: stri
 }
 
 export function isAiConfigured(): boolean {
-  const provider = process.env.AI_PROVIDER;
-  if (provider === "openai") return Boolean(process.env.OPENAI_API_KEY);
-  if (provider === "moonshot") return Boolean(process.env.MOONSHOT_API_KEY);
-  return Boolean(process.env.ANTHROPIC_API_KEY); // default provider is anthropic
+  return Boolean(process.env.OPENAI_API_KEY);
 }
 
 export type AIReasoningRequest = { objective: string; context: Record<string, unknown>; availableTools: string[] };

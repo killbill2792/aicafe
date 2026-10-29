@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { addOwnerMessageInput, createThreadInput } from "./contracts";
-import { assessGrounding } from "./grounding";
 import {
   ConversationConflict, ConversationNotFound, ConversationService,
   type ConversationRepository,
@@ -157,33 +156,4 @@ describe("Supervisor Phase 3 conversation foundation", () => {
     await expect(svc.listMessages(thread.id, 0)).rejects.toBeInstanceOf(ConversationNotFound);
   });
 
-  it("fails closed on missing tool data even if an evidence source is supplied", () => {
-    expect(assessGrounding("profitability", null, [{ source: "cafe_state", identifier: "profit", asOf: "2026-10-10" }]).status)
-      .toBe("insufficient_evidence");
-  });
-
-  it("requires verifiable source references even when data is available", () => {
-    const slice = { available: true as const, value: { ownerProfitCents: 58048 }, quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] } };
-    expect(assessGrounding("profitability", slice, []).status).toBe("insufficient_evidence");
-    expect(assessGrounding("profitability", slice, [{ source: "cafe_state", identifier: "snapshot", asOf: "2026-10-10" }]).status).toBe("verified");
-  });
-
-  it("never treats stale source inputs as verified grounding", () => {
-    const slice = {
-      available: true as const, value: { profitCents: 5000 },
-      quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: ["salesSync"] },
-    };
-    const result = assessGrounding("profitability", slice, [
-      { source: "cafe_state", identifier: "month-profit", asOf: "2026-10-10" },
-    ]);
-    expect(result.status).toBe("insufficient_evidence");
-    expect(result.missingInputs).toContain("stale:salesSync");
-  });
-
-  it("preserves estimated versus missing distinctions and never upgrades missing to verified", () => {
-    const evidence = [{ source: "pricing_engine" as const, identifier: "latte", asOf: "2026-10-10" }];
-    const estimated = { available: true as const, value: { suggestedPriceCents: 600 }, quality: { level: "medium" as const, missingInputs: [], estimatedInputs: ["benchmark"], staleInputs: [] } };
-    expect(assessGrounding("menu_pricing", estimated, evidence).status).toBe("estimated");
-    expect(assessGrounding("menu_pricing", { ...estimated, quality: { ...estimated.quality, missingInputs: ["recipe"] } }, evidence).status).toBe("insufficient_evidence");
-  });
 });

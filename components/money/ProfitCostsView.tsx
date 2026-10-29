@@ -218,6 +218,8 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
         <h2 className="text-[17px] font-bold">{t("vsLastPeriod")}</h2>
         {vm.changes.length === 0 && <p className="m-0 text-sm text-ink-muted">{t("notEnoughDataToCompare")}</p>}
+        {vm.changes.length > 0 && vm.comparisonState.kind === "available" && vm.comparisonState.partialPeriod &&
+          <p role="note" className="m-0 text-[17px] text-ink-muted">{tCommon("partialPeriod")}</p>}
         {vm.changes.map((change) => {
           const good = change.lowerIsBetter ? change.deltaCents <= 0 : change.deltaCents >= 0;
           return (

@@ -1,10 +1,10 @@
 import {ingredientOnlyEconomics} from "./alexPricingMath";
 
 /** The projection assumes unchanged unit demand; it is not a profit forecast.
- * All observed/projected monetary totals and inputs are integer USD cents. */
+ * All observed/projected monetary totals and inputs are integer cents in the café's own currency. */
 export type PriceExperimentBaseline={
   productId:string; productName:string;oldPriceCents:number;newPriceCents:number;
-  ingredientCostCents:number;baselineUnits7Days:number; currency:"USD";
+  ingredientCostCents:number;baselineUnits7Days:number; currency:string;
   estimateKind:"conditional_unchanged_demand";
 };
 export type PriceExperimentDay={
@@ -28,6 +28,8 @@ const signedProduct=(a:number,b:number):number|null=>{
 export function simulatePriceExperiment(input:{
   productId:string;productName:string;currentPriceCents:number;increaseCents:number;
   ingredientCostCents:number|null;units7Days:number|null;
+  /** The authenticated café's ISO 4217 currency. */
+  currency:string;
 }):PriceExperimentBaseline&{beforeContributionCents:number;afterContributionCents:number;
   estimatedAdditionalRevenue7DaysCents:number;estimatedAdditionalContribution7DaysCents:number}|null{
   const {currentPriceCents, increaseCents, ingredientCostCents,units7Days}=input;
@@ -44,7 +46,7 @@ export function simulatePriceExperiment(input:{
   if(!before||!after||before.ingredientContributionCents===null||
     after.ingredientContributionCents===null||delta===null)return null;
   return {productId:input.productId,productName:input.productName,oldPriceCents:currentPriceCents,
-    newPriceCents,ingredientCostCents,baselineUnits7Days:units7Days,currency:"USD",
+    newPriceCents,ingredientCostCents,baselineUnits7Days:units7Days,currency:input.currency,
     estimateKind:"conditional_unchanged_demand",beforeContributionCents:before.ingredientContributionCents,
     afterContributionCents:after.ingredientContributionCents,
     estimatedAdditionalRevenue7DaysCents:delta,estimatedAdditionalContribution7DaysCents:delta};

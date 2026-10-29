@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {swapCostPerSize,keepFromAddon,chatReadyMilkSwap} from "./modifierPricing";
+import {swapCostPerSize,keepFromAddon} from "./modifierPricing";
 const sizes=["8oz","12oz","16oz"].map(label=>({id:label,label}));
 const ml={ "8oz":{ml:120,basis:"recorded" as const},
   "12oz":{ml:180,basis:"recorded" as const},
@@ -16,7 +16,6 @@ describe("milk swap cost per size",()=>{
     expect(result.sizes[2].basis).toEqual({
       fromMilk:"recorded",toMilk:"recorded",milkMl:"owner_provided",
       targetProductCost:"owner_provided"});
-    expect(chatReadyMilkSwap(sizes,"regular","oat",ml,costs).rows).toHaveLength(3);
   });
   it("missing ingredient price or size quantity returns exact missing keys and null money",()=>{
     const outcome=swapCostPerSize(sizes,"regular","oat",

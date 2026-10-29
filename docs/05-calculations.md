@@ -116,7 +116,7 @@ Expected
 | Owner profit today (any day) | 2,400 − 650 − 70 − 779.52 − 320 = **$580.48** |
 | Average money left per drink | (2,400 − 650 − 70) ÷ 480 = **$3.50** |
 | Drinks needed per day | ceil((320 + 779.52) ÷ 3.50) = ceil(314.15) = **315** |
-| What-if all prices +25¢ | money left per drink 3.75 (fees held constant for simplicity in v1) → ceil(1,099.52 ÷ 3.75) = **294** |
+| What-if all prices +25¢ | money left per drink 3.75 (marginal percentage fee deducted on the price increase; fixed processing fee per payment unchanged for simplicity in v1) → ceil(1,099.52 ÷ 3.75) = **294** |
 | Rent & bills share per drink | 320 ÷ 480 = **$0.6667** |
 | Health: ingredients | 27.1% healthy · staff 32.5% healthy · together 59.6% healthy |
 
@@ -130,3 +130,6 @@ One day, loaded staff cost $300.00. Sold 100 lattes (prep 90s) and 100 drip coff
 
 ## Fixture C: menu example for the demo café screen (illustrative, matches mockup)
 Latte $5.25: ingredients $0.95, staff time $1.40, card fee $0.15, rent & bills share $0.67 → true profit **$2.08**, extra money from one more latte **$2.75**. Seed prep seconds and recipes so the demo lands within ±$0.05 of these.
+
+
+Legacy `lib/calc/perDrink.ts` was removed. Per-drink money and labor figures must use canonical `lib/metrics/core/*` calculations.

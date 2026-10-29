@@ -84,6 +84,7 @@ function PriceEvidencePanel({
  t:ReturnType<typeof useTranslations<"Menu">>;
  format:ReturnType<typeof useFormatter>;
 }){
+ const common=useTranslations("Common");
  const evidence=size.pricingEvidence ?? EMPTY_PRICE_EVIDENCE;
  const cost=evidence.costBenchmark;
  const sales=evidence.salesResponse;
@@ -122,6 +123,7 @@ function PriceEvidencePanel({
      const revenueKey=sales.revenueDirection==="up"?"salesRevenueUp":sales.revenueDirection==="down"?"salesRevenueDown":"salesRevenueFlat";
      salesText=changed;
      salesDetail=`${t(unitKey,{percent:pct(sales.unitsPerDayChangePercent),before:units(sales.beforeUnitsPerDay),after:units(sales.afterUnitsPerDay)})} ${t(revenueKey,{percent:pct(sales.revenuePerDayChangePercent),before:formatCents(sales.beforeRevenuePerDayCents),after:formatCents(sales.afterRevenuePerDayCents)})}`;
+     if(sales.confidence==="low")salesDetail+=" · "+common("beforeAfterDays",{before:sales.beforeCoveredDays,after:sales.afterCoveredDays})+" · "+common("lowConfidence");
    }
  }
  const marketText=market.status==="unavailable"
@@ -136,7 +138,7 @@ function PriceEvidencePanel({
    <div className="mt-3 space-y-3">
      <div><p className="font-bold text-ink">{t("costBenchmarkTitle")}</p><p className="mt-1 text-[17px] leading-snug text-ink-muted">{costText}</p><p className="mt-1 text-sm text-ink-muted">{t("costBenchmarkNotMarket")}</p></div>
      <div className="border-t border-line pt-3"><div className="flex flex-wrap items-center gap-2"><p className="font-bold text-ink">{t("salesResponseTitle")}</p>{source&&<span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-ink-muted">{source}</span>}</div><p className="mt-1 text-[17px] leading-snug text-ink-muted">{salesText}</p>{salesDetail&&<p className="mt-1 text-[17px] leading-snug text-ink">{salesDetail}</p>}{sales.status==="ready"&&<p className="mt-1 text-sm text-ink-muted">{t("salesResponseCaveat")}</p>}</div>
-     <div className="border-t border-line pt-3"><p className="font-bold text-ink">{t("marketComparisonTitle")}</p><p className="mt-1 text-[17px] leading-snug text-ink-muted">{marketText}</p></div>
+     <div className="border-t border-line pt-3"><p className="font-bold text-ink">{t("marketComparisonTitle")}</p><p className="mt-1 text-[17px] leading-snug text-ink-muted">{marketText}</p>{market.status==="ready"&&market.confidence==="low"&&<p className="mt-1 text-sm text-ink-muted">{common("basedOnCompetitors",{count:market.verifiedNearbyCount})} · {common("lowConfidence")}</p>}</div>
    </div>
  </section>;
 }

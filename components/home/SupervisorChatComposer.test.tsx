@@ -46,7 +46,7 @@ const chatStartCopy:Omit<ChatStartCopy,"suggestions"> = {
   suggestionsLabel:"Starter questions",handledLabel:"See handled",
 };
 function startHtml(enabled=true) {
-  return renderToStaticMarkup(createElement(SupervisorChatComposer,{
+  return renderToStaticMarkup(createElement(SupervisorChatComposer,{cafeCurrency:"EUR",
     enabled,unavailableReason:null,locale:"en",copy,chatStartData,chatStartCopy,
   }));
 }

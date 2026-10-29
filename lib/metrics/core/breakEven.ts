@@ -4,6 +4,10 @@ import {shiftCafeDate} from "./clock";
 export function moneyLeftPerDrinkCents(sales:number,ingredients:number,fees:number,drinks:number):number{
   return drinks===0?0:(sales-ingredients-fees)/drinks;
 }
+export function moneyLeftAfterPriceChangeCents(oldMoneyLeft:number,deltaPriceCents:number,feeRate:number):number{
+ if(!Number.isFinite(feeRate)||feeRate<0||feeRate>=1)throw new RangeError("Invalid marginal card-fee rate");
+ return oldMoneyLeft+deltaPriceCents*(1-feeRate);
+}
 export function dailyBreakEvenCostsCents(bills:number,staff:number):number{
   return bills+staff;
 }

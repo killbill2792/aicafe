@@ -62,19 +62,3 @@ export function swapCostPerSize(
   });
   return {sizes:out,missing:[...new Set(out.flatMap(item=>item.missing))]};
 }
-/** Compact structured result for Prompt C's answer handler. Never put English in a tool result. */
-export function chatReadyMilkSwap(
-  sizes:readonly MilkSize[],fromMilk:string,toMilk:string,
-  mlPerSize:Readonly<Record<string,SizeMilkVolume|number|null>>,
-  costs:Readonly<Record<string,MilkUnitCost|undefined>>,
-  targetProductCostPercent:number|null=DEFAULT_TARGET_PRODUCT_COST_PERCENT,
-  targetBasis:ModifierBasis="estimated",
-){
-  const result=swapCostPerSize(sizes,fromMilk,toMilk,mlPerSize,costs,
-    targetProductCostPercent,targetBasis);
-  return {source:"modifier_pricing" as const,fromMilk,toMilk,
-    rows:result.sizes.map(({sizeId,sizeLabel,milkMl,costDeltaCents,
-      suggestedUpchargeCents,marginKeptCents,basis,missing})=>
-      ({sizeId,sizeLabel,milkMl,costDeltaCents,suggestedUpchargeCents,
-        marginKeptCents,basis,missing})),missing:result.missing};
-}

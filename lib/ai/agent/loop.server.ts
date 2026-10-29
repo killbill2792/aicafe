@@ -12,9 +12,8 @@ import {newResolveState,observeToolResult,resolveOwnerPeriod,localizedPeriodLabe
 import {acceptedExplainLines,type ExplainLine} from "./explain";
 import {verifiedRecommendedPriceInReply} from "./pricingReply";
 import {injectSavedOwnerInputs,formatSavedOwnerFacts,type SavedFact} from "@/lib/ownerFacts/inject";
-import {classifyNeedsAsk,uncertaintyPhrases} from "@/lib/ownerFacts/needsAsk";
-import {questionFromReasons,localizedToolNote,answerFromSavedReasons} from "@/lib/ownerFacts/questions";
-import {compactCalculationReply} from "@/lib/ownerFacts/reply";
+import {classifyNeedsAsk} from "@/lib/ownerFacts/needsAsk";
+import {questionFromReasons} from "@/lib/ownerFacts/questions";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
@@ -32,11 +31,11 @@ export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType
 export type OwnerFollowUp = { id: string; text: string };
 /** Stable instruction prefix. Style rules are appended (not per-turn data), so the
  * whole prefix stays identical across turns and cafés and is served from cache. */
-export function agentInstructions(style: boolean): string {
-  return SYSTEM_PROMPT + "\n" + (style ? STYLE_RULES + "\n" : "") + agentLabelsPrompt;
+export function agentInstructions(): string {
+  return SYSTEM_PROMPT + "\n" + STYLE_RULES + "\n" + agentLabelsPrompt;
 }
-export function agentPromptCacheKey(style: boolean): string { return style ? "cafe-agent-v4" : "cafe-agent-v3"; }
-export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. The owner may answer any missing business fact using ask_owner. Use saved owner facts on every turn and never ask again for an already saved fact unless the owner changes it. If any requested fact is empty, failed or uncertain, give the partial answer and call ask_owner; do not refuse or direct the owner to connect a POS. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. When a tool result says needsOwnerChoice or two or more products, people, categories, or periods fit and affect numbers or proposals, call ask_owner with verified options (value = candidate ID returned by a tool; label = candidate name with optional price or size suffix), show Other for remaining matches, and stop. Never guess silently. If one candidate clearly fits, do not ask. Never ask in plain text when ask_owner fits. When suggest_new_item_price returns askOwnerRequired, call ask_owner with 2–4 exact candidate pairs from that result and allowOther=true. When any calculation is present, the main response must be at most three short lines: answer, price or number, and one next step or caveat. Put all working (cost, labor, fees, margin, sources) only in the collapsed How I got this block from trusted tool explanations. The price breakdown is UI-only: NEVER list its components in the chat reply. For follow-up pricing math, re-call suggest_new_item_price with the same owner item inputs. Use tool numbers. Compute business math only through tools; for any what-if or multi-step calculation call simulate_scenario first. Do not do arithmetic in prose beyond simple addition or subtraction of checked tool numbers. Missing inputs narrow an answer; they do not block a partial estimate. Never ask for a figure a tool returned. Say Estimate or You told me next to each affected number once. Give the best labeled answer and say what is needed to make it exact. Label owner-provided figures as You told me, and model estimates as Estimate. Imported prices are approximate observations, never verified list prices; disclose priceCheck differences. If priceCheck is unknown, do not claim a verified comparison. If a tool result has coverageLabel, say the numbers are for that window, not the period asked. Tool money values are integer cents, never dollars. If a tool returns a safe error code, tell the owner its specific reason and next step. On incomplete evidence explain what is known and missing. For questions about what needs attention, use get_attention_items as the sole source of attention tasks; never infer attention from staff, schedule or sales readings. If there are no attention items, say nothing needs attention. If attendanceTracked is false, explain the gap and ask the owner about attendance with ask_owner; never report zero clocked in. A missing confirmed weekly schedule means no schedule is set, not that coverage gaps are confirmed. Any requested or agreed change, including yes, do it, approve or send it, must invoke its propose_* tool in the same turn, so an approval card appears. Do not claim a card or a change unless that tool succeeded. Mapping: price -> propose_price_change; price test -> propose_price_experiment; supplies -> propose_purchases; weekly schedule -> draft_week_schedule then propose_schedule; one shift -> propose_shift_change; hire -> propose_add_staff; staff edit or retire -> propose_staff_change; availability -> propose_availability_change; labor rule -> propose_rule_change; send team schedule -> propose_send_schedule; check-in -> record_checkin. A schedule table in text requires propose_schedule, too. A what-if is simulate_scenario only, until the owner asks to act. A proposal is not a completed action; say 'I have drafted this for your approval.' Photos explicitly attached by an owner may describe purchases; draft individual proposals for each item using propose_purchases, never silently write them. Do not invent missing units or costs. For owner-approved schedules, messages are NEVER dispatched by AI. Explain that the owner must open their own WhatsApp or SMS composer. A recorded Opened action is NOT proof of delivery. No JSON envelope.";
+export function agentPromptCacheKey(): string { return "cafe-agent-v4"; }
+export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. The owner may answer any missing business fact using ask_owner. Use saved owner facts on every turn and never ask again for an already saved fact unless the owner changes it. If any requested fact is empty, failed or uncertain, give the partial answer and call ask_owner; do not refuse or direct the owner to connect a POS. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. When a tool result says needsOwnerChoice or two or more products, people, categories, or periods fit and affect numbers or proposals, call ask_owner with verified options (value = candidate ID returned by a tool; label = candidate name with optional price or size suffix), show Other for remaining matches, and stop. Never guess silently. If one candidate clearly fits, do not ask. Never ask in plain text when ask_owner fits. When suggest_new_item_price returns askOwnerRequired, call ask_owner with 2–4 exact candidate pairs from that result and allowOther=true. Answer first, then the key numbers. Be as short as the question allows. Put all working (cost, labor, fees, margin, sources) only in the collapsed How I got this block from trusted tool explanations. The price breakdown is UI-only: NEVER list its components in the chat reply. For follow-up pricing math, re-call suggest_new_item_price with the same owner item inputs. Use tool numbers. Compute business math only through tools; for any what-if or multi-step calculation call simulate_scenario first. Do not do arithmetic in prose beyond simple addition or subtraction of checked tool numbers. Missing inputs narrow an answer; they do not block a partial estimate. Never ask for a figure a tool returned. Say Estimate or You told me next to each affected number once. Give the best labeled answer and say what is needed to make it exact. Label owner-provided figures as You told me, and model estimates as Estimate. Imported prices are approximate observations, never verified list prices; disclose priceCheck differences. If priceCheck is unknown, do not claim a verified comparison. If a tool result has coverageLabel, say the numbers are for that window, not the period asked. Tool money values are integer cents; show them in the café currency. If a tool returns a safe error code, tell the owner its specific reason and next step. On incomplete evidence explain what is known and missing. For questions about what needs attention, use get_attention_items as the sole source of attention tasks; never infer attention from staff, schedule or sales readings. If there are no attention items, say nothing needs attention. If attendanceTracked is false, explain the gap and ask the owner about attendance with ask_owner; never report zero clocked in. A missing confirmed weekly schedule means no schedule is set, not that coverage gaps are confirmed. Any requested or agreed change, including yes, do it, approve or send it, must invoke its propose_* tool in the same turn, so an approval card appears. Do not claim a card or a change unless that tool succeeded. Mapping: price -> propose_price_change; price test -> propose_price_experiment; supplies -> propose_purchases; weekly schedule -> draft_week_schedule then propose_schedule; one shift -> propose_shift_change; hire -> propose_add_staff; staff edit or retire -> propose_staff_change; availability -> propose_availability_change; labor rule -> propose_rule_change; send team schedule -> propose_send_schedule; check-in -> record_checkin. A schedule table in text requires propose_schedule, too. A what-if is simulate_scenario only, until the owner asks to act. A proposal is not a completed action; say 'I have drafted this for your approval.' Photos explicitly attached by an owner may describe purchases; draft individual proposals for each item using propose_purchases, never silently write them. Do not invent missing units or costs. For owner-approved schedules, messages are NEVER dispatched by AI. Explain that the owner must open their own WhatsApp or SMS composer. A recorded Opened action is NOT proof of delivery. No JSON envelope.";
 
 export async function* openAIProvider(params: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<Event> {
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -74,9 +73,7 @@ export async function runAgentTurn(args: {
   onReset?: (discardChars: number) => void;
   now?: () => number; onTool?: (name:string,agentId:string)=>void;
   previousEvidence?:readonly NumericEvidence[];
-  /** CHAT_STYLE_V2: append STYLE_RULES to the cached instruction prefix. */
-  style?: boolean;
-  /** CHAT_MEMORY: owner-approved café facts, already capped and formatted. Sent as
+  /** owner-approved café facts, already capped and formatted. Sent as
    * the first input item (stable per café, so it also caches) — never in instructions. */
   memoryFacts?: string | null;
   /** Versioned café-specific facts are separate from approved conversation memory. */
@@ -85,9 +82,9 @@ export async function runAgentTurn(args: {
   ownerFactsReadFailed?:boolean;
   /** Approved scope for privacy-safe error audit. */
   businessId?:string;requestId?:string;
-  /** Extra strict tool definitions enabled by a flag (e.g. the memory tool). */
+  /** Extra strict tool definitions (e.g. the memory tool). */
   extraTools?: readonly unknown[];
-  /** CHAT_JOBS: returns up to `max` owner follow-ups not yet read (each exactly once).
+  /** returns up to `max` owner follow-ups not yet read (each exactly once).
    * Called before each later model step; failures are ignored (unread messages then
    * get their own continuation turn). */
   takeFollowUps?: (max: number) => Promise<OwnerFollowUp[]>;
@@ -154,10 +151,10 @@ export async function runAgentTurn(args: {
   const model = configuredSupervisorModel();
   const audit = (step: AgentAuditStep) => { try { args.onAuditStep?.(step); } catch { /* audit is non-critical */ } };
   const request = (final: boolean) => ({
-    model, instructions: agentInstructions(Boolean(args.style)),
+    model, instructions: agentInstructions(),
     tools: [...agentToolDefinitions, ...(args.extraTools ?? [])],
     tool_choice: final ? "none" : "auto", stream: true,
-    max_output_tokens: 1200, prompt_cache_key: agentPromptCacheKey(Boolean(args.style)), input,
+    max_output_tokens: 1200, prompt_cache_key: agentPromptCacheKey(), input,
   });
   const call = async (final: boolean) => {
     const calls: ToolCall[] = [], output: unknown[] = [];
@@ -204,7 +201,7 @@ export async function runAgentTurn(args: {
       modelError = "model_call_failed";
       const discardChars = text.length - callTextStart;
       if (discardChars > 0) {
-        text = text.slice(0, callTextStart);
+        text = text.slice(0, callTextStart); // allowed: discard incomplete model stream on provider failure
         args.onReset?.(discardChars);
       }
       throw error;
@@ -225,7 +222,8 @@ export async function runAgentTurn(args: {
         // The owner added something while this answer streamed: answer it in the
         // same reply (one extra bounded call) instead of silently dropping it.
         if (round < 4 && usage.modelCalls < 5 && await readFollowUps()) {
-          if (text && !text.endsWith("\n")) { text += "\n\n"; args.onDelta?.("\n\n"); }
+          if (text && !text.endsWith("\n")) { text += "\n\n"; // allowed: separator between model responses to live follow-ups
+             args.onDelta?.("\n\n"); }
           continue;
         }
         finished = true; break;
@@ -384,7 +382,8 @@ export async function runAgentTurn(args: {
           break;
         }
       }
-      if(askedQuestion){if(!text.trim())text=askedQuestion;break;}
+      if(askedQuestion){if(!text.trim()){text=askedQuestion; // allowed: empty-reply fill
+       }break;}
       if (endReason !== "complete") break;
       if (round === 4 || usage.toolCalls >= 8) { endReason = "budget"; break; }
     }
@@ -427,7 +426,7 @@ export async function runAgentTurn(args: {
             finalError = "model_call_failed";
             const discardChars = text.length - finalTextStart;
             if (discardChars > 0) {
-              text = text.slice(0, finalTextStart);
+              text = text.slice(0, finalTextStart); // allowed: discard incomplete model stream on provider failure
               args.onReset?.(discardChars);
             }
             throw error;
@@ -454,31 +453,10 @@ export async function runAgentTurn(args: {
       if(card.missing.length===0){
         results.push({callId:"automatic-owner-card",name:"ask_owner",arguments:"{}",result:card});
         startedTools.push("ask_owner"); // Internal recovery, not an extra model tool call.
-        const refusing=Object.values(uncertaintyPhrases).some(parts=>parts.some(p=>p.test(text)));
-        // A refusal may follow a valid partial number. Do not erase the
-        // measured part merely because the model also flagged missing data.
-        const includesPartialNumber=/[\d\u0660-\u0669\u06f0-\u06f9]/u.test(text);
-        if(refusing&&!includesPartialNumber){
-          args.onReset?.(text.length);
-          text="";
+        if(!text.trim()){text=String(card.question); // allowed: empty-reply fill
         }
-        if(!text.trim())text=String(card.question);
-      }
-    }else if(reasons.length){
-      // A current saved fact replaces a repeated question and a model refusal.
-      const answer=answerFromSavedReasons(reasons,collected,args.ownerText,args.ownerFacts??[],args.context.locale,args.context.currency??"XXX");
-      const refusing=Object.values(uncertaintyPhrases).some(parts=>parts.some(p=>p.test(text)));
-      if(answer&&(refusing||!text.trim())){
-        args.onReset?.(text.length);
-        text=answer;
-        args.onDelta?.(answer);
       }
     }
-  }
-  const note=localizedToolNote(results.map(r=>r.result),args.context.locale);
-  if(note&&text.trim()&&!text.includes(note)){
-    text+=(text.endsWith("\n")?"":"\n\n")+note;
-    args.onDelta?.("\n\n"+note);
   }
   usage.latencyMs = now() - started;
   const status = statusFromResults(results);
@@ -496,7 +474,7 @@ export async function runAgentTurn(args: {
   const priceResult=toolResults.find(r=>r.source==="new_item_price");
   const price=typeof priceResult?.recommendedPriceCents==="number"&&
     verifiedRecommendedPriceInReply(text,priceResult.recommendedPriceCents,
-      args.context.locale,unverified)?priceResult.recommendedPriceCents:null;
+      args.context.locale,unverified,args.context.currency)?priceResult.recommendedPriceCents:null;
   const accepted=acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale,price);
   // The deterministic milk adapter's inputs, results and formulas come ONLY
   // from existing shared calculators, not model prose. Preserve all verified
@@ -506,19 +484,6 @@ export async function runAgentTurn(args: {
       Boolean(line)&&typeof line==="object"&&"source" in line&&line.source==="milk_swap") :[]);
   const explain=[...accepted,...milkExplain.filter(line=>!accepted.some(x=>
     x.source===line.source&&x.label===line.label&&JSON.stringify(x.result)===JSON.stringify(line.result)))];
-  // Accept trusted disclosure lines against the original complete response first.
-  // Then shorten the visible message without losing the verified calculation,
-  // whose source/inputs are persisted in the collapsed how block.
-  const hasCalculatedEvidence=toolResults.some(result=>
-    Array.isArray(result.numberEstimates)&&result.numberEstimates.length>0);
-  if(explain.length||hasCalculatedEvidence){
-    const compact=compactCalculationReply(text);
-    if(compact&&compact!==text){
-      args.onReset?.(text.length);
-      text=compact;
-      args.onDelta?.(text);
-    }
-  }
   const finalUnverified=checkNumbers(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence);
   return { text, endReason, status,
     unverified:finalUnverified,

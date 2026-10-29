@@ -34,7 +34,7 @@ export const memoryTools = { remember_cafe_fact: {
 const { $schema: _schema, ...parameters } = z.toJSONSchema(rememberCafeFactSchema, { target: "draft-07" });
 void _schema;
 /** Strict OpenAI function definition. Deliberately NOT part of agentToolDefinitions:
- * it is appended only when CHAT_MEMORY is on (see route), so the default tool list is unchanged. */
+ * it is appended by the agent route when café memory is available. */
 export const memoryToolDefinition = {
   type: "function" as const, name: "remember_cafe_fact",
   description: memoryTools.remember_cafe_fact.description, strict: true as const,

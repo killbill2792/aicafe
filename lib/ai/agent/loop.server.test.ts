@@ -26,7 +26,7 @@ function fixture(rounds: Array<Array<Record<string, unknown>>>): AgentProvider {
   };
 }
 describe("recorded Responses streaming fixtures", () => {
-  it("keeps a successful menu answer when profit read fails, with a named dated note",async()=>{
+  it("keeps the exact model menu answer when profit read fails",async()=>{
     const failing:AgentToolContext={...context,tools:{...context.tools,
       getProfitability:async()=>{throw new Error("private SQL connection details");}
     }};
@@ -38,9 +38,7 @@ describe("recorded Responses streaming fixtures", () => {
       ])});
     expect(turn.results.some(x=>x.source==="menu_items"&&x.missing.length===0)).toBe(true);
     expect(turn.results.some(x=>x.source==="get_profit"&&x.error==="internal")).toBe(true);
-    expect(turn.text).toContain("Latte");
-    expect(turn.text).toContain("profit");
-    expect(turn.text).toContain("2026-09-01");
+    expect(turn.text).toBe("The menu lists Latte at $4.50.");
     expect(turn.text).not.toContain("private SQL");
   });
   it("sends café-local date and timezone as a developer input, not cached instructions",async()=>{

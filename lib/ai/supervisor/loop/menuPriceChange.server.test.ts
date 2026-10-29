@@ -1,13 +1,10 @@
 import {describe,it,expect,vi,beforeEach} from "vitest";
 const state=vi.hoisted(()=>({
-  businessId:"11111111-1111-4111-8111-111111111111",currency:"USD",
+  businessId:"11111111-1111-4111-8111-111111111111",currency:"USD" as string|null,
   menu:[{id:"22222222-2222-4222-8222-222222222222",name:"Latte",priceCents:450,active:true}],
   current:450 as number|null,saves:0,saveArgs:null as unknown,
   saveAttempts:0,changeBeforeSave:null as number|null,
 }));
-vi.mock("@/lib/metrics/p1Readers.server",()=>({authorizedOwnerP1:async()=>({
-  identity:{businessId:state.businessId,currency:state.currency}
-})}));
 vi.mock("@/lib/menu/priceHistory",()=>({setCanonicalMenuPrice:async(_client:unknown,input:unknown)=>{
   const args=input as {expectedOldPriceCents:number};
   state.saveAttempts++;
@@ -42,6 +39,15 @@ describe("approved menu price capability",()=>{
     state.menu=[{...state.menu[0],priceCents:2000}];
     const simulation=await menuPriceChangeCapability.simulate(scope,{...input,newPriceCents:2010});
     expect(simulation.effect).toMatchObject({oldPriceCents:2000,newPriceCents:2010,productName:"Latte"});
+  });
+  it("drafts a price change in a non-USD café's own currency",async()=>{
+    state.currency="EUR";
+    const simulation=await menuPriceChangeCapability.simulate(scope,input);
+    expect(simulation.effect).toMatchObject({oldPriceCents:450,newPriceCents:500,currency:"EUR"});
+  });
+  it("asks for the café currency instead of guessing one",async()=>{
+    state.currency=null;
+    await expect(menuPriceChangeCapability.simulate(scope,input)).rejects.toMatchObject({code:"validation"});
   });
   it("is registered in the cron-shared registry",()=>{
     expect(supervisorLoopRegistry.get(menuPriceChangeCapabilityId)).toBe(menuPriceChangeCapability);

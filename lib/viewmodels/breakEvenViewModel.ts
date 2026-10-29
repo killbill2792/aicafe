@@ -1,5 +1,4 @@
 import {
-  dailyCostsToCoverCents,
   summarizeResolvedSoldProductCosts,
   sumCents,
   whatIfIngredientCostChange,
@@ -8,8 +7,8 @@ import {
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { expectedMissingCostLines } from "@/lib/expenses/expectedCosts";
-import {breakEvenFor,moneyLeftPerDrinkCents} from "@/lib/metrics/core/breakEven";
-import {cardFeesForDays} from "@/lib/metrics/core/fees";
+import {breakEvenFor,moneyLeftPerDrinkCents,dailyBreakEvenCostsCents} from "@/lib/metrics/core/breakEven";
+import {cardFeesForDays,marginalCardFeeRate} from "@/lib/metrics/core/fees";
 import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {laborForPeriod} from "@/lib/metrics/core/labor";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
@@ -43,7 +42,7 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
     labor.projectedMonthlyLaborCents-(ownerExtras??0);
   const avgDailyStaffCost=clockedMonthly===null?null:
     clockedMonthly/28+(ownerExtras??0)/snapshot.daysInMonth;
-  const dailyCosts=dailyCostsToCoverCents(runningPerDay,avgDailyStaffCost??0);
+  const dailyCosts=dailyBreakEvenCostsCents(runningPerDay,avgDailyStaffCost??0);
   const shared=breakEvenFor({days,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
     monthlyBillsCents:Math.round(runningPerDay*snapshot.daysInMonth),
     monthlyStaffCents:avgDailyStaffCost===null?null:Math.round(avgDailyStaffCost*snapshot.daysInMonth),
@@ -64,7 +63,8 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
     {
       key: "price",
       label: "Raise all prices 25¢",
-      needed: whatIfPriceChange(avgMoneyLeft, 25, dailyCosts),
+      needed: whatIfPriceChange(avgMoneyLeft, 25, dailyCosts,
+        marginalCardFeeRate((snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans,snapshot.todayDateStr)),
     },
     {
       key: "staffing",

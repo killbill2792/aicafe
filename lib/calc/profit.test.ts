@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { averageOrderValueCents, staffCostCentsForPeriod, ownerProfitCentsForPeriod, laborKnown, laborWageStatusFromTimecards } from "./profit";
+import { averageOrderValueCents, staffCostCentsForPeriod, laborKnown, laborWageStatusFromTimecards } from "./profit";
 import type { DailyFacts } from "./types";
 
 describe("averageOrderValueCents", () => {
@@ -31,7 +31,6 @@ describe("partial payroll never becomes a final profit", () => {
   it("retains known cents without treating missing wages as a complete total",()=>{
     expect(day.wagesCents).toBe(3500);
     expect(staffCostCentsForPeriod([day])).toBeNull();
-    expect(ownerProfitCentsForPeriod([day],1000)).toBeNull();
     expect(staffCostCentsForPeriod([{...day,laborWageStatus:"actual"}])).toBe(3920);
   });
 });

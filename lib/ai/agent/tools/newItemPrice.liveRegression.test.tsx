@@ -80,7 +80,7 @@ describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
     ["es",es.SupervisorChat,"Cómo se calculó"],
     ["ar",ar.SupervisorChat,"كيف تم الحساب"]
   ] as const){
-    const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:selected,locale,copy}));
+    const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:selected,locale,copy,currency:"EUR"}));
     expect(html).toContain("<details");
     expect(html).not.toContain("<details open");
     expect(html).toContain(title);
@@ -98,7 +98,7 @@ describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
   expect(verifiedRecommendedPriceInReply(valid,525,"es",unverified)).toBe(true);
   expect(acceptedExplainLines(lines,evidence,valid,unverified,"es",525)).toHaveLength(lines.length);
   const html=renderToStaticMarkup(createElement(HowIGotThis,{
-   lines:acceptedExplainLines(lines,evidence,valid,[],"es",525),locale:"es",copy:es.SupervisorChat}));
+   lines:acceptedExplainLines(lines,evidence,valid,[],"es",525),locale:"es",copy:es.SupervisorChat,currency:"EUR"}));
   expect(html).toContain(es.SupervisorChat.howCalculated);
   const wrong="$15.25";
   expect(verifiedRecommendedPriceInReply(wrong,525,"en",[])).toBe(false);
@@ -127,7 +127,7 @@ describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
   expect(r.candidates).toEqual(expect.arrayContaining([expect.objectContaining({id:"bills-monthly"})]));
   expect((r.explain as ExplainLine[]).find(l=>l.label==="Break-even")?.provenance).toBe("missing");
   const html=renderToStaticMarkup(createElement(HowIGotThis,{
-   lines:r.explain as ExplainLine[],locale:"en",copy:en.SupervisorChat}));
+   lines:r.explain as ExplainLine[],locale:"en",copy:en.SupervisorChat,currency:"EUR"}));
   expect(html).toContain(en.SupervisorChat.explainMissing);
  });
  it("accepts verified owner total bills from the Other amount follow-up",async()=>{

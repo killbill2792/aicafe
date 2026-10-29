@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {scopedOwnerQuestionKey,questionFromReasons,answerFromSavedReasons} from "./questions";
+import {scopedOwnerQuestionKey,questionFromReasons} from "./questions";
 import type {AskReason} from "./needsAsk";
 import type {AgentToolResult} from "@/lib/ai/agent/tools";
 
@@ -30,13 +30,6 @@ describe("dated owner questions",()=>{
   const next=questionFromReasons([reason],[sandwich],"What does the sandwich cost?","en",stored);
   expect(next?.fields[0].key).toBe("unit_cost_cents:item:sandwich-id");
  });
- it.each(["en","es","ar"] as const)("formats saved EUR answers in %s",locale=>{
-  const reason:AskReason={kind:"missing",key:"payrollMissing",tool:"get_profit"};
-  const stored=[{fact_key:"monthly_payroll_cents",value_json:12345,unit:"cents",period_scope:"month",created_at:"2026-10-28T00:00:00Z"}];
-  const answer=answerFromSavedReasons([reason],[],"Payroll?",stored,locale,"EUR");
-  expect(answer).toContain("€");
-  expect(answer).not.toContain("$");
- });
  it.each([["en","almond milk"],["es","leche de almendra"],["ar","حليب اللوز"]] as const)(
   "milk cost card names the exact target in %s",(locale,translated)=>{
    const reason:AskReason={kind:"missing",
@@ -48,16 +41,6 @@ describe("dated owner questions",()=>{
    expect(card!.fields[0].key).toBe("milk_almond_serving_cost_cents:16oz");
    if(locale!=="en")expect(card!.fields[0].label).not.toContain("almond milk");
    expect(card!.fields[0].label).not.toContain("{milk}");
- });
- it("saved milk cost has no placeholder in any supported language",()=>{
-  const key="milk_almond_serving_cost_cents:16oz";
-  const reason:AskReason={kind:"missing",key,tool:"milk_swap"};
-  const fact={fact_key:key,value_json:90,unit:"cents",period_scope:null,created_at:"2026-10-28T00:00:00Z"};
-  for(const locale of ["en","es","ar"] as const){
-   const answer=answerFromSavedReasons([reason],[],"Switch to almond milk",[fact],locale);
-   expect(answer).not.toContain("{milk}");
-   expect(answer).toContain(({en:"almond milk",es:"leche de almendra",ar:"حليب اللوز"})[locale]);
-  }
  });
  const reason:AskReason={kind:"empty",key:"scheduled_shifts",tool:"scheduled_shifts"};
  const day=(date:string):AgentToolResult=>({source:"scheduled_shifts",
@@ -85,8 +68,6 @@ describe("dated owner questions",()=>{
     period_scope:null,created_at:"2026-10-28T00:00:00Z"};
   const card=questionFromReasons([reason],[toolResult],ownerText,"en",[fact]);
   expect(card).toBeNull();
-  const response=answerFromSavedReasons([reason],[toolResult],ownerText,[fact],"en");
-  expect(response).toContain("Owner confirms three items");
  });
  it("does not reuse a generic default-estimate answer for an unrelated question",()=>{
   const basis:AskReason={kind:"missing",key:"query_data",tool:"query_data"};

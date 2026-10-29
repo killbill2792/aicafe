@@ -12,6 +12,7 @@ export default function TryScenario({ items, base, currency, hoursComplete = tru
   hoursComplete?: boolean; salesCoverageGaps?: boolean; closedDaySales?: boolean;
 }) {
   const t = useTranslations("Scenario");
+  const common=useTranslations("Common");
   const locale = useLocale();
   const [kind, setKind] = useState<"price" | "ingredient" | "staff">("price");
   const drinks = items.filter(item => item.category === "drink" && item.active !== false);
@@ -23,13 +24,15 @@ export default function TryScenario({ items, base, currency, hoursComplete = tru
   const [staffAfternoonOnly, setStaffAfternoonOnly] = useState(false);
   const [presetKind, setPresetKind] = useState<"allPrices" | "milk" | null>(null);
   const money = {format:(value:number)=>formatCafeCurrency(Math.round(value*100),locale,currency).text};
+  // Short history no longer blocks; closed-day sales and coverage gaps still do, because
+  // item quantities and covered operating days must describe the same dates.
   const historyBlocker = scenarioHistoryBlocker(kind, {
     salesCoverageGaps, closedDaySales, salesDaysCovered: base?.salesDaysCovered,
   });
   // A staffing cost change remains valid without item-sale history, but
   // the break-even amount still needs reliable product/sales coverage.
   const breakEvenHistoryUnreliable = kind === "staff" &&
-    (closedDaySales || salesCoverageGaps || (base?.salesDaysCovered ?? 0) < 7);
+    (closedDaySales || salesCoverageGaps);
   const invalid = !Number.isFinite(Number(value)) || value.trim() === "" || Number(value) < 0 || Number(value) > 100000;
   const result = useMemo(() => base && !invalid && !historyBlocker ? simulatePlanChange({
     base, type: kind, item: picked, items, preset: presetKind,
@@ -99,11 +102,6 @@ export default function TryScenario({ items, base, currency, hoursComplete = tru
       <Link href="/more/uploads/sales" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
         {t("uploadSales")}
       </Link>
-    </div> : historyBlocker === "insufficientSalesDays" ? <div className="rounded-xl bg-surface p-4 text-[17px]">
-      <p>{t("insufficientOperatingSalesDays")}</p>
-      <Link href="/more/uploads/sales" className="mt-2 inline-flex min-h-12 items-center font-bold text-staff underline">
-        {t("uploadSales")}
-      </Link>
     </div> :
     kind === "staff" && base && base.monthlyStaffCents <= 0 ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("staffUnknown")}</p> :
     !base ? <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p> :
@@ -123,6 +121,9 @@ export default function TryScenario({ items, base, currency, hoursComplete = tru
           <strong className="block text-2xl">{money.format(result.monthlyProfitChangeCents / 100)}</strong>
         </div>
       </section> : <p className="rounded-xl bg-surface p-4 text-[17px]">{t("baselineUnknown")}</p>}
+    {base && base.salesDaysCovered>0 && <p role="note" className="text-[17px] text-ink-muted">{common("basedOnDays",{days:base.salesDaysCovered})}</p>}
+    {base && base.salesDaysCovered>0 && (base.salesDaysCovered<7 || salesCoverageGaps || closedDaySales) &&
+      <Link href="/more/uploads/sales" className="min-h-12 text-[17px] font-bold underline">{t("uploadSales")}</Link>}
     {base && <p className="text-[17px] text-ink-muted">{t("coverageAssumption", {
       salesDays: new Intl.NumberFormat(locale).format(base.salesDaysCovered),
       openDays: new Intl.NumberFormat(locale).format(base.operatingDaysInMonth),

@@ -15,7 +15,7 @@ const cents=z.number().int().safe().positive().max(100000);
 const effectSchema=z.strictObject({
   productId:z.uuid(),productName:z.string().min(1).max(200),
   oldPriceCents:z.number().int().safe().nonnegative(),
-  newPriceCents:cents,currency:z.literal("USD"),preview:z.array(diffFieldSchema).optional(),
+  newPriceCents:cents,currency:z.string().regex(/^[A-Z]{3}$/),preview:z.array(diffFieldSchema).optional(),
 });
 export const menuPriceChangeCapabilityId="alex.menu_price_change.v1";
 export class StaleProposalError extends Error{
@@ -35,7 +35,10 @@ export const menuPriceChangeCapability=registerLoopCapability({
     if(active!==scope.businessId)throw new ToolError("scope_mismatch");
     const {data:membership}=await client.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle();
     const {data:business}=await client.from("businesses").select("currency,is_demo").eq("id",scope.businessId).maybeSingle();
-    if(membership?.role!=="owner"||business?.is_demo||business?.currency!=="USD")throw new ToolError("unauthorized");
+    if(membership?.role!=="owner"||business?.is_demo)throw new ToolError("unauthorized");
+    // Any café currency works; an unset or invalid currency cannot label money.
+    const currency=typeof business?.currency==="string"&&/^[A-Z]{3}$/.test(business.currency)?business.currency:null;
+    if(!currency)throw new ToolError("validation","Set your café currency in Café profile before changing a price.");
     // Price proposals need one current menu row, not the entire Menu control
     // center (which also loads history, markets and every item sale). A failing
     // unrelated catalog query must never prevent drafting an approval card.
@@ -48,7 +51,7 @@ export const menuPriceChangeCapability=registerLoopCapability({
     const preview=diffFields([{field:"price",label:"Price",value:{kind:"money",cents:Number(item.price_cents)}}],
       [{field:"price",label:"Price",value:{kind:"money",cents:input.newPriceCents}}]);
     return {effect:{productId:item.id,productName:item.name,oldPriceCents:Number(item.price_cents),
-      newPriceCents:input.newPriceCents,currency:"USD",preview},
+      newPriceCents:input.newPriceCents,currency,preview},
       baseline:{source:"menu_items",status:"actual"},
       monitorSpec:{durationDays:7,metricScope:item.id}};
   },

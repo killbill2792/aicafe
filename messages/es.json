@@ -216,6 +216,11 @@
     "more": "Más"
   },
   "Common": {
+    "basedOnDays": "Basado en {days} días de ventas",
+    "partialPeriod": "Comparación de períodos parciales; interpretar con cautela",
+    "lowConfidence": "Confianza baja — agrega más datos de ventas",
+    "beforeAfterDays": "Basado en {before}/{after} días antes y después del cambio",
+    "basedOnCompetitors": "Basado en {count} competidores cercanos",
     "periodSwitchLabel": "Periodo",
     "today": "Hoy",
     "week": "Semana",
