@@ -37,6 +37,7 @@ import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { getAttentionItems } from "@/lib/attention/getAttentionItems.server";
 import type { Period } from "@/lib/viewmodels/period";
 import {readOperatingBoard} from "@/lib/operating/board.server";
+import {boardHref} from "@/lib/operating/board";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 
 
@@ -70,8 +71,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const tAccess=await getTranslations("FreeAccess");
   const items=await getAttentionItems({period,locale,snapshot,menu});
   const businessId=signedInUser?await getActiveBusinessId(signedInUser.id):null;
-  const board=businessId&&identity
-    ?await readOperatingBoard(await createServerSupabaseClient(),businessId,identity.asOf).catch(()=>null):null;
+  const board=businessId&&identity&&signedInUser
+    ?await readOperatingBoard(await createServerSupabaseClient(),{businessId,ownerUserId:signedInUser.id},identity.asOf):null;
   const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
   const money=(cents:number)=>formatCafeCurrency(cents,locale,cafeCurrency).text;
   const sales=vm.coverage.actualDays===0?"—":money(moneyVm.salesCents);
@@ -99,13 +100,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         shareCaption,comparisonCaption,
         board:board?{
           running:board.running.map(r=>({key:r.proposalId,
-            href:"/?thread="+r.threadId+"&experiment="+r.proposalId,
+            href:boardHref(r),
             text:r.stage==="waitingOnOwner"?t("boardWaiting",{item:r.productName,price:money(r.newPriceCents)})
               :r.day!==null&&r.day>=1?t("boardMonitoring",{item:r.productName,old:money(r.oldPriceCents),
                 new:money(r.newPriceCents),day:number(r.day),days:number(r.days??0)})
               :t("boardMonitoringStarts",{item:r.productName,old:money(r.oldPriceCents),new:money(r.newPriceCents)})})),
           reports:board.recentReports.map(r=>({key:r.proposalId,
-            href:"/?thread="+r.threadId+"&experiment="+r.proposalId,
+            href:boardHref(r),
             text:r.status==="insufficient_evidence"?t("boardReportInsufficient",{item:r.productName})
               :r.recommendation==="keep"?t("boardReportKeep",{item:r.productName})
               :r.recommendation==="revert"?t("boardReportRevert",{item:r.productName})

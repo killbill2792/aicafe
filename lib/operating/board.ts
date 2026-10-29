@@ -9,16 +9,26 @@ export type BoardProposalRow={
 export type BoardReportRow={proposal_id:string;status:string;report:unknown;generated_at:string};
 
 export type BoardRunning={
-  proposalId:string;threadId:string;productName:string;oldPriceCents:number;newPriceCents:number;
+  proposalId:string;threadId:string;capabilityId:string;productName:string;oldPriceCents:number;newPriceCents:number;
   /** waitingOnOwner: the owner still has to change the price in the POS. */
   stage:"waitingOnOwner"|"monitoring";day:number|null;days:number|null;
 };
 export type BoardReport={
-  proposalId:string;threadId:string;productName:string;
+  proposalId:string;threadId:string;capabilityId:string;productName:string;
   status:"complete"|"insufficient_evidence";recommendation:"keep"|"revert"|"adjust"|null;generatedAt:string;
 };
 export type OperatingBoard={running:BoardRunning[];recentReports:BoardReport[]};
 
+/** Rows the board reads; passed to the shared experiment reader. */
+export const BOARD_PROPOSAL_STATUSES=["manual_pending","manual_confirmed","committed","monitored"] as const;
+export const BOARD_REPORT_STATUSES=["complete","insufficient_evidence"] as const;
+/** Only drink price experiments have an experiment panel; every other
+ * monitor (a plain price change) opens its chat thread. */
+export const DRINK_PRICE_EXPERIMENT_CAPABILITY="alex.drink_price_experiment.v1";
+export function boardHref(r:{threadId:string;proposalId:string;capabilityId:string}):string{
+  return "/?thread="+encodeURIComponent(r.threadId)+
+    (r.capabilityId===DRINK_PRICE_EXPERIMENT_CAPABILITY?"&experiment="+encodeURIComponent(r.proposalId):"");
+}
 const RECENT_REPORT_DAYS=14;
 const MAX_ITEMS=3;
 
@@ -42,14 +52,14 @@ export function buildOperatingBoard(proposals:readonly BoardProposalRow[],report
     const effect=priceEffect(p.canonical_effect_payload);
     if(!effect)return [];
     if(p.status==="manual_pending")
-      return [{proposalId:p.id,threadId:p.thread_id,...effect,stage:"waitingOnOwner",day:null,days:null}];
+      return [{proposalId:p.id,threadId:p.thread_id,capabilityId:p.capability_id,...effect,stage:"waitingOnOwner",day:null,days:null}];
     if(!["manual_confirmed","committed"].includes(p.status)||!p.monitoring_start_date)return [];
     const days=durationDays(p.monitor_spec);
     if(days===null)return [];
     const day=dayIndex(p.monitoring_start_date,today);
     // A monitored change with no monitoring window (a plain price change) is not "running".
     if(day>days)return [];
-    return [{proposalId:p.id,threadId:p.thread_id,...effect,stage:"monitoring",day:Math.max(0,day),days}];
+    return [{proposalId:p.id,threadId:p.thread_id,capabilityId:p.capability_id,...effect,stage:"monitoring",day:Math.max(0,day),days}];
   }).slice(0,MAX_ITEMS);
   const cutoff=Date.parse(today+"T00:00:00Z")-RECENT_REPORT_DAYS*86_400_000;
   const recentReports=reports.flatMap((r):BoardReport[]=>{
@@ -58,7 +68,7 @@ export function buildOperatingBoard(proposals:readonly BoardProposalRow[],report
     if(!p||!effect||(r.status!=="complete"&&r.status!=="insufficient_evidence"))return [];
     if(!(Date.parse(r.generated_at)>=cutoff))return [];
     const rec=r.report&&typeof r.report==="object"?(r.report as {recommendation?:unknown}).recommendation:null;
-    return [{proposalId:p.id,threadId:p.thread_id,productName:effect.productName,status:r.status,
+    return [{proposalId:p.id,threadId:p.thread_id,capabilityId:p.capability_id,productName:effect.productName,status:r.status,
       recommendation:rec==="keep"||rec==="revert"||rec==="adjust"?rec:null,generatedAt:r.generated_at}];
   }).sort((a,b)=>b.generatedAt.localeCompare(a.generatedAt)).slice(0,MAX_ITEMS);
   return {running,recentReports};

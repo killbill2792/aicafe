@@ -1,17 +1,20 @@
-import {describe,expect,it} from "vitest";
-import {buildOperatingBoard,type BoardProposalRow} from "./board";
+import {describe,expect,it,vi} from "vitest";
+vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:vi.fn()}));
+vi.mock("@/lib/ai/supervisor/loop/sales.server",()=>({readPriceExperimentBaselineUnits:vi.fn(),readPriceExperimentSalesDays:vi.fn()}));
+import {boardHref,buildOperatingBoard,DRINK_PRICE_EXPERIMENT_CAPABILITY,type BoardProposalRow} from "./board";
+import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 
 const effect={productId:"x",productName:"Latte",oldPriceCents:450,newPriceCents:475};
 const row=(id:string,status:string,start:string|null,extra:Partial<BoardProposalRow>={}):BoardProposalRow=>({
-  id,thread_id:"t-"+id,status,capability_id:"price_experiment",canonical_effect_payload:effect,
+  id,thread_id:"t-"+id,status,capability_id:"alex.drink_price_experiment.v1",canonical_effect_payload:effect,
   monitor_spec:{durationDays:7,metricScope:"product"},monitoring_start_date:start,...extra});
 
 describe("Operating Board",()=>{
   it("shows monitoring day X of Y and price changes waiting on the owner",()=>{
     const board=buildOperatingBoard([row("a","committed","2026-10-27"),row("b","manual_pending",null)],[],"2026-10-29");
     expect(board.running).toEqual([
-      {proposalId:"a",threadId:"t-a",productName:"Latte",oldPriceCents:450,newPriceCents:475,stage:"monitoring",day:3,days:7},
-      {proposalId:"b",threadId:"t-b",productName:"Latte",oldPriceCents:450,newPriceCents:475,stage:"waitingOnOwner",day:null,days:null},
+      {proposalId:"a",threadId:"t-a",capabilityId:"alex.drink_price_experiment.v1",productName:"Latte",oldPriceCents:450,newPriceCents:475,stage:"monitoring",day:3,days:7},
+      {proposalId:"b",threadId:"t-b",capabilityId:"alex.drink_price_experiment.v1",productName:"Latte",oldPriceCents:450,newPriceCents:475,stage:"waitingOnOwner",day:null,days:null},
     ]);
   });
   it("drops finished windows, drafts and rows without a price effect",()=>{
@@ -29,6 +32,15 @@ describe("Operating Board",()=>{
     ],"2026-10-29");
     expect(board.recentReports.map(r=>[r.proposalId,r.status,r.recommendation]))
       .toEqual([["b","insufficient_evidence","adjust"],["a","complete","keep"]]);
+  });
+  it("uses the registered drink experiment capability id",()=>{
+    expect(DRINK_PRICE_EXPERIMENT_CAPABILITY).toBe(priceExperimentCapabilityId);
+  });
+  it("links a drink experiment to its panel and any other monitor to its thread",()=>{
+    expect(boardHref({threadId:"t1",proposalId:"p1",capabilityId:"alex.drink_price_experiment.v1"}))
+      .toBe("/?thread=t1&experiment=p1");
+    expect(boardHref({threadId:"t2",proposalId:"p2",capabilityId:"alex.menu_price_change.v1"}))
+      .toBe("/?thread=t2");
   });
   it("shows at most three of each",()=>{
     const rows=["a","b","c","d"].map(id=>row(id,"manual_pending",null));

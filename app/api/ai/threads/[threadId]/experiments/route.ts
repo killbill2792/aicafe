@@ -9,6 +9,7 @@ import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {supervisorLoopRegistry,priceExperimentCapabilityId}
   from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
 import {simulateLoop,proposeLoop,approveLoop,commitLoop,
   confirmManualLoop,monitorLoop,utcDateOffset,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 export const runtime="nodejs";export const dynamic="force-dynamic";
@@ -34,22 +35,14 @@ export async function GET(request:Request,{params}:Params){
   const {threadId}=await params;
   const {scope}=await context(threadId);
   const db=createAdminSupabaseClient();
-  const {data,error}=await db.from("supervisor_proposals")
-    .select("id,capability_id,revision,status,canonical_effect_payload,baseline,monitoring_start_date,created_at")
-    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
-    .eq("thread_id",threadId).order("created_at",{ascending:false}).limit(30);
-  if(error)throw error;
+  const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
   const selected=new URL(request.url).searchParams.get("proposal");
-  const proposals=[...(data??[])];
+  const proposals=await readOwnerProposals(db,owner,{threadId,limit:30});
   // A deep link from an old Operations task still opens that *exact*
   // experiment even when it is older than the recent-proposals page.
   if(selected&&uuid.safeParse(selected).success&&!proposals.some(p=>p.id===selected)){
-    const requested=await db.from("supervisor_proposals")
-      .select("id,capability_id,revision,status,canonical_effect_payload,baseline,monitoring_start_date,created_at")
-      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
-      .eq("thread_id",threadId).eq("id",selected).maybeSingle();
-    if(requested.error)throw requested.error;
-    if(requested.data)proposals.unshift(requested.data);
+    const [requested]=await readOwnerProposals(db,owner,{threadId,id:selected,limit:1});
+    if(requested)proposals.unshift(requested);
   }
   const catalog=(await getMenuControlCenter()).filter(item=>item.active)
     .map(({id,name,priceCents})=>({id,name,priceCents}));
