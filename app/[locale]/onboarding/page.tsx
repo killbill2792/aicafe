@@ -5,6 +5,7 @@ import { isSquareConfigured } from "@/lib/pos/square/oauth";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getRecurringCosts } from "@/lib/data/getRecurringCosts";
+import { getCafeProfile } from "@/lib/data/getCafeProfile";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import { Link } from "@/i18n/navigation";
 import OnboardingProgress from "@/components/onboarding/OnboardingProgress";
@@ -25,6 +26,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const t = await getTranslations("Onboarding");
   const tCategories = await getTranslations("Categories");
   const tBills = await getTranslations("Bills");
+  const tCommon = await getTranslations("Common");
 
   const businessResult = await ensureOwnBusiness();
   const businessId = "businessId" in businessResult ? businessResult.businessId : null;
@@ -62,6 +64,8 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         <>
           <BillsManager
             bills={await getRecurringCosts()}
+            currency={(await getCafeProfile()).currency}
+            currencyMissingLabel={tCommon("currencyNotSet")}
             categoryLabels={categoryLabels}
             labels={{
               amountLabel: tBills("amountLabel"),
