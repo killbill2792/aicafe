@@ -1,4 +1,5 @@
 import {getToastCheckEvidence} from "@/lib/data/getToastCheckEvidence";
+import {timeReader} from "@/lib/perf/timeReader.server";
 import {lastSalesImportAt} from "@/lib/data/canonical/lastSalesImport.server";
 import {NextResponse} from "next/server";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
@@ -12,36 +13,37 @@ export async function GET(request:Request){
  if(process.env.TOAST_SETUP_ENABLED!=="true")return send(404,{error:"not_found"});
  const id=GUID.safeParse(new URL(request.url).searchParams.get("businessId"));
  if(!id.success)return send(404,{error:"not_found"});
- const db=await authorizeToastOwner(id.data);
+ const db=await timeReader("Toast","status.authorizeToastOwner",()=>authorizeToastOwner(id.data));
  if(!db)return send(404,{error:"not_found"});
+ const timed=<T>(name:string,read:()=>Promise<T>)=>timeReader("Toast","status."+name,read);
  // All historical reads are ordered by a unique, stable compound key.
  // Never infer completeness from Supabase's default 1,000-row limit.
  let fetched;
  try{
   fetched=await Promise.all([
-   db.from("toast_api_credentials").select("state,last_error_category,scopes_available").eq("business_id",id.data).maybeSingle(),
-   db.from("toast_location_mappings").select("restaurant_guid,location_id,verified_at,toast_time_zone,toast_start_date,recheck_total").eq("business_id",id.data),
-   readAllPages((start,end)=>db.from("toast_sync_runs")
+   timed("credentials",async()=>db.from("toast_api_credentials").select("state,last_error_category,scopes_available").eq("business_id",id.data).maybeSingle()),
+   timed("locationMappings",async()=>db.from("toast_location_mappings").select("restaurant_guid,location_id,verified_at,toast_time_zone,toast_start_date,recheck_total").eq("business_id",id.data)),
+   timed("syncRuns",()=>readAllPages((start,end)=>db.from("toast_sync_runs")
     .select("id,kind,state,days_done,days_total,resume_at,requested_from,requested_to")
-    .eq("business_id",id.data).order("id").range(start,end)),
-   readAllPages((start,end)=>db.from("toast_day_status")
+    .eq("business_id",id.data).order("id").range(start,end))),
+   timed("dayStatus",()=>readAllPages((start,end)=>db.from("toast_day_status")
     .select("business_date,restaurant_guid,import_state,recon_state,net_sales_cents,toast_net_sales_cents,delta_net_cents,order_count,last_error_category,coverage_complete,unparsed_count,paid_other_day,rechecking_reason,owner_confirmed_at")
     .eq("business_id",id.data).order("business_date",{ascending:false})
-    .order("restaurant_guid").range(start,end)),
-   readAllPages((start,end)=>db.from("toast_day_owner_flags")
+    .order("restaurant_guid").range(start,end))),
+   timed("ownerFlags",()=>readAllPages((start,end)=>db.from("toast_day_owner_flags")
     .select("business_date,restaurant_guid,cleared_at").eq("business_id",id.data)
     .is("cleared_at",null).order("business_date",{ascending:false})
-    .order("restaurant_guid").range(start,end)),
-   db.from("toast_analytics_credentials").select("verified_at,last_error_category").eq("business_id",id.data).maybeSingle(),
-   db.from("toast_first_import_check").select("answered_at").eq("business_id",id.data).maybeSingle(),
-   db.from("businesses").select("timezone").eq("id",id.data).maybeSingle(),
-   readAllPages((start,end)=>db.from("toast_owner_attention_days_v").select("business_date,restaurant_guid")
-    .eq("business_id",id.data).order("business_date").order("restaurant_guid").range(start,end)),
-   readAllPages((start,end)=>db.from("toast_owner_summary_entries")
+    .order("restaurant_guid").range(start,end))),
+   timed("analyticsCredentials",async()=>db.from("toast_analytics_credentials").select("verified_at,last_error_category").eq("business_id",id.data).maybeSingle()),
+   timed("firstImportCheck",async()=>db.from("toast_first_import_check").select("answered_at").eq("business_id",id.data).maybeSingle()),
+   timed("businessTimezone",async()=>db.from("businesses").select("timezone").eq("id",id.data).maybeSingle()),
+   timed("ownerAttentionDays",()=>readAllPages((start,end)=>db.from("toast_owner_attention_days_v").select("business_date,restaurant_guid")
+    .eq("business_id",id.data).order("business_date").order("restaurant_guid").range(start,end))),
+   timed("ownerSummaryEntries",()=>readAllPages((start,end)=>db.from("toast_owner_summary_entries")
     .select("restaurant_guid,business_date,net_sales_cents,orders_count,comparison,delta_net_cents,delta_orders,discounts_cents,refunds_cents,voids_count,source")
-    .eq("business_id",id.data).order("business_date").order("restaurant_guid").range(start,end)),
-   getToastCheckEvidence(db,id.data),
-   db.from("locations").select("id,name").eq("business_id",id.data),
+    .eq("business_id",id.data).order("business_date").order("restaurant_guid").range(start,end))),
+   timed("checkEvidence",()=>getToastCheckEvidence(db,id.data)),
+   timed("locationNames",async()=>db.from("locations").select("id,name").eq("business_id",id.data)),
   ]);
  }catch{return send(503,{error:"status_unavailable"});}
  const [c,m,runRows,statusRows,flagRows,a,check,business,attention,entries,evidence,locationNames]=fetched;
@@ -58,10 +60,10 @@ export async function GET(request:Request){
  if(!zone)return send(503,{error:"status_unavailable"});
  try{new Intl.DateTimeFormat("en-CA",{timeZone:zone});}
  catch{return send(503,{error:"status_unavailable"});}
- const health=await db.from("toast_sync_health_v").select("last_good_sync_at,stale,warnings,days_with_unreadable_orders").eq("business_id",id.data);
+ const health=await timed("syncHealth",async()=>db.from("toast_sync_health_v").select("last_good_sync_at,stale,warnings,days_with_unreadable_orders").eq("business_id",id.data));
  if(health.error)return send(503,{error:"status_unavailable"});
  let good:string|null;
- try{good=await lastSalesImportAt(db,id.data);}catch{return send(503,{error:"status_unavailable"});}
+ try{good=await timed("lastSalesImportAt",()=>lastSalesImportAt(db,id.data));}catch{return send(503,{error:"status_unavailable"});}
  const state=c.data?.state==="verified"&&mappings.length>0&&mappings.every(x=>x.verified_at)?"connected":
   !c.data?"not_connected":"needs_attention";
  const active=(r.data??[]).filter(x=>["backfill","repull_modified"].includes(x.kind)&&["queued","running","paused_rate_limited"].includes(x.state));
