@@ -1,18 +1,18 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {refreshDerivedForBusiness} from "@/lib/alerts/refreshDerived.server";
 
 export type DerivedRefresh=(db:SupabaseClient,businessId:string,timezone:string)=>Promise<unknown>;
 export type DerivedRefreshModule={refreshDerivedForBusiness:DerivedRefresh};
 export type DerivedRefreshStatus={derivedRefreshPending:boolean;derivedRefreshNote:string|null};
 
-/** Optional until PR B lands. The computed module path permits TS builds while
- * the B-owned file is absent; B may replace this loader with a static import.
+/** Refreshes schedules and alerts after a committed import. A static import, so the
+ * production bundle includes the refresh (a webpackIgnore'd dynamic path to a .ts
+ * source never resolves on the server). Tests may inject a loader.
  * Never expose identifiers, payloads or raw errors in the log. */
 export async function afterToastImport(db:SupabaseClient,businessId:string,timezone:string,
- load:()=>Promise<DerivedRefreshModule>=async()=>{
-  const modulePath="../../alerts/"+"refreshDerived.server";
-  return import(/* webpackIgnore: true */ modulePath) as Promise<DerivedRefreshModule>;
- }):Promise<DerivedRefreshStatus>{
+ load:()=>Promise<DerivedRefreshModule>=async()=>({refreshDerivedForBusiness}),
+):Promise<DerivedRefreshStatus>{
  try{
   const loaded=await load();
   if(typeof loaded.refreshDerivedForBusiness!=="function")

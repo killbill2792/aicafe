@@ -1,9 +1,17 @@
 import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 vi.mock("server-only",()=>({}));
+const real=vi.hoisted(()=>({refresh:vi.fn(async()=>({businessDate:"2026-10-29",alertsCreated:0}))}));
+vi.mock("@/lib/alerts/refreshDerived.server",()=>({refreshDerivedForBusiness:real.refresh}));
 import {afterToastImport} from "./afterImport";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 describe("guarded B-owned derived refresh loader",()=>{
+ it("by default calls the real shared refresh (no dynamic path that production cannot load)",async()=>{
+  const db={} as SupabaseClient;
+  const result=await afterToastImport(db,business,"America/Los_Angeles");
+  expect(real.refresh).toHaveBeenCalledExactlyOnceWith(db,business,"America/Los_Angeles");
+  expect(result).toEqual({derivedRefreshPending:false,derivedRefreshNote:null});
+ });
  it("passes authenticated business and timezone to one shared B refresh",async()=>{
   const db={} as SupabaseClient,run=vi.fn(async()=>{});
   const result=await afterToastImport(db,business,"America/Los_Angeles",
