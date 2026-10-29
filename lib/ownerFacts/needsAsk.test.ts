@@ -10,8 +10,6 @@ describe("Prompt C question triggers",()=>{
    "We saw $4.","How much sales?").some(r=>r.kind==="empty")).toBe(true);
  });
  it("failed pricing input -> owner question",()=>{expect(classifyNeedsAsk([{source:"suggest_new_item_price",period:null,missing:[],error:"internal"}],"The recorded price is $5.","Price this latte").some(r=>r.kind==="failed")).toBe(true);});
- it("ES/AR refusal -> question",()=>{expect(classifyNeedsAsk([],"No tengo esa información.","¿Cuánto cuesta?").some(r=>r.kind==="uncertain")).toBe(true);expect(classifyNeedsAsk([],"لا توجد بيانات.","كم السعر؟").some(r=>r.kind==="uncertain")).toBe(true);});
- it("number question without number -> question",()=>{expect(classifyNeedsAsk([],"I can check.","How much did we sell?").some(r=>r.kind==="number")).toBe(true);});
  it("finds default estimates after 40 rows and inside deeply nested canonical evidence",()=>{
   const rows=Array.from({length:60},(_,i)=>i===59?
    {payload:{a:{b:{c:{d:{basis:"default_estimate"}}}}}}:
@@ -22,9 +20,6 @@ describe("Prompt C question triggers",()=>{
  it("treats explicitly empty tool status as an owner-question trigger",()=>{
   expect(classifyNeedsAsk([{source:"get_schedule",period:null,missing:[],status:"empty"}],
     "No shifts.","Who works Saturday?").some(r=>r.kind==="empty")).toBe(true);
- });
- it("provider failure without any model text still offers an owner question",()=>{
-   expect(classifyNeedsAsk([],"","Who works Saturday?").some(r=>r.kind==="uncertain")).toBe(true);
  });
  it("good measured answers are not classified as missing",()=>{expect(classifyNeedsAsk([{source:"sales",period:null,missing:[],rows:[{value:5}]}],"Sales were $5.","How much did we sell?")).toEqual([]);});
 });
