@@ -20,7 +20,6 @@ import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
 import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
-import {goalEffectSchema} from "@/lib/calc/goals/goalSpec";
 import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
@@ -172,8 +171,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
           const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
           const [goal]=await readOwnerProposals(await createServerSupabaseClient(),owner,{id:goalId,limit:1});
           if(!goal||goal.capability_id!==goalCapabilityId)return {missing:["goalNotFound"]};
-          const saved=await recordGoalCheckin(createAdminSupabaseClient(),owner,goalId,
-            goalEffectSchema.parse(goal.canonical_effect_payload),{date,answer,note});
+          const saved=await recordGoalCheckin(createAdminSupabaseClient(),owner,goalId,{date,answer,note});
           return saved?{saved:true,checkin:saved}:{missing:["noOpenCheckin"]};
         },
         status:async(goalId)=>{
