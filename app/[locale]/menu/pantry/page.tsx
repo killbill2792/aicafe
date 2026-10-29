@@ -52,7 +52,7 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
       {selected.map(p=><SupervisorProposalCard key={p.id} threadId={p.threadId} proposalId={p.id} locale={locale as "en"|"es"|"ar"}/>)}
     </section>}
     {purchases&&!purchases.currency&&<p role="note" className="mb-3 text-sm text-ink-muted">{common("currencyNotSet")}</p>}
-    <PantryWorkspace businessToday={businessToday} inventoryPanel={
+    <PantryWorkspace currency={purchases?.currency??null} businessToday={businessToday} inventoryPanel={
       <InventoryPurchasePanel items={items.map(i=>({id:i.id,name:i.name,baseUnit:i.baseUnit}))}
         month={month} rows={purchases?.rows??[]} currency={purchases?.currency??""}
         locale={locale as "en"|"es"|"ar"} t={inventoryLabels} today={businessToday} unavailable={!purchases}/>
