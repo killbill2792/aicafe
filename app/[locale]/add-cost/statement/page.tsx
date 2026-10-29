@@ -27,7 +27,7 @@ export default async function StatementUploadPage({ searchParams }: { searchPara
       <BackHeader title={t("optionStatement")} backHref="/add-cost" backLabel={tCommon("back")} />
       {!profile.currency&&<p role="note" className="text-sm text-ink-muted">{tCommon("currencyNotSet")}</p>}
       <StatementUploader returnTo={validReturnTo(returnTo)}
-        currency={profile.currency} currencyMissingLabel={tCommon("currencyNotSet")}
+        currency={profile.currency}
         categoryLabels={categoryLabels}
         labels={{
           uploadPrompt: t("statementUploadPrompt"),
