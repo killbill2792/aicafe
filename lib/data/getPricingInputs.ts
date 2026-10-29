@@ -1,5 +1,5 @@
 import "server-only";
-import { readDailyFactRows } from "./dailyFacts.server";
+import { readDailyFacts } from "./dailyFacts.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
@@ -52,7 +52,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
   const [itemsResult, rollupsResult, recurringResult, ordersResult, expenseResult, priorExpenseResult] = await Promise.all([
     supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
-    readDailyFactRows(supabase, businessId, fromDateStr, todayDateStr).then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
+    readDailyFacts(supabase, businessId, fromDateStr, todayDateStr).then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
     supabase.from("recurring_costs").select("amount_cents, category_code, frequency, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
     supabase.from("orders").select("business_date, pos_order_id, net_sales_cents, processing_fee_provider").eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("expenses").select("category_code, amount_cents, status")
@@ -122,7 +122,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
       unitsSoldInWindow: units.get(item.id) ?? 0,
     };
   });
-  const days: DailyFacts[] = (rollupsResult.data ?? []).map((row) => ({ date: row.business_date, netSalesCents: row.net_sales_cents, ordersCount: row.orders_count, drinksCount: row.drinks_count, ingredientsCents: row.ingredients_cents, wagesCents: row.staff_wages_cents, staffTaxCents: row.staff_tax_cents, laborWageStatus:row.labor_wage_status, staffTaxStatus:row.staff_tax_status, cardFeesCents: row.card_fees_cents, voidsCents: row.voids_cents }));
+  const days: DailyFacts[] = rollupsResult.data ?? [];
   const scale = 30 / windowDays;
   const monthlyRevenueCents = Math.round(days.reduce((sum, day) => sum + day.netSalesCents, 0) * scale);
   const {monthlyWagesCents,monthlyStaffCostCents,payrollCostsStatus} =
@@ -130,16 +130,9 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   // Use the same actual -> owner fee plan -> labeled estimate path as the Money screen.
   // A null/missing fee is NOT a verified zero. This reader never writes to the database.
   const ownerFeePlans=await getOwnerConfirmedProcessingFeePlans(supabase,businessId);
-  const feeDays=(rollupsResult.data??[]).map(row=>({
-    date:row.business_date,netSalesCents:Number(row.net_sales_cents),
-    ordersCount:Number(row.orders_count),
-    cardFeesCents:row.card_fees_status==="missing"||row.card_fees_cents==null?null:Number(row.card_fees_cents),
-    cardFeesStatus:row.card_fees_status,
-    salesDataStatus:row.sales_data_status,
-  }));
-  const feeResult=cardFeesForDays(feeDays,ownerFeePlans);
+  const feeResult=cardFeesForDays(days,ownerFeePlans);
   const monthlyProcessingFeesCents=Math.round(feeResult.amountCents*scale);
-  const salesDayFeeStatuses = (rollupsResult.data ?? []).filter((row) => Number(row.net_sales_cents) > 0).map((row) => row.card_fees_status ?? "missing");
+  const salesDayFeeStatuses = days.filter(day => day.netSalesCents > 0).map(day => day.cardFeesStatus ?? "missing");
   const processingFeesStatus = salesDayFeeStatuses.length === 0 || salesDayFeeStatuses.includes("missing")
     ? "missing"
     : salesDayFeeStatuses.includes("estimated") ? "estimated" : "actual";
@@ -153,10 +146,10 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     });
     ordersByDate.set(order.business_date, rows);
   }
-  const trustedOrdersInWindow = (rollupsResult.data ?? []).reduce((sum, row) => {
+  const trustedOrdersInWindow = days.reduce((sum, day) => {
     const count = trustedOrderCountForProcessingFeeEstimate(
-      ordersByDate.get(row.business_date) ?? [],
-      Number(row.net_sales_cents),
+      ordersByDate.get(day.date) ?? [],
+      day.netSalesCents,
     );
     return sum + (count ?? 0);
   }, 0);
@@ -170,17 +163,17 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   // not be diluted by dates that contain only POS sales evidence.
   const totalItemPrepSecondsInWindow = 0; // period-aligned item mix unavailable
   const menuPriceBasis = menuPriceSourceBasis({
-    days:(rollupsResult.data??[]).map(row=>({
-      businessDate:row.business_date,
-      salesStatus:row.sales_data_status??null,
-      netSalesCents:Number(row.net_sales_cents),
-      drinksCount:Number(row.drinks_count),
-      wagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
-      payrollTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
-       laborWageStatus:row.labor_wage_status,
-      payrollTaxStatus:row.staff_tax_status??null,
-      cardFeesCents:Number(row.card_fees_cents),
-      cardFeesStatus:row.card_fees_status??null,
+    days:days.map(day=>({
+      businessDate:day.date,
+      salesStatus:day.salesDataStatus??null,
+      netSalesCents:day.netSalesCents,
+      drinksCount:day.drinksCount,
+      wagesCents:day.wagesCents,
+      payrollTaxCents:day.staffTaxCents,
+      laborWageStatus:day.laborWageStatus,
+      payrollTaxStatus:day.staffTaxStatus??null,
+      cardFeesCents:day.cardFeesCents??0,
+      cardFeesStatus:day.cardFeesStatus??null,
     })),
     recurring:activeOperatingCosts.map(row=>({
       categoryCode:row.category_code,

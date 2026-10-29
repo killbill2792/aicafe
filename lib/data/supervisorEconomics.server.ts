@@ -1,5 +1,5 @@
 import "server-only";
-import {readDailyFactRows} from "./dailyFacts.server";
+import {readDailyFacts} from "./dailyFacts.server";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {formatInTimeZone,fromZonedTime} from "date-fns-tz";
 import {normalizeOpenHours,regularHoursStateForDate} from "@/lib/business/openHours";
@@ -32,7 +32,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   db.from("locations").select("open_hours").eq("business_id",businessId).limit(1),
   db.from("recurring_costs").select("amount_cents,frequency,is_estimate,active_from,active_to")
    .eq("business_id",businessId).lte("active_from",asOf),
-  readDailyFactRows(db,businessId,salesSince,asOf).then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
+  readDailyFacts(db,businessId,salesSince,asOf).then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
   db.from("employees").select("id,display_name,role,default_hourly_wage_cents").eq("business_id",businessId).eq("active",true).limit(500),
   getOwnerConfirmedProcessingFeePlans(db,businessId),
   getBusinessSnapshotFromDb(db,businessId,"month",asOf),
@@ -41,13 +41,14 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   if(response.error)throw response.error;
  if((employees.data??[]).length>=500)throw new Error("Employee roster page truncated");
  if(!business.data?.timezone)throw new Error("Café timezone missing");
+ const days=rollups.data??[];
  const timezone=business.data.timezone;
  const hours=normalizeOpenHours(locations.data?.[0]?.open_hours);
  const open=(day:string)=>regularHoursStateForDate(hours,day)!=="closed";
  const dayList:string[]=[];
  for(let day=month.from;day<=month.to;day=dateOffset(day,1))if(open(day))dayList.push(day);
- const salesDays=(rollups.data??[]).filter(row=>row.sales_data_status==="actual")
-  .map(row=>row.business_date).sort();
+ const salesDays=days.filter(day=>day.salesDataStatus==="actual")
+  .map(day=>day.date).sort();
  const latest=salesDays.at(-1);
  const first=latest?salesDays.find(day=>day>=dateOffset(latest,-29)):undefined;
  const coveredDates=new Set(salesDays.filter(day=>first&&latest&&day>=first&&day<=latest));
@@ -59,10 +60,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   .lte("clock_in",fromZonedTime((latest??asOf)+"T23:59:59",timezone).toISOString()).limit(2001);
  if(timecards.error)throw timecards.error;
  if((timecards.data??[]).length>2000)throw new Error("Labor timecard page truncated");
- const laborRows:LaborRecord[]=(rollups.data??[]).map(row=>({date:row.business_date,
-  wagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
-  staffTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
-  laborWageStatus:row.labor_wage_status,staffTaxStatus:row.staff_tax_status}));
+ const laborRows:LaborRecord[]=days;
  const recorded=new Set(laborRows.filter(row=>row.wagesCents!==null&&
   row.staffTaxCents!==null&&row.laborWageStatus!=="missing").map(row=>row.date));
  const laborDays=laborWindow.filter(day=>recorded.has(day));
@@ -103,31 +101,26 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const ingredientStatus=recipeRate!==null?"actual":savedRate!==null?
   (business.data?.target_ingredient_cost_rate_status==="owner"||
     business.data?.target_ingredient_cost_rate_status==="confirmed"?"owner":"estimate"):"missing";
- const hasCoveredSales=(rollups.data??[]).some(row=>row.sales_data_status!=="missing"&&
-  Number(row.net_sales_cents)>0);
- const allFeeDays=(rollups.data??[]).map(row=>({
-  date:row.business_date,netSalesCents:Number(row.net_sales_cents??0),
-  cardFeesCents:row.card_fees_cents===null?null:Number(row.card_fees_cents),
-  cardFeesStatus:row.card_fees_status,ordersCount:Number(row.orders_count??0),
-  salesDataStatus:row.sales_data_status,
- }));
+ const hasCoveredSales=days.some(day=>day.salesDataStatus!=="missing"&&
+  day.netSalesCents>0);
+ const allFeeDays=days;
  const coveredFeeDays=allFeeDays.filter(day=>day.salesDataStatus!=="missing"&&
   day.date>=shiftCafeDate(asOf,-28)&&day.date<asOf);
  const fees=cardFeesForDays(coveredFeeDays,feePlans);
  const feeSalesCents=coveredFeeDays.reduce((sum,day)=>sum+day.netSalesCents,0);
  const feeRate=feeSalesCents>0?fees.amountCents/feeSalesCents:null;
  const feeStatus=feeRate===null?"missing":fees.basis==="actual"?"actual":"estimate";
- const salesDates=(rollups.data??[]).filter(row=>coveredDates.has(row.business_date));
- const totalDrinks=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.drinks_count??0)),0);
- const totalOrders=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.orders_count??0)),0);
+ const salesDates=days.filter(day=>coveredDates.has(day.date));
+ const totalDrinks=salesDates.reduce((sum,day)=>sum+Math.max(0,day.drinksCount??0),0);
+ const totalOrders=salesDates.reduce((sum,day)=>sum+Math.max(0,day.ordersCount??0),0);
  const plan=ownerConfirmedPlanForDate(feePlans,asOf);
  // Owner-confirmed plan overrides the observed effective rate only when the
  // café has actual covered drinks and orders for fixed-fee allocation.
  const feePlan=plan&&validateOwnerConfirmedProcessingFeePlan(plan)===null?
   fixedCardFeeForCoveredSales(plan,totalDrinks,totalOrders):undefined;
- const observedRevenueCents=salesDates.reduce((sum,row)=>sum+Number(row.net_sales_cents??0),0);
+ const observedRevenueCents=salesDates.reduce((sum,day)=>sum+(day.netSalesCents??0),0);
  const salesObserved=salesDates.length>0;
- const salesOpenDays=salesDates.filter(row=>open(row.business_date)).length;
+ const salesOpenDays=salesDates.filter(day=>open(day.date)).length;
  // Revenue, cups and average selling price all use THE SAME café-local
  // covered dates. Never divide a 90-day Menu revenue projection by a
  // current-month unit projection (which invents an average drink price).
@@ -154,12 +147,12 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   payrollTaxRate:Number(business.data.payroll_tax_rate??.12),
   missingBillCategories:running.missingRunningCategories,
   asOfDate:asOf,
-  observedDays:(rollups.data??[]).filter(row=>row.sales_data_status!=="missing")
-   .map(row=>({date:row.business_date,netSalesCents:Number(row.net_sales_cents??0),
-     ingredientsCents:Number(row.ingredients_cents??0),
-     cardFeesCents:Number(row.card_fees_cents??0),
-      cardFeesStatus:row.card_fees_status??"missing",
-      ordersCount:Number(row.orders_count??0),drinksCount:Number(row.drinks_count??0)})),
+  observedDays:days.filter(day=>day.salesDataStatus!=="missing")
+   .map(day=>({date:day.date,netSalesCents:day.netSalesCents??0,
+     ingredientsCents:day.ingredientsCents??0,
+     cardFeesCents:day.cardFeesCents??0,
+      cardFeesStatus:day.cardFeesStatus??"missing",
+      ordersCount:day.ordersCount??0,drinksCount:day.drinksCount??0})),
  },items:pricing.items,ownerMonthlyPayrollExtrasCents,ownerIngredientRate:savedRate,
  staff:(employees.data??[]).map(person=>{
   const worked=(timecards.data??[]).filter(card=>card.source_type!=="owner_schedule"&&
