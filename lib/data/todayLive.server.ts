@@ -65,3 +65,29 @@ export async function todaySoFarForBusiness(admin:SupabaseClient,businessId:stri
   return {available:true,value:saved.value};
  return read;
 }
+
+/** Home's bounded attempt when no current-day saved reading exists.
+ * Delegates to the ONE live reader; never introduces another Toast query. */
+export async function readHomeTodayLiveFallback(admin:SupabaseClient,businessId:string,timeoutMs=4_000):
+ Promise<{value:TodaySoFar;ageMs:number}|null>{
+ let timer:ReturnType<typeof setTimeout>|undefined;
+ try{
+  const read=await Promise.race([
+   todaySoFarForBusiness(admin,businessId).catch(()=>{
+    console.error("home.today_live.fallback_failed");return null;
+   }),
+   new Promise<null>(resolve=>{
+    timer=setTimeout(()=>{
+     console.error("home.today_live.fallback_timeout");resolve(null);
+    },timeoutMs);
+   }),
+  ]);
+  if(!read)return null;
+  if(!read.available){
+   console.error("home.today_live.fallback_unavailable");return null;
+  }
+  return {value:read.value,ageMs:Math.max(0,Date.now()-Date.parse(read.value.readAt))};
+ }finally{
+  if(timer)clearTimeout(timer);
+ }
+}

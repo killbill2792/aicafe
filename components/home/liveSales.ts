@@ -14,3 +14,17 @@ export function liveSalesView(live:{value:{netSalesCents:number;readAt:string;bu
  return {netSalesCents:unread>0&&live.value.orders===0?null:live.value.netSalesCents,time,
   fresh:live.ageMs<LIVE_FRESH_MS,unreadOrders:unread};
 }
+
+/** A rollup row alone does not prove today's sales were closed out. A zero
+ * amount or a missing/not-final sales status still needs the live reading. */
+export function needsHomeLiveReading(businessDay:string|null,
+ recordedDays:ReadonlyArray<{date:string;netSalesCents:number;salesDataStatus?:string}>):boolean{
+ if(!businessDay)return false;
+ const day=recordedDays.find(row=>row.date===businessDay);
+ return !day||day.salesDataStatus!=="actual"||day.netSalesCents===0;
+}
+
+/** A saved reading from a previous business day must trigger a new read. */
+export function needsHomeLiveFallback(live:{value:{businessDate:string}}|null,businessDay:string|null):boolean{
+ return Boolean(businessDay)&&(!live||live.value.businessDate!==businessDay);
+}
