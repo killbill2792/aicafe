@@ -84,6 +84,7 @@ function PriceEvidencePanel({
  t:ReturnType<typeof useTranslations<"Menu">>;
  format:ReturnType<typeof useFormatter>;
 }){
+ const common=useTranslations("Common");
  const evidence=size.pricingEvidence ?? EMPTY_PRICE_EVIDENCE;
  const cost=evidence.costBenchmark;
  const sales=evidence.salesResponse;

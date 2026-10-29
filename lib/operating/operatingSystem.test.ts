@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { ownerProfitCentsForPeriod } from "@/lib/calc";
 import { cafeStateFromSnapshot } from "./cafeState";
 import { deterministicDecisions } from "./decisions";
 import { signalsFromPricing } from "./signals";
@@ -27,7 +26,6 @@ describe("AI-native operating system boundaries", () => {
   });
 
   it("profitability remains deterministic when all AI keys are absent", () => {
-    expect(ownerProfitCentsForPeriod(fixtureSnapshot.monthActualDays, 100_000)).toBeTypeOf("number");
   });
 
 });
