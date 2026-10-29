@@ -20,7 +20,7 @@ const TONE_BAR_COLOR = { good: "bg-good", warn: "bg-warn", neutral: "bg-ink-mute
 // label, default text) exactly as before. `Money` already renders the "−" for a negative amount
 // via Intl's currency formatting — this never prepends one itself, so there's only ever one
 // minus sign on screen.
-function StepBar({ label, cents, widthPct, color, tone, currency }: { label: string; cents: number; widthPct: number; color: string; tone?: "good" | "warn" | "neutral"; currency: string | null }) {
+function StepBar({ label, cents, widthPct, color, tone, currency }: { label: string; cents: number; widthPct: number; color: string; tone?: "good" | "warn" | "neutral"; currency?: string | null }) {
   const barColor = tone ? TONE_BAR_COLOR[tone] : color;
   const textColor = tone ? profitToneTextClass(tone) : "";
   const labelColor = tone ? textColor : "text-ink-muted";
@@ -272,7 +272,7 @@ function Row({
   addLabel?: string;
   href?: string;
   last?: boolean;
-  currency: string | null;
+  currency?: string | null;
 }) {
   return (
     <div className={`flex items-center gap-2 py-2 ${last ? "border-b border-line pb-3" : ""}`}>
