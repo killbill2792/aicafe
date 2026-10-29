@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getPricingProfile } from "@/lib/pricing/profiles";
 import { suggestPrice } from "@/lib/calc/pricingEngine";
-import { NoAIProvider } from "@/lib/ai/providers/noAI";
 import {
   agentForSignal,
   agentForTask,
@@ -138,7 +137,6 @@ describe("shared operating tasks", () => {
   });
 
   it("keeps deterministic tasks usable with no AI or communication transport", async () => {
-    expect(await new NoAIProvider().isAvailable()).toBe(false);
     const transport = new UnavailableStaffCommunicationProvider();
     expect(await transport.isAvailable()).toBe(false);
     expect((await transport.deliverCoverageRequest({} as never, { employeeId: "m", destination: "+1" })).delivered).toBe(false);

@@ -56,8 +56,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   // Match Money’s selected-period evidence; the default month snapshot cannot prove Today or Week ingredient coverage.
   const [snapshot, menu, identity] = await Promise.all([getSnapshot(period), getMenuControlCenter(),
-    readSupervisorCafeIdentity(await getActiveBusinessId(signedInUser.id))]);
-  const cafeCurrency=identity.currency;
+    signedInUser?readSupervisorCafeIdentity(await getActiveBusinessId(signedInUser.id)):Promise.resolve(null)]);
+  const cafeCurrency=identity?.currency??null;
   const vm = buildHomeViewModel(snapshot, period);
   // Money and Supervisor agree on known costs and their evidence. Home must not
   // bypass that canonical completeness gate when showing owner profit.

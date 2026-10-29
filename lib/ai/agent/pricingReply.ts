@@ -1,6 +1,6 @@
 /** Match a tool-verified price in the reply, never a numeric substring. */
 export function verifiedRecommendedPriceInReply(reply:string,cents:number,
- locale:"en"|"es"|"ar",unverified:readonly {start:number;end:number}[],currency:string|undefined):boolean{
+ locale:"en"|"es"|"ar",unverified:readonly {start:number;end:number}[],currency?:string|null):boolean{
  if(!Number.isSafeInteger(cents)||cents<0)return false;
  const amount=cents/100;
  const tokens=[new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(amount),
