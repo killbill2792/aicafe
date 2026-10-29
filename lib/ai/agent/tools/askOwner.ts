@@ -31,7 +31,7 @@ function withoutEmptyChoices(field:AskOwnerField,kind:string|undefined):AskOwner
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 export const askOwnerTools={ask_owner:{
  agentId:"alex",schema:askOwnerSchema,
- description:"Ask once each turn when any needed fact is missing, unknown, empty or failed. For arbitrary questions use kind=facts with 1–6 number, money, percent, text, date or choice fields; options=[] and allowOther=false. Use a generic text field when the key is unknown. For known ambiguity use verified kind=choice candidates. Legacy pantry counts use verified kind=fill only. Never ask for a figure already returned or saved.",
+ description:"Ask once each turn when any needed fact is missing, unknown, empty or failed. For arbitrary questions use kind=facts with 1–6 number, money, percent, text, date or choice fields; options=[] and allowOther=false. Use a generic text field when the key is unknown. For known ambiguity use verified kind=choice with 2–4 of the candidates (pick the likeliest, or ask a narrower question). Legacy pantry counts use verified kind=fill only. Never ask for a figure already returned or saved.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const parsed=askOwnerSchema.parse(raw);
   const input={...parsed,fields:parsed.fields?.map(field=>withoutEmptyChoices(field,parsed.kind))};
@@ -58,7 +58,8 @@ export const askOwnerTools={ask_owner:{
       questionId:randomUUID(),question:input.question,fields:fields.filter(f=>f!==null)};
   }
   if(input.kind==="fill"){
-    if(!input.fields?.length||input.options.length||input.allowOther||input.fields.some(f=>f.inputType!=="number"))
+    // The saved fill card holds at most two fields (clarifyBlockSchema).
+    if(!input.fields?.length||input.fields.length>2||input.options.length||input.allowOther||input.fields.some(f=>f.inputType!=="number"))
       return {source:"ask_owner",period:null,missing:["invalidFields"],error:"invalidFillFields"};
     const verified=input.fields!.every(field=>{
       const observed=state.usageMissing.get(field.key);
@@ -71,6 +72,9 @@ export const askOwnerTools={ask_owner:{
   }
   if(input.fields?.length)return {source:"ask_owner",period:null,missing:["invalidChoiceFields"],error:"invalidChoiceFields"};
   if(input.options.length<2||!state.ambiguous.length)return {source:"ask_owner",period:null,missing:["noAmbiguity"],error:"noRecordedAmbiguity"};
+  // The saved choice card holds 2–4 options (clarifyBlockSchema). Refuse more here, before
+  // the question is used up, so the model can retry with fewer instead of the reply failing to save.
+  if(input.options.length>4)return {source:"ask_owner",period:null,missing:["tooManyOptions"],error:"tooManyOptions"};
   if(new Set(input.options.map(o=>o.label.trim().toLocaleLowerCase())).size!==input.options.length)
     return {source:"ask_owner",period:null,missing:["duplicateLabels"],error:"duplicateLabels"};
   if(input.options.some(o=>uuid.test(o.value)&&!state.seenIds.has(o.value.toLowerCase())))
