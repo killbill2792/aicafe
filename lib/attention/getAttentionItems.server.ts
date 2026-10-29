@@ -20,9 +20,9 @@ import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewm
 import {readPersistedOperatingTasks} from "@/lib/data/operatingTasks";
 import {isSupabaseConfigured} from "@/lib/supabase/client";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
-import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { EXPENSE_CATEGORY_CODES, RUNNING_COST_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import type { AgentId, OperatingTask } from "@/lib/operating/tasks";
+type HomeTaskPreviewItem={id:string;agentId:AgentId;agentName:string;title:string;href:string};
 
 const agentSchema=z.enum(["alex","leo","maya","olivia"]);
 export const attentionItemSchema=z.strictObject({

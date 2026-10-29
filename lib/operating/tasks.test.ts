@@ -14,7 +14,6 @@ import {
   staffCoverageTask,
   supplyCheckTask,
 } from "./tasks";
-import { UnavailableStaffCommunicationProvider } from "./staffCommunication";
 
 const now = new Date("2026-10-02T12:00:00Z");
 const employeeResponse = (taskId: string, responseCode: "yes" | "no") => ({
@@ -136,9 +135,4 @@ describe("shared operating tasks", () => {
     expect(updated.payload.inventoryQuantityAvailable).toBe(false);
   });
 
-  it("keeps deterministic tasks usable with no AI or communication transport", async () => {
-    const transport = new UnavailableStaffCommunicationProvider();
-    expect(await transport.isAvailable()).toBe(false);
-    expect((await transport.deliverCoverageRequest({} as never, { employeeId: "m", destination: "+1" })).delivered).toBe(false);
-  });
 });

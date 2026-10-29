@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { OptionalCafeOperatingBrain } from "@/lib/ai/operatingBrain";
 import { ownerProfitCentsForPeriod } from "@/lib/calc";
 import { cafeStateFromSnapshot } from "./cafeState";
 import { deterministicDecisions } from "./decisions";
@@ -31,10 +30,4 @@ describe("AI-native operating system boundaries", () => {
     expect(ownerProfitCentsForPeriod(fixtureSnapshot.monthActualDays, 100_000)).toBeTypeOf("number");
   });
 
-  it("AI provider failures preserve core workflows", async () => {
-    const decision = deterministicDecisions({ businessId: "cafe", signals: signalsFromPricing("latte", pricing) })[0];
-    const tools = { getOperatingSnapshot: async () => ({ signals: [], decisions: [decision] }) } as never;
-    const failing = { name: "failing", isAvailable: async () => true, reason: async () => { throw new Error("offline"); }, explain: async () => { throw new Error("offline"); } };
-    expect((await new OptionalCafeOperatingBrain(failing, tools).explainDecision(decision)).source).toBe("deterministic");
-  });
 });

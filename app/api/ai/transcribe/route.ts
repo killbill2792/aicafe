@@ -1,7 +1,28 @@
 import { assertCafeAiAccess } from "@/lib/access/access.server";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
-import { readSafeProviderError } from "@/lib/ai/conversations/diagnostics.server";
 import { conversationError, conversationJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
+
+/** Only the provider's identifier-shaped error fields may be inspected. Never log its raw body. */
+async function readSafeProviderError(response:Response):Promise<{
+ providerErrorType?:string;providerErrorCode?:string;providerRequestId?:string
+}>{
+ const safe=(value:unknown):string|undefined=>{
+  if(typeof value!=="string")return undefined;
+  const limited=value.slice(0,64);
+  return /^[a-zA-Z0-9_.-]+$/.test(limited)?limited:undefined;
+ };
+ const providerRequestId=safe(response.headers.get("x-request-id"));
+ let providerErrorType:string|undefined,providerErrorCode:string|undefined;
+ try{
+  const body:unknown=await response.json();
+  if(body!==null&&typeof body==="object"&&!Array.isArray(body)&&
+     "error" in body&&body.error!==null&&typeof body.error==="object"&&!Array.isArray(body.error)){
+   const error=body.error as Record<string,unknown>;
+   providerErrorType=safe(error.type);providerErrorCode=safe(error.code);
+  }
+ }catch{/* Provider returned malformed or non-JSON body; do not expose it. */}
+ return {providerErrorType,providerErrorCode,providerRequestId};
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

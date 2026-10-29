@@ -130,3 +130,6 @@ One day, loaded staff cost $300.00. Sold 100 lattes (prep 90s) and 100 drip coff
 
 ## Fixture C: menu example for the demo café screen (illustrative, matches mockup)
 Latte $5.25: ingredients $0.95, staff time $1.40, card fee $0.15, rent & bills share $0.67 → true profit **$2.08**, extra money from one more latte **$2.75**. Seed prep seconds and recipes so the demo lands within ±$0.05 of these.
+
+
+Legacy `lib/calc/perDrink.ts` was removed. Per-drink money and labor figures must use canonical `lib/metrics/core/*` calculations.

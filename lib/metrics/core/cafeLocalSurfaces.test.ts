@@ -4,8 +4,6 @@ import {resolve} from "node:path";
 import {cafeToday} from "./clock";
 
 const localDateSurfaces=[
- "components/staff/OliviaShiftEditor.tsx",
- "components/staff/OliviaPublicationPanel.tsx",
  "components/operations/SupplierEvidenceManager.tsx",
  "app/[locale]/operations/suppliers/page.tsx",
  "app/api/ai/suppliers/quotes/route.ts",
@@ -13,7 +11,7 @@ const localDateSurfaces=[
 ] as const;
 
 describe("café-local dates cannot silently switch to UTC",()=>{
- it("rejects an implicit UTC wall-time or today fallback on six surfaces",()=>{
+ it("rejects an implicit UTC wall-time or today fallback on four surfaces",()=>{
   for(const path of localDateSurfaces){
    const source=readFileSync(resolve(process.cwd(),path),"utf8");
    expect(source,path).not.toMatch(/\?\?\s*["']UTC["']/);

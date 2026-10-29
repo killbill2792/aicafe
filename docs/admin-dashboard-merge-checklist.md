@@ -10,7 +10,6 @@ Keep this file aligned with PR #165 and future modifications. It supplements AGE
 - Count all historical redemptions in the database; **never** derive capacity, totals or user eligibility from a paginated/truncated ledger. Give admins navigable history for older codes and owners.
 - Expiry dates are inclusive café-local civil dates, including the 7-day warning; test across UTC midnight and daylight-saving transitions.
 - Never persist raw prompts, answers, receipts, bank transactions, PII, or free-form diagnostic output into logs. Audit steps contain fixed, allowlisted labels. Existing legacy telemetry requires a documented scrub before new deployment.
-- All service-role database queries and mutations live in `lib/data`, with independent authorization in the caller or helper. Register new `lib/data` exports in `lib/metrics/p1SourceManifest.ts`. Service-role secrets never reach client components.
 - Owner text is localized in `messages/en.json`, `messages/es.json`, and `messages/ar.json`; do not show database enum/status tokens. Check RTL. Targets are at least 48px and body text at least 17px.
 - Store pricing as integer cents. Do not enable checkout; café price examples require product-owner verification.
 
