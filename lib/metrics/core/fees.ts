@@ -28,7 +28,7 @@ const percentRate=(plan:OwnerFeePlan,rules:readonly {percentageBps:number;salesM
 export function marginalCardFeeRate(
  ownerPlans:OwnerFeePlan|readonly OwnerFeePlan[]|null|undefined,date:string,
 ):number{
- const plans=ownerPlans==null?[]:Array.isArray(ownerPlans)?ownerPlans:[ownerPlans as OwnerFeePlan];
+ const plans:readonly OwnerFeePlan[]=ownerPlans==null?[]:Array.isArray(ownerPlans)?ownerPlans:[ownerPlans as OwnerFeePlan];
  const chosen=plans.filter(plan=>(!plan.effectiveFrom||plan.effectiveFrom<=date)&&
    (!plan.effectiveTo||plan.effectiveTo>=date))
    .sort((a,b)=>(b.effectiveFrom??"").localeCompare(a.effectiveFrom??""))[0];
