@@ -14,8 +14,8 @@ type Proposal={id:string;capability_id:string;revision:number;status:string;moni
   canonical_effect_payload:{productName:string;oldPriceCents:number;newPriceCents:number}};
 type Simulation={effect:{productName:string;oldPriceCents:number;newPriceCents:number};
   baseline:{estimatedAdditionalRevenue7DaysCents:number}};
-export default function SupervisorExperiment({threadId,locale,copy,canUseAi=true,initialProposalId,refreshVersion}:{
-  threadId:string;locale:"en"|"es"|"ar";copy:ExperimentCopy;canUseAi?:boolean;initialProposalId?:string;refreshVersion?:number}){
+export default function SupervisorExperiment({threadId,locale,currency,copy,canUseAi=true,initialProposalId,refreshVersion}:{
+  threadId:string;locale:"en"|"es"|"ar";currency:string|null;copy:ExperimentCopy;canUseAi?:boolean;initialProposalId?:string;refreshVersion?:number}){
  const [open,setOpen]=useState(Boolean(initialProposalId)),[busy,setBusy]=useState(false);
  const [selectedProposalId,setSelectedProposalId]=useState(initialProposalId??"");
  const [items,setItems]=useState<Item[]>([]),[itemId,setItemId]=useState("");
@@ -65,7 +65,7 @@ export default function SupervisorExperiment({threadId,locale,copy,canUseAi=true
     <select className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]"
       value={itemId} onChange={e=>{setItemId(e.target.value);setSimulation(null);}}>
       {items.map(item=><option key={item.id} value={item.id}>
-        {item.name} · {formatCents(item.priceCents,locale)}</option>)}</select></label>}
+        {item.name} · {formatCents(item.priceCents,locale,currency)}</option>)}</select></label>}
    {canUseAi&&!initialProposalId&&<label className="block">{copy.increase}
     <input type="number" className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]"
       min={1} max={100000} step={1} value={cents}
@@ -73,8 +73,8 @@ export default function SupervisorExperiment({threadId,locale,copy,canUseAi=true
    {canUseAi&&!initialProposalId&&<button className={actionClass} disabled={busy||!itemId||!valid}
      onClick={()=>void invoke({action:"simulate",productId:itemId,increaseCents:delta})}>{copy.preview}</button>}
    {canUseAi&&!initialProposalId&&simulation&&<div className="space-y-2">
-    <p>{simulation.effect.productName}: {formatCents(simulation.effect.oldPriceCents,locale)} → {formatCents(simulation.effect.newPriceCents,locale)}</p>
-    <p>{copy.condition} {formatCents(simulation.baseline.estimatedAdditionalRevenue7DaysCents,locale)}</p>
+    <p>{simulation.effect.productName}: {formatCents(simulation.effect.oldPriceCents,locale,currency)} → {formatCents(simulation.effect.newPriceCents,locale,currency)}</p>
+    <p>{copy.condition} {formatCents(simulation.baseline.estimatedAdditionalRevenue7DaysCents,locale,currency)}</p>
     <button className={actionClass} disabled={busy}
       onClick={()=>void invoke({action:"propose",productId:itemId,increaseCents:delta,
         requestKey:crypto.randomUUID(),locale})}>{copy.propose}</button>
@@ -84,18 +84,18 @@ export default function SupervisorExperiment({threadId,locale,copy,canUseAi=true
        onChange={e=>{setSelectedProposalId(e.target.value);setReport(null);}}
        className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]">
        {proposals.map(x=><option key={x.id} value={x.id}>
-         {x.canonical_effect_payload.productName} — {formatCents(x.canonical_effect_payload.newPriceCents,locale)} · {status(x.status)}
+         {x.canonical_effect_payload.productName} — {formatCents(x.canonical_effect_payload.newPriceCents,locale,currency)} · {status(x.status)}
        </option>)}
      </select></label>}
    {p&&<div className="space-y-2 border-t pt-3">
     <p className="font-semibold">{p.canonical_effect_payload.productName}:
-      {" "}{formatCents(p.canonical_effect_payload.oldPriceCents,locale)} → {formatCents(p.canonical_effect_payload.newPriceCents,locale)}</p>
+      {" "}{formatCents(p.canonical_effect_payload.oldPriceCents,locale,currency)} → {formatCents(p.canonical_effect_payload.newPriceCents,locale,currency)}</p>
     {canUseAi&&p.status==="draft"&&<button className={actionClass} disabled={busy}
       onClick={()=>void invoke({action:"approve",proposalId:p.id,revision:p.revision})}>{copy.approve}</button>}
     {canUseAi&&p.status==="approved"&&<button className={actionClass} disabled={busy}
       onClick={()=>void invoke({action:"commit",proposalId:p.id,revision:p.revision})}>{copy.apply}</button>}
     {p.status==="manual_pending"&&<>
-      <p>{copy.confirmNote} {formatCents(p.canonical_effect_payload.newPriceCents,locale)}</p>
+      <p>{copy.confirmNote} {formatCents(p.canonical_effect_payload.newPriceCents,locale,currency)}</p>
       {canUseAi&&<button className={actionClass} disabled={busy}
         onClick={()=>void invoke({action:"manual_done",proposalId:p.id,revision:p.revision})}>{copy.done}</button>}
     </>}
