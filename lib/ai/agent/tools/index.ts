@@ -108,6 +108,18 @@ const descriptions: Record<string, string> = {
   get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar live provisional reading is attached when today is not imported.",
   get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
 };
+/** OpenAI strict mode needs every property listed in `required` at every nesting level;
+ * one gap rejects the whole request (HTTP 400), so the chat fails on every question.
+ * Optional fields must therefore also be nullable in Zod so the model can send null. */
+function requireEveryProperty(node:unknown):unknown{
+  if(Array.isArray(node))return node.map(requireEveryProperty);
+  if(!node||typeof node!=="object")return node;
+  const out:Record<string,unknown>={};
+  for(const [key,value] of Object.entries(node))out[key]=requireEveryProperty(value);
+  if(out.properties&&typeof out.properties==="object"&&!Array.isArray(out.properties))
+    out.required=Object.keys(out.properties);
+  return out;
+}
 const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
   const { $schema: _schema, ...parameters } = z.toJSONSchema("schema" in schemas[name] ? schemas[name].schema as z.ZodType : schemas[name], { target: "draft-07" });
   void _schema;
@@ -116,7 +128,7 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
   const required=properties && typeof properties==="object" ? Object.keys(properties) : [];
   return { type: "function" as const, name,
     description: "description" in schemas[name] ? schemas[name].description : descriptions[name],
-    strict: true as const, parameters:{...parameters,required} };
+    strict: true as const, parameters:{...requireEveryProperty(parameters) as typeof parameters,required} };
 });
 /** Function names stay plain strings: memory and capability gating add or filter by name. */
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=[...baseToolDefinitions];

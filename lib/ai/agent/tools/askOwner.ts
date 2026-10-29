@@ -14,19 +14,27 @@ export const askOwnerSchema=z.strictObject({
    inputType:z.enum(["number","money","percent","text","date","choice"]),
    units:z.array(z.string().min(1).max(20)).max(8),
    defaultUnit:z.string().max(20),
-   choices:z.array(z.strictObject({label:z.string().trim().min(1).max(80),value:z.string().min(1).max(100)})).max(12).optional(),
+   choices:z.array(z.strictObject({label:z.string().trim().min(1).max(80),value:z.string().min(1).max(100)})).max(12).nullable().optional(),
  })).max(6).optional(),
 }).superRefine((input,ctx)=>{
  // Choice-mode contracts remain strict while fill-mode accepts no choices.
  if(input.kind!=="fill"&&input.kind!=="facts"&&input.options.length<2)
   ctx.addIssue({code:"custom",message:"Choose between two and four options"});
 });
+type AskOwnerField=NonNullable<z.infer<typeof askOwnerSchema>["fields"]>[number];
+/** Strict mode makes the model send `choices` on every field (often null). The clarify
+ * card contract accepts only a list or no key, and fill fields take no choices at all. */
+function withoutEmptyChoices(field:AskOwnerField,kind:string|undefined):AskOwnerField{
+ const {choices,...rest}=field;
+ return kind!=="fill"&&choices?{...rest,choices}:rest;
+}
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 export const askOwnerTools={ask_owner:{
  agentId:"alex",schema:askOwnerSchema,
  description:"Ask once each turn when any needed fact is missing, unknown, empty or failed. For arbitrary questions use kind=facts with 1–6 number, money, percent, text, date or choice fields; options=[] and allowOther=false. Use a generic text field when the key is unknown. For known ambiguity use verified kind=choice candidates. Legacy pantry counts use verified kind=fill only. Never ask for a figure already returned or saved.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-  const input=askOwnerSchema.parse(raw);
+  const parsed=askOwnerSchema.parse(raw);
+  const input={...parsed,fields:parsed.fields?.map(field=>withoutEmptyChoices(field,parsed.kind))};
   const state=ctx.resolveState;
   if(!state||state.asked)return {source:"ask_owner",period:null,missing:["alreadyAsked"],error:"askOwnerLimit"};
   if(input.kind==="facts"){
