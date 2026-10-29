@@ -10,7 +10,9 @@ Each item below is one small PR, in order. Do not start an item from "Next" befo
 - [ ] 4a. Capture every Toast endpoint daily: the #210 sampler runs on a schedule per café for the last three closed days that are not complete (`toast-raw-capture-daily.yml`, into `toast_raw_samples`). Owner turns on scheduled runs with the repository variable `TOAST_DAILY_CAPTURE_ENABLED=true`.
 - [ ] 4b. Point the canonical views (#212) at that store, so cash, stock, kitchen and dining options are fresh; add views for the remaining endpoints.
 - [ ] 4c. Merge `describe_data` / `query_data` (#212) with a dictionary entry for every source; screens move to the same readers.
-- [ ] 4d. "Today so far" live layer: refresh changed orders, payments, time entries, stock and cash every 10–15 minutes while open; provisional, replaced at closeout. First review why the old 5-minute poll was turned off and reuse what is safe.
+- [ ] 4d. "Today so far" live layer: provisional, replaced at closeout.
+  - [x] Chat reads today's Toast sales live when asked (`get_today_so_far`, read-only, not stored, 3-minute cache). The old poll (`lib/pos/toast/poll.ts`) was never switched on: it needs four flags and an outside scheduler, and it writes to a staging table the chat does not read.
+  - [ ] Add payments, time entries, stock and cash to the live read; a scheduled refresh every 10–15 minutes while open (for the proactive monitor), reusing `isCafeCurrentlyOpen`.
 
 ## Next — the operator loop (AGENTS.md 4–5)
 - [ ] One experiment system: keep the Supervisor loop (propose → approve → monitor → report already works); fold in or delete owner initiatives.

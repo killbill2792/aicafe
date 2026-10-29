@@ -117,7 +117,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       "get_staff","get_schedule","get_labor","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
       "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
-      "get_item_sales","get_price_recommendation","draft_week_schedule","suggest_new_item_price","milk_swap_price","simulate_scenario","propose_price_change","propose_price_experiment",
+      "get_item_sales","get_price_recommendation","get_today_so_far","draft_week_schedule","suggest_new_item_price","milk_swap_price","simulate_scenario","propose_price_change","propose_price_experiment",
       "propose_schedule","propose_shift_change","propose_add_staff","propose_staff_change",
       "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases",
       "get_initiatives","get_initiative_status","record_checkin"]);
