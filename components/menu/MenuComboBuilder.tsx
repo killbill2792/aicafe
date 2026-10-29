@@ -8,7 +8,7 @@ import {calculateComboTotals,suggestComboPrices} from "@/lib/calc/menuCombo";
 import {formatCents} from "@/lib/calc";
 export type ComboChoice={id:string;name:string;sizeLabel:string|null;priceCents:number;costCents:number|null;estimated:boolean;menuGroup:string|null};
 type Line={itemId:string;quantity:number;buyInCostCents:number|null};
-export default function MenuComboBuilder({choices,currency}:{choices:ComboChoice[];currency:string|null}){
+export default function MenuComboBuilder({choices,currency}:{choices:ComboChoice[];currency?:string|null}){
  const money=(cents:number)=>formatCents(cents,undefined,currency);
  const t=useTranslations("MenuBuilder"),router=useRouter();
  const [name,setName]=useState(""),[price,setPrice]=useState(0),[lines,setLines]=useState<Line[]>([]),[next,setNext]=useState(""),[error,setError]=useState("");
