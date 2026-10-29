@@ -192,8 +192,11 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     className="border-b border-line py-4">
     <p className="font-semibold"><bdi>{day(row.date)}</bdi></p>
     {data.restaurantNames[row.restaurantGuid]&&<p>{data.restaurantNames[row.restaurantGuid]}</p>}
-    <p className="text-ink-muted">{t("ownerOurs")}: <bdi>{fmt(row.oursCents)}</bdi> · {t("ownerToast")}: <bdi>{fmt(row.toastCents)}</bdi></p>
-    <p>{t("ownerDifference")}: <bdi>{fmt(row.deltaCents)}</bdi></p>
+    {/* Toast's own total exists only with Toast Analytics; without it, show the imported total alone. */}
+    {row.toastCents==null
+     ?<p className="text-ink-muted">{t("ownerImportedTotal")}: <bdi>{fmt(row.oursCents)}</bdi></p>
+     :<><p className="text-ink-muted">{t("ownerOurs")}: <bdi>{fmt(row.oursCents)}</bdi> · {t("ownerToast")}: <bdi>{fmt(row.toastCents)}</bdi></p>
+      <p>{t("ownerDifference")}: <bdi>{fmt(row.deltaCents)}</bdi></p></>}
     <p className="text-warn">{t("ownerReviewReason")}: {row.reason==="owner_flag"?t("ownerReasonOwner"):row.reason==="unparsed_orders"?t("unreadableOrders",{count:row.unreadableOrders}):row.reason==="owner_summary_mismatch"?t("summaryMismatch"):row.reason==="mismatch"?t("ownerReasonMismatch"):
      row.reason==="analytics_timeout"?t("ownerReasonTimeout"):row.reason==="coverage_invalid"?t("ownerReasonCoverage"):t("ownerReasonOther")}</p>
     <div className="mt-2 flex flex-wrap gap-2">
@@ -221,16 +224,15 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     </details>
    </div>)}
   </section>
+  {/* Toast Analytics is an optional extra check (RMS Pro). Nothing waits on it. */}
   <section className="rounded-card-lg bg-card p-5">
-   <h2 className="text-xl font-bold">{t("ownerAnalytics")}</h2>
-   <p className="text-ink-muted">{t("ownerAnalyticsNote")}</p>
-   <p className="mt-2">{t("analyticsHelper")}</p>
-   {data.analytics.errorCategory&&<p role="alert" className="mt-2 text-warn">{t(data.analytics.errorCategory==="missing_permissions"?"analyticsErrorPermissions":data.analytics.errorCategory==="authentication"?"analyticsErrorAuthentication":data.analytics.errorCategory==="invalid_host"?"analyticsErrorHost":"ownerError")}</p>}
-   <button disabled={analyticsBusy} onClick={()=>void configureAnalytics("disconnect")} className="mt-3 min-h-12 rounded-full border border-line px-5">{t("analyticsSkip")}</button>
-   <p className="mt-2 font-semibold">{data.analytics.verified?t("verified"):t("notConnected")}</p>
-   <details className="mt-3">
-    <summary className="min-h-12 cursor-pointer font-semibold">{t("ownerAnalyticsSetup")}</summary>
-    <div className="mt-3 flex flex-col gap-3">
+   <details open={data.analytics.connected||Boolean(data.analytics.errorCategory)}>
+    <summary className="min-h-12 cursor-pointer font-semibold">
+     {data.analytics.verified?t("analyticsConnectedLine"):t("analyticsOptionalLine")}</summary>
+    <p className="mt-2 text-ink-muted">{t("ownerAnalyticsNote")}</p>
+    <p className="mt-2">{t("analyticsHelper")}</p>
+    {data.analytics.errorCategory&&<p role="alert" className="mt-2 text-warn">{t(data.analytics.errorCategory==="missing_permissions"?"analyticsErrorPermissions":data.analytics.errorCategory==="authentication"?"analyticsErrorAuthentication":data.analytics.errorCategory==="invalid_host"?"analyticsErrorHost":"ownerError")}</p>}
+    {!data.analytics.connected&&<div className="mt-3 flex flex-col gap-3">
      {(["apiUrl","managementGroupGuid","clientId","clientSecret"] as const).map(key=>
       <label key={key} className="flex flex-col gap-1">
        <span>{t("ownerAnalytics_"+key)}</span>
@@ -242,11 +244,11 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
       onClick={()=>void configureAnalytics("connect")}
       className="min-h-12 rounded-full bg-accent px-5 text-on-accent disabled:opacity-40">
       {t("ownerAnalyticsConnect")}</button>
-     {data.analytics.connected&&<button disabled={analyticsBusy}
-      onClick={()=>void configureAnalytics("disconnect")}
-      className="min-h-12 rounded-full border border-line px-5">
-      {t("ownerAnalyticsDisconnect")}</button>}
-    </div>
+    </div>}
+    {data.analytics.connected&&<button disabled={analyticsBusy}
+     onClick={()=>void configureAnalytics("disconnect")}
+     className="mt-3 min-h-12 rounded-full border border-line px-5">
+     {t("ownerAnalyticsDisconnect")}</button>}
    </details>
   </section>
   {message&&<p role="status" className="rounded-xl bg-card p-3">{message}</p>}
