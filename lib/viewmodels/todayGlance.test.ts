@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildTodayGlanceViewModel } from "./todayGlance";
 import { zeroDailyFacts } from "@/lib/calc";
 import { liveSalesView } from "@/components/home/liveSales";
+import { todayTools } from "@/lib/ai/agent/tools/today";
+import type { AgentToolContext } from "@/lib/ai/agent/tools";
 import type { BusinessSnapshot } from "@/lib/data/types";
 
 const BUCKETS: BusinessSnapshot["runningCostLines"] = [
@@ -59,7 +61,7 @@ describe("buildTodayGlanceViewModel", () => {
     expect(vm.moneyLeftCents).toBeNull();
     expect(vm.bucketState.kind).toBe("costsUnknown");
   });
-  it("Money's live Today sales exactly equal Home's saved-reading sales, without claiming money left", () => {
+  it("Money's live Today sales exactly equal Home and chat, without claiming money left", async () => {
     const saved = {
       value: {netSalesCents: 84_250, orders: 61, unparsedOrders: 2,
         readAt: "2026-10-03T17:15:00Z", businessDate: "2026-10-03"},
@@ -70,7 +72,16 @@ describe("buildTodayGlanceViewModel", () => {
     const money = buildTodayGlanceViewModel(buildSnapshot({todayHasData: false}), {
       netSalesCents: home!.netSalesCents, orders: saved.value.orders,
     });
+    const chat = await todayTools.get_today_so_far.execute({}, {
+      readTodaySoFar: async () => ({available: true, value: {
+        ...saved.value, provisional: true as const, grossSalesCents: 90_000, discountsCents: 0,
+        refundsCents: 0, tipCents: 0, openChecks: 0, topItems: [],
+        locationsRead: 1, locationsFailed: 0, truncated: false,
+      }}),
+    } as unknown as AgentToolContext);
     expect(money.salesCents).toBe(home!.netSalesCents);
+    expect(money.salesCents).toBe(chat.netSalesCents);
+    expect(money.ordersCount).toBe(chat.orders);
     expect(money.ordersCount).toBe(61);
     expect(money.avgOrderValueCents).toBe(1381);
     expect(money.moneyLeftCents).toBeNull();
