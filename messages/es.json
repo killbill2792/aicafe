@@ -3575,5 +3575,12 @@
     "milkTypeAlmond": "leche de almendra",
     "milkTypeSoy": "leche de soja",
     "milkTypeCoconut": "leche de coco"
+  },
+  "DailyBrief": {
+    "yesterday": "Buenos días. Ayer: ventas {sales}, costos conocidos {costs}, te quedaste con {kept}.",
+    "partial": "Aún faltan algunos costos, así que es parcial.",
+    "noSales": "Buenos días. Las ventas de ayer todavía no han llegado.",
+    "needsYou": "{count} cosas te necesitan. Pregúntame por cualquiera.",
+    "allClear": "Nada te necesita ahora mismo."
   }
 }

@@ -3575,5 +3575,12 @@
     "milkTypeAlmond": "almond milk",
     "milkTypeSoy": "soy milk",
     "milkTypeCoconut": "coconut milk"
+  },
+  "DailyBrief": {
+    "yesterday": "Good morning. Yesterday: sales {sales}, known costs {costs}, you kept {kept}.",
+    "partial": "Some costs are still missing, so this is partial.",
+    "noSales": "Good morning. Yesterday's sales aren't in yet.",
+    "needsYou": "{count} things need you. Ask me about any of them.",
+    "allClear": "Nothing needs you right now."
   }
 }
