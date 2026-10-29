@@ -5,6 +5,7 @@ import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
 import { readDailyFacts } from "@/lib/data/dailyFacts.server";
+import { readMenuCatalogRows } from "@/lib/data/menuCatalog.server";
 import type { DailyFacts } from "@/lib/calc";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 import { rangeExpectedDays } from "./conversations/dateRange";
@@ -53,11 +54,7 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
     },
     async menuCatalog(id: string): Promise<KnownSlice<MenuCatalogProduct[]>> {
       assertScope(id);
-      const { data, error } = await client.from("menu_items")
-        .select("id,name,base_name,size_label,category,is_active,price_cents,description,menu_group,pos_visibility,pos_pricing_strategy")
-        .eq("business_id",id).order("id").limit(501);
-      if (error) throw error;
-      const items=(data??[]).slice(0,500);
+      const items = await readMenuCatalogRows(client, id);
       if(items.length===0)return {available:true,value:[],quality:quality()};
       // All add-on references remain business-scoped and read-only under RLS.
       // A truncated result is labeled incomplete, never silently authoritative.
@@ -100,10 +97,9 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
           minSelections:link.min_selections,maxSelections:link.max_selections,
           required:link.required,options:optionsByGroup.get(link.pos_group_id)??[]
         }))
-      })),quality:quality([
-        ...((data??[]).length>500?["menuCatalogTruncated"]:[]),
-        ...((links??[]).length>10000?["menuModifierLinksTruncated"]:[])
-      ]) };
+      })),quality:quality(
+        (links??[]).length>10000?["menuModifierLinksTruncated"]:[]
+      ) };
     },
     async staffAttendance(id: string, period: CafeStatePeriod, timezone: string): Promise<KnownSlice<StaffAttendance>> {
       assertScope(id);

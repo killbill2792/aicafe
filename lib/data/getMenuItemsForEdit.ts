@@ -3,6 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { getTranslations } from "next-intl/server";
 import { displayPantryStarterName } from "@/lib/menu/pantryStarter";
 import { visiblePricedMenuItems } from "@/lib/menu/pricedMenuVisibility";
+import { readMenuCatalogRows } from "./menuCatalog.server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
@@ -72,19 +73,11 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   if (!user) return { items: [], ingredients: [] };
   const businessId = await getActiveBusinessId(user.id);
 
-  const [itemsResult, ingredientsResult, businessResult] = await Promise.all([
-    supabase
-      .from("menu_items")
-      .select("id, name, base_name, size_label, price_cents, prep_seconds, category, menu_group, is_active, pos_item_id, catalog_source, catalog_last_synced_at")
-      .eq("business_id", businessId)
-      .order("name"),
+  const [catalogRows, ingredientsResult, businessResult] = await Promise.all([
+    readMenuCatalogRows(supabase, businessId),
     supabase.from("ingredients").select("id, name, base_unit, starter_key").eq("business_id", businessId).order("name"),
     supabase.from("businesses").select("timezone").eq("id", businessId).single(),
   ]);
-  if (itemsResult.error) {
-    logQueryError("getMenuItemsForEdit:menu_items", itemsResult.error);
-    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
-  }
   if (ingredientsResult.error) {
     logQueryError("getMenuItemsForEdit:ingredients", ingredientsResult.error);
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
@@ -92,7 +85,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   // The business's timezone has a safe, documented fallback below, so a failure here degrades
   // gracefully rather than blocking the whole menu — still logged, never silently unnoticed.
   if (businessResult.error) logQueryError("getMenuItemsForEdit:businesses", businessResult.error);
-  const items = visiblePricedMenuItems(itemsResult.data ?? []);
+  const items = visiblePricedMenuItems(catalogRows);
   const ingredients = ingredientsResult.data;
   const business = businessResult.data;
   const todayDateStr = formatInTimeZone(new Date(), business?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
