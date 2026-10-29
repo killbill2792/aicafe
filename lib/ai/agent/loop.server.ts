@@ -10,7 +10,7 @@ import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
 import {newResolveState,observeToolResult,resolveOwnerPeriod,localizedPeriodLabel} from "./resolve";
 import {acceptedExplainLines,type ExplainLine} from "./explain";
-import {verifiedRecommendedPriceInReply,forcedPricingClarifyText} from "./pricingReply";
+import {verifiedRecommendedPriceInReply} from "./pricingReply";
 import {injectSavedOwnerInputs,formatSavedOwnerFacts,type SavedFact} from "@/lib/ownerFacts/inject";
 import {classifyNeedsAsk,uncertaintyPhrases} from "@/lib/ownerFacts/needsAsk";
 import {questionFromReasons,localizedToolNote,answerFromSavedReasons} from "@/lib/ownerFacts/questions";
@@ -295,6 +295,16 @@ export async function runAgentTurn(args: {
             missing: [detail.error],what:mapped.what, ...detail };
           toolError = diagnostic;
         } finally { clearTimeout(toolTimer); }
+        // A rejected model-generated global cost card must still trigger the
+        // code-owned recovery with a scoped item key (or a generic question).
+        if(tool.name==="ask_owner"&&result.error==="invalidFactFields"){
+          try{
+            const attempted=JSON.parse(tool.arguments) as {fields?:Array<{key?:string}>};
+            if(attempted.fields?.some(f=>f.key==="unitCostCents"||f.key==="unit_cost_cents")){
+              result={...result,missing:["unitCostCents"]};
+            }
+          }catch{ /* malformed arguments already have a safe error result */ }
+        }
         let argumentKeys: string[] = [];
         try {
           const parsed: unknown = JSON.parse(tool.arguments);
@@ -430,14 +440,6 @@ export async function runAgentTurn(args: {
       } catch { endReason = now() >= deadline ? "timeout" : "provider_error"; }
     }
   } finally { controller.abort(); }
-  // A clarification card must not displace the price the owner requested.
-  if(askedQuestion){
-   const priced=results.map(r=>r.result).find(r=>r.source==="new_item_price");
-   if(priced&&typeof priced.recommendedPriceCents==="number"){
-    text=forcedPricingClarifyText(priced.recommendedPriceCents,args.context.locale,priced.pricingNote);
-   }
-  }
-
   // The response contract is enforced in code, not dependent on model compliance:
   // partial tool data may be used, but missing/empty/failed evidence must end in
   // an actionable, persisted owner question unless that exact fact is already saved.
