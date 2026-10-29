@@ -6,7 +6,7 @@ import {formatCents} from "@/lib/calc";
 import type {PricedPantry} from "./MenuAddonsPanel";
 /** All active sizes of the chosen product; every size uses its OWN recipe quantity. */
 export default function MilkSizePrices({items,fromMilkId,toMilkId,pantry,currency}:{
-  items:MenuItemForEdit[];fromMilkId:string|null;toMilkId:string;pantry:PricedPantry[];currency:string|null;
+  items:MenuItemForEdit[];fromMilkId:string|null;toMilkId:string;pantry:PricedPantry[];currency?:string|null;
 }){
   const t=useTranslations("MenuBuilder"),note=useTranslations("MetricsNotes");
   const money=(cents:number)=>formatCents(cents,undefined,currency);
