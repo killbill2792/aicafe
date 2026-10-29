@@ -6,17 +6,17 @@ Each item says what is wrong, where, and how to check it. Before starting, read 
 rules at the end of this section. One item = one small PR. Tick it here in the same PR.
 
 ### Owner actions
-- [ ] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
+- [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
 - [ ] Decide: may the chat's ad-hoc data queries (`describe_data`/`query_data`, canonical `cv_*` views) answer sales/fee numbers, or only the main tools? Today they are a second path.
 
 ### Today's live sales (owner priority)
 - [x] Chat doesn't use the live reading for "today's sales". The system prompt in `lib/ai/agent/loop.server.ts` never maps today questions to `get_today_so_far`, so the model calls `get_sales`, which only knows closed days. Fix: add the mapping; and in `lib/ai/agent/tools/coverage.ts` / `tools/index.ts`, when the period is today and not imported, return the live reading from `ctx.readTodaySoFar()` with `provisional: true` and its read time.
 - [x] Home may skip the live reading. `app/[locale]/page.tsx` shows it only when `vm.coverage.actualDays===0`; a $0 or not-final row for today would hide it. Errors there are swallowed (`.catch(()=>null)`). Fix: use the live reading whenever today's closeout import isn't in; log an error category (never data); if no saved reading for the current business day, call `todaySoFarForBusiness` with a 4-second timeout. Check: `select business_date, sales_data_status, net_sales_cents from daily_rollups where business_date = current_date;`
-- [ ] Money screen's "today at a glance" card (`lib/viewmodels/todayGlance.ts`, `components/money/CostRecoveryView.tsx`) uses closed days only; read the live reading through `lib/data/todayLive.server.ts`.
+- [x] (#242) Money screen's "today at a glance" card (`lib/viewmodels/todayGlance.ts`, `components/money/CostRecoveryView.tsx`) uses closed days only; read the live reading through `lib/data/todayLive.server.ts`.
 - [ ] Test café copy (`.github/workflows/sync-cafe-data.yml`) runs every 30 minutes, so its live reading often shows "Not live". Optional: run every 15 minutes.
 
 ### Speed
-- [ ] Screens load slowly. Measure first: timing logs (names and ms only) around each reader on Home, Money and the Toast page. Then: run independent reads in `Promise.all`; wrap repeated per-request lookups (`getActiveBusinessId`, `readSupervisorCafeIdentity`, `getSnapshot`) in React `cache()`; don't run `getMenuControlCenter`'s 90-day order-line scan on Home unless needed. No change to numbers.
+- [x] (#244–#247) Screens load slowly. Measure first: timing logs (names and ms only) around each reader on Home, Money and the Toast page. Then: run independent reads in `Promise.all`; wrap repeated per-request lookups (`getActiveBusinessId`, `readSupervisorCafeIdentity`, `getSnapshot`) in React `cache()`; don't run `getMenuControlCenter`'s 90-day order-line scan on Home unless needed. No change to numbers.
 
 ### Toast data
 - [ ] Verify the processing-fee backfill (#235) a day after deploy: every imported day should have payments saved. Check: `select business_date, count(*) from toast_payment_facts where business_date >= current_date - 14 group by 1 order by 1;` and `card_fees_status` in `daily_rollups` should be `actual`/`estimated` with a non-zero fee on sales days.
@@ -24,9 +24,13 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 - [ ] `toast_payment_facts.fee_basis` has no `default_rate` value; default-rate estimates are stored as `missing` with `fee_status = estimated` (#235). Add the value in a future migration.
 - [ ] Add payments, time entries, stock and cash to the live read; live checks every ~30 minutes while open (4d part 2).
 
+### Supervisor chat start (Home key numbers) — found on the test café
+- [ ] Today shows Sales but "Known business costs" and "You keep" are blank (—). Cause: before closeout, Sales comes from the live reading, but costs and profit come from `buildProfitAndCostsViewModel` (`lib/viewmodels/moneyViewModel.ts`), and `profitForPeriod` (`lib/metrics/core/profit.ts`) returns null when the period has no closed day with `sales_data_status='actual'`. So Today is always — until closeout. Fix: on Today before closeout, show known costs so far (today's share of bills + labor recorded so far + card fees on the live sales) and You keep from the live sales, labeled provisional, through `lib/metrics/core` (no new formula). Wire in `app/[locale]/page.tsx` where `costs`/`kept` are set.
+- [ ] Today / Week / Month to date buttons "don't work" on the test café. On demo data (no Supabase) they work: each tap changes the URL to `?period=week|month` and all three numbers change (checked with Playwright). So the cause is specific to the live café data or an open chat thread. Check first, on the test café: (1) does the URL change after a tap? If not, look at `components/shared/PeriodSwitch.tsx` (`router.replace` + `router.refresh`) with a `?thread=` in the URL. (2) If the URL changes but numbers stay blank, run `select business_date, sales_data_status, net_sales_cents from daily_rollups where business_id = '719af528-af8e-4203-bb25-4c118c9ff832' and business_date >= current_date - 31 order by 1;` — Week/Month costs need at least one `actual` day; if the copy job (`scripts/sync-cafe-data.mjs`) brings rows without `actual`, fix the copy. (3) A slow Home render can look like a dead tap: check the `Home` timing logs (#244).
+
 ### One path (AGENTS.md rule 3)
-- [ ] Fold the row mappers in `lib/data/getPricingInputs.ts` and `lib/data/supervisorEconomics.server.ts` into `rowToDailyFacts` (they already read through `lib/data/dailyFacts.server.ts`).
-- [ ] Chat's menu list reads `menu_items` itself (`menuCatalog` in `lib/ai/supervisorReads.server.ts`) instead of the Menu screen's `lib/data/getMenuItemsForEdit.ts`. Make one shared menu reader both use. Check: chat and Menu screen list the same items and prices.
+- [x] (#243) Fold the row mappers in `lib/data/getPricingInputs.ts` and `lib/data/supervisorEconomics.server.ts` into `rowToDailyFacts` (they already read through `lib/data/dailyFacts.server.ts`).
+- [ ] (in progress) Chat's menu list reads `menu_items` itself (`menuCatalog` in `lib/ai/supervisorReads.server.ts`) instead of the Menu screen's `lib/data/getMenuItemsForEdit.ts`. Make one shared menu reader both use. Check: chat and Menu screen list the same items and prices.
 - [ ] Café settings (currency, timezone, is_demo) are read from `businesses` in ~10 places (`getCafeProfile`, `snapshot.server`, `readSupervisorCafeIdentity`, `getPricingInputs`, `staffReadScope`, `dailyBrief`, `getMoreBadges`, supervisor loop `goal`/`menuPriceChange`/`priceExperiment`). Add one `readCafeSettings(businessId)` reader (React `cache()`d) and switch callers to it.
 - [ ] `suggestPrice` (price math) lives in `lib/calc/pricingEngine.ts`; move it to `lib/metrics/core/` per AGENTS.md, with no change to results.
 - [ ] Screen-vs-chat equality: `lib/metrics/core/metricsParity.test.ts` covers profit, labor, fees and break-even on a fixture; add cases for period/coverage preparation (partial weeks, missing days) so both paths must agree.
@@ -42,10 +46,10 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 7. Owner-facing text in en/es/ar message files; never hard-code a currency; never log secrets or customer data.
 
 ## Now
-- [ ] Set `OPENAI_API_KEY` in production before deploying #216 (receipts and statements now always use OpenAI).
-- [ ] Owner: apply migration 122 (RLS on `businesses`, merged in #220) to production: `alter table public.businesses enable row level security;`
-- [ ] Owner: set `DAILY_BRIEF_ENABLED=true` in Vercel production to turn on the morning brief (#226).
-- [ ] Owner: apply migrations 123 (drop empty owner-initiative tables, #231), 124 (live today reading, #238) and 125 ("needs a look" cleanup, #240). The code works before 124 is applied (it reads Toast live).
+- [x] Set `OPENAI_API_KEY` in production before deploying #216 (receipts and statements now always use OpenAI).
+- [x] Owner: apply migration 122 (RLS on `businesses`, merged in #220) to production: `alter table public.businesses enable row level security;`
+- [x] Owner: set `DAILY_BRIEF_ENABLED=true` in Vercel production to turn on the morning brief (#226).
+- [x] Owner: apply migrations 123 (drop empty owner-initiative tables, #231), 124 (live today reading, #238) and 125 ("needs a look" cleanup, #240). The code works before 124 is applied (it reads Toast live).
 
 ## Next — the AI reads all POS data (AGENTS.md 4b)
 - [x] 4a. Daily capture of every Toast endpoint (#218). Owner: run it once by hand, then set the repository variable `TOAST_DAILY_CAPTURE_ENABLED=true`.
@@ -54,7 +58,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 - [ ] 4d. "Today so far" live layer: provisional, replaced at closeout.
   - [x] Chat reads today's Toast sales live when asked (`get_today_so_far`, read-only, not stored, 3-minute cache). The old poll (`lib/pos/toast/poll.ts`) was never switched on: it needs four flags and an outside scheduler, and it writes to a staging table the chat does not read.
   - [x] Saved reading every 15 minutes (`/api/cron/today-live`, table `toast_today_live`); Home's Today sales and the chat read the same one (#238).
-  - [ ] Add payments, time entries, stock and cash to the live read; wire the Money screen's "today at a glance" card to it.
+  - [ ] Add payments, time entries, stock and cash to the live read; wire the Money screen's "today at a glance" card to it (done in #242).
 
 ## Next — the operator loop (AGENTS.md 4–5)
 - [x] One experiment system: the Supervisor loop. Owner initiatives deleted (#229, tables dropped by #231); goals (#230), goal check-ins (#232) and a price-test orders guardrail (#233) added to the loop.
@@ -71,7 +75,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 - [x] One reader for saved daily totals, used by every screen and chat tool (#236).
 - [x] Toast page: Re-pull and "Looks right" say exactly what happened (#237); Toast Analytics is an optional line (#239).
 - [x] "Needs a look" lists real problems only; stale flags cleared (#240, migration 125).
-- [ ] Fold the pricing and economics row mappers into `rowToDailyFacts`; decide whether ad-hoc data queries may answer sales/fee numbers (canonical views are a second path).
+- [ ] Row mappers folded (#243). Left: decide whether ad-hoc data queries may answer sales/fee numbers (canonical views are a second path).
 
 ## Later
 - [ ] Email delivery of inbox items.
