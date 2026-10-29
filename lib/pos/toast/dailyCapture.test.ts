@@ -35,6 +35,15 @@ describe("daily Toast capture planning",()=>{
    .toEqual(new Set([a+"|2026-10-28"]));
  });
 
+ it("retries a day whose Analytics report was not ready or whose pages were capped",()=>{
+  for(const reason of ["not_ready","page_cap"]){
+   expect(completeDays([
+    {businessId:a,businessDate:"2026-10-28",reason:"available"},
+    {businessId:a,businessDate:"2026-10-28",reason},
+   ])).toEqual(new Set());
+  }
+ });
+
  it("plans each café once and never guesses a missing timezone or closeout",()=>{
   const plan=planDailyCaptures([
    {businessId:a,...la},{businessId:a,timezone:"America/New_York",closeoutHour:3},

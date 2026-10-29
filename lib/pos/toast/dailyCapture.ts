@@ -4,10 +4,11 @@ import {addCalendarDays,eligibleClosedDay,localClock} from "./scheduleDates";
  * or partial run is retried on the next run instead of leaving a permanent gap. */
 export const DAILY_CAPTURE_LOOKBACK_DAYS=3;
 
-/** Coverage reasons that mean the latest capture of a day did not finish. */
+/** Coverage reasons that mean the latest capture of a day did not finish: stopped
+ * early, an Analytics report still processing, or a page limit that cut data off. */
 const INCOMPLETE_REASONS=new Set([
  "skipped_time_budget","skipped_endpoint_budget","skipped_lease_lost",
- "skipped_interrupted","sample_write_failed","not_attempted",
+ "skipped_interrupted","sample_write_failed","not_attempted","not_ready","page_cap",
 ]);
 
 export type CaptureLocation={businessId:string;timezone:string|null;closeoutHour:number|null};
