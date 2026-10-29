@@ -5,8 +5,9 @@ import {createToastClient} from "./client";
 import {parseToastDayPage,type ToastDayPage} from "./dayParser";
 import {currentToastBusinessDay,summarizeToastToday,type TodaySoFar} from "./todaySoFar";
 
-/** Read-only and never stored: today's Toast orders read live when the owner asks.
- * The closeout import stays the only writer of the day's sales. */
+/** Read-only: today's Toast orders read live. lib/data/todayLive.server.ts saves
+ * the latest reading for Home and the chat; the closeout import stays the only
+ * writer of the day's final sales. */
 const MAX_PAGES=10;
 const READ_BUDGET_MS=15_000;
 const CACHE_MS=3*60_000;

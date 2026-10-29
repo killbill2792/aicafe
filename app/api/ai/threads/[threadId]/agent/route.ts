@@ -15,7 +15,7 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
 import {readSupervisorEconomics} from "@/lib/data/supervisorEconomics.server";
-import {readToastTodaySoFar} from "@/lib/pos/toast/todaySoFar.server";
+import {todaySoFarForBusiness} from "@/lib/data/todayLive.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
@@ -155,7 +155,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf),
       readEconomics:async()=>readSupervisorEconomics(await createServerSupabaseClient(),scope.businessId,identity.asOf),
       // Toast credentials are service-role only; the café comes from the authenticated scope.
-      readTodaySoFar:()=>readToastTodaySoFar(createAdminSupabaseClient(),scope.businessId),
+      readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId),
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       goals:{

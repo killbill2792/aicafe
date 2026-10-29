@@ -347,6 +347,8 @@
     "costsUnavailable": "Costos del negocio no disponibles",
     "youKeep": "Te queda",
     "ofSales": "{pct}% de las ventas",
+    "liveSales": "En vivo · actualizado {time}",
+    "liveSalesStale": "Sin conexión en vivo · última lectura {time}",
     "missingCostBannerText": "{category} aún no se ha agregado.",
     "missingCostBannerAction": "Agregar",
     "coveredOn": "{label} ✓ {date}",

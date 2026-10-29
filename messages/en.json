@@ -347,6 +347,8 @@
     "costsUnavailable": "Business costs unavailable",
     "youKeep": "You keep",
     "ofSales": "{pct}% of sales",
+    "liveSales": "Live · updated {time}",
+    "liveSalesStale": "Not live · last read {time}",
     "missingCostBannerText": "{category} not added yet.",
     "missingCostBannerAction": "Add",
     "coveredOn": "{label} ✓ {date}",

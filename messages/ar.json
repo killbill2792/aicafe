@@ -347,6 +347,8 @@
     "costsUnavailable": "تكاليف العمل غير متاحة",
     "youKeep": "يبقى لك",
     "ofSales": "{pct}% من المبيعات",
+    "liveSales": "مباشر · آخر تحديث {time}",
+    "liveSalesStale": "غير مباشر · آخر قراءة {time}",
     "missingCostBannerText": "لم تتم إضافة {category} بعد.",
     "missingCostBannerAction": "إضافة",
     "coveredOn": "{label} ✓ {date}",

@@ -39,6 +39,8 @@ import type { Period } from "@/lib/viewmodels/period";
 import {readOperatingBoard} from "@/lib/operating/board.server";
 import {boardHref} from "@/lib/operating/board";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
+import {readSavedTodayLive} from "@/lib/data/todayLive.server";
+import {liveSalesView} from "@/components/home/liveSales";
 
 
 // Personalized, session-dependent — never statically prerendered.
@@ -76,7 +78,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     ?await readOperatingBoard(await createServerSupabaseClient(),{businessId,ownerUserId:signedInUser.id},identity.asOf):null;
   const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
   const money=(cents:number)=>formatCafeCurrency(cents,locale,cafeCurrency).text;
-  const sales=vm.coverage.actualDays===0?"—":money(moneyVm.salesCents);
+  // Today: until the closeout import, Sales is the live Toast reading the chat also uses.
+  const live=period==="today"&&businessId&&vm.coverage.actualDays===0
+    ?await readSavedTodayLive(await createServerSupabaseClient(),businessId).catch(()=>null):null;
+  const liveView=liveSalesView(live,identity?.timezone??null,locale);
+  const sales=liveView?money(liveView.netSalesCents):vm.coverage.actualDays===0?"—":money(moneyVm.salesCents);
+  const salesCaption=liveView?t(liveView.fresh?"liveSales":"liveSalesStale",{time:liveView.time}):null;
   const costs=costCompleteness==="unavailable"||moneyVm.totalCostsCents===null?"—":money(moneyVm.totalCostsCents);
   const kept=canShowProfit&&moneyVm.ownerProfitCents!==null?money(moneyVm.ownerProfitCents):"—";
   // Restore the gated comparisons from the old Home strip; never imply a
@@ -98,7 +105,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         period,sales,costs,kept,attention:items,
         partial:hasPartial,estimated:hasEstimatedCosts,
         incomplete:!canShowProfit && vm.coverage.actualDays>0,
-        shareCaption,comparisonCaption,
+        shareCaption,comparisonCaption,salesCaption,
         board:board?{
           running:board.running.map(r=>({key:r.proposalId,
             href:boardHref(r),
