@@ -21,7 +21,7 @@ export type CafeProfileData = {
 const EMPTY_PROFILE: CafeProfileData = {
   name: "My café",
   timezone: "America/Los_Angeles",
-  currency: "USD",
+  currency: "",
   openedOn: "",
   locationName: "",
   addressLine1: "",
