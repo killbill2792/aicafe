@@ -89,7 +89,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     finally{setBusy(false);}
   };
   if(!value)return error?<p role="alert">{copy.error}</p>:<p role="status">{copy.loading}</p>;
-  const money=(cents:number)=>formatCardValue({kind:"money",cents},locale,value.currency??"USD");
+  const money=(cents:number)=>formatCardValue({kind:"money",cents},locale,value.currency??"");
   const staff=value.capabilityId?.startsWith("olivia.staff_")===true;
   const purchase=value.capabilityId==="maya.inventory_purchase.v1";
   const experiment=value.capabilityId==="alex.drink_price_experiment.v1";
@@ -203,7 +203,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       </div>
       {value.subjectName&&<p className="mt-2 break-words text-lg font-bold">{value.subjectName}</p>}
       <p className="mt-2 text-[17px] text-ink-muted">{staffCopy.reviewNotice}</p>
-      <BeforeAfterRows rows={value.preview??[]} locale={locale} currency={value.currency??"USD"}/>
+      <BeforeAfterRows rows={value.preview??[]} locale={locale} currency={value.currency??""}/>
       {value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true&&value.state!=="applied"&&
         <p className="mt-3 text-[17px]">{staffCopy.preparedOnly}</p>}
       {value.state==="applied"&&(
@@ -233,7 +233,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-bold">{statuses[value.state]??copy.states.failed}</span>
     </div>
     <h3 className="mt-2 break-words text-xl font-bold">{value.productName}</h3>
-    <BeforeAfterRows rows={rows} locale={locale} currency={value.currency??"USD"}/>
+    <BeforeAfterRows rows={rows} locale={locale} currency={value.currency??""}/>
     {value.editedByOwner&&<p className="mt-2">{copy.editedByYou}</p>}
     {experiment&&value.state==="manual_pending"&&<p className="mt-2 text-[17px]">{copy.manualInstructions}</p>}
     {value.state==="stale"&&<p className="mt-2">{copy.stale} {value.currentPriceCents!=null?money(value.currentPriceCents):""}</p>}
