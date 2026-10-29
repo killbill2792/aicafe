@@ -180,14 +180,14 @@ function SupervisorMessage({ message, copy, locale, cafeCurrency, onOwnerRespons
         if(clarify.success)return <ClarifyCard key={i} block={clarify.data} locale={locale} copy={copy}
           state={clarifyState} choice={clarifyChoice} disabled={disabled} onSend={onClarify} onFacts={onFacts}/>;
         const candidate=ownerQuestionSchema.safeParse(group.block);
-        if (candidate.success) return <ReplyBlock key={i} block={{type:"text",text:candidate.data.title[locale]}} copy={copy} locale={locale}/>;
+        if (candidate.success) return <ReplyBlock key={i} block={{type:"text",text:candidate.data.title[locale]}} copy={copy} locale={locale} cafeCurrency={cafeCurrency}/>;
         const originalIndex=originalReplyBlockIndex(originalBlocks,group.block);
         const spans = rawSpans
           .filter(v => v.blockIndex === originalIndex && typeof v.start === "number" && typeof v.end === "number")
           .map(v=>({start:Number(v.start),end:Number(v.end),
             source:(v.source==="owner"||v.source==="estimate"?v.source:"unchecked") as "owner"|"estimate"|"unchecked",
             detail:typeof v.detail==="string"?v.detail:undefined}));
-        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} threadId={message.threadId} unverified={spans}/>;
+        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} cafeCurrency={cafeCurrency} threadId={message.threadId} unverified={spans}/>;
       })}
       <SourceLegend sources={legendSources} labels={provenanceLabels} legendLabel={copy.provenanceLegend}/>
     </div>
@@ -926,7 +926,7 @@ export default function SupervisorChatComposer({
       {(sending && liveJobId || resumedRunning) && <ChatJobProgress locale={locale} acknowledged
         steps={sending ? liveSteps : watcher.job?.progress ?? []}
         note={sending ? liveNote : liveCopy.resumed} />}
-      {sending && streamedText && <article className="w-full space-y-3"><div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div><ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/></article>}
+      {sending && streamedText && <article className="w-full space-y-3"><div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div><ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale} cafeCurrency={cafeCurrency}/></article>}
       {sending && <div className="flex items-center gap-3 text-[16px] text-ink-muted" role="status">
         {parseAgentId(progressStatus?.agent) ?
           <span className="shrink-0"><AgentAvatar agentId={parseAgentId(progressStatus?.agent)!} size="task" /></span> :
