@@ -3581,6 +3581,9 @@
     "partial": "Aún faltan algunos costos, así que es parcial.",
     "noSales": "Buenos días. Las ventas de ayer todavía no han llegado.",
     "needsYou": "{count} cosas te necesitan. Pregúntame por cualquiera.",
-    "allClear": "Nada te necesita ahora mismo."
+    "allClear": "Nada te necesita ahora mismo.",
+    "currencyMissing": "La moneda de tu café no está configurada, así que estos importes no tienen moneda.",
+    "taskTitle": "Resumen de la mañana",
+    "taskAction": "Abrir en el chat"
   }
 }

@@ -27,6 +27,10 @@ describe("daily brief text and timing",()=>{
     expect(briefText({locale:"en",currency:"USD",needsOwner:0,
       yesterday:{netSalesCents:100,totalCostsCents:50,ownerProfitCents:50,complete:false}}))
       .toContain("Some costs are still missing, so this is partial. Nothing needs you right now.");
+    // A recorded zero-sales day is a result, and a missing currency is said out loud.
+    expect(briefText({locale:"en",currency:null,needsOwner:0,
+      yesterday:{netSalesCents:0,totalCostsCents:5_000,ownerProfitCents:-5_000,complete:true}}))
+      .toContain("Your café currency isn't set, so these amounts have no currency.");
     expect(briefText({locale:"es",currency:"EUR",needsOwner:0,yesterday:null}))
       .toBe("Buenos días. Las ventas de ayer todavía no han llegado. Nada te necesita ahora mismo.");
   });
@@ -37,13 +41,15 @@ function fakeDb(opts:{already?:boolean;thread?:boolean}={}){
   const inserts:Rows[]=[];
   const q=(table:string)=>{
     const self:Record<string,unknown>={};
-    for(const m of ["select","eq","order","limit","in"])self[m]=()=>self;
+    for(const m of ["select","eq","order","limit","in","neq"])self[m]=()=>self;
+    self.upsert=async(row:Rows)=>{inserts.push({table,...row});return {error:null};};
+    self.update=(row:Rows)=>{inserts.push({table,op:"update",...row});return self;};
     self.range=async()=>({data:table==="businesses"?[{id:"b1",timezone:zone,currency:"USD",is_demo:false},
       {id:"demo",timezone:zone,currency:"USD",is_demo:true}]:[],error:null});
     self.maybeSingle=async()=>({error:null,data:table==="ai_messages"?(opts.already?{id:"x"}:null):
       table==="memberships"?{user_id:"u1"}:table==="ai_threads"?(opts.thread===false?null:{id:"t1"}):null});
     self.then=(r:(v:unknown)=>void)=>r({count:2,error:null});
-    self.insert=async(row:Rows)=>{inserts.push(row);return {error:null};};
+    self.insert=async(row:Rows)=>{inserts.push({table,...row});return {error:null};};
     return self;
   };
   return {db:{from:q} as unknown as SupabaseClient,inserts};
@@ -54,7 +60,11 @@ describe("sending the daily brief",()=>{
   it("posts one supervisor message in the owner's latest thread, never for demo cafés",async()=>{
     const {db,inserts}=fakeDb();
     expect(await sendDailyBriefs(db,morning)).toEqual({checked:1,sent:1,skipped:0,failed:0});
-    expect(inserts).toHaveLength(1);
+    expect(inserts.map(r=>r.table)).toEqual(["ai_messages","operating_tasks","operating_tasks"]);
+    expect(inserts[1]).toMatchObject({id:"daily-brief:2026-10-29",kind:"daily_brief",status:"watching",
+      payload:{businessDate:"2026-10-28",threadId:"t1"}});
+    // The previous day's brief is retired in the inbox.
+    expect(inserts[2]).toMatchObject({op:"update",status:"expired"});
     expect(inserts[0]).toMatchObject({id:briefMessageId("b1","2026-10-29"),thread_id:"t1",owner_user_id:"u1",
       role:"supervisor",structured_content:[{type:"text",
         text:"Good morning. Yesterday: sales $2,400.00, known costs $1,600.00, you kept $800.00. 2 things need you. Ask me about any of them."}]});

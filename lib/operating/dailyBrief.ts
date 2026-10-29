@@ -27,13 +27,16 @@ export type BriefInput={
 };
 export function briefText(i:BriefInput):string{
   const copy=({en,es,ar} as const)[i.locale].DailyBrief;
-  const money=(c:number)=>formatCafeCurrency(c,i.locale,i.currency).text;
+  let currencyMissing=false;
+  const money=(c:number)=>{const f=formatCafeCurrency(c,i.locale,i.currency);
+    if(f.currencyMissing)currencyMissing=true;return f.text;};
   const count=(n:number)=>new Intl.NumberFormat(i.locale).format(n);
   const parts=[i.yesterday
     ?copy.yesterday.replace("{sales}",money(i.yesterday.netSalesCents))
       .replace("{costs}",money(i.yesterday.totalCostsCents)).replace("{kept}",money(i.yesterday.ownerProfitCents))
       +(i.yesterday.complete?"":" "+copy.partial)
     :copy.noSales];
+  if(currencyMissing)parts.push(copy.currencyMissing);
   parts.push(i.needsOwner>0?copy.needsYou.replace("{count}",count(i.needsOwner)):copy.allClear);
   return parts.join(" ");
 }

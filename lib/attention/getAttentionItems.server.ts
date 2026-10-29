@@ -52,6 +52,8 @@ function operatingTaskHref(task: OperatingTask): string {
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
+  if (task.kind === "daily_brief" && typeof task.payload.threadId === "string")
+    return "/?thread=" + encodeURIComponent(task.payload.threadId);
   // Supply questions need the existing Team inbox; an ingredient-cost upload is not a
   // response to a staff/member stock check, and this UI must never imply it is.
   if (task.kind === "supply_check") {
@@ -72,9 +74,10 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
   const usageRead=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to})
     .then(r=>({over:r.rows.filter(x=>x.status==="over"),unavailable:false}))
     .catch(()=>({over:[],unavailable:true}));
-  const [t,tOperations,tCategories,tExperiment,tAlerts,tReconnect]=await Promise.all([
+  const [t,tOperations,tCategories,tExperiment,tAlerts,tReconnect,tBrief]=await Promise.all([
     getTranslations("Home"),getTranslations("Operations"),getTranslations("Categories"),
     getTranslations("SupervisorExperiment"),getTranslations("Alerts"),getTranslations("Reconnect"),
+    getTranslations("DailyBrief"),
   ]);
   const posStatus=await getPosConnectionStatus();
   const squareReconnectReady=isSquareConfigured()&&Boolean(process.env.SQUARE_REDIRECT_URI);
@@ -95,6 +98,8 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
 
     if(task.kind==="price_experiment_report"){
       title=tExperiment("reportTask",{item:itemName});
+    }else if(task.kind==="daily_brief"){
+      title=tBrief("taskTitle");
     }else if (task.status === "handled" && task.kind === "price_review") {
       // Handled covers both "keep current" and a separately verified price application.
       // Never describe a verified price change as a decision to keep the old price.
@@ -226,6 +231,7 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
     if(task){
       const itemName=String(task.payload.itemName??"").replace(" · "," ");
       if(task.kind==="price_experiment_report"){key="SupervisorExperiment.reportTask";params={item:itemName};}
+      else if(task.kind==="daily_brief"){key="DailyBrief.taskTitle";}
       else if(task.status==="handled" && task.kind==="price_review"){
         key=task.payload.priceAppliedToPos===true?"Operations.homeVerifiedPriceApplied":
           task.payload.ownerChoice==="keep_price"?"Operations.homeHandledPrice":"Operations.homePriceReviewClosed";

@@ -56,7 +56,8 @@ async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:s
   const locale:BriefLocale=lastLocale.data?.locale==="es"||lastLocale.data?.locale==="ar"?lastLocale.data.locale:"en";
   const p=state.profitability;
   const text=briefText({locale,currency:b.currency,needsOwner:tasks.count??0,
-    yesterday:p.available&&p.value.netSalesCents>0?{netSalesCents:p.value.netSalesCents,
+    // A recorded zero or negative day is still yesterday's result, not missing data.
+    yesterday:p.available?{netSalesCents:p.value.netSalesCents,
       totalCostsCents:p.value.totalCostsCents,ownerProfitCents:p.value.ownerProfitCents,
       complete:state.businessCosts.completeness==="complete"}:null});
   const inserted=await db.from("ai_messages").insert({
@@ -66,5 +67,18 @@ async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:s
       intent:"cafe_overview",evidence:[{source:"historical_rollups",identifier:"daily-brief:"+when.yesterday,asOf:when.today}]},
   });
   if(inserted.error){if(inserted.error.code==="23505")return false;throw inserted.error;}
+  // The same brief in the Operations inbox: one "watching" item per day, and
+  // the previous day's brief is retired so only the latest stays open.
+  const taskId="daily-brief:"+when.today;
+  const task=await db.from("operating_tasks").upsert({business_id:b.id,id:taskId,agent_id:"leo",kind:"daily_brief",
+    status:"watching",confidence:state.businessCosts.completeness==="complete"?"high":"low",
+    payload:{businessDate:when.yesterday,threadId:thread.data.id,messageId,text},
+    evidence:[{source:"historical_rollups",facts:{businessDate:when.yesterday}}]},
+    {onConflict:"business_id,id",ignoreDuplicates:true});
+  if(task.error)throw task.error;
+  const retired=await db.from("operating_tasks").update({status:"expired",resolved_at:new Date().toISOString(),
+    updated_at:new Date().toISOString()}).eq("business_id",b.id).eq("kind","daily_brief")
+    .eq("status","watching").neq("id",taskId);
+  if(retired.error)throw retired.error;
   return true;
 }

@@ -3581,6 +3581,9 @@
     "partial": "Some costs are still missing, so this is partial.",
     "noSales": "Good morning. Yesterday's sales aren't in yet.",
     "needsYou": "{count} things need you. Ask me about any of them.",
-    "allClear": "Nothing needs you right now."
+    "allClear": "Nothing needs you right now.",
+    "currencyMissing": "Your café currency isn't set, so these amounts have no currency.",
+    "taskTitle": "Morning brief",
+    "taskAction": "Open in chat"
   }
 }
