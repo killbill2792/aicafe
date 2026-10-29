@@ -3,6 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
 import {readToastTodaySoFar,type TodaySoFarRead} from "@/lib/pos/toast/todaySoFar.server";
 import {currentToastBusinessDay,type TodaySoFar} from "@/lib/pos/toast/todaySoFar";
+import {cafeToday} from "@/lib/metrics/core/clock";
 
 /** The ONE path for "today so far": a live Toast reading saved every 15
  * minutes (cron) or when the chat needs a fresher one. Home and the chat both
@@ -32,12 +33,17 @@ export async function saveTodayLive(admin:SupabaseClient,businessId:string,value
   updated_at:new Date().toISOString()},{onConflict:"business_id"});
  if(error&&!missingTable(error.code))throw error;
 }
-/** Toast's current business day for the café (before closeout, the previous date). */
+/** Toast's current business day for the café (before closeout, the previous date).
+ * A café without its own verified Toast location (such as a test café that receives
+ * a copied reading) uses today's date in its own time zone. */
 export async function currentTodayBusinessDay(db:SupabaseClient,businessId:string,now=new Date()):Promise<string|null>{
  const {data,error}=await db.from("toast_location_mappings").select("toast_time_zone,closeout_hour")
   .eq("business_id",businessId).not("verified_at","is",null).limit(1).maybeSingle();
- if(error||!data?.toast_time_zone||data.closeout_hour==null)return null;
- return currentToastBusinessDay(now,String(data.toast_time_zone),Number(data.closeout_hour));
+ if(error)return null;
+ if(data?.toast_time_zone&&data.closeout_hour!=null)
+  return currentToastBusinessDay(now,String(data.toast_time_zone),Number(data.closeout_hour));
+ const cafe=await db.from("businesses").select("timezone").eq("id",businessId).maybeSingle();
+ return !cafe.error&&cafe.data?.timezone?cafeToday(String(cafe.data.timezone),now):null;
 }
 /** A fresh saved reading for the CURRENT business day, else a new live read from
  * Toast (saved for everyone). A reading from before closeout is never reused. */
@@ -52,5 +58,10 @@ export async function todaySoFarForBusiness(admin:SupabaseClient,businessId:stri
  // Only a complete reading replaces the saved one.
  if(read.available&&!read.value.locationsFailed&&!read.value.truncated)
   await saveTodayLive(admin,businessId,read.value).catch(()=>{});
+ // Toast can't be read right now (or the café has no Toast connection of its own):
+ // an older reading for the same business day is still today's best number. Its
+ // readAt says how old it is.
+ if(!read.available&&saved&&businessDay&&saved.value.businessDate===businessDay)
+  return {available:true,value:saved.value};
  return read;
 }

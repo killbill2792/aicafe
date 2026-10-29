@@ -1,5 +1,6 @@
 import { posFactReaders } from "@/lib/data/posFactReaders.server";
 import "server-only";
+import {cache} from "react";
 import {readUsageVariance} from "@/lib/data/usageVariance.server";
 import {readSchedulingDraftInputs} from "@/lib/data/schedulingDraftInputs.server";
 import { agentSourceReaders } from "@/lib/data/agentReadSources.server";
@@ -172,7 +173,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
 }
 
 /** Owner-scoped calendar and café identity without loading the mutable Home snapshot. */
-export async function readSupervisorCafeIdentity(authorizedBusinessId: string) {
+export const readSupervisorCafeIdentity=cache(async function readSupervisorCafeIdentity(authorizedBusinessId: string) {
   const client = await createServerSupabaseClient();
   const { data, error } = await client.from("businesses").select("id,name,timezone,currency")
     .eq("id",authorizedBusinessId).single();
@@ -186,4 +187,4 @@ export async function readSupervisorCafeIdentity(authorizedBusinessId: string) {
   const currency=typeof data.currency==="string"&&/^[A-Z]{3}$/.test(data.currency)?data.currency:null;
   return { cafeName:String(data.name).slice(0,120), timezone:String(data.timezone),currency,
     asOf:value("year")+"-"+value("month")+"-"+value("day") };
-}
+});

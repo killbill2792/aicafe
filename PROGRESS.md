@@ -1,6 +1,46 @@
 Direction: an AI operator that runs the café through the Supervisor chat (see AGENTS.md sections 1–5).
 Each item below is one small PR, in order. Do not start an item from "Next" before "Now" is done.
 
+## Open issues (any agent can pick one up)
+Each item says what is wrong, where, and how to check it. Before starting, read AGENTS.md and the
+rules at the end of this section. One item = one small PR. Tick it here in the same PR.
+
+### Owner actions
+- [ ] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
+- [ ] Decide: may the chat's ad-hoc data queries (`describe_data`/`query_data`, canonical `cv_*` views) answer sales/fee numbers, or only the main tools? Today they are a second path.
+
+### Today's live sales (owner priority)
+- [x] Chat doesn't use the live reading for "today's sales". The system prompt in `lib/ai/agent/loop.server.ts` never maps today questions to `get_today_so_far`, so the model calls `get_sales`, which only knows closed days. Fix: add the mapping; and in `lib/ai/agent/tools/coverage.ts` / `tools/index.ts`, when the period is today and not imported, return the live reading from `ctx.readTodaySoFar()` with `provisional: true` and its read time.
+- [ ] Home may skip the live reading. `app/[locale]/page.tsx` shows it only when `vm.coverage.actualDays===0`; a $0 or not-final row for today would hide it. Errors there are swallowed (`.catch(()=>null)`). Fix: use the live reading whenever today's closeout import isn't in; log an error category (never data); if no saved reading for the current business day, call `todaySoFarForBusiness` with a 4-second timeout. Check: `select business_date, sales_data_status, net_sales_cents from daily_rollups where business_date = current_date;`
+- [ ] Money screen's "today at a glance" card (`lib/viewmodels/todayGlance.ts`, `components/money/CostRecoveryView.tsx`) uses closed days only; read the live reading through `lib/data/todayLive.server.ts`.
+- [ ] Test café copy (`.github/workflows/sync-cafe-data.yml`) runs every 30 minutes, so its live reading often shows "Not live". Optional: run every 15 minutes.
+
+### Speed
+- [ ] Screens load slowly. Measure first: timing logs (names and ms only) around each reader on Home, Money and the Toast page. Then: run independent reads in `Promise.all`; wrap repeated per-request lookups (`getActiveBusinessId`, `readSupervisorCafeIdentity`, `getSnapshot`) in React `cache()`; don't run `getMenuControlCenter`'s 90-day order-line scan on Home unless needed. No change to numbers.
+
+### Toast data
+- [ ] Verify the processing-fee backfill (#235) a day after deploy: every imported day should have payments saved. Check: `select business_date, count(*) from toast_payment_facts where business_date >= current_date - 14 group by 1 order by 1;` and `card_fees_status` in `daily_rollups` should be `actual`/`estimated` with a non-zero fee on sales days.
+- [ ] After migration 125, the "needs a look" list should hold only real problems. If days stay `pending` with `rate_limited` for long, the reconcile retries in `lib/pos/toast/reconcile.ts` may need backoff.
+- [ ] `toast_payment_facts.fee_basis` has no `default_rate` value; default-rate estimates are stored as `missing` with `fee_status = estimated` (#235). Add the value in a future migration.
+- [ ] Add payments, time entries, stock and cash to the live read; live checks every ~30 minutes while open (4d part 2).
+
+### One path (AGENTS.md rule 3)
+- [ ] Fold the row mappers in `lib/data/getPricingInputs.ts` and `lib/data/supervisorEconomics.server.ts` into `rowToDailyFacts` (they already read through `lib/data/dailyFacts.server.ts`).
+- [ ] Chat's menu list reads `menu_items` itself (`menuCatalog` in `lib/ai/supervisorReads.server.ts`) instead of the Menu screen's `lib/data/getMenuItemsForEdit.ts`. Make one shared menu reader both use. Check: chat and Menu screen list the same items and prices.
+- [ ] Café settings (currency, timezone, is_demo) are read from `businesses` in ~10 places (`getCafeProfile`, `snapshot.server`, `readSupervisorCafeIdentity`, `getPricingInputs`, `staffReadScope`, `dailyBrief`, `getMoreBadges`, supervisor loop `goal`/`menuPriceChange`/`priceExperiment`). Add one `readCafeSettings(businessId)` reader (React `cache()`d) and switch callers to it.
+- [ ] `suggestPrice` (price math) lives in `lib/calc/pricingEngine.ts`; move it to `lib/metrics/core/` per AGENTS.md, with no change to results.
+- [ ] Screen-vs-chat equality: `lib/metrics/core/metricsParity.test.ts` covers profit, labor, fees and break-even on a fixture; add cases for period/coverage preparation (partial weeks, missing days) so both paths must agree.
+- [ ] Remove the remaining hard-coded USD listed in `lib/ai/agent/bannedPatterns.test.ts`; merge duplicate money formulas listed in `lib/metrics/core/canonicalOnly.test.ts`.
+
+### Rules for any agent working on these
+1. AGENTS.md is the only source of agent instructions; follow it.
+2. One path: daily totals only via `lib/data/dailyFacts.server.ts`; today's live sales only via `lib/data/todayLive.server.ts`; money math only in `lib/metrics/core/`. Never add a second reader or a second fee rate.
+3. Don't touch `lib/pos/toast/*`, `supabase/migrations/*` or cron routes unless the item names them. No new migration without the owner. Never write to Toast or any POS.
+4. Never block an answer because a day is flagged or Toast Analytics is missing; show the number with one short note.
+5. Don't loosen, skip or delete tests; test behavior, not source text; list every changed test in the PR with a reason.
+6. Before a PR: `npx tsc --noEmit -p .`, `npx eslint app lib components`, `npx vitest run`, `npx next build`. Merge only with CI green and the review clean.
+7. Owner-facing text in en/es/ar message files; never hard-code a currency; never log secrets or customer data.
+
 ## Now
 - [ ] Set `OPENAI_API_KEY` in production before deploying #216 (receipts and statements now always use OpenAI).
 - [ ] Owner: apply migration 122 (RLS on `businesses`, merged in #220) to production: `alter table public.businesses enable row level security;`

@@ -9,18 +9,26 @@ import ToastOnboardingChecklist from "@/components/more/ToastOnboardingChecklist
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
 import ToastOwnerDashboard from "@/components/more/ToastOwnerDashboard";
 import {trustedToastOrigin} from "@/lib/pos/toast/client";
+import {timeReader} from "@/lib/perf/timeReader.server";
 export const dynamic="force-dynamic";
 export default async function ToastConnectionPage() {
-  const user=await requireOwnBusiness();
+  const user=await timeReader("Toast","requireOwnBusiness",requireOwnBusiness);
   if(!user)notFound();
-  const db=await createServerSupabaseClient();
-  const businessId=await getActiveBusinessId(user.id);
-  const {data:member}=await db.from("memberships").select("role")
-    .eq("business_id",businessId).eq("user_id",user.id).maybeSingle();
-  const {data:business}=await db.from("businesses").select("is_demo,currency").eq("id",businessId).maybeSingle();
+  const [db,businessId]=await Promise.all([
+    timeReader("Toast","createServerSupabaseClient",createServerSupabaseClient),
+    timeReader("Toast","getActiveBusinessId",()=>getActiveBusinessId(user.id)),
+  ]);
+  const [{data:member},{data:business}]=await Promise.all([
+    timeReader("Toast","ownerMembership",async()=>db.from("memberships").select("role")
+      .eq("business_id",businessId).eq("user_id",user.id).maybeSingle()),
+    timeReader("Toast","business",async()=>db.from("businesses").select("is_demo,currency").eq("id",businessId).maybeSingle()),
+  ]);
   if(member?.role!=="owner"||!business||business.is_demo)notFound();
-  const {data:locations,error}=await db.from("locations")
-    .select("id,name").eq("business_id",businessId).order("name");
+  const [{data:locations,error},t,common]=await Promise.all([
+    timeReader("Toast","locations",async()=>db.from("locations").select("id,name").eq("business_id",businessId).order("name")),
+    timeReader("Toast","getTranslations.ToastConnect",()=>getTranslations("ToastConnect")),
+    timeReader("Toast","getTranslations.Common",()=>getTranslations("Common")),
+  ]);
   if(error)throw error;
   // This list is trusted server configuration, never an owner-supplied outbound URL.
   const allowedHostValue=process.env.TOAST_ALLOWED_API_HOSTS??"";
@@ -35,8 +43,6 @@ export default async function ToastConnectionPage() {
   }catch{defaultApiOrigin="";}
   if(!defaultApiOrigin&&approvedOrigins.length===1)defaultApiOrigin=approvedOrigins[0];
   const setupReady=process.env.TOAST_SETUP_ENABLED==="true"&&approvedOrigins.length>0;
-  const t=await getTranslations("ToastConnect");
-  const common=await getTranslations("Common");
   return (
     <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more"
