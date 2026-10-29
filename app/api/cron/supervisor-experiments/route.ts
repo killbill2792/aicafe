@@ -5,6 +5,17 @@ import {monitorLoop,midRunDay,utcDateOffset,type LoopProposal,type OwnerLoopScop
   from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+const sameWeekday=(a:string,b:string)=>new Date(a+"T12:00:00Z").getUTCDay()===new Date(b+"T12:00:00Z").getUTCDay();
+/** A stored day is complete when every reading in it is certified: a price
+ * test day has actual coverage, a goal day full coverage on every metric. */
+function sampleComplete(observation:unknown):boolean{
+  if(!observation||typeof observation!=="object")return false;
+  const o=observation as {coverage?:unknown;values?:unknown};
+  if(o.coverage!==undefined)return o.coverage==="actual";
+  if(o.values&&typeof o.values==="object")
+    return Object.values(o.values).every(v=>typeof v==="object"&&v!==null&&(v as {coverage?:unknown}).coverage===1);
+  return false;
+}
 export const runtime="nodejs";export const dynamic="force-dynamic";export const maxDuration=120;
 const respond=(status:number,result:unknown)=>NextResponse.json(result,{status,headers:{"Cache-Control":"no-store"}});
 /** Authenticated server cron; reauthz every owner and reread observed source per day.
@@ -48,12 +59,15 @@ export async function GET(request:Request){
    // insufficient-evidence report, not strand the proposal in this queue.
    // Revisit missed dates, not only yesterday; actual coverage is checked on
    // each day and samples are uniquely idempotent by proposal/business date.
-   // Goals run up to 90 days: re-read the last week every run (POS corrections
-   // land there) and older days only when they still have no sample.
-   const sampledDates=new Set((await repo.samples(scope,p.id)).map(s=>s.businessDate));
+   // Short windows (price tests, goals up to 14 days) re-read every day each
+   // run. Longer goals re-read the last week each run, older days whose
+   // sample is still incomplete (late imports), and every day once a week
+   // on the start weekday (re-pulled or corrected older days).
+   const fullPass=p.monitorSpec.durationDays<=14||sameWeekday(today,start);
+   const complete=new Set((await repo.samples(scope,p.id)).filter(s=>sampleComplete(s.observation)).map(s=>s.businessDate));
    const recheckFrom=utcDateOffset(yesterday,-6);
    for(let day=start;day<=yesterday&&day<=end;day=utcDateOffset(day,1)){
-      if(day<recheckFrom&&sampledDates.has(day))continue;
+      if(!fullPass&&day<recheckFrom&&complete.has(day))continue;
       const report=await monitorLoop(scope,supervisorLoopRegistry,repo,p,day);
       sampled++;
       if(report)reported++;

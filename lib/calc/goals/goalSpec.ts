@@ -67,7 +67,14 @@ export const goalObservationSchema=z.strictObject({
 });
 export type GoalObservation=z.infer<typeof goalObservationSchema>;
 
-export function goalSeries(effect:GoalEffect,samples:ReadonlyArray<{businessDate:string;observation:unknown}>):GoalMetric[]{
+/** Every date from start to through, inclusive. */
+export function datesBetween(start:string,through:string):string[]{
+  const out:string[]=[];
+  for(let d=start;d<=through&&out.length<=GOAL_MAX_DAYS;d=addDays(d,1))out.push(d);
+  return out;
+}
+export function goalSeries(effect:GoalEffect,samples:ReadonlyArray<{businessDate:string;observation:unknown}>,
+  expected?:readonly string[]):GoalMetric[]{
   const parsed=samples.flatMap(s=>{const o=goalObservationSchema.safeParse(s.observation);
     return o.success?[{date:s.businessDate,o:o.data}]:[];}).sort((a,b)=>a.date.localeCompare(b.date));
   return effect.metrics.map(m=>{
@@ -76,16 +83,20 @@ export function goalSeries(effect:GoalEffect,samples:ReadonlyArray<{businessDate
     return {id:m.id,role:m.role,comparator:m.comparator,targetKind:m.targetKind,target:m.target,source:"computed",
       baseline:[...base.values()],
       test:parsed.map(s=>({date:s.date,value:s.o.values[m.id]?.value??null,coverage:s.o.values[m.id]?.coverage??0})),
-      expectedTestDates:parsed.map(s=>s.date)};
+      expectedTestDates:expected?[...expected]:parsed.map(s=>s.date)};
   });
 }
 export type GoalOutcome={evaluation:Evaluation;asOf:string|null;
   status:"in_progress"|"complete"|"insufficient_evidence";recommendation:"keep"|"revert"|"adjust"};
-/** Scores the goal from its daily samples. Before the last day the result is in progress. */
+/** Scores the goal from its daily samples. Before the last day the result is in progress.
+ * With a window, every day in it counts toward coverage, so missed days are
+ * missing evidence, never quietly left out. */
 export function scoreGoal(effect:GoalEffect,samples:ReadonlyArray<{businessDate:string;observation:unknown}>,
-  windowComplete:boolean):GoalOutcome{
-  const series=goalSeries(effect,samples);
-  const asOf=series[0]?.test.at(-1)?.date??null;
+  windowComplete:boolean,window?:{start:string;through:string}):GoalOutcome{
+  const inWindow=window?samples.filter(s=>s.businessDate>=window.start&&s.businessDate<=window.through):samples;
+  const expected=window&&window.through>=window.start?datesBetween(window.start,window.through):undefined;
+  const series=goalSeries(effect,inWindow,expected);
+  const asOf=expected?expected.at(-1)!:series[0]?.test.at(-1)?.date??null;
   const evaluation=asOf===null?{status:"insufficient_data" as const,recommendation:"none" as const,results:{}}:
     evaluateGoal(series,asOf,windowComplete?asOf:"9999-12-31",0.8,"goal");
   const status=!windowComplete?"in_progress":evaluation.status==="insufficient_data"?"insufficient_evidence":"complete";

@@ -88,8 +88,8 @@ export const goalCapability=registerLoopCapability({
     }
     return {businessDate,observation,source:"metric_catalog"};
   },
-  report:async(scope,effect,samples,windowComplete)=>{
-    const outcome=scoreGoal(effect,samples,windowComplete);
+  report:async(scope,effect,samples,windowComplete,window)=>{
+    const outcome=scoreGoal(effect,samples,windowComplete,window);
     // Messages are capped at 1200 characters; the caveat sentence is the last part.
     const full=outcome.status==="in_progress"?goalMidRunText(effect,outcome,scope.locale):goalReportText(effect,outcome,scope.locale);
     const text=full.length<=1200?full:full.slice(0,1199)+"…";
