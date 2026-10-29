@@ -200,13 +200,13 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const period={from:checked.value.from,to:checked.value.to};
     if(name==="get_peak_hours"){
       const slice=await ctx.tools.getPeakHours?.(period);
-      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes(slice?.quality.missingInputs??[],ctx.locale)};
-      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),...summarizePeakHours(slice.value)};
+      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes([...(slice?.quality.missingInputs??[]),...(slice?.quality.notes??[])],ctx.locale)};
+      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale),...summarizePeakHours(slice.value)};
     }
     if(name==="get_employee_sales"){
       const slice=await ctx.tools.getEmployeeSales?.(period);
-      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes(slice?.quality.missingInputs??[],ctx.locale)};
-      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),...summarizeEmployeeSales(slice.value)};
+      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes([...(slice?.quality.missingInputs??[]),...(slice?.quality.notes??[])],ctx.locale)};
+      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale),...summarizeEmployeeSales(slice.value)};
     }
     const [slice,ownerCosts,labor,toastScopes]=await Promise.all([
       ctx.tools.getPayrollFacts?.(period),

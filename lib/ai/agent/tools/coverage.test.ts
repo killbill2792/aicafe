@@ -35,6 +35,23 @@ describe("days flagged for review still answer",()=>{
   expect(r.dataNotes).toEqual(["1 days need a look: 2026-10-28."]);
  });
 });
+describe("flag notes reach every Toast sales answer",()=>{
+ const notes=["toastDaysNeedLook:1:2026-10-28:0"];
+ const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[],notes};
+ const ctx:AgentToolContext={asOf:"2026-10-29",locale:"en",currency:"USD",timezone:"America/Los_Angeles",tools:{
+   getSalesTrend:async()=>unavailable(),getProfitability:async()=>unavailable(),getMenuCatalog:async()=>unavailable(),
+   getPeakHours:async()=>({available:true as const,value:{hours:[{date:"2026-10-28",hourLocal:9,locationId:null,
+     netSalesCents:5000,ordersCount:10}]},quality:q}),
+   getEmployeeSales:async()=>({available:true as const,value:{employees:[]} as never,quality:q}),
+ } as never};
+ it("keeps the needs-a-look note on peak hours and staff sales",async()=>{
+  for(const tool of ["get_peak_hours","get_employee_sales"]){
+   const r=await executeAgentTool(tool,{from:"2026-10-28",to:"2026-10-28"},ctx);
+   expect(r.missing).toEqual([]);
+   expect(r.dataNotes).toEqual(["1 days need a look: 2026-10-28."]);
+  }
+ });
+});
 describe("latest covered sales window",()=>{
  it("does not substitute an older period for month in profit or item-sales",async()=>{
   const dates=["2026-09-01","2026-09-02"];
