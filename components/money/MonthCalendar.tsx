@@ -68,7 +68,7 @@ export default function MonthCalendar({
   bucketLabels: Record<string, string>;
   labels: MonthCalendarLabels;
   coverageSignal: MonthCalendarViewModel["coverageSignal"];
-  currency: string | null;
+  currency?: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -252,7 +252,7 @@ export default function MonthCalendar({
   );
 }
 
-function DetailRow({ label, cents, currency }: { label: string; cents: number; currency: string | null }) {
+function DetailRow({ label, cents, currency }: { label: string; cents: number; currency?: string | null }) {
   return (
     <div className="flex items-center justify-between text-sm">
       <span className="text-ink-muted">{label}</span>
