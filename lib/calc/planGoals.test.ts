@@ -53,6 +53,12 @@ describe("Plan goals", () => {
     expect(all?.monthlyProfitChangeCents).toBeGreaterThan(one!.monthlyProfitChangeCents);
     expect(milk?.monthlyProfitChangeCents).toBe(Math.round(-Math.round(300 * 150 * 100 / 3785) * 30 / 28));
   });
+  it("shows a three-day price scenario with low confidence instead of blocking",()=>{
+    const result=simulatePlanChange({base:{...base,salesDaysCovered:3},type:"price",item,
+      newValueCents:525,staffHoursPerDay:0,assumedHourlyWageCents:1950});
+    expect(result?.monthlyProfitChangeCents).toBeGreaterThan(0);
+    expect(result).toMatchObject({lowConfidence:true,days:3});
+  });
   it("normalizes seven covered sales days rather than pretending the item units cover 28", () => {
     const sevenDay = { ...base, salesDaysCovered: 7, operatingDaysInMonth: 22 };
     const amount = simulatePlanChange({ base: sevenDay, type: "price", item, newValueCents: 525,

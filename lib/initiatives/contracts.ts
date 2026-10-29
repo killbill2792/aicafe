@@ -47,8 +47,8 @@ export const initiativeProposalBaseSchema=z.strictObject({
 export const proposeInitiativeSchema=initiativeProposalBaseSchema.superRefine((value,ctx)=>{
   const start=Date.parse(value.startsOn+"T12:00:00Z"),end=Date.parse(value.endsOn+"T12:00:00Z");
   const length=(end-start)/86400000+1;
-  if(length<7||length>92||!Number.isInteger(length))
-    ctx.addIssue({code:"custom",message:"monitoring window must contain 7 to 92 days"});
+  if(length<1||length>92||!Number.isInteger(length))
+    ctx.addIssue({code:"custom",message:"monitoring window must contain 1 to 92 days"});
   if((start-Date.parse(value.baselineFrom+"T12:00:00Z"))/86400000>92)
     ctx.addIssue({code:"custom",message:"baseline window exceeds 92 days"});
   if(value.baselineFrom>=value.startsOn||
