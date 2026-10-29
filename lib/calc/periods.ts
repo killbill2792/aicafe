@@ -113,7 +113,7 @@ export type CoverageFallback={requested:CalcPeriod;used:CalcPeriod};
  * most recent covered window (up to the requested length) and tell the owner.
  * A disjoint set of covered days never implies missing days are zero sales. */
 export function coveredWindow(requested:CalcPeriod,coverage:Coverage):{
-  period:CalcPeriod;fallback:boolean;label:string|null;coverageFallback:CoverageFallback|null
+  period:CalcPeriod;fallback:boolean;label:string|null;labelKey?:string;labelParams?:{from:string;to:string};coverageFallback:CoverageFallback|null
 }{
   const days=Array.isArray(coverage)?[...coverage].sort():null;
   const from=days?days[0]: (coverage as CalcPeriod).from;
@@ -122,6 +122,6 @@ export function coveredWindow(requested:CalcPeriod,coverage:Coverage):{
   civilDay(from);civilDay(to);
   if(from<=requested.to&&to>=requested.from)return {period:requested,fallback:false,label:null,coverageFallback:null};
   const latest={from:dateOffset(to,-Math.min(periodDays(requested),periodDays({from,to}))+1),to};
-  const fmt=(v:string)=>{const d=new Date(civilDay(v));return d.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});};
-  return {period:latest,fallback:true,label:"Latest data: "+fmt(latest.from)+"–"+fmt(latest.to),coverageFallback:{requested,used:latest}};
+  return {period:latest,fallback:true,label:null,labelKey:"periodLatestData",
+    labelParams:{from:latest.from,to:latest.to},coverageFallback:{requested,used:latest}};
 }

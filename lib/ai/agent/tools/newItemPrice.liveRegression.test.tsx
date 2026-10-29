@@ -27,7 +27,7 @@ const item={ingredient_cost_cents:145,packaging_cents:0,category:"drink" as cons
  item_name:"New Latte",ownerInputs:null};
 function context(override:Partial<Economics>={},ownerText="",
  locale:"en"|"es"|"ar"="en",savedTarget:number|null=null):AgentToolContext{
- return {timezone:"America/Los_Angeles",asOf:"2026-10-27",locale,
+ return {timezone:"America/Los_Angeles",asOf:"2026-10-27",locale,currency:"USD",
   resolveState:{ownerText,ambiguous:[],seenIds:new Set(),chosenIds:new Set(),
    priorChoice:null,asked:false,usageMissing:new Map()},
   tools:{} as AgentToolContext["tools"],
