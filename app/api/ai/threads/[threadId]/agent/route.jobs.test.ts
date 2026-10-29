@@ -11,7 +11,6 @@ const fake = vi.hoisted(() => ({
   steps: [] as Array<{ tool: string }>, loopArgs: [] as Array<Record<string, unknown>>,
   followUps: [] as Array<{ id: string; text: string }>, kept: 0,
 }));
-vi.mock("@/lib/ai/agent/flags", () => ({ chatExperienceFlags: () => ({ style: true, jobs: true, memory: false }) }));
 vi.mock("@/lib/ai/agent/jobs.server", () => ({
   startAgentJob: async () => { if (fake.startFails) throw new Error("rpc"); return { mode: fake.mode, job: job(JOB) }; },
   recordAgentJobStep: async (_id: string, step: { tool: string }) => { fake.steps.push(step); },
@@ -86,7 +85,7 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
-describe("agent route with CHAT_JOBS on", () => {
+describe("agent route with background jobs enabled", () => {
   it("blocks expired access before starting a job", async () => {
     fake.accessAllowed = false;
     const response = await post();
@@ -103,7 +102,7 @@ describe("agent route with CHAT_JOBS on", () => {
     expect(fake.kept).toBe(1);
     expect(fake.steps).toEqual([{ tool: "get_sales", agent: "alex" }]);
     expect(fake.finished).toEqual([{ id: JOB, status: "done", replyMessageId: "reply-msg-1" }]);
-    expect(fake.loopArgs[0]).toMatchObject({ style: true });
+    expect(fake.loopArgs[0]).toHaveProperty("ownerText");
     expect(typeof fake.loopArgs[0].takeFollowUps).toBe("function");
   });
   it("folds a mid-run follow-up into the same answer", async () => {

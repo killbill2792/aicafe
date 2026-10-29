@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { STYLE_RULES, styleReport } from "./style";
-import { chatExperienceFlags } from "./flags";
 
 describe("answer style rules", () => {
   it("covers every owner-facing rule and stays small enough to cache cheaply", () => {
@@ -21,10 +20,3 @@ describe("answer style rules", () => {
   });
 });
 
-describe("chat experience flags", () => {
-  it("ships dark by default and turns on per feature", () => {
-    expect(chatExperienceFlags({})).toEqual({ style: false, jobs: false, memory: false });
-    expect(chatExperienceFlags({ CHAT_STYLE_V2: "1", CHAT_JOBS: "true", CHAT_MEMORY: "0" }))
-      .toEqual({ style: true, jobs: true, memory: false });
-  });
-});
