@@ -33,7 +33,7 @@ export default function IngredientCostImporter({
   initialMapping: IngredientCostColumnMapping | null;
   existingNames: string[];
   todayDateStr: string;
-  currency: string | null;
+  currency?: string | null;
   labels: {
     uploadPrompt: string;
     chooseFile: string;
