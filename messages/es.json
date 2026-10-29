@@ -2454,6 +2454,10 @@
     "statusInsufficient": "Faltan datos diarios de ventas verificados",
     "midRunUpdate": "Actualización a mitad de prueba de {item}: {covered} de {days} días contados a {price}. {units} vendidos, ventas netas {revenue}, {difference} frente al precio anterior con el mismo volumen. Lectura temprana, no final. El informe completo llega después del día {days}.",
     "midRunNoData": "Actualización a mitad de prueba de {item}: todavía no hay días con ventas verificadas a {price}. Seguiré revisando. El informe completo llega después del día {days}.",
+    "guardrailBroken": "Atención: los pedidos totales del café bajaron un {change}% frente a los mismos días antes de la prueba ({now} frente a {before}; {counted} de {total} días comparados).",
+    "guardrailOk": "Los pedidos totales del café se mantuvieron: {change}% frente a los mismos días antes de la prueba ({counted} de {total} días comparados).",
+    "guardrailUnknown": "Pedidos totales del café sin revisar: ningún día tenía pedidos verificados para comparar con las semanas anteriores.",
+    "guardrailTask": "Los pedidos totales del café bajaron un {change}% frente a antes de la prueba.",
     "midRunTask": "Actualización a mitad de prueba de {item}",
     "midRunDetail": "Lectura temprana mientras la prueba sigue. No es final; el informe completo llega al terminar."
   },
