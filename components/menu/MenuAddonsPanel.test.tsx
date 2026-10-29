@@ -2,8 +2,7 @@ import {describe,it,expect,vi} from "vitest";
 import {renderToStaticMarkup} from "react-dom/server";
 import type {MenuItemForEdit} from "@/lib/data/getMenuItemsForEdit";
 import MenuAddonsPanel from "./MenuAddonsPanel";
-vi.mock("next-intl",()=>({useTranslations:()=>((key:string,params?:Record<string,unknown>)=>
-  params?.size?String(params.size):key)}));
+vi.mock("next-intl",()=>({useTranslations:()=>((key:string)=>key)}));
 vi.mock("@/i18n/navigation",()=>({useRouter:()=>({refresh:vi.fn()})}));
 vi.mock("@/lib/actions/menuAddons",()=>({saveMenuProductAddons:vi.fn()}));
 const items=["8oz","12oz","16oz"].map((sizeLabel,index)=>({
