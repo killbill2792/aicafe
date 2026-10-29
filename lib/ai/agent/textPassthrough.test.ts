@@ -66,13 +66,16 @@ describe("full model-text passthrough: stream -> turn -> persistence payload -> 
   expect(turn.text).toBe(modelText);expect(renderedText(turn)).toBe(modelText);
   expect(agentReplyPayload(turn).reply.blocks.some(b=>b.type==="clarify")).toBe(true);
  });
- it("when model says nothing at all, only a separate card question may fill the empty text",async()=>{
+ it("when model says nothing at all, the card question fills the text and is shown once",async()=>{
   const turn=await runAgentTurn({ownerText:"Menu?",context:{...base},
    provider:stream([[call("get_menu_items",menuArgs,"menu"),completed],[completed]])});
   const card=turn.results.find(r=>r.source==="ask_owner");
   expect(card?.question).toBeTruthy();
   expect(turn.text).toBe(card?.question);
-  expect(renderedText(turn)).toBe(card?.question);
+  // The owner sees the question once: in the clarify card, not again as text.
+  const blocks=agentReplyPayload(turn).reply.blocks;
+  expect(renderedText(turn)).toBe("");
+  expect(blocks.filter(b=>b.type==="clarify")).toHaveLength(1);
  });
  it("when the model itself repeats the card question, the text still renders",async()=>{
   const modelText="What items should I add to the menu?";

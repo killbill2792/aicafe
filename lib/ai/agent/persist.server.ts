@@ -63,8 +63,10 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function agentReplyPayload(turn: AgentTurn) {
   if (!turn.text.trim()) throw new AgentEmptyReplyError();
   const clarify=turn.results.find(r=>r.source==="ask_owner"&&r.missing.length===0);
-  // Persist and show model text byte-for-byte, even when a separate card repeats it.
-  const blocks=splitAgentText(turn.text,turn.provenance??turn.unverified);
+  const isOnlyQuestion=clarify&&typeof clarify.question==="string"&&
+    turn.text.trim()===clarify.question.trim();
+  // The card itself owns the question; avoid showing the identical text twice.
+  const blocks=isOnlyQuestion?[]:splitAgentText(turn.text,turn.provenance??turn.unverified);
   const proposalIds=[...new Set(turn.results.flatMap(result=>
     (result.source==="price_change_proposal"||result.source==="staff_proposal"||result.source==="purchase_proposal")&&
       (result.source==="purchase_proposal"||result.missing.length===0)&&result.draft===true&&
@@ -125,7 +127,7 @@ export function agentReplyPayload(turn: AgentTurn) {
     unverified, endReason: turn.endReason, evidence:turn.evidence??[],explain:safeExplain,agentIds:turn.agentIds??[],
     sources: turn.results.map(r => ({ source:r.source, period:r.period, missing:r.missing })),
     usage: { ...turn.usage },
-    // Owner messages answered inside this reply (CHAT_JOBS mid-run follow-ups).
+    // Owner messages answered inside this reply (mid-run follow-ups).
     ...(turn.absorbedOwnerMessageIds?.length?{absorbedOwnerMessageIds:[...turn.absorbedOwnerMessageIds]}:{}),
   } };
 }

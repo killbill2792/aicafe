@@ -199,7 +199,11 @@ export async function runAgentTurn(args: {
       return calls;
     } catch (error) {
       modelError = "model_call_failed";
-
+      const discardChars = text.length - callTextStart;
+      if (discardChars > 0) {
+        text = text.slice(0, callTextStart); // allowed: discard incomplete model stream on provider failure
+        args.onReset?.(discardChars);
+      }
       throw error;
     } finally {
       clearTimeout(timeout);
@@ -218,7 +222,8 @@ export async function runAgentTurn(args: {
         // The owner added something while this answer streamed: answer it in the
         // same reply (one extra bounded call) instead of silently dropping it.
         if (round < 4 && usage.modelCalls < 5 && await readFollowUps()) {
-
+          if (text && !text.endsWith("\n")) { text += "\n\n"; // allowed: separator between model responses to live follow-ups
+             args.onDelta?.("\n\n"); }
           continue;
         }
         finished = true; break;
@@ -419,7 +424,11 @@ export async function runAgentTurn(args: {
               for (const message of absorbed) deliveredIds.add(message.id);
           } catch (error) {
             finalError = "model_call_failed";
-
+            const discardChars = text.length - finalTextStart;
+            if (discardChars > 0) {
+              text = text.slice(0, finalTextStart); // allowed: discard incomplete model stream on provider failure
+              args.onReset?.(discardChars);
+            }
             throw error;
           } finally {
             clearTimeout(timeout);
