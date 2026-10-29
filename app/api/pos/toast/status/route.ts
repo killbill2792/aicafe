@@ -1,4 +1,5 @@
 import {getToastCheckEvidence} from "@/lib/data/getToastCheckEvidence";
+import {lastSalesImportAt} from "@/lib/data/canonical/lastSalesImport.server";
 import {NextResponse} from "next/server";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
 import {GUID} from "@/lib/pos/toast/client";
@@ -24,7 +25,7 @@ export async function GET(request:Request){
     .select("id,kind,state,days_done,days_total,resume_at,requested_from,requested_to")
     .eq("business_id",id.data).order("id").range(start,end)),
    readAllPages((start,end)=>db.from("toast_day_status")
-    .select("business_date,restaurant_guid,import_state,recon_state,net_sales_cents,toast_net_sales_cents,delta_net_cents,order_count,last_error_category,coverage_complete,unparsed_count,paid_other_day,rechecking_reason")
+    .select("business_date,restaurant_guid,import_state,recon_state,net_sales_cents,toast_net_sales_cents,delta_net_cents,order_count,last_error_category,coverage_complete,unparsed_count,paid_other_day,rechecking_reason,owner_confirmed_at")
     .eq("business_id",id.data).order("business_date",{ascending:false})
     .order("restaurant_guid").range(start,end)),
    readAllPages((start,end)=>db.from("toast_day_owner_flags")
@@ -59,10 +60,11 @@ export async function GET(request:Request){
  catch{return send(503,{error:"status_unavailable"});}
  const health=await db.from("toast_sync_health_v").select("last_good_sync_at,stale,warnings,days_with_unreadable_orders").eq("business_id",id.data);
  if(health.error)return send(503,{error:"status_unavailable"});
- const good=(health.data??[]).map(h=>h.last_good_sync_at).filter(Boolean).sort().at(-1)??null;
+ let good:string|null;
+ try{good=await lastSalesImportAt(db,id.data);}catch{return send(503,{error:"status_unavailable"});}
  const state=c.data?.state==="verified"&&mappings.length>0&&mappings.every(x=>x.verified_at)?"connected":
   !c.data?"not_connected":"needs_attention";
- const active=(r.data??[]).filter(x=>x.kind==="backfill"&&["queued","running","paused_rate_limited"].includes(x.state));
+ const active=(r.data??[]).filter(x=>["backfill","repull_modified"].includes(x.kind)&&["queued","running","paused_rate_limited"].includes(x.state));
  const flags=new Set((f.data??[]).map(x=>x.restaurant_guid+":"+x.business_date));
  const needing=(s.data??[]).filter(x=>attention.some(a=>a.restaurant_guid===x.restaurant_guid&&a.business_date===x.business_date));
  // Owner flags can precede an import, and must remain visible even with NO status row.
@@ -108,7 +110,7 @@ export async function GET(request:Request){
   firstImportRows:completeDates.slice(0,7).map(date=>{
    const totals=dayTotals(mappings,s.data,date);
    return {date,oursCents:totals.netSalesCents,
-    toastCents:a.data?.verified_at?totals.toastNetSalesCents:null};
+    toastCents:totals.toastNetSalesCents};
   }),
   recent:recentDates.map(date=>{
    const totals=dayTotals(mappings,s.data,date);
@@ -116,6 +118,8 @@ export async function GET(request:Request){
    const problem=needsLook.some(x=>x.date===date&&eligible.some(m=>m.restaurant_guid===x.restaurantGuid));
    return {date,netSalesCents:totals.netSalesCents,orders:totals.orders,paidOtherDay:totals.paidOtherDay,
     status:problem?"needs_look":!totals.complete?"missing":
+     eligible.length>0&&eligible.every(m=>days.some(d=>d.business_date===date&&
+       d.restaurant_guid===m.restaurant_guid&&d.owner_confirmed_at))?"owner_confirmed":
      eligible.length>0&&eligible.every(m=>entries.some(e=>e.restaurant_guid===m.restaurant_guid&&e.business_date===date&&e.comparison==="owner_summary_match"))?"owner_match":
      totals.checked?(days.filter(d=>d.business_date===date&&eligible.some(m=>m.restaurant_guid===d.restaurant_guid)).every(d=>d.recon_state==="matched")?"checked":"checked_internal"):"checking"};
   }),

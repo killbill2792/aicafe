@@ -515,6 +515,13 @@ SELECT pg_temp.assert_true(
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','2025-01-10','refunded',
   '["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0029"]'::jsonb)=0,
  'duplicate refund event is idempotent');
+SELECT pg_temp.assert_true(EXISTS(
+ SELECT 1 FROM public.cv_payments WHERE
+ business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND source_ref LIKE 'payment-event:%' AND business_date='2025-01-10'
+ AND status='open' AND amount_cents IS NULL AND tip_cents IS NULL
+ AND (data->>'amount_known')::boolean=false),
+ 'payment-day event remains readable as incomplete canonical evidence');
 SELECT pg_temp.assert_true((SELECT net_sales_cents=1100 FROM orders
  WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
  AND pos_order_id LIKE 'toast:aaaaaaaa-aaaa-4aaa%'),
@@ -717,4 +724,281 @@ BEGIN
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
 RESET ROLE;
+
+-- Prompt D: source pages, nested records and incomplete labor remain after staging cleanup.
+DO $keepall$
+DECLARE
+ b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+ loc uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001';
+ run uuid; before_count integer; after_count integer;
+ pay uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0050';
+ chk uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0051';
+ ord uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0052';
+ entry uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0053';
+BEGIN
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state)
+ values(b,r,'daily','queued') returning id into run;
+ insert into public.toast_day_pages(run_id,business_date,page,payload)
+ values(run,'2026-10-18',1,jsonb_build_array(jsonb_build_object(
+  'guid',ord,'openedDate','2026-10-18T10:00:00Z',
+  'closedDate','2026-10-18T10:10:00Z',
+  'checks',jsonb_build_array(jsonb_build_object(
+   'guid',chk,
+   'appliedDiscounts',jsonb_build_array(jsonb_build_object(
+     'name','Owner Loyalty','discountAmount',1.25)),
+   'selections',jsonb_build_array(jsonb_build_object(
+     'guid','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0054',
+     'tax',0.2,'taxRate',0.08,
+     'modifiers',jsonb_build_array(jsonb_build_object(
+       'item',jsonb_build_object('guid','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0055'),
+       'price',0.75)))),
+   'payments',jsonb_build_array(jsonb_build_object(
+    'guid',pay,'type','CASH','amount',10,'tipAmount',2)))))));
+ select count(*) into before_count from public.toast_raw_records
+ where business_id=b and run_id=run;
+ perform pg_temp.assert_true(before_count=3,'order/check/payment all archived');
+ perform pg_temp.assert_true(public.toast_redact_raw(
+  '[{"guid":"g","customer":{"email":"ann@example.com"},"checks":[{"tabName":"Ann",
+    "payments":[{"amount":12.5,"cardType":"VISA","last4Digits":"4242","name":"ANN LEE"}]}]}]'::jsonb,'orders')
+  ='[{"guid":"g","checks":[{"payments":[{"amount":12.5,"cardType":"VISA"}]}]}]'::jsonb,
+  'archive redaction drops customer details, tab names, card digits and payer names but keeps amounts');
+ perform pg_temp.assert_true(exists(
+  select 1 from public.toast_order_typed_facts t
+  where t.business_id=b and t.order_guid=ord
+   and t.order_duration_seconds=600
+   and t.check_discounts->0->>'name'='Owner Loyalty'
+   and (t.check_discounts->0->>'amountCents')::bigint=125
+   and (t.item_taxes->0->>'taxAmountCents')::bigint=20
+   and (t.modifier_prices->0->>'priceCents')::bigint=75),
+  'typed order fields captured in same transaction as raw provider order');
+ perform pg_temp.assert_true(not has_table_privilege('anon',
+  'public.toast_order_typed_facts','SELECT'),
+  'anonymous cannot read sanitized order details');
+ -- A later version of the SAME source page/run must survive with a new hash.
+ update public.toast_day_pages set payload=jsonb_build_array(
+  jsonb_build_object('guid',ord,'modifiedDate','2026-10-18T12:00:00Z',
+  'checks',jsonb_build_array(jsonb_build_object(
+  'guid',chk,'payments',jsonb_build_array(jsonb_build_object(
+  'guid',pay,'type','CASH','amount',10,'tipAmount',2))))),
+  jsonb_build_object('guid',ord,'modifiedDate','2026-10-18T13:00:00Z',
+  'checks',jsonb_build_array(jsonb_build_object(
+  'guid',chk,'payments',jsonb_build_array(jsonb_build_object(
+  'guid',pay,'type','CASH','amount',12,'tipAmount',2)))))) where run_id=run
+  and business_date='2026-10-18' and page=1;
+ perform pg_temp.assert_true(
+  (select count(*)>before_count from public.toast_raw_records
+   where business_id=b and run_id=run),
+   'changed payload at same page/index archives another revision');
+ perform public.toast_rebuild_day_payments(run,b,r,'2026-10-18',true);
+ perform pg_temp.assert_true(
+  (select count(*)=1 from public.toast_payment_summaries
+   where business_id=b and business_date='2026-10-18'),
+   'duplicate payment GUID resolves to one current row');
+ perform pg_temp.assert_true(
+  (select amount_cents=1200 from public.toast_payment_summaries
+   where business_id=b and business_date='2026-10-18'
+    and payment_ref=pay::text),
+   'latest payment revision wins');
+ select count(*) into before_count from public.toast_raw_records
+  where business_id=b and run_id=run;
+ delete from public.toast_day_pages where run_id=run and business_date='2026-10-18';
+ select count(*) into after_count from public.toast_raw_records
+ where business_id=b and run_id=run;
+ perform pg_temp.assert_true(after_count=before_count,
+  'clearing source pages preserves all immutable Toast payloads');
+ perform pg_temp.assert_true(exists(select 1 from public.toast_payment_summaries
+  where business_id=b and restaurant_guid=r and business_date='2026-10-18'
+  and payment_ref=pay::text and amount_cents=1200 and tip_cents=200),
+  'payment safe reader preserves numeric evidence');
+ insert into public.toast_labor_entries(business_id,restaurant_guid,location_id,
+  external_time_entry_id,external_employee_id,clock_in,clock_out,
+  hourly_wage_cents,wage_status)
+ values(b,r,loc,entry,entry,'2026-10-18T10:00:00Z',null,null,'missing')
+ on conflict (business_id,restaurant_guid,external_time_entry_id)
+ do update set clock_out=null,hourly_wage_cents=null,wage_status='missing';
+ perform pg_temp.assert_true(exists(select 1 from public.cv_labor_entries
+  where business_id=b and source='toast' and status='open'
+  and source_ref='staged-timecard:'||r::text||':'||entry::text
+  and data->>'hourly_wage_cents' is null),
+  'open Toast timecards readable without invented wage rates');
+ -- Deleted timecards remain retained but must NOT appear as current billable labor.
+ update public.toast_labor_entries set deleted=true
+  where business_id=b and restaurant_guid=r and external_time_entry_id=entry;
+ perform pg_temp.assert_true(exists(select 1 from public.toast_open_labor_summaries
+  where business_id=b and restaurant_guid=r and external_time_entry_id=entry
+   and deleted=true),'deleted labor retained as historical staged evidence');
+ perform pg_temp.assert_true(not exists(select 1 from public.cv_labor_entries
+  where business_id=b and
+   source_ref='staged-timecard:'||r::text||':'||entry::text),
+   'deleted attendance cannot be displayed as active labor');
+ -- Two GUID-less raw orders with different payments must remain two orders;
+ -- a null partition must NOT collapse them into a single "latest" row.
+ insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state)
+ values(b,r,'daily','queued') returning id into run;
+ insert into public.toast_day_pages(run_id,business_date,page,payload)
+ values(run,'2026-10-19',1,
+  jsonb_build_array(
+   jsonb_build_object('checks',jsonb_build_array(jsonb_build_object(
+    'payments',jsonb_build_array(jsonb_build_object(
+     'guid','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0081','amount',4.0))))),
+   jsonb_build_object('checks',jsonb_build_array(jsonb_build_object(
+    'payments',jsonb_build_array(jsonb_build_object(
+     'guid','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0082','amount',6.0)))))));
+ perform public.toast_rebuild_day_payments(run,b,r,'2026-10-19',true);
+ perform pg_temp.assert_true(
+ (select count(*)=2 from public.toast_payment_summaries
+  where business_id=b and restaurant_guid=r and business_date='2026-10-19'),
+ 'GUID-less orders retain distinct payment evidence');
+
+ -- Unmatched provider identities remain owner-readable instead of disappearing.
+ insert into public.pos_import_reviews(business_id,provider,review_type,source_key,detail,status)
+ values(b,'toast','staff_identity','d-test-unmatched-employee',
+  '{"provider":"toast","reason":"unknown_employee"}'::jsonb,'needs_owner'),
+       (b,'toast','catalog_item','d-test-unmatched-menu-item',
+  '{"provider":"toast","reason":"unknown_item"}'::jsonb,'needs_owner')
+ on conflict(business_id,provider,review_type,source_key) do update
+ set detail=excluded.detail,status=excluded.status;
+ perform pg_temp.assert_true(exists(select 1 from public.cv_staff
+  where business_id=b and source='toast' and status='needs_match'
+   and source_ref='review:staff_identity:d-test-unmatched-employee'),
+  'unmatched Toast employee remains in canonical staff');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_menu
+  where business_id=b and source='toast' and status='needs_match'
+   and source_ref='review:catalog_item:d-test-unmatched-menu-item'),
+  'unmatched Toast menu item remains in canonical menu');
+
+ perform pg_temp.assert_true(exists(select 1 from public.cv_payments
+  where business_id=b and amount_cents=1200 and tip_cents=200),
+  'canonical payment view uses sanitized row');
+ perform pg_temp.assert_true((select count(*)=19 from information_schema.views
+  where table_schema='public' and table_name like 'cv_%'),
+  'all 19 canonical views exist');
+ perform pg_temp.assert_true(not has_table_privilege('authenticated',
+   'public.toast_raw_records','SELECT'),
+  'raw payment/card payload not exposed to authenticated role');
+END $keepall$;
+
+-- Follow-up D issue 9: phase queued was fixed in migration 101.
+-- Confirm that PostgreSQL actually accepts and stores the phase, not just DDL text.
+DO $queued$
+DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+BEGIN
+ insert into public.toast_sync_phase_errors(business_id,restaurant_guid,phase,
+  last_error_category,last_failed_at)
+ values(b,r,'queued','synthetic_queue_check',now())
+ on conflict(business_id,restaurant_guid,phase) do update
+ set last_error_category=excluded.last_error_category,last_failed_at=excluded.last_failed_at;
+ perform pg_temp.assert_true(exists(select 1 from public.toast_sync_phase_errors
+  where business_id=b and restaurant_guid=r and phase='queued'
+   and last_error_category='synthetic_queue_check'),
+  'phase queued is valid and round-trips');
+END $queued$;
+
+-- Verify new views return actual scoped PostgreSQL rows, not merely valid SQL text.
+DO $optional_views$
+DECLARE
+ b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ other_b uuid:='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+ r text:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+BEGIN
+ insert into public.orders(business_id,location_id,pos_order_id,closed_at,business_date,
+ gross_sales_cents,net_sales_cents,dining_option,source_channel,guest_count,toast_excluded)
+ values(b,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001','toast:optional-view-proof',
+ '2026-10-26T19:00:00Z','2026-10-26',1000,1000,'DINE_IN','IN_STORE',2,true);
+ perform pg_temp.assert_true(exists(select 1 from public.cv_orders
+  where business_id=b and source='toast' and dining_option='DINE_IN'
+   and source_channel='IN_STORE' and guest_count=2 and status='needs_match'),
+  'excluded order evidence remains visible with caveat');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_orders
+  where business_id=b and source_channel='IN_STORE' and status='needs_match'
+   and net_sales_cents is null and (data->>'recorded_net_sales_cents')::bigint=1000),
+  'excluded order preserves original amount for review but does not inflate sales');
+ insert into public.orders(business_id,location_id,pos_order_id,closed_at,business_date,
+ gross_sales_cents,net_sales_cents,dining_option,source_channel,guest_count)
+ values(b,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001','toast:optional-view-current',
+ '2026-10-26T19:00:00Z','2026-10-26',450,450,'DINE_IN','IN_STORE',1);
+ perform pg_temp.assert_true(exists(select 1 from public.cv_orders
+  where business_id=b and source='toast' and source_channel='IN_STORE'
+  and net_sales_cents=450 and status='actual'),
+  'channel query reads a single stored current order amount');
+ perform pg_temp.assert_true((
+  public.ai_query_view(b,'cv_orders',array[]::text[],
+  '[{"column":"source_channel","op":"=","value":"IN_STORE"}]'::jsonb,
+  array['source_channel'],
+  '[{"fn":"sum","column":"net_sales_cents"}]'::jsonb,
+  '2026-10-26','2026-10-26',null,100)->'rows'->0->>'sum_net_sales_cents'
+ )::bigint=450,'real café-scoped RPC groups current channel sales without excluded rows');
+
+ insert into public.toast_raw_samples(business_id,restaurant_guid,endpoint,business_date,
+ http_status,item_count,sample,field_paths) values
+ (b,r,'stock/v1/inventory','2026-10-26',200,2,
+  '[{"guid":"stock-a","status":"QUANTITY","quantity":3.5},
+    {"guid":"stock-b","status":"OUT_OF_STOCK","quantity":null}]'::jsonb,ARRAY['status','quantity']),
+ (b,r,'cashmgmt/v1/entries','2026-10-26',200,1,
+  '[{"guid":"entry-a","type":"CASH_IN","amount":12.50,
+     "cashDrawer":{"guid":"drawer-a"},"employee1":{"guid":"employee-a"}}]'::jsonb,ARRAY['type','amount']),
+ (b,r,'cashmgmt/v1/deposits','2026-10-26',200,1,
+  '[{"guid":"deposit-a","amount":19.75,"employee":{"guid":"employee-a"}}]'::jsonb,ARRAY['amount']),
+ (b,r,'kitchen/v1/export/itemFulfillments','2026-10-26',200,1,
+  '[{"orderGuid":"order-a","ticketGuid":"ticket-a",
+     "ticketFiredAt":"2026-10-26T10:00:00Z",
+     "itemStartedAt":"2026-10-26T10:01:00Z",
+     "itemFulfilledAt":"2026-10-26T10:04:00Z",
+     "prepStationGuid":"station-a"}]'::jsonb,ARRAY['ticketFiredAt','itemFulfilledAt']),
+ (b,r,'config/v2/diningOptions','2026-10-26',200,1,
+  '[{"guid":"option-a","name":"Dine In","behavior":"DINE_IN"}]'::jsonb,ARRAY['name']),
+ (b,r,'kitchen/v1/published/prepStations','2026-10-26',200,1,
+  '[{"guid":"station-b","name":"Cold Bar","printingMode":"ON"}]'::jsonb,ARRAY['name']);
+
+ perform pg_temp.assert_true(exists(select 1 from public.cv_inventory
+  where business_id=b and source='toast' and menu_item_ref='stock-a'
+    and stock_status='QUANTITY' and quantity=3.5),
+  'Toast stock quantity exposed alongside app stock');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_inventory
+  where business_id=b and source='toast' and menu_item_ref='stock-b'
+    and stock_status='OUT_OF_STOCK' and quantity is null),
+  'out of stock does not fabricate a zero quantity');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_cash
+  where business_id=b and source='toast' and entry_type='CASH_IN'
+  and amount_cents=1250 and cash_drawer_ref='drawer-a'
+  and employee_ref='employee-a'),
+  'cash entries project numeric cents and identifiers');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_cash
+  where business_id=b and entry_type='deposit' and amount_cents=1975),
+  'cash deposits project numeric cents without invented drawers');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_kitchen
+  where business_id=b and ticket_ref='ticket-a' and
+    fired_at='2026-10-26T10:00:00Z' and ready_at='2026-10-26T10:04:00Z'),
+  'Toast fulfillment timestamps remain queryable');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_kitchen
+  where business_id=b and prep_station_ref='station-b'
+  and data->>'prep_station_name'='Cold Bar'),
+  'prep station configuration GUID/name are exposed');
+ perform pg_temp.assert_true(exists(select 1 from public.cv_dining_options
+  where business_id=b and dining_option_ref='option-a'
+   and dining_option_name='Dine In'),
+  'config dining option names are redacted and queryable');
+ perform pg_temp.assert_true(not exists(select 1 from public.cv_cash
+  where business_id=other_b and amount_cents=1250),
+  'cross-cafe cash projection does not leak source rows');
+ perform pg_temp.assert_true(has_function_privilege('authenticated',
+  'public.toast_safe_business_label(text)','EXECUTE'),
+  'authenticated invoker can execute the redacting dining label helper');
+ -- A second capture of the same business date (manual run + scheduled capture)
+ -- must not double-count: views read only the newest successful capture.
+ insert into public.toast_raw_samples(business_id,restaurant_guid,endpoint,business_date,
+ fetched_at,http_status,item_count,sample,field_paths,capture_id) values
+ (b,r,'cashmgmt/v1/entries','2026-10-26',clock_timestamp()+interval '1 minute',200,1,
+  '[{"guid":"entry-a","type":"CASH_IN","amount":12.50,
+     "cashDrawer":{"guid":"drawer-a"},"employee1":{"guid":"employee-a"}}]'::jsonb,
+  ARRAY['type','amount'],gen_random_uuid()),
+ (b,r,'cashmgmt/v1/entries','2026-10-26',clock_timestamp()+interval '2 minute',429,0,
+  '{}'::jsonb,ARRAY[]::text[],gen_random_uuid());
+ perform pg_temp.assert_true((select sum(amount_cents) from public.cv_cash
+  where business_id=b and business_date='2026-10-26' and entry_type='CASH_IN')=1250,
+  'a re-captured cash entry is counted once and a newer failed capture is ignored');
+END $optional_views$;
+
 ROLLBACK;

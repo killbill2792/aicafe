@@ -120,6 +120,7 @@
     "ownerFlagDay": "وضع علامة على اليوم",
     "ownerRecent": "الأيام الأخيرة",
     "ownerOrders": "{count} طلبًا",
+    "ownerState_owner_confirmed": "تم التأكيد من المالك",
     "ownerState_checked": "تم التحقق بمقارنة Toast",
     "ownerState_checking": "جارٍ التحقق",
     "ownerState_needs_look": "تحتاج مراجعة",

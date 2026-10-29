@@ -4,13 +4,14 @@ import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
 import {GUID} from "@/lib/pos/toast/client";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
-const schema=z.object({businessId:GUID,from:z.iso.date(),to:z.iso.date()}).strict();
+const schema=z.object({businessId:GUID,from:z.iso.date(),to:z.iso.date(),repull:z.boolean().optional()}).strict();
 const reply=(status:number,body:unknown)=>NextResponse.json(body,{status,headers:{"Cache-Control":"no-store"}});
 export async function POST(request:Request){
  if(process.env.TOAST_AUTO_IMPORT_ENABLED!=="true")return reply(503,{disabled:true});
  const parsed=schema.safeParse(await request.json().catch(()=>null));
  if(!parsed.success)return reply(400,{error:"invalid_request"});
- const {businessId,from,to}=parsed.data;
+ const {businessId,from,to,repull=false}=parsed.data;
+ if(repull&&from!==to)return reply(400,{error:"repull_requires_one_day"});
  const start=Date.parse(from+"T00:00:00Z"),end=Date.parse(to+"T00:00:00Z");
  if(from<"2015-12-02"||end<start||(end-start)/86400000>=400)
   return reply(400,{error:"invalid_range"});
@@ -27,8 +28,11 @@ export async function POST(request:Request){
  }
  const runIds:string[]=[];
  for(const m of mappings){
-  const {data,error:queued}=await db.rpc("toast_queue_backfill",{
-   p_business_id:businessId,p_restaurant_guid:m.restaurant_guid,p_from:from,p_to:to});
+  const {data,error:queued}=repull
+   ?await db.rpc("toast_queue_owner_repull",{
+    p_business_id:businessId,p_restaurant_guid:m.restaurant_guid,p_date:from})
+   :await db.rpc("toast_queue_backfill",{
+    p_business_id:businessId,p_restaurant_guid:m.restaurant_guid,p_from:from,p_to:to});
   if(queued)return reply(503,{error:"queue_unavailable"});
   runIds.push(data as string);
  }
