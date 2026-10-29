@@ -3547,6 +3547,7 @@
     "savedBut": "He guardado la respuesta. Algunas cifras necesitan un plan de comisiones o desglose de gastos completo.",
     "needNumber": "el número que quieres comprobar",
     "error": "No pude consultar {source} para {period}.",
+    "errorSave": "No pude guardar {source}. Inténtalo de nuevo.",
     "period": "el período solicitado",
     "sendFailed": "No se pudo guardar. Inténtalo de nuevo.",
     "howRemainingShare": "Porción después del objetivo",
