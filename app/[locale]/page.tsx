@@ -67,7 +67,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   // Match Money’s selected-period evidence; the default month snapshot cannot prove Today or Week ingredient coverage.
   const [snapshot, menu, identity] = await Promise.all([
     timeReader("Home","getSnapshot",()=>getSnapshot(period)),
-    timeReader("Home","getMenuControlCenter",getMenuControlCenter),
+    timeReader("Home","getMenuControlCenter",()=>getMenuControlCenter({includeSalesEvidence:false})),
     signedInUser?timeReader("Home","readSupervisorCafeIdentity",async()=>readSupervisorCafeIdentity(
       await timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id)))):Promise.resolve(null),
   ]);
