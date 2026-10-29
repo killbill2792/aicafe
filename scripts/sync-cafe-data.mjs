@@ -320,6 +320,31 @@ async function syncTimezoneAndHours(client) {
   }
 }
 
+// Copies the source café's latest live "today so far" Toast reading (one row, refreshed every
+// 15 minutes on the source) so the destination's Home and chat show today's sales without its
+// own Toast connection. Skipped quietly until migration 124 (toast_today_live) is applied.
+export async function syncTodayLive(client) {
+  let rows;
+  try {
+    ({ rows } = await client.query(
+      `select business_date, read_at, net_sales_cents, orders, reading from toast_today_live where business_id = $1`,
+      [SOURCE_BUSINESS_ID]));
+  } catch (err) {
+    if (err?.code === "42P01") return 0;
+    throw err;
+  }
+  const row = rows[0];
+  if (!row) return 0;
+  await client.query(
+    `insert into toast_today_live (business_id, business_date, read_at, net_sales_cents, orders, reading, updated_at)
+     values ($1, $2, $3, $4, $5, $6, now())
+     on conflict (business_id) do update set business_date = excluded.business_date, read_at = excluded.read_at,
+       net_sales_cents = excluded.net_sales_cents, orders = excluded.orders, reading = excluded.reading, updated_at = now()`,
+    [DEST_BUSINESS_ID, toParam("business_date", row.business_date), toParam("read_at", row.read_at),
+      row.net_sales_cents, row.orders, toParam("reading", row.reading)]);
+  return 1;
+}
+
 // Full-copy vs. refresh-window is decided per table (whether THAT table is empty in the
 // destination), not from one global signal like "does the destination have any orders yet" —
 // tables can genuinely be in different states (e.g. a prior run could add a brand new table
@@ -474,6 +499,9 @@ export async function main() {
 
     currentTable = "timezone_and_hours";
     await syncTimezoneAndHours(client);
+
+    currentTable = "toast_today_live";
+    counts.toast_today_live = await syncTodayLive(client);
 
     await finishRun(client, runId, { status: "success", counts });
 
