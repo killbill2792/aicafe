@@ -1,5 +1,6 @@
 import {z} from "zod";
 import {laborKnown} from "@/lib/calc";
+import {laborForPeriod as sharedLaborForPeriod} from "@/lib/metrics/core/labor";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {calculateNewItemPrice,contributionCoverage} from "@/lib/calc/newItemPrice";
 import {requestedPeriod,prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
@@ -8,6 +9,7 @@ import {resolveCoveredSalesWindow} from "./coverage";
 import {money,percent,count,type ExplainLine} from "../explain";
 import {COFFEE_SHOP_PROFILE} from "@/lib/pricing/profiles";
 import {figure,recommendFullCostPrice} from "@/lib/calc/supervisorEconomics";
+import {localizedMetricReason} from "@/lib/ai/agent/metricReasons";
 import {ownerSpecifiedMonthlyBills,ownerSpecifiedPercent} from "./pricingOwnerEvidence";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -26,17 +28,28 @@ export const newItemPriceTools={suggest_new_item_price:{
   if(ctx.readEconomics){
    const {economics,ownerIngredientRate}=await ctx.readEconomics();
    const ownerLabor=ownerMonthlyAmount(owner?.laborCents??null,owner?.laborPeriod??null,ctx.asOf);
-   const monthlyStaff=ownerLabor!==null?figure(ownerLabor,"owner","You told me"):economics.monthlyStaff;
+   const savedLabor=economics.laborEvidence?sharedLaborForPeriod(
+    economics.laborEvidence.dates,economics.laborEvidence.records,null,
+    economics.knownMonthlyLaborExtrasCents==null?null:{
+     monthlyCents:economics.knownMonthlyLaborExtrasCents,
+     from:calendarMonth(ctx.asOf).from,to:calendarMonth(ctx.asOf).to}):null;
+   const monthlyStaff=ownerLabor!==null?figure(ownerLabor,"owner","laborOwnerProvided"):
+    savedLabor?figure(savedLabor.projectedMonthlyLaborCents,
+     savedLabor.basis==="recorded"?"actual":"estimate",
+     savedLabor.coveredDays<savedLabor.totalDays?"laborPartialCoverage":"laborRecorded",
+     [],{covered:savedLabor.coveredDays,total:savedLabor.totalDays}):
+    economics.monthlyStaff;
    const month=calendarMonth(ctx.asOf);
    const openDays=economics.daysInMonth||periodDays(month);
    let units=owner?.itemsSoldPerDay!=null?
     Math.round(owner.itemsSoldPerDay*openDays):economics.monthlyUnits;
+   const metrics={en,es,ar}[ctx.locale].MetricsNotes;
    const coverageDates=economics.salesCoverage;
-   const pretty=(date:string)=>new Intl.DateTimeFormat("en-US",{
-    month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(date+"T12:00:00Z"));
+   const pretty=(date:string)=>new Intl.DateTimeFormat(ctx.locale,{
+    year:"numeric",month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(date+"T12:00:00Z"));
    let coverageLabel:string|null=coverageDates?
-    "drinks sold "+pretty(coverageDates.from)+"–"+pretty(coverageDates.to)+", "+
-    coverageDates.to.slice(0,4)+", scaled to "+openDays+" open days":null;
+    metrics.pricingCoverageScaled.replace("{from}",pretty(coverageDates.from))
+      .replace("{to}",pretty(coverageDates.to)).replace("{days}",String(openDays)):null;
    if(units===null){
     const coverage=await resolveCoveredSalesWindow(ctx,requestedPeriod("month",ctx.asOf));
     const trend=await ctx.tools.getSalesTrend(coverage.period);
@@ -48,7 +61,8 @@ export const newItemPriceTools={suggest_new_item_price:{
     if(days.length){
      units=Math.round(sold/days.length*openDays);
      coverageLabel=coverage.label?coverage.label+", "+coverage.period.to.slice(0,4):
-      "Recorded sales: "+coverage.period.from+"–"+coverage.period.to;
+      metrics.pricingCoverageRecorded.replace("{from}",coverage.period.from)
+       .replace("{to}",coverage.period.to);
     }
    }
    // Only the owner's current message can authorize a different target.
@@ -62,10 +76,7 @@ export const newItemPriceTools={suggest_new_item_price:{
    const costPct=costOwner?v.target_drink_cost_percent!/100:
     Math.max(.25,Math.min(.35,savedTarget));
    const operatingMargin=marginOwner?v.operating_margin_percent!/100:economics.targetMargin;
-   const sparse=economics.laborCoveredDays!=null&&economics.laborWindowDays!=null&&
-    (economics.laborCoveredDays<7||economics.laborCoveredDays/economics.laborWindowDays<.5);
-   const labor=sparse&&ownerLabor===null?figure(null,"missing",
-    "Only "+economics.laborCoveredDays+" of "+economics.laborWindowDays+" days have payroll"):monthlyStaff;
+   const labor=monthlyStaff;
    const explicitBillTotal=v.owner_monthly_bills_cents!=null&&
     ownerSpecifiedMonthlyBills(utterances,v.owner_monthly_bills_cents)?
      v.owner_monthly_bills_cents:null;
@@ -73,7 +84,7 @@ export const newItemPriceTools={suggest_new_item_price:{
    const ownerBills=explicitBillTotal??(ownerBillsComplete?prorate(
     owner!.rentCents!+owner!.otherOverheadCents!,
     ownerPeriod(owner?.overheadPeriod??null,ctx.asOf)??month,month):null);
-   const monthlyBills=ownerBills!==null?figure(ownerBills,"owner","You told me: total monthly bills"):
+   const monthlyBills=ownerBills!==null?figure(ownerBills,"owner","newItemOwnerBills"):
     economics.monthlyBills;
    const missingBills=ownerBills!==null?[]:(economics.missingBillCategories??[]);
    const billsPartial=missingBills.length>0||monthlyBills.valueCents===null;
@@ -89,10 +100,40 @@ export const newItemPriceTools={suggest_new_item_price:{
    });
    const source=(s:string):ExplainLine["provenance"]=>s==="owner"?"ownerProvided":
     s==="actual"?"recorded":s==="missing"?"missing":"estimate";
+   const explainTitles:Record<string,string>={
+    "Ingredients + packaging":metrics.itemIngredientsPackaging,
+    "Units/month":metrics.itemUnitsMonth,"Labor/drink":metrics.itemLaborPerDrink,
+    "Bills/drink":metrics.itemBillsPerDrink,"Processing fee":metrics.itemProcessingFee,
+    "Card percentage fee":metrics.itemCardPercentFee,"Full loaded cost":metrics.itemFullCost,
+    "Full cost plus fixed card fee":metrics.itemFullCostPlusFee,
+    "Recommended price":metrics.itemRecommendedPrice,"Break-even":metrics.itemBreakEven,
+    "Profit price (informational)":metrics.itemProfitPrice,
+   };
+   const inputTitles:Record<string,string>={
+    ingredients:metrics.itemInputsIngredients,packaging:metrics.itemInputsPackaging,
+    units:metrics.itemInputsUnits,laborPerMonth:metrics.itemInputsLaborPerMonth,
+    billsPerMonth:metrics.itemInputsBillsPerMonth,fixedPerOrder:metrics.itemInputsFixedPerOrder,
+    drinksPerOrder:metrics.itemInputsDrinksPerOrder,fee:metrics.itemInputsFee,
+    product:metrics.itemInputsProduct,labor:metrics.itemInputsLabor,bills:metrics.itemInputsBills,
+    fullCost:metrics.itemInputsFullCost,fixedPerDrink:metrics.itemInputsFixedPerDrink,
+    productCost:metrics.itemInputsProductCost,drinkCostTarget:metrics.itemInputsDrinkCostTarget,
+    fullCostPlusFixed:metrics.itemInputsFullCost,afterFees:metrics.itemInputsAfterFees,
+    afterFeesAndMargin:metrics.itemInputsAfterFeesMargin,missing:metrics.itemInputsMissing,
+    rate:metrics.itemInputsRate,
+   };
+   const explainTitle=(label:string):string=>ctx.locale==="en"?label:
+    label.startsWith("Processing fee:")?
+     label.replace("Processing fee:",metrics.itemProcessingFee+":")
+       .replaceAll("/order",metrics.itemPerOrder).replaceAll("/drink",metrics.itemPerDrink):
+     explainTitles[label]??label;
    const lines:ExplainLine[]=[];
    const add=(label:string,inputs:ExplainLine["inputs"],formula:ExplainLine["formula"],
-    result:ExplainLine["result"],provenance:ExplainLine["provenance"],basis:string)=>{
-    lines.push({label,inputs,formula,result,period:month,source:"suggest_new_item_price",provenance,basis});
+    result:ExplainLine["result"],provenance:ExplainLine["provenance"],_basis:string)=>{
+    lines.push({label:explainTitle(label),inputs:inputs.map(i=>({...i,
+      name:ctx.locale==="en"?i.name:inputTitles[i.name]??i.name})),formula,result,
+      period:month,source:"suggest_new_item_price",
+      provenance,basis:provenance==="ownerProvided"?"owner_provided":
+      provenance==="recorded"?"recorded":provenance==="estimate"?"estimated":"missing"});
    };
    const product=v.packaging_cents===null?null:v.ingredient_cost_cents+v.packaging_cents;
    if(product!==null)add("Ingredients + packaging",[
@@ -100,7 +141,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     "sum",money(product),"ownerProvided","Your item's ingredient and packaging costs");
    if(units!==null)add("Units/month",[{name:"units",value:count(units)}],
     "sum",count(units),owner?.itemsSoldPerDay!=null?"ownerProvided":"recorded",
-    coverageLabel??"Latest covered café sales");
+    coverageLabel??metrics.pricingLatestCovered);
    if(labor.valueCents!==null&&units&&recommended.laborPerUnitCents!==null)
     add("Labor/drink",[{name:"laborPerMonth",value:money(labor.valueCents)},
      {name:"units",value:count(units)}],"divide",money(Math.round(recommended.laborPerUnitCents)),
@@ -114,9 +155,9 @@ export const newItemPriceTools={suggest_new_item_price:{
     if(plan){
      const rateText=new Intl.NumberFormat(ctx.locale,{minimumFractionDigits:2,maximumFractionDigits:2})
       .format(feeRate*100)+"%";
-     const perOrder=new Intl.NumberFormat(ctx.locale,{style:"currency",currency:"USD"})
+     const perOrder=new Intl.NumberFormat(ctx.locale,{style:"currency",currency:ctx.currency??"XXX"})
       .format(plan.fixedFeeCents/100);
-     const perDrink=new Intl.NumberFormat(ctx.locale,{style:"currency",currency:"USD"})
+     const perDrink=new Intl.NumberFormat(ctx.locale,{style:"currency",currency:ctx.currency??"XXX"})
       .format(fixedPerDrink/100);
      add("Processing fee: "+rateText+" + "+perOrder+"/order (≈"+perDrink+"/drink)",
       [{name:"fixedPerOrder",value:money(Math.round(plan.fixedFeeCents))},
@@ -163,7 +204,7 @@ export const newItemPriceTools={suggest_new_item_price:{
     ["Labor/drink",labor.reason],["Bills/drink",monthlyBills.reason],
     ["Full loaded cost","Missing labor or bills"],["Break-even","Missing full costs or fee"],
     ["Profit price (informational)","Missing full costs or fee"]] as const)
-     if(!lines.some(line=>line.label===label))add(label,[{name:"missing",value:{kind:"missing",reason:"none"}}],
+     if(!lines.some(line=>line.label===explainTitle(label)))add(label,[{name:"missing",value:{kind:"missing",reason:"none"}}],
        "sum",{kind:"missing",reason:"none"},"missing",basis);
    const numberEstimates=lines.flatMap(line=>[line.result,...line.inputs.map(i=>i.value)])
     .flatMap<{value:number;unit:"cents"|"count"|"bps"|"ratio";detail:"pricing"}>(value=>value.kind==="money"?[{value:value.cents,unit:"cents",detail:"pricing"}]:
@@ -171,12 +212,13 @@ export const newItemPriceTools={suggest_new_item_price:{
       value.kind==="percent"?[{value:value.bps,unit:"bps",detail:"pricing"}]:[]);
    if(plan)numberEstimates.push({value:plan.drinksPerOrder,unit:"ratio",detail:"pricing"});
    const candidates=[
-    ...(labor.valueCents===null?[{id:"labor-monthly",label:"Provide monthly labor",detail:"Enter monthly labor"},
-      {id:"labor-unknown",label:"I don't know labor yet",detail:"Keep it incomplete"}]:[]),
-    ...(billsPartial?[{id:"bills-monthly",label:"Provide monthly bills",detail:"Enter monthly costs"},
-      {id:"bills-unknown",label:"Some bills are unknown",detail:"Keep it partial"}]:[])
+    ...(labor.valueCents===null?[{id:"labor-monthly",label:metrics.itemProvideLabor,detail:metrics.itemEnterLabor},
+      {id:"labor-unknown",label:metrics.itemLaborUnknown,detail:metrics.itemIncomplete}]:[]),
+    ...(billsPartial?[{id:"bills-monthly",label:metrics.itemProvideBills,detail:metrics.itemEnterCosts},
+      {id:"bills-unknown",label:metrics.itemBillsUnknown,detail:metrics.itemPartial}]:[])
    ];
-   const missing=[...recommended.missing,...missingBills.map(category=>"monthlyBill:"+category),
+   const missing=[...recommended.missing,...(!ctx.currency?["cafeCurrencyMissing"]:[]),
+    ...missingBills.map(category=>"monthlyBill:"+category),
     ...(candidates.length?["ownerChoiceRequired"]:[])];
    return {source:"new_item_price",period:month,coverageLabel,monthlyUnits:units,agentId:"alex",
     status:missing.length?"estimate":"actual",saved:false,draft:true,
@@ -185,20 +227,24 @@ export const newItemPriceTools={suggest_new_item_price:{
     breakEvenCents:recommended.breakEvenCents,fullCostCents:recommended.fullCostCents,
     profitPriceCents:recommended.profitPriceCents,
     knownCostFloorCents:recommended.knownCostFloorCents,
-    knownCostFloorLabel:recommended.knownCostFloorLabel,warning:recommended.warning,
+    knownCostFloorLabel:recommended.knownCostFloorLabel?metrics.itemFloorNote:null,
+     warning:recommended.warning,
     pricingNote:recommended.warning==="below_full_cost"?copy.pricingNoteBelowFullCost:
       copy.pricingNoteDrinkCost.replace("{percent}",String(Math.round(costPct*100))),
-    monthlyLabor:labor,monthlyBills,billsPartial,
-    components:{product:{valueCents:product,source:product===null?"missing":"ownerProvided",basis:"Owner item costs"},
-      labor:{valueCents:labor.valueCents,source:source(labor.status),basis:labor.reason},
-      bills:{valueCents:monthlyBills.valueCents,source:billsPartial?"estimate":source(monthlyBills.status),basis:monthlyBills.reason},
-      units:{value:units,source:units===null?"missing":owner?.itemsSoldPerDay!=null?"ownerProvided":"recorded",basis:coverageLabel??"Café sales"},
+    monthlyLabor:{...labor,reasonKey:labor.reason,
+      reason:localizedMetricReason(labor.reason,ctx.locale,labor.reasonParams)},
+    monthlyBills:{...monthlyBills,reasonKey:monthlyBills.reason,
+      reason:localizedMetricReason(monthlyBills.reason,ctx.locale,monthlyBills.reasonParams)},billsPartial,
+    components:{product:{valueCents:product,source:product===null?"missing":"ownerProvided",basis:"owner_provided"},
+      labor:{valueCents:labor.valueCents,source:source(labor.status),basis:labor.status==="owner"?"owner_provided":labor.status==="actual"?"recorded":"estimated"},
+      bills:{valueCents:monthlyBills.valueCents,source:billsPartial?"estimate":source(monthlyBills.status),basis:monthlyBills.status==="owner"?"owner_provided":monthlyBills.status==="actual"?"recorded":"estimated"},
+      units:{value:units,source:units===null?"missing":owner?.itemsSoldPerDay!=null?"ownerProvided":"recorded",basis:"recorded_sales"},
       fee:{value:feeRate,source:plan?"ownerProvided":source(economics.feeStatus),
-        basis:plan?plan.processorLabel+" owner-confirmed fee plan":"Café effective fee rate",
+        basis:plan?"owner_plan":"effective_fee_rate",
         fixedPerDrinkCents:fixedPerDrink,drinksPerOrderRatio:plan?.drinksPerOrder??null},
-      operatingMargin:{value:recommended.operatingMargin,source:marginOwner?"ownerProvided":"estimate",basis:marginOwner?"You told me":"Saved target"},
+      operatingMargin:{value:recommended.operatingMargin,source:marginOwner?"ownerProvided":"estimate",basis:marginOwner?"owner_provided":"saved_target"},
       targetDrinkCost:{value:costPct,source:costOwner||ownerIngredientRate!=null?"ownerProvided":"estimate",
-        basis:ownerIngredientRate!=null?copy.pricingSavedTarget:"Product cost target"}},
+        basis:ownerIngredientRate!=null?"owner_provided":"product_cost_target"}},
     feeRate,targetMargin:recommended.operatingMargin,feePlan:plan??null,
     missing,explain:lines,numberEstimates,
     ...(candidates.length>0?{needsOwnerChoice:true,candidates,allowOther:true,askOwnerRequired:true}: {})};

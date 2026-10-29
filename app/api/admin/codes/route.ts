@@ -5,12 +5,14 @@ import {requireAdmin} from "@/lib/admin/auth.server";
 import {insertFreeAccessCode,toggleFreeAccessCode,changeCafeAccess} from "@/lib/data/adminCodes.server";
 import {requireSameOrigin,readBoundedJson} from "@/lib/ai/conversations/http.server";
 import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
+import {cafeToday} from "@/lib/metrics/core/clock";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const uuid=z.uuid();
 const actions=z.discriminatedUnion("action",[
  z.strictObject({action:z.literal("create"),durationMonths:z.number().int().min(1).max(120).nullable(),
    fixedEndDate:z.iso.date().nullable(),maxCafes:z.number().int().min(1).max(100000),
-   note:z.string().trim().max(500),code:z.string().trim().max(32).optional()}),
+   note:z.string().trim().max(500),code:z.string().trim().max(32).optional(),
+    timeZone:z.string().min(1).max(128).optional()}),
  z.strictObject({action:z.literal("toggle"),id:uuid,active:z.boolean()}),
  z.strictObject({action:z.literal("extend"),businessId:uuid,accessEnd:z.iso.date()}),
  z.strictObject({action:z.literal("setMode"),businessId:uuid,mode:z.enum(["grandfathered","paused"])}),
@@ -25,8 +27,12 @@ export async function POST(request:Request){
   if(input.action==="create"){
    if((input.durationMonths===null)===(input.fixedEndDate===null))
     return NextResponse.json({error:"select_one_duration_type"},{status:422});
-   if(input.fixedEndDate && input.fixedEndDate<new Date().toISOString().slice(0,10))
-    return NextResponse.json({error:"end_date_in_past"},{status:422});
+   if(input.fixedEndDate){
+    if(!input.timeZone)return NextResponse.json({error:"time_zone_required"},{status:422});
+    let today:string;
+    try{today=cafeToday(input.timeZone);}catch{return NextResponse.json({error:"invalid_time_zone"},{status:422});}
+    if(input.fixedEndDate<today)return NextResponse.json({error:"end_date_in_past"},{status:422});
+   }
    // Generate with CSPRNG; only the hash persists. The raw value is shown once.
    const code=input.code?.trim() || "CAFE-"+randomBytes(8).toString("hex").toUpperCase();
    const status=await insertFreeAccessCode({code,durationMonths:input.durationMonths,

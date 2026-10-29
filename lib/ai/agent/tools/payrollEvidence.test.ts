@@ -23,8 +23,8 @@ describe("break-even owner payroll evidence",()=>{
   const result=await moneyTools.get_break_even.execute(inputs,ctx(3000));
   expect(result.ownerMonthlyPayrollExtrasCents).toBe(3000);
   expect(result.ownerDailyPayrollExtrasCents).toBe(100);
-  expect(result.ownerMonthlyPayrollSource).toBe("You told me");
-  expect(result.ownerMonthlyPayrollStatus).toBe("Estimate");
+  expect(result.ownerMonthlyPayrollSource).toBe("owner_provided");
+  expect(result.ownerMonthlyPayrollStatus).toBe("estimated");
   expect(result.estimated).toContain("ownerMonthlyPayrollExtras");
   expect(result.ownerComparison).toMatchObject({
    dailyFixedCostsCents:10100,dailyBreakEvenSalesCents:12625

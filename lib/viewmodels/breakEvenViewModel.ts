@@ -1,8 +1,5 @@
 import {
-  avgMoneyLeftPerDrinkCents,
   dailyCostsToCoverCents,
-  drinksNeededPerDay,
-  staffCostCentsForPeriod,
   summarizeResolvedSoldProductCosts,
   sumCents,
   whatIfIngredientCostChange,
@@ -11,6 +8,11 @@ import {
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { expectedMissingCostLines } from "@/lib/expenses/expectedCosts";
+import {breakEvenFor,moneyLeftPerDrinkCents} from "@/lib/metrics/core/breakEven";
+import {cardFeesForDays} from "@/lib/metrics/core/fees";
+import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
+import {laborForPeriod} from "@/lib/metrics/core/labor";
+import {shiftCafeDate} from "@/lib/metrics/core/clock";
 
 // Break-even what-ifs need per-shift wage and per-drink milk data finer than the daily/28-day
 // aggregates this snapshot carries. Until Staff (v1.5) and per-item recipe quantities are wired
@@ -21,33 +23,39 @@ const ASSUMED_ML_MILK_PER_DRINK = 150;
 const GALLON_ML = 3_785;
 
 export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
-  const days = snapshot.last28Days;
+  const days=(snapshot.breakEvenDays??snapshot.last28Days).filter(d=>d.date>=shiftCafeDate(snapshot.todayDateStr,-28)&&d.date<snapshot.todayDateStr);
   const netSales = sumCents(days, (d) => d.netSalesCents);
   const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
   const productCosts = summarizeResolvedSoldProductCosts(breakEvenCostItems);
   const ingredients = productCosts.totalCostCents;
-  const cardFees = sumCents(days, (d) => d.cardFeesCents);
   const drinks = sumCents(days, (d) => d.drinksCount);
 
-  const avgMoneyLeft = productCosts.missingProductCosts ? 0 : avgMoneyLeftPerDrinkCents(netSales, ingredients, cardFees, drinks);
   const runningPerDay = snapshot.runningCostLines.reduce((s, l) => s + l.amountCents, 0) / snapshot.daysInMonth;
-  const laborTotal=staffCostCentsForPeriod(days);
-  const avgDailyStaffCost=laborTotal===null?0:days.length?laborTotal/days.length:0;
-  const dailyCosts = dailyCostsToCoverCents(runningPerDay, avgDailyStaffCost);
-  const needed = drinksNeededPerDay(dailyCosts, avgMoneyLeft);
+  const dates=Array.from({length:28},(_,i)=>({date:shiftCafeDate(snapshot.todayDateStr,i-28)}));
+  const ownerExtras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
+    .ownerMonthlyPayrollExtrasCents;
+  const labor=laborForPeriod(dates,days,null,ownerExtras==null?null:{
+    monthlyCents:ownerExtras,from:dates[0].date,to:dates[dates.length-1].date,
+  });
+  // Clocked labor is projected from 28 completed days; owner extras are a
+  // calendar-month figure and must not be divided by 28 in a 30/31-day month.
+  const clockedMonthly=labor.projectedMonthlyLaborCents===null?null:
+    labor.projectedMonthlyLaborCents-(ownerExtras??0);
+  const avgDailyStaffCost=clockedMonthly===null?null:
+    clockedMonthly/28+(ownerExtras??0)/snapshot.daysInMonth;
+  const dailyCosts=dailyCostsToCoverCents(runningPerDay,avgDailyStaffCost??0);
+  const shared=breakEvenFor({days,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
+    monthlyBillsCents:Math.round(runningPerDay*snapshot.daysInMonth),
+    monthlyStaffCents:avgDailyStaffCost===null?null:Math.round(avgDailyStaffCost*snapshot.daysInMonth),
+    observedIngredientCents:productCosts.totalCostCents,
+    ownerFeePlans:(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans});
+  const avgMoneyLeft=productCosts.missingProductCosts?0:moneyLeftPerDrinkCents(netSales,ingredients,
+    cardFeesForDays(days,(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans??null).amountCents,drinks);
+  const needed=shared.drinksPerDay??0;
   const missingCosts = expectedMissingCostLines(snapshot.runningCostLines);
   const missingCostLabels = missingCosts.map((line) => line.label);
-  const unavailableReason = laborTotal===null?"missing_costs" as const:missingCostLabels.length > 0
-    ? "missing_costs" as const
-    : days.length === 0 || drinks <= 0
-      ? "missing_sales" as const
-      : productCosts.missingProductCosts
-        ? "missing_product_costs" as const
-        : avgMoneyLeft <= 0
-          ? "missing_sales" as const
-          : dailyCosts <= 0
-            ? "missing_costs" as const
-            : null;
+  const unavailableReason=shared.drinksPerDay===null?
+    (days.length===0||drinks<=0?"missing_sales" as const:"missing_costs" as const):null;
 
   const todayDrinks = snapshot.todayDay.drinksCount;
   const progressPct = needed > 0 && Number.isFinite(needed) ? Math.min(100, (todayDrinks / needed) * 100) : 0;
@@ -81,6 +89,9 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
     dailyCostsToCoverCents: dailyCosts,
     whatIfs,
     unavailableReason,
+    noteKeys:[...shared.notes,...labor.notes,
+      ...(missingCostLabels.length?["breakEvenBillsMissing"]:[]),
+      ...(productCosts.missingProductCosts?["profitProductCostsMissing"]:[])],
     missingCostLabels,
     missingCosts,
   };

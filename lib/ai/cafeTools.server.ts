@@ -8,6 +8,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { getSnapshot } from "@/lib/data/getSnapshot";
+import {getBusinessSnapshotFromDb} from "@/lib/data/snapshot.server";
 import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
 import { projectCurrentStaff, projectBreakEven, projectRecurringSchedule } from "./conversations/domainProjections";
 import type { StaffRosterMember } from "@/lib/viewmodels/staffViewModel";
@@ -19,7 +20,6 @@ import { SupabaseDecisionStore } from "@/lib/operating/supabaseDecisionStore";
 import { BusinessScopedCafeTools, StructuredCafeTools } from "./tools";
 import { supervisorFactReaders } from "./supervisorFacts.server";
 import { supervisorHistoricalReaders } from "./supervisorReads.server";
-import { readPeriodItemSales } from "@/lib/data/periodItemSales.server";
 
 /**
  * The future Supervisor backend must call this authenticated server factory.
@@ -67,14 +67,15 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
   const states = new SnapshotCafeStateService(
     async (requested,period) => {
       assertBusiness(requested);
-      const snapshot = await currentSnapshot();
-      if (snapshot.business.id !== businessId) throw new Error("Café snapshot business mismatch");
-      if(!period||snapshot.periodItemSales?.period.from===period.from&&
-        snapshot.periodItemSales.period.to===period.to)return snapshot;
-      // Target the exact authorized date range; never reuse a month/28-day
-      // quantity as proof for today or another custom window.
-      const periodItemSales=await readPeriodItemSales(client,businessId,period);
-      return {...snapshot,periodItemSales};
+      if(period){
+        // Historical lookups must never materialize shifts or regenerate alerts.
+        const historical=await getBusinessSnapshotFromDb(client,businessId,period);
+        if(historical.business.id!==businessId)throw new Error("Café snapshot scope mismatch");
+        return historical;
+      }
+      const snapshot=await currentSnapshot();
+      if(snapshot.business.id!==businessId)throw new Error("Café snapshot business mismatch");
+      return snapshot;
     },
     async (requested) => (await pricingMenu(requested)).map(({ id, pricing }) => ({ id, pricing })),
   );
@@ -173,7 +174,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
 /** Owner-scoped calendar and café identity without loading the mutable Home snapshot. */
 export async function readSupervisorCafeIdentity(authorizedBusinessId: string) {
   const client = await createServerSupabaseClient();
-  const { data, error } = await client.from("businesses").select("id,name,timezone")
+  const { data, error } = await client.from("businesses").select("id,name,timezone,currency")
     .eq("id",authorizedBusinessId).single();
   if (error || !data || data.id !== authorizedBusinessId) throw new Error("Café identity unavailable");
   // en-CA has historically varied by Node ICU; formatToParts yields an invariant ISO date.
@@ -181,6 +182,8 @@ export async function readSupervisorCafeIdentity(authorizedBusinessId: string) {
     timeZone:data.timezone,year:"numeric",month:"2-digit",day:"2-digit",
   }).formatToParts(new Date());
   const value = (kind: string) => parts.find(p=>p.type===kind)?.value ?? "";
-  return { cafeName:String(data.name).slice(0,120), timezone:String(data.timezone),
+  // Missing currency is an owner-facing caveat, not a reason to hide saved café data.
+  const currency=typeof data.currency==="string"&&/^[A-Z]{3}$/.test(data.currency)?data.currency:null;
+  return { cafeName:String(data.name).slice(0,120), timezone:String(data.timezone),currency,
     asOf:value("year")+"-"+value("month")+"-"+value("day") };
 }

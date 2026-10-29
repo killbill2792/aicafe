@@ -1,24 +1,21 @@
-/** Break-even (docs/05-calculations.md "Break-even"). */
+/** Preserve the legacy public API while using shared B math. */
+import {moneyLeftPerDrinkCents,dailyBreakEvenCostsCents,
+  drinksTargetPerDay} from "@/lib/metrics/core/breakEven";
 
 /** Average money left per drink = (net sales − ingredients − card fees) ÷ drinks, over 28 days. */
-export function avgMoneyLeftPerDrinkCents(
-  netSalesCents: number,
-  ingredientsCents: number,
-  cardFeesCents: number,
-  drinks: number,
-): number {
-  return drinks === 0 ? 0 : (netSalesCents - ingredientsCents - cardFeesCents) / drinks;
+export function avgMoneyLeftPerDrinkCents(netSalesCents:number,ingredientsCents:number,
+  cardFeesCents:number,drinks:number):number{
+  return moneyLeftPerDrinkCents(netSalesCents,ingredientsCents,cardFeesCents,drinks);
 }
 
 /** Daily costs to cover = running costs per day + average daily staff cost (planned for new cafés). */
-export function dailyCostsToCoverCents(runningCostsPerDayCents: number, avgDailyStaffCostCents: number): number {
-  return runningCostsPerDayCents + avgDailyStaffCostCents;
+export function dailyCostsToCoverCents(runningCosts:number,staffCost:number):number{
+  return dailyBreakEvenCostsCents(runningCosts,staffCost);
 }
 
 /** Drinks needed per day = ceil(daily costs to cover ÷ average money left per drink). */
-export function drinksNeededPerDay(dailyCostsToCoverCentsValue: number, avgMoneyLeftPerDrinkCentsValue: number): number {
-  if (avgMoneyLeftPerDrinkCentsValue <= 0) return Infinity;
-  return Math.ceil(dailyCostsToCoverCentsValue / avgMoneyLeftPerDrinkCentsValue);
+export function drinksNeededPerDay(dailyCosts:number,moneyLeft:number):number{
+  return drinksTargetPerDay(dailyCosts,moneyLeft);
 }
 
 /** What-if: raise every price by `deltaCentsPerDrink` (fees held constant, per the doc). */

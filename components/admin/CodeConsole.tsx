@@ -42,6 +42,7 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
   <form className="grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();void action({
     action:"create",code:code||undefined,durationMonths:durationKind==="months"?months:null,
     fixedEndDate:durationKind==="fixed"?end:null,maxCafes:max,note,
+    timeZone:durationKind==="fixed"?Intl.DateTimeFormat().resolvedOptions().timeZone:undefined,
   });}}>
    <h2 className="sm:col-span-2 font-bold">Create code</h2>
    <label className="grid gap-1 text-sm">Custom code (optional)<input className="rounded border p-2" value={code} onChange={e=>setCode(e.target.value)} maxLength={32} placeholder="Generated if blank"/></label>

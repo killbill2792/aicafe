@@ -6,6 +6,7 @@ import type {AgentId,OperatingTaskKind,OperatingTask} from "@/lib/operating/task
 export class ProposalRequestConflictError extends Error {
   constructor(){super("Conflicting proposal request key");this.name="ProposalRequestConflictError";}
 }
+import {cafeToday,shiftCafeDate} from "@/lib/metrics/core/clock";
 export type LoopLocale="en"|"es"|"ar";
 export type OwnerLoopScope={businessId:string;ownerUserId:string;threadId:string;locale:LoopLocale};
 export type ProposalStatus="draft"|"approved"|"executing"|"committed"|"manual_pending"|
@@ -102,6 +103,7 @@ export function loopRegistry(...definitions:RegisteredLoopCapability[]){
 }
 export type LoopCreate=Omit<LoopProposal,"id"|"status"|"revision"|"monitoringStartDate"|"createdAt">;
 export interface LoopRepository{
+  cafeTimezone?:(scope:OwnerLoopScope)=>Promise<string>;
   create(scope:OwnerLoopScope,requestKey:string,proposal:LoopCreate):Promise<LoopProposal>;
   load(scope:OwnerLoopScope,id:string):Promise<LoopProposal>;
   transition(scope:OwnerLoopScope,id:string,revision:number,
@@ -170,6 +172,11 @@ export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof
   if(p.capabilityVersion!==def.version)throw new Error("Effect contract version changed");
   const effect=def.parseEffect(p.canonicalEffectPayload);
   if(p.effectHash!==effectHash(effect))throw new Error("Immutable effect changed");
+  // Resolve the authenticated café calendar BEFORE committing a side effect.
+  // A missing timezone must never execute an irreversible effect and fail afterward.
+  const timezone=await repo.cafeTimezone?.(scope);
+  if(!timezone)throw new Error("Café timezone required for commit");
+  const committedDate=cafeToday(timezone);
   // Claim the exact approval under the repository's atomic revision lock
   // BEFORE invoking a domain effect. A competing call never reaches commit.
   // A failed effect deliberately remains "executing" for reconciliation:
@@ -182,7 +189,7 @@ export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof
   const transition=result.status==="requires_manual_action"?"manual_pending":"committed";
   // For a future connected integration, a verified commit starts a monitor
   // window. The manual POS workflow uses the café-local confirmed date.
-  const start=transition==="committed"?utcDateOffset(new Date().toISOString().slice(0,10),1):undefined;
+  const start=transition==="committed"?shiftCafeDate(committedDate,1):undefined;
   const updated=await repo.transition(scope,id,claimed.revision,transition,start);
   return {proposal:updated,result};
 }

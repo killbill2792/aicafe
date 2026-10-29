@@ -58,7 +58,7 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
     const state = cafeStateFromSnapshot(snapshot);
     expect(state.sales.available).toBe(true);
     expect(state.sales.quality.missingInputs).toContain("salesCoverage:8/9");
-    expect(state.profitability.available).toBe(false);
+    expect(state.profitability.available).toBe(true);
     expect(state.profitability.quality.missingInputs).toContain("salesCoverage:8/9");
   });
 
@@ -70,8 +70,13 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
     expect(state.profitability.quality.missingInputs).toContain("periodOutsideLoadedMonth");
   });
 
-  it("refuses future dates or invalid calendars", () => {
-    expect(cafeStateFromSnapshot(fixture, { from: "2026-09-09", to: "2026-09-10" }).profitability.available).toBe(false);
+  it("clips future dates with a visible caveat, but refuses invalid calendars", () => {
+    const state=cafeStateFromSnapshot(fixture, { from: "2026-09-09", to: "2026-09-10" });
+    expect(state.period).toEqual({from:"2026-09-09",to:"2026-09-09"});
+    expect(state.profitability.available).toBe(true);
+    expect(state.profitability.quality.missingInputs).toContain("futureDatesExcluded");
+    expect(state.sales.available).toBe(true);
+    if(state.sales.available)expect(state.sales.value).toHaveLength(1);
     expect(cafeStateFromSnapshot(fixture, { from: "2026-09-31", to: "2026-09-31" }).profitability.available).toBe(false);
   });
 
@@ -82,7 +87,7 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
         ? { ...day, cardFeesStatus: "missing" as const } : day),
     };
     const state = cafeStateFromSnapshot(snapshot);
-    expect(state.profitability.available).toBe(false);
+    expect(state.profitability.available).toBe(true);
     expect(state.profitability.quality.missingInputs).toContain("cardFees:2026-09-01");
   });
 
@@ -108,7 +113,7 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
       menuItems: [{ ...fixture.menuItems[0], costStatus: "NO_RECIPE" }, ...fixture.menuItems.slice(1)],
     };
     const state = cafeStateFromSnapshot(snapshot);
-    expect(state.profitability.available).toBe(false);
+    expect(state.profitability.available).toBe(true);
     expect(state.profitability.quality.missingInputs).toContain("productCost:latte");
   });
 
@@ -121,7 +126,7 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
       ],
     };
     const state = cafeStateFromSnapshot(snapshot);
-    expect(state.profitability.available).toBe(false);
+    expect(state.profitability.available).toBe(true);
     expect(state.profitability.quality.missingInputs).toContain("expense:internet");
   });
 
@@ -144,7 +149,7 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
     const partial = fixture.monthActualDays.map((day, i) => i===0
       ? {...day,laborWageStatus:"missing" as const} : day);
     const state = cafeStateFromSnapshot({...fixture,monthActualDays:partial,monthRecordedDays:partial});
-    expect(state.profitability.available).toBe(false);
+    expect(state.profitability.available).toBe(true);
     expect(state.profitability.quality.missingInputs).toContain("laborWageUnknown:2026-09-01");
     expect(state.labor.quality.missingInputs).toContain("laborWageUnknown:2026-09-01");
     expect(state.labor.available).toBe(true);

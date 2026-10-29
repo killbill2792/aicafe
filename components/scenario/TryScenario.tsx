@@ -4,10 +4,11 @@ import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { simulatePlanChange, type PlanScenarioBase, type PlanScenarioItem } from "@/lib/calc/planGoals";
 import { scenarioHistoryBlocker } from "./scenarioHistoryBlocker";
+import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
 
 const WAGE_CENTS = 1950;
-export default function TryScenario({ items, base, hoursComplete = true, salesCoverageGaps = false, closedDaySales = false }: {
-  items: PlanScenarioItem[]; base: PlanScenarioBase | null;
+export default function TryScenario({ items, base, currency, hoursComplete = true, salesCoverageGaps = false, closedDaySales = false }: {
+  items: PlanScenarioItem[]; base: PlanScenarioBase | null; currency?:string|null;
   hoursComplete?: boolean; salesCoverageGaps?: boolean; closedDaySales?: boolean;
 }) {
   const t = useTranslations("Scenario");
@@ -21,7 +22,7 @@ export default function TryScenario({ items, base, hoursComplete = true, salesCo
   const [staffHours, setStaffHours] = useState("0");
   const [staffAfternoonOnly, setStaffAfternoonOnly] = useState(false);
   const [presetKind, setPresetKind] = useState<"allPrices" | "milk" | null>(null);
-  const money = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
+  const money = {format:(value:number)=>formatCafeCurrency(Math.round(value*100),locale,currency).text};
   const historyBlocker = scenarioHistoryBlocker(kind, {
     salesCoverageGaps, closedDaySales, salesDaysCovered: base?.salesDaysCovered,
   });

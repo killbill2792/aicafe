@@ -14,8 +14,9 @@ export function homeMoneyQuality(
   // Older cost lines may lack an explicit isExpected flag. Home still identifies
   // them as missing; do not show a verified profit while an expected bill is absent.
   const missingBills = home.missingCategories.length > 0;
-  const canShowProfit = costCompleteness === "complete" && !missingBills &&
-    money.ownerProfitDisplay.kind !== "unavailable";
+  // A known-cost subtotal is useful to the owner. Incomplete expense evidence
+  // changes the caveat, not whether the number may be shown.
+  const canShowProfit=money.ownerProfitDisplay.kind!=="unavailable";
   return {
     costCompleteness,
     canShowProfit,
@@ -23,7 +24,8 @@ export function homeMoneyQuality(
     hasEstimatedCosts: money.businessCosts.estimatedInputs.length > 0,
     // Revenue coverage is insufficient to justify a *profit* comparison.
     // Both windows require independently verified costs.
-    profitChangePct: canShowProfit && money.changes.some(change => change.key === "ownerProfit")
+    profitChangePct: canShowProfit && costCompleteness==="complete" &&
+      !missingBills && money.changes.some(change => change.key === "ownerProfit")
       ? home.changeVsLastPeriodPct : null,
   };
 }

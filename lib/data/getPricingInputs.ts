@@ -16,7 +16,7 @@ import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
  * file now calls that same shared function instead of reimplementing its own cost+completeness
  * check, which previously could disagree with getMenuItemsForEdit's own READY/NO_RECIPE verdict. */
 export type PricingItemInput = { id: string; name: string; category: MenuItemCategoryCode; currentPriceCents: number; productCostCents: number; productCostStatus: RecipeCostStatus; productCostSource?: ProductCostSource | null; productCostQuality?: "actual" | "estimated"; unitsSoldInWindow: number };
-export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyWagesCents?: number | null; monthlyStaffCostCents: number | null; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number; monthlyProcessingFeesCents: number; processingFeesStatus: "actual" | "estimated" | "missing"; productCostsStatus?: "actual" | "estimated" | "missing"; targetOperatingMargin?: number; targetOperatingMarginStatus?: "default" | "confirmed"; payrollTaxRateStatus?: "estimated" | "confirmed"; payrollCostsStatus?: "actual" | "estimated" | "missing"; operatingCostsStatus?: "actual" | "estimated" | "missing" };
+export type PricingBusinessInput = { currency?:string|null; windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyWagesCents?: number | null; monthlyStaffCostCents: number | null; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number; monthlyProcessingFeesCents: number; processingFeesStatus: "actual" | "estimated" | "missing"; productCostsStatus?: "actual" | "estimated" | "missing"; targetOperatingMargin?: number; targetOperatingMarginStatus?: "default" | "confirmed"; payrollTaxRateStatus?: "estimated" | "confirmed"; payrollCostsStatus?: "actual" | "estimated" | "missing"; operatingCostsStatus?: "actual" | "estimated" | "missing" };
 
 /** Known-only rollup wages cannot establish complete monthly payroll. */
 export function monthlyPayrollFromDays(days: Pick<DailyFacts,
@@ -35,9 +35,10 @@ export function monthlyPayrollFromDays(days: Pick<DailyFacts,
 }
 
 export async function getPricingInputs(supabase: SupabaseClient, businessId: string): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput; menuPriceBasis: MenuPriceSourceBasis }> {
-  const { data: businessRow, error: businessError } = await supabase.from("businesses").select("timezone, target_operating_margin, target_operating_margin_status, payroll_tax_rate_status").eq("id", businessId).single();
+  const { data: businessRow, error: businessError } = await supabase.from("businesses").select("timezone, currency, target_operating_margin, target_operating_margin_status, payroll_tax_rate_status").eq("id", businessId).single();
   if (businessError) throw businessError;
-  const timezone = businessRow?.timezone ?? "America/Los_Angeles";
+  if (!businessRow?.timezone) throw new Error("Café timezone missing");
+  const timezone = businessRow.timezone;
   const today = new Date();
   const todayDateStr = formatInTimeZone(today, timezone, "yyyy-MM-dd");
   const firstOfMonth = todayDateStr.slice(0,7)+"-01";
@@ -201,7 +202,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
         ? "estimated" as const
         : "actual" as const;
   const monthlyVariableProductCostCents = Math.round(items.reduce((sum, item) => sum + item.unitsSoldInWindow * item.productCostCents, 0) * scale);
-  return { items, menuPriceBasis, business: { windowDays, daysWithSalesInWindow: days.filter((day) => day.netSalesCents > 0).length, totalOrdersInWindow: trustedOrdersInWindow, monthlyRevenueCents, monthlyWagesCents, monthlyStaffCostCents, monthlyOperatingCostCents, monthlyVariableProductCostCents, monthlyProcessingFeesCents, processingFeesStatus, productCostsStatus,
+  return { items, menuPriceBasis, business: { currency:businessRow.currency??null, windowDays, daysWithSalesInWindow: days.filter((day) => day.netSalesCents > 0).length, totalOrdersInWindow: trustedOrdersInWindow, monthlyRevenueCents, monthlyWagesCents, monthlyStaffCostCents, monthlyOperatingCostCents, monthlyVariableProductCostCents, monthlyProcessingFeesCents, processingFeesStatus, productCostsStatus,
     targetOperatingMargin: Number(businessRow?.target_operating_margin ?? 0.15),
     targetOperatingMarginStatus: businessRow?.target_operating_margin_status ?? "default",
     payrollTaxRateStatus: businessRow?.payroll_tax_rate_status ?? "estimated",

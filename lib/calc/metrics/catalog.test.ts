@@ -1,5 +1,7 @@
 import { describe,expect,it } from "vitest";
 import { computeMetric,metricCatalog,verifiedDailyCogs,type MetricDailyInput } from "./catalog";
+import {laborForPeriod} from "@/lib/metrics/core/labor";
+import {profitForPeriod} from "@/lib/metrics/core/profit";
 
 const itemId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ingredientId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -22,6 +24,14 @@ const recorded:MetricDailyInput={
   salesTotalCoverageVerified:true,validItemIds:[itemId],
 };
 describe("M1 typed metric catalog",()=>{
+  it("certified metric numbers equal the same core used by Money",()=>{
+    const f=recorded.facts!;
+    const labor=laborForPeriod([{date:recorded.date}],[f]).knownLaborCents;
+    const profit=profitForPeriod([f],{amountCents:recorded.runningCostsCents!},
+      {amountCents:f.cardFeesCents},{amountCents:labor},{amountCents:f.ingredientsCents});
+    expect(computeMetric("labor_cost",{},recorded).value).toBe(labor);
+    expect(computeMetric("net_profit",{},recorded).value).toBe(profit.profitCents);
+  });
   it("uses canonical sales and margin calculators",()=>{
     expect(computeMetric("net_sales",{},recorded).value).toBe(20000);
     expect(computeMetric("orders",{},recorded).value).toBe(20);

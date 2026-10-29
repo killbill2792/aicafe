@@ -1,6 +1,7 @@
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {notificationEnabled,safeTaskKind,deliverOwnerTemplate} from "@/lib/ai/notifications/whatsapp.server";
 import {NextResponse} from "next/server";
+import {cafeToday} from "@/lib/metrics/core/clock";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const respond=(status:number,result:unknown)=>NextResponse.json(result,{status,headers:{"Cache-Control":"no-store"}});
 export async function GET(request:Request){
@@ -12,7 +13,6 @@ export async function GET(request:Request){
  const {data:subscribers,error}=await db.from("ai_owner_notifications")
    .select("business_id,owner_user_id,phone_e164").eq("opted_in",true).limit(100);
  if(error)return respond(503,{error:"delivery_queue_unavailable"});
- const today=new Date().toISOString().slice(0,10);
  let sent=0,failed=0;
  for(const sub of subscribers??[]){
   // Auth phone confirmation can be revoked after subscription.
@@ -27,6 +27,10 @@ export async function GET(request:Request){
     .order("created_at",{ascending:false}).limit(1);
   if(taskError||!tasks?.length)continue;
   const task=tasks[0];
+  const {data:business,error:timezoneError}=await db.from("businesses")
+    .select("timezone").eq("id",sub.business_id).single();
+  if(timezoneError||!business?.timezone){failed++;continue;}
+  const today=cafeToday(business.timezone);
   const kind=safeTaskKind(task);
   if(!kind)continue;
   // Reserve before external send. A timeout cannot accidentally trigger a duplicate.

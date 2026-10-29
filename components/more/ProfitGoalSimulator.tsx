@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { profitGoalBlockers } from "./profitGoalBlockers";
+import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
 import { simulateProfitGoal } from "@/lib/calc/profitGoalSimulator";
 import type { ProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
 
@@ -59,8 +60,7 @@ export default function ProfitGoalSimulator({
     const timer = setTimeout(() => setTarget(parsed), 250);
     return () => clearTimeout(timer);
   }, [parsed, error]);
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
-  const fmt = (cents: number) => currency.format(cents / 100);
+  const fmt = (cents: number) => formatCafeCurrency(cents,locale,data.business.currency).text;
   const pct = (value: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value);
   const typedPct = (value: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value / 100);
   const blockers = profitGoalBlockers(data);

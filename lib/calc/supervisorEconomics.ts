@@ -1,9 +1,13 @@
 import {calculateBreakEvenSales} from "./breakEvenSales";
+import {breakEvenFor,type BreakEvenDay} from "@/lib/metrics/core/breakEven";
+import {shiftCafeDate} from "@/lib/metrics/core/clock";
+import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
+import type {LaborRecord} from "@/lib/metrics/core/labor";
 import {COFFEE_SHOP_PROFILE} from "@/lib/pricing/profiles";
 export type FigureStatus="actual"|"estimate"|"owner"|"missing";
-export type Figure={valueCents:number|null;status:FigureStatus;reason:string;missingDays:string[]};
-export const figure=(valueCents:number|null,status:FigureStatus,reason:string,missingDays:string[]=[]):Figure=>({
- valueCents,status:valueCents===null?"missing":status,reason,missingDays
+export type Figure={valueCents:number|null;status:FigureStatus;reason:string;missingDays:string[];reasonParams?:Record<string,string|number>};
+export const figure=(valueCents:number|null,status:FigureStatus,reason:string,missingDays:string[]=[],reasonParams?:Record<string,string|number>):Figure=>({
+ valueCents,status:valueCents===null?"missing":status,reason,missingDays,reasonParams
 });
 /** Owner costs are EXTRAS, never a substitute for known/clocked payroll.
  * Without a clocked-labor basis, even saved extras cannot certify total payroll. */
@@ -24,6 +28,14 @@ export type Economics={
  feePlan?:{percentRate:number;fixedFeeCents:number;drinksPerOrder:number;processorLabel:string};
  /** Expected operating categories without current actual or recurring basis. */
  missingBillCategories?:string[];
+ asOfDate?:string;observedDays?:BreakEvenDay[];
+ ownerFeePlans?:readonly OwnerFeePlan[];
+ observedIngredientCentsOverride?:number|null;
+ missingIngredientCosts?:boolean;
+ laborEvidence?:{dates:readonly {date:string}[];records:readonly LaborRecord[]};
+ /** Owner-supplied observations take precedence in this specific calculation only. */
+ ownerNetSalesCents?:number|null;ownerSalesDays?:number|null;
+ scenarioIngredientRateOverride?:number;
 };
 /** Weighted owner-confirmed processor rate from the SAME covered drinks/order window. */
 export function fixedCardFeeForCoveredSales(plan:{
@@ -56,30 +68,75 @@ export function unifiedBreakEven(input:Economics){
  const rateKnown=input.ingredientRate!==null&&input.feeRate!==null;
  const effectiveIngredientRate=input.ingredientRate??0;
  const effectiveFeeRate=input.feeRate??0;
- const computed=calculateBreakEvenSales({
-  monthlyBillsCents:input.monthlyBills.valueCents??0,
-  monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
-  observedSalesCents:100_000_000,
-  observedIngredientCents:Math.round(100_000_000*effectiveIngredientRate),
-  observedProcessingFeesCents:Math.round(100_000_000*effectiveFeeRate)
- });
- const completeFixed=input.monthlyBills.valueCents!==null&&input.monthlyStaff.valueCents!==null;
- const knownCostBreakEvenFloorCents=(fixed.length>0||extrasFloor>0)&&rateKnown&&
-  computed.kind==="ready"?computed.breakEvenSalesCents:null;
- const monthlyCents=completeFixed&&rateKnown&&!(input.missingBillCategories?.length)&&
-  computed.kind==="ready"?computed.breakEvenSalesCents:null;
- const drinksPerDay=monthlyCents!==null&&input.averagePriceCents!==null&&input.averagePriceCents>0
-  ?Math.ceil(monthlyCents/input.averagePriceCents/input.daysInMonth):null;
+ const realDays=input.asOfDate?input.observedDays?.filter(day=>
+   day.date>=shiftCafeDate(input.asOfDate!,-28)&&
+   day.date<input.asOfDate!&&day.salesDataStatus!=="missing")??[]:[];
+ const observedSalesCents=realDays.reduce((sum,d)=>sum+d.netSalesCents,0);
+ const ownerSales=input.ownerNetSalesCents??null;
+ if(ownerSales!==null&&(!Number.isSafeInteger(ownerSales)||ownerSales<0))
+   throw new RangeError("Invalid owner sales observation");
+ const calcSales=ownerSales??observedSalesCents;
+ const sourceIngredients=input.observedIngredientCentsOverride??
+   realDays.reduce((sum,day)=>sum+day.ingredientsCents,0);
+ const sourceFees=cardFeesForDays(realDays,input.ownerFeePlans??null).amountCents;
+ // A stated owner percentage overrides imports for this scenario. Otherwise,
+ // retain the real amounts, or scale their effective rates when the owner supplies sales.
+ const ingredientCents=input.scenarioIngredientRateOverride!==undefined?
+   Math.round(calcSales*input.scenarioIngredientRateOverride):
+   input.ingredientStatus==="owner"&&input.ingredientRate!==null?
+   Math.round(calcSales*input.ingredientRate):
+   observedSalesCents>0?Math.round(sourceIngredients*calcSales/observedSalesCents):
+   Math.round(calcSales*effectiveIngredientRate);
+ const feeCents=input.feeStatus==="owner"&&input.feeRate!==null?
+   Math.round(calcSales*input.feeRate):
+   observedSalesCents>0?Math.round(sourceFees*calcSales/observedSalesCents):
+   Math.round(calcSales*effectiveFeeRate);
+ const shared=ownerSales===null&&input.asOfDate&&input.observedDays?breakEvenFor({
+   days:realDays,asOfDate:input.asOfDate,daysInMonth:input.daysInMonth,
+   monthlyBillsCents:input.monthlyBills.valueCents,
+   monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
+   observedIngredientCents:ingredientCents,
+   observedProcessingFeesCents:feeCents,
+   ownerFeePlans:input.ownerFeePlans,
+ }):null;
+ const computed=shared?.calculation??(
+   ownerSales!==null?calculateBreakEvenSales({
+     monthlyBillsCents:input.monthlyBills.valueCents??0,
+     monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
+     observedSalesCents:calcSales,
+     observedIngredientCents:ingredientCents,
+     observedProcessingFeesCents:feeCents,
+   }):input.observedDays?{kind:"unavailable" as const,reason:"NO_SALES" as const}:
+   calculateBreakEvenSales({
+     monthlyBillsCents:input.monthlyBills.valueCents??0,
+     monthlyStaffCents:input.monthlyStaff.valueCents??extrasFloor,
+     observedSalesCents:100_000_000,
+     observedIngredientCents:Math.round(100_000_000*effectiveIngredientRate),
+     observedProcessingFeesCents:Math.round(100_000_000*effectiveFeeRate),
+   }));
+ // Observed costs can provide a meaningful known-cost break-even without a saved
+ // percentage. Explicit missing inputs remain disclosed instead of becoming zero.
+ const evidenceReady=ownerSales!==null||shared!==null||rateKnown;
+ const monthlyCents=evidenceReady&&computed.kind==="ready"?computed.breakEvenSalesCents:null;
+ const knownCostBreakEvenFloorCents=(fixed.length>0||extrasFloor>0)&&
+   monthlyCents!==null?monthlyCents:null;
+ const drinksPerDay=shared?shared.drinksPerDay:
+   monthlyCents!==null&&input.averagePriceCents!==null&&input.averagePriceCents>0&&input.daysInMonth>0
+   ?Math.ceil(monthlyCents/input.averagePriceCents/input.daysInMonth):null;
  const status:FigureStatus=missing.length||fixed.some(f=>f.status!=="actual")||
   input.ingredientStatus!=="actual"||input.feeStatus!=="actual"?"estimate":"actual";
- const reason=missing.length?"Known inputs only; missing: "+missing.join(", "):
-  input.monthlyStaff.missingDays.length?"estimate: "+input.monthlyStaff.missingDays.length+" labor days missing":
-  status==="actual"?"Recorded costs and sales":"Includes estimates or owner-entered figures";
- return {monthlyBreakEven:figure(monthlyCents,status,reason,input.missingDays),
+ const reason=missing.length?"breakEvenKnownInputs":
+  input.monthlyStaff.missingDays.length?"laborPartialCoverage":
+  status==="actual"?"laborRecorded":"profitFeesEstimated";
+ const reasonParams={missing:missing.join(", "),covered:input.laborCoveredDays??0,
+  total:input.laborWindowDays??0};
+ return {monthlyBreakEven:figure(monthlyCents,status,reason,input.missingDays,reasonParams),
   drinksPerDay,knownCostBreakEvenFloorCents,monthlyFixedKnownCents:fixedKnown,
   monthlyBills:input.monthlyBills,monthlyStaff:input.monthlyStaff,
   ingredientRate:input.ingredientRate,feeRate:input.feeRate,
-  status,reason,missing};
+  status,reason,reasonParams,missing,
+  observedProcessingFeesCents:feeCents,observedIngredientCents:ingredientCents,
+  observedSalesCents:calcSales};
 }
 /** Drink pricing: product-cost target sets the baseline; fully loaded economics
  * can only lift that baseline to break-even, never stack a model-selected margin. */
@@ -172,8 +229,10 @@ export function simulateEconomics(input:Economics,delta:ScenarioDelta){
    afterInput.monthlyRevenue=figure(afterInput.monthlyRevenue.valueCents+
     Math.round((delta.newPriceCents-delta.oldPriceCents)*delta.weeklyUnits*weeklyFactor),
     "estimate","Price scenario");
-  if(delta.kind==="item_cost"&&input.monthlyRevenue.valueCents&&input.ingredientRate!==null&&profitChangeCents!==null)
+  if(delta.kind==="item_cost"&&input.monthlyRevenue.valueCents&&input.ingredientRate!==null&&profitChangeCents!==null){
    afterInput.ingredientRate=Math.max(0,input.ingredientRate-profitChangeCents/input.monthlyRevenue.valueCents);
+   afterInput.scenarioIngredientRateOverride=afterInput.ingredientRate;
+  }
  }else if(delta.kind==="shift"||delta.kind==="wage"){
   const wages=delta.kind==="shift"?delta.hoursChange*delta.shiftsPerWeek*delta.wageCents:
    delta.weeklyHours*(delta.newWageCents-delta.oldWageCents);

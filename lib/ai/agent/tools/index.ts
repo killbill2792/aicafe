@@ -42,6 +42,8 @@ export type AgentToolResult = {
 export type AgentToolContext = {
   tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
   timezone:string;
+  /** Authenticated ISO 4217 currency; absent only in legacy test contexts. */
+  currency?:string|null;
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
   resolveState?:import("../resolve").ResolveState;

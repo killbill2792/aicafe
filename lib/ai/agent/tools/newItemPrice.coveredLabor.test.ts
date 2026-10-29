@@ -8,7 +8,7 @@ describe("owner labor with actual covered sales",()=>{
   const days=Array.from({length:14},(_,i)=>
    new Date(Date.UTC(2026,7,22+i)).toISOString().slice(0,10));
   const ctx={
-   asOf:"2026-10-27",timezone:"America/Los_Angeles",locale:"en" as const,
+   asOf:"2026-10-27",timezone:"America/Los_Angeles",locale:"en" as const,currency:"USD",
    tools:{getSalesTrend:async({from,to}:{from:string;to:string})=>{
     const selected=days.filter(date=>date>=from&&date<=to);
     return {available:selected.length>0,value:selected.map(date=>({date,drinksCount:20,ordersCount:12})),quality:q};
@@ -25,7 +25,7 @@ describe("owner labor with actual covered sales",()=>{
     laborPeriod:{unit:"month"},rentCents:null,otherOverheadCents:null,
     overheadPeriod:null,unitCostCents:null,itemsSoldPerDay:null}
   },ctx);
-  expect(result.monthlyLabor).toMatchObject({valueCents:310000,status:"owner",reason:"You told me"});
+  expect(result.monthlyLabor).toMatchObject({valueCents:310000,status:"owner",reasonKey:"laborOwnerProvided",reason:"Owner-provided monthly payroll."});
   expect(result.monthlyUnits).toBe(620);
   expect(result.coverageLabel).toContain("Aug 22–Sep 4");
   expect(result.coverageLabel).toContain("2026");

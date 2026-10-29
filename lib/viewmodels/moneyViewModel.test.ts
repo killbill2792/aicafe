@@ -172,7 +172,7 @@ describe("Money Week spanning previous month remains supported Oct 1–6",()=>{
       expect(partial.totalCostsCents).toBe(expectedTotal);
       expect(partial.runningCostLines[0].amountCents).toBe(expectedRunning);
       expect(partial.salesCents).toBe(7*100000);
-      expect(partial.ownerProfitDisplay.kind).toBe("unavailable");
+      expect(partial.ownerProfitDisplay.kind).toBe("partial");
       expect(partial.comparisonState.kind).toBe("available");
       expect(partial.changes.map(x=>x.key)).toContain("sales");
       expect(partial.changes.map(x=>x.key)).not.toContain("ownerProfit");
@@ -191,7 +191,7 @@ describe("Money Week spanning previous month remains supported Oct 1–6",()=>{
       expect(completed.businessCosts.completeness).toBe("partial");
       expect(completed.businessCosts.missingInputs).toEqual(["priorMonthRunningCostCoverage"]);
       expect(completed.totalCostsCents).toBe(expectedTotal);
-      expect(completed.ownerProfitDisplay.kind).toBe("unavailable");
+      expect(completed.ownerProfitDisplay.kind).toBe("partial");
       expect(completed.changes.map(x=>x.key)).not.toContain("ownerProfit");
     });
   }
@@ -208,6 +208,17 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     historicalIngredientCostProof:{source:"historical_recomputation" as const,
       days:[{date:day.date,ingredientsCents:day.ingredientsCents}]},
   });
+  // Fixture A's default utility bill and fee totals are estimates, so tests
+  // asserting VERIFIED profit require explicit actual evidence for each part.
+  const verifiedSnapshot=():BusinessSnapshot=>{
+    const certifiedDays=fixture.monthActualDays.map(d=>({
+      ...d,salesDataStatus:"actual" as const,cardFeesStatus:"actual" as const,
+      laborWageStatus:"actual" as const,staffTaxStatus:"actual" as const,
+    }));
+    return {...fixture,monthActualDays:certifiedDays,monthRecordedDays:certifiedDays,
+      todayDay:certifiedDays[certifiedDays.length-1],
+      runningCostLines:fixture.runningCostLines.map(line=>({...line,isEstimate:false}))};
+  };
   it("current period partial: no owner-profit or ingredient delta, but sales still compares",()=>{
     const vm=buildProfitAndCostsViewModel({
       ...fixture,
@@ -216,7 +227,7 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     },"today");
     expect(vm.comparisonState.kind).toBe("available");
     expect(vm.businessCosts.completeness).toBe("partial");
-    expect(vm.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(vm.ownerProfitDisplay.kind).toBe("partial");
     expect(vm.changes.map(x=>x.key)).toContain("sales");
     expect(vm.changes.map(x=>x.key)).not.toContain("ownerProfit");
     expect(vm.changes.map(x=>x.key)).not.toContain("ingredients");
@@ -235,7 +246,7 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     expect(vm.changes.map(x=>x.key)).not.toContain("ingredients");
   });
   it("both dates have independent historical item-cost proof: owner-profit delta remains",()=>{
-    const snapshot:BusinessSnapshot={...fixture,
+    const snapshot:BusinessSnapshot={...verifiedSnapshot(),
       periodItemSales:provenItemPeriod(current),
       comparisonPeriodItemSales:provenItemPeriod(previous),
     };
@@ -279,12 +290,13 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
     expect(vm.changes.map(x=>x.key)).not.toContain("staff");
   });
   it("current and comparison both verified-zero sales can still compare real profit",()=>{
+    const verified=verifiedSnapshot();
     const zero=(d:DailyFacts):DailyFacts=>({...d,netSalesCents:0,
       ordersCount:0,ingredientsCents:0,cardFeesCents:0,
       salesDataStatus:"actual",cardFeesStatus:"actual"});
-    const days=fixture.monthActualDays.map(d=>
+    const days=verified.monthActualDays.map(d=>
       d.date===current.date||d.date===previous.date?zero(d):d);
-    const snapshot:BusinessSnapshot={...fixture,
+    const snapshot:BusinessSnapshot={...verified,
       monthActualDays:days,monthRecordedDays:days,
       todayDay:days[days.length-1],
       periodItemSales:undefined,comparisonPeriodItemSales:undefined,
@@ -298,6 +310,19 @@ describe("Money comparison evidence gates: sales is not verified profit",()=>{
 });
 
 
+describe("Money with missing card fee facts",()=>{
+  it("still shows a partial cents result and asks for the owner's rate",()=>{
+    const fixture=getFixtureSnapshot();
+    const missing=fixture.monthActualDays.map(day=>day.date===fixture.todayDay.date?
+      {...day,cardFeesCents:0,cardFeesStatus:"missing" as const}:day);
+    const snapshot={...fixture,monthActualDays:missing,monthRecordedDays:missing,
+      todayDay:missing.find(day=>day.date===fixture.todayDay.date)!};
+    const vm=buildProfitAndCostsViewModel(snapshot,"today");
+    expect(vm.ownerProfitCents).not.toBeNull();
+    expect(vm.financialNotes).toContain("feeDefaultEstimateAskRate");
+    expect(vm.financialNotes).toContain("profitFeesMissing");
+  });
+});
 describe("Money partial-known-wage day",()=>{
   it("removes wages, staff change and final profit without hiding sales",()=>{
     const original=getFixtureSnapshot();
@@ -309,14 +334,14 @@ describe("Money partial-known-wage day",()=>{
       todayDay:changed(original.todayDay)};
     const vm=buildProfitAndCostsViewModel(snapshot,"today");
     expect(vm.salesCents).toBeGreaterThan(0);
-    expect(vm.wagesCents).toBeNull();
-    expect(vm.staffTaxCents).toBeNull();
+    expect(vm.wagesCents).toBe(1750);
+    expect(vm.staffTaxCents).toBe(210);
     expect(vm.staffRatio).toBeNull();
     expect(vm.combinedRatio).toBeNull();
     expect(vm.staffBand).toBeNull();
     expect(vm.combinedBand).toBeNull();
-    expect(vm.ownerProfitCents).toBeNull();
-    expect(vm.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(vm.ownerProfitCents).not.toBeNull();
+    expect(vm.ownerProfitDisplay.kind).toBe("partial");
     expect(vm.businessCosts.missingInputs).toContain("laborWageUnknown:"+date);
     expect(vm.changes.map(row=>row.key)).not.toContain("staff");
     const complete=buildProfitAndCostsViewModel({...snapshot,
@@ -332,8 +357,8 @@ describe("Money partial-known-wage day",()=>{
       ...d,wagesCents:1250,staffTaxCents:150,laborWageStatus:"missing" as const}:d);
     const vm=buildCostRecoveryViewModel({...original,monthRecordedDays:changed,
       monthActualDays:changed});
-    expect(vm.monthlyStaffCents).toBeNull();
-    expect(vm.breakEven.kind).toBe("unavailable");
+    expect(vm.monthlyStaffCents).toBeGreaterThan(0);
+    expect(vm.breakEvenNotes).toContain("laborWageUnknown");
   });
 });
 
@@ -349,8 +374,8 @@ describe("Money staff-only missing-wage day",()=>{
     const result=buildProfitAndCostsViewModel(snapshot,"month");
     expect(result.salesCents).toBeGreaterThan(0);
     expect(result.businessCosts.missingInputs).toContain("laborWageUnknown:"+staffOnly.date);
-    expect(result.ownerProfitCents).toBeNull();
-    expect(result.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(result.ownerProfitCents).not.toBeNull();
+    expect(result.ownerProfitDisplay.kind).toBe("partial");
     const restored=buildProfitAndCostsViewModel({...snapshot,
       monthRecordedDays:snapshot.monthRecordedDays.map(day=>day.date===staffOnly.date?{
         ...day,laborWageStatus:"actual" as const}:day)},"month");
@@ -365,9 +390,10 @@ describe("Recovery with known-only missing wages",()=>{
       ...day,wagesCents:200,staffTaxCents:25,laborWageStatus:"missing" as const}:day);
     const partial=buildCostRecoveryViewModel({...fixture,
       monthActualDays:missing,monthRecordedDays:missing});
-    expect(partial.monthlyStaffCents).toBeNull();
+    expect(partial.monthlyStaffCents).toBeGreaterThan(0);
+    expect(partial.breakEvenNotes).toContain("laborWageUnknown");
     expect(partial.allCovered).toBe(false);
-    expect(partial.projectedMonthEndProfitCents).toBeNull();
+    expect(partial.projectedMonthEndProfitCents).not.toBeNull();
     const restored=missing.map((day,i)=>i===0?{
       ...day,laborWageStatus:"actual" as const}:day);
     expect(buildCostRecoveryViewModel({...fixture,

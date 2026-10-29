@@ -141,7 +141,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
         content: m.text ?? (m.blocks ?? []).flatMap(b => b && typeof b === "object" && "text" in b ?
           [String(b.text)] : b && typeof b === "object" && "type" in b && b.type==="clarify" && "question" in b && "options" in b && Array.isArray(b.options) ?
           ["Asked: "+String(b.question)+" Options: "+b.options.map(o=>o&&typeof o==="object"&&"label" in o&&"value" in o?String(o.label)+" ("+String(o.value)+")":"").join("; ")] : []).join(" ") })).filter(m => m.content);
-    const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,
+    const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf),
       readEconomics:async()=>readSupervisorEconomics(await createServerSupabaseClient(),scope.businessId,identity.asOf),
       threadId:id,ownerMessageId:owner.id,

@@ -3,6 +3,7 @@ import {conversationError,conversationJson,parseInput,readBoundedJson,requireSam
  from "@/lib/ai/conversations/http.server";
 import {quoteInput} from "@/lib/ai/suppliers/contracts";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
+import {readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const cols="id,supplier_name,item_name,price_cents,package_count,package_unit,source_kind,source_url,quoted_on,evidence_status,created_at";
 type Row={id:string;supplier_name:string;item_name:string;price_cents:number;package_count:number;
@@ -25,9 +26,10 @@ export async function POST(request:Request){
  try{
   requireSameOrigin(request);
   const x=parseInput(quoteInput,await readBoundedJson(request));
-  if(x.quotedOn>new Date().toISOString().slice(0,10))
-   throw new ConversationApiError(422,"future_quote_date");
   const {scope}=await authenticatedConversationContext();
+  const identity=await readSupervisorCafeIdentity(scope.businessId);
+  if(x.quotedOn>identity.asOf)
+   throw new ConversationApiError(422,"future_quote_date");
   const db=await createServerSupabaseClient();
   const payload={
    business_id:scope.businessId,owner_user_id:scope.ownerUserId,

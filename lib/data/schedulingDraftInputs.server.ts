@@ -20,6 +20,8 @@ export async function readSchedulingDraftInputs(client:SupabaseClient,businessId
  if([employees,schedules,availability,preferences,exceptions].some(r=>(r.data??[]).length>200))missing.push("scheduleInputsTruncated");
  const location=locations.data?.[0],openHours=normalizeOpenHours(location?.open_hours);
  if(!openHours)missing.push("businessHoursNotSet");
+ const timezone=location?.timezone??business.data?.timezone;
+ if(!timezone)return {available:false,value:null,quality:{level:"low",missingInputs:["cafeTimezoneMissing"],estimatedInputs:[],staleInputs:[]}};
  const value:SchedulingDraftInputs={
   employees:(employees.data??[]).slice(0,200).map(x=>({...x,default_hourly_wage_cents:x.default_hourly_wage_cents==null?null:Number(x.default_hourly_wage_cents),wage_amount_cents:x.wage_amount_cents==null?null:Number(x.wage_amount_cents)})),
   schedules:(schedules.data??[]).slice(0,200).map(x=>({...x,start_time:String(x.start_time).slice(0,5),end_time:String(x.end_time).slice(0,5)})),
@@ -31,8 +33,8 @@ export async function readSchedulingDraftInputs(client:SupabaseClient,businessId
     start:x.start_local===null?null:String(x.start_local).slice(0,5),
     end:x.end_local===null?null:String(x.end_local).slice(0,5),
     overnight:x.overnight===true})),
-  timezone:location?.timezone??business.data?.timezone??"UTC",
-  timezoneDefaultedToUtc:!location?.timezone&&!business.data?.timezone,
+  timezone,
+  timezoneDefaultedToUtc:false,
   city:location?.city??null,region:location?.region??null,countryCode:location?.country_code??null
  };
  return {available:true,value,quality:{level:missing.length?"medium":"high",missingInputs:missing,estimatedInputs:[],staleInputs:[]}};

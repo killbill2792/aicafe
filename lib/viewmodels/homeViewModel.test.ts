@@ -29,8 +29,9 @@ describe("owner-truthful Home inputs", () => {
     const snapshot = getFixtureSnapshot();
     snapshot.runningCostLines.push({ categoryCode: "water", label: "Water", amountCents: 0, isEstimate: false, isMissing: true, isExpected: true });
     const vm = buildBreakEvenViewModel(snapshot);
-    expect(vm.unavailableReason).toBe("missing_costs");
-    expect(vm.whatIfs).toEqual([]);
+    expect(vm.unavailableReason).toBeNull();
+    expect(vm.drinksNeededPerDay).toBeGreaterThan(0);
+    expect(vm.noteKeys).toContain("breakEvenBillsMissing");
     expect(vm.missingCosts[0]?.categoryCode).toBe("water");
   });
 
@@ -60,7 +61,9 @@ describe("owner-truthful Home inputs", () => {
       costStatus: "NO_RECIPE",
       quantitySoldLast28Days: 10,
     });
-    expect(buildHomeViewModel(snapshot, "month").operatingMargin).toBeNull();
+    const vm=buildHomeViewModel(snapshot,"month");
+    expect(vm.operatingMargin).not.toBeNull();
+    expect(vm.financialNotes).toContain("profitProductCostsMissing");
   });
 
   it("recognizes a fresh café without sales or known running-cost setup", () => {
@@ -79,10 +82,12 @@ describe("Home with known-only wages from missing labor day",()=>{
       laborWageStatus:"missing" as const};
     snapshot.todayDay=missing;
     snapshot.monthActualDays=snapshot.monthActualDays.map(day=>day.date===missing.date?missing:day);
+    snapshot.monthRecordedDays=snapshot.monthRecordedDays?.map(day=>day.date===missing.date?missing:day);
     snapshot.last28Days=snapshot.last28Days.map(day=>day.date===missing.date?missing:day);
     const vm=buildHomeViewModel(snapshot,"today");
-    expect(vm.ownerProfitCents).toBeNull();
-    expect(vm.ownerProfitDisplay.kind).toBe("unavailable");
+    expect(vm.ownerProfitCents).not.toBeNull();
+    expect(vm.ownerProfitDisplay.kind).toBe("partial");
+    expect(vm.financialNotes).toContain("profitLaborMissing");
     expect(vm.staffCostPerMinuteNow).toBeNull();
     expect(buildHomeViewModel({...snapshot,todayDay:{...missing,laborWageStatus:"actual"},
       monthActualDays:snapshot.monthActualDays.map(day=>day.date===missing.date?{...missing,laborWageStatus:"actual"}:day)},"today")
@@ -101,9 +106,9 @@ describe("Home staff-only missing-wage day",()=>{
       monthRecordedDays:[staffOnly,...fixture.monthActualDays.slice(1)]};
     const result=buildHomeViewModel(snapshot,"month");
     expect(result.salesCents).toBeGreaterThan(0);
-    expect(result.ownerProfitCents).toBeNull();
-    expect(result.ownerProfitDisplay.kind).toBe("unavailable");
-    expect(result.operatingMargin).toBeNull();
+    expect(result.ownerProfitCents).not.toBeNull();
+    expect(result.ownerProfitDisplay.kind).toBe("partial");
+    expect(result.financialNotes).toContain("profitLaborMissing");
     const complete=buildHomeViewModel({...snapshot,
       monthRecordedDays:snapshot.monthRecordedDays.map(day=>day.date===staffOnly.date?{
         ...day,laborWageStatus:"actual" as const}:day)},"month");

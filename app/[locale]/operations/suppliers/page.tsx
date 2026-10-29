@@ -4,20 +4,23 @@ import {Link} from "@/i18n/navigation";
 import PageShell from "@/components/shared/PageShell";
 import SupplierEvidenceManager from "@/components/operations/SupplierEvidenceManager";
 import {authenticatedConversationContext} from "@/lib/ai/conversations/auth.server";
+import {readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 export const dynamic="force-dynamic";
 export default async function SupplierEvidencePage(){
- await authenticatedConversationContext().catch(()=>notFound());
+ const {scope}=await authenticatedConversationContext().catch(()=>notFound());
+ const identity=await readSupervisorCafeIdentity(scope.businessId).catch(()=>notFound());
  const t=await getTranslations("SupplierEvidence");
+ const note=await getTranslations("MetricsNotes");
  return <PageShell className="flex flex-col gap-4 px-4 pb-28 pt-6">
   <header>
    <Link href="/operations" className="flex min-h-12 items-center text-[17px] font-bold text-ink underline">{t("back")}</Link>
    <h1 className="font-headline text-3xl font-bold text-ink">{t("title")}</h1>
   </header>
-  <SupplierEvidenceManager copy={{
+  <SupplierEvidenceManager today={identity.asOf} currency={identity.currency} copy={{
    title:t("title"),description:t("description"),supplier:t("supplier"),
    item:t("item"),price:t("price"),count:t("count"),unit:t("unit"),
    sourceKind:t("sourceKind"),sourceUrl:t("sourceUrl"),date:t("date"),
-   save:t("save"),saving:t("saving"),saved:t("saved"),error:t("error"),
+   save:t("save"),saving:t("saving"),saved:t("saved"),error:t("error"),currencyMissing:note("cafeCurrencyMissing"),
    history:t("history"),empty:t("empty"),notVerified:t("notVerified"),
    search:t("search"),searchButton:t("searchButton"),
    searchUnavailable:t("searchUnavailable"),webNotice:t("webNotice"),

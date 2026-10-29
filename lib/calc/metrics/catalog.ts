@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { averageOrderValueCents, netSalesCentsForPeriod, ownerProfitCentsForPeriod,
-  staffCostCentsForPeriod } from "@/lib/calc/profit";
+import {averageOrderValueCents,netSalesCentsForPeriod,laborKnown} from "@/lib/calc/profit";
+import {laborForPeriod,laborPercentForPeriod} from "@/lib/metrics/core/labor";
+import {profitForPeriod} from "@/lib/metrics/core/profit";
 import { roundHalfUpToCent } from "@/lib/calc/money";
 import { paidHoursForTimecard } from "@/lib/calc/staff";
 import { evaluateRecipeCost, resolveProductCost } from "@/lib/calc/ingredients";
@@ -84,6 +85,18 @@ const sales = (day: MetricDailyInput): DailyFacts | null =>
     day.salesTotalCoverageVerified===true ? day.facts : null;
 const ratioBps = (part: number, total: number): MetricResult =>
   total > 0 ? known(Math.round(part * 10000 / total)) : missing("noSalesDenominator",true);
+/** Only publish CERTIFIED metric samples on complete provenance. This evidence
+ * contract differs from owner-facing partial amounts, but the math is shared. */
+const sharedLabor=(d:MetricDailyInput):number|null=>
+  d.facts&&laborKnown(d.facts)?
+    laborForPeriod([{date:d.date}],[d.facts]).knownLaborCents:null;
+const sharedProfit=(d:MetricDailyInput):number|null=>{
+  const labor=sharedLabor(d);
+  if(!d.facts||labor===null||d.runningCostsCents===undefined)return null;
+  return profitForPeriod([d.facts],{amountCents:d.runningCostsCents},
+    {amountCents:d.facts.cardFeesCents},{amountCents:labor},
+    {amountCents:d.facts.ingredientsCents}).profitCents;
+};
 const itemValue = (day: MetricDailyInput, params: MetricParams, field: "units" | "revenue" | "margin"): MetricResult => {
   const id = String(params.itemId);
   if(!day.validItemIds)return missing("itemIdentityUnverified");
@@ -136,13 +149,31 @@ export const metricCatalog: Record<MetricKey, Definition> = {
   item_revenue:{key:"item_revenue",unit:"cents",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"revenue")},
   item_margin:{key:"item_margin",unit:"cents",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"margin")},
   cogs_pct:{key:"cogs_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified?ratioBps(d.facts!.ingredientsCents,d.facts!.netSalesCents):missing("cogsCompleteness",Boolean(d.items)||d.itemCoverageInvalidated===true)},
-  labor_cost:{key:"labor_cost",unit:"cents",paramsSchema:empty,compute:d=>d.facts&&d.laborCoverageVerified&&d.facts.staffTaxStatus==="actual"&&staffCostCentsForPeriod([d.facts])!==null?known(staffCostCentsForPeriod([d.facts])!):missing("laborProvenance",Boolean(d.facts&&d.facts.staffTaxStatus!=="actual"))},
-  labor_pct:{key:"labor_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&staffCostCentsForPeriod([d.facts!])!==null?ratioBps(staffCostCentsForPeriod([d.facts!])!,d.facts!.netSalesCents):missing("laborProvenance",Boolean(d.facts&&d.facts.staffTaxStatus!=="actual"))},
+  labor_cost:{key:"labor_cost",unit:"cents",paramsSchema:empty,compute:d=>{
+    const labor=sharedLabor(d);
+    return d.facts&&d.laborCoverageVerified&&d.facts.staffTaxStatus==="actual"&&labor!==null?
+      known(labor):missing("laborProvenance",Boolean(d.facts&&d.facts.staffTaxStatus!=="actual"));
+  }},
+  labor_pct:{key:"labor_pct",unit:"bps",paramsSchema:empty,compute:d=>{
+    const labor=sharedLabor(d);
+    if(!sales(d)||!d.laborCoverageVerified||d.facts!.staffTaxStatus!=="actual"||labor===null)
+      return missing("laborProvenance",Boolean(d.facts&&d.facts.staffTaxStatus!=="actual"));
+    const fraction=laborPercentForPeriod(labor,d.facts!.netSalesCents);
+    return fraction===null?missing("noSalesDenominator",true):known(Math.round(fraction*10000));
+  }},
   sales_per_labor_hour:{key:"sales_per_labor_hour",unit:"cents",paramsSchema:hours,compute:hourly},
-  operating_margin:{key:"operating_margin",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&staffCostCentsForPeriod([d.facts!])!==null&&d.runningCostsCents!==undefined?
-    ratioBps(ownerProfitCentsForPeriod([d.facts!],d.runningCostsCents)!,d.facts!.netSalesCents):missing("runningCostsOrSales")},
-  net_profit:{key:"net_profit",unit:"cents",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&staffCostCentsForPeriod([d.facts!])!==null&&d.runningCostsCents!==undefined?
-    known(ownerProfitCentsForPeriod([d.facts!],d.runningCostsCents)!):missing("runningCostsOrSales")},
+  operating_margin:{key:"operating_margin",unit:"bps",paramsSchema:empty,compute:d=>{
+    const profit=sharedProfit(d);
+    return sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&
+      d.facts!.staffTaxStatus==="actual"&&profit!==null?
+      ratioBps(profit,d.facts!.netSalesCents):missing("runningCostsOrSales");
+  }},
+  net_profit:{key:"net_profit",unit:"cents",paramsSchema:empty,compute:d=>{
+    const profit=sharedProfit(d);
+    return sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&
+      d.facts!.staffTaxStatus==="actual"&&profit!==null?
+      known(profit):missing("runningCostsOrSales");
+  }},
   ingredient_unit_cost:{key:"ingredient_unit_cost",unit:"microcents_per_base_unit",paramsSchema:ingredient,compute:(d,p)=>{
     const raw=d.ingredientPriceMicros?.[String(p.ingredientId)];
     return raw!==undefined&&Number.isSafeInteger(raw)&&raw>=0?known(raw):missing("ingredientPrice",Boolean(d.ingredientPriceMicros));
