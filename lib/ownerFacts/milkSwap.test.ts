@@ -1,6 +1,6 @@
 import {describe,it,expect} from "vitest";
 import {swapCostPerSize,DEFAULT_TARGET_PRODUCT_COST_PERCENT} from "@/lib/metrics/core/modifierPricing";
-import {isMilkSwapQuestion,requestedMilkSizes,requestedMilkTarget,milkFactToken,milkSwapFromFacts} from "./milkSwap";
+import {requestedMilkSizes,milkFactToken,milkSwapFromFacts} from "./milkSwap";
 import type {SavedFact} from "./inject";
 const fact=(fact_key:string,value_json:unknown):SavedFact=>({
  fact_key,value_json,created_at:"2026-10-28T00:00:00Z",unit:null,period_scope:null
@@ -81,21 +81,6 @@ describe("milk swap shared-module screen/chat parity",()=>{
   const value=milkSwapFromFacts(sizes,[fact("milk_base_type","whole milk")],[],"almond milk");
   expect(value.missing).toContain("milk_almond_serving_cost_cents:16oz");
   expect(value.missing).not.toContain("milk_oat_serving_cost_cents:16oz");
- });
- it("selects a menu alternative by name, without inventing an option",()=>{
-  const rows=[{source:"canonical_data",period:null,missing:[],rows:[
-    {name:"Macadamia Cream",category:"alternative milk"},
-    {name:"Whole milk",category:"dairy milk"}
-  ]}];
-  expect(requestedMilkTarget("Swap milk to Macadamia Cream",rows)).toBe("Macadamia Cream");
-  expect(requestedMilkTarget("Change to alternative milk",rows)).toBe("Macadamia Cream");
-  expect(requestedMilkTarget("Switch to almond milk",[])).toBe("almond milk");
-  expect(requestedMilkTarget("Switch to soy milk",[])).toBe("soy milk");
-  expect(requestedMilkTarget("Switch to coconut milk",[])).toBe("coconut milk");
-  expect(requestedMilkTarget("Swap the milk",[])).toBeNull();
-  expect(isMilkSwapQuestion("Switch to soy instead")).toBe(true);
-  expect(isMilkSwapQuestion("Switch to Macadamia Cream",rows)).toBe(true);
-  expect(isMilkSwapQuestion("Switch to a latte",rows)).toBe(false);
  });
  it("owner serving costs match B's exact recommended upcharge",()=>{
   const saved=[fact("milk_base_type","whole milk"),fact("milk_ml:16oz",160),
@@ -186,9 +171,6 @@ describe("milk swap shared-module screen/chat parity",()=>{
   expect(answer.rows[0].suggestedUpchargeCents).toBeNull();
  });
  it("recognizes size-specific swaps in supported languages",()=>{
-  expect(isMilkSwapQuestion("Switch the 16 oz latte to oat milk and suggest an upcharge")).toBe(true);
-  expect(isMilkSwapQuestion("cambiar 16 onzas a leche de avena con recargo")).toBe(true);
-  expect(isMilkSwapQuestion("تبديل حليب الشوفان 16 oz وزيادة السعر")).toBe(true);
   expect(requestedMilkSizes("16 oz and 12 oz")).toEqual([{id:"16oz",label:"16 oz"},{id:"12oz",label:"12 oz"}]);
   expect(requestedMilkSizes("١٦ أونصة")).toEqual([{id:"16oz",label:"16 oz"}]);
  });

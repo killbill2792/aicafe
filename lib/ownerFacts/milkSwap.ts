@@ -10,65 +10,6 @@ import {money} from "@/lib/ai/agent/explain";
 
 /** C adapts stored source records to B's modifier-pricing engine.
  * All customer upcharges and cost deltas come from that shared module. */
-export function isMilkSwapQuestion(text:string,results:readonly AgentToolResult[]=[]):boolean{
- const change=/(?:swap|switch|change|replace|instead|upcharge|surcharge|cambiar|sustituir|recargo|cambio|استبدال|تبديل|زيادة|بدل)/iu.test(text);
- return change&&(
-  /(?:milk|leche|حليب|\b(?:oat|almond|soy|coconut)\b)/iu.test(text)||
-  requestedMilkTarget(text,results)!==null
- );
-}
-/** Choose a named milk; never silently assume oat or the first menu option. */
-export function requestedMilkTarget(text:string,results:readonly AgentToolResult[]=[]):string|null{
- const words=text.trim().toLocaleLowerCase("und");
- const names=new Set<string>();
- const alternatives=new Set<string>();
- for(const result of results)for(const item of [
-   ...(Array.isArray(result.items)?result.items:[]),
-   ...(Array.isArray(result.rows)?result.rows:[])
- ]){
-  if(!item||typeof item!=="object")continue;
-  const row=flattenCanonicalRow(item);
-  const name=row.name??row.ingredient_name;
-  const group=row.category??row.ingredient_category??row.category_name??row.group_name;
-  if(typeof name==="string"&&typeof group==="string"&&
-    /milk|dairy|leche|حليب/iu.test(group)&&name.trim()){
-     names.add(name.trim());
-     if(/alternative|non.?dairy|بديل|vegetal/iu.test(group))alternatives.add(name.trim());
-   }
- }
- const matched=[...names].filter(name=>words.includes(name.toLocaleLowerCase("und")));
- if(matched.length)return matched.sort((a,b)=>b.length-a.length)[0];
- const english=[...text.matchAll(/\b(?:to|with|using)\s+((?:[\p{L}\p{M}-]+\s+){0,3}milk)\b/giu)];
- if(english.length){
-  const selected=english[english.length-1][1].trim().toLocaleLowerCase("und");
-  if(!/^(?:milk|alternative milk|replacement milk|other milk|non.?dairy milk|plant.based milk)$/iu.test(selected))
-   return selected;
- }
- const commonShort=text.match(/\b(?:to|with|using)\s+(oat|almond|soy|coconut)\b/iu);
- if(commonShort)return commonShort[1].toLowerCase()+" milk";
- const spanish=text.match(/leche\s+de\s+([\p{L}\p{M} -]{2,42})/iu);
- if(spanish){
-  const value=spanish[1].trim().toLocaleLowerCase("und")
-    .split(/\s+/u).filter(Boolean).reduce<string[]>((words,word)=>{
-      if(["con","para","por","en","y","que","un","una"].includes(word))return words;
-      if(words.length===0||!["recargo","cambio","precio"].includes(word))words.push(word);
-      return words;
-    },[]).slice(0,3).join(" ");
-  const common:Record<string,string>={avena:"oat milk",almendra:"almond milk",
-    almendras:"almond milk",soja:"soy milk",soya:"soy milk",coco:"coconut milk"};
-  return common[value]??"leche de "+value;
- }
- const arabic=text.match(/حليب\s+(جوز\s+الهند|ال[\p{L}\p{M} ]{1,30})/u);
- if(arabic){
-  const value=arabic[1].trim();
-  const common:Record<string,string>={"الشوفان":"oat milk","اللوز":"almond milk",
-    "الصويا":"soy milk","جوز الهند":"coconut milk"};
-  return common[value]??"حليب "+value;
- }
- // Only a unique recorded alternative is safe to infer.
- return /milk|leche|حليب|alternative|non.?dairy|plant.based|بديل|vegetal/iu.test(text)&&alternatives.size===1?
-   [...alternatives][0]:null;
-}
 export type MilkSize={id:string;label:string};
 export function requestedMilkSizes(text:string):MilkSize[]{
  const localized=text.replace(/[\u0660-\u0669\u06f0-\u06f9]/gu,digit=>{
