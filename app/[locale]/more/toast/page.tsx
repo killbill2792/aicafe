@@ -13,14 +13,19 @@ export const dynamic="force-dynamic";
 export default async function ToastConnectionPage() {
   const user=await requireOwnBusiness();
   if(!user)notFound();
-  const db=await createServerSupabaseClient();
-  const businessId=await getActiveBusinessId(user.id);
-  const {data:member}=await db.from("memberships").select("role")
-    .eq("business_id",businessId).eq("user_id",user.id).maybeSingle();
-  const {data:business}=await db.from("businesses").select("is_demo,currency").eq("id",businessId).maybeSingle();
+  const [db,businessId]=await Promise.all([
+    createServerSupabaseClient(),getActiveBusinessId(user.id),
+  ]);
+  const [{data:member},{data:business}]=await Promise.all([
+    db.from("memberships").select("role").eq("business_id",businessId).eq("user_id",user.id).maybeSingle(),
+    db.from("businesses").select("is_demo,currency").eq("id",businessId).maybeSingle(),
+  ]);
   if(member?.role!=="owner"||!business||business.is_demo)notFound();
-  const {data:locations,error}=await db.from("locations")
-    .select("id,name").eq("business_id",businessId).order("name");
+  const [{data:locations,error},t,common]=await Promise.all([
+    db.from("locations").select("id,name").eq("business_id",businessId).order("name"),
+    getTranslations("ToastConnect"),
+    getTranslations("Common"),
+  ]);
   if(error)throw error;
   // This list is trusted server configuration, never an owner-supplied outbound URL.
   const allowedHostValue=process.env.TOAST_ALLOWED_API_HOSTS??"";
@@ -35,8 +40,6 @@ export default async function ToastConnectionPage() {
   }catch{defaultApiOrigin="";}
   if(!defaultApiOrigin&&approvedOrigins.length===1)defaultApiOrigin=approvedOrigins[0];
   const setupReady=process.env.TOAST_SETUP_ENABLED==="true"&&approvedOrigins.length>0;
-  const t=await getTranslations("ToastConnect");
-  const common=await getTranslations("Common");
   return (
     <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more"
