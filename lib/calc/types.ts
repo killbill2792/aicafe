@@ -100,6 +100,8 @@ export type DataQuality = {
   missingInputs: string[];
   estimatedInputs: string[];
   staleInputs: string[];
+  /** Caveats to mention once (e.g. a day flagged for review). Never missing data. */
+  notes?: string[];
 };
 
 export type PricingCategory = import("@/lib/constants").MenuItemCategoryCode;

@@ -201,13 +201,13 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const period={from:checked.value.from,to:checked.value.to};
     if(name==="get_peak_hours"){
       const slice=await ctx.tools.getPeakHours?.(period);
-      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes(slice?.quality.missingInputs??[],ctx.locale)};
-      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),...summarizePeakHours(slice.value)};
+      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes([...(slice?.quality.missingInputs??[]),...(slice?.quality.notes??[])],ctx.locale)};
+      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale),...summarizePeakHours(slice.value)};
     }
     if(name==="get_employee_sales"){
       const slice=await ctx.tools.getEmployeeSales?.(period);
-      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes(slice?.quality.missingInputs??[],ctx.locale)};
-      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),...summarizeEmployeeSales(slice.value)};
+      if(!slice?.available)return {source:name,period,agentId:"alex",missing:slice?.quality.missingInputs??["posFactsReaderUnavailable"],dataNotes:localizeQualityNotes([...(slice?.quality.missingInputs??[]),...(slice?.quality.notes??[])],ctx.locale)};
+      return {source:name,period,agentId:"alex",missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale),...summarizeEmployeeSales(slice.value)};
     }
     const [slice,ownerCosts,labor,toastScopes]=await Promise.all([
       ctx.tools.getPayrollFacts?.(period),
@@ -366,8 +366,9 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   }
   if(name!=="get_sales")throw new ToolError("not_supported");
   const slice=await ctx.tools.getSalesTrend(period);
-  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote};
+  const salesNotes=localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale);
+  if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:salesNotes,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote};
   return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,agentId:"alex",unit:"cents",
-    missing:slice.quality.missingInputs,dataNotes:localizeQualityNotes(slice.quality.missingInputs,ctx.locale),netSalesCents:netSalesCentsForPeriod(slice.value),
+    missing:slice.quality.missingInputs,dataNotes:salesNotes,netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
 }

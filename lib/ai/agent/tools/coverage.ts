@@ -48,8 +48,7 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
   imported=current.available&&current.value.some(day=>day.date===ctx.asOf);
   importUncertain=imported&&current.quality.missingInputs.some(key=>
    key==="toastDayStatusUnavailable"||key==="toastCheckEvidenceUnavailable"||
-   key.startsWith("toastImportIncompleteDays:")||key.startsWith("toastDayStatusMissing:")||
-   key.startsWith("toastDaysNeedLook:"));
+   key.startsWith("toastImportIncompleteDays:")||key.startsWith("toastDayStatusMissing:"));
  }catch{currentFailed=true;}
  if(imported&&importUncertain)return {...unchanged,lastRecordedDay:ctx.asOf,
   lastFullDay:null,lastFullDayTotals:null,dataNote:copy.todayStoredUnverified};

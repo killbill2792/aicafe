@@ -102,7 +102,9 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
   const result=await posFactReaders(db,"b").peakHours(period);
   expect(result.available).toBe(true);
   if(result.available)expect(result.value.hours).toHaveLength(1);
-  expect(result.quality.missingInputs).toContain("toastDaysNeedLook:1:"+period.from+":0");
+  // A flagged day is a caveat, never missing data.
+  expect(result.quality.missingInputs).not.toContain("toastDaysNeedLook:1:"+period.from+":0");
+  expect(result.quality.notes).toContain("toastDaysNeedLook:1:"+period.from+":0");
  });
  it("keeps successfully loaded first page when second page fails",async()=>{
   const rows=Array.from({length:500},()=>({business_date:period.from,

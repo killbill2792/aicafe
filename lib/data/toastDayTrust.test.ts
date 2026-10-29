@@ -30,10 +30,11 @@ describe("shared Toast day trust",()=>{
   flags.mockResolvedValue(dates.map(date=>({date,status:"imported",needsLook:true})));
   const result=await readToastDayTrust({} as never,"business",dates[0],dates.at(-1)!);
   expect(result.blocked.size).toBe(0);
-  expect(result.quality).toEqual([needsLookKey(dates)]);
-  expect(result.quality[0]).toContain("66:");
-  expect(result.quality[0]).toContain(":63");
-  expect(result.quality[0]).toContain(dates[2]);
+  expect(result.quality).toEqual([]);
+  expect(result.notes).toEqual([needsLookKey(dates)]);
+  expect(result.notes[0]).toContain("66:");
+  expect(result.notes[0]).toContain(":63");
+  expect(result.notes[0]).toContain(dates[2]);
  });
  it("keeps imported partial days when another Toast location failed",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");
@@ -44,7 +45,8 @@ describe("shared Toast day trust",()=>{
   canonical.mockResolvedValue(new Set(["2026-08-01"]));
   const trust=await readToastDayTrust({} as never,"business","2026-08-01","2026-08-01");
   expect(trust.blocked.size).toBe(0);
-  expect(trust.quality).toEqual([needsLookKey(["2026-08-01"]),incompleteDayKey(["2026-08-01"])]);
+  expect(trust.quality).toEqual([incompleteDayKey(["2026-08-01"])]);
+  expect(trust.notes).toEqual([needsLookKey(["2026-08-01"])]);
  });
  it("legacy canonical Toast rows without status are visible with one caveat",async()=>{
   vi.stubEnv("TOAST_AUTO_IMPORT_ENABLED","true");

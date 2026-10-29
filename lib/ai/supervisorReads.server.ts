@@ -37,23 +37,23 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
         .order("business_date",{ascending:true}).limit(370);
       if (error) throw error;
       const trust=await readToastDayTrust(client,id,period.from,period.to);
-      const toastQuality=[...trust.quality];
+      // How Toast days are checked is context, not missing data: it goes in notes.
+      const notes=[...trust.notes];
       if(process.env.TOAST_AUTO_IMPORT_ENABLED==="true"){
        try{
         const check=await getToastCheckEvidence(client,id);
-        if(check){const t=await getTranslations("ToastConnect");
-         toastQuality.push(t(check.mode==="official"?"checkModeOfficial":"checkModeInternal"));
-         if(check.compared)toastQuality.push(t("summaryCompared",{count:check.compared,matched:check.matched}));
+        if(check?.compared){const t=await getTranslations("ToastConnect");
+         notes.push(t("summaryCompared",{count:check.compared,matched:check.matched}));
         }
-       }catch{toastQuality.push("toastCheckEvidenceUnavailable");}
+       }catch{ /* Context only; the sales numbers do not depend on it. */ }
       }
       const days=(data??[]).filter(row=>row.sales_data_status==="actual").map(rowToDailyFacts);
-      if (!days.length) return {available:false,value:null,quality:quality([...toastQuality,"noCoveredSalesRows"])};
+      if (!days.length) return {available:false,value:null,quality:{...quality([...trust.quality,"noCoveredSalesRows"]),notes}};
       const expected = rangeExpectedDays(period), covered = new Set(days.map(d=>d.date)).size;
-      return { available:true, value:days, quality:quality([
+      return { available:true, value:days, quality:{...quality([
         ...(covered < expected ? ["salesCoverage:"+covered+"/"+expected] : []),
-        ...toastQuality
-      ]) };
+        ...trust.quality
+      ]),notes} };
     },
     async menuCatalog(id: string): Promise<KnownSlice<MenuCatalogProduct[]>> {
       assertScope(id);
