@@ -28,9 +28,9 @@ export default async function TeamLegacyMetrics(){
    <h2 className="text-lg font-bold">{vm.onShift.length?t("activeShiftHero",{count:vm.onShift.length}):t("noOneOnShiftHero")}</h2>
    <p className="mt-1 text-sm text-ink-muted">{vm.onShift.length?vm.onShift.map(s=>s.name).join(", "):t("noOneOnShift")}</p>
    {vm.hasUnmatchedTimecards && <Link href="/more/uploads#upload-history" className="mt-2 inline-flex min-h-12 items-center text-sm font-semibold text-accent-text underline">{t("matchNames")}</Link>}
-   <p className="mt-3 text-sm">{t("staffCostToday")} <strong>{vm.costTodayCents===null?"—":<Money cents={vm.costTodayCents}/>}</strong></p>
+   <p className="mt-3 text-sm">{t("staffCostToday")} <strong>{vm.costTodayCents===null?"—":<Money cents={vm.costTodayCents} currency={snapshot.business.currency}/>}</strong></p>
    {vm.onShift.map(s=><p key={s.employeeId} className="mt-2 flex justify-between gap-2 border-t border-line pt-2 text-sm">
-    <span>{s.name} · {clock(s.clockInIso)}</span><strong>{s.todayCostCents===null?"—":<Money cents={s.todayCostCents}/>}</strong>
+    <span>{s.name} · {clock(s.clockInIso)}</span><strong>{s.todayCostCents===null?"—":<Money cents={s.todayCostCents} currency={snapshot.business.currency}/>}</strong>
    </p>)}
   </section>
   {rules.ok&&<section className="rounded-card-lg bg-card p-4">
