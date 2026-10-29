@@ -29,6 +29,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   await requireOwnBusiness();
   const [{ agent, status, task }, snapshot, menu, t, tCategories, tRules, tExperiment] = await Promise.all([searchParams, getSnapshot(), getMenuControlCenter(), getTranslations("Operations"), getTranslations("Categories"), getTranslations("TeamRules"), getTranslations("SupervisorExperiment")]);
   const tBrief = await getTranslations("DailyBrief");
+  const money=(cents:number)=>formatCents(cents,undefined,snapshot.business.currency);
   const tGoals = await getTranslations("Goals");
   const derived = buildOperationsTeamViewModel(snapshot, menu);
   const persisted = await syncAndGetOperatingTasks([...derived.needsYou, ...derived.handled, ...derived.watching]);
@@ -136,9 +137,9 @@ function TaskList({ tasks, empty, names, t, tExperiment, tBrief, tGoals, categor
       <h2 className="mt-3 text-lg font-bold text-ink">{title}</h2><p className="mt-1 text-[17px] font-semibold text-ink">{detail}</p>{price && <p className="mt-1 text-sm text-ink-muted">{t("priceNumbers", { current: formatCents(Number(task.payload.currentPriceCents)), suggested: formatCents(Number(task.payload.suggestedPriceCents)) })}</p>}
       {task.kind==="price_experiment_report"&&<div className="mt-3 space-y-2 text-[17px]">
         <p>{tExperiment("reportRevenue",{value:typeof task.payload.observedRevenueCents==="number"?
-          formatCents(task.payload.observedRevenueCents):tExperiment("notAvailable")})}</p>
+          money(task.payload.observedRevenueCents):tExperiment("notAvailable")})}</p>
         <p>{tExperiment("reportDifference",{value:typeof task.payload.realizedRevenueDifferenceCents==="number"?
-          formatCents(task.payload.realizedRevenueDifferenceCents):tExperiment("notAvailable")})}</p>
+          money(task.payload.realizedRevenueDifferenceCents):tExperiment("notAvailable")})}</p>
         {task.payload.ordersGuardrail==="broken"&&typeof task.payload.ordersChangePct==="number"&&
           <p className="font-semibold text-ink">{tExperiment("guardrailTask",{change:Math.abs(task.payload.ordersChangePct)})}</p>}
         {!midRun&&<p className="font-semibold">{tExperiment("recommendation",{choice:tExperiment(
