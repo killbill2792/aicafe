@@ -58,8 +58,8 @@ function SizeCard({size,t,chip,editing,onPrice,onPriceClose,saveLabel,cancelLabe
  const format=useFormatter();const [period,setPeriod]=useState<Period>("days30");const ready=size.costStatus==="READY"&&size.ingredientsCostCents!==null;const recipeReady=(size.recipeCostStatus ?? size.costStatus)==="READY";const keep=ready?size.priceCents-size.ingredientsCostCents!:null;const units=size.unitsSoldByPeriod?.[period]??null;const daily=size.unitsSoldDailyByPeriod?.[period]??null;const sourceLabel=size.costSource==="combo"?t("costSourceCombo"):size.costSource==="recipe"?t("costSourceRecipe"):size.costSource==="owner_total"?`${size.ownerTotalCostSource==="imported"?t("costSourceImported"):t("costSourceOwner")}${size.ownerTotalCostStatus==="estimated"?` · ${t("costSourceEstimate")}`:""}`:null;
  return <article className={`overflow-hidden rounded-card-lg border bg-card shadow-sm ${size.active?"border-line":"border-line opacity-80"}`}>
   <div className="p-4"><div className="flex items-center gap-3"><span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-warn-soft text-warn-text"><Coffee size={27} strokeWidth={2.2}/></span><div><h3 className="text-2xl font-extrabold">{size.sizeLabel??size.name}</h3><p className="text-ink-muted">{size.active?t("active"):t("inactive")}</p></div></div>
-   <dl className="mt-4 grid grid-cols-3 divide-x divide-line border-t border-line pt-3 rtl:divide-x-reverse"><div className="pe-2"><dt className="text-sm text-ink-muted">{t("sellingPrice")}</dt><dd className="mt-1"><InlinePrice size={size} editing={editing} onEdit={onPrice} onClose={onPriceClose} saveLabel={saveLabel} cancelLabel={cancelLabel} suggestedLabel={t("suggested")} inputLabel={t("sellingPrice")}/></dd></div><div className="px-2"><dt className="text-sm text-ink-muted">{t("costToMake")}</dt><dd className="mt-1 text-xl font-bold">{ready?formatCents(size.ingredientsCostCents!):"—"}</dd>{ready&&sourceLabel&&<span className="mt-1 inline-flex rounded-full bg-paper px-2 py-1 text-[11px] font-bold text-ink-muted">{sourceLabel}</span>}</div><div className="ps-2"><dt className="text-sm text-ink-muted">{t("youKeep")}</dt><dd className="mt-1 text-xl font-extrabold text-good">{keep===null?"—":formatCents(keep)}</dd></div></dl>
-   {ready&&keep!==null&&<div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-line" aria-label={t("costKeepSummary",{cost:formatCents(size.ingredientsCostCents!),keep:formatCents(keep)})}><span className="bg-ingredients" style={{flexGrow:size.ingredientsCostCents!,flexBasis:0}}/><span className="bg-good" style={{flexGrow:Math.max(keep,0),flexBasis:0}}/></div>}
+   <dl className="mt-4 grid grid-cols-3 divide-x divide-line border-t border-line pt-3 rtl:divide-x-reverse"><div className="pe-2"><dt className="text-sm text-ink-muted">{t("sellingPrice")}</dt><dd className="mt-1"><InlinePrice size={size} editing={editing} onEdit={onPrice} onClose={onPriceClose} saveLabel={saveLabel} cancelLabel={cancelLabel} suggestedLabel={t("suggested")} inputLabel={t("sellingPrice")}/></dd></div><div className="px-2"><dt className="text-sm text-ink-muted">{t("costToMake")}</dt><dd className="mt-1 text-xl font-bold">{ready?money(size.ingredientsCostCents!):"—"}</dd>{ready&&sourceLabel&&<span className="mt-1 inline-flex rounded-full bg-paper px-2 py-1 text-[11px] font-bold text-ink-muted">{sourceLabel}</span>}</div><div className="ps-2"><dt className="text-sm text-ink-muted">{t("youKeep")}</dt><dd className="mt-1 text-xl font-extrabold text-good">{keep===null?"—":money(keep)}</dd></div></dl>
+   {ready&&keep!==null&&<div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-line" aria-label={t("costKeepSummary",{cost:money(size.ingredientsCostCents!),keep:money(keep)})}><span className="bg-ingredients" style={{flexGrow:size.ingredientsCostCents!,flexBasis:0}}/><span className="bg-good" style={{flexGrow:Math.max(keep,0),flexBasis:0}}/></div>}
    <div className="mt-4 rounded-2xl bg-paper p-3"><div className="flex items-end justify-between gap-3"><div className="min-w-0 flex-1"><p className="text-sm text-ink-muted">{t("unitsSold")}</p><p className="text-2xl font-extrabold">{units===null?t("noSalesData"):format.number(units)}</p></div>{daily&&<SalesBars days={daily}/>}</div><div className="mt-2 grid grid-cols-3 rounded-xl bg-card p-1" aria-label={t("salesPeriod")}>{(["today","days7","days30"] as const).map(value=><button key={value} type="button" aria-pressed={period===value} onClick={()=>setPeriod(value)} className={`min-h-12 rounded-lg px-1 text-sm font-bold ${period===value?"bg-accent text-on-accent":"text-ink-muted"}`}>{t(value==="today"?"today":value==="days7"?"last7Days":"last30Days")}</button>)}</div></div>
    <div className="mt-3 grid grid-cols-2 gap-2"><StatusBox label={t("priceStatus")} value={chip.label} good={chip.good}/><StatusBox label={t("recipeStatus")} value={recipeReady?t("recipeReady"):t("needsReview")} good={recipeReady}/></div>
    <MenuPricePreview item={size}/>
@@ -71,9 +71,9 @@ function SizeCard({size,t,chip,editing,onPrice,onPriceClose,saveLabel,cancelLabe
 function InlinePrice({size,editing,onEdit,onClose,saveLabel,cancelLabel,suggestedLabel,inputLabel}:{size:MenuControlItem;editing:boolean;onEdit:()=>void;onClose:()=>void;saveLabel:string;cancelLabel:string;suggestedLabel:string;inputLabel:string}){
  const router=useRouter();const [value,setValue]=useState((size.priceCents/100).toFixed(2));const [error,setError]=useState<string|null>(null);const [pending,start]=useTransition();const inputRef=useRef<HTMLInputElement>(null);const status=getItemPricingStatus(size);
  useEffect(()=>{if(editing)requestAnimationFrame(()=>{inputRef.current?.scrollIntoView({block:"center",behavior:"smooth"});inputRef.current?.focus();});},[editing]);
- if(!editing)return <button type="button" onClick={()=>{setValue((size.priceCents/100).toFixed(2));setError(null);onEdit();}} className="flex min-h-12 items-center gap-1.5 rounded-lg text-xl font-extrabold hover:text-good"><span>{formatCents(size.priceCents)}</span><Pencil size={17} aria-hidden="true"/></button>;
+ if(!editing)return <button type="button" onClick={()=>{setValue((size.priceCents/100).toFixed(2));setError(null);onEdit();}} className="flex min-h-12 items-center gap-1.5 rounded-lg text-xl font-extrabold hover:text-good"><span>{money(size.priceCents)}</span><Pencil size={17} aria-hidden="true"/></button>;
  const suggested=(status.kind==="low"||status.kind==="high")?status.suggestedPriceCents:null;
- return <div className="min-w-[150px]"><label className="flex h-12 items-center rounded-lg border border-ink bg-card px-2 font-bold"><span aria-hidden="true">$</span><input ref={inputRef} aria-label={inputLabel} inputMode="decimal" value={value} onChange={event=>setValue(event.target.value)} className="w-20 min-w-0 px-1 outline-none"/></label>{suggested!==null&&<p className="mt-1 text-sm font-medium text-ink-muted">{suggestedLabel} {formatCents(suggested)}</p>}{error&&<p className="mt-1 text-sm text-warn" role="alert">{error}</p>}<div className="mt-2 flex gap-1"><button type="button" disabled={pending} onClick={()=>start(async()=>{const cents=Math.round(Number(value)*100);const result=await updateMenuItemPrice({menuItemId:size.id,priceCents:cents});if(result.ok){router.refresh();onClose();}else setError(result.error);})} className="min-h-12 rounded-lg bg-accent px-3 text-sm font-bold text-on-accent disabled:opacity-40">{saveLabel}</button><button type="button" disabled={pending} onClick={()=>{setError(null);onClose();}} className="min-h-12 rounded-lg px-2 text-sm font-bold">{cancelLabel}</button></div></div>;
+ return <div className="min-w-[150px]"><label className="flex h-12 items-center rounded-lg border border-ink bg-card px-2 font-bold">{size.currency&&<span className="me-1" aria-hidden="true">{size.currency}</span>}<input ref={inputRef} aria-label={inputLabel} inputMode="decimal" value={value} onChange={event=>setValue(event.target.value)} className="w-20 min-w-0 px-1 outline-none"/></label>{suggested!==null&&<p className="mt-1 text-sm font-medium text-ink-muted">{suggestedLabel} {money(suggested)}</p>}{error&&<p className="mt-1 text-sm text-warn" role="alert">{error}</p>}<div className="mt-2 flex gap-1"><button type="button" disabled={pending} onClick={()=>start(async()=>{const cents=Math.round(Number(value)*100);const result=await updateMenuItemPrice({menuItemId:size.id,priceCents:cents});if(result.ok){router.refresh();onClose();}else setError(result.error);})} className="min-h-12 rounded-lg bg-accent px-3 text-sm font-bold text-on-accent disabled:opacity-40">{saveLabel}</button><button type="button" disabled={pending} onClick={()=>{setError(null);onClose();}} className="min-h-12 rounded-lg px-2 text-sm font-bold">{cancelLabel}</button></div></div>;
 }
 function PriceEvidencePanel({
  size,
@@ -103,18 +103,18 @@ function PriceEvidencePanel({
  const costText=cost.status==="unavailable"
    ? t("costBenchmarkUnavailable")
    : cost.position==="above"
-     ? t("costBenchmarkAbove",{amount:formatCents(Math.abs(cost.differenceCents)),benchmark:formatCents(cost.benchmarkPriceCents),percent:pct(cost.differencePercent)})
+     ? t("costBenchmarkAbove",{amount:money(Math.abs(cost.differenceCents)),benchmark:money(cost.benchmarkPriceCents),percent:pct(cost.differencePercent)})
      : cost.position==="below"
-       ? t("costBenchmarkBelow",{amount:formatCents(Math.abs(cost.differenceCents)),benchmark:formatCents(cost.benchmarkPriceCents),percent:pct(cost.differencePercent)})
-       : t("costBenchmarkNear",{benchmark:formatCents(cost.benchmarkPriceCents)});
+       ? t("costBenchmarkBelow",{amount:money(Math.abs(cost.differenceCents)),benchmark:money(cost.benchmarkPriceCents),percent:pct(cost.differencePercent)})
+       : t("costBenchmarkNear",{benchmark:money(cost.benchmarkPriceCents)});
  let salesText:string;
  let salesDetail:string|null=null;
  if(sales.status==="no_change_history"){
    salesText=t("salesResponseNoHistory");
  }else{
    const changed=sales.priceChangeCents>0
-     ? t("priceChangedUp",{amount:formatCents(Math.abs(sales.priceChangeCents)),date:changeDate(sales.change.changedOn)})
-     : t("priceChangedDown",{amount:formatCents(Math.abs(sales.priceChangeCents)),date:changeDate(sales.change.changedOn)});
+     ? t("priceChangedUp",{amount:money(Math.abs(sales.priceChangeCents)),date:changeDate(sales.change.changedOn)})
+     : t("priceChangedDown",{amount:money(Math.abs(sales.priceChangeCents)),date:changeDate(sales.change.changedOn)});
    if(sales.status==="not_enough_data"){
      salesText=changed;
      salesDetail=t("salesResponseNotEnough",{before:sales.beforeCoveredDays,after:sales.afterCoveredDays,minimum:sales.minimumCoveredDays});
@@ -122,17 +122,17 @@ function PriceEvidencePanel({
      const unitKey=sales.unitsDirection==="up"?"salesUnitsUp":sales.unitsDirection==="down"?"salesUnitsDown":"salesUnitsFlat";
      const revenueKey=sales.revenueDirection==="up"?"salesRevenueUp":sales.revenueDirection==="down"?"salesRevenueDown":"salesRevenueFlat";
      salesText=changed;
-     salesDetail=`${t(unitKey,{percent:pct(sales.unitsPerDayChangePercent),before:units(sales.beforeUnitsPerDay),after:units(sales.afterUnitsPerDay)})} ${t(revenueKey,{percent:pct(sales.revenuePerDayChangePercent),before:formatCents(sales.beforeRevenuePerDayCents),after:formatCents(sales.afterRevenuePerDayCents)})}`;
+     salesDetail=`${t(unitKey,{percent:pct(sales.unitsPerDayChangePercent),before:units(sales.beforeUnitsPerDay),after:units(sales.afterUnitsPerDay)})} ${t(revenueKey,{percent:pct(sales.revenuePerDayChangePercent),before:money(sales.beforeRevenuePerDayCents),after:money(sales.afterRevenuePerDayCents)})}`;
      if(sales.confidence==="low")salesDetail+=" · "+common("beforeAfterDays",{before:sales.beforeCoveredDays,after:sales.afterCoveredDays})+" · "+common("lowConfidence");
    }
  }
  const marketText=market.status==="unavailable"
    ? t("marketUnavailable",{count:market.verifiedNearbyCount,minimum:market.minimumCompetitors})
    : market.position==="above"
-     ? t("marketAbove",{percent:pct(market.differencePercent),count:market.verifiedNearbyCount,median:formatCents(market.medianPriceCents)})
+     ? t("marketAbove",{percent:pct(market.differencePercent),count:market.verifiedNearbyCount,median:money(market.medianPriceCents)})
      : market.position==="below"
-       ? t("marketBelow",{percent:pct(market.differencePercent),count:market.verifiedNearbyCount,median:formatCents(market.medianPriceCents)})
-       : t("marketNear",{count:market.verifiedNearbyCount,median:formatCents(market.medianPriceCents)});
+       ? t("marketBelow",{percent:pct(market.differencePercent),count:market.verifiedNearbyCount,median:money(market.medianPriceCents)})
+       : t("marketNear",{count:market.verifiedNearbyCount,median:money(market.medianPriceCents)});
  return <section className="mt-3 rounded-2xl border border-line bg-surface2 p-4">
    <h4 className="text-lg font-extrabold text-ink">{t("priceAnalysisTitle")}</h4>
    <div className="mt-3 space-y-3">
