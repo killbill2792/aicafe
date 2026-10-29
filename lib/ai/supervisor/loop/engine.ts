@@ -27,6 +27,8 @@ export type LoopSimulation={
 export type LoopCommitResult=
   |{status:"requires_manual_action";instructionKey:string;instructions:Record<string,string>}
   |{status:"verified";evidenceSource:string};
+/** The monitored days a report covers, first to last (inclusive). */
+export type LoopWindow={start:string;through:string};
 export type LoopSample={businessDate:string;observation:Record<string,unknown>;source:string};
 export type LoopReport={status:"in_progress"|"complete"|"insufficient_evidence";
   result:Record<string,unknown>;recommendation:"keep"|"revert"|"adjust";
@@ -49,7 +51,7 @@ export type RegisteredLoopCapability={
   dependencyScope:(rawEffect:unknown)=>Record<string,unknown>;
   commit:(scope:OwnerLoopScope,rawEffect:unknown,proposalId?:string)=>Promise<LoopCommitResult>;
   monitor:(scope:OwnerLoopScope,rawEffect:unknown,businessDate:string)=>Promise<LoopSample|null>;
-  report:(scope:OwnerLoopScope,rawEffect:unknown,samples:readonly LoopSample[],windowComplete:boolean)=>Promise<LoopReport>;
+  report:(scope:OwnerLoopScope,rawEffect:unknown,samples:readonly LoopSample[],windowComplete:boolean,window?:LoopWindow)=>Promise<LoopReport>;
   /** Pure owner-intent interpretation and canonical source resolution,
    * never an approval or executable permission from model-authored text. */
   recognizeProposal?:(scope:OwnerLoopScope,currentText:string,
@@ -64,7 +66,7 @@ export function registerLoopCapability<I,E extends Record<string,unknown>>(defin
   simulate:(scope:OwnerLoopScope,input:I)=>Promise<LoopSimulation>;
   commit:(scope:OwnerLoopScope,effect:E,proposalId?:string)=>Promise<LoopCommitResult>;
   monitor:(scope:OwnerLoopScope,effect:E,date:string)=>Promise<LoopSample|null>;
-  report:(scope:OwnerLoopScope,effect:E,samples:readonly LoopSample[],windowComplete:boolean)=>Promise<LoopReport>;
+  report:(scope:OwnerLoopScope,effect:E,samples:readonly LoopSample[],windowComplete:boolean,window?:LoopWindow)=>Promise<LoopReport>;
   recognizeProposal?:(scope:OwnerLoopScope,currentText:string,
     priorOwnerTexts:readonly string[])=>Promise<I|null>;
 }):RegisteredLoopCapability{
@@ -87,8 +89,8 @@ export function registerLoopCapability<I,E extends Record<string,unknown>>(defin
     ...(definition.recognizeProposal?{recognizeProposal:definition.recognizeProposal}:{}),
     commit:(scope:OwnerLoopScope,raw:unknown,proposalId?:string)=>definition.commit(scope,parse(raw),proposalId),
     monitor:(scope:OwnerLoopScope,raw:unknown,date:string)=>definition.monitor(scope,parse(raw),date),
-    report:(scope:OwnerLoopScope,raw:unknown,samples:readonly LoopSample[],windowComplete:boolean)=>
-      definition.report(scope,parse(raw),samples,windowComplete),
+    report:(scope:OwnerLoopScope,raw:unknown,samples:readonly LoopSample[],windowComplete:boolean,window?:LoopWindow)=>
+      definition.report(scope,parse(raw),samples,windowComplete,window),
   });
 }
 export function loopRegistry(...definitions:RegisteredLoopCapability[]){
@@ -242,7 +244,9 @@ export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
   if(!allowEarlyReport&&businessDate<end)return null;
   const samples=(await repo.samples(scope,p.id))
     .filter(x=>x.businessDate>=p.monitoringStartDate!&&x.businessDate<=end);
-  const generated=await def.report(reportScope,effect,samples,businessDate>=end);
+  // The days the report covers: every one counts, sampled or not.
+  const generated=await def.report(reportScope,effect,samples,businessDate>=end,
+    {start:p.monitoringStartDate,through:businessDate<end?businessDate:end});
   // "In progress" is a window property, not evidence of a future zero-sales day.
   // At the end, missing actual-coverage observations become a durable
   // insufficient-evidence report rather than an endlessly open experiment.

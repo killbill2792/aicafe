@@ -2791,7 +2791,9 @@
       "draft_week_schedule": "Drafted a week schedule",
       "suggest_new_item_price": "Worked out a price for the new item",
       "propose_price_change": "Prepared a price change for you to approve",
-      "remember_cafe_fact": "Prepared a note for you to approve"
+      "remember_cafe_fact": "Prepared a note for you to approve",
+      "propose_goal": "Drafted your goal",
+      "get_goal_status": "Checked your goals"
     },
     "agents": {
       "supervisor": "Checked your café data",
@@ -3577,5 +3579,49 @@
     "currencyMissing": "Your café currency isn't set, so these amounts have no currency.",
     "taskTitle": "Morning brief",
     "taskAction": "Open in chat"
+  },
+  "Goals": {
+    "metric": {
+      "net_sales": "Daily sales",
+      "orders": "Orders a day",
+      "avg_ticket": "Average ticket",
+      "item_units": "{item} sold a day",
+      "item_revenue": "{item} sales a day"
+    },
+    "titleUpPercent": "{metric} up {pct}%",
+    "titleDownPercent": "{metric} down {pct}%",
+    "titleAtLeast": "{metric} at least {value}",
+    "titleAtMost": "{metric} at most {value}",
+    "guardrailNotBelow": "{metric} must not drop more than {pct}%",
+    "guardrailNotAbove": "{metric} must not rise more than {pct}%",
+    "guardrailWord": "guardrail",
+    "previewGoal": "Goal",
+    "previewMetric": "Measured by",
+    "previewDays": "Length",
+    "previewGuardrail": "Guardrail",
+    "line": "{metric}: {current} vs {baseline} before (target {target}), {status}",
+    "lineNoBaseline": "{metric}: {current}, {status}",
+    "lineMissing": "{metric}: not enough verified days yet",
+    "met": "on target",
+    "notMet": "below target",
+    "unknown": "not judged yet",
+    "midRun": "Halfway update on {title}: {lines}. Early read, not final; the full report comes after day {days}.",
+    "reportMet": "Goal report for {title}: met.",
+    "reportMissed": "Goal report for {title}: not met.",
+    "reportInsufficient": "Goal report for {title}: not enough verified sales days to judge.",
+    "recommendKeep": "Recommendation: keep doing what you changed.",
+    "recommendRevert": "Recommendation: a guardrail was broken, so undo the change that caused it.",
+    "recommendAdjust": "Recommendation: adjust the plan and try again.",
+    "recommendInsufficient": "Recommendation: check that sales are importing, then run the goal again.",
+    "reportCaveat": "Before-period values are the same weekdays in the two weeks before the goal; this compares days, it does not prove cause.",
+    "boardGoal": "{title}: day {day} of {days}",
+    "boardGoalStarts": "{title}: tracking starts tomorrow",
+    "boardGoalMet": "{title}: goal met",
+    "boardGoalMissed": "{title}: goal not met",
+    "boardGoalInsufficient": "{title}: not enough data to judge",
+    "taskTitle": "Goal report: {title}",
+    "taskMidRunTitle": "Halfway update: {title}",
+    "taskAction": "Open in chat",
+    "cardTracking": "Tracking"
   }
 }

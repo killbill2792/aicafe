@@ -46,4 +46,16 @@ describe("Operating Board",()=>{
     const rows=["a","b","c","d"].map(id=>row(id,"manual_pending",null));
     expect(buildOperatingBoard(rows,[],"2026-10-29").running).toHaveLength(3);
   });
+  it("shows a goal by its title, with day X of Y, and its met/not met report",()=>{
+    const g=(id:string,status:string,start:string|null)=>({id,thread_id:"t-"+id,status,capability_id:"leo.goal.v1",
+      canonical_effect_payload:{title:"Average ticket up 5%"},monitor_spec:{durationDays:30,metricScope:"goal:avg_ticket"},
+      monitoring_start_date:start});
+    const board=buildOperatingBoard([g("a","committed","2026-10-20"),g("b","monitored","2026-09-01")],
+      [{proposal_id:"b",status:"complete",report:{recommendation:"keep",evaluationStatus:"met"},generated_at:"2026-10-25T16:30:00Z"}],
+      "2026-10-29");
+    expect(board.running).toEqual([{proposalId:"a",threadId:"t-a",capabilityId:"leo.goal.v1",productName:"Average ticket up 5%",
+      oldPriceCents:0,newPriceCents:0,goal:true,stage:"monitoring",day:10,days:30}]);
+    expect(board.recentReports[0]).toMatchObject({proposalId:"b",goal:{met:true}});
+    expect(boardHref(board.running[0])).toBe("/?thread=t-a");
+  });
 });

@@ -7,7 +7,7 @@ export function parseAgentId(value: string | undefined): AgentId | null {
   return AGENT_IDS.find((agent) => agent === value) ?? null;
 }
 export type OperatingTaskStatus = "watching" | "needs_response" | "needs_owner" | "handled" | "expired";
-export type OperatingTaskKind = "price_experiment_report" | "price_review" | "staff_coverage" | "supply_check" | "money_update" | "data_quality" | "daily_brief";
+export type OperatingTaskKind = "price_experiment_report" | "price_review" | "staff_coverage" | "supply_check" | "money_update" | "data_quality" | "daily_brief" | "goal_report";
 export type TaskEvidence = { source: string; facts: Record<string, string | number | boolean | null> };
 export type OperatingTask = {
   id: string;
