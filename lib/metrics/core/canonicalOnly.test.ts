@@ -13,11 +13,15 @@ const pr2Duplicates:Readonly<Record<string,string>>={
  "lib/calc/supervisorEconomics.ts::fixedCardFeeForCoveredSales":"REDIRECT in PR 2: fixed per-payment fee to core/fees",
  "lib/calc/planGoals.ts::simulatePlanChange":"REDIRECT in PR 2: scenario calculations to shared economics",
  "lib/calc/pricingEngine.ts::suggestPrice":"REDIRECT in PR 2: price economics to core",
- "lib/calc/ownerReportedBreakEven.ts::ownerReportedBreakEven":"REDIRECT in PR 2: include the fixed 15c payment fee"
+ "lib/calc/ownerReportedBreakEven.ts::ownerReportedDailyBreakEven":"REDIRECT in PR 2: include the fixed 15c payment fee",
+ "lib/calc/pricingBusiness.ts::monthlyProcessingFeesForWindow":"REDIRECT in PR 2: monthly fee projection to core/fees",
+ "lib/calc/staff.ts::staffCostLoadedCents":"REDIRECT in PR 2: loaded staff cost to core/labor",
+ "lib/calc/supervisorEconomics.ts::unifiedBreakEven":"REDIRECT in PR 2: break-even to core/breakEven"
 };
 const fileAllow:Readonly<Record<string,string>>={
  "lib/calc/breakEvenSales.ts":"Core breakEven uses this shared solver",
- "lib/calc/toastPaymentFee.ts":"D-owned per-payment Toast fee source; do not edit in PR 1"
+ "lib/calc/toastPaymentFee.ts":"D-owned per-payment Toast fee source; do not edit in PR 1",
+ "lib/ai/conversations/domainProjections.ts":"Projects the shared break-even view model for chat; no math of its own"
 };
 function productionFiles(){
  const root=process.cwd(),paths:string[]=[];
@@ -29,14 +33,16 @@ function productionFiles(){
    paths.push(full);
   }
  };
- walk(join(root,"lib"));
+ // Where a second copy of money math would live. POS fee ingestion (lib/pos),
+ // readers (lib/data) and display state (lib/viewmodels) consume core results.
+ ["lib/calc","lib/operating","lib/ai"].forEach(dir=>walk(join(root,dir)));
  return paths.map(p=>({path:relative(root,p).split(sep).join("/"),text:readFileSync(p,"utf8")}));
 }
 describe("canonical money and labor exports only",()=>{
  it("does not introduce a second export for shared money math",()=>{
   const violations:string[]=[];
   for(const file of productionFiles()){
-   if(file.path.startsWith("lib/metrics/core/")||fileAllow[file.path])continue;
+   if(fileAllow[file.path])continue;
    for(const match of file.text.matchAll(/export\s+(?:async\s+)?function\s+(\w+)\s*\(/g)){
     const name=match[1];if(!moneyNames.test(name))continue;
     const key=`${file.path}::${name}`;

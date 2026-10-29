@@ -24,6 +24,28 @@ const banned=[
  "uncertaintyPhrases","numericQuestion","chatExperienceFlags",
  "CHAT_STYLE_V2","CHAT_JOBS","CHAT_MEMORY","AI_PROVIDER"
 ];
+/** Hard-coded USD that is correct or explicitly scheduled. Any other file fails. */
+const usdAllowed:Readonly<Record<string,string>>={
+ "lib/admin/format.ts":"Internal admin view of AI provider costs, which are billed in USD",
+ "lib/calc/scheduling/staffScreenshotFixture.ts":"Screenshot fixture data, not a café",
+ "lib/calc/money.ts":"REDIRECT in currency PR: formatCents callers move to the café currency",
+
+ "lib/data/getCafeProfile.ts":"REDIRECT in currency PR: use the café currency",
+ "lib/data/getMoreBadges.ts":"REDIRECT in currency PR: use the café currency",
+ "lib/data/getProcessingFeeEstimateSetup.ts":"REDIRECT in currency PR: use the café currency",
+ "lib/data/inventory.server.ts":"REDIRECT in currency PR: use the café currency",
+ "lib/data/staffReadScope.server.ts":"REDIRECT in currency PR: use the café currency",
+ "app/[locale]/menu/import-review/page.tsx":"REDIRECT in currency PR: use the café currency",
+ "app/[locale]/menu/pantry/page.tsx":"REDIRECT in currency PR: use the café currency",
+ "app/[locale]/more/page.tsx":"REDIRECT in currency PR: use the café currency",
+ "app/[locale]/more/toast/page.tsx":"REDIRECT in currency PR: use the café currency",
+ "components/addcost/StatementUploader.tsx":"REDIRECT in currency PR: use the café currency",
+ "components/addcost/TypeExpenseForm.tsx":"REDIRECT in currency PR: use the café currency",
+ "components/bills/BillsManager.tsx":"REDIRECT in currency PR: use the café currency",
+ "components/home/SupervisorProposalCard.tsx":"REDIRECT in currency PR: use the café currency",
+ "components/more/ProcessingFeeEstimateForm.tsx":"REDIRECT in currency PR: use the café currency",
+ "components/more/cafeProfileOptions.ts":"Country-to-currency suggestion during setup; unmapped countries suggest USD and the owner can change it",
+};
 /** Exception: a D-owned file may be changed by D, not PR 1. Only this historical comment remains. */
 const exceptions:Readonly<Record<string,readonly string[]>>={
  "lib/ai/agent/tools/index.ts":["CHAT_MEMORY"]
@@ -40,7 +62,8 @@ describe("banned production patterns",()=>{
  it("never introduces an unscoped USD label or a UTC today in the chat path",()=>{
   const violations:string[]=[];
   for(const file of sources()){
-   if(/currency\s*:\s*["']USD["']/.test(file.source))violations.push(`${file.path}: hard-coded USD`);
+   if(/currency\s*:\s*["']USD["']|(?:\?\?|\|\|)\s*["']USD["']|z\.literal\(["']USD["']\)|[!=]==\s*["']USD["']/.test(file.source)&&
+      !usdAllowed[file.path])violations.push(`${file.path}: hard-coded USD`);
    file.source.split("\n").forEach((line,index)=>{
     if(/toISOString\(\)\.slice\(0,\s*10\)/.test(line)&&
        /\b(?:today|currentDay|todayUtc)\b/i.test(line)&&
@@ -62,7 +85,8 @@ describe("banned production patterns",()=>{
    if(!/\btext\s*(?:\+=|=(?!=))/.test(line))return [];
    if(/\blet text\s*=/.test(line)||
       /text\s*\+=\s*event\.delta/.test(line)||
-      /\/\/ allowed: empty-reply fill/.test(line))return [];
+      // The only reply changes AGENTS.md section 6 permits.
+      /\/\/ allowed: (?:empty-reply fill|discard incomplete model stream on provider failure|separator between model responses to live follow-ups)$/.test(line.trimEnd()))return [];
    return [`loop.server.ts:${index+1}: ${line.trim()}`];
   });
   expect(violations).toEqual([]);

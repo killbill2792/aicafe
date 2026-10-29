@@ -280,8 +280,8 @@ export default function SupervisorChatComposer({
   const messageContent = useRef<HTMLDivElement | null>(null);
   const retryId = useRef<string | null>(null);
   const threadRequestId = useRef<string | null>(null);
-  // CHAT_JOBS (server flag): these stay empty/null unless the server sends an
-  // "ack" event, so with the flag off the composer behaves exactly as before.
+  // Background jobs: these stay empty/null unless the server sends an
+  // "ack" event (for example when the jobs table is unavailable).
   const liveCopy = chatExperienceCopy(locale);
   const [liveJobId, setLiveJobId] = useState<string | null>(null);
   const [liveSteps, setLiveSteps] = useState<AgentJobStep[]>([]);
@@ -463,7 +463,7 @@ export default function SupervisorChatComposer({
     try { const body = await response.json() as { error?: unknown }; return typeof body.error === "string" ? body.error : "agent_request_failed"; }
     catch { return "agent_request_failed"; }
   }
-  /** CHAT_JOBS: a message sent while an answer is still being worked on joins
+  /** Background jobs: a message sent while an answer is still being worked on joins
    * that same job; the server folds it into the answer or answers it right after. */
   async function sendFollowUp(text: string) {
     const id = threadId;
