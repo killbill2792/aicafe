@@ -6,7 +6,7 @@ import AiUnavailableNotice from "@/components/addcost/AiUnavailableNotice";
 import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
 import { isAiConfigured } from "@/lib/ai/types";
 import PageShell from "@/components/shared/PageShell";
-import { getCafeProfile } from "@/lib/data/getCafeProfile";
+import { getSnapshot } from "@/lib/data/getSnapshot";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ export default async function VoiceEntryPage() {
     );
   }
 
-  const profile = await getCafeProfile();
+  const profile = await getSnapshot();
   const categoryLabels = Object.fromEntries(EXPENSE_CATEGORY_CODES.map((c) => [c, tCategories(c)])) as Record<
     (typeof EXPENSE_CATEGORY_CODES)[number],
     string
@@ -35,9 +35,9 @@ export default async function VoiceEntryPage() {
   return (
     <PageShell className="flex flex-col gap-6 px-4 py-6 pb-10">
       <BackHeader title={t("optionVoice")} backHref="/add-cost" backLabel={tCommon("back")} />
-      {!profile.currency&&<p role="note" className="text-sm text-ink-muted">{tCommon("currencyNotSet")}</p>}
+      {!profile.business.currency&&<p role="note" className="text-sm text-ink-muted">{tCommon("currencyNotSet")}</p>}
       <VoiceRecorder
-        currency={profile.currency}
+        currency={profile.business.currency}
         categoryLabels={categoryLabels}
         labels={{
           holdToTalk: t("voiceHoldToTalk"),
