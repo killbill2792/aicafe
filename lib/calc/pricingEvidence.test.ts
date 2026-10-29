@@ -20,7 +20,7 @@ describe("price-change sales response", () => {
     }, [])).toEqual({ status: "no_change_history" });
   });
 
-  it("says not enough data instead of predicting demand", () => {
+  it("shows short observed periods with low confidence", () => {
     const result = analyzePriceChangeSalesResponse({
       changedOn: "2026-10-01", oldPriceCents: 500, newPriceCents: 550,
       sourceType: "owner_manual", sourceProvider: "Owner",
@@ -30,7 +30,7 @@ describe("price-change sales response", () => {
       day("2026-10-02", 9, 4_950),
       day("2026-10-03", 8, 4_400),
     ]);
-    expect(result.status).toBe("not_enough_data");
+    expect(result).toMatchObject({status:"ready",confidence:"low",beforeCoveredDays:2,afterCoveredDays:2});
   });
 
   it("reports observed units/day and revenue/day before vs after", () => {
@@ -72,17 +72,15 @@ describe("nearby market comparison", () => {
     competitorName: name, priceCents, distanceMeters, observedOn, sourceLabel: "Public menu", sourceUrl: null,
   });
 
-  it("requires three distinct recent nearby competitors", () => {
-    expect(compareNearbyMarketPrice(650, [obs("A", 500, 500), obs("B", 550, 900)], "2026-10-08")).toEqual({
-      status: "unavailable", verifiedNearbyCount: 2, minimumCompetitors: 3,
-    });
+  it("uses two distinct recent nearby competitors with low confidence", () => {
+    expect(compareNearbyMarketPrice(650,[obs("A",500,500),obs("B",550,900)],"2026-10-08")).toMatchObject({status:"ready",confidence:"low",verifiedNearbyCount:2,medianPriceCents:525});
   });
 
   it("does not call a remote or unsourced-distance observation nearby", () => {
     const result = compareNearbyMarketPrice(650, [
       obs("A", 500, null), obs("B", 550, 10_000), obs("C", 575, 900),
     ], "2026-10-08");
-    expect(result.status).toBe("unavailable");
+    expect(result).toMatchObject({status:"ready",confidence:"low",verifiedNearbyCount:1});
   });
 
   it("ignores stale competitor observations", () => {
@@ -91,7 +89,7 @@ describe("nearby market comparison", () => {
       obs("B", 550, 900, "2026-10-01"),
       obs("C", 575, 1_200, "2026-10-01"),
     ], "2026-10-08");
-    expect(result).toEqual({ status: "unavailable", verifiedNearbyCount: 2, minimumCompetitors: 3 });
+    expect(result).toMatchObject({status:"ready",confidence:"low",verifiedNearbyCount:2});
   });
 
   it("compares against the median of latest distinct nearby competitors", () => {

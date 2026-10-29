@@ -28,6 +28,7 @@ export type PriceChangeSalesResponse =
     }
   | {
       status: "ready";
+      confidence:"low"|"high";
       change: MenuPriceChange;
       priceChangeCents: number;
       priceChangePercent: number;
@@ -70,6 +71,7 @@ export type NearbyMarketComparison =
     }
   | {
       status: "ready";
+      confidence:"low"|"high";
       verifiedNearbyCount: number;
       medianPriceCents: number;
       differenceCents: number;
@@ -144,9 +146,7 @@ export function analyzePriceChangeSalesResponse(
   const beforeUnits = before.reduce((sum, day) => sum + day.units, 0);
 
   if (
-    before.length < minimumCoveredDays ||
-    after.length < minimumCoveredDays ||
-    beforeUnits < minimumBeforeUnits
+    before.length === 0 || after.length === 0
   ) {
     return {
       status: "not_enough_data",
@@ -173,6 +173,7 @@ export function analyzePriceChangeSalesResponse(
   const revenuePerDayChangePercent = percentChange(beforeRevenuePerDayCents, afterRevenuePerDayCents);
   return {
     status: "ready",
+    confidence:before.length<minimumCoveredDays||after.length<minimumCoveredDays||beforeUnits<minimumBeforeUnits?"low":"high",
     change,
     priceChangeCents,
     priceChangePercent,
@@ -251,7 +252,7 @@ export function compareNearbyMarketPrice(
   }
 
   const verified = [...latestByCompetitor.values()];
-  if (verified.length < minimumCompetitors || currentPriceCents <= 0) {
+  if (verified.length === 0 || currentPriceCents <= 0) {
     return { status: "unavailable", verifiedNearbyCount: verified.length, minimumCompetitors };
   }
 
@@ -267,6 +268,7 @@ export function compareNearbyMarketPrice(
 
   return {
     status: "ready",
+    confidence:verified.length<minimumCompetitors?"low":"high",
     verifiedNearbyCount: verified.length,
     medianPriceCents,
     differenceCents,
