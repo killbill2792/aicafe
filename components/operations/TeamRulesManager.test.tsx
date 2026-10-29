@@ -25,7 +25,7 @@ describe("integrated AI Team rules UX",()=>{
   });
   it("redirects old standalone rules bookmarks into the integrated Team page",()=>{
     const route=readFileSync("app/[locale]/operations/rules/page.tsx","utf8");
-    expect(route).toContain('href:"/operations"');
+    expect(route).toContain('href:"/staff/rules"');
     expect(route).not.toContain("TeamRulesManager");
   });
 });

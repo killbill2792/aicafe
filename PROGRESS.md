@@ -3,11 +3,11 @@ Each item below is one small PR, in order. Do not start an item from "Next" befo
 
 ## Now
 - [ ] Set `OPENAI_API_KEY` in production before deploying #216 (receipts and statements now always use OpenAI).
-- [ ] Security: enable RLS on `businesses` (the only table without it) and add a CI check that fails if any `public` table has RLS off. Verify production first: `select relrowsecurity from pg_class where relname='businesses';`
-- [ ] Golden owner questions: ~10 fixed fixture questions with exact expected numbers on both chat and screen paths; replace the `>= 0` cost check in `metricsParity.test.ts` with exact equality.
+- [ ] Owner: apply migration 122 (RLS on `businesses`, merged in #220) to production: `alter table public.businesses enable row level security;`
+- [ ] Tests: `*.test.tsx` files never run (vitest includes only `*.test.ts`); 6 of their tests fail today. Include them and fix the failures.
 
 ## Next — the AI reads all POS data (AGENTS.md 4b)
-- [ ] 4a. Capture every Toast endpoint daily: the #210 sampler runs on a schedule per café for the last three closed days that are not complete (`toast-raw-capture-daily.yml`, into `toast_raw_samples`). Owner turns on scheduled runs with the repository variable `TOAST_DAILY_CAPTURE_ENABLED=true`.
+- [x] 4a. Daily capture of every Toast endpoint (#218). Owner: run it once by hand, then set the repository variable `TOAST_DAILY_CAPTURE_ENABLED=true`.
 - [ ] 4b. Point the canonical views (#212) at that store, so cash, stock, kitchen and dining options are fresh; add views for the remaining endpoints.
 - [ ] 4c. Merge `describe_data` / `query_data` (#212) with a dictionary entry for every source; screens move to the same readers.
 - [ ] 4d. "Today so far" live layer: provisional, replaced at closeout.
@@ -16,7 +16,7 @@ Each item below is one small PR, in order. Do not start an item from "Next" befo
 
 ## Next — the operator loop (AGENTS.md 4–5)
 - [ ] One experiment system: keep the Supervisor loop (propose → approve → monitor → report already works); fold in or delete owner initiatives.
-- [ ] Operating Board: add "Running" (active experiments/monitors, day X of Y, early read) and "Recent reports" to `ChatStart`, reading the same data as the chat tools.
+- [x] Operating Board: "Running" (waiting on your POS change, or day X of Y) and "Recent reports" on `ChatStart`, from the Supervisor loop tables. Mid-run early read comes with the mid-run updates item.
 - [ ] Inbox + notifications: every proactive finding, experiment update and report becomes an `operating_tasks` item plus a chat message, with an unread badge on the board.
 - [ ] Proactive monitor: daily findings plus live checks every ~30 minutes while open; duplicate suppression and daily cap.
 - [ ] Mid-run experiment updates (not only the final report).
@@ -30,13 +30,13 @@ Each item below is one small PR, in order. Do not start an item from "Next" befo
 - [ ] Browser push, Toast webhooks, "always allow" per action type, WhatsApp/SMS sending once a verified business sender exists.
 
 ## Done (last 10)
+- PR #221: chat cost answer matches the Money screen; 10 golden owner questions.
+- PR #220: row level security on `businesses` and a CI check for every table.
+- PR #219: fonts self-hosted (no build-time Google Fonts download).
+- PR #218: daily capture of every Toast endpoint for the last three closed days.
 - PR #217: AGENTS.md rewritten around the AI café operator direction.
 - PR #216: cleanup — model text passthrough, café currency in price proposals, short-history estimates, retired code removed.
 - PR #215: model-driven milk tool, fact-card resume, scoped costs and localization.
 - PR #214: owner fact cards, saved new-thread answers and milk-swap adapter.
 - PR #211: shared café math, partial results and read-only refresh.
 - PR #213: stored Toast facts and schedules exposed in chat.
-- PR #210: Toast read-only diagnostics across all documented GET APIs.
-- PR #209: manual Toast raw sample workflow.
-- PR #208: Toast raw data samples.
-- PR #207: GitHub Actions cron for Test Cafe sync.
