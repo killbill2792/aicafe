@@ -46,6 +46,19 @@ describe("model-driven milk swap in the real chat loop",()=>{
   expect(turn.text.toLowerCase()).toContain("profit");
   expect(turn.text.toLowerCase()).toContain("oat milk");
  });
+ it("recovers an unsavable global cost card with an owner-saveable question",async()=>{
+  const turn=await runAgentTurn({ownerText:"What does the latte cost?",
+   context:{...context},provider:fixture([
+    [call("ask_owner",{kind:"facts",question:"Cost?",options:[],allowOther:false,
+     fields:[{key:"unitCostCents",label:"Cost",inputType:"money",units:[],defaultUnit:""}]},"bad"),completed],
+    [say("I need the item's cost."),completed]
+   ])});
+  const card=turn.results.find(r=>r.source==="ask_owner"&&r.kind==="facts");
+  expect(card).toBeDefined();
+  expect((card?.fields as Array<{key:string}>)[0].key).toMatch(/^owner_question_/);
+  expect((card?.fields as Array<{inputType:string}>)[0].inputType).toBe("text");
+  expect(turn.results.some(r=>r.source==="ask_owner"&&r.error==="invalidFactFields")).toBe(true);
+ });
  it("does not run a post-model regex intent router or assign canned milk text",()=>{
   const source=readFileSync(join(process.cwd(),"lib/ai/agent/loop.server.ts"),"utf8");
   expect(source).not.toContain("isMilkSwapQuestion");
