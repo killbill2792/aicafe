@@ -5,12 +5,6 @@ export function additiveCostCents(quantityInBase:number,costPerBaseMicros:number
  if(!Number.isFinite(quantityInBase)||quantityInBase<0)throw new RangeError("Invalid quantity");
  return quantityInBase*costPerBaseMicros/1_000_000;
 }
-export function replacementDifferenceCents(quantityInBase:number,oldUnitMicros:number|null,newUnitMicros:number|null):number|null{
- const oldCost=additiveCostCents(quantityInBase,oldUnitMicros),newCost=additiveCostCents(quantityInBase,newUnitMicros);
- return oldCost===null||newCost===null?null:newCost-oldCost;
-}
-
-
 /** Compare physical portions that may have different shot/pump conversions. */
 export function swapPortionDifferenceCents(sourceBaseQuantity:number,sourceMicros:number|null,targetBaseQuantity:number,targetMicros:number|null):number|null{
  const source=additiveCostCents(sourceBaseQuantity,sourceMicros),target=additiveCostCents(targetBaseQuantity,targetMicros);

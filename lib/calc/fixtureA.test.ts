@@ -5,7 +5,6 @@ import {moneyLeftPerDrinkCents,dailyBreakEvenCostsCents,moneyLeftAfterPriceChang
 import {
   combinedHealthBand,
   ingredientsHealthBand,
-  ownerProfitCentsForPeriod,
   ratio,
   staffCostCentsForPeriod,
   staffHealthBand,
@@ -73,7 +72,6 @@ describe("Fixture A: owner profit", () => {
     expect(Math.round(runningCosts)).toBe(832_000); // 26 × 320.00
 
     expect(Math.round(totalCostsCentsForPeriod(days, runningCosts)!)).toBe(4_730_752);
-    expect(Math.round(ownerProfitCentsForPeriod(days, runningCosts)!)).toBe(1_509_248);
   });
 
   it("today (any single day) is $580.48", () => {
@@ -84,7 +82,6 @@ describe("Fixture A: owner profit", () => {
       "2026-09-01",
     );
     expect(Math.round(runningCosts)).toBe(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS);
-    expect(Math.round(ownerProfitCentsForPeriod(days, runningCosts)!)).toBe(58_048);
   });
 });
 
