@@ -60,7 +60,7 @@ const EMPTY_EVIDENCE: MenuPricingEvidence = {
 };
 
 /** One canonical read model for both the menu catalog and product detail. */
-export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
+export async function getMenuControlCenter(options: { includeSalesEvidence?: boolean } = {}): Promise<MenuControlItem[]> {
   const { items } = await getMenuItemsForEdit();
   if (!isSupabaseConfigured() || items.length === 0) {
     return items.map((item) => ({
@@ -90,6 +90,30 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
     targetMarginStatus: pricingInputs.business.targetOperatingMarginStatus ?? "default",
   };
   const inputById = new Map(pricingInputs.items.map((item) => [item.id, item]));
+  // Both full Menu and Home attention use exactly the same pricing calculation.
+  const baseItem = (item: MenuItemForEdit) => {
+    const input = inputById.get(item.id);
+    return {
+      ...item,
+      pricing: pricingById.get(item.id) ?? null,
+      pricingBasis,
+      unitsSold: input && input.unitsSoldInWindow > 0 ? input.unitsSoldInWindow : null,
+      provenance: ((item.catalogSource ?? (item.posItemId ? "OTHER_POS" : "MANUAL")).toUpperCase()) as MenuControlItem["provenance"],
+      lastSyncedAt: item.catalogLastSyncedAt,
+    };
+  };
+  // Home only projects pricing into attention tasks. It doesn't display item
+  // sales response, market comparisons, daily units or revenue. Avoid that
+  // separate 90-day order-line scan and its optional evidence queries.
+  if (options.includeSalesEvidence === false) {
+    return items.map((item) => ({
+      ...baseItem(item),
+      pricingEvidence: EMPTY_EVIDENCE,
+      unitsSoldByPeriod: { today: null, days7: null, days30: null },
+      unitsSoldDailyByPeriod: { today: null, days7: null, days30: null },
+      revenueCents: null,
+    }));
+  }
   const itemIds = items.map((item) => item.id);
 
   const { data: business } = await supabase
@@ -236,8 +260,8 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
   const hasLiveSquareCatalog = (connectionsResult.data ?? []).some(row=>row.provider==="square");
 
   return items.map((item) => {
-    const input = inputById.get(item.id);
-    const pricing = pricingById.get(item.id) ?? null;
+    const base = baseItem(item);
+    const pricing = base.pricing;
     const daily = itemDaily.get(item.id) ?? new Map<string, { units: number; revenueCents: number }>();
     const salesEvidence: ItemSalesEvidenceDay[] = coveredSalesDates.map((date) => {
       const itemDay = daily.get(date);
@@ -254,20 +278,15 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
       ) ?? null;
 
     return {
-      ...item,
-      pricing,
-      pricingBasis,
+      ...base,
       pricingEvidence: {
         costBenchmark: compareCostBasedPrice(item.priceCents, pricing?.baselinePriceCents ?? null),
         salesResponse: analyzePriceChangeSalesResponse(latestChange, salesEvidence),
         nearbyMarket: compareNearbyMarketPrice(item.priceCents, marketByItem.get(item.id) ?? [], today),
       },
-      unitsSold: input && input.unitsSoldInWindow > 0 ? input.unitsSoldInWindow : null,
       unitsSoldByPeriod: itemSalesPeriodTotals(datedQuantities, coverage, item.id, today),
       unitsSoldDailyByPeriod: itemSalesDailyByPeriod(datedQuantities, coverage, item.id, today),
       revenueCents: revenueById.has(item.id) ? revenueById.get(item.id)! : null,
-      provenance: ((item.catalogSource ?? (item.posItemId ? "OTHER_POS" : "MANUAL")).toUpperCase()) as MenuControlItem["provenance"],
-      lastSyncedAt: item.catalogLastSyncedAt,
     };
   });
 }
