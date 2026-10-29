@@ -22,6 +22,7 @@ import {buildAgentSendBody} from "./agentSendBody";
 import MemoryCard from "./MemoryCard";
 import ClarifyCard from "./ClarifyCard";
 import HowIGotThis from "./HowIGotThis";
+import {resumeOwnerQuestion} from "@/lib/ownerFacts/resume";
 import {explainLineSchema} from "@/lib/ai/agent/explain";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress from "./ChatJobProgress";
@@ -873,7 +874,18 @@ export default function SupervisorChatComposer({
             const savedCopy=({en,es,ar}[locale]).OwnerQuestions;
             const responseText=result.writeThroughApplied?savedCopy.saved:savedCopy.savedBut;
             setChosenClarify(old=>({...old,[message.id]:responseText}));
-            await sendText(responseText);
+            const pending=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
+            const original=pending.success?pending.data.originalText:
+              [...displayedMessages.slice(0,messageIndex)].reverse()
+                .find(entry=>entry.role==="owner"&&entry.text?.trim())?.text??null;
+            const card=(message.blocks??[]).map(block=>clarifyBlockSchema.safeParse(block))
+              .find(parsed=>parsed.success&&parsed.data.kind==="facts"&&parsed.data.questionId===questionId);
+            const fields=card?.success&&card.data.kind==="facts"?card.data.fields:[];
+            const facts=answers.map(answer=>({
+              label:fields.find(field=>field.key===answer.fieldKey)?.label??answer.fieldKey,
+              value:answer.value
+            }));
+            await sendText(resumeOwnerQuestion(original,responseText,facts));
           }}
           disabled={sending||!enabled||!canUseAi||
           (message.role==="supervisor"&&message.id!==activeQuestionMessageId&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state!=="active")}
