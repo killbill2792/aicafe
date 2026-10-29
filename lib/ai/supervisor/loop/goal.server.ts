@@ -97,8 +97,8 @@ export const goalCapability=registerLoopCapability({
     const outcome=scoreGoal(effect,samples,windowComplete,window);
     // Messages are capped at 1200 characters; the caveat sentence is the last part.
     // Check-in answers are qualitative: reported next to the numbers, never scored.
-    const checkins=effect.checkin&&outcome.status!=="in_progress"
-      ?await readGoalCheckins(createAdminSupabaseClient(),scope.businessId,effect).then(tallyCheckins).catch(()=>undefined):undefined;
+    const checkins=effect.checkin&&outcome.status!=="in_progress"&&window?.proposalId
+      ?await readGoalCheckins(createAdminSupabaseClient(),scope.businessId,window.proposalId).then(tallyCheckins).catch(()=>undefined):undefined;
     const full=outcome.status==="in_progress"?goalMidRunText(effect,outcome,scope.locale):goalReportText(effect,outcome,scope.locale,checkins);
     const text=full.length<=1200?full:full.slice(0,1199)+"…";
     return {status:outcome.status,recommendation:outcome.recommendation,source:"metric_catalog",

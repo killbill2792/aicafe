@@ -47,7 +47,7 @@ describe("goal check-ins store",()=>{
     expect(await postGoalCheckin(db,scope,goalId,effect,"2026-10-02")).toBe(false);
     expect(tables.operating_tasks).toHaveLength(1);
     expect(tables.ai_messages).toHaveLength(1);
-    expect(tables.operating_tasks[0]).toMatchObject({id:checkinTaskId(effect,"2026-10-02"),kind:"goal_checkin",
+    expect(tables.operating_tasks[0]).toMatchObject({id:checkinTaskId(goalId,"2026-10-02"),kind:"goal_checkin",
       status:"needs_owner",entity_id:goalId,payload:{question:"Did guests mention the new pastry?",threadId:scope.threadId}});
     expect(JSON.stringify(tables.ai_messages[0].structured_content)).toContain("Reply yes, somewhat or no");
   });
@@ -55,9 +55,9 @@ describe("goal check-ins store",()=>{
     const {db}=fakeDb();
     await postGoalCheckin(db,scope,goalId,effect,"2026-10-02");
     await postGoalCheckin(db,scope,goalId,effect,"2026-10-09");
-    const saved=await recordGoalCheckin(db,scope,goalId,effect,{date:null,answer:"somewhat",note:"Two asked"});
-    expect(saved).toEqual({id:checkinTaskId(effect,"2026-10-09"),date:"2026-10-09",answer:"somewhat"});
-    const rows=await readGoalCheckins(db,scope.businessId,effect);
+    const saved=await recordGoalCheckin(db,scope,goalId,{date:null,answer:"somewhat",note:"Two asked"});
+    expect(saved).toEqual({id:checkinTaskId(goalId,"2026-10-09"),date:"2026-10-09",answer:"somewhat"});
+    const rows=await readGoalCheckins(db,scope.businessId,goalId);
     expect(rows.find(r=>r.date==="2026-10-09")).toMatchObject({answer:"somewhat",note:"Two asked"});
     expect(rows.find(r=>r.date==="2026-10-02")?.answer).toBeNull();
     // The older unanswered question closed when the newer one was posted.
@@ -69,10 +69,20 @@ describe("goal check-ins store",()=>{
     await postGoalCheckin(db,scope,goalId,effect,"2026-10-09");
     expect(tables.operating_tasks.map(r=>r.status)).toEqual(["handled","needs_owner"]);
   });
+  it("gives an identical goal in another café, or a second identical goal, its own check-in",async()=>{
+    const {db,tables}=fakeDb();
+    const other={...scope,businessId:"f0000000-0000-4000-8000-000000000001"};
+    const second="e0000000-0000-4000-8000-000000000002";
+    expect(await postGoalCheckin(db,scope,goalId,effect,"2026-10-02")).toBe(true);
+    expect(await postGoalCheckin(db,other,second,effect,"2026-10-02")).toBe(true);
+    expect(await postGoalCheckin(db,scope,"e0000000-0000-4000-8000-000000000003",effect,"2026-10-02")).toBe(true);
+    expect(new Set(tables.ai_messages.map(m=>m.id)).size).toBe(3);
+    expect(tables.operating_tasks.filter(t=>t.status==="needs_owner")).toHaveLength(3);
+  });
   it("finds nothing to answer for another goal",async()=>{
     const {db}=fakeDb();
     await postGoalCheckin(db,scope,goalId,effect,"2026-10-02");
-    expect(await recordGoalCheckin(db,scope,"e0000000-0000-4000-8000-000000000001",effect,
+    expect(await recordGoalCheckin(db,scope,"e0000000-0000-4000-8000-000000000001",
       {date:null,answer:"yes",note:null})).toBeNull();
   });
 });
