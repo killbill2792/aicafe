@@ -5,10 +5,11 @@ import {swapCostPerSize,DEFAULT_TARGET_PRODUCT_COST_PERCENT} from "@/lib/metrics
 import {formatCents} from "@/lib/calc";
 import type {PricedPantry} from "./MenuAddonsPanel";
 /** All active sizes of the chosen product; every size uses its OWN recipe quantity. */
-export default function MilkSizePrices({items,fromMilkId,toMilkId,pantry}:{
-  items:MenuItemForEdit[];fromMilkId:string|null;toMilkId:string;pantry:PricedPantry[];
+export default function MilkSizePrices({items,fromMilkId,toMilkId,pantry,currency}:{
+  items:MenuItemForEdit[];fromMilkId:string|null;toMilkId:string;pantry:PricedPantry[];currency:string|null;
 }){
   const t=useTranslations("MenuBuilder"),note=useTranslations("MetricsNotes");
+  const money=(cents:number)=>formatCents(cents,undefined,currency);
   const first=items.find(item=>item.active)??items[0];
   // Include ALL saved size variants, including inactive ones, so the owner can
   // understand a swap before deciding whether to put that size back on sale.
@@ -48,10 +49,10 @@ export default function MilkSizePrices({items,fromMilkId,toMilkId,pantry}:{
         <p className="text-ink-muted">{note("modifierMissingInput")}: {size.missing.map(missingLabel).join(" · ")}</p>:
         <>
           <p>{size.costDeltaCents===0?t("aboutSame"):
-            size.costDeltaCents<0?t("savesYou",{amount:formatCents(Math.abs(size.costDeltaCents))}):
-            t("costsYou",{amount:formatCents(size.costDeltaCents)})}</p>
-          <p>{note("modifierSuggestedUpcharge")}: <strong>{formatCents(size.suggestedUpchargeCents!)}</strong></p>
-          <p>{note("modifierMarginKept")}: {formatCents(size.marginKeptCents!)}</p>
+            size.costDeltaCents<0?t("savesYou",{amount:money(Math.abs(size.costDeltaCents))}):
+            t("costsYou",{amount:money(size.costDeltaCents)})}</p>
+          <p>{note("modifierSuggestedUpcharge")}: <strong>{money(size.suggestedUpchargeCents!)}</strong></p>
+          <p>{note("modifierMarginKept")}: {money(size.marginKeptCents!)}</p>
         </>}
     </section>)}
     <p className="text-[17px] text-ink-muted">{note("modifierDefaultTarget")}</p>
