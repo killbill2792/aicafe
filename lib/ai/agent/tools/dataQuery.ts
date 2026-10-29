@@ -7,6 +7,11 @@ import {canonicalDictionary,canonicalViewNames,
 
 export type DataQueryContext={db:SupabaseClient;businessId:string};
 const DEFAULT_ROWS=50,MAX_ROWS=100;
+/** Views built from on-demand diagnostic captures (toast_raw_samples), not a scheduled
+ * sync. Results are marked so the answer is partial and says the data is a snapshot,
+ * until the scheduled capture feeds these views. */
+const SNAPSHOT_VIEWS:ReadonlySet<CanonicalView>=new Set(["cv_cash","cv_inventory","cv_kitchen","cv_dining_options"]);
+const snapshotNote=(view:CanonicalView)=>SNAPSHOT_VIEWS.has(view)?["snapshotOnly"]:[];
 const atom=z.union([z.string().max(256),z.number().finite(),z.boolean()]);
 const filter=z.strictObject({column:z.string().max(100),
  op:z.enum(["=","!=","<","<=",">",">=","in","between","ilike"]),
@@ -47,7 +52,7 @@ export const dataQueryTools={
  },
  query_data:{
   agentId:"alex" as const,schema:dataQuerySchema,
-  description:"Read and aggregate ONLY allowlisted canonical views through a café-scoped, RLS-invoker RPC. Supply dates and null for omitted filters/grouping. Returns at most 100 rows (50 by default): prefer group_by and metrics for totals.",
+  description:"Read and aggregate ONLY allowlisted canonical views through a café-scoped, RLS-invoker RPC. Supply dates and null for omitted filters/grouping. Returns at most 100 rows (50 by default): prefer group_by and metrics for totals. missing includes snapshotOnly for cash, stock, kitchen and dining options: say these are the latest captured snapshot, not live data.",
   execute:async(raw:unknown,ctx:DataQueryContext)=>{
    const parsed=dataQuerySchema.safeParse(raw);
    if(!parsed.success)return empty("invalid_query");
@@ -79,7 +84,7 @@ export const dataQueryTools={
      }
      const hasIncomplete=result.rows.some(row=>["open","estimated","needs_match"].includes(String(row.status)));
      return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
-      missing:[...(rows.length===0?["empty"]:[]),
+      missing:[...(rows.length===0?["empty"]:[]),...snapshotNote(p.view),
        ...(hasIncomplete?["incompleteEvidence"]:[]),
        ...(result.truncated?["result_truncated"]:[])],
       empty:rows.length===0,error:undefined as string|undefined,
@@ -100,7 +105,7 @@ export const dataQueryTools={
       sourceMix?:Record<string,number>;sourceCount?:number;hasIncomplete?:boolean}|null;
     const rows=Array.isArray(result?.rows)?result.rows:[];
     return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
-     missing:[...(rows.length===0||result?.sourceCount===0?["empty"]:[]),
+     missing:[...(rows.length===0||result?.sourceCount===0?["empty"]:[]),...snapshotNote(p.view),
       ...(result?.hasIncomplete?["incompleteEvidence"]:[]),
       ...(result?.truncated?["result_truncated"]:[])],
      empty:rows.length===0||result?.sourceCount===0,error:undefined as string|undefined,rows,rowCount:rows.length,

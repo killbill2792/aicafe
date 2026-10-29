@@ -74,3 +74,11 @@ it("defaults to a compact 50-row result when the model gives no limit",async()=>
  await dataQueryTools.query_data.execute({...input(),limit:null},{db:f.db,businessId:b});
  expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({p_limit:50}));
 });
+it("marks cash, stock, kitchen and dining results as snapshots, not live data",async()=>{
+ const f=testDb([{entry_type:"deposit",sum_amount_cents:5000}]);
+ const cash=await dataQueryTools.query_data.execute({...input("cv_cash"),columns:["entry_type"],group_by:["entry_type"],
+  metrics:[{fn:"sum",column:"amount_cents"}]},{db:f.db,businessId:b});
+ expect(cash.missing).toContain("snapshotOnly");
+ const sales=await dataQueryTools.query_data.execute(input(),{db:f.db,businessId:b});
+ expect(sales.missing).not.toContain("snapshotOnly");
+});
