@@ -93,12 +93,12 @@ function progressStatusText(copy: SupervisorChatCopy, status: SupervisorProgress
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; unverified?: {start:number;end:number;source?:'owner'|'estimate'|'unchecked';detail?:string}[] }) {
+function ReplyBlock({ block, copy, locale, cafeCurrency, threadId, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; cafeCurrency:string|null; threadId?:string; unverified?: {start:number;end:number;source?:'owner'|'estimate'|'unchecked';detail?:string}[] }) {
   if (!record(block)) return null;
   if(block.type==="proposal_card"&&typeof block.proposalId==="string"&&threadId)
     return <SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/>;
   if(block.type==="experiment_card"&&typeof block.proposalId==="string"&&threadId)
-    return <SupervisorExperiment threadId={threadId} locale={locale}
+    return <SupervisorExperiment threadId={threadId} locale={locale} currency={cafeCurrency}
       copy={{en,es,ar}[locale].SupervisorExperiment} initialProposalId={block.proposalId}/>;
   if(block.type==="memory_card"&&typeof block.ruleId==="string")
     return <MemoryCard ruleId={block.ruleId} locale={locale}/>;
@@ -166,7 +166,7 @@ function SupervisorMessage({ message, copy, locale, cafeCurrency, onOwnerRespons
       {proposalIds.length>1&&<InventoryApproveAll threadId={message.threadId} ids={proposalIds} locale={locale}/>}
       {groups.map((group,i)=>{
         if(group.kind==="facts")
-          return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
+          return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source} currency={cafeCurrency}/>;
         if(isDuplicateLinkedExperimentCard(group.block,message.threadId,linkedThreadId,linkedProposalId))
           return null;
         if(record(group.block)&&group.block.type==="how"&&Array.isArray(group.block.lines)){
@@ -938,7 +938,7 @@ export default function SupervisorChatComposer({
     {showNewMessage && <button type="button" onClick={scrollToLatest} className="absolute bottom-28 left-1/2 z-10 inline-flex min-h-12 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
     {initialProposalId && initialThreadId && threadId === initialThreadId && <div className="max-h-[50dvh] shrink-0 overflow-y-auto" data-testid="experiment-deeplink">
       <SupervisorExperiment key={initialThreadId + ":" + initialProposalId}
-        threadId={threadId} locale={locale} canUseAi={canUseAi}
+        threadId={threadId} locale={locale} currency={cafeCurrency} canUseAi={canUseAi}
         copy={{en,es,ar}[locale].SupervisorExperiment}
         initialProposalId={initialProposalId} refreshVersion={messages.length} />
     </div>}
