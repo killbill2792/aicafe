@@ -25,7 +25,9 @@ export default async function IngredientCostsPage() {
   return (
     <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("ingredientsTitle")} subtitle={t("ingredientsSubtitle")} backHref="/more/uploads" backLabel={tCommon("back")} />
+      {!snapshot.business.currency&&<p role="note" className="text-sm text-ink-muted">{tCommon("currencyNotSet")}</p>}
       <IngredientCostImporter
+        currency={snapshot.business.currency}
         initialMapping={initialMapping}
         existingNames={existingNames}
         todayDateStr={snapshot.todayDateStr}
