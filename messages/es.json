@@ -3518,6 +3518,8 @@
     "howSourceOwner": "Dato del propietario",
     "howSourceApp": "Datos registrados",
     "howTarget": "Objetivo de costo del producto",
+    "howRoundingStep": "Incremento de redondeo",
+    "howRoundUp": "Dividir por el objetivo de costo y redondear hacia arriba a los siguientes 5 céntimos",
     "averageTicket": "importe medio de una transacción con tarjeta",
     "cardSalesShare": "porcentaje de ventas pagadas con tarjeta",
     "cardTransactionsShare": "porcentaje de transacciones pagadas con tarjeta",
