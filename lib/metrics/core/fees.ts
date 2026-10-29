@@ -20,6 +20,28 @@ export type FeeResult={
   notes:string[];
 };
 const valid=(value:number)=>Number.isSafeInteger(value)&&value>=0;
+const percentRate=(plan:OwnerFeePlan,rules:readonly {percentageBps:number;salesMixBps:number}[])=>{
+ return (plan.processedSalesShareBps??10000)/10000 *
+   rules.reduce((sum,rule)=>sum+rule.percentageBps/10000*rule.salesMixBps/10000,0);
+};
+/** Marginal fee on a new cent of card sales. The fixed fee per already-counted payment is unchanged. */
+export function marginalCardFeeRate(
+ ownerPlans:OwnerFeePlan|readonly OwnerFeePlan[]|null|undefined,date:string,
+):number{
+ const plans=ownerPlans==null?[]:Array.isArray(ownerPlans)?ownerPlans:[ownerPlans as OwnerFeePlan];
+ const chosen=plans.filter(plan=>(!plan.effectiveFrom||plan.effectiveFrom<=date)&&
+   (!plan.effectiveTo||plan.effectiveTo>=date))
+   .sort((a,b)=>(b.effectiveFrom??"").localeCompare(a.effectiveFrom??""))[0];
+ if(!chosen)return DEFAULT_PROCESSING_FEE_RATE_BPS/10000;
+ const rules=chosen.rules??[{
+   percentageBps:chosen.percentageBps??-1,fixedFeeCents:chosen.fixedFeeCents??0,
+   salesMixBps:10000,transactionMixBps:10000
+ }];
+ if(!valid(chosen.processedSalesShareBps??10000)||(chosen.processedSalesShareBps??10000)>10000||
+    !rules.length||rules.some(rule=>!valid(rule.percentageBps)||!valid(rule.salesMixBps)||rule.salesMixBps>10000))
+   return DEFAULT_PROCESSING_FEE_RATE_BPS/10000;
+ return percentRate(chosen,rules);
+}
 function planAmount(days:readonly FeeDay[],plan:OwnerFeePlan):{amountCents:number;unroundedCents:number;missingFixed:boolean}|null{
   const rules=plan.rules??[{
     percentageBps:plan.percentageBps??-1,fixedFeeCents:plan.fixedFeeCents??0,
@@ -30,7 +52,7 @@ function planAmount(days:readonly FeeDay[],plan:OwnerFeePlan):{amountCents:numbe
   if(!valid(salesShare)||salesShare>10000||!valid(transactionsShare)||transactionsShare>10000||
     !rules.length||rules.some(r=>!valid(r.percentageBps)||!valid(r.fixedFeeCents)||
       !valid(r.salesMixBps)||r.salesMixBps>10000||!valid(r.transactionMixBps)||r.transactionMixBps>10000))return null;
-  const rate=salesShare/10000*rules.reduce((sum,r)=>sum+r.percentageBps/10000*r.salesMixBps/10000,0);
+  const rate=percentRate(plan,rules);
   const fixed=transactionsShare/10000*rules.reduce((sum,r)=>sum+r.fixedFeeCents*r.transactionMixBps/10000,0);
   let amount=0,missingFixed=false;
   for(const d of days){

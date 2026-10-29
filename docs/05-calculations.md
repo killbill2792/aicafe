@@ -116,7 +116,7 @@ Expected
 | Owner profit today (any day) | 2,400 − 650 − 70 − 779.52 − 320 = **$580.48** |
 | Average money left per drink | (2,400 − 650 − 70) ÷ 480 = **$3.50** |
 | Drinks needed per day | ceil((320 + 779.52) ÷ 3.50) = ceil(314.15) = **315** |
-| What-if all prices +25¢ | money left per drink 3.75 (fees held constant for simplicity in v1) → ceil(1,099.52 ÷ 3.75) = **294** |
+| What-if all prices +25¢ | money left per drink 3.75 (marginal percentage fee deducted on the price increase; fixed processing fee per payment unchanged for simplicity in v1) → ceil(1,099.52 ÷ 3.75) = **294** |
 | Rent & bills share per drink | 320 ÷ 480 = **$0.6667** |
 | Health: ingredients | 27.1% healthy · staff 32.5% healthy · together 59.6% healthy |
 

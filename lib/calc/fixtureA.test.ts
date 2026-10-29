@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { computeCostRecovery } from "./costRecovery";
-import { avgMoneyLeftPerDrinkCents, dailyCostsToCoverCents, drinksNeededPerDay, whatIfPriceChange } from "./breakEven";
+import { drinksNeededPerDay, whatIfPriceChange } from "./breakEven";
+import {moneyLeftPerDrinkCents,dailyBreakEvenCostsCents,moneyLeftAfterPriceChangeCents} from "@/lib/metrics/core/breakEven";
 import {
   combinedHealthBand,
   ingredientsHealthBand,
@@ -89,7 +90,7 @@ describe("Fixture A: owner profit", () => {
 
 describe("Fixture A: break-even", () => {
   it("average money left per drink is $3.50", () => {
-    const avg = avgMoneyLeftPerDrinkCents(
+    const avg = moneyLeftPerDrinkCents(
       FIXTURE_A_DAY.netSalesCents,
       FIXTURE_A_DAY.ingredientsCents,
       FIXTURE_A_DAY.cardFeesCents,
@@ -99,9 +100,9 @@ describe("Fixture A: break-even", () => {
   });
 
   it("drinks needed per day is 315", () => {
-    const daily = dailyCostsToCoverCents(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS, FIXTURE_A_DAY.staffCostCents);
+    const daily = dailyBreakEvenCostsCents(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS, FIXTURE_A_DAY.staffCostCents);
     expect(daily).toBeCloseTo(109_952, 6);
-    const avg = avgMoneyLeftPerDrinkCents(
+    const avg = moneyLeftPerDrinkCents(
       FIXTURE_A_DAY.netSalesCents,
       FIXTURE_A_DAY.ingredientsCents,
       FIXTURE_A_DAY.cardFeesCents,
@@ -111,14 +112,15 @@ describe("Fixture A: break-even", () => {
   });
 
   it("what-if all prices +25¢ needs 294 drinks/day", () => {
-    const daily = dailyCostsToCoverCents(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS, FIXTURE_A_DAY.staffCostCents);
-    const avg = avgMoneyLeftPerDrinkCents(
+    const daily = dailyBreakEvenCostsCents(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS, FIXTURE_A_DAY.staffCostCents);
+    const avg = moneyLeftPerDrinkCents(
       FIXTURE_A_DAY.netSalesCents,
       FIXTURE_A_DAY.ingredientsCents,
       FIXTURE_A_DAY.cardFeesCents,
       FIXTURE_A_DAY.drinks,
     );
-    expect(whatIfPriceChange(avg, 25, daily)).toBe(294);
+    expect(moneyLeftAfterPriceChangeCents(avg,25,0.0249)-avg).toBeCloseTo(24.3775,4);
+    expect(whatIfPriceChange(avg, 25, daily,0.0249)).toBe(294);
   });
 });
 

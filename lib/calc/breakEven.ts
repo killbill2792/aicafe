@@ -1,30 +1,20 @@
 /** Preserve the legacy public API while using shared B math. */
-import {moneyLeftPerDrinkCents,dailyBreakEvenCostsCents,
-  drinksTargetPerDay} from "@/lib/metrics/core/breakEven";
-
-/** Average money left per drink = (net sales − ingredients − card fees) ÷ drinks, over 28 days. */
-export function avgMoneyLeftPerDrinkCents(netSalesCents:number,ingredientsCents:number,
-  cardFeesCents:number,drinks:number):number{
-  return moneyLeftPerDrinkCents(netSalesCents,ingredientsCents,cardFeesCents,drinks);
-}
-
-/** Daily costs to cover = running costs per day + average daily staff cost (planned for new cafés). */
-export function dailyCostsToCoverCents(runningCosts:number,staffCost:number):number{
-  return dailyBreakEvenCostsCents(runningCosts,staffCost);
-}
+import {moneyLeftAfterPriceChangeCents,drinksTargetPerDay} from "@/lib/metrics/core/breakEven";
 
 /** Drinks needed per day = ceil(daily costs to cover ÷ average money left per drink). */
 export function drinksNeededPerDay(dailyCosts:number,moneyLeft:number):number{
   return drinksTargetPerDay(dailyCosts,moneyLeft);
 }
 
-/** What-if: raise every price by `deltaCentsPerDrink` (fees held constant, per the doc). */
+/** What-if: price rise less the marginal percentage card fee; per-payment fixed fee stays unchanged. */
 export function whatIfPriceChange(
   avgMoneyLeftPerDrinkCentsValue: number,
   deltaCentsPerDrink: number,
   dailyCostsToCoverCentsValue: number,
+  feeRate:number,
 ): number {
-  return drinksNeededPerDay(dailyCostsToCoverCentsValue, avgMoneyLeftPerDrinkCentsValue + deltaCentsPerDrink);
+  return drinksNeededPerDay(dailyCostsToCoverCentsValue,
+    moneyLeftAfterPriceChangeCents(avgMoneyLeftPerDrinkCentsValue,deltaCentsPerDrink,feeRate));
 }
 
 /** What-if: one less person for a `hours`-long window removes hours × wage × (1 + tax rate) per day. */
