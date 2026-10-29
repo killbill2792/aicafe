@@ -22,6 +22,27 @@ const decode=(r:Row):LoopProposal=>({
   locale:r.locale,monitoringStartDate:r.monitoring_start_date,createdAt:r.created_at,
 });
 const failed=(error:unknown,code:string):never=>{throw new Error(code,{cause:error});};
+/** UUID-shaped id from a stable key, so a repeated cron run cannot post twice. */
+export function stableMessageId(key:string):string{
+  const d=createHash("sha256").update(key).digest("hex");
+  return d.slice(0,8)+"-"+d.slice(8,12)+"-4"+d.slice(13,16)+"-a"+d.slice(17,20)+"-"+d.slice(20,32);
+}
+/** The one mid-run update for an experiment: a short chat message in the
+ * experiment's own thread. Never a task, never a second message. */
+async function postMidRunUpdate(db:ReturnType<typeof createAdminSupabaseClient>,scope:OwnerLoopScope,
+  p:LoopProposal,text:string):Promise<void>{
+  if(text.length>1200)throw new Error("Invalid mid-run update text");
+  const {data:business,error}=await db.from("businesses").select("timezone").eq("id",scope.businessId).single();
+  if(error||!business?.timezone)throw new Error("Café timezone unavailable");
+  const inserted=await db.from("ai_messages").insert({
+    id:stableMessageId("supervisor-midrun:"+p.id),business_id:scope.businessId,thread_id:scope.threadId,
+    owner_user_id:scope.ownerUserId,author_user_id:null,role:"supervisor",content_type:"blocks",
+    text_content:null,structured_content:[{type:"text",text}],
+    grounding:{status:"estimated",intent:"menu_pricing",evidence:[{source:"operating_tasks",
+      identifier:"supervisor-midrun:"+p.id,asOf:cafeToday(business.timezone)}]},
+  });
+  if(inserted.error&&inserted.error.code!=="23505")failed(inserted.error,"Supervisor mid-run update unavailable");
+}
 /** Service-role persistence. The API verifies the owner session BEFORE constructing
  * a scope; the database transition RPC locks revision/actor/effect hash atomically.
  * Authenticated callers can read only their own rows via RLS, never write them. */
@@ -160,7 +181,7 @@ export class SupabaseLoopRepository implements LoopRepository{
     return (data??[]).map(row=>({businessDate:row.business_date,
       observation:row.observation as Record<string,unknown>,source:row.evidence_source}));
   }
-  async saveReport(scope:OwnerLoopScope,p:LoopProposal,report:LoopReport):Promise<void>{
+  async saveReport(scope:OwnerLoopScope,p:LoopProposal,report:LoopReport,opts?:{midRun?:boolean}):Promise<void>{
     const db=createAdminSupabaseClient();
     const written=await db.from("supervisor_reports").upsert({
       business_id:scope.businessId,proposal_id:p.id,report:{...report.result,source:report.source,
@@ -168,7 +189,10 @@ export class SupabaseLoopRepository implements LoopRepository{
       generated_at:new Date().toISOString(),
     },{onConflict:"business_id,proposal_id"});
     if(written.error)failed(written.error,"Report save failed");
-    if(report.status==="in_progress")return;
+    if(report.status==="in_progress"){
+      if(opts?.midRun&&report.midRunText?.trim())await postMidRunUpdate(db,scope,p,report.midRunText);
+      return;
+    }
     // The platform is domain-neutral: delivery contracts originate only in
     // the registered capability's verified report, not in a price-specific
     // task writer or a generic second inbox.
