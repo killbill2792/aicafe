@@ -29,7 +29,8 @@ type Labels = {
   error: string;
 };
 
-export default function AggregateProductCostEditor({ items, labels }: { items: MenuItemForEdit[]; labels: Labels }) {
+export default function AggregateProductCostEditor({ items, labels, currency }: { items: MenuItemForEdit[]; labels: Labels; currency: string | null }) {
+  const money = (cents: number) => formatCents(cents, undefined, currency);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   // Drafts are scoped to the server-provided value they were based on.
@@ -91,8 +92,8 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
     if ((item.recipeCostStatus ?? item.costStatus) !== "READY" || recipeCost == null || ownerTotal == null || difference == null) return null;
     if (Math.abs(difference) < 0.5) return labels.same;
     return difference > 0
-      ? labels.recipeHigher.replace("{amount}", formatCents(Math.abs(difference)))
-      : labels.recipeLower.replace("{amount}", formatCents(Math.abs(difference)));
+      ? labels.recipeHigher.replace("{amount}", money(Math.abs(difference)))
+      : labels.recipeLower.replace("{amount}", money(Math.abs(difference)));
   }
 
   return (
@@ -112,7 +113,7 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
                   {compare && <p className="mt-2 text-sm leading-snug text-ink-muted">{compare}</p>}
                 </div>
                 {item.costStatus === "READY" && item.ingredientsCostCents !== null && (
-                  <span className="text-lg font-extrabold text-ink">{formatCents(item.ingredientsCostCents)}</span>
+                  <span className="text-lg font-extrabold text-ink">{money(item.ingredientsCostCents)}</span>
                 )}
               </div>
               <div className="mt-3 flex flex-wrap items-end gap-2">
