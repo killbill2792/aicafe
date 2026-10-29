@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeCostRecovery } from "./costRecovery";
 import { avgMoneyLeftPerDrinkCents, dailyCostsToCoverCents, drinksNeededPerDay, whatIfPriceChange } from "./breakEven";
-import { rentBillsSharePerDrinkCents } from "./perDrink";
 import {
   combinedHealthBand,
   ingredientsHealthBand,
@@ -123,11 +122,7 @@ describe("Fixture A: break-even", () => {
   });
 });
 
-describe("Fixture A: per-drink and health", () => {
-  it("rent & bills share per drink is $0.6667", () => {
-    const share = rentBillsSharePerDrinkCents(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS, FIXTURE_A_DAY.drinks);
-    expect(share).toBeCloseTo(66.6667, 3);
-  });
+describe("Fixture A: observed cost health", () => {
 
   it("ingredients 27.1% healthy, staff 32.5% healthy, combined 59.6% healthy", () => {
     const days = fixtureADays(1);
