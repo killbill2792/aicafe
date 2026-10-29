@@ -50,6 +50,19 @@ describe("milk swap shared-module screen/chat parity",()=>{
   expect(chat.missing).toEqual([]);
   expect(chat.rows[0].suggestedUpchargeCents).toBe(screen.suggestedUpchargeCents);
  });
+ it("uses the named base milk cost instead of the saved default base",()=>{
+  const saved=[fact("milk_base_type","whole milk"),fact("milk_ml:16oz",160),
+   fact("milk_base_serving_cost_cents:16oz",40),
+   fact("milk_almond_serving_cost_cents:16oz",80),
+   fact("milk_oat_serving_cost_cents:16oz",90)];
+  const answer=milkSwapFromFacts(sizes,saved,[],"oat milk","almond milk");
+  expect(answer.missing).toEqual([]);
+  expect(answer.rows[0].baseServingCents).toBe(80);
+  expect(answer.rows[0].suggestedUpchargeCents).toBe(35);
+  const absent=milkSwapFromFacts(sizes,saved.filter(f=>f.fact_key!=="milk_almond_serving_cost_cents:16oz"),[],"oat milk","almond milk");
+  expect(absent.missing).toContain("milk_almond_serving_cost_cents:16oz");
+  expect(absent.rows[0].suggestedUpchargeCents).toBeNull();
+ });
  it("never assumes oat for an unnamed swap",()=>{
   const answer=milkSwapFromFacts(sizes,[fact("milk_base_type","whole milk")],[]);
   expect(answer.targetMilk).toBeNull();
