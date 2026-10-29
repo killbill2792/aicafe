@@ -5,7 +5,7 @@ import type {ReactNode} from "react";
 import ProfitCostsView from "./ProfitCostsView";
 
 vi.mock("next-intl/server",()=>({
-  getTranslations:async()=>((key:string)=>key),
+  getTranslations:async()=>Object.assign((key:string)=>key,{has:()=>true}),
   getLocale:async()=>"en",
 }));
 vi.mock("@/i18n/navigation",()=>({
@@ -16,7 +16,7 @@ vi.mock("@/components/shared/Money",()=>({
 }));
 
 describe("ProfitCostsView incomplete POS wages",()=>{
-  it("does not render a complete staff flow bar or profit when partial wages are non-null",async()=>{
+  it("shows known partial wages labelled incomplete and keeps owner profit waiting",async()=>{
     const complete=getFixtureSnapshot();
     const date=complete.todayDay.date;
     const partial={...complete.todayDay,wagesCents:1250,staffTaxCents:150,
@@ -29,7 +29,10 @@ describe("ProfitCostsView incomplete POS wages",()=>{
     expect(html).toContain("ownerProfitWaiting");
     expect(html).toContain("staff:");
     expect(html).not.toContain("STAFF</span><span class=\"text-[13px] font-bold text-ink-muted\">0%");
-    expect(html).not.toContain("rounded-md bg-staff");
+    // Partial results (#211): the known staff cost is shown, and the screen says
+    // which wage is missing instead of presenting it as complete.
+    expect(html).toContain("profitLaborMissing");
+    expect(html).toContain("laborWageUnknown");
     const completeHtml=renderToStaticMarkup(await ProfitCostsView({
       snapshot:complete,period:"today",salesSources:["toast"]}));
     expect(completeHtml).toContain("rounded-md bg-staff");
