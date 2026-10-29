@@ -40,7 +40,7 @@ export async function getProfitGoalSimulatorData(): Promise<ProfitGoalSimulatorD
   );
 
   let unavailableReason: ProfitGoalSimulatorData["unavailableReason"] = null;
-  if (pricing.business.daysWithSalesInWindow < 7) unavailableReason = "NOT_ENOUGH_SALES";
+  if (pricing.business.daysWithSalesInWindow === 0) unavailableReason = "NOT_ENOUGH_SALES";
   else if (pricing.business.processingFeesStatus === "missing") unavailableReason = "MISSING_PROCESSING_FEES";
   else if (hasMissingProductCosts) unavailableReason = "MISSING_PRODUCT_COSTS";
   else if (pricing.business.operatingCostsStatus === "missing") unavailableReason = "MISSING_OPERATING_COSTS";
@@ -51,7 +51,7 @@ export async function getProfitGoalSimulatorData(): Promise<ProfitGoalSimulatorD
       ? {
           monthlyRevenueCents: pricing.business.monthlyRevenueCents,
           monthlyVariableProductCostCents: pricing.business.monthlyVariableProductCostCents,
-          monthlyStaffCostCents: pricing.business.monthlyStaffCostCents!,
+          monthlyStaffCostCents: pricing.business.monthlyStaffCostCents ?? 0, // partial lower-bound estimate: missing payroll is separately disclosed
           monthlyOperatingCostCents: pricing.business.monthlyOperatingCostCents,
           monthlyProcessingFeesCents: pricing.business.monthlyProcessingFeesCents,
         }
