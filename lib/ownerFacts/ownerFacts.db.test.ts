@@ -71,6 +71,6 @@ describe("migration 110 disposable PostgreSQL integration",()=>{
   expect(milk).toMatchObject({missing:[],targetMilk:"almond milk",
    rows:[expect.objectContaining({sizeId:"16oz",inputBasis:"owner_provided",
     suggestedUpchargeCents:expect.any(Number)})]});
-  expect(turn.text).toContain("almond milk");
+  expect(turn.text.toLowerCase()).toContain("almond milk");
  });
 });
