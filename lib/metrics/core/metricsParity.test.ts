@@ -15,7 +15,6 @@ import {newItemPriceTools} from "@/lib/ai/agent/tools/newItemPrice";
 import {staffTools} from "@/lib/ai/agent/tools/staff";
 import type {AgentToolContext} from "@/lib/ai/agent/tools/index";
 import {figure,type Economics} from "@/lib/calc/supervisorEconomics";
-import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
 import {regularHoursStateForDate} from "@/lib/business/openHours";
 
 const date=(i:number)=>shiftCafeDate("2026-09-01",i);
@@ -141,7 +140,7 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
    expect(sourceBills).toBe(recovery.monthlyBillsCents);
    const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
    const period={from:snapshot.monthKey+"-01",to:snapshot.todayDateStr};
-   const ctx:AgentToolContext={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",currency:"USD",
+   const ctx:AgentToolContext={asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",currency:snapshot.business.currency??null,
     tools:{
      getLaborMetrics:async()=>({available:true as const,value:raw.map(d=>({
        date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
@@ -149,7 +148,8 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
        loadedStaffCostCents:d.wagesCents===null||d.staffTaxCents===null?
         null:d.wagesCents+d.staffTaxCents,
      })),quality}),
-     getBusinessCostSummary:async()=>businessCostSummaryFromSnapshot(snapshot,period),
+     // The production reader (lib/ai/tools.ts) returns cafe state's businessCosts.
+     getBusinessCostSummary:async()=>cafeStateFromSnapshot(snapshot,period).businessCosts,
     } as unknown as AgentToolContext["tools"],
     readEconomics:async()=>({economics,items:[],staff:[],
      ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null}),
@@ -167,7 +167,8 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
      .reduce((sum,day)=>sum+(day.wagesCents??0)+(day.staffTaxCents??0),0);
    expect(knownLabor).toBe(screen.wagesCents!+screen.staffTaxCents!);
    const costChat=await moneyTools.get_cost_summary.execute({period:"month"},ctx);
-   expect(costChat.knownTotalCents).toBeGreaterThanOrEqual(0);
+   // The chat's cost answer must be the same number the Money screen shows as costs.
+   expect(costChat.knownTotalCents).toBe(screen.totalCostsCents);
    const price=await newItemPriceTools.suggest_new_item_price.execute({
     ingredient_cost_cents:145,category:"drink",packaging_cents:0,item_name:null,ownerInputs:null,
    },ctx);
