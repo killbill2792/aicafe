@@ -6,7 +6,7 @@ import { resolveCatalogMatch, matchUploadedItem, addUploadedItemToMenu } from "@
 import { Link } from "@/i18n/navigation";
 import BackHeader from "@/components/shared/BackHeader";
 import PageShell from "@/components/shared/PageShell";
-import { getCafeProfile } from "@/lib/data/getCafeProfile";
+import { getSnapshot } from "@/lib/data/getSnapshot";
 import { formatCafeCurrency } from "@/lib/format/cafeCurrency";
 
 export const dynamic = "force-dynamic";
@@ -16,13 +16,13 @@ export default async function ImportReviewPage({searchParams}: {searchParams: Pr
   const source = params.source === "upload" ? "upload" : undefined;
   const [rows, items, t, common, locale, profile] = await Promise.all([
     getCatalogMatchReview(source ? {source,uploadId:params.uploadId} : undefined),
-    getMenuItemsForEdit(),getTranslations("Menu"),getTranslations("Common"),getLocale(),getCafeProfile(),
+    getMenuItemsForEdit(),getTranslations("Menu"),getTranslations("Common"),getLocale(),getSnapshot(),
   ]);
   const menuItems = items.items;
   const backHref = source && params.uploadId ? `/more/uploads/${encodeURIComponent(params.uploadId)}` : "/menu";
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
     <BackHeader title={t("matchItems")} subtitle={rows.length ? t("keepYourWork") : undefined} backHref={backHref} backLabel={common("back")}/>
-    {!profile.currency&&rows.some(row=>row.importedPriceCents!==null)&&<p role="note" className="text-sm text-ink-muted">{common("currencyNotSet")}</p>}
+    {!profile.business.currency&&rows.some(row=>row.importedPriceCents!==null)&&<p role="note" className="text-sm text-ink-muted">{common("currencyNotSet")}</p>}
     {params.result === "error" && <p role="alert" className="rounded-card-lg border border-line bg-card p-4 text-[17px] text-ink">{t("matchError")}</p>}
     {params.result === "matched" && <p role="status" className="rounded-card-lg bg-card p-4 text-[17px] text-ink">{t(rows.length ? "matchSaved" : "matchDone")}</p>}
     {rows.length === 0 ? <div className="rounded-card-lg bg-card p-5 text-[17px] text-ink-muted">
@@ -30,7 +30,7 @@ export default async function ImportReviewPage({searchParams}: {searchParams: Pr
       <Link href="/" className="mt-3 inline-flex min-h-12 items-center font-semibold text-accent-text underline">{t("backHome")}</Link>
     </div> : rows.map(row=><section key={row.id} className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
       <div className="flex justify-between gap-3"><div><strong className="text-lg">{row.importedName}</strong><p className="text-sm text-ink-muted">{t("syncedFrom",{source:row.provider.toUpperCase()})}</p></div>
-        {row.importedPriceCents!==null && <strong>{formatCafeCurrency(row.importedPriceCents,locale,profile.currency).text}</strong>}</div>
+        {row.importedPriceCents!==null && <strong>{formatCafeCurrency(row.importedPriceCents,locale,profile.business.currency).text}</strong>}</div>
       {row.provider==="csv" ? <>
         <form action={matchUploadedItem.bind(null,row.id)} className="flex flex-col gap-2">
           <label htmlFor={`item-${row.id}`} className="text-sm font-semibold">{t("pickExistingItem")}</label>
