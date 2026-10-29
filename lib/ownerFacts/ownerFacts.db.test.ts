@@ -29,8 +29,17 @@ const context:AgentToolContext={
  }
 };
 const completed={type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+let turnNumber=0;
 const provider:AgentProvider=async function*(){
- yield {type:"response.output_text.delta",delta:"Checking recorded costs."};
+ if(turnNumber++===0){
+  yield {type:"response.output_item.done",item:{type:"function_call",
+   name:"milk_swap_price",call_id:"milk-db",arguments:JSON.stringify({
+    targetMilk:"almond milk",baseMilk:null,sizes:["16 oz"]
+   })}};
+ }else{
+  yield {type:"response.output_text.delta",
+   delta:"Almond milk 16 oz: suggested upcharge $1.70 (estimate)."};
+ }
  yield completed;
 };
 describe("migration 110 disposable PostgreSQL integration",()=>{
