@@ -33,12 +33,14 @@ function BucketRow({
   isFirst,
   isLast,
   t,
+  currency,
 }: {
   bucket: BucketResult;
   label: string;
   isFirst: boolean;
   isLast: boolean;
   t: Awaited<ReturnType<typeof getTranslations<"Money">>>;
+  currency: string | null;
 }) {
   const covered = bucket.pctCovered >= 100;
   return (
@@ -48,7 +50,7 @@ function BucketRow({
         <div className="flex flex-wrap items-center justify-between gap-x-2">
           <span className="break-words text-[17px] font-bold text-ink">{label}</span>
           <span className="break-words text-[17px] font-bold text-ink">
-            <Money cents={bucket.amountCents} />
+            <Money cents={bucket.amountCents} currency={currency} />
           </span>
         </div>
         {covered ? (
@@ -61,7 +63,7 @@ function BucketRow({
               <div className="h-2.5 rounded-full bg-good" style={{ width: `${bucket.pctCovered}%` }} />
             </div>
             <span className="text-[13px] font-semibold text-ink">
-              {t("paidBackToGo", { pct: Math.round(bucket.pctCovered), amount: formatCents(bucket.centsToGo) })}
+              {t("paidBackToGo", { pct: Math.round(bucket.pctCovered), amount: formatCents(bucket.centsToGo, undefined, currency) })}
             </span>
           </div>
         ) : (
@@ -157,7 +159,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
             {vm.breakEven.kind === "ready" ? (
               <>
                 <div className="mt-1 font-headline text-[40px] font-bold leading-none text-ink">
-                  <Money cents={vm.breakEven.breakEvenSalesCents} />
+                  <Money cents={vm.breakEven.breakEvenSalesCents} currency={snapshot.business.currency} />
                 </div>
                 <p className="mt-2 text-sm leading-snug text-ink-muted">{t("breakEvenSalesNeeded")}</p>
                  {actualDays>0&&<p role="note" className="mt-2 text-sm text-ink-muted">{tCommon("basedOnDays",{days:actualDays})}</p>}
@@ -183,11 +185,11 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           <div className="rounded-2xl bg-paper p-3">
             <span className="block text-xs font-semibold text-ink-muted">{t("monthlyBillsTotal")}</span>
-            <strong className="mt-1 block text-xl text-ink"><Money cents={vm.monthlyBillsCents} /></strong>
+            <strong className="mt-1 block text-xl text-ink"><Money cents={vm.monthlyBillsCents} currency={snapshot.business.currency} /></strong>
           </div>
           <div className="rounded-2xl bg-paper p-3">
             <span className="block text-xs font-semibold text-ink-muted">{t("monthlyStaffEstimate")}</span>
-            <strong className="mt-1 block text-xl text-ink">{vm.monthlyStaffCents===null?"—":<Money cents={vm.monthlyStaffCents} />}</strong>
+            <strong className="mt-1 block text-xl text-ink">{vm.monthlyStaffCents===null?"—":<Money cents={vm.monthlyStaffCents} currency={snapshot.business.currency} />}</strong>
           </div>
         </div>
       </section>
@@ -197,9 +199,9 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
         <div className="flex min-w-[220px] flex-1 flex-col gap-1.5">
           <span className="text-[15px] font-semibold text-ink-muted">{t("billCoverageThisMonth")}</span>
           <span className="whitespace-nowrap font-headline text-[40px] font-bold leading-none">
-            <Money cents={totalPaidBackCents} />
+            <Money cents={totalPaidBackCents} currency={snapshot.business.currency} />
           </span>
-          <span className="text-[15px] font-semibold">{t("paidBackOf", { amount: formatCents(vm.totalCents) })}</span>
+          <span className="text-[15px] font-semibold">{t("paidBackOf", { amount: formatCents(vm.totalCents, locale, snapshot.business.currency) })}</span>
           {!vm.allCovered && vm.buckets[vm.buckets.length - 1]?.projectedCoveredOn && (
             <span className="text-sm font-bold text-good">
               {t("allCoveredBy", { date: shortDate(vm.buckets[vm.buckets.length - 1].projectedCoveredOn!) })}
@@ -207,7 +209,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
           )}
           {vm.allCovered && (
             <span className="text-sm font-bold text-good">
-              {t("yoursSoFar", { amount: formatCents(vm.yoursSoFarCents) })}
+              {t("yoursSoFar", { amount: formatCents(vm.yoursSoFarCents, locale, snapshot.business.currency) })}
             </span>
           )}
         </div>
@@ -215,7 +217,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
 
       <section aria-label={t("billsOrderLabel")} className="rounded-card-lg bg-card px-[18px]">
         {vm.buckets.map((bucket, i) => (
-          <BucketRow key={bucket.code} bucket={bucket} label={labelFor(bucket.code)} isFirst={i === 0} isLast={i === vm.buckets.length - 1} t={t} />
+          <BucketRow key={bucket.code} bucket={bucket} label={labelFor(bucket.code)} isFirst={i === 0} isLast={i === vm.buckets.length - 1} t={t} currency={snapshot.business.currency} />
         ))}
       </section>
 
@@ -225,6 +227,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
       <MonthCalendar
         toastConnected={toastConnected}
         monthLabel={monthLabel}
+        currency={snapshot.business.currency}
         calMonthKey={calMonthKey}
         canGoNext={!isCurrentMonth}
         weekdayLabels={weekdayLabels}
