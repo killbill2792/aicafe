@@ -40,7 +40,7 @@ function BucketRow({
   isFirst: boolean;
   isLast: boolean;
   t: Awaited<ReturnType<typeof getTranslations<"Money">>>;
-  currency: string | null;
+  currency?: string | null;
 }) {
   const covered = bucket.pctCovered >= 100;
   return (
