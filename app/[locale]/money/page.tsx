@@ -6,7 +6,9 @@ import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { readAllPosRows } from "@/lib/pos/pagedReads";
 import { salesSourcesForOrders, type SalesOrderEvidence } from "@/components/money/moneyActions";
 import { Receipt } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
+import { readSavedTodayLive, currentTodayBusinessDay } from "@/lib/data/todayLive.server";
+import { liveSalesView, type LiveSalesView } from "@/components/home/liveSales";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import type { Period } from "@/lib/viewmodels/period";
@@ -38,7 +40,9 @@ export default async function MoneyPage({
 
   const snapshot = await getSnapshot(period);
   const t = await getTranslations("Money");
+  const locale = await getLocale();
   let toastConnected = false;
+  let liveToday: {sales: LiveSalesView; orders: number} | null = null;
   let salesSources: ReturnType<typeof salesSourcesForOrders> = ["unknown"];
   if (user && isSupabaseConfigured()) {
     const db = await createServerSupabaseClient();
@@ -49,6 +53,16 @@ export default async function MoneyPage({
       .eq("business_id", businessId).eq("toast_excluded",false).is("superseded_by",null).gte("business_date", range.start)
       .lte("business_date", range.end).order("id").range(first, last), "money sales sources");
     salesSources = salesSourcesForOrders(orders);
+    // Use the same saved, business-day-checked reading as Home. Never replace a
+    // finalized daily row with provisional sales, or silently use yesterday's reading.
+    if (!snapshot.todayHasData && businessId === snapshot.business.id && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const [saved, businessDay] = await Promise.all([
+        readSavedTodayLive(db, businessId).catch(() => null),
+        currentTodayBusinessDay(createAdminSupabaseClient(), businessId).catch(() => null),
+      ]);
+      const sales = liveSalesView(saved, snapshot.business.timezone, locale, businessDay);
+      if (saved && sales) liveToday = {sales, orders: saved.value.orders};
+    }
     // Toast credentials have no authenticated RLS grants. Only read a verified
     // state after the user's active-business membership has been checked.
     if (process.env.SUPABASE_SERVICE_ROLE_KEY && businessId === snapshot.business.id) {
@@ -84,7 +98,7 @@ export default async function MoneyPage({
       {view === "profit" && <PeriodSwitch current={period} />}
 
       {view === "recovery" ? (
-        <CostRecoveryView snapshot={snapshot} calMonthKey={calMonthKey} toastConnected={toastConnected} />
+        <CostRecoveryView snapshot={snapshot} calMonthKey={calMonthKey} toastConnected={toastConnected} liveToday={liveToday} />
       ) : (
         <ProfitCostsView snapshot={snapshot} period={period} salesSources={salesSources} />
       )}
