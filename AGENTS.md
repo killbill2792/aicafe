@@ -78,8 +78,10 @@ urgent issues (nobody clocked in for a shift, sales far below normal, an item ru
 void or refund).
 
 ## 4b. POS data: keep everything, read everything, include today
-- **Keep everything.** Every Toast endpoint the café's credentials allow is captured on a schedule and
-  stored (`toast_raw_records`), with customer personal details removed and business data kept.
+- **Keep everything.** Every Toast endpoint the café's credentials allow is captured on a schedule
+  (`.github/workflows/toast-raw-capture-daily.yml`, last three closed days kept complete) into
+  `toast_raw_samples`, with customer personal details removed and business data kept. Views read only
+  the newest successful capture of each day.
 - **The AI can read all of it** through the canonical views and the one read-only data-query tool, with a
   plain-words dictionary entry for every source. "Missing" means the POS truly returned nothing (or we
   lack permission), and the AI says exactly which.

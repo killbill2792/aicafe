@@ -36,16 +36,16 @@ function context(override:Partial<Economics>={},ownerText="",
  } as AgentToolContext;
 }
 describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
- it("rejects a model margin and keeps a $5 baseline with insufficient labor coverage",async()=>{
+ it("rejects a model margin, keeps a $5 baseline and labels sparse labor as an estimate",async()=>{
   await expect(newItemPriceTools.suggest_new_item_price.execute({...item,target_margin_percent:50},
    context())).rejects.toThrow();
   const r=await newItemPriceTools.suggest_new_item_price.execute(item,context());
   expect(r.recommendedPriceCents).toBe(500);
-  expect(r.breakEvenCents).toBeNull();
-  expect(r.monthlyLabor).toMatchObject({status:"missing",valueCents:null});
-  expect(r).toMatchObject({askOwnerRequired:true,needsOwnerChoice:true,allowOther:true});
-  expect(r.candidates).toEqual(expect.arrayContaining([
-    expect.objectContaining({id:"labor-monthly",label:"Provide monthly labor"})]));
+  // One of fourteen days has timecards: labor is projected and labelled an
+  // estimate (short-history estimates, #216) rather than stopping the answer.
+  expect(r.monthlyLabor).toMatchObject({status:"estimate",valueCents:514000,
+    reasonKey:"Sparse: one of fourteen days has timecards"});
+  expect(r.breakEvenCents).toBe(379);
  });
  it("uses owner $13,000/month to reach $5.25, full break-even $5.13, profit price $6.25",async()=>{
   const v={...item,ownerInputs:{...emptyOwnerInputs,laborCents:1300000,laborPeriod:{unit:"month" as const}}};
@@ -174,7 +174,7 @@ describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
   expect(fee.label).toContain("2.49%");
   expect(fee.label).toContain("$0.15/order");
   expect(fee.label).toContain("$0.08/drink");
-  expect(fee.basis).toContain("Owner card fees");
+  expect(fee.basis).toBe("owner_provided");
   expect(fee.provenance).toBe("ownerProvided");
   expect((result.components as {fee:{source:string}}).fee.source).toBe("ownerProvided");
   expect(result.numberEstimates).toEqual(expect.arrayContaining([
@@ -200,7 +200,7 @@ describe("new drink pricing: sparse Aug 22–Sep 4 regression",()=>{
    const r=await newItemPriceTools.suggest_new_item_price.execute(v,context({},"",locale,.30));
    expect(r.pricingNote).toBe(copy.pricingNoteBelowFullCost);
    expect((r.components as {targetDrinkCost:{source:string,basis:string}}).targetDrinkCost)
-    .toMatchObject({source:"ownerProvided",basis:copy.pricingSavedTarget});
+    .toMatchObject({source:"ownerProvided",basis:"owner_provided"});
    const missing=await newItemPriceTools.suggest_new_item_price.execute(item,context({},"",locale));
    expect(missing.pricingNote).toBe(copy.pricingNoteDrinkCost.replace("{percent}","30"));
   }

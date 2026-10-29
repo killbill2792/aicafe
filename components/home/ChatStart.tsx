@@ -8,6 +8,8 @@ import { AgentAvatar } from "@/components/operations/agentVisuals";
 import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import { CHAT_START_AGENTS, topChatStartItems, type ChatStartAttentionItem } from "./chatStartAttention";
 
+/** One preformatted Operating Board line with a link into its chat thread. */
+export type BoardLine = { key: string; href: string; text: string };
 export type ChatStartData = {
   period: Period;
   sales: string;
@@ -19,6 +21,8 @@ export type ChatStartData = {
   incomplete: boolean;
   shareCaption: string|null;
   comparisonCaption: string|null;
+  /** Experiments the operator is running and its recent reports (same rows as the chat). */
+  board?: { running: BoardLine[]; reports: BoardLine[] };
 };
 export type ChatStartCopy = {
   keyNumbers: string;
@@ -37,6 +41,8 @@ export type ChatStartCopy = {
   experimentPrompt: string;
   suggestionsLabel: string;
   handledLabel: string;
+  boardRunning?: string;
+  boardReports?: string;
 };
 export type ChatStartProps = {
   data: ChatStartData;
@@ -91,6 +97,20 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
         </p>}
         <Link href="/money" className="mt-1 inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline">{copy.details}</Link>
       </section>
+      {data.board && (data.board.running.length > 0 || data.board.reports.length > 0) &&
+        <section className="min-w-0 space-y-3 rounded-2xl border border-line bg-card p-3" data-testid="operating-board">
+          {([[copy.boardRunning, data.board.running, "running"], [copy.boardReports, data.board.reports, "reports"]] as const)
+            .filter(([, lines]) => lines.length > 0).map(([title, lines, id]) => <div key={id} className="min-w-0">
+              <h3 className="text-[15px] font-semibold text-ink-muted">{title}</h3>
+              <ul className="mt-1 space-y-1">
+                {lines.map((line) => <li key={line.key} className="min-w-0">
+                  <Link href={line.href} className="inline-flex min-h-12 w-full items-center break-words text-[15px] leading-snug text-ink underline-offset-2 hover:underline" dir="auto">
+                    {line.text}
+                  </Link>
+                </li>)}
+              </ul>
+            </div>)}
+        </section>}
       <section aria-label={copy.seeAll} className="min-w-0">
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {CHAT_START_AGENTS.map((agentId) => {

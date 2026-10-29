@@ -246,7 +246,11 @@ export function cafeStateFromSnapshot(
     {amountCents:knownIngredientCents,missing:missingProductCosts,
       estimated:estimatedProductCosts.length>0});
   const salesCents=profitResult.netSalesCents;
-  if(historical||monthlyExtras!=null)businessCosts={...businessCosts,
+  // The chat's cost answer is the same total the Money screen shows: the profit
+  // parts, with missing card fees estimated by the core fee rule (labelled below).
+  if(businessCosts.completeness!=="unavailable"&&profitResult.profitCents!==null)businessCosts={...businessCosts,
+    estimatedInputs:feeResult.notes.includes("feeDefaultEstimateAskRate")
+      ?[...businessCosts.estimatedInputs,"cardFees:defaultRate"]:businessCosts.estimatedInputs,
     knownTotalCents:Math.round(Object.values(profitResult.partsUsed).reduce((a,b)=>a+b,0)),
     components:{ingredientsCents:profitResult.partsUsed.productCostsCents,
       loadedStaffCents:profitResult.partsUsed.laborCents,

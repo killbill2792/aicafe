@@ -445,7 +445,16 @@
     "chatStartLeoRole": "المال",
     "chatStartMayaRole": "الإمدادات",
     "chatStartOliviaRole": "الموظفون",
-    "chatStartExperimentPrompt": "أريد تجربة تغيير سعر مشروب"
+    "chatStartExperimentPrompt": "أريد تجربة تغيير سعر مشروب",
+    "boardRunning": "قيد التشغيل",
+    "boardReports": "تقارير حديثة",
+    "boardWaiting": "{item}: غيّر السعر إلى {price} في نظام نقاط البيع ثم أخبرني",
+    "boardMonitoring": "{item}: {old} ← {new} · اليوم {day} من {days}",
+    "boardMonitoringStarts": "{item}: {old} ← {new} · تبدأ المتابعة غدًا",
+    "boardReportKeep": "{item}: التقرير جاهز · احتفظ بالسعر الجديد",
+    "boardReportRevert": "{item}: التقرير جاهز · عُد إلى السعر القديم",
+    "boardReportAdjust": "{item}: التقرير جاهز · عدّل وجرّب مرة أخرى",
+    "boardReportInsufficient": "{item}: التقرير جاهز · لا توجد مبيعات كافية لاتخاذ قرار"
   },
   "Money": {
     "title": "المال",
@@ -2441,7 +2450,11 @@
     "statusRejected": "مغلق",
     "statusInProgress": "المراقبة مستمرة",
     "statusComplete": "اكتمل تقرير الأيام السبعة",
-    "statusInsufficient": "نحتاج إلى بيانات مبيعات يومية موثقة إضافية"
+    "statusInsufficient": "نحتاج إلى بيانات مبيعات يومية موثقة إضافية",
+    "midRunUpdate": "تحديث منتصف التجربة لـ {item}: تم احتساب {covered} من {days} أيام بسعر {price}. بيع {units}، وصافي المبيعات {revenue}، والفرق {difference} مقارنة بالسعر القديم بنفس الكمية. قراءة مبكرة وليست نهائية. يصل التقرير الكامل بعد اليوم {days}.",
+    "midRunNoData": "تحديث منتصف التجربة لـ {item}: لا توجد أيام مبيعات مؤكدة بعد بسعر {price}. سأواصل المتابعة. يصل التقرير الكامل بعد اليوم {days}.",
+    "midRunTask": "تحديث منتصف التجربة لـ {item}",
+    "midRunDetail": "قراءة مبكرة أثناء التجربة. ليست نهائية؛ يصل التقرير الكامل في النهاية."
   },
   "AgentFields": {
     "recordedChoice": "المسجّل",

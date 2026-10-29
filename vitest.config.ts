@@ -4,7 +4,7 @@ import path from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["**/*.test.ts"],
+    include: ["**/*.test.ts","**/*.test.tsx"],
     // Full CI runs hundreds of isolated files on a small shared runner.
     // Reserve CPU for deterministic, wall-clock-bounded optimizer tests
     // instead of competing with excessive test workers.

@@ -445,7 +445,16 @@
     "chatStartLeoRole": "Dinero",
     "chatStartMayaRole": "Insumos",
     "chatStartOliviaRole": "Personal",
-    "chatStartExperimentPrompt": "Quiero probar un experimento de precio de bebidas"
+    "chatStartExperimentPrompt": "Quiero probar un experimento de precio de bebidas",
+    "boardRunning": "En marcha",
+    "boardReports": "Informes recientes",
+    "boardWaiting": "{item}: cámbialo a {price} en tu TPV y avísame",
+    "boardMonitoring": "{item}: {old} → {new} · día {day} de {days}",
+    "boardMonitoringStarts": "{item}: {old} → {new} · el seguimiento empieza mañana",
+    "boardReportKeep": "{item}: informe listo · mantén el nuevo precio",
+    "boardReportRevert": "{item}: informe listo · vuelve al precio anterior",
+    "boardReportAdjust": "{item}: informe listo · ajusta y prueba de nuevo",
+    "boardReportInsufficient": "{item}: informe listo · no hay ventas suficientes para decidir"
   },
   "Money": {
     "title": "Dinero",
@@ -2441,7 +2450,11 @@
     "statusRejected": "Cerrado",
     "statusInProgress": "Seguimiento en curso",
     "statusComplete": "Informe de siete días completo",
-    "statusInsufficient": "Faltan datos diarios de ventas verificados"
+    "statusInsufficient": "Faltan datos diarios de ventas verificados",
+    "midRunUpdate": "Actualización a mitad de prueba de {item}: {covered} de {days} días contados a {price}. {units} vendidos, ventas netas {revenue}, {difference} frente al precio anterior con el mismo volumen. Lectura temprana, no final. El informe completo llega después del día {days}.",
+    "midRunNoData": "Actualización a mitad de prueba de {item}: todavía no hay días con ventas verificadas a {price}. Seguiré revisando. El informe completo llega después del día {days}.",
+    "midRunTask": "Actualización a mitad de prueba de {item}",
+    "midRunDetail": "Lectura temprana mientras la prueba sigue. No es final; el informe completo llega al terminar."
   },
   "AgentFields": {
     "recordedChoice": "Registrado",

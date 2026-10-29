@@ -31,4 +31,15 @@ describe("canonical price experiment report delivery status",()=>{
   expect(r.delivery?.evidence[0]?.facts).toMatchObject({status:"insufficient_evidence",coveredDays:3});
   expect(r.delivery?.confidence).toBe("low");
  });
+ it("writes one short mid-run read while running, and none in the final report",async()=>{
+  const running=await priceExperimentCapability.report(scope,effect,samples,false);
+  // 3 days x 10 at 5.10; baseline at the same volume 30 x 5.00 = 150.00.
+  expect(running.midRunText).toBe("Halfway update on Latte: 3 of 7 days counted at $5.10. 30 sold, "+
+    "net sales $153.00, $3.00 compared with the old price at the same volume. Early read, not final. "+
+    "The full report comes after day 7.");
+  const none=await priceExperimentCapability.report(scope,effect,[],false);
+  expect(none.midRunText).toContain("no verified sales days yet at $5.10");
+  const done=await priceExperimentCapability.report(scope,effect,samples,true);
+  expect(done.midRunText).toBeUndefined();
+ });
 });

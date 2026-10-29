@@ -15,6 +15,7 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
 import {readSupervisorEconomics} from "@/lib/data/supervisorEconomics.server";
+import {readToastTodaySoFar} from "@/lib/pos/toast/todaySoFar.server";
 import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
@@ -148,6 +149,8 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       canonicalData:async()=>({db:await createServerSupabaseClient(),businessId:scope.businessId}),
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf),
       readEconomics:async()=>readSupervisorEconomics(await createServerSupabaseClient(),scope.businessId,identity.asOf),
+      // Toast credentials are service-role only; the café comes from the authenticated scope.
+      readTodaySoFar:()=>readToastTodaySoFar(createAdminSupabaseClient(),scope.businessId),
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       proposals:{proposePriceChange:async({productId,newPriceCents})=>{
