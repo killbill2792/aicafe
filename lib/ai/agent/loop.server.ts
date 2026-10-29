@@ -18,8 +18,6 @@ import {injectSavedOwnerInputs,formatSavedOwnerFacts,type SavedFact} from "@/lib
 import {classifyNeedsAsk,uncertaintyPhrases} from "@/lib/ownerFacts/needsAsk";
 import {questionFromReasons,localizedToolNote,answerFromSavedReasons} from "@/lib/ownerFacts/questions";
 import {compactCalculationReply} from "@/lib/ownerFacts/reply";
-import {isMilkSwapQuestion,requestedMilkSizes,requestedMilkTarget,milkSwapFromFacts} from "@/lib/ownerFacts/milkSwap";
-import {savedValue} from "@/lib/ownerFacts/inject";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
@@ -147,6 +145,8 @@ export async function runAgentTurn(args: {
   const resolveState=newResolveState(args.ownerText,args.history);
   args.context.resolveState=resolveState;
   args.context.ownerMessages=(args.history??[]).filter(m=>m.role==="user").map(m=>m.content);
+  // Tool context is authenticated; owner facts are loaded once per turn.
+  Object.assign(args.context,{savedOwnerFacts:args.ownerFacts??[]});
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
   if(args.ownerFactsReadFailed)results.push({callId:'owner-facts-read',name:'owner_facts',arguments:'{}',
     result:{source:'owner_facts',period:null,missing:['ownerFactsReadFailed'],error:'owner_facts_read_failed'}});
@@ -441,105 +441,6 @@ export async function runAgentTurn(args: {
    }
   }
 
-  // Prompt C milk swap: read only through existing shared café tools, never
-  // invent size usage or a POS milk cost, and never mutate a menu price.
-  if(isMilkSwapQuestion(args.ownerText,results.map(r=>r.result))){
-    const savedSize=savedValue(args.ownerFacts??[],"milk_requested_size");
-    const sizes=requestedMilkSizes(args.ownerText).length?
-      requestedMilkSizes(args.ownerText):
-      typeof savedSize==="string"?requestedMilkSizes(savedSize):[];
-    const known=results.map(r=>r.result);
-    const selectedTarget=requestedMilkTarget(args.ownerText,known)??
-      (typeof savedValue(args.ownerFacts??[],"milk_target_type")==="string"?
-        String(savedValue(args.ownerFacts??[],"milk_target_type")):null);
-    if(sizes.length){
-      const base=savedValue(args.ownerFacts??[],"milk_base_type");
-      if(args.context.tools.getIngredientCosts&&now()<deadline-3000){
-        const queries=[...new Set([...(selectedTarget?[selectedTarget]:[]),
-          ...(typeof base==="string"&&base.trim()?[base.trim()]:[])])];
-        let milkTimer:ReturnType<typeof setTimeout>|undefined;
-        try{
-          const reads=await Promise.race([
-            Promise.all(queries.map(async name=>{
-              try{
-                const slice=await args.context.tools.getIngredientCosts!(args.context.asOf,name,10);
-                return slice.available?
-                  {items:slice.value.items,missing:slice.quality.missingInputs,error:false}:
-                  {items:[],missing:slice.quality.missingInputs,error:true};
-              }catch{return {items:[],missing:['ingredientReadFailed'],error:true};}
-            })),
-            new Promise<never>((_,reject)=>{
-              milkTimer=setTimeout(()=>reject(new Error("milk_read_deadline")),
-                Math.max(100,Math.min(1800,deadline-now()-2000)));
-            })
-          ]).catch(()=>[{items:[],missing:['ingredientReadFailed'],error:true}]);
-          const failed=reads.some(read=>read.error);
-          const ingredientResult:AgentToolResult={source:"ingredient_prices",period:null,
-            missing:[...new Set(reads.flatMap(read=>read.missing))],
-            items:reads.flatMap(read=>read.items),
-            ...(failed?{error:"ingredient_read_failed"}:{})};
-          known.push(ingredientResult);
-          if(failed)results.push({callId:"milk-ingredient-read",name:"ingredient_prices",
-            arguments:"{}",result:ingredientResult});
-        }finally{clearTimeout(milkTimer);}
-      }
-      const swap=milkSwapFromFacts(sizes,args.ownerFacts??[],known,selectedTarget);
-      results.push({callId:"shared-milk-swap",name:"milk_swap",arguments:"{}",result:swap});
-      const copy={en,es,ar}[args.context.locale].OwnerQuestions;
-      const pricedRows=swap.rows.filter(row=>row.suggestedUpchargeCents!==null);
-      const fmt=(cents:number)=>new Intl.NumberFormat(
-        args.context.locale==="es"?"es-ES":args.context.locale==="ar"?"ar":"en-US",
-        {style:"currency",currency:"USD"}).format(cents/100);
-      // Every requested size stays visible in a compact first line; the second
-      // line clearly identifies the estimate or still-missing inputs.
-      const translatedMilk=({
-        "oat milk":copy.milkTypeOat,"almond milk":copy.milkTypeAlmond,
-        "soy milk":copy.milkTypeSoy,"coconut milk":copy.milkTypeCoconut
-      } as Record<string,string>)[swap.targetMilk?.toLowerCase()??""]??swap.targetMilk??"";
-      const lines=pricedRows.map(row=>
-        copy.milkCompactPrice.replace("{milk}",translatedMilk)
-          .replace("{size}",row.sizeLabel)
-          .replace("{upcharge}",fmt(row.suggestedUpchargeCents!)));
-      const summary=lines.length?lines.join(" · ")+"\n"+
-        (swap.missing.length?copy.milkPartial:copy.milkEstimateNote):copy.milkPartial;
-      if(text!==summary){
-        args.onReset?.(text.length);
-        text=summary;
-        args.onDelta?.(summary);
-      }
-      // Replace an incomplete model question with ONE card carrying every
-      // outstanding size/cost input (max six typed fields per card).
-      if(swap.missing.length){
-        const cards=results.filter(r=>r.name==="ask_owner");
-        for(const old of cards){const at=results.indexOf(old);if(at>=0)results.splice(at,1);}
-        resolveState.asked=false;
-        const reasons=swap.missing.map(key=>({kind:"missing" as const,key,tool:"milk_swap"}));
-        const inputCard=questionFromReasons(reasons,results.map(x=>x.result),
-          args.ownerText,args.context.locale,args.ownerFacts??[]);
-        if(inputCard){
-          const card=await executeAgentTool("ask_owner",inputCard,args.context);
-          if(card.missing.length===0){
-            results.push({callId:"milk-swap-owner-card",name:"ask_owner",arguments:"{}",result:card});
-            startedTools.push("ask_owner");
-          }
-        }
-      }
-    }else{
-      // A size cannot be guessed from a menu; ask and persist it for the next turn.
-      const copy={en,es,ar}[args.context.locale].OwnerQuestions;
-      if(text!==copy.milkNoSize){args.onReset?.(text.length);text=copy.milkNoSize;args.onDelta?.(text);}
-      if(!results.some(r=>r.name==="ask_owner"&&r.result.missing.length===0)){
-        const card=await executeAgentTool("ask_owner",{kind:"facts",question:copy.milkNoSize,
-          options:[],allowOther:false,fields:[{key:"milk_requested_size",label:copy.milkNoSize,
-            inputType:"text",units:[],defaultUnit:""}]},args.context);
-        if(card.missing.length===0){
-          results.push({callId:"milk-swap-size-card",name:"ask_owner",arguments:"{}",result:card});
-          startedTools.push("ask_owner");
-        }
-      }
-    }
-  }
-
   // The response contract is enforced in code, not dependent on model compliance:
   // partial tool data may be used, but missing/empty/failed evidence must end in
   // an actionable, persisted owner question unless that exact fact is already saved.
@@ -566,7 +467,7 @@ export async function runAgentTurn(args: {
       }
     }else if(reasons.length){
       // A current saved fact replaces a repeated question and a model refusal.
-      const answer=answerFromSavedReasons(reasons,collected,args.ownerText,args.ownerFacts??[],args.context.locale);
+      const answer=answerFromSavedReasons(reasons,collected,args.ownerText,args.ownerFacts??[],args.context.locale,args.context.currency??"XXX");
       const refusing=Object.values(uncertaintyPhrases).some(parts=>parts.some(p=>p.test(text)));
       if(answer&&(refusing||!text.trim())){
         args.onReset?.(text.length);
