@@ -5,16 +5,18 @@ import BackHeader from "@/components/shared/BackHeader";
 import NewMenuItemForm from "@/components/menu/NewMenuItemForm";
 import PageShell from "@/components/shared/PageShell";
 import { getMenuItemsForEdit } from "@/lib/data/getMenuItemsForEdit";
+import { getCafeProfile } from "@/lib/data/getCafeProfile";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewMenuItemPage() {
   await requireOwnBusiness();
-  const [menuGroupOptions, t, common, menuItems] = await Promise.all([getMenuGroupOptions(), getTranslations("ManageMenu"), getTranslations("Common"), getMenuItemsForEdit()]);
+  const [menuGroupOptions, t, common, menuItems, profile] = await Promise.all([getMenuGroupOptions(), getTranslations("ManageMenu"), getTranslations("Common"), getMenuItemsForEdit(), getCafeProfile()]);
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
       <BackHeader title={t("addDrink")} backHref="/menu" backLabel={common("back")} />
-      <NewMenuItemForm menuGroupOptions={menuGroupOptions} comboChoices={menuItems.items.map(item=>({id:item.id,name:item.name,sizeLabel:item.sizeLabel,priceCents:item.priceCents,costCents:item.ingredientsCostCents,estimated:item.ownerTotalCostStatus==="estimated"||item.costStatus!=="READY",menuGroup:item.menuGroup}))} />
+      {!profile.currency&&<p role="note" className="text-sm text-ink-muted">{common("currencyNotSet")}</p>}
+      <NewMenuItemForm currency={profile.currency} menuGroupOptions={menuGroupOptions} comboChoices={menuItems.items.map(item=>({id:item.id,name:item.name,sizeLabel:item.sizeLabel,priceCents:item.priceCents,costCents:item.ingredientsCostCents,estimated:item.ownerTotalCostStatus==="estimated"||item.costStatus!=="READY",menuGroup:item.menuGroup}))} />
     </PageShell>
   );
 }
