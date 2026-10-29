@@ -20,7 +20,7 @@ const TONE_BAR_COLOR = { good: "bg-good", warn: "bg-warn", neutral: "bg-ink-mute
 // label, default text) exactly as before. `Money` already renders the "−" for a negative amount
 // via Intl's currency formatting — this never prepends one itself, so there's only ever one
 // minus sign on screen.
-function StepBar({ label, cents, widthPct, color, tone }: { label: string; cents: number; widthPct: number; color: string; tone?: "good" | "warn" | "neutral" }) {
+function StepBar({ label, cents, widthPct, color, tone, currency }: { label: string; cents: number; widthPct: number; color: string; tone?: "good" | "warn" | "neutral"; currency: string | null }) {
   const barColor = tone ? TONE_BAR_COLOR[tone] : color;
   const textColor = tone ? profitToneTextClass(tone) : "";
   const labelColor = tone ? textColor : "text-ink-muted";
@@ -31,7 +31,7 @@ function StepBar({ label, cents, widthPct, color, tone }: { label: string; cents
         <div className={`h-[26px] rounded-md ${barColor}`} style={{ width: `${Math.max(0, Math.min(100, widthPct))}%` }} />
       </div>
       <span className={`w-16 shrink-0 text-end text-[13px] font-bold ${textColor}`}>
-        <Money cents={cents} />
+        <Money cents={cents} currency={truesnapshot.business.currency} />
       </span>
     </div>
   );
@@ -111,9 +111,9 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
       <section className="flex flex-col gap-3.5 rounded-card-lg bg-card p-[18px]">
         <h2 className="text-base font-bold">{t("fromSalesToPocket")}</h2>
         <div className="flex flex-col gap-2">
-          <StepBar label={t("sales")} cents={vm.salesCents} widthPct={100} color="bg-ink" />
-          <StepBar label={t("ingredients")} cents={-vm.ingredientsCents} widthPct={pct(vm.ingredientsCents)} color="bg-ingredients" />
-          {knownLabor&&<StepBar label={t("staff")} cents={-(vm.wagesCents!+vm.staffTaxCents!+vm.ownerPayrollExtrasCents)}
+          <StepBar currency={snapshot.business.currency} label={t("sales")} cents={vm.salesCents} widthPct={100} color="bg-ink" />
+          <StepBar currency={snapshot.business.currency} label={t("ingredients")} cents={-vm.ingredientsCents} widthPct={pct(vm.ingredientsCents)} color="bg-ingredients" />
+          {knownLabor&&<StepBar currency={snapshot.business.currency} label={t("staff")} cents={-(vm.wagesCents!+vm.staffTaxCents!+vm.ownerPayrollExtrasCents)}
              widthPct={pct(vm.wagesCents!+vm.staffTaxCents!+vm.ownerPayrollExtrasCents)} color="bg-staff" />}
           {knownTotals&&<StepBar
             label={t("rentAndBills")}
@@ -122,7 +122,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
             color="bg-running"
           />}
           {vm.ownerProfitCents!==null&&vm.ownerProfitDisplay.kind!=="unavailable" &&
-            <StepBar label={t("youKeep")} cents={vm.ownerProfitCents!}
+            <StepBar currency={snapshot.business.currency} label={t("youKeep")} cents={vm.ownerProfitCents!}
               widthPct={flowBarWidthPct(vm.ownerProfitCents!, vm.salesCents)}
               color="bg-good" tone={tone} />}
         </div>
@@ -135,27 +135,28 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
             <span className="text-xs text-ink-muted">{sourceLabel}</span>
           </div>
           <span className="text-xl font-extrabold">
-            <Money cents={vm.salesCents} />
+            <Money cents={vm.salesCents} currency={truesnapshot.business.currency} />
           </span>
         </div>
 
         <RowGroup label={t("ingredients")} pct={Math.round(pct(vm.ingredientsCents))} color="bg-ingredients">
-          <Row name={t("ingredientsAndCups")} cents={vm.ingredientsCents} addLabel={t("add")} />
+          <Row currency={snapshot.business.currency} name={t("ingredientsAndCups")} cents={vm.ingredientsCents} addLabel={t("add")} />
         </RowGroup>
 
         <RowGroup label={t("staff")} pct={knownLabor?Math.round(pct(vm.wagesCents!+vm.staffTaxCents!+vm.ownerPayrollExtrasCents)):null} color="bg-staff">
-          <Row name={t("wages")} cents={vm.wagesCents} addLabel={t("add")} />
-          <Row name={t("payrollTaxes")} cents={vm.staffTaxCents} addLabel={t("add")}
+          <Row currency={snapshot.business.currency} name={t("wages")} cents={vm.wagesCents} addLabel={t("add")} />
+          <Row currency={snapshot.business.currency} name={t("payrollTaxes")} cents={vm.staffTaxCents} addLabel={t("add")}
             last={vm.ownerPayrollExtrasCents===0} />
-          {vm.ownerPayrollExtrasCents>0&&<Row name={tMetrics("ownerPayrollExtras")}
+          {vm.ownerPayrollExtrasCents>0&&<Row currency={snapshot.business.currency} name={tMetrics("ownerPayrollExtras")}
             cents={vm.ownerPayrollExtrasCents} addLabel={t("add")} estimate
             estimateLabel={t("estimateLower")} last />}
         </RowGroup>
 
         <RowGroup label={t("runningCosts")} pct={Math.round(pct(runningExCardFees + vm.cardFeesCents))} color="bg-running">
-          <Row name={t("cardFees")} cents={vm.cardFeesCents} addLabel={t("add")} />
+          <Row currency={snapshot.business.currency} name={t("cardFees")} cents={vm.cardFeesCents} addLabel={t("add")} />
           {vm.runningCostLines.map((line, i) => (
             <Row
+                currency={snapshot.business.currency}
               key={line.categoryCode}
               name={line.label}
               cents={line.isMissing ? null : line.amountCents}
@@ -174,7 +175,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
               ? t("costsUnavailable") : t("totalCosts")}</span>
           <span className="text-lg font-extrabold text-warn">
             {vm.businessCosts.completeness!=="unavailable"&&vm.totalCostsCents!==null
-              ? <Money cents={vm.totalCostsCents} /> : "—"}
+              ? <Money cents={vm.totalCostsCents} currency={truesnapshot.business.currency} /> : "—"}
           </span>
         </div>
         {costLimitation && <p className="mb-3 text-sm text-ink-muted">{costLimitation}</p>}
@@ -190,7 +191,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
             <span className="text-base font-bold text-ink-muted">{t("ownerProfitWaiting")}</span>
           ) : (
             <span className={`font-headline text-[28px] font-bold ${profitToneTextClass(tone)}`}>
-              <Money cents={vm.ownerProfitDisplay.ownerProfitCents} />
+              <Money cents={vm.ownerProfitDisplay.ownerProfitCents} currency={truesnapshot.business.currency} />
             </span>
           )}
         </div>
@@ -230,7 +231,7 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
               <span className="flex-1">{changeLabels[change.key] ?? change.label}</span>
               <b className={good ? "text-good" : "text-warn"}>
                 {change.deltaCents >= 0 ? "+" : "−"}
-                <Money cents={Math.abs(change.deltaCents)} />
+                <Money cents={Math.abs(change.deltaCents)} currency={truesnapshot.business.currency} />
               </b>
             </div>
           );
@@ -261,6 +262,7 @@ function Row({
   addLabel,
   href,
   last,
+  currency,
 }: {
   name: string;
   cents: number | null;
@@ -269,6 +271,7 @@ function Row({
   addLabel?: string;
   href?: string;
   last?: boolean;
+  currency: string | null;
 }) {
   return (
     <div className={`flex items-center gap-2 py-2 ${last ? "border-b border-line pb-3" : ""}`}>
@@ -280,7 +283,7 @@ function Row({
         </Link>
       ) : (
         <span className="text-base font-bold">
-          <Money cents={cents} />
+          <Money cents={cents} currency={currency} />
         </span>
       )}
     </div>
