@@ -75,7 +75,7 @@ function dates(p:{from:string;to:string}|null,locale:Locale){
  const read=(v:string)=>format.format(new Date(v+"T12:00:00Z"));
  return p.from===p.to?read(p.from):read(p.from)+" – "+read(p.to);
 }
-export default function HowIGotThis({lines,locale,copy,currency="USD"}:{
+export default function HowIGotThis({lines,locale,copy,currency="XXX"}:{
  lines:readonly ExplainLine[];locale:Locale;copy:Copy;currency?:string;
 }){
  if(!lines.length)return null;
