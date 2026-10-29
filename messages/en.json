@@ -444,7 +444,16 @@
     "chatStartLeoRole": "Money",
     "chatStartMayaRole": "Supplies",
     "chatStartOliviaRole": "Staff",
-    "chatStartExperimentPrompt": "I want to try a drink price experiment"
+    "chatStartExperimentPrompt": "I want to try a drink price experiment",
+    "boardRunning": "Running",
+    "boardReports": "Recent reports",
+    "boardWaiting": "{item}: change it to {price} in your POS, then tell me",
+    "boardMonitoring": "{item}: {old} → {new} · day {day} of {days}",
+    "boardMonitoringStarts": "{item}: {old} → {new} · tracking starts tomorrow",
+    "boardReportKeep": "{item}: report ready · keep the new price",
+    "boardReportRevert": "{item}: report ready · go back to the old price",
+    "boardReportAdjust": "{item}: report ready · adjust and try again",
+    "boardReportInsufficient": "{item}: report ready · not enough sales to decide"
   },
   "Money": {
     "title": "Money",
