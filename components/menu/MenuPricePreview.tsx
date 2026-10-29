@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { formatCents } from "@/lib/calc";
 import { menuPricePreview } from "@/lib/calc/menuPricePreview";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
@@ -32,6 +32,8 @@ function feeBps(raw:string):number|null{
 }
 export default function MenuPricePreview({item}:{item:MenuControlItem}){
   const t=useTranslations("Menu");
+  const locale=useLocale();
+  const money=(n:number|null)=>n===null?t("priceBasisMissing"):formatCents(n,locale,item.currency);
   const categoryName=useTranslations("Categories");
   const basis=item.pricingBasis;
   const initial:Fields={
@@ -85,12 +87,12 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
       monthlyDrinks:volume,processingFeeBps:fee});
     setError(false);
   }
-  const input=(field:keyof Fields,label:string,source:string,unit:"usd"|"count"|"percent")=>(
+  const input=(field:keyof Fields,label:string,source:string,unit:"money"|"count"|"percent")=>(
     <label className="block rounded-xl bg-card p-3">
       <span className="block text-[17px] font-bold text-ink">{label}</span>
       <span className="mt-1 block text-sm text-ink-muted">{source}</span>
       <span className="mt-2 flex min-h-12 items-center rounded-lg border border-line bg-paper px-3">
-        {unit==="usd"&&<span className="me-1 font-bold" aria-hidden="true">$</span>}
+        {unit==="money"&&item.currency&&<span className="me-1 font-bold" aria-hidden="true">{item.currency}</span>}
         <input className="w-full min-w-0 bg-transparent text-[17px] text-ink outline-none"
           aria-label={label} inputMode={unit==="count"?"numeric":"decimal"}
           placeholder={t("priceBasisMissing")} value={draft[field]}
@@ -118,7 +120,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     }
     return status(source);
   };
-  const money=(n:number|null)=>n===null?t("priceBasisMissing"):formatCents(n);
+
   const period=basis.oldestDate&&basis.latestDate?t("priceBasisWindow",{
     from:basis.oldestDate,to:basis.latestDate,days:basis.coveredDays,
   }):t("priceBasisNoHistory");
@@ -152,7 +154,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     </div>
     <div className="mt-3 grid gap-2 md:grid-cols-2">
       <div>
-        {input("running",t("priceBasisBills"),sourceLabel("running",basis.runningStatus),"usd")}
+        {input("running",t("priceBasisBills"),sourceLabel("running",basis.runningStatus),"money")}
         {basis.missingRunningCategories.length>0&&values.monthlyRunningCents===null&&
           <p className="mt-2 text-sm text-warn" role="status">{t("priceBasisMissingCostDetail",{
             names:basis.missingRunningCategories
@@ -160,7 +162,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
             known:money(basis.runningKnownCents),
           })}</p>}
       </div>
-      {input("payroll",t("priceBasisPayroll"),sourceLabel("payroll",basis.payrollStatus),"usd")}
+      {input("payroll",t("priceBasisPayroll"),sourceLabel("payroll",basis.payrollStatus),"money")}
       {input("drinks",t("priceBasisDrinks"),sourceLabel("drinks",basis.volumeStatus),"count")}
       {input("fee",t("priceBasisFees"),sourceLabel("fee",basis.feeStatus),"percent")}
     </div>
@@ -174,7 +176,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
       <p className="mt-3 rounded-lg bg-warn-soft p-3 text-[17px] text-warn">
         {t("priceBasisMissingExpected",{
           count:basis.missingRunningCategories.length,
-          subtotal:formatCents(basis.runningKnownCents),
+          subtotal:money(basis.runningKnownCents),
         })}
       </p>}
     <p className="mt-3 text-sm text-ink-muted">{t("priceBasisAvoidDoubleCount")}</p>
@@ -187,7 +189,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     <div className="mt-3 rounded-xl border border-line/70 bg-card p-3">
       <p className="text-[17px] font-extrabold text-ink">{t("priceBasisResultTitle")}</p>
       <dl className="mt-2 space-y-2 text-[17px]">
-        <div className="flex justify-between gap-3"><dt>{t("sellingPrice")}</dt><dd className="font-bold">{formatCents(item.priceCents)}</dd></div>
+        <div className="flex justify-between gap-3"><dt>{t("sellingPrice")}</dt><dd className="font-bold">{money(item.priceCents)}</dd></div>
         <div className="flex justify-between gap-3"><dt>{t("costToMake")}</dt><dd>{money(item.costStatus==="READY"?item.ingredientsCostCents:null)}</dd></div>
         <div className="flex justify-between gap-3"><dt>{t("priceBasisPayrollPerDrink")}</dt><dd>{money(estimate.laborPerDrinkCents)}</dd></div>
         <div className="flex justify-between gap-3"><dt>{t("priceBasisBillsPerDrink")}</dt><dd>{money(estimate.billsPerDrinkCents)}</dd></div>
