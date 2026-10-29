@@ -49,10 +49,16 @@ export function scopedOwnerQuestionKey(
 ):string{
  const tool=reason.tool??"";
  if(catalogForMissing(reason.key).factKey==="unit_cost_cents"){
-  const identified=results.find(r=>r.source===tool&&
+  const candidates=results.filter(r=>r.source!=="ask_owner"&&
    (typeof r.itemId==="string"||typeof r.itemName==="string"));
-  const key=itemCostFactKey(typeof identified?.itemId==="string"?identified.itemId:null,
-   typeof identified?.itemName==="string"?identified.itemName:null);
+  const scoped=results.filter(r=>r.source===tool&&
+   (typeof r.itemId==="string"||typeof r.itemName==="string"));
+  const identities=new Set((scoped.length?scoped:candidates).map(r=>
+   itemCostFactKey(typeof r.itemId==="string"?r.itemId:null,
+    typeof r.itemName==="string"?r.itemName:null)).filter(Boolean));
+  // A model's rejected global card may use a verified item from another tool,
+  // but never choose arbitrarily between two different menu items.
+  const key=identities.size===1?[...identities][0]:null;
   // Unresolved items must never receive a café-wide saved unit cost.
   return key??genericQuestionKey("unresolved-item-cost:"+ownerText);
  }
