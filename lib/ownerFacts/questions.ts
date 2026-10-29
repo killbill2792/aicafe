@@ -122,7 +122,7 @@ export function answerFromSavedReasons(
   if(typeof value==="number"&&Number.isFinite(value)){
    const number=def.type==="money"?value/100:value;
    display=new Intl.NumberFormat(locale==="en"?"en-US":locale==="es"?"es-ES":"ar",
-    def.type==="money"?{style:"currency",currency:"USD"}:
+    def.type==="money"?{style:"currency",currency}:
      {maximumFractionDigits:2}).format(number)+(def.type==="percent"?"%":"");
   }else if(typeof value==="string")display=value;
   else return [];
