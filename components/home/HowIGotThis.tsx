@@ -55,7 +55,8 @@ function localizedLabel(label:string,locale:Locale):string{
  const copy={en,es,ar}[locale].OwnerQuestions;
  const dynamic=label.startsWith("Processing fee:")?"howFees":null;
  const key=dynamic??calcLabels[label];
- return key?copy[key]:(locale==="en"?label:copy.generic);
+ // A tool may have already translated this label. Never replace it with an unrelated generic key.
+  return key?copy[key]:label;
 }
 function localizedSource(source:string,locale:Locale):string{
  const copy={en,es,ar}[locale].OwnerQuestions;
