@@ -9,6 +9,7 @@ import {z} from "zod";
 import {syncToastOptionalSources,ensureToastFirstCatalog} from "./optionalSync";
 import {readAllPages} from "./readAllPages";
 import {reconcileToastDays} from "./reconcile";
+import {queueToastPaymentGaps} from "./paymentGaps";
 
 type Mapping={business_id:string;location_id:string;restaurant_guid:string;
  toast_time_zone:string;closeout_hour:number;info_refreshed_at:string|null;
@@ -291,6 +292,12 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    // after it finishes, when there is no risk of starving the initial load.
    if(!pendingBackfills.length&&Date.now()<deadlineAt)
     await scanModifiedDates(db,m,now,deadlineAt);
+   });
+   await isolated("payment_gaps",async()=>{
+   // Hourly, after the first import: re-pull imported days that have no saved
+   // Toast payments (and so no processing fees). Runs in the repull phase below.
+   if(!pendingBackfills.length&&now.getUTCMinutes()<10&&Date.now()<deadlineAt)
+    await queueToastPaymentGaps(db,m,localClock(now,m.toast_time_zone).today,deadlineAt);
    });
    await isolated("repull",async()=>{
    if(Date.now()<deadlineAt){

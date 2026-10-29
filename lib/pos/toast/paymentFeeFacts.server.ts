@@ -73,7 +73,9 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
  for(const {row,decision} of decisions){
   const {error}=await db.from("toast_payment_facts").update({
     processing_fee_cents:decision.amountCents,fee_status:decision.status,
-    fee_basis:decision.basis
+    // The stored basis list predates the default card rate; it is recorded as
+    // an estimate with no rule basis (fee_status says "estimated").
+    fee_basis:decision.basis==="default_rate"?"missing":decision.basis
   }).eq("business_id",businessId).eq("business_date",businessDate)
    .eq("payment_ref",row.payment_ref);
   if(error)throw error;
@@ -94,7 +96,9 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
   status:estimated?"estimated":"actual",
   sourceType:estimated?"owner_confirmed_estimate":"connected_pos_actual",
   provider:"Toast",sourceReference:"toast-payment-facts:"+businessDate,
-  metadata:{basis:estimated?"owner_plan":"toast",transactions:decisions.length}
+  metadata:{basis:estimated?"owner_plan":"toast",transactions:decisions.length,
+   toastFeeTransactions:decisions.filter(x=>x.decision.basis==="toast").length,
+   estimatedTransactions:decisions.filter(x=>x.decision.status==="estimated").length}
  });
  // A newly estimated day must not retain a previously certified actual.
  if(estimated)await setProcessingFeeCandidateEligibility(db,{

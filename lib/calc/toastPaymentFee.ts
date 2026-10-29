@@ -7,7 +7,10 @@ export type ToastFeeInput={
 export type ToastCardRule={cardType:string;cardEntryMode:string;
  percentageBps:number;fixedFeeCents:number};
 export type ToastFeeDecision={amountCents:number|null;
- status:"actual"|"estimated"|"missing";basis:"toast"|"owner_plan"|"cash_or_gift"|"missing"};
+ status:"actual"|"estimated"|"missing";basis:"toast"|"owner_plan"|"default_rate"|"cash_or_gift"|"missing"};
+/** Card rate used only for the few card payments Toast sent without a fee and
+ * no owner rate plan covers (same default as the café-level fee estimate). */
+export const DEFAULT_CARD_FEE_BPS=290;
 export function determineToastPaymentFee(p:ToastFeeInput,rules:readonly ToastCardRule[]):ToastFeeDecision{
  const type=(p.type??"").toUpperCase().replace(/[^A-Z]/g,"");
  if(type==="CASH"||type==="GIFTCARD"||type==="GIFTCERTIFICATE")
@@ -18,17 +21,22 @@ export function determineToastPaymentFee(p:ToastFeeInput,rules:readonly ToastCar
   return {amountCents:p.originalProcessingFeeCents,status:"actual",basis:"toast"};
  }
  // A non-card payment without a Toast fee must not be charged the card plan.
- if(!["CARD","CREDIT","DEBIT","CREDITCARD","DEBITCARD"].includes(type)||
-   !p.cardType||!p.cardEntryMode)
+ // Toast charges processing fees on card payments only. A house account,
+ // reward card or "other" tender carries no card fee; an unknown type stays missing.
+ if(["HOUSEACCOUNT","REWARDCARD","OTHER"].includes(type))
+  return {amountCents:0,status:"actual",basis:"cash_or_gift"};
+ if(!["CARD","CREDIT","DEBIT","CREDITCARD","DEBITCARD"].includes(type))
   return {amountCents:null,status:"missing",basis:"missing"};
  const matching=rules.filter(r=>(r.cardType===p.cardType||r.cardType==="*")&&
   (r.cardEntryMode===p.cardEntryMode||r.cardEntryMode==="*"))
   .sort((a,b)=>Number(b.cardType!=="*")+Number(b.cardEntryMode!=="*")-
     Number(a.cardType!=="*")-Number(a.cardEntryMode!=="*"));
  const specificity=(r:ToastCardRule)=>Number(r.cardType!=="*")+Number(r.cardEntryMode!=="*");
- if(matching.length===0||(matching.length>1&&specificity(matching[0])===specificity(matching[1]))||
-    p.amountCents===null||!Number.isSafeInteger(p.amountCents)||p.amountCents<0)
+ if(p.amountCents===null||!Number.isSafeInteger(p.amountCents)||p.amountCents<0)
   return {amountCents:null,status:"missing",basis:"missing"};
+ // No single owner rule fits: estimate this one card payment at the default rate.
+ if(matching.length===0||(matching.length>1&&specificity(matching[0])===specificity(matching[1])))
+  return {amountCents:Math.round(p.amountCents*DEFAULT_CARD_FEE_BPS/10000),status:"estimated",basis:"default_rate"};
  const r=matching[0];
  if(!Number.isInteger(r.percentageBps)||r.percentageBps<0||r.percentageBps>5000||
   !Number.isInteger(r.fixedFeeCents)||r.fixedFeeCents<0||r.fixedFeeCents>5000)

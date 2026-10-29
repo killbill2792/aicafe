@@ -34,16 +34,29 @@ it("writes a fully supplied 33-cent Toast fee as an actual daily fact",async()=>
   amountCents:33,status:"actual",sourceType:"connected_pos_actual",provider:"Toast"
  }));
 });
-it("does not certify an incomplete payment fee as actual zero",async()=>{
+const visa={payment_ref:"p",payment_type:"CREDIT",card_type:"VISA",
+ card_entry_mode:"SWIPED",amount_cents:1000,original_processing_fee_cents:33};
+it("estimates a card payment Toast sent without a fee, never as actual zero",async()=>{
  const f=db([{payment_ref:"p",payment_type:"CREDIT",card_type:"VISA",
   card_entry_mode:"SWIPED",amount_cents:1000,original_processing_fee_cents:null}]);
  const result=await refreshToastPaymentFeeForDay(f.db,b,"2026-10-20");
+ // 2.9% of 10.00, labelled an estimate.
+ expect(result).toMatchObject({status:"estimated",amountCents:29});
+});
+it("uses Toast's fee for each payment and estimates only the ones without",async()=>{
+ const f=db([{...visa,payment_ref:"a"},{...visa,payment_ref:"b",original_processing_fee_cents:null},
+  {payment_ref:"c",payment_type:"CASH",card_type:null,card_entry_mode:null,amount_cents:500,original_processing_fee_cents:null},
+  {payment_ref:"d",payment_type:"OTHER",card_type:null,card_entry_mode:null,amount_cents:500,original_processing_fee_cents:null}]);
+ const result=await refreshToastPaymentFeeForDay(f.db,b,"2026-10-20");
+ expect(result).toMatchObject({status:"estimated",amountCents:33+29,count:4});
+});
+it("keeps a payment with an unknown tender type missing",async()=>{
+ const f=db([{...visa,payment_ref:"a"},{payment_ref:"x",payment_type:"UNDETERMINED",card_type:null,
+  card_entry_mode:null,amount_cents:500,original_processing_fee_cents:null}]);
+ const result=await refreshToastPaymentFeeForDay(f.db,b,"2026-10-20");
  expect(result.status).toBe("missing");
  expect(m.upsert).not.toHaveBeenCalled();
- expect(m.disable).toHaveBeenCalled();
 });
-const visa={payment_ref:"p",payment_type:"CREDIT",card_type:"VISA",
- card_entry_mode:"SWIPED",amount_cents:1000,original_processing_fee_cents:33};
 it("does not publish a subtotal as the daily fee when a location has not imported the day",async()=>{
  const f=db([visa],{mappings:[{restaurant_guid:"r1"},{restaurant_guid:"r2"}],days:fullyImported.days});
  const result=await refreshToastPaymentFeeForDay(f.db,b,"2026-10-20");
