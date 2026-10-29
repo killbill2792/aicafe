@@ -9,6 +9,7 @@ import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/rea
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import { validReturnTo } from "@/components/addcost/routeParams";
 import { makeMissingStatementLine } from "@/components/addcost/statementMissingLine";
+import { formatCafeCurrency } from "@/lib/format/cafeCurrency";
 
 type ReviewableLine = ReviewLine & { correctedCategory?: ExpenseCategoryCode };
 type BalanceCheck = { openingCents: number; closingCents: number; sumCents: number; ok: boolean };
@@ -20,8 +21,12 @@ export default function StatementUploader({
   categoryLabels,
   labels,
   returnTo,
+  currency,
+  currencyMissingLabel,
 }: {
   returnTo?: string | null;
+  currency: string | null | undefined;
+  currencyMissingLabel: string;
   categoryLabels: Record<ExpenseCategoryCode, string>;
   labels: {
     uploadPrompt: string;
@@ -49,7 +54,7 @@ export default function StatementUploader({
   const router = useRouter();
   const locale = useLocale();
   const safeReturnTo = validReturnTo(returnTo ?? undefined) ?? "/money";
-  const formatAmount = (cents: number) => new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(cents / 100);
+  const formatAmount = (cents: number) => formatCafeCurrency(cents, locale, currency).text;
   const [state, setState] = useState<ReviewState | null>(null);
   const [isPending, startTransition] = useTransition();
   const [missingLine, setMissingLine] = useState(false);
