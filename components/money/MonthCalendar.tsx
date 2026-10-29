@@ -55,6 +55,7 @@ export default function MonthCalendar({
   bucketLabels,
   labels,
   coverageSignal,
+  currency,
 }: {
   monthLabel: string;
   toastConnected: boolean;
@@ -67,6 +68,7 @@ export default function MonthCalendar({
   bucketLabels: Record<string, string>;
   labels: MonthCalendarLabels;
   coverageSignal: MonthCalendarViewModel["coverageSignal"];
+  currency: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -223,18 +225,18 @@ export default function MonthCalendar({
             </div>
           ) : (
             <>
-              <DetailRow label={labels.sales} cents={selectedDetail.salesCents} />
-              <DetailRow label={labels.ingredients} cents={-selectedDetail.ingredientsCents} />
-              <DetailRow label={labels.staff} cents={-selectedDetail.staffCents} />
-              <DetailRow label={labels.cardFees} cents={-selectedDetail.cardFeesCents} />
-              <DetailRow label={labels.rentAndBills} cents={-selectedDetail.runningCostShareCents} />
+              <DetailRow label={labels.sales} cents={selectedDetail.salesCents} currency={currency} />
+              <DetailRow label={labels.ingredients} cents={-selectedDetail.ingredientsCents} currency={currency} />
+              <DetailRow label={labels.staff} cents={-selectedDetail.staffCents} currency={currency} />
+              <DetailRow label={labels.cardFees} cents={-selectedDetail.cardFeesCents} currency={currency} />
+              <DetailRow label={labels.rentAndBills} cents={-selectedDetail.runningCostShareCents} currency={currency} />
               <div className="mt-1 flex items-center justify-between border-t border-line pt-2">
                 <span className="flex items-center gap-1.5 text-base font-bold text-ink">
                   {labels.ownerProfit}
                   {selectedDetail.runningCostShareIsEstimate && <EstimatePill label={labels.estimatePill} />}
                 </span>
                 <span className={`text-lg font-bold ${profitToneTextClass(profitTone(selectedDetail.ownerProfitCents))}`}>
-                  <Money cents={selectedDetail.ownerProfitCents} />
+                  <Money cents={selectedDetail.ownerProfitCents} currency={currency} />
                 </span>
               </div>
               {selectedDetail.milestoneBucketCodes.map((code) => (
@@ -250,12 +252,12 @@ export default function MonthCalendar({
   );
 }
 
-function DetailRow({ label, cents }: { label: string; cents: number }) {
+function DetailRow({ label, cents, currency }: { label: string; cents: number; currency: string | null }) {
   return (
     <div className="flex items-center justify-between text-sm">
       <span className="text-ink-muted">{label}</span>
       <span className="font-semibold text-ink">
-        <Money cents={cents} />
+        <Money cents={cents} currency={currency} />
       </span>
     </div>
   );
