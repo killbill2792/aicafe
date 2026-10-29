@@ -758,6 +758,11 @@ BEGIN
  select count(*) into before_count from public.toast_raw_records
  where business_id=b and run_id=run;
  perform pg_temp.assert_true(before_count=3,'order/check/payment all archived');
+ perform pg_temp.assert_true(public.toast_redact_raw(
+  '[{"guid":"g","customer":{"email":"ann@example.com"},"checks":[{"tabName":"Ann",
+    "payments":[{"amount":12.5,"cardType":"VISA","last4Digits":"4242","name":"ANN LEE"}]}]}]'::jsonb,'orders')
+  ='[{"guid":"g","checks":[{"payments":[{"amount":12.5,"cardType":"VISA"}]}]}]'::jsonb,
+  'archive redaction drops customer details, tab names, card digits and payer names but keeps amounts');
  perform pg_temp.assert_true(exists(
   select 1 from public.toast_order_typed_facts t
   where t.business_id=b and t.order_guid=ord
