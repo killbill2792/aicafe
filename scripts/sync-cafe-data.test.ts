@@ -11,6 +11,7 @@ import {
   REFRESH_WINDOW_TABLES,
   SOURCE_BUSINESS_ID,
   DEST_BUSINESS_ID,
+  syncTodayLive,
 } from "./sync-cafe-data.mjs";
 import { extractUniqueConstraints } from "./migrationConstraints.mjs";
 
@@ -256,5 +257,31 @@ describe("wrapClientForSafety", () => {
   it("allows a write scoped only to DEST_BUSINESS_ID", async () => {
     const client = wrapClientForSafety(fakeClient());
     await expect(client.query("insert into orders (business_id) values ($1)", [DEST_BUSINESS_ID])).resolves.toEqual({ rows: [], rowCount: 0 });
+  });
+});
+
+describe("syncTodayLive", () => {
+  const reading = { provisional: true, businessDate: "2026-10-29", netSalesCents: 45575 };
+  function fakeClient(sourceRows: unknown[] | Error) {
+    const calls: Array<{ sql: string; params: unknown[] }> = [];
+    return { calls, client: { query: async (sql: string, params: unknown[]) => {
+      calls.push({ sql, params });
+      if (/^\s*select/i.test(sql)) { if (sourceRows instanceof Error) throw sourceRows; return { rows: sourceRows }; }
+      return { rows: [] };
+    } } };
+  }
+  it("copies the source café's live reading to the test café only", async () => {
+    const { client, calls } = fakeClient([{ business_date: "2026-10-29", read_at: new Date("2026-10-29T18:15:04Z"),
+      net_sales_cents: 45575, orders: 45, reading }]);
+    expect(await syncTodayLive(client)).toBe(1);
+    const write = calls[1];
+    expect(write.sql).toMatch(/^\s*insert into toast_today_live/);
+    expect(write.params[0]).toBe(DEST_BUSINESS_ID);
+    expect(write.params).not.toContain(SOURCE_BUSINESS_ID);
+    expect(write.params[5]).toBe(JSON.stringify(reading));
+  });
+  it("does nothing when there is no reading or the table is not installed yet", async () => {
+    expect(await syncTodayLive(fakeClient([]).client)).toBe(0);
+    expect(await syncTodayLive(fakeClient(Object.assign(new Error("missing"), { code: "42P01" })).client)).toBe(0);
   });
 });
