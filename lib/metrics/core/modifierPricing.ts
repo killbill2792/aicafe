@@ -8,6 +8,7 @@ export type MilkSwapLine={
   sizeId:string;sizeLabel:string;milkMl:number|null;
   costDeltaCents:number|null;suggestedUpchargeCents:number|null;
   marginKeptCents:number|null;
+  targetProductCostPercent:number|null;roundingStepCents:number;
   basis:{fromMilk:ModifierBasis;toMilk:ModifierBasis;milkMl:ModifierBasis;
     targetProductCost:ModifierBasis};
   missing:string[];
@@ -27,6 +28,7 @@ export function swapCostPerSize(
   targetBasis:ModifierBasis="estimated",
 ):{sizes:MilkSwapLine[];missing:string[]}{
   if(!fromMilk||!toMilk)throw new RangeError("Milk IDs required");
+  const roundingStepCents=5;
   const seen=new Set<string>();
   const out=sizes.map(size=>{
     if(seen.has(size.id))throw new RangeError("Duplicate size");
@@ -49,11 +51,12 @@ export function swapCostPerSize(
       // Microcents/ml source basis; round to integer cents only after multiplying the portion.
       costDeltaCents=Math.round(volume.ml!*(to!.costPerMlMicros!-from!.costPerMlMicros!)/1_000_000);
       suggestedUpchargeCents=Math.ceil(Math.max(0,costDeltaCents)/
-        targetProductCostPercent!/5)*5;
+        targetProductCostPercent!/roundingStepCents)*roundingStepCents;
       marginKeptCents=keepFromAddon(suggestedUpchargeCents,costDeltaCents);
     }
     return {sizeId:size.id,sizeLabel:size.label,milkMl:volume.ml,
       costDeltaCents,suggestedUpchargeCents,marginKeptCents,
+      targetProductCostPercent,roundingStepCents,
       basis:{fromMilk:from?.basis??"missing",toMilk:to?.basis??"missing",
         milkMl:volume.basis,targetProductCost:targetBasis},missing};
   });
