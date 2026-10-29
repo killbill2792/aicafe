@@ -114,7 +114,7 @@ export function localizedToolNote(results:readonly AgentToolResult[],locale:Agen
  * Render the stored value with explicit owner provenance, never as a POS actual. */
 export function answerFromSavedReasons(
  reasons:readonly AskReason[],results:readonly AgentToolResult[],
- ownerText:string,facts:readonly SavedFact[],locale:AgentLocale
+ ownerText:string,facts:readonly SavedFact[],locale:AgentLocale,currency="XXX"
 ):string|null{
  const copy=copyByLocale[locale];
  const seen=new Set<string>();
