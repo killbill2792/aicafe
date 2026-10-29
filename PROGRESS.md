@@ -2,23 +2,30 @@ Direction: an AI operator that runs the café through the Supervisor chat (see A
 Each item below is one small PR, in order. Do not start an item from "Next" before "Now" is done.
 
 ## Now
+- [ ] Review and merge #217 (these rules) and #216 (cleanup; all checks green locally, awaiting CI and review). Set `OPENAI_API_KEY` in production before deploying #216.
 - [ ] Security: enable RLS on `businesses` (the only table without it) and add a CI check that fails if any `public` table has RLS off. Verify production first: `select relrowsecurity from pg_class where relname='businesses';`
-- [ ] Finish cleanup PR #216: restore discarding of a failed call's partial text (AGENTS.md §6 exceptions), make its guard tests pass by fixing code, fix the 2 failing plan/period tests, show the partial-period note, update the 4 workflows that reference deleted files.
-- [ ] Currency: remove hard-coded USD from price proposals (`menuPriceChange.server.ts`, `priceExperiment.server.ts`), `formatCents` callers and `BillsManager`; use the café currency everywhere.
-- [ ] Golden owner questions: fixed fixture questions with exact expected numbers on both chat and screen paths; replace the `>= 0` cost check in `metricsParity.test.ts` with exact equality.
+- [ ] Golden owner questions: ~10 fixed fixture questions with exact expected numbers on both chat and screen paths; replace the `>= 0` cost check in `metricsParity.test.ts` with exact equality.
 
-## Next
-- [ ] One experiment system: choose between the Supervisor loop and owner initiatives, migrate the other into it, delete the loser.
+## Next — the AI reads all POS data (AGENTS.md 4b)
+- [ ] 4a. Capture every Toast endpoint daily: run the #210 sampler on a schedule per café and store every page in `toast_raw_records` (from #212).
+- [ ] 4b. Point the canonical views (#212) at that store, so cash, stock, kitchen and dining options are fresh; add views for the remaining endpoints.
+- [ ] 4c. Merge `describe_data` / `query_data` (#212) with a dictionary entry for every source; screens move to the same readers.
+- [ ] 4d. "Today so far" live layer: refresh changed orders, payments, time entries, stock and cash every 10–15 minutes while open; provisional, replaced at closeout. First review why the old 5-minute poll was turned off and reuse what is safe.
+
+## Next — the operator loop (AGENTS.md 4–5)
+- [ ] One experiment system: keep the Supervisor loop (propose → approve → monitor → report already works); fold in or delete owner initiatives.
 - [ ] Operating Board: add "Running" (active experiments/monitors, day X of Y, early read) and "Recent reports" to `ChatStart`, reading the same data as the chat tools.
 - [ ] Inbox + notifications: every proactive finding, experiment update and report becomes an `operating_tasks` item plus a chat message, with an unread badge on the board.
-- [ ] Proactive monitors: daily job finds notable changes (costs, sales, labor, coverage, missing data) and posts a short report with a suggested action; duplicate suppression and daily cap.
+- [ ] Proactive monitor: daily findings plus live checks every ~30 minutes while open; duplicate suppression and daily cap.
 - [ ] Mid-run experiment updates (not only the final report).
-- [ ] Email delivery of inbox items (no business WhatsApp needed).
-- [ ] Merge duplicate money formulas into `lib/metrics/core` (fees, break-even, labor) with parity tests.
-- [ ] Expose stored Toast data to chat (voids, refunds, discounts, guest counts, dining options) via the canonical data layer (PR #212), with screens on the same reader.
+
+## Later
+- [ ] Email delivery of inbox items.
+- [ ] Currency: remove the remaining hard-coded USD listed in `lib/ai/agent/bannedPatterns.test.ts` (`formatCents` callers, BillsManager, etc.).
+- [ ] Merge duplicate money formulas listed in `lib/metrics/core/canonicalOnly.test.ts` into `lib/metrics/core`, with parity tests.
 - [ ] Rolling conversation summary; tool-result size cap enforced in code.
 - [ ] Add `npm run smoke:agent` (live owner smoke test run by the owner before release).
-- [ ] Later: browser push, "always allow" per action type, WhatsApp/SMS sending once a verified business sender exists.
+- [ ] Browser push, Toast webhooks, "always allow" per action type, WhatsApp/SMS sending once a verified business sender exists.
 
 ## Done (last 10)
 - PR #215: model-driven milk tool, fact-card resume, scoped costs and localization.

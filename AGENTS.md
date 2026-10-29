@@ -73,7 +73,20 @@ unread count on the board.
 
 **Proactive monitors** are scheduled jobs (`app/api/cron/*`). They read the same readers and calculators
 as the chat, write inbox items, and post a short report into chat. They never change data owned by
-the owner or the POS.
+the owner or the POS. They run daily, plus live checks every ~30 minutes while the café is open for
+urgent issues (nobody clocked in for a shift, sales far below normal, an item running out, an unusual
+void or refund).
+
+## 4b. POS data: keep everything, read everything, include today
+- **Keep everything.** Every Toast endpoint the café's credentials allow is captured on a schedule and
+  stored (`toast_raw_records`), with customer personal details removed and business data kept.
+- **The AI can read all of it** through the canonical views and the one read-only data-query tool, with a
+  plain-words dictionary entry for every source. "Missing" means the POS truly returned nothing (or we
+  lack permission), and the AI says exactly which.
+- **Today counts.** A "today so far" live layer refreshes changed data every 10–15 minutes during open
+  hours (orders, payments, time entries, stock, cash). It is labeled provisional and is replaced by the
+  final import after closeout. It feeds the same views; it is not a second pipeline.
+- Setup data (discounts, tax rates, revenue centers…) refreshes daily.
 
 ## 5. Experiments (one lifecycle)
 Propose (current price, margin and expected effect from `lib/metrics/core`) → owner approves → owner
