@@ -30,8 +30,21 @@ export function stableMessageId(key:string):string{
 /** The one mid-run update for an experiment: a short chat message in the
  * experiment's own thread. Never a task, never a second message. */
 async function postMidRunUpdate(db:ReturnType<typeof createAdminSupabaseClient>,scope:OwnerLoopScope,
-  p:LoopProposal,text:string):Promise<void>{
+  p:LoopProposal,report:LoopReport,text:string):Promise<void>{
   if(text.length>1200)throw new Error("Invalid mid-run update text");
+  // Also an inbox item, so the owner finds it in Operations. It is "watching"
+  // (nothing to decide yet) and has its own id, so the final report still
+  // creates its own needs-owner item.
+  const delivery=report.delivery;
+  if(delivery){
+    const task=await db.from("operating_tasks").upsert({
+      business_id:scope.businessId,id:"supervisor:"+p.capabilityId+":"+p.id+":midrun",agent_id:delivery.agentId,
+      kind:delivery.taskKind,entity_type:delivery.entityType,entity_id:delivery.entityId,status:"watching",
+      confidence:"low",payload:{...delivery.payload,outcomeStatus:"in_progress",midRun:true,
+        proposalId:p.id,threadId:p.threadId},evidence:delivery.evidence,
+    },{onConflict:"business_id,id",ignoreDuplicates:true});
+    if(task.error)failed(task.error,"Operations mid-run inbox unavailable");
+  }
   const {data:business,error}=await db.from("businesses").select("timezone").eq("id",scope.businessId).single();
   if(error||!business?.timezone)throw new Error("Café timezone unavailable");
   const inserted=await db.from("ai_messages").insert({
@@ -190,7 +203,7 @@ export class SupabaseLoopRepository implements LoopRepository{
     },{onConflict:"business_id,proposal_id"});
     if(written.error)failed(written.error,"Report save failed");
     if(report.status==="in_progress"){
-      if(opts?.midRun&&report.midRunText?.trim())await postMidRunUpdate(db,scope,p,report.midRunText);
+      if(opts?.midRun&&report.midRunText?.trim())await postMidRunUpdate(db,scope,p,report,report.midRunText);
       return;
     }
     // The platform is domain-neutral: delivery contracts originate only in
