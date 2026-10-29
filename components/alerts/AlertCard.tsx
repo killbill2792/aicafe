@@ -11,6 +11,7 @@ export default function AlertCard({
   subtitle,
   impactCents,
   locale,
+  currency,
   reviewLabel,
 }: {
   href: string;
@@ -19,6 +20,7 @@ export default function AlertCard({
   subtitle: string;
   impactCents: number | null;
   locale: string;
+  currency: string | null;
   reviewLabel?: string;
 }) {
   return (
@@ -33,7 +35,7 @@ export default function AlertCard({
       </span>
       {impactCents !== null ? (
         <span className="shrink-0 text-end text-lg font-bold text-warn">
-          {formatCents(impactCents, locale)}
+          {formatCents(impactCents, locale, currency)}
         </span>
       ) : (
         <ChevronRight aria-hidden="true" size={18} className="text-ink-muted rtl:rotate-180" />
