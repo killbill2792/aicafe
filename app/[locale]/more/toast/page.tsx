@@ -71,7 +71,8 @@ export default async function ToastConnectionPage() {
           connectedLastSync:t.raw("connectedLastSync"),noSyncYet:t("noSyncYet"),
           manualLocationHint:t("manualLocationHint"),chooseApiUrl:t("chooseApiUrl"),
         }}/>
-      <ToastOwnerDashboard businessId={businessId} currency={business.currency??"USD"}/>
+      {!business.currency&&<p role="note" className="text-sm text-ink-muted">{common("currencyNotSet")}</p>}
+      <ToastOwnerDashboard businessId={businessId} currency={business.currency??""}/>
       </>}
     </PageShell>
   );
