@@ -29,7 +29,7 @@ const usdAllowed:Readonly<Record<string,string>>={
  "lib/admin/format.ts":"Internal admin view of AI provider costs, which are billed in USD",
  "lib/calc/scheduling/staffScreenshotFixture.ts":"Screenshot fixture data, not a café",
 
- "components/more/cafeProfileOptions.ts":"Country-to-currency suggestion during setup; unmapped countries suggest USD and the owner can change it",
+ "components/more/cafeProfileOptions.ts":"Known country-to-currency suggestions; unknown countries do not default to USD",
 };
 /** Exception: a D-owned file may be changed by D, not PR 1. Only this historical comment remains. */
 const exceptions:Readonly<Record<string,readonly string[]>>={
