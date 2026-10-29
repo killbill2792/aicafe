@@ -1,4 +1,5 @@
 import type {AgentToolContext} from "./index";
+import {todayLiveMissing} from "./today";
 import {coveredWindow,dateOffset,type CalcPeriod,type CoverageFallback} from "@/lib/calc/periods";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -10,7 +11,24 @@ export type CoveredSalesWindow={
  lastFullDayTotals?:{netSalesCents:number|null;ordersCount:number|null;drinksCount:number|null}|null;
  lastRecordedDay?:string|null;
  dataNote?:string;
+ /** Today's live, provisional POS reading when today's closeout import isn't in. */
+ todaySoFar?:TodaySoFarResult|null;
 };
+export type TodaySoFarResult={provisional:true;available:true;businessDate:string;readAt:string;
+ netSalesCents:number;orders:number;openChecks:number;missing:string[]}|
+ {provisional:true;available:false;missing:string[]};
+/** The live reading (ctx.readTodaySoFar, via lib/data/todayLive.server.ts) for a today
+ * question whose closed-day sales aren't imported yet. Never throws. */
+async function readTodayLive(ctx:AgentToolContext):Promise<TodaySoFarResult>{
+ if(!ctx.readTodaySoFar)return {provisional:true,available:false,missing:["todayLiveReaderUnavailable"]};
+ let read:Awaited<ReturnType<NonNullable<AgentToolContext["readTodaySoFar"]>>>|null=null;
+ try{read=await ctx.readTodaySoFar();}catch{read=null;}
+ if(!read)return {provisional:true,available:false,missing:["todayLiveReadFailed"]};
+ if(!read.available)return {provisional:true,available:false,missing:read.missing};
+ const t=read.value;
+ return {provisional:true,available:true,businessDate:t.businessDate,readAt:t.readAt,netSalesCents:t.netSalesCents,
+  orders:t.orders,openChecks:t.openChecks,missing:todayLiveMissing(t)};
+}
 /** Do not silently substitute historical dates for the period the owner asked for.
  * A separate, labeled last complete day can accompany a missing "today". */
 export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:CalcPeriod):
@@ -38,7 +56,7 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
  const copy={en,es,ar}[ctx.locale].DataNotes;
  if(typeof ctx.tools.getSalesTrend!=="function")
   return {...unchanged,lastFullDay:null,lastFullDayTotals:null,
-   dataNote:copy.todaySalesCheckUnavailable};
+   dataNote:copy.todaySalesCheckUnavailable,todaySoFar:await readTodayLive(ctx)};
  const onlyNoRows=(keys:readonly string[])=>keys.length===1&&keys[0]==="noCoveredSalesRows";
  let currentFailed=false,imported=false,importUncertain=false;
  try{
@@ -51,8 +69,10 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
    key.startsWith("toastImportIncompleteDays:")||key.startsWith("toastDayStatusMissing:"));
  }catch{currentFailed=true;}
  if(imported&&importUncertain)return {...unchanged,lastRecordedDay:ctx.asOf,
-  lastFullDay:null,lastFullDayTotals:null,dataNote:copy.todayStoredUnverified};
+  lastFullDay:null,lastFullDayTotals:null,dataNote:copy.todayStoredUnverified,
+  todaySoFar:await readTodayLive(ctx)};
  if(imported)return {...unchanged,todayImported:true};
+ const todaySoFar=readTodayLive(ctx);
  let historicFailed=false;
  let previous:{date:string;netSalesCents?:number|null;ordersCount?:number|null;drinksCount?:number|null}|undefined;
  try{
@@ -89,5 +109,5 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
  return {...unchanged,...(!currentFailed?{todayImported:false}:{}),
   lastFullDay,lastRecordedDay:previous?.date??null,
   lastFullDayTotals:lastFullDay?{netSalesCents:amount,ordersCount:previous?.ordersCount??null,
-   drinksCount:previous?.drinksCount??null}:null,dataNote:safeNote};
+   drinksCount:previous?.drinksCount??null}:null,dataNote:safeNote,todaySoFar:await todaySoFar};
 }

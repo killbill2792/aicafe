@@ -9,22 +9,25 @@ import ToastOnboardingChecklist from "@/components/more/ToastOnboardingChecklist
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
 import ToastOwnerDashboard from "@/components/more/ToastOwnerDashboard";
 import {trustedToastOrigin} from "@/lib/pos/toast/client";
+import {timeReader} from "@/lib/perf/timeReader.server";
 export const dynamic="force-dynamic";
 export default async function ToastConnectionPage() {
-  const user=await requireOwnBusiness();
+  const user=await timeReader("Toast","requireOwnBusiness",requireOwnBusiness);
   if(!user)notFound();
   const [db,businessId]=await Promise.all([
-    createServerSupabaseClient(),getActiveBusinessId(user.id),
+    timeReader("Toast","createServerSupabaseClient",createServerSupabaseClient),
+    timeReader("Toast","getActiveBusinessId",()=>getActiveBusinessId(user.id)),
   ]);
   const [{data:member},{data:business}]=await Promise.all([
-    db.from("memberships").select("role").eq("business_id",businessId).eq("user_id",user.id).maybeSingle(),
-    db.from("businesses").select("is_demo,currency").eq("id",businessId).maybeSingle(),
+    timeReader("Toast","ownerMembership",async()=>db.from("memberships").select("role")
+      .eq("business_id",businessId).eq("user_id",user.id).maybeSingle()),
+    timeReader("Toast","business",async()=>db.from("businesses").select("is_demo,currency").eq("id",businessId).maybeSingle()),
   ]);
   if(member?.role!=="owner"||!business||business.is_demo)notFound();
   const [{data:locations,error},t,common]=await Promise.all([
-    db.from("locations").select("id,name").eq("business_id",businessId).order("name"),
-    getTranslations("ToastConnect"),
-    getTranslations("Common"),
+    timeReader("Toast","locations",async()=>db.from("locations").select("id,name").eq("business_id",businessId).order("name")),
+    timeReader("Toast","getTranslations.ToastConnect",()=>getTranslations("ToastConnect")),
+    timeReader("Toast","getTranslations.Common",()=>getTranslations("Common")),
   ]);
   if(error)throw error;
   // This list is trusted server configuration, never an owner-supplied outbound URL.

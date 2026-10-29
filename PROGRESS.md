@@ -7,11 +7,10 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 
 ### Owner actions
 - [ ] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
-- [ ] Merge #248 (test café gets the copied live reading) once CI is green.
 - [ ] Decide: may the chat's ad-hoc data queries (`describe_data`/`query_data`, canonical `cv_*` views) answer sales/fee numbers, or only the main tools? Today they are a second path.
 
 ### Today's live sales (owner priority)
-- [ ] Chat doesn't use the live reading for "today's sales". The system prompt in `lib/ai/agent/loop.server.ts` never maps today questions to `get_today_so_far`, so the model calls `get_sales`, which only knows closed days. Fix: add the mapping; and in `lib/ai/agent/tools/coverage.ts` / `tools/index.ts`, when the period is today and not imported, return the live reading from `ctx.readTodaySoFar()` with `provisional: true` and its read time.
+- [x] Chat doesn't use the live reading for "today's sales". The system prompt in `lib/ai/agent/loop.server.ts` never maps today questions to `get_today_so_far`, so the model calls `get_sales`, which only knows closed days. Fix: add the mapping; and in `lib/ai/agent/tools/coverage.ts` / `tools/index.ts`, when the period is today and not imported, return the live reading from `ctx.readTodaySoFar()` with `provisional: true` and its read time.
 - [ ] Home may skip the live reading. `app/[locale]/page.tsx` shows it only when `vm.coverage.actualDays===0`; a $0 or not-final row for today would hide it. Errors there are swallowed (`.catch(()=>null)`). Fix: use the live reading whenever today's closeout import isn't in; log an error category (never data); if no saved reading for the current business day, call `todaySoFarForBusiness` with a 4-second timeout. Check: `select business_date, sales_data_status, net_sales_cents from daily_rollups where business_date = current_date;`
 - [ ] Money screen's "today at a glance" card (`lib/viewmodels/todayGlance.ts`, `components/money/CostRecoveryView.tsx`) uses closed days only; read the live reading through `lib/data/todayLive.server.ts`.
 - [ ] Test café copy (`.github/workflows/sync-cafe-data.yml`) runs every 30 minutes, so its live reading often shows "Not live". Optional: run every 15 minutes.
@@ -27,6 +26,10 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 
 ### One path (AGENTS.md rule 3)
 - [ ] Fold the row mappers in `lib/data/getPricingInputs.ts` and `lib/data/supervisorEconomics.server.ts` into `rowToDailyFacts` (they already read through `lib/data/dailyFacts.server.ts`).
+- [ ] Chat's menu list reads `menu_items` itself (`menuCatalog` in `lib/ai/supervisorReads.server.ts`) instead of the Menu screen's `lib/data/getMenuItemsForEdit.ts`. Make one shared menu reader both use. Check: chat and Menu screen list the same items and prices.
+- [ ] Café settings (currency, timezone, is_demo) are read from `businesses` in ~10 places (`getCafeProfile`, `snapshot.server`, `readSupervisorCafeIdentity`, `getPricingInputs`, `staffReadScope`, `dailyBrief`, `getMoreBadges`, supervisor loop `goal`/`menuPriceChange`/`priceExperiment`). Add one `readCafeSettings(businessId)` reader (React `cache()`d) and switch callers to it.
+- [ ] `suggestPrice` (price math) lives in `lib/calc/pricingEngine.ts`; move it to `lib/metrics/core/` per AGENTS.md, with no change to results.
+- [ ] Screen-vs-chat equality: `lib/metrics/core/metricsParity.test.ts` covers profit, labor, fees and break-even on a fixture; add cases for period/coverage preparation (partial weeks, missing days) so both paths must agree.
 - [ ] Remove the remaining hard-coded USD listed in `lib/ai/agent/bannedPatterns.test.ts`; merge duplicate money formulas listed in `lib/metrics/core/canonicalOnly.test.ts`.
 
 ### Rules for any agent working on these

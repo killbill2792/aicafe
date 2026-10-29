@@ -42,6 +42,7 @@ import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {readSavedTodayLive,currentTodayBusinessDay} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {liveSalesView} from "@/components/home/liveSales";
+import {timeReader} from "@/lib/perf/timeReader.server";
 
 
 // Personalized, session-dependent — never statically prerendered.
@@ -52,38 +53,50 @@ function isPeriod(value: string | undefined): value is Period {
 }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string; thread?: string; experiment?: string }> }) {
-  const signedInUser = await requireOwnBusiness();
+  const signedInUser = await timeReader("Home","requireOwnBusiness",requireOwnBusiness);
   const [requestedLocale, chatReadiness, {period:periodParam,thread:initialThread,experiment:initialExperiment}] = await Promise.all([
-    getLocale(), getSupervisorChatReadiness(Boolean(signedInUser)), searchParams,
+    timeReader("Home","getLocale",getLocale),
+    timeReader("Home","getSupervisorChatReadiness",()=>getSupervisorChatReadiness(Boolean(signedInUser))),
+    searchParams,
   ]);
   const locale = requestedLocale === "es" || requestedLocale === "ar" ? requestedLocale : "en";
-  const cafeAccess=signedInUser ? await getCafeAccess(await getActiveBusinessId(signedInUser.id)) : null;
+  const cafeAccess=signedInUser ? await timeReader("Home","getCafeAccess",async()=>getCafeAccess(
+    await timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id)))) : null;
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
   // Match Money’s selected-period evidence; the default month snapshot cannot prove Today or Week ingredient coverage.
-  const [snapshot, menu, identity] = await Promise.all([getSnapshot(period), getMenuControlCenter(),
-    signedInUser?readSupervisorCafeIdentity(await getActiveBusinessId(signedInUser.id)):Promise.resolve(null)]);
+  const [snapshot, menu, identity] = await Promise.all([
+    timeReader("Home","getSnapshot",()=>getSnapshot(period)),
+    timeReader("Home","getMenuControlCenter",getMenuControlCenter),
+    signedInUser?timeReader("Home","readSupervisorCafeIdentity",async()=>readSupervisorCafeIdentity(
+      await timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id)))):Promise.resolve(null),
+  ]);
   const cafeCurrency=identity?.currency??null;
   const vm = buildHomeViewModel(snapshot, period);
   // Money and Supervisor agree on known costs and their evidence. Home must not
   // bypass that canonical completeness gate when showing owner profit.
   const moneyVm = buildProfitAndCostsViewModel(snapshot, period);
   const [t,tChat,tCommon,tAccess,tGoals,items,businessId]=await Promise.all([
-    getTranslations("Home"),getTranslations("SupervisorChat"),getTranslations("Common"),
-    getTranslations("FreeAccess"),getTranslations("Goals"),
-    getAttentionItems({period,locale,snapshot,menu}),
-    signedInUser?getActiveBusinessId(signedInUser.id):Promise.resolve(null),
+    timeReader("Home","getTranslations.Home",()=>getTranslations("Home")),
+    timeReader("Home","getTranslations.SupervisorChat",()=>getTranslations("SupervisorChat")),
+    timeReader("Home","getTranslations.Common",()=>getTranslations("Common")),
+    timeReader("Home","getTranslations.FreeAccess",()=>getTranslations("FreeAccess")),
+    timeReader("Home","getTranslations.Goals",()=>getTranslations("Goals")),
+    timeReader("Home","getAttentionItems",()=>getAttentionItems({period,locale,snapshot,menu})),
+    signedInUser?timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id)):Promise.resolve(null),
   ]);
   const board=businessId&&identity&&signedInUser
-    ?await readOperatingBoard(await createServerSupabaseClient(),{businessId,ownerUserId:signedInUser.id},identity.asOf):null;
+    ?await timeReader("Home","readOperatingBoard",async()=>readOperatingBoard(await createServerSupabaseClient(),
+      {businessId,ownerUserId:signedInUser.id},identity.asOf)):null;
   const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
   const money=(cents:number)=>formatCafeCurrency(cents,locale,cafeCurrency).text;
   // Today: until the closeout import, Sales is the live Toast reading the chat also uses.
-  const liveDb=period==="today"&&businessId&&vm.coverage.actualDays===0?await createServerSupabaseClient():null;
+  const liveDb=period==="today"&&businessId&&vm.coverage.actualDays===0
+    ?await timeReader("Home","createServerSupabaseClient",createServerSupabaseClient):null;
   const [live,liveDay]=liveDb&&businessId?await Promise.all([
-    readSavedTodayLive(liveDb,businessId).catch(()=>null),
+    timeReader("Home","readSavedTodayLive",()=>readSavedTodayLive(liveDb,businessId)).catch(()=>null),
     // Location settings are server-only; the café is the signed-in owner's own.
-    currentTodayBusinessDay(createAdminSupabaseClient(),businessId).catch(()=>null)]):[null,null];
+    timeReader("Home","currentTodayBusinessDay",()=>currentTodayBusinessDay(createAdminSupabaseClient(),businessId)).catch(()=>null)]):[null,null];
   const liveView=liveSalesView(live,identity?.timezone??null,locale,liveDay);
   const sales=liveView?(liveView.netSalesCents===null?"—":money(liveView.netSalesCents))
     :vm.coverage.actualDays===0?"—":money(moneyVm.salesCents);
