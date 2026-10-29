@@ -7,14 +7,14 @@ import AlertCard from "@/components/alerts/AlertCard";
 import { describeAlert } from "@/components/alerts/alertContent";
 import { formatCents } from "@/lib/calc";
 import PageShell from "@/components/shared/PageShell";
-import { getCafeProfile } from "@/lib/data/getCafeProfile";
+import { getSnapshot } from "@/lib/data/getSnapshot";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
 export default async function AlertsPage() {
   await requireOwnBusiness();
-  const [alerts, profile] = await Promise.all([getOpenAlerts(), getCafeProfile()]);
+  const [alerts, profile] = await Promise.all([getOpenAlerts(), getSnapshot()]);
   const [t, locale] = await Promise.all([getTranslations("Alerts"), getLocale()]);
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");
@@ -27,11 +27,11 @@ export default async function AlertsPage() {
     <PageShell className="flex flex-col gap-3.5 px-4 py-6 pb-10">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
 
-      {!profile.currency&&<p role="note" className="text-sm text-ink-muted">{tCommon("currencyNotSet")}</p>}
+      {!profile.business.currency&&<p role="note" className="text-sm text-ink-muted">{tCommon("currencyNotSet")}</p>}
       <div className="grid grid-cols-2 gap-2.5">
         <div className="flex flex-col gap-1.5 rounded-[22px] bg-card p-4">
           <span className="text-sm font-bold text-warn">{t("potentialImpact")}</span>
-          <span className="font-headline text-[36px] font-bold leading-none text-warn">{alerts.length === 0 ? formatCents(0, locale, profile.currency) : knownImpacts.length ? formatCents(leakingCents, locale, profile.currency) : "—"}</span>
+          <span className="font-headline text-[36px] font-bold leading-none text-warn">{alerts.length === 0 ? formatCents(0, locale, profile.business.currency) : knownImpacts.length ? formatCents(leakingCents, locale, profile.business.currency) : "—"}</span>
           <span className="text-[13px] text-ink-muted">{knownImpacts.length < alerts.length ? t("impactPartialHint") : t("impactHint")}</span>
         </div>
         <div className="flex flex-col gap-1.5 rounded-[22px] bg-card p-4">
@@ -57,7 +57,7 @@ export default async function AlertsPage() {
                 subtitle={content.subtitle}
                 impactCents={alert.impactCents}
                 locale={locale}
-                currency={profile.currency}
+                currency={profile.business.currency}
                 reviewLabel={content.actionHref === detailHref ? content.actionLabel : undefined}
               />
             );
