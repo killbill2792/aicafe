@@ -7,7 +7,7 @@ import ar from "@/messages/ar.json";
 const messages={en,es,ar} as const;
 export type ApprovalPreviewRow=DiffField|{label:string;before:string;after:string};
 function isTyped(row:ApprovalPreviewRow):row is DiffField{return "field" in row;}
-export default function BeforeAfterRows({rows,locale,currency="USD"}:{
+export default function BeforeAfterRows({rows,locale,currency=""}:{
  rows:readonly ApprovalPreviewRow[];locale:CardLocale;currency?:string;
 }){
  const copy=messages[locale].StaffApprovalCard;
