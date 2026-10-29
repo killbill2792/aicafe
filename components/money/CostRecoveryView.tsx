@@ -132,8 +132,10 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
   const breakEvenUnavailable=vm.breakEven.kind==="unavailable"?
     vm.breakEven.reason==="NO_SALES"?t("breakEvenNeedSales"):t("breakEvenUnavailable"):null;
 
+  const actualDays=new Set(snapshot.last28Days.filter(day=>day.netSalesCents>0).map(day=>day.date)).size;
   const recoveryAction=vm.breakEven.kind==="unavailable"&&vm.breakEven.reason==="NO_SALES"?
-    breakEvenAction("NOT_ENOUGH_SALES",toastConnected,snapshot.runningCostLines):null;
+    breakEvenAction("NOT_ENOUGH_SALES",toastConnected,snapshot.runningCostLines):
+    actualDays>0&&actualDays<7?breakEvenAction("PARTIAL_SALES",toastConnected,snapshot.runningCostLines):null;
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -147,6 +149,8 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
                   <Money cents={vm.breakEven.breakEvenSalesCents} />
                 </div>
                 <p className="mt-2 text-sm leading-snug text-ink-muted">{t("breakEvenSalesNeeded")}</p>
+                 {actualDays>0&&<p role="note" className="mt-2 text-sm text-ink-muted">{tCommon("basedOnDays",{days:actualDays})}</p>}
+                 {recoveryAction&&<Link href={recoveryAction.href} className="mt-2 inline-flex min-h-12 items-center text-sm font-bold underline">{t(recoveryAction.labelKey)}</Link>}
               </>
             ) : (
               <>

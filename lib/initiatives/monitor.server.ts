@@ -273,7 +273,8 @@ export async function monitorInitiatives(now:Date=new Date(),
       }))).sort((a,b)=>a.metricId.localeCompare(b.metricId)||
         a.date.localeCompare(b.date));
       const inputs={asOf,endsOn:initiative.ends_on,kind:initiative.kind,
-        minCoverage:0.8,metrics:[...goalMetrics].sort((a,b)=>a.id.localeCompare(b.id)),
+        minCoverage:0.8,lowConfidence:testDates.length<7,days:testDates.length,
+         metrics:[...goalMetrics].sort((a,b)=>a.id.localeCompare(b.id)),
         evidenceVersions:versions};
       await guarded(()=>persistInitiativeEvaluation(scope,initiative.id,asOf,
         evaluation.status,evaluation.recommendation,evaluation.results,inputs,transitionKey,token,itemSignal));

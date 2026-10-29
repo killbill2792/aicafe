@@ -12,6 +12,7 @@ describe("Money recovery button destinations", () => {
   it("chooses an upload without Toast, and Sync Toast only with a verified connection", () => {
     expect(breakEvenAction("NOT_ENOUGH_SALES", false, lines)).toEqual({ labelKey: "uploadSales", href: "/more/uploads/sales" });
     expect(breakEvenAction("NOT_ENOUGH_SALES", true, lines)).toEqual({ labelKey: "syncToast", href: "/more/toast" });
+    expect(breakEvenAction("PARTIAL_SALES",false,lines)).toEqual({labelKey:"uploadSales",href:"/more/uploads/sales"});
   });
   it("links the first expected missing bill rather than an unused category", () => {
     expect(firstMissingBillCategory(lines)).toBe("internet");

@@ -43,6 +43,7 @@ export function breakEvenAction(
 ): { labelKey: RecoveryActionKey; href: string } | null {
   switch (reason) {
     case "NOT_ENOUGH_SALES":
+    case "PARTIAL_SALES":
       return toastConnected
         ? { labelKey: "syncToast", href: "/more/toast" }
         : { labelKey: "uploadSales", href: "/more/uploads/sales" };
