@@ -185,14 +185,14 @@ describe("Plan goals", () => {
       type: "staff", item: null, newValueCents: 0,
       staffHoursPerDay: 2, assumedHourlyWageCents: 1950 })).toBeNull();
   });
-  it("keeps staffed-month savings available with fewer than seven operating sales dates", () => {
+  it("keeps staffed-month savings and a low-confidence price estimate with fewer than seven sales dates", () => {
     const missingOpenDays = { ...base, salesDaysCovered: 5 };
     const staff = simulatePlanChange({ base: missingOpenDays, type: "staff", item: null,
       newValueCents: 0, staffHoursPerDay: 2, assumedHourlyWageCents: 1950 });
     expect(staff?.monthlyProfitChangeCents).toBeGreaterThan(0);
     const price = simulatePlanChange({ base: missingOpenDays, type: "price", item,
       newValueCents: item.priceCents + 25, staffHoursPerDay: 0, assumedHourlyWageCents: 1950 });
-    expect(price).toBeNull();
+    expect(price).toMatchObject({ lowConfidence: true, days: 5 });
   });
   it("does not project profit for too little observed sales coverage", () => {
     expect(simulatePlanChange({ base: { ...base, salesDaysCovered: 0 },

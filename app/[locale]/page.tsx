@@ -80,7 +80,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const comparisonCaption=profitChangePct===null?null:t("changeVsLastPeriod",{
     pct:number(Math.abs(Math.round(profitChangePct))),
     direction:profitChangePct>=0?t("more"):t("less"),
-  });
+  })+(vm.comparisonState.kind==="available"&&vm.comparisonState.partialPeriod?" · "+tCommon("partialPeriod"):"");
   return <PageShell wide className="flex flex-col gap-4 px-3 pb-4 pt-3 md:px-4 md:pt-4">
     {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px]">
       {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
