@@ -61,7 +61,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
   // Match Money’s selected-period evidence; the default month snapshot cannot prove Today or Week ingredient coverage.
-  const [snapshot, menu, identity] = await Promise.all([getSnapshot(period), getMenuControlCenter(),
+  const [snapshot, menu, identity] = await Promise.all([getSnapshot(period), getMenuControlCenter({includeSalesEvidence:false}),
     signedInUser?readSupervisorCafeIdentity(await getActiveBusinessId(signedInUser.id)):Promise.resolve(null)]);
   const cafeCurrency=identity?.currency??null;
   const vm = buildHomeViewModel(snapshot, period);
