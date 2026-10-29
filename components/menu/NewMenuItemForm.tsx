@@ -13,7 +13,7 @@ import MenuComboBuilder, {type ComboChoice} from "./MenuComboBuilder";
 type Kind="drink"|"food"|"retail"|"combo";type Mode="template"|"quick"|"blank";
 const templates:{key:RecipeTemplateKey|null;name:string;description:string}[]=[
  {key:"latte",name:"Latte",description:"Espresso + milk"},{key:"cappuccino",name:"Cappuccino",description:"Foamy espresso"},{key:"americano",name:"Americano",description:"Espresso + water"},{key:"mocha",name:"Mocha",description:"Chocolate latte"},{key:"iced-latte",name:"Iced latte",description:"Cold espresso + milk"},{key:"cold-brew",name:"Cold brew",description:"Slow brewed coffee"},{key:"chai-latte",name:"Chai",description:"Spiced tea + milk"},{key:"matcha-latte",name:"Matcha",description:"Green tea latte"},{key:null,name:"Pastry",description:"Fresh bakery item"}];
-export default function NewMenuItemForm({menuGroupOptions,comboChoices,currency}:{menuGroupOptions:string[];comboChoices:ComboChoice[];currency:string|null}) {
+export default function NewMenuItemForm({menuGroupOptions,comboChoices,currency}:{menuGroupOptions:string[];comboChoices:ComboChoice[];currency?:string|null}) {
  const t=useTranslations("MenuBuilder"),common=useTranslations("Common"),manage=useTranslations("ManageMenu"),router=useRouter();
  const templateLabel=(value:typeof templates[number])=>t(`templates.${value.key??"pastry"}.name` as never);
  const templateDescription=(value:typeof templates[number])=>t(`templates.${value.key??"pastry"}.subtitle` as never);
