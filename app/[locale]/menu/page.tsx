@@ -17,6 +17,8 @@ export default async function MenuPage() {
   await requireOwnBusiness();
   const [items, pendingMatches, t, menuBuilderT, locale, unpriced] = await Promise.all([getMenuControlCenter(), getCatalogMatchReview(), getTranslations("Menu"), getTranslations("MenuBuilder"), getLocale(), getUnpricedPublishedMenu()]);
   const photos = await getMenuCatalogPhotos(items);
+  const common = await getTranslations("Common");
+  const currency = items[0]?.currency ?? null;
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
       <header className="flex flex-col gap-3 px-1 md:flex-row md:items-start md:justify-between">
@@ -35,6 +37,7 @@ export default async function MenuPage() {
         <span className="font-bold text-ink">{t("itemsNeedMatching",{count:new Intl.NumberFormat(locale).format(pendingMatches.length)})}</span>
         <span className="font-bold text-accent-text">{t("matchItems")}</span>
       </Link>}
+      {!currency&&<p role="note" className="text-sm text-ink-muted">{common("currencyNotSet")}</p>}
       <MenuCatalog items={items} photos={photos} />
       {unpriced.length>0&&<section aria-label={t("unpricedPublished")} className="mt-3">
         <h2 className="mb-3 font-headline text-xl font-bold text-ink">{t("unpricedPublished")}</h2>
@@ -56,7 +59,7 @@ export default async function MenuPage() {
               <p className="mb-1 text-sm font-bold text-ink">{t("addOnPrices")}</p>
               <ul className="space-y-1">{item.addons.map((addon,index)=><li key={index} className="flex justify-between gap-3 text-sm text-ink-muted">
                 <span>{addon.groupName?addon.groupName+" · ":""}{addon.name}</span>
-                <span>{addon.priceCents===null?menuBuilderT("priceNotSet"):formatCents(addon.priceCents)}</span>
+                <span>{addon.priceCents===null?menuBuilderT("priceNotSet"):formatCents(addon.priceCents, locale, currency)}</span>
               </li>)}</ul>
             </div>}
           </article>)}
