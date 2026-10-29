@@ -3,6 +3,7 @@ import {formatInTimeZone} from "date-fns-tz";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {aggregatePriceExperimentSalesRows,type PriceExperimentDay} from "@/lib/calc/priceExperiment";
 import {utcDateOffset} from "./engine";
+import {readDailyFactRows} from "@/lib/data/dailyFacts.server";
 
 /** Read strictly completed business dates and exact canonical POS source coverage.
  * A missing/late rollup, an invalid line or a truncated PostgREST page NEVER
@@ -15,9 +16,8 @@ export async function readPriceExperimentSalesDays(
  const lastDate=utcDateOffset(firstDate,days-1);
  const db=createAdminSupabaseClient();
  const [coverage,orders]=await Promise.all([
-   db.from("daily_rollups").select("business_date,sales_data_status")
-     .eq("business_id",businessId).gte("business_date",firstDate)
-     .lte("business_date",lastDate).limit(32),
+   readDailyFactRows(db,businessId,firstDate,lastDate)
+     .then(data=>({data,error:null}),error=>({data:null,error})),
    db.from("order_lines")
      .select("quantity,net_sales_cents,orders!inner(business_date,business_id)",{count:"exact"})
      .eq("menu_item_id",productId).eq("orders.business_id",businessId)
@@ -46,7 +46,7 @@ export async function readPriceExperimentSalesDays(
  const rollups=new Map<string,string>();
  for(const row of coverage.data??[]){
    if(rollups.has(row.business_date))invalid=true;
-   rollups.set(row.business_date,row.sales_data_status);
+   rollups.set(row.business_date,row.sales_data_status??"missing");
  }
  return Array.from({length:days},(_,i)=>{
    const businessDate=utcDateOffset(firstDate,i);

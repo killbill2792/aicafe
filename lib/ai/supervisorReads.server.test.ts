@@ -15,7 +15,7 @@ const row=(status:string|null,sales=0,orders=0,date="2026-10-12"):Row=>({
 });
 function reader(rows:Row[]){
   const query={select:()=>query,eq:()=>query,gte:()=>query,lte:()=>query,
-    order:()=>query,limit:async()=>({data:rows,error:null})};
+    order:()=>query,limit:async()=>({data:rows,error:null}),range:async()=>({data:rows,error:null})};
   return supervisorHistoricalReaders({from:()=>query} as unknown as SupabaseClient,"my-cafe");
 }
 describe("Canonical sales status strictly distinguishes verified zero and missing",()=>{
@@ -48,7 +48,7 @@ describe("Canonical sales status strictly distinguishes verified zero and missin
 afterEach(()=>vi.unstubAllEnvs());
 function pilotReader(rows:Row[],rpcDates:string[],canonicalToastDates:string[],broken=false,flags:unknown[]=[]){
  const rollup={select:()=>rollup,eq:()=>rollup,gte:()=>rollup,lte:()=>rollup,
-  order:()=>rollup,limit:async()=>({data:rows,error:null})};
+  order:()=>rollup,limit:async()=>({data:rows,error:null}),range:async()=>({data:rows,error:null})};
  const orders={select:()=>orders,eq:()=>orders,like:()=>orders,in:()=>orders,order:()=>orders,
   range:async(start:number,end:number)=>broken?{data:null,error:{message:"connection failed"}}:
    {data:canonicalToastDates.slice(start,end+1).map((business_date,i)=>({id:start+i,business_date})),error:null}};

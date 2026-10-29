@@ -4,7 +4,7 @@ import {getTranslations} from "next-intl/server";
 import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
-import { rowToDailyFacts } from "@/lib/data/runningCostCatalog";
+import { readDailyFacts } from "@/lib/data/dailyFacts.server";
 import type { DailyFacts } from "@/lib/calc";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 import { rangeExpectedDays } from "./conversations/dateRange";
@@ -31,11 +31,7 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
   return {
     async salesTrend(id: string, period: CafeStatePeriod): Promise<KnownSlice<DailyFacts[]>> {
       assertScope(id);
-      const { data, error } = await client.from("daily_rollups")
-        .select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents")
-        .eq("business_id",id).gte("business_date",period.from).lte("business_date",period.to)
-        .order("business_date",{ascending:true}).limit(370);
-      if (error) throw error;
+      const all = await readDailyFacts(client,id,period.from,period.to);
       const trust=await readToastDayTrust(client,id,period.from,period.to);
       // How Toast days are checked is context, not missing data: it goes in notes.
       const notes=[...trust.notes];
@@ -47,7 +43,7 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
         }
        }catch{ /* Context only; the sales numbers do not depend on it. */ }
       }
-      const days=(data??[]).filter(row=>row.sales_data_status==="actual").map(rowToDailyFacts);
+      const days=all.filter(day=>day.salesDataStatus==="actual");
       if (!days.length) return {available:false,value:null,quality:{...quality([...trust.quality,"noCoveredSalesRows"]),notes}};
       const expected = rangeExpectedDays(period), covered = new Set(days.map(d=>d.date)).size;
       return { available:true, value:days, quality:{...quality([
