@@ -50,7 +50,8 @@ export default async function MenuItemPage({
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
       <BackHeader title={editItem.baseName} backHref="/menu" backLabel={common("back")} />
-      {comboParts.length>0?<SavedComboDetail name={editItem.baseName} priceCents={editItem.priceCents} parts={comboParts} items={editItems}/>:<ProductDetailScreen
+      {!item.currency&&<p role="note" className="text-sm text-ink-muted">{common("currencyNotSet")}</p>}
+      {comboParts.length>0?<SavedComboDetail name={editItem.baseName} priceCents={editItem.priceCents} parts={comboParts} items={editItems} currency={item.currency}/>:<ProductDetailScreen
         item={item}
         pantry={pantry.map(({id,name,category,baseUnit,costPerBaseMicros})=>({id,name,category,baseUnit,costPerBaseMicros}))}
         savedAddons={savedAddons}
