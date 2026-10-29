@@ -22,6 +22,7 @@ import {buildAgentSendBody} from "./agentSendBody";
 import MemoryCard from "./MemoryCard";
 import ClarifyCard from "./ClarifyCard";
 import HowIGotThis from "./HowIGotThis";
+import {resumeOwnerQuestion} from "@/lib/ownerFacts/resume";
 import {explainLineSchema} from "@/lib/ai/agent/explain";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress from "./ChatJobProgress";
@@ -55,7 +56,7 @@ export type SupervisorChatCopy = {
   needsYou: string; handled: string; watching: string;
   answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string; provenanceOwner:string;provenanceEstimate:string;provenanceUnchecked:string;provenanceBreakEven:string;provenanceSalesGap:string;provenanceLegend:string;provenanceOverhead:string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
-  clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string;
+  clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifySaveError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string;
   howIGotThis:string;howCalculated:string;explainMissing:string;
   pricingLaborPrefix:string;pricingBillsPrefix:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
   explainMultiply:string;explainSum:string;explainDivide:string;explainRatio:string;explainProrate:string;explainSubtract:string;
@@ -131,11 +132,12 @@ function isOwnerConfirmation(message:ConversationMessage){
   const state=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
   return state.success&&state.data.stage==="confirm";
 }
-function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, clarifyState, clarifyChoice, disabled, linkedThreadId, linkedProposalId }: {
-  message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale;
+function SupervisorMessage({ message, copy, locale, cafeCurrency, onOwnerResponse, onClarify, onFacts, clarifyState, clarifyChoice, disabled, linkedThreadId, linkedProposalId }: {
+  message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale; cafeCurrency:string|null;
   disabled:boolean;
   linkedThreadId?:string; linkedProposalId?:string;
   onClarify:(text:string)=>void;
+  onFacts:(questionId:string,answers:{fieldKey:string;value:string}[])=>Promise<void>;
   clarifyState:"hidden"|"active"|"chosen"|"skipped";clarifyChoice:string|null;
   onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
 }) {
@@ -172,11 +174,11 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, onClarify, 
             const parsed=explainLineSchema.safeParse(line);
             return parsed.success?[parsed.data]:[];
           });
-          return lines.length?<HowIGotThis key={i} lines={lines} locale={locale} copy={copy}/>:null;
+          return lines.length?<HowIGotThis key={i} lines={lines} locale={locale} copy={copy} currency={cafeCurrency}/>:null;
         }
         const clarify=clarifyBlockSchema.safeParse(group.block);
         if(clarify.success)return <ClarifyCard key={i} block={clarify.data} locale={locale} copy={copy}
-          state={clarifyState} choice={clarifyChoice} disabled={disabled} onSend={onClarify}/>;
+          state={clarifyState} choice={clarifyChoice} disabled={disabled} onSend={onClarify} onFacts={onFacts}/>;
         const candidate=ownerQuestionSchema.safeParse(group.block);
         if (candidate.success) return <ReplyBlock key={i} block={{type:"text",text:candidate.data.title[locale]}} copy={copy} locale={locale}/>;
         const originalIndex=originalReplyBlockIndex(originalBlocks,group.block);
@@ -225,10 +227,10 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
   </div>;
 }
 export default function SupervisorChatComposer({
-  enabled, canUseAi=true, locale, copy, languageSwitch, onActivityChange, initialThreadId, initialProposalId, chatStartData,chatStartCopy,
+  enabled, canUseAi=true, locale, cafeCurrency, copy, languageSwitch, onActivityChange, initialThreadId, initialProposalId, chatStartData,chatStartCopy,
 }: {
   enabled: boolean; canUseAi?: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
-  locale: Locale; copy: SupervisorChatCopy;
+  locale: Locale; copy: SupervisorChatCopy; cafeCurrency:string|null;
   chatStartData?: ChatStartData;
   chatStartCopy?: Omit<ChatStartCopy,"suggestions">;
   initialThreadId?:string;initialProposalId?:string;
@@ -278,8 +280,8 @@ export default function SupervisorChatComposer({
   const messageContent = useRef<HTMLDivElement | null>(null);
   const retryId = useRef<string | null>(null);
   const threadRequestId = useRef<string | null>(null);
-  // CHAT_JOBS (server flag): these stay empty/null unless the server sends an
-  // "ack" event, so with the flag off the composer behaves exactly as before.
+  // Background jobs: these stay empty/null unless the server sends an
+  // "ack" event (for example when the jobs table is unavailable).
   const liveCopy = chatExperienceCopy(locale);
   const [liveJobId, setLiveJobId] = useState<string | null>(null);
   const [liveSteps, setLiveSteps] = useState<AgentJobStep[]>([]);
@@ -461,7 +463,7 @@ export default function SupervisorChatComposer({
     try { const body = await response.json() as { error?: unknown }; return typeof body.error === "string" ? body.error : "agent_request_failed"; }
     catch { return "agent_request_failed"; }
   }
-  /** CHAT_JOBS: a message sent while an answer is still being worked on joins
+  /** Background jobs: a message sent while an answer is still being worked on joins
    * that same job; the server folds it into the answer or answers it right after. */
   async function sendFollowUp(text: string) {
     const id = threadId;
@@ -853,13 +855,38 @@ export default function SupervisorChatComposer({
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
       {displayedMessages.map((message,messageIndex) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
-        <SupervisorMessage message={message} copy={copy} locale={locale}
+        <SupervisorMessage message={message} copy={copy} locale={locale} cafeCurrency={cafeCurrency}
           linkedThreadId={threadId===initialThreadId?initialThreadId:undefined}
           linkedProposalId={threadId===initialThreadId?initialProposalId:undefined}
           clarifyState={chosenClarify[message.id]&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state==="skipped"?
             "chosen":clarifyCardState(clarifyVisibilityMessages,messageIndex).state}
           clarifyChoice={chosenClarify[message.id]??clarifyCardState(clarifyVisibilityMessages,messageIndex).choice}
           onClarify={value=>{setChosenClarify(old=>({...old,[message.id]:value}));void sendText(value);}}
+          onFacts={async(questionId,answers)=>{
+            if(!threadId||message.threadId!==threadId)throw new Error("thread_unavailable");
+            const response=await fetch("/api/ai/threads/"+encodeURIComponent(threadId)+"/owner-answer",{
+              method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({questionId,answers,locale})
+            });
+            if(!response.ok)throw new Error("owner_answer_save_failed");
+            const result=await response.json() as {saved:boolean;writeThroughApplied:boolean};
+            if(!result.saved)throw new Error("owner_answer_save_failed");
+            const savedCopy=({en,es,ar}[locale]).OwnerQuestions;
+            const responseText=result.writeThroughApplied?savedCopy.saved:savedCopy.savedBut;
+            setChosenClarify(old=>({...old,[message.id]:responseText}));
+            const pending=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
+            const original=pending.success?pending.data.originalText:
+              [...displayedMessages.slice(0,messageIndex)].reverse()
+                .find(entry=>entry.role==="owner"&&entry.text?.trim())?.text??null;
+            const card=(message.blocks??[]).map(block=>clarifyBlockSchema.safeParse(block))
+              .find(parsed=>parsed.success&&parsed.data.kind==="facts"&&parsed.data.questionId===questionId);
+            const fields=card?.success&&card.data.kind==="facts"?card.data.fields:[];
+            const facts=answers.map(answer=>({
+              label:fields.find(field=>field.key===answer.fieldKey)?.label??answer.fieldKey,
+              value:answer.value
+            }));
+            await sendText(resumeOwnerQuestion(original,responseText,facts));
+          }}
           disabled={sending||!enabled||!canUseAi||
           (message.role==="supervisor"&&message.id!==activeQuestionMessageId&&clarifyCardState(clarifyVisibilityMessages,messageIndex).state!=="active")}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{

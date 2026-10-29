@@ -1,10 +1,11 @@
 import { laborKnown } from "@/lib/calc";
+import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
+import {profitForPeriod} from "@/lib/metrics/core/profit";
+import {laborForPeriod} from "@/lib/metrics/core/labor";
+import type {DailyFacts,CategoryMonthlyAmount} from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { PricingResult, DataQuality } from "@/lib/calc";
 import {
-  netSalesCentsForPeriod,
-  totalCostsCentsForPeriod,
-  ownerProfitCentsForPeriod,
   runningCostsForPeriodCents,
   runningCostsForPeriodCentsByCategory,
   allocateIntegerCentsByCategory,
@@ -81,15 +82,20 @@ function expectedCalendarDays(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
 }
 
-/** Only the loaded calendar month is supported. A 28-day list of recent sales is NOT
- * a substitute for prior-month bill evidence, and missing dates are NOT zero-sales days.
+/** A read-only historical snapshot carries independently loaded range-specific facts.
+ * The current snapshot by itself never proves a different historical month.
  */
+type HistoricalData={
+ days:DailyFacts[];recorded:DailyFacts[];monthlyAmounts:CategoryMonthlyAmount[];
+ missingExpenseCategories:string[];estimatedExpenseCategories:string[];
+};
+
 function supportedPeriod(snapshot: BusinessSnapshot, period: CafeStatePeriod): boolean {
+  const historical=(snapshot as BusinessSnapshot & {historicalPeriod?:HistoricalData}).historicalPeriod;
   return validDate(period.from) && validDate(period.to) && period.from <= period.to &&
-    period.from >= `${snapshot.monthKey}-01` &&
     period.to <= snapshot.todayDateStr &&
-    period.from.slice(0, 7) === snapshot.monthKey &&
-    period.to.slice(0, 7) === snapshot.monthKey;
+    (historical!==undefined||period.from>=`${snapshot.monthKey}-01`&&
+      period.from.slice(0,7)===snapshot.monthKey&&period.to.slice(0,7)===snapshot.monthKey);
 }
 
 /**
@@ -101,24 +107,39 @@ export function cafeStateFromSnapshot(
   period: CafeStatePeriod = { from: `${snapshot.monthKey}-01`, to: snapshot.todayDateStr },
   canonicalPricing?: CanonicalPricingItem[],
 ): CafeState {
-  const inRange = supportedPeriod(snapshot, period);
-  const days = inRange
-    ? snapshot.monthActualDays.filter((day) => day.date >= period.from && day.date <= period.to && day.salesDataStatus !== "missing")
-    : [];
-  const expectedDays = inRange ? expectedCalendarDays(period.from, period.to) : 0;
+  const historical=(snapshot as BusinessSnapshot & {historicalPeriod?:HistoricalData}).historicalPeriod;
+  const requestedFuture=period.to>snapshot.todayDateStr;
+  const effectivePeriod: CafeStatePeriod=requestedFuture?
+    {from:period.from,to:snapshot.todayDateStr}:period;
+  const inRange=supportedPeriod(snapshot,effectivePeriod);
+  const days=inRange?(historical?.days??snapshot.monthActualDays)
+    .filter(day=>day.date>=effectivePeriod.from&&day.date<=effectivePeriod.to&&day.salesDataStatus!=="missing"):[];
+  const expectedDays = inRange ? expectedCalendarDays(effectivePeriod.from, effectivePeriod.to) : 0;
   const observedDays = new Set(days.map((day) => day.date)).size;
   const missingSales = inRange && observedDays !== expectedDays;
-  const recorded = inRange
-    ? (snapshot.monthRecordedDays ?? snapshot.monthActualDays).filter((day) => day.date >= period.from && day.date <= period.to)
-    : [];
+  const recorded=inRange?(historical?.recorded??snapshot.monthRecordedDays??snapshot.monthActualDays)
+    .filter(day=>day.date>=effectivePeriod.from&&day.date<=effectivePeriod.to):[];
 
-  const expenseMissing = snapshot.runningCostLines
-    .filter((line) => line.isMissing && line.isExpected)
-    .map((line) => `expense:${line.categoryCode}`);
-  const expenseEstimated = snapshot.runningCostLines
-    .filter((line) => line.isEstimate && line.amountCents > 0)
-    .map((line) => `expense:${line.categoryCode}`);
-  const businessCosts=businessCostSummaryFromSnapshot(snapshot,period);
+  const expenseMissing=historical?.missingExpenseCategories??
+    snapshot.runningCostLines.filter(line=>line.isMissing&&line.isExpected)
+      .map(line=>`expense:${line.categoryCode}`);
+  const expenseEstimated=historical?.estimatedExpenseCategories??
+    snapshot.runningCostLines.filter(line=>line.isEstimate&&line.amountCents>0)
+      .map(line=>`expense:${line.categoryCode}`);
+  let businessCosts=businessCostSummaryFromSnapshot(snapshot,effectivePeriod);
+  if(historical){
+    businessCosts={...businessCosts,period:effectivePeriod,
+      completeness:days.length?"partial":"unavailable",
+      observed:{ingredients:days.length>0,loadedStaff:recorded.length>0,
+        cardFees:days.length>0,runningCosts:historical.monthlyAmounts.some(row=>!row.isMissing)},
+      missingInputs:[
+        ...(observedDays<expectedDays?[`salesCoverage:${observedDays}/${expectedDays}`]:[]),
+        "historicalIngredientCostCoverage",...expenseMissing],
+      estimatedInputs:[...expenseEstimated],
+      coverage:{...businessCosts.coverage,salesDays:observedDays,
+        laborDays:new Set(recorded.map(day=>day.date)).size,expectedDays},
+    };
+  }
   // Product completeness is an exact-period participation question.
   // A rolling last-28-days menu quantity is never evidence for this period.
   const missingProductCosts=businessCosts.missingInputs.filter(input=>
@@ -138,15 +159,19 @@ export function cafeStateFromSnapshot(
     .filter((day) => day.staffTaxStatus === "estimated")
     .map((day) => `staffTax:${day.date}`);
   const basicMissing = [
+    ...(requestedFuture?["futureDatesExcluded"]:[]),
     ...(!inRange ? ["periodOutsideLoadedMonth"] : []),
     ...(missingSales ? [`salesCoverage:${observedDays}/${expectedDays}`] : []),
   ];
   const observedQuality = quality([...basicMissing, ...feeMissing], [...feeEstimated, ...taxEstimated]);
+  const monthlyExtras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
+    .ownerMonthlyPayrollExtrasCents;
   const financialQuality = quality(
     [...basicMissing, ...feeMissing, ...expenseMissing, ...missingProductCosts,
       ...unknownLabor.map(day=>"laborWageUnknown:"+day.date)],
     [...expenseEstimated, ...feeEstimated, ...taxEstimated, ...estimatedProductCosts,
-      ...wageEstimated.map(day=>"laborWageEstimate:"+day.date)],
+      ...wageEstimated.map(day=>"laborWageEstimate:"+day.date),
+      ...(monthlyExtras?["laborOwnerExtras"]:[])],
   );
 
   const labor = recorded.map((day) => ({
@@ -182,53 +207,71 @@ export function cafeStateFromSnapshot(
 
   // Monthly running costs must be *calendar-prorated* over the requested range.
   // Full-month costs against today's or sparse sales gave a fictional loss.
-  const monthlyLines = snapshot.runningCostLines.map((line) => ({
-    categoryCode: line.categoryCode,
-    monthKey: snapshot.monthKey,
-    amountCents: line.amountCents,
-    isEstimate: line.isEstimate,
-    isMissing: line.isMissing,
+  const monthlyLines=historical?.monthlyAmounts??snapshot.runningCostLines.map(line=>({
+    categoryCode:line.categoryCode,monthKey:snapshot.monthKey,amountCents:line.amountCents,
+    isEstimate:line.isEstimate,isMissing:line.isMissing,
   }));
-  const running = inRange ? runningCostsForPeriodCents(monthlyLines, period.from, period.to) : 0;
+  const running = inRange ? runningCostsForPeriodCents(monthlyLines, effectivePeriod.from, effectivePeriod.to) : 0;
   // Reuse the SAME cent-safe largest-remainder allocator used by Money's category
   // breakdown, so an arbitrary supported range's detail rows reconcile to the
   // aggregate rounded operating costs even when individual lines have fractional cents.
   const rawByCategory = inRange
-    ? runningCostsForPeriodCentsByCategory(monthlyLines, period.from, period.to)
+    ? runningCostsForPeriodCentsByCategory(monthlyLines, effectivePeriod.from, effectivePeriod.to)
     : new Map<string, number>();
   const allocated = allocateIntegerCentsByCategory(new Map(
     snapshot.runningCostLines
-      .filter((line) => !line.isMissing)
+      .filter((line) => historical!==undefined||!line.isMissing)
       .map((line) => [line.categoryCode, rawByCategory.get(line.categoryCode) ?? 0]),
   ), roundHalfUpToCent(running));
   const periodExpenses = snapshot.runningCostLines.map((line) => ({
     ...line,
-    amountCents: line.isMissing ? 0 : allocated.get(line.categoryCode) ?? 0,
+    amountCents:historical!==undefined?allocated.get(line.categoryCode)??0:
+      line.isMissing?0:allocated.get(line.categoryCode)??0,
   }));
-  const salesCents = netSalesCentsForPeriod(days);
-  const totalCosts = totalCostsCentsForPeriod(days, running);
-  const profit = ownerProfitCentsForPeriod(days, running);
-  const financials = {
-    netSalesCents: salesCents,
-    // This object is never exposed when financialQuality marks wages missing.
-    totalCostsCents: totalCosts===null?0:roundHalfUpToCent(totalCosts),
-    ownerProfitCents: profit===null?0:roundHalfUpToCent(profit),
-    operatingMargin: profit===null?0:ratio(profit, salesCents),
-    coveredSalesDays: observedDays,
-    expectedSalesDays: expectedDays,
+  const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
+  const feeResult=cardFeesForDays(days,feePlans??null);
+  const laborResult=laborForPeriod(
+    Array.from({length:expectedDays},(_,index)=>({
+      date:new Date(Date.parse(effectivePeriod.from+"T12:00:00Z")+index*86400000).toISOString().slice(0,10),
+    })),recorded,null,monthlyExtras==null?null:{
+      monthlyCents:monthlyExtras,from:effectivePeriod.from,to:effectivePeriod.to,
+    });
+  const knownIngredientCents=days.reduce((sum,day)=>sum+day.ingredientsCents,0);
+  const profitResult=profitForPeriod(days,
+    {amountCents:roundHalfUpToCent(running),missing:expenseMissing,estimated:expenseEstimated.length>0},
+    {amountCents:feeResult.amountCents,missing:feeMissing,estimated:feeResult.basis!=="actual"},
+    {amountCents:laborResult.knownLaborCents,
+      missing:laborResult.coveredDays===expectedDays?[]:["laborCoveragePartial"],
+      estimated:laborResult.basis!=="recorded"},
+    {amountCents:knownIngredientCents,missing:missingProductCosts,
+      estimated:estimatedProductCosts.length>0});
+  const salesCents=profitResult.netSalesCents;
+  if(historical||monthlyExtras!=null)businessCosts={...businessCosts,
+    knownTotalCents:Math.round(Object.values(profitResult.partsUsed).reduce((a,b)=>a+b,0)),
+    components:{ingredientsCents:profitResult.partsUsed.productCostsCents,
+      loadedStaffCents:profitResult.partsUsed.laborCents,
+      cardFeesCents:profitResult.partsUsed.feesCents,
+      runningCostsCents:profitResult.partsUsed.billsCents}};
+  const financials={
+    netSalesCents:salesCents,
+    totalCostsCents:Math.round(Object.values(profitResult.partsUsed).reduce((a,b)=>a+b,0)),
+    ownerProfitCents:profitResult.profitCents??0,
+    operatingMargin:ratio(profitResult.profitCents??0,salesCents),
+    coveredSalesDays:observedDays,
+    expectedSalesDays:expectedDays,
   };
 
   return {
     asOf: snapshot.todayDateStr,
-    period,
+    period:effectivePeriod,
     business: snapshot.business,
     products: known(snapshot.menuItems, quality(missingProductCosts, estimatedProductCosts)),
     sales: !inRange ? unavailable("periodOutsideLoadedMonth") : days.length ? known(days, observedQuality) : unavailable(...basicMissing, "salesHistory"),
     expenses: !inRange ? unavailable("periodOutsideLoadedMonth") : known(periodExpenses, quality(expenseMissing, expenseEstimated)),
     businessCosts,
-    profitability: financialQuality.missingInputs.length || observedDays === 0
-      ? { available: false, value: null, quality: financialQuality }
-      : known(financials, financialQuality),
+    profitability: profitResult.profitCents===null
+      ? {available:false,value:null,quality:financialQuality}
+      : known(financials,financialQuality),
     labor: !inRange ? unavailable("periodOutsideLoadedMonth") : labor.length ? known(labor, laborQuality) : unavailable("laborHistory"),
     pricingRecommendations: canonicalPricing === undefined
       ? unavailable("pricingRecommendations")

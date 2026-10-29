@@ -1,3 +1,7 @@
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
+import {localizedMetricReason} from "@/lib/ai/agent/metricReasons";
 import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
@@ -26,7 +30,8 @@ export const moneyTools={
     agentId:"leo",schema:period.extend({category:z.string().max(100).nullable()}),description:"Recorded actual expenses separately from recurring category estimates.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=period.extend({category:z.string().max(100).nullable()}).parse(raw);
-      const chosen=resolveOwnerPeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
+      if(!ctx.timezone)return unavailable("expenses",null,["cafeTimezoneMissing"]);
+      const chosen=resolveOwnerPeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(chosen.status!=="resolved")return periodChoicePayload("expenses",chosen);
       const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getRecordedExpenses||!ctx.tools.getExpenseSummary)return unavailable("expenses",p,["expenseReaderUnavailable"]);
@@ -78,10 +83,14 @@ export const moneyTools={
       if(ctx.readEconomics){
         const {economics}=await ctx.readEconomics();
         const overridden={...economics};
+        // Owner-provided figures belong to this answer, never silently fall back
+        // to the import window. No persistence or POS mutation is performed here.
+        overridden.ownerNetSalesCents=owner.ownerNetSalesCents??provided?.netSalesCents??null;
+        overridden.ownerSalesDays=owner.ownerSalesDays??null;
         if(provided?.laborCents!==null&&provided?.laborCents!==undefined&&provided.laborPeriod){
           const range=ownerPeriod(provided.laborPeriod,ctx.asOf);
           if(range)overridden.monthlyStaff=figure(prorate(provided.laborCents,range,calendarMonth(ctx.asOf)),
-            "owner","You told me: monthly payroll");
+            "owner","owner_provided");
         }
         if(owner.ownerIngredientPackagingPercent!==null&&owner.ownerIngredientPackagingPercent!==undefined){
           overridden.ingredientRate=owner.ownerIngredientPackagingPercent/100;
@@ -96,9 +105,16 @@ export const moneyTools={
         return {source:"break_even",period:calendarMonth(ctx.asOf),agentId:"leo",
           monthlyBreakEvenCents:monthly,knownCostBreakEvenFloorCents:result.knownCostBreakEvenFloorCents,
           drinksPerDay:result.drinksPerDay,
-          monthlyBills:result.monthlyBills,monthlyLabor:result.monthlyStaff,
+          observedProcessingFeesCents:result.observedProcessingFeesCents,
+          observedIngredientCents:result.observedIngredientCents,
+          monthlyBills:{...result.monthlyBills,reasonKey:result.monthlyBills.reason,
+            reason:localizedMetricReason(result.monthlyBills.reason,ctx.locale,result.monthlyBills.reasonParams)},
+          monthlyLabor:{...result.monthlyStaff,reasonKey:result.monthlyStaff.reason,
+            reason:localizedMetricReason(result.monthlyStaff.reason,ctx.locale,result.monthlyStaff.reasonParams)},
           ingredientRate:result.ingredientRate,feeRate:result.feeRate,
-          status:result.status,reason:result.reason,missingDays:overridden.missingDays,
+          status:result.status,reasonKey:result.reason,
+           reason:localizedMetricReason(result.reason,ctx.locale,result.reasonParams),
+           missingDays:overridden.missingDays,
           missing:result.missing,ownerInputs:provided??null,
           numberEstimates:[...(monthly===null?[]:[{value:monthly,unit:"cents" as const,detail:"breakEvenSales"}]),
             ...(result.knownCostBreakEvenFloorCents===null?[]:[{value:result.knownCostBreakEvenFloorCents,
@@ -210,8 +226,8 @@ export const moneyTools={
         ownerInputs:provided??null,knownOwnerLaborDailyCents,
         ownerMonthlyPayrollExtrasCents,
         ownerDailyPayrollExtrasCents,
-        ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"You told me",
-        ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
+        ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"owner_provided",
+        ownerMonthlyPayrollStatus:ownerMonthlyPayrollExtrasCents===null?"missing":"estimated",
         // Owner-supplied labor alone is NOT verified full fixed-cost coverage.
         missing,explain:breakEvenExplain,
         ...(fixedCostEstimates.length?{estimated:fixedCostEstimates}:{}),
@@ -244,7 +260,8 @@ export const moneyTools={
   get_cost_summary:{
     agentId:"leo",schema:period,description:"Observed business cost components; respect incomplete coverage.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-      const chosen=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone??"UTC"},ctx.resolveState);
+      if(!ctx.timezone)return unavailable("business_costs",null,["cafeTimezoneMissing"]);
+      const chosen=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(chosen.status!=="resolved")return periodChoicePayload("business_costs",chosen);
       const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getBusinessCostSummary)return unavailable("business_costs",p,["costSummaryReaderUnavailable"]);
@@ -254,9 +271,9 @@ export const moneyTools={
       const sum=safeSumCents(costs);
       const explain=s.completeness==="complete"&&
         Object.values(s.observed).every(Boolean)&&sum===s.knownTotalCents?
-        [{label:"Recorded business costs",inputs:[
-          {name:"ingredients",value:money(costs[0])},{name:"staff",value:money(costs[1])},
-          {name:"fees",value:money(costs[2])},{name:"overhead",value:money(costs[3])}],
+        [{label:{en,es,ar}[ctx.locale].MetricsNotes.itemRecordedBusinessCosts,inputs:[
+          {name:{en,es,ar}[ctx.locale].MetricsNotes.itemInputsIngredients,value:money(costs[0])},{name:{en,es,ar}[ctx.locale].MetricsNotes.itemInputsLabor,value:money(costs[1])},
+          {name:{en,es,ar}[ctx.locale].MetricsNotes.itemInputsFee,value:money(costs[2])},{name:{en,es,ar}[ctx.locale].MetricsNotes.itemInputsBills,value:money(costs[3])}],
           formula:"sum" as const,result:money(s.knownTotalCents),period:p,source:"get_cost_summary",
           provenance:s.estimatedInputs.length?"estimate" as const:"recorded" as const}]:[];
       return {source:"business_costs",period:p,agentId:"leo",missing:s.missingInputs,explain,

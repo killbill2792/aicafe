@@ -3,7 +3,7 @@ import { SYSTEM_PROMPT, agentInstructions } from "./loop.server";
 
 describe("attention and attendance base instructions", () => {
   it.each([false, true])("keeps honesty rules when style flag is %s", style => {
-    const prompt = agentInstructions(style);
+    const prompt = agentInstructions();
     expect(prompt).toContain("get_attention_items");
     expect(prompt).toContain("never infer attention from staff");
     expect(prompt).toContain("attendanceTracked is false");

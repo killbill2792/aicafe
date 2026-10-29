@@ -2,7 +2,7 @@ import { ArrowRight, Coins, Users, Milk, CreditCard } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import BackHeader from "@/components/shared/BackHeader";
-import Money from "@/components/shared/Money";
+import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
 import PageShell from "@/components/shared/PageShell";
 import ProfitGoalSimulator from "@/components/more/ProfitGoalSimulator";
 import TryScenario from "@/components/scenario/TryScenario";
@@ -23,9 +23,9 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   await requireOwnBusiness();
   const { tab: queryTab } = await searchParams;
   const tab: PlanTab = TABS.includes(queryTab as PlanTab) ? queryTab as PlanTab : "break-even";
-  const [t, money, economics, common, categories, locale] = await Promise.all([
+  const [t, money, economics, common, categories, notes, locale] = await Promise.all([
     getTranslations("BreakEven"), getTranslations("Money"), getTranslations("Economics"),
-    getTranslations("Common"), getTranslations("Categories"), getLocale(),
+    getTranslations("Common"), getTranslations("Categories"), getTranslations("MetricsNotes"), getLocale(),
   ]);
   const snapshot = tab !== "profit-goal" ? await getSnapshot() : null;
   const recovery = snapshot ? buildCostRecoveryViewModel(snapshot) : null;
@@ -34,18 +34,21 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const days = snapshot?.last28Days ?? [];
   const costs = snapshot ? summarizeResolvedSoldProductCosts(snapshot.breakEvenProductCosts ?? snapshot.menuItems) : null;
   const missing = [
-    ...(snapshot && (days.length < 7 || drinks?.unavailableReason === "missing_sales") ? [{ key: "sales", text: money("breakEvenNeedSales"), action: money("uploadSales"), href: "/more/uploads/sales" }] : []),
+    ...(snapshot && (days.length === 0 || drinks?.unavailableReason === "missing_sales") ? [{ key: "sales", text: money("breakEvenNeedSales"), action: money("uploadSales"), href: "/more/uploads/sales" }] : []),
     ...(snapshot?.runningCostLines.filter(line => line.isMissing && line.isExpected).map(line => ({
       key: line.categoryCode, text: categories(line.categoryCode), action: isBillCategory(line.categoryCode) ? money("addBills") : common("addCost"), href: missingCostDestination(line.categoryCode),
     })) ?? []),
     ...(costs?.missingProductCosts ? [{ key: "products", text: money("breakEvenNeedProductCosts"), action: money("addProductCosts"), href: "/menu" }] : []),
+    ...(drinks?.noteKeys.includes("breakEvenLaborMissing")||drinks?.noteKeys.includes("laborNoCoveredDays") ? [{ key: "labor", text: notes("breakEvenLaborMissing"), action: t("plannedStaffRow"), href: "/staff" }] : []),
     ...(days.some(day => day.cardFeesStatus === "missing") ? [{ key: "fees", text: money("breakEvenNeedProcessingFees"), action: money("fixFees"), href: "/more/processing-fees" }] : []),
   ];
   const pricing = tab === "profit-goal" ? await getProfitGoalSimulatorData() : null;
-  const moneyFormat = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
+  const currency=snapshot?.business.currency??pricing?.business.currency??null;
+  const formattedMoney=(cents:number)=>formatCafeCurrency(cents,locale,currency).text;
   const numberFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
 
   return <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
+    {days.length>0 && days.length<7 && <p role="note" className="text-[17px] text-ink-muted">{common("basedOnDays",{days:days.length})}</p>}
     <BackHeader title={t("planTitle")} subtitle={t("planSubtitle")} backHref="/more" backLabel={common("back")} />
     <nav aria-label={t("planTitle")} className="grid grid-cols-3 gap-1 rounded-2xl bg-surface p-1">
       {TABS.map(id => <Link key={id} href={`/more/plan?tab=${id}`} aria-current={tab === id ? "page" : undefined}
@@ -53,18 +56,22 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         {id === "break-even" ? t("planBreakEven") : id === "profit-goal" ? t("planProfitGoal") : t("planWhatIf")}
       </Link>)}
     </nav>
+    {!currency && <p role="note" className="text-[15px] text-ink-muted">{notes("cafeCurrencyMissing")}</p>}
     {tab === "break-even" && snapshot && recovery && drinks && hourly && <>
       <section className="rounded-card-lg bg-card p-5">
         <h2 className="text-[17px] font-bold">{money("monthlyBreakEven")}</h2>
-        <div className="mt-2 font-headline text-[36px] font-bold">{recovery.breakEven.kind === "ready" ? <Money cents={recovery.breakEven.breakEvenSalesCents} /> : "—"}</div>
+        <div className="mt-2 font-headline text-[36px] font-bold">{recovery.breakEven.kind === "ready" ? formattedMoney(recovery.breakEven.breakEvenSalesCents) : "—"}</div>
         {recovery.breakEvenUsesEstimates && recovery.breakEven.kind === "ready" && <p className="text-[15px] text-ink-muted">{money("estimateLower")}</p>}
         <p className="mt-2 text-[17px] text-ink-muted">{money("breakEvenSalesNeeded")}</p>
+        {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[17px] text-ink-muted">{notes("breakEvenLaborMissing")}</p>}
+        {drinks.noteKeys.includes("laborCoveragePartial") && <p className="mt-2 text-[17px] text-ink-muted">{notes("laborCoveragePartial")}</p>}
       </section>
       {recovery.breakEven.kind === "ready" && !drinks.unavailableReason && <section className="rounded-card-lg bg-card p-5">
         <p className="text-[17px] font-semibold">{t("subtitle")}</p>
         {!hourly.closed && <div className="mt-2 font-headline text-[40px] font-bold text-staff">{numberFormat.format(drinks.drinksNeededPerDay)}</div>}
         {!hourly.closed && <p className="text-[17px] font-semibold">{t("drinksToCover")}</p>}
         <p className="mt-2 text-[17px] text-ink-muted">{hourly.closed ? t("closedToday") : t("aboutPerHour", { count: numberFormat.format(hourly.perHour ?? 0) })}</p>
+        {drinks.noteKeys.includes("breakEvenLaborMissing") && <p className="mt-2 text-[17px] text-ink-muted">{notes("breakEvenLaborMissing")}</p>}
         {hourly.fallback && <Link href="/more/cafe-profile?focus=hours" className="mt-3 inline-flex min-h-12 items-center text-[17px] font-bold text-staff underline">{t("setCafeHours")}</Link>}
       </section>}
       {missing.length > 0 && <section className="rounded-card-lg bg-card p-5">
@@ -84,7 +91,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           { label: money("processingFeesAtBreakEven"), amount: recovery.breakEven.processingFeesAtBreakEvenCents, href: "/more/processing-fees", Icon: CreditCard, tone: "bg-surface text-ink" },
         ].map(({ label, amount, href, Icon, tone }) => <Link key={href} href={href} className="flex min-h-12 items-center gap-2 border-b border-line py-3 text-[17px] text-ink no-underline last:border-0">
           <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon aria-hidden="true" size={20} /></span>
-          <span className="min-w-0 flex-1">{label}</span><span className="font-bold">{moneyFormat.format(amount / 100)}</span>
+          <span className="min-w-0 flex-1">{label}</span><span className="font-bold">{formattedMoney(amount)}</span>
           <ArrowRight aria-hidden="true" size={18} className="shrink-0 rtl:rotate-180" />
         </Link>)}
       </section>}
@@ -110,7 +117,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         className="mb-3 inline-flex min-h-12 items-center text-[17px] font-bold text-staff underline">
         {t("setCafeHours")}
       </Link>}
-      <TryScenario hoursComplete={hasCompletePlanHours(snapshot.business.openHours)}
+      <TryScenario currency={currency} hoursComplete={hasCompletePlanHours(snapshot.business.openHours)}
         salesCoverageGaps={hasUncoveredPlanOperatingDates(days, snapshot.business.openHours, snapshot.todayDateStr)}
         closedDaySales={hasPlanSalesOnClosedDays(days, snapshot.business.openHours)}
         items={(snapshot.breakEvenProductCosts ?? snapshot.menuItems).map(item => ({

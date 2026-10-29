@@ -22,7 +22,7 @@ const latte=registerLoopCapability({
  inputSchema:z.strictObject({increaseCents:z.number().int().positive()}),effectSchema,
  simulate:async(_scope,input)=>{
    const scenario=simulatePriceExperiment({productId:item,productName:"Latte",currentPriceCents:500,
-     increaseCents:input.increaseCents,ingredientCostCents:125,units7Days:70});
+     increaseCents:input.increaseCents,ingredientCostCents:125,units7Days:70,currency:"USD"});
    if(!scenario)throw new Error("unavailable");
    const {beforeContributionCents,afterContributionCents,
      estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,
@@ -61,6 +61,7 @@ const bill=registerLoopCapability({
    recommendation:"keep",source:"review_status"}),
 });
 class MemoryRepo implements LoopRepository{
+  async cafeTimezone(){return "America/Los_Angeles";}
  proposal:LoopProposal|null=null;
  samplesList:LoopSample[]=[];
  report:LoopReport|null=null;

@@ -40,7 +40,10 @@ export async function getProfitGoalSimulatorData(): Promise<ProfitGoalSimulatorD
   );
 
   let unavailableReason: ProfitGoalSimulatorData["unavailableReason"] = null;
-  if (pricing.business.daysWithSalesInWindow < 7) unavailableReason = "NOT_ENOUGH_SALES";
+  // Short history is allowed (labeled estimated below). Missing cost inputs are not:
+  // treating unknown payroll, fees, product or operating costs as zero would inflate
+  // the margin and could claim the target is already met.
+  if (pricing.business.daysWithSalesInWindow === 0) unavailableReason = "NOT_ENOUGH_SALES";
   else if (pricing.business.processingFeesStatus === "missing") unavailableReason = "MISSING_PROCESSING_FEES";
   else if (hasMissingProductCosts) unavailableReason = "MISSING_PRODUCT_COSTS";
   else if (pricing.business.operatingCostsStatus === "missing") unavailableReason = "MISSING_OPERATING_COSTS";
@@ -61,10 +64,10 @@ export async function getProfitGoalSimulatorData(): Promise<ProfitGoalSimulatorD
   const currentMarginQuality =
     !current
       ? "missing" as const
-      : pricing.business.processingFeesStatus === "estimated" ||
-          pricing.business.productCostsStatus === "estimated" ||
-          pricing.business.payrollCostsStatus === "estimated" ||
-          pricing.business.operatingCostsStatus === "estimated"
+      : pricing.business.processingFeesStatus !== "actual" ||
+          hasMissingProductCosts || pricing.business.productCostsStatus !== "actual" ||
+          pricing.business.payrollCostsStatus !== "actual" ||
+          pricing.business.operatingCostsStatus !== "actual" || pricing.business.daysWithSalesInWindow < 7
         ? "estimated" as const
         : "actual" as const;
 

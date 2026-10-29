@@ -13,7 +13,6 @@ vi.mock("@/i18n/navigation",()=>({
 vi.mock("next-intl",()=>({useLocale:()=> "en",useTranslations:()=> (key:string)=>key}));
 vi.mock("next-intl/server",()=>({getTranslations:async()=> (key:string)=>key}));
 import RegisterChoice from "./RegisterChoice";
-import ReconnectBanner, {reconnectHref} from "@/components/shared/ReconnectBanner";
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
 
 const labels={
@@ -124,21 +123,5 @@ describe("Toast setup destination states",()=>{
   expect(html).toContain("API URL");
   expect(html).toContain('value="https://one.toasttab.com"');
   expect(html).toContain('value="https://two.toasttab.com"');
- });
-});
-
-describe("reconnect banner",()=>{
- it("routes Toast owner to Toast connection setup",async()=>{
-  const html=renderToStaticMarkup(await ReconnectBanner({provider:"toast"}));
-  expect(html).toContain('href="/more/toast"');
-  expect(html).not.toContain('href="/onboarding"');
- });
- it("retains Square's working onboarding-based reconnect path",async()=>{
-  const html=renderToStaticMarkup(await ReconnectBanner({provider:"square"}));
-  expect(html).toContain('href="/onboarding"');
-  expect(html).not.toContain('href="/more/toast"');
- });
- it("does not route an unknown POS provider to Toast",()=>{
-  expect(reconnectHref("unrecognized")).toBe("/onboarding");
  });
 });

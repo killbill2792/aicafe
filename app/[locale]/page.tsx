@@ -22,7 +22,8 @@ import { homeMoneyQuality } from "@/components/home/homeMoneyQuality";
 
 
 
-import { formatCents } from "@/lib/calc";
+import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
+import {readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 
 
 
@@ -54,7 +55,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
   // Match Money’s selected-period evidence; the default month snapshot cannot prove Today or Week ingredient coverage.
-  const [snapshot, menu] = await Promise.all([getSnapshot(period), getMenuControlCenter()]);
+  const [snapshot, menu, identity] = await Promise.all([getSnapshot(period), getMenuControlCenter(),
+    signedInUser?readSupervisorCafeIdentity(await getActiveBusinessId(signedInUser.id)):Promise.resolve(null)]);
+  const cafeCurrency=identity?.currency??null;
   const vm = buildHomeViewModel(snapshot, period);
   // Money and Supervisor agree on known costs and their evidence. Home must not
   // bypass that canonical completeness gate when showing owner profit.
@@ -65,7 +68,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const tAccess=await getTranslations("FreeAccess");
   const items=await getAttentionItems({period,locale,snapshot,menu});
   const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
-  const money=(cents:number)=>formatCents(cents,locale);
+  const money=(cents:number)=>formatCafeCurrency(cents,locale,cafeCurrency).text;
   const sales=vm.coverage.actualDays===0?"—":money(moneyVm.salesCents);
   const costs=costCompleteness==="unavailable"||moneyVm.totalCostsCents===null?"—":money(moneyVm.totalCostsCents);
   const kept=canShowProfit&&moneyVm.ownerProfitCents!==null?money(moneyVm.ownerProfitCents):"—";
@@ -77,13 +80,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const comparisonCaption=profitChangePct===null?null:t("changeVsLastPeriod",{
     pct:number(Math.abs(Math.round(profitChangePct))),
     direction:profitChangePct>=0?t("more"):t("less"),
-  });
+  })+(vm.comparisonState.kind==="available"&&vm.comparisonState.partialPeriod?" · "+tCommon("partialPeriod"):"");
   return <PageShell wide className="flex flex-col gap-4 px-3 pb-4 pt-3 md:px-4 md:pt-4">
     {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px]">
       {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
       {" "}<Link href="/pricing" className="underline">{tAccess("haveCode")}</Link>
     </p>}
-    <SupervisorHomePanel
+    <SupervisorHomePanel cafeCurrency={cafeCurrency}
       chatStartData={{
         period,sales,costs,kept,attention:items,
         partial:hasPartial,estimated:hasEstimatedCosts,
@@ -108,7 +111,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       chatUnavailableReason={chatReadiness.reason}
           chatCopy={{
         photoRequest:tChat("photoRequest"),
-        clarifyFillError:tChat("clarifyFillError"),
+        clarifyFillError:tChat("clarifyFillError"),clarifySaveError:tChat("clarifySaveError"),
         clarifyCountSummary:tChat("clarifyCountSummary"),clarifyPurchaseSummary:tChat("clarifyPurchaseSummary"),
         clarifyOther:tChat("clarifyOther"),clarifySend:tChat("clarifySend"),
         clarifyYouChose:tChat("clarifyYouChose"),clarifySkipped:tChat("clarifySkipped"),

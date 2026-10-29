@@ -12,6 +12,7 @@ import { formatCents } from "@/lib/calc";
 import type { BucketResult } from "@/lib/calc";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import type { BusinessSnapshot } from "@/lib/data/types";
+import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 import { getMonthCalendar } from "@/lib/data/getMonthCalendar";
 import { RUNNING_COST_CODES } from "@/lib/data/runningCostCatalog";
 import { buildCostRecoveryViewModel } from "@/lib/viewmodels/moneyViewModel";
@@ -96,6 +97,8 @@ function BucketRow({
 
 export default async function CostRecoveryView({ snapshot, calMonthKey, toastConnected }: { snapshot: BusinessSnapshot; calMonthKey: string; toastConnected: boolean }) {
   const t = await getTranslations("Money");
+  const metrics=await getTranslations("MetricsNotes");
+  const noteFor=(key:string)=>metrics.has(key as never)?metrics(key as never):t("partialPill");
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");
   const locale = await getLocale();
@@ -113,6 +116,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
     todayDateStr: snapshot.todayDateStr,
     isCurrentMonth,
     projectedDays: isCurrentMonth ? vm.projectedDays : [],
+    ownerFeePlans:(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans,
   });
   const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(new Date(`${calMonthKey}-01T00:00:00`));
   const firstWeekday = new Date(`${calMonthKey}-01T00:00:00`).getDay();
@@ -125,21 +129,13 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
   const totalPaidBackCents = Math.max(0, vm.totalCents - totalCentsToGo);
   const overallPctCovered = vm.totalCents === 0 ? 100 : (totalPaidBackCents / vm.totalCents) * 100;
 
-  const breakEvenUnavailable =
-    vm.breakEven.kind === "unavailable"
-      ? vm.breakEven.reason === "NOT_ENOUGH_SALES"
-        ? t("breakEvenNeedSales")
-        : vm.breakEven.reason === "MISSING_BILLS"
-          ? t("breakEvenNeedBills")
-          : vm.breakEven.reason === "MISSING_PRODUCT_COSTS"
-            ? t("breakEvenNeedProductCosts")
-            : vm.breakEven.reason === "MISSING_PROCESSING_FEES"
-              ? t("breakEvenNeedProcessingFees")
-              : t("breakEvenUnavailable")
-      : null;
+  const breakEvenUnavailable=vm.breakEven.kind==="unavailable"?
+    vm.breakEven.reason==="NO_SALES"?t("breakEvenNeedSales"):t("breakEvenUnavailable"):null;
 
-  const recoveryAction = vm.breakEven.kind === "unavailable"
-    ? breakEvenAction(vm.breakEven.reason, toastConnected, snapshot.runningCostLines) : null;
+  const actualDays=new Set(snapshot.last28Days.filter(day=>day.netSalesCents>0).map(day=>day.date)).size;
+  const recoveryAction=vm.breakEven.kind==="unavailable"&&vm.breakEven.reason==="NO_SALES"?
+    breakEvenAction("NOT_ENOUGH_SALES",toastConnected,snapshot.runningCostLines):
+    actualDays>0&&actualDays<7?breakEvenAction("PARTIAL_SALES",toastConnected,snapshot.runningCostLines):null;
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -153,6 +149,8 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
                   <Money cents={vm.breakEven.breakEvenSalesCents} />
                 </div>
                 <p className="mt-2 text-sm leading-snug text-ink-muted">{t("breakEvenSalesNeeded")}</p>
+                 {actualDays>0&&<p role="note" className="mt-2 text-sm text-ink-muted">{tCommon("basedOnDays",{days:actualDays})}</p>}
+                 {recoveryAction&&<Link href={recoveryAction.href} className="mt-2 inline-flex min-h-12 items-center text-sm font-bold underline">{t(recoveryAction.labelKey)}</Link>}
               </>
             ) : (
               <>
@@ -168,6 +166,9 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
           )}
         </div>
 
+        {vm.breakEvenNotes.length>0&&<p className="mt-2 text-sm text-ink-muted">
+          {[...new Set(vm.breakEvenNotes)].map(noteFor).join(" · ")}
+        </p>}
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           <div className="rounded-2xl bg-paper p-3">
             <span className="block text-xs font-semibold text-ink-muted">{t("monthlyBillsTotal")}</span>
@@ -207,6 +208,9 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
         ))}
       </section>
 
+      {calendarVm.noteKeys.length>0&&<p className="text-sm text-ink-muted">
+        {calendarVm.noteKeys.map(noteFor).join(" · ")}
+      </p>}
       <MonthCalendar
         toastConnected={toastConnected}
         monthLabel={monthLabel}

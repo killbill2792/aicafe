@@ -4,11 +4,15 @@ import {formatInTimeZone,fromZonedTime} from "date-fns-tz";
 import {normalizeOpenHours,regularHoursStateForDate} from "@/lib/business/openHours";
 import {dateOffset,calendarMonth} from "@/lib/calc/periods";
 import {figure,addOwnerPayrollExtras,fixedCardFeeForCoveredSales,type Economics} from "@/lib/calc/supervisorEconomics";
-import {payrollDayCoverage} from "@/lib/calc/payrollDayCoverage";
+import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {totalMonthlyRecurringCostsCents} from "@/lib/expenses/recurringMonthlyTotal";
 import {getPricingInputs,type PricingItemInput} from "./getPricingInputs";
+import {getBusinessSnapshotFromDb} from "./snapshot.server";
+import {summarizeResolvedSoldProductCosts} from "@/lib/calc";
 import {getOwnerConfirmedProcessingFeePlans,ownerConfirmedPlanForDate} from "@/lib/pos/processingFeeEstimate.server";
 import {validateOwnerConfirmedProcessingFeePlan} from "@/lib/pos/processingFeeEstimate";
+import {cardFeesForDays} from "@/lib/metrics/core/fees";
+import {laborForPeriod,type LaborRecord} from "@/lib/metrics/core/labor";
 
 export type SupervisorEconomicsRead={economics:Economics;items:PricingItemInput[];
  ownerMonthlyPayrollExtrasCents:number|null;ownerIngredientRate:number|null;
@@ -22,21 +26,22 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const salesSince=dateOffset(asOf,-364);
  const business=await db.from("businesses").select("timezone,payroll_tax_rate,target_ingredient_cost_rate,target_ingredient_cost_rate_status,owner_monthly_payroll_extras_cents").eq("id",businessId).single();
  if(business.error)throw business.error;
- const [pricing,locations,recurring,rollups,connections,employees,feePlans]=await Promise.all([
+ const [pricing,locations,recurring,rollups,employees,feePlans,resolvedItems]=await Promise.all([
   getPricingInputs(db,businessId),
   db.from("locations").select("open_hours").eq("business_id",businessId).limit(1),
   db.from("recurring_costs").select("amount_cents,frequency,is_estimate,active_from,active_to")
    .eq("business_id",businessId).lte("active_from",asOf),
-  db.from("daily_rollups").select("business_date,sales_data_status,net_sales_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,drinks_count,orders_count")
+  db.from("daily_rollups").select("business_date,sales_data_status,net_sales_cents,ingredients_cents,card_fees_cents,card_fees_status,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,drinks_count,orders_count")
    .eq("business_id",businessId).gte("business_date",salesSince).lte("business_date",asOf).limit(500),
-  db.from("pos_connections").select("provider").eq("business_id",businessId).eq("status","active"),
   db.from("employees").select("id,display_name,role,default_hourly_wage_cents").eq("business_id",businessId).eq("active",true).limit(500),
-  getOwnerConfirmedProcessingFeePlans(db,businessId)
+  getOwnerConfirmedProcessingFeePlans(db,businessId),
+  getBusinessSnapshotFromDb(db,businessId,"month",asOf),
  ]);
- for(const response of [locations,recurring,rollups,connections,employees])
+ for(const response of [locations,recurring,rollups,employees])
   if(response.error)throw response.error;
  if((employees.data??[]).length>=500)throw new Error("Employee roster page truncated");
- const timezone=business.data?.timezone??"America/Los_Angeles";
+ if(!business.data?.timezone)throw new Error("Café timezone missing");
+ const timezone=business.data.timezone;
  const hours=normalizeOpenHours(locations.data?.[0]?.open_hours);
  const open=(day:string)=>regularHoursStateForDate(hours,day)!=="closed";
  const dayList:string[]=[];
@@ -54,36 +59,27 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   .lte("clock_in",fromZonedTime((latest??asOf)+"T23:59:59",timezone).toISOString()).limit(2001);
  if(timecards.error)throw timecards.error;
  if((timecards.data??[]).length>2000)throw new Error("Labor timecard page truncated");
- const payEvidence=payrollDayCoverage(
-  (timecards.data??[]).filter(row=>row.source_type!=="owner_schedule").map(row=>({
-   businessDate:formatInTimeZone(new Date(row.clock_in),timezone,"yyyy-MM-dd"),
-   clockOut:row.clock_out,hourlyWageCents:row.hourly_wage_cents===null?null:Number(row.hourly_wage_cents)
-  })),
-  (rollups.data??[]).map(row=>({
-   businessDate:row.business_date,
-   staffWagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
-   staffTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
-   laborWageStatus:row.labor_wage_status,taxStatus:row.staff_tax_status
-  }))
- );
- const recorded=payEvidence.coveredDates;
+ const laborRows:LaborRecord[]=(rollups.data??[]).map(row=>({date:row.business_date,
+  wagesCents:row.staff_wages_cents===null?null:Number(row.staff_wages_cents),
+  staffTaxCents:row.staff_tax_cents===null?null:Number(row.staff_tax_cents),
+  laborWageStatus:row.labor_wage_status,staffTaxStatus:row.staff_tax_status}));
+ const recorded=new Set(laborRows.filter(row=>row.wagesCents!==null&&
+  row.staffTaxCents!==null&&row.laborWageStatus!=="missing").map(row=>row.date));
  const laborDays=laborWindow.filter(day=>recorded.has(day));
  const laborMissing=laborWindow.filter(day=>!recorded.has(day));
- // Match the numerator to the same covered sales days as the labor projection denominator.
- const payrollRows=(rollups.data??[]).filter(row=>laborDays.includes(row.business_date));
- const wages=payrollRows.reduce((sum,row)=>sum+Number(row.staff_wages_cents)+Number(row.staff_tax_cents),0);
- const estimatedTax=payrollRows.some(row=>payEvidence.taxEstimatedDays.has(row.business_date));
- const sufficientLabor=laborDays.length>=7&&laborWindow.length>0&&laborDays.length/laborWindow.length>=.5;
- const projectedLabor=sufficientLabor?Math.round(wages*dayList.length/laborDays.length):null;
- const ownerMonthlyPayrollExtrasCents=business.data?.owner_monthly_payroll_extras_cents===null||
-  business.data?.owner_monthly_payroll_extras_cents===undefined?null:Number(business.data.owner_monthly_payroll_extras_cents);
- const monthlyTotal=addOwnerPayrollExtras(projectedLabor,ownerMonthlyPayrollExtrasCents);
- const payroll=figure(monthlyTotal,
-  ownerMonthlyPayrollExtrasCents!==null||laborMissing.length||estimatedTax?"estimate":"actual",
-  !sufficientLabor?"Labor missing: "+laborDays.length+" of "+laborWindow.length+" covered sales days have usable payroll":
-  laborMissing.length?"Clocked wages incomplete; "+laborMissing.length+" labor days missing; owner extras do not replace wages":
-  ownerMonthlyPayrollExtrasCents!==null?"Projected clocked wages plus owner-reported monthly extras (once)":
-  estimatedTax?"Employer payroll tax estimated":"Clocked wages plus payroll tax",laborMissing);
+ const ownerMonthlyPayrollExtrasCents=business.data?.owner_monthly_payroll_extras_cents==null?
+  null:Number(business.data.owner_monthly_payroll_extras_cents);
+ // Same core as Home/Money: project from every usable payroll day; do not
+ // withhold evidence simply because there are fewer than seven covered days.
+ const laborEvidence=laborForPeriod(dayList.map(date=>({date})),laborRows,null,
+  ownerMonthlyPayrollExtrasCents===null?null:{monthlyCents:ownerMonthlyPayrollExtrasCents,
+   from:month.from,to:month.to});
+ const payroll=figure(laborEvidence.projectedMonthlyLaborCents,
+  laborEvidence.basis==="recorded"?"actual":"estimate",
+  laborEvidence.coveredDays<laborEvidence.totalDays?"laborPartialCoverage":
+    ownerMonthlyPayrollExtrasCents!==null?"laborOwnerExtras":
+    laborEvidence.notes.includes("laborEstimated")?"laborEstimated":"laborRecorded",
+  laborMissing,{covered:laborDays.length,total:laborWindow.length});
  const active=(recurring.data??[]).filter(row=>!row.active_to||row.active_to>=asOf);
  const billTotal=active.length?totalMonthlyRecurringCostsCents(active.map(row=>({
   amountCents:Number(row.amount_cents),frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly"
@@ -96,9 +92,8 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const billsPartial=running.missingRunningCategories.length>0;
  const monthlyBills=figure(running.monthlyRunningCents??knownBills,
   !billsPartial&&running.runningStatus==="recorded"?"actual":billStatus==="estimate"?"estimate":"estimate",
-  billsPartial?"Known running costs only; missing categories: "+running.missingRunningCategories.join(", "):
-  running.monthlyRunningCents===null?"Known recurring bills only; additional categories may be missing":
-   "Saved running expenses with actual-by-category replacement");
+  billsPartial?"billsPartial":running.monthlyRunningCents===null?"billsKnownRecurring":"billsRecorded",
+  [],{missing:running.missingRunningCategories.join(", ")});
  const revenue=pricing.business.monthlyRevenueCents;
  const soldCount=pricing.items.reduce((sum,item)=>sum+Math.max(0,item.unitsSoldInWindow),0);
  const recipesReady=pricing.business.productCostsStatus!=="missing"&&revenue>0&&soldCount>0;
@@ -108,14 +103,20 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const ingredientStatus=recipeRate!==null?"actual":savedRate!==null?
   (business.data?.target_ingredient_cost_rate_status==="owner"||
     business.data?.target_ingredient_cost_rate_status==="confirmed"?"owner":"estimate"):"missing";
- const hasToast=(connections.data??[]).some(row=>row.provider==="toast");
- const feeBasis=pricing.menuPriceBasis;
- const feeRecorded=feeBasis.feeStatus!=="missing"&&
-  (feeBasis.processingFeeDenominatorCents??0)>0;
- const feeRate=feeRecorded?Number(feeBasis.processingFeeNumeratorCents)/
-   Number(feeBasis.processingFeeDenominatorCents):hasToast?.029:null;
- const feeStatus=feeRecorded?feeBasis.feeStatus==="actual"?"actual":"estimate":
-  hasToast?"estimate":"missing";
+ const hasCoveredSales=(rollups.data??[]).some(row=>row.sales_data_status!=="missing"&&
+  Number(row.net_sales_cents)>0);
+ const allFeeDays=(rollups.data??[]).map(row=>({
+  date:row.business_date,netSalesCents:Number(row.net_sales_cents??0),
+  cardFeesCents:row.card_fees_cents===null?null:Number(row.card_fees_cents),
+  cardFeesStatus:row.card_fees_status,ordersCount:Number(row.orders_count??0),
+  salesDataStatus:row.sales_data_status,
+ }));
+ const coveredFeeDays=allFeeDays.filter(day=>day.salesDataStatus!=="missing"&&
+  day.date>=shiftCafeDate(asOf,-28)&&day.date<asOf);
+ const fees=cardFeesForDays(coveredFeeDays,feePlans);
+ const feeSalesCents=coveredFeeDays.reduce((sum,day)=>sum+day.netSalesCents,0);
+ const feeRate=feeSalesCents>0?fees.amountCents/feeSalesCents:null;
+ const feeStatus=feeRate===null?"missing":fees.basis==="actual"?"actual":"estimate";
  const salesDates=(rollups.data??[]).filter(row=>coveredDates.has(row.business_date));
  const totalDrinks=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.drinks_count??0)),0);
  const totalOrders=salesDates.reduce((sum,row)=>sum+Math.max(0,Number(row.orders_count??0)),0);
@@ -140,14 +141,25 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   monthlyBills,monthlyStaff:payroll,
   knownMonthlyLaborExtrasCents:ownerMonthlyPayrollExtrasCents,
   monthlyRevenue:figure(monthlyRevenueCents,"estimate",
-    "Current month's covered sales projected across open days; not recorded month-end revenue"),
+    "monthlyRevenueCovered"),
   ingredientRate,feeRate,ingredientStatus,feeStatus,averagePriceCents,monthlyUnits,feePlan,
+  ownerFeePlans:feePlans,
+  observedIngredientCentsOverride:summarizeResolvedSoldProductCosts((resolvedItems.breakEvenProductCosts??resolvedItems.menuItems).filter(x=>x.quantitySoldLast28Days>0)).totalCostCents,
+  missingIngredientCosts:summarizeResolvedSoldProductCosts((resolvedItems.breakEvenProductCosts??resolvedItems.menuItems).filter(x=>x.quantitySoldLast28Days>0)).missingProductCosts,
   daysInMonth:dayList.length||Number(month.to.slice(-2)),
   laborCoveredDays:laborDays.length,laborWindowDays:laborWindow.length,
+  laborEvidence:{dates:dayList.map(date=>({date})),records:laborRows},
   salesCoverage:first&&latest?{from:first,to:latest,openDays:salesOpenDays}:undefined,
   targetMargin:pricing.business.targetOperatingMargin??.15,missingDays:laborMissing,
   payrollTaxRate:Number(business.data.payroll_tax_rate??.12),
   missingBillCategories:running.missingRunningCategories,
+  asOfDate:asOf,
+  observedDays:(rollups.data??[]).filter(row=>row.sales_data_status!=="missing")
+   .map(row=>({date:row.business_date,netSalesCents:Number(row.net_sales_cents??0),
+     ingredientsCents:Number(row.ingredients_cents??0),
+     cardFeesCents:Number(row.card_fees_cents??0),
+      cardFeesStatus:row.card_fees_status??"missing",
+      ordersCount:Number(row.orders_count??0),drinksCount:Number(row.drinks_count??0)})),
  },items:pricing.items,ownerMonthlyPayrollExtrasCents,ownerIngredientRate:savedRate,
  staff:(employees.data??[]).map(person=>{
   const worked=(timecards.data??[]).filter(card=>card.source_type!=="owner_schedule"&&

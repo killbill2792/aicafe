@@ -1,0 +1,108 @@
+import {createHash} from "node:crypto";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
+import {catalogForMissing} from "./catalog";
+import {savedValue,itemCostFactKey,type SavedFact} from "./inject";
+import type {AskReason} from "./needsAsk";
+import type {AgentToolResult,AgentLocale} from "@/lib/ai/agent/tools";
+const copyByLocale={en:en.OwnerQuestions,es:es.OwnerQuestions,ar:ar.OwnerQuestions};
+const labels:Record<string,keyof typeof en.OwnerQuestions>={
+ payroll:"payroll",bills:"bills",cardFee:"cardFee",payrollExtras:"payrollExtras",
+ cardSalesShare:"cardSalesShare",cardTransactionsShare:"cardTransactionsShare",
+ cardFixedFee:"cardFixedFee",averageTicket:"averageTicket",processor:"processor",
+ itemCost:"itemCost",hours:"hours",schedule:"schedule",generic:"generic",
+ milkBase:"milkBase",milkTarget:"milkTarget",milkNoSize:"milkNoSize",milkVolume:"milkVolume",milkBaseCost:"milkBaseCost",milkOatCost:"milkOatCost",milkTargetCost:"milkTargetCost"
+};
+export function ownerFactLabel(key:string,labelKey:string,locale:AgentLocale):string{
+ const copy=copyByLocale[locale];
+ const match=/^milk_([a-z0-9_]+)_serving_cost_cents:([0-9]{1,2})oz$/u.exec(key);
+ const type=match?.[1].replace(/_milk$/u,"");
+ const milkName=match?({
+  oat:copy.milkTypeOat,almond:copy.milkTypeAlmond,
+  soy:copy.milkTypeSoy,coconut:copy.milkTypeCoconut
+ } as Record<string,string>)[type??""]??type?.replace(/_/g," ")??"":"";
+ const label=match&&match[1]!=="base"?
+  copy.milkTargetCost.replace("{milk}",milkName):
+  copy[labels[labelKey]??"generic"];
+ const size=/^milk_(?:ml|[a-z0-9_]+_serving_cost_cents):([0-9]{1,2})oz$/u.exec(key);
+ return size?label+" ("+size[1]+" oz)":label;
+}
+export function readableSource(source:string,locale:AgentLocale):string{
+ const key: keyof typeof en.OwnerQuestions=/schedule|shift|coverage|staff|team/.test(source)?"shifts":
+  /payroll|labor|employee|clock/.test(source)?"labor":
+  /fees|processing/.test(source)?"fees":
+  /price|menu|item|product|ingredient/.test(source)?"menu":
+  /profit|break_even/.test(source)?"profit":
+  /expense|bill|cost/.test(source)?"expenses":
+  /inventory|stock|usage/.test(source)?"inventory":
+  /sale|order|hour/.test(source)?"sales":"generic";
+ return copyByLocale[locale][key];
+}
+export function genericQuestionKey(question:string):string{
+ return "owner_question_"+createHash("sha256").update(question.trim().toLowerCase()).digest("hex").slice(0,20);
+}
+/** Questions about dated shifts must be scoped to the requested window.
+ * One week's answer is not evidence for any other week's schedule. */
+export function scopedOwnerQuestionKey(
+ reason:AskReason,results:readonly AgentToolResult[],ownerText:string
+):string{
+ const tool=reason.tool??"";
+ if(catalogForMissing(reason.key).factKey==="unit_cost_cents"){
+  const candidates=results.filter(r=>r.source!=="ask_owner"&&
+   (typeof r.itemId==="string"||typeof r.itemName==="string"));
+  const scoped=results.filter(r=>r.source===tool&&
+   (typeof r.itemId==="string"||typeof r.itemName==="string"));
+  const identities=new Set((scoped.length?scoped:candidates).map(r=>
+   itemCostFactKey(typeof r.itemId==="string"?r.itemId:null,
+    typeof r.itemName==="string"?r.itemName:null)).filter(Boolean));
+  // A model's rejected global card may use a verified item from another tool,
+  // but never choose arbitrarily between two different menu items.
+  const key=identities.size===1?[...identities][0]:null;
+  // Unresolved items must never receive a café-wide saved unit cost.
+  return key??genericQuestionKey("unresolved-item-cost:"+ownerText);
+ }
+ const period=results.find(r=>r.source===tool)?.period;
+ if(period&&/^\d{4}-\d{2}-\d{2}$/.test(period.from)&&
+   /^\d{4}-\d{2}-\d{2}$/.test(period.to)&&
+   /(?:schedule|shift|coverage)/iu.test(tool+" "+reason.key))
+   return "schedule:"+period.from+":"+period.to;
+ if(reason.kind==="uncertain"||reason.kind==="number")return genericQuestionKey(ownerText);
+ if((reason.kind==="empty"||reason.kind==="failed"||
+     reason.kind==="missing"&&reason.key===tool)&&
+    tool!=="suggest_new_item_price")
+   return genericQuestionKey(tool+"|"+ownerText);
+ return reason.key;
+}
+export function questionFromReasons(
+ reasons:readonly AskReason[],results:readonly AgentToolResult[],
+ ownerText:string,locale:AgentLocale,savedFacts:readonly SavedFact[]
+){
+ const copy=copyByLocale[locale];
+ const effective=reasons.some(reason=>reason.tool)?
+  reasons.filter(reason=>reason.kind!=="uncertain"&&reason.kind!=="number"):reasons;
+ const wanted=Array.from(new Map(effective.flatMap(reason=>{
+  const key=scopedOwnerQuestionKey(reason,results,ownerText);
+  const definition=catalogForMissing(key);
+  const keys=definition.factKey==="card_fee_rate_percent"?[
+    "card_fee_rate_percent","card_sales_share_percent","card_transactions_share_percent",
+    "card_fixed_fee_cents","card_processor_label","card_average_ticket_cents"]:[definition.factKey];
+  return keys.map(factKey=>[factKey,{reason,definition:catalogForMissing(factKey)}] as const);
+ })).values()).filter(x=>savedValue(savedFacts,x.definition.factKey)===undefined).slice(0,6);
+ if(!wanted.length)return null;
+ const first=wanted[0],r=results.find(x=>x.source===first.reason.tool);
+ const period=r?.period?String(r.period.from)+" – "+String(r.period.to):"";
+ const detail=first.reason.kind==="failed"?copy.failed:first.reason.kind==="empty"?copy.empty:copy.missing;
+ const word=(x:typeof first)=>{
+  return ownerFactLabel(x.definition.factKey,x.definition.labelKey,locale);
+ };
+ const question=copy.question.replace("{source}",readableSource(first.reason.tool??"",locale)+(period?" ("+period+")":""))
+  .replace("{detail}",detail).replace("{what}",wanted.map(word).join(", ")).slice(0,200);
+ return {kind:"facts" as const,question,options:[] as [],allowOther:false as const,
+  fields:wanted.map(x=>({
+   key:x.definition.factKey,label:word(x),inputType:x.definition.type,
+   units:[] as string[],defaultUnit:"",
+   ...(x.definition.type==="choice"?{choices:[
+    {label:copy.generic,value:"other"},{label:copy.schedule,value:"scheduled"}]}:{})
+  }))};
+}

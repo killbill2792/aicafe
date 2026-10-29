@@ -3,11 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const threadId = "11111111-1111-4111-8111-111111111111";
 const businessId = "22222222-2222-4222-8222-222222222222";
 const ownerId = "33333333-3333-4333-8333-333333333333";
-const stub = vi.hoisted(() => ({ rows: [] as Array<Record<string, unknown>>, jobsEnabled: true, lookups: [] as string[] }));
+const stub = vi.hoisted(() => ({ rows: [] as Array<Record<string, unknown>>, lookups: [] as string[] }));
 
-vi.mock("@/lib/ai/agent/flags", () => ({
-  chatExperienceFlags: () => ({ style: false, jobs: stub.jobsEnabled, memory: false }),
-}));
 vi.mock("@/lib/ai/conversations/auth.server", () => ({
   authenticatedConversationContext: async () => ({
     scope: { businessId: "22222222-2222-4222-8222-222222222222", ownerUserId: "33333333-3333-4333-8333-333333333333" },
@@ -58,7 +55,7 @@ const job = (id: string, status: "running" | "failed" | "done", created: string)
 const request = async () => (await GET(new Request("http://localhost:3000/api/ai/threads/" + threadId + "/jobs"),
   { params: Promise.resolve({ threadId }) })).json() as Promise<{ job: { id: string; status: string } | null }>;
 
-beforeEach(() => { stub.rows = []; stub.jobsEnabled = true; stub.lookups = []; });
+beforeEach(() => { stub.rows = []; stub.lookups = []; });
 
 describe("GET /jobs priority", () => {
   it("returns an older running retry before a newer terminal job", async () => {
@@ -82,9 +79,4 @@ describe("GET /jobs priority", () => {
     expect(stub.lookups).toEqual(["running"]);
   });
 
-  it("returns no job without querying the table when the flag is off", async () => {
-    stub.jobsEnabled = false;
-    expect((await request()).job).toBeNull();
-    expect(stub.lookups).toEqual([]);
-  });
 });

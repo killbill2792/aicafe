@@ -5,7 +5,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 
 export type CoveredSalesWindow={
- period:CalcPeriod;label:string|null;coverageFallback:CoverageFallback|null;
+ period:CalcPeriod;label:string|null;labelKey?:string;labelParams?:{from:string;to:string};coverageFallback:CoverageFallback|null;
  todayImported?:boolean;lastFullDay?:string|null;
  lastFullDayTotals?:{netSalesCents:number|null;ordersCount:number|null;drinksCount:number|null}|null;
  lastRecordedDay?:string|null;
@@ -26,7 +26,13 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
     from:dateOffset(requested.to,-364),to:requested.to,
    });
    if(!history.available||!history.value.length)return unchanged;
-   return coveredWindow(requested,history.value.map(day=>day.date));
+   const window=coveredWindow(requested,history.value.map(day=>day.date));
+   if(!window.labelKey||!window.labelParams)return window;
+   const format=(value:string)=>new Intl.DateTimeFormat(ctx.locale,{
+    month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(value+"T12:00:00Z"));
+   const template={en,es,ar}[ctx.locale].MetricsNotes.periodLatestData;
+   return {...window,label:template.replace("{from}",format(window.labelParams.from))
+    .replace("{to}",format(window.labelParams.to))};
   }catch{return unchanged;}
  }
  const copy={en,es,ar}[ctx.locale].DataNotes;
@@ -72,7 +78,7 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
  }
  const amount=previous&&Number.isSafeInteger(previous.netSalesCents)?previous.netSalesCents!:null;
  const formatted=amount===null?"—":new Intl.NumberFormat(ctx.locale,{
-  minimumFractionDigits:2,maximumFractionDigits:2}).format(amount/100);
+  style:"currency",currency:ctx.currency??"XXX"}).format(amount/100);
  const note=currentFailed?
   (previous?copy.todaySalesCheckFailedWithHistory.replace("{date}",previous.date).replace("{amount}",formatted):
    copy.todaySalesCheckUnavailable):
@@ -80,8 +86,9 @@ export async function resolveCoveredSalesWindow(ctx:AgentToolContext,requested:C
   lastFullDay?copy.todayNotImported.replace("{date}",lastFullDay).replace("{amount}",formatted):
    previous?copy.todayLastRecordedUnverified.replace("{date}",previous.date).replace("{amount}",formatted):
    copy.todayNotImportedNoHistory;
+ const safeNote=!ctx.currency&&amount!==null?note+" "+{en,es,ar}[ctx.locale].MetricsNotes.cafeCurrencyMissing:note;
  return {...unchanged,...(!currentFailed?{todayImported:false}:{}),
   lastFullDay,lastRecordedDay:previous?.date??null,
   lastFullDayTotals:lastFullDay?{netSalesCents:amount,ordersCount:previous?.ordersCount??null,
-   drinksCount:previous?.drinksCount??null}:null,dataNote:note};
+   drinksCount:previous?.drinksCount??null}:null,dataNote:safeNote};
 }

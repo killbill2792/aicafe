@@ -3,9 +3,6 @@ on:
   pull_request:
     paths:
       - "components/staff/Availability*.tsx"
-      - "components/staff/StaffCoverageEditor.tsx"
-      - "components/staff/StaffQualificationsEditor.tsx"
-      - "components/staff/ManageStaffPanel.tsx"
       - "components/staff/StaffWorkspace.tsx"
       - "components/staff/StaffDialog.tsx"
       - "app/**/more/manage-staff/**"
@@ -13,7 +10,6 @@ on:
       - "lib/scheduling/coverageIdentity*"
       - "lib/scheduling/foundation*"
       - "lib/scheduling/qualificationCode*"
-      - "lib/actions/schedulingFoundation.ts"
       - "lib/calc/scheduling/availability*"
       - "lib/calc/scheduling/coverageGaps*"
       - "lib/calc/scheduling/scheduleValidators*"
@@ -45,7 +41,7 @@ jobs:
         continue-on-error: true
         run: npm run lint
       - name: Scoped scheduling UI/backend lint
-        run: npx eslint "components/staff/*.tsx" "lib/scheduling/*.ts" "lib/actions/schedulingFoundation.ts" "lib/calc/scheduling/*.ts" "app/[locale]/more/manage-staff/page.tsx"
+        run: npx eslint "components/staff/*.tsx" "lib/scheduling/*.ts" "lib/calc/scheduling/*.ts" "app/[locale]/more/manage-staff/page.tsx"
       - name: Build
         run: npm run build -- --webpack
       - name: Whitespace

@@ -52,9 +52,10 @@ describe("Supervisor canonical domain projections",()=>{
     const missingCosts={...snapshot,runningCostLines:snapshot.runningCostLines.map((l,i)=>i===0?
       {...l,isMissing:true,isExpected:true}:l)};
     const vm=buildBreakEvenViewModel(missingCosts),result=projectBreakEven(missingCosts);
-    expect(vm.unavailableReason).toBe("missing_costs");
-    expect(result.available).toBe(false);
-    expect(result.quality.missingInputs.join(" ")).toContain("breakEven:missing_costs");
+    expect(vm.unavailableReason).toBeNull();
+    expect(vm.noteKeys).toContain("breakEvenBillsMissing");
+    expect(result.available).toBe(true);
+    if(result.available)expect(result.value.drinksNeededPerDay).toBe(vm.drinksNeededPerDay);
     const noSales={...snapshot,last28Days:[],todayHasData:false,
       runningCostLines:snapshot.runningCostLines.map(l=>({...l,isMissing:false,isExpected:false}))};
     expect(buildBreakEvenViewModel(noSales).unavailableReason).toBe("missing_sales");

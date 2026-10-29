@@ -53,6 +53,12 @@ describe("Plan goals", () => {
     expect(all?.monthlyProfitChangeCents).toBeGreaterThan(one!.monthlyProfitChangeCents);
     expect(milk?.monthlyProfitChangeCents).toBe(Math.round(-Math.round(300 * 150 * 100 / 3785) * 30 / 28));
   });
+  it("shows a three-day price scenario with low confidence instead of blocking",()=>{
+    const result=simulatePlanChange({base:{...base,salesDaysCovered:3},type:"price",item,
+      newValueCents:525,staffHoursPerDay:0,assumedHourlyWageCents:1950});
+    expect(result?.monthlyProfitChangeCents).toBeGreaterThan(0);
+    expect(result).toMatchObject({lowConfidence:true,days:3});
+  });
   it("normalizes seven covered sales days rather than pretending the item units cover 28", () => {
     const sevenDay = { ...base, salesDaysCovered: 7, operatingDaysInMonth: 22 };
     const amount = simulatePlanChange({ base: sevenDay, type: "price", item, newValueCents: 525,
@@ -179,14 +185,14 @@ describe("Plan goals", () => {
       type: "staff", item: null, newValueCents: 0,
       staffHoursPerDay: 2, assumedHourlyWageCents: 1950 })).toBeNull();
   });
-  it("keeps staffed-month savings available with fewer than seven operating sales dates", () => {
+  it("keeps staffed-month savings and a low-confidence price estimate with fewer than seven sales dates", () => {
     const missingOpenDays = { ...base, salesDaysCovered: 5 };
     const staff = simulatePlanChange({ base: missingOpenDays, type: "staff", item: null,
       newValueCents: 0, staffHoursPerDay: 2, assumedHourlyWageCents: 1950 });
     expect(staff?.monthlyProfitChangeCents).toBeGreaterThan(0);
     const price = simulatePlanChange({ base: missingOpenDays, type: "price", item,
       newValueCents: item.priceCents + 25, staffHoursPerDay: 0, assumedHourlyWageCents: 1950 });
-    expect(price).toBeNull();
+    expect(price).toMatchObject({ lowConfidence: true, days: 5 });
   });
   it("does not project profit for too little observed sales coverage", () => {
     expect(simulatePlanChange({ base: { ...base, salesDaysCovered: 0 },

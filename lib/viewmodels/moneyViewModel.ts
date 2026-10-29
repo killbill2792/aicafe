@@ -1,16 +1,13 @@
 import {
-  calculateBreakEvenSales,
   combinedHealthBand,
   computeCostRecovery,
   ingredientsHealthBand,
-  ownerProfitCentsForPeriod,
   laborKnown,
   staffCostCentsForPeriod,
   ratio,
   staffHealthBand,
   summarizeResolvedSoldProductCosts,
   sumCents,
-  totalCostsCentsForPeriod,
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, projectedDayContributions, recoveryBuckets } from "./costRecoveryShared";
@@ -30,20 +27,15 @@ import { regularHoursStateForDate } from "@/lib/business/openHours";
 import { periodComparisonState } from "./periodComparison";
 import { periodCalendarRange } from "./period";
 import { businessCostSummaryFromSnapshot } from "@/lib/operating/businessCosts";
-
-function countOperatingDays(snapshot: BusinessSnapshot, throughDay: number): number {
-    let count = 0;
-  for (let day = 1; day <= throughDay; day++) {
-    const date = `${snapshot.monthKey}-${String(day).padStart(2, "0")}`;
-    if (regularHoursStateForDate(snapshot.business.openHours, date) !== "closed") count += 1;
-  }
-  return count;
-}
+import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
+import {profitForPeriod} from "@/lib/metrics/core/profit";
+import {laborForPeriod,proratedOwnerPayrollExtrasCents} from "@/lib/metrics/core/labor";
+import {breakEvenFor} from "@/lib/metrics/core/breakEven";
 
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const buckets = recoveryBuckets(snapshot);
   const actual = actualDayContributions(snapshot);
-  const projected = snapshot.last28Days.length >= 7 ? projectedDayContributions(snapshot) : [];
+  const projected = snapshot.last28Days.length ? projectedDayContributions(snapshot) : [];
   const recovery = computeCostRecovery(buckets, [...actual, ...projected]);
 
   const totalCents = buckets.reduce((s, b) => s + b.amountCents, 0);
@@ -57,51 +49,37 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const missingMonthWage=monthRecordedDays.some(d=>!laborKnown(d));
   // Known contributions cannot establish final coverage when any recorded wage is partial.
   const allCovered=!missingMonthWage&&recovery.currentBucketCode===null;
-  const staffSoFarCents=missingMonthWage?null:monthRecordedDays.reduce((sum,day)=>
-    sum+(day.wagesCents??0)+(day.staffTaxCents??0),0);
   const todayDay = Number(snapshot.todayDateStr.slice(-2));
-  const elapsedOperatingDays = countOperatingDays(snapshot, todayDay);
-  const fullMonthOperatingDays = countOperatingDays(snapshot, snapshot.daysInMonth);
-  const monthlyStaffCents =
-    staffSoFarCents===null?null:elapsedOperatingDays > 0
-      ? Math.round(staffSoFarCents * (fullMonthOperatingDays / elapsedOperatingDays))
-      : 0;
+  const monthOpenDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
+    snapshot.monthKey+"-"+String(i+1).padStart(2,"0")).filter(date=>
+      regularHoursStateForDate(snapshot.business.openHours,date)!=="closed");
+  const ownerExtras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
+    .ownerMonthlyPayrollExtrasCents;
+  const monthLabor=laborForPeriod(monthOpenDates.map(date=>({date})),monthRecordedDays,null,
+    ownerExtras==null?null:{monthlyCents:ownerExtras,from:snapshot.monthKey+"-01",
+      to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")});
+  const monthlyStaffCents=monthLabor.projectedMonthlyLaborCents;
 
-  const salesHistory = snapshot.last28Days;
-  const observedSalesCents = sumCents(salesHistory, (day) => day.netSalesCents);
+  const salesHistory = snapshot.breakEvenDays??snapshot.last28Days;
   const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
   const productCosts = summarizeResolvedSoldProductCosts(breakEvenCostItems);
   const missingProductCosts = productCosts.missingProductCosts;
   // Use the same pure sold-item product-cost aggregation as the drinks/day break-even surface.
-  const observedIngredientCents = productCosts.totalCostCents;
-  const observedProcessingFeesCents = sumCents(salesHistory, (day) => day.cardFeesCents);
   const missingProcessingFees = salesHistory.some((day) => day.cardFeesStatus === "missing");
   const missingBills = snapshot.runningCostLines.some((line) => line.isMissing && line.isExpected);
-  const enoughSales = salesHistory.length >= 7;
 
-  const calculatedBreakEven =
-    monthlyStaffCents!==null&&enoughSales && !missingProductCosts && !missingProcessingFees && !missingBills
-      ? calculateBreakEvenSales({
-          monthlyBillsCents,
-          monthlyStaffCents,
-          observedSalesCents,
-          observedIngredientCents,
-          observedProcessingFeesCents,
-        })
-      : null;
-
-  const breakEven =
-    !enoughSales||monthlyStaffCents===null
-      ? { kind: "unavailable" as const, reason: "NOT_ENOUGH_SALES" as const }
-      : missingBills
-        ? { kind: "unavailable" as const, reason: "MISSING_BILLS" as const }
-        : missingProductCosts
-          ? { kind: "unavailable" as const, reason: "MISSING_PRODUCT_COSTS" as const }
-          : missingProcessingFees
-            ? { kind: "unavailable" as const, reason: "MISSING_PROCESSING_FEES" as const }
-            : calculatedBreakEven?.kind === "ready"
-              ? calculatedBreakEven
-              : { kind: "unavailable" as const, reason: "VARIABLE_COSTS_TOO_HIGH" as const };
+  const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
+  const sharedBreakEven=breakEvenFor({
+    days:salesHistory,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
+    monthlyBillsCents,monthlyStaffCents,
+    observedIngredientCents:productCosts.totalCostCents,ownerFeePlans:feePlans,
+  });
+  const breakEven=sharedBreakEven.calculation;
+  const breakEvenNotes=[...sharedBreakEven.notes,
+    ...(missingBills?["breakEvenBillsMissing"]:[]),
+    ...(missingProductCosts?["profitProductCostsMissing"]:[]),
+    ...(missingProcessingFees?["profitFeesMissing"]:[]),
+    ...monthLabor.notes];
 
   const breakEvenUsesEstimates =
     todayDay < snapshot.daysInMonth ||
@@ -114,7 +92,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     buckets: recovery.buckets,
     currentBucketCode: recovery.currentBucketCode,
     yoursSoFarCents: recovery.yoursSoFarCents,
-    projectedMonthEndProfitCents: missingMonthWage?null:recovery.projectedMonthEndProfitCents,
+    projectedMonthEndProfitCents:recovery.projectedMonthEndProfitCents,
     allCovered,
     totalCents,
     actualDays: actual,
@@ -122,6 +100,8 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     monthlyBillsCents,
     monthlyStaffCents,
     breakEven,
+    observedProcessingFeesCents:cardFeesForDays(salesHistory,feePlans??null).amountCents,
+    breakEvenNotes,
     breakEvenUsesEstimates,
   };
 }
@@ -142,27 +122,57 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const salesCents = sumCents(days, (d) => d.netSalesCents);
   const ingredientsCents = sumCents(days, (d) => d.ingredientsCents);
   const wageUnknown=recordedLaborDays.some(d=>!laborKnown(d));
-  const wagesCents=wageUnknown?null:sumCents(recordedLaborDays,d=>d.wagesCents??0);
-  const staffTaxCents=wageUnknown?null:sumCents(recordedLaborDays,d=>d.staffTaxCents??0);
-  const cardFeesCents = sumCents(days, (d) => d.cardFeesCents);
+  // Retain observed cents even when other wage rows are unknown; never show unknown as verified zero.
+  const wagesCents=sumCents(recordedLaborDays,d=>d.wagesCents??0);
+  const staffTaxCents=sumCents(recordedLaborDays,d=>d.staffTaxCents??0);
+  const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
+  const feeResult=cardFeesForDays(days,feePlans??null);
+  const cardFeesCents=feeResult.amountCents;
   // This is the same known-cost contract consumed by Supervisor; Money still
   // separately gates any owner-profit claim on the existing strict coverage.
-  const totalCostsCents=businessCosts.completeness==="unavailable"
-    ? totalCostsCentsForPeriod(days,runningCosts) : businessCosts.knownTotalCents;
-  const ownerProfitCents = wageUnknown?null:ownerProfitCentsForPeriod(days, runningCosts);
-  const coverage = periodCoverage(snapshot, period);
+  const coverage=periodCoverage(snapshot,period);
+  const ownerExtras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
+    .ownerMonthlyPayrollExtrasCents;
+  const baseLaborResult=laborForPeriod(
+    Array.from({length:coverage.expectedDays},(_,i)=>({
+      date:new Date(Date.parse(calendar.start+"T12:00:00Z")+i*86400000).toISOString().slice(0,10),
+    })),recordedLaborDays);
+  const laborResult=laborForPeriod(
+    Array.from({length:coverage.expectedDays},(_,i)=>({
+      date:new Date(Date.parse(calendar.start+"T12:00:00Z")+i*86400000).toISOString().slice(0,10),
+    })),recordedLaborDays,null,ownerExtras==null?null:{
+      monthlyCents:ownerExtras,from:calendar.start,to:calendar.end,
+    });
+  const ownerPayrollExtrasCents=laborResult.knownLaborCents-baseLaborResult.knownLaborCents;
+  const feeMissing=days.some(d=>d.netSalesCents>0&&d.cardFeesStatus==="missing");
+  const costMissing=businessCosts.missingInputs.filter(k=>k.startsWith("productCost:")||
+    k==="itemSalesCoverage"||k==="historicalIngredientCostCoverage");
+  const knownProfit=profitForPeriod(
+    days,
+    {amountCents:Math.round(runningCosts),
+      missing:businessCosts.missingInputs.filter(k=>k.startsWith("expense:")||
+        k==="priorMonthRunningCostCoverage"),estimated:businessCosts.estimatedInputs.some(k=>k.startsWith("expense:"))},
+    {amountCents:cardFeesCents,missing:feeMissing?["cardFeesMissing"]:[],estimated:feeResult.basis!=="actual"},
+    {amountCents:laborResult.knownLaborCents,
+      missing:laborResult.coveredDays===coverage.expectedDays?[]:["laborCoveragePartial"],
+      estimated:laborResult.basis!=="recorded"},
+    {amountCents:ingredientsCents,missing:costMissing,
+      estimated:businessCosts.estimatedInputs.some(k=>k.startsWith("productCost:"))},
+  );
+  const ownerProfitCents=knownProfit.profitCents;
+  const totalCostsCents=knownProfit.profitCents===null?null:
+    Math.round(Object.values(knownProfit.partsUsed).reduce((a,b)=>a+b,0));
   const baselineProfitDisplay=ownerProfitCents===null?{kind:"unavailable" as const}:
     ownerProfitDisplayState(ownerProfitCents,coverage);
-  // A sales-complete period does not prove complete owner profit when costs are
-  // unknown. Keep the math, but never present it as confirmed owner profit.
-  const ownerProfitDisplay=businessCosts.completeness!=="complete"&&
-    baselineProfitDisplay.kind==="complete"
-    ? {kind:"unavailable" as const}:baselineProfitDisplay;
+  const ownerProfitDisplay=baselineProfitDisplay.kind==="complete"&&
+      (knownProfit.basis==="partial"||businessCosts.completeness!=="complete")?
+      {kind:"partial" as const,ownerProfitCents:ownerProfitCents!,tone:baselineProfitDisplay.tone}
+      :baselineProfitDisplay;
   const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
   const ingredientsRatio = ratio(ingredientsCents, salesCents);
-  const staffRatio=wagesCents===null||staffTaxCents===null?null:ratio(wagesCents+staffTaxCents,salesCents);
-  const combinedRatio=wagesCents===null||staffTaxCents===null?null:ratio(ingredientsCents+wagesCents+staffTaxCents,salesCents);
+  const staffRatio=wageUnknown?null:ratio(laborResult.knownLaborCents,salesCents);
+  const combinedRatio=wageUnknown?null:ratio(ingredientsCents+laborResult.knownLaborCents,salesCents);
 
   const prevDays = previousPeriodDays(snapshot, period);
   const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
@@ -212,6 +222,23 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   };
   const currentLabor = observedLabor(calendar);
   const previousLabor = observedLabor(prevCalendar);
+  const previousFees=cardFeesForDays(prevDays,feePlans??null);
+  // The owner payroll setting is a monthly extra, not clocked wages; allocate it
+  // over this comparison's exact calendar dates just as the current period does.
+  const previousExtrasCents=ownerExtras==null?0:proratedOwnerPayrollExtrasCents({
+    monthlyCents:ownerExtras,from:prevCalendar.start,to:prevCalendar.end,
+  });
+  const previousProfit=profitForPeriod(prevDays,
+    {amountCents:Math.round(prevRunningCosts),
+      missing:previousBusinessCosts?.missingInputs.filter(k=>k.startsWith("expense:"))??["previousBillsMissing"],
+      estimated:previousBusinessCosts?.estimatedInputs.some(k=>k.startsWith("expense:"))??true},
+    {amountCents:previousFees.amountCents,estimated:previousFees.basis!=="actual"},
+    {amountCents:previousLabor.costCents===null?null:previousLabor.costCents+previousExtrasCents,
+      missing:previousLabor.covered?[]:["previousLaborMissing"],
+      estimated:previousExtrasCents>0},
+    {amountCents:sumCents(prevDays,d=>d.ingredientsCents),
+      missing:previousBusinessCosts?.missingInputs.filter(k=>k.startsWith("productCost:")||k==="historicalIngredientCostCoverage")??["previousIngredientsMissing"],
+      estimated:previousBusinessCosts?.estimatedInputs.some(k=>k.startsWith("productCost:"))??true});
 
   // Each row has its own evidence gate. Verified sales comparisons survive
   // missing ingredient/operating costs; profit never leaks from calendar coverage.
@@ -229,9 +256,10 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
           deltaCents: currentLabor.costCents - previousLabor.costCents,
           lowerIsBetter: true,
         }] : []),
-        ...(profitComparisonReady && ownerProfitCents!==null && ownerProfitCentsForPeriod(prevDays,prevRunningCosts)!==null ? [{
+        ...(profitComparisonReady && knownProfit.basis==="complete" &&
+          previousProfit.basis==="complete" && ownerProfitCents!==null && previousProfit.profitCents!==null ? [{
           key: "ownerProfit", label: "Owner profit",
-          deltaCents: ownerProfitCents! - ownerProfitCentsForPeriod(prevDays, prevRunningCosts)!,
+          deltaCents: ownerProfitCents - previousProfit.profitCents,
         }] : []),
       ]
     : [];
@@ -251,6 +279,8 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     businessCosts,
     ownerProfitCents,
     ownerProfitDisplay,
+    financialNotes:[...new Set([...knownProfit.notes,...feeResult.notes,...laborResult.notes])],
+    ownerPayrollExtrasCents,
     comparisonState,
     ingredientsRatio,
     staffRatio,

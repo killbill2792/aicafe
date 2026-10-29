@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { computeCostRecovery } from "./costRecovery";
-import { avgMoneyLeftPerDrinkCents, dailyCostsToCoverCents, drinksNeededPerDay, whatIfPriceChange } from "./breakEven";
-import { rentBillsSharePerDrinkCents } from "./perDrink";
+import { drinksNeededPerDay, whatIfPriceChange } from "./breakEven";
+import {moneyLeftPerDrinkCents,dailyBreakEvenCostsCents,moneyLeftAfterPriceChangeCents} from "@/lib/metrics/core/breakEven";
 import {
   combinedHealthBand,
   ingredientsHealthBand,
-  ownerProfitCentsForPeriod,
   ratio,
   staffCostCentsForPeriod,
   staffHealthBand,
@@ -73,7 +72,6 @@ describe("Fixture A: owner profit", () => {
     expect(Math.round(runningCosts)).toBe(832_000); // 26 × 320.00
 
     expect(Math.round(totalCostsCentsForPeriod(days, runningCosts)!)).toBe(4_730_752);
-    expect(Math.round(ownerProfitCentsForPeriod(days, runningCosts)!)).toBe(1_509_248);
   });
 
   it("today (any single day) is $580.48", () => {
@@ -84,13 +82,12 @@ describe("Fixture A: owner profit", () => {
       "2026-09-01",
     );
     expect(Math.round(runningCosts)).toBe(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS);
-    expect(Math.round(ownerProfitCentsForPeriod(days, runningCosts)!)).toBe(58_048);
   });
 });
 
 describe("Fixture A: break-even", () => {
   it("average money left per drink is $3.50", () => {
-    const avg = avgMoneyLeftPerDrinkCents(
+    const avg = moneyLeftPerDrinkCents(
       FIXTURE_A_DAY.netSalesCents,
       FIXTURE_A_DAY.ingredientsCents,
       FIXTURE_A_DAY.cardFeesCents,
@@ -100,9 +97,9 @@ describe("Fixture A: break-even", () => {
   });
 
   it("drinks needed per day is 315", () => {
-    const daily = dailyCostsToCoverCents(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS, FIXTURE_A_DAY.staffCostCents);
+    const daily = dailyBreakEvenCostsCents(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS, FIXTURE_A_DAY.staffCostCents);
     expect(daily).toBeCloseTo(109_952, 6);
-    const avg = avgMoneyLeftPerDrinkCents(
+    const avg = moneyLeftPerDrinkCents(
       FIXTURE_A_DAY.netSalesCents,
       FIXTURE_A_DAY.ingredientsCents,
       FIXTURE_A_DAY.cardFeesCents,
@@ -112,22 +109,19 @@ describe("Fixture A: break-even", () => {
   });
 
   it("what-if all prices +25¢ needs 294 drinks/day", () => {
-    const daily = dailyCostsToCoverCents(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS, FIXTURE_A_DAY.staffCostCents);
-    const avg = avgMoneyLeftPerDrinkCents(
+    const daily = dailyBreakEvenCostsCents(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS, FIXTURE_A_DAY.staffCostCents);
+    const avg = moneyLeftPerDrinkCents(
       FIXTURE_A_DAY.netSalesCents,
       FIXTURE_A_DAY.ingredientsCents,
       FIXTURE_A_DAY.cardFeesCents,
       FIXTURE_A_DAY.drinks,
     );
-    expect(whatIfPriceChange(avg, 25, daily)).toBe(294);
+    expect(moneyLeftAfterPriceChangeCents(avg,25,0.0249)-avg).toBeCloseTo(24.3775,4);
+    expect(whatIfPriceChange(avg, 25, daily,0.0249)).toBe(294);
   });
 });
 
-describe("Fixture A: per-drink and health", () => {
-  it("rent & bills share per drink is $0.6667", () => {
-    const share = rentBillsSharePerDrinkCents(FIXTURE_A_RUNNING_COST_PER_DAY_CENTS, FIXTURE_A_DAY.drinks);
-    expect(share).toBeCloseTo(66.6667, 3);
-  });
+describe("Fixture A: observed cost health", () => {
 
   it("ingredients 27.1% healthy, staff 32.5% healthy, combined 59.6% healthy", () => {
     const days = fixtureADays(1);

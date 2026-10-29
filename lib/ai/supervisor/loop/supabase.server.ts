@@ -1,5 +1,6 @@
 import {createHash} from "node:crypto";
 import "server-only";
+import {cafeToday} from "@/lib/metrics/core/clock";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
 import {ProposalRequestConflictError} from "./engine";
@@ -25,6 +26,13 @@ const failed=(error:unknown,code:string):never=>{throw new Error(code,{cause:err
  * a scope; the database transition RPC locks revision/actor/effect hash atomically.
  * Authenticated callers can read only their own rows via RLS, never write them. */
 export class SupabaseLoopRepository implements LoopRepository{
+  async cafeTimezone(scope:OwnerLoopScope):Promise<string>{
+    const db=createAdminSupabaseClient();
+    const {data,error}=await db.from("businesses").select("timezone")
+      .eq("id",scope.businessId).single();
+    if(error||!data?.timezone)throw new Error("Café timezone unavailable");
+    return data.timezone;
+  }
   async create(scope:OwnerLoopScope,key:string,p:LoopCreate):Promise<LoopProposal>{
     uuid.parse(key);
     const db=createAdminSupabaseClient();
@@ -185,8 +193,11 @@ export class SupabaseLoopRepository implements LoopRepository{
       throw new Error("Invalid canonical Supervisor report text");
     // Unique proposal UUID makes repeated cron runs idempotent; a late
     // duplicate cannot send repeated unsolicited owner messages.
+    const {data:business,error:timezoneError}=await db.from("businesses")
+      .select("timezone").eq("id",scope.businessId).single();
+    if(timezoneError||!business?.timezone)throw new Error("Café timezone unavailable");
     const ref={source:"operating_tasks",identifier:"supervisor-report:"+p.id,
-      asOf:new Date().toISOString().slice(0,10)};
+      asOf:cafeToday(business.timezone)};
     // Append a new, stable revision ONLY when the evidence-backed report
     // content changes after a corrected source sync. Same payload => same UUID
     // => duplicate insert safely ignored. Previously delivered messages stay

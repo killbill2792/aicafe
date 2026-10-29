@@ -2907,3 +2907,24 @@ Third Codex review on cfd2b34 found interchangeable scalar quantities, omitted t
 - [x] 2026-10-20 PR #138 next Codex quote-validation review: percent-typed numeric context (`10%`, `10.5%`, Arabic/Spanish percent forms) no longer masquerades as an alternative price, while disjunctive word-quantity requests (`ten or maybe 20 cents`, `diez o quizás 20 centavos`, `عشرة أو ربما ٢٠ سنتات`) fail closed. Unit regressions added; PR remains draft and awaits final-head CI and independent review.
 - [x] 2026-10-20 PR #138 latest Codex quote-ambiguity fix: parse the complete owner utterance for numeric tokens not accounted for by explicit money or recognized non-price measurements (for example `12 oz`), rather than only matching adjacent alternative connectors. Nonadjacent EN/ES/AR alternatives now fail closed; added a regression that failed against pre-fix HEAD `476cdab` and included positive size-specific quote cases. PR remains draft/unmerged; rerun final-head CI and Codex review.
 - [x] 2026-10-20 PR #138 natural-language proposal routing correction: commit `8260923` added registry metadata but had no consumer and removed the prior matcher, so chat proposals were broken at that commit. The current implementation passes the registered price experiment’s description and typed JSON schema through the existing Supervisor investigation native tool list; a model-selected call reaches an authenticated, owner-source-checked `proposeLoop` that only saves a draft. Added direct EN/ES/AR mock-selection cases and a real registered-capability → native tool → draft integration regression (`runInvestigation.server.test.ts`), plus authenticated chat-route callback tests; baseline and focused CI passed on `173890e9`. Live-provider semantic accuracy and actual POS changes are **not** verified; owner approval/commit/manual handoff remain separate. A historical `8260923` test-run has **not** been executed (new assertions would fail there because the native tool/callback was absent).
+
+
+## PROGRESS.md snapshot archived 2026-10-29 (superseded by the operator roadmap)
+
+## Now
+- [ ] Review M1: generic owner goals/experiments, check-ins, monitoring, approval and RLS; run CI and live smoke before merge.
+- [ ] Deploy approved M0/M1 migrations separately; neither is applied by this PR.
+- [ ] Run a live owner agent smoke test with credentials before production release.
+
+## Next
+- [ ] Add grounded quick-reply chips and reconcile remaining AI usage ledger limits.
+- [ ] Review eight-theme UI foundation for screen contrast and owner RTL behavior.
+- [ ] Add an actual owner-click approval card and persistence in UI; only then enable production propose_initiative registration (backend-only M1 deliberately gates it).
+- [ ] Add staff WhatsApp check-in handling in W2; no staff messaging in M1.
+- [ ] Add rolling conversation summaries and remove unused legacy routes.
+
+## Done (last 10)
+- PR #150 merged: pantry starter ingredients, recipe-size templates and pricing helpers; deployment remains separate.
+- PR #147 merged: team_updates owner-scoped storage and service-role writer.
+- PR #146 merged: streaming agent with bounded calls and verified money extraction.
+- Existing P1 source inventory and business data boundary remain enforced.

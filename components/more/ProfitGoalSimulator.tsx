@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { profitGoalBlockers } from "./profitGoalBlockers";
+import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
 import { simulateProfitGoal } from "@/lib/calc/profitGoalSimulator";
 import type { ProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
 
@@ -51,6 +52,7 @@ export default function ProfitGoalSimulator({
 }) {
   const [draftTarget, setDraftTarget] = useState("15");
   const locale = useLocale();
+  const common=useTranslations("Common");
   const [target, setTarget] = useState(15);
   const parsed = draftTarget.trim() ? Number(draftTarget) : Number.NaN;
   const error = !Number.isFinite(parsed) || parsed < 0 || parsed > 80 ? labels.invalid : null;
@@ -59,12 +61,11 @@ export default function ProfitGoalSimulator({
     const timer = setTimeout(() => setTarget(parsed), 250);
     return () => clearTimeout(timer);
   }, [parsed, error]);
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "USD" });
-  const fmt = (cents: number) => currency.format(cents / 100);
+  const fmt = (cents: number) => formatCafeCurrency(cents,locale,data.business.currency).text;
   const pct = (value: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value);
   const typedPct = (value: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 }).format(value / 100);
   const blockers = profitGoalBlockers(data);
-  const blockerText = { sales: labels.unavailableSales, fees: labels.unavailableFees,
+  const blockerText = { sales: data.business.daysWithSalesInWindow>0?common("basedOnDays",{days:data.business.daysWithSalesInWindow})+" · "+common("lowConfidence"):labels.unavailableSales, fees: labels.unavailableFees,
     costs: labels.unavailableCosts, operating: labels.unavailableOperating, payroll:labels.unavailablePayroll };
   const blockerActions = { sales: labels.fixSales, fees: labels.fixFees,
     costs: labels.fixCosts, operating: labels.fixOperating, payroll:labels.fixPayroll };
@@ -85,6 +86,7 @@ export default function ProfitGoalSimulator({
         <span className="mt-1 block">{labels.assumption}</span>
       </section>
 
+      {data.business.daysWithSalesInWindow>0&&<p role="note" className="text-[17px] text-ink-muted">{common("basedOnDays",{days:data.business.daysWithSalesInWindow})}{data.currentMarginQuality!=="actual"?" · "+common("lowConfidence"):""}</p>}
       <section className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-card-lg bg-card p-4">
           <span className="text-sm font-semibold text-ink-muted">{labels.currentMargin}</span>

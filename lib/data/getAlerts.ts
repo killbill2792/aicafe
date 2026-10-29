@@ -2,10 +2,9 @@ import "server-only";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
-import { generateAlerts } from "@/lib/alerts/generate";
+import {getOptionalAuthenticatedUser} from "@/lib/auth/requireUser";
 import { summarizeVoidsRollups, type VoidsSummary } from "@/lib/calc/voidsReview";
 import { formatInTimeZone } from "date-fns-tz";
-import { DEMO_BUSINESS_ID } from "@/lib/constants";
 
 export type AlertKind = "missing_bill" | "voids" | "meal_break" | "early_clockin" | "underpriced" | "overstaffed" | "covered_milestone" | "unmatched_sales_items";
 
@@ -19,26 +18,22 @@ export type AlertRow = {
   voidsReview?: { ok: true; summary: VoidsSummary } | { ok: false };
 };
 
-/** Regenerates alerts from current data, then returns the open ones. No cron yet (see
- * PROGRESS.md) — this is the trigger point until a scheduled job exists. */
+/** Read-only alert listing. The 15-minute refresh-derived cron owns generation. */
 export async function getOpenAlerts(): Promise<AlertRow[]> {
   if (!isSupabaseConfigured()) return [];
   const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user=await getOptionalAuthenticatedUser();
   if (!user) return [];
   const businessId = await getActiveBusinessId(user.id);
 
-  // The shared demo is read-only: a visit must never mutate other owners’ alerts.
-  if (businessId !== DEMO_BUSINESS_ID) await generateAlerts(supabase, businessId);
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("alerts")
     .select("id, kind, impact_cents, payload, status, created_at")
     .eq("business_id", businessId)
     .in("status", ["new", "seen"])
     .order("created_at", { ascending: false });
+  if (error) throw error;
 
   const alerts: AlertRow[] = (data ?? []).map((a) => ({
     id: a.id,
@@ -60,14 +55,15 @@ export async function getOpenAlerts(): Promise<AlertRow[]> {
 export async function getAlertById(id: string): Promise<AlertRow | null> {
   if (!isSupabaseConfigured()) return null;
   const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user=await getOptionalAuthenticatedUser();
   if (!user) return null;
   const businessId = await getActiveBusinessId(user.id);
-  const { data } = await supabase.from("alerts")
+  const { data, error } = await supabase.from("alerts")
     .select("id, kind, impact_cents, payload, status, created_at")
     .eq("business_id", businessId)
     .eq("id", id)
     .maybeSingle();
+  if (error) throw error;
   if (!data) return null;
 
   const payload = (data.payload as Record<string, unknown>) ?? {};

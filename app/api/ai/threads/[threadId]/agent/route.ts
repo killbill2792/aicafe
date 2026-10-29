@@ -20,7 +20,6 @@ import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
 import { persistAgentReply, recordAgentTurnUsage, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
 import { labelSupervisorThread, assertOwnerAgentTurnAvailable } from "@/lib/ai/conversations/usage.server";
-import { chatExperienceFlags, type ChatExperienceFlags } from "@/lib/ai/agent/flags";
 import { styleReport } from "@/lib/ai/agent/style";
 import type { AgentToolContext } from "@/lib/ai/agent/tools";
 import { isJobStepAgent, type AgentJob } from "@/lib/ai/agent/jobState";
@@ -29,11 +28,12 @@ import { assertCafeAiAccess } from "@/lib/access/access.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
+import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 // 60s agent deadline + one possible continuation turn + persistence. Only matters
-// with CHAT_JOBS on (the turn keeps running via after() once the owner leaves).
+// with background jobs on (the turn keeps running via after() once the owner leaves).
 // Vercel: Hobby caps at 60s, Pro/Enterprise allow this (Fluid compute default 300s).
 export const maxDuration = 150;
 type RouteContext = { params: Promise<{ threadId: string }> };
@@ -83,7 +83,7 @@ function errorCode(error: unknown): string {
 type TurnParams = {
   scope: ConversationScope; threadId: string; owner: ConversationMessage; ownerText: string; locale: Locale;
   service: Awaited<ReturnType<typeof authenticatedConversationContext>>["service"];
-  flags: ChatExperienceFlags; emit: Emit; job: AgentJob | null; jobs: JobsModule | null;
+  emit: Emit; job: AgentJob | null; jobs: JobsModule | null;
   attachmentIds?:string[];
 };
 /** Read only IDs explicitly selected for this turn. An old thread file is never
@@ -110,16 +110,19 @@ async function readOwnerImages(scope:ConversationScope,threadId:string,ids:reado
 }
 /** One owner turn: tools → loop → persist → usage. Emits done/error and never throws. */
 async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwnerMessageIds: string[] } | { errorCode: string }> {
-  const { scope, threadId: id, owner, emit, flags, job, jobs } = p;
+  const { scope, threadId: id, owner, emit, job, jobs } = p;
   let logged = false;
   const startedAt = Date.now();
   const auditSteps: AgentAuditStep[] = [];
   let completedTurn: AgentTurn | undefined;
   let steps: Promise<void> = Promise.resolve();
   try {
-    const [tools, identity, page, memory] = await Promise.all([
+    const [tools, identity, page, memory, ownerFactRead] = await Promise.all([
       createAuthenticatedCafeTools(), readSupervisorCafeIdentity(scope.businessId), p.service.listMessages(id, 0),
-      flags.memory ? loadMemory() : Promise.resolve(null),
+      loadMemory(),
+       loadOwnerFacts(scope.businessId)
+         .then(facts => ({facts,failed:false}))
+         .catch(() => {console.error('owner_facts_read_failed'); return {facts:[],failed:true};}),
     ]);
     const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id).slice(-8);
     const previousEvidence:NumericEvidence[]=priorAssistant.flatMap(m=>{
@@ -141,7 +144,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
         content: m.text ?? (m.blocks ?? []).flatMap(b => b && typeof b === "object" && "text" in b ?
           [String(b.text)] : b && typeof b === "object" && "type" in b && b.type==="clarify" && "question" in b && "options" in b && Array.isArray(b.options) ?
           ["Asked: "+String(b.question)+" Options: "+b.options.map(o=>o&&typeof o==="object"&&"label" in o&&"value" in o?String(o.label)+" ("+String(o.value)+")":"").join("; ")] : []).join(" ") })).filter(m => m.content);
-    const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,
+    const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db:await createServerSupabaseClient(),businessId:scope.businessId}),
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf),
       readEconomics:async()=>readSupervisorEconomics(await createServerSupabaseClient(),scope.businessId,identity.asOf),
@@ -215,7 +218,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
     const ownerImages=await readOwnerImages(scope,id,p.attachmentIds??[]);
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages, history, context,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
-      previousEvidence,
+      previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
       onTool:(name,agentId)=>{
         emit("tool",{name,agentId});
         // Ordered, best-effort persistence so a reloaded page can show the same steps.
@@ -223,7 +226,6 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       },
       onDelta: delta => emit("delta", { text: delta }),
       onReset: discardChars => emit("reset", { discardChars }),
-      ...(flags.style ? { style: true } : {}),
       ...(memory ? { memoryFacts: memory.facts, extraTools: [memory.tool] } : {}),
       ...(job && jobs ? {
         takeFollowUps: (max: number): Promise<OwnerFollowUp[]> => jobs.takeAgentJobInbox(job.id, max),
@@ -238,7 +240,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       // Billable usage must be counted even for blank, oversized or failed writes.
       try { await recordAgentTurnUsage(scope, owner, result); }
       catch { console.error("agent_usage_write_failed"); } // no owner data logged
-      const style = flags.style ? styleReport(result.text) : null;
+      const style = styleReport(result.text);
       console.info("agent_turn",{turn:"agent",endReason:result.endReason,status:result.status.status,
         modelCalls:result.usage.modelCalls,toolCalls:result.usage.toolCalls,
         tools:result.tools??[],latencyMs:result.usage.latencyMs,
@@ -271,7 +273,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
   } finally { await steps.catch(() => undefined); }
 }
 
-/** CHAT_MEMORY: approved café facts + the draft-only memory tool (RLS client). */
+/** café memory: approved café facts + the draft-only memory tool (RLS client). */
 async function loadMemory() {
   const [{ authenticatedTeamRulesService }, { loadCafeMemory, cafeMemoryPort }, { memoryToolDefinition }] = await Promise.all([
     import("@/lib/ai/policies/auth.server"), import("@/lib/ai/agent/memory.server"), import("@/lib/ai/agent/tools/memory")]);
@@ -300,20 +302,12 @@ export async function POST(request: Request, context: RouteContext) {
     if (thread.title === null) {
       try { await labelSupervisorThread(scope, id, input.text); } catch { /* title is optional */ }
     }
-    const flags = chatExperienceFlags();
-    const base = { scope, threadId: id, owner, ownerText: input.text, locale: input.locale, service, flags,
+    const base = { scope, threadId: id, owner, ownerText: input.text, locale: input.locale, service,
       attachmentIds:input.attachmentIds??[] };
 
     if (prior) return sseStream((emit, close) => { emit("done", { reply: prior, replayed: true }); close(); });
 
-    if (!flags.jobs) {
-      // Default path (flag off): the turn lives inside this response, as before.
-      return sseStream(async (emit, close) => {
-        try { await runOneTurn({ ...base, emit, job: null, jobs: null }); } finally { close(); }
-      });
-    }
-
-    // CHAT_JOBS: the turn is a background job that outlives this response.
+    // Background jobs are always on; unavailable job storage falls back inline.
     const jobs = await import("@/lib/ai/agent/jobs.server");
     let started: Awaited<ReturnType<JobsModule["startAgentJob"]>>;
     try { started = await jobs.startAgentJob(scope, id, owner.id); }

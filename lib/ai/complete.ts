@@ -1,16 +1,6 @@
 import "server-only";
 import type { z } from "zod";
-import { completeWithAnthropic } from "./providers/anthropic";
 import { completeWithOpenai } from "./providers/openai";
-import { completeWithMoonshot } from "./providers/moonshot";
-import type { AiChatCompleter, AiProviderName } from "./types";
-
-function getCompleter(): AiChatCompleter {
-  const provider = (process.env.AI_PROVIDER as AiProviderName) || "anthropic";
-  if (provider === "openai") return completeWithOpenai;
-  if (provider === "moonshot") return completeWithMoonshot;
-  return completeWithAnthropic;
-}
 
 function extractJson(text: string): string {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -20,7 +10,7 @@ function extractJson(text: string): string {
 /**
  * lib/ai/complete(task, input) from docs/06-integrations.md: validates output with zod, retries
  * once on invalid JSON, logs token usage (never the prompt/response content). Temperature 0,
- * whichever provider AI_PROVIDER selects.
+ * always using OpenAI.
  */
 export async function completeStructured<T>(params: {
   task: string;
@@ -29,14 +19,11 @@ export async function completeStructured<T>(params: {
   imageDataUrl?: string;
   schema: z.ZodType<T>;
 }): Promise<T> {
-  const completer = getCompleter();
+  const completer = completeWithOpenai;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { text, usage } = await completer({ system: params.system, user: params.user, imageDataUrl: params.imageDataUrl });
-    console.log(
-      `[ai] task=${params.task} provider=${process.env.AI_PROVIDER || "anthropic"} attempt=${attempt + 1} inputTokens=${usage.inputTokens} outputTokens=${usage.outputTokens}`,
-    );
+    const { text } = await completer({ system: params.system, user: params.user, imageDataUrl: params.imageDataUrl });
     try {
       const json = JSON.parse(extractJson(text));
       return params.schema.parse(json);

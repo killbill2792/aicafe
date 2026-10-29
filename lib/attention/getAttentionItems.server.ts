@@ -17,11 +17,12 @@ import { gettingStartedAttention } from "@/components/home/GettingStartedCard";
 import { homeAttentionHref, homeShiftHref, showAlertInHome, type HomeAttentionItem } from "@/components/home/homeAttention";
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
-import { syncAndGetOperatingTasks } from "@/lib/data/operatingTasks";
+import {readPersistedOperatingTasks} from "@/lib/data/operatingTasks";
+import {isSupabaseConfigured} from "@/lib/supabase/client";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
-import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { EXPENSE_CATEGORY_CODES, RUNNING_COST_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import type { AgentId, OperatingTask } from "@/lib/operating/tasks";
+type HomeTaskPreviewItem={id:string;agentId:AgentId;agentName:string;title:string;href:string};
 
 const agentSchema=z.enum(["alex","leo","maya","olivia"]);
 export const attentionItemSchema=z.strictObject({
@@ -78,10 +79,15 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
   const posStatus=await getPosConnectionStatus();
   const squareReconnectReady=isSquareConfigured()&&Boolean(process.env.SQUARE_REDIRECT_URI);
   const derivedTeam=buildOperationsTeamViewModel(snapshot,menu);
-  const persistedTasks=await syncAndGetOperatingTasks([
-    ...derivedTeam.needsYou,...derivedTeam.handled,...derivedTeam.watching,
-  ]);
-  const team=projectOperatingTasks(persistedTasks.tasks);
+  // Page loads are strictly READ-ONLY. Persisted task lifecycle is authoritative;
+  // ephemeral derived actions remain visible until a dedicated task-refresh job
+  // is wired (outside Prompt B's allowed files).
+  const derived=[...derivedTeam.needsYou,...derivedTeam.handled,...derivedTeam.watching];
+  const stored=isSupabaseConfigured()?
+    await readPersistedOperatingTasks(snapshot.business.id):[];
+  const storedIds=new Set(stored.map(task=>task.id));
+  const team=projectOperatingTasks([...stored,
+    ...derived.filter(task=>!storedIds.has(task.id))]);
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");

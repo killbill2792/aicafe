@@ -7,9 +7,9 @@ describe("periodComparisonState", () => {
     expect(result).toEqual({ kind: "notEnoughData" });
   });
 
-  it("current partial week -> no misleading week-over-week comparison, even if the previous week is complete", () => {
+  it("current partial week -> comparison shown and marked as a partial period", () => {
     const result = periodComparisonState({ actualDays: 4, expectedDays: 7 }, { actualDays: 7, expectedDays: 7 });
-    expect(result).toEqual({ kind: "notEnoughData" });
+    expect(result).toEqual({ kind: "available",partialPeriod:true });
   });
 
   it("complete current + complete previous -> comparison still works", () => {
@@ -17,9 +17,9 @@ describe("periodComparisonState", () => {
     expect(result).toEqual({ kind: "available" });
   });
 
-  it("sparse previous month-to-date -> no misleading MTD comparison, even if the current month-to-date is complete", () => {
+  it("sparse previous month-to-date -> comparison shown and marked as a partial period", () => {
     const result = periodComparisonState({ actualDays: 5, expectedDays: 5 }, { actualDays: 2, expectedDays: 5 });
-    expect(result).toEqual({ kind: "notEnoughData" });
+    expect(result).toEqual({ kind: "available",partialPeriod:true });
   });
 
   it("zero actual days on either side is never 'available'", () => {

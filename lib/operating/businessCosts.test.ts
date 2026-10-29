@@ -42,7 +42,7 @@ describe("One canonical BusinessCostSummary for Money and Supervisor",()=>{
    const state=cafeStateFromSnapshot(snapshot);
    expect(state.businessCosts).toMatchObject({completeness:"partial",knownTotalCents:1_637_568});
    expect(state.businessCosts.coverage.missingProductCostCount).toBe(1);
-   expect(state.profitability.available).toBe(false);
+   expect(state.profitability.available).toBe(true);
    const message=businessCostLimitations(state.businessCosts,"en");
    expect(message).toContain("1 products");
    expect(message).not.toContain(item.id);
@@ -275,7 +275,8 @@ describe("Historical rollup proof cannot be manufactured by today's newly added 
     expect(observed.missingInputs).toContain("historicalIngredientCostCoverage");
     expect(observed.components.ingredientsCents).toBe(0);
     expect(observed.knownTotalCents).toBeGreaterThan(0);
-    expect(cafeStateFromSnapshot(snapshot,dayPeriod).profitability.available).toBe(false);
+    expect(cafeStateFromSnapshot(snapshot,dayPeriod).profitability.available).toBe(true);
+     expect(cafeStateFromSnapshot(snapshot,dayPeriod).profitability.quality.missingInputs).toContain("historicalIngredientCostCoverage");
     // Only explicitly attested, date-exact, stored-rollup reconciliation
     // (not the current recipe READY state) can clear this missing category.
     const proven:BusinessSnapshot={...snapshot,periodItemSales:{

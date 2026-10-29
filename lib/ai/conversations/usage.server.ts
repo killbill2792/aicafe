@@ -92,12 +92,14 @@ export function ownerModelCallsLimit(value = process.env.AI_OWNER_MAX_MODEL_CALL
 }
 export async function assertOwnerAgentTurnAvailable(scope: ConversationScope): Promise<void> {
   const session = await createServerSupabaseClient();
-  const todayUtc = new Date().toISOString().slice(0, 10);
+  // allowed: UTC quota bucket. ai_usage_events.attempt_day is an existing UTC quota key,
+  // not a café calendar date or a date shown to the owner.
+  const utcQuotaBucketDay = new Date().toISOString().slice(0, 10);
   const { data, error } = await session.from("ai_usage_events")
     .select("model_call_count")
     .eq("business_id", scope.businessId)
     .eq("owner_user_id", scope.ownerUserId)
-    .eq("attempt_day", todayUtc);
+    .eq("attempt_day", utcQuotaBucketDay);
   if (error || !data) throw new ConversationApiError(503, "usage_unavailable");
   // The ledger upserts repeated attempts under a single owner-message ID;
   // model-call totals still include every retry (including failed answers).

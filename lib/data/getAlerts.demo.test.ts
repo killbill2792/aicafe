@@ -9,6 +9,7 @@ const m = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/supabase/client", () => ({ isSupabaseConfigured: () => true }));
 vi.mock("@/lib/data/getActiveBusinessId", () => ({ getActiveBusinessId: vi.fn(async () => m.businessId) }));
+vi.mock("@/lib/auth/requireUser",()=>({getOptionalAuthenticatedUser:async()=>({id:"owner"})}));
 vi.mock("@/lib/alerts/generate", () => ({ generateAlerts: m.generate }));
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: vi.fn(async () => ({
@@ -42,9 +43,8 @@ describe("shared demo alert listing", () => {
     expect(m.queries).toEqual([{ table: "alerts", businessId: DEMO_BUSINESS_ID, statuses: ["new", "seen"] }]);
   });
 
-  it("continues generating alerts for an owner's own café", async () => {
+  it("never generates alerts from an owner's page load", async () => {
     expect(await getOpenAlerts()).toEqual([]);
-    expect(m.generate).toHaveBeenCalledOnce();
-    expect(m.generate.mock.calls[0]?.[1]).toBe("owner-cafe");
+    expect(m.generate).not.toHaveBeenCalled();
   });
 });

@@ -194,7 +194,7 @@ export function simulatePlanChange(input: {
   if (!Number.isFinite(base.observedSalesCents) || base.observedSalesCents < 0 ||
       !Number.isSafeInteger(base.daysInMonth) || base.daysInMonth < 1 || base.daysInMonth > 31 ||
       !Number.isSafeInteger(base.salesDaysCovered) || base.salesDaysCovered < 0 || base.salesDaysCovered > 28 ||
-      (type !== "staff" && (base.salesDaysCovered < 7 || base.observedSalesCents <= 0 || !base.breakEvenAvailable)) ||
+      (type !== "staff" && (base.salesDaysCovered === 0 || base.observedSalesCents <= 0 || !base.breakEvenAvailable)) ||
       !Number.isSafeInteger(base.operatingDaysInMonth) || base.operatingDaysInMonth < 1 ||
       base.operatingDaysInMonth > base.daysInMonth ||
       !Number.isFinite(base.payrollTaxRate) || base.payrollTaxRate < 0 ||
@@ -261,6 +261,7 @@ export function simulatePlanChange(input: {
       monthlyBreakEvenCents: null,
       breakEvenChangeCents: null,
       monthlyProfitChangeCents: profitDelta,
+      lowConfidence:base.salesDaysCovered>0&&base.salesDaysCovered<7,days:base.salesDaysCovered,
     } : null;
   }
   const next = calculateBreakEvenSales({ ...base, monthlyStaffCents: staff,
@@ -268,5 +269,6 @@ export function simulatePlanChange(input: {
   if (next.kind !== "ready") return null;
   return { monthlyBreakEvenCents: next.breakEvenSalesCents,
     breakEvenChangeCents: next.breakEvenSalesCents - old.breakEvenSalesCents,
-    monthlyProfitChangeCents: profitDelta };
+    monthlyProfitChangeCents: profitDelta,
+    lowConfidence:base.salesDaysCovered>0&&base.salesDaysCovered<7,days:base.salesDaysCovered };
 }

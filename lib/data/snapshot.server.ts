@@ -1,8 +1,6 @@
 import "server-only";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { buildDayWindows, evaluateRecipeCost, resolveProductCost, type ExpenseCategoryCode } from "@/lib/calc";
-import { generateAlerts } from "@/lib/alerts/generate";
-import { ensureScheduledShiftsThroughDate } from "./materializeSchedule";
 import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
@@ -11,36 +9,35 @@ import { normalizeOpenHours } from "@/lib/business/openHours";
 import { readPeriodItemSales } from "./periodItemSales.server";
 import {readMenuComboCostComponents} from "./comboCosts.server";
 import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
+import {getOwnerConfirmedProcessingFeePlans} from "@/lib/pos/processingFeeEstimate.server";
+import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
+import {shiftCafeDate} from "@/lib/metrics/core/clock";
+import {hasSalesCoverage} from "@/lib/calc/dayWindows";
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
   supabase: SupabaseClient,
   businessId: string,
-  costPeriod: "today"|"week"|"month"="month",
+  costPeriod: "today"|"week"|"month"|{from:string;to:string}="month",
+  asOfDate?:string,
 ): Promise<BusinessSnapshot> {
-  const { data: businessRow, error: businessError } = await supabase
-    .from("businesses")
-    .select("id, name, timezone, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status")
-    .eq("id", businessId)
-    .single();
-  if (businessError || !businessRow) throw new Error(`Business not found: ${businessId}`);
-
-  const { data: locationRow, error: locationError } = await supabase
-    .from("locations")
-    .select("open_hours")
-    .eq("business_id", businessId)
-    .order("name", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (locationError) throw locationError;
-
+  // Historical range is a read-only mode of the existing classified source.
+  // Never reach shift-materialization or alert-generation writes in this path.
+  if(typeof costPeriod==="object")
+    return readHistoricalBusinessSnapshot(supabase,businessId,costPeriod);
+  const [businessRead,locationRead]=await Promise.all([
+    supabase.from("businesses").select(
+      "id, name, timezone, currency, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status, owner_monthly_payroll_extras_cents")
+      .eq("id",businessId).single(),
+    supabase.from("locations").select("open_hours").eq("business_id",businessId)
+      .order("name",{ascending:true}).limit(1).maybeSingle(),
+  ]);
+  const {data:businessRow,error:businessError}=businessRead;
+  const {data:locationRow,error:locationError}=locationRead;
+  if(businessError||!businessRow||!businessRow.timezone)throw new Error("Business unavailable");
+  if(locationError)throw locationError;
   const timezone = businessRow.timezone;
-  const todayDateStr = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
-
-  // Reconcile the owner's recurring schedules across the current month through today before
-  // reading rollups. This picks up already-entered weekend schedules without requiring re-entry,
-  // and existing manual/POS/imported timecards always win.
-  await ensureScheduledShiftsThroughDate(supabase, businessId, timezone, todayDateStr);
+  const todayDateStr = asOfDate??formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
 
   const monthKey = todayDateStr.slice(0, 7);
   const [year, month] = monthKey.split("-").map(Number);
@@ -52,42 +49,31 @@ export async function getBusinessSnapshotFromDb(
   const prevMonthDays = new Date(year, month - 1, 0).getDate();
   const prevMonthEnd = `${prevMonthKey}-${String(prevMonthDays).padStart(2, "0")}`;
 
-  const { data: rollupRows, error: rollupError } = await supabase
-    .from("daily_rollups")
-    .select(
-      "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents",
-    )
-    .eq("business_id", businessId)
-    .gte("business_date", prevMonthStart)
-    .lte("business_date", todayDateStr)
-    .order("business_date", { ascending: true });
-  if (rollupError) throw rollupError;
-
-  const allDays = (rollupRows ?? []).map(rowToDailyFacts);
-  const { monthRecordedDays, monthActualDays, last7Days, last28Days, todayDay, todayHasData } = buildDayWindows(allDays, todayDateStr, monthKey);
-  const previousMonthRecordedDays=allDays.filter(d=>
-    d.date>=prevMonthStart&&d.date<=prevMonthEnd);
-  const previousMonthDays=previousMonthRecordedDays.filter(d=>
-    d.salesDataStatus!=="missing");
-
-  const [recurringResult, expensesResult, priorExpenseResult, recoveryOrderResult] = await Promise.all([
-    supabase
-      .from("recurring_costs")
-      .select("category_code, amount_cents, is_estimate, active_from, active_to")
-      .eq("business_id", businessId),
-    supabase
-      .from("expenses")
-      .select("category_code, amount_cents, status")
-      .eq("business_id", businessId)
-      .gte("spent_on", monthStart)
-      .lte("spent_on", todayDateStr),
-    supabase.from("expenses").select("category_code").eq("business_id", businessId).gte("spent_on", prevMonthStart).lte("spent_on", prevMonthEnd),
-    supabase
-      .from("recovery_order")
-      .select("bucket_code, position")
-      .eq("business_id", businessId)
-      .order("position", { ascending: true }),
-  ]);
+  // All source reads here are independent; no schedule/alert writes on page load.
+  const [rollupResult,recurringResult,expensesResult,priorExpenseResult,recoveryOrderResult]=
+    await Promise.all([
+      supabase.from("daily_rollups").select(
+        "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, labor_wage_status, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents")
+        .eq("business_id",businessId).gte("business_date",prevMonthStart)
+        .lte("business_date",todayDateStr).order("business_date",{ascending:true}),
+      supabase.from("recurring_costs").select("category_code, amount_cents, is_estimate, active_from, active_to")
+        .eq("business_id",businessId),
+      supabase.from("expenses").select("category_code, amount_cents, status")
+        .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr),
+      supabase.from("expenses").select("category_code").eq("business_id",businessId)
+        .gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd),
+      supabase.from("recovery_order").select("bucket_code, position")
+        .eq("business_id",businessId).order("position",{ascending:true}),
+    ]);
+  const {data:rollupRows,error:rollupError}=rollupResult;
+  if(rollupError)throw rollupError;
+  const allDays=(rollupRows??[]).map(rowToDailyFacts);
+  const {monthRecordedDays,monthActualDays,last7Days,last28Days,todayDay,todayHasData}=
+    buildDayWindows(allDays,todayDateStr,monthKey);
+  const breakEvenDays=allDays.filter(d=>d.date>=shiftCafeDate(todayDateStr,-28)&&
+    d.date<todayDateStr&&hasSalesCoverage(d));
+  const previousMonthRecordedDays=allDays.filter(d=>d.date>=prevMonthStart&&d.date<=prevMonthEnd);
+  const previousMonthDays=previousMonthRecordedDays.filter(d=>d.salesDataStatus!=="missing");
   if (recurringResult.error) throw recurringResult.error;
   if (expensesResult.error) throw expensesResult.error;
   if (priorExpenseResult.error) throw priorExpenseResult.error;
@@ -134,31 +120,31 @@ export async function getBusinessSnapshotFromDb(
       return { categoryCode: code, label: RUNNING_COST_LABELS[code] ?? code, amountCents: 0, isEstimate: false, isMissing: isExpected, isExpected };
     });
 
-  const allMenuItemSnapshots = await getMenuItemSnapshots(supabase, businessId, todayDateStr, last28Days.map((d) => d.date));
-  // Requested window, not last28Days and not the currently active menu.
+  // Requested period, not last28Days, is the item-cost evidence boundary.
   const minusSix=new Date(Date.parse(todayDateStr+"T12:00:00Z")-6*86_400_000).toISOString().slice(0,10);
   const periodFrom=costPeriod==="today"?todayDateStr:costPeriod==="week"?minusSix:monthStart;
-  const periodItemSales=await readPeriodItemSales(supabase,businessId,
-    {from:periodFrom,to:todayDateStr});
-  const menuItems = allMenuItemSnapshots.filter((item) => item.active !== false);
-  const breakEvenProductCosts = allMenuItemSnapshots.filter((item) => item.quantitySoldLast28Days > 0);
-  const staffShiftsToday = await getStaffShiftsToday(supabase, businessId, timezone, todayDateStr);
-
-  // Regenerate alerts opportunistically (no cron yet — see PROGRESS.md) so the Home teaser and
-  // the Alerts screen never disagree, then report how many are open and their $ impact.
-  await generateAlerts(supabase, businessId);
-  const { count: alertsCount, data: alertRows } = await supabase
-    .from("alerts")
-    .select("impact_cents", { count: "exact" })
-    .eq("business_id", businessId)
-    .in("status", ["new", "seen"]);
-  const leakingCents = (alertRows ?? []).reduce((sum, a) => sum + Math.max(0, a.impact_cents ?? 0), 0);
+  const [allMenuItemSnapshots,periodItemSales,staffShiftsToday,alertsRead,ownerFeePlans]=
+    await Promise.all([
+      getMenuItemSnapshots(supabase,businessId,todayDateStr),
+      readPeriodItemSales(supabase,businessId,{from:periodFrom,to:todayDateStr}),
+      getStaffShiftsToday(supabase,businessId,timezone,todayDateStr),
+      supabase.from("alerts").select("impact_cents",{count:"exact"}).eq("business_id",businessId)
+        .in("status",["new","seen"]),
+      getOwnerConfirmedProcessingFeePlans(supabase,businessId),
+    ]);
+  if(alertsRead.error)throw alertsRead.error;
+  const menuItems=allMenuItemSnapshots.filter(item=>item.active!==false);
+  const breakEvenProductCosts=allMenuItemSnapshots.filter(item=>item.quantitySoldLast28Days>0);
+  const alertsCount=alertsRead.count;
+  const leakingCents=(alertsRead.data??[]).reduce((sum,alert)=>
+    sum+Math.max(0,alert.impact_cents??0),0);
 
   return {
     business: {
       id: businessRow.id,
       name: businessRow.name,
       timezone,
+      currency:businessRow.currency??null,
       payrollTaxRate: Number(businessRow.payroll_tax_rate),
       payrollTaxRateStatus: businessRow.payroll_tax_rate_status ?? "estimated",
       payrollTaxRateSource: businessRow.payroll_tax_rate_source ?? "system_estimate",
@@ -172,6 +158,7 @@ export async function getBusinessSnapshotFromDb(
     monthRecordedDays,
     monthActualDays,
     last28Days,
+    breakEvenDays,
     last7Days,
     todayDay,
     todayHasData,
@@ -186,7 +173,10 @@ export async function getBusinessSnapshotFromDb(
     alerts: { count: alertsCount ?? 0, leakingCents },
     staffShiftsToday,
     staffNowIso: new Date().toISOString(),
-  };
+    ownerFeePlans,
+    ownerMonthlyPayrollExtrasCents:businessRow.owner_monthly_payroll_extras_cents===null?
+      null:Number(businessRow.owner_monthly_payroll_extras_cents),
+  } as BusinessSnapshot;
 }
 
 /** All of today's timecards (business-timezone calendar day), joined to the employee's name/role. */
@@ -234,7 +224,6 @@ async function getMenuItemSnapshots(
   supabase: SupabaseClient,
   businessId: string,
   todayDateStr: string,
-  last28DateStrs: string[],
 ): Promise<MenuItemSnapshot[]> {
   const { data: items, error: itemsError } = await supabase
     .from("menu_items")
@@ -249,8 +238,8 @@ async function getMenuItemSnapshots(
     supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", itemIds),
     supabase.rpc("menu_item_quantities_sold", {
       p_business_id: businessId,
-      p_from: last28DateStrs[0] ?? todayDateStr,
-      p_to: todayDateStr,
+      p_from: shiftCafeDate(todayDateStr,-28),
+      p_to: shiftCafeDate(todayDateStr,-1),
     }),
     supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status").eq("business_id", businessId).in("menu_item_id", itemIds),
   ]);
@@ -332,4 +321,155 @@ async function getMenuItemSnapshots(
       quantitySoldLast28Days: quantityByItem[item.id] ?? 0,
     };
   });
+}
+
+
+/** Read-only historical snapshot for a café-scoped arbitrary range. Never call
+ * materializeScheduledShifts, generateAlerts, or any snapshot write path here.
+ * Monthly cost lines retain their own month provenance across month boundaries.
+ */
+async function readHistoricalBusinessSnapshot(
+  supabase:SupabaseClient,businessId:string,period:{from:string;to:string},
+):Promise<BusinessSnapshot & {ownerFeePlans:OwnerFeePlan[];
+  ownerMonthlyPayrollExtrasCents:number|null;historicalPeriod:{
+  days:import("@/lib/calc").DailyFacts[];
+  recorded:import("@/lib/calc").DailyFacts[];
+  monthlyAmounts:import("@/lib/calc").CategoryMonthlyAmount[];
+  missingExpenseCategories:string[];
+  estimatedExpenseCategories:string[];
+}}>{
+  if(!businessId||!/^\d{4}-\d{2}-\d{2}$/.test(period.from)||
+    !/^\d{4}-\d{2}-\d{2}$/.test(period.to)||period.from>period.to)
+    throw new Error("Invalid historical café period");
+  const {data:business,error:businessError}=await supabase.from("businesses")
+    .select("id,name,timezone,currency,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source,target_operating_margin,target_operating_margin_status,owner_monthly_payroll_extras_cents")
+    .eq("id",businessId).single();
+  if(businessError||!business||!business.timezone)throw new Error("Historical café scope unavailable");
+  const today=formatInTimeZone(new Date(),business.timezone,"yyyy-MM-dd");
+  if(period.from>today)throw new Error("Historical period has no completed dates");
+  period={...period,to:period.to>today?today:period.to};
+  const first=period.from.slice(0,7)+"-01";
+  const last=period.to.slice(0,7);
+  const [year,month]=last.split("-").map(Number);
+  const monthEnd=last+"-"+String(new Date(year,month,0).getDate()).padStart(2,"0");
+  const [rollups,recurring,expenses,locations,itemSales]=await Promise.all([
+    supabase.from("daily_rollups")
+      .select("business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,staff_tax_source,sales_data_status,card_fees_cents,card_fees_status,voids_cents")
+      .eq("business_id",businessId).gte("business_date",period.from)
+      .lte("business_date",period.to).order("business_date",{ascending:true}).range(0,999),
+    supabase.from("recurring_costs")
+      .select("id,category_code,amount_cents,is_estimate,active_from,active_to")
+      .eq("business_id",businessId).lte("active_from",period.to).order("id",{ascending:true}).range(0,999),
+    supabase.from("expenses").select("id,category_code,amount_cents,status,spent_on")
+      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd).order("spent_on",{ascending:true}).order("category_code",{ascending:true}).order("id",{ascending:true}).range(0,999),
+    supabase.from("locations").select("open_hours")
+      .eq("business_id",businessId).order("name",{ascending:true}).limit(1),
+    readPeriodItemSales(supabase,businessId,period),
+  ]);
+  for(const result of [rollups,recurring,expenses,locations])
+    if(result.error)throw result.error;
+  // Page every historical record. PostgREST commonly caps queries at 1,000 rows.
+  const allRollups=[...(rollups.data??[])];
+  for(let offset=1000;offset<=allRollups.length;offset+=1000){
+    const page=await supabase.from("daily_rollups")
+      .select("business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,labor_wage_status,staff_tax_status,staff_tax_source,sales_data_status,card_fees_cents,card_fees_status,voids_cents")
+      .eq("business_id",businessId).gte("business_date",period.from)
+      .lte("business_date",period.to).order("business_date",{ascending:true}).range(offset,offset+999);
+    if(page.error)throw page.error;
+    allRollups.push(...(page.data??[]));
+    if((page.data??[]).length<1000)break;
+  }
+  const allExpenses=[...(expenses.data??[])];
+  for(let offset=1000;offset<=allExpenses.length;offset+=1000){
+    const page=await supabase.from("expenses").select("id,category_code,amount_cents,status,spent_on")
+      .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd)
+      .order("spent_on",{ascending:true}).order("category_code",{ascending:true}).range(offset,offset+999);
+    if(page.error)throw page.error;
+    allExpenses.push(...(page.data??[]));
+    if((page.data??[]).length<1000)break;
+  }
+  const allRecurring=[...(recurring.data??[])];
+  for(let offset=1000;offset<=allRecurring.length;offset+=1000){
+    const page=await supabase.from("recurring_costs")
+      .select("id,category_code,amount_cents,is_estimate,active_from,active_to")
+      .eq("business_id",businessId).lte("active_from",period.to)
+      .order("id",{ascending:true}).range(offset,offset+999);
+    if(page.error)throw page.error;
+    allRecurring.push(...(page.data??[]));
+    if((page.data??[]).length<1000)break;
+  }
+  const recorded=allRollups.map(rowToDailyFacts);
+  const sales=recorded.filter(d=>d.salesDataStatus!=="missing");
+  const months:string[]=[];
+  let cursor=first;
+  while(cursor<=last+"-01"){
+    months.push(cursor.slice(0,7));
+    const [y,m]=cursor.split("-").map(Number);
+    const next=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);
+    cursor=next+"-01";
+    if(months.length>2400)throw new Error("Historical period exceeds supported calendar bounds");
+  }
+  const monthlyAmounts:import("@/lib/calc").CategoryMonthlyAmount[]=[];
+  const missingExpenseCategories:string[]=[];
+  const estimatedExpenseCategories:string[]=[];
+  const relevantCodes=RUNNING_COST_CODES;
+  for(const key of months){
+    const finalDay=key+"-"+String(new Date(Number(key.slice(0,4)),Number(key.slice(5,7)),0)
+      .getDate()).padStart(2,"0");
+    for(const categoryCode of relevantCodes){
+      const actual=allExpenses.filter(r=>r.category_code===categoryCode&&
+        r.spent_on>=key+"-01"&&r.spent_on<=finalDay);
+      const configured=allRecurring.filter(r=>r.category_code===categoryCode&&
+        r.active_from<=finalDay&&(!r.active_to||r.active_to>=key+"-01"));
+      const rows=actual.length?actual:configured;
+      const amountCents=rows.reduce((sum,r)=>sum+Number(r.amount_cents),0);
+      const isEstimate=actual.length?actual.some(r=>r.status==="estimated"):
+        configured.some(r=>r.is_estimate);
+      const isMissing=rows.length===0;
+      monthlyAmounts.push({monthKey:key,categoryCode,amountCents,isEstimate,isMissing});
+      if(isEstimate)estimatedExpenseCategories.push("expense:"+categoryCode+":"+key);
+      if(isMissing&&(allRecurring.some(r=>r.category_code===categoryCode)||
+        allExpenses.some(r=>r.category_code===categoryCode)))
+        missingExpenseCategories.push("expense:"+categoryCode+":"+key);
+    }
+  }
+  const monthKey=last;
+  const lastAmounts=monthlyAmounts.filter(r=>r.monthKey===monthKey);
+  const runningCostLines:RunningCostLine[]=lastAmounts.map(line=>({
+    categoryCode:line.categoryCode as ExpenseCategoryCode,
+    label:RUNNING_COST_LABELS[line.categoryCode as ExpenseCategoryCode]??line.categoryCode,
+    amountCents:line.amountCents,isEstimate:line.isEstimate,
+    isMissing:line.isMissing,isExpected:missingExpenseCategories.some(x=>x.startsWith("expense:"+line.categoryCode+":")),
+  }));
+  const ownerFeePlans=await getOwnerConfirmedProcessingFeePlans(supabase,businessId);
+  return {
+    business:{id:business.id,name:business.name,timezone:business.timezone,
+      currency:business.currency??null,
+      payrollTaxRate:Number(business.payroll_tax_rate),
+      payrollTaxRateStatus:business.payroll_tax_rate_status,
+      payrollTaxRateSource:business.payroll_tax_rate_source,
+      targetOperatingMargin:Number(business.target_operating_margin??.15),
+      targetOperatingMarginStatus:business.target_operating_margin_status,
+      openHours:normalizeOpenHours(locations.data?.[0]?.open_hours)},
+    todayDateStr:today,monthKey,daysInMonth:new Date(year,month,0).getDate(),
+    monthActualDays:sales.filter(d=>d.date.slice(0,7)===monthKey),
+    monthRecordedDays:recorded.filter(d=>d.date.slice(0,7)===monthKey),
+    last28Days:[],last7Days:[],
+    todayDay:recorded.find(d=>d.date===today)??{
+      date:today,netSalesCents:0,ordersCount:0,drinksCount:0,ingredientsCents:0,
+      wagesCents:null,staffTaxCents:null,cardFeesCents:0,voidsCents:0,
+      salesDataStatus:"missing" as const,cardFeesStatus:"missing" as const,
+    },
+    todayHasData:recorded.some(d=>d.date===today&&d.salesDataStatus!=="missing"),
+    previousMonthDays:sales.filter(d=>d.date.slice(0,7)!==monthKey),
+    previousMonthRecordedDays:recorded.filter(d=>d.date.slice(0,7)!==monthKey),
+    runningCostLines,recoveryOrder:RUNNING_COST_CODES,
+    menuItems:[],allCostProducts:[],periodItemSales:itemSales,breakEvenProductCosts:[],
+    alerts:{count:0,leakingCents:0},staffShiftsToday:[],staffNowIso:new Date().toISOString(),
+    historicalPeriod:{days:sales,recorded,monthlyAmounts,
+      missingExpenseCategories,estimatedExpenseCategories},
+    ownerFeePlans,
+    ownerMonthlyPayrollExtrasCents:business.owner_monthly_payroll_extras_cents===null?
+      null:Number(business.owner_monthly_payroll_extras_cents),
+  };
 }

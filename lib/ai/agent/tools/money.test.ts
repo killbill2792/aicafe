@@ -3,15 +3,63 @@ import { moneyTools } from "./money";
 import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
 import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
 import {newResolveState} from "../resolve";
+import {figure,type Economics} from "@/lib/calc/supervisorEconomics";
 import type { AgentToolContext } from "./index";
 const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,quality:{...q,missingInputs:["missingSource"]}};
 function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
-  return {timezone:"America/Los_Angeles",asOf:"2026-10-22",locale:"en",tools:{
+  return {asOf:"2026-10-22",timezone:"America/Los_Angeles",locale:"en",tools:{
     getProfitability:async()=>unavailable,getSalesTrend:async()=>unavailable,
     getMenuCatalog:async()=>unavailable,...extra}};
 }
 describe("Leo scoped money reads",()=>{
+  it("passes owner sales and percentage overrides into the authenticated calculation",async()=>{
+    const economics:Economics={
+      monthlyBills:figure(30000,"actual","rent"),monthlyStaff:figure(30000,"actual","payroll"),
+      monthlyRevenue:figure(100000,"actual","recorded"),ingredientRate:.1,feeRate:.02,
+      ingredientStatus:"actual",feeStatus:"actual",averagePriceCents:500,monthlyUnits:200,
+      daysInMonth:31,targetMargin:.15,missingDays:[],asOfDate:"2026-10-22",
+      observedDays:[{date:"2026-10-21",netSalesCents:100000,ingredientsCents:10000,
+        cardFeesCents:2000,cardFeesStatus:"actual",drinksCount:200}],
+    };
+    const context:AgentToolContext={...ctx({}),readEconomics:async()=>({economics,items:[],
+      staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
+    const result=await moneyTools.get_break_even.execute({ownerNetSalesCents:200000,
+      ownerSalesDays:2,ownerIngredientPackagingPercent:25,ownerProcessingFeePercent:5},context);
+    expect(result.monthlyBreakEvenCents).toBe(Math.round(60000/.70));
+    expect(result.status).toBe("estimate");
+    const noImports=await moneyTools.get_break_even.execute({ownerNetSalesCents:200000,
+      ownerSalesDays:2,ownerIngredientPackagingPercent:25,ownerProcessingFeePercent:5},
+      {...context,readEconomics:async()=>({...await context.readEconomics!(),
+        economics:{...economics,observedDays:[]}})});
+    expect(noImports.monthlyBreakEvenCents).toBe(Math.round(60000/.70));
+  });
+  it("get_cost_summary renders the ledger label in EN ES and AR",async()=>{
+    const snapshot=getFixtureSnapshot();
+    const observed=businessCostSummaryFromSnapshot(snapshot,{from:snapshot.monthKey+"-01",to:snapshot.todayDateStr});
+    const sum=Object.values(observed.components).reduce((total,n)=>total+n,0);
+    const source={...observed,completeness:"complete" as const,knownTotalCents:sum,
+      observed:{ingredients:true,loadedStaff:true,cardFees:true,runningCosts:true},
+      estimatedInputs:[]};
+    for(const [locale,label] of [["en","Recorded business costs"],["es","Costes del negocio registrados"],["ar","تكاليف العمل المسجلة"]] as const){
+      const c={...ctx({getBusinessCostSummary:async()=>source}),locale,currency:"EUR"};
+      const answer=await moneyTools.get_cost_summary.execute({period:"month"},c);
+      const lines=answer.explain as Array<{label:string;inputs:Array<{name:string}>}>;
+      expect(lines[0].label).toBe(label);
+      if(locale!=="en")expect(lines[0].inputs.map(x=>x.name)).not.toContain("ingredients");
+    }
+  });
+  it("does not quietly use UTC when café timezone is unavailable",async()=>{
+    const missingZone={...ctx({}),timezone:undefined} as unknown as AgentToolContext;
+    const expense=await moneyTools.get_expenses.execute(
+      {period:"month",category:null},missingZone);
+    const costs=await moneyTools.get_cost_summary.execute(
+      {period:"month"},missingZone);
+    expect(expense.missing).toContain("cafeTimezoneMissing");
+    expect(costs.missing).toContain("cafeTimezoneMissing");
+    expect(expense.period).toBeNull();
+    expect(costs.period).toBeNull();
+  });
   it("allows only the category selected in the previous trusted clarification",async()=>{
     const state=newResolveState("Supplies — supplies",[
       {role:"assistant",content:"Asked: Which category? Options: Supplies — supplies (supplies); Supplies — other (other)"}]);

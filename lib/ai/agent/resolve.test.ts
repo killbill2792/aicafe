@@ -1,10 +1,21 @@
 import {describe,it,expect} from "vitest";
-import {resolveEntity,newResolveState,ownerChoiceGuard,observeToolResult} from "./resolve";
+import {resolveEntity,newResolveState,ownerChoiceGuard,observeToolResult,localizedPeriodLabel} from "./resolve";
 const hot="11111111-1111-4111-8111-111111111111",iced="22222222-2222-4222-8222-222222222222";
 const rows=[{id:hot,name:"Latte",category:"Hot"},{id:iced,name:"Latte",category:"Iced"},
 {id:"33333333-3333-4333-8333-333333333333",name:"Café",category:"Coffee"}];
 const props={nameOf:(r:typeof rows[number])=>r.name,idOf:(r:typeof rows[number])=>r.id,describe:(r:typeof rows[number])=>r.category};
 describe("safe entity resolution",()=>{
+ it.each([["en","Last month"],["es","El mes pasado"],["ar","الشهر الماضي"]] as const)(
+  "translates A labelKey in %s", (locale,expected)=>{
+   expect(localizedPeriodLabel({from:"2026-09-01",to:"2026-09-30",
+     label:"2026-09-01 – 2026-09-30",labelKey:"periodLastMonth"},locale)).toContain(expected);
+   expect(localizedPeriodLabel({from:"2026-09-01",to:"2026-09-30",
+     label:"fallback",labelKey:"noSuchKey"},locale)).toBe("fallback");
+ });
+ it("labels B latest-data key without modifying the underlying dates",()=>{
+   expect(localizedPeriodLabel({from:"2026-09-01",to:"2026-09-30",
+     labelKey:"periodLatestData"},"en")).toContain("Latest data");
+ });
  it("maps a selected category code from a trusted previous clarification",()=>{
     const state=newResolveState("Supplies — other",[
       {role:"assistant",content:"Asked: Which supplies? Options: Supplies — supplies (supplies); Supplies — other (other)"}]);

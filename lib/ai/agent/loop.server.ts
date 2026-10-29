@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 import {redactToolFailure,redactedErrorStack} from "./redactToolError";
-import {safeToolError,TOOL_REASONS} from "./toolErrors";
+import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
 import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import { agentToolDefinitions, agentLabelsPrompt, agentForTool, executeAgentTool, type AgentToolContext, type AgentToolResult } from "./tools";
@@ -8,12 +8,13 @@ import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
 import { STYLE_RULES } from "./style";
-import {newResolveState,observeToolResult} from "./resolve";
+import {newResolveState,observeToolResult,resolveOwnerPeriod,localizedPeriodLabel} from "./resolve";
 import {acceptedExplainLines,type ExplainLine} from "./explain";
-import {verifiedRecommendedPriceInReply,forcedPricingClarifyText} from "./pricingReply";
-import en from "@/messages/en.json";
-import es from "@/messages/es.json";
-import ar from "@/messages/ar.json";
+import {verifiedRecommendedPriceInReply} from "./pricingReply";
+import {injectSavedOwnerInputs,formatSavedOwnerFacts,type SavedFact} from "@/lib/ownerFacts/inject";
+import {classifyNeedsAsk} from "@/lib/ownerFacts/needsAsk";
+import {questionFromReasons} from "@/lib/ownerFacts/questions";
+import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -30,11 +31,11 @@ export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType
 export type OwnerFollowUp = { id: string; text: string };
 /** Stable instruction prefix. Style rules are appended (not per-turn data), so the
  * whole prefix stays identical across turns and cafés and is served from cache. */
-export function agentInstructions(style: boolean): string {
-  return SYSTEM_PROMPT + "\n" + (style ? STYLE_RULES + "\n" : "") + agentLabelsPrompt;
+export function agentInstructions(): string {
+  return SYSTEM_PROMPT + "\n" + STYLE_RULES + "\n" + agentLabelsPrompt;
 }
-export function agentPromptCacheKey(style: boolean): string { return style ? "cafe-agent-v4" : "cafe-agent-v3"; }
-export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. When a tool result says needsOwnerChoice or two or more products, people, categories, or periods fit and affect numbers or proposals, call ask_owner with verified options (value = candidate ID returned by a tool; label = candidate name with optional price or size suffix), show Other for remaining matches, and stop. Never guess silently. If one candidate clearly fits, do not ask. Never ask in plain text when ask_owner fits. When suggest_new_item_price returns askOwnerRequired, call ask_owner with 2–4 exact candidate pairs from that result and allowOther=true. The price breakdown is UI-only: NEVER list its components in the chat reply. For follow-up pricing math, re-call suggest_new_item_price with the same owner item inputs. Use tool numbers. Compute business math only through tools; for any what-if or multi-step calculation call simulate_scenario first. Do not do arithmetic in prose beyond simple addition or subtraction of checked tool numbers. Missing inputs narrow an answer; they do not block a partial estimate. Never ask for a figure a tool returned. Say Estimate or You told me next to each affected number once. Give the best labeled answer and say what is needed to make it exact. Label owner-provided figures as You told me, and model estimates as Estimate. Imported prices are approximate observations, never verified list prices; disclose priceCheck differences. If priceCheck is unknown, do not claim a verified comparison. If a tool result has coverageLabel, say the numbers are for that window, not the period asked. Tool money values are integer cents, never dollars. If a tool returns a safe error code, tell the owner its specific reason and next step. On incomplete evidence explain what is known and missing. For questions about what needs attention, use get_attention_items as the sole source of attention tasks; never infer attention from staff, schedule or sales readings. If there are no attention items, say nothing needs attention. If attendanceTracked is false, say clock-ins are not tracked yet and explain how to connect a time clock or POS; never report zero clocked in. A missing confirmed weekly schedule means no schedule is set, not that coverage gaps are confirmed. Any requested or agreed change, including yes, do it, approve or send it, must invoke its propose_* tool in the same turn, so an approval card appears. Do not claim a card or a change unless that tool succeeded. Mapping: price -> propose_price_change; price test -> propose_price_experiment; supplies -> propose_purchases; weekly schedule -> draft_week_schedule then propose_schedule; one shift -> propose_shift_change; hire -> propose_add_staff; staff edit or retire -> propose_staff_change; availability -> propose_availability_change; labor rule -> propose_rule_change; send team schedule -> propose_send_schedule; check-in -> record_checkin. A schedule table in text requires propose_schedule, too. A what-if is simulate_scenario only, until the owner asks to act. A proposal is not a completed action; say 'I have drafted this for your approval.' Photos explicitly attached by an owner may describe purchases; draft individual proposals for each item using propose_purchases, never silently write them. Do not invent missing units or costs. For owner-approved schedules, messages are NEVER dispatched by AI. Explain that the owner must open their own WhatsApp or SMS composer. A recorded Opened action is NOT proof of delivery. No JSON envelope.";
+export function agentPromptCacheKey(): string { return "cafe-agent-v4"; }
+export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. The owner may answer any missing business fact using ask_owner. Use saved owner facts on every turn and never ask again for an already saved fact unless the owner changes it. If any requested fact is empty, failed or uncertain, give the partial answer and call ask_owner; do not refuse or direct the owner to connect a POS. Alex, Leo, Maya and Olivia are names for you; you are one assistant with all tools. Never say you can\'t reach or contact a teammate. Answer staff, schedule, money and supplies questions directly with the tools. Use tools for business facts. Never invent numbers, missing data or completed actions. When a tool result says needsOwnerChoice or two or more products, people, categories, or periods fit and affect numbers or proposals, call ask_owner with verified options (value = candidate ID returned by a tool; label = candidate name with optional price or size suffix), show Other for remaining matches, and stop. Never guess silently. If one candidate clearly fits, do not ask. Never ask in plain text when ask_owner fits. When suggest_new_item_price returns askOwnerRequired, call ask_owner with 2–4 exact candidate pairs from that result and allowOther=true. Answer first, then the key numbers. Be as short as the question allows. Put all working (cost, labor, fees, margin, sources) only in the collapsed How I got this block from trusted tool explanations. The price breakdown is UI-only: NEVER list its components in the chat reply. For follow-up pricing math, re-call suggest_new_item_price with the same owner item inputs. Use tool numbers. Compute business math only through tools; for any what-if or multi-step calculation call simulate_scenario first. Do not do arithmetic in prose beyond simple addition or subtraction of checked tool numbers. Missing inputs narrow an answer; they do not block a partial estimate. Never ask for a figure a tool returned. Say Estimate or You told me next to each affected number once. Give the best labeled answer and say what is needed to make it exact. Label owner-provided figures as You told me, and model estimates as Estimate. Imported prices are approximate observations, never verified list prices; disclose priceCheck differences. If priceCheck is unknown, do not claim a verified comparison. If a tool result has coverageLabel, say the numbers are for that window, not the period asked. Tool money values are integer cents; show them in the café currency. If a tool returns a safe error code, tell the owner its specific reason and next step. On incomplete evidence explain what is known and missing. For questions about what needs attention, use get_attention_items as the sole source of attention tasks; never infer attention from staff, schedule or sales readings. If there are no attention items, say nothing needs attention. If attendanceTracked is false, explain the gap and ask the owner about attendance with ask_owner; never report zero clocked in. A missing confirmed weekly schedule means no schedule is set, not that coverage gaps are confirmed. Any requested or agreed change, including yes, do it, approve or send it, must invoke its propose_* tool in the same turn, so an approval card appears. Do not claim a card or a change unless that tool succeeded. Mapping: price -> propose_price_change; price test -> propose_price_experiment; supplies -> propose_purchases; weekly schedule -> draft_week_schedule then propose_schedule; one shift -> propose_shift_change; hire -> propose_add_staff; staff edit or retire -> propose_staff_change; availability -> propose_availability_change; labor rule -> propose_rule_change; send team schedule -> propose_send_schedule; check-in -> record_checkin. A schedule table in text requires propose_schedule, too. A what-if is simulate_scenario only, until the owner asks to act. A proposal is not a completed action; say 'I have drafted this for your approval.' Photos explicitly attached by an owner may describe purchases; draft individual proposals for each item using propose_purchases, never silently write them. Do not invent missing units or costs. For owner-approved schedules, messages are NEVER dispatched by AI. Explain that the owner must open their own WhatsApp or SMS composer. A recorded Opened action is NOT proof of delivery. No JSON envelope.";
 
 export async function* openAIProvider(params: Record<string, unknown>, signal: AbortSignal): AsyncGenerator<Event> {
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -72,16 +73,18 @@ export async function runAgentTurn(args: {
   onReset?: (discardChars: number) => void;
   now?: () => number; onTool?: (name:string,agentId:string)=>void;
   previousEvidence?:readonly NumericEvidence[];
-  /** CHAT_STYLE_V2: append STYLE_RULES to the cached instruction prefix. */
-  style?: boolean;
-  /** CHAT_MEMORY: owner-approved café facts, already capped and formatted. Sent as
+  /** owner-approved café facts, already capped and formatted. Sent as
    * the first input item (stable per café, so it also caches) — never in instructions. */
   memoryFacts?: string | null;
+  /** Versioned café-specific facts are separate from approved conversation memory. */
+  ownerFacts?: readonly SavedFact[];
+  /** True when the authenticated fact read failed; never confuse with zero saved facts. */
+  ownerFactsReadFailed?:boolean;
   /** Approved scope for privacy-safe error audit. */
   businessId?:string;requestId?:string;
-  /** Extra strict tool definitions enabled by a flag (e.g. the memory tool). */
+  /** Extra strict tool definitions (e.g. the memory tool). */
   extraTools?: readonly unknown[];
-  /** CHAT_JOBS: returns up to `max` owner follow-ups not yet read (each exactly once).
+  /** returns up to `max` owner follow-ups not yet read (each exactly once).
    * Called before each later model step; failures are ignored (unread messages then
    * get their own continuation turn). */
   takeFollowUps?: (max: number) => Promise<OwnerFollowUp[]>;
@@ -89,6 +92,7 @@ export async function runAgentTurn(args: {
   /** Redacted, synchronous event collector. Never persists while the loop is running. */
   onAuditStep?: (step: AgentAuditStep) => void;
 }): Promise<AgentTurn> {
+  if(!args.context.timezone)throw new Error("cafe_timezone_required");
   const now = args.now ?? Date.now, started = now(), deadline = started + 60000;
   const workDeadline = deadline - 12000; // reserve time for the final no-tool answer
   const controller = new AbortController();
@@ -97,8 +101,9 @@ export async function runAgentTurn(args: {
   const weekday=new Intl.DateTimeFormat("en-US",{weekday:"long",timeZone:"UTC"}).format(localDay);
   const input: unknown[] = [
     ...(args.memoryFacts ? [{ role: "developer", content: args.memoryFacts }] : []),
+    ...(args.ownerFacts?.length ? [{role:"developer",content:formatSavedOwnerFacts(args.ownerFacts)}] : []),
     {role:"developer",content:"Café local date: "+args.context.asOf+" ("+weekday+"), timezone "+
-      (args.context.timezone??"UTC")+"; weeks start Monday"},
+      args.context.timezone+"; weeks start Monday"},
     ...(args.history ?? []), { role: "user", content:args.ownerImages?.length?
       [{type:"input_text",text:args.ownerText},...args.ownerImages.map(image=>({
         type:"input_image",image_url:"data:"+image.mimeType+";base64,"+image.base64,detail:"low"
@@ -134,7 +139,11 @@ export async function runAgentTurn(args: {
   const resolveState=newResolveState(args.ownerText,args.history);
   args.context.resolveState=resolveState;
   args.context.ownerMessages=(args.history??[]).filter(m=>m.role==="user").map(m=>m.content);
+  // Tool context is authenticated; owner facts are loaded once per turn.
+  Object.assign(args.context,{savedOwnerFacts:args.ownerFacts??[]});
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
+  if(args.ownerFactsReadFailed)results.push({callId:'owner-facts-read',name:'owner_facts',arguments:'{}',
+    result:{source:'owner_facts',period:null,missing:['ownerFactsReadFailed'],error:'owner_facts_read_failed'}});
   const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0, model: undefined as string|undefined };
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
@@ -142,10 +151,10 @@ export async function runAgentTurn(args: {
   const model = configuredSupervisorModel();
   const audit = (step: AgentAuditStep) => { try { args.onAuditStep?.(step); } catch { /* audit is non-critical */ } };
   const request = (final: boolean) => ({
-    model, instructions: agentInstructions(Boolean(args.style)),
+    model, instructions: agentInstructions(),
     tools: [...agentToolDefinitions, ...(args.extraTools ?? [])],
     tool_choice: final ? "none" : "auto", stream: true,
-    max_output_tokens: 1200, prompt_cache_key: agentPromptCacheKey(Boolean(args.style)), input,
+    max_output_tokens: 1200, prompt_cache_key: agentPromptCacheKey(), input,
   });
   const call = async (final: boolean) => {
     const calls: ToolCall[] = [], output: unknown[] = [];
@@ -192,7 +201,7 @@ export async function runAgentTurn(args: {
       modelError = "model_call_failed";
       const discardChars = text.length - callTextStart;
       if (discardChars > 0) {
-        text = text.slice(0, callTextStart);
+        text = text.slice(0, callTextStart); // allowed: discard incomplete model stream on provider failure
         args.onReset?.(discardChars);
       }
       throw error;
@@ -213,7 +222,8 @@ export async function runAgentTurn(args: {
         // The owner added something while this answer streamed: answer it in the
         // same reply (one extra bounded call) instead of silently dropping it.
         if (round < 4 && usage.modelCalls < 5 && await readFollowUps()) {
-          if (text && !text.endsWith("\n")) { text += "\n\n"; args.onDelta?.("\n\n"); }
+          if (text && !text.endsWith("\n")) { text += "\n\n"; // allowed: separator between model responses to live follow-ups
+             args.onDelta?.("\n\n"); }
           continue;
         }
         finished = true; break;
@@ -238,7 +248,15 @@ export async function runAgentTurn(args: {
         let toolError: string | undefined;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
-          result = await Promise.race([executeAgentTool(tool.name, JSON.parse(tool.arguments), args.context),
+          const parsedArgs=JSON.parse(tool.arguments);
+          const questionArgs=tool.name==="ask_owner"?
+            withoutSavedFactFields(parsedArgs,args.ownerFacts??[]):parsedArgs;
+          result = await Promise.race([questionArgs===null?
+            Promise.resolve({source:"ask_owner",period:null,missing:["alreadySaved"],
+              error:"ownerFactAlreadySaved"} as AgentToolResult):
+            executeAgentTool(tool.name,injectSavedOwnerInputs(questionArgs,args.ownerFacts??[],
+              Boolean((agentToolDefinitions.find(d=>d.name===tool.name)?.parameters as {
+                properties?:Record<string,unknown>}|undefined)?.properties?.ownerInputs)),args.context),
             new Promise<never>((_, reject) => {
               const left = workDeadline - now();
               if (left <= 0) reject(new Error("deadline"));
@@ -247,8 +265,21 @@ export async function runAgentTurn(args: {
           failures = 0;
         } catch (error) {
           failures++;
-          const mapped = error instanceof ZodError || error instanceof SyntaxError ?
-            {code:"validation" as const,reason:TOOL_REASONS.validation}:safeToolError(error,now() >= workDeadline);
+          const failedPeriod=(()=>{
+            try{
+              const input=JSON.parse(tool.arguments) as Record<string,unknown>;
+              const candidate=input.period??(typeof input.from==="string"&&typeof input.to==="string"?
+                {from:input.from,to:input.to}:null);
+              if(!candidate)return null;
+              const resolved=resolveOwnerPeriod(candidate as import("@/lib/calc/periods").PeriodInput,
+                {asOf:args.context.asOf,timezone:args.context.timezone},resolveState);
+              return resolved.status==="resolved"?resolved.value:null;
+            }catch{return null;}
+          })();
+          const periodContext=failedPeriod?failedPeriod.from+" – "+failedPeriod.to:undefined;
+          const mapped = safeToolError(error,now() >= workDeadline,{
+            source:tool.name,locale:args.context.locale,period:periodContext});
+          if(error instanceof ZodError||error instanceof SyntaxError)mapped.code="validation";
           const detail={error:mapped.code,reason:mapped.reason};
           const diagnostic=redactToolFailure(error,mapped.code);
           if(mapped.code!=="validation")console.error("agent_tool_failure",{
@@ -257,9 +288,21 @@ export async function runAgentTurn(args: {
             cafeHash:createHash("sha256").update(args.businessId??"unknown").digest("hex").slice(0,12),
             requestId:args.requestId??"none",
           });
-          result = { source: tool.name, period: null, missing: [detail.error], ...detail };
+          result = { source: tool.name,
+            period:failedPeriod?{from:failedPeriod.from,to:failedPeriod.to}:null,
+            missing: [detail.error],what:mapped.what, ...detail };
           toolError = diagnostic;
         } finally { clearTimeout(toolTimer); }
+        // A rejected model-generated global cost card must still trigger the
+        // code-owned recovery with a scoped item key (or a generic question).
+        if(tool.name==="ask_owner"&&result.error==="invalidFactFields"){
+          try{
+            const attempted=JSON.parse(tool.arguments) as {fields?:Array<{key?:string}>};
+            if(attempted.fields?.some(f=>f.key==="unitCostCents"||f.key==="unit_cost_cents")){
+              result={...result,missing:["unitCostCents"]};
+            }
+          }catch{ /* malformed arguments already have a safe error result */ }
+        }
         let argumentKeys: string[] = [];
         try {
           const parsed: unknown = JSON.parse(tool.arguments);
@@ -274,30 +317,51 @@ export async function runAgentTurn(args: {
           audit({ kind: result.source === "memory_proposal" ? "memory" : "approval_card",
             toolName: tool.name, inputSummary: "Draft request", outputSummary: "Awaiting owner approval", durationMs: 0 });
         }
+        // A supplies locale-neutral labelKey; C renders it for chat, including
+        // the distinct latest-covered-data fallback, without changing the dates.
+        try{
+          const parsed=JSON.parse(tool.arguments) as Record<string,unknown>;
+          const choice=parsed.period??(typeof parsed.from==="string"&&typeof parsed.to==="string"?
+            {from:parsed.from,to:parsed.to}:null);
+          if(choice&&result.period&&typeof result.period==="object"){
+            const resolved=resolveOwnerPeriod(choice as import("@/lib/calc/periods").PeriodInput,
+              {asOf:args.context.asOf,timezone:args.context.timezone},resolveState);
+            if(resolved.status==="resolved"){
+              const actual=result.period as {from:string;to:string};
+              const key=result.coverageFallback?"periodLatestData":resolved.value.labelKey;
+              const period={...actual,labelKey:key};
+              result={...result,periodLabelKey:key,
+                periodLabel:localizedPeriodLabel(period,args.context.locale)};
+            }
+          }
+        }catch{ /* Invalid tool arguments already have a localized failure. */ }
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         observeToolResult(resolveState,result);
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
-        // Price inputs can be incomplete even though the product-cost baseline
-        // is useful. Always generate its verified existing ask_owner card.
+        // The old pricing-only choice card sent amounts as chat text and lost
+        // them in later threads. Use the universal structured fact card instead.
         if(tool.name==="suggest_new_item_price"&&result.askOwnerRequired===true&&
-           Array.isArray(result.candidates)&&!resolveState.asked){
-          const kind=result.candidates.some(candidate=>candidate&&typeof candidate==="object"&&candidate.id==="labor-monthly")?
-            "labor":"bills";
-          const options=result.candidates.filter(candidate=>candidate&&typeof candidate==="object"&&
-            typeof candidate.id==="string"&&candidate.id.startsWith(kind+"-")).slice(0,4).flatMap(candidate=>
-            candidate&&typeof candidate==="object"&&
-            typeof candidate.label==="string"&&typeof candidate.id==="string"?
-              [{label:candidate.label,value:candidate.id}]:[]);
-          if(options.length>=2){
-            const copy={en,es,ar}[args.context.locale].SupervisorChat;
-            const question=kind==="labor"?copy.pricingClarifyLabor:copy.pricingClarifyBills;
-            const card=await executeAgentTool("ask_owner",{
-              question,kind:"choice",options,allowOther:true},args.context);
-            if(card.missing.length===0){
-              results.push({callId:"verified-pricing-owner-card",name:"ask_owner",arguments:"{}",result:card});
-              startedTools.push("ask_owner");usage.toolCalls++;
-              askedQuestion=question;finished=true;
-              break;
+           !resolveState.asked){
+          const candidates=Array.isArray(result.candidates)?result.candidates:[];
+          const missingFacts=[
+            ...(candidates.some(candidate=>candidate&&typeof candidate==="object"&&
+              candidate.id==="labor-monthly")?["monthly_payroll_cents"]:[]),
+            ...(candidates.some(candidate=>candidate&&typeof candidate==="object"&&
+              candidate.id==="bills-monthly")?["monthly_bills_cents"]:[])
+          ];
+          if(missingFacts.length){
+            const cardInput=questionFromReasons(missingFacts.map(key=>({
+              kind:"missing" as const,key,tool:"new_item_price"
+            })),[result],args.ownerText,args.context.locale,args.ownerFacts??[]);
+            if(cardInput){
+              const card=await executeAgentTool("ask_owner",cardInput,args.context);
+              if(card.missing.length===0){
+                results.push({callId:"structured-pricing-owner-card",name:"ask_owner",
+                  arguments:"{}",result:card});
+                startedTools.push("ask_owner");
+                askedQuestion=cardInput.question;finished=true;
+                break;
+              }
             }
           }
         }
@@ -318,7 +382,8 @@ export async function runAgentTurn(args: {
           break;
         }
       }
-      if(askedQuestion){if(!text.trim())text=askedQuestion;break;}
+      if(askedQuestion){if(!text.trim()){text=askedQuestion; // allowed: empty-reply fill
+       }break;}
       if (endReason !== "complete") break;
       if (round === 4 || usage.toolCalls >= 8) { endReason = "budget"; break; }
     }
@@ -361,7 +426,7 @@ export async function runAgentTurn(args: {
             finalError = "model_call_failed";
             const discardChars = text.length - finalTextStart;
             if (discardChars > 0) {
-              text = text.slice(0, finalTextStart);
+              text = text.slice(0, finalTextStart); // allowed: discard incomplete model stream on provider failure
               args.onReset?.(discardChars);
             }
             throw error;
@@ -374,12 +439,24 @@ export async function runAgentTurn(args: {
       } catch { endReason = now() >= deadline ? "timeout" : "provider_error"; }
     }
   } finally { controller.abort(); }
-  // A clarification card must not displace the price the owner requested.
-  if(askedQuestion){
-   const priced=results.map(r=>r.result).find(r=>r.source==="new_item_price");
-   if(priced&&typeof priced.recommendedPriceCents==="number"){
-    text=forcedPricingClarifyText(priced.recommendedPriceCents,args.context.locale,priced.pricingNote);
-   }
+  // The response contract is enforced in code, not dependent on model compliance:
+  // partial tool data may be used, but missing/empty/failed evidence must end in
+  // an actionable, persisted owner question unless that exact fact is already saved.
+  if(!results.some(r=>r.name==="ask_owner"&&r.result.missing.length===0)){
+    const collected=results.map(r=>r.result);
+    const reasons=classifyNeedsAsk(collected,text,args.ownerText);
+    const cardInput=questionFromReasons(reasons,collected,args.ownerText,args.context.locale,args.ownerFacts??[]);
+    if(cardInput){
+      // A malformed model ask must not suppress the code-generated recovery card.
+      resolveState.asked=false;
+      const card=await executeAgentTool("ask_owner",cardInput,args.context);
+      if(card.missing.length===0){
+        results.push({callId:"automatic-owner-card",name:"ask_owner",arguments:"{}",result:card});
+        startedTools.push("ask_owner"); // Internal recovery, not an extra model tool call.
+        if(!text.trim()){text=String(card.question); // allowed: empty-reply fill
+        }
+      }
+    }
   }
   usage.latencyMs = now() - started;
   const status = statusFromResults(results);
@@ -391,15 +468,26 @@ export async function runAgentTurn(args: {
   const evidence=compactEvidence(verificationResults);
   const candidates=toolResults.flatMap(result=>Array.isArray(result.explain)?
     result.explain.slice(0,12).filter((line):line is ExplainLine=>
-      Boolean(line)&&typeof line==="object"&&"source" in line&&typeof line.source==="string") :[]);
+      Boolean(line)&&typeof line==="object"&&"source" in line&&typeof line.source==="string")
+      .map(line=>({...line,...(typeof result.periodLabelKey==="string"&&line.period?
+        {periodLabelKey:result.periodLabelKey}:{})})):[]);
   const priceResult=toolResults.find(r=>r.source==="new_item_price");
   const price=typeof priceResult?.recommendedPriceCents==="number"&&
     verifiedRecommendedPriceInReply(text,priceResult.recommendedPriceCents,
-      args.context.locale,unverified)?priceResult.recommendedPriceCents:null;
-  const explain=acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale,price);
+      args.context.locale,unverified,args.context.currency)?priceResult.recommendedPriceCents:null;
+  const accepted=acceptedExplainLines(candidates,evidence,text,unverified,args.context.locale,price);
+  // The deterministic milk adapter's inputs, results and formulas come ONLY
+  // from existing shared calculators, not model prose. Preserve all verified
+  // per-size workings even if the model never repeated the intermediate cost.
+  const milkExplain=toolResults.flatMap(r=>r.source==="milk_swap"&&r.missing.length===0&&
+    Array.isArray(r.explain)?r.explain.filter((line):line is ExplainLine=>
+      Boolean(line)&&typeof line==="object"&&"source" in line&&line.source==="milk_swap") :[]);
+  const explain=[...accepted,...milkExplain.filter(line=>!accepted.some(x=>
+    x.source===line.source&&x.label===line.label&&JSON.stringify(x.result)===JSON.stringify(line.result)))];
+  const finalUnverified=checkNumbers(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence);
   return { text, endReason, status,
-    unverified,
-    provenance:numberProvenance(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence,unverified),
+    unverified:finalUnverified,
+    provenance:numberProvenance(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence,finalUnverified),
     evidence,explain,
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
     results:toolResults, usage,

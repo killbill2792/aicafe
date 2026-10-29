@@ -4,7 +4,8 @@ import { getTranslations, getLocale } from "next-intl/server";
 import Money from "@/components/shared/Money";
 import EstimatePill from "@/components/shared/EstimatePill";
 import { Link } from "@/i18n/navigation";
-import { laborKnown, type HealthBand } from "@/lib/calc";
+import type {HealthBand} from "@/lib/calc";
+
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { Period } from "@/lib/viewmodels/period";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
@@ -63,6 +64,8 @@ function HealthRow({ label, pct, band, note, bandLabel }: { label: string; pct: 
 export default async function ProfitCostsView({ snapshot, period, salesSources }: { snapshot: BusinessSnapshot; period: Period; salesSources: SalesSource[] }) {
   const t = await getTranslations("Money");
   const tCommon = await getTranslations("Common");
+  const metrics=await getTranslations("MetricsNotes");
+  const tMetrics=(key:string)=>metrics.has(key as never)?metrics(key as never):t("partialPill");
   const bandLabel: Record<HealthBand, string> = { healthy: t("bandHealthy"), watch: t("bandWatch"), high: t("bandHigh") };
   const vm = buildProfitAndCostsViewModel(snapshot, period);
   const currentLocale=await getLocale();
@@ -81,9 +84,8 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
   // nonsense like "150200000%" the moment a period had no sales yet. 0% reads as "not enough
   // sales to show a ratio" rather than a fabricated number.
   const pct = (n: number) => (vm.salesCents > 0 ? (n / vm.salesCents) * 100 : 0);
-  const knownLabor=laborKnown({wagesCents:vm.wagesCents,staffTaxCents:vm.staffTaxCents,
-    laborWageStatus:vm.businessCosts.missingInputs.some(x=>x.startsWith("laborWageUnknown:"))?"missing":undefined});
-  const knownTotals=vm.totalCostsCents!==null&&knownLabor;
+  const knownLabor=vm.businessCosts.coverage.laborDays>0||vm.ownerPayrollExtrasCents>0;
+  const knownTotals=vm.totalCostsCents!==null;
   const runningExCardFees = vm.runningCostLines.reduce((s, l) => s + l.amountCents, 0);
   // No confirmed owner-profit figure to color when nothing's been uploaded yet — the flow bar and
   // summary box fall back to a neutral, non-alarming presentation rather than a precise red loss.
@@ -111,11 +113,12 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
         <div className="flex flex-col gap-2">
           <StepBar label={t("sales")} cents={vm.salesCents} widthPct={100} color="bg-ink" />
           <StepBar label={t("ingredients")} cents={-vm.ingredientsCents} widthPct={pct(vm.ingredientsCents)} color="bg-ingredients" />
-          {knownLabor&&<StepBar label={t("staff")} cents={-(vm.wagesCents!+vm.staffTaxCents!)} widthPct={pct(vm.wagesCents!+vm.staffTaxCents!)} color="bg-staff" />}
+          {knownLabor&&<StepBar label={t("staff")} cents={-(vm.wagesCents!+vm.staffTaxCents!+vm.ownerPayrollExtrasCents)}
+             widthPct={pct(vm.wagesCents!+vm.staffTaxCents!+vm.ownerPayrollExtrasCents)} color="bg-staff" />}
           {knownTotals&&<StepBar
             label={t("rentAndBills")}
-            cents={-(vm.totalCostsCents! - vm.ingredientsCents - vm.wagesCents! - vm.staffTaxCents!)}
-            widthPct={pct(vm.totalCostsCents! - vm.ingredientsCents - vm.wagesCents! - vm.staffTaxCents!)}
+            cents={-(vm.totalCostsCents! - vm.ingredientsCents - vm.wagesCents! - vm.staffTaxCents! - vm.ownerPayrollExtrasCents)}
+            widthPct={pct(vm.totalCostsCents! - vm.ingredientsCents - vm.wagesCents! - vm.staffTaxCents! - vm.ownerPayrollExtrasCents)}
             color="bg-running"
           />}
           {vm.ownerProfitCents!==null&&vm.ownerProfitDisplay.kind!=="unavailable" &&
@@ -140,9 +143,13 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
           <Row name={t("ingredientsAndCups")} cents={vm.ingredientsCents} addLabel={t("add")} />
         </RowGroup>
 
-        <RowGroup label={t("staff")} pct={knownLabor?Math.round(pct(vm.wagesCents!+vm.staffTaxCents!)):null} color="bg-staff">
+        <RowGroup label={t("staff")} pct={knownLabor?Math.round(pct(vm.wagesCents!+vm.staffTaxCents!+vm.ownerPayrollExtrasCents)):null} color="bg-staff">
           <Row name={t("wages")} cents={vm.wagesCents} addLabel={t("add")} />
-          <Row name={t("payrollTaxes")} cents={vm.staffTaxCents} addLabel={t("add")} last />
+          <Row name={t("payrollTaxes")} cents={vm.staffTaxCents} addLabel={t("add")}
+            last={vm.ownerPayrollExtrasCents===0} />
+          {vm.ownerPayrollExtrasCents>0&&<Row name={tMetrics("ownerPayrollExtras")}
+            cents={vm.ownerPayrollExtrasCents} addLabel={t("add")} estimate
+            estimateLabel={t("estimateLower")} last />}
         </RowGroup>
 
         <RowGroup label={t("runningCosts")} pct={Math.round(pct(runningExCardFees + vm.cardFeesCents))} color="bg-running">
@@ -171,6 +178,9 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
           </span>
         </div>
         {costLimitation && <p className="mb-3 text-sm text-ink-muted">{costLimitation}</p>}
+        {vm.financialNotes.length>0&&<p className="mb-3 text-sm text-ink-muted">
+          {vm.financialNotes.map(key=>tMetrics(key)).join(" · ")}
+        </p>}
         <div className={`mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl px-3.5 py-3 ${tone === "good" ? "bg-good-tint" : tone === "warn" ? "bg-warn-tint" : "bg-surface"}`}>
           <span className={`flex items-center gap-1.5 text-[17px] font-extrabold ${tone === "good" ? "text-fg" : profitToneTextClass(tone)}`}>
             {t("youKeep")}
@@ -208,6 +218,8 @@ export default async function ProfitCostsView({ snapshot, period, salesSources }
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
         <h2 className="text-[17px] font-bold">{t("vsLastPeriod")}</h2>
         {vm.changes.length === 0 && <p className="m-0 text-sm text-ink-muted">{t("notEnoughDataToCompare")}</p>}
+        {vm.changes.length > 0 && vm.comparisonState.kind === "available" && vm.comparisonState.partialPeriod &&
+          <p role="note" className="m-0 text-[17px] text-ink-muted">{tCommon("partialPeriod")}</p>}
         {vm.changes.map((change) => {
           const good = change.lowerIsBetter ? change.deltaCents <= 0 : change.deltaCents >= 0;
           return (

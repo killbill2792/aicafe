@@ -10,10 +10,12 @@ export class AgentReplyStorageError extends Error { constructor() { super("agent
 export class AgentEmptyReplyError extends Error { constructor() { super("agent_turn_failed"); } }
 type GroundingStatus = GroundedSupervisorReply["status"];
 export function persistedAgentStatus(turn: AgentTurn): GroundingStatus {
+  if(turn.results.some(r=>r.source==="ask_owner"&&r.missing.length===0))
+    return "requires_owner_input";
   // A completed greeting/clarification does not require a business read.
   if (turn.endReason === "complete" && turn.usage.toolCalls === 0) return "verified";
   const hasSuccessfulRead = turn.results.some(result =>
-    result.missing.length === 0 && typeof result.error !== "string");
+    result.source!=="ask_owner"&&result.missing.length===0&&typeof result.error!=="string");
   if (!hasSuccessfulRead) return "unavailable";
   if (turn.endReason !== "complete") return "partial";
   return turn.status.status === "complete" ? "verified" : "partial";
@@ -94,7 +96,12 @@ export function agentReplyPayload(turn: AgentTurn) {
     ...proposalIds.map(proposalId=>({type:"proposal_card" as const,proposalId})),
     ...experimentIds.map(proposalId=>({type:"experiment_card" as const,proposalId})),
     ...memoryRuleIds.map(ruleId=>({type:"memory_card" as const,ruleId})),
-    ...(clarify&&typeof clarify.question==="string"&&clarify.kind==="fill"&&Array.isArray(clarify.fields)?
+    ...(clarify&&typeof clarify.question==="string"&&clarify.kind==="facts"&&
+      typeof clarify.questionId==="string"&&Array.isArray(clarify.fields)?
+     [{type:"clarify" as const,kind:"facts" as const,questionId:clarify.questionId,question:clarify.question,
+       fields:clarify.fields as {key:string;label:string;inputType:"number"|"money"|"percent"|"text"|"date"|"choice";
+         units:string[];defaultUnit:string;choices?:{label:string;value:string}[]}[]}]:
+     clarify&&typeof clarify.question==="string"&&clarify.kind==="fill"&&Array.isArray(clarify.fields)?
      [{type:"clarify" as const,kind:"fill" as const,question:clarify.question,
        fields:clarify.fields as {key:string;label:string;inputType:"number";units:string[];defaultUnit:string}[]}]:
       clarify&&typeof clarify.question==="string"&&Array.isArray(clarify.options)?
@@ -120,7 +127,7 @@ export function agentReplyPayload(turn: AgentTurn) {
     unverified, endReason: turn.endReason, evidence:turn.evidence??[],explain:safeExplain,agentIds:turn.agentIds??[],
     sources: turn.results.map(r => ({ source:r.source, period:r.period, missing:r.missing })),
     usage: { ...turn.usage },
-    // Owner messages answered inside this reply (CHAT_JOBS mid-run follow-ups).
+    // Owner messages answered inside this reply (mid-run follow-ups).
     ...(turn.absorbedOwnerMessageIds?.length?{absorbedOwnerMessageIds:[...turn.absorbedOwnerMessageIds]}:{}),
   } };
 }

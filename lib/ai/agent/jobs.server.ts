@@ -5,7 +5,7 @@ import type { ConversationMessage, ConversationScope } from "@/lib/ai/conversati
 import { toAgentJob, type AgentJob, type AgentJobStartMode, type AgentJobStep } from "./jobState";
 import type { OwnerFollowUp } from "./loop.server";
 
-/** Server side of background chat turns (CHAT_JOBS). All writes go through the
+/** Server side of background chat turns. All writes go through the
  * service-role-only RPCs in migration 20261023000086; owners can only read. */
 export async function startAgentJob(scope: ConversationScope, threadId: string, ownerMessageId: string):
   Promise<{ mode: AgentJobStartMode; job: AgentJob }> {

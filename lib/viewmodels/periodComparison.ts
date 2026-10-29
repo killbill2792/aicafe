@@ -1,6 +1,6 @@
 export type PeriodCoverage = { actualDays: number; expectedDays: number };
 
-export type PeriodComparisonState = { kind: "available" } | { kind: "notEnoughData" };
+export type PeriodComparisonState = { kind: "available"; partialPeriod?:true } | { kind: "notEnoughData" };
 
 /**
  * Whether a "vs last period" comparison is trustworthy to show at all. Comparing a partially
@@ -13,5 +13,6 @@ export type PeriodComparisonState = { kind: "available" } | { kind: "notEnoughDa
 export function periodComparisonState(coverage: PeriodCoverage, previousCoverage: PeriodCoverage): PeriodComparisonState {
   const currentComplete = coverage.actualDays === coverage.expectedDays;
   const previousComplete = previousCoverage.actualDays === previousCoverage.expectedDays;
-  return currentComplete && previousComplete ? { kind: "available" } : { kind: "notEnoughData" };
+  if(coverage.actualDays===0||previousCoverage.actualDays===0)return {kind:"notEnoughData"};
+  return currentComplete && previousComplete ? {kind:"available"} : {kind:"available",partialPeriod:true};
 }

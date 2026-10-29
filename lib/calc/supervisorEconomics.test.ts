@@ -8,6 +8,31 @@ const base:Economics={
  missingDays:["2026-10-24","2026-10-25","2026-10-26"],
 };
 describe("single deterministic supervisor economics model",()=>{
+ it("uses actual observed ingredient/processor cents even without configured rates",()=>{
+  const input:Economics={...base,asOfDate:"2026-10-29",ingredientRate:null,feeRate:null,
+   ingredientStatus:"missing",feeStatus:"missing",
+   observedDays:[{date:"2026-10-28",netSalesCents:100000,
+     ingredientsCents:20000,cardFeesCents:3000,cardFeesStatus:"actual",drinksCount:200}]};
+  const result=unifiedBreakEven(input);
+  expect(result.monthlyBreakEven.valueCents).toBe(Math.round(2046700/.77));
+  expect(result.monthlyBreakEven.status).toBe("estimate");
+  expect(result.missing).toContain("ingredientRate");
+ });
+ it("applies dated owner fee plans after actual fees, rather than defaulting to 2.9%",()=>{
+  const input:Economics={...base,asOfDate:"2026-10-29",feeRate:null,
+   ownerFeePlans:[{effectiveFrom:"2026-10-01",percentageBps:400}],
+   observedDays:[{date:"2026-10-28",netSalesCents:100000,ingredientsCents:20000,
+     cardFeesCents:0,cardFeesStatus:"missing",drinksCount:200}]};
+  expect(unifiedBreakEven(input).monthlyBreakEven.valueCents).toBe(Math.round(2046700/.76));
+ });
+ it("honors explicitly supplied owner sales and variable rates over prior recorded costs",()=>{
+  const input:Economics={...base,asOfDate:"2026-10-29",ownerNetSalesCents:200000,
+   ingredientRate:.25,ingredientStatus:"owner",feeRate:.05,feeStatus:"owner",
+   observedDays:[{date:"2026-10-28",netSalesCents:100000,
+     ingredientsCents:10000,cardFeesCents:2000,cardFeesStatus:"actual",drinksCount:200}]};
+  expect(unifiedBreakEven(input).monthlyBreakEven.valueCents).toBe(Math.round(2046700/.70));
+  expect(unifiedBreakEven({...input,ownerNetSalesCents:0}).monthlyBreakEven.valueCents).toBeNull();
+ });
  it("adds extras exactly once without substituting for unknown clocked labor",()=>{
   expect(addOwnerPayrollExtras(500000,25000)).toBe(525000);
   expect(addOwnerPayrollExtras(500000,null)).toBe(500000);
@@ -20,13 +45,24 @@ describe("single deterministic supervisor economics model",()=>{
   const answer=unifiedBreakEven(unknown);
   expect(answer.monthlyFixedKnownCents).toBe(746700+25000);
   expect(answer.knownCostBreakEvenFloorCents).toBeGreaterThan(0);
-  expect(answer.monthlyBreakEven.valueCents).toBeNull();
+  expect(answer.monthlyBreakEven.valueCents).toBeGreaterThan(0);
+   expect(answer.monthlyBreakEven.status).toBe("estimate");
   expect(answer.missing).toContain("monthlyLabor");
  });
  it("does not count owner extras twice when clocked payroll is known",()=>{
   const known={...base,monthlyStaff:figure(525000,"estimate","Wages and saved extras"),
    knownMonthlyLaborExtrasCents:25000};
   expect(unifiedBreakEven(known).monthlyFixedKnownCents).toBe(746700+525000);
+ });
+ it("item-cost scenario updates observed break-even, not just profit",()=>{
+  const observed:Economics={...base,asOfDate:"2026-10-29",
+   observedDays:[{date:"2026-10-28",netSalesCents:100000,ingredientsCents:25000,
+    cardFeesCents:3000,cardFeesStatus:"actual",drinksCount:250}],
+   ingredientRate:.25,ingredientStatus:"actual",feeRate:.03,feeStatus:"actual"};
+  const result=simulateEconomics(observed,{kind:"item_cost",itemId:"test-item",
+   oldCostCents:150,newCostCents:100,weeklyUnits:500,currentPriceCents:500});
+  expect(result.difference.monthlyBreakEvenCents).toBeLessThan(0);
+  expect(result.difference.drinksPerDay).toBeLessThan(0);
  });
  it("includes owner extras on top of clocked wages only once",()=>{
   const extras=25000,clocked=500000;
@@ -49,12 +85,14 @@ describe("single deterministic supervisor economics model",()=>{
   expect(actual.monthlyFixedKnownCents).toBe(746700);
   expect(actual.monthlyBills.valueCents).toBe(746700);
   expect(actual.missing).toContain("monthlyLabor");
-  expect(actual.monthlyBreakEven.valueCents).toBeNull();
+  expect(actual.monthlyBreakEven.valueCents).toBeGreaterThan(0);
+   expect(actual.monthlyBreakEven.status).toBe("estimate");
  });
  it("shows a known-cost floor without claiming a complete break-even when a bill category is missing",()=>{
   const partial={...base,missingBillCategories:["utilities_power"]};
   const answer=unifiedBreakEven(partial);
-  expect(answer.monthlyBreakEven.valueCents).toBeNull();
+  expect(answer.monthlyBreakEven.valueCents).toBeGreaterThan(0);
+   expect(answer.monthlyBreakEven.status).toBe("estimate");
   expect(answer.knownCostBreakEvenFloorCents).toBeGreaterThan(0);
   expect(answer.missing).toContain("monthlyBill:utilities_power");
  });
