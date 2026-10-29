@@ -2,7 +2,7 @@ import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
 import {dataQueryTools,type DataQueryContext} from "./dataQuery";
-import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard,periodChoicePayload,resolveOwnerPeriod} from "../resolve";
+import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard,periodChoicePayload,resolveOwnerPeriod,rememberedCandidate} from "../resolve";
 
 import {money,count} from "../explain";
 import { staffTools } from "./staff";
@@ -277,8 +277,11 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
       else{
         const resolved=resolveEntity("product",input.query,active,{nameOf:i=>i.name,idOf:i=>i.id,
           describe:i=>i.category+" · "+(i.priceCents===null?"open price":(i.priceCents/100).toFixed(2))});
-        if(resolved.status!=="resolved")return {...choicePayload(resolved,"menu_items",null),agentId:"alex"};
-        filtered=[resolved.value];
+        const remembered=resolved.status==="ambiguous"?rememberedCandidate(ctx.resolveState,resolved.candidates):null;
+        const rememberedRow=remembered?active.find(i=>i.id===remembered):undefined;
+        if(rememberedRow)filtered=[rememberedRow];
+        else if(resolved.status!=="resolved")return {...choicePayload(resolved,"menu_items",null),agentId:"alex"};
+        else filtered=[resolved.value];
       }
     }
     if(input.query&&filtered.length===1&&!ownerNamedTarget(ctx.resolveState,filtered[0].id,filtered[0].name))
