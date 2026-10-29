@@ -19,15 +19,26 @@ export type TodayGlanceBucketState =
   | { kind: "noBills" };
 
 export type TodayGlanceViewModel = {
-  salesCents: number;
-  ordersCount: number;
-  avgOrderValueCents: number;
+  salesCents: number | null;
+  ordersCount: number | null;
+  avgOrderValueCents: number | null;
   moneyLeftCents: number | null;
   drinksCount: number;
   bucketState: TodayGlanceBucketState;
 };
 
-export function buildTodayGlanceViewModel(snapshot: BusinessSnapshot): TodayGlanceViewModel {
+/** A live sales reading has no complete cost data; never infer money left or bill progress from it. */
+export function buildTodayGlanceViewModel(snapshot: BusinessSnapshot, liveToday?: {netSalesCents: number | null; orders: number} | null): TodayGlanceViewModel {
+  if (liveToday) {
+    return {
+      salesCents: liveToday.netSalesCents,
+      ordersCount: liveToday.netSalesCents === null ? null : liveToday.orders,
+      avgOrderValueCents: liveToday.netSalesCents === null ? null : averageOrderValueCents(liveToday.netSalesCents, liveToday.orders),
+      moneyLeftCents: null,
+      drinksCount: 0,
+      bucketState: {kind: "costsUnknown"},
+    };
+  }
   const today = snapshot.todayDay;
   const buckets = recoveryBuckets(snapshot);
   const contributionCentsToday = dayContributionCents(today);

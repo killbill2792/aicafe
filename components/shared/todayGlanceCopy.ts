@@ -15,6 +15,7 @@ export function todayGlanceCopy(
   t: Translator,
   tCommon: Translator,
   labelFor: (bucketCode: string) => string,
+  formatMoney: (cents: number) => string = formatCents,
 ): { caption: string; icon: { code: ExpenseIconCode; pctCovered: number } | null } {
   const state = glance.bucketState;
 
@@ -25,7 +26,7 @@ export function todayGlanceCopy(
 
   if (state.kind === "allYours") {
     return {
-      caption: state.amountCents > 0 ? t("glanceAllYours", { amount: formatCents(state.amountCents) }) : t("glanceAllYoursNoSales"),
+      caption: state.amountCents > 0 ? t("glanceAllYours", { amount: formatMoney(state.amountCents) }) : t("glanceAllYoursNoSales"),
       icon: null,
     };
   }
@@ -44,7 +45,7 @@ export function todayGlanceCopy(
   // "inProgress": one bucket, part-way filled by today's money.
   const bucket = labelFor(state.bucketCode);
   const caption = [
-    t("glanceInProgressPut", { amount: formatCents(state.amountCents), bucket }),
+    t("glanceInProgressPut", { amount: formatMoney(state.amountCents), bucket }),
     t("glanceInProgressPct", { bucket, pct: Math.round(state.pctCoveredAfterToday) }),
   ].join(" ");
   return { caption, icon: { code: state.bucketCode as ExpenseIconCode, pctCovered: state.pctCoveredAfterToday } };

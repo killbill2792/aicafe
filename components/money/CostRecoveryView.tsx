@@ -6,6 +6,8 @@ import FillIcon from "@/components/icons/FillIcon";
 import Money from "@/components/shared/Money";
 import TodayAtAGlanceCard from "@/components/shared/TodayAtAGlanceCard";
 import { todayGlanceCopy } from "@/components/shared/todayGlanceCopy";
+import type { LiveSalesView } from "@/components/home/liveSales";
+import { formatCafeCurrency } from "@/lib/format/cafeCurrency";
 import MonthCalendar from "@/components/money/MonthCalendar";
 import { moveRecoveryBucket } from "@/lib/actions/recoveryOrder";
 import { formatCents } from "@/lib/calc";
@@ -95,7 +97,7 @@ function BucketRow({
   );
 }
 
-export default async function CostRecoveryView({ snapshot, calMonthKey, toastConnected }: { snapshot: BusinessSnapshot; calMonthKey: string; toastConnected: boolean }) {
+export default async function CostRecoveryView({ snapshot, calMonthKey, toastConnected, liveToday }: { snapshot: BusinessSnapshot; calMonthKey: string; toastConnected: boolean; liveToday?: {sales: LiveSalesView; orders: number} | null }) {
   const t = await getTranslations("Money");
   const metrics=await getTranslations("MetricsNotes");
   const noteFor=(key:string)=>metrics.has(key as never)?metrics(key as never):t("partialPill");
@@ -105,8 +107,17 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
   const vm = buildCostRecoveryViewModel(snapshot);
   const labelFor = (code: string) => (code === "yours" ? t("yours") : snapshot.runningCostLines.find((l) => l.categoryCode === code)?.label ?? code);
 
-  const glance = buildTodayGlanceViewModel(snapshot);
-  const glanceCopy = todayGlanceCopy(glance, t, tCommon, labelFor);
+  const formatMoney = (cents: number) => formatCafeCurrency(cents, locale, snapshot.business.currency).text;
+  const currencyMissing = formatCafeCurrency(0, locale, snapshot.business.currency).currencyMissing;
+  const glance = buildTodayGlanceViewModel(snapshot, liveToday ? {
+    netSalesCents: liveToday.sales.netSalesCents, orders: liveToday.orders,
+  } : null);
+  const glanceCopy = todayGlanceCopy(glance, t, tCommon, labelFor, formatMoney);
+  const hasTodaySales = Boolean(liveToday) || snapshot.todayHasData;
+  const glanceCaption = liveToday
+    ? [t(liveToday.sales.fresh ? "glanceLive" : "glanceLiveStale", {time: liveToday.sales.time}),
+       ...(liveToday.sales.unreadOrders > 0 ? [t("glanceLiveUnread", {count: liveToday.sales.unreadOrders})] : [])].join(" · ")
+    : hasTodaySales ? glanceCopy.caption : t("ownerProfitWaiting");
 
   const isCurrentMonth = calMonthKey === snapshot.monthKey;
   const monthData = await getMonthCalendar(calMonthKey, snapshot);
@@ -255,13 +266,13 @@ export default async function CostRecoveryView({ snapshot, calMonthKey, toastCon
       <TodayAtAGlanceCard
         title={t("glanceTitle")}
         stats={[
-          { label: t("glanceSales"), value: formatCents(glance.salesCents) },
-          { label: t("glanceOrders"), value: String(glance.ordersCount) },
-          { label: t("glanceAvgOrder"), value: formatCents(glance.avgOrderValueCents) },
-          { label: t("glanceMoneyLeft"), value: glance.moneyLeftCents===null?"—":formatCents(glance.moneyLeftCents) },
+          { label: t("glanceSales"), value: !hasTodaySales || glance.salesCents === null ? "—" : formatMoney(glance.salesCents) },
+          { label: t("glanceOrders"), value: !hasTodaySales || glance.ordersCount === null ? "—" : new Intl.NumberFormat(locale).format(glance.ordersCount) },
+          { label: t("glanceAvgOrder"), value: !hasTodaySales || glance.avgOrderValueCents === null ? "—" : formatMoney(glance.avgOrderValueCents) },
+          { label: t("glanceMoneyLeft"), value: !hasTodaySales || glance.moneyLeftCents === null ? "—" : formatMoney(glance.moneyLeftCents) },
         ]}
         secondaryStat={glance.drinksCount > 0 ? t("glanceDrinks", { count: glance.drinksCount }) : null}
-        caption={glanceCopy.caption}
+        caption={[glanceCaption, ...(currencyMissing ? [tCommon("currencyNotSet")] : [])].join(" · ")}
         icon={glanceCopy.icon}
       />
 
