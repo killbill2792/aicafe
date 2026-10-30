@@ -7,7 +7,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
-- [ ] Decide: may the chat's ad-hoc data queries (`describe_data`/`query_data`, canonical `cv_*` views) answer sales/fee numbers, or only the main tools? Today they are a second path.
+- [x] Decided (Oct 30): screen numbers (profit, labor cost, card fees, break-even, item cost) come only from their `lib/metrics/core` tools; everything else may be read with `describe_data`/`query_data` and computed with `calculate` (AGENTS.md 7.2).
 
 ### Today's live sales (owner priority)
 - [x] Chat doesn't use the live reading for "today's sales". The system prompt in `lib/ai/agent/loop.server.ts` never maps today questions to `get_today_so_far`, so the model calls `get_sales`, which only knows closed days. Fix: add the mapping; and in `lib/ai/agent/tools/coverage.ts` / `tools/index.ts`, when the period is today and not imported, return the live reading from `ctx.readTodaySoFar()` with `provisional: true` and its read time.
@@ -55,6 +55,14 @@ The owner wants to see exactly where her money goes. The Money screen has the br
 ### Supervisor chat asks the same question twice
 - [x] Owner, Oct 29: "raise the latte 10¢" → picked a latte on the card → what-if answer → "draft price change approval" → asked "which latte?" again. Cause: `newResolveState` (`lib/ai/agent/resolve.ts`) trusted a card pick only on the message right after the card; later, the price-change and menu tools accept a product only if the owner names it again or types one of a few fixed "yes, do it" phrases. Fixed: the pick on the latest choice card stays trusted (`recentChoiceIds`) for that exact record until a newer choice card is shown or the owner names the item again (any word from that card's options, e.g. "latte", "iced"); then their own words decide, as before. It never resolves a different item. Check: `lib/ai/agent/rememberCardChoice.test.ts` replays the owner's conversation.
 - [x] A reply that is only a typed-answer question (`facts`/`fill` card) was invisible to the AI on the next turn: the history built in `app/api/ai/threads/[threadId]/agent/route.ts` kept text blocks and choice cards only. Fixed: one `historyContent` (`lib/ai/agent/history.ts`) adds those cards as "Question card (owner answers in its form): <question> Fields: …"; choice cards keep the exact "Asked: … Options:" form the pick memory reads. Check: `lib/ai/agent/history.test.ts`.
+
+### Universal answers (owner-approved design, Oct 30; AGENTS.md 7.2)
+The AI works out how to answer any question; no new tool or scenario per question type. One PR per step, in order.
+- [x] Step 4: AGENTS.md rule 7.2: no arithmetic in the model's head; screen numbers from `lib/metrics/core`; all other math through `calculate`, steps shown.
+- [ ] Step 3: one general `calculate` tool: + − × ÷, sum, percent; every input from a tool result or saved owner fact; inputs, formula and steps shown, labeled calculation or estimate; test that it never rebuilds a screen number.
+- [ ] Step 5: owner answers saved once, used everywhere. Ask only ingredient %, payroll, bills, card fee %, opening hours. Save each where the calculators already read it (ingredient % → `target_ingredient_cost_rate`; payroll → payroll extras; bills → recurring costs; card fee → fee plan). Use only where real data is missing, per day and per item, labeled estimate; real data replaces it automatically. Every other gap is a one-line note, not a question.
+- [ ] Step 6: test that the same fact is never asked twice.
+- [ ] Step 7: retire one-off fixes: drop the "ingredients 20%" branch (`fix/cost-summary-ingredient-percent`, never merged); once `calculate` works, retire `simulate_scenario`'s fixed options.
 
 ### Rules for any agent working on these
 1. AGENTS.md is the only source of agent instructions; follow it.
