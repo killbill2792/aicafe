@@ -13,7 +13,7 @@ import {EventReportCard} from "./EventReportCard";
 type Locale="en"|"es"|"ar";
 type T=(key:string,values?:Record<string,string|number>)=>string;
 type Plan=SavedEventTimeline["plans"][number];
-type Timeline=SavedEventTimeline&{today:string;currency:string|null};
+type Timeline=SavedEventTimeline&{today:string;currency?:string|null};
 type Tab="past"|"now"|"upcoming";
 type Panel="events"|"day"|null;
 type Action={area:string;action:string;reason:string};
