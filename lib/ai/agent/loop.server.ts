@@ -149,6 +149,38 @@ export async function runAgentTurn(args: {
   let askedQuestion:string|null=null;
   const model = configuredSupervisorModel();
   const audit = (step: AgentAuditStep) => { try { args.onAuditStep?.(step); } catch { /* audit is non-critical */ } };
+  // A hosted web search is another Responses model request, not a free data read.
+  // Account for it within the same six-call budget and protect the final answer slot.
+  // Use a per-turn context copy so retries/shared test contexts cannot stack wrappers.
+  const underlyingWebSearch=args.context.webSearch;
+  const toolContext:AgentToolContext=underlyingWebSearch?{
+    ...args.context,
+    webSearch:async query=>{
+      const searchStarted=now();
+      let reserved=false,completed=false;
+      try{
+        const result=await underlyingWebSearch(query,{
+          reserveModelCall:()=>{
+            if(usage.modelCalls>=5||now()>=workDeadline)return false;
+            usage.modelCalls++;
+            reserved=true;
+            return true;
+          },
+          recordUsage:bill=>{
+            usage.inputTokens+=bill.inputTokens;
+            usage.cachedTokens+=bill.cachedTokens;
+            usage.outputTokens+=bill.outputTokens;
+          },
+        });
+        completed=result.available;
+        return result;
+      }finally{
+        if(reserved)audit({kind:"model_call",inputSummary:"Web lookup; prompts withheld",
+          outputSummary:completed?"Completed":"Incomplete",
+          durationMs:Math.max(0,now()-searchStarted)});
+      }
+    },
+  }:args.context;
   const request = (final: boolean) => ({
     model, instructions: agentInstructions(),
     tools: [...agentToolDefinitions, ...(args.extraTools ?? [])],
@@ -214,6 +246,7 @@ export async function runAgentTurn(args: {
     for (let round = 0; round < 5; round++) {
       if (now() >= workDeadline) { endReason = "timeout"; break; }
       if (round > 0) await readFollowUps();
+      if(usage.modelCalls>=5){endReason="budget";break;}
       let calls: ToolCall[];
       try { calls = await call(false); }
       catch { endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
@@ -255,7 +288,7 @@ export async function runAgentTurn(args: {
               error:"ownerFactAlreadySaved"} as AgentToolResult):
             executeAgentTool(tool.name,injectSavedOwnerInputs(questionArgs,args.ownerFacts??[],
               Boolean((agentToolDefinitions.find(d=>d.name===tool.name)?.parameters as {
-                properties?:Record<string,unknown>}|undefined)?.properties?.ownerInputs)),args.context),
+                properties?:Record<string,unknown>}|undefined)?.properties?.ownerInputs)),toolContext),
             new Promise<never>((_, reject) => {
               const left = workDeadline - now();
               if (left <= 0) reject(new Error("deadline"));
@@ -384,7 +417,7 @@ export async function runAgentTurn(args: {
       if(askedQuestion){if(!text.trim()){text=askedQuestion; // allowed: empty-reply fill
        }break;}
       if (endReason !== "complete") break;
-      if (round === 4 || usage.toolCalls >= 8) { endReason = "budget"; break; }
+      if (round === 4 || usage.modelCalls>=5 || usage.toolCalls >= 8) { endReason = "budget"; break; }
     }
     if (!finished && endReason === "complete") endReason = "budget";
     if (!finished && usage.modelCalls < 6 && now() < deadline) {
