@@ -3694,6 +3694,7 @@
     "hasPlan": "Plan ready",
     "cancelled": "Cancelled",
     "moved": "Changed",
+    "mapLink": "View in Maps",
     "source": "Source",
     "chatAbout": "Chat about this",
     "moreEvents": "{count} more events",
