@@ -79,6 +79,7 @@ export function liveEventHeadline(plan:Plan|undefined,date:string,t:T):string|nu
    return null;
  return t(live.changePercent>=0?"liveAhead":"liveBehind",{
    change:Math.abs(live.changePercent),time:live.asOfLocal,
+   hourEnd:live.asOfLocal.slice(0,2)+":59",
  });
 }
 
