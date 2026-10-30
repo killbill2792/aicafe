@@ -20,6 +20,8 @@ concurrency:
 
 jobs:
   p1:
+    # The universal PR baseline owns full typecheck, lint, tests and build.
+    # Keep the Supervisor-specific checks here; don't rerun the full app.
     name: P1 catalog, typecheck, regressions, lint, build
     runs-on: ubuntu-latest
     steps:
@@ -31,17 +33,18 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: TypeScript (strict)
-        run: npx tsc --noEmit
       - name: P1 bidirectional coverage and negative security tests
         run: npx vitest run lib/metrics
-      - name: Full regression suite
-        run: npm test
-      - name: Changed TypeScript lint
+      - name: Focused metrics ESLint
         run: npx eslint lib/metrics
-      - name: Production build
-        # Next 16 Turbopack Google-font import resolution is unstable on ephemeral runners.
-        # Use the supported Webpack production build, as our Playwright workflow does for dev.
-        run: npm run build -- --webpack
+      # Standalone manual dispatch does not trigger the universal PR baseline.
+      # Retain the comprehensive verification in that mode.
+      - name: Standalone full verification (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          npx tsc --noEmit
+          npm run lint
+          npm test
+          npm run build -- --webpack
       - name: Whitespace
         run: git diff --check origin/main...HEAD
