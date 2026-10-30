@@ -3666,6 +3666,7 @@
     "taskCheckinAction": "أجب في المحادثة"
   },
   "EventsPanel": {
+    "answerInChat": "الإجابة في المحادثة",
     "boardEventRunning": "خطة فعالية · {title}",
     "boardEventReport": "تقرير فعالية · {title}",
     "title": "فعاليات بالقرب من مقهاك",
