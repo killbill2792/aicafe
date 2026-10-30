@@ -1,3 +1,4 @@
+import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys} from "@/lib/ai/supervisor/loop/receiptAllocation";
@@ -160,6 +161,8 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await createServerSupabaseClient(),scope.businessId,ownerFactRead.facts),
       searchNearbyEvents,
+      readWeekSchedule:weekStart=>getWeekSchedule({weekStart}),
+      ownerFacts:ownerFactRead.facts,
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       goals:{
