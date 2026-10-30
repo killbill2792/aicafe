@@ -1,4 +1,5 @@
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
+import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys} from "@/lib/ai/supervisor/loop/receiptAllocation";
 import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -147,9 +148,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       (m.role === "owner" || m.role === "supervisor") &&
       !(job && m.role === "owner" && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
-        content: m.text ?? (m.blocks ?? []).flatMap(b => b && typeof b === "object" && "text" in b ?
-          [String(b.text)] : b && typeof b === "object" && "type" in b && b.type==="clarify" && "question" in b && "options" in b && Array.isArray(b.options) ?
-          ["Asked: "+String(b.question)+" Options: "+b.options.map(o=>o&&typeof o==="object"&&"label" in o&&"value" in o?String(o.label)+" ("+String(o.value)+")":"").join("; ")] : []).join(" ") })).filter(m => m.content);
+        content: historyContent(m) })).filter(m => m.content);
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db:await createServerSupabaseClient(),businessId:scope.businessId}),
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf),
