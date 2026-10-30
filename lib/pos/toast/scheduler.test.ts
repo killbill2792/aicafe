@@ -8,7 +8,7 @@ vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
 vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional,ensureToastFirstCatalog:m.firstCatalog}));
 vi.mock("./restaurantInfo",()=>({refreshToastRestaurantInfo:m.refresh}));
-vi.mock("./paymentGaps",()=>({queueToastPaymentGaps:m.paymentGaps}));
+vi.mock("./missingDays",()=>({queueToastMissingDays:m.paymentGaps}));
 vi.mock("./rollupRetries",()=>({retryToastRollupRefreshes:m.costs}));
 vi.mock("./client",()=>{
  class ToastApiError extends Error{
