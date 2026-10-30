@@ -103,7 +103,7 @@ export const staffTools = {
     },
   },
   get_labor: {
-    agentId:"olivia",schema:period,description:"Labor-day costs, including estimated inputs, and recorded attendance for a current period.",
+    agentId:"olivia",schema:period,description:"Labor-day costs, including estimated inputs, and recorded attendance for a current period. missingWageShifts lists the only finished shifts with no hourly wage (date, person, hours); every other laborDays entry is recorded. When wages are missing, give the known labor total, name those shifts, and ask only for those people's hourly wage — never ask the owner for a labor total over a range.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const resolved=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(resolved.status!=="resolved")return periodChoicePayload("labor_and_attendance",resolved);
@@ -158,6 +158,7 @@ export const staffTools = {
           date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
           loadedStaffCostCents:d.loadedStaffCostCents,wageStatus:d.wageStatus})):null,
         attendanceTracked:attendance.available?attendance.value.attendanceTracked:null,
+        missingWageShifts:attendance.available?attendance.value.missingWageShifts??null:null,
         attendance:attendance.available?attendance.value:null};
     },
   },

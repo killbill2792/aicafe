@@ -200,6 +200,17 @@ describe("Olivia bounded reads",()=>{
     expect(result.dataNotes).toEqual([expect.stringContaining("first 366 days")]);
     expect((result.shifts as unknown[]).length).toBeGreaterThan(0);
   });
+  it("names the shifts with no wage next to the known labor days",async()=>{
+    const r=await staffTools.get_labor.execute({period:"today"},ctx({
+      getLaborMetrics:async()=>({available:true,value:[{date:"2026-10-22",wagesCents:1500,
+        staffTaxCents:100,loadedStaffCostCents:1600,wageStatus:"missing"}],quality:q}),
+      getStaffAttendance:async()=>({available:true,value:{timecardCount:4,onClockCount:0,
+        attendanceTracked:true,missingWageShifts:[{date:"2026-10-22",employeeName:"Sam",hours:6.5}]},quality:q}),
+    }));
+    expect(r.missingWageShifts).toEqual([{date:"2026-10-22",employeeName:"Sam",hours:6.5}]);
+    expect(r.missing).toContain("laborWageUnknown:2026-10-22");
+    expect(r.laborDays).toHaveLength(1);
+  });
   it("keeps attendance unavailable separate from labor",async()=>{
     const r=await staffTools.get_labor.execute({period:"today"},ctx({
       getLaborMetrics:async()=>({available:true,value:[{date:"2026-10-22",wagesCents:1500,

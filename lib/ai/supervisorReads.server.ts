@@ -16,7 +16,10 @@ export type MenuCatalogProduct = { id: string; name: string; category: "drink" |
  pricingStrategy?:string|null; modifierGroups?:Array<{id:string;name:string;
  minSelections:number|null;maxSelections:number|null;required:boolean;
  options:Array<{name:string;priceCents:number|null}>}> };
-export type StaffAttendance = { timecardCount: number; onClockCount: number | null; attendanceTracked: boolean };
+/** A finished shift with no hourly wage: the one thing to ask the owner about. */
+export type MissingWageShift = { date: string; employeeName: string | null; hours: number | null };
+export type StaffAttendance = { timecardCount: number; onClockCount: number | null; attendanceTracked: boolean;
+  missingWageShifts?: MissingWageShift[] };
 const quality = (missingInputs: string[] = []) => ({
   level: (missingInputs.length ? "low" : "high") as "low" | "high",
   missingInputs, estimatedInputs: [] as string[], staleInputs: [] as string[],
@@ -102,6 +105,35 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       ) };
     },
     async staffAttendance(id: string, period: CafeStatePeriod, timezone: string): Promise<KnownSlice<StaffAttendance>> {
+      /** Finished shifts with no hourly wage, from the same labor view the Staff screen uses. */
+      async function missingWageShifts(businessId: string, range: CafeStatePeriod):
+        Promise<{shifts:MissingWageShift[]|null;missing:string[]}> {
+        try {
+          const {data,error}=await client.from("cv_labor_entries")
+            .select("business_date,data,regular_hours,overtime_hours")
+            .eq("business_id",businessId).eq("status","needs_match")
+            .gte("business_date",range.from).lte("business_date",range.to)
+            .order("business_date").limit(21);
+          if(error)return {shifts:null,missing:["missingWageShiftsUnavailable"]};
+          const rows=(data??[]) as Array<{business_date:string;data:{employee_id?:string}|null;
+            regular_hours:number|null;overtime_hours:number|null}>;
+          const ids=[...new Set(rows.map(row=>row.data?.employee_id).filter((x):x is string=>Boolean(x)))];
+          const names=new Map<string,string|null>();
+          if(ids.length){
+            const people=await client.from("employees").select("id,display_name")
+              .eq("business_id",businessId).in("id",ids);
+            for(const person of people.data??[])names.set(String(person.id),person.display_name??null);
+          }
+          return {missing:rows.length>20?["missingWageShiftsTruncated"]:[],
+            shifts:rows.slice(0,20).map(row=>{
+              const hours=row.regular_hours===null&&row.overtime_hours===null?null:
+                Number(row.regular_hours??0)+Number(row.overtime_hours??0);
+              return {date:String(row.business_date),
+                employeeName:row.data?.employee_id?names.get(row.data.employee_id)??null:null,
+                hours:hours===null||!Number.isFinite(hours)?null:Math.round(hours*100)/100};
+            })};
+        } catch { return {shifts:null,missing:["missingWageShiftsUnavailable"]}; }
+      }
       assertScope(id);
       const start = fromZonedTime(period.from+"T00:00:00",timezone).toISOString();
       const end = fromZonedTime(period.to+"T23:59:59.999",timezone).toISOString();
@@ -121,13 +153,17 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       const actual = (records.data ?? []).slice(0,500).filter(row =>
         row.source_type !== "owner_schedule");
       const tracked = actual.length > 0;
+      const unpaid = await missingWageShifts(id, period);
       return { available:true, value:{
         timecardCount:actual.length,
         onClockCount:tracked ? actual.filter(row=>row.clock_out===null && active.has(row.employee_id)).length : null,
         attendanceTracked:tracked,
+        // Unreadable is not "none": leave it out so nothing claims every wage is known.
+        ...(unpaid.shifts?{missingWageShifts:unpaid.shifts}:{}),
       },quality:quality([
         ...((records.data ?? []).length>500?["timecardResultTruncated"]:[]),
         ...(!tracked?["attendanceNotTracked"]:[]),
+        ...unpaid.missing,
       ]) };
     },
   };
