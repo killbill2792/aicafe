@@ -14,6 +14,7 @@ import { getActiveCafeName } from "@/lib/data/getActiveCafeName";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ExpenseIconDefs from "@/components/icons/ExpenseIconDefs";
 import ScreenViewLogger from "@/components/shared/ScreenViewLogger";
+import NavigationTiming from "@/components/shared/NavigationTiming";
 import "../globals.css";
 
 // Self-hosted (OFL) so builds never download fonts from Google: the same files and
@@ -94,6 +95,7 @@ export default async function LocaleLayout({
         <NextIntlClientProvider>
           <ExpenseIconDefs />
           <ScreenViewLogger />
+          <NavigationTiming />
           <div className="flex min-h-screen w-full flex-1">
             <SideNav cafeName={activeCafeName} languageSwitch={<LanguageSwitch href="/" compact />} />
             <div className="w-full min-w-0 flex-1 pb-24 md:pb-10">{children}</div>

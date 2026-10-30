@@ -4,7 +4,7 @@
  * without changing any page's own spacing, cards, or wording. `wide` is for the few screens
  * (the Menu list and product detail) asked to actually use more of the desktop width; every other
  * screen gets a comfortable, narrower reading column instead. */
-export default function PageShell({ children, className = "", wide = false }: { children: React.ReactNode; className?: string; wide?: boolean }) {
+export default function PageShell({ children, className = "", wide = false, perfLoading = false }: { children: React.ReactNode; className?: string; wide?: boolean; perfLoading?: boolean }) {
   const widthClass = wide ? "md:max-w-app-wide" : "md:max-w-app-content";
-  return <main className={`mx-auto w-full max-w-app ${widthClass} md:px-8 ${className}`}>{children}</main>;
+  return <main data-perf-ready={perfLoading ? undefined : "true"} data-perf-loading={perfLoading ? "true" : undefined} className={`mx-auto w-full max-w-app ${widthClass} md:px-8 ${className}`}>{children}</main>;
 }
