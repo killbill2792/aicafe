@@ -58,14 +58,14 @@ function canonicalBreakEvenAnswer(
    ...(basis.missingBills?["monthlyBillsPartial"]:[]),
    ...(basis.monthlyStaffCents===null?["monthlyLabor"]:[]),
    ...(laborPartial?["laborDaysIncomplete"]:[]),
-   ...(basis.productCosts.missingProductCosts?["productCostsIncomplete"]:[]),
+   ...(basis.ingredientMissing?["productCostsIncomplete"]:[]),
    ...(basis.missingFees?["processingFeeDaysIncomplete"]:[]),
    ...(monthly===null?["breakEvenUnavailable"]:[]),
  ];
  const feeRate=calc.kind==="ready"?calc.processingFeeRate:null;
  const ingredientRate=calc.kind==="ready"?calc.ingredientRate:null;
  const observedProcessingFeesCents=basis.feeResult.amountCents;
- const observedIngredientCents=basis.productCosts.totalCostCents;
+ const observedIngredientCents=basis.observedIngredientCents;
  const status=monthly===null?"missing":basis.estimatesUsed?"estimate":"actual";
  const reason=missing.length?"breakEvenKnownInputs":status==="actual"?"laborRecorded":"profitFeesEstimated";
  const reasonParams={missing:missing.join(", "),covered,total:basis.elapsedOpenDates.length};
@@ -94,7 +94,7 @@ function canonicalBreakEvenAnswer(
    monthlyBills:{...bills,reasonKey:bills.reason,reason:localizedMetricReason(bills.reason,locale)},
    monthlyLabor:{...staff,reasonKey:staff.reason,
      reason:localizedMetricReason(staff.reason,locale,staff.reasonParams)},
-   ingredientRate,feeRate,
+   ingredientRate,ingredientStatus:basis.ingredientStatus,feeRate,
    feeStatus:basis.feeResult.basis==="actual"?"actual":"estimate",
    status,reasonKey:reason,reason:localizedMetricReason(reason,locale,reasonParams),
    missingDays:basis.missingLaborDates,missing,
@@ -107,6 +107,7 @@ function canonicalBreakEvenAnswer(
      ...(basis.feeResult.basis!=="actual"?["processingFeeEstimate"]:[]),
      ...(basis.estimatedBills?["monthlyBillsEstimate"]:[]),
      ...(basis.productCosts.usesEstimatedProductCosts?["productCostEstimate"]:[]),
+     ...(basis.ingredientSource==="saved_rate"?["savedIngredientRate"]:[]),
    ]:[],
    explain,
    numberEstimates:[
