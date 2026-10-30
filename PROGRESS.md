@@ -52,7 +52,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    the highest owner-facing priority.** Do not change `AGENTS.md`, migrations,
    POS import/sync code, production flags, or add a duplicate event reader/monitor.
 
-   - [ ] **Events Fix A — cron search reliability (search files only).**
+   - [x] **Events Fix A — cron search reliability (search files only).**
      Own: `lib/events/nearbyEventsSearch.server.ts`, `lib/events/nearbyEvents.ts`
      when needed, and search tests. Make the existing OpenAI web search reliably
      produce valid sourced results with bounded retries/fallbacks for 200-incomplete,
@@ -65,7 +65,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
      bounded retries and dedupe. **No** writer/cron route, lifecycle, UI, locale
      or migration edits. Send any scan-status writer follow-up to B.
 
-   - [ ] **Events Fix B — automatic read-only observation & Toast-backed reports.**
+   - [x] **Events Fix B — automatic read-only observation & Toast-backed reports.**
      Own: `lib/events/eventsLookahead.server.ts`,
      `lib/events/eventLiveWatch.server.ts`,
      `lib/ai/supervisor/loop/eventReadiness.server.ts`,
@@ -204,12 +204,12 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 - The prior October Supervisor break-even answer mixed monthly figures (**27,692.54/month**, **893.31/open day**) with rolling “**28 of 30 days**” labor coverage. Money, Plan and Chat assemble inputs differently. The normal `get_break_even` result lacks structured `explain`, hiding “How I got this”; missing costs can be rendered as an insufficiently labeled known-cost floor.
 
 #### Fix 1 / PR A — Toast canonical completeness, daily refresh and missing-data recovery
-- [ ] **Implement/source-data correctness.** **Own only:** scoped `lib/pos/toast/*` labor/fee/recovery files, `lib/pos/rollup.ts`, `lib/pos/timecardDay.ts`, necessary existing labor-status helpers and their tests. **Excluded:** `scripts/sync-cafe-data*`, `lib/viewmodels/*`, Supervisor agent tools, break-even core. Migrations/cron changes require evidence and separate owner approval.
+- [x] **Implement/source-data correctness.** **Own only:** scoped `lib/pos/toast/*` labor/fee/recovery files, `lib/pos/rollup.ts`, `lib/pos/timecardDay.ts`, necessary existing labor-status helpers and their tests. **Excluded:** `scripts/sync-cafe-data*`, `lib/viewmodels/*`, Supervisor agent tools, break-even core. Migrations/cron changes require evidence and separate owner approval.
 - **Do:** trace raw Toast staging → employee link → canonical timecard → refresh queue → `daily_rollups`. Raw wage NULL means Toast omitted it, but a successfully imported Toast wage NULL is canonical $0 under migration 132; distinguish missing/unlinked shifts, staged `needs_match`, pending refresh and genuine incomplete data. Detect **partial** labor gaps, not only dates with zero timecards; use one existing bounded, idempotent recovery mechanism, not another scheduler. Preserve Toast-authoritative pay/hours/overtime/edits/deletes and café-local midnight allocation; actual Toast per-payment fees must take precedence over estimates. Do not repull already-complete Toast days or duplicate archives.
 - **Pass:** six/seven SOURCE shifts with valid two $0 wages; wages/tax/status reflect current canonical records after refresh; partial missed labor is eventually retried; no stale “missing” after successful recompute and no fabricated zero for genuinely absent shifts; existing actual fees remain actual. Behavioral and SQL integration tests cover these states.
 
 #### Fix 2 / PR B — SOURCE-to-TEST complete, safe and verified mirror
-- [ ] **Implement/test-data parity.** **Own only:** `scripts/sync-cafe-data.mjs`, its unit/DB integration tests and `.github/workflows/sync-cafe-data.yml`. **Excluded:** Toast importer/rollup/recovery files, metrics/viewmodels, AI tools.
+- [x] **Implement/test-data parity.** **Own only:** `scripts/sync-cafe-data.mjs`, its unit/DB integration tests and `.github/workflows/sync-cafe-data.yml`. **Excluded:** Toast importer/rollup/recovery files, metrics/viewmodels, AI tools.
 - **Do:** inspect the latest owner-triggered `full_copy` and audit; identify the exact **23503 constraint and table** with safe diagnostics and repair FK ordering without disabling integrity. Preserve atomic day replacement. Group clocked shifts by **café-local business day** rather than database `clock_in::date` (Oct 14 local shift can start Oct 15 UTC). Ensure economic source facts propagate through both refreshed-day and existing insert-if-missing master records: employee links, bills/rates, orders, wages, rollups and payment fees. Preserve intentional TEST-specific IDs, access/identity, chat history, credentials and **no live Toast connection**; never copy sensitive tokens. Use mapped references for parity and avoid repeated archived record storage.
 - **Pass:** a full copy followed by incremental sync succeeds, is idempotent and shows **committed** parity. All 13 provider shifts and two $0 wages match; Oct 12/14 wages, loaded labor, tax/status and **5357/5464-cent actual fees** match SOURCE; resolve/explain the prior 136-cent wage difference; source/test comparison ignores intentionally remapped identifiers. Failure leaves no partial copy. Real-DB integration tests verify.
 

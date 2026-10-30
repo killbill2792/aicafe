@@ -8,6 +8,8 @@ import {laborWageStatusFromTimecards} from "@/lib/calc/profit";
 import { processingFeeForRollup } from "./processingFees";
 import { ensureOwnerConfirmedProcessingFeeEstimateForDay } from "./processingFeeEstimate.server";
 import {refreshToastPaymentFeeForDay} from "./toast/paymentFeeFacts.server";
+import {hasIncompleteToastLabor, type StagedToastShift} from "./toast/laborCoverage";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import { resolveSalesDataStatus, type SalesDataStatus } from "./salesCoverage";
 
 /**
@@ -21,7 +23,10 @@ export async function recomputeDailyRollup(
   businessDate: string,
   options: { salesDataStatus?: SalesDataStatus; dryRun?: boolean } = {},
 ): Promise<void | Record<string, unknown>> {
-  const { data: business } = await supabase.from("businesses").select("payroll_tax_rate, payroll_tax_rate_source, timezone").eq("id", businessId).single();
+  const { data: business, error: businessError } = await supabase.from("businesses").select("payroll_tax_rate, payroll_tax_rate_source, timezone").eq("id", businessId).single();
+  // This RLS-protected read is the authorization boundary for the caller-supplied
+  // café ID, before any service-only Toast staging evidence can be accessed.
+  if (businessError || !business) throw new Error("Rollup business scope unavailable");
   const payrollTaxRate = Number(business?.payroll_tax_rate ?? 0.12);
   const payrollTaxRateSource = business?.payroll_tax_rate_source ?? "system_estimate";
   const timezone = business?.timezone ?? "America/Los_Angeles";
@@ -133,28 +138,53 @@ export async function recomputeDailyRollup(
   // which started today. End is exclusive, including at DST boundaries.
   const timecards=await readAllPosRows((first,last)=>supabase
     .from("timecards")
-    .select("id, clock_in, clock_out, hourly_wage_cents, wage_source, breaks, source_type, provider_regular_hours, provider_overtime_hours")
+    .select("id, pos_timecard_id, clock_in, clock_out, hourly_wage_cents, wage_source, breaks, source_type, provider_regular_hours, provider_overtime_hours")
     .eq("business_id", businessId)
     .lt("clock_in", dayEndUtc)
     .or("clock_out.is.null,clock_out.gt."+dayStartUtc)
     .order("id").range(first,last),"daily timecards");
 
 
-  // Retain known wages while identifying incomplete days separately. Unknown
-  // wages cannot be assumed zero when calculating total labor or margins.
-  // Owner schedules are plans, never clocked payroll evidence.
+  // Only certified, closed Toast shifts can establish $0 pay. A staged shift
+  // without a matching canonical timecard is a PARTIAL day, even if five of
+  // six other workers were imported and their wages look complete.
   const paidTimecards=timecards.filter(tc=>tc.source_type!=="owner_schedule");
   const toastSales=netSalesCents>0&&effectiveOrders.some(o=>o.pos_order_id?.startsWith("toast:"));
-  const wagesCents=paidTimecards.length===0&&toastSales?null:paidTimecards.reduce((sum,tc)=>{
-    const amount=timecardWagesForLocalDay({
-      clockIn:tc.clock_in,clockOut:tc.clock_out,
-      hourlyWageCents:tc.hourly_wage_cents,breaks:tc.breaks??[],
-      providerRegularHours:tc.provider_regular_hours==null?null:Number(tc.provider_regular_hours),
-      providerOvertimeHours:tc.provider_overtime_hours==null?null:Number(tc.provider_overtime_hours),
-    },businessDate,timezone);
-    return sum+(amount??0);
-  },0);
-  const laborWageStatus=laborWageStatusFromTimecards(paidTimecards);
+  const toastAttendance=paidTimecards.some(tc=>tc.pos_timecard_id?.startsWith("toast:"));
+  let stagedGap=false;
+  if(toastSales||toastAttendance){
+    // Toast staging is service-role-only by migration 045. The original caller
+    // may be an authenticated owner finalizing a CSV import, not a cron job.
+    // After checking that caller can read this business above, read only this
+    // business's narrowly bounded staging evidence with the server-only client.
+    // No raw provider row leaves this canonical rollup writer.
+    const laborDb=process.env.SUPABASE_SERVICE_ROLE_KEY
+      ?createAdminSupabaseClient():supabase;
+    const staged=await readAllPosRows((first,last)=>laborDb.from("toast_labor_entries")
+      .select("restaurant_guid,external_time_entry_id,clock_in,clock_out,hourly_wage_cents,provider_regular_hours,provider_overtime_hours,deleted")
+      .eq("business_id",businessId).eq("deleted",false)
+      .lt("clock_in",dayEndUtc)
+      .or("clock_out.is.null,clock_out.gt."+dayStartUtc)
+      .order("restaurant_guid").order("external_time_entry_id").range(first,last),
+      "staged Toast labor");
+    stagedGap=hasIncompleteToastLabor(staged as StagedToastShift[],paidTimecards);
+  }
+  const incomplete=stagedGap||
+    paidTimecards.some(tc=>tc.hourly_wage_cents===null)||
+    (toastSales&&!toastAttendance);
+  // A known-only subtotal must not be exported as the whole day's wages or
+  // used as the base for an estimated employer payroll tax.
+  const wagesCents=incomplete||(paidTimecards.length===0&&toastSales)?null:
+    paidTimecards.reduce((sum,tc)=>{
+      const amount=timecardWagesForLocalDay({
+        clockIn:tc.clock_in,clockOut:tc.clock_out,
+        hourlyWageCents:tc.hourly_wage_cents,breaks:tc.breaks??[],
+        providerRegularHours:tc.provider_regular_hours==null?null:Number(tc.provider_regular_hours),
+        providerOvertimeHours:tc.provider_overtime_hours==null?null:Number(tc.provider_overtime_hours),
+      },businessDate,timezone);
+      return sum+(amount??0);
+    },0);
+  const laborWageStatus=incomplete?"missing":laborWageStatusFromTimecards(paidTimecards);
   const { data: existingRollup, error: existingRollupError } = await supabase
     .from("daily_rollups")
     .select("staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status, voids_status, voids_cents")
