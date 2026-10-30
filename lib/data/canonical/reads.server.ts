@@ -15,8 +15,11 @@ const periodViews=new Set<CanonicalView>([
 ]);
 /** The only canonical view query path for screens and AI.
  * Never accept an arbitrary SQL table or inferred café ID from the model. */
+/** Row statuses a caller may filter on before the limit (open, actual, needs_match...). */
+const statusFilter=z.enum(["open","actual","estimated","needs_match"]);
 export async function readCanonicalView(db:SupabaseClient,businessId:string,
- view:CanonicalView,range:CanonicalRange,requestedLimit=200):Promise<CanonicalRead>{
+ view:CanonicalView,range:CanonicalRange,requestedLimit=200,
+ filter:{status?:z.infer<typeof statusFilter>}={}):Promise<CanonicalRead>{
  if(!z.uuid().safeParse(businessId).success||
    !canonicalViewNames.includes(view))
   return {rows:[],notes:["invalid_scope"],empty:true,truncated:false,rowCount:0,error:"invalid_scope"};
@@ -27,6 +30,11 @@ export async function readCanonicalView(db:SupabaseClient,businessId:string,
  let query=db.from(view).select("*").eq("business_id",businessId);
  if(periodViews.has(view))
   query=query.gte("business_date",range.dateFrom).lte("business_date",range.dateTo);
+ if(filter.status!==undefined){
+  if(!statusFilter.safeParse(filter.status).success)
+   return {rows:[],notes:["invalid_scope"],empty:true,truncated:false,rowCount:0,error:"invalid_scope"};
+  query=query.eq("status",filter.status);
+ }
  const {data,error}=await query.order("source_ref").limit(limit+1);
  if(error)return {rows:[],notes:["source_read_failed"],empty:true,truncated:false,
   rowCount:0,error:"source_read_failed"};
@@ -46,6 +54,9 @@ export const readDiscounts=wrap("cv_discounts");
 export const readVoidsRefunds=wrap("cv_voids_refunds");
 export const readCardFees=wrap("cv_card_fees");
 export const readLaborEntries=wrap("cv_labor_entries");
+/** Finished shifts with no hourly wage, filtered before the limit. */
+export const readLaborEntriesMissingWage=(db:SupabaseClient,businessId:string,
+ range:CanonicalRange,limit=20)=>readCanonicalView(db,businessId,"cv_labor_entries",range,limit,{status:"needs_match"});
 export const readStaff=wrap("cv_staff");
 export const readShifts=wrap("cv_shifts");
 export const readMenu=wrap("cv_menu");

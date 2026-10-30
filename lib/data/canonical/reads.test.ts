@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {readCanonicalView,readSalesDays,readStaff} from "./reads.server";
+import {readCanonicalView,readLaborEntriesMissingWage,readSalesDays,readStaff} from "./reads.server";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const range={dateFrom:"2026-10-01",dateTo:"2026-10-31"};
 function db(rows:Record<string,unknown>[]=[],err:unknown=null){
@@ -24,6 +24,14 @@ describe("canonical authenticated read path",()=>{
   expect(x.calls).toContainEqual(["business_id",business]);
   expect(x.calls).toContainEqual([">=business_date",range.dateFrom]);
   expect(x.calls).toContainEqual(["<=business_date",range.dateTo]);
+ });
+ it("filters labor to shifts with no wage before the limit",async()=>{
+  const x=db([{source_ref:"timecard:1",status:"needs_match"}]);
+  const result=await readLaborEntriesMissingWage(x.client,business,range,20);
+  expect(x.table).toBe("cv_labor_entries");
+  expect(x.calls).toContainEqual(["status","needs_match"]);
+  expect(x.calls).toContainEqual(["limit",21]);
+  expect(result.rowCount).toBe(1);
  });
  it("does not hide undated staff facts behind a date filter",async()=>{
   const x=db([{source_ref:"staff:1"}]);await readStaff(x.client,business,range);

@@ -1,4 +1,5 @@
 import "server-only";
+import {readLaborEntriesMissingWage} from "@/lib/data/canonical/reads.server";
 import {getToastCheckEvidence} from "@/lib/data/getToastCheckEvidence";
 import {getTranslations} from "next-intl/server";
 import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
@@ -109,14 +110,11 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       async function missingWageShifts(businessId: string, range: CafeStatePeriod):
         Promise<{shifts:MissingWageShift[]|null;missing:string[]}> {
         try {
-          const {data,error}=await client.from("cv_labor_entries")
-            .select("business_date,data,regular_hours,overtime_hours")
-            .eq("business_id",businessId).eq("status","needs_match")
-            .gte("business_date",range.from).lte("business_date",range.to)
-            .order("business_date").limit(21);
-          if(error)return {shifts:null,missing:["missingWageShiftsUnavailable"]};
-          const rows=(data??[]) as Array<{business_date:string;data:{employee_id?:string}|null;
-            regular_hours:number|null;overtime_hours:number|null}>;
+          const read=await readLaborEntriesMissingWage(client,businessId,{dateFrom:range.from,dateTo:range.to},20);
+          if(read.error)return {shifts:null,missing:["missingWageShiftsUnavailable"]};
+          const rows=(read.rows as Array<{business_date:string;data:{employee_id?:string}|null;
+            regular_hours:number|null;overtime_hours:number|null}>)
+            .slice().sort((x,y)=>String(x.business_date).localeCompare(String(y.business_date)));
           const ids=[...new Set(rows.map(row=>row.data?.employee_id).filter((x):x is string=>Boolean(x)))];
           const names=new Map<string,string|null>();
           if(ids.length){
@@ -124,8 +122,8 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
               .eq("business_id",businessId).in("id",ids);
             for(const person of people.data??[])names.set(String(person.id),person.display_name??null);
           }
-          return {missing:rows.length>20?["missingWageShiftsTruncated"]:[],
-            shifts:rows.slice(0,20).map(row=>{
+          return {missing:read.truncated?["missingWageShiftsTruncated"]:[],
+            shifts:rows.map(row=>{
               const hours=row.regular_hours===null&&row.overtime_hours===null?null:
                 Number(row.regular_hours??0)+Number(row.overtime_hours??0);
               return {date:String(row.business_date),
