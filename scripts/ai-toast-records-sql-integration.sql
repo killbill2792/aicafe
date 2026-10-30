@@ -34,9 +34,20 @@ BEGIN
      'modifiers',jsonb_build_array(jsonb_build_object('displayName','Oat milk','price',0.75)),
      'appliedDiscounts',jsonb_build_array(jsonb_build_object('name','Happy hour','discountAmount',1))),
     jsonb_build_object('guid','sel-2','displayName','Muffin','price',4,'quantity',1),
-    jsonb_build_object('guid','sel-3','displayName','Cookie','price',3,'quantity',1,'voided',true)),
+    jsonb_build_object('guid','sel-3','displayName','Cookie','price',3,'quantity',1,'voided',true),
+    jsonb_build_object('guid','sel-4','displayName','Gift card','price',25,'quantity',1,'deferred',true)),
    'payments',jsonb_build_array(jsonb_build_object('guid','cccccccc-cccc-4ccc-8ccc-cccccccc0003',
-    'type','CREDIT','amount',9.5,'tipAmount',1,'paymentStatus','CAPTURED'))))));
+    'type','CREDIT','amount',9.5,'tipAmount',1,'paymentStatus','CAPTURED'),
+    jsonb_build_object('guid','cccccccc-cccc-4ccc-8ccc-cccccccc0004','type','CREDIT','amount',9.5,'paymentStatus','DENIED'))),
+   jsonb_build_object('guid','cccccccc-cccc-4ccc-8ccc-cccccccc0005','voided',true,'amount',4,
+    'payments',jsonb_build_array(jsonb_build_object('guid','cccccccc-cccc-4ccc-8ccc-cccccccc0006',
+     'type','CASH','amount',4,'paymentStatus','CLOSED'))))),
+  -- A training order made in Toast's test mode: kept, never counted.
+  jsonb_build_object('guid','cccccccc-cccc-4ccc-8ccc-cccccccc0007','createdInTestMode',true,
+   'checks',jsonb_build_array(jsonb_build_object('guid','cccccccc-cccc-4ccc-8ccc-cccccccc0008','amount',5,
+    'selections',jsonb_build_array(jsonb_build_object('guid','sel-5','displayName','Latte','price',5,'quantity',1)),
+    'payments',jsonb_build_array(jsonb_build_object('guid','cccccccc-cccc-4ccc-8ccc-cccccccc0009',
+     'type','CASH','amount',5,'paymentStatus','CLOSED'))))));
  changed:=jsonb_set(page,'{0,checks,0,payments,0,tipAmount}','2'::jsonb);
 
  -- Import A, then import B where Toast changed the tip: only B's version is read.
@@ -67,16 +78,23 @@ BEGIN
   '[{"guid":"t-1","name":"Patio 4"},{"guid":"t-2","name":"Bar 1"}]','{}'),
  (b,r::text,'orders/v2/ordersBulk',d,now(),200,1,'[{"guid":"dup"}]','{}');
 
- perform pg_temp.assert_true((select count(*)=1 from public.cv_toast_records
+ perform pg_temp.assert_true((select count(*)=2 from public.cv_toast_records
   where business_id=b and record_type='order'),'each order appears once, from the latest import');
+ perform pg_temp.assert_true((select count(*)=1 from public.cv_toast_records
+  where business_id=b and record_type='order' and not counts_in_sales),'a test-mode order is kept but not counted');
+ perform pg_temp.assert_true((select count(*) from public.cv_toast_records where business_id=b and record_type='payment')=4
+  and (select count(*) from public.cv_toast_records where business_id=b and record_type='payment' and counts_in_sales)=1,
+  'declined payments, payments on voided checks and test-mode payments are kept but not counted');
  perform pg_temp.assert_true((select count(*)=1 from public.cv_toast_records where business_id=b
   and record_type='payment' and (data->>'tipAmount')::numeric=2),'payments show the changed tip');
- perform pg_temp.assert_true((select count(*) from public.cv_toast_records where business_id=b and record_type='item')=3
+ perform pg_temp.assert_true((select count(*) from public.cv_toast_records where business_id=b and record_type='item')=5
   and (select count(*) from public.cv_toast_records where business_id=b and record_type='item' and counts_in_sales)=2,
-  'every item is readable; the voided one does not count in sales');
+  'every item is readable; voided, gift card and test-mode items do not count in sales');
+ perform pg_temp.assert_true(not exists(select 1 from public.cv_toast_records where business_id=b
+  and record_type in ('order','check','item','payment') and counts_in_sales is null),'the sales flag is never unknown for order records');
  perform pg_temp.assert_true((select count(*) from public.cv_toast_records where business_id=b
   and record_type in ('modifier','item_discount','check_discount'))=3,'modifiers and discounts are their own rows');
- perform pg_temp.assert_true((select not (data ? 'checks') from public.cv_toast_records
+ perform pg_temp.assert_true((select bool_and(not (data ? 'checks')) from public.cv_toast_records
   where business_id=b and record_type='order'),'an order row does not repeat its checks');
  perform pg_temp.assert_true(not exists(select 1 from public.cv_toast_records
   where business_id=b and record_type like 'orders/%'),'orders are read once, from the archive');
@@ -90,12 +108,12 @@ BEGIN
  perform pg_temp.assert_true(res->'rows' @> '[{"data.displayName":"Latte","sum_data.price":5.5}]'
   and jsonb_array_length(res->'rows')=2,'sums a field inside data, grouped by another');
  execute q into res using b,null::text[],
-  '[{"column":"record_type","op":"=","value":"order"}]'::jsonb,
+  '[{"column":"record_type","op":"=","value":"order"},{"column":"counts_in_sales","op":"=","value":true}]'::jsonb,
   array['data.server.guid','data.table.name'],'[{"fn":"sum","column":"data.numberOfGuests"}]'::jsonb,d;
  perform pg_temp.assert_true(res->'rows'->0->>'data.server.guid'='server-1'
   and res->'rows'->0->>'data.table.name'='Patio 4','groups by nested fields');
  execute q into res using b,array['data.displayName'],
-  '[{"column":"record_type","op":"=","value":"item"},{"column":"data.price","op":">","value":3.5}]'::jsonb,
+  '[{"column":"record_type","op":"=","value":"item"},{"column":"counts_in_sales","op":"=","value":true},{"column":"data.price","op":">","value":3.5}]'::jsonb,
   null::text[],null::jsonb,d;
  perform pg_temp.assert_true(jsonb_array_length(res->'rows')=2,'compares numbers inside data as numbers');
  execute q into res using b,array['data.name'],

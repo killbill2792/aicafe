@@ -311,7 +311,7 @@ Every Toast record and field, one row each: orders, checks, items, modifiers, pa
 | record_ref | Toast GUID of this record. | identifier | toast | Which record? |
 | order_ref | Toast order GUID this record belongs to (order-level types only). | identifier | toast | Which order? |
 | check_ref | Toast check GUID this record belongs to. | identifier | toast | Which check? |
-| counts_in_sales | False when this record or its order/check is voided or deleted; null for non-order records. Filter true for sales. | boolean | app | Did this count? |
+| counts_in_sales | Same rule as imported sales: false for voided or deleted orders, checks and items, test-mode and excess-food orders, gift card and house-account items, and declined, cancelled, errored or voided payments; null for non-order records. Filter true for sales. | boolean | app | Did this count? |
 | data | Every field Toast sent for this record (guest names, contacts, card details and notes removed). Read one field by name: data.server.guid, data.price, data.diningOption.guid. Get the field names with describe_data and record_type. Toast money fields are dollars, not cents. | JSON | toast | Sales by server? Average order time? Which table? |
 
 ## Capture-only Toast evidence and limitations

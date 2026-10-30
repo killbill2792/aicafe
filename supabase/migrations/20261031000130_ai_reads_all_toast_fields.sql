@@ -25,7 +25,10 @@ create or replace view public.cv_toast_records
  with (security_invoker=true) as
 with orders as not materialized (
  select r.business_id,r.business_date,r.id,r.payload o,
-  (r.payload->'voided') is not distinct from 'true'::jsonb or (r.payload->'deleted') is not distinct from 'true'::jsonb o_void
+  -- Same exclusions as the importer (lib/pos/toast/dayParser.ts): deleted, voided,
+  -- excess-food and test-mode orders are kept here but never count in sales.
+  (r.payload->'voided') is not distinct from 'true'::jsonb or (r.payload->'deleted') is not distinct from 'true'::jsonb
+   or (r.payload->'excessFood') is not distinct from 'true'::jsonb or (r.payload->'createdInTestMode') is not distinct from 'true'::jsonb o_void
  from public.toast_raw_records r
  join public.toast_day_status d on d.business_id=r.business_id
   and d.restaurant_guid=r.restaurant_guid and d.business_date=r.business_date
@@ -39,7 +42,9 @@ checks as not materialized (
   then o.o->'checks' else '[]'::jsonb end) with ordinality c(v,n)
  where jsonb_typeof(c.v)='object'),
 items as not materialized (
- select k.*,s.v s,s.n sn,k.c_void or (s.v->'voided') is not distinct from 'true'::jsonb s_void
+ -- Gift card and house-account items are deferred: the importer leaves them out of sales.
+ select k.*,s.v s,s.n sn,k.c_void or (s.v->'voided') is not distinct from 'true'::jsonb or (s.v->'deferred') is not distinct from 'true'::jsonb
+  or (s.v->>'selectionType') is not distinct from 'HOUSE_ACCOUNT_PAY_BALANCE' s_void
  from checks k cross join lateral jsonb_array_elements(case when jsonb_typeof(k.c->'selections')='array'
   then k.c->'selections' else '[]'::jsonb end) with ordinality s(v,n)
  where jsonb_typeof(s.v)='object'),
@@ -88,7 +93,8 @@ where jsonb_typeof(d.v)='object'
 union all
 select k.business_id,'toast','toast-payment:'||k.id::text||':'||k.cn||':'||p.n,'actual',k.business_date,
  'payment',p.v->>'guid',k.o->>'guid',k.c->>'guid',
- not k.o_void and (p.v->>'paymentStatus') is distinct from 'VOIDED',p.v
+ not k.c_void and (p.v->'voided') is distinct from 'true'::jsonb
+  and coalesce(p.v->>'paymentStatus','') not in ('VOIDED','DENIED','CANCELLED','ERROR','ERROR_NETWORK'),p.v
 from checks k cross join lateral jsonb_array_elements(case when jsonb_typeof(k.c->'payments')='array'
  then k.c->'payments' else '[]'::jsonb end) with ordinality p(v,n)
 where jsonb_typeof(p.v)='object'
