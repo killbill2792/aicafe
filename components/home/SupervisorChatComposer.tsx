@@ -848,7 +848,7 @@ export default function SupervisorChatComposer({
   };
   // Only saved event facts are read on Home; no paid search starts when opening the panel.
   const comingUpCard = enabled && canUseAi ? <SavedEventsCard locale={locale}
-    onChatAboutDay={(date,title,existingThreadId)=>void chatAboutEventDay(date,title,existingThreadId)} disabled={boardAskDisabled}/> : undefined;
+    onChatAboutDay={(date,title,existingThreadId)=>void chatAboutEventDay(date,title,existingThreadId)} chatDisabled={boardAskDisabled}/> : undefined;
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
