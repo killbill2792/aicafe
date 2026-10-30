@@ -52,16 +52,22 @@ export default async function MoneyPage({
       timeReader("Money","createServerSupabaseClient",createServerSupabaseClient),
       timeReader("Money","getActiveBusinessId",()=>getActiveBusinessId(user.id)),
     ]);
-    const range = periodCalendarRange(snapshot, period);
     // Toast credentials have no authenticated RLS grants. Only read them after the
     // user's active-business membership has been checked.
     const canReadAdmin = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) &&
       businessId === snapshot.business.id;
     const [orders,todayPair,verifiedLocation] = await Promise.all([
-      timeReader("Money","readAllPosRows.salesSources",()=>readAllPosRows<SalesOrderEvidence>((first, last) => db.from("orders")
-        .select("pos_order_id, processing_fee_provider")
-        .eq("business_id", businessId).eq("toast_excluded",false).is("superseded_by",null).gte("business_date", range.start)
-        .lte("business_date", range.end).order("id").range(first, last), "money sales sources")),
+      // Only Profit & costs displays order provenance. Recovery uses the same
+      // snapshot/live readings but must not page through unused order evidence.
+      view === "profit"
+        ? timeReader("Money","readAllPosRows.salesSources",()=>{
+          const range = periodCalendarRange(snapshot, period);
+          return readAllPosRows<SalesOrderEvidence>((first, last) => db.from("orders")
+            .select("pos_order_id, processing_fee_provider")
+            .eq("business_id", businessId).eq("toast_excluded",false).is("superseded_by",null).gte("business_date", range.start)
+            .lte("business_date", range.end).order("id").range(first, last), "money sales sources");
+        })
+        : Promise.resolve(null),
       // Same saved, business-day-checked reading as Home. Never replace a finalized
       // daily row with provisional sales, or silently use yesterday's reading.
       !snapshot.todayHasData && canReadAdmin
@@ -81,7 +87,7 @@ export default async function MoneyPage({
         return Boolean(location?.length);
       })() : Promise.resolve(false),
     ]);
-    salesSources = salesSourcesForOrders(orders);
+    if (orders !== null) salesSources = salesSourcesForOrders(orders);
     if (todayPair) {
       const [saved,businessDay] = todayPair;
       const sales = liveSalesView(saved,snapshot.business.timezone,locale,businessDay);
