@@ -5,15 +5,16 @@ import {z} from "zod";
 export const EVENT_KINDS=["festival","conference","sports","concert","parade","market","holiday_event",
   "school","community","road_closure","public_holiday","other"] as const;
 export const CROWD_SIZES=["small","medium","large","unknown"] as const;
-export type NearbyEvent={name:string;startDate:string;endDate:string;venue:string|null;venueAddress:string|null;
-  startTime:string|null;endTime:string|null;distance:string|null;
+export type NearbyEvent={name:string;startDate:string;endDate:string;venue:string|null;venueAddress?:string|null;
+  startTime?:string|null;endTime?:string|null;distance:string|null;
   kind:typeof EVENT_KINDS[number];expectedCrowd:typeof CROWD_SIZES[number];sourceUrl:string;sourceName:string|null};
 export type SearchFailureCategory="not_configured"|"http_error"|"incomplete"|"missing_message"|
   "empty_text"|"invalid_json"|"invalid_shape"|"invalid_response"|"timeout"|"network";
+/** Optional metadata keeps older search stubs compatible; the production search always sets it. */
 export type NearbyEventsResult=
-  |{available:true;outcome:"found";events:NearbyEvent[];partial:boolean}
-  |{available:true;outcome:"none_found";events:NearbyEvent[];partial:false}
-  |{available:false;outcome:"failed";reason:"notConfigured"|"searchFailed"|"timeout";category:SearchFailureCategory};
+  |{available:true;outcome?:"found"|"none_found";events:NearbyEvent[];partial?:boolean}
+  |{available:false;outcome?:"failed";reason:"notConfigured"|"searchFailed"|"timeout";
+      category?:SearchFailureCategory};
 export type NearbyEventsSearch=(input:{location:string;city:string|null;region:string|null;countryCode:string|null;
   from:string;to:string})=>Promise<NearbyEventsResult>;
 
