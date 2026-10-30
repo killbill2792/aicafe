@@ -9,6 +9,7 @@ import OwnerScheduleSendPanel from "@/components/staff/OwnerScheduleSendPanel";
 import {scheduleApprovalReply} from "@/lib/calc/scheduling/ownerDeliveryLinks";
 import {priceInputCents,priceEditString} from "@/lib/calc/menuPriceProposal";
 import {parseOwnerDecimal} from "@/lib/calc/localeDecimal";
+import {eventActionAreaLabel} from "@/lib/events/eventActionArea";
 type Locale="en"|"es"|"ar";
 export type ProposalView={proposalId:string;revision:number;state:string;capabilityId?:string;
   productName?:string;oldPriceCents?:number;newPriceCents?:number;
@@ -94,6 +95,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const purchase=value.capabilityId==="maya.inventory_purchase.v1";
   const experiment=value.capabilityId==="alex.drink_price_experiment.v1";
   const goal=value.capabilityId==="leo.goal.v1";
+  const eventPlan=value.capabilityId==="alex.event_readiness.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
   if(purchase&&value.purchase){
     const copy=dict[locale].InventoryApprovalCard;
@@ -222,6 +224,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     </section>;
   }
   const rows:ApprovalPreviewRow[]=value.preview?.length?value.preview:((value.oldPriceCents!=null&&value.newPriceCents!=null)?diffFields([{field:"price",label:"Price",value:{kind:"money",cents:value.oldPriceCents}}],[{field:"price",label:"Price",value:{kind:"money",cents:value.newPriceCents}}]):[]);
+  const localizedRows=eventPlan?rows.map(row=>({...row,label:eventActionAreaLabel(row.label,locale)})):rows;
   const pending=value.state==="pending"&&!busy;
   const statuses={...copy.states,...(experiment?{manual_pending:copy.manualPending}:{}),
     ...(goal?{tracking:dict[locale].Goals.cardTracking}:{})} as Record<string,string>;
@@ -233,15 +236,15 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-bold">{statuses[value.state]??copy.states.failed}</span>
     </div>
     <h3 className="mt-2 break-words text-xl font-bold">{value.productName}</h3>
-    <BeforeAfterRows rows={rows} locale={locale} currency={value.currency??"USD"}/>
+    <BeforeAfterRows rows={localizedRows} locale={locale} currency={value.currency??"USD"}/>
     {value.editedByOwner&&<p className="mt-2">{copy.editedByYou}</p>}
     {experiment&&value.state==="manual_pending"&&<p className="mt-2 text-[17px]">{copy.manualInstructions}</p>}
     {value.state==="stale"&&<p className="mt-2">{copy.stale} {value.currentPriceCents!=null?money(value.currentPriceCents):""}</p>}
     {["failed","conflict","stale"].includes(value.state)&&<p className="mt-2">{copy.stale}</p>}
     {pending&&<div className="mt-4 flex flex-wrap gap-2">
       <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}
-        onClick={()=>void invoke("approve")}>{copy.approve}</button>
-      {!experiment&&!goal&&<button type="button" disabled={busy} className={button+" border border-line"}
+        onClick={()=>void invoke("approve")}>{eventPlan?dict[locale].EventsPanel.usePlan:copy.approve}</button>
+      {!experiment&&!goal&&!eventPlan&&<button type="button" disabled={busy} className={button+" border border-line"}
         onClick={()=>{setEditing(x=>!x);setPrice(priceEditString(value.newPriceCents!));}}>{copy.edit}</button>}
       <button type="button" disabled={busy} className={button+" border border-line"}
         onClick={()=>void invoke("cancel")}>{copy.cancel}</button>

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getLocale } from "next-intl/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { readActiveBusinessMemberships } from "@/lib/data/getActiveBusinessId";
 
 /**
  * Server-side guard for every authenticated tab screen. Redirects to /login when signed out.
@@ -44,9 +45,8 @@ export const requireOwnBusiness=cache(async function requireOwnBusiness(){
   const user = await requireUser();
   if (!isSupabaseConfigured() || !user) return user;
 
-  const supabase = await createServerSupabaseClient();
-  const { data: memberships } = await supabase.from("memberships").select("business_id, businesses(is_demo)").eq("user_id", user.id);
-  const hasOwnBusiness = (memberships ?? []).some((m) => {
+  const memberships = await readActiveBusinessMemberships(user.id);
+  const hasOwnBusiness = memberships.some((m) => {
     const business = m.businesses as unknown as { is_demo: boolean } | { is_demo: boolean }[] | null;
     const isDemo = Array.isArray(business) ? business[0]?.is_demo : business?.is_demo;
     return isDemo === false;
