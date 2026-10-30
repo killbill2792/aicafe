@@ -25,6 +25,8 @@ type Db=SupabaseClient;
 type Business={id:string;timezone:string|null;is_demo:boolean};
 export type LookaheadRun={checked:number;scanned:number;planned:number;skipped:number;failed:number};
 const maxPlansPerDay=3;
+const planMessageId=(businessId:string,ownerId:string,date:string,hash:string,proposalId:string)=>
+  stableMessageId("event-plan-message:"+businessId+":"+ownerId+":"+date+":"+hash+":"+proposalId);
 
 /** No heuristic predicts whether a holiday will be busy. A day qualifies
  * only because a saved external fact exists; the single AI agent judges impact. */
@@ -168,7 +170,7 @@ async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|"ar",
   if(!proposal)return false;
   const {reply,metadata}=turn.text.trim()?agentReplyPayload(turn):
     {reply:{blocks:[{type:"proposal_card",proposalId:proposal.proposalId}]},metadata:{}};
-  const messageId=stableMessageId("event-plan-message:"+b.id+":"+ownerId+":"+day.date+":"+day.hash);
+  const messageId=planMessageId(b.id,ownerId,day.date,day.hash,proposal.proposalId);
   const message=await db.from("ai_messages").insert({
     id:messageId,business_id:b.id,thread_id:threadId,owner_user_id:ownerId,
     author_user_id:null,role:"supervisor",content_type:"blocks",text_content:null,
@@ -196,10 +198,20 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
   events:readonly CafeEvent[],
   plans:readonly {proposalId:string;threadId:string;startDate:string;factsHash:string;
     status:string;summary:string}[],capacity:number):Promise<{repaired:number;created:number}>{
-  const latest=plans.filter(p=>p.status==="draft"&&p.startDate>=today&&
-    p.startDate<=addDays(today,13)&&p.factsHash===effectHash(eventPlanFacts(
-      events.filter(e=>e.status==="found"&&e.startDate<=p.startDate&&
-        e.endDate>=p.startDate).sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8))));
+  // The shared owner proposal reader returns newest-first. More than one
+  // draft can exist for a day with the same facts hash (e.g. from owner chat).
+  // Only the newest eligible draft may own the day-keyed inbox notification.
+  const seenDays=new Set<string>();
+  const latest=plans.filter(p=>{
+    if(p.status!=="draft"||p.startDate<today||p.startDate>addDays(today,13)||
+      seenDays.has(p.startDate))return false;
+    const facts=eventPlanFacts(events.filter(e=>e.status==="found"&&
+      e.startDate<=p.startDate&&e.endDate>=p.startDate)
+      .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8));
+    if(p.factsHash!==effectHash(facts))return false;
+    seenDays.add(p.startDate);
+    return true;
+  });
   if(!latest.length)return {repaired:0,created:0};
   const rows=await db.from("operating_tasks").select("id,payload").eq("business_id",businessId)
     .in("id",latest.map(p=>"event-plan:"+p.startDate));
@@ -212,8 +224,9 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
   for(const p of latest){
     const taskId="event-plan:"+p.startDate;
     const previous=known.get(taskId);
-    const messageId=stableMessageId("event-plan-message:"+businessId+":"+ownerId+
-      ":"+p.startDate+":"+p.factsHash);
+    // Scope the message to the proposal, not just the day's event facts:
+    // owner-chat drafts can share a facts hash but have different approval cards.
+    const messageId=planMessageId(businessId,ownerId,p.startDate,p.factsHash,p.proposalId);
     // A revised proposal reuses the day-keyed task. Its old payload does not
     // prove that the new approval card and inbox link were delivered.
     if(previous?.proposalId===p.proposalId&&previous.messageId===messageId&&
