@@ -145,8 +145,8 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
 }
 
 /** Opens over the same Supervisor conversation. Reads saved PR 3 facts and loop plans only. */
-export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
-  locale:Locale;disabled:boolean;
+export default function SavedEventsCard({locale,chatDisabled,onChatAboutDay}:{
+  locale:Locale;chatDisabled:boolean;
   onChatAboutDay:(date:string,title:string,existingThreadId?:string)=>void;
 }){
   const t=useMemo(()=>createTranslator({locale,messages:{en,es,ar}[locale],namespace:"EventsPanel"}) as unknown as T,[locale]);
@@ -199,6 +199,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
     calendarMonth+"-"+String(i-weekday+1).padStart(2,"0"));
   const button="min-h-12 rounded-xl px-4 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   const chat=(date:string)=>{
+    if(chatDisabled)return;
     const matched=eventsOn(timeline.events,date);
     const dayPlan=planOn(timeline.plans,date);
     onChatAboutDay(date,(matched[0]?.name??dayPlan?.summary??date).slice(0,120),
@@ -218,7 +219,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
         <CalendarDays size={20} aria-hidden="true"/><span className="flex-1 text-[17px]">{t("title")}</span>
         <span className="text-[15px] text-accent-text">{t("seeAll")}</span>
       </button>
-      {lead?<button type="button" disabled={disabled} onClick={()=>openDay(lead.date)}
+      {lead?<button type="button" onClick={()=>openDay(lead.date)}
         className="mb-3 w-full min-w-0 rounded-2xl bg-surface2 p-3 text-start disabled:opacity-60">
         <p className="text-[15px] font-semibold text-accent-text">{dateLabel(lead.date,locale,"long")} · {lead.date===today?t("now"):t("upcoming")}</p>
         <h3 className="mt-1 break-words font-headline text-[20px] font-bold leading-snug text-ink" dir="auto">
@@ -233,7 +234,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
           const dayPlan=planOn(timeline.plans,date);
           const events=eventsOn(timeline.events,date);
           const name=dateLabel(date,locale);
-          return <button key={date} type="button" disabled={disabled} onClick={()=>openDay(date)}
+          return <button key={date} type="button" onClick={()=>openDay(date)}
             aria-label={name+" · "+(dayPlan?.summary??events.map(e=>e.name).join(", ")??"")}
             className="flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 rounded-xl bg-surface2 px-0.5 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
             <span className="text-[13px]">{new Intl.DateTimeFormat(locale,{weekday:"short",timeZone:"UTC"}).format(new Date(date+"T00:00:00Z"))}</span>
@@ -351,7 +352,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                 currency={timeline.currency??null} locale={locale} t={t} onChat={()=>chat(chosen)}/>
             </section>:<p className="rounded-xl bg-surface2 p-4 text-ink-muted">{t("noPlan")}</p>}
             {dayEvents.length===0&&!plan&&<p className="text-ink-muted">{t("noEvents")}</p>}
-            <button type="button" onClick={()=>chat(chosen)}
+            <button type="button" onClick={()=>chat(chosen)} disabled={chatDisabled}
               className={button+" w-full bg-accent text-on-accent"}>{t("chatAbout")}</button>
           </>}
         </div>
