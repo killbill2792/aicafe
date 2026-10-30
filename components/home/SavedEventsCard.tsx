@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect,useMemo,useState} from "react";
+import {useCallback,useEffect,useMemo,useState} from "react";
 import {createTranslator} from "next-intl";
 import {CalendarDays,ChevronLeft,ChevronRight,X} from "lucide-react";
 import en from "@/messages/en.json";
@@ -147,7 +147,7 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
 /** Opens over the same Supervisor conversation. Reads saved PR 3 facts and loop plans only. */
 export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   locale:Locale;disabled:boolean;
-  onChatAboutDay:(date:string,title:string,prompt:string,existingThreadId?:string)=>void;
+  onChatAboutDay:(date:string,title:string,existingThreadId?:string)=>void;
 }){
   const t=useMemo(()=>createTranslator({locale,messages:{en,es,ar}[locale],namespace:"EventsPanel"}) as unknown as T,[locale]);
   const [timeline,setTimeline]=useState<Timeline|null>(null);
@@ -160,19 +160,19 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   const [month,setMonth]=useState<string|null>(null);
   const [sortByDate,setSortByDate]=useState(false);
 
-  async function refresh(signal?:AbortSignal){
+  const refresh=useCallback(async(signal?:AbortSignal)=>{
     const response=await fetch("/api/events/saved",{cache:"no-store",signal});
     if(!response.ok)throw new Error("events_unavailable");
     const data=await response.json() as Timeline;
     if(!Array.isArray(data.events)||!Array.isArray(data.plans)||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(data.today))
       throw new Error("invalid_events");
     setTimeline(data);setError(false);
-  }
+  },[]);
   useEffect(()=>{
     const controller=new AbortController();
     void refresh(controller.signal).catch(()=>{if(!controller.signal.aborted)setError(true);});
     return ()=>controller.abort();
-  },[]);
+  },[refresh]);
   if(!timeline)return <section data-testid="coming-up" aria-label={t("title")}
     className="space-y-2 rounded-2xl border border-line bg-card p-4 text-[17px] text-ink" role="status">
       <p>{error?t("loadFailed"):t("loading")}</p>
@@ -202,7 +202,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
     const matched=eventsOn(timeline.events,date);
     const dayPlan=planOn(timeline.plans,date);
     onChatAboutDay(date,(matched[0]?.name??dayPlan?.summary??date).slice(0,120),
-      "",dayPlan?.threadId);
+      dayPlan?.threadId);
     setPanel(null);
   };
   const listDates=eventListDays(timeline,tab,affectsOnly,sortByDate);
@@ -260,7 +260,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
             <div className="grid grid-cols-3 gap-1" role="group" aria-label={t("title")}>
               {(["past","now","upcoming"] as const).map(key=><button key={key} type="button"
                 aria-pressed={tab===key} onClick={()=>setTab(key)}
-                className="min-h-12 min-w-0 rounded-xl px-1 text-[16px] font-semibold sm:px-4">{t(key)}</button>)}
+                className={"min-h-12 min-w-0 rounded-xl px-1 text-[16px] font-semibold sm:px-4 "+(tab===key?"bg-accent text-on-accent":"bg-surface2 text-ink")}>{t(key)}</button>)}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button type="button" className={button+" bg-surface2"} onClick={()=>setCalendar(v=>!v)}
