@@ -122,6 +122,14 @@ Each PR: small (ideally < 400 changed lines), one concern, tests for the behavio
 - Return three distinct outcomes: `found`, `none_found` (searched, nothing nearby), `failed`
   (with category). The chat and card must say which.
 - Output budget: measure on the test café, propose a number (D4), keep it in one constant.
+- **Time:** web search often takes 10–40 s. Production: one search returned in ~14 s, so the failure was
+  reading the reply, not time. With retries, the total can pass the 60 s chat-turn limit, so:
+  - **Background search (cron, PR 4): generous time** (e.g. up to 60 s per attempt, 2 attempts). Nobody
+    is waiting.
+  - **Inside a chat turn: never block on a slow search.** Answer at once from saved events plus holidays
+    and the café's own data. If nothing is saved yet, say "I'm checking local events now and will post
+    them here", start the search in the background, and post the result to the same thread when done.
+  - Log the duration of every attempt, so the right limits are set from real numbers.
 - Tests: recorded real-shape failure fixtures (incomplete, reasoning-only output, prose instead of
   JSON, fenced JSON, empty list), not only the happy path.
 - Check: the test café's Halloween search finds local events, or logs a clear reason.
