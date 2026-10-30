@@ -63,6 +63,29 @@ describe("event morning-after narrative",()=>{
       ["Halloween"],"Ready for the holiday",result,"insufficient_evidence")).toBeNull();
     expect(runAgentTurn).not.toHaveBeenCalled();
   });
+  it("supplies typed hourly amounts to the numeric checker and retains warning offsets",async()=>{
+    const text="Sales reached 999999, unsupported by the saved day.";
+    vi.mocked(runAgentTurn).mockResolvedValueOnce({
+      text,provenance:[{text:"999999",start:14,end:20,kind:"number",source:"unchecked"}],
+      unverified:[{text:"999999",start:14,end:20,kind:"number"}],
+    } as Awaited<ReturnType<typeof runAgentTurn>>);
+    const narrative=await eventFinalNarrative(scope,
+      "44444444-4444-4444-8444-444444444444",["Halloween"],
+      "Ready for the holiday",result,"complete");
+    expect(narrative?.text).toBe(text);
+    expect(narrative?.provenance).toEqual([{
+      text:"999999",start:14,end:20,kind:"number",source:"unchecked",
+    }]);
+    const args=vi.mocked(runAgentTurn).mock.calls[0][0];
+    expect(args.previousEvidence).toEqual([{
+      tool:"event_readiness",values:expect.arrayContaining([
+        {key:"2026-10-31/actualCents",value:5000,unit:"cents"},
+        {key:"2026-10-31/12/actualCents",value:500,unit:"cents"},
+        {key:"2026-10-31/12/usualCents",value:400,unit:"cents"},
+        {key:"2026-10-31/12/changeBps",value:2500,unit:"bps"},
+      ]),
+    }]);
+  });
   it("never invents a narrative when the provider returns empty text",async()=>{
     vi.mocked(runAgentTurn).mockResolvedValue({text:""} as Awaited<ReturnType<typeof runAgentTurn>>);
     expect(await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
