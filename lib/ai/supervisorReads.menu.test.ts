@@ -2,6 +2,8 @@ import {describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 vi.mock("server-only",()=>({}));
 import {supervisorHistoricalReaders} from "./supervisorReads.server";
+import {readMenuCatalogRows} from "@/lib/data/menuCatalog.server";
+import {visiblePricedMenuItems} from "@/lib/menu/pricedMenuVisibility";
 
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const group="toast:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:milk";
@@ -13,7 +15,8 @@ function fakeDb(){
    select:()=>q,
    eq:(key:string,value:string)=>{if(key==="business_id")businessFilter=value;return q;},
    in:()=>q,order:()=>q,
-   limit:async()=>{
+   limit:()=>q.range(0,10000),
+   range:async(_from:number=0,_to:number=10000)=>{
     reads.push(table);
     if(businessFilter!==business)throw new Error("Unscoped menu reader");
     if(table==="menu_items")return {error:null,data:[
@@ -57,6 +60,50 @@ describe("Supervisor published POS menu evidence",()=>{
   expect(result.value.find(x=>x.id==="priced")).toMatchObject({
    priceCents:500,sizeLabel:"Large",modifierGroups:[{name:"Milk"}]});
   expect(reads).toEqual(["menu_items","menu_item_modifier_groups","modifier_recipes"]);
+ });
+ it("matches the Menu screen's priced item IDs and exact cents, retaining open prices",async()=>{
+  const {client}=fakeDb();
+  const screen=visiblePricedMenuItems(await readMenuCatalogRows(client,business))
+    .map(row=>({id:row.id,priceCents:row.price_cents}));
+  const chat=await supervisorHistoricalReaders(client,business).menuCatalog(business);
+  expect(chat.available).toBe(true);
+  if(!chat.available)return;
+  expect(chat.value.filter(row=>row.priceCents!==null)
+    .map(row=>({id:row.id,priceCents:row.priceCents}))).toEqual(screen);
+  expect(chat.value.find(row=>row.id==="open")?.priceCents).toBeNull();
+ });
+ it("pages the same complete menu for chat and screen beyond 500 items",async()=>{
+  const rows=Array.from({length:501},(_,i)=>({
+    id:String(i).padStart(4,"0"),name:"Item "+String(i).padStart(4,"0"),
+    base_name:null,size_label:null,price_cents:i===250?null:500+i,
+    prep_seconds:0,category:"drink",menu_group:null,is_active:i%2===0,
+    pos_item_id:null,catalog_source:"manual",catalog_last_synced_at:null,
+    description:null,pos_visibility:null,pos_pricing_strategy:null
+  }));
+  const calls:string[]=[];
+  const from=(table:string)=>{
+    const q={
+      select:()=>q,
+      eq:(key:string,value:unknown)=>{if(key==="business_id")expect(value).toBe(business);return q;},
+      in:()=>q,order:()=>q,
+      range:async(first:number,last:number)=>{
+        calls.push(table);
+        return {data:table==="menu_items"?rows.slice(first,last+1):[],error:null};
+      },
+      limit:async()=>({data:[],error:null})
+    };
+    return q;
+  };
+  const client={from} as unknown as SupabaseClient;
+  const screen=visiblePricedMenuItems(await readMenuCatalogRows(client,business));
+  const chat=await supervisorHistoricalReaders(client,business).menuCatalog(business);
+  expect(chat.available).toBe(true);
+  if(!chat.available)return;
+  expect(chat.value.filter(row=>row.priceCents!==null).map(row=>[row.id,row.priceCents]))
+    .toEqual(screen.map(row=>[row.id,row.price_cents]));
+  expect(chat.value).toHaveLength(501);
+  expect(chat.value[500].priceCents).toBe(1000);
+  expect(calls.filter(table=>table==="menu_items")).toHaveLength(4);
  });
  it("rejects cross-business readers before touching database",async()=>{
   const {client,reads}=fakeDb();
