@@ -39,7 +39,6 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
-import {searchNearbyEvents} from "@/lib/events/nearbyEventsSearch.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
@@ -163,7 +162,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId),
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await createServerSupabaseClient(),scope.businessId,ownerFactRead.facts),
-      searchNearbyEvents,
+      // Saved event answers never initiate the paid nearby-event discovery job.
       webSearch:async(query,budget)=>{await assertCafeAiAccess(scope.businessId);return searchWeb(query,budget);},
       savedEvents:async(from,to)=>readSavedEventTimeline(await createServerSupabaseClient(),
         {businessId:scope.businessId,ownerUserId:scope.ownerUserId},from,to),
