@@ -74,7 +74,7 @@ describe("event-day delivery recovery after an interrupted revision",()=>{
     const previous=plan("Old parade time","proposal-old");
     const current=plan("Updated parade time","proposal-new");
     const oldMessageId=stableMessageId("event-plan-message:"+businessId+":"+ownerId+
-      ":"+day+":"+previous.factsHash);
+      ":"+day+":"+previous.factsHash+":"+previous.proposalId);
     const store=database([{id:taskId,payload:{
       proposalId:previous.proposalId,threadId:previous.threadId,
       messageId:oldMessageId,plannedOn:"2026-10-29",
@@ -99,7 +99,7 @@ describe("event-day delivery recovery after an interrupted revision",()=>{
   it("completes a task update after the revised message already exists",async()=>{
     const current=plan("Updated parade time","proposal-new");
     const expectedId=stableMessageId("event-plan-message:"+businessId+":"+ownerId+
-      ":"+day+":"+current.factsHash);
+      ":"+day+":"+current.factsHash+":"+current.proposalId);
     const store=database([{id:taskId,payload:{
       proposalId:"proposal-old",threadId:"thread-one",
       messageId:"message-old",plannedOn:today,
@@ -109,6 +109,32 @@ describe("event-day delivery recovery after an interrupted revision",()=>{
       .toEqual({repaired:1,created:0});
     expect(store.messageWrites).toEqual([]);
     expect(store.tasks.get(taskId)?.payload.messageId).toBe(expectedId);
+  });
+
+  it("uses only the newest draft when several proposals share a date and facts hash",async()=>{
+    const newest=plan("Downtown parade","proposal-new");
+    const older={...plan("Downtown parade","proposal-old"),threadId:"old-thread"};
+    const oldMessageId=stableMessageId("event-plan-message:"+businessId+":"+ownerId+
+      ":"+day+":"+older.factsHash+":"+older.proposalId);
+    const newMessageId=stableMessageId("event-plan-message:"+businessId+":"+ownerId+
+      ":"+day+":"+newest.factsHash+":"+newest.proposalId);
+    expect(newMessageId).not.toBe(oldMessageId);
+    const store=database([{id:taskId,payload:{
+      proposalId:older.proposalId,threadId:older.threadId,
+      messageId:oldMessageId,plannedOn:"2026-10-29",
+    }}],[oldMessageId]);
+    // The canonical owner-proposal reader returns newest-first.
+    const plans=[newest,older];
+    expect(await recoverPlanDelivery(store.db,businessId,ownerId,today,
+      [event("Downtown parade")],plans,0)).toEqual({repaired:1,created:0});
+    expect(store.tasks.get(taskId)?.payload).toMatchObject({
+      proposalId:"proposal-new",threadId:"thread-one",messageId:newMessageId,
+    });
+    expect(store.messageWrites).toEqual([newMessageId]);
+    expect(store.taskWrites).toHaveLength(1);
+    expect(await recoverPlanDelivery(store.db,businessId,ownerId,today,
+      [event("Downtown parade")],plans,0)).toEqual({repaired:0,created:0});
+    expect(store.taskWrites).toHaveLength(1);
   });
 
   it("does not create a new inbox day when no daily delivery capacity remains",async()=>{
