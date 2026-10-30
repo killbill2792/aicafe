@@ -6,8 +6,7 @@ import {CalendarDays,ChevronLeft,ChevronRight,X} from "lucide-react";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import type {CafeEvent,EventChecklistTick,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
-import {eventActionAreaLabel} from "@/lib/events/eventActionArea";
+import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {EventReportCard} from "./EventReportCard";
 
 type Locale="en"|"es"|"ar";
@@ -103,7 +102,7 @@ export function VenueMapLink({address,t}:{address:string|null;t:T}){
 }
 
 export function eventStripDays(today:string){return Array.from({length:7},(_,i)=>dayAt(today,i));}
-export function eventListDays(timeline:Timeline,tab:Tab,affectsOnly:boolean){
+export function eventListDays(timeline:Timeline,tab:Tab,affectsOnly:boolean,sortByDate=false){
   const from=tab==="past"?dayAt(timeline.today,-14):tab==="now"?timeline.today:dayAt(timeline.today,1);
   const to=tab==="past"?dayAt(timeline.today,-1):tab==="now"?timeline.today:dayAt(timeline.today,14);
   const dates=new Set<string>();
@@ -113,8 +112,23 @@ export function eventListDays(timeline:Timeline,tab:Tab,affectsOnly:boolean){
   timeline.plans.forEach(p=>{
     if(p.startDate<=to&&p.endDate>=from)dates.add(p.startDate<from?from:p.startDate);
   });
-  return [...dates].filter(date=>!affectsOnly||Boolean(planOn(timeline.plans,date)))
-    .sort((a,b)=>tab==="past"?b.localeCompare(a):a.localeCompare(b));
+  const list=[...dates].filter(date=>!affectsOnly||Boolean(planOn(timeline.plans,date)));
+  const importance=(day:string)=>{
+    const level=planOn(timeline.plans,day)?.importance;
+    return level==="high"?3:level==="medium"?2:level==="low"?1:0;
+  };
+  return list.sort((a,b)=>{
+    if(tab==="past")return b.localeCompare(a);
+    if(tab!=="upcoming"||sortByDate)return a.localeCompare(b);
+    const nearEnd=dayAt(timeline.today,7);
+    const aNear=a<=nearEnd,bNear=b<=nearEnd;
+    if(aNear!==bNear)return aNear?-1:1;
+    if(aNear&&bNear){
+      const diff=importance(b)-importance(a);
+      if(diff!==0)return diff;
+    }
+    return a.localeCompare(b);
+  });
 }
 function PlanHours({plan,t}:{plan:Plan;t:T}){
   const hours=hoursFor(plan);
@@ -144,10 +158,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   const [affectsOnly,setAffectsOnly]=useState(false);
   const [calendar,setCalendar]=useState(false);
   const [month,setMonth]=useState<string|null>(null);
-  const [tickData,setTickData]=useState<{proposalId:string;ticks:EventChecklistTick[]}|null>(null);
-  const [questionData,setQuestionData]=useState<{proposalId:string;value:SavedQuestion|null}|null>(null);
-  const [busy,setBusy]=useState(false);
-  const [actionError,setActionError]=useState(false);
+  const [sortByDate,setSortByDate]=useState(false);
 
   async function refresh(signal?:AbortSignal){
     const response=await fetch("/api/events/saved",{cache:"no-store",signal});
@@ -155,62 +166,31 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
     const data=await response.json() as Timeline;
     if(!Array.isArray(data.events)||!Array.isArray(data.plans)||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(data.today))
       throw new Error("invalid_events");
-    setTimeline(data);
+    setTimeline(data);setError(false);
   }
   useEffect(()=>{
     const controller=new AbortController();
-    void fetch("/api/events/saved",{cache:"no-store",signal:controller.signal})
-      .then(async response=>{
-        if(!response.ok)throw new Error("events_unavailable");
-        const data=await response.json() as Timeline;
-        if(!Array.isArray(data.events)||!Array.isArray(data.plans)||
-          !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(data.today))throw new Error("invalid_events");
-        if(!controller.signal.aborted)setTimeline(data);
-      }).catch(()=>{if(!controller.signal.aborted)setError(true);});
+    void refresh(controller.signal).catch(()=>{if(!controller.signal.aborted)setError(true);});
     return ()=>controller.abort();
   },[]);
-  useEffect(()=>{
-    if(!selected||!timeline)return;
-    const plan=planOn(timeline.plans,selected);
-    if(!plan)return;
-    const controller=new AbortController();
-    void fetch("/api/events/saved?proposalId="+encodeURIComponent(plan.proposalId),
-      {cache:"no-store",signal:controller.signal})
-      .then(r=>r.ok?r.json():Promise.reject(new Error("checklist_unavailable")))
-      .then((data:{ticks:EventChecklistTick[]})=>setTickData({proposalId:plan.proposalId,ticks:data.ticks}))
-      .catch(()=>{if(!controller.signal.aborted)setActionError(true);});
-    return ()=>controller.abort();
-  },[selected,timeline]);
-  useEffect(()=>{
-    if(panel!=="day"||!selected||!timeline)return;
-    const plan=planOn(timeline.plans,selected);
-    if(!plan)return;
-    const controller=new AbortController();
-    void fetch("/api/ai/threads/"+encodeURIComponent(plan.threadId)+"/messages?offset=0",
-      {cache:"no-store",signal:controller.signal})
-      .then(r=>r.ok?r.json():Promise.reject(new Error("messages_unavailable")))
-      .then((page:{items:Message[]})=>{
-        if(!controller.signal.aborted&&Array.isArray(page.items))
-          setQuestionData({proposalId:plan.proposalId,value:latestEventQuestion(page.items,locale)});
-      }).catch(()=>{});
-    return ()=>controller.abort();
-  },[panel,selected,timeline,locale]);
-  if(!timeline)return error?null:<section data-testid="coming-up" aria-label={t("title")}
-    className="rounded-2xl border border-line bg-card p-3 text-[17px] text-ink-muted" role="status">{t("loading")}</section>;
+  if(!timeline)return <section data-testid="coming-up" aria-label={t("title")}
+    className="space-y-2 rounded-2xl border border-line bg-card p-4 text-[17px] text-ink" role="status">
+      <p>{error?t("loadFailed"):t("loading")}</p>
+      {error&&<button type="button" onClick={()=>{setError(false);void refresh().catch(()=>setError(true));}}
+        className="min-h-12 rounded-xl bg-accent px-4 font-semibold text-on-accent">{t("retry")}</button>}
+    </section>;
 
   const today=timeline.today;
   const days=eventStripDays(today);
   const lead=days.map(date=>({date,plan:planOn(timeline.plans,date),
     events:eventsOn(timeline.events,date)}))
     .find(d=>Boolean(d.plan)||d.events.length>0);
-  const openDay=(date:string)=>{setSelected(date);setPanel("day");setActionError(false);setMonth(date.slice(0,7));};
+  const openDay=(date:string)=>{setSelected(date);setPanel("day");setTab(date<today?"past":date===today?"now":"upcoming");setMonth(date.slice(0,7));};
   const openEvents=()=>{setPanel("events");setSelected(null);setTab("upcoming");setMonth(today.slice(0,7));};
   const chosen=selected??today;
   const plan=planOn(timeline.plans,chosen);
   const dayEvents=eventsOn(timeline.events,chosen);
   const actions=actionsFor(plan);
-  const ticks=tickData&&tickData.proposalId===plan?.proposalId?tickData.ticks:[];
-  const question=questionData&&questionData.proposalId===plan?.proposalId?questionData.value:null;
   const calendarMonth=month??today.slice(0,7);
   const calendarFirst=calendarMonth+"-01";
   const weekday=new Date(calendarFirst+"T00:00:00Z").getUTCDay();
@@ -221,40 +201,11 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   const chat=(date:string)=>{
     const matched=eventsOn(timeline.events,date);
     const dayPlan=planOn(timeline.plans,date);
-    const context=JSON.stringify({date,events:matched.map(e=>({
-      name:e.name,venue:e.venue,area:e.areaLabel,source:e.sourceUrl})),
-      plan:dayPlan?{summary:dayPlan.summary,threadId:dayPlan.threadId}:null});
     onChatAboutDay(date,(matched[0]?.name??dayPlan?.summary??date).slice(0,120),
-      t("chatPrompt",{date,context}),dayPlan?.threadId);
+      "",dayPlan?.threadId);
     setPanel(null);
   };
-  const saveTick=async(index:number,state:"done"|"dismissed")=>{
-    if(!plan||busy)return;
-    setBusy(true);setActionError(false);
-    try{
-      const response=await fetch("/api/events/saved",{method:"POST",credentials:"same-origin",
-        headers:{"content-type":"application/json"},body:JSON.stringify({
-          proposalId:plan.proposalId,actionIndex:index,state,
-        })});
-      if(!response.ok)throw new Error("tick_unavailable");
-      setTickData(previous=>({proposalId:plan.proposalId,ticks:[...(previous?.proposalId===plan.proposalId?previous.ticks:[])
-        .filter(x=>x.actionIndex!==index),{actionIndex:index,state}]}));
-    }catch{setActionError(true);}finally{setBusy(false);}
-  };
-  const approve=async()=>{
-    if(!plan||busy)return;
-    setBusy(true);setActionError(false);
-    try{
-      const response=await fetch("/api/ai/threads/"+encodeURIComponent(plan.threadId)+"/proposals",{
-        method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},
-        body:JSON.stringify({action:"approve",proposalId:plan.proposalId,revision:plan.revision}),
-      });
-      if(!response.ok)throw new Error("approval_unavailable");
-      await refresh();
-    }catch{setActionError(true);}finally{setBusy(false);}
-  };
-  const approved=Boolean(plan&&["committed","monitored"].includes(plan.status));
-  const listDates=eventListDays(timeline,tab,affectsOnly);
+  const listDates=eventListDays(timeline,tab,affectsOnly,sortByDate);
   const visibleEvents=(date:string)=>timeline.events.filter(e=>{
     const from=tab==="past"?dayAt(today,-14):tab==="now"?today:dayAt(today,1);
     return e.startDate<=date&&e.endDate>=date&&(e.startDate===date||(e.startDate<from&&date===from));
