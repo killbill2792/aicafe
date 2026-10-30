@@ -32,7 +32,7 @@ describe("get_events: saved-only, owner-scoped read",()=>{
          typicalCents:9000,hours:Array.from({length:24},()=>({actualCents:1000}))}))}})),
   }));
   const r=await executeAgentTool("get_events",{from:"2026-10-01",to:"2026-11-01"},
-   context(saved as AgentToolContext["savedEvents"]));
+   context(saved as unknown as AgentToolContext["savedEvents"]));
   expect((r.events as unknown[])).toHaveLength(8);
   expect((r.plans as unknown[])).toHaveLength(5);
   expect(r.omittedEvents).toBe(4);
