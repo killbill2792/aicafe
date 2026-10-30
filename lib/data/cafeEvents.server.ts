@@ -15,7 +15,7 @@ export type SavedEventTimeline={
  events:CafeEvent[];
  plans:Array<{proposalId:string;threadId:string;status:string;revision:number;
    startDate:string;endDate:string;summary:string;actions:unknown;expectedBusyHours:unknown;
-   factsHash:string;importance:"high"|"medium"|"low"|null;
+   factsHash:string;importance?:"high"|"medium"|"low"|null;
    reportStatus:string|null;report:unknown|null}>;
 };
 
