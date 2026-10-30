@@ -11,7 +11,7 @@ type Snapshot=z.infer<typeof statusSchema>;
 const dateShift=(d:string,days:number)=>new Date(Date.parse(d+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
 function localDate(zone:string,instant:number){return new Intl.DateTimeFormat("en-CA",{timeZone:zone,
  year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(instant));}
-export default function ToastOwnerDashboard({businessId,currency,children}:{businessId:string;currency:string;children:ReactNode}){
+export default function ToastOwnerDashboard({businessId,currency,children}:{businessId:string;currency:string;children?:ReactNode}){
  const t=useTranslations("ToastConnect");const locale=useLocale();
  const [data,setData]=useState<Snapshot|null>(null),[bad,setBad]=useState(false);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
