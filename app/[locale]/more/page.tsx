@@ -9,6 +9,7 @@ import { Link } from "@/i18n/navigation";
 import PageShell from "@/components/shared/PageShell";
 import SignOutButton from "@/components/more/SignOutButton";
 import { getMoreBadgeInputs } from "@/lib/data/getMoreBadges";
+import { timeReader } from "@/lib/perf/timeReader.server";
 import { buildMoreBadges } from "@/lib/viewmodels/moreBadges";
 import { routing } from "@/i18n/routing";
 
@@ -42,7 +43,7 @@ function MoreGroup({ title, children }: { title: string; children: React.ReactNo
 export default async function MorePage() {
   const user = await requireUser();
   const [cookieStore, t, locale, evidence, tCommon] = await Promise.all([
-    cookies(), getTranslations("More"), getLocale(), getMoreBadgeInputs(user?.id), getTranslations("Common"),
+    cookies(), getTranslations("More"), getLocale(), timeReader("More", "getMoreBadgeInputs", () => getMoreBadgeInputs(user?.id)), getTranslations("Common"),
   ]);
   const badges = buildMoreBadges(evidence);
   const number = new Intl.NumberFormat(locale);
