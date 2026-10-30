@@ -1,7 +1,7 @@
 import {describe,expect,it,vi,beforeEach} from "vitest";
 import {effectHash,type LoopProposal} from "./engine";
-import {readOnlyEventObservation,selectEventObservations,eventToastEvidence,
-  eventReadinessCapabilityId} from "./eventReadiness.server";
+import {readOnlyEventObservation,selectEventObservations,observedEventProposalIds,
+  eventToastEvidence,eventReadinessCapabilityId} from "./eventReadiness.server";
 import {readItemSales,readDiscounts,readLaborEntries,readMenu}
   from "@/lib/data/canonical/reads.server";
 
@@ -49,6 +49,21 @@ describe("saved event observation is never owner approval",()=>{
     expect(readOnlyEventObservation({...proposal(),capabilityId:"alex.price.v1"})).toBeNull();
     expect(selectEventObservations([proposal("draft","new"),
       proposal("committed","approved")]).map(x=>x.id)).toEqual(["approved"]);
+  });
+  it("sticks to the originally sampled proposal after a newer draft revision",async()=>{
+    const earlier=proposal("draft","first");
+    const later={...proposal("draft","second"),createdAt:"2026-10-31T00:00:00Z"};
+    const db={from(table:string){
+      expect(table).toBe("supervisor_monitor_samples");
+      const q={select:()=>q,eq:()=>q,in:()=>q,
+        limit:async()=>({data:[{proposal_id:earlier.id}],error:null})};
+      return q;
+    }};
+    const ids=await observedEventProposalIds(db as never,earlier.businessId,
+      [earlier.id,later.id]);
+    expect(ids).toEqual(new Set([earlier.id]));
+    expect(selectEventObservations([later,earlier],ids).map(x=>x.id)).toEqual(
+      [earlier.id]);
   });
   it("does not multiply a day monitor when cron receives duplicate saved drafts",()=>{
     expect(selectEventObservations([proposal("draft","older"),proposal("draft","newer")]))
