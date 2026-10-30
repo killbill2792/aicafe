@@ -38,7 +38,9 @@ describe("event-thread owner questions (recorded tool-call fixtures)",()=>{
       [text("The route follows Main Street. [City route](https://city.example.org/parade)."),completed],
     ]);
     const turn=await runAgentTurn({ownerText:"What's the parade route?",context:{...context,webSearch},provider});
-    expect(webSearch).toHaveBeenCalledWith("Halloween parade route Austin 2026");
+    expect(webSearch).toHaveBeenCalledWith("Halloween parade route Austin 2026",expect.objectContaining({
+      reserveModelCall:expect.any(Function),recordUsage:expect.any(Function),
+    }));
     expect(turn.tools).toContain("web_search");
     expect(turn.results[0].sources).toEqual([{title:"City",url:"https://city.example.org/parade"}]);
     expect(turn.text).toContain("https://city.example.org/parade");
