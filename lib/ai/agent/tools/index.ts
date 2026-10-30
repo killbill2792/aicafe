@@ -26,6 +26,7 @@ import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import {scenarioTools} from "./scenarios";
 import {eventsTools} from "./events";
+import {savedEventsTools} from "./getEvents";
 import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.server";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import {ToolError} from "../toolErrors";
@@ -67,6 +68,8 @@ export type AgentToolContext = {
   cafeLocation?:()=>Promise<import("@/lib/data/cafeLocation.server").CafeLocation|null>;
   /** Read-only web search for public events near a location. */
   searchNearbyEvents?:import("@/lib/events/nearbyEvents").NearbyEventsSearch;
+  /** Authenticated, saved-only timeline; never a web search. */
+  savedEvents?:(from:string,to:string)=>Promise<import("@/lib/data/cafeEvents.server").SavedEventTimeline>;
   /** Same canonical café readers used by Staff and saved owner questions. */
   readWeekSchedule?:(weekStart:string)=>ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>;
   ownerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
@@ -86,7 +89,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...proposalTools,...priceExperimentTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...proposalTools,...priceExperimentTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -268,6 +271,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_item_sales")return salesTools.get_item_sales.execute(raw,ctx);
   if(name==="get_today_so_far")return todayTools.get_today_so_far.execute(raw,ctx);
   if(name==="get_nearby_events")return eventsTools.get_nearby_events.execute(raw,ctx);
+  if(name==="get_events")return savedEventsTools.get_events.execute(raw,ctx);
   if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
   if (name === "get_menu_items") {
     const input = menuSchema.parse(raw);

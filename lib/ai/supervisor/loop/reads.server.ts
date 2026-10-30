@@ -12,10 +12,11 @@ export type OwnerProposalRow={id:string;thread_id:string;capability_id:string;re
 export type OwnerReportRow={proposal_id:string;status:string;report:unknown;generated_at:string};
 
 export async function readOwnerProposals(db:SupabaseClient,scope:OwnerScope,
-  filter:{threadId?:string;id?:string;statuses?:readonly string[];limit:number}):Promise<OwnerProposalRow[]>{
+  filter:{threadId?:string;id?:string;capabilityId?:string;statuses?:readonly string[];limit:number}):Promise<OwnerProposalRow[]>{
   let q=db.from("supervisor_proposals").select(PROPOSAL_COLUMNS)
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId);
   if(filter.threadId)q=q.eq("thread_id",filter.threadId);
+  if(filter.capabilityId)q=q.eq("capability_id",filter.capabilityId);
   if(filter.id)q=q.eq("id",filter.id);
   if(filter.statuses)q=q.in("status",[...filter.statuses]);
   const {data,error}=await q.order("created_at",{ascending:false}).limit(filter.limit);
