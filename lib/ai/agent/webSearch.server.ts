@@ -7,7 +7,7 @@ export type WebSearchResult =
   | {available:false;reason:"notConfigured"|"timeout"|"providerFailed"|"unreadable"};
 
 const WEB_SEARCH_TIMEOUT_MS=20_000;
-const WEB_SEARCH_OUTPUT_TOKENS=1600;
+const WEB_SEARCH_OUTPUT_TOKENS=1200;
 type Fetch=typeof fetch;
 
 function publicSource(value:unknown):{title:string;url:string}|null{
