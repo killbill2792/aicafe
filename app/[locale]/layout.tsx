@@ -65,8 +65,8 @@ export const viewport: Viewport = {
 
 // The navigation is interactive while its authorized café label loads.
 async function ActiveCafeNavigation() {
-  const cafeName = await getActiveCafeName();
-  return <SideNav cafeName={cafeName} languageSwitch={<LanguageSwitch href="/" compact />} />;
+  const activeCafeName = await getActiveCafeName();
+  return <SideNav cafeName={activeCafeName} languageSwitch={<LanguageSwitch href="/" compact />} />;
 }
 
 export default async function LocaleLayout({
