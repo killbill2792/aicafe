@@ -31,7 +31,8 @@ export function credibleEventEvidence(event:CafeEvent,evidence:EventEvidence,
 }
 export function verifiedEventChange(event:CafeEvent,evidence:EventEvidence,
   citedUrls:readonly string[],at:string):VerifiedChange|null{
-  if(!credibleEventEvidence(event,evidence,citedUrls))return null;
+  if(!credibleEventEvidence(event,evidence,citedUrls)||!evidence.sourceUrl||
+    !evidence.statement)return null;
   const status:CafeEvent["status"]=
     evidence.verdict==="cancelled"?"cancelled":
     evidence.verdict==="postponed"||evidence.verdict==="venue_changed"?"moved":
