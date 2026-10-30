@@ -137,6 +137,20 @@ describe("event-day delivery recovery after an interrupted revision",()=>{
     expect(store.taskWrites).toHaveLength(1);
   });
 
+  it("does not revive an older draft after a newer owner decision",async()=>{
+    const latest={...plan("Downtown parade","proposal-decided"),status:"committed"};
+    const old=plan("Downtown parade","proposal-old");
+    const store=database([{id:taskId,payload:{
+      proposalId:latest.proposalId,threadId:latest.threadId,
+      messageId:"owner-approved-message",plannedOn:today,
+    }}]);
+    expect(await recoverPlanDelivery(store.db,businessId,ownerId,today,
+      [event("Downtown parade")],[latest,old],0))
+      .toEqual({repaired:0,created:0});
+    expect(store.taskWrites).toHaveLength(0);
+    expect(store.messageWrites).toHaveLength(0);
+  });
+
   it("does not create a new inbox day when no daily delivery capacity remains",async()=>{
     const store=database(),current=plan("Downtown parade","proposal-new");
     expect(await recoverPlanDelivery(store.db,businessId,ownerId,today,
