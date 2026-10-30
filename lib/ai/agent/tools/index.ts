@@ -52,6 +52,8 @@ export type AgentToolContext = {
   canonicalData?:()=>Promise<DataQueryContext>;
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
+  /** The owner's message this turn, so calculate can use numbers they just said. */
+  ownerText?:string;
   resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;

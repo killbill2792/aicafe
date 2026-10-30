@@ -144,6 +144,7 @@ export async function runAgentTurn(args: {
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
   if(args.ownerFactsReadFailed)results.push({callId:'owner-facts-read',name:'owner_facts',arguments:'{}',
     result:{source:'owner_facts',period:null,missing:['ownerFactsReadFailed'],error:'owner_facts_read_failed'}});
+  args.context.ownerText=args.ownerText;
   args.context.turnResults=()=>results.map(r=>({name:r.name,result:r.result}));
   const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0, model: undefined as string|undefined };

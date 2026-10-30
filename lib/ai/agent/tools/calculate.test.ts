@@ -16,7 +16,12 @@ function ctx(turn:Array<{name:string;result:AgentToolResult}>,facts:unknown[]=[]
   return {asOf:"2026-10-30",timezone:"America/Los_Angeles",locale:"en",turnResults:()=>turn,savedOwnerFacts:facts,
     tools:{getProfitability:async()=>unavailable,getSalesTrend:async()=>unavailable,getMenuCatalog:async()=>unavailable}} as AgentToolContext;
 }
-const input=(name:string,tool:string|null,path:string|null,fact_key:string|null=null)=>({name,label:name.replace(/_/g," "),tool,path,fact_key});
+const input=(name:string,tool:string|null,path:string|null,fact_key:string|null=null)=>
+  ({name,label:name.replace(/_/g," "),tool,path,fact_key,owner_value:null,owner_unit:null});
+const said=(name:string,owner_value:number,owner_unit:"cents"|"percent"|"count")=>
+  ({...input(name,null,null),owner_value,owner_unit});
+const withOwner=(c:AgentToolContext,ownerText:string,ownerMessages:string[]=[],locale:"en"|"es"|"ar"="en")=>
+  ({...c,ownerText,ownerMessages,locale}) as AgentToolContext;
 const turn=[{name:"query_data",result:sales},{name:"get_cost_summary",result:costs}];
 const knownWithEstimate={purpose:"Known costs with 20% ingredients",screen_number:"none",
   inputs:[input("sales","query_data","rows.0.net_sales_cents"),input("known","get_cost_summary","knownTotalCents"),
@@ -62,6 +67,34 @@ describe("calculate tool",()=>{
       inputs:[input("a","get_sales","totalCents")],steps:[{id:"y",label:"y",op:"sum",args:["a"]}]},ctx(turn));
     expect(classifyNeedsAsk([r],"","")).toEqual([]);
     expect(questionFromReasons(classifyNeedsAsk([r],"",""),[r],"","en",[])).toBeNull();
+  });
+});
+
+describe("calculate uses what the owner says",()=>{
+  const rentTurn=[...turn,{name:"get_bills",result:{source:"recurring_bills",period:null,missing:[],monthlyEquivalentCents:300000} as AgentToolResult}];
+  const rentWhatIf=(c:AgentToolContext)=>calculateTools.calculate.execute({purpose:"Monthly bills if rent goes up",screen_number:"none",
+    inputs:[input("bills","get_bills","monthlyEquivalentCents"),said("rent_increase",50000,"cents")],
+    steps:[{id:"new_bills",label:"Bills after the increase",op:"add",args:["bills","rent_increase"]}]},c);
+  it("uses a number the owner typed this turn, labeled as theirs",async()=>{
+    const r=await rentWhatIf(withOwner(ctx(rentTurn),"what if rent goes up $500?"));
+    expect(r).toMatchObject({result:{unit:"cents",valueCents:350000},kind:"estimate",ownerProvided:["rent_increase"]});
+    expect((r.explain as Array<{provenance:string}>)[0].provenance).toBe("ownerProvided");
+  });
+  it("uses a number from an earlier owner message, in Spanish too",async()=>{
+    const r=await rentWhatIf(withOwner(ctx(rentTurn),"y entonces?",["sube la renta 500 dólares"],"es"));
+    expect(r.result).toEqual({unit:"cents",valueCents:350000});
+  });
+  it("uses a percent the owner said, and a typed question-card answer",async()=>{
+    const pct=(c:AgentToolContext)=>calculateTools.calculate.execute({purpose:"Ingredients",screen_number:"none",
+      inputs:[input("sales","query_data","rows.0.net_sales_cents"),said("share",20,"percent")],
+      steps:[{id:"ing",label:"Ingredients",op:"percent_of",args:["share","sales"]}]},c);
+    expect((await pct(withOwner(ctx(turn),"20% of price for all"))).result).toEqual({unit:"cents",valueCents:20000});
+    expect((await pct(withOwner(ctx(turn),"Known costs yesterday?\nSaved.\nIngredient cost: 20% of price"))).result)
+      .toEqual({unit:"cents",valueCents:20000});
+  });
+  it("refuses a number the owner never said",async()=>{
+    expect((await rentWhatIf(withOwner(ctx(rentTurn),"what if rent goes up?"))).refused).toBe("ownerDidNotSayThis");
+    expect((await rentWhatIf(withOwner(ctx(rentTurn),"rent up $400"))).refused).toBe("ownerDidNotSayThis");
   });
 });
 

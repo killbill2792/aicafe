@@ -4,6 +4,7 @@ import {CALC_OPS,exactNumber,runCalculation,type CalcOp,type CalcShown,type Calc
 import {SCREEN_NUMBERS,SCREEN_NUMBER_IDS,type ScreenNumber} from "../screenNumbers";
 import type {ExplainLine} from "../explain";
 import type {CardValue} from "@/lib/format/values";
+import {ownerStatedAmounts} from "../checkNumbers";
 
 const name=z.string().regex(/^[a-z][a-z0-9_]{0,39}$/u);
 const calculateInput=z.strictObject({
@@ -14,6 +15,8 @@ const calculateInput=z.strictObject({
     tool:z.string().max(64).nullable(),
     path:z.string().max(200).nullable(),
     fact_key:z.string().max(120).nullable(),
+    owner_value:z.number().finite().nullable(),
+    owner_unit:z.enum(["cents","percent","count"]).nullable(),
   })).min(1).max(12),
   steps:z.array(z.strictObject({
     id:name,label:z.string().trim().min(1).max(50),
@@ -25,7 +28,7 @@ const calculateInput=z.strictObject({
 type TurnResult={name:string;result:AgentToolResult};
 type SavedFact={fact_key:string;value_json:unknown;unit:string|null};
 type CalcContext=AgentToolContext&{turnResults?:()=>readonly TurnResult[];savedOwnerFacts?:readonly SavedFact[]};
-type Input={name:string;label:string;value:CalcValue;from:"tool"|"owner_fact";ref:string;estimate:boolean;partial:boolean;
+type Input={name:string;label:string;value:CalcValue;from:"tool"|"owner_fact"|"owner_said";ref:string;estimate:boolean;owner:boolean;partial:boolean;
   period:{from:string;to:string}|null};
 
 /** Unit from the field name the value was read from. Never guessed from the number. */
@@ -65,6 +68,15 @@ function card(s:CalcShown):CardValue|null{
   if(s.unit==="count"&&Number.isInteger(s.quantity))return {kind:"count",n:s.quantity};
   return null;
 }
+/** Union per message, so numbers from two messages never merge into one. */
+function ownerSaid(ctx:CalcContext,locale:AgentToolContext["locale"]){
+  const all={money:new Set<number>(),percent:new Set<number>(),number:new Set<number>()};
+  for(const text of [...(ctx.ownerMessages??[]),...(ctx.ownerText?[ctx.ownerText]:[])]){
+    const found=ownerStatedAmounts(text,locale);
+    for(const k of ["money","percent","number"] as const)for(const v of found[k])all[k].add(v);
+  }
+  return all;
+}
 const unitName:Record<CalcUnit,string>={cents:"cents",percent:"percent",count:"count",ratio:"ratio"};
 
 export const calculateTools={
@@ -74,7 +86,9 @@ export const calculateTools={
       "Screen numbers (profit, labor cost, card fees, break-even, item cost) come only from their own tools; "+
       "set screen_number to the one this result is about, or none, and start from that tool's number. "+
       "Each input reads ONE number: either tool (a tool name called earlier this turn) + path (dot path into its result, e.g. rows.0.net_sales_cents), "+
-      "or fact_key (a saved owner fact). Set the unused fields to null. Never type a number. "+
+      "or fact_key (a saved owner fact, including a question-card answer), "+
+      "or owner_value + owner_unit for a number the owner said in chat (cents for money, 20 for 20%, plain count). "+
+      "Set the unused fields to null. Never type any other number. Say You told me for owner numbers. "+
       "Steps run in order; args name inputs or earlier step ids; percent_of takes (percent, value). "+
       "Show the inputs, formula and steps in How I got this, and label the result Calculation or Estimate as returned.",
     async execute(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>{
@@ -85,7 +99,8 @@ export const calculateTools={
       const inputs:Input[]=[];
       for(const input of p.inputs){
         if(inputs.some(i=>i.name===input.name))return refuse("duplicateName",input.name);
-        if(input.tool&&input.path&&!input.fact_key){
+        const owner=input.owner_value!==null||input.owner_unit!==null;
+        if(input.tool&&input.path&&!input.fact_key&&!owner){
           const hit=[...turn].reverse().find(r=>r.name===input.tool);
           if(!hit)return refuse("toolNotCalledThisTurn",input.tool);
           const value=readPath(hit.result,input.path);
@@ -95,8 +110,8 @@ export const calculateTools={
           const exact=unitForField(field,value);
           if(!exact)return refuse("invalidNumber",input.path);
           inputs.push({name:input.name,label:input.label,value:exact,from:"tool",ref:input.tool+":"+input.path,
-            estimate:isEstimate(hit.result),partial:hit.result.missing.length>0,period:hit.result.period});
-        }else if(input.fact_key&&!input.tool&&!input.path){
+            estimate:isEstimate(hit.result),owner:false,partial:hit.result.missing.length>0,period:hit.result.period});
+        }else if(input.fact_key&&!input.tool&&!input.path&&!owner){
           const fact=facts.find(f=>f.fact_key===input.fact_key);
           if(!fact)return refuse("factNotSaved",input.fact_key);
           if(typeof fact.value_json!=="number")return refuse("factIsNotANumber",input.fact_key);
@@ -104,7 +119,19 @@ export const calculateTools={
           const exact=unitForField(field,fact.value_json);
           if(!exact)return refuse("invalidNumber",input.fact_key);
           inputs.push({name:input.name,label:input.label,value:exact,from:"owner_fact",ref:input.fact_key,
-            estimate:true,partial:false,period:null});
+            estimate:false,owner:true,partial:false,period:null});
+        }else if(input.owner_value!==null&&input.owner_unit!==null&&!input.tool&&!input.path&&!input.fact_key){
+          // The owner's own words this turn or in recent messages (incl. a typed card answer).
+          const v=input.owner_value,unit=input.owner_unit;
+          const said=ownerSaid(scoped,ctx.locale);
+          const key=unit==="cents"?"money":unit==="percent"?"percent":"number";
+          const want=unit==="percent"?Math.round(v*100):v;
+          if(unit==="cents"&&!Number.isInteger(v))return refuse("centsMustBeWhole",input.name);
+          if(!said[key].has(want))return refuse("ownerDidNotSayThis",input.name+" ("+v+" "+unit+")");
+          const exact=unit==="cents"?exactNumber(v,"cents"):unit==="percent"?exactNumber(v,"percent",100):exactNumber(v,"count");
+          if(!exact)return refuse("invalidNumber",input.name);
+          inputs.push({name:input.name,label:input.label,value:exact,from:"owner_said",ref:"owner",
+            estimate:false,owner:true,partial:false,period:null});
         }else return refuse("inputNeedsToolAndPathOrFactKey",input.name);
       }
       // Never rebuild a screen number: a result about one must start from its own tool.
@@ -121,7 +148,9 @@ export const calculateTools={
         const parts=s.args.map(a=>expr.get(a)??a);
         expr.set(s.id,s===p.steps[p.steps.length-1]?parts.join(symbol[s.op]):"("+parts.join(symbol[s.op])+")");
       }
-      const estimate=inputs.some(i=>i.estimate);
+      const estimate=inputs.some(i=>i.estimate||i.owner);
+      const provenance:ExplainLine["provenance"]=inputs.some(i=>i.estimate)?"estimate":
+        inputs.some(i=>i.owner)?"ownerProvided":"recorded";
       const periods=[...new Set(inputs.map(i=>i.period?i.period.from+"/"+i.period.to:"none"))];
       const period=periods.length===1&&periods[0]!=="none"?inputs[0].period:null;
       const shownOf=new Map<string,CalcShown>();
@@ -135,7 +164,7 @@ export const calculateTools={
         if(!result||values.some(v=>!v.value))continue;
         explain.push({label:s===run.result?p.purpose:labels.get(s.id)!,
           inputs:values.map(v=>({name:v.name,value:v.value!})),formula:formulaFor[s.op],result,period,
-          source:"calculate",provenance:estimate?"estimate":"recorded",
+          source:"calculate",provenance,
           basis:(expr.get(s.id)??"").slice(0,240)});
       }
       return {source:"calculate",period,agentId:"leo",missing:[],
@@ -143,6 +172,7 @@ export const calculateTools={
         inputs:inputs.map(i=>({name:i.name,label:i.label,from:i.from,ref:i.ref,unit:unitName[i.value.unit],...shownOf.get(i.name)})),
         steps:run.steps.map(s=>({id:s.id,label:labels.get(s.id),op:s.op,args:s.args,...s.shown})),
         result:{...run.result.shown},
+        ...(inputs.some(i=>i.owner)?{ownerProvided:inputs.filter(i=>i.owner).map(i=>i.name)}:{}),
         ...(inputs.some(i=>i.partial)?{basedOnPartialData:inputs.filter(i=>i.partial).map(i=>i.ref.split(":")[0])}:{}),
         explain};
     },
