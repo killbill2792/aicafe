@@ -45,7 +45,7 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
          return parsed!==null&&(f.inputType!=="percent"||parsed<=100);
        }
        if(f.inputType==="choice")return f.choices?.some(o=>o.value===raw)===true||
-         raw==="other"||/^other:[\\s\\S]{1,200}$/.test(raw);
+         raw==="other"||/^other:[\s\S]{1,200}$/.test(raw);
        if(f.inputType==="date")return /^\\d{4}-\\d{2}-\\d{2}$/.test(raw);
        return raw.trim().length>0;
      });
