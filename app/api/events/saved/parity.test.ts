@@ -64,7 +64,10 @@ beforeEach(()=>{
   f.access.mockResolvedValue(undefined);
   f.identity.mockResolvedValue({asOf:"2026-10-30"});
   f.db.mockResolvedValue({});
-  f.timeline.mockResolvedValue(timeline);
+  f.timeline.mockImplementation(async (_db:unknown,_scope:unknown,from:string,to:string)=>({
+    events:timeline.events.filter(e=>e.startDate<=to&&e.endDate>=from),
+    plans:timeline.plans.filter(p=>p.startDate<=to&&p.endDate>=from),
+  }));
 });
 
 describe("Home and Supervisor saved-event parity",()=>{
@@ -100,7 +103,7 @@ describe("Home and Supervisor saved-event parity",()=>{
     const canonical=await executeAgentTool("get_events",
       {from:"2026-10-30",to:"2026-11-02"},ctx);
     expect(saved).toEqual(canonical);
-    expect(saved.events).toEqual(timeline.events); // the fixture reader is the same for either tool
+    expect(saved.events).toEqual([timeline.events[1]]); // out-of-range history is not duplicated
     expect(paidDiscovery).not.toHaveBeenCalled();
     expect(webSearch).not.toHaveBeenCalled();
 
