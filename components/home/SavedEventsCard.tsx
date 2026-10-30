@@ -302,7 +302,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                     event.startDate+" – "+event.endDate:event.startTime??""}
                     {event.venue||event.areaLabel?" · "+(event.venue??event.areaLabel):""}</p>
                   {event.status!=="found"&&<p role="status" className="font-semibold text-warn-text">{event.status==="cancelled"?t("cancelled"):t("moved")}</p>}
-                  <p className="text-[15px] text-ink-muted">{event.verificationFailedAt?t("verificationPending"):t("verifiedOn",{date:event.lastVerifiedAt?.slice(0,10)??event.lastCheckedAt.slice(0,10)})}</p>
+                  <p className="text-[15px] text-ink-muted">{event.verificationFailedAt&&(!event.lastVerifiedAt||event.verificationFailedAt>event.lastVerifiedAt)?t("verificationPending"):event.lastVerifiedAt?t("verifiedOn",{date:event.lastVerifiedAt.slice(0,10)}):t("lastSavedOn",{date:event.lastCheckedAt.slice(0,10)})}</p>
                   <VenueMapLink address={event.venueAddress} t={t}/>
                   {sourceUrl(event.sourceUrl)&&<a href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer"
                     className="inline-flex min-h-12 items-center text-accent-text underline">{t("source")}</a>}
@@ -324,7 +324,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                 {event.status!=="found"&&<span role="status" className="rounded-lg bg-surface2 px-2 py-1 text-[15px] font-semibold text-warn-text">{event.status==="cancelled"?t("cancelled"):t("moved")}</span>}
               </div>
               <p className="text-ink-muted" dir="auto">{event.venue??event.areaLabel??t("venueUnknown")}{event.startTime?" · "+event.startTime:""}</p>
-              <p className="text-[15px] text-ink-muted">{event.verificationFailedAt?t("verificationPending"):t("verifiedOn",{date:event.lastVerifiedAt?.slice(0,10)??event.lastCheckedAt.slice(0,10)})}</p>
+              <p className="text-[15px] text-ink-muted">{event.verificationFailedAt&&(!event.lastVerifiedAt||event.verificationFailedAt>event.lastVerifiedAt)?t("verificationPending"):event.lastVerifiedAt?t("verifiedOn",{date:event.lastVerifiedAt.slice(0,10)}):t("lastSavedOn",{date:event.lastCheckedAt.slice(0,10)})}</p>
               <VenueMapLink address={event.venueAddress} t={t}/>
               {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
                 href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
