@@ -388,7 +388,7 @@ async function readHistoricalBusinessSnapshot(
   const allRecurring=[...(recurring.data??[])];
   for(let offset=1000;offset<=allRecurring.length;offset+=1000){
     const page=await supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,is_estimate,active_from,active_to")
+      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to")
       .eq("business_id",businessId).lte("active_from",period.to)
       .order("id",{ascending:true}).range(offset,offset+999);
     if(page.error)throw page.error;
