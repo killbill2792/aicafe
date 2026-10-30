@@ -56,6 +56,12 @@ try {
   // UTC but is still Oct 14 at the café (PDT). Two complete shifts have a real
   // canonical Toast wage of zero; null wages would wrongly mark days missing.
   await q("update businesses set timezone = 'America/Los_Angeles' where id = $1", [S]);
+  const payFactId = sync.uuidv5("payroll-2026-10-14");
+  await q(`insert into employee_pay_period_facts
+    (id,business_id,employee_id,pay_period_end,regular_cents,overtime_cents,
+     gross_cents,employee_tax_cents,employer_tax_cents,net_cents,source)
+    values ($1,$2,$3,'2026-10-14',130000,20000,150000,18000,9000,132000,'toast')`,
+    [payFactId,S,ids.emp]);
   const financialDays = [{ date: "2026-10-12", shifts: 6, wage: 90136, tax: 10203, fee: 5357 },
     { date: "2026-10-14", shifts: 7, wage: 110201, tax: 13222, fee: 5464 }];
   for (const fact of financialDays) {
@@ -121,6 +127,13 @@ try {
 
   const second = await run();
   check(Object.keys(replacedDays(second)).length === 0, `an unchanged second run replaces nothing ${JSON.stringify(replacedDays(second))}`);
+
+  await q("update employee_pay_period_facts set gross_cents=15136, employer_tax_cents=987, net_cents=13000 where id=$1", [payFactId]);
+  await run();
+  const copiedPay = await one(`select gross_cents::int,employer_tax_cents::int,net_cents::int
+    from employee_pay_period_facts where id=$1`, [remapId("employee_pay_period_facts",payFactId)]);
+  check(copiedPay.gross_cents === 15136 && copiedPay.employer_tax_cents === 987 &&
+    copiedPay.net_cents === 13000, "a corrected payroll source record updates already-copied gross, employer tax and net");
 
   // Insert-if-missing economic facts must refresh when SOURCE changes, without
   // copying credentials or replacing the intentionally separate test identity.
