@@ -3688,6 +3688,9 @@
     "askDay": "What should I plan for {what} ({when})?",
     "askWeek": "Ask about the week",
     "weekPrompt": "What's coming up near my café this week?",
+    "searchPartial": "Some nearby events may be missing. Could not check: {missed}.",
+    "searchGeneral": "general nearby events",
+    "searchOther": "some nearby searches",
     "searchDown": "Local events couldn't be checked right now."
   }
 }

@@ -43,6 +43,26 @@ describe("facts-only events outlook",()=>{
     expect(o.hourlySalesQuality).toEqual(warnings);
     expect(o.notCovered).toEqual(expect.arrayContaining(Object.values(warnings).flat()));
   });
+
+  it("shows partial nearby searches without dropping found events or implying full coverage",async()=>{
+    const o=await buildEventsOutlook({
+      today:"2026-10-30",timezone:"America/Chicago",locale:"en",days:2,
+      readLocation:async()=>({label:"12 Main St, Austin, TX",city:"Austin",region:"TX",
+        postalCode:null,countryCode:"US",source:"profile"}),readSales:async()=>[],
+      search:async()=>({available:true,outcome:"found",
+        events:[{...event,name:"Halloween parade",startDate:"2026-10-31",endDate:"2026-10-31"}],
+        partial:true,failedSearches:[{kind:"holiday",name:"Halloween",date:"2026-10-31"}]})
+    });
+    if("tooFarAhead" in o)throw new Error("unexpected");
+    expect(o.localEventsSearched).toBe(true);
+    expect(o.localEvents.map(e=>e.name)).toEqual(["Halloween parade"]);
+    expect(o.days[1].eventIds).toEqual(["e1"]);
+    expect(o.days[1]).not.toHaveProperty("decision");
+    expect(o.notCovered).toContain("localEventsSearchPartial");
+    expect(o.localEventsSearchGaps).toEqual([{kind:"holiday",name:"Halloween",date:"2026-10-31"}]);
+    expect(o.notCovered).not.toContain("localEventsSearchFailed");
+  });
+
   it("keeps hourly sales unknown when the canonical hourly reader fails",async()=>{
     const o=await buildEventsOutlook({today:"2026-10-30",timezone:"America/Chicago",locale:"en",
       readSales:async()=>[],readHourlySales:async()=>null});
