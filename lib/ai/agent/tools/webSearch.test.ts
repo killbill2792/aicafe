@@ -24,7 +24,7 @@ describe("general web_search",()=>{
       {type:"url_citation",title:"Bad URL",url:"javascript:alert(1)"}]);
     expect(extractWebSearchAnswer(body)).toEqual({answer:"The parade runs on Main Street.",
       sources:[{title:"Official parade route",url:"https://city.example.org/parade"}]});
-    const fetch=vi.fn(async()=>completed(body));
+    const fetch=vi.fn(async(_url:string|URL|Request,_init?:RequestInit)=>completed(body));
     const search=createWebSearch({fetch,apiKey:"test-key",model:"test-model"});
     const ctx={...input,webSearch:search};
     const result=await executeAgentTool("web_search",{query:"Where is the parade route?"},ctx);
