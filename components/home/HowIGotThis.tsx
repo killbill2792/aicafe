@@ -94,7 +94,7 @@ export default function HowIGotThis({lines,locale,copy,currency}:{
        {" − "}{localizedLabel(line.inputs[3].name,locale)}: {formatCardValue(line.inputs[3].value,locale,currency)}
        {" − "}{localizedLabel(line.inputs[4].name,locale)}: {formatCardValue(line.inputs[4].value,locale,currency)}
        {") = "}{formatCardValue(line.result,locale,currency)}</bdi>:
-     {line.source==="milk_swap"&&line.inputs.length===3&&line.inputs[2].name==="roundingStepCents"?
+     line.source==="milk_swap"&&line.inputs.length===3&&line.inputs[2].name==="roundingStepCents"?
        <><span className="text-ink-muted">{({en,es,ar}[locale]).OwnerQuestions.howRoundUp}: </span>
        <bdi dir="ltr">ceil(max(0, {formatCardValue(line.inputs[0].value,locale,currency)}) ÷ {formatCardValue(line.inputs[1].value,locale,currency)} ÷ {formatCardValue(line.inputs[2].value,locale,currency)}) × {formatCardValue(line.inputs[2].value,locale,currency)} {"="} {formatCardValue(line.result,locale,currency)}</bdi></>:
        <bdi dir="ltr">{line.inputs.map((input,j)=><span key={j}>
