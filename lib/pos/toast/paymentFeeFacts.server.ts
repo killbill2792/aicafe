@@ -7,7 +7,8 @@ import {readAllPages} from "./readAllPages";
 
 type Row={payment_ref:string;payment_type:string|null;payment_status:string|null;card_type:string|null;
  card_entry_mode:string|null;amount_cents:number|null;
- original_processing_fee_cents:number|null};
+ original_processing_fee_cents:number|null;
+ processing_fee_cents?:number|null;fee_status?:string|null;fee_basis?:string|null};
 type RawRule=Record<string,unknown>;
 const isRawRule=(x:unknown):x is RawRule=>!!x&&typeof x==="object"&&!Array.isArray(x);
 function parseCardRules(raw:unknown,defaultOne:boolean):ToastCardRule[]{
@@ -51,7 +52,7 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
   return {status:"not_installed" as const};
  if(raw.error)throw raw.error;
  const rows=await readAllPages((start,end)=>db.from("toast_payment_facts").select(
-  "payment_ref,payment_type,payment_status,card_type,card_entry_mode,amount_cents,original_processing_fee_cents")
+  "payment_ref,payment_type,payment_status,card_type,card_entry_mode,amount_cents,original_processing_fee_cents,processing_fee_cents,fee_status,fee_basis")
   .eq("business_id",businessId).eq("business_date",businessDate)
   .order("payment_ref").range(start,end)) as Row[];
  const plans=await getOwnerConfirmedProcessingFeePlans(db,businessId);
@@ -74,12 +75,16 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
   },rules)
  }));
  for(const {row,decision} of decisions){
-  const {error}=await db.from("toast_payment_facts").update({
-    processing_fee_cents:decision.amountCents,fee_status:decision.status,
-    // The stored basis list predates the default card rate; it is recorded as
-    // an estimate with no rule basis (fee_status says "estimated").
-    fee_basis:decision.basis==="default_rate"?"missing":decision.basis
-  }).eq("business_id",businessId).eq("business_date",businessDate)
+  // The stored basis list predates the default card rate; it is recorded as
+  // an estimate with no rule basis (fee_status says "estimated").
+  const next={processing_fee_cents:decision.amountCents,fee_status:decision.status,
+   fee_basis:decision.basis==="default_rate"?"missing":decision.basis};
+  // Write only payments whose fee changed. Rewriting every payment on every
+  // day refresh flooded the database disk and made the whole app time out.
+  if(row.processing_fee_cents===next.processing_fee_cents&&row.fee_status===next.fee_status
+   &&row.fee_basis===next.fee_basis)continue;
+  const {error}=await db.from("toast_payment_facts").update(next)
+   .eq("business_id",businessId).eq("business_date",businessDate)
    .eq("payment_ref",row.payment_ref);
   if(error)throw error;
  }
