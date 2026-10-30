@@ -135,11 +135,12 @@ describe("mid-run follow-ups ()", () => {
       [call("get_menu_items", '{"query":null,"limit":null}', "c1"), completed],
       [failed],
       [failed],
+      [failed], // the silent retry of the final answer fails too
     ]);
     const box = inbox([[{ id: "88888888-8888-4888-8888-888888888888", text: "and oat milk?" }]]);
     const result = await runAgentTurn({ ownerText: "Latte price?", context, provider,
       takeFollowUps: box.take });
-    expect(requests).toHaveLength(3);
+    expect(requests).toHaveLength(4);
     expect(result.absorbedOwnerMessageIds).toBeUndefined();
     expect(result.endReason).toBe("provider_error");
   });
@@ -150,11 +151,11 @@ describe("mid-run follow-ups ()", () => {
       [call("get_menu_items", '{"query":null,"limit":null}', "c1"), completed],
       [call("get_menu_items", '{"query":null,"limit":null}', "c2"), completed],
       [failed],
-      [failed],
+      [failed], // the silent retry of the final answer fails too
     ]);
     const box = inbox([[{ id: "99999999-9999-4999-8999-999999999999", text: "any oat milk?" }]]);
     const result = await runAgentTurn({ ownerText: "Latte?", context, provider, takeFollowUps: box.take });
-    expect(requests).toHaveLength(4);
+    expect(requests).toHaveLength(5);
     expect(result.absorbedOwnerMessageIds).toBeUndefined();
   });
 

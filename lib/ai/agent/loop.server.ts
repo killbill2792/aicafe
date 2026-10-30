@@ -389,53 +389,61 @@ export async function runAgentTurn(args: {
     if (!finished && endReason === "complete") endReason = "budget";
     if (!finished && usage.modelCalls < 6 && now() < deadline) {
       await readFollowUps();
-      // Exactly one final no-tool request; never allow another model tool call.
-      // Recovery is bounded even after provider disconnect/incomplete response.
-      try {
-        const finalController = new AbortController();
-        const left = deadline - now();
-        if (left <= 0) { endReason = "timeout"; }
-        else {
-          const timeout = setTimeout(() => finalController.abort(), left);
-          const finalTextStart = text.length;
-          const finalStart = now();
-          let completed = false;
-          let finalError: string | undefined;
-          try {
-            usage.modelCalls++;
-            for await (const event of provider(request(true), finalController.signal)) {
-              if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
-              if (now() >= deadline) throw new Error("deadline");
-              if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
-                text += event.delta; args.onDelta?.(event.delta);
+      // Final no-tool request; never allow another model tool call.
+      // If the provider fails, retry once silently (within the call budget and
+      // deadline) so a passing provider hiccup still gives the owner an answer.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const finalController = new AbortController();
+          const left = deadline - now();
+          if (left <= 0) { endReason = "timeout"; }
+          else {
+            const timeout = setTimeout(() => finalController.abort(), left);
+            const finalTextStart = text.length;
+            const finalStart = now();
+            let completed = false;
+            let finalError: string | undefined;
+            try {
+              usage.modelCalls++;
+              for await (const event of provider(request(true), finalController.signal)) {
+                if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
+                if (now() >= deadline) throw new Error("deadline");
+                if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+                  text += event.delta; args.onDelta?.(event.delta);
+                }
+                if (event.type === "response.completed") {
+                  const actual=(event.response as {model?:unknown}|undefined)?.model;
+                  if(typeof actual==="string"&&actual.trim())usage.model=actual;
+                  completed = true;
+                  const u = (event.response as {usage?:{input_tokens?:number;output_tokens?:number;input_tokens_details?:{cached_tokens?:number}}}|undefined)?.usage;
+                  usage.inputTokens += u?.input_tokens ?? 0; usage.outputTokens += u?.output_tokens ?? 0;
+                  usage.cachedTokens += u?.input_tokens_details?.cached_tokens ?? 0;
+                }
               }
-              if (event.type === "response.completed") {
-                const actual=(event.response as {model?:unknown}|undefined)?.model;
-                if(typeof actual==="string"&&actual.trim())usage.model=actual;
-                completed = true;
-                const u = (event.response as {usage?:{input_tokens?:number;output_tokens?:number;input_tokens_details?:{cached_tokens?:number}}}|undefined)?.usage;
-                usage.inputTokens += u?.input_tokens ?? 0; usage.outputTokens += u?.output_tokens ?? 0;
-                usage.cachedTokens += u?.input_tokens_details?.cached_tokens ?? 0;
+              if (!completed) throw new Error("provider_incomplete");
+              if (text.length > finalTextStart)
+                for (const message of absorbed) deliveredIds.add(message.id);
+            } catch (error) {
+              finalError = "model_call_failed";
+              const discardChars = text.length - finalTextStart;
+              if (discardChars > 0) {
+                text = text.slice(0, finalTextStart); // allowed: discard incomplete model stream on provider failure
+                args.onReset?.(discardChars);
               }
+              throw error;
+            } finally {
+              clearTimeout(timeout);
+              audit({ kind: "model_call", inputSummary: "Final response; no tools",
+                outputSummary: completed ? "Completed" : "Incomplete", durationMs: Math.max(0, now() - finalStart), error: finalError });
             }
-            if (!completed) throw new Error("provider_incomplete");
-            if (text.length > finalTextStart)
-              for (const message of absorbed) deliveredIds.add(message.id);
-          } catch (error) {
-            finalError = "model_call_failed";
-            const discardChars = text.length - finalTextStart;
-            if (discardChars > 0) {
-              text = text.slice(0, finalTextStart); // allowed: discard incomplete model stream on provider failure
-              args.onReset?.(discardChars);
-            }
-            throw error;
-          } finally {
-            clearTimeout(timeout);
-            audit({ kind: "model_call", inputSummary: "Final response; no tools",
-              outputSummary: completed ? "Completed" : "Incomplete", durationMs: Math.max(0, now() - finalStart), error: finalError });
           }
+          break;
+        } catch {
+          if (attempt === 0 && usage.modelCalls < 6 && now() < deadline) continue;
+          endReason = now() >= deadline ? "timeout" : "provider_error";
+          break;
         }
-      } catch { endReason = now() >= deadline ? "timeout" : "provider_error"; }
+      }
     }
   } finally { controller.abort(); }
   usage.latencyMs = now() - started;

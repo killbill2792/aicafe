@@ -195,15 +195,40 @@ describe("recorded Responses streaming fixtures", () => {
       };
       const resets: number[] = [];
       const result = await runAgentTurn({ownerText:"Menu?",context,provider,onReset:n=>resets.push(n)});
-      expect(requests).toHaveLength(3);
+      // The final answer is retried once silently; both attempts fail here.
+      expect(requests).toHaveLength(4);
       expect(requests[2].tool_choice).toBe("none");
+      expect(requests[3].tool_choice).toBe("none");
       // The partial text is discarded and no code-made card fills the gap:
       // the empty reply becomes the route's retryable error for the owner.
       expect(result.text).toBe("");
       expect(result.results.some(r=>r.source==="ask_owner")).toBe(false);
-      expect(resets).toEqual(["Partial final answer.".length]);
+      expect(resets).toEqual(["Partial final answer.".length,"Partial final answer.".length]);
       expect(result.endReason).toBe("provider_error");
     });
+  it("silently retries a failed final answer once and keeps the retry's text", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const provider: AgentProvider = async function* (params) {
+      requests.push(params);
+      if (requests.length <= 2) {
+        yield call("get_menu_items",'{"wrong":1}',"bad-"+requests.length);
+        yield completed;
+      } else if (requests.length === 3) {
+        yield text("Cut off");
+        yield { type: "response.failed" };
+      } else {
+        yield text("Here is the full answer.");
+        yield completed;
+      }
+    };
+    const resets: number[] = [];
+    const result = await runAgentTurn({ownerText:"Menu?",context,provider,onReset:n=>resets.push(n)});
+    expect(requests).toHaveLength(4);
+    expect(requests[3].tool_choice).toBe("none");
+    expect(result.text).toBe("Here is the full answer.");
+    expect(resets).toEqual(["Cut off".length]);
+    expect(result.usage.modelCalls).toBe(4);
+  });
 
   it("checks a current amount against owner history but not prior assistant prose", async () => {
     const first=await runAgentTurn({ownerText:"Repeat my rent.",context,
