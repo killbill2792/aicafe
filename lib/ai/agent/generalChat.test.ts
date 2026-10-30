@@ -1,5 +1,6 @@
 import {describe,expect,it,vi} from "vitest";
 import {runAgentTurn,type AgentProvider} from "./loop.server";
+import {createWebSearch} from "./webSearch.server";
 import type {AgentToolContext} from "./tools";
 
 const employeeId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -43,6 +44,36 @@ describe("event-thread owner questions (recorded tool-call fixtures)",()=>{
     expect(turn.text).toContain("https://city.example.org/parade");
     expect(turn.usage.toolCalls).toBe(1);
     expect((requests[0].tools as Array<{name:string}>).some(t=>t.name==="web_search")).toBe(true);
+  });
+
+  it("shares the six-call budget with web subcalls and includes all web tokens",async()=>{
+    const fetched=vi.fn(async()=>new Response(JSON.stringify({
+      status:"completed",
+      output:[{type:"message",content:[{type:"output_text",text:"Verified outside fact."}]}],
+      usage:{input_tokens:37,output_tokens:19,input_tokens_details:{cached_tokens:11}},
+    }),{status:200}));
+    const webSearch=createWebSearch({fetch:fetched,apiKey:"k",model:"m"});
+    const {requests,provider}=scripted([
+      [tool("web_search",{query:"First parade route"}),completed],
+      [tool("web_search",{query:"Second parade route"}),completed],
+      [tool("web_search",{query:"Third parade route"}),completed],
+      [text("The first two sources were checked; more lookups need a new turn."),completed],
+    ]);
+    const audit:Array<{kind:string;inputSummary?:string}>=[];
+    const turn=await runAgentTurn({ownerText:"Check three parade routes",
+      context:{...context,webSearch},provider,
+      onAuditStep:step=>audit.push({kind:step.kind,inputSummary:step.inputSummary})});
+    expect(requests).toHaveLength(4); // three outer calls plus one final, no seventh model request
+    expect(requests.at(-1)?.tool_choice).toBe("none");
+    expect(fetched).toHaveBeenCalledTimes(2); // third web call denied before any HTTP request
+    expect(turn.usage.modelCalls).toBe(6); // 4 supervisor calls + 2 hosted lookup calls
+    expect(turn.usage.inputTokens).toBe(4*42+2*37);
+    expect(turn.usage.cachedTokens).toBe(2*11);
+    expect(turn.usage.outputTokens).toBe(4*16+2*19);
+    expect(turn.endReason).toBe("budget");
+    expect(turn.results.at(-1)).toMatchObject({source:"web_search",failure:"budget"});
+    expect(audit.filter(step=>step.kind==="model_call")).toHaveLength(6);
+    expect(audit.filter(step=>step.inputSummary==="Web lookup; prompts withheld")).toHaveLength(2);
   });
 
   it("writes three drink names without a paid search when public facts are not needed",async()=>{
