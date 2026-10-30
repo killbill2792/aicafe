@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
 import { getMenuItemsForEdit, type MenuItemForEdit } from "./getMenuItemsForEdit";
 import { getPricingInputs } from "./getPricingInputs";
+import { timeReader } from "@/lib/perf/timeReader.server";
 import type { MenuPriceSourceBasis } from "@/lib/calc/menuPriceSourceBasis";
 import { buildPricingViewModel } from "@/lib/viewmodels/pricingViewModel";
 import {
@@ -61,7 +62,10 @@ const EMPTY_EVIDENCE: MenuPricingEvidence = {
 
 /** One canonical read model for both the menu catalog and product detail. */
 export async function getMenuControlCenter(options: { includeSalesEvidence?: boolean } = {}): Promise<MenuControlItem[]> {
-  const { items } = await getMenuItemsForEdit();
+  const attentionOnly = options.includeSalesEvidence === false;
+  const measure = <T>(stage: string, read: () => Promise<T>): Promise<T> =>
+    attentionOnly ? timeReader("Home", "menu." + stage, read) : read();
+  const { items } = await measure("catalog", getMenuItemsForEdit);
   if (!isSupabaseConfigured() || items.length === 0) {
     return items.map((item) => ({
       ...item,
@@ -81,7 +85,8 @@ export async function getMenuControlCenter(options: { includeSalesEvidence?: boo
   if (!user) return [];
 
   const businessId = await getActiveBusinessId(user.id);
-  const pricingInputs = await getPricingInputs(supabase, businessId);
+  const pricingInputs = await measure("pricingInputs", () =>
+    getPricingInputs(supabase, businessId, { attentionOnly }));
   const pricingById = new Map(buildPricingViewModel(pricingInputs).map((row) => [row.itemId, row.result]));
   const pricingBasis: MenuPricingBasis = {
     ...pricingInputs.menuPriceBasis,
