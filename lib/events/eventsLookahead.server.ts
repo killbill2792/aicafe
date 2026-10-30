@@ -20,7 +20,7 @@ import {verifyUpcomingEventChanges} from "./eventVerification.server";
 import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {effectHash,proposeLoop,monitorLoop,utcDateOffset,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
-import {authorizedScheduledEventScope,eventPlanFacts,eventReadinessCapabilityId,selectEventObservations}
+import {authorizedScheduledEventScope,eventPlanFacts,eventReadinessCapabilityId,selectEventObservations,observedEventProposalIds}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {agentReplyPayload} from "@/lib/ai/agent/persist.server";
@@ -348,7 +348,9 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
   const recent=utcDateOffset(today,-14);
   let checked=0,reported=0,failed=0;
   const repo=new SupabaseLoopRepository();
-  for(const p of selectEventObservations(proposals).filter(p=>
+  const observedIds=await observedEventProposalIds(db,businessId,
+    proposals.map(p=>p.id));
+  for(const p of selectEventObservations(proposals,observedIds).filter(p=>
     p.monitoringStartDate!<=yesterday&&
     utcDateOffset(p.monitoringStartDate!,p.monitorSpec.durationDays-1)>=recent).slice(0,6)){
     checked++;
