@@ -1,4 +1,4 @@
-import {beforeEach,describe,expect,it,vi} from "vitest";
+import {beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 import {effectHash,monitorLoop} from "@/lib/ai/supervisor/loop/engine";
 import {watchLiveEvents} from "./eventLiveWatch.server";
 
