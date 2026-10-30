@@ -3460,6 +3460,7 @@
     "itemInputsRate": "المعدل",
     "metricReasonUnknown": "يعتمد هذا الرقم على السجلات المتاحة؛ يلزم تأكيد مصدره.",
     "periodLatestData": "أحدث البيانات: {from}–{to}",
+    "laborProjectedToMonth": "تم تقدير الرواتب من {covered} يوم عمل مكتمل البيانات إلى {planned} يوم عمل خلال هذا الشهر.",
     "laborPartialCoverage": "تم تقدير الرواتب من {covered} من أصل {total} يومًا؛ بقية الأيام غير مسجلة.",
     "laborRecorded": "الأجور وضرائب الرواتب المسجلة.",
     "laborOwnerProvided": "رواتب شهرية قدمها المالك.",
