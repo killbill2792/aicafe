@@ -13,6 +13,7 @@ import {typicalHourlySales} from "@/lib/metrics/core/dayOutlook";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {cafeCountry,holidaysBetween,addDays,weekdayOf} from "./holidays";
 import {eventIdentity,eventScanWindows,savedEventKind,type EventScanState} from "./eventsLookahead";
+import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
 import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {effectHash,proposeLoop,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
@@ -52,7 +53,8 @@ const requireOk=(error:unknown)=>{if(error)throw new Error("events_store_unavail
 
 /** Only confirmed search results and calendar dates are persisted. Absence
  * from web results does NOT prove cancellation, so never delete by omission. */
-export async function scanCafe(db:Db,b:Business,today:string):Promise<number>{
+export async function scanCafe(db:Db,b:Business,today:string,
+  search:NearbyEventsSearch=searchNearbyEvents):Promise<number>{
   const facts=await loadOwnerFacts(b.id,db);
   const location=await readCafeLocation(db,b.id,facts);
   const country=cafeCountry(location?.countryCode,b.timezone);
@@ -83,7 +85,7 @@ export async function scanCafe(db:Db,b:Business,today:string):Promise<number>{
     let completed=false;
     if(location){
       // Search happens ONLY in cron, after owner role + AI access were checked.
-      const result=await searchNearbyEvents({location:location.label,city:location.city,
+      const result=await search({location:location.label,city:location.city,
         region:location.region,countryCode:location.countryCode??country.country,
         from:range.from,to:range.to});
       if(result.available){
