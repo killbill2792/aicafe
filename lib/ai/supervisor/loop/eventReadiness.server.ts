@@ -91,11 +91,18 @@ export async function observedEventProposalIds(
   db:ReturnType<typeof createAdminSupabaseClient>,businessId:string,
   ids:readonly string[]):Promise<Set<string>>{
   if(!ids.length)return new Set();
-  const {data,error}=await db.from("supervisor_monitor_samples")
-    .select("proposal_id").eq("business_id",businessId)
-    .in("proposal_id",[...new Set(ids)].slice(0,100)).limit(1000);
-  if(error)throw new Error("Event monitoring history unavailable");
-  return new Set((data??[]).map(r=>r.proposal_id as string));
+  const found=new Set<string>();
+  const unique=[...new Set(ids)].slice(0,100);
+  // One event proposal has at most 14 observed business days. Chunks of 40
+  // cannot silently hit the canonical 1,000-row provider cap.
+  for(let i=0;i<unique.length;i+=40){
+    const {data,error}=await db.from("supervisor_monitor_samples")
+      .select("proposal_id").eq("business_id",businessId)
+      .in("proposal_id",unique.slice(i,i+40)).limit(1000);
+    if(error||!data)throw new Error("Event monitoring history unavailable");
+    for(const row of data)found.add(row.proposal_id as string);
+  }
+  return found;
 }
 
 /** Read the already canonicalized, café-scoped Toast evidence only.
