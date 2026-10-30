@@ -298,7 +298,7 @@ Toast dining-option name configuration from optional redacted captures.
 
 ## cv_toast_records
 
-Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover.
+Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover. Never use it to rebuild a screen number (net sales, profit, labor cost, card fees, break-even, item cost): use their tools.
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|

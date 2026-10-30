@@ -1086,7 +1086,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_toast_records": {
-    "meaning": "Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover.",
+    "meaning": "Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover. Never use it to rebuild a screen number (net sales, profit, labor cost, card fees, break-even, item cost): use their tools.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
