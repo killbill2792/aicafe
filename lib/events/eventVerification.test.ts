@@ -22,10 +22,21 @@ describe("early event verification guardrails",()=>{
    const now=new Date(at);
    const plan={startDate:"2026-11-06",endDate:"2026-11-06",status:"committed"};
    expect(importantVerificationQueue([event()], [plan],"2026-11-01",now)).toEqual([event()]);
-   expect(eventVerificationDue({...event(),lastAttemptedAt:"2026-10-30T11:00:00Z"},
+   expect(eventVerificationDue({...event(),lastAttemptedAt:"2026-10-31T22:00:00Z"},
      "2026-11-01",now)).toBe(false);
    expect(eventVerificationDue({...event(),lastAttemptedAt:"2026-10-28T00:00:00Z"},
      "2026-11-01",now)).toBe(true);
+ });
+ it("fairly prioritizes previously unverified events under a three-check budget",()=>{
+   const planned=[{startDate:"2026-11-01",endDate:"2026-11-13",status:"committed"}];
+   const events=Array.from({length:5},(_,i)=>({
+     ...event(),id:"event-"+i,startDate:"2026-11-0"+(i+2),
+     endDate:"2026-11-0"+(i+2),
+     ...(i<3?{lastAttemptedAt:"2026-10-31T15:00:00Z"}:{}),
+   }));
+   expect(importantVerificationQueue(events,planned,"2026-11-01",
+     new Date("2026-11-01T12:00:00Z")).map(e=>e.id)).toEqual([
+       "event-3","event-4","event-0"]);
  });
  it("needs a saved plan and known sourced event, and never verifies a holiday",()=>{
    expect(importantVerificationQueue([event()],[],"2026-11-01",new Date(at))).toEqual([]);
