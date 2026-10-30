@@ -14,28 +14,13 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    closeout (see "Supervisor chat start" below). Fix: add it as a golden owner question with exact
    numbers checked on the chat and Money screen paths, add the prompt mapping, then ask it on the test
    café. Missing buckets must say "missing", never zero.
-2. [ ] **Nearby events and holidays → staffing and crowd advice.** The AI finds what is happening near
-   the café and tells the owner what to do ("Tomorrow is Halloween, last year you sold 32% more, add one
-   person"), then later checks Toast to see what really happened.
-   - [x] **Chat part:** `get_nearby_events` (`lib/ai/agent/tools/events.ts`). Holidays from the maintained
-     `date-holidays` data (about 200 countries, state holidays, moving dates like Easter and Eid; never our
-     own date list), with a short café note for a few well-known days. Local events by OpenAI's hosted
-     web search near the café's saved address (`lib/events/`), cached 3 h. Usual-day sales and "same day
-     last year" from the café's own Toast days (`lib/metrics/core/dayOutlook.ts`). No address → holidays
-     still shown and the owner is asked once (`cafe_address` owner fact).
-   - [x] **Board card "Coming up"** (`components/home/ComingUpCard.tsx`) on the chat start, next to the key
-     numbers: up to 3 notable days, each one decision (Busier/Quieter/Usual/Unsure + what to do + why).
-     Loads after the page via `/api/events/outlook`, so Home is never slower. Tapping a day asks the chat.
-     Chat and card use the one builder `lib/events/outlook.ts` (equality test in `tools/events.test.ts`).
-   - [ ] **Check on the test café** after deploy: ask "anything happening nearby this week?". Halloween
-     (Sat Oct 31 2026) should lead; local events need `OPENAI_API_KEY` on the server and a model with web
-     search (optional `EVENTS_SEARCH_OPENAI_MODEL` overrides the chat model for the search only).
-   - [ ] **Proactive:** a daily job (`app/api/cron/*`) looks 1–7 days ahead and writes one inbox item
-     (`operating_tasks`) plus a short chat message per notable day. No duplicates; daily cap applies.
-   - [ ] **Day-after report:** compare real Toast sales and staffing with the outlook ("Halloween: sales up
-     22%, you were short one person 11–2"), using the one report system (`supervisor_reports`).
-   - [ ] An address typed in chat is saved as an owner fact only; copy it into the café profile
-     (`locations`) needs a small migration to the `save_owner_fact` write-through (owner approval).
+2. [ ] **Nearby events, holidays and readiness.** Full plan, rules and one prompt per PR:
+   [docs/plans/nearby-events.md](docs/plans/nearby-events.md). First version shipped in #271; in
+   production the web search fails (`nearby_events_search_unparsed`) and the advice is hard-coded. Next,
+   in order: PR 1 search fix · PR 2 facts-only + AI plans and asks (with "Other") · PR 3 storage + one
+   reader (migration, owner approves) · PR 4 find once / plan once job · PR 5 Home strip + events panel
+   (Past/Now/Coming up, calendar) · PR 6 live watch · PR 7 report card · PR 8 distance (after decision D3) ·
+   PR 9 chat about any event + answer anything (web search). Waves: {1,2,3,9} → {4,5} → {6,7,8}.
 
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.

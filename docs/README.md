@@ -14,6 +14,7 @@ If any document conflicts with AGENTS.md, AGENTS.md wins.
 - [08 pricing engine plan](08-pricing-engine-plan.md) — pricing-engine design and decisions.
 - [scheduling architecture](scheduling-architecture.md) — scheduling boundaries and contracts.
 - [team collaboration](team-collaboration.md) — human implementer and review workflow.
+- [plan: nearby events](plans/nearby-events.md) — nearby events, holidays and readiness: rules and PR order.
 - [admin dashboard merge checklist](admin-dashboard-merge-checklist.md) — admin dashboard review checklist.
 - [auth pr133 testing](auth-pr133-testing.md) — authentication testing notes.
 
