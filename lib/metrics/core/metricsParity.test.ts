@@ -214,7 +214,7 @@ describe("October closed-day parity, verified Toast zero fees and visible workin
    const snapshot:BusinessSnapshot={...base,todayDateStr:"2026-10-15",
      monthKey:"2026-10",daysInMonth:31,monthActualDays:history,
      monthRecordedDays:history,last28Days:history,breakEvenDays:history,
-     ownerMonthlyPayrollExtrasCents:null};
+     };
    const inputs=breakEvenSnapshotInputs(snapshot);
    const money=buildCostRecoveryViewModel(snapshot);
    const plan=buildBreakEvenViewModel(snapshot);
