@@ -1,7 +1,6 @@
 import "server-only";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
-import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {effectHash,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 
 type EventResult={
@@ -54,6 +53,9 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
     moneyUnit:"integer cents (currency is not provided; do not name a currency)",
   };
   try{
+    // Import on demand: the agent tool registry imports event readiness too.
+    // Loading it at module initialization creates a circular schema dependency.
+    const {runAgentTurn}=await import("@/lib/ai/agent/loop.server");
     const turn=await runAgentTurn({
       businessId:scope.businessId,
       requestId:"event-final:"+proposalId+":"+hash,
