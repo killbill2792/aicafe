@@ -19,7 +19,8 @@ export const canonicalViewNames = [
   "cv_orders",
   "cv_cash",
   "cv_kitchen",
-  "cv_dining_options"
+  "cv_dining_options",
+  "cv_toast_records"
 ] as const;
 export type CanonicalView = typeof canonicalViewNames[number];
 export const canonicalDictionary = {
@@ -1083,11 +1084,88 @@ export const canonicalDictionary = {
         "example": "What was recorded?"
       }
     }
+  },
+  "cv_toast_records": {
+    "meaning": "Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover.",
+    "columns": {
+      "business_id": {
+        "meaning": "Authenticated café UUID; never query other cafés.",
+        "unit": "UUID",
+        "source": "app",
+        "example": "What data does my café have?"
+      },
+      "source": {
+        "meaning": "Always toast.",
+        "unit": "label",
+        "source": "app",
+        "example": "Where did this come from?"
+      },
+      "source_ref": {
+        "meaning": "Stable reference for this Toast record.",
+        "unit": "identifier",
+        "source": "app",
+        "example": "Which record supports it?"
+      },
+      "status": {
+        "meaning": "Always actual: the latest saved Toast data.",
+        "unit": "label",
+        "source": "app",
+        "example": "Is this final?"
+      },
+      "business_date": {
+        "meaning": "Café business date; null for setup lists (menus, tables, discounts, jobs...), which always show the newest copy.",
+        "unit": "local date",
+        "source": "toast",
+        "example": "What happened on this date?"
+      },
+      "record_type": {
+        "meaning": "order, check, item, modifier, payment, check_discount, item_discount, service_charge, or a Toast endpoint such as labor/v1/timeEntries, labor/v1/employees, labor/v1/jobs, cashmgmt/v1/entries, config/v2/menuItems, config/v2/tables, menus/v2/menus, kitchen/v1/export/itemFulfillments. Always filter on it.",
+        "unit": "label",
+        "source": "toast",
+        "example": "Which kind of record?"
+      },
+      "record_ref": {
+        "meaning": "Toast GUID of this record.",
+        "unit": "identifier",
+        "source": "toast",
+        "example": "Which record?"
+      },
+      "order_ref": {
+        "meaning": "Toast order GUID this record belongs to (order-level types only).",
+        "unit": "identifier",
+        "source": "toast",
+        "example": "Which order?"
+      },
+      "check_ref": {
+        "meaning": "Toast check GUID this record belongs to.",
+        "unit": "identifier",
+        "source": "toast",
+        "example": "Which check?"
+      },
+      "counts_in_sales": {
+        "meaning": "False when this record or its order/check is voided or deleted; null for non-order records. Filter true for sales.",
+        "unit": "boolean",
+        "source": "app",
+        "example": "Did this count?"
+      },
+      "data": {
+        "meaning": "Every field Toast sent for this record (guest names, contacts, card details and notes removed). Read one field by name: data.server.guid, data.price, data.diningOption.guid. Get the field names with describe_data and record_type. Toast money fields are dollars, not cents.",
+        "unit": "JSON",
+        "source": "toast",
+        "example": "Sales by server? Average order time? Which table?"
+      }
+    }
   }
 } as const;
 export function isCanonicalView(name:string):name is CanonicalView {
  return (canonicalViewNames as readonly string[]).includes(name);
 }
 export function isCanonicalColumn(view:CanonicalView,column:string):boolean {
- return Object.prototype.hasOwnProperty.call(canonicalDictionary[view].columns,column);
+ return Object.prototype.hasOwnProperty.call(canonicalDictionary[view].columns,column)||
+  isDataField(column)&&Object.prototype.hasOwnProperty.call(canonicalDictionary[view].columns,"data");
+}
+/** A named field inside a view's data JSON, e.g. "data.server.guid" or
+ * "data.checks.0.amount". Matches the database rule in ai_query_path. */
+export function isDataField(column:string):boolean {
+ return /^data(\.([A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})){1,8}$/.test(column);
 }
