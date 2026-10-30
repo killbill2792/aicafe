@@ -1,3 +1,4 @@
+import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys} from "@/lib/ai/supervisor/loop/receiptAllocation";
@@ -163,6 +164,8 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       searchNearbyEvents,
       savedEvents:async(from,to)=>readSavedEventTimeline(await createServerSupabaseClient(),
         {businessId:scope.businessId,ownerUserId:scope.ownerUserId},from,to),
+      readWeekSchedule:weekStart=>getWeekSchedule({weekStart}),
+      ownerFacts:ownerFactRead.facts,
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       goals:{

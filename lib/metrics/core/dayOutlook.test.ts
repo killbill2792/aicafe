@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {medianCents,typicalDaySales,changePercent,lastTimeOutlook} from "./dayOutlook";
+import {medianCents,typicalDaySales,typicalHourlySales,changePercent,lastTimeOutlook} from "./dayOutlook";
 
 describe("usual-day sales",()=>{
   it("takes the median of the same weekday before the cut-off, in whole cents",()=>{
@@ -19,6 +19,19 @@ describe("usual-day sales",()=>{
     const r=typicalDaySales(days,"2026-10-31","2026-10-30",{exclude:new Set(["2026-10-10"])});
     expect(r.typicalCents).toBeNull();
     expect(r.sampleDays).toBe(2);
+  });
+  it("uses the same-weekday hourly medians from recorded hours, not invented zero hours",()=>{
+    const rows=["2026-10-03","2026-10-10","2026-10-17","2026-10-24"].flatMap((date,i)=>[
+      {date,hourLocal:9,netSalesCents:1000+i*100},
+      {date,hourLocal:9,netSalesCents:200},
+      {date,hourLocal:14,netSalesCents:3000+i*100},
+    ]);
+    const usual=typicalHourlySales([...rows,{date:"2026-10-23",hourLocal:14,netSalesCents:90000}],
+      "2026-10-31","2026-10-30");
+    expect(usual).toEqual([{hourLocal:9,typicalCents:1350,sampleDays:4},
+      {hourLocal:14,typicalCents:3150,sampleDays:4}]);
+    expect(typicalHourlySales(rows,"2026-10-31","2026-10-30",
+      {exclude:new Set(["2026-10-10","2026-10-17"])})).toEqual([]);
   });
   it("gives the change in whole percent and refuses a zero base",()=>{
     expect(changePercent(126_000,100_000)).toBe(26);

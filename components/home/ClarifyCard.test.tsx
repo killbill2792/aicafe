@@ -24,6 +24,25 @@ describe("clarify choice card",()=>{
   expect(markup).toContain("decimal");
  });
 
+ it("shows tappable event outcome choices and an Other option in all owner languages",()=>{
+  const fact={type:"clarify" as const,kind:"facts" as const,
+    questionId:"11111111-1111-4111-8111-111111111111",question:"How was Halloween?",
+    fields:[{key:"event_outcome:halloween:2025",label:"Last Halloween",
+      inputType:"choice" as const,units:[],defaultUnit:"",
+      choices:[{label:"Busy",value:"busy"},{label:"Quieter",value:"quiet"}]}]};
+  for(const locale of ["en","es","ar"] as const){
+    const markup=renderToStaticMarkup(createElement(ClarifyCard,{block:fact,locale,
+      copy:{...copy,clarifyOther:({en,es,ar}[locale]).SupervisorChat.clarifyOther},
+      state:"active",choice:null,disabled:false,onSend:vi.fn(),onFacts:vi.fn()}));
+    expect(markup).toContain("aria-pressed");
+    expect(markup).toContain("Busy");
+    expect(markup).toContain("Quieter");
+    expect(markup).toContain(({en,es,ar}[locale]).SupervisorChat.clarifyOther);
+    expect(markup).not.toContain("<select");
+    if(locale==="ar")expect(markup).toContain('dir="rtl"');
+  }
+ });
+
  it("distinguishes persistence errors from validation errors in EN ES AR",()=>{
   for(const m of [en.SupervisorChat,es.SupervisorChat,ar.SupervisorChat]){
    expect(m.clarifySaveError).not.toEqual(m.clarifyFillError);
