@@ -1,7 +1,7 @@
 import "server-only";
 import {formatInTimeZone} from "date-fns-tz";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {eventReadinessCapabilityId,authorizedScheduledEventScope,selectEventObservations}
+import {eventReadinessCapabilityId,authorizedScheduledEventScope,selectEventObservations,observedEventProposalIds}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {monitorLoop,utcDateOffset} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -45,7 +45,8 @@ export async function watchLiveEvents(businessId:string,businessDate:string):Pro
      console.warn("events_live_watch_load_failed");
    }
  }
- for(const proposal of selectEventObservations(eligible)){
+ const observedIds=await observedEventProposalIds(db,businessId,eligible.map(p=>p.id));
+ for(const proposal of selectEventObservations(eligible,observedIds)){
    const start=proposal.monitoringStartDate!;
    const end=utcDateOffset(start,proposal.monitorSpec.durationDays-1);
    if(today<start||today>end)continue;
