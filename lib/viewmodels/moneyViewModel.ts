@@ -49,7 +49,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const breakEven=basis.shared.calculation;
   const breakEvenNotes=[...basis.shared.notes,
     ...(basis.missingBills?["breakEvenBillsMissing"]:[]),
-    ...(basis.productCosts.missingProductCosts?["profitProductCostsMissing"]:[]),
+    ...(basis.ingredientMissing?["profitProductCostsMissing"]:[]),
     ...(basis.missingFees?["profitFeesMissing"]:[]),
     ...basis.monthLabor.notes];
   const breakEvenUsesEstimates=basis.estimatesUsed;
