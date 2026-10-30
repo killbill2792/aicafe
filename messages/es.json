@@ -3460,6 +3460,7 @@
     "itemInputsRate": "Tasa",
     "metricReasonUnknown": "Esta cifra usa los registros disponibles; falta confirmar su origen.",
     "periodLatestData": "Últimos datos: {from}–{to}",
+    "laborProjectedToMonth": "Nómina proyectada de {covered} días de apertura con datos completos a {planned} días de apertura este mes.",
     "laborPartialCoverage": "Nómina proyectada con {covered} de {total} días; faltan registros de otros días.",
     "laborRecorded": "Salarios e impuestos de nómina registrados.",
     "laborOwnerProvided": "Nómina mensual proporcionada por el propietario.",
