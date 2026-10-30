@@ -170,9 +170,16 @@ export default function SavedEventsCard({locale,chatDisabled,onChatAboutDay}:{
   },[]);
   useEffect(()=>{
     const controller=new AbortController();
-    void refresh(controller.signal).catch(()=>{if(!controller.signal.aborted)setError(true);});
+    void fetch("/api/events/saved",{cache:"no-store",signal:controller.signal})
+      .then(async response=>{
+        if(!response.ok)throw new Error("events_unavailable");
+        const data=await response.json() as Timeline;
+        if(!Array.isArray(data.events)||!Array.isArray(data.plans)||
+          !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(data.today))throw new Error("invalid_events");
+        if(!controller.signal.aborted)setTimeline(data);
+      }).catch(()=>{if(!controller.signal.aborted)setError(true);});
     return ()=>controller.abort();
-  },[refresh]);
+  },[]);
   if(!timeline)return <section data-testid="coming-up" aria-label={t("title")}
     className="space-y-2 rounded-2xl border border-line bg-card p-4 text-[17px] text-ink" role="status">
       <p>{error?t("loadFailed"):t("loading")}</p>
