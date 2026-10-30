@@ -10,9 +10,12 @@ export type NearbyEvent={name:string;startDate:string;endDate:string;venue:strin
   kind:typeof EVENT_KINDS[number];expectedCrowd:typeof CROWD_SIZES[number];sourceUrl:string;sourceName:string|null};
 export type SearchFailureCategory="not_configured"|"http_error"|"incomplete"|"missing_message"|
   "empty_text"|"invalid_json"|"invalid_shape"|"invalid_response"|"timeout"|"network";
+/** The public-event query that could not be completed, without exposing the café address. */
+export type UnsearchedEventScope={kind:"general"}|{kind:"holiday";name:string;date:string};
 /** Optional metadata keeps older search stubs compatible; the production search always sets it. */
 export type NearbyEventsResult=
-  |{available:true;outcome?:"found"|"none_found";events:NearbyEvent[];partial?:boolean}
+  |{available:true;outcome?:"found"|"none_found";events:NearbyEvent[];partial?:boolean;
+      failedSearches?:UnsearchedEventScope[]}
   |{available:false;outcome?:"failed";reason:"notConfigured"|"searchFailed"|"timeout";
       category?:SearchFailureCategory};
 export type NearbyEventsSearch=(input:{location:string;city:string|null;region:string|null;countryCode:string|null;
