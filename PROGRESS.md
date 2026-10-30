@@ -52,7 +52,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    the highest owner-facing priority.** Do not change `AGENTS.md`, migrations,
    POS import/sync code, production flags, or add a duplicate event reader/monitor.
 
-   - [ ] **Events Fix A — cron search reliability (search files only).**
+   - [x] **Events Fix A — cron search reliability (search files only).**
      Own: `lib/events/nearbyEventsSearch.server.ts`, `lib/events/nearbyEvents.ts`
      when needed, and search tests. Make the existing OpenAI web search reliably
      produce valid sourced results with bounded retries/fallbacks for 200-incomplete,
