@@ -18,9 +18,9 @@ import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
 import {verifyUpcomingEventChanges} from "./eventVerification.server";
 import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
-import {effectHash,proposeLoop,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
+import {effectHash,proposeLoop,monitorLoop,utcDateOffset,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
-import {authorizedScheduledEventScope,eventPlanFacts,eventReadinessCapabilityId}
+import {authorizedScheduledEventScope,eventPlanFacts,eventReadinessCapabilityId,selectEventObservations,observedEventProposalIds}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {agentReplyPayload} from "@/lib/ai/agent/persist.server";
@@ -323,6 +323,59 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
   return {repaired,created};
 }
 
+/** Morning-after observation uses the same Supervisor monitor and report ledger.
+ * Drafts remain drafts: no owner approval, commit or POS effect is invoked.
+ * Recheck recently closed days to incorporate late/corrected Toast imports. */
+export async function reportSavedEventDays(db:Db,businessId:string,ownerId:string,
+  today:string):Promise<{checked:number;reported:number;failed:number}>{
+  const rows=await db.from("supervisor_proposals")
+    .select("id,owner_user_id,thread_id,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,status,revision,locale,monitoring_start_date,created_at")
+    .eq("business_id",businessId).eq("owner_user_id",ownerId)
+    .eq("capability_id",eventReadinessCapabilityId)
+    .in("status",["draft","approved","committed","manual_confirmed"])
+    .order("created_at",{ascending:false}).limit(100);
+  requireOk(rows.error);
+  const proposals:LoopProposal[]=(rows.data??[]).map(row=>({
+    id:row.id,businessId,ownerUserId:row.owner_user_id,
+    threadId:row.thread_id,capabilityId:row.capability_id,
+    capabilityVersion:row.capability_version,
+    canonicalEffectPayload:row.canonical_effect_payload,effectHash:row.effect_hash,
+    baseline:row.baseline,monitorSpec:row.monitor_spec,status:row.status,
+    revision:row.revision,locale:row.locale,
+    monitoringStartDate:row.monitoring_start_date,createdAt:row.created_at,
+  }));
+  const yesterday=utcDateOffset(today,-1);
+  const recent=utcDateOffset(today,-14);
+  let checked=0,reported=0,failed=0;
+  const repo=new SupabaseLoopRepository();
+  const observedIds=await observedEventProposalIds(db,businessId,
+    proposals.map(p=>p.id));
+  for(const p of selectEventObservations(proposals,observedIds).filter(p=>
+    p.monitoringStartDate!<=yesterday&&
+    utcDateOffset(p.monitoringStartDate!,p.monitorSpec.durationDays-1)>=recent).slice(0,6)){
+    checked++;
+    try{
+      const scope=await authorizedScheduledEventScope({
+        businessId,ownerUserId:p.ownerUserId,threadId:p.threadId,locale:p.locale,
+      });
+      const end=utcDateOffset(p.monitoringStartDate!,p.monitorSpec.durationDays-1);
+      // The monitor itself certifies coverage. A missing Toast day remains
+      // insufficient evidence, never a fabricated zero or implementation claim.
+      for(let day=p.monitoringStartDate!;day<=end&&day<=yesterday;
+        day=utcDateOffset(day,1)){
+        const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,day);
+        if(result)reported++;
+      }
+      // The final observed day above already generates the terminal report.
+      // Replaying that day on later crons refreshes corrected Toast evidence.
+    }catch{
+      failed++;
+      console.warn("events_observation_report_failed");
+    }
+  }
+  return {checked,reported,failed};
+}
+
 /** Triggered exclusively by cron. No screen or chat read calls this writer. */
 export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
   now=new Date()):Promise<LookaheadRun>{
@@ -343,6 +396,13 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
         if(!owner.data?.user_id){result.skipped++;continue;}
         // Required before ANY paid model or web search and rechecked at proposal time.
         await assertCafeAiAccess(b.id);
+        // Reconcile yesterday's saved event regardless of discovery/search outcome.
+        const observation=await reportSavedEventDays(db,b.id,owner.data.user_id,today)
+          .catch(()=>{
+            console.warn("events_observation_unavailable");
+            return {checked:0,reported:0,failed:1};
+          });
+        result.failed+=observation.failed;
         result.scanned+=await scanCafe(db,b,today);
         const to=addDays(today,13);
         let timeline=await readSavedEventTimeline(db,

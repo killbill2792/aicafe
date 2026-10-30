@@ -14,6 +14,15 @@ type EventResult={
     changePercent?:number|null;hours?:Array<{hourLocal:number;actualCents:number;
       usualCents:number|null;changePercent:number|null}>}>;
   caveat:string;
+  toastEvidence?:{
+    itemSales:{coverage:string;items:Array<{name:string;quantity:number}>};
+    namedDiscounts:{coverage:string;names:string[];matchedRecommendationNames?:string[]};
+    discountAmounts:{coverage:string;observedOrders:number};
+    laborEntries:{coverage:string;recordedShifts:number;wageCoverage?:string};
+    recommendedComboImplemented:string;
+    recommendedDiscountImplemented:string;
+    physicalPreparationImplemented:string;
+  }|null;
 };
 export function eventReportFactsHash(result:EventResult,status:string,planSummary:string,
   eventNames:readonly string[]):string{
@@ -98,7 +107,9 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
   const evidence={
     dates:[result.startDate,result.endDate],names:eventNames.slice(0,8),
     originalPlan:planSummary,outcomeStatus,
-    checklist:result.checklist,observedDays:result.observedDays,
+    // A tick is an owner-entered marker, not proof of implementation.
+    ownerMarkedChecklist:result.checklist,observedDays:result.observedDays,
+    toastEvidence:result.toastEvidence??null,
     expectedDays:result.expectedDays,
     days:result.days.map(day=>({
       date:day.date,actualCents:day.actualCents??null,
@@ -119,7 +130,11 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
       toolNames:[],
       ownerText:"Scheduled event-day FINAL report, not an owner request. Write a short, "+
         "clear owner-facing report card comparing the certified actual and usual hourly "+
-        "sales, the original plan and checklist completion. Write in "+scope.locale+". Use only supplied numbers "+
+        "sales and available Toast item, menu, named-discount and shift evidence. "+
+        "Never ask which physical suggestions were performed. Never imply a checklist "+
+        "marker proves implementation, or that separate item sales prove a combo "+
+        "or discount was offered. If POS lacks an identifiable discount name, "+
+        "label the recommendation unverified. Write in "+scope.locale+". Use only supplied numbers "+
         "without doing additional arithmetic. Label missing evidence, never invent "+
         "causes or money currency. Keep below 1000 characters, in the locale provided. "+
         "Suggest a next step only when evidence supports it. No approval or action.",
