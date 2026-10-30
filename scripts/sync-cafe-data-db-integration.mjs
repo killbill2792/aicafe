@@ -104,10 +104,14 @@ try {
       `${fact.date} preserves Toast's ${fact.fee}-cent actual fee, never an estimate`);
   }
   const srcProviderIds = (await q(`select regexp_replace(pos_timecard_id,'^toast:[^:]+:','') as provider
-    from timecards where business_id=$1 and source_type='connected_pos' order by provider`,[S])).rows.map(x=>x.provider);
+    from timecards where business_id=$1 and source_type='connected_pos' and
+      (clock_in at time zone (select timezone from businesses where id=$1))::date
+        in ('2026-10-12'::date,'2026-10-14'::date) order by provider`,[S])).rows.map(x=>x.provider);
   const destProviderIds = (await q(`select regexp_replace(pos_timecard_id,'^toast:[^:]+:','') as provider
-    from timecards where business_id=$1 and source_type='connected_pos' order by provider`,[D])).rows.map(x=>x.provider);
-  check(JSON.stringify(destProviderIds) === JSON.stringify(srcProviderIds),
+    from timecards where business_id=$1 and source_type='connected_pos' and
+      (clock_in at time zone (select timezone from businesses where id=$1))::date
+        in ('2026-10-12'::date,'2026-10-14'::date) order by provider`,[D])).rows.map(x=>x.provider);
+  check(destProviderIds.length === 13 && JSON.stringify(destProviderIds) === JSON.stringify(srcProviderIds),
     "all 13 financial-fixture provider shifts match after restaurant GUID remapping");
 
   const labor = async (b) => (await one("select count(*)::int n from cv_labor_entries where business_id = $1", [b])).n;
@@ -136,7 +140,7 @@ try {
   await q("update daily_rollups set staff_wages_cents=staff_wages_cents+136 where business_id=$1 and business_date='2026-10-12'",[S]);
   const beforeFailure = await parity(D,"2026-10-12");
   const failingClient = { query: async (sql, params) => {
-    if (/^\\s*delete from timecards /i.test(sql)) throw Object.assign(new Error("injected mirror failure"),{ code:"23503" });
+    if (/^\s*delete from timecards /i.test(sql)) throw Object.assign(new Error("injected mirror failure"),{ code:"23503" });
     return client.query(sql,params);
   } };
   let failed = false;
