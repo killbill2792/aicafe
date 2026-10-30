@@ -1,6 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {scopedOwnerQuestionKey,questionFromReasons} from "./questions";
-import type {AskReason} from "./needsAsk";
+import {scopedOwnerQuestionKey,questionFromReasons,type AskReason} from "./questions";
 import type {AgentToolResult} from "@/lib/ai/agent/tools";
 
 describe("rejected global cost card recovery",()=>{
