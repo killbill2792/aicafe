@@ -128,8 +128,9 @@ export default function NavigationTiming() {
   // Cold document load uses the browser navigation entry rather than adding a fetch.
   useEffect(()=>{
     if(Math.random()>=RATE)return;
-    const route=perfRoute(window.location.pathname,new URLSearchParams(window.location.search).get("view"));
-    if(!route)return;
+    const candidate=perfRoute(window.location.pathname,new URLSearchParams(window.location.search).get("view"));
+    if(!candidate)return;
+    const route:PerfRoute=candidate;
     let recorded=false;
     const observer=new MutationObserver(()=>ready());
     function ready() {
