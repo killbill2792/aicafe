@@ -23,14 +23,13 @@ import {
   type Period,
 } from "./period";
 import { ownerProfitDisplayState } from "./ownerProfitDisplay";
-import { regularHoursStateForDate } from "@/lib/business/openHours";
 import { periodComparisonState } from "./periodComparison";
 import { periodCalendarRange } from "./period";
 import { businessCostSummaryFromSnapshot } from "@/lib/operating/businessCosts";
 import {cardFeesForDays,type OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {profitForPeriod} from "@/lib/metrics/core/profit";
 import {laborForPeriod,proratedOwnerPayrollExtrasCents} from "@/lib/metrics/core/labor";
-import {breakEvenFor} from "@/lib/metrics/core/breakEven";
+import {breakEvenSnapshotInputs} from "./breakEvenViewModel";
 
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const buckets = recoveryBuckets(snapshot);
@@ -41,52 +40,19 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const totalCents = buckets.reduce((s, b) => s + b.amountCents, 0);
 
 
-  const monthlyBillsCents = snapshot.runningCostLines
-    .filter((line) => !line.isMissing)
-    .reduce((sum, line) => sum + line.amountCents, 0);
-
-  const monthRecordedDays = snapshot.monthRecordedDays ?? snapshot.monthActualDays;
+  const basis=breakEvenSnapshotInputs(snapshot);
+  const monthlyBillsCents=basis.monthlyBillsCents;
+  const monthlyStaffCents=basis.monthlyStaffCents;
+  const monthRecordedDays=snapshot.monthRecordedDays??snapshot.monthActualDays;
   const missingMonthWage=monthRecordedDays.some(d=>!laborKnown(d));
-  // Known contributions cannot establish final coverage when any recorded wage is partial.
   const allCovered=!missingMonthWage&&recovery.currentBucketCode===null;
-  const todayDay = Number(snapshot.todayDateStr.slice(-2));
-  const monthOpenDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
-    snapshot.monthKey+"-"+String(i+1).padStart(2,"0")).filter(date=>
-      regularHoursStateForDate(snapshot.business.openHours,date)!=="closed");
-  const ownerExtras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
-    .ownerMonthlyPayrollExtrasCents;
-  const monthLabor=laborForPeriod(monthOpenDates.map(date=>({date})),monthRecordedDays,null,
-    ownerExtras==null?null:{monthlyCents:ownerExtras,from:snapshot.monthKey+"-01",
-      to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")});
-  const monthlyStaffCents=monthLabor.projectedMonthlyLaborCents;
-
-  const salesHistory = snapshot.breakEvenDays??snapshot.last28Days;
-  const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
-  const productCosts = summarizeResolvedSoldProductCosts(breakEvenCostItems);
-  const missingProductCosts = productCosts.missingProductCosts;
-  // Use the same pure sold-item product-cost aggregation as the drinks/day break-even surface.
-  const missingProcessingFees = salesHistory.some((day) => day.cardFeesStatus === "missing");
-  const missingBills = snapshot.runningCostLines.some((line) => line.isMissing && line.isExpected);
-
-  const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
-  const sharedBreakEven=breakEvenFor({
-    days:salesHistory,asOfDate:snapshot.todayDateStr,daysInMonth:snapshot.daysInMonth,
-    monthlyBillsCents,monthlyStaffCents,
-    observedIngredientCents:productCosts.totalCostCents,ownerFeePlans:feePlans,
-  });
-  const breakEven=sharedBreakEven.calculation;
-  const breakEvenNotes=[...sharedBreakEven.notes,
-    ...(missingBills?["breakEvenBillsMissing"]:[]),
-    ...(missingProductCosts?["profitProductCostsMissing"]:[]),
-    ...(missingProcessingFees?["profitFeesMissing"]:[]),
-    ...monthLabor.notes];
-
-  const breakEvenUsesEstimates =
-    todayDay < snapshot.daysInMonth ||
-    snapshot.runningCostLines.some((line) => line.isEstimate && line.amountCents > 0) ||
-    monthRecordedDays.some((day) => day.staffTaxStatus === "estimated") ||
-    salesHistory.some((day) => day.cardFeesStatus === "estimated") ||
-    productCosts.usesEstimatedProductCosts;
+  const breakEven=basis.shared.calculation;
+  const breakEvenNotes=[...basis.shared.notes,
+    ...(basis.missingBills?["breakEvenBillsMissing"]:[]),
+    ...(basis.productCosts.missingProductCosts?["profitProductCostsMissing"]:[]),
+    ...(basis.missingFees?["profitFeesMissing"]:[]),
+    ...basis.monthLabor.notes];
+  const breakEvenUsesEstimates=basis.estimatesUsed;
 
   return {
     buckets: recovery.buckets,
@@ -100,7 +66,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     monthlyBillsCents,
     monthlyStaffCents,
     breakEven,
-    observedProcessingFeesCents:cardFeesForDays(salesHistory,feePlans??null).amountCents,
+    observedProcessingFeesCents:basis.feeResult.amountCents,
     breakEvenNotes,
     breakEvenUsesEstimates,
   };
