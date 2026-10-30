@@ -81,14 +81,14 @@ describe("canonical snapshot independent read phases",()=>{
     }]);
     const snapshot=await work;
     expect(snapshot.business).toMatchObject({id:"cafe1",currency:"EUR"});
-    expect(snapshot.ownerMonthlyPayrollExtrasCents).toBe(1200);
+    expect(snapshot).toMatchObject({ownerMonthlyPayrollExtrasCents:1200});
     expect(snapshot.monthActualDays.map(d=>d.netSalesCents)).toEqual([12345]);
-    expect(snapshot.periodItemSales.period).toEqual({from:"2026-10-24",to:"2026-10-30"});
+    expect(snapshot.periodItemSales?.period).toEqual({from:"2026-10-24",to:"2026-10-30"});
     expect(snapshot.runningCostLines.find(row=>row.categoryCode==="rent")).toMatchObject({
       amountCents:60000,isMissing:false,isEstimate:false,
     });
     expect(snapshot.alerts).toEqual({count:1,leakingCents:240});
-    expect(snapshot.ownerFeePlans).toEqual([]);
+    expect(snapshot).toMatchObject({ownerFeePlans:[]});
     expect(reads.filter(table=>table==="menu_items")).toHaveLength(1);
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
     expect(scope.every(row=>row.businessId==="cafe1")).toBe(true);
