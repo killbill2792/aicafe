@@ -3691,6 +3691,9 @@
     "chatDayPrompt": "Let's chat about {date}. Facts from my café's Coming up card: {context}. Please check the latest café facts or public sources as needed. What should I know?",
     "askWeek": "Ask about the week",
     "weekPrompt": "What's coming up near my café this week?",
+    "searchPartial": "Some nearby events may be missing. Could not check: {missed}.",
+    "searchGeneral": "general nearby events",
+    "searchOther": "some nearby searches",
     "searchDown": "Local events couldn't be checked right now."
   }
 }

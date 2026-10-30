@@ -1,6 +1,6 @@
 import {addDays,cafeCountry,daysBetween,holidaysBetween,holidayDateInYear,weekdayOf,type HolidayDay} from "./holidays";
 import {typicalDaySales,lastTimeOutlook,type OutlookSalesDay,type LastTimeOutlook} from "@/lib/metrics/core/dayOutlook";
-import type {NearbyEvent,NearbyEventsSearch} from "./nearbyEvents";
+import type {NearbyEvent,NearbyEventsSearch,UnsearchedEventScope} from "./nearbyEvents";
 import type {CafeLocation} from "@/lib/data/cafeLocation.server";
 
 /** The ONE "what's coming up" builder. The chat tool (get_nearby_events) and the
@@ -20,6 +20,8 @@ export type OutlookDay={date:string;weekday:string;daysFromToday:number;
 export type EventsOutlook={from:string;to:string;today:string;
   location:{label:string;source:CafeLocation["source"]}|null;country:string|null;countrySource:"profile"|"timezone"|null;
   days:OutlookDay[];localEvents:OutlookEvent[];localEventsSearched:boolean;
+  /** Successful searches with missing general/holiday coverage; not an empty-search result. */
+  localEventsSearchGaps?:UnsearchedEventScope[];
   /** Gaps the owner cannot fill by answering a question (search down, no history…). */
   notCovered:string[];addressMissing:boolean};
 export type OutlookDeps={today:string;timezone:string;locale:string;from?:string|null;days?:number|null;
@@ -72,11 +74,19 @@ export async function buildEventsOutlook(deps:OutlookDeps):Promise<EventsOutlook
   const holidays=safeHolidays(from,to);
   if(!country.country)notCovered.push(location?"holidaysNeedCountry":"holidaysNeedAddress");
 
+  let localEventsSearchGaps:UnsearchedEventScope[]=[];
   const eventsRead:Promise<NearbyEvent[]|null>=!location?Promise.resolve(null):
     !deps.search?Promise.resolve(null).then(()=>{notCovered.push("localEventsSearchUnavailable");return null;}):
     deps.search({location:location.label,city:location.city,region:location.region,
       countryCode:location.countryCode??country.country,from,to})
-      .then(r=>{if(r.available)return r.events;
+      .then(r=>{
+        if(r.available){
+          if(r.partial){
+            localEventsSearchGaps=r.failedSearches??[];
+            notCovered.push("localEventsSearchPartial");
+          }
+          return r.events;
+        }
         notCovered.push(r.reason==="notConfigured"?"localEventsSearchUnavailable":"localEventsSearchFailed");return null;})
       .catch(()=>{notCovered.push("localEventsSearchFailed");return null;});
 
@@ -127,5 +137,5 @@ export async function buildEventsOutlook(deps:OutlookDeps):Promise<EventsOutlook
   if(!history.length&&recent!==null)notCovered.push("noSalesHistory");
   return {from,to,today,location:location?{label:location.label,source:location.source}:null,
     country:country.country,countrySource:country.source,days,localEvents,localEventsSearched:found!==null,
-    notCovered:[...new Set(notCovered)],addressMissing:!location};
+    localEventsSearchGaps,notCovered:[...new Set(notCovered)],addressMissing:!location};
 }
