@@ -3,7 +3,7 @@ name: sync-cafe-data
 # Syncs café operating data between two café businesses in this project (ids live in
 # scripts/sync-cafe-data.mjs, not here, to keep account info out of source control).
 # Idempotent and one-directional — see the header comment in that script for the full
-# table scope, exclusions, and the insert-if-missing vs. refresh-window strategy.
+# table scope, exclusions, and the insert-if-missing vs. day-mirror strategy.
 #
 # Runs on GitHub's infrastructure, not on anyone's laptop, so it keeps going even if
 # the local machine is off or the session that set it up has ended.
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       full_copy:
-        description: "Force a full copy of every refresh-window table (orders, rollups, timecards, card-fee facts, Toast day facts), ignoring each table's own current state"
+        description: "Replace every day of every mirrored table (orders, rollups, timecards, card-fee and payment facts, Toast day facts), even days that already match"
         type: boolean
         default: false
 

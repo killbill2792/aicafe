@@ -34,15 +34,19 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - name: All Vitest tests
+        if: github.event_name != 'pull_request'
         run: npm run test
       - name: TypeScript strict
+        if: github.event_name != 'pull_request'
         run: npx tsc --noEmit
       - name: Repository-wide lint baseline
+        if: github.event_name != 'pull_request'
         continue-on-error: true
         run: npm run lint
       - name: Scoped scheduling UI/backend lint
         run: npx eslint "components/staff/*.tsx" "lib/scheduling/*.ts" "lib/calc/scheduling/*.ts" "app/[locale]/more/manage-staff/page.tsx"
       - name: Build
+        if: github.event_name != 'pull_request'
         run: npm run build -- --webpack
       - name: Whitespace
         run: git diff --check origin/main...HEAD

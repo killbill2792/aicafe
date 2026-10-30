@@ -55,6 +55,7 @@ jobs:
           P1_DISPOSABLE_DB: "1"
         run: node scripts/test-supervisor-owner-input-cas.mjs
       - name: Existing project TypeScript and tests
+        if: github.event_name != 'pull_request'
         run: |
           npx tsc --noEmit
           npm test

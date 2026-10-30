@@ -18,7 +18,7 @@ class StaleImportError extends Error{}
 type Status=DayCheckState&{import_state:string;orders_snapshot_sha256:string|null;
  net_sales_cents:number;order_count:number;discounts_cents:number;refunds_cents:number;
  tax_cents?:number|null;tip_cents?:number|null;
- unparsed_count:number;imported_at:string|null};
+ unparsed_count:number;imported_at:string|null;last_import_run_id?:string|null};
 const fail=(deadlineAt:number)=>{if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");};
 const day8=(date:string)=>date.replaceAll("-","");
 const sum=(a:number[])=>a.reduce((x,y)=>x+y,0);
@@ -57,6 +57,17 @@ async function pullDay(db:SupabaseClient,p:Location,day:string,deadlineAt:number
   if(page===300)throw new ToastApiError("invalid_response");
  }
  return all;
+}
+/** The day exactly as its latest import saved it (the archive), so a check
+ * never downloads the whole day from Toast again. Null when the archive has
+ * no copy of that import (days imported before the archive existed). */
+async function savedDay(db:SupabaseClient,p:Location,day:string,runId:string|null|undefined){
+ if(!runId)return null;
+ const rows=await readAllPages((start,end)=>db.from("toast_raw_records").select("payload")
+  .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+  .eq("business_date",day).eq("entity","order").eq("run_id",runId)
+  .order("id").range(start,end)) as Array<{payload:unknown}>;
+ return rows.length?rows.map(row=>row.payload):null;
 }
 export function internalOrderProof(rows:unknown[],p:Location,day:string,
  expectedChecksum:string|null,unparsed:number){
@@ -271,11 +282,14 @@ async function eraDay(db:SupabaseClient,p:Location,day:string,status:Status,
 async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status,
  deadlineAt:number){
  const cache=proofCache(db,p,day,status),cached=await cache.load();
- const rows=await pullDay(db,p,day,deadlineAt,cache,cached);
+ // Check the saved day; only Toast's payment list below is read from Toast.
+ const rows=await savedDay(db,p,day,status.last_import_run_id)??
+  await pullDay(db,p,day,deadlineAt,cache,cached);
  const proof=internalOrderProof(rows,p,day,status.orders_snapshot_sha256,status.unparsed_count);
  let comparison:ReturnType<typeof compareDayMoney>|null=null;
  const evidence:EvidencePatch={};
- // Independent provider read compared with our LAST COMMITTED day values.
+ // The checked orders' totals compared with our LAST COMMITTED day values
+ // (a broken save shows here). Toast's payment list below is the independent check.
  // If one field is missing, do not manufacture zero or a mismatch.
  if(status.unparsed_count===0&&(proof.orders.length>0||
    (rows.length===0&&status.order_count===0))&&proof.orders.every(o=>o.normalized!==undefined)){
@@ -427,7 +441,7 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
 export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt:number){
  let mode=await detectToastCheckMode(db,p.businessId,p.restaurantGuid,p.timeZone,deadlineAt);
  const {data:days,error:de}=await db.from("toast_day_status")
-  .select("business_date,import_state,recon_state,orders_snapshot_sha256,net_sales_cents,order_count,discounts_cents,refunds_cents,tax_cents,tip_cents,unparsed_count,warnings,imported_at,last_recon_attempt_at,internal_state,internal_reasons,paid_other_day,payment_repull_at,analytics_state,recon_source,reconciled_at,last_error_category")
+  .select("business_date,import_state,recon_state,orders_snapshot_sha256,net_sales_cents,order_count,discounts_cents,refunds_cents,tax_cents,tip_cents,unparsed_count,warnings,imported_at,last_import_run_id,last_recon_attempt_at,internal_state,internal_reasons,paid_other_day,payment_repull_at,analytics_state,recon_source,reconciled_at,last_error_category")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("import_state","imported").is("rechecking_reason",null)
   // Supabase .or() calls overwrite the same PostgREST "or" query key.
@@ -443,6 +457,12 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
   if(status.last_recon_attempt_at&&
    Date.now()-Date.parse(status.last_recon_attempt_at)<(status.recon_state==="pending"?9:60)*60000)
    continue;
+  // Each check downloads the whole day from Toast again. A day waiting for
+  // another day's re-import is checked hourly, not every 9 minutes; a day
+  // whose payment order Toast never gave us is checked once a day.
+  const sinceAttempt=status.last_recon_attempt_at?Date.now()-Date.parse(status.last_recon_attempt_at):Infinity;
+  if(status.payment_repull_at&&sinceAttempt<60*60000)continue;
+  if(status.last_error_category==="unverified_payment_order"&&sinceAttempt<24*3600000)continue;
   try {
    const {data:cred,error:credError}=await db.from("toast_analytics_credentials")
     .select("verified_at").eq("business_id",p.businessId).maybeSingle();

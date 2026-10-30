@@ -757,7 +757,7 @@ BEGIN
     'guid',pay,'type','CASH','amount',10,'tipAmount',2)))))));
  select count(*) into before_count from public.toast_raw_records
  where business_id=b and run_id=run;
- perform pg_temp.assert_true(before_count=3,'order/check/payment all archived');
+ perform pg_temp.assert_true(before_count=1,'order archived once, with its check and payment inside');
  perform pg_temp.assert_true(public.toast_redact_raw(
   '[{"guid":"g","customer":{"email":"ann@example.com"},"checks":[{"tabName":"Ann",
     "payments":[{"amount":12.5,"cardType":"VISA","last4Digits":"4242","name":"ANN LEE"}]}]}]'::jsonb,'orders')
@@ -871,9 +871,9 @@ BEGIN
  perform pg_temp.assert_true(exists(select 1 from public.cv_payments
   where business_id=b and amount_cents=1200 and tip_cents=200),
   'canonical payment view uses sanitized row');
- perform pg_temp.assert_true((select count(*)=19 from information_schema.views
+ perform pg_temp.assert_true((select count(*)=20 from information_schema.views
   where table_schema='public' and table_name like 'cv_%'),
-  'all 19 canonical views exist');
+  'all 20 canonical views exist (migration 130 adds cv_toast_records)');
  perform pg_temp.assert_true(not has_table_privilege('authenticated',
    'public.toast_raw_records','SELECT'),
   'raw payment/card payload not exposed to authenticated role');
