@@ -25,11 +25,26 @@ function ctx(over:Partial<AgentToolContext>={}){
       {available:false as const,value:null,quality:{level:"low" as const,missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}};
   });
   const searchNearbyEvents=vi.fn<NearbyEventsSearch>(async()=>({available:true,events:[aiWeek]}));
+  const hours=["2026-09-05","2026-09-12","2026-09-19","2026-09-26","2026-10-03","2026-10-10","2026-10-17","2026-10-24"]
+    .map(date=>({date,hourLocal:14,locationId:null,netSalesCents:12_000,ordersCount:20}));
+  const good={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
+  const tools={getSalesTrend,
+    getPeakHours:vi.fn(async()=>({available:true as const,value:{hours},quality:good})),
+    getBusinessHours:vi.fn(async()=>({available:true as const,
+      value:{sat:[["08:00","18:00"]]},quality:good})),
+    getProductSales:vi.fn(async()=>({available:true as const,value:[
+      {id:"latte",name:"Latte",category:"drink" as const,units:18}],quality:good}))};
+  const readWeekSchedule=vi.fn(async()=>({ok:true as const,data:{timezone:"America/Chicago",
+    shifts:[{id:"s1",date:"2026-10-31",employeeId:"staff1",employeeName:"Jane",start:"09:00",
+      end:"17:00",paidMinutes:480,costCents:null,estimated:true}],posShifts:[]}}));
   const c={asOf:"2026-10-30",locale:"en",timezone:"America/Chicago",
-    tools:{getSalesTrend},cafeLocation:async()=>location,searchNearbyEvents,...over} as unknown as AgentToolContext;
+    tools,cafeLocation:async()=>location,searchNearbyEvents,readWeekSchedule,ownerFacts:[],...over} as unknown as AgentToolContext;
   return {c,getSalesTrend,searchNearbyEvents};
 }
-type Day={date:string;weekday:string;daysFromToday:number;holidays?:Array<{name:string;usualEffect:string}>;eventIds?:string[];
+type Day={date:string;weekday:string;daysFromToday:number;holidays?:Array<{name:string}>;eventIds?:string[];
+  usualHourlySales?:Array<{hourLocal:number;typicalCents:number;sampleDays:number}>;
+  openingHours?:[string,string][]|null;scheduledPeople?:string[]|null;
+  lastHolidayTopItems?:Array<{name:string;units:number}>|null;savedAnswers?:Array<{key:string;value:unknown}>;
   typicalSalesCents:number|null;lastTime?:{date:string;changePercent:number;netSalesCents:number;typicalCents:number;holiday:string}|null};
 
 describe("get_nearby_events",()=>{
@@ -50,6 +65,11 @@ describe("get_nearby_events",()=>{
     const tomorrow=days[1];
     expect(tomorrow).toMatchObject({date:"2026-10-31",weekday:"Saturday",daysFromToday:1,typicalSalesCents:150_000});
     expect(tomorrow.holidays?.map(h=>h.name)).toEqual(["Halloween"]);
+    expect(tomorrow).not.toHaveProperty("decision");
+    expect(tomorrow.usualHourlySales).toEqual([{hourLocal:14,typicalCents:12_000,sampleDays:8}]);
+    expect(tomorrow.openingHours).toEqual([["08:00","18:00"]]);
+    expect(tomorrow.scheduledPeople).toEqual(["Jane"]);
+    expect(tomorrow.lastHolidayTopItems).toEqual([{name:"Latte",units:18}]);
     // Last Halloween (Friday) vs usual Fridays before it: +32%, from the café's own Toast days.
     expect(tomorrow.lastTime).toEqual({date:"2025-10-31",netSalesCents:132_000,typicalCents:100_000,
       changePercent:32,sampleDays:5,holiday:"Halloween"});
@@ -60,6 +80,14 @@ describe("get_nearby_events",()=>{
     expect(r.localEvents).toEqual([{id:"e1",...aiWeek}]);
     expect(searchNearbyEvents).toHaveBeenCalledWith({location:location.label,city:"Austin",region:"TX",countryCode:"US",
       from:"2026-10-30",to:"2026-11-05"});
+  });
+
+  it("includes a saved event outcome as evidence, never a code-written verdict",async()=>{
+    const {c}=ctx({ownerFacts:[{fact_key:"event_outcome:halloween:2025",value_json:"quieter",
+      unit:null,period_scope:null,created_at:"2026-10-30T00:00:00Z"}]});
+    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:2},c);
+    expect((r.days as Day[])[1].savedAnswers).toEqual([{key:"event_outcome:halloween:2025",value:"quieter"}]);
+    expect((r.days as Day[])[1]).not.toHaveProperty("decision");
   });
 
   it("without an address still gives holidays and asks for the address, never searching blind",async()=>{
@@ -164,7 +192,7 @@ describe("owner asks 'anything happening nearby?' in chat",()=>{
       return async function*(){for(const e of list[i++]??[])yield {...e,type:String(e.type)};};};
     const {c}=ctx();
     const turn=await runAgentTurn({ownerText:"Anything happening nearby?",context:c,
-      provider:provider(rounds("Tomorrow is Halloween (Saturday). Last Halloween you sold 32% more than a usual day, so add one person for the afternoon. Austin AI Week runs Nov 2–5 near you."))});
+      provider:provider(rounds("Tomorrow is Halloween (Saturday). Last Halloween you sold 32% more than a usual day. Estimate: 2–6pm could be busiest; consider extra afternoon cover, pastry prep and a seasonal special. Austin AI Week runs Nov 2–5 near you."))});
     expect(turn.tools).toContain("get_nearby_events");
     expect(turn.unverified).toEqual([]);
     expect(turn.text).toContain("Halloween");
@@ -187,16 +215,21 @@ describe("owner asks 'anything happening nearby?' in chat",()=>{
 });
 
 describe("board and chat show the same days",()=>{
-  it("the chat tool and the Home card builder return identical days and decisions",async()=>{
+  it("the chat and Home use exactly the same calendar, usual totals and hourly medians",async()=>{
     const {buildEventsOutlook}=await import("@/lib/events/outlook");
     const {c}=ctx();
     const chat=await executeAgentTool("get_nearby_events",{start_date:null,days:null},c);
     const board=await buildEventsOutlook({today:"2026-10-30",timezone:"America/Chicago",locale:"en",
       readLocation:async()=>location,search:async()=>({available:true,events:[aiWeek]}),
-      readSales:async(from,to)=>history.filter(d=>d.date>=from&&d.date<=to).map(d=>({date:d.date,netSalesCents:d.netSalesCents}))});
+      readSales:async(from,to)=>history.filter(d=>d.date>=from&&d.date<=to).map(d=>({date:d.date,netSalesCents:d.netSalesCents})),
+      readHourlySales:async()=>["2026-09-05","2026-09-12","2026-09-19","2026-09-26","2026-10-03","2026-10-10","2026-10-17","2026-10-24"]
+        .map(date=>({date,hourLocal:14,netSalesCents:12_000}))});
     if("tooFarAhead" in board)throw new Error("unexpected");
-    expect(chat.days).toEqual(board.days);
+    const shared=(days:readonly Record<string,unknown>[])=>days.map(d=>({
+      date:d.date,weekday:d.weekday,holidays:d.holidays,eventIds:d.eventIds,
+      typicalSalesCents:d.typicalSalesCents,lastTime:d.lastTime,usualHourlySales:d.usualHourlySales
+    }));
+    expect(shared(chat.days as Record<string,unknown>[])).toEqual(shared(board.days as unknown as Record<string,unknown>[]));
     expect(chat.localEvents).toEqual(board.localEvents);
-    expect((chat.days as Array<{date:string;decision:unknown}>)[1].decision).toEqual({expect:"busier",action:"add_staff",basis:"your_sales"});
   });
 });
