@@ -174,7 +174,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   const plan=planOn(timeline.plans,chosen);
   const dayEvents=eventsOn(timeline.events,chosen);
   const actions=actionsFor(plan);
-  const ticks=tickData?.proposalId===plan?.proposalId?tickData.ticks:[];
+  const ticks=tickData&&tickData.proposalId===plan?.proposalId?tickData.ticks:[];
   const question=questionData?.proposalId===plan?.proposalId?questionData.value:null;
   const calendarMonth=month??today.slice(0,7);
   const calendarFirst=calendarMonth+"-01";
