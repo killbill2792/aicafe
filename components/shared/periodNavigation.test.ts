@@ -3,7 +3,7 @@ import { getFixtureSnapshot } from "@/lib/data/fixtureSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
 import type { Period } from "@/lib/viewmodels/period";
-import { needsPeriodRecovery, periodFromUrl, periodHref } from "./periodNavigation";
+import { needsPeriodRecovery, periodFromUrl, periodHref, periodTapAction } from "./periodNavigation";
 
 describe("PeriodSwitch navigation behavior", () => {
   it.each(["en", "es", "ar"])("changes only period, preserving thread, experiment, locale and query (%s)", locale => {
@@ -29,6 +29,14 @@ describe("PeriodSwitch navigation behavior", () => {
     // Back/Forward can reveal a mismatched old payload as well; the same safeguard applies.
     expect(needsPeriodRecovery("week", "today", false, false)).toBe(true);
     expect(needsPeriodRecovery("today", "today", false, true)).toBe(false);
+  });
+
+  it("permits safe retries after interrupted navigation without duplicate in-flight taps", () => {
+    expect(periodTapAction("month", "today", "month", true)).toBe("none");
+    expect(periodTapAction("month", "today", "month", false)).toBe("refresh");
+    expect(periodTapAction("today", "today", "month", false)).toBe("replace");
+    expect(periodTapAction("week", "today", "month", false)).toBe("replace");
+    expect(periodTapAction("today", "today", "today", false)).toBe("none");
   });
 
   it("keeps Home and Money using identical actual cents for each confirmed URL period", () => {
