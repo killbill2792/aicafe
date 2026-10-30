@@ -110,7 +110,8 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
   Code does not pre-decide intent with regexes or keyword routers.
 - **Tools:** typed, strict JSON Schema (`strict:true`), zod input, compact results (≤ ~1.5k tokens:
   totals, top rows, ids, units, source + period, `missing[]`). One tool per business capability.
-  One read-only data-query tool over documented canonical views is allowed. The server sets the café
+  One read-only data-query tool over documented canonical views is allowed, plus one general
+  `calculate` tool for arithmetic (rule 7.2). The server sets the café
   scope; the model never writes SQL and never chooses the café.
 - **Clarifications:** the `ask_owner` tool renders a clarify card (2–4 options from real tool data + Other).
   The owner's answer is the next message. No server-side pending-question state.
@@ -144,8 +145,17 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
 
 ## 7. Numbers and money (non-negotiable)
 1. Money is integer cents. Never floats. Format only at display.
-2. **Code calculates, the AI explains.** All money math lives in `lib/metrics/core/` as pure, tested
-   functions. The model never does arithmetic beyond repeating tool numbers.
+2. **The model never does arithmetic in its head.** Screen numbers come from `lib/metrics/core/`.
+   All other math goes through the calculator tool, with steps shown.
+   - *Screen numbers* (profit, labor cost, card fees, break-even, item cost) have one definition in
+     `lib/metrics/core/`. When an answer needs one, the model uses the tool that returns it, so the chat
+     always matches the screens. This list grows only when a new number is added to a screen.
+   - *Everything else:* the model reads the data with `describe_data`/`query_data` and the other read
+     tools, decides the method, and does every sum through the one `calculate` tool: + − × ÷, sum and
+     percent only. No money definitions and no code execution. Every input comes from a tool result
+     or a saved owner fact. The answer shows inputs, formula and steps, labeled calculation or estimate.
+     A test ensures the calculator is never used to rebuild a screen number.
+   - No new tool or scenario per question type. A new tool is added only for new data or a new action.
    *Why:* models make arithmetic mistakes, and owners act on these numbers.
 3. Every number the model states must come from a tool result or the owner's own words.
    `lib/ai/agent/checkNumbers.ts` compares them after the reply. A mismatch is logged and the figure gets
