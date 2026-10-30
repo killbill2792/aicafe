@@ -7,7 +7,7 @@ import {createAuthenticatedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
 import {searchNearbyEvents} from "@/lib/events/nearbyEventsSearch.server";
-import {buildEventsOutlook} from "@/lib/events/outlook";
+import {buildEventsOutlook,hourlyOutlookRead} from "@/lib/events/outlook";
 
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const locale=z.enum(["en","es","ar"]);
@@ -28,7 +28,7 @@ export async function GET(request:Request){
       search:searchNearbyEvents,
       readHourlySales:async(from,to)=>{
         const slice=await tools.getPeakHours({from,to});
-        return slice.available?slice.value.hours.map(({date,hourLocal,netSalesCents})=>({date,hourLocal,netSalesCents})):null;
+        return hourlyOutlookRead(slice);
       },
       readSales:async(from,to)=>{
         const slice=await tools.getSalesTrend({from,to});
