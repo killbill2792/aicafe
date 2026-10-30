@@ -52,7 +52,74 @@ try {
   await q(`insert into toast_open_labor_summaries(business_id, restaurant_guid, external_time_entry_id, external_employee_id, clock_in, clock_out, status, wage_status)
     values ($1, $2, $3, $4, $5::date + interval '8 hours', $5::date + interval '12 hours', 'actual', 'actual')`, [S, G, ids.entry, ids.emp, day]);
 
+  // Oct 12/14 financial parity fixture. The seventh Oct 14 shift begins on Oct 15
+  // UTC but is still Oct 14 at the café (PDT). Two complete shifts have a real
+  // canonical Toast wage of zero; null wages would wrongly mark days missing.
+  await q("update businesses set timezone = 'America/Los_Angeles' where id = $1", [S]);
+  const payFactId = sync.uuidv5("payroll-2026-10-14");
+  await q(`insert into employee_pay_period_facts
+    (id,business_id,employee_id,pay_period_end,regular_cents,overtime_cents,
+     gross_cents,employee_tax_cents,employer_tax_cents,net_cents,source)
+    values ($1,$2,$3,'2026-10-14',130000,20000,150000,18000,9000,132000,'toast')`,
+    [payFactId,S,ids.emp]);
+  const financialDays = [{ date: "2026-10-12", shifts: 6, wage: 90136, tax: 10203, fee: 5357 },
+    { date: "2026-10-14", shifts: 7, wage: 110201, tax: 13222, fee: 5464 }];
+  for (const fact of financialDays) {
+    for (let i = 0; i < fact.shifts; i++) {
+      const entry = sync.uuidv5(`fixture-entry-${fact.date}-${i}`);
+      const card = sync.uuidv5(`fixture-card-${fact.date}-${i}`);
+      const isLateUtcShift = fact.date === "2026-10-14" && i === 6;
+      const clockIn = isLateUtcShift ? "2026-10-15T02:00:00+00:00" : `${fact.date}T18:00:00+00:00`;
+      await q(`insert into timecards(id,business_id,employee_id,clock_in,clock_out,
+        pos_timecard_id,hourly_wage_cents,source_type)
+        values ($1,$2,$3,$4::timestamptz,$4::timestamptz + interval '1 hour',$5,$6,'connected_pos')`,
+      [card,S,ids.emp,clockIn,`toast:${G}:${entry}`,i === fact.shifts - 1 ? 0 : 1500]);
+    }
+    await q(`insert into daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,
+      ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,
+      labor_wage_status,staff_tax_status,card_fees_status)
+      values ($1,$2,50000,50,50,2000,$3,$4,$5,0,'actual','actual','actual')`,
+      [S,fact.date,fact.wage,fact.tax,fact.fee]);
+    await q(`insert into toast_payment_facts(business_id,restaurant_guid,business_date,payment_ref,
+      original_processing_fee_cents,processing_fee_cents,fee_status,fee_basis)
+      values ($1,$2,$3,$4,$5,$5,'actual','toast')`,
+      [S,G,fact.date,`payment-${fact.date}`,fact.fee]);
+  }
+  const parity = async (b, date) => ({
+    shifts: Number((await one(`select count(*)::int n from timecards where business_id=$1
+      and (clock_in at time zone (select timezone from businesses where id=$1))::date=$2::date
+      and source_type='connected_pos'`,[b,date])).n),
+    zero: Number((await one(`select count(*)::int n from timecards where business_id=$1
+      and (clock_in at time zone (select timezone from businesses where id=$1))::date=$2::date
+      and hourly_wage_cents=0`,[b,date])).n),
+    rollup: await one(`select staff_wages_cents::text,staff_tax_cents::text,card_fees_cents::text,
+      labor_wage_status,staff_tax_status,card_fees_status from daily_rollups where business_id=$1
+      and business_date=$2`,[b,date]),
+    payment: await one(`select processing_fee_cents::text,fee_status,fee_basis from toast_payment_facts
+      where business_id=$1 and business_date=$2`,[b,date]),
+  });
+
   await run();
+  for (const fact of financialDays) {
+    const src = await parity(S,fact.date), dst = await parity(D,fact.date);
+    check(JSON.stringify(dst) === JSON.stringify(src), `financial parity ${fact.date}: ${JSON.stringify(dst)}`);
+    check(dst.shifts === fact.shifts && dst.zero === 1,
+      `${fact.date} retains ${fact.shifts} shifts and one real zero-wage shift`);
+    check(dst.payment.processing_fee_cents === String(fact.fee) &&
+      dst.payment.fee_status === "actual" && dst.rollup.card_fees_status === "actual",
+      `${fact.date} preserves Toast's ${fact.fee}-cent actual fee, never an estimate`);
+  }
+  const srcProviderIds = (await q(`select regexp_replace(pos_timecard_id,'^toast:[^:]+:','') as provider
+    from timecards where business_id=$1 and source_type='connected_pos' and
+      (clock_in at time zone (select timezone from businesses where id=$1))::date
+        in ('2026-10-12'::date,'2026-10-14'::date) order by provider`,[S])).rows.map(x=>x.provider);
+  const destProviderIds = (await q(`select regexp_replace(pos_timecard_id,'^toast:[^:]+:','') as provider
+    from timecards where business_id=$1 and source_type='connected_pos' and
+      (clock_in at time zone (select timezone from businesses where id=$1))::date
+        in ('2026-10-12'::date,'2026-10-14'::date) order by provider`,[D])).rows.map(x=>x.provider);
+  check(destProviderIds.length === 13 && JSON.stringify(destProviderIds) === JSON.stringify(srcProviderIds),
+    "all 13 financial-fixture provider shifts match after restaurant GUID remapping");
+
   const labor = async (b) => (await one("select count(*)::int n from cv_labor_entries where business_id = $1", [b])).n;
   check(await labor(D) === await labor(S), `a finished shift appears as often in the test café as in the real café (${await labor(D)} vs ${await labor(S)})`);
   check((await one("select menu_item_id from order_lines l join orders o on o.id = l.order_id where o.business_id = $1", [D])).menu_item_id === remapId("menu_items", ids.m1),
@@ -60,6 +127,47 @@ try {
 
   const second = await run();
   check(Object.keys(replacedDays(second)).length === 0, `an unchanged second run replaces nothing ${JSON.stringify(replacedDays(second))}`);
+
+  await q("update employee_pay_period_facts set gross_cents=15136, employer_tax_cents=987, net_cents=13000 where id=$1", [payFactId]);
+  await run();
+  const copiedPay = await one(`select gross_cents::int,employer_tax_cents::int,net_cents::int
+    from employee_pay_period_facts where id=$1`, [remapId("employee_pay_period_facts",payFactId)]);
+  check(copiedPay.gross_cents === 15136 && copiedPay.employer_tax_cents === 987 &&
+    copiedPay.net_cents === 13000, "a corrected payroll source record updates already-copied gross, employer tax and net");
+
+  // Insert-if-missing economic facts must refresh when SOURCE changes, without
+  // copying credentials or replacing the intentionally separate test identity.
+  await q("update employees set default_hourly_wage_cents = 2100 where id=$1", [ids.emp]);
+  await run();
+  check((await one("select default_hourly_wage_cents as n from employees where id=$1",
+    [remapId("employees", ids.emp)])).n === "2100" ||
+    Number((await one("select default_hourly_wage_cents as n from employees where id=$1",
+      [remapId("employees", ids.emp)])).n) === 2100,
+    "changed source employee default rate updates an existing copied employee");
+  check((await one("select api_origin from toast_api_credentials where business_id=$1",[D])).api_origin === "not_configured",
+    "test café retains only an inert Toast credential placeholder");
+
+  // A failure after some writes must roll back all tables, including master
+  // updates and already deleted mirror days. No production database is used.
+  await q("update employees set default_hourly_wage_cents = 2300 where id=$1",[ids.emp]);
+  await q("update daily_rollups set staff_wages_cents=staff_wages_cents+136 where business_id=$1 and business_date='2026-10-12'",[S]);
+  const beforeFailure = await parity(D,"2026-10-12");
+  const failingClient = { query: async (sql, params) => {
+    if (/^\s*delete from daily_rollups /i.test(sql)) throw Object.assign(new Error("injected mirror failure"),{ code:"23503" });
+    return client.query(sql,params);
+  } };
+  let failed = false;
+  try { await syncAll(failingClient, {}); } catch (e) { failed = e.code === "23503"; }
+  check(failed, "injected FK-like failure aborts the copy transaction");
+  check(JSON.stringify(await parity(D,"2026-10-12")) === JSON.stringify(beforeFailure),
+    "rollback leaves test wages, fees and statuses untouched");
+  check(Number((await one("select default_hourly_wage_cents as n from employees where id=$1",
+    [remapId("employees",ids.emp)])).n) === 2100,
+    "rollback restores existing copied master economic values");
+  await run();
+  check((await parity(D,"2026-10-12")).rollup.staff_wages_cents ===
+    (await parity(S,"2026-10-12")).rollup.staff_wages_cents,
+    "incremental recovery reconciles a previously stale 136-cent wage difference");
 
   await q("update order_lines set menu_item_id = $1 where id = $2", [ids.m2, ids.line]);
   const third = await run();

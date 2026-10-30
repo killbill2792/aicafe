@@ -13,6 +13,8 @@ import {
   daysToReplace,
   fingerprintIgnoredColumns,
   dayFingerprintSql,
+  businessDaySql,
+  orderByForeignKeys,
   SOURCE_BUSINESS_ID,
   DEST_BUSINESS_ID,
   syncTodayLive,
@@ -347,6 +349,47 @@ describe("test café gets the Toast archive and daily captures (database behavio
   it("reads timestamps with their full precision, so unchanged days compare equal", () => {
     expect(pg.types.getTypeParser(1184)("2026-10-30 18:27:54.382047+00")).toBe("2026-10-30 18:27:54.382047+00");
     expect(pg.types.getTypeParser(1082)("2026-10-30")).toBe("2026-10-30");
+  });
+});
+
+describe("Financial Fix B: source/test safety and café-local parity", () => {
+  it("partitions late UTC timecards on the café-local business date", () => {
+    const timecards = REFRESH_WINDOW_TABLES.find((cfg) => cfg.table === "timecards")!;
+    const open = REFRESH_WINDOW_TABLES.find((cfg) => cfg.table === "toast_open_labor_summaries")!;
+    const shifts = REFRESH_WINDOW_TABLES.find((cfg) => cfg.table === "pos_scheduled_shifts")!;
+    for (const cfg of [timecards, open, shifts]) {
+      expect(cfg.localDay).toBe(true);
+      const sql = dayFingerprintSql(cfg);
+      expect(sql).toContain("at time zone (select timezone from businesses");
+      expect(sql).toContain("::date");
+    }
+    expect(businessDaySql(timecards, "t")).toContain("t.clock_in");
+    expect(businessDaySql(REFRESH_WINDOW_TABLES.find((cfg) => cfg.table === "orders")!, "t"))
+      .toBe("(t.business_date)::date");
+  });
+
+  it("orders mirroring by live FK parents even when the static order is wrong", () => {
+    expect(orderByForeignKeys(["child", "parent", "grandchild"], [
+      { child: "child", parent: "parent" }, { child: "grandchild", parent: "child" },
+    ])).toEqual(["parent", "child", "grandchild"]);
+    expect(() => orderByForeignKeys(["a", "b"], [
+      { child: "a", parent: "b" }, { child: "b", parent: "a" },
+    ])).toThrow(/FK cycle/);
+  });
+
+  it("refreshes existing copied economic sources, not source credentials or café identity", () => {
+    for (const name of ["employees", "recurring_costs", "expenses", "processing_fee_rate_plans", "employee_pay_period_facts"]) {
+      const cfg = INSERT_IF_MISSING_TABLES.find((x) => x.table === name)!;
+      expect(cfg.conflictMode).toBe("updateSafetyColumns");
+      expect(cfg.updateColumnsOnConflict?.length).toBeGreaterThan(0);
+      expect(cfg.updateColumnsOnConflict).not.toContain("business_id");
+      expect(cfg.updateColumnsOnConflict).not.toContain("confirmed_by");
+    }
+    expect(INSERT_IF_MISSING_TABLES.some((x) => x.table === "toast_api_credentials")).toBe(false);
+    const directory = INSERT_IF_MISSING_TABLES.find((x) => x.table === "toast_employee_directory")!;
+    expect(directory.fk?.linked_employee_id).toBe("employees");
+    expect(directory.fk?.restaurant_guid).toBe("toast_restaurant_guid");
+    expect(directory.pk).toEqual(["business_id", "restaurant_guid", "employee_guid"]);
   });
 });
 
