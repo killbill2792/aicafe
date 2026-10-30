@@ -28,6 +28,9 @@ const ids = { loc: "c0ffee00-0000-4000-8000-0000000000a1", emp: "c0ffee00-0000-4
 const day = "2026-10-20";
 
 async function cleanup() {
+  // Import runs and day statuses do not cascade from the café; remove them first.
+  await q("delete from toast_day_status where business_id = any($1::uuid[])", [[S, D]]);
+  await q("delete from toast_sync_runs where business_id = any($1::uuid[])", [[S, D]]);
   await q("delete from businesses where id = any($1::uuid[])", [[S, D]]);
 }
 
@@ -63,6 +66,58 @@ try {
   check((await one("select menu_item_id from order_lines l join orders o on o.id = l.order_id where o.business_id = $1", [D])).menu_item_id === remapId("menu_items", ids.m2),
     "an order line moved to another menu item is copied again");
   check(third.orders_days === 1 && third.timecards_days === undefined, `only that order day is replaced ${JSON.stringify(replacedDays(third))}`);
+
+  // The Toast archive and daily captures (stack PR 6): only each day's latest import is copied.
+  const archiveDay = "2026-10-21";
+  const runIds = { old: "c0ffee00-0000-4000-8000-000000000201", cur: "c0ffee00-0000-4000-8000-000000000202", next: "c0ffee00-0000-4000-8000-000000000203" };
+  const orderGuid = "c0ffee00-0000-4000-8000-000000000301";
+  const orderPayload = (tip) => ({ guid: orderGuid, checks: [{ guid: "c0ffee00-0000-4000-8000-000000000302", amount: 5,
+    selections: [{ guid: "c0ffee00-0000-4000-8000-000000000303", displayName: "Latte", price: 5, quantity: 1 }],
+    payments: [{ guid: "c0ffee00-0000-4000-8000-000000000304", type: "CREDIT", amount: 5, tipAmount: tip, paymentStatus: "CAPTURED" }] }] });
+  await q("insert into toast_sync_runs(id, business_id, restaurant_guid, kind, state) values ($1, $3, $4, 'daily', 'completed'), ($2, $3, $4, 'daily', 'running')", [runIds.old, runIds.cur, S, G]);
+  await q("insert into toast_day_status(business_id, restaurant_guid, business_date, import_state, last_import_run_id, imported_at) values ($1, $2, $3, 'imported', $4, now())", [S, G, archiveDay, runIds.cur]);
+  await q("update toast_sync_runs set state = 'completed' where id = $1", [runIds.cur]);
+  const archive = (run, tip, key) => q(`insert into toast_raw_records(business_id, restaurant_guid, entity, entity_guid, business_date, payload, payload_sha256, run_id, capture_key, source_page, source_index)
+    values ($1, $2, 'order', $3, $4, $5::jsonb, md5($5::text) || md5($5::text), $6, $7, 1, 1)`, [S, G, orderGuid, archiveDay, JSON.stringify(orderPayload(tip)), run, key]);
+  await archive(runIds.old, 1, "old-version");
+  await archive(runIds.cur, 2, "current-version");
+  await q(`insert into toast_raw_records(business_id, restaurant_guid, entity, business_date, payload, payload_sha256, run_id, capture_key)
+    values ($1, $2, 'check', $3, '{}', repeat('a', 64), $4, 'legacy-check-row')`, [S, G, archiveDay, runIds.cur]);
+  const capture = (endpoint, date, hoursAgo, items, extra = {}) => q(`insert into toast_raw_samples(business_id, restaurant_guid, endpoint, business_date, fetched_at, http_status, item_count, sample, field_paths, capture_id, error_code)
+    values ($1, $2, $3, $4, now() - $5 * interval '1 hour', $6, 1, $7, '{guid}', gen_random_uuid(), $8)`,
+    [S, G, endpoint, date, hoursAgo, extra.status ?? 200, JSON.stringify(items), extra.error ?? null]);
+  await capture("labor/v1/timeEntries", archiveDay, 5, [{ guid: "old-entry" }]);
+  await capture("labor/v1/timeEntries", archiveDay, 1, [{ guid: "entry-1", regularHours: 4 }]);
+  await capture("labor/v1/timeEntries", archiveDay, 0, [], { status: 500, error: "http_error" });
+  await capture("config/v2/tables", "2026-10-19", 48, [{ guid: "old-table" }]);
+  await capture("config/v2/tables", "2026-10-20", 24, [{ guid: "t-1" }, { guid: "t-2" }]);
+  await capture("orders/v2/ordersBulk", archiveDay, 1, [{ guid: orderGuid }]);
+
+  await run();
+  const viewCounts = async (b) => Object.fromEntries((await q(
+    "select record_type, count(*)::int n, count(*) filter (where counts_in_sales)::int counted from cv_toast_records where business_id = $1 group by 1 order by 1", [b])).rows
+    .map((r) => [r.record_type, `${r.n}/${r.counted}`]));
+  const [sourceView, destView] = [await viewCounts(S), await viewCounts(D)];
+  check(JSON.stringify(destView) === JSON.stringify(sourceView), `the AI's Toast records read the same in both cafés ${JSON.stringify(destView)}`);
+  check(destView.order === "1/1" && destView["config/v2/tables"] === "2/0" && destView["labor/v1/timeEntries"] === "1/0" && !destView["orders/v2/ordersBulk"],
+    "latest order version only, newest captures only, no second copy of orders");
+  check((await one("select count(*)::int n from toast_raw_records where business_id = $1", [D])).n === 1, "the test café archive holds one row: the latest order");
+  check((await one("select (payload->'checks'->0->'payments'->0->>'tipAmount')::int tip from toast_raw_records where business_id = $1", [D])).tip === 2, "the copied order is the latest version");
+  check((await one("select count(*)::int n from toast_order_typed_facts where business_id = $1", [D])).n === 1, "typed order details are rebuilt in the test café");
+  check((await one(`select count(*)::int n from toast_raw_records r join toast_day_status d on d.business_id = r.business_id and d.restaurant_guid = r.restaurant_guid
+    and d.business_date = r.business_date and d.last_import_run_id = r.run_id where r.business_id = $1`, [D])).n === 1, "the copied order names its day's copied run");
+
+  const unchanged = await run();
+  check(Object.keys(replacedDays(unchanged)).length === 0, `an unchanged run replaces nothing ${JSON.stringify(replacedDays(unchanged))}`);
+
+  // Toast sends the same day again, unchanged: a new run, the same order.
+  await q("insert into toast_sync_runs(id, business_id, restaurant_guid, kind, state) values ($1, $2, $3, 'daily', 'running')", [runIds.next, S, G]);
+  await q("update toast_day_status set last_import_run_id = $1, imported_at = now() + interval '1 minute' where business_id = $2 and business_date = $3", [runIds.next, S, archiveDay]);
+  await q("update toast_sync_runs set state = 'completed' where id = $1", [runIds.next]);
+  await q("update toast_raw_records set run_id = $1, last_seen = now() + interval '1 minute' where business_id = $2 and run_id = $3", [runIds.next, S, runIds.cur]);
+  const reimport = await run();
+  check(reimport.toast_raw_records_days === 1, `a re-imported day is copied again ${JSON.stringify(replacedDays(reimport))}`);
+  check(JSON.stringify(await viewCounts(D)) === JSON.stringify(await viewCounts(S)), "after the re-import both cafés still read the same");
 } finally {
   await cleanup();
   await client.end();
