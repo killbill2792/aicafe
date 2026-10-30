@@ -38,7 +38,8 @@ async function postMidRunUpdate(db:ReturnType<typeof createAdminSupabaseClient>,
   const delivery=report.delivery;
   if(delivery){
     const task=await db.from("operating_tasks").upsert({
-      business_id:scope.businessId,id:"supervisor:"+p.capabilityId+":"+p.id+":midrun",agent_id:delivery.agentId,
+      business_id:scope.businessId,id:"supervisor:"+p.capabilityId+":"+p.id+":midrun"+
+        (report.midRunKey?":"+report.midRunKey:""),agent_id:delivery.agentId,
       kind:delivery.taskKind,entity_type:delivery.entityType,entity_id:delivery.entityId,status:"watching",
       confidence:"low",payload:{...delivery.payload,outcomeStatus:"in_progress",midRun:true,
         proposalId:p.id,threadId:p.threadId},evidence:delivery.evidence,
