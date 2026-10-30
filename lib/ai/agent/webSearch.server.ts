@@ -1,0 +1,87 @@
+import "server-only";
+import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
+
+/** Read-only public web lookup for the authenticated Supervisor chat. */
+export type WebSearchResult =
+  | {available:true;answer:string;sources:Array<{title:string;url:string}>}
+  | {available:false;reason:"notConfigured"|"timeout"|"providerFailed"|"unreadable"};
+
+const WEB_SEARCH_TIMEOUT_MS=20_000;
+const WEB_SEARCH_OUTPUT_TOKENS=1600;
+type Fetch=typeof fetch;
+
+function publicSource(value:unknown):{title:string;url:string}|null{
+  if(!value||typeof value!=="object")return null;
+  const row=value as {url?:unknown;title?:unknown};
+  if(typeof row.url!=="string")return null;
+  try{
+    const url=new URL(row.url);
+    if(url.protocol!=="https:"||url.username||url.password||url.hostname.length===0)return null;
+    return {title:typeof row.title==="string"?row.title.trim().slice(0,100):url.hostname,url:url.href};
+  }catch{return null;}
+}
+
+/** Responses API web_search returns web_search_call and message items, not a search-result array. */
+export function extractWebSearchAnswer(body:unknown):{answer:string;sources:Array<{title:string;url:string}>}|null{
+  if(!body||typeof body!=="object")return null;
+  const response=body as {status?:unknown;output?:unknown};
+  if(response.status==="incomplete"||response.status==="failed"||!Array.isArray(response.output))return null;
+  const paragraphs:string[]=[],sources:Array<{title:string;url:string}>=[];
+  const urls=new Set<string>();
+  for(const item of response.output){
+    if(!item||typeof item!=="object"||(item as {type?:unknown}).type!=="message")continue;
+    const content=(item as {content?:unknown}).content;
+    if(!Array.isArray(content))continue;
+    for(const part of content){
+      if(!part||typeof part!=="object"||(part as {type?:unknown}).type!=="output_text")continue;
+      const text=(part as {text?:unknown}).text;
+      if(typeof text==="string"&&text.trim())paragraphs.push(text.trim());
+      const annotations=(part as {annotations?:unknown}).annotations;
+      if(!Array.isArray(annotations))continue;
+      for(const annotation of annotations){
+        const source=publicSource(annotation);
+        if(source&&!urls.has(source.url)&&sources.length<5){urls.add(source.url);sources.push(source);}
+      }
+    }
+  }
+  const answer=paragraphs.join("\n").slice(0,1500);
+  return answer?{answer,sources}:null;
+}
+
+export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;now?:()=>number}={}){
+  const doFetch=deps.fetch??fetch,now=deps.now??Date.now;
+  return async(query:string):Promise<WebSearchResult>=>{
+    const key=deps.apiKey??process.env.OPENAI_API_KEY;
+    if(!key)return {available:false,reason:"notConfigured"};
+    const started=now();
+    try{
+      const response=await doFetch("https://api.openai.com/v1/responses",{
+        method:"POST",signal:AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS),
+        headers:{"content-type":"application/json",Authorization:"Bearer "+key},
+        body:JSON.stringify({
+          model:deps.model??configuredSupervisorModel(),
+          store:false,max_output_tokens:WEB_SEARCH_OUTPUT_TOKENS,
+          tools:[{type:"web_search"}],
+          input:"Search for current, public information on this question. Summarize only what sources support and cite their URLs. Question: "+query,
+        }),
+      });
+      const durationMs=now()-started;
+      if(!response.ok){
+        console.error("agent_web_search_failed",{category:"http",status:response.status,durationMs});
+        return {available:false,reason:"providerFailed"};
+      }
+      const parsed=extractWebSearchAnswer(await response.json());
+      if(!parsed){
+        console.error("agent_web_search_failed",{category:"unreadable",durationMs});
+        return {available:false,reason:"unreadable"};
+      }
+      console.info("agent_web_search_completed",{durationMs,sources:parsed.sources.length});
+      return {available:true,...parsed};
+    }catch(error){
+      const timedOut=error instanceof Error&&(error.name==="TimeoutError"||error.name==="AbortError");
+      console.error("agent_web_search_failed",{category:timedOut?"timeout":"network",durationMs:now()-started});
+      return {available:false,reason:timedOut?"timeout":"providerFailed"};
+    }
+  };
+}
+export const searchWeb=createWebSearch();
