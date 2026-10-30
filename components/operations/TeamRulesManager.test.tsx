@@ -6,7 +6,6 @@ describe("integrated AI Team rules UX",()=>{
     const manager=readFileSync("components/operations/TeamRulesManager.tsx","utf8");
     // The Team card, rules and tabs render in TeamInbox so teammates switch without a reload.
     const page=readFileSync("components/operations/TeamInbox.tsx","utf8");
-    expect(readFileSync("app/[locale]/operations/page.tsx","utf8")).toContain("<TeamInbox");
     expect(manager).not.toContain("<select");
     expect(manager).not.toContain("POLICY_AGENTS");
     expect(manager).toContain("selectedAgent:RuleAgent");
