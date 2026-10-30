@@ -16,6 +16,7 @@ import {cafeCountry,holidaysBetween,addDays,weekdayOf} from "./holidays";
 import {eventIdentity,eventScanWindows,savedEventKind,type EventScanState} from "./eventsLookahead";
 import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
+import {verifyUpcomingEventChanges} from "./eventVerification.server";
 import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {effectHash,proposeLoop,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -344,7 +345,12 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
         await assertCafeAiAccess(b.id);
         result.scanned+=await scanCafe(db,b,today);
         const to=addDays(today,13);
-        const timeline=await readSavedEventTimeline(db,
+        let timeline=await readSavedEventTimeline(db,
+          {businessId:b.id,ownerUserId:owner.data.user_id},today,to);
+        const verifiedChanges=await verifyUpcomingEventChanges(db,b.id,owner.data.user_id,
+          b.timezone,today,timeline,now);
+        // Re-read updated event statuses before planning; never alter approved plans.
+        if(verifiedChanges)timeline=await readSavedEventTimeline(db,
           {businessId:b.id,ownerUserId:owner.data.user_id},today,to);
         const candidates=pendingEventDays(timeline.events,timeline.plans,today,to);
         const quota=await db.from("operating_tasks").select("id",{head:true,count:"exact"})
