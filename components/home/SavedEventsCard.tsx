@@ -8,11 +8,12 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import type {CafeEvent,EventChecklistTick,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {eventActionAreaLabel} from "@/lib/events/eventActionArea";
+import {EventReportCard} from "./EventReportCard";
 
 type Locale="en"|"es"|"ar";
 type T=(key:string,values?:Record<string,string|number>)=>string;
 type Plan=SavedEventTimeline["plans"][number];
-type Timeline=SavedEventTimeline&{today:string};
+type Timeline=SavedEventTimeline&{today:string;currency:string|null};
 type Tab="past"|"now"|"upcoming";
 type Panel="events"|"day"|null;
 type Action={area:string;action:string;reason:string};
@@ -313,6 +314,9 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                 </article>)}
                 {saved.length>3&&<button type="button" className={button+" bg-surface2"}
                   onClick={()=>openDay(date)}>{t("moreEvents",{count:saved.length-3})}</button>}
+                {tab==="past"&&dayPlan&&<EventReportCard report={dayPlan.report}
+                  status={dayPlan.reportStatus} currency={timeline.currency}
+                  locale={locale} t={t} onChat={()=>chat(date)}/>}
               </section>;
             })}
           </>:<>
@@ -351,7 +355,8 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                 onClick={()=>void approve()} className={button+" w-full bg-accent text-on-accent"}>{t("usePlan")}</button>}
               {!approved&&plan.status!=="draft"&&<p>{t("planNotActive")}</p>}
               {plan.status==="draft"&&<p className="text-ink-muted">{t("approveFirst")}</p>}
-              {plan.reportStatus&&<p className="rounded-xl bg-surface2 p-3">{t("reportAvailable")}</p>}
+              <EventReportCard report={plan.report} status={plan.reportStatus}
+                currency={timeline.currency} locale={locale} t={t} onChat={()=>chat(chosen)}/>
             </>:<p className="text-ink-muted">{t("noPlan")}</p>}
             {actionError&&<p role="alert">{t("saveFailed")}</p>}
             <button type="button" onClick={()=>chat(chosen)}
