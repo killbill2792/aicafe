@@ -182,7 +182,8 @@ export async function verifyUpcomingEventChanges(db:Db,businessId:string,ownerId
   const queue=importantVerificationQueue(timeline.events,timeline.plans,today,now);
   for(const event of queue){
     try{
-      const checked=await check(event);
+      // Provider timeouts also count as attempted/failed, not as a fresh confirmation.
+      const checked=await check(event).catch(()=>null);
       const change=await writeAttempt(db,businessId,event,now.toISOString(),checked);
       if(change){
         changed++;
