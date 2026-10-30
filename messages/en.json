@@ -3686,6 +3686,9 @@
     "addAddressButton": "Add address",
     "addressPrompt": "Find events near my café",
     "askDay": "What should I plan for {what} ({when})?",
+    "chatAboutThis": "Chat about this",
+    "chatDayTitle": "{date} · {what}",
+    "chatDayPrompt": "Let's chat about {date}. Facts from my café's Coming up card: {context}. Please check the latest café facts or public sources as needed. What should I know?",
     "askWeek": "Ask about the week",
     "weekPrompt": "What's coming up near my café this week?",
     "searchDown": "Local events couldn't be checked right now."
