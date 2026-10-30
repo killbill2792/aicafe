@@ -254,8 +254,9 @@ export const eventReadinessCapability=registerLoopCapability({
    const actual=observed.filter(s=>s.observation.coverage==="actual");
    // A completed business day can have actual sales but missing item/discount
    // details. Keep that distinction in the same saved Supervisor report.
-   const toastEvidence=windowComplete?await eventToastEvidence(
-     createAdminSupabaseClient(),scope.businessId,effect.endDate).catch(()=>({
+   const toastEvidence=windowComplete&&window?.proposalId?await Promise.resolve()
+     .then(()=>eventToastEvidence(createAdminSupabaseClient(),
+       scope.businessId,effect.endDate)).catch(()=>({
        itemSales:{coverage:"missing" as const,items:[]},
        namedDiscounts:{coverage:"missing" as const,names:[]},
        discountAmounts:{coverage:"missing" as const,observedOrders:0},
