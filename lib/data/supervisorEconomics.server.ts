@@ -59,6 +59,11 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const closedSalesDates=new Set(days.filter(d=>d.salesDataStatus==="actual").map(d=>d.date));
  const laborWindow=dayList.filter(date=>date<asOf||
    (date===asOf&&closedSalesDates.has(date)));
+ // Wage-change scenarios use the entire rolling timecard range, not only the
+ // elapsed calendar-month labor coverage dates used for break-even evidence.
+ const staffHoursWindow:string[]=[];
+ for(let date=first??month.from;date<=(latest??asOf);date=dateOffset(date,1))
+  if(open(date))staffHoursWindow.push(date);
  const timecards=await db.from("timecards")
   .select("employee_id,clock_in,clock_out,hourly_wage_cents,source_type")
   .eq("business_id",businessId)
@@ -175,6 +180,6 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
    Date.parse(card.clock_out!)-Date.parse(card.clock_in))/3600000),0);
   return {id:person.id,displayName:person.display_name,role:person.role,
    wageCents:person.default_hourly_wage_cents==null?null:Number(person.default_hourly_wage_cents),
-   weeklyHours:worked.length?hours*7/Math.max(1,laborWindow.length):null};
+   weeklyHours:worked.length?hours*7/Math.max(1,staffHoursWindow.length):null};
  })};
 }
