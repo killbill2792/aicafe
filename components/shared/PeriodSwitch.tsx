@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import type { Period } from "@/lib/viewmodels/period";
-import { needsPeriodRecovery, periodFromUrl, periodHref } from "./periodNavigation";
+import { needsPeriodRecovery, periodFromUrl, periodHref, periodTapAction } from "./periodNavigation";
 
 const PERIODS: Period[] = ["today", "week", "month"];
 
@@ -38,11 +38,15 @@ export default function PeriodSwitch({ current, defaultPeriod = "today" }: { cur
   }, [current, urlPeriod, isNavigating, hrefKey, router, startNavigation]);
 
   function setPeriod(period: Period) {
-    if (period === current || busy) return;
-    recoveredUrl.current = null;
+    // Only active requests block taps. If a refresh failed to reconcile a stale URL,
+    // let the owner retry that period or return to the displayed period.
+    const action = periodTapAction(period, current, urlPeriod, isNavigating);
+    if (action === "none") return;
+    recoveredUrl.current = action === "refresh" ? hrefKey : null;
     setPendingPeriod(period);
     startNavigation(() => {
-      router.replace(periodHref(pathname, searchParams.toString(), period), { scroll: false });
+      if (action === "refresh") router.refresh();
+      else router.replace(periodHref(pathname, searchParams.toString(), period), { scroll: false });
     });
   }
 
@@ -59,7 +63,7 @@ export default function PeriodSwitch({ current, defaultPeriod = "today" }: { cur
             type="button"
             aria-pressed={active}
             aria-label={waiting ? `${t(period)}…` : t(period)}
-            disabled={busy}
+            disabled={isNavigating}
             onClick={() => setPeriod(period)}
             className={`min-h-12 flex-1 rounded-3xl text-[15px] font-semibold transition-colors ${
               waiting ? "bg-card text-ink ring-2 ring-accent-text" :
