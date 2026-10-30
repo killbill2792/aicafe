@@ -6,6 +6,7 @@ import {monitorLoop,midRunDay,utcDateOffset,type LoopProposal,type OwnerLoopScop
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
+import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {postGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
 import {goalEffectSchema,checkinDue} from "@/lib/calc/goals/goalSpec";
 const sameWeekday=(a:string,b:string)=>new Date(a+"T12:00:00Z").getUTCDay()===new Date(b+"T12:00:00Z").getUTCDay();
@@ -30,6 +31,9 @@ export async function GET(request:Request){
  const db=createAdminSupabaseClient(),repo=new SupabaseLoopRepository();
  const {data,error}=await db.from("supervisor_proposals").select("*")
    .in("status",["manual_confirmed","committed"]).not("monitoring_start_date","is",null)
+   // Event observation is reconciled by the Events cron, including inert drafts.
+   // Exclude committed events here to prevent two jobs writing one report.
+   .neq("capability_id",eventReadinessCapabilityId)
    // Oldest never permanently crowds out newer tenants: every checked
    // proposal rotates to the back of this stable bounded queue.
    .order("monitor_checked_at",{ascending:true,nullsFirst:true})
