@@ -1,6 +1,10 @@
-import {describe,expect,it,vi} from "vitest";
+import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
+const admin=vi.hoisted(()=>({make:vi.fn()}));
+vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:admin.make}));
 vi.mock("server-only",()=>({}));
+beforeEach(()=>vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY",""));
+afterEach(()=>vi.unstubAllEnvs());
 vi.mock("./processingFeeEstimate.server",()=>({
  ensureOwnerConfirmedProcessingFeeEstimateForDay:vi.fn()
 }));
@@ -13,15 +17,20 @@ const planned={id:"planned",source_type:"owner_schedule",wage_source:"owner",
  clock_in:"2026-08-22T18:00:00Z",clock_out:"2026-08-22T19:00:00Z",
  hourly_wage_cents:2000,breaks:[]};
 const actual={...planned,id:"actual",source_type:"connected_pos",
- wage_source:"pos",hourly_wage_cents:1800};
-function previewDb(timecards:Array<typeof planned>,orders=[toastOrder]){
+ wage_source:"pos",hourly_wage_cents:1800,pos_timecard_id:"toast:restaurant:shift"};
+type TimecardFixture=Omit<typeof planned,"hourly_wage_cents">&{
+ hourly_wage_cents:number|null;pos_timecard_id?:string;
+ provider_regular_hours?:number|null;provider_overtime_hours?:number|null;
+};
+function previewDb(timecards:Array<TimecardFixture>,orders=[toastOrder],staged:Array<Record<string,unknown>>=[],denyStage=false){
  const from=(table:string)=>{
   const q={
    select:()=>q,eq:()=>q,lt:()=>q,or:()=>q,order:()=>q,in:()=>q,
    lte:()=>q,gte:()=>q,
    range:async(start:number,end:number)=>({
-    data:(table==="orders"?orders:table==="timecards"?timecards:[]).slice(start,end+1),
-    error:null
+    data:table==="toast_labor_entries"&&denyStage?null:
+      (table==="orders"?orders:table==="timecards"?timecards:table==="toast_labor_entries"?staged:[]).slice(start,end+1),
+    error:table==="toast_labor_entries"&&denyStage?{code:"42501"}:null
    }),
    single:async()=>({data:{timezone:"America/Los_Angeles",
     payroll_tax_rate:0.12,payroll_tax_rate_source:"system_estimate"},error:null}),
@@ -48,4 +57,52 @@ describe("Toast sales with no paid shifts",()=>{
   expect(result).toMatchObject({labor_wage_status:"actual",
    staff_wages_cents:1800,staff_tax_cents:216});
  });
+});
+
+const providerShift=(n:number,wage:number|null)=>({
+ ...actual,id:"s"+n,pos_timecard_id:"toast:restaurant:"+n,
+ hourly_wage_cents:wage,clock_in:"2026-08-22T18:00:00Z",
+ clock_out:"2026-08-22T19:00:00Z",
+ provider_regular_hours:1,provider_overtime_hours:0,
+});
+const stagedShift=(n:number,wage:number|null)=>({
+ restaurant_guid:"restaurant",external_time_entry_id:String(n),
+ clock_in:"2026-08-22T18:00:00Z",clock_out:"2026-08-22T19:00:00Z",
+ hourly_wage_cents:wage,provider_regular_hours:1,provider_overtime_hours:0,
+ deleted:false
+});
+describe("daily rollup guards incomplete Toast attendance",()=>{
+ it("does not call six of seven staged shifts complete, even if six wages are known",async()=>{
+  const source=Array.from({length:7},(_,i)=>stagedShift(i,i===0?null:1800));
+  const timecards=source.slice(0,6).map((_,i)=>providerShift(i,i===0?0:1800));
+  const result=await recomputeDailyRollup(previewDb(timecards,[toastOrder],source),"business",day,{dryRun:true});
+  expect(result).toMatchObject({labor_wage_status:"missing",
+   staff_wages_cents:null,staff_tax_cents:null});
+ });
+ it("certifies all seven imported shifts with genuine Toast-omitted $0 wage",async()=>{
+  const source=Array.from({length:7},(_,i)=>stagedShift(i,i===0?null:1800));
+  const timecards=source.map((_,i)=>providerShift(i,i===0?0:1800));
+  const result=await recomputeDailyRollup(previewDb(timecards,[toastOrder],source),"business",day,{dryRun:true});
+  expect(result).toMatchObject({labor_wage_status:"actual",
+   staff_wages_cents:10800,staff_tax_cents:1296});
+ });
+ it("never computes full payroll tax from a known-only subtotal with an unknown wage",async()=>{
+  const cards=[providerShift(0,null),providerShift(1,1800)];
+  const result=await recomputeDailyRollup(previewDb(cards),"business",day,{dryRun:true});
+  expect(result).toMatchObject({labor_wage_status:"missing",
+   staff_wages_cents:null,staff_tax_cents:null});
+ });
+});
+
+it("reads service-only staging only after the authenticated business scope was checked",async()=>{
+  const staged=[stagedShift(0,null),stagedShift(1,1800)];
+  const canonical=[providerShift(0,0),providerShift(1,1800)];
+  const ownerDb=previewDb(canonical,[toastOrder],[],true);
+  const serviceDb=previewDb(canonical,[toastOrder],staged);
+  admin.make.mockReturnValue(serviceDb);
+  vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","private-test-key");
+  const result=await recomputeDailyRollup(ownerDb,"business",day,{dryRun:true});
+  expect(result).toMatchObject({labor_wage_status:"actual",
+   staff_wages_cents:1800,staff_tax_cents:216});
+  expect(admin.make).toHaveBeenCalledTimes(1);
 });
