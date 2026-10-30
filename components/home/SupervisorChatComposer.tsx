@@ -514,7 +514,7 @@ export default function SupervisorChatComposer({
     const text = value.trim() || (attachments.some(file=>file.mediaType.startsWith("image/"))?copy.photoRequest:"");
     // A confirmed background job accepts follow-ups while the first response streams.
     // The main-turn double-tap guard must not intercept this separate path.
-    if (!existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
+    if (!targetThreadId && !existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
       !uploading && !recorder.current && dictation !== "recognizing" && text.length <= 4000)
       return sendFollowUp(text);
     if(sendOnce.current)return;
