@@ -27,29 +27,42 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot) {
   const days=(snapshot.breakEvenDays??snapshot.last28Days).filter(day=>
     day.date>=shiftCafeDate(snapshot.todayDateStr,-28)&&
     day.date<snapshot.todayDateStr&&day.salesDataStatus!=="missing");
-  const productCosts=summarizeResolvedSoldProductCosts(snapshot.breakEvenProductCosts??snapshot.menuItems);
+  const costRows=snapshot.breakEvenProductCosts??snapshot.menuItems;
+  const productCosts=summarizeResolvedSoldProductCosts(costRows);
   const monthlyBillsCents=snapshot.runningCostLines.filter(line=>!line.isMissing)
     .reduce((total,line)=>total+line.amountCents,0);
   const openDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
     snapshot.monthKey+"-"+String(i+1).padStart(2,"0")).filter(date=>
       regularHoursStateForDate(snapshot.business.openHours,date)!=="closed");
   const monthRecords=snapshot.monthRecordedDays??snapshot.monthActualDays;
+  const closedDates=new Set(monthRecords.filter(day=>day.salesDataStatus==="actual").map(day=>day.date));
+  const elapsedOpenDates=openDates.filter(date=>date<snapshot.todayDateStr||
+    (date===snapshot.todayDateStr&&closedDates.has(date)));
+  const elapsedDates=new Set(elapsedOpenDates);
+  const elapsedLaborRecords=monthRecords.filter(day=>elapsedDates.has(day.date));
   const extras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
     .ownerMonthlyPayrollExtrasCents;
-  const monthLabor=laborForPeriod(openDates.map(date=>({date})),monthRecords,null,
+  const monthLabor=laborForPeriod(openDates.map(date=>({date})),elapsedLaborRecords,null,
     extras==null?null:{monthlyCents:extras,from:snapshot.monthKey+"-01",
       to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")});
   const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
   const feeResult=cardFeesForDays(days,feePlans??null);
   const observedSalesCents=sumCents(days,day=>day.netSalesCents);
+  const hasCompleteRecipeCosts=costRows.some(item=>item.quantitySoldLast28Days>0)&&
+    !productCosts.missingProductCosts;
+  const savedRate=snapshot.business.targetIngredientCostRate;
+  const confirmedRate=typeof savedRate==="number"&&Number.isFinite(savedRate)&&savedRate>=0&&savedRate<1?
+    savedRate:null;
+  const ingredientSource=hasCompleteRecipeCosts?"recipe" as const:
+    confirmedRate!==null?"saved_rate" as const:"partial" as const;
+  const ingredientMissing=ingredientSource==="partial";
+  const observedIngredientCents=ingredientSource==="saved_rate"?
+    Math.round(observedSalesCents*confirmedRate!):productCosts.totalCostCents;
   const openDayCount=openDates.length||snapshot.daysInMonth;
   const shared=breakEvenFor({days,asOfDate:snapshot.todayDateStr,daysInMonth:openDayCount,
     monthlyBillsCents,monthlyStaffCents:monthLabor.projectedMonthlyLaborCents,
-    observedIngredientCents:productCosts.totalCostCents,ownerFeePlans:feePlans});
-  const closedDates=new Set(monthRecords.filter(d=>d.salesDataStatus==="actual").map(d=>d.date));
-  const elapsedOpenDates=openDates.filter(date=>date<snapshot.todayDateStr||
-    (date===snapshot.todayDateStr&&closedDates.has(date)));
-  const completeLaborDates=new Set(monthRecords.filter(day=>
+    observedIngredientCents,ownerFeePlans:feePlans});
+  const completeLaborDates=new Set(elapsedLaborRecords.filter(day=>
     day.wagesCents!==null&&day.staffTaxCents!==null&&day.laborWageStatus!=="missing")
     .map(day=>day.date));
   const missingLaborDates=elapsedOpenDates.filter(date=>!completeLaborDates.has(date));
@@ -58,27 +71,27 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot) {
   const estimatedStaffTax=monthRecords.some(day=>day.staffTaxStatus==="estimated");
   const ownerExtrasPresent=extras!=null;
   const missingFees=days.some(day=>day.cardFeesStatus==="missing");
-  const estimatesUsed=missingBills||missingFees||productCosts.missingProductCosts||
+  const estimatesUsed=missingBills||missingFees||ingredientSource!=="recipe"||
     productCosts.usesEstimatedProductCosts||monthLabor.notes.includes("laborEstimated")||
     missingLaborDates.length>0||elapsedOpenDates.length<openDates.length||
     feeResult.basis!=="actual"||estimatedBills||estimatedStaffTax||ownerExtrasPresent;
   return {days,productCosts,monthlyBillsCents,monthlyStaffCents:monthLabor.projectedMonthlyLaborCents,
     monthLabor,feeResult,shared,openDayCount,openDates,elapsedOpenDates,missingLaborDates,
     missingBills,missingFees,estimatedBills,estimatedStaffTax,ownerExtrasPresent,observedSalesCents,
-    estimatesUsed};
+    observedIngredientCents,ingredientSource,ingredientMissing,estimatesUsed};
 }
 
 export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const basis=breakEvenSnapshotInputs(snapshot);
   const {days,productCosts,shared}=basis;
   const netSales=sumCents(days,day=>day.netSalesCents);
-  const ingredients=productCosts.totalCostCents;
+  const ingredients=basis.observedIngredientCents;
   const drinks=sumCents(days,day=>day.drinksCount);
   const runningPerDay=basis.monthlyBillsCents/basis.openDayCount;
   const avgDailyStaffCost=basis.monthlyStaffCents===null?null:
     basis.monthlyStaffCents/basis.openDayCount;
   const dailyCosts=dailyBreakEvenCostsCents(runningPerDay,avgDailyStaffCost??0);
-  const avgMoneyLeft=productCosts.missingProductCosts?0:moneyLeftPerDrinkCents(
+  const avgMoneyLeft=basis.ingredientMissing?0:moneyLeftPerDrinkCents(
     netSales,ingredients,basis.feeResult.amountCents,drinks);
   const needed=shared.drinksPerDay??0;
   const missingCosts=expectedMissingCostLines(snapshot.runningCostLines);
@@ -125,7 +138,7 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
     unavailableReason,
     noteKeys:[...shared.notes,...basis.monthLabor.notes,
       ...(missingCostLabels.length?["breakEvenBillsMissing"]:[]),
-      ...(productCosts.missingProductCosts?["profitProductCostsMissing"]:[])],
+      ...(basis.ingredientMissing?["profitProductCostsMissing"]:[])],
     missingCostLabels,
     missingCosts,
   };
