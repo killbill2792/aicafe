@@ -108,7 +108,8 @@ function t(table, opts = {}) {
     joinScope: opts.joinScope ?? null, // parent table to scope by, for tables with no business_id column
     joinCol: opts.joinCol ?? null, // this table's column that references joinScope.id
     matchColumn: opts.matchColumn ?? null, // dedupe against an existing dest row sharing this column's value
-    dateColumn: opts.dateColumn ?? "business_date", // day-mirror tables only: the column whose date groups a row into a day
+    dateColumn: opts.dateColumn ?? "business_date",
+    localDay: opts.localDay ?? false, // day-mirror tables only: the column whose date groups a row into a day
     dropColumns: opts.dropColumns ?? [], // never copied (e.g. an identity id the destination generates itself)
     // Day-mirror tables only: SQL condition on alias "t" choosing which rows of a day are mirrored
     // (the same condition is used for both cafés, so their fingerprints compare like for like).
@@ -134,8 +135,8 @@ export const INSERT_IF_MISSING_TABLES = [
   t("locations", { remapOwnId: true }),
   t("ingredients", { remapOwnId: true, matchColumn: "starter_key" }),
   t("menu_items", { remapOwnId: true }),
-  t("employees", { remapOwnId: true }),
-  t("recurring_costs", { remapOwnId: true }),
+  t("employees", { remapOwnId: true, conflictMode: "updateSafetyColumns", updateColumnsOnConflict: ["default_hourly_wage_cents", "pos_team_member_id", "active"] }),
+  t("recurring_costs", { remapOwnId: true, conflictMode: "updateSafetyColumns", updateColumnsOnConflict: ["amount_cents", "frequency", "due_day", "is_estimate", "active_from", "active_to", "category_code", "label", "source"] }),
   t("recovery_order", { pk: ["business_id", "bucket_code"] }),
   t("staff_schedules", { remapOwnId: true, fk: { employee_id: "employees" } }),
   t("scheduling_qualification_types", { remapOwnId: true }),
@@ -168,12 +169,12 @@ export const INSERT_IF_MISSING_TABLES = [
   t("staff_scheduling_compensation", { remapOwnId: true, fk: { employee_id: "employees" } }),
   t("staff_scheduling_preferences", { remapOwnId: true, fk: { employee_id: "employees" } }),
   t("scheduling_coverage_requirements", { remapOwnId: true, fk: { location_id: "locations" } }),
-  t("employee_pay_period_facts", { remapOwnId: true, fk: { employee_id: "employees" } }),
-  t("expenses", { remapOwnId: true, fk: { recurring_cost_id: "recurring_costs" } }),
+  t("employee_pay_period_facts", { remapOwnId: true, fk: { employee_id: "employees" }, conflictMode: "updateSafetyColumns", updateColumnsOnConflict: ["regular_cents", "overtime_cents", "double_overtime_cents", "gross_cents", "employee_tax_cents", "employer_tax_cents", "net_cents", "pay_period_end", "source"] }),
+  t("expenses", { remapOwnId: true, fk: { recurring_cost_id: "recurring_costs" }, conflictMode: "updateSafetyColumns", updateColumnsOnConflict: ["amount_cents", "spent_on", "status", "category_code", "recurring_cost_id"] }),
   t("expense_lines", { remapOwnId: true, joinScope: "expenses", joinCol: "expense_id", fk: { expense_id: "expenses", ingredient_id: "ingredients" } }),
   t("vendor_rules", { pk: ["business_id", "normalized_vendor"] }),
   t("uploads", { remapOwnId: true }),
-  t("processing_fee_rate_plans", { remapOwnId: true }),
+  t("processing_fee_rate_plans", { remapOwnId: true, conflictMode: "updateSafetyColumns", updateColumnsOnConflict: ["effective_from", "effective_to", "processor_label", "processed_sales_share_bps", "processed_transaction_share_bps", "average_processed_ticket_cents", "rules"] }),
   t("pantry_stock_counts", { remapOwnId: true, fk: { ingredient_id: "ingredients" } }),
   t("pantry_stock_purchases", { remapOwnId: true, fk: { ingredient_id: "ingredients", expense_line_id: "expense_lines" } }),
   t("pantry_modifier_links", { pk: ["business_id", "provider", "location_ref", "pos_modifier_id"], fk: { modifier_recipe_id: "modifier_recipes" } }),
@@ -203,6 +204,11 @@ export const INSERT_IF_MISSING_TABLES = [
     conflictMode: "updateSafetyColumns",
     updateColumnsOnConflict: ["verified_at", "info_refreshed_at", "last_tick_started_at", "recheck_total"],
   }),
+  // Provider employee GUIDs stay stable; only the restaurant and canonical linked employee are remapped.
+  t("toast_employee_directory", { pk: ["business_id", "restaurant_guid", "employee_guid"],
+    fk: { restaurant_guid: "toast_restaurant_guid", linked_employee_id: "employees" },
+    conflictMode: "updateSafetyColumns",
+    updateColumnsOnConflict: ["display_name", "deleted", "linked_employee_id", "linked_at", "fetched_at"] }),
   t("toast_first_import_check", { pk: ["business_id"] }),
   // No real unique/PK target to name here (see migrationConstraints test) — a plain conflict
   // target would need to assume a specific index shape; skip naming one instead.
@@ -225,19 +231,19 @@ export const REFRESH_WINDOW_TABLES = [
   t("employee_sales_rollup", { pk: ["business_id", "business_date", "employee_id"], fk: { employee_id: "employees" }, conflictMode: "plain" }),
   t("hourly_sales_rollup", { pk: ["business_id", "business_date", "hour_local"], fk: { location_id: "locations" }, conflictMode: "plain" }),
   t("daily_rollups", { pk: ["business_id", "business_date"] }),
-  t("timecards", { remapOwnId: true, fk: { employee_id: "employees", schedule_id: "staff_schedules" }, dateColumn: "clock_in", toastGuidIn: ["pos_timecard_id"] }),
+  t("timecards", { remapOwnId: true, fk: { employee_id: "employees", schedule_id: "staff_schedules" }, dateColumn: "clock_in", localDay: true, toastGuidIn: ["pos_timecard_id"] }),
   t("processing_fee_daily_candidates", { pk: ["business_id", "business_date", "source_type", "provider"] }),
   t("processing_fee_daily_facts", { pk: ["business_id", "business_date"] }),
   // Moved here from insert-if-missing: these are Toast-derived day-level facts that should track
   // the same days as the rest of the day's sales data, not be seeded once and left stale.
   t("toast_day_status", { pk: ["business_id", "restaurant_guid", "business_date"], fk: { restaurant_guid: "toast_restaurant_guid" }, nullOut: ["last_import_run_id"] }),
   t("toast_day_owner_flags", { pk: ["business_id", "restaurant_guid", "business_date"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
-  t("pos_scheduled_shifts", { pk: ["business_id", "provider", "external_shift_id"], fk: { location_id: "locations" }, dateColumn: "scheduled_start" }),
+  t("pos_scheduled_shifts", { pk: ["business_id", "provider", "external_shift_id"], fk: { location_id: "locations" }, dateColumn: "scheduled_start", localDay: true }),
   // Per-payment card fees and payment details, open Toast timecards, voids and refunds: the
   // rows the app's payment, labor and voids/refunds readers use.
   t("toast_payment_facts", { pk: ["business_id", "restaurant_guid", "business_date", "payment_ref"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
   t("toast_payment_summaries", { pk: ["business_id", "restaurant_guid", "business_date", "payment_ref"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
-  t("toast_open_labor_summaries", { pk: ["business_id", "restaurant_guid", "external_time_entry_id"], fk: { restaurant_guid: "toast_restaurant_guid" }, dateColumn: "clock_in" }),
+  t("toast_open_labor_summaries", { pk: ["business_id", "restaurant_guid", "external_time_entry_id"], fk: { restaurant_guid: "toast_restaurant_guid" }, dateColumn: "clock_in", localDay: true }),
   t("toast_void_facts", { pk: ["business_id", "selection_guid"], fk: { location_id: "locations" }, dateColumn: "order_business_date" }),
   // id is an identity column the destination generates; the whole day is deleted first.
   t("toast_refund_facts", { pk: ["id"], fk: { restaurant_guid: "toast_restaurant_guid" }, dateColumn: "order_business_date", dropColumns: ["id"], conflictMode: "plain" }),
@@ -284,6 +290,7 @@ function conflictClause(conflictMode, pkColumns, updateColumnsOnConflict) {
   if (conflictMode === "plain") return "";
   if (conflictMode === "none") return "on conflict do nothing";
   if (conflictMode === "updateSafetyColumns") {
+    if (!updateColumnsOnConflict.length) return `on conflict (${pkColumns.join(",")}) do nothing`;
     const sets = updateColumnsOnConflict.map((c) => `${c} = excluded.${c}`).join(",");
     return `on conflict (${pkColumns.join(",")}) do update set ${sets}`;
   }
@@ -294,7 +301,8 @@ async function chunkedInsert(client, table, rows, pkColumns, conflictMode = "tar
   if (rows.length === 0) return 0;
   const columns = Object.keys(rows[0]);
   const chunkSize = Math.max(1, Math.floor(1000 / columns.length)); // stay under postgres's 65535 bind-param limit
-  const onConflict = conflictClause(conflictMode, pkColumns, updateColumnsOnConflict);
+  const onConflict = conflictClause(conflictMode, pkColumns,
+    (updateColumnsOnConflict ?? []).filter((column) => columns.includes(column)));
   let inserted = 0;
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
@@ -420,6 +428,14 @@ export function sourceIdOverrides(cfg) {
   return pairs.length ? ` || jsonb_build_object(${pairs.join(", ")})` : "";
 }
 
+// A UTC midnight may be on the previous café business day. Use the business timezone,
+// never the connection's session timezone, for timestamp-partitioned labor.
+export function businessDaySql(cfg, alias) {
+  const value = `${alias}.${cfg.dateColumn}`;
+  if (!cfg.localDay) return `(${value})::date`;
+  return `(${value} at time zone (select timezone from businesses where id = ${alias}.business_id))::date`;
+}
+
 // One row per business day: md5 over every row of that day (minus ignored columns), in a fixed order.
 // Order lines have no business or date of their own: they belong to their order's day and are
 // keyed by the order's POS id, which is the same in both cafés. The source side translates links.
@@ -427,11 +443,11 @@ export function dayFingerprintSql(cfg, side = "dest") {
   const links = side === "source" ? sourceIdOverrides(cfg) : "";
   if (cfg.joinScope) {
     const row = `p.pos_order_id || ':' || ((to_jsonb(t) - $2::text[])${links})::text`;
-    return `select (p.${cfg.dateColumn})::date::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t join ${cfg.joinScope} p on t.${cfg.joinCol} = p.id where p.business_id = $1 group by 1`;
+    return `select ${businessDaySql(cfg, "p")}::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t join ${cfg.joinScope} p on t.${cfg.joinCol} = p.id where p.business_id = $1 group by 1`;
   }
   const row = `((to_jsonb(t) - $2::text[])${links})::text`;
   const filter = cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : "";
-  return `select (t.${cfg.dateColumn})::date::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t where t.business_id = $1${filter} group by 1`;
+  return `select ${businessDaySql(cfg, "t")}::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t where t.business_id = $1${filter} group by 1`;
 }
 
 // remapId in SQL: the same name-based UUID (version 5) the copy gives each row, using pgcrypto's sha1.
@@ -460,38 +476,65 @@ async function readDayFingerprints(client, cfg, businessId) {
 }
 
 // SQL condition selecting the given dates ($2) and, when $3 is true, rows without a date.
-function dayCondition(column) {
-  return `((${column})::date = any($2::date[]) or ($3::boolean and ${column} is null))`;
+function dayCondition(expression) {
+  return `(${expression} = any($2::date[]) or ($3::boolean and ${expression} is null))`;
 }
 const dayParams = (businessId, days) => [businessId, days.filter((d) => d !== "none"), days.includes("none")];
 
 async function deleteDestDays(client, cfg, days) {
-  const { table, joinScope, joinCol, dateColumn } = cfg;
+  const { table, joinScope, joinCol } = cfg;
   const params = dayParams(DEST_BUSINESS_ID, days);
   if (joinScope) {
-    await client.query(`delete from ${table} where ${joinCol} in (select p.id from ${joinScope} p where p.business_id = $1 and ${dayCondition(`p.${dateColumn}`)})`, params);
+    await client.query(`delete from ${table} where ${joinCol} in (select p.id from ${joinScope} p where p.business_id = $1 and ${dayCondition(businessDaySql(cfg, "p"))})`, params);
   } else {
-    await client.query(`delete from ${table} where business_id = $1 and ${dayCondition(dateColumn)}`, params);
+    await client.query(`delete from ${table} t where t.business_id = $1 and ${dayCondition(businessDaySql(cfg, "t"))}`, params);
   }
 }
 
 async function copySourceDays(client, cfg, days) {
-  const { table, pk, joinScope, joinCol, dateColumn, conflictMode } = cfg;
+  const { table, pk, joinScope, joinCol, conflictMode } = cfg;
   const selectSql = joinScope
-    ? `select t.* from ${table} t join ${joinScope} p on t.${joinCol} = p.id where p.business_id = $1 and ${dayCondition(`p.${dateColumn}`)}`
-    : `select t.* from ${table} t where t.business_id = $1 and ${dayCondition(`t.${dateColumn}`)}${cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : ""}`;
+    ? `select t.* from ${table} t join ${joinScope} p on t.${joinCol} = p.id where p.business_id = $1 and ${dayCondition(businessDaySql(cfg, "p"))}`
+    : `select t.* from ${table} t where t.business_id = $1 and ${dayCondition(businessDaySql(cfg, "t"))}${cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : ""}`;
   const { rows } = await client.query(selectSql, dayParams(SOURCE_BUSINESS_ID, days));
   if (rows.length === 0) return 0;
   return chunkedInsert(client, table, rows.map((row) => remapRow(table, row, cfg)), pk, conflictMode);
 }
 
-// Compares every table day by day and replaces only the days that differ, in one transaction, so a
-// failure partway through never leaves the destination with some tables refreshed and others not.
-export async function runDayMirrorSync(client, counts) {
+export function orderByForeignKeys(initialOrder, edges) {
+  const remaining = new Set(initialOrder);
+  const order = [];
+  while (remaining.size) {
+    const next = initialOrder.find((table) => remaining.has(table) &&
+      !edges.some(({ child, parent }) => child === table && remaining.has(parent) && parent !== child));
+    if (!next) throw Object.assign(new Error("mirrored table FK cycle"), { code: "FK_ORDER_CYCLE" });
+    order.push(next);
+    remaining.delete(next);
+  }
+  return order;
+}
+
+async function readMirrorForeignKeys(client) {
+  const { rows } = await client.query(`select child.relname as child, parent.relname as parent
+    from pg_constraint fk join pg_class child on child.oid = fk.conrelid
+    join pg_class parent on parent.oid = fk.confrelid
+    join pg_namespace ns on ns.oid = child.relnamespace
+    where fk.contype='f' and ns.nspname='public'
+      and child.relname = any($1::text[]) and parent.relname = any($1::text[])`,
+    [DAY_MIRROR_ORDER]);
+  return rows;
+}
+
+// The caller owns the transaction, including master rows, archive and metadata.
+// One failure rolls the *whole* source-to-test copy back.
+// Compares every table day by day and replaces only the days that differ.
+export async function runDayMirrorSync(client, counts, step = () => {}) {
   const byTable = Object.fromEntries(REFRESH_WINDOW_TABLES.map((cfg) => [cfg.table, cfg]));
   const plans = {};
+  const edges = await readMirrorForeignKeys(client);
+  const safeOrder = orderByForeignKeys(DAY_MIRROR_ORDER, edges);
   await defineSqlRemapId(client);
-  for (const tableName of DAY_MIRROR_ORDER) {
+  for (const tableName of safeOrder) {
     const cfg = byTable[tableName];
     const [source, dest] = [await readDayFingerprints(client, cfg, SOURCE_BUSINESS_ID), await readDayFingerprints(client, cfg, DEST_BUSINESS_ID)];
     plans[tableName] = daysToReplace(source, dest, FORCE_FULL_COPY);
@@ -505,21 +548,17 @@ export async function runDayMirrorSync(client, counts) {
   plans.orders = orderDays;
   plans.order_lines = orderDays;
 
-  await client.query("begin");
-  try {
-    for (const tableName of [...DAY_MIRROR_ORDER].reverse()) {
-      if (plans[tableName].length) await deleteDestDays(client, byTable[tableName], plans[tableName]);
-    }
-    for (const tableName of DAY_MIRROR_ORDER) {
-      counts[tableName] = plans[tableName].length ? await copySourceDays(client, byTable[tableName], plans[tableName]) : 0;
-      if (plans[tableName].length) counts[`${tableName}_days`] = plans[tableName].length;
-    }
-    counts.toast_day_status_runs = await linkImportRuns(client);
-    await client.query("commit");
-  } catch (err) {
-    await client.query("rollback");
-    throw err;
+  for (const tableName of [...safeOrder].reverse()) {
+    step(`mirror_delete_${tableName}`);
+    if (plans[tableName].length) await deleteDestDays(client, byTable[tableName], plans[tableName]);
   }
+  for (const tableName of safeOrder) {
+    step(`mirror_insert_${tableName}`);
+    counts[tableName] = plans[tableName].length ? await copySourceDays(client, byTable[tableName], plans[tableName]) : 0;
+    if (plans[tableName].length) counts[`${tableName}_days`] = plans[tableName].length;
+  }
+  step("mirror_link_import_runs");
+  counts.toast_day_status_runs = await linkImportRuns(client);
 }
 
 // The destination keeps a copy of each import run a source day points at, so the copied archive
@@ -590,6 +629,8 @@ if (process.env.VITEST !== "true" && !process.env.SYNC_CAFE_DATA_SKIP_MAIN) {
 
 // Every copy step, in order. `step` is told which step is running (for the error log).
 export async function syncAll(client, counts, step = () => {}) {
+  await client.query("begin isolation level repeatable read");
+  try {
   step("toast_api_credentials");
   await ensureToastCredentialsPlaceholder(client); // must exist before toast_location_mappings below
 
@@ -598,17 +639,22 @@ export async function syncAll(client, counts, step = () => {}) {
     counts[cfg.table] = await syncTable(client, cfg);
   }
 
+  step("timezone_and_hours");
+  await syncTimezoneAndHours(client); // set destination timezone before clock-in day partitioning
+
   step("toast_sync_runs");
   counts.toast_sync_runs = await syncImportRuns(client); // before the archive and day status that name them
 
   step("day_mirror");
-  await runDayMirrorSync(client, counts);
-
-  step("timezone_and_hours");
-  await syncTimezoneAndHours(client);
+  await runDayMirrorSync(client, counts, step);
 
   step("toast_today_live");
   counts.toast_today_live = await syncTodayLive(client);
+  await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  }
 }
 
 export async function main() {
@@ -635,10 +681,15 @@ export async function main() {
     // Deliberately log only the table name and error code — never err.message/err.detail, which
     // can embed literal row values (e.g. a unique-constraint violation's "Key (id)=(...)").
     const errorCode = err.code ?? "UNKNOWN";
-    console.error(`sync failed: table=${currentTable} code=${errorCode}`);
+    // PostgreSQL constraint/table identifiers are safe to log. Never log err.detail or row values.
+    const safeId = (value) => /^[a-zA-Z_][a-zA-Z_0-9]{0,100}$/.test(value ?? "") ? value : null;
+    const constraint = safeId(err.constraint);
+    const violatedTable = safeId(err.table);
+    const diagnostic = [currentTable, violatedTable, constraint].filter(Boolean).join(":");
+    console.error(`sync failed: table=${diagnostic} code=${errorCode}`);
     if (runId) {
       try {
-        await finishRun(client, runId, { status: "error", counts, errorTable: currentTable, errorCode });
+        await finishRun(client, runId, { status: "error", counts, errorTable: diagnostic, errorCode });
       } catch {
         // best-effort audit write; don't mask the original failure
       }
