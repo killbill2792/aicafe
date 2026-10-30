@@ -36,6 +36,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
 import ComingUpCard from "./ComingUpCard";
+import {openEventDayThread} from "./eventDayThread";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
@@ -817,19 +818,22 @@ export default function SupervisorChatComposer({
   const askFromBoard = (prompt: string) => { if (boardAskDisabled) return; retryId.current = null; void sendText(prompt); };
   const chatAboutEventDay=async(date:string,title:string,prompt:string)=>{
     if(boardAskDisabled||openingEvent.current)return;
-    const existing=eventThreadIds.current.get(date);
-    if(existing){selectThread(existing);return;}
     openingEvent.current=true;
     try{
-      // Existing owner-scoped thread API handles idempotency and permissions.
-      const created=await jsonFrom<{thread:ConversationThread}>(await fetch("/api/ai/threads",{
-        method:"POST",headers:{"content-type":"application/json"},
-        body:JSON.stringify({requestId:crypto.randomUUID(),title}),
-      }));
-      eventThreadIds.current.set(date,created.thread.id);
-      selectThread(created.thread.id);
-      setThreads(current=>[created.thread,...current.filter(t=>t.id!==created.thread.id)]);
-      await sendText(prompt,undefined,created.thread.id);
+      await openEventDayThread({
+        date,title,prompt,known:eventThreadIds.current,
+        create:async title=>{
+          // Existing owner-scoped thread API handles idempotency and permissions.
+          const created=await jsonFrom<{thread:ConversationThread}>(await fetch("/api/ai/threads",{
+            method:"POST",headers:{"content-type":"application/json"},
+            body:JSON.stringify({requestId:crypto.randomUUID(),title}),
+          }));
+          setThreads(current=>[created.thread,...current.filter(t=>t.id!==created.thread.id)]);
+          return created.thread;
+        },
+        select:id=>selectThread(id),
+        send:async(prompt,id)=>sendText(prompt,undefined,id),
+      });
     }catch{
       setError(true);setFailureCode("agent_request_failed");
     }finally{openingEvent.current=false;}
