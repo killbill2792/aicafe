@@ -65,13 +65,19 @@ export function readOnlyEventObservation(p:LoopProposal):LoopProposal|null{
 
 /** One canonical monitored plan per event-day. A committed owner choice wins over
  * an unapproved revised draft; reruns never generate parallel report threads. */
-export function selectEventObservations(proposals:readonly LoopProposal[]):LoopProposal[]{
-  const priority=(status:LoopProposal["status"])=>
-    status==="committed"||status==="manual_confirmed"?2:status==="approved"?1:0;
+export function selectEventObservations(proposals:readonly LoopProposal[],
+  observedIds:ReadonlySet<string>=new Set()):LoopProposal[]{
+  const priority=(p:LoopProposal)=>{
+    // Once a day's monitor has emitted a sample, its proposal ID is sticky.
+    // Changing draft facts cannot create a second mid-run notice/inbox thread.
+    if(observedIds.has(p.id))return 10;
+    return p.status==="committed"||p.status==="manual_confirmed"?2:
+      p.status==="approved"?1:0;
+  };
   const chosen=new Map<string,LoopProposal>();
   for(const original of [...proposals].sort((a,b)=>
-    priority(b.status)-priority(a.status)||
-    b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id))){
+    priority(b)-priority(a)||b.createdAt.localeCompare(a.createdAt)||
+    b.id.localeCompare(a.id))){
     const observation=readOnlyEventObservation(original);
     if(!observation)continue;
     const start=observation.monitoringStartDate!;
@@ -79,12 +85,25 @@ export function selectEventObservations(proposals:readonly LoopProposal[]):LoopP
   }
   return [...chosen.values()];
 }
+/** Bounded, persisted monitor identity, shared by the live and report crons.
+ * Fail closed when it cannot be read: guessing a new ID can duplicate notices. */
+export async function observedEventProposalIds(
+  db:ReturnType<typeof createAdminSupabaseClient>,businessId:string,
+  ids:readonly string[]):Promise<Set<string>>{
+  if(!ids.length)return new Set();
+  const {data,error}=await db.from("supervisor_monitor_samples")
+    .select("proposal_id").eq("business_id",businessId)
+    .in("proposal_id",[...new Set(ids)].slice(0,100)).limit(1000);
+  if(error)throw new Error("Event monitoring history unavailable");
+  return new Set((data??[]).map(r=>r.proposal_id as string));
+}
 
-/** Read existing café-scoped Toast views only. Named discounts and combo
- * adoption require identifiable POS evidence: a generic discount amount or
- * sale of separate items cannot prove that a proposal was implemented. */
+/** Read the already canonicalized, café-scoped Toast evidence only.
+ * A named promotion and a bundled menu item are distinct from generic sales
+ * or an order-level discount total; neither proves that physical work occurred. */
 export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabaseClient>,
-  businessId:string,day:string){
+  businessId:string,day:string,
+  actions:readonly {area:string;action:string}[]=[]){
   const range={dateFrom:day,dateTo:day};
   const [items,discounts,shifts,menu]=await Promise.all([
     readItemSales(db,businessId,range),
@@ -104,26 +123,58 @@ export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabas
       data.quantity>0&&menuNames.has(data.name)
       ?[{name:data.name,quantity:data.quantity}]:[];
   });
+  // The current canonical view includes typed *check* and *item* discounts.
+  // Empty/malformed names are not evidence of an applied named promotion.
   const recordedDiscounts=discounts.rows.filter(r=>r.source==="toast"&&
     r.status==="actual"&&typeof r.amount_cents==="number");
-  // The current canonical discount view exposes amount/order ID, not the
-  // applied discount's *name*. Thus there is no identifiable promotion proof.
-  const namedDiscounts:{coverage:"missing"|"verified";names:string[]}={
-    coverage:"missing",names:[],
-  };
-  const labor=shifts.rows.filter(r=>r.source==="toast"&&r.status==="actual");
+  const names=new Set<string>();
+  for(const row of recordedDiscounts){
+    for(const value of [row.check_discounts,row.item_discounts]){
+      if(!Array.isArray(value))continue;
+      for(const entry of value){
+        if(!entry||typeof entry!=="object")continue;
+        const d=entry as {name?:unknown;amountCents?:unknown};
+        const name=typeof d.name==="string"?d.name.trim():"";
+        if(name&&name.length<=120&&typeof d.amountCents==="number"&&
+          Number.isSafeInteger(d.amountCents)&&d.amountCents>0)names.add(name);
+      }
+    }
+  }
+  const normalized=(value:string)=>value.trim().replace(/\\s+/g," ").toLocaleLowerCase("en-US");
+  const plannedPromotion=actions.filter(a=>a.area==="promo")
+    .map(a=>normalized(a.action));
+  const matches=(name:string)=>plannedPromotion.some(action=>
+    name.length>=4&&action.includes(normalized(name)));
+  const matchedDiscounts=[...names].filter(matches);
+  const matchedCombos=sold.map(r=>r.name).filter(name=>
+    /\\b(combo|bundle|meal deal)\\b/i.test(name)&&matches(name));
+  // A wage classification is independent of a recorded closed timecard.
+  // "needs_match" and "estimated" wages remain valid attendance facts.
+  const labor=shifts.rows.filter(r=>{
+    if(r.source!=="toast")return false;
+    const data=r.data as {clock_in?:unknown;clock_out?:unknown}|null;
+    return ["actual","estimated","needs_match"].includes(String(r.status))&&
+      typeof data?.clock_in==="string"&&typeof data.clock_out==="string";
+  });
+  const openLabor=shifts.rows.some(r=>r.source==="toast"&&r.status==="open");
+  const partialLabor=unavailable(shifts)||openLabor;
   return {
     itemSales:{coverage:unavailable(items)||unavailable(menu)?"partial" as const:
       sold.length?"verified" as const:"missing" as const,items:sold.slice(0,8)},
-    namedDiscounts,
+    namedDiscounts:{coverage:unavailable(discounts)?"partial" as const:
+      names.size?"verified" as const:"missing" as const,
+      names:[...names].slice(0,8),matchedRecommendationNames:matchedDiscounts.slice(0,8)},
     discountAmounts:{coverage:unavailable(discounts)?"partial" as const:
       recordedDiscounts.length?"verified" as const:"missing" as const,
       observedOrders:recordedDiscounts.length},
-    laborEntries:{coverage:unavailable(shifts)?"partial" as const:
+    laborEntries:{coverage:partialLabor?"partial" as const:
       labor.length?"verified" as const:"missing" as const,
-      recordedShifts:labor.length},
-    recommendedComboImplemented:"unverified" as const,
-    recommendedDiscountImplemented:"unverified" as const,
+      recordedShifts:labor.length,
+      wageCoverage:partialLabor||labor.some(r=>r.status!=="actual")?
+        "partial" as const:labor.length?"verified" as const:"missing" as const},
+    recommendedComboImplemented:matchedCombos.length?"verified" as const:"unverified" as const,
+    recommendedDiscountImplemented:matchedDiscounts.length?
+      "verified" as const:"unverified" as const,
     physicalPreparationImplemented:"unverified" as const,
   };
 }
@@ -256,11 +307,13 @@ export const eventReadinessCapability=registerLoopCapability({
    // details. Keep that distinction in the same saved Supervisor report.
    const toastEvidence=windowComplete&&window?.proposalId?await Promise.resolve()
      .then(()=>eventToastEvidence(createAdminSupabaseClient(),
-       scope.businessId,effect.endDate)).catch(()=>({
+       scope.businessId,effect.endDate,effect.actions)).catch(()=>({
        itemSales:{coverage:"missing" as const,items:[]},
-       namedDiscounts:{coverage:"missing" as const,names:[]},
+       namedDiscounts:{coverage:"missing" as const,names:[],
+         matchedRecommendationNames:[]},
        discountAmounts:{coverage:"missing" as const,observedOrders:0},
-       laborEntries:{coverage:"missing" as const,recordedShifts:0},
+       laborEntries:{coverage:"missing" as const,recordedShifts:0,
+         wageCoverage:"missing" as const},
        recommendedComboImplemented:"unverified" as const,
        recommendedDiscountImplemented:"unverified" as const,
        physicalPreparationImplemented:"unverified" as const,
