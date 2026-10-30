@@ -202,7 +202,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {" "}<Link href="/pricing" className="underline">{tAccess("haveCode")}</Link>
     </p>}
     <SupervisorHomePanel cafeCurrency={cafeCurrency}
-      chatStartPromise={chatStartPromise}
+      chatStartPromise={chatStartPromise} boardPeriod={period}
       initialThreadId={initialThread} initialProposalId={initialExperiment}
           locale={locale}
       languageSwitch={<LanguageSwitch href="/" compact />}
