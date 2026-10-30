@@ -57,6 +57,7 @@ describe("event-thread owner questions (recorded tool-call fixtures)",()=>{
 
   it("routes an event-day shift move to the existing approval proposal, not a direct write",async()=>{
     const proposeStaff=vi.fn(async()=>({proposalId,revision:1,capabilityId:"staff_shift_change"}));
+    const proposePriceChange=vi.fn(async()=>{throw new Error("not a price change");});
     const {provider}=scripted([
       [tool("propose_shift_change",{shift_id:shiftId,remove:false,shift:{
         employee_id:employeeId,date:"2026-10-31",start:"15:00",end:"19:00",break_minutes:0,
@@ -64,13 +65,14 @@ describe("event-thread owner questions (recorded tool-call fixtures)",()=>{
       [text("I have drafted the shift move for your approval."),completed],
     ]);
     const turn=await runAgentTurn({ownerText:"Move Maria's extra Halloween shift to 3pm",context:{
-      ...context,proposals:{proposeStaff},
+      ...context,proposals:{proposeStaff,proposePriceChange},
     },provider});
     expect(proposeStaff).toHaveBeenCalledWith(expect.objectContaining({name:"propose_shift_change",
       input:expect.objectContaining({shift_id:shiftId,shift:expect.objectContaining({start:"15:00"})})}));
     expect(turn.results).toEqual(expect.arrayContaining([expect.objectContaining({
       source:"staff_proposal",draft:true,saved:false,proposalId,
     })]));
+    expect(proposePriceChange).not.toHaveBeenCalled();
     expect(turn.text).toContain("for your approval");
   });
 });
