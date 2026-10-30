@@ -1,7 +1,8 @@
 Direction: an AI operator that runs the café through the Supervisor chat (see AGENTS.md sections 1–5).
-Each item below is one small PR, in order. Do not start an item from "Next" before "Now" is done.
-**Owner focus (Oct 30): app-wide responsiveness on Vercel is P0 ahead of new non-speed features.**
-Nearby-events web-search repair is assigned separately to Claude; do not include it in speed PRs.
+Each item below is a scoped PR. Other work keeps its published dependencies; the
+three Events Fix A/B/C workstreams below may be built in parallel after the planning PR merges.
+**Owner focus (Oct 30): the Events dashboard is P0 alongside app-wide responsiveness P0.**
+Keep Events search, automatic monitoring, UI and performance PR scopes separate.
 **Separate-chat playbook:** [docs/plans/app-wide-performance.md](docs/plans/app-wide-performance.md) — each numbered item has its own copy/paste prompt, prerequisites and acceptance checks. Work from the latest main; the plan is not permission to merge or deploy.
 
 ## Open issues (any agent can pick one up)
@@ -17,32 +18,120 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    closeout (see "Supervisor chat start" below). Fix: add it as a golden owner question with exact
    numbers checked on the chat and Money screen paths, add the prompt mapping, then ask it on the test
    café. Missing buckets must say "missing", never zero.
-2. [ ] **Nearby events, holidays and readiness.** Full plan, rules and one prompt per PR:
-   [docs/plans/nearby-events.md](docs/plans/nearby-events.md). First version shipped in #271; in
-   production the web search fails (`nearby_events_search_unparsed`) and the advice is hard-coded. Next,
-   in order: PR 1 search fix · PR 2 facts-only + AI plans and asks (with "Other") · PR 3 storage + one
-   reader (migration, owner approves) · PR 4 find once / plan once job · PR 5 Home strip + events panel
-   (Past/Now/Coming up, calendar) · PR 6 live watch · PR 7 report card · PR 8 saved venue map links
-   (D3 agreed, no geocoding) · PR 9 chat about any event + answer anything (web search).
-   Follow-ups: PR 10 first-run/rolling discovery · PR 11 early cancellation/change verification and
-   owner notices · PR 12 saved-event parity for Home/chat. Details and acceptance checks are in
-   [docs/plans/nearby-events.md](docs/plans/nearby-events.md). Keep every business action behind
-   owner approval; schedule jobs may only save verified event facts and send notices.
-   - [x] Nearby events PR 1 — retry unparseable HTTP 200 searches, holiday-specific queries, outcomes and safe diagnostics; recorded-response tests. PRs 2–9 remain open.
-   - [x] **Nearby-events PR 2 — facts only + AI plans/questions:** removed hard-coded event staffing advice; Home and chat use the same factual holiday/event and usual-hour evidence; owner answers can use an optional “Other” text response saved by event/year. PR 1 search repair, storage and monitoring remain separate.
-   - [x] PR 3 implementation: event-readiness capability, RLS-backed storage, shared reader, saved-events chat tool (migration **not applied**, awaiting owner approval).
-   - [x] **Nearby-events PR 4 — find once / plan once:** cron-only two-week Monday discovery, rolling daily/day-before checks, deduplicated café event facts, bounded Supervisor `propose_event_plan` drafts using the PR 3 approval lifecycle, day-specific chat threads and one Operations inbox item per day. Three-day-per-café daily cap, retry-safe delivery, cron auth and AI-access checks. Default-off pending owner-approved migration/rollout; baseline typecheck, lint, full Vitest, build and whitespace gate green (#284).
-   - [x] **Nearby-events PR 5 — saved Home strip and events/day-plan panels:** past/now/coming-up calendar with grouped saved events, owner-approved loop plans, checklist ticks and event chat; the Home open uses only PR 3 saved readers (no search). EN/ES/AR; baseline checks green on implementation commit (final progress-only CI pending).
-   - [x] **Nearby-events PR 6 — event-day live watch (#291):** opt-in today-live cron checks only owner-approved plans during configured café hours; provisional sales vs reconciled same-weekday hourly history flow through the canonical Supervisor monitor, report and day thread. Material alerts are day-idempotent, EN/ES/AR and Home reuse saved reports. No POS writes or separate inbox; owner approval needed to enable flag.
-   - [x] **Nearby-events PR 7 — next-morning report:** one terminal Supervisor report with certified actual/usual hourly evidence, checklist outcomes, an AI-written owner summary and idempotent inbox/thread delivery. The Past panel shows 14 days; historic reports inform later plans. PR #292; no new monitor, migration, deploy or POS writes.
-   - [x] **Nearby-events PR 9:** General read-only web search in Supervisor and event-day “Chat about this” threads.
-   - [ ] **Nearby-events PR 6 (#291)** — live event-day watch; finish final-head CI and independent review, merge before PR 8.
-   - [ ] **Nearby-events PR 7 (#292)** — morning-after report; reconcile PR 6 overlap, rerun required checks and merge before PR 8.
-   - [x] **Nearby-events PR 8 (#303)** — saved venue address opens Maps from both Events and day panels, no API provider, lookup, distance calculation or business action. Implementation checks green: [baseline](https://github.com/killbill2792/aicafe/actions/runs/41111154846); Codex found no issues on implementation commit. Merge still held for PRs 6–7, final-head CI and owner review.
-   - [x] **Nearby-events PR 10 — durable 14-day research (#304):** first scheduled scan on any weekday covers 14 days; the daily cron adds only the entering day; Monday research adds late announcements without rewriting saved events, owner decisions or history. Implementation baseline **green** ([TypeScript, ESLint, full Vitest and production build](https://github.com/killbill2792/aicafe/actions/runs/41114495774)); [Codex review](https://github.com/killbill2792/aicafe/pull/304#issuecomment-6531537682) clean on implementation head. Migration `20261030000129_cafe_event_search_state.sql` remains **unapplied**, dependent on owner approval and migration 127; independent review and release still pending.
-   - [ ] **Nearby-events PR 11 (#306) — verified changes and early alerts:** rebased onto merged PRs 6, 7, 8 and 10; owner-first notices for verified cancellations, moves and reinstatements preserve approved plans, event history and decisions. New-code checks and Codex review must pass on the conflict-resolution commit. Migration `20261031000131_event_verification.sql` **not applied**; no production activation or merge.
-   - [ ] **Nearby-events PR 12 (#305) — saved Home/Supervisor parity:** Home and both chat event tools share `readSavedEventTimeline` for existing events, statuses, source links, plans and reports; no paid event rediscovery in owner chat, while owner-requested `web_search` remains available. Added Home/chat parity and recorded agent-turn regressions. Rebased existing PR #305 onto latest `main` after PRs 10/11 merged and GitHub reports mergeable; final-head TypeScript, ESLint, full Vitest, production build and renewed Codex review are required before marking complete. No merge, deployment or production activation.
-   - [ ] **Events rollout gate:** owner-authorize/apply café-events RLS migration, verify real-café EN/ES/AR and phone panels, confirm all intended flags and cron safety before enabling production. Do not equate merged PRs with completed deployment.
+2. [ ] **Events stabilization — P0: reliable automatic intelligence and a real Events dashboard.**
+   **Owner-verified production prerequisite (Oct 30):** Events SQL/schema is applied, the
+   `EVENTS_LOOKAHEAD_ENABLED=true` flag is deployed, and the currently selected café
+   passes the demo/timezone eligibility check. Do not ask the owner to rerun SQL or
+   reconfigure these. The saved Halloween event and AI-written plan are visible.
+   **Code status:** Earlier nearby-events PRs 1–12 are merged/implemented, including
+   #291 (6), #292 (7), #303 (8), #304 (10), #306 (11), #305 (12).
+   The older unfinished PR/migration notes below were stale; they are replaced here.
+   Preserve all saved events, histories, verified changes, proposals and owner decisions.
+
+   **Observed production failure:** Vercel `/api/cron/events-lookahead` logs on Oct 30
+   ~21:27 UTC show `nearby_events_search_failed`: 3 of 3 initial research queries
+   failed, including 25-second timeouts and an HTTP-200 OpenAI response marked
+   `incomplete` / `max_output_tokens` at 1,200 tokens. The cron reached the search
+   stage; this does not prove all stages or cafés failed. Missing saved events must
+   not be presented as "none found" when research failed.
+
+   **Owner's revised contract, superseding conflicting historical Events plan text:**
+   AI discovers/verifies events, produces concise evidence-backed insights, observes
+   actual café data automatically on the event day and reports afterward; owners do
+   **not** have to select "Use this plan", "Track", or check off recommendations.
+   Never ask whether free chocolates/toffees, decorations, extra preparation or other
+   physical suggestions were carried out. Do not ask marketing follow-ups for now.
+   AI may recommend combos/discounts; report implementation only when identifiable
+   in Toast menu/item/discount data, otherwise say unverified. Never pretend an
+   observed sales change was caused by an event. All actual business changes (POS,
+   menu, staff, schedule, purchasing, outbound messages) still need separate owner
+   approval, per AGENTS.md. Read-only monitoring does not grant or fake approval.
+
+   **Start THREE separate PRs in parallel after this planning PR merges.**
+   Each starts from latest `main`; one owner per PR; no cross-scope edits. **UI is
+   the highest owner-facing priority.** Do not change `AGENTS.md`, migrations,
+   POS import/sync code, production flags, or add a duplicate event reader/monitor.
+
+   - [ ] **Events Fix A — cron search reliability (search files only).**
+     Own: `lib/events/nearbyEventsSearch.server.ts`, `lib/events/nearbyEvents.ts`
+     when needed, and search tests. Make the existing OpenAI web search reliably
+     produce valid sourced results with bounded retries/fallbacks for 200-incomplete,
+     reasoning-only, 25s timeout and partial success; log privacy-safe failure
+     classes. Respect the AGENTS.md 1,200-token ceiling unless the owner explicitly
+     approves a change (the open D4 decision is *not* approval). Failed/partial
+     searches must not be stored as complete; keep previously saved event facts
+     and avoid paid search on Home open. Regression tests: recorded response
+     fixtures for incomplete, timeout, partial, all failed, empty valid success,
+     bounded retries and dedupe. **No** writer/cron route, lifecycle, UI, locale
+     or migration edits. Send any scan-status writer follow-up to B.
+
+   - [ ] **Events Fix B — automatic read-only observation & Toast-backed reports.**
+     Own: `lib/events/eventsLookahead.server.ts`,
+     `lib/events/eventLiveWatch.server.ts`,
+     `lib/ai/supervisor/loop/eventReadiness.server.ts`,
+     `lib/events/eventFinalReport.server.ts`, their tests, and the existing
+     monitoring cron only if necessary. A saved event/AI insight must be watched on
+     its scheduled day, with mid-run facts and next-day report, **without owner
+     approval of observation**. Reuse ONE Supervisor loop, existing reports/inbox,
+     canonical Toast hourly sales, item sales, menu, named discounts, and available
+     shift evidence; distinguish missing, provisional and verified data.
+     Add a backward-compatible, nullable **AI-judged importance** to the *existing*
+     saved event insight/proposal payload if needed for UI sorting (no new table);
+     UI C reads it via the canonical Events reader. Do not infer that the owner
+     implemented a suggested combo, discount or physical preparation.
+     Do not ask physical-action questions. Do not automatically commit a draft
+     proposal as though the owner approved it; preserve manual approval and audit
+     trails for any business effects and all other Supervisor capabilities.
+     Reruns must not duplicate monitors, reports or notices or rewrite history.
+     Tests: future vs event day vs next day, auto-observation without approval,
+     partial/missing Toast, distinct named discount/combo evidence, no unauthorized
+     approval/POS write, rerun idempotence. B alone adds an Oct 30 owner-decision
+     addendum to `docs/plans/nearby-events.md` (keep historical PR 1–12 text).
+     **No** edits to A search files or C-owned UI/API/reader/localization.
+
+   - [ ] **Events Fix C — rich Events-first Home UI (owner P0).**
+     Own: `components/home/SavedEventsCard.tsx`,
+     `components/home/ChatStart.tsx`, `components/home/SupervisorChatComposer.tsx`,
+     `components/home/eventDayThread.ts`, `lib/operating/board.ts`,
+     `app/[locale]/page.tsx`, `messages/{en,es,ar}.json`, and UI/board tests.
+     Only C may extend `lib/data/cafeEvents.server.ts` or
+     `app/api/events/saved/route.ts` for canonical *read-only* display metadata.
+     EVERY Events entry point opens the SAME in-place Events panel, not chat.
+     Rich, legible artifact cards show the saved AI reasoning, dated event and
+     source/verification, usual busy hours *labeled estimate*, preparation
+     recommendations as plain insight cards (not disabled checkboxes), and
+     actual observations/reports as they become available.
+     **Past / Today / Upcoming** tabs and calendar: Past reports newest-first;
+     Today live actual/provisional readings; Upcoming next 7 days sorted by
+     saved AI importance by default (date toggle), beyond 7 days chronological;
+     unknown importance => chronological, never invented rank. Day/date drilldown
+     stays in panel with back navigation. On Oct 30 Halloween Oct 31 appears
+     **Upcoming**, never "Running" or "day 0"; on Oct 31 it is Today and on
+     Nov 1 Past. Do not duplicate the Events insight in generic Running text
+     or chat. Remove "Use this plan"/Track and physical checkboxes. Only an
+     intentional "Chat about this" opens the day thread, **without** automatic
+     raw JSON, full-plan text or a duplicate approval card. Visible retry for
+     API errors; missing research, empty verified result, stale and partial
+     data are not conflated. No web search from Home.
+     Tests: date boundaries (Oct 30/31, Nov 1), all tabs/entry points, importance
+     and date sorting, within-panel details, no involuntary chat or approval,
+     empty/error/retry, 360–430px + desktop, EN/ES/AR RTL, accessibility.
+     **No** edits to A/B writer, search, monitor, Toast, migration files.
+     C may be coded in parallel but **merge B before C** so removing the
+     approval control cannot strand existing monitoring in production.
+
+   **Shared integration contract:** All three consume the same saved Events
+   identity/facts and canonical data readers, same Supervisor report/inbox
+   lifecycle, and the same café-local date. B supplies optional importance;
+   C handles older saved rows without it. To avoid `PROGRESS.md` conflicts, each
+   implementer edits only *their own checkbox* here and rebases onto latest main
+   before final review; the owner-decision plan addendum belongs to B only.
+   All PRs require behavioral regression tests, `npx tsc --noEmit`,
+   `npm run lint`, `npm test`, `npm run build`, green final-head CI,
+   independent Codex review and fixes for all P1s; no autonomous merge,
+   production deploy or SQL. Acceptance after owner-approved rollout: real and
+   test café, EN/ES/AR and mobile/desktop, correct event-day transitions,
+   no silent failures, no duplicated output, no unauthorized actions.
 
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
