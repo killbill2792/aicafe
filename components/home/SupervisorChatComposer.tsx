@@ -480,7 +480,7 @@ export default function SupervisorChatComposer({
     try {
       const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachments)),
+        body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachmentOverride??attachments)),
       });
       if (!response.ok || !response.body) throw new Error(await agentErrorCode(response));
       const reader = response.body.getReader();
@@ -509,7 +509,8 @@ export default function SupervisorChatComposer({
       setQueuedOwner((queue) => queue.filter((item) => item.clientMessageId !== clientMessageId));
     }
   }
-  async function sendText(value: string, existingKey?: string, targetThreadId?: string) {
+  async function sendText(value: string, existingKey?: string, targetThreadId?: string,
+    attachmentOverride?:readonly StoredAttachment[]) {
     const text = value.trim() || (attachments.some(file=>file.mediaType.startsWith("image/"))?copy.photoRequest:"");
     // A confirmed background job accepts follow-ups while the first response streams.
     // The main-turn double-tap guard must not intercept this separate path.
@@ -832,7 +833,7 @@ export default function SupervisorChatComposer({
           return created.thread;
         },
         select:id=>selectThread(id),
-        send:async(prompt,id)=>sendText(prompt,undefined,id),
+        send:async(prompt,id,files)=>sendText(prompt,undefined,id,files),
       });
     }catch{
       setError(true);setFailureCode("agent_request_failed");
