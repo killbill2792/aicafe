@@ -78,6 +78,7 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
       {expanded ? <ChevronUp size={18} className="shrink-0" aria-hidden="true" /> :
         <ChevronDown size={18} className="shrink-0" aria-hidden="true" />}
     </button>}
+    {comingUp}
     {(!hasMessages || expanded) && <>
       <section className="min-w-0 rounded-2xl border border-line bg-card p-3" aria-label={copy.keyNumbers}>
         <PeriodSwitch current={data.period} />
@@ -102,7 +103,6 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
         </p>}
         <Link href="/money" className="mt-1 inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline">{copy.details}</Link>
       </section>
-      {comingUp}
       {data.board && (data.board.running.length > 0 || data.board.reports.length > 0) &&
         <section className="min-w-0 space-y-3 rounded-2xl border border-line bg-card p-3" data-testid="operating-board">
           {([[copy.boardRunning, data.board.running, "running"], [copy.boardReports, data.board.reports, "reports"]] as const)
