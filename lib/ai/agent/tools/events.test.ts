@@ -222,8 +222,9 @@ describe("board and chat show the same days",()=>{
     const board=await buildEventsOutlook({today:"2026-10-30",timezone:"America/Chicago",locale:"en",
       readLocation:async()=>location,search:async()=>({available:true,events:[aiWeek]}),
       readSales:async(from,to)=>history.filter(d=>d.date>=from&&d.date<=to).map(d=>({date:d.date,netSalesCents:d.netSalesCents})),
-      readHourlySales:async()=>["2026-09-05","2026-09-12","2026-09-19","2026-09-26","2026-10-03","2026-10-10","2026-10-17","2026-10-24"]
-        .map(date=>({date,hourLocal:14,netSalesCents:12_000}))});
+      readHourlySales:async()=>({hours:["2026-09-05","2026-09-12","2026-09-19","2026-09-26","2026-10-03","2026-10-10","2026-10-17","2026-10-24"]
+        .map(date=>({date,hourLocal:14,netSalesCents:12_000})),
+        quality:{missingInputs:[],estimatedInputs:[],staleInputs:[],notes:[]}})});
     if("tooFarAhead" in board)throw new Error("unexpected");
     const shared=(days:readonly Record<string,unknown>[])=>days.map(d=>({
       date:d.date,weekday:d.weekday,holidays:d.holidays,eventIds:d.eventIds,
