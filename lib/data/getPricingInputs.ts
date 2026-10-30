@@ -65,10 +65,15 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     .select("business_date, pos_order_id, net_sales_cents, processing_fee_provider")
     .eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null)
     .gte("business_date", fromDateStr).lte("business_date", todayDateStr));
-  const ordersPromise = options.attentionOnly
-    ? daysPromise.then(days => ordersMayAffectPricing(days.filter(day => day.netSalesCents > 0).length, windowDays)
-      ? readOrders() : { data: [], error: null })
-    : readOrders();
+  const ordersPromise = (async () => {
+    if (options.attentionOnly) {
+      const coveredDays = await daysPromise;
+      if (!ordersMayAffectPricing(coveredDays.filter(day => day.netSalesCents > 0).length, windowDays)) {
+        return { data: [], error: null };
+      }
+    }
+    return readOrders();
+  })();
   const [itemsResult, days, recurringResult, ordersResult, expenseResult, priorExpenseResult, ownerFeePlans] = await Promise.all([
     supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
     daysPromise,
