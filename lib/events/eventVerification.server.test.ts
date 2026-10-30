@@ -95,6 +95,27 @@ describe("persisted change alerts through the existing inbox and chat",()=>{
    expect(writes[0].patch).not.toHaveProperty("status");
    expect(writes[0].patch).not.toHaveProperty("last_verified_at");
  });
+ it("retains cancellation history when a cited reinstatement restores an event",async()=>{
+   const {db,writes}=fakeDb();
+   const previous={
+     id:event.id,previousStatus:"found",status:"cancelled",verdict:"cancelled",
+     sourceUrl:event.sourceUrl!,statement:"Cancelled",newDate:null,newVenue:null,
+     verifiedAt:"2026-10-30T12:00:00Z",
+   };
+   const original={...event,status:"cancelled" as const,
+     verificationDetails:{change:previous,pendingNotice:false,history:[previous]}};
+   const changed=await verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC",
+     "2026-11-01",timeline([original]),new Date("2026-11-01T12:00:00Z"),
+     async()=>({evidence:{verdict:"reinstated",
+       sourceUrl:event.sourceUrl,statement:"City says parade resumes.",
+       newDate:null,newVenue:null},citedUrls:[event.sourceUrl!]}));
+   expect(changed).toBe(1);
+   const changes=writes.filter(w=>w.table==="cafe_events");
+   expect(changes[0].patch.status).toBe("found");
+   const details=changes[0].patch.verification_details as {history:Array<{verdict:string}>};
+   expect(details.history.map(h=>h.verdict)).toEqual(["cancelled","reinstated"]);
+   expect(writes.filter(w=>w.table==="operating_tasks")).toHaveLength(1);
+ });
  it("does not replay an already-delivered notice or recheck immediately",async()=>{
    const {db,writes}=fakeDb();
    const old={...event,status:"cancelled" as const,
