@@ -7,6 +7,7 @@ on:
       - 'supabase/migrations/20261012000040_toast_secure_access.sql'
       - 'docs/toast-implementation-pr1.md'
       - '.github/workflows/toast-foundation-verify.yml'
+  workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -23,15 +24,25 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run test
-      - run: npm run lint
+      # The PR baseline runs every test, type check, lint and build once (in
+      # parallel). This job adds the Toast-focused tests and lint.
+      - name: Toast tests
+        run: npx vitest run lib/pos/toast app/api/pos/toast
+      - name: Full npm run test (manual runs only; the PR baseline covers it)
+        if: github.event_name != 'pull_request'
+        run: npm run test
+      - name: Full npm run lint (manual runs only; the PR baseline covers it)
+        if: github.event_name != 'pull_request'
+        run: npm run lint
       - name: Lint Toast changed files
         if: always()
         run: npx eslint lib/pos/toast app/api/pos/toast
-      - run: npx tsc --noEmit
-        if: always()
-      - run: npm run build
-        if: always()
+      - name: Full npx tsc --noEmit (manual runs only; the PR baseline covers it)
+        if: github.event_name != 'pull_request'
+        run: npx tsc --noEmit
+      - name: Full npm run build (manual runs only; the PR baseline covers it)
+        if: github.event_name != 'pull_request'
+        run: npm run build
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder

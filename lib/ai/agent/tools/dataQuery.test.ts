@@ -1,6 +1,6 @@
 import {it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {dataQueryTools} from "./dataQuery";
+import {dataQueryTools,fitRows} from "./dataQuery";
 const b="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 function input(view="cv_sales_days"){return {view,columns:["business_date","net_sales_cents"],
  filters:null,group_by:["business_date"],metrics:[{fn:"sum",column:"net_sales_cents"}],
@@ -81,4 +81,41 @@ it("marks cash, stock, kitchen and dining results as snapshots, not live data",a
  expect(cash.missing).toContain("snapshotOnly");
  const sales=await dataQueryTools.query_data.execute(input(),{db:f.db,businessId:b});
  expect(sales.missing).not.toContain("snapshotOnly");
+});
+it("reads named Toast fields through the database, never whole records",async()=>{
+ const f=testDb([{"data.server.guid":"s1","sum_data.price":12.5}]);
+ const result=await dataQueryTools.query_data.execute({view:"cv_toast_records",columns:null,
+  filters:[{column:"record_type",op:"=",value:"item"},{column:"counts_in_sales",op:"=",value:true}],
+  group_by:["data.server.guid"],metrics:[{fn:"sum",column:"data.price"}],
+  date_from:"2026-10-01",date_to:"2026-10-10",order_by:null,limit:null},{db:f.db,businessId:b});
+ expect(result.rows).toEqual([{"data.server.guid":"s1","sum_data.price":12.5}]);
+ expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+  p_view:"cv_toast_records",p_group_by:["data.server.guid"]}));
+ // Plain rows of Toast records also use the database function, not select *.
+ const plain=testDb([{record_type:"order"}]);
+ await dataQueryTools.query_data.execute({view:"cv_toast_records",columns:["record_type","data.table.name"],
+  filters:null,group_by:null,metrics:null,date_from:"2026-10-01",date_to:"2026-10-01",order_by:null,limit:null},
+  {db:plain.db,businessId:b});
+ expect(plain.rpc).toHaveBeenCalledTimes(1);
+});
+it("accepts only plain field names inside data",async()=>{
+ const f=testDb();
+ for(const column of ["data","data.","data.a;drop","data.a b","data.a.b.c.d.e.f.g.h.i","meta.x"])
+  expect((await dataQueryTools.query_data.execute({...input("cv_toast_records"),columns:null,
+   group_by:[column],metrics:null},{db:f.db,businessId:b})).error,column).toBe(column==="data"?undefined:"column_not_allowed");
+});
+it("lists the field names of a Toast record type for this café only",async()=>{
+ const rpc=vi.fn(async()=>({data:[{field:"data.price",type:"number",example:"5.5"}],error:null}));
+ const result=await dataQueryTools.describe_data.execute({record_type:"item"},{db:{rpc} as never,businessId:b});
+ expect(rpc).toHaveBeenCalledWith("ai_toast_fields",{p_business_id:b,p_record_type:"item"});
+ expect(result).toMatchObject({record_type:"item",fields:[{field:"data.price"}]});
+ const all=await dataQueryTools.describe_data.execute({record_type:null});
+ expect(all.views?.some(v=>v.name==="cv_toast_records")).toBe(true);
+});
+it("keeps results compact by dropping whole rows and saying so",()=>{
+ const rows=Array.from({length:100},(_,i)=>({i,text:"x".repeat(200)}));
+ const fit=fitRows(rows);
+ expect(fit.cut).toBe(true);
+ expect(JSON.stringify(fit.rows).length).toBeLessThanOrEqual(6000);
+ expect(fitRows(rows.slice(0,3))).toEqual({rows:rows.slice(0,3),cut:false});
 });

@@ -247,6 +247,8 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
         key="Operations.homePriceAwaitingVerification";params={item:itemName};
       }else if(task.kind==="price_review" && task.status==="watching" && typeof task.payload.snoozeMode==="string"){
         key="Operations.homePriceReviewLater";params={item:itemName};
+      }else if(task.kind==="event_change"){
+        key="Operations.eventChangeReview";params={event:String(task.payload.eventName??"")};
       }else if(task.kind==="price_review"){
         const direction=priceReviewDirection(Number(task.payload.currentPriceCents),Number(task.payload.suggestedPriceCents));
         key=direction==="low"?"Operations.priceTaskSentenceLow":"Operations.priceTaskSentenceHigh";

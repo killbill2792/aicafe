@@ -296,6 +296,24 @@ Toast dining-option name configuration from optional redacted captures.
 | dining_option_ref | Toast dining-option reference. | identifier | toast | What was recorded? |
 | dining_option_name | Safe Toast dining-option label when supplied. | label | toast | What was recorded? |
 
+## cv_toast_records
+
+Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover. Never use it to rebuild a screen number (net sales, profit, labor cost, card fees, break-even, item cost): use their tools.
+
+| Column | Meaning | Unit | Source | Example owner question |
+|---|---|---|---|---|
+| business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
+| source | Always toast. | label | app | Where did this come from? |
+| source_ref | Stable reference for this Toast record. | identifier | app | Which record supports it? |
+| status | Always actual: the latest saved Toast data. | label | app | Is this final? |
+| business_date | Café business date; null for setup lists (menus, tables, discounts, jobs...), which always show the newest copy. | local date | toast | What happened on this date? |
+| record_type | order, check, item, modifier, payment, check_discount, item_discount, service_charge, or a Toast endpoint such as labor/v1/timeEntries, labor/v1/employees, labor/v1/jobs, cashmgmt/v1/entries, config/v2/menuItems, config/v2/tables, menus/v2/menus, kitchen/v1/export/itemFulfillments. Always filter on it. | label | toast | Which kind of record? |
+| record_ref | Toast GUID of this record. | identifier | toast | Which record? |
+| order_ref | Toast order GUID this record belongs to (order-level types only). | identifier | toast | Which order? |
+| check_ref | Toast check GUID this record belongs to. | identifier | toast | Which check? |
+| counts_in_sales | Same rule as imported sales: false for voided or deleted orders, checks and items, test-mode and excess-food orders, gift card and house-account items, and declined, cancelled, errored or voided payments; null for non-order records. Filter true for sales. | boolean | app | Did this count? |
+| data | Every field Toast sent for this record (guest names, contacts, card details and notes removed). Read one field by name: data.server.guid, data.price, data.diningOption.guid. Get the field names with describe_data and record_type. Toast money fields are dollars, not cents. | JSON | toast | Sales by server? Average order time? Which table? |
+
 ## Capture-only Toast evidence and limitations
 
 `cv_cash`, Toast rows of `cv_inventory`, `cv_kitchen` and `cv_dining_options` are derived from **redacted diagnostic snapshots** in `toast_raw_samples`; they are not continuously imported operational data. A missing capture, failed response or zero returned rows does not establish an operational zero. Repeated captures can record the same underlying event multiple times, so they must not be summed as daily totals without deduplication.
