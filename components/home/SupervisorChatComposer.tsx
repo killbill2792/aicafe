@@ -32,6 +32,7 @@ import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
 import SupervisorExperiment from "./SupervisorExperiment";
 import ChatStart, {type ChatStartData,type ChatStartCopy} from "./ChatStart";
 import DeferredChatStart, {type HomeStartPayload} from "./DeferredChatStart";
+import type {Period} from "@/lib/viewmodels/period";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -230,13 +231,14 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
   </div>;
 }
 export default function SupervisorChatComposer({
-  enabled, canUseAi=true, locale, cafeCurrency, copy, languageSwitch, onActivityChange, initialThreadId, initialProposalId, chatStartData,chatStartCopy,chatStartPromise,
+  enabled, canUseAi=true, locale, cafeCurrency, copy, languageSwitch, onActivityChange, initialThreadId, initialProposalId, chatStartData,chatStartCopy,chatStartPromise,boardPeriod,
 }: {
   enabled: boolean; canUseAi?: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
   locale: Locale; copy: SupervisorChatCopy; cafeCurrency:string|null;
   chatStartData?: ChatStartData;
   chatStartCopy?: Omit<ChatStartCopy,"suggestions">;
   chatStartPromise?: Promise<HomeStartPayload | null>;
+  boardPeriod?: Period;
   initialThreadId?:string;initialProposalId?:string;
   languageSwitch?: React.ReactNode;
   onActivityChange?: (active: boolean) => void;
@@ -871,7 +873,7 @@ export default function SupervisorChatComposer({
       </button>
     </header>
     {chatStartPromise&&hasChatMessages&&<div className="max-h-[55dvh] shrink-0 overflow-y-auto">
-      <Suspense fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
+      <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
         <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
           hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
           onSuggestion={()=>{}} suggestionsDisabled comingUp={comingUpCard}/>
@@ -887,7 +889,7 @@ export default function SupervisorChatComposer({
       onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-label={copy.threads}>
       <div ref={messageContent} className="flex min-h-full flex-col items-stretch justify-start gap-4">
       {chatStartPromise&&!hasChatMessages&&startReady&&
-        <Suspense fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
+        <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
           <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
             hasMessages={false} expanded={false} onToggle={()=>{}}
             onSuggestion={prompt=>{retryId.current=null;void sendText(prompt);}}
