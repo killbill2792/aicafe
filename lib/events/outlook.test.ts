@@ -29,6 +29,20 @@ describe("facts-only events outlook",()=>{
     expect(o.days[1].holidays.map(h=>h.key)).toEqual(["halloween"]);
     expect(o.days[1].typicalSalesCents).toBeNull();
   });
+  it("preserves usable hourly observations and all import quality warnings",async()=>{
+    const warnings={missingInputs:["toastImportIncompleteDays","hourlySalesUnavailable"],
+      estimatedInputs:["estimatedHourlyCoverage"],staleInputs:["olderImport"],notes:["partial Toast data"]};
+    const o=await buildEventsOutlook({today:"2026-10-30",timezone:"America/Chicago",locale:"en",
+      readSales:async()=>[],readHourlySales:async()=>({hours:[
+        {date:"2026-10-03",hourLocal:14,netSalesCents:1100},
+        {date:"2026-10-10",hourLocal:14,netSalesCents:1200},
+        {date:"2026-10-17",hourLocal:14,netSalesCents:1300},
+        {date:"2026-10-24",hourLocal:14,netSalesCents:1400}],quality:warnings})});
+    if("tooFarAhead" in o)throw new Error("unexpected");
+    expect(o.days[1].usualHourlySales).toEqual([{hourLocal:14,typicalCents:1250,sampleDays:4}]);
+    expect(o.hourlySalesQuality).toEqual(warnings);
+    expect(o.notCovered).toEqual(expect.arrayContaining(Object.values(warnings).flat()));
+  });
   it("keeps hourly sales unknown when the canonical hourly reader fails",async()=>{
     const o=await buildEventsOutlook({today:"2026-10-30",timezone:"America/Chicago",locale:"en",
       readSales:async()=>[],readHourlySales:async()=>null});
