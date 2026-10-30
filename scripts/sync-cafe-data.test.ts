@@ -9,6 +9,10 @@ import {
   wrapClientForSafety,
   INSERT_IF_MISSING_TABLES,
   REFRESH_WINDOW_TABLES,
+  DAY_MIRROR_ORDER,
+  daysToReplace,
+  fingerprintIgnoredColumns,
+  dayFingerprintSql,
   SOURCE_BUSINESS_ID,
   DEST_BUSINESS_ID,
   syncTodayLive,
@@ -283,5 +287,45 @@ describe("syncTodayLive", () => {
   it("does nothing when there is no reading or the table is not installed yet", async () => {
     expect(await syncTodayLive(fakeClient([]).client)).toBe(0);
     expect(await syncTodayLive(fakeClient(Object.assign(new Error("missing"), { code: "42P01" })).client)).toBe(0);
+  });
+});
+
+describe("day mirror", () => {
+  it("replaces only the days whose rows differ, including days only one café has", () => {
+    const source = new Map([["2026-08-22", "a"], ["2026-08-23", "b"], ["2026-08-25", "late"]]);
+    const dest = new Map([["2026-08-22", "a"], ["2026-08-23", "old"], ["2026-08-24", "gone"]]);
+    expect(daysToReplace(source, dest)).toEqual(["2026-08-23", "2026-08-24", "2026-08-25"]);
+  });
+  it("replaces nothing when every day matches, and everything on a forced full copy", () => {
+    const same = new Map([["2026-08-22", "a"]]);
+    expect(daysToReplace(same, new Map(same))).toEqual([]);
+    expect(daysToReplace(same, new Map(same), true)).toEqual(["2026-08-22"]);
+  });
+  it("leaves remapped, reset and dropped columns out of the fingerprint", () => {
+    const tc = REFRESH_WINDOW_TABLES.find((c) => c.table === "timecards");
+    expect(fingerprintIgnoredColumns(tc)).toEqual(["business_id", "id", "employee_id", "schedule_id"]);
+    const status = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_day_status");
+    expect(fingerprintIgnoredColumns(status)).toEqual(expect.arrayContaining(["restaurant_guid", "last_import_run_id"]));
+    const refunds = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_refund_facts");
+    expect(fingerprintIgnoredColumns(refunds)).toContain("id");
+  });
+  it("groups order lines by their order's day and keys them by the order's POS id", () => {
+    const sql = dayFingerprintSql(REFRESH_WINDOW_TABLES.find((c) => c.table === "order_lines"));
+    expect(sql).toContain("join orders p on t.order_id = p.id");
+    expect(sql).toContain("p.pos_order_id");
+    expect(sql).toContain("(p.business_date)::date");
+  });
+  it("mirrors every table in a parent-first order, and copies the payment, labor, void and refund facts", () => {
+    expect([...DAY_MIRROR_ORDER].sort()).toEqual(REFRESH_WINDOW_TABLES.map((c) => c.table).sort());
+    expect(DAY_MIRROR_ORDER.indexOf("orders")).toBeLessThan(DAY_MIRROR_ORDER.indexOf("order_lines"));
+    for (const name of ["toast_payment_facts", "toast_payment_summaries", "toast_open_labor_summaries", "toast_void_facts", "toast_refund_facts"]) {
+      expect(DAY_MIRROR_ORDER).toContain(name);
+    }
+  });
+  it("never copies a refund's identity id", () => {
+    const refunds = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_refund_facts");
+    const out = remapRow("toast_refund_facts", { id: 7, business_id: SOURCE_BUSINESS_ID, restaurant_guid: "r", amount_cents: 5 }, refunds);
+    expect(out).not.toHaveProperty("id");
+    expect(out.business_id).toBe(DEST_BUSINESS_ID);
   });
 });
