@@ -1,5 +1,6 @@
 "use client";
 import type {ChatStartCopy, ChatStartData} from "./ChatStart";
+import type {HomeStartPayload} from "./DeferredChatStart";
 
 import SupervisorChatComposer, { type SupervisorChatCopy } from "./SupervisorChatComposer";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
@@ -12,12 +13,13 @@ type SupervisorCopy = {
 
 /** One conversation surface, not a dashboard card around another chat card. */
 export default function SupervisorHomePanel({
-  copy, chatCopy, chatEnabled, chatUnavailableReason, canUseAi=true, locale, languageSwitch, initialThreadId, initialProposalId, chatStartData, chatStartCopy, cafeCurrency,
+  copy, chatCopy, chatEnabled, chatUnavailableReason, canUseAi=true, locale, languageSwitch, initialThreadId, initialProposalId, chatStartData, chatStartCopy, chatStartPromise, cafeCurrency,
 }: {
   copy: SupervisorCopy;
   cafeCurrency:string|null;
   chatCopy: Omit<SupervisorChatCopy, keyof SupervisorCopy>;
-  chatStartData: ChatStartData;
+  chatStartData?: ChatStartData;
+  chatStartPromise?: Promise<HomeStartPayload | null>;
   chatStartCopy: Omit<ChatStartCopy, "suggestions">;
   initialThreadId?:string;initialProposalId?:string;
   languageSwitch?: React.ReactNode;
@@ -33,6 +35,6 @@ export default function SupervisorHomePanel({
     enabled={chatEnabled} canUseAi={canUseAi} unavailableReason={chatUnavailableReason} cafeCurrency={cafeCurrency}
      locale={locale} languageSwitch={languageSwitch}
     initialThreadId={initialThreadId} initialProposalId={initialProposalId} copy={{ ...copy, ...chatCopy }}
-    chatStartData={chatStartData} chatStartCopy={chatStartCopy}
+    chatStartData={chatStartData} chatStartCopy={chatStartCopy} chatStartPromise={chatStartPromise}
   />;
 }
