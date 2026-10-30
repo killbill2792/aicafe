@@ -2,7 +2,7 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
 const search=vi.hoisted(()=>vi.fn());
-vi.mock("./nearbyEventsSearch.server",()=>({searchNearbyEvents:search}));
+
 vi.mock("@/lib/ownerFacts/store.server",()=>({loadOwnerFacts:vi.fn().mockResolvedValue([])}));
 vi.mock("@/lib/data/cafeLocation.server",()=>({readCafeLocation:vi.fn().mockResolvedValue({
   label:"1 Main St, Example, US",city:"Example",region:"CA",countryCode:"US",
@@ -50,36 +50,37 @@ function fixture(){
     requests.push(input.from+".."+input.to);
     return responses.shift()??{available:true,outcome:"none_found",events:[],partial:false};
   });
-  return {db,events,writes,requests,responses,getState:()=>state};
+  return {db,events,writes,requests,responses,getState:()=>state,
+    run:(day:string)=>scanCafe(db,business,day,search)};
 }
 describe("cron-only discovery and preservation",()=>{
   beforeEach(()=>search.mockReset());
   it("scans all 14 days on first Tuesday, records even an empty successful search, then one day only",async()=>{
     const f=fixture();
-    await scanCafe(f.db,business,"2026-11-03");
+    await f.run("2026-11-03");
     expect(f.requests).toEqual(["2026-11-03..2026-11-16"]);
     expect(f.getState()).toMatchObject({scanned_through_date:"2026-11-16"});
-    await scanCafe(f.db,business,"2026-11-03");
+    await f.run("2026-11-03");
     expect(f.requests).toHaveLength(1);
-    await scanCafe(f.db,business,"2026-11-04");
+    await f.run("2026-11-04");
     expect(f.requests).toEqual(["2026-11-03..2026-11-16","2026-11-17..2026-11-17"]);
   });
   it("weekly research adds newly announced events without replacing old facts or status",async()=>{
     const f=fixture();
     f.responses.push({available:true,outcome:"found",events:[one],partial:false});
-    await scanCafe(f.db,business,"2026-11-03");
+    await f.run("2026-11-03");
     const row=[...f.events.values()][0],id=String(row.id);
     f.events.set(id,{...row,status:"cancelled",venue:"Owner-confirmed venue"});
     f.responses.push({available:true,outcome:"found",
       events:[{...one,venue:"Provider changed venue"},
         {...one,name:"Newly announced market",sourceUrl:"https://example.org/new"}],
       partial:false});
-    await scanCafe(f.db,business,"2026-11-09");
+    await f.run("2026-11-09");
     expect(f.requests).toEqual(["2026-11-03..2026-11-16","2026-11-09..2026-11-22"]);
     expect(f.events.get(id)).toMatchObject({status:"cancelled",venue:"Owner-confirmed venue"});
     expect(f.events.size).toBe(2);
     expect(f.writes.filter(w=>w.table==="cafe_events").every(w=>w.options.ignoreDuplicates===true)).toBe(true);
-    await scanCafe(f.db,business,"2026-11-09");
+    await f.run("2026-11-09");
     expect(f.requests).toHaveLength(2);
   });
   it("keeps an approved or rejected plan even after newly discovered event facts",()=>{
@@ -99,12 +100,12 @@ describe("cron-only discovery and preservation",()=>{
   it("never advances the scan cursor for a failed or partial search",async()=>{
     const f=fixture();
     f.responses.push({available:false,outcome:"failed",reason:"searchFailed"});
-    await scanCafe(f.db,business,"2026-11-05");
+    await f.run("2026-11-05");
     expect(f.getState()).toBeNull();
     f.responses.push({available:true,outcome:"found",events:[one],partial:true});
-    await scanCafe(f.db,business,"2026-11-05");
+    await f.run("2026-11-05");
     expect(f.getState()).toBeNull();
-    await scanCafe(f.db,business,"2026-11-05");
+    await f.run("2026-11-05");
     expect(f.getState()).toMatchObject({scanned_through_date:"2026-11-18"});
     expect(f.requests).toHaveLength(3);
   });
