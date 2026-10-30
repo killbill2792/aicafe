@@ -31,6 +31,11 @@ describe("parsing searched events",()=>{
     expect(parseNearbyEvents("```json\n"+JSON.stringify(many)+"\n```","2026-10-30","2026-11-05")).toHaveLength(MAX_EVENTS);
     expect(parseNearbyEvents("sorry, I could not search","2026-10-30","2026-11-05")).toBeNull();
     expect(parseNearbyEvents(JSON.stringify({events:[]}),"2026-10-30","2026-11-05")).toEqual([]);
+    // A broken "events" list is not an empty successful search.
+    expect(parseNearbyEvents(JSON.stringify({events:[{name:"No source"}]}),
+      "2026-10-30","2026-11-05")).toBeNull();
+    expect(parseNearbyEvents(JSON.stringify({events:[event({startDate:"2026-12-01",endDate:null})]}),
+      "2026-10-30","2026-11-05")).toBeNull();
   });
   it("reads the text of a Responses API result",()=>{
     expect(responseOutputText({output:[{type:"web_search_call"},
@@ -165,7 +170,7 @@ describe("web search call",()=>{
     expect(fetch).toHaveBeenCalledTimes(bodies.length);
   });
 
-  it("keeps found events but reports and caches the specific holiday search that failed",async()=>{
+  it("keeps partial findings without caching a failed holiday scope",async()=>{
     const fetch=vi.fn(async (_url:string|URL|Request,init?:RequestInit)=>{
       const request=JSON.parse(String(init?.body)) as {input:string};
       if(request.input.includes("Search specifically for Halloween"))
@@ -181,7 +186,8 @@ describe("web search call",()=>{
     const calls=fetch.mock.calls.length;
     expect(calls).toBeGreaterThan(1);
     expect(await search(params)).toEqual(result);
-    expect(fetch).toHaveBeenCalledTimes(calls);
+    // In contrast to a complete search, partial scopes are retried on next scan.
+    expect(fetch).toHaveBeenCalledTimes(calls*2);
   });
 
   it("flags a failed general search while retaining successful holiday events",async()=>{
@@ -196,6 +202,106 @@ describe("web search call",()=>{
     expect(result).toMatchObject({available:true,outcome:"found",partial:true,
       failedSearches:[{kind:"general"}],
       events:[{name:"Halloween parade"}]});
+  });
+
+  it("recovers from a 25-second timeout on one bounded plain-JSON retry",async()=>{
+    const info=vi.spyOn(console,"info").mockImplementation(()=>{});
+    try{
+      const fetch=vi.fn().mockRejectedValueOnce(Object.assign(new Error("no details"),{name:"TimeoutError"}))
+        .mockResolvedValueOnce(ok([event()]));
+      const result=await createNearbyEventsSearch({fetch,apiKey:"k",model:"gpt-test-reasoning"})(input);
+      expect(result).toMatchObject({available:true,outcome:"found",partial:false});
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const retry=JSON.parse(String(fetch.mock.calls[1][1].body));
+      expect(retry.model).toBe("gpt-4.1-mini");
+      expect(retry.text).toBeUndefined();
+      expect(retry.max_output_tokens).toBe(SEARCH_MAX_OUTPUT_TOKENS);
+      expect(info.mock.calls.map(c=>c[1])).toEqual([
+        expect.objectContaining({attempt:1,parseFailure:"timeout"}),
+        expect.objectContaining({attempt:2,parseFailure:null}),
+      ]);
+      expect(JSON.stringify(info.mock.calls)).not.toContain("Main St");
+    }finally{info.mockRestore();}
+  });
+
+  it("stops after two timeouts, returning failed rather than no events",async()=>{
+    const fetch=vi.fn().mockRejectedValue(Object.assign(new Error("connection"),{name:"TimeoutError"}));
+    const run=createNearbyEventsSearch({fetch,apiKey:"k",model:"m"});
+    expect(await run(input)).toEqual({available:false,outcome:"failed",reason:"timeout",category:"timeout"});
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(await run(input)).toMatchObject({available:false,outcome:"failed"});
+    // Failed scans are never cached as a completed search.
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([408,429,503])("retries transient HTTP %i once",async(status)=>{
+    const fetch=vi.fn().mockResolvedValueOnce(new Response("retry",{status}))
+      .mockResolvedValueOnce(ok([event()]));
+    const result=await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})(input);
+    expect(result).toMatchObject({available:true,outcome:"found"});
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry auth errors and never records them as no events",async()=>{
+    const fetch=vi.fn().mockResolvedValue(new Response("unauthorized",{status:401}));
+    const result=await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})(input);
+    expect(result).toMatchObject({available:false,outcome:"failed",category:"http_error"});
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not accept a nonempty message on an incomplete Responses result",async()=>{
+    const first={status:"incomplete",incomplete_details:{reason:"max_output_tokens"},
+      output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({events:[event()]})}]}]};
+    const fetch=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(first),{status:200}))
+      .mockResolvedValueOnce(ok([]));
+    const result=await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})(input);
+    expect(result).toEqual({available:true,outcome:"none_found",events:[],partial:false});
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps all-incomplete scans failed and retries them on the next invocation",async()=>{
+    const fixture={status:"incomplete",incomplete_details:{reason:"max_output_tokens"},
+      output:[{type:"web_search_call",status:"completed"},{type:"reasoning",summary:[]}]};
+    // A new request gets a new response body; Response.json() consumes it once.
+    const fetch=vi.fn(async()=>new Response(JSON.stringify(fixture),{status:200}));
+    const search=createNearbyEventsSearch({fetch,apiKey:"k",model:"m"});
+    expect(await search(input)).toEqual({available:false,outcome:"failed",
+      reason:"searchFailed",category:"incomplete"});
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(await search(input)).toMatchObject({available:false,outcome:"failed"});
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not call a partly failed, empty scan 'none found'",async()=>{
+    const fetch=vi.fn(async(_url:string|URL|Request,init?:RequestInit)=>{
+      const body=JSON.parse(String(init?.body)) as {input:string};
+      return body.input.startsWith("Search specifically for Halloween")?
+        new Response("offline",{status:503}):ok([]);
+    });
+    const result=await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})({
+      ...input,countryCode:"US",to:"2026-10-31"});
+    expect(result).toMatchObject({available:false,outcome:"failed",category:"http_error"});
+  });
+
+  it("reports complete failure across general and holiday searches, with bounded attempts",async()=>{
+    const fetch=vi.fn(async()=>new Response(JSON.stringify({
+      status:"incomplete",incomplete_details:{reason:"max_output_tokens"},
+      output:[{type:"web_search_call",status:"completed"},{type:"reasoning",summary:[]}],
+    }),{status:200}));
+    const params={...input,countryCode:"US",to:"2026-10-31"};
+    const scopes=1+holidaysBetween(params.from,params.to,"US","TX","en").length;
+    const result=await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})(params);
+    expect(result).toEqual({available:false,outcome:"failed",
+      reason:"searchFailed",category:"incomplete"});
+    expect(fetch).toHaveBeenCalledTimes(scopes*2);
+  });
+
+  it("caches an explicitly empty, fully successful search",async()=>{
+    const fetch=vi.fn().mockResolvedValue(ok([]));
+    const search=createNearbyEventsSearch({fetch,apiKey:"k",model:"m"});
+    expect(await search(input)).toEqual({available:true,outcome:"none_found",events:[],partial:false});
+    expect(await search(input)).toEqual({available:true,outcome:"none_found",events:[],partial:false});
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("does not call out without an API key",async()=>{

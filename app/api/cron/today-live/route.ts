@@ -23,9 +23,9 @@ export async function GET(request:Request){
   // Readings younger than 10 minutes are kept; older ones are refreshed.
   const read=await todaySoFarForBusiness(db,businessId,{maxAgeMs:10*60_000}).catch(()=>null);
   if(read?.available)saved++;else failed++;
-  // Live-event watch is opt-in until the owner approves the event rollout.
-  // The canonical saved Toast reading is the only live money source.
-  if(read?.available&&process.env.EVENTS_LIVE_WATCH_ENABLED==="true"&&
+  // Observation is read-only and follows the already enabled Events rollout;
+  // there is no second approval/flag for examining saved Toast evidence.
+  if(read?.available&&process.env.EVENTS_LOOKAHEAD_ENABLED==="true"&&
     Date.now()<deadline-15_000){
     const watch=await watchLiveEvents(businessId,read.value.businessDate).catch(()=>{
       console.warn("events_live_watch_unavailable");return null;

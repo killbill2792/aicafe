@@ -84,3 +84,23 @@ it("does not rewrite payments whose saved fee is already correct",async()=>{
  expect(result).toMatchObject({status:"actual",amountCents:66,count:2});
  expect(f.writes).toEqual([{processing_fee_cents:33,fee_status:"actual",fee_basis:"toast"}]);
 });
+
+it("preserves verified Toast zero fees as actual instead of overriding them with a rate",async()=>{
+ const f=db([{...visa,original_processing_fee_cents:0,
+  processing_fee_cents:29,fee_status:"estimated",fee_basis:"missing"}]);
+ const result=await refreshToastPaymentFeeForDay(f.db,b,"2026-10-14");
+ expect(result).toMatchObject({status:"actual",amountCents:0,count:1});
+ expect(m.upsert).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({
+  amountCents:0,status:"actual",sourceType:"connected_pos_actual",provider:"Toast"
+ }));
+ expect(f.writes).toEqual([{processing_fee_cents:0,fee_status:"actual",fee_basis:"toast"}]);
+});
+it("uses exact Toast per-payment fees for an imported day instead of owner estimates",async()=>{
+ const f=db([{...visa,payment_ref:"one",original_processing_fee_cents:5357},
+  {...visa,payment_ref:"two",original_processing_fee_cents:0}]);
+ const result=await refreshToastPaymentFeeForDay(f.db,b,"2026-10-12");
+ expect(result).toMatchObject({status:"actual",amountCents:5357,count:2});
+ expect(m.upsert).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({
+  amountCents:5357,status:"actual",sourceType:"connected_pos_actual"
+ }));
+});
