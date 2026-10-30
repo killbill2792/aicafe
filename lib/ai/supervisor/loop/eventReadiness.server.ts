@@ -1,5 +1,10 @@
 import "server-only";
 import {z} from "zod";
+import {formatInTimeZone} from "date-fns-tz";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
+import {readSavedTodayLive} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import type {OwnerLoopScope} from "./engine";
@@ -8,8 +13,10 @@ import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {readCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
-import {indexHourlyRevenue,compareEventDaySales} from "@/lib/metrics/core/eventReadiness";
+import {indexHourlyRevenue,compareEventDaySales,compareLiveEventSales} from "@/lib/metrics/core/eventReadiness";
 import {cafeToday} from "@/lib/metrics/core/clock";
+import {eventFinalNarrative,eventReportFactsHash,eventReportFallback,eventReportNumericEvidence}
+  from "@/lib/events/eventFinalReport.server";
 import {effectHash,registerLoopCapability,utcDateOffset} from "./engine";
 
 const time=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -107,6 +114,17 @@ export const eventReadinessCapability=registerLoopCapability({
  monitor:async(scope,effect,businessDate)=>{
    if(businessDate<effect.startDate||businessDate>effect.endDate)return null;
    const db=createAdminSupabaseClient();
+   const {data:cafe,error:cafeError}=await db.from("businesses").select("timezone")
+     .eq("id",scope.businessId).maybeSingle();
+   if(cafeError||!cafe?.timezone)return null;
+   const liveDay=formatInTimeZone(new Date(),cafe.timezone,"yyyy-MM-dd");
+   const isLive=businessDate===liveDay;
+   const saved=isLive?await readSavedTodayLive(db,scope.businessId):null;
+   // A partial, old or mismatched reading cannot generate an owner alert.
+   if(isLive&&(!saved||saved.value.businessDate!==businessDate||
+     saved.ageMs>20*60_000||!Number.isFinite(Date.parse(saved.value.readAt))||
+     Date.parse(saved.value.readAt)>Date.now()+60_000||saved.value.truncated||
+     saved.value.unparsedOrders>0||saved.value.locationsFailed>0))return null;
    const from=utcDateOffset(businessDate,-56);
    const [days,hours,exclusions]=await Promise.all([
      readDailyFacts(db,scope.businessId,from,businessDate),
@@ -115,7 +133,8 @@ export const eventReadinessCapability=registerLoopCapability({
    ]);
    const certified=days.filter(d=>d.salesDataStatus==="actual");
    const today=certified.find(d=>d.date===businessDate);
-   if(!today||!hours.available||!hours.value)return null;
+   // Finalized daily evidence always wins; never replace it with a live sample.
+   if((isLive&&today)||(!isLive&&!today)||!hours.available||!hours.value)return null;
    const byDay=indexHourlyRevenue(hours.value.hours);
    if(hours.quality.missingInputs.some(x=>x==="hourlySalesPageLimit"||x==="hourlySalesUnavailable"))return null;
    const excluded=new Set(exclusions.filter(e=>e.status==="found").flatMap(e=>{
@@ -125,6 +144,16 @@ export const eventReadinessCapability=registerLoopCapability({
    }));
    // One canonical usual-day definition, shared with get_nearby_events.
    // Missing hourly coverage only reduces the per-hour comparison sample.
+   if(isLive&&saved){
+     const time=formatInTimeZone(new Date(saved.value.readAt),cafe.timezone,"HH:mm");
+     const throughHour=Number(time.slice(0,2));
+     const comparison=compareLiveEventSales(certified,byDay,businessDate,
+       saved.value.netSalesCents,throughHour,excluded);
+     if(!comparison)return null;
+     return {businessDate,source:"toast_today_live+hourly_sales_rollup+daily_rollups",
+       observation:{coverage:"provisional",...comparison,asOf:saved.value.readAt,
+         asOfLocal:time,partialCurrentHour:true}};
+   }
    const comparison=compareEventDaySales(certified,byDay,businessDate,excluded);
    if(!comparison)return null;
    return {businessDate,source:"hourly_sales_rollup+daily_rollups",
@@ -142,13 +171,77 @@ export const eventReadinessCapability=registerLoopCapability({
    const actual=observed.filter(s=>s.observation.coverage==="actual");
    const complete=windowComplete&&actual.length===expected&&
      actual.every(s=>typeof s.observation.typicalCents==="number");
-   return {status:!windowComplete?"in_progress":complete?"complete":"insufficient_evidence",
+   const live=!windowComplete?[...observed].reverse().find(s=>
+     s.businessDate===window?.through&&s.observation.coverage==="provisional"):undefined;
+   const o=live?.observation;
+   const liveWatch=live&&o&&typeof o.asOf==="string"&&
+     typeof o.asOfLocal==="string"&&typeof o.actualCents==="number"?
+     {businessDate:live.businessDate,asOf:o.asOf,asOfLocal:o.asOfLocal,
+       actualCents:o.actualCents,typicalCents:typeof o.typicalCents==="number"?o.typicalCents:null,
+       changePercent:typeof o.changePercent==="number"?o.changePercent:null,
+       baselineDays:typeof o.baselineDays==="number"?o.baselineDays:0,
+       notable:o.notable===true,coverage:"provisional" as const,
+       partialCurrentHour:true}:null;
+   const copy=({en,es,ar} as const)[scope.locale].EventsPanel;
+   const direction=liveWatch?.changePercent===null?null:
+     liveWatch&&liveWatch.changePercent!==null?
+     liveWatch.changePercent>=0?"liveAhead":"liveBehind":null;
+   const hourEnd=liveWatch?liveWatch.asOfLocal.slice(0,2)+":59":null;
+   const midRunText=liveWatch?.notable&&direction&&hourEnd?
+     copy[direction].replace("{change}",String(Math.abs(liveWatch.changePercent!)))
+       .replace("{time}",liveWatch.asOfLocal).replace("{hourEnd}",hourEnd):undefined;
+   // The event monitor owns an existing Operations-task delivery contract.
+   // Only notable live findings are delivered here; PR 7 owns final reports.
+   const delivery=midRunText&&liveWatch&&hourEnd?{
+     agentId:"alex" as const,taskKind:"event_plan" as const,
+     entityType:"event_day",entityId:liveWatch.businessDate,confidence:"low" as const,
+     payload:{businessDate:liveWatch.businessDate,asOf:liveWatch.asOf,
+       asOfLocal:liveWatch.asOfLocal,note:midRunText,provisional:true,
+       changePercent:liveWatch.changePercent,baselineDays:liveWatch.baselineDays,
+       usualThroughHourEnd:hourEnd},
+     evidence:[{source:"toast_today_live+hourly_sales_rollup",
+       facts:{businessDate:liveWatch.businessDate,
+         actualCents:liveWatch.actualCents,typicalCents:liveWatch.typicalCents,
+         baselineDays:liveWatch.baselineDays,
+         usualThroughHourEnd:hourEnd,partialCurrentHour:true}}],
+     threadText:midRunText,
+   }:undefined;
+   const status=!windowComplete?"in_progress":complete?"complete":"insufficient_evidence";
+   const result={
+     eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
+     factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
+     checklist,liveWatch,
+     missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
+     days:actual.map(s=>({date:s.businessDate,...s.observation})),
+     caveat:"Comparison is observational, not evidence that an event caused a change.",
+   };
+   // Keep PR 6's live reporting and PR 7's final report in the same canonical loop.
+   const terminal=windowComplete&&Boolean(window?.proposalId);
+   const narrative=terminal&&window?.proposalId
+     ?await eventFinalNarrative(scope,window.proposalId,effect.facts.map(f=>f.name),
+       effect.summary,result,status==="complete"?"complete":"insufficient_evidence")
+     :null;
+   const reportText=narrative?.text??(terminal?eventReportFallback(scope.locale,result):null);
+   const provenance=narrative?.provenance??[];
+   const factsHash=eventReportFactsHash(result,status,effect.summary,effect.facts.map(f=>f.name));
+   const finalDelivery=terminal&&reportText?{
+     agentId:"alex" as const,taskKind:"event_plan" as const,
+     entityType:"event_day",entityId:effect.startDate,
+     confidence:status==="complete"?"high" as const:"low" as const,
+     payload:{itemName:effect.summary,businessDate:effect.startDate,
+       eventReport:true,outcomeStatus:status,text:reportText},
+     evidence:[{source:"hourly_sales_rollup+daily_rollups",
+       facts:{observedDays:actual.length,expectedDays:expected,
+         doneActions:checklist.done,totalActions:checklist.total,nonCausal:true}}],
+     numberProvenance:provenance,numericEvidence:eventReportNumericEvidence(result),
+     threadText:reportText,
+   }:undefined;
+   return {status,midRunText,midRunKey:liveWatch?.businessDate,
+     delivery:finalDelivery??delivery,
      recommendation:"adjust",source:"hourly_sales_rollup+daily_rollups",
-     result:{eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
-       factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
-       checklist,
-       missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
-       days:actual.map(s=>({date:s.businessDate,...s.observation})),
-       caveat:"Comparison is observational, not evidence that an event caused a change."}};
+     result:{...result,...(reportText?{reportText,reportFactsHash:factsHash,
+       reportTextOrigin:narrative?"model":"facts",reportProvenance:provenance,
+       reportNumericEvidence:eventReportNumericEvidence(result)}:{})}};
+
  },
 });

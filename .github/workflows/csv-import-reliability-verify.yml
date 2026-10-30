@@ -27,12 +27,15 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - name: Vitest suite
+        if: github.event_name != 'pull_request'
         run: npm run test
       - name: TypeScript strict
+        if: github.event_name != 'pull_request'
         run: npx tsc --noEmit
       - name: CSV import changed-code lint
         run: npx eslint lib/actions/csvImport.ts lib/pos/csv/aggregateSalesRows.ts lib/pos/csv/aggregateSalesRows.test.ts lib/pos/csv/parseSalesCsv.ts lib/pos/csv/parseSalesCsv.test.ts lib/pos/csv/parseLaborCsv.ts components/uploads/SalesCsvImporter.tsx components/uploads/LaborCsvImporter.tsx
       - name: Build
+        if: github.event_name != 'pull_request'
         run: npm run build
       - name: Diff whitespace
         run: git diff --check origin/main...HEAD

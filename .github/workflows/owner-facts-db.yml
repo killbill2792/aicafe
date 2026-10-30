@@ -33,10 +33,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: TypeScript typecheck
+        if: github.event_name != 'pull_request'
         run: npx tsc --noEmit
       - name: ESLint - entire repository (includes every changed file)
+        if: github.event_name != 'pull_request'
         run: npm run lint
-      - name: Full Vitest suite including migration 110 against PostgreSQL
+      # On PRs the baseline runs every other test; this job runs the owner-facts
+      # tests against PostgreSQL (manual runs keep the full suite).
+      - name: Owner-facts Vitest including migration 110 against PostgreSQL
         env:
           OWNER_FACTS_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/ownerfacts_test
-        run: npx vitest run
+        run: npx vitest run ${{ github.event_name == 'pull_request' && 'lib/ownerFacts' || '' }}
