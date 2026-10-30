@@ -3666,6 +3666,8 @@
     "taskCheckinAction": "Answer in chat"
   },
   "EventsPanel": {
+    "boardEventRunning": "Event plan · {title}",
+    "boardEventReport": "Event report · {title}",
     "title": "Events near your café",
     "loading": "Loading saved events…",
     "seeAll": "See events",
