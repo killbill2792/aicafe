@@ -151,13 +151,13 @@ describe("web search call",()=>{
     const halloween=holidaysBetween("2026-10-30","2026-10-31","US","TX","en")
       .find(h=>/halloween/iu.test(h.name));
     expect(halloween).toEqual(expect.objectContaining({date:"2026-10-31"}));
-    const fetch=vi.fn(async()=>ok([event({name:"Halloween parade",
+    const fetch=vi.fn(async (_url:string|URL|Request,_init?:RequestInit)=>ok([event({name:"Halloween parade",
       startDate:"2026-10-31",endDate:null})]));
     const search=createNearbyEventsSearch({fetch,apiKey:"k",model:"m"});
     const result=await search({...input,countryCode:"US",to:"2026-10-31"});
     expect(result).toMatchObject({available:true,outcome:"found",partial:false});
     if(result.available)expect(result.events.map(e=>e.name)).toEqual(["Halloween parade"]);
-    const bodies=fetch.mock.calls.map(c=>JSON.parse(String(c[1].body)) as {input:string});
+    const bodies=fetch.mock.calls.map(c=>JSON.parse(String(c[1]?.body)) as {input:string});
     expect(bodies.some(b=>b.input.includes("Dates: 2026-10-30 to 2026-10-31"))).toBe(true);
     expect(bodies.some(b=>b.input.includes("Halloween events near"))).toBe(true);
     expect(fetch.mock.calls.length).toBe(1+holidaysBetween("2026-10-30","2026-10-31","US","TX","en").length);
