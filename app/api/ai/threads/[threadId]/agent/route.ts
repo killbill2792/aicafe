@@ -161,7 +161,7 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await createServerSupabaseClient(),scope.businessId,ownerFactRead.facts),
       searchNearbyEvents,
-      webSearch:async(query)=>{await assertCafeAiAccess(scope.businessId);return searchWeb(query);},
+      webSearch:async(query,budget)=>{await assertCafeAiAccess(scope.businessId);return searchWeb(query,budget);},
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       goals:{
