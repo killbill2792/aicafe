@@ -14,12 +14,30 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    closeout (see "Supervisor chat start" below). Fix: add it as a golden owner question with exact
    numbers checked on the chat and Money screen paths, add the prompt mapping, then ask it on the test
    café. Missing buckets must say "missing", never zero.
-2. [ ] **Excel sheet.** Owner to confirm what it is: an export of the café's numbers to Excel, or
-   importing an owner's Excel sheet (costs, staff, menu)? Write the scope here before starting.
-3. [ ] **Event tracker and updates.** Owner to confirm what it is: tracking café events (catering,
-   holidays, local events) and their effect on sales, or following running experiments/monitors with
-   updates (Operating Board "Running" + inbox, AGENTS.md section 4)? Must use the one existing
-   experiment/monitor system and inbox; no second system. Write the scope here before starting.
+2. [ ] **Nearby events and holidays → staffing and crowd advice.** The AI finds what is happening near
+   the café (public holidays, local events like a conference, a game, a festival) and tells the owner
+   what to do. Examples: "Labor Day is tomorrow, expect more people." "Quiet day today, keep staff low."
+   "There's an AI week near your café, expect extra customers." After the day, it checks Toast and
+   reports what really happened.
+   - **Where the café is:** `locations.city` / `locations.postal_code` (café profile). If missing, ask
+     the owner once with `ask_owner` and save it.
+   - **Holidays:** worked out in code from the café's country and timezone. No outside service needed.
+   - **Local events:** need an outside events source (e.g. PredictHQ, Ticketmaster, Eventbrite).
+     **Owner decides which one** (cost, API key) before this part starts. Partial data never blocks
+     advice: without it, give holiday advice and say local events aren't covered.
+   - **The advice:** compare with past Toast sales on similar days (same weekday, past holidays, past
+     event days) through `lib/data/dailyFacts.server.ts`. Code works out the expected change; the AI
+     only explains it. Label it "Estimate", e.g. "last Labor Day sales were 30% above a normal Monday".
+     Staffing advice uses the existing schedule tools; changing a shift is still a `propose_*` card.
+   - **Proactive:** a daily job (`app/api/cron/*`) looks 1–7 days ahead and writes one inbox item
+     (`operating_tasks`) plus a short chat message per notable event. No duplicates; daily cap applies.
+   - **Follow-up:** the day after, compare real Toast sales and staffing with the estimate and post a
+     short report ("Labor Day: sales up 22%, you were short one person 11–2"). Reuse the one
+     monitor/report system (`supervisor_reports`), Operating Board "Running"/"Recent reports".
+     No second system.
+   - Chat questions like "anything happening this week?" call one new read tool for upcoming events.
+   - Split into small PRs: (a) holidays + advice in chat; (b) daily job + inbox; (c) day-after report;
+     (d) local events source, after the owner picks it.
 
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
