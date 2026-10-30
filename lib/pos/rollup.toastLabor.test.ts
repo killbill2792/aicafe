@@ -14,7 +14,11 @@ const planned={id:"planned",source_type:"owner_schedule",wage_source:"owner",
  hourly_wage_cents:2000,breaks:[]};
 const actual={...planned,id:"actual",source_type:"connected_pos",
  wage_source:"pos",hourly_wage_cents:1800,pos_timecard_id:"toast:restaurant:shift"};
-function previewDb(timecards:Array<typeof planned>,orders=[toastOrder],staged:Array<Record<string,unknown>>=[]){
+type TimecardFixture=Omit<typeof planned,"hourly_wage_cents">&{
+ hourly_wage_cents:number|null;pos_timecard_id?:string;
+ provider_regular_hours?:number|null;provider_overtime_hours?:number|null;
+};
+function previewDb(timecards:Array<TimecardFixture>,orders=[toastOrder],staged:Array<Record<string,unknown>>=[]){
  const from=(table:string)=>{
   const q={
    select:()=>q,eq:()=>q,lt:()=>q,or:()=>q,order:()=>q,in:()=>q,
