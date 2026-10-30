@@ -7,7 +7,7 @@ import ar from "@/messages/ar.json";
 import {readSavedTodayLive} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
-import type {OwnerLoopScope} from "./engine";
+import type {OwnerLoopScope,LoopProposal} from "./engine";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {readCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
@@ -44,6 +44,23 @@ export const eventReadinessEffect=eventReadinessInput.extend({
  factsHash:z.string().regex(/^[a-f0-9]{64}$/),
 });
 export const eventReadinessCapabilityId="alex.event_readiness.v1";
+
+/** Observation is permitted without approval; business effects are not.
+ * Give the existing monitor loop a transient window for a saved event plan,
+ * without calling commitLoop or changing its durable proposal status/revision.
+ * Rejected/stale proposals and corrupt facts are never resurrected. */
+export function readOnlyEventObservation(p:LoopProposal):LoopProposal|null{
+  if(p.capabilityId!==eventReadinessCapabilityId||
+    !["draft","approved","committed","manual_confirmed"].includes(p.status))return null;
+  const parsed=eventReadinessEffect.safeParse(p.canonicalEffectPayload);
+  if(!parsed.success||effectHash(parsed.data)!==p.effectHash)return null;
+  const effect=parsed.data;
+  const days=Math.round((Date.parse(effect.endDate)-Date.parse(effect.startDate))/86400000)+1;
+  if(days<1||days>14||days!==p.monitorSpec.durationDays)return null;
+  // This clone is for monitorLoop only; it is never persisted as a transition.
+  return {...p,status:"committed",monitoringStartDate:effect.startDate};
+}
+
 
 // A scheduled run has no browser cookie. Only this server-side factory may mint
 // a system scope, after checking current owner membership AND AI entitlement.
