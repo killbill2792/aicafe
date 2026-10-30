@@ -4,8 +4,8 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {catalogForMissing} from "./catalog";
 import {savedValue,itemCostFactKey,type SavedFact} from "./inject";
-import type {AskReason} from "./needsAsk";
 import type {AgentToolResult,AgentLocale} from "@/lib/ai/agent/tools";
+export type AskReason={kind:"missing"|"empty"|"failed"|"uncertain"|"number";key:string;tool?:string};
 const copyByLocale={en:en.OwnerQuestions,es:es.OwnerQuestions,ar:ar.OwnerQuestions};
 const labels:Record<string,keyof typeof en.OwnerQuestions>={
  payroll:"payroll",bills:"bills",cardFee:"cardFee",payrollExtras:"payrollExtras",
