@@ -76,18 +76,3 @@ describe("dated owner questions",()=>{
   expect(first).not.toBe(second);
  });
 });
-describe("vague missing keys",()=>{
- const sales:AgentToolResult={source:"daily_sales",period:null,
-  missing:["costsUnverified","menuPriceEvidenceUnavailable","itemSalesReadFailed"]};
- const reasons:AskReason[]=sales.missing.map(key=>({kind:"missing",key,tool:"daily_sales"}));
- it("asks one field that names the topic instead of repeating a vague label",()=>{
-  const card=questionFromReasons(reasons,[sales],"How are sales?","en",[]);
-  expect(card?.fields.map(f=>f.label)).toEqual(["details about sales"]);
-  expect(card?.question).toBe("I checked sales, but some information is missing. Can you tell me details about sales?");
- });
- it("drops vague fields when a named fact is also missing",()=>{
-  const card=questionFromReasons([...reasons,{kind:"missing",key:"payrollMissing",tool:"daily_sales"}],
-   [sales],"How are sales?","en",[]);
-  expect(card?.fields.map(f=>f.key)).toEqual(["monthly_payroll_cents"]);
- });
-});

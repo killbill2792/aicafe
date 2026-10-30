@@ -3559,7 +3559,6 @@
     "failed": "falló la consulta",
     "missing": "falta información",
     "generic": "la información que falta",
-    "aboutSource": "detalles sobre {source}",
     "schedule": "quién trabaja y en qué horario",
     "payroll": "el coste mensual de nómina",
     "bills": "los gastos mensuales",
