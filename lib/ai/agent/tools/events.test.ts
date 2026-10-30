@@ -1,7 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 import {executeAgentTool,agentToolDefinitions,type AgentToolContext} from "./index";
 import {questionFromReasons} from "@/lib/ownerFacts/questions";
-import {classifyNeedsAsk} from "@/lib/ownerFacts/needsAsk";
 import {cafeLocationFrom} from "@/lib/data/cafeLocation.server";
 import type {DailyFacts} from "@/lib/calc";
 import type {NearbyEventsSearch} from "@/lib/events/nearbyEvents";
@@ -71,12 +70,13 @@ describe("get_nearby_events",()=>{
     expect((r.days as Day[])[1].holidays?.map(h=>h.name)).toEqual(["Halloween"]);
     expect(searchNearbyEvents).not.toHaveBeenCalled();
     // The automatic recovery card asks for exactly the address, as a text field.
-    const card=questionFromReasons(classifyNeedsAsk([r],"",""),[r],"anything happening nearby?","en",[]);
+    const reasons=r.missing.map(key=>({kind:"missing" as const,key,tool:r.source}));
+    const card=questionFromReasons(reasons,[r],"anything happening nearby?","en",[]);
     expect(card?.fields).toEqual([{key:"cafe_address",label:"your café's address (street, city and ZIP or postal code)",
       inputType:"text",units:[],defaultUnit:""}]);
     expect(card?.question).toContain("nearby events");
     // Once the owner has answered, it is not asked again.
-    expect(questionFromReasons(classifyNeedsAsk([r],"",""),[r],"x","en",
+    expect(questionFromReasons(reasons,[r],"x","en",
       [{fact_key:"cafe_address",value_json:"12 Main St, Austin",created_at:"2026-10-30T00:00:00Z",unit:null,period_scope:null}])).toBeNull();
   });
 
@@ -170,8 +170,17 @@ describe("owner asks 'anything happening nearby?' in chat",()=>{
     expect(turn.text).toContain("Halloween");
 
     const noAddress=ctx({cafeLocation:async()=>null}).c;
+    // The model, not a hidden intent router, calls ask_owner after the tool reports a missing address.
+    const askAddress={question:"What is your café's address? I'll check nearby events.",kind:"facts",
+      options:[],allowOther:false,fields:[{key:"cafe_address",label:"Café address",inputType:"text",
+        units:[],defaultUnit:"",choices:null}]};
     const asked=await runAgentTurn({ownerText:"Anything happening nearby?",context:noAddress,
-      provider:provider(rounds("Tomorrow is Halloween. Tell me your address and I'll check local events too."))});
+      provider:provider([
+        [{type:"response.output_item.done",item:{type:"function_call",name:"get_nearby_events",
+          arguments:JSON.stringify({start_date:null,days:null}),call_id:"c1"}},completed],
+        [{type:"response.output_item.done",item:{type:"function_call",name:"ask_owner",
+          arguments:JSON.stringify(askAddress),call_id:"c2"}},completed],
+      ])});
     const card=asked.results.find(r=>r.source==="ask_owner");
     expect(card?.fields).toEqual([expect.objectContaining({key:"cafe_address",inputType:"text"})]);
   });
