@@ -2,7 +2,7 @@
 
 import {useEffect,useRef} from "react";
 import {usePathname} from "next/navigation";
-import {perfRoute,rscStats,TRACE_COOKIE,type NavMetric,type PerfRoute} from "@/lib/perf/navigationMetrics";
+import {perfDestinationRoute,perfRoute,rscStats,TRACE_COOKIE,type NavMetric,type PerfRoute} from "@/lib/perf/navigationMetrics";
 
 const RATE=0.1;
 const TIMEOUT=15000;
@@ -74,7 +74,8 @@ export default function NavigationTiming() {
       if(action!=="link"&&action!=="period"&&action!=="money-view")return;
       if(button?.getAttribute("aria-pressed")==="true")return;
       let targetPath=window.location.pathname;
-      let route=perfRoute(targetPath,new URLSearchParams(window.location.search).get("view"));
+      let route=perfDestinationRoute(targetPath,new URLSearchParams(window.location.search).get("view"),
+        action,button?.dataset.perfValue);
       if(link) {
         const to=new URL(link.href,window.location.href);
         if(to.origin!==window.location.origin||to.pathname===targetPath)return;

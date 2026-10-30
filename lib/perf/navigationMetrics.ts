@@ -22,6 +22,14 @@ export function perfRoute(path: string, view?: string|null): PerfRoute|null {
     default: return null;
   }
 }
+/** Bucket a Money view switch by the destination rather than the previously rendered tab. */
+export function perfDestinationRoute(
+  path:string, currentView:string|null, action:"link"|"period"|"money-view",
+  selectedView?:string,
+):PerfRoute|null {
+  if(action==="money-view"&&selectedView!=="recovery"&&selectedView!=="profit")return null;
+  return perfRoute(path,action==="money-view"?selectedView:currentView);
+}
 export type ResourceSample=Pick<PerformanceResourceTiming,"name"|"initiatorType"|"startTime"|"responseStart">;
 export function rscStats(entries:readonly ResourceSample[], from:number,to:number,origin:string) {
   const samples=entries.filter((e)=>{

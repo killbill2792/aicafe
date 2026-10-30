@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {perfRoute,percentile,rscStats,safeMetric} from "./navigationMetrics";
+import {perfDestinationRoute,perfRoute,percentile,rscStats,safeMetric} from "./navigationMetrics";
 describe("performance event safety and measurement",()=>{
   it("classifies all main locales and nested screens without returning identifiers",()=>{
     const paths=["/en","/es/money","/ar/menu/private-item","/en/operations","/ar/staff",
@@ -8,6 +8,12 @@ describe("performance event safety and measurement",()=>{
       "staff","more","settings","toast"]);
     expect(perfRoute("/en/money","profit")).toBe("money-profit");
     expect(perfRoute("/en/login")).toBeNull();
+  });
+  it("buckets Money view button clicks under their destination, not the prior view",()=>{
+    expect(perfDestinationRoute("/en/money","recovery","money-view","profit")).toBe("money-profit");
+    expect(perfDestinationRoute("/es/money","profit","money-view","recovery")).toBe("money-recovery");
+    expect(perfDestinationRoute("/ar/money","profit","period")).toBe("money-profit");
+    expect(perfDestinationRoute("/en/money","recovery","money-view","unknown")).toBeNull();
   });
   it("counts only RSC fetches from the same origin and time window",()=>{
     const row=(name:string,startTime:number,responseStart:number,initiatorType="fetch")=>
