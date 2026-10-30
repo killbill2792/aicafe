@@ -47,23 +47,19 @@ jobs:
         with: { node-version: 22, cache: npm }
       - name: Install
         run: npm ci
-      - name: TypeScript
-        run: npx tsc --noEmit
-      - name: Lint changed JavaScript and TypeScript
-        shell: bash
+      # The universal baseline runs all tests, typecheck, ESLint and Webpack
+      # build on every PR; this job adds targeted Supervisor coverage.
+      - name: Supervisor experience regressions
+        run: npx vitest run lib/ai/agent lib/ai/conversations components/home
+      - name: Supervisor experience scoped ESLint
+        run: npx eslint lib/ai/agent lib/ai/conversations components/home
+      # The historical push trigger is standalone (no PR baseline).
+      - name: Standalone full verification (historical push only)
+        if: github.event_name == 'push'
         run: |
-          mapfile -d '' -t changed < <(git diff --name-only --diff-filter=ACMR -z origin/main...HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs')
-          if (( ${#changed[@]} > 0 )); then
-            npx eslint "${changed[@]}"
-          else
-            echo "No changed JS/TS sources."
-          fi
-      - name: Full repository ESLint (baseline audit)
-        continue-on-error: true
-        run: npm run lint
-      - name: Unit and regression tests
-        run: npm test
-      - name: Next.js production build
-        run: npm run build -- --webpack
+          npx tsc --noEmit
+          npm run lint
+          npm test
+          npm run build -- --webpack
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD

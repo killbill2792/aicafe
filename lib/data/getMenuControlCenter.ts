@@ -61,10 +61,13 @@ const EMPTY_EVIDENCE: MenuPricingEvidence = {
 };
 
 /** One canonical read model for both the menu catalog and product detail. */
-export async function getMenuControlCenter(options: { includeSalesEvidence?: boolean } = {}): Promise<MenuControlItem[]> {
+export async function getMenuControlCenter(options: { includeSalesEvidence?: boolean; catalogOnly?: boolean } = {}): Promise<MenuControlItem[]> {
   const attentionOnly = options.includeSalesEvidence === false;
+  // Catalog cards only show the canonical price and recipe status. Item detail
+  // and Supervisor still request complete quantity periods and 90-day evidence.
+  const catalogOnly = options.catalogOnly === true;
   const measure = <T>(stage: string, read: () => Promise<T>): Promise<T> =>
-    attentionOnly ? timeReader("Home", "menu." + stage, read) : read();
+    attentionOnly || catalogOnly ? timeReader(attentionOnly ? "Home" : "Menu", "menu." + stage, read) : read();
   const { items } = await measure("catalog", getMenuItemsForEdit);
   if (!isSupabaseConfigured() || items.length === 0) {
     return items.map((item) => ({
@@ -86,7 +89,7 @@ export async function getMenuControlCenter(options: { includeSalesEvidence?: boo
 
   const businessId = await getActiveBusinessId(user.id);
   const pricingInputs = await measure("pricingInputs", () =>
-    getPricingInputs(supabase, businessId, { attentionOnly }));
+    getPricingInputs(supabase, businessId, { attentionOnly, profile: catalogOnly ? "Menu" : undefined }));
   const pricingById = new Map(buildPricingViewModel(pricingInputs).map((row) => [row.itemId, row.result]));
   const pricingBasis: MenuPricingBasis = {
     ...pricingInputs.menuPriceBasis,
@@ -107,17 +110,24 @@ export async function getMenuControlCenter(options: { includeSalesEvidence?: boo
       lastSyncedAt: item.catalogLastSyncedAt,
     };
   };
-  // Home only projects pricing into attention tasks. It doesn't display item
-  // sales response, market comparisons, daily units or revenue. Avoid that
-  // separate 90-day order-line scan and its optional evidence queries.
-  if (options.includeSalesEvidence === false) {
-    return items.map((item) => ({
+  // Home attention and Menu catalog cards do not show historical item sales
+  // evidence. Preserve the canonical pricing calculation and unitsSoldInWindow;
+  // only the full detail/chat reader fetches the secondary evidence.
+  if (attentionOnly || catalogOnly) {
+    const projected = items.map((item) => ({
       ...baseItem(item),
       pricingEvidence: EMPTY_EVIDENCE,
       unitsSoldByPeriod: { today: null, days7: null, days30: null },
       unitsSoldDailyByPeriod: { today: null, days7: null, days30: null },
       revenueCents: null,
     }));
+    if (catalogOnly && Math.random() < 0.1) {
+      // Sample only counts/serialized bytes (not business, item or customer data).
+      // This is DTO size, not a claim about total wire/RSC payload.
+      console.info("[menu-payload] catalog_items=" + projected.length +
+        " catalog_dto_bytes=" + Buffer.byteLength(JSON.stringify(projected), "utf8"));
+    }
+    return projected;
   }
   const itemIds = items.map((item) => item.id);
 

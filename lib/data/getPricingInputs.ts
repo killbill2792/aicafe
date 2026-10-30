@@ -39,11 +39,11 @@ export function monthlyPayrollFromDays(days: Pick<DailyFacts,
       "actual" as const:"estimated" as const};
 }
 
-export async function getPricingInputs(supabase: SupabaseClient, businessId: string, options: { attentionOnly?: boolean } = {}): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput; menuPriceBasis: MenuPriceSourceBasis }> {
+export async function getPricingInputs(supabase: SupabaseClient, businessId: string, options: { attentionOnly?: boolean; profile?: "Menu" } = {}): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput; menuPriceBasis: MenuPriceSourceBasis }> {
   // Keep all pricing math and evidence in this reader. Home's stages share the
   // existing per-request trace but emit no café, item or financial data.
   const measure = <T>(stage: string, read: () => Promise<T>): Promise<T> =>
-    options.attentionOnly ? timeReader("Home", "pricing." + stage, read) : read();
+    options.attentionOnly || options.profile ? timeReader(options.attentionOnly ? "Home" : "Menu", "pricing." + stage, read) : read();
   const { data: businessRow, error: businessError } = await measure("business", async () =>
     await supabase.from("businesses").select("timezone, currency, target_operating_margin, target_operating_margin_status, payroll_tax_rate_status").eq("id", businessId).single());
   if (businessError) throw businessError;
