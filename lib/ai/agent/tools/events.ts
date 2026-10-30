@@ -34,14 +34,15 @@ export const eventsTools={
         return {source:"nearby_events",period:null,agentId:"alex",missing:[],notCovered:["tooFarAhead"],maxDaysAhead:outlook.maxDaysAhead};
       const {from,to,addressMissing,...rest}=outlook;
       // The one existing readers supply context. Failed reads are unknown, not empty schedules.
-      const hours=await ctx.tools.getBusinessHours?.().catch(()=>null);
+      const hours=ctx.tools.getBusinessHours?await ctx.tools.getBusinessHours().catch(()=>null):null;
       const weeks=[...new Set(outlook.days.map(d=>mondayOfLocalDate(d.date)))];
       const schedules=await Promise.all(weeks.map(async week=>
         ctx.readWeekSchedule?ctx.readWeekSchedule(week).catch(()=>null):null));
       const shifts=schedules.flatMap(s=>s?.ok?mergeScheduleShifts(s.data):[]);
       const pastDates=[...new Set(outlook.days.flatMap(d=>d.lastTime?[d.lastTime.date]:[]))];
       const pastItems=await Promise.all(pastDates.map(async date=>{
-        const slice=await ctx.tools.getProductSales?.({from:date,to:date}).catch(()=>null);
+        const slice=ctx.tools.getProductSales?
+          await ctx.tools.getProductSales({from:date,to:date}).catch(()=>null):null;
         return [date,slice?.available?[...slice.value].filter(x=>x.units>0)
           .sort((a,b)=>b.units-a.units).slice(0,3).map(x=>({name:x.name,units:x.units})):null] as const;
       }));
@@ -70,8 +71,7 @@ export const eventsTools={
         notCovered:[...new Set([...outlook.notCovered,
           ...(hours?.available?[]:["openingHoursUnavailable"]),
           ...(ctx.readWeekSchedule&&schedules.every(s=>!s?.ok)?["scheduleUnavailable"]:[]),
-          ...(pastDates.length&&pastItems.every(([,items])=>items===null)?["pastItemSalesUnavailable"]:[])])]}
-    ;
+          ...(pastDates.length&&pastItems.every(([,items])=>items===null)?["pastItemSalesUnavailable"]:[])])};
     },
   },
 } as const;
