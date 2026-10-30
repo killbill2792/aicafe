@@ -80,7 +80,7 @@ export const eventReadinessCapability=registerLoopCapability({
        throw new Error("owner_required");
    }
    const [{data:member},{data:business}]=await Promise.all([
-     db.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle(),
+     db.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",scope.ownerUserId).maybeSingle(),
      db.from("businesses").select("timezone,is_demo").eq("id",scope.businessId).maybeSingle(),
    ]);
    if(member?.role!=="owner"||!business?.timezone||business.is_demo)throw new Error("owner_required");
