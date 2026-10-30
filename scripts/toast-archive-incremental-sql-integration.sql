@@ -1,4 +1,5 @@
--- Migration 128: re-importing a Toast day stores only new or changed records.
+-- Migrations 128-129: re-importing a Toast day stores only new or changed orders,
+-- each order once with its checks and payments inside it.
 -- Run ONLY against a disposable local Supabase after all migrations. Synthetic data, rolled back.
 \set ON_ERROR_STOP on
 BEGIN;
@@ -46,7 +47,7 @@ BEGIN
  perform public.toast_archive_day_pages(run_a,d);
  delete from public.toast_day_pages where run_id=run_a;
  select count(*) into n from public.toast_raw_records where business_id=b and business_date=d;
- perform pg_temp.assert_true(n=3,'first import stores order, check and payment once');
+ perform pg_temp.assert_true(n=1,'first import stores the order once, with its check and payment inside');
  perform pg_temp.assert_true((select count(*)=1 from public.toast_payment_facts
   where business_id=b and business_date=d and tip_cents=100),'first import saves the payment fee row');
 
@@ -62,7 +63,7 @@ BEGIN
  perform public.toast_archive_day_pages(run_b,d);
  delete from public.toast_day_pages where run_id=run_b;
  select count(*) into n from public.toast_raw_records where business_id=b and business_date=d;
- perform pg_temp.assert_true(n=3,'unchanged re-import stores no copies');
+ perform pg_temp.assert_true(n=1,'unchanged re-import stores no copies');
  perform pg_temp.assert_true((select bool_and(run_id=run_b) from public.toast_raw_records
   where business_id=b and business_date=d),'unchanged records belong to the latest import');
  perform pg_temp.assert_true((select bool_and(run_id=run_b) from public.toast_order_typed_facts
@@ -76,7 +77,7 @@ BEGIN
  perform pg_temp.assert_true((select bool_and(run_id=run_b) from public.toast_raw_records
   where business_id=b and business_date=d),'a failed import never moves records off the last good import');
  select count(*) into n from public.toast_raw_records where business_id=b and business_date=d;
- perform pg_temp.assert_true(n=3,'a failed import stores no copies');
+ perform pg_temp.assert_true(n=1,'a failed import stores no copies');
 
  -- Import D: Toast changed the tip. Only the changed records are added; the
  -- old version is kept, and the fee row shows the new tip.
@@ -88,11 +89,14 @@ BEGIN
  perform public.toast_archive_day_pages(run_d,d);
  delete from public.toast_day_pages where run_id=run_d;
  select count(*) into n from public.toast_raw_records where business_id=b and business_date=d;
- perform pg_temp.assert_true(n=6,'a changed order adds one new version of order, check and payment');
+ perform pg_temp.assert_true(n=2,'a changed order adds one new version of the order');
  perform pg_temp.assert_true((select count(*)=1 from public.toast_payment_facts
   where business_id=b and business_date=d and tip_cents=200),'fee row uses the changed payment');
- perform pg_temp.assert_true((select count(*)=3 from public.toast_raw_records
-  where business_id=b and business_date=d and run_id=run_d),'latest import holds exactly the current versions');
+ perform pg_temp.assert_true((select count(*)=1 from public.toast_raw_records
+  where business_id=b and business_date=d and run_id=run_d),'latest import holds exactly the current version');
+ perform pg_temp.assert_true(not exists(select 1 from public.toast_raw_records
+  where business_id=b and business_date=d and entity in ('check','payment')),
+  'checks and payments are kept inside the order, not as separate rows');
 END $incremental$;
 
 ROLLBACK;
