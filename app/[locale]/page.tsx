@@ -71,12 +71,18 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     ? timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id))
     : Promise.resolve(null);
   const identityPromise = signedInUser
-    ? timeReader("Home","readSupervisorCafeIdentity",async()=>readSupervisorCafeIdentity(await businessIdPromise))
+    ? timeReader("Home","readSupervisorCafeIdentity",async()=>{
+      const businessId = await businessIdPromise;
+      return businessId ? readSupervisorCafeIdentity(businessId) : null;
+    })
     : Promise.resolve(null);
   // Chat enablement, access and currency must be verified before composing messages.
   const [chatReadiness,cafeAccess,identity,t,tChat,tCommon,tAccess,tGoals,tEvents] = await Promise.all([
     timeReader("Home","getSupervisorChatReadiness",()=>getSupervisorChatReadiness(Boolean(signedInUser))),
-    signedInUser ? timeReader("Home","getCafeAccess",async()=>getCafeAccess(await businessIdPromise)) : Promise.resolve(null),
+    signedInUser ? timeReader("Home","getCafeAccess",async()=>{
+      const businessId = await businessIdPromise;
+      return businessId ? getCafeAccess(businessId) : null;
+    }) : Promise.resolve(null),
     identityPromise,
     timeReader("Home","getTranslations.Home",()=>getTranslations("Home")),
     timeReader("Home","getTranslations.SupervisorChat",()=>getTranslations("SupervisorChat")),
