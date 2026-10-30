@@ -443,6 +443,12 @@ export async function reconcileToastDays(db:SupabaseClient,p:Location,deadlineAt
   if(status.last_recon_attempt_at&&
    Date.now()-Date.parse(status.last_recon_attempt_at)<(status.recon_state==="pending"?9:60)*60000)
    continue;
+  // Each check downloads the whole day from Toast again. A day waiting for
+  // another day's re-import is checked hourly, not every 9 minutes; a day
+  // whose payment order Toast never gave us is checked once a day.
+  const sinceAttempt=status.last_recon_attempt_at?Date.now()-Date.parse(status.last_recon_attempt_at):Infinity;
+  if(status.payment_repull_at&&sinceAttempt<60*60000)continue;
+  if(status.last_error_category==="unverified_payment_order"&&sinceAttempt<24*3600000)continue;
   try {
    const {data:cred,error:credError}=await db.from("toast_analytics_credentials")
     .select("verified_at").eq("business_id",p.businessId).maybeSingle();

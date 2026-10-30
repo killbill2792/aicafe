@@ -668,3 +668,24 @@ it("preserves an incomplete payment-GUID diagnostic without a fake financial mis
  expect(f.item.internal_state).toBeNull();
  expect(f.item.internal_reasons).toContain("missing_payment_guid");
 });
+
+describe("Checks that download the whole day again are rationed",()=>{
+ it("checks a day waiting for another day's re-import hourly, not every 9 minutes",async()=>{
+  const f=fakeDb(false);
+  Object.assign(f.item,{payment_repull_at:new Date(Date.now()-2*3600000).toISOString(),
+   last_recon_attempt_at:new Date(Date.now()-20*60000).toISOString()});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.request).not.toHaveBeenCalled();
+  expect(f.writes).toEqual([]);
+ });
+ it("checks a day with an unknown payment order once a day",async()=>{
+  const f=fakeDb(false);
+  Object.assign(f.item,{last_error_category:"unverified_payment_order",
+   last_recon_attempt_at:new Date(Date.now()-2*3600000).toISOString()});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.request).not.toHaveBeenCalled();
+  f.item.last_recon_attempt_at=new Date(Date.now()-25*3600000).toISOString();
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.writes.length).toBeGreaterThan(0);
+ });
+});
