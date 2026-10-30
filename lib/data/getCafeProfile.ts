@@ -2,6 +2,7 @@ import "server-only";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { normalizeOpenHours, type OpenHours } from "@/lib/business/openHours";
+import { readPrimaryLocation } from "./cafeLocation.server";
 
 export type CafeProfileData = {
   name: string;
@@ -62,14 +63,7 @@ export async function getCafeProfile(): Promise<CafeProfileData> {
     | { name: string; timezone: string; currency: string; opened_on: string | null; is_demo: boolean }[];
   const business = Array.isArray(rawBusiness) ? rawBusiness[0] : rawBusiness;
 
-  const { data: location, error: locationError } = await supabase
-    .from("locations")
-    .select("name, open_hours, address_line1, address_line2, city, region, postal_code, country_code")
-    .eq("business_id", own.business_id)
-    .order("name", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (locationError) throw locationError;
+  const location = await readPrimaryLocation(supabase, own.business_id);
 
   return {
     name: business?.name ?? EMPTY_PROFILE.name,

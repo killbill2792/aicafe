@@ -29,6 +29,7 @@ const entries:Record<string,FactDefinition>={
   payrollExtras:{factKey:"payroll_extras_monthly_cents",type:"money",labelKey:"payrollExtras",target:"businesses"},
   unitCostCents:{factKey:"unit_cost_cents",type:"money",labelKey:"itemCost",target:"owner_facts"},
   ingredientCost:{factKey:"ingredient_cost",type:"money",labelKey:"itemCost",target:"owner_facts"},
+  cafe_address:{factKey:"cafe_address",type:"text",labelKey:"cafeAddress",target:"owner_facts"},
   openingHours:{factKey:"opening_hours",type:"text",labelKey:"hours",target:"owner_facts"},
   schedule:{factKey:"schedule",type:"text",labelKey:"schedule",target:"owner_facts"},
   shifts:{factKey:"schedule",type:"text",labelKey:"schedule",target:"owner_facts"},

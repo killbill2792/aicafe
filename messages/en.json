@@ -3566,6 +3566,8 @@
     "payrollExtras": "monthly payroll extras",
     "itemCost": "the item cost",
     "hours": "opening hours",
+    "cafeAddress": "your café's address (street, city and ZIP or postal code)",
+    "events": "nearby events",
     "saved": "I've saved these answers for this café.",
     "savedBut": "I've saved the answer. Some screen figures need a complete rate plan or cost breakdown.",
     "needNumber": "the number you want to check",

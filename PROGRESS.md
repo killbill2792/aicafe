@@ -15,29 +15,24 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    numbers checked on the chat and Money screen paths, add the prompt mapping, then ask it on the test
    café. Missing buckets must say "missing", never zero.
 2. [ ] **Nearby events and holidays → staffing and crowd advice.** The AI finds what is happening near
-   the café (public holidays, local events like a conference, a game, a festival) and tells the owner
-   what to do. Examples: "Labor Day is tomorrow, expect more people." "Quiet day today, keep staff low."
-   "There's an AI week near your café, expect extra customers." After the day, it checks Toast and
-   reports what really happened.
-   - **Where the café is:** `locations.city` / `locations.postal_code` (café profile). If missing, ask
-     the owner once with `ask_owner` and save it.
-   - **Holidays:** worked out in code from the café's country and timezone. No outside service needed.
-   - **Local events:** need an outside events source (e.g. PredictHQ, Ticketmaster, Eventbrite).
-     **Owner decides which one** (cost, API key) before this part starts. Partial data never blocks
-     advice: without it, give holiday advice and say local events aren't covered.
-   - **The advice:** compare with past Toast sales on similar days (same weekday, past holidays, past
-     event days) through `lib/data/dailyFacts.server.ts`. Code works out the expected change; the AI
-     only explains it. Label it "Estimate", e.g. "last Labor Day sales were 30% above a normal Monday".
-     Staffing advice uses the existing schedule tools; changing a shift is still a `propose_*` card.
-   - **Proactive:** a daily job (`app/api/cron/*`) looks 1–7 days ahead and writes one inbox item
-     (`operating_tasks`) plus a short chat message per notable event. No duplicates; daily cap applies.
-   - **Follow-up:** the day after, compare real Toast sales and staffing with the estimate and post a
-     short report ("Labor Day: sales up 22%, you were short one person 11–2"). Reuse the one
-     monitor/report system (`supervisor_reports`), Operating Board "Running"/"Recent reports".
-     No second system.
-   - Chat questions like "anything happening this week?" call one new read tool for upcoming events.
-   - Split into small PRs: (a) holidays + advice in chat; (b) daily job + inbox; (c) day-after report;
-     (d) local events source, after the owner picks it.
+   the café and tells the owner what to do ("Tomorrow is Halloween, last year you sold 32% more, add one
+   person"), then later checks Toast to see what really happened.
+   - [x] **Chat part (this PR):** `get_nearby_events` (`lib/ai/agent/tools/events.ts`). Holidays and
+     observances in code (`lib/calc/holidays.ts`, US list; other countries via the web search). Local events
+     by OpenAI's hosted web search near the café's saved address (`lib/ai/events/`), cached 3 h per place
+     and dates. Usual-day sales and "same day last year" from the café's own Toast days through
+     `lib/metrics/core/dayOutlook.ts`. No address → holidays still shown and the owner is asked for the
+     address once (`cafe_address` owner fact). One location reader (`lib/data/cafeLocation.server.ts`),
+     shared with the café profile.
+   - [ ] **Check on the test café** after deploy: ask "anything happening nearby this week?". Halloween
+     (Sat Oct 31 2026) should lead; local events need `OPENAI_API_KEY` on the server and a model with web
+     search (optional `EVENTS_SEARCH_OPENAI_MODEL` overrides the chat model for the search only).
+   - [ ] **Proactive:** a daily job (`app/api/cron/*`) looks 1–7 days ahead and writes one inbox item
+     (`operating_tasks`) plus a short chat message per notable day. No duplicates; daily cap applies.
+   - [ ] **Day-after report:** compare real Toast sales and staffing with the outlook ("Halloween: sales up
+     22%, you were short one person 11–2"), using the one report system (`supervisor_reports`).
+   - [ ] An address typed in chat is saved as an owner fact only; copy it into the café profile
+     (`locations`) needs a small migration to the `save_owner_fact` write-through (owner approval).
 
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
