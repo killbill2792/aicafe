@@ -34,6 +34,7 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot) {
   const openDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
     snapshot.monthKey+"-"+String(i+1).padStart(2,"0")).filter(date=>
       regularHoursStateForDate(snapshot.business.openHours,date)!=="closed");
+  const openDayCount=openDates.length||snapshot.daysInMonth;
   const monthRecords=snapshot.monthRecordedDays??snapshot.monthActualDays;
   const closedDates=new Set(monthRecords.filter(day=>day.salesDataStatus==="actual").map(day=>day.date));
   const elapsedOpenDates=openDates.filter(date=>date<snapshot.todayDateStr||
@@ -42,9 +43,10 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot) {
   const elapsedLaborRecords=monthRecords.filter(day=>elapsedDates.has(day.date));
   const extras=(snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null})
     .ownerMonthlyPayrollExtrasCents;
-  const monthLabor=laborForPeriod(openDates.map(date=>({date})),elapsedLaborRecords,null,
+  const monthLabor=laborForPeriod(elapsedOpenDates.map(date=>({date})),elapsedLaborRecords,null,
     extras==null?null:{monthlyCents:extras,from:snapshot.monthKey+"-01",
-      to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")});
+      to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")},
+    openDayCount);
   const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
   const feeResult=cardFeesForDays(days,feePlans??null);
   const observedSalesCents=sumCents(days,day=>day.netSalesCents);
@@ -62,7 +64,6 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot) {
       snapshot.business.targetIngredientCostRateStatus==="confirmed"?"owner" as const:"estimate" as const;
   const observedIngredientCents=ingredientSource==="saved_rate"?
     Math.round(observedSalesCents*confirmedRate!):productCosts.totalCostCents;
-  const openDayCount=openDates.length||snapshot.daysInMonth;
   const shared=breakEvenFor({days,asOfDate:snapshot.todayDateStr,daysInMonth:openDayCount,
     monthlyBillsCents,monthlyStaffCents:monthLabor.projectedMonthlyLaborCents,
     observedIngredientCents,ownerFeePlans:feePlans});
