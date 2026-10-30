@@ -8,6 +8,7 @@ import {syncCanonicalCatalog} from "../syncCatalog";
 import {syncCanonicalEmployees} from "../syncEmployees";
 import {syncToastLaborReadOnly} from "./laborSync";
 import {ToastApiError} from "./client";
+import {queueStaleToastLaborRollups} from "./staleLaborRecovery";
 
 export type ToastCopyScope={businessId:string;restaurantGuid:string;locationId:string;
  timezone:string;deadlineAt?:number};
@@ -45,7 +46,10 @@ export async function importStagedToastAttendance(db:SupabaseClient,p:ToastCopyS
   },{onConflict:"business_id,business_date"});
   if(queueError)throw new ToastApiError("unavailable");
  }
- return {changed:info.changed??0,skipped:info.skipped??0,affectedDates:[...dates]};
+ // Also repair rows whose canonical shifts were already correct but whose prior
+ // derived cost job failed or was never scheduled. The existing durable queue owns retries.
+ const staleDates=await queueStaleToastLaborRollups(db,p.businessId,p.timezone);
+ return {changed:info.changed??0,skipped:info.skipped??0,affectedDates:[...dates],staleDates};
 }
 /** A published menu outage must not unverify credentials or block sales. */
 export async function recordToastCopyFailure(db:SupabaseClient,p:ToastCopyScope,
