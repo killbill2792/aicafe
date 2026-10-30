@@ -27,6 +27,7 @@ import {memoryTools,type CafeMemoryPort} from "./memory";
 import {scenarioTools} from "./scenarios";
 import {eventsTools} from "./events";
 import {savedEventsTools} from "./getEvents";
+import {webSearchTools} from "./webSearch";
 import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.server";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import {ToolError} from "../toolErrors";
@@ -70,6 +71,8 @@ export type AgentToolContext = {
   searchNearbyEvents?:import("@/lib/events/nearbyEvents").NearbyEventsSearch;
   /** Authenticated, saved-only timeline; never a web search. */
   savedEvents?:(from:string,to:string)=>Promise<import("@/lib/data/cafeEvents.server").SavedEventTimeline>;
+  /** General outside-world lookup; server checks current café AI access before each paid call. */
+  webSearch?:(query:string,budget?:import("../webSearch.server").WebSearchBudget)=>Promise<import("../webSearch.server").WebSearchResult>;
   /** Same canonical café readers used by Staff and saved owner questions. */
   readWeekSchedule?:(weekStart:string)=>ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>;
   ownerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
@@ -89,7 +92,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...proposalTools,...priceExperimentTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...proposalTools,...priceExperimentTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools,...webSearchTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -110,7 +113,9 @@ export const resolverCoverage:Partial<Record<AgentToolName,readonly string[]>>={
 export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>={
   // These fields describe NEW values, not names or IDs of existing records.
   propose_add_staff:["name"],propose_staff_change:["name"],
-  suggest_new_item_price:["category"]
+  suggest_new_item_price:["category"],
+  // A public web search phrase is not a café catalog identifier.
+  web_search:["query"]
 };
 
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
@@ -272,6 +277,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_today_so_far")return todayTools.get_today_so_far.execute(raw,ctx);
   if(name==="get_nearby_events")return eventsTools.get_nearby_events.execute(raw,ctx);
   if(name==="get_events")return savedEventsTools.get_events.execute(raw,ctx);
+  if(name==="web_search")return webSearchTools.web_search.execute(raw,ctx);
   if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
   if (name === "get_menu_items") {
     const input = menuSchema.parse(raw);

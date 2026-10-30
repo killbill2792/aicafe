@@ -26,7 +26,7 @@ const outlook:EventsOutlook={from:"2026-10-30",to:"2026-11-05",today:"2026-10-30
     {...base,date:"2026-11-04",weekday:"Wednesday",daysFromToday:5,eventIds:["e1"]},
   ]};
 const view=(state:ComingUpState,locale:"en"|"es"|"ar"="en")=>renderToStaticMarkup(createElement(ComingUpView,
-  {state,locale,t:t(locale),onAsk:()=>{},disabled:false}));
+  {state,locale,t:t(locale),onAsk:()=>{},onChatAboutDay:()=>{},disabled:false}));
 
 describe("Coming up card",()=>{
   it("shows dated facts without writing a staffing verdict, at most three",()=>{
@@ -40,6 +40,7 @@ describe("Coming up card",()=>{
     expect(html).toContain("Mon, Nov 2 · Austin AI Week");
     expect(html).toContain("Event nearby · 0.4 mi");
     expect(html.match(/<li/gu)).toHaveLength(3);
+    expect(html.match(/Chat about this/gu)).toHaveLength(3);
     expect(html).not.toContain("Wed, Nov 4"); // the fourth notable day stays in chat
     expect(html).toContain("Ask about the week");
   });
@@ -52,6 +53,8 @@ describe("Coming up card",()=>{
   it("is in the owner's language and stays out of the way while loading or failing",()=>{
     expect(view({status:"ready",outlook},"es")).toContain("Mañana · Halloween");
     expect(view({status:"ready",outlook},"ar")).toContain("غدًا · Halloween");
+    expect(view({status:"ready",outlook},"es")).toContain("Hablar de esto");
+    expect(view({status:"ready",outlook},"ar")).toContain("تحدث عن هذا");
     expect(view({status:"loading"})).toContain("Checking what");
     expect(view({status:"error"})).toBe("");
   });

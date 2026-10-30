@@ -36,6 +36,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
 import ComingUpCard from "./ComingUpCard";
+import {openEventDayThread} from "./eventDayThread";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
@@ -281,6 +282,8 @@ export default function SupervisorChatComposer({
   const messageContent = useRef<HTMLDivElement | null>(null);
   const retryId = useRef<string | null>(null);
   const threadRequestId = useRef<string | null>(null);
+  const eventThreadIds=useRef(new Map<string,string>());
+  const openingEvent=useRef(false);
   // Background jobs: these stay empty/null unless the server sends an
   // "ack" event (for example when the jobs table is unavailable).
   const liveCopy = chatExperienceCopy(locale);
@@ -446,7 +449,7 @@ export default function SupervisorChatComposer({
     const page = await jsonFrom<ConversationPage<ConversationThread>>(
       await fetch("/api/ai/threads", { cache: "no-store" }));
     setThreads(page.items);
-    if (threadId) setThreadTitle(page.items.find((thread) => thread.id === threadId)?.title ?? null);
+    if (selectedThreadId.current) setThreadTitle(page.items.find((thread) => thread.id === selectedThreadId.current)?.title ?? null);
   }
   async function ensureThread(): Promise<string> {
     if (threadId) return threadId;
@@ -506,11 +509,12 @@ export default function SupervisorChatComposer({
       setQueuedOwner((queue) => queue.filter((item) => item.clientMessageId !== clientMessageId));
     }
   }
-  async function sendText(value: string, existingKey?: string) {
+  async function sendText(value: string, existingKey?: string, targetThreadId?: string,
+    attachmentOverride?:readonly StoredAttachment[]) {
     const text = value.trim() || (attachments.some(file=>file.mediaType.startsWith("image/"))?copy.photoRequest:"");
     // A confirmed background job accepts follow-ups while the first response streams.
     // The main-turn double-tap guard must not intercept this separate path.
-    if (!existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
+    if (!targetThreadId && !existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
       !uploading && !recorder.current && dictation !== "recognizing" && text.length <= 4000)
       return sendFollowUp(text);
     if(sendOnce.current)return;
@@ -532,11 +536,11 @@ export default function SupervisorChatComposer({
     // connection is not a failure because the answer keeps being written.
     let jobConfirmed = false, serverError = false;
     try {
-      const id = await ensureThread();
+      const id = targetThreadId ?? await ensureThread();
       attemptedThreadId = id;
       const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachments)),
+        body: JSON.stringify(buildAgentSendBody(clientMessageId,text,locale,attachmentOverride??attachments)),
       });
       if (!response.ok || !response.body) throw new Error("agent_request_failed");
       const reader = response.body.getReader();
@@ -813,8 +817,31 @@ export default function SupervisorChatComposer({
   // A tap on a "Coming up" row asks the chat about that day, like a suggestion chip.
   const boardAskDisabled = !enabled || !canUseAi || sending || uploading || dictation === "recognizing" || resumedRunning;
   const askFromBoard = (prompt: string) => { if (boardAskDisabled) return; retryId.current = null; void sendText(prompt); };
+  const chatAboutEventDay=async(date:string,title:string,prompt:string)=>{
+    if(boardAskDisabled||openingEvent.current)return;
+    openingEvent.current=true;
+    try{
+      await openEventDayThread({
+        date,title,prompt,known:eventThreadIds.current,
+        create:async title=>{
+          // Existing owner-scoped thread API handles idempotency and permissions.
+          const created=await jsonFrom<{thread:ConversationThread}>(await fetch("/api/ai/threads",{
+            method:"POST",headers:{"content-type":"application/json"},
+            body:JSON.stringify({requestId:crypto.randomUUID(),title}),
+          }));
+          setThreads(current=>[created.thread,...current.filter(t=>t.id!==created.thread.id)]);
+          return created.thread;
+        },
+        select:id=>selectThread(id),
+        send:async(prompt,id,files)=>sendText(prompt,undefined,id,files),
+      });
+    }catch{
+      setError(true);setFailureCode("agent_request_failed");
+    }finally{openingEvent.current=false;}
+  };
   // The card runs a paid web search: never mount it (and never fetch) without AI access.
-  const comingUpCard = enabled && canUseAi ? <ComingUpCard locale={locale} onAsk={askFromBoard} disabled={boardAskDisabled}/> : undefined;
+  const comingUpCard = enabled && canUseAi ? <ComingUpCard locale={locale} onAsk={askFromBoard}
+    onChatAboutDay={(date,title,prompt)=>void chatAboutEventDay(date,title,prompt)} disabled={boardAskDisabled}/> : undefined;
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
