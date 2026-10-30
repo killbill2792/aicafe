@@ -192,7 +192,13 @@ export async function verifyUpcomingEventChanges(db:Db,businessId:string,ownerId
     const pending=storedChange(event);
     const plan=planned(event);
     if(pending?.pendingNotice&&pending.change.status===event.status&&plan){
-      await deliverChange(db,businessId,ownerId,timezone,today,event,plan,pending.change);
+      try{
+        await deliverChange(db,businessId,ownerId,timezone,today,event,plan,pending.change);
+      }catch{
+        // One broken notification must not block source checks for other days.
+        // Keep pendingNotice intact so the next authorized cron can repair it.
+        console.warn("event_verification_failed",{stage:"retry_notice"});
+      }
     }
   }
   const queue=importantVerificationQueue(timeline.events,timeline.plans,today,now);
