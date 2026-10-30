@@ -14,12 +14,15 @@ export type BoardRunning={
   stage:"waitingOnOwner"|"monitoring";day:number|null;days:number|null;
   /** Set for goals: productName holds the goal title and the prices are 0. */
   goal?:true;
+  /** Existing event-readiness plan, not a price change. */
+  event?:true;
 };
 export type BoardReport={
   proposalId:string;threadId:string;capabilityId:string;productName:string;
   status:"complete"|"insufficient_evidence";recommendation:"keep"|"revert"|"adjust"|null;generatedAt:string;
   /** Goals only: whether the goal was met. */
   goal?:{met:boolean|null};
+  event?:true;
 };
 export type OperatingBoard={running:BoardRunning[];recentReports:BoardReport[]};
 
@@ -37,11 +40,17 @@ const RECENT_REPORT_DAYS=14;
 const MAX_ITEMS=3;
 
 export const GOAL_CAPABILITY="leo.goal.v1";
+export const EVENT_CAPABILITY="alex.event_readiness.v1";
 function goalTitle(payload:unknown){
   const t=payload&&typeof payload==="object"?(payload as {title?:unknown}).title:null;
   return typeof t==="string"&&t.length>0?t:null;
 }
 function priceEffect(payload:unknown,capabilityId?:string){
+  if(capabilityId===EVENT_CAPABILITY){
+    const summary=payload&&typeof payload==="object"?(payload as {summary?:unknown}).summary:null;
+    return typeof summary==="string"&&summary.trim()?
+      {productName:summary,oldPriceCents:0,newPriceCents:0,event:true as const}:null;
+  }
   if(capabilityId===GOAL_CAPABILITY){
     const title=goalTitle(payload);
     return title?{productName:title,oldPriceCents:0,newPriceCents:0,goal:true as const}:null;
@@ -84,7 +93,8 @@ export function buildOperatingBoard(proposals:readonly BoardProposalRow[],report
     const rec=report.recommendation;
     return [{proposalId:p.id,threadId:p.thread_id,capabilityId:p.capability_id,productName:effect.productName,status:r.status,
       recommendation:rec==="keep"||rec==="revert"||rec==="adjust"?rec:null,generatedAt:r.generated_at,
-      ...("goal" in effect?{goal:{met:report.evaluationStatus==="met"?true:report.evaluationStatus==="missed"?false:null}}:{})}];
+      ...("goal" in effect?{goal:{met:report.evaluationStatus==="met"?true:report.evaluationStatus==="missed"?false:null}}:{}),
+      ...("event" in effect?{event:true as const}:{})}];
   }).sort((a,b)=>b.generatedAt.localeCompare(a.generatedAt)).slice(0,MAX_ITEMS);
   return {running,recentReports};
 }

@@ -1,10 +1,11 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import type {SavedFact} from "./inject";
 export type OwnerFactAnswer={fieldKey:string;value:unknown;unit?:string|null;periodScope?:string|null};
 /** Uses the authenticated user's RLS session, never a service-role cross-café lookup. */
-export async function loadOwnerFacts(businessId:string):Promise<SavedFact[]>{
- const db=await createServerSupabaseClient();
+export async function loadOwnerFacts(businessId:string,client?:SupabaseClient):Promise<SavedFact[]>{
+ const db=client??await createServerSupabaseClient();
  const facts:SavedFact[]=[];
  // Supabase/PostgREST may cap one result page; walk every current fact so an
  // old but still authoritative owner answer is never forgotten in a new chat.

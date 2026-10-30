@@ -3,6 +3,7 @@ import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys} from "@/lib/ai/supervisor/loop/receiptAllocation";
 import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
+import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
@@ -170,6 +171,12 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       ownerFacts:ownerFactRead.facts,
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
+      eventPlans:{propose:async(input)=>{
+        const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,eventPlan:input}));
+        const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},
+          supervisorLoopRegistry,new SupabaseLoopRepository(),eventReadinessCapabilityId,input,key);
+        return {proposalId:proposal.id,revision:proposal.revision};
+      }},
       goals:{
         propose:async(input)=>{
           const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,goal:input}));

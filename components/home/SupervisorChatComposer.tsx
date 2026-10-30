@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { Suspense, useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { Clock3, History, Mic, Plus, Send, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown } from "lucide-react";
 import { AgentAvatar } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
@@ -31,11 +31,13 @@ import { answeredOwnerMessageIds, chatExperienceCopy, failureLine, inFlightOwner
 import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
 import SupervisorExperiment from "./SupervisorExperiment";
 import ChatStart, {type ChatStartData,type ChatStartCopy} from "./ChatStart";
+import DeferredChatStart, {type HomeStartPayload} from "./DeferredChatStart";
+import type {Period} from "@/lib/viewmodels/period";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
-import ComingUpCard from "./ComingUpCard";
+import SavedEventsCard from "./SavedEventsCard";
 import {openEventDayThread} from "./eventDayThread";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
@@ -229,12 +231,14 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
   </div>;
 }
 export default function SupervisorChatComposer({
-  enabled, canUseAi=true, locale, cafeCurrency, copy, languageSwitch, onActivityChange, initialThreadId, initialProposalId, chatStartData,chatStartCopy,
+  enabled, canUseAi=true, locale, cafeCurrency, copy, languageSwitch, onActivityChange, initialThreadId, initialProposalId, chatStartData,chatStartCopy,chatStartPromise,boardPeriod,
 }: {
   enabled: boolean; canUseAi?: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
   locale: Locale; copy: SupervisorChatCopy; cafeCurrency:string|null;
   chatStartData?: ChatStartData;
   chatStartCopy?: Omit<ChatStartCopy,"suggestions">;
+  chatStartPromise?: Promise<HomeStartPayload | null>;
+  boardPeriod?: Period;
   initialThreadId?:string;initialProposalId?:string;
   languageSwitch?: React.ReactNode;
   onActivityChange?: (active: boolean) => void;
@@ -814,13 +818,17 @@ export default function SupervisorChatComposer({
   const inputLocked = sending && !liveJobId;
   const shownFailure = failureCode ?? (watcher.job?.status === "failed" ? watcher.job.errorCode ?? null : null);
   const durationLabel = String(Math.floor(elapsed / 60)) + ":" + String(elapsed % 60).padStart(2, "0");
-  // A tap on a "Coming up" row asks the chat about that day, like a suggestion chip.
+  // A tap on a saved event opens that day in the same Supervisor conversation.
   const boardAskDisabled = !enabled || !canUseAi || sending || uploading || dictation === "recognizing" || resumedRunning;
-  const askFromBoard = (prompt: string) => { if (boardAskDisabled) return; retryId.current = null; void sendText(prompt); };
-  const chatAboutEventDay=async(date:string,title:string,prompt:string)=>{
+  const chatAboutEventDay=async(date:string,title:string,prompt:string,existingThreadId?:string)=>{
     if(boardAskDisabled||openingEvent.current)return;
     openingEvent.current=true;
     try{
+      if(existingThreadId){
+        eventThreadIds.current.set(date,existingThreadId);
+        selectThread(existingThreadId);
+        return;
+      }
       await openEventDayThread({
         date,title,prompt,known:eventThreadIds.current,
         create:async title=>{
@@ -839,9 +847,9 @@ export default function SupervisorChatComposer({
       setError(true);setFailureCode("agent_request_failed");
     }finally{openingEvent.current=false;}
   };
-  // The card runs a paid web search: never mount it (and never fetch) without AI access.
-  const comingUpCard = enabled && canUseAi ? <ComingUpCard locale={locale} onAsk={askFromBoard}
-    onChatAboutDay={(date,title,prompt)=>void chatAboutEventDay(date,title,prompt)} disabled={boardAskDisabled}/> : undefined;
+  // Only saved event facts are read on Home; no paid search starts when opening the panel.
+  const comingUpCard = enabled && canUseAi ? <SavedEventsCard locale={locale}
+    onChatAboutDay={(date,title,prompt,existingThreadId)=>void chatAboutEventDay(date,title,prompt,existingThreadId)} disabled={boardAskDisabled}/> : undefined;
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
@@ -864,7 +872,14 @@ export default function SupervisorChatComposer({
         <Plus size={22} aria-hidden="true" />
       </button>
     </header>
-    {chatStartData&&chatStartCopy&&hasChatMessages&&<div className="max-h-[55dvh] shrink-0 overflow-y-auto">
+    {chatStartPromise&&hasChatMessages&&<div className="max-h-[55dvh] shrink-0 overflow-y-auto">
+      <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
+        <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
+          hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
+          onSuggestion={()=>{}} suggestionsDisabled comingUp={comingUpCard}/>
+      </Suspense>
+    </div>}
+    {!chatStartPromise&&chatStartData&&chatStartCopy&&hasChatMessages&&<div className="max-h-[55dvh] shrink-0 overflow-y-auto">
       <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
         hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
         onSuggestion={()=>{}} suggestionsDisabled
@@ -873,7 +888,16 @@ export default function SupervisorChatComposer({
     <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-4 md:px-6 md:py-5"
       onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-label={copy.threads}>
       <div ref={messageContent} className="flex min-h-full flex-col items-stretch justify-start gap-4">
-      {chatStartData&&chatStartCopy&&!hasChatMessages&&startReady&&
+      {chatStartPromise&&!hasChatMessages&&startReady&&
+        <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
+          <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
+            hasMessages={false} expanded={false} onToggle={()=>{}}
+            onSuggestion={prompt=>{retryId.current=null;void sendText(prompt);}}
+            suggestionsDisabled={!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}
+            unavailableMessage={!enabled ? copy.unavailable : undefined}
+            comingUp={comingUpCard}/>
+        </Suspense>}
+      {!chatStartPromise&&chatStartData&&chatStartCopy&&!hasChatMessages&&startReady&&
         <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
           hasMessages={false} expanded={false} onToggle={()=>{}}
           onSuggestion={prompt=>{retryId.current=null;void sendText(prompt);}}
@@ -881,7 +905,7 @@ export default function SupervisorChatComposer({
           unavailableMessage={!enabled ? copy.unavailable : undefined}
           comingUp={comingUpCard}/>}
 
-      {!chatStartData&&!hasChatMessages&&<div className="mx-auto py-3 text-center">
+      {!chatStartPromise&&!chatStartData&&!hasChatMessages&&<div className="mx-auto py-3 text-center">
         <h2 className="font-headline text-xl font-bold text-ink">{copy.emptyHeading}</h2>
         {!enabled&&<p className="text-[17px] text-ink-muted">{copy.unavailable}</p>}
       </div>}
