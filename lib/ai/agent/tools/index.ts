@@ -107,7 +107,9 @@ export const resolverCoverage:Partial<Record<AgentToolName,readonly string[]>>={
 export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>={
   // These fields describe NEW values, not names or IDs of existing records.
   propose_add_staff:["name"],propose_staff_change:["name"],
-  suggest_new_item_price:["category"]
+  suggest_new_item_price:["category"],
+  // An external web search phrase is not an identifier in the café catalog.
+  web_search:["query"]
 };
 
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
