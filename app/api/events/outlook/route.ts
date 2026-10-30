@@ -26,6 +26,10 @@ export async function GET(request:Request){
     const outlook=await buildEventsOutlook({today:identity.asOf,timezone:identity.timezone,locale:lang,
       readLocation:async()=>readCafeLocation(await createServerSupabaseClient(),scope.businessId,facts),
       search:searchNearbyEvents,
+      readHourlySales:async(from,to)=>{
+        const slice=await tools.getPeakHours({from,to});
+        return slice.available?slice.value.hours.map(({date,hourLocal,netSalesCents})=>({date,hourLocal,netSalesCents})):null;
+      },
       readSales:async(from,to)=>{
         const slice=await tools.getSalesTrend({from,to});
         return slice.available?slice.value.map(d=>({date:d.date,netSalesCents:d.netSalesCents})):[];
