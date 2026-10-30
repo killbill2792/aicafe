@@ -25,6 +25,10 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
  const [factValues,setFactValues]=useState<Record<string,string>>({});
  if(state==="hidden")return null;
  if(state==="chosen")return <p dir={locale==="ar"?"rtl":"ltr"} className="text-[17px] text-ink-muted">{copy.clarifyYouChose.replace("{choice}",choice??"")}</p>;
+ // A typed-answer card is answered in its own form, so a later message does not mean
+ // it was skipped. Keep its question readable; it may be the whole reply.
+ if(state==="skipped"&&(block.kind==="facts"||block.kind==="fill"))
+   return <p dir={locale==="ar"?"rtl":"ltr"} className="text-[17px] text-ink-muted">{block.question}</p>;
  if(state==="skipped")return <p className="text-[17px] text-ink-muted">{copy.clarifySkipped}</p>;
  if(block.kind==="facts"){
    const save=async()=>{
