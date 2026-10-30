@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, use, useMemo, useState } from "react";
 import Image from "next/image";
 import { Check, Coffee, Search, TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -19,7 +19,22 @@ function StatusLine({ good, label }: { good: boolean; label: string }) {
   );
 }
 
-export default function MenuCatalog({ items, photos }: { items: MenuControlItem[]; photos: Record<string, ProductPhoto> }) {
+/** Only the image suspends: searching, filtering, prices and item links stay usable. */
+function CatalogPhoto({ photosPromise, memberIds }: {
+  photosPromise: Promise<Record<string, ProductPhoto>>;
+  memberIds: string[];
+}) {
+  const photos = use(photosPromise);
+  const photo = memberIds.map((id) => photos[id]).find(Boolean) ?? null;
+  return photo
+    ? <Image src={photo.signedUrl} alt="" fill unoptimized sizes="112px" className="object-cover transition-transform group-hover:scale-[1.02] motion-reduce:transform-none" />
+    : <Coffee size={42} strokeWidth={1.8} aria-hidden="true" />;
+}
+
+export default function MenuCatalog({ items, photosPromise }: {
+  items: MenuControlItem[];
+  photosPromise: Promise<Record<string, ProductPhoto>>;
+}) {
   const t = useTranslations("Menu");
   const statusChip = usePricingStatusChip();
   const [query, setQuery] = useState("");
@@ -108,11 +123,12 @@ export default function MenuCatalog({ items, photos }: { items: MenuControlItem[
       </div>
       <div className="flex flex-col gap-3 md:grid md:grid-cols-2 lg:grid-cols-3">
         {groups.map((group) => {
-          const photo = group.memberIds.map((id) => photos[id]).find(Boolean) ?? null;
           return <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="group overflow-hidden rounded-card-lg border border-line/70 bg-card text-ink no-underline shadow-sm transition-shadow hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
             <div className="flex gap-4 p-4">
               <div className="relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-surface2 text-warn-text">
-                {photo ? <Image src={photo.signedUrl} alt="" fill unoptimized sizes="112px" className="object-cover transition-transform group-hover:scale-[1.02] motion-reduce:transform-none" /> : <Coffee size={42} strokeWidth={1.8} aria-hidden="true" />}
+                <Suspense fallback={<Coffee size={42} strokeWidth={1.8} aria-hidden="true" />}>
+                  <CatalogPhoto photosPromise={photosPromise} memberIds={group.memberIds} />
+                </Suspense>
               </div>
               <div className="min-w-0 flex-1 py-0.5">
                 <h2 className="text-xl font-extrabold leading-tight">{group.baseName}</h2>
