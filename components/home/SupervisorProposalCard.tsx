@@ -94,6 +94,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const purchase=value.capabilityId==="maya.inventory_purchase.v1";
   const experiment=value.capabilityId==="alex.drink_price_experiment.v1";
   const goal=value.capabilityId==="leo.goal.v1";
+  const eventPlan=value.capabilityId==="alex.event_readiness.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
   if(purchase&&value.purchase){
     const copy=dict[locale].InventoryApprovalCard;
@@ -240,8 +241,8 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     {["failed","conflict","stale"].includes(value.state)&&<p className="mt-2">{copy.stale}</p>}
     {pending&&<div className="mt-4 flex flex-wrap gap-2">
       <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}
-        onClick={()=>void invoke("approve")}>{copy.approve}</button>
-      {!experiment&&!goal&&<button type="button" disabled={busy} className={button+" border border-line"}
+        onClick={()=>void invoke("approve")}>{eventPlan?dict[locale].EventsPanel.usePlan:copy.approve}</button>
+      {!experiment&&!goal&&!eventPlan&&<button type="button" disabled={busy} className={button+" border border-line"}
         onClick={()=>{setEditing(x=>!x);setPrice(priceEditString(value.newPriceCents!));}}>{copy.edit}</button>}
       <button type="button" disabled={busy} className={button+" border border-line"}
         onClick={()=>void invoke("cancel")}>{copy.cancel}</button>
