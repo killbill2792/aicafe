@@ -1,6 +1,8 @@
 import "server-only";
 import {z} from "zod";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {assertCafeAiAccess} from "@/lib/access/access.server";
+import type {OwnerLoopScope} from "./engine";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {readCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
@@ -27,12 +29,41 @@ export const eventReadinessInput=z.strictObject({
 const sourceFact=z.strictObject({
  id:z.uuid(),name:z.string(),kind:z.string(),startDate:isoDay,endDate:isoDay,
  venue:z.string().nullable(),areaLabel:z.string().nullable(),sourceUrl:z.string().nullable(),
+ venueAddress:z.string().nullable().optional(),startTime:z.string().nullable().optional(),
+ endTime:z.string().nullable().optional(),
 });
 export const eventReadinessEffect=eventReadinessInput.extend({
  facts:z.array(sourceFact).min(1).max(8),
  factsHash:z.string().regex(/^[a-f0-9]{64}$/),
 });
 export const eventReadinessCapabilityId="alex.event_readiness.v1";
+
+// A scheduled run has no browser cookie. Only this server-side factory may mint
+// a system scope, after checking current owner membership AND AI entitlement.
+const approvedScheduledScopes=new WeakSet<object>();
+export async function authorizedScheduledEventScope(scope:OwnerLoopScope):Promise<OwnerLoopScope>{
+  const db=createAdminSupabaseClient();
+  const [{data:member,error:memberError},{data:business,error:businessError}]=await Promise.all([
+    db.from("memberships").select("role").eq("business_id",scope.businessId)
+      .eq("user_id",scope.ownerUserId).maybeSingle(),
+    db.from("businesses").select("timezone,is_demo").eq("id",scope.businessId).maybeSingle(),
+  ]);
+  if(memberError||businessError||member?.role!=="owner"||!business?.timezone||business.is_demo)
+    throw new Error("owner_required");
+  await assertCafeAiAccess(scope.businessId);
+  approvedScheduledScopes.add(scope);
+  return scope;
+}
+
+/** The same fact fingerprint at scan time and at proposal simulation time. */
+export function eventPlanFacts(events:readonly import("@/lib/data/cafeEvents.server").CafeEvent[]){
+  return events.filter(e=>e.status==="found").map(e=>({
+    id:e.id,name:e.name,kind:e.kind,startDate:e.startDate,endDate:e.endDate,
+    venue:e.venue,areaLabel:e.areaLabel,sourceUrl:e.sourceUrl,
+    venueAddress:e.venueAddress,startTime:e.startTime,endTime:e.endTime,
+  })).sort((a,b)=>a.id.localeCompare(b.id));
+}
+
 
 /** No new monitoring store: one sample per business day in supervisor_monitor_samples. */
 export const eventReadinessCapability=registerLoopCapability({
@@ -41,15 +72,19 @@ export const eventReadinessCapability=registerLoopCapability({
  proposalDescription:"Draft an inert event-day readiness plan for owner approval using saved café event facts. No staff, purchasing or POS change is performed.",
  dependencyScope:effect=>({kind:"event_readiness",eventIds:effect.eventIds,start:effect.startDate,end:effect.endDate}),
  simulate:async(scope,input)=>{
-   const db=await createServerSupabaseClient();
-   const {data:{user}}=await db.auth.getUser();
-   if(!user||user.id!==scope.ownerUserId||await getActiveBusinessId(user.id)!==scope.businessId)
-     throw new Error("owner_required");
+   const system=approvedScheduledScopes.has(scope);
+   const db=system?createAdminSupabaseClient():await createServerSupabaseClient();
+   if(!system){
+     const {data:{user}}=await db.auth.getUser();
+     if(!user||user.id!==scope.ownerUserId||await getActiveBusinessId(user.id)!==scope.businessId)
+       throw new Error("owner_required");
+   }
    const [{data:member},{data:business}]=await Promise.all([
      db.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle(),
      db.from("businesses").select("timezone,is_demo").eq("id",scope.businessId).maybeSingle(),
    ]);
    if(member?.role!=="owner"||!business?.timezone||business.is_demo)throw new Error("owner_required");
+   if(system)await assertCafeAiAccess(scope.businessId);
    const today=cafeToday(business.timezone);
    const duration=Math.round((Date.parse(input.endDate)-Date.parse(input.startDate))/86400000)+1;
    if(input.startDate<today||duration<1||duration>14||
@@ -59,10 +94,7 @@ export const eventReadinessCapability=registerLoopCapability({
    const found=(await readCafeEvents(db,scope.businessId,input.startDate,input.endDate))
      .filter(e=>input.eventIds.includes(e.id)&&e.status==="found");
    if(found.length!==input.eventIds.length)throw new Error("event_facts_unavailable");
-   const facts=found.map(e=>({
-     id:e.id,name:e.name,kind:e.kind,startDate:e.startDate,endDate:e.endDate,
-     venue:e.venue,areaLabel:e.areaLabel,sourceUrl:e.sourceUrl,
-   })).sort((a,b)=>a.id.localeCompare(b.id));
+   const facts=eventPlanFacts(found);
    return {effect:{...input,facts,factsHash:effectHash(facts)},
      baseline:{source:"cafe_events",eventNames:facts.map(f=>f.name),
        expectedBusyHours:input.expectedBusyHours,factsHash:effectHash(facts)},
