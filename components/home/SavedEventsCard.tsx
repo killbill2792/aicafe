@@ -68,6 +68,23 @@ const hoursFor=(plan:Plan|undefined):Array<{start:string;end:string}>=>
       typeof h.start==="string"&&typeof h.end==="string"):[];
 const sourceUrl=(url:string|null)=>url&&/^https:\/\//i.test(url)?url:null;
 
+/** A read-only link from the saved venue address. No geocoding or guessed distance. */
+export function eventVenueMapUrl(address:string|null):string|null{
+  const value=address?.trim();
+  if(!value||value.length>500||/[\u0000-\u001f\u007f]/u.test(value))return null;
+  return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(value);
+}
+export function VenueMapLink({address,t}:{address:string|null;t:T}){
+  const url=eventVenueMapUrl(address);
+  if(!url||!address)return null;
+  return <a href={url} target="_blank" rel="noopener noreferrer"
+    aria-label={t("mapLink")+": "+address.trim()}
+    className="inline-flex min-h-12 max-w-full flex-wrap items-center gap-1 text-[17px] text-accent-text underline">
+    <span dir="auto" className="break-words">{address.trim()}</span>
+    <span className="whitespace-nowrap">· {t("mapLink")}</span>
+  </a>;
+}
+
 export function eventStripDays(today:string){return Array.from({length:7},(_,i)=>dayAt(today,i));}
 export function eventListDays(timeline:Timeline,tab:Tab,affectsOnly:boolean){
   const from=tab==="past"?dayAt(timeline.today,-14):tab==="now"?timeline.today:dayAt(timeline.today,1);
@@ -306,6 +323,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                     event.startDate+" – "+event.endDate:event.startTime??""}
                     {event.venue||event.areaLabel?" · "+(event.venue??event.areaLabel):""}</p>
                   {event.status!=="found"&&<p>{event.status==="cancelled"?t("cancelled"):t("moved")}</p>}
+                  <VenueMapLink address={event.venueAddress} t={t}/>
                   {sourceUrl(event.sourceUrl)&&<a href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer"
                     className="inline-flex min-h-12 items-center text-accent-text underline">{t("source")}</a>}
                   <button type="button" onClick={()=>chat(date)}
@@ -319,6 +337,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
             {dayEvents.map(event=><article key={event.id} className="rounded-xl bg-surface2 p-3">
               <p className="font-semibold" dir="auto">{event.name}</p>
               <p className="text-ink-muted" dir="auto">{event.venue??event.areaLabel??""}{event.startTime?" · "+event.startTime:""}</p>
+              <VenueMapLink address={event.venueAddress} t={t}/>
               {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
                 href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
             </article>)}
