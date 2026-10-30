@@ -27,6 +27,8 @@ const db={
     if(table==="locations")return {
       select:()=>({eq:()=>({limit:async()=>({data:[{open_hours:{
         sat:[["00:00","23:59"]]} }],error:null})})})};
+    if(table==="supervisor_monitor_samples")return {
+      select:()=>({eq:()=>({in:()=>({limit:async()=>({data:[],error:null})})})})};
     if(table==="supervisor_proposals"){
       const q={select:()=>q,eq:()=>q,in:()=>q,order:()=>q,
         limit:async()=>({data:[{id:proposal.id,
