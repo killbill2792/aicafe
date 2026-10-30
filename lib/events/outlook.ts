@@ -1,22 +1,18 @@
 import {addDays,cafeCountry,daysBetween,holidaysBetween,holidayDateInYear,weekdayOf,type HolidayDay} from "./holidays";
-import {typicalDaySales,lastTimeOutlook,type OutlookSalesDay,type LastTimeOutlook} from "@/lib/metrics/core/dayOutlook";
+import {typicalDaySales,lastTimeOutlook,typicalHourlySales,type OutlookSalesDay,type LastTimeOutlook,type OutlookHourlyRow,type OutlookHour} from "@/lib/metrics/core/dayOutlook";
 import type {NearbyEvent,NearbyEventsSearch} from "./nearbyEvents";
 import type {CafeLocation} from "@/lib/data/cafeLocation.server";
 
 /** The ONE "what's coming up" builder. The chat tool (get_nearby_events) and the
- * Home board card both call it, so they always show the same days and decisions. */
+ * Home board card both call it, so they see the same calendar and evidence. */
 
-export type DayExpect="busier"|"quieter"|"normal"|"unsure";
-export type DayAction="add_staff"|"keep_staff_light"|"normal_staff"|"have_backup";
-export type DayBasis="your_sales"|"nearby_event"|"general_pattern"|"none";
-export type DayDecision={expect:DayExpect;action:DayAction;basis:DayBasis};
 export type OutlookEvent=NearbyEvent&{id:string};
 export type OutlookDay={date:string;weekday:string;daysFromToday:number;
-  holidays:Array<Pick<HolidayDay,"key"|"name"|"kind"|"dayOff"|"usualEffect"|"why">>;eventIds:string[];
+  holidays:HolidayDay[];eventIds:string[];
   typicalSalesCents:number|null;typicalSampleDays:number;
   lastTime:(LastTimeOutlook&{holiday:string})|null;
-  /** Worth showing the owner: a holiday, a local event, or a clear sales signal. */
-  notable:boolean;decision:DayDecision};
+  /** Known same-weekday hourly medians, not predictions. */
+  usualHourlySales:OutlookHour[];};
 export type EventsOutlook={from:string;to:string;today:string;
   location:{label:string;source:CafeLocation["source"]}|null;country:string|null;countrySource:"profile"|"timezone"|null;
   days:OutlookDay[];localEvents:OutlookEvent[];localEventsSearched:boolean;
@@ -26,31 +22,11 @@ export type OutlookDeps={today:string;timezone:string;locale:string;from?:string
   readLocation?:()=>Promise<CafeLocation|null>;
   /** Closed Toast days in [from, to]: null when the read failed, [] when there are none. */
   readSales:(from:string,to:string)=>Promise<OutlookSalesDay[]|null>;
+  readHourlySales?:(from:string,to:string)=>Promise<OutlookHourlyRow[]|null>;
   search?:NearbyEventsSearch};
 
 export const MAX_DAYS_AHEAD=60;
-/** A change this size (whole percent) against a usual day counts as busier/quieter. */
-export const NOTABLE_CHANGE_PERCENT=10;
 const WEEKDAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"] as const;
-
-/** Plain decision for one day. Priority: the café's own past sales, then a big
- * event nearby, then the general pattern for that holiday. */
-export function decideDay(day:Pick<OutlookDay,"lastTime"|"holidays">,events:readonly NearbyEvent[]):DayDecision{
-  const change=day.lastTime?.changePercent;
-  if(typeof change==="number"){
-    if(change>=NOTABLE_CHANGE_PERCENT)return {expect:"busier",action:"add_staff",basis:"your_sales"};
-    if(change<=-NOTABLE_CHANGE_PERCENT)return {expect:"quieter",action:"keep_staff_light",basis:"your_sales"};
-    return {expect:"normal",action:"normal_staff",basis:"your_sales"};
-  }
-  if(events.some(e=>e.expectedCrowd==="large"||e.expectedCrowd==="medium")&&!events.every(e=>e.kind==="road_closure"))
-    return {expect:"busier",action:"add_staff",basis:"nearby_event"};
-  if(events.length)return {expect:"unsure",action:"have_backup",basis:"nearby_event"};
-  const effects=day.holidays.filter(h=>h.why!==null).map(h=>h.usualEffect);
-  if(effects.includes("busier"))return {expect:"busier",action:"add_staff",basis:"general_pattern"};
-  if(effects.includes("quieter"))return {expect:"quieter",action:"keep_staff_light",basis:"general_pattern"};
-  if(effects.length)return {expect:"unsure",action:"have_backup",basis:"general_pattern"};
-  return {expect:"normal",action:"normal_staff",basis:"none"};
-}
 
 export async function buildEventsOutlook(deps:OutlookDeps):Promise<EventsOutlook|{tooFarAhead:true;maxDaysAhead:number}>{
   const today=deps.today,notCovered:string[]=[];
@@ -90,11 +66,13 @@ export async function buildEventsOutlook(deps:OutlookDeps):Promise<EventsOutlook
   const past=[...lastYear.values()].sort();
   const recentFrom=addDays(today,-56),recentTo=addDays(today,-1);
   const read=(a:string,b:string)=>a>b?Promise.resolve([] as OutlookSalesDay[]):deps.readSales(a,b).catch(()=>null);
-  const [recent,older,found]=await Promise.all([
+  const [recent,older,found,hourly]=await Promise.all([
     read(recentFrom,recentTo),
     past.length?read(addDays(past[0],-42),past[past.length-1]<recentFrom?past[past.length-1]:addDays(recentFrom,-1)):Promise.resolve([]),
     eventsRead,
+    deps.readHourlySales?deps.readHourlySales(recentFrom,recentTo).catch(()=>null):Promise.resolve(null),
   ]);
+  if(deps.readHourlySales&&hourly===null)notCovered.push("hourlySalesUnavailable");
   if(recent===null||older===null)notCovered.push("salesHistoryUnavailable");
   const byDate=new Map<string,OutlookSalesDay>();
   for(const d of [...(older??[]),...(recent??[])])byDate.set(d.date,d);
@@ -115,13 +93,9 @@ export async function buildEventsOutlook(deps:OutlookDeps):Promise<EventsOutlook
       const hit=d?lastTimeOutlook(history,d,exclude):null;
       if(hit){lastTime={...hit,holiday:h.name};break;}
     }
-    const shown=onDay.map(({key,name,kind,dayOff,usualEffect,why})=>({key,name,kind,dayOff,usualEffect,why}));
-    const decision=decideDay({lastTime,holidays:shown},dayEvents);
-    const notable=dayEvents.length>0||onDay.some(h=>h.dayOff||h.why!==null)||
-      (decision.basis==="your_sales"&&decision.expect!=="normal");
-    days.push({date,weekday:WEEKDAYS[weekdayOf(date)],daysFromToday:daysBetween(today,date),holidays:shown,
+    days.push({date,weekday:WEEKDAYS[weekdayOf(date)],daysFromToday:daysBetween(today,date),holidays:onDay,
       eventIds:dayEvents.map(e=>e.id),typicalSalesCents:typical.typicalCents,typicalSampleDays:typical.sampleDays,
-      lastTime,notable,decision});
+      lastTime,usualHourlySales:typicalHourlySales(hourly??[],date,today,{weeks:8,exclude})});
   }
   if(history.length&&days.every(d=>d.typicalSalesCents===null))notCovered.push("notEnoughSalesHistory");
   if(!history.length&&recent!==null)notCovered.push("noSalesHistory");
