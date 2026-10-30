@@ -32,7 +32,7 @@ export function validateOwnerAnswers(
   }else if(field.inputType==="choice"){
    // "Other" is an explicit owner selection on facts choice cards. Text after
    // the colon is optional, and may never be mistaken for a verified option ID.
-   const custom=raw==="other"||/^other:[\\s\\S]{1,200}$/.test(raw);
+   const custom=raw==="other"||/^other:[\s\S]{1,200}$/.test(raw);
    if(!field.choices?.some(choice=>choice.value===raw)&&!custom)
      throw new Error("invalid_owner_choice");
   }else if(field.inputType==="text"){
