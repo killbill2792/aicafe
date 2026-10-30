@@ -26,7 +26,7 @@ export type LoopSimulation={
 };
 export type LoopCommitResult=
   |{status:"requires_manual_action";instructionKey:string;instructions:Record<string,string>}
-  |{status:"verified";evidenceSource:string};
+  |{status:"verified";evidenceSource:string;monitoringStartDate?:string};
 /** The monitored days a report covers, first to last (inclusive), and the proposal it is for. */
 export type LoopWindow={start:string;through:string;proposalId?:string};
 export type LoopSample={businessDate:string;observation:Record<string,unknown>;source:string};
@@ -194,7 +194,8 @@ export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof
   const transition=result.status==="requires_manual_action"?"manual_pending":"committed";
   // For a future connected integration, a verified commit starts a monitor
   // window. The manual POS workflow uses the café-local confirmed date.
-  const start=transition==="committed"?shiftCafeDate(committedDate,1):undefined;
+  const start=transition==="committed"?(result.status==="verified"?result.monitoringStartDate:undefined)??shiftCafeDate(committedDate,1):undefined;
+  if(start&&utcDateOffset(start,0)!==start)throw new Error("Invalid monitor start date");
   const updated=await repo.transition(scope,id,claimed.revision,transition,start);
   return {proposal:updated,result};
 }
