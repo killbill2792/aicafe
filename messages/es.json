@@ -3688,6 +3688,9 @@
     "askDay": "¿Qué debo planear para {what} ({when})?",
     "askWeek": "Preguntar por la semana",
     "weekPrompt": "¿Qué viene cerca de mi café esta semana?",
+    "searchPartial": "Pueden faltar algunos eventos cercanos. No se pudo consultar: {missed}.",
+    "searchGeneral": "eventos cercanos generales",
+    "searchOther": "algunas búsquedas cercanas",
     "searchDown": "No se pudieron revisar los eventos cercanos ahora."
   }
 }
