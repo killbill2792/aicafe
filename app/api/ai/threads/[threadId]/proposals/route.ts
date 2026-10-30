@@ -83,7 +83,9 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
     return {...data,state:p.status==="approved"?"conflict":data.state};
   }
   if(p.capabilityId===eventReadinessCapabilityId){
-    const effect=supervisorLoopRegistry.get(eventReadinessCapabilityId).parseEffect(p.canonicalEffectPayload);
+    const effect=supervisorLoopRegistry.get(eventReadinessCapabilityId).parseEffect(p.canonicalEffectPayload) as {
+      summary:string;actions:Array<{area:string;action:string;reason:string}>;
+    };
     return {...card(p),productName:effect.summary,preview:effect.actions.map((a,i)=>({
       field:"action:"+i,label:a.area,before:null,
       after:{kind:"text" as const,text:a.action+" — "+a.reason},
