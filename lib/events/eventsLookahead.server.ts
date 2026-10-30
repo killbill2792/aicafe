@@ -185,6 +185,50 @@ async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|"ar",
   return true;
 }
 
+/** A proposal write can succeed while its later message/task write fails.
+ * The next cron repairs that delivery without asking the model to propose again. */
+async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string,today:string,
+  events:readonly CafeEvent[],
+  plans:readonly {proposalId:string;threadId:string;startDate:string;factsHash:string;
+    status:string;summary:string}[],capacity:number):Promise<number>{
+  if(capacity<=0)return 0;
+  const latest=plans.filter(p=>p.status==="draft"&&p.startDate>=today&&
+    p.startDate<=addDays(today,13)&&p.factsHash===effectHash(eventPlanFacts(
+      events.filter(e=>e.status==="found"&&e.startDate<=p.startDate&&
+        e.endDate>=p.startDate).sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8))));
+  if(!latest.length)return 0;
+  const rows=await db.from("operating_tasks").select("id").eq("business_id",businessId)
+    .in("id",latest.map(p=>"event-plan:"+p.startDate));
+  requireOk(rows.error);
+  const known=new Set((rows.data??[]).map(t=>t.id));
+  let repaired=0;
+  for(const p of latest){
+    const taskId="event-plan:"+p.startDate;
+    if(known.has(taskId)||repaired>=capacity)continue;
+    const messageId=stableMessageId("event-plan-message:"+businessId+":"+ownerId+
+      ":"+p.startDate+":"+p.factsHash);
+    const message=await db.from("ai_messages").insert({
+      id:messageId,business_id:businessId,owner_user_id:ownerId,thread_id:p.threadId,
+      author_user_id:null,role:"supervisor",content_type:"blocks",text_content:null,
+      structured_content:[{type:"text",text:p.summary||"A saved event-day plan is ready for review."},
+        {type:"proposal_card",proposalId:p.proposalId}],
+      grounding:{status:"estimated",intent:"cafe_overview",
+        evidence:[{source:"cafe_events",identifier:p.startDate,asOf:today}]},
+    });
+    if(message.error&&message.error.code!=="23505")throw new Error("event_message_unavailable");
+    const task=await db.from("operating_tasks").upsert({
+      id:taskId,business_id:businessId,agent_id:"alex",kind:"event_plan",
+      entity_type:"event_day",entity_id:p.startDate,status:"needs_owner",confidence:"low",
+      payload:{businessDate:p.startDate,plannedOn:today,threadId:p.threadId,
+        proposalId:p.proposalId,messageId,needsApproval:true},
+      evidence:[{source:"cafe_events",facts:{businessDate:p.startDate}}],
+    },{onConflict:"business_id,id",ignoreDuplicates:true});
+    requireOk(task.error);
+    known.add(taskId);repaired++;
+  }
+  return repaired;
+}
+
 /** Triggered exclusively by cron. No screen or chat read calls this writer. */
 export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
   now=new Date()):Promise<LookaheadRun>{
@@ -210,12 +254,15 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
         const timeline=await readSavedEventTimeline(db,
           {businessId:b.id,ownerUserId:owner.data.user_id},today,to);
         const candidates=pendingEventDays(timeline.events,timeline.plans,today,to);
-        if(!candidates.length){result.skipped++;continue;}
         const quota=await db.from("operating_tasks").select("id",{head:true,count:"exact"})
           .eq("business_id",b.id).eq("kind","event_plan").contains("payload",{plannedOn:today});
         requireOk(quota.error);
-        const remaining=Math.max(0,maxPlansPerDay-(quota.count??0));
-        if(!remaining){result.skipped++;continue;}
+        const capacity=Math.max(0,maxPlansPerDay-(quota.count??0));
+        const repaired=await recoverPlanDelivery(db,b.id,owner.data.user_id,today,
+          timeline.events,timeline.plans,capacity);
+        result.planned+=repaired;
+        const remaining=capacity-repaired;
+        if(!candidates.length||!remaining){result.skipped++;continue;}
         const from=addDays(today,-56),until=addDays(today,-1);
         const [days,hours,localeRow]=await Promise.all([
           readDailyFacts(db,b.id,from,until),
