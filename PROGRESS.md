@@ -22,14 +22,25 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    production the web search fails (`nearby_events_search_unparsed`) and the advice is hard-coded. Next,
    in order: PR 1 search fix · PR 2 facts-only + AI plans and asks (with "Other") · PR 3 storage + one
    reader (migration, owner approves) · PR 4 find once / plan once job · PR 5 Home strip + events panel
-   (Past/Now/Coming up, calendar) · PR 6 live watch · PR 7 report card · PR 8 distance (after decision D3) ·
-   PR 9 chat about any event + answer anything (web search). Waves: {1,2,3,9} → {4,5} → {6,7,8}.
+   (Past/Now/Coming up, calendar) · PR 6 live watch · PR 7 report card · PR 8 saved venue map links
+   (D3 agreed, no geocoding) · PR 9 chat about any event + answer anything (web search).
+   Follow-ups: PR 10 first-run/rolling discovery · PR 11 early cancellation/change verification and
+   owner notices · PR 12 saved-event parity for Home/chat. Details and acceptance checks are in
+   [docs/plans/nearby-events.md](docs/plans/nearby-events.md). Keep every business action behind
+   owner approval; schedule jobs may only save verified event facts and send notices.
    - [x] Nearby events PR 1 — retry unparseable HTTP 200 searches, holiday-specific queries, outcomes and safe diagnostics; recorded-response tests. PRs 2–9 remain open.
    - [x] **Nearby-events PR 2 — facts only + AI plans/questions:** removed hard-coded event staffing advice; Home and chat use the same factual holiday/event and usual-hour evidence; owner answers can use an optional “Other” text response saved by event/year. PR 1 search repair, storage and monitoring remain separate.
    - [x] PR 3 implementation: event-readiness capability, RLS-backed storage, shared reader, saved-events chat tool (migration **not applied**, awaiting owner approval).
    - [x] **Nearby-events PR 4 — find once / plan once:** cron-only two-week Monday discovery, rolling daily/day-before checks, deduplicated café event facts, bounded Supervisor `propose_event_plan` drafts using the PR 3 approval lifecycle, day-specific chat threads and one Operations inbox item per day. Three-day-per-café daily cap, retry-safe delivery, cron auth and AI-access checks. Default-off pending owner-approved migration/rollout; baseline typecheck, lint, full Vitest, build and whitespace gate green (#284).
    - [x] **Nearby-events PR 5 — saved Home strip and events/day-plan panels:** past/now/coming-up calendar with grouped saved events, owner-approved loop plans, checklist ticks and event chat; the Home open uses only PR 3 saved readers (no search). EN/ES/AR; baseline checks green on implementation commit (final progress-only CI pending).
    - [x] **Nearby-events PR 9:** General read-only web search in Supervisor and event-day “Chat about this” threads.
+   - [ ] **Nearby-events PR 6 (#291)** — live event-day watch; finish final-head CI and independent review, merge before PR 8.
+   - [ ] **Nearby-events PR 7 (#292)** — morning-after report; reconcile PR 6 overlap, rerun required checks and merge before PR 8.
+   - [ ] **Nearby-events PR 8** — existing saved venue address opens Maps from both Events and day panels, no API provider/lookup or guessed mileage; branch under review. Mark done only after final-head CI and independent approval.
+   - [ ] **Nearby-events PR 10 — rolling discovery:** first run searches all 14 days on any weekday; thereafter one new day per day and bounded weekly recently announced-event discovery. Persist successful empty/failed/partial coverage, retry gaps, preserve existing saved event facts and plans.
+   - [ ] **Nearby-events PR 11 — verified changes and early alerts:** daily source checks for important upcoming planned events well before purchases/staff changes, plus imminent events; store verified cancellations/moves/reopenings without deletion; notify owner once via existing inbox/chat with what changed, source/freshness, implication and next action. AI recommends only; no silent owner action.
+   - [ ] **Nearby-events PR 12 — one saved event path:** ensure Home and Supervisor chat read canonical saved event facts by default; remove legacy chat-triggered duplicate event research while retaining explicitly requested general web search.
+   - [ ] **Events rollout gate:** owner-authorize/apply café-events RLS migration, verify real-café EN/ES/AR and phone panels, confirm all intended flags and cron safety before enabling production. Do not equate merged PRs with completed deployment.
 
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
