@@ -71,13 +71,13 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       # Cache compiler artifacts across PR commits. The lockfile scopes
-      # compatibility, and a new SHA writes a fresh cache while restoring
-      # the most recent compatible successful build.
+      # compatibility; hash only build-relevant source/config, so docs-only
+      # commits reuse the same key. Restore the latest compatible build.
       - name: Restore Next.js Webpack build cache
         uses: actions/cache@v4
         with:
           path: .next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('package.json', 'next.config.*', 'tsconfig.json', 'postcss.config.*', 'tailwind.config.*', 'app/**', 'components/**', 'lib/**', 'messages/**', 'public/**') }}
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
       - name: Production build
