@@ -2,9 +2,23 @@ import {addDays,cafeCountry,daysBetween,holidaysBetween,holidayDateInYear,weekda
 import {typicalDaySales,lastTimeOutlook,typicalHourlySales,type OutlookSalesDay,type LastTimeOutlook,type OutlookHourlyRow,type OutlookHour} from "@/lib/metrics/core/dayOutlook";
 import type {NearbyEvent,NearbyEventsSearch} from "./nearbyEvents";
 import type {CafeLocation} from "@/lib/data/cafeLocation.server";
+import type {PeakHourFacts} from "@/lib/data/posFactReaders.server";
+import type {KnownSlice} from "@/lib/operating/types";
 
 /** The ONE "what's coming up" builder. The chat tool (get_nearby_events) and the
  * Home board card both call it, so they see the same calendar and evidence. */
+
+/** Keep canonical hourly POS quality alongside usable observations. */
+export type OutlookHourlySalesRead={hours:OutlookHourlyRow[];
+  quality:{missingInputs:string[];estimatedInputs:string[];staleInputs:string[];notes:string[]}};
+
+/** Single adapter for both the Home endpoint and the chat tool. */
+export function hourlyOutlookRead(slice:KnownSlice<PeakHourFacts>):OutlookHourlySalesRead|null{
+  if(!slice.available)return null;
+  return {hours:slice.value.hours.map(({date,hourLocal,netSalesCents})=>({date,hourLocal,netSalesCents})),
+    quality:{missingInputs:slice.quality.missingInputs,estimatedInputs:slice.quality.estimatedInputs,
+      staleInputs:slice.quality.staleInputs,notes:slice.quality.notes??[]}};
+}
 
 export type OutlookEvent=NearbyEvent&{id:string};
 export type OutlookDay={date:string;weekday:string;daysFromToday:number;
@@ -17,12 +31,14 @@ export type EventsOutlook={from:string;to:string;today:string;
   location:{label:string;source:CafeLocation["source"]}|null;country:string|null;countrySource:"profile"|"timezone"|null;
   days:OutlookDay[];localEvents:OutlookEvent[];localEventsSearched:boolean;
   /** Gaps the owner cannot fill by answering a question (search down, no history…). */
-  notCovered:string[];addressMissing:boolean};
+  notCovered:string[];addressMissing:boolean;
+  /** An imported hourly subset can be usable while its coverage remains incomplete. */
+  hourlySalesQuality:OutlookHourlySalesRead["quality"]|null;};
 export type OutlookDeps={today:string;timezone:string;locale:string;from?:string|null;days?:number|null;
   readLocation?:()=>Promise<CafeLocation|null>;
   /** Closed Toast days in [from, to]: null when the read failed, [] when there are none. */
   readSales:(from:string,to:string)=>Promise<OutlookSalesDay[]|null>;
-  readHourlySales?:(from:string,to:string)=>Promise<OutlookHourlyRow[]|null>;
+  readHourlySales?:(from:string,to:string)=>Promise<OutlookHourlySalesRead|null>;
   search?:NearbyEventsSearch};
 
 export const MAX_DAYS_AHEAD=60;
@@ -73,6 +89,8 @@ export async function buildEventsOutlook(deps:OutlookDeps):Promise<EventsOutlook
     deps.readHourlySales?deps.readHourlySales(recentFrom,recentTo).catch(()=>null):Promise.resolve(null),
   ]);
   if(deps.readHourlySales&&hourly===null)notCovered.push("hourlySalesUnavailable");
+  if(hourly)notCovered.push(...hourly.quality.missingInputs,...hourly.quality.staleInputs,
+    ...hourly.quality.estimatedInputs,...hourly.quality.notes);
   if(recent===null||older===null)notCovered.push("salesHistoryUnavailable");
   const byDate=new Map<string,OutlookSalesDay>();
   for(const d of [...(older??[]),...(recent??[])])byDate.set(d.date,d);
@@ -95,11 +113,12 @@ export async function buildEventsOutlook(deps:OutlookDeps):Promise<EventsOutlook
     }
     days.push({date,weekday:WEEKDAYS[weekdayOf(date)],daysFromToday:daysBetween(today,date),holidays:onDay,
       eventIds:dayEvents.map(e=>e.id),typicalSalesCents:typical.typicalCents,typicalSampleDays:typical.sampleDays,
-      lastTime,usualHourlySales:typicalHourlySales(hourly??[],date,today,{weeks:8,exclude})});
+      lastTime,usualHourlySales:typicalHourlySales(hourly?.hours??[],date,today,{weeks:8,exclude})});
   }
   if(history.length&&days.every(d=>d.typicalSalesCents===null))notCovered.push("notEnoughSalesHistory");
   if(!history.length&&recent!==null)notCovered.push("noSalesHistory");
   return {from,to,today,location:location?{label:location.label,source:location.source}:null,
     country:country.country,countrySource:country.source,days,localEvents,localEventsSearched:found!==null,
-    notCovered:[...new Set(notCovered)],addressMissing:!location};
+    notCovered:[...new Set(notCovered)],addressMissing:!location,
+    hourlySalesQuality:hourly?.quality??null};
 }
