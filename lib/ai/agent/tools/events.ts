@@ -2,6 +2,10 @@ import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {buildEventsOutlook} from "@/lib/events/outlook";
 import {CAFE_ADDRESS_FACT} from "@/lib/data/cafeLocation.server";
+import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
+import {weekdayOf} from "@/lib/events/holidays";
+import {mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
+import {mergeScheduleShifts} from "./scheduleReads";
 
 export const nearbyEventsInput=z.strictObject({
   start_date:z.iso.date().nullable(),
@@ -13,16 +17,15 @@ export const nearbyEventsInput=z.strictObject({
 export const eventsTools={
   get_nearby_events:{
     agentId:"alex",schema:nearbyEventsInput,
-    description:"Holidays, observances (e.g. Halloween, Labor Day) and local events near the café (festivals, conferences, games, parades, road closures) for the coming days, each with a decision (expect busier/quieter/normal/unsure; action add_staff/keep_staff_light/normal_staff/have_backup) and what similar days brought in the café's own Toast sales. "+
-      "Use for: events nearby, anything happening this week/weekend, holidays, will it be busy, how many staff to plan. start_date null = today; days null = 7 (max 10). "+
-      "If missing has cafe_address, the café address is unknown: still give the holiday part, then call ask_owner kind=facts with one text field key cafe_address asking for the café's street address, city and ZIP/postal code. "+
-      "Answer like a manager, short: only notable days, today/tomorrow first. For each: what is happening, the decision in plain words, and why in one clause. "+
-      "Use the decision as given; never contradict it. basis your_sales → cite lastTime.changePercent (their Toast sales last time); nearby_event → name the event and its source site; general_pattern → say it is a general pattern, not their data yet. "+
-      "Never invent crowd sizes, dates or events. For how many people are scheduled, also call get_week_schedule.",
+    description:"Read-only facts for holidays and events near the signed-in café: dated names, event sources, venue/time, regular hours, same-weekday hourly Toast medians, last occurrence's sales, recorded top items, existing schedule and saved owner answers. No staffing decisions, forecasts or hard-coded holiday advice. Use for questions about upcoming days and busy hours; start_date null=today, days null=7. Never invent crowd counts or fill missing evidence with zero. Give a useful AI-written plan immediately: expected busy hours (label estimates), 1–3 actions across staffing, prep, ordering, promotion, hours or operations with a reason grounded in these facts. If a holiday has no past history and no saved event answer, add at most one ask_owner kind=facts choice field named event_outcome:<holiday key>:<last year>, with 2–4 owner-friendly options (e.g. busy, normal, quiet, closed) and an Other response. The owner answer is saved and the same chat updates the plan. If the café address is missing still explain known holidays, then ask for cafe_address. Never pretend the AI's plan comes from code.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=nearbyEventsInput.parse(raw);
       const outlook=await buildEventsOutlook({today:ctx.asOf,timezone:ctx.timezone,locale:ctx.locale,
         from:input.start_date,days:input.days,readLocation:ctx.cafeLocation,search:ctx.searchNearbyEvents,
+        readHourlySales:ctx.tools.getPeakHours?async(from,to)=>{
+          const slice=await ctx.tools.getPeakHours!({from,to});
+          return slice.available?slice.value.hours.map(({date,hourLocal,netSalesCents})=>({date,hourLocal,netSalesCents})):null;
+        }:undefined,
         readSales:async(from,to)=>{
           const slice=await ctx.tools.getSalesTrend({from,to});
           return slice.available?slice.value.map(d=>({date:d.date,netSalesCents:d.netSalesCents})):[];
@@ -30,11 +33,45 @@ export const eventsTools={
       if("tooFarAhead" in outlook)
         return {source:"nearby_events",period:null,agentId:"alex",missing:[],notCovered:["tooFarAhead"],maxDaysAhead:outlook.maxDaysAhead};
       const {from,to,addressMissing,...rest}=outlook;
+      // The one existing readers supply context. Failed reads are unknown, not empty schedules.
+      const hours=await ctx.tools.getBusinessHours?.().catch(()=>null);
+      const weeks=[...new Set(outlook.days.map(d=>mondayOfLocalDate(d.date)))];
+      const schedules=await Promise.all(weeks.map(async week=>
+        ctx.readWeekSchedule?ctx.readWeekSchedule(week).catch(()=>null):null));
+      const shifts=schedules.flatMap(s=>s?.ok?mergeScheduleShifts(s.data):[]);
+      const pastDates=[...new Set(outlook.days.flatMap(d=>d.lastTime?[d.lastTime.date]:[]))];
+      const pastItems=await Promise.all(pastDates.map(async date=>{
+        const slice=await ctx.tools.getProductSales?.({from:date,to:date}).catch(()=>null);
+        return [date,slice?.available?[...slice.value].filter(x=>x.units>0)
+          .sort((a,b)=>b.units-a.units).slice(0,3).map(x=>({name:x.name,units:x.units})):null] as const;
+      }));
+      const byPastDate=new Map(pastItems);
+      const enriched=outlook.days.map(day=>{
+        const intervals=hours?.available?hours.value[OPEN_HOURS_DAY_KEYS[weekdayOf(day.date)]]:undefined;
+        const scheduledPeople=ctx.readWeekSchedule?
+          [...new Set(shifts.filter(s=>s.date===day.date).map(s=>s.employeeName))]:null;
+        const savedAnswers=day.holidays.flatMap(h=>{
+          const key="event_outcome:"+h.key+":"+(Number(day.date.slice(0,4))-1);
+          const fact=ctx.ownerFacts?.find(f=>f.fact_key===key);
+          return fact?[{key,value:fact.value_json}]:[];
+        });
+        return {...day,openingHours:intervals??null,scheduledPeople,
+          lastHolidayTopItems:day.lastTime?byPastDate.get(day.lastTime.date)??null:null,
+          savedAnswers,
+          // Hourly medians are observations, not forecasts of the event day.
+          usualHourlySales:day.usualHourlySales
+            .sort((a,b)=>b.typicalCents-a.typicalCents).slice(0,4)
+            .sort((a,b)=>a.hourLocal-b.hourLocal)};
+      });
       return {source:"nearby_events",period:{from,to},agentId:"alex",unit:"cents",
-        // Only what the owner can answer goes in missing: it becomes a question card.
         missing:addressMissing?[CAFE_ADDRESS_FACT]:[],
-        typicalMeans:"median Toast net sales of the same weekday over the 8 weeks before today, holidays left out",
-        ...rest};
+        typicalMeans:"median recorded Toast sales of the same weekday in the last 8 weeks; event effects are unknown",
+        ...rest,days:enriched,
+        notCovered:[...new Set([...outlook.notCovered,
+          ...(hours?.available?[]:["openingHoursUnavailable"]),
+          ...(ctx.readWeekSchedule&&schedules.every(s=>!s?.ok)?["scheduleUnavailable"]:[]),
+          ...(pastDates.length&&pastItems.every(([,items])=>items===null)?["pastItemSalesUnavailable"]:[])])]}
+    ;
     },
   },
 } as const;
