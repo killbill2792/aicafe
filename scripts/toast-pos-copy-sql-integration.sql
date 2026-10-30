@@ -336,4 +336,60 @@ begin
  then raise exception 'actual shift day must not be requeued as missing labor';end if;
 end $attendance_repair$;
 
+-- Financial Fix 1: seven provider shifts with two legitimate Toast-omitted
+-- wages. An unlinked seventh shift is still missing evidence until the
+-- employee link exists; replaying the same staged input is idempotent.
+-- The TypeScript rollup test separately proves a 6/7 subtotal is NOT complete.
+do $financial_fix_a$
+declare b uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+ r uuid:='cccccccc-cccc-4ccc-8ccc-ccccccccff01';
+ loc uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccc01';
+ linked uuid;guid uuid;shift_start timestamptz;changes jsonb;i integer;n integer;
+begin
+ select linked_employee_id into linked from public.toast_employee_directory
+ where business_id=b and restaurant_guid=r
+ and employee_guid='cccccccc-cccc-4ccc-8ccc-cccccccc0011';
+ if linked is null then raise exception 'missing linked Toast fixture employee';end if;
+ for i in 1..7 loop
+  guid:=('cccccccc-cccc-4ccc-8ccc-'||lpad((1000+i)::text,12,'0'))::uuid;
+  shift_start:='2026-12-01T12:00:00Z'::timestamptz+make_interval(hours=>2*i);
+  insert into public.toast_labor_entries(
+   business_id,restaurant_guid,location_id,external_time_entry_id,
+   external_employee_id,clock_in,clock_out,hourly_wage_cents,wage_status,
+   breaks,deleted,provider_regular_hours,provider_overtime_hours)
+  values(b,r,loc,guid,
+   case when i=7 then 'cccccccc-cccc-4ccc-8ccc-cccccccc00ef'::uuid
+        else 'cccccccc-cccc-4ccc-8ccc-cccccccc0011'::uuid end,
+   shift_start,shift_start+interval '1 hour',
+   case when i in (2,7) then null else 1800 end,
+   case when i in (2,7) then 'missing' else 'verified' end,
+   '[]'::jsonb,false,1,0);
+ end loop;
+ select public.pos_import_toast_attendance(b,r) into changes;
+ select count(*) into n from public.timecards t
+ where t.business_id=b and t.clock_in>='2026-12-01T12:00:00Z'
+ and t.clock_in<'2026-12-02T04:00:00Z' and t.source_provider='Toast';
+ if n<>6 or (changes->>'skipped')::integer<1 then
+  raise exception 'unlinked seventh Toast shift must not appear as payroll: % / %',n,changes;
+ end if;
+ insert into public.toast_employee_directory(
+  business_id,restaurant_guid,employee_guid,display_name,linked_employee_id,linked_at)
+ values(b,r,'cccccccc-cccc-4ccc-8ccc-cccccccc00ef','Recovered shift employee',linked,now());
+ select public.pos_import_toast_attendance(b,r) into changes;
+ select count(*) into n from public.timecards t
+ where t.business_id=b and t.clock_in>='2026-12-01T12:00:00Z'
+ and t.clock_in<'2026-12-02T04:00:00Z' and t.source_provider='Toast';
+ if n<>7 then raise exception 'replayed unlinked seventh shift not recovered: %',n;end if;
+ select count(*) into n from public.timecards t
+ where t.business_id=b and t.clock_in>='2026-12-01T12:00:00Z'
+ and t.clock_in<'2026-12-02T04:00:00Z'
+ and t.source_provider='Toast' and t.hourly_wage_cents=0
+ and t.wage_source='pos' and t.provider_regular_hours=1;
+ if n<>2 then raise exception 'two Toast omitted wages must be canonical $0 with provider hours: %',n;end if;
+ select public.pos_import_toast_attendance(b,r) into changes;
+ if (changes->>'changed')::integer<>0 then
+  raise exception 'replaying the complete seven Toast shifts must be idempotent: %',changes;
+ end if;
+end $financial_fix_a$;
+
 rollback;
