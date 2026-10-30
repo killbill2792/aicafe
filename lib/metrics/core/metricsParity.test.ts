@@ -268,5 +268,52 @@ describe("October closed-day parity, verified Toast zero fees and visible workin
    expect(missing.feeResult.amountCents).not.toBe(10_821);
    expect(missing.feeResult.basis).not.toBe("actual");
    expect((await toolAnswer(missing)).status).toBe("estimate");
+   const zeroActual:BusinessSnapshot={...snapshot,
+     last28Days:[history[0],dateRow("2026-10-14",0,"actual")],
+     breakEvenDays:[history[0],dateRow("2026-10-14",0,"actual")]};
+   const verifiedZero=breakEvenSnapshotInputs(zeroActual);
+   expect(verifiedZero.feeResult.basis).toBe("actual");
+   expect(verifiedZero.feeResult.amountCents).toBe(5_357); // actual $0 wins fallback
+
+ });
+});
+
+describe("Codex P1 financial input regressions",()=>{
+ it("excludes unclosed today's wages from the disclosed elapsed labor calibration",()=>{
+   const original=demo("complete");
+   const days=(original.monthRecordedDays??original.monthActualDays).map(day=>
+     day.date===original.todayDateStr?{
+       ...day,salesDataStatus:"missing" as const,wagesCents:2_000,staffTaxCents:240,
+     }:day);
+   const snapshot:BusinessSnapshot={...original,monthRecordedDays:days,
+     monthActualDays:days.filter(day=>day.salesDataStatus!=="missing")};
+   const inputs=breakEvenSnapshotInputs(snapshot);
+   const completed=days.filter(day=>day.date<snapshot.todayDateStr);
+   const expected=laborForPeriod(inputs.openDates.map(date=>({date})),completed);
+   expect(inputs.monthLabor.projectedMonthlyLaborCents).toBe(expected.projectedMonthlyLaborCents);
+   expect(inputs.elapsedOpenDates).not.toContain(snapshot.todayDateStr);
+   expect(inputs.missingLaborDates).not.toContain(snapshot.todayDateStr);
+   expect(inputs.monthLabor.coveredDays).toBe(expected.coveredDays);
+   expect(buildCostRecoveryViewModel(snapshot).monthlyStaffCents).toBe(expected.projectedMonthlyLaborCents);
+ });
+ it("uses a saved ingredient rate if recipes are unavailable, and labels genuine unknowns",()=>{
+   const original=demo("complete");
+   const snapshot:BusinessSnapshot={...original,menuItems:[],breakEvenProductCosts:[],
+     business:{...original.business,targetIngredientCostRate:.24,targetIngredientCostRateStatus:"confirmed"}};
+   const owner=breakEvenSnapshotInputs(snapshot);
+   expect(owner.ingredientSource).toBe("saved_rate");
+   expect(owner.ingredientStatus).toBe("owner");
+   expect(owner.observedIngredientCents).toBe(Math.round(owner.observedSalesCents*.24));
+   expect(owner.ingredientMissing).toBe(false);
+   expect(owner.estimatesUsed).toBe(true);
+   expect(buildBreakEvenViewModel(snapshot).breakEven).toEqual(
+     buildCostRecoveryViewModel(snapshot).breakEven);
+   const unknown=breakEvenSnapshotInputs({...snapshot,business:{
+     ...snapshot.business,targetIngredientCostRate:null}});
+   expect(unknown.ingredientMissing).toBe(true);
+   expect(unknown.ingredientStatus).toBe("missing");
+   expect(unknown.estimatesUsed).toBe(true);
+   expect(buildBreakEvenViewModel({...snapshot,business:{
+     ...snapshot.business,targetIngredientCostRate:null}}).noteKeys).toContain("profitProductCostsMissing");
  });
 });
