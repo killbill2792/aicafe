@@ -53,8 +53,13 @@ Design mockup (sample data): https://claude.ai/artifact/UBRTrUsFqQAtxjTqi5JqK7
    moved).
 4. **Advice is more than staffing:** staff, prep/stock, ordering (lead times), menu/promo, opening
    hours, operations (road closures, deliveries).
-5. **One data layer.** Everything (events, plans, answers, checklist status, reports) is in tables read
-   by one set of readers in `lib/data/`. The board panels and the chat tools use the same readers.
+5. **One system, one data layer (AGENTS.md sections 3 and 5).** A day's readiness plan is a
+   **capability in the existing Supervisor loop** (`lib/ai/supervisor/loop/`): the plan is a
+   `supervisor_proposals` row, live notes are its mid-run updates, and the report card is a
+   `supervisor_reports` row, exactly like goals. No second monitor, plan or report system. Only
+   supporting facts get their own tables (found events, checklist ticks). Owner answers are owner facts.
+   The board panels and the chat tools read all of it through the same readers in `lib/data/` and
+   `lib/ai/supervisor/loop/reads.server.ts`.
 6. **The conversation is never restrictive.** Any question gets a real answer: café data through
    tools, the outside world through web search (with source links), ideas and writing from the
    model itself. If something truly can't be done, the AI says what it can do instead.
@@ -95,7 +100,7 @@ Design mockup (sample data): https://claude.ai/artifact/UBRTrUsFqQAtxjTqi5JqK7
 | # | Decision | Status |
 |---|---|---|
 | D1 | Panels over the chat (not standalone screens) for the events list, calendar, day plan, past reports | **Agreed** |
-| D2 | New tables for events, plans, answers, checklist, reports (migration, RLS) | Owner approves the migration PR before merge |
+| D2 | New supporting tables for found events and checklist ticks (migration, RLS). Plans and reports use the existing `supervisor_proposals` / `supervisor_reports` | Owner approves the migration PR before merge |
 | D3 | Distance: a geocoding service (Google Maps / Mapbox) for "0.3 mi" tags vs the venue/area name only | **Open**: until decided, show the venue or area name; never a guessed number |
 | D4 | Output-token budget for the internal search call (above the 1,200 used for chat turns) | **Open**: PR 1 proposes a number with evidence; owner approves |
 | D5 | Look-ahead timing: weekly on Monday morning + one new day each day + day-before check | Proposed |
@@ -150,63 +155,78 @@ Each PR: small (ideally < 400 changed lines), one concern, tests for the behavio
 > advice, make get_nearby_events facts-only with hourly usual sales, and add the 'Other' option to the
 > choice question card. Open a PR when the Done checks pass."
 
-### PR 3 — Storage and one reader (migration: owner approves before merge)
+### PR 3 — Event readiness in the Supervisor loop, plus supporting storage (migration: owner approves)
 
-- Tables (RLS on, café-scoped, AGENTS.md section 8):
-  - `cafe_events` — one row per event or holiday: dates, start/end time, name, kind, venue, venue
-    address, distance or area label, source URL, status (`found`/`cancelled`/`moved`), `found_at`,
-    `last_checked_at`.
-  - `cafe_event_days` — one row per café per notable day: the AI's plan (summary, expected busy hours,
-    actions with area + reason + status `open`/`done`/`dismissed`), the question and the owner's answer,
-    the thread id, `plan_written_at`, and a `facts_hash` (rewrite the plan only when the facts change).
-  - `cafe_event_reports` — the morning-after report: actual vs usual numbers (from core), the AI's
-    summary, checklist outcome.
-- One reader module `lib/data/cafeEvents.server.ts` for Past / Now / Coming up / a date range.
-- Chat tools on that reader: `get_events` (any date range, past or future) and `get_event_report`, so
-  the chat can answer "how did Halloween go?" at any time.
-- No UI change in this PR.
+- **New loop capability `event_readiness`** (`lib/ai/supervisor/loop/eventReadiness.server.ts`,
+  registered like `goal.server.ts`), so plans, monitoring and reports use the one lifecycle:
+  - **Proposal = the AI's plan for one day** (summary, expected busy hours, 1–3 actions with area and
+    reason, the facts it used, a `facts_hash`). Inert: "Use this plan" approves it; commit has no side
+    effect (`verified`, like a goal); staff actions stay their own `propose_*` cards.
+  - **Monitor** = each business day of the window (the event day, or the days of a multi-day event):
+    a sample of sales vs a usual day by hour (core readers) and checklist status.
+  - **Report** = `supervisor_reports`: mid-run updates (live notes) and the final report card, with the
+    numbers from core; the owner-facing wording is written by the AI in the day's thread from that
+    report (PR 7).
+- **Supporting tables** (RLS on, café-scoped, AGENTS.md section 8):
+  - `cafe_events`: one row per found event or holiday (dates, start/end time, name, kind, venue, venue
+    address, distance or area label, source URL, status `found`/`cancelled`/`moved`, `found_at`,
+    `last_checked_at`). Facts only, no advice.
+  - `cafe_event_checklist`: one row per plan action the owner ticks or dismisses, keyed by proposal id.
+- Readers: `lib/data/cafeEvents.server.ts` (found events, any date range) and the existing
+  `reads.server.ts` for proposals and reports. Chat tools on them: `get_events` (any range, past or
+  future, with each day's plan and report status) and the existing report reads, so the chat can answer
+  "how did Halloween go?" at any time.
+- No UI change in this PR. Add the capability to `capabilityExposure.test.ts` (or document why not).
 
-> **Prompt:** "Read AGENTS.md and docs/plans/nearby-events.md. Do PR 3 only: the migration for
-> cafe_events / cafe_event_days / cafe_event_reports with RLS, one reader in lib/data, and the get_events
-> and get_event_report chat tools. Don't apply the migration to production; the owner approves it."
+> **Prompt:** "Read AGENTS.md and docs/plans/nearby-events.md. Do PR 3 only: the event_readiness
+> capability in the existing Supervisor loop (plans as supervisor_proposals, reports in
+> supervisor_reports), the migration for cafe_events and cafe_event_checklist with RLS, one reader in
+> lib/data, and the get_events chat tool. No second monitor or report system. Don't apply the migration
+> to production; the owner approves it."
 
 ### PR 4 — Find once, plan once (scheduled job)
 
 - A cron route (`app/api/cron/events-lookahead`): weekly 14-day look-ahead (D5), then each day only the
-  new day entering the window, plus a day-before check for each planned day. Writes `cafe_events`.
-- For each notable day without a plan, or whose `facts_hash` changed, run the **same agent loop** as
-  a system turn in an "Events" chat thread. The agent saves its plan through one strict tool
-  (`save_event_plan`). The plan is an inert draft; staff changes stay `propose_*` cards.
+  new day entering the window, plus a day-before check for each planned day. Writes `cafe_events` only.
+- For each notable day without a plan, or whose `facts_hash` changed, run the **same agent loop** as a
+  system turn in that day's chat thread. The agent drafts the plan with a strict
+  `propose_event_plan` tool, which creates the `event_readiness` proposal through `proposeLoop`
+  (like `propose_goal`). The owner sees it as the usual approval card ("Use this plan").
 - One inbox item (`operating_tasks`) per newly planned day; no duplicates; daily cap (AGENTS.md section 4).
 - Opening the app never triggers this job.
 
-> **Prompt:** "Read AGENTS.md and docs/plans/nearby-events.md. Do PR 4 only: the events look-ahead cron,
-> plan-once via the agent loop and a save_event_plan tool, and inbox items. Requires PR 3 merged."
+> **Prompt:** "Read AGENTS.md and docs/plans/nearby-events.md. Do PR 4 only: the events look-ahead cron
+> and plan-once via the agent loop with a propose_event_plan tool creating event_readiness proposals,
+> plus inbox items. Requires PR 3 merged."
 
 ### PR 5 — Home strip and the events panel (UI)
 
 - Replace `ComingUpCard` with: headline + 7-day strip on the chat start; the events panel (Past · Now ·
   Coming up tabs, month calendar, "Affects you / All" filter, folded small events, distance or area tag);
-  the day-plan panel (busy-hours bars, why, question card, checklist with ticks saved through the reader).
-- Reads only saved rows (no search on open). Follows `docs/02-design-system.md`: 48px targets, 17px
-  body, EN/ES/AR, RTL, reduced motion. Matches the mockup.
-- Screenshot at phone width in the PR.
+  the day-plan panel (busy-hours bars, why, question card, checklist with ticks saved to
+  `cafe_event_checklist`, "Use this plan" approval).
+- Reads only saved data through the PR 3 readers (no search on open). The Operating Board's "Running"
+  and "Recent reports" show event plans like any other loop item, from the same rows.
+- Follows `docs/02-design-system.md`: 48px targets, 17px body, EN/ES/AR, RTL, reduced motion. Matches
+  the mockup. Screenshot at phone width in the PR.
 
 > **Prompt:** "Read AGENTS.md, docs/02-design-system.md and docs/plans/nearby-events.md, and look at the
 > mockup linked there. Do PR 5 only: the Home strip, events panel (Past/Now/Coming up + calendar) and
-> day-plan panel over the Supervisor chat, reading the PR 3 reader. Requires PRs 3–4 merged."
+> day-plan panel over the Supervisor chat, reading the PR 3 readers. Requires PRs 3–4 merged."
 
-### PR 6 — On the day: live watch
+### PR 6 — On the day: live watch (loop mid-run updates)
 
-- During open hours on a planned day, the existing live checks (~30 min, `today-live` cron) compare
-  sales so far and the hourly pace with a usual day, and checklist status; the AI writes at most a few
-  short live notes into the day row and the chat thread. The Home headline shows them.
+- During open hours on a planned day, the existing live checks (~30 min, `today-live` cron) run the
+  `event_readiness` monitor on the live reading; notable changes become the loop's mid-run update in
+  `supervisor_reports`, and the AI posts a short note in the day's thread. At most a few per day. The
+  Home headline shows the latest.
 
-### PR 7 — Report card the morning after
+### PR 7 — Report card the morning after (loop final report)
 
-- Morning after a planned day: numbers from core (actual vs usual, by hour; checklist done or not); the
-  AI writes the report into `cafe_event_reports` and the thread; an inbox item. Past tab shows 14 days.
-  Next year's plan reads this report as evidence.
+- Morning after the window: the `event_readiness` final report in `supervisor_reports` (actual vs usual
+  by hour from core; checklist done or not); the AI writes the owner-facing report card in the thread
+  from it; an inbox item. Past tab shows 14 days; reports are kept for good, and next year's plan reads
+  them as evidence.
 
 ### PR 9 — Chat about any event, and answer anything (can run in wave 1)
 
