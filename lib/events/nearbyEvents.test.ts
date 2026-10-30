@@ -165,6 +165,39 @@ describe("web search call",()=>{
     expect(fetch).toHaveBeenCalledTimes(bodies.length);
   });
 
+  it("keeps found events but reports and caches the specific holiday search that failed",async()=>{
+    const fetch=vi.fn(async (_url:string|URL|Request,init?:RequestInit)=>{
+      const request=JSON.parse(String(init?.body)) as {input:string};
+      if(request.input.includes("Search specifically for Halloween"))
+        return new Response("service unavailable",{status:503});
+      return ok([event({name:"Halloween parade",startDate:"2026-10-31",endDate:null})]);
+    });
+    const search=createNearbyEventsSearch({fetch,apiKey:"k",model:"m"});
+    const params={...input,countryCode:"US",to:"2026-10-31"};
+    const result=await search(params);
+    expect(result).toMatchObject({available:true,outcome:"found",partial:true,
+      failedSearches:[{kind:"holiday",name:"Halloween",date:"2026-10-31"}]});
+    if(result.available)expect(result.events.map(e=>e.name)).toEqual(["Halloween parade"]);
+    const calls=fetch.mock.calls.length;
+    expect(calls).toBeGreaterThan(1);
+    expect(await search(params)).toEqual(result);
+    expect(fetch).toHaveBeenCalledTimes(calls);
+  });
+
+  it("flags a failed general search while retaining successful holiday events",async()=>{
+    const fetch=vi.fn(async (_url:string|URL|Request,init?:RequestInit)=>{
+      const request=JSON.parse(String(init?.body)) as {input:string};
+      return request.input.startsWith("Search the web for public events")?
+        new Response("service unavailable",{status:503}):
+        ok([event({name:"Halloween parade",startDate:"2026-10-31",endDate:null})]);
+    });
+    const result=await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})(
+      {...input,countryCode:"US",to:"2026-10-31"});
+    expect(result).toMatchObject({available:true,outcome:"found",partial:true,
+      failedSearches:[{kind:"general"}],
+      events:[{name:"Halloween parade"}]});
+  });
+
   it("does not call out without an API key",async()=>{
     const fetch=vi.fn();
     expect(await createNearbyEventsSearch({fetch,apiKey:"",model:"m"})(input)).toEqual({available:false,outcome:"failed",reason:"notConfigured",category:"not_configured"});
