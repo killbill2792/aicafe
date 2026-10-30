@@ -9,7 +9,7 @@ import { needsPeriodRecovery, periodFromUrl, periodHref } from "./periodNavigati
 
 const PERIODS: Period[] = ["today", "week", "month"];
 
-export default function PeriodSwitch({ current }: { current: Period }) {
+export default function PeriodSwitch({ current, defaultPeriod = "today" }: { current: Period; defaultPeriod?: Period }) {
   const t = useTranslations("Common");
   const router = useRouter();
   const pathname = usePathname();
@@ -18,7 +18,7 @@ export default function PeriodSwitch({ current }: { current: Period }) {
   const [isNavigating, startNavigation] = useTransition();
   const recoveredUrl = useRef<string | null>(null);
 
-  const urlPeriod = periodFromUrl(searchParams.get("period"));
+  const urlPeriod = periodFromUrl(searchParams.get("period"), defaultPeriod);
   const hrefKey = `${pathname}?${searchParams.toString()}`;
   const waitingForData = pendingPeriod !== null && pendingPeriod !== current &&
     (isNavigating || urlPeriod === pendingPeriod);
