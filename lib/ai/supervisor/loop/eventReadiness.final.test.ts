@@ -4,7 +4,11 @@ import {eventFinalNarrative} from "@/lib/events/eventFinalReport.server";
 
 vi.mock("server-only",()=>({}));
 vi.mock("@/lib/events/eventFinalReport.server",()=>({
-  eventFinalNarrative:vi.fn(async()=>({text:"The AI reviewed this day's results.",hash:"h".repeat(64)})),
+  eventFinalNarrative:vi.fn(async()=>({text:"The AI reviewed this day's results.",hash:"h".repeat(64),
+    provenance:[],evidence:[]})),
+  eventReportFactsHash:vi.fn(()=>"h".repeat(64)),
+  eventReportFallback:vi.fn(()=>"Certified event results are ready."),
+  eventReportNumericEvidence:vi.fn(()=>[]),
 }));
 vi.mock("@/lib/data/cafeEvents.server",()=>({
   readEventChecklist:vi.fn(async()=>[
@@ -58,6 +62,15 @@ describe("event readiness final report delivery",()=>{
       missingBaselineDays:["2026-10-31"],
       days:[{date:"2026-10-31",typicalCents:null}]});
     expect(report.delivery?.payload).toMatchObject({outcomeStatus:"insufficient_evidence"});
+  });
+  it("delivers a sourced, factual report when the AI narrative is unavailable",async()=>{
+    vi.mocked(eventFinalNarrative).mockResolvedValueOnce(null);
+    const report=await eventReadinessCapability.report(scope,effect,[actual(4000)],true,
+      {start:"2026-10-31",through:"2026-10-31",proposalId});
+    expect(report).toMatchObject({
+      status:"complete",result:{reportText:"Certified event results are ready.",reportTextOrigin:"facts"},
+      delivery:{threadText:"Certified event results are ready.",taskKind:"event_plan"}});
+    expect(report.delivery?.numberProvenance).toEqual([]);
   });
   it("does not send a final report or call the model before the window closes",async()=>{
     vi.mocked(eventFinalNarrative).mockClear();
