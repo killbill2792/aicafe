@@ -13,7 +13,7 @@ const t=(locale:"en"|"es"|"ar")=>createTranslator({locale,messages:{en,es,ar}[lo
 const base:Omit<OutlookDay,"date"|"weekday"|"daysFromToday">={holidays:[],eventIds:[],typicalSalesCents:150_000,typicalSampleDays:8,
   lastTime:null,usualHourlySales:[]};
 const outlook:EventsOutlook={from:"2026-10-30",to:"2026-11-05",today:"2026-10-30",location:{label:"Austin",source:"profile"},
-  country:"US",countrySource:"profile",localEventsSearched:true,notCovered:[],addressMissing:false,
+  country:"US",countrySource:"profile",localEventsSearched:true,notCovered:[],addressMissing:false,hourlySalesQuality:null,
   localEvents:[{id:"e1",name:"Austin AI Week",startDate:"2026-11-02",endDate:"2026-11-05",venue:null,distance:"0.4 mi",
     kind:"conference",expectedCrowd:"large",sourceUrl:"https://e.org",sourceName:null}],
   days:[
