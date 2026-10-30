@@ -170,7 +170,7 @@ async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|"ar",
   if(!proposal)return false;
   const {reply,metadata}=turn.text.trim()?agentReplyPayload(turn):
     {reply:{blocks:[{type:"proposal_card",proposalId:proposal.proposalId}]},metadata:{}};
-  const messageId=planMessageId(b.id,ownerId,day.date,day.hash,proposal.proposalId);
+  const messageId=planMessageId(b.id,ownerId,day.date,day.hash,String(proposal.proposalId));
   const message=await db.from("ai_messages").insert({
     id:messageId,business_id:b.id,thread_id:threadId,owner_user_id:ownerId,
     author_user_id:null,role:"supervisor",content_type:"blocks",text_content:null,
