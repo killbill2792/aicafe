@@ -54,7 +54,7 @@ function fixture(){
     run:(day:string)=>scanCafe(db,business,day,search)};
 }
 describe("cron-only discovery and preservation",()=>{
-  beforeEach(()=>search.mockReset());
+  beforeEach(()=>{search.mockReset();});
   it("scans all 14 days on first Tuesday, records even an empty successful search, then one day only",async()=>{
     const f=fixture();
     await f.run("2026-11-03");
