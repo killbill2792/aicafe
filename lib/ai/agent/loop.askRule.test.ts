@@ -21,22 +21,22 @@ const scopedMenuKey=scopedOwnerQuestionKey(
  {kind:"empty",key:"menu_items",tool:"menu_items"},[],
  "What menu items can I price?"
 );
-describe("main-loop mandatory owner question",()=>{
- it("model skips card after empty menu → code adds typed card",async()=>{
+describe("owner questions come only from the AI",()=>{
+ it("model skips card after empty menu → code adds no card",async()=>{
   const turn=await runAgentTurn({ownerText:"What menu items can I price?",context:{...base},provider:fixture([
    [tool("get_menu_items",{query:null,limit:null},"menu"),completed],
    [say("I found no items in the menu."),completed]
   ])});
-  const card=turn.results.find(r=>r.source==="ask_owner");
-  expect(card).toMatchObject({kind:"facts",missing:[]});
-  expect(agentReplyPayload(turn).reply.blocks.some(b=>b.type==="clarify"&&b.kind==="facts")).toBe(true);
+  expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
+  expect(agentReplyPayload(turn).reply.blocks.some(b=>b.type==="clarify")).toBe(false);
+  expect(turn.text).toBe("I found no items in the menu.");
  });
- it("a partial numeric answer is preserved next to a mandatory owner card",async()=>{
+ it("a partial numeric answer is kept and no code card is added",async()=>{
   const turn=await runAgentTurn({ownerText:"What item prices are recorded?",context:{...base},
    provider:fixture([[tool("get_menu_items",{query:null,limit:null},"menu"),completed],
     [say("The owner recorded $5.00, but other costs are not available."),completed]])});
   expect(turn.text).toContain("$5.00");
-  expect(turn.results.some(r=>r.source==="ask_owner"&&r.kind==="facts")).toBe(true);
+  expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
  });
  it("saved fact in a new thread prevents repeat card",async()=>{
   const turn=await runAgentTurn({ownerText:"What menu items can I price?",context:{...base},
@@ -57,9 +57,9 @@ describe("main-loop mandatory owner question",()=>{
   const turn=await runAgentTurn({ownerText:"What is our payroll?",context:{...base},
    ownerFactsReadFailed:true,provider:fixture([[say("No data."),completed]])});
   expect(turn.results.some(r=>r.source==="owner_facts"&&r.error==="owner_facts_read_failed")).toBe(true);
-  expect(turn.results.some(r=>r.source==="ask_owner"&&r.kind==="facts")).toBe(true);
+  expect(turn.results.some(r=>r.source==="ask_owner")).toBe(false);
   expect(turn.text).toBe("No data.");
-  expect(agentReplyPayload(turn).reply.blocks.some(block=>block.type==="clarify")).toBe(true);
+  expect(agentReplyPayload(turn).reply.blocks.some(block=>block.type==="clarify")).toBe(false);
  });
  it.each([["es","No tengo esa información."],["ar","لا توجد بيانات."]] as const)(
   "model refusal in %s is preserved",async(locale,reply)=>{

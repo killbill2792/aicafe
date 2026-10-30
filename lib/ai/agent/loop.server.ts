@@ -12,7 +12,6 @@ import {newResolveState,observeToolResult,resolveOwnerPeriod,localizedPeriodLabe
 import {acceptedExplainLines,type ExplainLine} from "./explain";
 import {verifiedRecommendedPriceInReply} from "./pricingReply";
 import {injectSavedOwnerInputs,formatSavedOwnerFacts,type SavedFact} from "@/lib/ownerFacts/inject";
-import {classifyNeedsAsk} from "@/lib/ownerFacts/needsAsk";
 import {questionFromReasons} from "@/lib/ownerFacts/questions";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 
@@ -439,25 +438,6 @@ export async function runAgentTurn(args: {
       } catch { endReason = now() >= deadline ? "timeout" : "provider_error"; }
     }
   } finally { controller.abort(); }
-  // The response contract is enforced in code, not dependent on model compliance:
-  // partial tool data may be used, but missing/empty/failed evidence must end in
-  // an actionable, persisted owner question unless that exact fact is already saved.
-  if(!results.some(r=>r.name==="ask_owner"&&r.result.missing.length===0)){
-    const collected=results.map(r=>r.result);
-    const reasons=classifyNeedsAsk(collected,text,args.ownerText);
-    const cardInput=questionFromReasons(reasons,collected,args.ownerText,args.context.locale,args.ownerFacts??[]);
-    if(cardInput){
-      // A malformed model ask must not suppress the code-generated recovery card.
-      resolveState.asked=false;
-      const card=await executeAgentTool("ask_owner",cardInput,args.context);
-      if(card.missing.length===0){
-        results.push({callId:"automatic-owner-card",name:"ask_owner",arguments:"{}",result:card});
-        startedTools.push("ask_owner"); // Internal recovery, not an extra model tool call.
-        if(!text.trim()){text=String(card.question); // allowed: empty-reply fill
-        }
-      }
-    }
-  }
   usage.latencyMs = now() - started;
   const status = statusFromResults(results);
   const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),

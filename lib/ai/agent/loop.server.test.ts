@@ -197,8 +197,10 @@ describe("recorded Responses streaming fixtures", () => {
       const result = await runAgentTurn({ownerText:"Menu?",context,provider,onReset:n=>resets.push(n)});
       expect(requests).toHaveLength(3);
       expect(requests[2].tool_choice).toBe("none");
-      expect(result.text.length).toBeGreaterThan(0);
-      expect(result.results.some(r=>r.source==="ask_owner"&&r.missing.length===0)).toBe(true);
+      // The partial text is discarded and no code-made card fills the gap:
+      // the empty reply becomes the route's retryable error for the owner.
+      expect(result.text).toBe("");
+      expect(result.results.some(r=>r.source==="ask_owner")).toBe(false);
       expect(resets).toEqual(["Partial final answer.".length]);
       expect(result.endReason).toBe("provider_error");
     });
@@ -263,7 +265,7 @@ describe("recorded Responses streaming fixtures", () => {
       expect(result.usage.toolCalls).toBe(1);
       expect(result.endReason).toBe("timeout");
       expect(result.text).toContain("The menu read timed out; I cannot verify it yet.");
-      expect(result.results.some(r=>r.source==="ask_owner"&&r.missing.length===0)).toBe(true);
+      expect(result.results.some(r=>r.source==="ask_owner")).toBe(false);
       expect(result.results[0].missing).toContain("deadline_exceeded");
       expect(result.usage.latencyMs).toBe(48000);
     } finally { vi.useRealTimers(); }
