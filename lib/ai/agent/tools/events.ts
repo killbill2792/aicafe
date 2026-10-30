@@ -1,6 +1,6 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {buildEventsOutlook} from "@/lib/events/outlook";
+import {buildEventsOutlook,hourlyOutlookRead} from "@/lib/events/outlook";
 import {CAFE_ADDRESS_FACT} from "@/lib/data/cafeLocation.server";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 import {weekdayOf} from "@/lib/events/holidays";
@@ -24,7 +24,7 @@ export const eventsTools={
         from:input.start_date,days:input.days,readLocation:ctx.cafeLocation,search:ctx.searchNearbyEvents,
         readHourlySales:ctx.tools.getPeakHours?async(from,to)=>{
           const slice=await ctx.tools.getPeakHours!({from,to});
-          return slice.available?slice.value.hours.map(({date,hourLocal,netSalesCents})=>({date,hourLocal,netSalesCents})):null;
+          return hourlyOutlookRead(slice);
         }:undefined,
         readSales:async(from,to)=>{
           const slice=await ctx.tools.getSalesTrend({from,to});
@@ -36,9 +36,13 @@ export const eventsTools={
       // The one existing readers supply context. Failed reads are unknown, not empty schedules.
       const hours=ctx.tools.getBusinessHours?await ctx.tools.getBusinessHours().catch(()=>null):null;
       const weeks=[...new Set(outlook.days.map(d=>mondayOfLocalDate(d.date)))];
-      const schedules=await Promise.all(weeks.map(async week=>
-        ctx.readWeekSchedule?ctx.readWeekSchedule(week).catch(()=>null):null));
-      const shifts=schedules.flatMap(s=>s?.ok?mergeScheduleShifts(s.data):[]);
+      const schedules=await Promise.all(weeks.map(async week=>({
+        week,result:ctx.readWeekSchedule?await ctx.readWeekSchedule(week).catch(()=>null):null
+      })));
+      const byWeek=new Map(schedules.map(({week,result})=>[week,result]));
+      const scheduleUnavailableWeeks=schedules.filter(s=>!s.result?.ok).map(s=>s.week);
+      const toastSchedulePartialWeeks=schedules.filter(s=>s.result?.ok&&s.result.data.posScheduleError)
+        .map(s=>s.week);
       const pastDates=[...new Set(outlook.days.flatMap(d=>d.lastTime?[d.lastTime.date]:[]))];
       const pastItems=await Promise.all(pastDates.map(async date=>{
         const slice=ctx.tools.getProductSales?
@@ -49,14 +53,17 @@ export const eventsTools={
       const byPastDate=new Map(pastItems);
       const enriched=outlook.days.map(day=>{
         const intervals=hours?.available?hours.value[OPEN_HOURS_DAY_KEYS[weekdayOf(day.date)]]:undefined;
-        const scheduledPeople=ctx.readWeekSchedule?
-          [...new Set(shifts.filter(s=>s.date===day.date).map(s=>s.employeeName))]:null;
+        const schedule=byWeek.get(mondayOfLocalDate(day.date));
+        const scheduleStatus=!schedule?.ok?"unavailable":schedule.data.posScheduleError?"partial":"complete";
+        const scheduledPeople=schedule?.ok?
+          [...new Set(mergeScheduleShifts(schedule.data)
+            .filter(shift=>shift.date===day.date).map(shift=>shift.employeeName))]:null;
         const savedAnswers=day.holidays.flatMap(h=>{
           const key="event_outcome:"+h.key+":"+(Number(day.date.slice(0,4))-1);
           const fact=ctx.ownerFacts?.find(f=>f.fact_key===key);
           return fact?[{key,value:fact.value_json}]:[];
         });
-        return {...day,openingHours:intervals??null,scheduledPeople,
+        return {...day,openingHours:intervals??null,scheduledPeople,scheduleStatus,
           lastHolidayTopItems:day.lastTime?byPastDate.get(day.lastTime.date)??null:null,
           savedAnswers,
           // Hourly medians are observations, not forecasts of the event day.
@@ -70,8 +77,10 @@ export const eventsTools={
         ...rest,days:enriched,
         notCovered:[...new Set([...outlook.notCovered,
           ...(hours?.available?[]:["openingHoursUnavailable"]),
-          ...(ctx.readWeekSchedule&&schedules.every(s=>!s?.ok)?["scheduleUnavailable"]:[]),
-          ...(pastDates.length&&pastItems.every(([,items])=>items===null)?["pastItemSalesUnavailable"]:[])])]};
+          ...(scheduleUnavailableWeeks.length?["scheduleUnavailable"]:[]),
+          ...(toastSchedulePartialWeeks.length?["toastScheduleReadFailed"]:[]),
+          ...(pastDates.length&&pastItems.every(([,items])=>items===null)?["pastItemSalesUnavailable"]:[])])],
+        scheduleUnavailableWeeks,toastSchedulePartialWeeks};
     },
   },
 } as const;
