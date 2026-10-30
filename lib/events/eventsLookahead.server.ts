@@ -364,10 +364,8 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
         const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,day);
         if(result)reported++;
       }
-      // A terminal report is due only after the event has finished locally.
-      // Refresh it even when no new day is present, for corrected Toast data.
-      if(yesterday>end&&await monitorLoop(scope,supervisorLoopRegistry,repo,p,yesterday))
-        reported++;
+      // The final observed day above already generates the terminal report.
+      // Replaying that day on later crons refreshes corrected Toast evidence.
     }catch{
       failed++;
       console.warn("events_observation_report_failed");
