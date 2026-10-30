@@ -114,7 +114,7 @@ export default async function MoneyPage({
 
       <MoneyViewSwitch current={view} recoveryLabel={t("recoveryTab")} profitLabel={t("profitTab")} />
 
-      {view === "profit" && <PeriodSwitch current={period} />}
+      {view === "profit" && <PeriodSwitch current={period} defaultPeriod="month" />}
 
       {view === "recovery" ? (
         <CostRecoveryView snapshot={snapshot} calMonthKey={calMonthKey} toastConnected={toastConnected} liveToday={liveToday} />
