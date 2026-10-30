@@ -37,6 +37,27 @@ describe("general web_search",()=>{
     expect(payload.max_output_tokens).toBeLessThanOrEqual(1600);
   });
 
+  it("reserves each paid lookup before sending and returns actual provider token counts",async()=>{
+    const payload={...message("The street is closed.",[cited]),
+      usage:{input_tokens:31,output_tokens:42,input_tokens_details:{cached_tokens:10}}};
+    const fetch=vi.fn(async()=>completed(payload));
+    const reserveModelCall=vi.fn(()=>true),recordUsage=vi.fn();
+    const search=createWebSearch({fetch,apiKey:"test-key"});
+    expect(await search("Street closures?",{reserveModelCall,recordUsage})).toMatchObject({available:true});
+    expect(reserveModelCall).toHaveBeenCalledTimes(1);
+    expect(recordUsage).toHaveBeenCalledWith({inputTokens:31,cachedTokens:10,outputTokens:42});
+    const refuse=vi.fn(()=>false);
+    expect(await search("Another search?",{reserveModelCall:refuse,recordUsage}))
+      .toEqual({available:false,reason:"budget"});
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const unreadable=createWebSearch({fetch:vi.fn(async()=>completed({
+      status:"incomplete",output:[],usage:{input_tokens:7,output_tokens:1200},
+    })),apiKey:"test-key"});
+    expect(await unreadable("Incomplete?",{reserveModelCall,recordUsage}))
+      .toEqual({available:false,reason:"unreadable"});
+    expect(recordUsage).toHaveBeenLastCalledWith({inputTokens:7,cachedTokens:0,outputTokens:1200});
+  });
+
   it("rejects model-supplied café scopes, empty queries and oversized queries",async()=>{
     const webSearch=vi.fn();
     const ctx={...input,webSearch};
