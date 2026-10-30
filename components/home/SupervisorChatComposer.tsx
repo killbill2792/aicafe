@@ -35,7 +35,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
-import ComingUpCard from "./ComingUpCard";
+import SavedEventsCard from "./SavedEventsCard";
 import {openEventDayThread} from "./eventDayThread";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
@@ -814,9 +814,8 @@ export default function SupervisorChatComposer({
   const inputLocked = sending && !liveJobId;
   const shownFailure = failureCode ?? (watcher.job?.status === "failed" ? watcher.job.errorCode ?? null : null);
   const durationLabel = String(Math.floor(elapsed / 60)) + ":" + String(elapsed % 60).padStart(2, "0");
-  // A tap on a "Coming up" row asks the chat about that day, like a suggestion chip.
+  // A tap on a saved event opens that day in the same Supervisor conversation.
   const boardAskDisabled = !enabled || !canUseAi || sending || uploading || dictation === "recognizing" || resumedRunning;
-  const askFromBoard = (prompt: string) => { if (boardAskDisabled) return; retryId.current = null; void sendText(prompt); };
   const chatAboutEventDay=async(date:string,title:string,prompt:string)=>{
     if(boardAskDisabled||openingEvent.current)return;
     openingEvent.current=true;
@@ -839,8 +838,8 @@ export default function SupervisorChatComposer({
       setError(true);setFailureCode("agent_request_failed");
     }finally{openingEvent.current=false;}
   };
-  // The card runs a paid web search: never mount it (and never fetch) without AI access.
-  const comingUpCard = enabled && canUseAi ? <ComingUpCard locale={locale} onAsk={askFromBoard}
+  // Only saved event facts are read on Home; no paid search starts when opening the panel.
+  const comingUpCard = enabled && canUseAi ? <SavedEventsCard locale={locale}
     onChatAboutDay={(date,title,prompt)=>void chatAboutEventDay(date,title,prompt)} disabled={boardAskDisabled}/> : undefined;
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
