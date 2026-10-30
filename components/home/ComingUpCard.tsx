@@ -7,6 +7,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { CalendarDays } from "lucide-react";
 import type { EventsOutlook, OutlookDay, DayExpect } from "@/lib/events/outlook";
+import {eventDayChatContext} from "@/lib/events/eventDayChat";
 
 type Locale = "en" | "es" | "ar";
 type Translate = (key: string, values?: Record<string, string | number>) => string;
@@ -51,8 +52,9 @@ function basisLabel(day: OutlookDay, outlook: EventsOutlook, t: Translate, local
 }
 
 /** Pure view: the card for a loaded (or loading) outlook. */
-export function ComingUpView({ state, locale, t, onAsk, disabled }:
-  { state: ComingUpState; locale: Locale; t: Translate; onAsk: (prompt: string) => void; disabled: boolean }) {
+export function ComingUpView({ state, locale, t, onAsk, onChatAboutDay, disabled }:
+  { state: ComingUpState; locale: Locale; t: Translate; onAsk: (prompt: string) => void;
+    onChatAboutDay:(date:string,title:string,prompt:string)=>void;disabled:boolean }) {
   if (state.status === "error") return null; // never block Home; the chat can still answer
   const button = "inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline disabled:opacity-50";
   return <section className="min-w-0 rounded-2xl border border-line bg-card p-3" aria-label={t("title")} data-testid="coming-up">
@@ -69,7 +71,8 @@ export function ComingUpView({ state, locale, t, onAsk, disabled }:
               const when = whenLabel(day, locale, t), what = whatLabel(day, outlook, t);
               const basis = basisLabel(day, outlook, t, locale);
               return <li key={day.date} className="min-w-0">
-                <button type="button" disabled={disabled} onClick={() => onAsk(t("askDay", { what, when }))}
+                <button type="button" disabled={disabled} onClick={() => onChatAboutDay(day.date,t("chatDayTitle",{date:day.date,what}).slice(0,120),
+                  t("chatDayPrompt",{date:day.date,context:eventDayChatContext(day,outlook)}))}
                   className="flex min-h-12 w-full min-w-0 items-start gap-2 rounded-xl bg-surface2 p-2.5 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-60">
                   <span className={"shrink-0 rounded-full border bg-card px-2 py-0.5 text-[13px] font-semibold " + PILL[day.decision.expect]}>
                     {t(day.decision.expect)}
@@ -78,6 +81,7 @@ export function ComingUpView({ state, locale, t, onAsk, disabled }:
                     <span className="block break-words text-[15px] font-semibold leading-snug text-ink" dir="auto">{when} · {what}</span>
                     <span className="mt-0.5 block text-[17px] leading-snug text-ink">{t(day.decision.action)}</span>
                     {basis && <span className="mt-0.5 block break-words text-[13px] leading-snug text-ink-muted" dir="auto">{basis}</span>}
+                    <span className="mt-1 block text-[15px] font-semibold text-accent-text">{t("chatAboutThis")}</span>
                   </span>
                 </button>
               </li>;
@@ -96,7 +100,8 @@ export function ComingUpView({ state, locale, t, onAsk, disabled }:
 }
 
 /** Loads after the page so a slow web search never delays Home. */
-export default function ComingUpCard({ locale, onAsk, disabled }: { locale: Locale; onAsk: (prompt: string) => void; disabled: boolean }) {
+export default function ComingUpCard({ locale, onAsk, onChatAboutDay, disabled }: { locale: Locale; onAsk: (prompt: string) => void;
+  onChatAboutDay:(date:string,title:string,prompt:string)=>void;disabled: boolean }) {
   // Same message files the chat composer reads (it renders outside a provider in tests too).
   const t = useMemo(() => createTranslator({ locale, messages: { en, es, ar }[locale], namespace: "ComingUp" }) as unknown as Translate, [locale]);
   const [state, setState] = useState<ComingUpState>({ status: "loading" });
@@ -110,5 +115,5 @@ export default function ComingUpCard({ locale, onAsk, disabled }: { locale: Loca
       .catch(() => { if (!controller.signal.aborted) setState({ status: "error" }); });
     return () => controller.abort();
   }, [locale]);
-  return <ComingUpView state={state} locale={locale} t={t} onAsk={onAsk} disabled={disabled} />;
+  return <ComingUpView state={state} locale={locale} t={t} onAsk={onAsk} onChatAboutDay={onChatAboutDay} disabled={disabled} />;
 }
