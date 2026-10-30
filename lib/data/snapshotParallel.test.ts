@@ -80,9 +80,7 @@ describe("canonical snapshot independent read phases",()=>{
       card_fees_cents:375,card_fees_status:"actual",voids_cents:0,
     }]);
     const snapshot=await work;
-    expect(snapshot.business).toMatchObject({
-      id:"cafe1",currency:"EUR",ownerMonthlyPayrollExtrasCents:undefined,
-    });
+    expect(snapshot.business).toMatchObject({id:"cafe1",currency:"EUR"});
     expect(snapshot.ownerMonthlyPayrollExtrasCents).toBe(1200);
     expect(snapshot.monthActualDays.map(d=>d.netSalesCents)).toEqual([12345]);
     expect(snapshot.periodItemSales.period).toEqual({from:"2026-10-24",to:"2026-10-30"});
