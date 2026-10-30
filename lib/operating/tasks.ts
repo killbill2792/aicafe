@@ -7,7 +7,7 @@ export function parseAgentId(value: string | undefined): AgentId | null {
   return AGENT_IDS.find((agent) => agent === value) ?? null;
 }
 export type OperatingTaskStatus = "watching" | "needs_response" | "needs_owner" | "handled" | "expired";
-export type OperatingTaskKind = "price_experiment_report" | "price_review" | "staff_coverage" | "supply_check" | "money_update" | "data_quality" | "daily_brief" | "goal_report" | "goal_checkin" | "event_plan";
+export type OperatingTaskKind = "price_experiment_report" | "price_review" | "staff_coverage" | "supply_check" | "money_update" | "data_quality" | "daily_brief" | "goal_report" | "goal_checkin" | "event_plan" | "event_change";
 export type TaskEvidence = { source: string; facts: Record<string, string | number | boolean | null> };
 export type OperatingTask = {
   id: string;
@@ -35,7 +35,7 @@ export type OperatingTaskResponse = {
 };
 
 export function agentForTask(kind: OperatingTaskKind): AgentId {
-  if (kind === "price_review" || kind === "price_experiment_report" || kind === "event_plan") return "alex";
+  if (kind === "price_review" || kind === "price_experiment_report" || kind === "event_plan" || kind === "event_change") return "alex";
   if (kind === "staff_coverage") return "olivia";
   if (kind === "supply_check") return "maya";
   return "leo";
