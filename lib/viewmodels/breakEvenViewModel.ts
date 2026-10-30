@@ -56,6 +56,10 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot) {
   const ingredientSource=hasCompleteRecipeCosts?"recipe" as const:
     confirmedRate!==null?"saved_rate" as const:"partial" as const;
   const ingredientMissing=ingredientSource==="partial";
+  const ingredientStatus=ingredientSource==="recipe"?"actual" as const:
+    ingredientSource==="partial"?"missing" as const:
+      snapshot.business.targetIngredientCostRateStatus==="owner"||
+      snapshot.business.targetIngredientCostRateStatus==="confirmed"?"owner" as const:"estimate" as const;
   const observedIngredientCents=ingredientSource==="saved_rate"?
     Math.round(observedSalesCents*confirmedRate!):productCosts.totalCostCents;
   const openDayCount=openDates.length||snapshot.daysInMonth;
@@ -78,7 +82,7 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot) {
   return {days,productCosts,monthlyBillsCents,monthlyStaffCents:monthLabor.projectedMonthlyLaborCents,
     monthLabor,feeResult,shared,openDayCount,openDates,elapsedOpenDates,missingLaborDates,
     missingBills,missingFees,estimatedBills,estimatedStaffTax,ownerExtrasPresent,observedSalesCents,
-    observedIngredientCents,ingredientSource,ingredientMissing,estimatesUsed};
+    observedIngredientCents,ingredientSource,ingredientStatus,ingredientMissing,estimatesUsed};
 }
 
 export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
