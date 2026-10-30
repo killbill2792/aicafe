@@ -42,6 +42,9 @@ export type LoopReport={status:"in_progress"|"complete"|"insufficient_evidence";
     agentId:AgentId;taskKind:OperatingTaskKind;entityType:string;entityId:string;
     payload:OperatingTask["payload"];confidence:OperatingTask["confidence"];
     evidence:OperatingTask["evidence"];threadText:string;
+    /** Verified number offsets from the SAME agent checkNumbers path. */
+    numberProvenance?:readonly import("@/lib/ai/agent/checkNumbers").NumberProvenance[];
+    numericEvidence?:readonly import("@/lib/ai/agent/checkNumbers").NumericEvidence[];
   };
 };
 export type RegisteredLoopCapability={
