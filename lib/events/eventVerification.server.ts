@@ -24,6 +24,22 @@ function storedChange(event:CafeEvent):ChangeRecord|null{
   return typeof change.sourceUrl==="string"&&typeof change.verifiedAt==="string"&&
     typeof change.verdict==="string"?{change,pendingNotice:detail.pendingNotice===true}:null;
 }
+function changeHistory(event:CafeEvent):VerifiedChange[]{
+  const details=event.verificationDetails;
+  if(details&&typeof details==="object"&&!Array.isArray(details)){
+    const rows=(details as {history?:unknown}).history;
+    if(Array.isArray(rows))return rows.filter((x):x is VerifiedChange=>
+      !!x&&typeof x==="object"&&typeof x.verifiedAt==="string"&&
+      typeof x.verdict==="string"&&typeof x.sourceUrl==="string");
+  }
+  const previous=storedChange(event);
+  return previous?[previous.change]:[];
+}
+function historyIncluding(event:CafeEvent,change:VerifiedChange):VerifiedChange[]{
+  const history=changeHistory(event);
+  return history.some(x=>x.id===change.id&&x.verifiedAt===change.verifiedAt&&
+    x.verdict===change.verdict)?history:[...history,change];
+}
 function citedUrls(body:unknown):string[]{
   const data=body as {output?:Array<{content?:Array<{annotations?:Array<{type?:string;url?:string}>}>}>};
   return (data?.output??[]).flatMap(item=>(item.content??[]).flatMap(c=>
@@ -92,7 +108,7 @@ async function writeAttempt(db:Db,businessId:string,event:CafeEvent,at:string,
   };
   if(isNew&&change){
     patch.status=change.status;
-    patch.verification_details={change,pendingNotice:true};
+    patch.verification_details={change,pendingNotice:true,history:historyIncluding(event,change)};
   }
   // Optimistic status guard: never race an owner's newer saved event revision.
   const updated=await db.from("cafe_events").update(patch).eq("business_id",businessId)
@@ -102,7 +118,7 @@ async function writeAttempt(db:Db,businessId:string,event:CafeEvent,at:string,
 }
 async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:string,
   today:string,event:CafeEvent,plan:Planned,change:VerifiedChange):Promise<void>{
-  const key=stableMessageId("event-change:"+businessId+":"+event.id+":"+
+  const key=stableMessageId("event-change:"+businessId+":"+event.id+":"+change.verifiedAt+":"+
     change.status+":"+change.verdict+":"+change.sourceUrl+":"+
     (change.newDate??"")+":"+(change.newVenue??""));
   const taskId="event-change:"+key;
@@ -159,7 +175,7 @@ async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:str
   }
   // An interrupted delivery is retried next cron. Never resurrect handled tasks.
   const cleared=await db.from("cafe_events").update({
-    verification_details:{change,pendingNotice:false},
+    verification_details:{change,pendingNotice:false,history:historyIncluding(event,change)},
   }).eq("business_id",businessId).eq("id",event.id).eq("status",change.status);
   if(cleared.error)throw cleared.error;
 }
