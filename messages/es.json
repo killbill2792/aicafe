@@ -3676,6 +3676,7 @@
     "liveObservations": "Ventas observadas hoy",
     "venueUnknown": "Lugar no registrado",
     "verificationPending": "Verificación incompleta; los datos guardados pueden estar desactualizados",
+    "lastSavedOn": "Última revisión guardada: {date} · sin verificación confirmada",
     "verifiedOn": "Última verificación: {date}",
     "importanceHigh": "Importancia alta · criterio de IA",
     "importanceMedium": "Importancia media · criterio de IA",
