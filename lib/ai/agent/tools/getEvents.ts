@@ -2,6 +2,17 @@ import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 
 export const getEventsInput=z.strictObject({from:z.iso.date(),to:z.iso.date()});
+/** Keep chat tool evidence compact. Full readings remain in the one shared data reader. */
+function compactReport(raw:unknown):Record<string,unknown>|null{
+ if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
+ const r=raw as Record<string,unknown>;
+ const days=Array.isArray(r.days)?r.days.filter(d=>d&&typeof d==="object").slice(0,7)
+   .map(d=>{const x=d as Record<string,unknown>;return {
+     date:x.date,actualCents:x.actualCents,typicalCents:x.typicalCents,
+     changePercent:x.changePercent,baselineDays:x.baselineDays};}):[];
+ return {observedDays:r.observedDays??null,expectedDays:r.expectedDays??null,
+   checklist:r.checklist??null,days,additionalDays:Array.isArray(r.days)?Math.max(0,r.days.length-days.length):0};
+}
 export const savedEventsTools={
  get_events:{
   agentId:"alex",
@@ -15,8 +26,9 @@ export const savedEventsTools={
      missing:["savedEventsUnavailable"],agentId:"alex"};
    const result=await ctx.savedEvents(v.from,v.to);
    return {source:"cafe_events",period:{from:v.from,to:v.to},missing:[],
-     agentId:"alex",events:result.events.slice(0,20),plans:result.plans.slice(0,20),
-     omittedEvents:Math.max(0,result.events.length-20),omittedPlans:Math.max(0,result.plans.length-20),
+     agentId:"alex",unit:"cents",events:result.events.slice(0,8),
+     plans:result.plans.slice(0,5).map(p=>({...p,report:compactReport(p.report)})),
+     omittedEvents:Math.max(0,result.events.length-8),omittedPlans:Math.max(0,result.plans.length-5),
      searched:false,empty:result.events.length===0&&result.plans.length===0};
   },
  },
