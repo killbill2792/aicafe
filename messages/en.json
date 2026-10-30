@@ -1438,6 +1438,7 @@
     "priceQuestion": "Raise {item} from {current} → {suggested}?",
     "pricingEvidence": "Recommendation from the deterministic pricing engine. No register price was changed.",
     "missingCosts": "{count, plural, one {# cost is missing this month.} other {# costs are missing this month.}}",
+    "eventPlanReview": "Review the event-day plan for {date}.",
     "mayaWatching": "Watching entered cup and ingredient costs.",
     "inventoryUnavailable": "Inventory quantities are not connected, so Maya will not guess stock levels.",
     "transportUnavailable": "Staff messaging is not connected. Olivia can structure coverage requests, but cannot send them yet.",
