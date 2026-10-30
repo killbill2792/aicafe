@@ -18,6 +18,16 @@ describe("Past event report cards",()=>{
           {hourLocal:14,actualCents:1550,usualCents:1200}]}],
     });
   });
+  it("retains precise unverified number spans without changing report text",()=>{
+    const report=safeEventReport({
+      reportText:"Sales reached 999, but that figure is unverified.",
+      reportProvenance:[{start:14,end:17,source:"unchecked"},
+        {start:-1,end:4,source:"unchecked"}],
+      observedDays:1,expectedDays:1,checklist:{total:1,done:0},days:[],
+    });
+    expect(report?.text).toBe("Sales reached 999, but that figure is unverified.");
+    expect(report?.provenance).toEqual([{start:14,end:17,source:"unchecked"}]);
+  });
   it("does not turn absent, malformed or partial evidence into zero",()=>{
     expect(safeEventReport(null)).toBeNull();
     const report=safeEventReport({
