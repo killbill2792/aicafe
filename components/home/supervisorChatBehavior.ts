@@ -63,10 +63,14 @@ export function activeOwnerQuestionMessageId(messages:readonly ConversationMessa
 export function clarifyCardState(messages:readonly ConversationMessage[],index:number){
   const message=messages[index];
   const card=message?.blocks?.find(b=>b&&typeof b==="object"&&"type" in b&&b.type==="clarify");
-  if(!card||typeof card!=="object"||!("options" in card)||!Array.isArray(card.options))return {state:"hidden" as const,choice:null};
+  if(!card||typeof card!=="object")return {state:"hidden" as const,choice:null};
+  // Every card kind is shown. A reply that is only a question is saved as the card
+  // alone (no text block), so hiding a card would leave an empty answer bubble.
+  // Typed-answer cards (facts, fill) have no options to match a reply against.
+  const options="options" in card&&Array.isArray(card.options)?card.options:[];
   const next=messages.slice(index+1).find(m=>m.role==="owner");
   if(next){
-    const label=card.options.find(o=>o&&typeof o==="object"&&"label" in o&&o.label===next.text);
+    const label=options.find(o=>o&&typeof o==="object"&&"label" in o&&o.label===next.text);
     return label?{state:"chosen" as const,choice:String(label.label)}:{state:"skipped" as const,choice:null};
   }
   return messages.at(-1)?.id===message.id?{state:"active" as const,choice:null}:{state:"skipped" as const,choice:null};
