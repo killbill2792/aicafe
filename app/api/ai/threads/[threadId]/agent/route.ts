@@ -37,7 +37,7 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
-import {searchNearbyEvents} from "@/lib/ai/events/nearbyEventsSearch.server";
+import {searchNearbyEvents} from "@/lib/events/nearbyEventsSearch.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

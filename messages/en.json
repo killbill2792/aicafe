@@ -3663,5 +3663,31 @@
     },
     "taskCheckinTitle": "Check-in: {question}",
     "taskCheckinAction": "Answer in chat"
+  },
+  "ComingUp": {
+    "title": "Coming up",
+    "loading": "Checking what's coming up…",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "busier": "Busier",
+    "quieter": "Quieter",
+    "normal": "Usual",
+    "unsure": "Unsure",
+    "add_staff": "Expect more customers. Add staff and prep extra.",
+    "keep_staff_light": "Expect fewer customers. Keep staff light.",
+    "normal_staff": "Like a usual day. Normal staffing.",
+    "have_backup": "Could go either way. Keep someone on call.",
+    "basisSales": "Last time: {change}% vs a usual day",
+    "basisEvent": "Event nearby{distance}",
+    "basisGeneral": "General pattern, not your sales yet",
+    "moreEvents": "+{count} more",
+    "nothingSpecial": "Nothing special in the next 7 days. Normal staffing.",
+    "addAddress": "Add your café address to see local events too.",
+    "addAddressButton": "Add address",
+    "addressPrompt": "Find events near my café",
+    "askDay": "What should I plan for {what} ({when})?",
+    "askWeek": "Ask about the week",
+    "weekPrompt": "What's coming up near my café this week?",
+    "searchDown": "Local events couldn't be checked right now."
   }
 }

@@ -4,7 +4,7 @@ import {questionFromReasons} from "@/lib/ownerFacts/questions";
 import {classifyNeedsAsk} from "@/lib/ownerFacts/needsAsk";
 import {cafeLocationFrom} from "@/lib/data/cafeLocation.server";
 import type {DailyFacts} from "@/lib/calc";
-import type {NearbyEventsSearch} from "@/lib/ai/events/nearbyEvents";
+import type {NearbyEventsSearch} from "@/lib/events/nearbyEvents";
 
 const day=(date:string,netSalesCents:number)=>({date,netSalesCents,ordersCount:0,drinksCount:0,ingredientsCents:0,
   wagesCents:null,staffTaxCents:null,cardFeesCents:0,voidsCents:0,salesDataStatus:"actual"}) as DailyFacts;
@@ -55,7 +55,7 @@ describe("get_nearby_events",()=>{
     expect(tomorrow.lastTime).toEqual({date:"2025-10-31",netSalesCents:132_000,typicalCents:100_000,
       changePercent:32,sampleDays:5,holiday:"Halloween"});
     expect(days[0]).toMatchObject({date:"2026-10-30",weekday:"Friday",typicalSalesCents:100_000});
-    expect(days[0].holidays).toBeUndefined();
+    expect(days[0].holidays).toEqual([]);
     // The AI week shows on each of its days.
     expect(days.filter(d=>d.eventIds?.includes("e1")).map(d=>d.date)).toEqual(["2026-11-02","2026-11-03","2026-11-04","2026-11-05"]);
     expect(r.localEvents).toEqual([{id:"e1",...aiWeek}]);
@@ -174,5 +174,20 @@ describe("owner asks 'anything happening nearby?' in chat",()=>{
       provider:provider(rounds("Tomorrow is Halloween. Tell me your address and I'll check local events too."))});
     const card=asked.results.find(r=>r.source==="ask_owner");
     expect(card?.fields).toEqual([expect.objectContaining({key:"cafe_address",inputType:"text"})]);
+  });
+});
+
+describe("board and chat show the same days",()=>{
+  it("the chat tool and the Home card builder return identical days and decisions",async()=>{
+    const {buildEventsOutlook}=await import("@/lib/events/outlook");
+    const {c}=ctx();
+    const chat=await executeAgentTool("get_nearby_events",{start_date:null,days:null},c);
+    const board=await buildEventsOutlook({today:"2026-10-30",timezone:"America/Chicago",locale:"en",
+      readLocation:async()=>location,search:async()=>({available:true,events:[aiWeek]}),
+      readSales:async(from,to)=>history.filter(d=>d.date>=from&&d.date<=to).map(d=>({date:d.date,netSalesCents:d.netSalesCents}))});
+    if("tooFarAhead" in board)throw new Error("unexpected");
+    expect(chat.days).toEqual(board.days);
+    expect(chat.localEvents).toEqual(board.localEvents);
+    expect((chat.days as Array<{date:string;decision:unknown}>)[1].decision).toEqual({expect:"busier",action:"add_staff",basis:"your_sales"});
   });
 });

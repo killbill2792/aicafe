@@ -3663,5 +3663,31 @@
     },
     "taskCheckinTitle": "Seguimiento: {question}",
     "taskCheckinAction": "Responder en el chat"
+  },
+  "ComingUp": {
+    "title": "Próximamente",
+    "loading": "Revisando lo que viene…",
+    "today": "Hoy",
+    "tomorrow": "Mañana",
+    "busier": "Más gente",
+    "quieter": "Más tranquilo",
+    "normal": "Normal",
+    "unsure": "Incierto",
+    "add_staff": "Espera más clientes. Suma personal y prepara de más.",
+    "keep_staff_light": "Espera menos clientes. Mantén poco personal.",
+    "normal_staff": "Como un día normal. Personal habitual.",
+    "have_backup": "Puede ir en cualquier dirección. Ten a alguien de guardia.",
+    "basisSales": "La última vez: {change}% frente a un día normal",
+    "basisEvent": "Evento cerca{distance}",
+    "basisGeneral": "Patrón general, aún no son tus ventas",
+    "moreEvents": "+{count} más",
+    "nothingSpecial": "Nada especial en los próximos 7 días. Personal habitual.",
+    "addAddress": "Agrega la dirección de tu café para ver también los eventos cercanos.",
+    "addAddressButton": "Agregar dirección",
+    "addressPrompt": "Busca eventos cerca de mi café",
+    "askDay": "¿Qué debo planear para {what} ({when})?",
+    "askWeek": "Preguntar por la semana",
+    "weekPrompt": "¿Qué viene cerca de mi café esta semana?",
+    "searchDown": "No se pudieron revisar los eventos cercanos ahora."
   }
 }

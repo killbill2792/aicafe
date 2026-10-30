@@ -35,6 +35,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
+import ComingUpCard from "./ComingUpCard";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
@@ -809,6 +810,9 @@ export default function SupervisorChatComposer({
   const inputLocked = sending && !liveJobId;
   const shownFailure = failureCode ?? (watcher.job?.status === "failed" ? watcher.job.errorCode ?? null : null);
   const durationLabel = String(Math.floor(elapsed / 60)) + ":" + String(elapsed % 60).padStart(2, "0");
+  // A tap on a "Coming up" row asks the chat about that day, like a suggestion chip.
+  const boardAskDisabled = !enabled || !canUseAi || sending || uploading || dictation === "recognizing" || resumedRunning;
+  const askFromBoard = (prompt: string) => { if (boardAskDisabled) return; retryId.current = null; void sendText(prompt); };
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
@@ -834,7 +838,8 @@ export default function SupervisorChatComposer({
     {chatStartData&&chatStartCopy&&hasChatMessages&&<div className="max-h-[55dvh] shrink-0 overflow-y-auto">
       <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
         hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
-        onSuggestion={()=>{}} suggestionsDisabled/>
+        onSuggestion={()=>{}} suggestionsDisabled
+        comingUp={<ComingUpCard locale={locale} onAsk={askFromBoard} disabled={boardAskDisabled}/>}/>
     </div>}
     <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-4 md:px-6 md:py-5"
       onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-label={copy.threads}>
@@ -844,7 +849,8 @@ export default function SupervisorChatComposer({
           hasMessages={false} expanded={false} onToggle={()=>{}}
           onSuggestion={prompt=>{retryId.current=null;void sendText(prompt);}}
           suggestionsDisabled={!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}
-          unavailableMessage={!enabled ? copy.unavailable : undefined}/>}
+          unavailableMessage={!enabled ? copy.unavailable : undefined}
+          comingUp={<ComingUpCard locale={locale} onAsk={askFromBoard} disabled={boardAskDisabled}/>}/>}
 
       {!chatStartData&&!hasChatMessages&&<div className="mx-auto py-3 text-center">
         <h2 className="font-headline text-xl font-bold text-ink">{copy.emptyHeading}</h2>

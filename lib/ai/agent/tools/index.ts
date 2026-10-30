@@ -66,7 +66,7 @@ export type AgentToolContext = {
   /** The session café's saved location (profile, else the owner's typed address). Never from model args. */
   cafeLocation?:()=>Promise<import("@/lib/data/cafeLocation.server").CafeLocation|null>;
   /** Read-only web search for public events near a location. */
-  searchNearbyEvents?:import("@/lib/ai/events/nearbyEvents").NearbyEventsSearch;
+  searchNearbyEvents?:import("@/lib/events/nearbyEvents").NearbyEventsSearch;
   menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;

@@ -17,13 +17,16 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 2. [ ] **Nearby events and holidays → staffing and crowd advice.** The AI finds what is happening near
    the café and tells the owner what to do ("Tomorrow is Halloween, last year you sold 32% more, add one
    person"), then later checks Toast to see what really happened.
-   - [x] **Chat part (this PR):** `get_nearby_events` (`lib/ai/agent/tools/events.ts`). Holidays and
-     observances in code (`lib/calc/holidays.ts`, US list; other countries via the web search). Local events
-     by OpenAI's hosted web search near the café's saved address (`lib/ai/events/`), cached 3 h per place
-     and dates. Usual-day sales and "same day last year" from the café's own Toast days through
-     `lib/metrics/core/dayOutlook.ts`. No address → holidays still shown and the owner is asked for the
-     address once (`cafe_address` owner fact). One location reader (`lib/data/cafeLocation.server.ts`),
-     shared with the café profile.
+   - [x] **Chat part:** `get_nearby_events` (`lib/ai/agent/tools/events.ts`). Holidays from the maintained
+     `date-holidays` data (about 200 countries, state holidays, moving dates like Easter and Eid; never our
+     own date list), with a short café note for a few well-known days. Local events by OpenAI's hosted
+     web search near the café's saved address (`lib/events/`), cached 3 h. Usual-day sales and "same day
+     last year" from the café's own Toast days (`lib/metrics/core/dayOutlook.ts`). No address → holidays
+     still shown and the owner is asked once (`cafe_address` owner fact).
+   - [x] **Board card "Coming up"** (`components/home/ComingUpCard.tsx`) on the chat start, next to the key
+     numbers: up to 3 notable days, each one decision (Busier/Quieter/Usual/Unsure + what to do + why).
+     Loads after the page via `/api/events/outlook`, so Home is never slower. Tapping a day asks the chat.
+     Chat and card use the one builder `lib/events/outlook.ts` (equality test in `tools/events.test.ts`).
    - [ ] **Check on the test café** after deploy: ask "anything happening nearby this week?". Halloween
      (Sat Oct 31 2026) should lead; local events need `OPENAI_API_KEY` on the server and a model with web
      search (optional `EVENTS_SEARCH_OPENAI_MODEL` overrides the chat model for the search only).
