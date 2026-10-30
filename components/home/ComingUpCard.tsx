@@ -6,7 +6,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { CalendarDays } from "lucide-react";
-import type { EventsOutlook, OutlookDay, DayExpect } from "@/lib/events/outlook";
+import type { EventsOutlook, OutlookDay } from "@/lib/events/outlook";
 
 type Locale = "en" | "es" | "ar";
 type Translate = (key: string, values?: Record<string, string | number>) => string;
@@ -14,13 +14,6 @@ export type ComingUpState = { status: "loading" } | { status: "error" } | { stat
 
 /** At most this many days on the board; the rest is one tap away in chat. */
 export const COMING_UP_ROWS = 3;
-
-const PILL: Record<DayExpect, string> = {
-  busier: "border-good text-good",
-  quieter: "border-line text-ink",
-  normal: "border-line text-ink-muted",
-  unsure: "border-warn text-warn",
-};
 
 function whenLabel(day: OutlookDay, locale: Locale, t: Translate): string {
   if (day.daysFromToday === 0) return t("today");
@@ -38,16 +31,12 @@ function whatLabel(day: OutlookDay, outlook: EventsOutlook, t: Translate): strin
 }
 
 function basisLabel(day: OutlookDay, outlook: EventsOutlook, t: Translate, locale: Locale): string | null {
-  if (day.decision.basis === "your_sales" && day.lastTime) {
-    const n = day.lastTime.changePercent;
-    return t("basisSales", { change: (n > 0 ? "+" : "") + new Intl.NumberFormat(locale).format(n) });
+  if (day.lastTime) {
+    const change = day.lastTime.changePercent;
+    return t("basisSales", { change: (change > 0 ? "+" : "") + new Intl.NumberFormat(locale).format(change) });
   }
-  if (day.decision.basis === "nearby_event") {
-    const e = outlook.localEvents.find(x => day.eventIds.includes(x.id));
-    return e ? t("basisEvent", { distance: e.distance ? " · " + e.distance : "" }) : null;
-  }
-  if (day.decision.basis === "general_pattern") return t("basisGeneral");
-  return null;
+  const e = outlook.localEvents.find(x => day.eventIds.includes(x.id));
+  return e ? t("basisEvent", { distance: e.distance ? " · " + e.distance : "" }) : null;
 }
 
 /** Pure view: the card for a loaded (or loading) outlook. */
@@ -61,7 +50,7 @@ export function ComingUpView({ state, locale, t, onAsk, disabled }:
     </h3>
     {state.status === "loading" ? <p className="mt-2 text-[15px] text-ink-muted" role="status">{t("loading")}</p> : (() => {
       const { outlook } = state;
-      const rows = outlook.days.filter(d => d.notable).slice(0, COMING_UP_ROWS);
+      const rows = outlook.days.filter(d => d.holidays.length > 0 || d.eventIds.length > 0).slice(0, COMING_UP_ROWS);
       return <>
         {rows.length === 0 ? <p className="mt-2 text-[17px] text-ink">{t("nothingSpecial")}</p> :
           <ul className="mt-2 space-y-2">
@@ -71,12 +60,8 @@ export function ComingUpView({ state, locale, t, onAsk, disabled }:
               return <li key={day.date} className="min-w-0">
                 <button type="button" disabled={disabled} onClick={() => onAsk(t("askDay", { what, when }))}
                   className="flex min-h-12 w-full min-w-0 items-start gap-2 rounded-xl bg-surface2 p-2.5 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-60">
-                  <span className={"shrink-0 rounded-full border bg-card px-2 py-0.5 text-[13px] font-semibold " + PILL[day.decision.expect]}>
-                    {t(day.decision.expect)}
-                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block break-words text-[15px] font-semibold leading-snug text-ink" dir="auto">{when} · {what}</span>
-                    <span className="mt-0.5 block text-[17px] leading-snug text-ink">{t(day.decision.action)}</span>
                     {basis && <span className="mt-0.5 block break-words text-[13px] leading-snug text-ink-muted" dir="auto">{basis}</span>}
                   </span>
                 </button>
