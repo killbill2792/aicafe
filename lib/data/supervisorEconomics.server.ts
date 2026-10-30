@@ -52,7 +52,12 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const latest=salesDays.at(-1);
  const first=latest?salesDays.find(day=>day>=dateOffset(latest,-29)):undefined;
  const coveredDates=new Set(salesDays.filter(day=>first&&latest&&day>=first&&day<=latest));
- const laborWindow=[...coveredDates].filter(open);
+ // Break-even projects a full calendar month, but missing-labor evidence must
+ // describe only this month's elapsed OPEN dates. Sales calibration below uses
+ // a rolling historical window; it must not define October labor coverage.
+ // Today's labor is provisional until a completed closeout is recorded.
+ const closedSalesDates=new Set(days.filter(day=>day.salesDataStatus==="actual").map(day=>day.date));
+ const laborWindow=dayList.filter(day=>day<asOf||(day===asOf&&closedSalesDates.has(day)));
  const timecards=await db.from("timecards")
   .select("employee_id,clock_in,clock_out,hourly_wage_cents,source_type")
   .eq("business_id",businessId)
