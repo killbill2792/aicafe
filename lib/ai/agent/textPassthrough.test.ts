@@ -41,13 +41,13 @@ describe("full model-text passthrough: stream -> turn -> persistence payload -> 
       expect(agentReplyPayload(turn).reply.blocks.filter(b=>b.type==="text").length).toBeGreaterThan(0);
     });
  });
- it("tool missing[] offers a separate card and keeps model text intact",async()=>{
+ it("tool missing[] adds no code card and keeps model text intact",async()=>{
   const modelText="I have the menu, but sales coverage is missing for this week.";
   const turn=await runAgentTurn({ownerText:"What can I price?",context:{...base},
    provider:stream([[call("get_menu_items",menuArgs,"menu"),completed],[say(modelText),completed]])});
   expect(turn.text).toBe(modelText);
   expect(renderedText(turn)).toBe(modelText);
-  expect(agentReplyPayload(turn).reply.blocks.some(b=>b.type==="clarify")).toBe(true);
+  expect(agentReplyPayload(turn).reply.blocks.some(b=>b.type==="clarify")).toBe(false);
  });
  it("saved owner facts prevent repeated cards without replacing the model reply",async()=>{
   const key=scopedOwnerQuestionKey({kind:"empty",key:"menu_items",tool:"menu_items"},[],"What can I price?");
@@ -64,11 +64,11 @@ describe("full model-text passthrough: stream -> turn -> persistence payload -> 
    provider:stream([[say(modelText),completed]])});
   expect(turn.results).toEqual(expect.arrayContaining([expect.objectContaining({error:"owner_facts_read_failed"})]));
   expect(turn.text).toBe(modelText);expect(renderedText(turn)).toBe(modelText);
-  expect(agentReplyPayload(turn).reply.blocks.some(b=>b.type==="clarify")).toBe(true);
+  expect(agentReplyPayload(turn).reply.blocks.some(b=>b.type==="clarify")).toBe(false);
  });
  it("when model says nothing at all, the card question fills the text and is shown once",async()=>{
   const turn=await runAgentTurn({ownerText:"Menu?",context:{...base},
-   provider:stream([[call("get_menu_items",menuArgs,"menu"),completed],[completed]])});
+   provider:stream([[call("get_menu_items",menuArgs,"menu"),completed],[call("ask_owner",{kind:"facts",question:"Which items should I add to the menu?",options:[],allowOther:false,fields:[{key:"menu_items_to_add",label:"Items to add",inputType:"text",units:[],defaultUnit:""}]},"ask"),completed]])});
   const card=turn.results.find(r=>r.source==="ask_owner");
   expect(card?.question).toBeTruthy();
   expect(turn.text).toBe(card?.question);
@@ -80,7 +80,7 @@ describe("full model-text passthrough: stream -> turn -> persistence payload -> 
  it("when the model itself repeats the card question, the text still renders",async()=>{
   const modelText="What items should I add to the menu?";
   const turn=await runAgentTurn({ownerText:"Menu?",context:{...base},
-   provider:stream([[call("get_menu_items",menuArgs,"menu"),completed],[say(modelText),completed]])});
+   provider:stream([[call("get_menu_items",menuArgs,"menu"),completed],[say(modelText),call("ask_owner",{kind:"facts",question:"Which items should I add to the menu?",options:[],allowOther:false,fields:[{key:"menu_items_to_add",label:"Items to add",inputType:"text",units:[],defaultUnit:""}]},"ask"),completed]])});
   expect(turn.text).toBe(modelText);expect(renderedText(turn)).toBe(modelText);
   expect(agentReplyPayload(turn).reply.blocks.some(b=>b.type==="clarify")).toBe(true);
  });
