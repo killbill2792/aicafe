@@ -813,6 +813,8 @@ export default function SupervisorChatComposer({
   // A tap on a "Coming up" row asks the chat about that day, like a suggestion chip.
   const boardAskDisabled = !enabled || !canUseAi || sending || uploading || dictation === "recognizing" || resumedRunning;
   const askFromBoard = (prompt: string) => { if (boardAskDisabled) return; retryId.current = null; void sendText(prompt); };
+  // The card runs a paid web search: never mount it (and never fetch) without AI access.
+  const comingUpCard = enabled && canUseAi ? <ComingUpCard locale={locale} onAsk={askFromBoard} disabled={boardAskDisabled}/> : undefined;
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
@@ -839,7 +841,7 @@ export default function SupervisorChatComposer({
       <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
         hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
         onSuggestion={()=>{}} suggestionsDisabled
-        comingUp={<ComingUpCard locale={locale} onAsk={askFromBoard} disabled={boardAskDisabled}/>}/>
+        comingUp={comingUpCard}/>
     </div>}
     <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-4 md:px-6 md:py-5"
       onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-label={copy.threads}>
@@ -850,7 +852,7 @@ export default function SupervisorChatComposer({
           onSuggestion={prompt=>{retryId.current=null;void sendText(prompt);}}
           suggestionsDisabled={!enabled||!canUseAi||sending||uploading||dictation==="recognizing"||resumedRunning}
           unavailableMessage={!enabled ? copy.unavailable : undefined}
-          comingUp={<ComingUpCard locale={locale} onAsk={askFromBoard} disabled={boardAskDisabled}/>}/>}
+          comingUp={comingUpCard}/>}
 
       {!chatStartData&&!hasChatMessages&&<div className="mx-auto py-3 text-center">
         <h2 className="font-headline text-xl font-bold text-ink">{copy.emptyHeading}</h2>
