@@ -1036,6 +1036,33 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
 }
 
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
+/** Amounts the owner stated (money in cents, percent in bps, plain numbers).
+ * The one rule for "the owner said it", shared by checkNumbers and calculate. */
+export function ownerStatedAmounts(ownerText:string,locale:AgentLocale):Record<Kind,Set<number>>{
+  const allowed:Record<Kind,Set<number>>={money:new Set(),percent:new Set(),number:new Set()};
+  const ownerNumbers=candidates(ownerText,locale);
+  // Time units are scoped evidence, never generic quantity allowances.
+  ownerNumbers.forEach(v=>{if(!v.durationUnit)allowed[v.kind].add(v.value);});
+  const ownerSpoken=spokenOwnerValues(ownerText,locale);
+  for(const spoken of ownerSpoken)if(!spoken.durationUnit)allowed[spoken.kind].add(spoken.value);
+  // Only reconciled, typed numeric evidence authorizes an amount.
+  // Re-adding raw current-turn estimates here would resurrect a prior result
+  // that a later tool result explicitly invalidated in this same turn.
+  // Assistant prose is NEVER numeric evidence, even if it had no unverified
+  // chips. Clock formatting and list markers can pass without a source.
+  // Only owner statements and typed tool evidence can authorize a claim.
+  // Explicit owner-provided quantities are not prices. Infer dollars only from
+  // a nearby monetary / menu-price statement, never from "sold 9 drinks".
+  for(const v of ownerNumbers){
+    if(v.kind!=="number"||v.durationUnit)continue;
+    const before=ownerText.slice(Math.max(0,v.start-90),v.start);
+    const after=ownerText.slice(v.end,v.end+24);
+    if(/^\s*(?:drinks?|orders?|people|staff|items?|cups?|units?|hours?|days?|coffees?)\b/iu.test(after))continue;
+    if(/\b(?:price|cost|charge|rent|bill|fee|salary|wage|revenue|profit|latte|mocha|espresso|cappuccino|americano|tea|coffee|sandwich|croissant|muffin|brownie)\b[^.!?\n]{0,45}$/iu.test(before))
+      allowed.money.add(Math.round(v.value*100));
+  }
+  return allowed;
+}
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
   previousEvidence:readonly NumericEvidence[] = []): UnverifiedNumber[] {
   const allowed: Record<Kind, Set<number>> = { money: new Set(), percent: new Set(), number: new Set() };
@@ -1079,26 +1106,9 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   for(const item of itemPrices)allowed.money.add(item.priceCents);
   const menuPrices=itemPrices;
   const ownerNumbers=candidates(ownerText,locale);
-  // Time units are scoped evidence, never generic quantity allowances.
-  ownerNumbers.forEach(v=>{if(!v.durationUnit)allowed[v.kind].add(v.value);});
   const ownerSpoken=spokenOwnerValues(ownerText,locale);
-  for(const spoken of ownerSpoken)if(!spoken.durationUnit)allowed[spoken.kind].add(spoken.value);
-  // Only reconciled, typed numeric evidence authorizes an amount.
-  // Re-adding raw current-turn estimates here would resurrect a prior result
-  // that a later tool result explicitly invalidated in this same turn.
-  // Assistant prose is NEVER numeric evidence, even if it had no unverified
-  // chips. Clock formatting and list markers can pass without a source.
-  // Only owner statements and typed tool evidence can authorize a claim.
-  // Explicit owner-provided quantities are not prices. Infer dollars only from
-  // a nearby monetary / menu-price statement, never from "sold 9 drinks".
-  for(const v of ownerNumbers){
-    if(v.kind!=="number"||v.durationUnit)continue;
-    const before=ownerText.slice(Math.max(0,v.start-90),v.start);
-    const after=ownerText.slice(v.end,v.end+24);
-    if(/^\s*(?:drinks?|orders?|people|staff|items?|cups?|units?|hours?|days?|coffees?)\b/iu.test(after))continue;
-    if(/\b(?:price|cost|charge|rent|bill|fee|salary|wage|revenue|profit|latte|mocha|espresso|cappuccino|americano|tea|coffee|sandwich|croissant|muffin|brownie)\b[^.!?\n]{0,45}$/iu.test(before))
-      allowed.money.add(Math.round(v.value*100));
-  }
+  const stated=ownerStatedAmounts(ownerText,locale);
+  for(const kind of ["money","percent","number"] as const)for(const v of stated[kind])allowed[kind].add(v);
   // Monetary evidence stays in cents. Check currency-less monetary wording
   // at each candidate, rather than authorizing the value as a generic count.
 

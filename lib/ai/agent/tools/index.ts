@@ -25,6 +25,7 @@ import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../re
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import {scenarioTools} from "./scenarios";
+import {calculateTools} from "./calculate";
 import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.server";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import {ToolError} from "../toolErrors";
@@ -51,9 +52,13 @@ export type AgentToolContext = {
   canonicalData?:()=>Promise<DataQueryContext>;
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
+  /** The owner's message this turn, so calculate can use numbers they just said. */
+  ownerText?:string;
   resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;
+  /** This turn's earlier tool results, so calculate reads numbers instead of trusting typed ones. */
+  turnResults?:()=>ReadonlyArray<{name:string;result:AgentToolResult}>;
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
   /** Authenticated canonical screen read, bound to session membership rather than model args. */
@@ -78,7 +83,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...proposalTools,...priceExperimentTools,...goalTools,...staffProposalTools,...purchasesTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...goalTools,...staffProposalTools,...purchasesTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -181,6 +186,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
   if(name==="milk_swap_price")return milkSwapTools.milk_swap_price.execute(raw,ctx);
   if(name==="simulate_scenario")return scenarioTools.simulate_scenario.execute(raw,ctx);
+  if(name==="calculate")return calculateTools.calculate.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
    if(name==="propose_purchases")return purchasesTools.propose_purchases.execute(raw,ctx);
   if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);

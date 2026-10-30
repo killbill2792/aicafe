@@ -53,7 +53,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 ### Universal answers (owner-approved design, Oct 30; AGENTS.md 7.2)
 The AI works out how to answer any question; no new tool or scenario per question type. One PR per step, in order.
 - [x] Step 4: AGENTS.md rule 7.2: no arithmetic in the model's head; screen numbers from `lib/metrics/core`; all other math through `calculate`, steps shown.
-- [ ] Step 3: one general `calculate` tool: + − × ÷, sum, percent; every input from a tool result or saved owner fact; inputs, formula and steps shown, labeled calculation or estimate; test that it never rebuilds a screen number.
+- [x] Step 3: one general `calculate` tool: + − × ÷, sum, percent; every input from a tool result or saved owner fact; inputs, formula and steps shown, labeled calculation or estimate; test that it never rebuilds a screen number.
 - [ ] Step 5: owner answers saved once, used everywhere. Ask only ingredient %, payroll, bills, card fee %, opening hours. Save each where the calculators already read it (ingredient % → `target_ingredient_cost_rate`; payroll → payroll extras; bills → recurring costs; card fee → fee plan). Use only where real data is missing, per day and per item, labeled estimate; real data replaces it automatically. Every other gap is a one-line note, not a question.
 - [ ] Step 6: test that the same fact is never asked twice.
 - [ ] Step 7: retire one-off fixes: drop the "ingredients 20%" branch (`fix/cost-summary-ingredient-percent`, never merged); once `calculate` works, retire `simulate_scenario`'s fixed options.
