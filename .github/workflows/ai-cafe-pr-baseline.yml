@@ -1,8 +1,12 @@
 name: AI CAFE Pull Request Baseline
 
-# Run for every PR to main. Keep the original required check name in the
-# final gate; all jobs must succeed, including all three regression shards.
+# Every PR gets the complete fail-closed baseline. A push to main runs ONLY
+# the production build to seed its branch-visible Next.js cache for new PRs.
+# Keep the original required PR check name, including all regression shards.
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
@@ -17,6 +21,7 @@ concurrency:
 
 jobs:
   quality:
+    if: github.event_name != 'push'
     name: TypeScript, full ESLint and patch hygiene
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -38,6 +43,7 @@ jobs:
         run: git diff --check origin/main...HEAD
 
   regressions:
+    if: github.event_name != 'push'
     name: Full Vitest regressions (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -86,7 +92,7 @@ jobs:
   baseline:
     # Preserve this required check name for existing branch protection.
     name: AI CAFE PR baseline
-    if: always()
+    if: ${{ always() && github.event_name != 'push' }}
     needs: [quality, regressions, production-build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
