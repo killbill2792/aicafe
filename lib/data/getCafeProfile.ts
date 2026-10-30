@@ -1,6 +1,8 @@
 import "server-only";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getOptionalAuthenticatedUser } from "@/lib/auth/requireUser";
+import { readActiveBusinessMemberships } from "./getActiveBusinessId";
 import { normalizeOpenHours, type OpenHours } from "@/lib/business/openHours";
 import { readPrimaryLocation } from "./cafeLocation.server";
 
@@ -37,18 +39,14 @@ const EMPTY_PROFILE: CafeProfileData = {
 export async function getCafeProfile(): Promise<CafeProfileData> {
   if (!isSupabaseConfigured()) return EMPTY_PROFILE;
   const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getOptionalAuthenticatedUser();
   if (!user) return EMPTY_PROFILE;
 
-  const { data: memberships, error: membershipError } = await supabase
-    .from("memberships")
-    .select("business_id, businesses(name, timezone, currency, opened_on, is_demo)")
-    .eq("user_id", user.id);
-  if (membershipError) throw membershipError;
-
-  const own = (memberships ?? []).find((membership) => {
+  // requireOwnBusiness and the active café selector already read these rows.
+  // Reuse the same request-scoped RLS lookup instead of repeating auth and
+  // membership round trips before loading the location.
+  const memberships = await readActiveBusinessMemberships(user.id);
+  const own = memberships.find((membership) => {
     const raw = membership.businesses as unknown as
       | { name: string; timezone: string; currency: string; opened_on: string | null; is_demo: boolean }
       | { name: string; timezone: string; currency: string; opened_on: string | null; is_demo: boolean }[]

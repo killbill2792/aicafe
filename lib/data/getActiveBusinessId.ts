@@ -21,7 +21,7 @@ export const readActiveBusinessMemberships=cache(async function readActiveBusine
   const supabase = await createServerSupabaseClient();
   const { data: memberships } = await supabase
     .from("memberships")
-    .select("business_id, businesses(is_demo)")
+    .select("business_id, role, businesses(is_demo, name, timezone, currency, opened_on)")
     .eq("user_id", userId);
   return memberships ?? [];
 });
