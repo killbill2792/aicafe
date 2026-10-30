@@ -6,7 +6,7 @@ import type {NumericEvidence} from "./checkNumbers";
 export const explainLineSchema=z.strictObject({
  label:z.string().trim().min(1).max(120),
  inputs:z.array(z.strictObject({name:z.string().trim().min(1).max(50),value:cardValueSchema})).min(1).max(8),
- formula:z.enum(["multiply","sum","divide","ratio","prorate","subtract"]),
+ formula:z.enum(["multiply","sum","divide","ratio","prorate","subtract","breakEven"]),
  result:cardValueSchema,
  period:z.strictObject({from:z.iso.date(),to:z.iso.date()}).nullable(),
  periodLabelKey:z.string().max(50).optional(),
