@@ -51,7 +51,9 @@ describe("model-driven milk swap in the real chat loop",()=>{
    context:{...context},provider:fixture([
     [call("ask_owner",{kind:"facts",question:"Cost?",options:[],allowOther:false,
      fields:[{key:"unitCostCents",label:"Cost",inputType:"money",units:[],defaultUnit:""}]},"bad"),completed],
-    [say("I need the item's cost."),completed]
+    // The rejected card does not use up the turn's question, so the AI can ask again.
+    [call("ask_owner",{kind:"facts",question:"What does one latte cost you to make?",options:[],allowOther:false,
+     fields:[{key:"owner_question_latte_cost",label:"Latte cost",inputType:"text",units:[],defaultUnit:""}]},"retry"),completed]
    ])});
   const card=turn.results.find(r=>r.source==="ask_owner"&&r.kind==="facts");
   expect(card).toBeDefined();
@@ -83,7 +85,9 @@ describe("model-driven milk swap in the real chat loop",()=>{
   const original="What should I charge to switch a 16 oz latte to almond milk?";
   const asked=await runAgentTurn({ownerText:original,context:{...context},provider:fixture([
    [call("milk_swap_price",args("almond milk"),"m"),completed],
-   [say("I'll need the serving costs and amount of milk."),completed]
+   [say("I'll need the almond milk cost per 16 oz serving."),
+    call("ask_owner",{kind:"facts",question:"What does almond milk cost per 16 oz serving?",options:[],allowOther:false,
+     fields:[{key:"milk_almond_serving_cost_cents:16oz",label:"Almond milk cost",inputType:"money",units:[],defaultUnit:""}]},"ask"),completed]
   ])});
   const card=asked.results.find(r=>r.source==="ask_owner"&&r.kind==="facts");
   expect(card).toBeDefined();
