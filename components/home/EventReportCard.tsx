@@ -24,7 +24,8 @@ export function safeEventReport(raw:unknown):{
     const hours=Array.isArray(day.hours)?day.hours.flatMap((item:unknown)=>{
       if(!item||typeof item!=="object")return [];
       const h=item as Record<string,unknown>;
-      if(!Number.isInteger(h.hourLocal)||Number(h.hourLocal)<0||Number(h.hourLocal)>23||
+      if(typeof h.hourLocal!=="number"||!Number.isInteger(h.hourLocal)||
+        h.hourLocal<0||h.hourLocal>23||
         cents(h.actualCents)===null)return [];
       return [{hourLocal:Number(h.hourLocal),actualCents:cents(h.actualCents)!,
         usualCents:cents(h.usualCents)}];
