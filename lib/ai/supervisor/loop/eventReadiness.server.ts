@@ -10,6 +10,7 @@ import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {indexHourlyRevenue,compareEventDaySales} from "@/lib/metrics/core/eventReadiness";
 import {cafeToday} from "@/lib/metrics/core/clock";
+import {eventFinalNarrative} from "@/lib/events/eventFinalReport.server";
 import {effectHash,registerLoopCapability,utcDateOffset} from "./engine";
 
 const time=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -142,13 +143,33 @@ export const eventReadinessCapability=registerLoopCapability({
    const actual=observed.filter(s=>s.observation.coverage==="actual");
    const complete=windowComplete&&actual.length===expected&&
      actual.every(s=>typeof s.observation.typicalCents==="number");
-   return {status:!windowComplete?"in_progress":complete?"complete":"insufficient_evidence",
-     recommendation:"adjust",source:"hourly_sales_rollup+daily_rollups",
-     result:{eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
-       factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
-       checklist,
-       missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
-       days:actual.map(s=>({date:s.businessDate,...s.observation})),
-       caveat:"Comparison is observational, not evidence that an event caused a change."}};
+   const status=!windowComplete?"in_progress":complete?"complete":"insufficient_evidence";
+   const result={
+     eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
+     factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
+     checklist,
+     missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
+     days:actual.map(s=>({date:s.businessDate,...s.observation})),
+     caveat:"Comparison is observational, not evidence that an event caused a change.",
+   };
+   // The shared morning cron supplies a proposal ID for terminal reports.
+   const narrative=windowComplete&&window?.proposalId
+     ?await eventFinalNarrative(scope,window.proposalId,effect.facts.map(f=>f.name),
+       effect.summary,result,status==="complete"?"complete":"insufficient_evidence")
+     :null;
+   return {status,recommendation:"adjust",source:"hourly_sales_rollup+daily_rollups",
+     result:{...result,...(narrative?{reportText:narrative.text,reportFactsHash:narrative.hash}:{})},
+     ...(narrative?{delivery:{
+       agentId:"alex" as const,taskKind:"event_plan" as const,
+       entityType:"event_day",entityId:effect.startDate,
+       confidence:status==="complete"?"high" as const:"low" as const,
+       payload:{itemName:effect.summary,businessDate:effect.startDate,
+         eventReport:true,outcomeStatus:status,text:narrative.text},
+       evidence:[{source:"hourly_sales_rollup+daily_rollups",
+         facts:{observedDays:actual.length,expectedDays:expected,
+           doneActions:checklist.done,totalActions:checklist.total,nonCausal:true}}],
+       threadText:narrative.text,
+     }}:{}),
+   };
  },
 });
