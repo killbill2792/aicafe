@@ -22,6 +22,8 @@ export type Economics={
  ingredientRate:number|null;feeRate:number|null;
  ingredientStatus:FigureStatus;feeStatus:FigureStatus;
  averagePriceCents:number|null;monthlyUnits:number|null;daysInMonth:number;
+ /** Where daysInMonth came from: the café's saved opening hours, or every calendar day. */
+ openDaysBasis?:"opening_hours"|"calendar";
  targetMargin:number;missingDays:string[];payrollTaxRate?:number;
  laborCoveredDays?:number;laborWindowDays?:number;
  salesCoverage?:{from:string;to:string;openDays:number};

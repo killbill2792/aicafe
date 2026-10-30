@@ -34,6 +34,26 @@ describe("Leo scoped money reads",()=>{
         economics:{...economics,observedDays:[]}})});
     expect(noImports.monthlyBreakEvenCents).toBe(Math.round(60000/.70));
   });
+  it("returns a per-open-day break-even from saved opening hours, and an owner open-days override",async()=>{
+    const economics:Economics={
+      monthlyBills:figure(30000,"actual","rent"),monthlyStaff:figure(30000,"actual","payroll"),
+      monthlyRevenue:figure(100000,"actual","recorded"),ingredientRate:.1,feeRate:.02,
+      ingredientStatus:"actual",feeStatus:"actual",averagePriceCents:500,monthlyUnits:200,
+      daysInMonth:27,openDaysBasis:"opening_hours",targetMargin:.15,missingDays:[],
+    };
+    const context:AgentToolContext={...ctx({}),readEconomics:async()=>({economics,items:[],
+      staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
+    const fromHours=await moneyTools.get_break_even.execute({},context);
+    const monthly=fromHours.monthlyBreakEvenCents as number;
+    expect(monthly).toBe(Math.round(60000/.88));
+    expect(fromHours.openDaysPerMonth).toBe(27);
+    expect(fromHours.openDaysSource).toBe("opening_hours");
+    expect(fromHours.dailyBreakEvenCents).toBe(Math.ceil(monthly/27));
+    const owner=await moneyTools.get_break_even.execute({ownerOpenDaysPerMonth:30},context);
+    expect(owner.openDaysPerMonth).toBe(30);
+    expect(owner.openDaysSource).toBe("owner");
+    expect(owner.dailyBreakEvenCents).toBe(Math.ceil(monthly/30));
+  });
   it("get_cost_summary renders the ledger label in EN ES and AR",async()=>{
     const snapshot=getFixtureSnapshot();
     const observed=businessCostSummaryFromSnapshot(snapshot,{from:snapshot.monthKey+"-01",to:snapshot.todayDateStr});
