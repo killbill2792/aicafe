@@ -358,3 +358,15 @@ Shared files will clash a little: `lib/ai/agent/tools/index.ts`, the pinned tool
 `lib/ai/agent/agent.test.ts`, the system prompt in `lib/ai/agent/loop.server.ts`, `messages/*.json`
 and `PROGRESS.md`. The second PR to merge does a normal "merge main into branch" and keeps both sides.
 Ask that PR's chat to do it. Keep to at most 4 chats at once, so reviews and merges stay manageable.
+
+
+## Oct 30, 2026 — owner decision addendum (Events Fix B)
+
+This addendum supersedes only conflicting approval/monitoring instructions in historical PR 1–12 descriptions above; their development history stays intact.
+
+- A saved event and its AI-authored preparation insight are **automatically observed** on the café-local event date and reported after the date closes. Viewing and observing Toast readings is read-only and **does not require “Use this plan,” “Track,” or any other owner approval**. Future events are not reported as already happening.
+- Events use the existing Supervisor `event_readiness` proposal, monitor samples, reports, chat thread and Operations inbox. Monitoring an inert draft creates no approval, no commit, and no schedule, staffing, purchase, marketing or POS write; owner approval/audit requirements remain for every business effect.
+- The live reading is provisional and as-of dated. The final report uses certified hourly/daily Toast observations and calls out missing coverage; it never assumes zero for unknown data. Repeat runs reuse event/plan/day identities, preserve prior reports and owner decisions, and must not produce duplicate owner notices.
+- AI may recommend combos and named promotions, but **the fact that an item sold or an order had a discount amount is not evidence the owner implemented the recommendation**. Identify an applied promotion only when its *name* and matching sale/discount evidence can be resolved from canonical Toast data; otherwise explicitly mark implementation unverified. Staff time entries record attendance, not proof of a proposed roster change. Physical preparation (toffees, decorations, extra stock) must remain unverified and must not trigger check-off questions. No marketing follow-ups for now.
+- Events comparisons are observational: the Supervisor must never attribute an observed sales increase or decrease to the event without causal evidence. Optional importance is a nullable AI judgment in the existing saved insight payload for the Events UI, never an invented numeric rank.
+- Fix B owns automatic observation and report evidence only. Search reliability belongs to A; the rich in-place Events panel, dates and read-only display metadata belong to C. The C PR must merge after B to avoid leaving an approval-dependent monitor behind.
