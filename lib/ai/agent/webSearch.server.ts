@@ -4,7 +4,25 @@ import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 /** Read-only public web lookup for the authenticated Supervisor chat. */
 export type WebSearchResult =
   | {available:true;answer:string;sources:Array<{title:string;url:string}>}
-  | {available:false;reason:"notConfigured"|"timeout"|"providerFailed"|"unreadable"};
+  | {available:false;reason:"notConfigured"|"timeout"|"providerFailed"|"unreadable"|"budget"};
+
+export type WebSearchUsage={inputTokens:number;cachedTokens:number;outputTokens:number};
+/** The outer agent reserves a model call before the request and records token usage. */
+export type WebSearchBudget={
+  reserveModelCall:()=>boolean;
+  recordUsage:(usage:WebSearchUsage)=>void;
+};
+function tokens(value:unknown):number{
+  return typeof value==="number"&&Number.isSafeInteger(value)&&value>=0?value:0;
+}
+export function webSearchUsage(body:unknown):WebSearchUsage{
+  const row=body&&typeof body==="object"?body as {usage?:unknown}:null;
+  const usage=row?.usage&&typeof row.usage==="object"?row.usage as {
+    input_tokens?:unknown;output_tokens?:unknown;input_tokens_details?:{cached_tokens?:unknown};
+  }:null;
+  return {inputTokens:tokens(usage?.input_tokens),outputTokens:tokens(usage?.output_tokens),
+    cachedTokens:tokens(usage?.input_tokens_details?.cached_tokens)};
+}
 
 const WEB_SEARCH_TIMEOUT_MS=20_000;
 const WEB_SEARCH_OUTPUT_TOKENS=1200;
@@ -51,9 +69,12 @@ export function extractWebSearchAnswer(body:unknown):{answer:string;sources:Arra
 
 export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;now?:()=>number}={}){
   const doFetch=deps.fetch??fetch,now=deps.now??Date.now;
-  return async(query:string):Promise<WebSearchResult>=>{
+  return async(query:string,budget?:WebSearchBudget):Promise<WebSearchResult>=>{
     const key=deps.apiKey??process.env.OPENAI_API_KEY;
     if(!key)return {available:false,reason:"notConfigured"};
+    // Reserve one paid Responses call inside the same six-model-call turn budget.
+    // No request is made when only the final no-tool answer slot remains.
+    if(budget&&!budget.reserveModelCall())return {available:false,reason:"budget"};
     const started=now();
     try{
       const response=await doFetch("https://api.openai.com/v1/responses",{
@@ -71,7 +92,9 @@ export function createWebSearch(deps:{fetch?:Fetch;apiKey?:string;model?:string;
         console.error("agent_web_search_failed",{category:"http",status:response.status,durationMs});
         return {available:false,reason:"providerFailed"};
       }
-      const parsed=extractWebSearchAnswer(await response.json());
+      const body:unknown=await response.json();
+      budget?.recordUsage(webSearchUsage(body));
+      const parsed=extractWebSearchAnswer(body);
       if(!parsed){
         console.error("agent_web_search_failed",{category:"unreadable",durationMs});
         return {available:false,reason:"unreadable"};
