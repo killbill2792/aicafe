@@ -38,6 +38,8 @@ function row(day:string,status="draft"){
 }
 const fake=(rows:ReturnType<typeof row>[])=>({
   from(table:string){
+    if(table==="supervisor_monitor_samples")return {
+      select:()=>({eq:()=>({in:()=>({limit:async()=>({data:[],error:null})})})})};
     if(table!=="supervisor_proposals")throw Error("unexpected table "+table);
     const q={select:()=>q,eq:()=>q,in:()=>q,order:()=>q,
       limit:async()=>({data:rows,error:null})};
