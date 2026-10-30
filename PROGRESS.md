@@ -40,6 +40,10 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 - [ ] Screen-vs-chat equality: `lib/metrics/core/metricsParity.test.ts` covers profit, labor, fees and break-even on a fixture; add cases for period/coverage preparation (partial weeks, missing days) so both paths must agree.
 - [ ] Remove the remaining hard-coded USD listed in `lib/ai/agent/bannedPatterns.test.ts`; merge duplicate money formulas listed in `lib/metrics/core/canonicalOnly.test.ts`.
 
+### Team inbox (Operations)
+- [x] Home said "18 things need you" but "See all" opened Operations with almost nothing in Needs you. Cause: Home counts the shared attention list (`getAttentionItems`: alerts, missing bills/fees/sales, unmatched items, POS reconnect, tasks); Operations showed only `operating_tasks`. Fixed: Operations Needs you is the same list, for the same period, split by teammate; each teammate card shows their count and top item (`needsYouFromAttention` in `lib/viewmodels/operationsTeam.ts`). Check: Home count = Operations Needs you count.
+- [ ] Switching teammates on Operations takes 10–15 s and can error until a hard refresh. Cause: every load re-reads snapshot + menu and writes to `operating_tasks` (`syncAndGetOperatingTasks`, one update per task); any failed write errors the page, and no loading state shows on a teammate tap. Fix: make the page read-only like Home (move the sync into `/api/cron/refresh-derived`), and switch teammates without a server round trip.
+
 ### Rules for any agent working on these
 1. AGENTS.md is the only source of agent instructions; follow it.
 2. One path: daily totals only via `lib/data/dailyFacts.server.ts`; today's live sales only via `lib/data/todayLive.server.ts`; money math only in `lib/metrics/core/`. Never add a second reader or a second fee rate.
