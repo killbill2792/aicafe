@@ -11,8 +11,10 @@ export function canRepullToastDay(enabled:boolean,busy:boolean,day:string,yester
 /** A committed write must never be reported as failed just because the
  * follow-up status GET failed. The GET independently displays its retry UI.
  */
-export async function commitToastOwnerAction(write:()=>Promise<void>,refresh:()=>Promise<void>){
+export async function commitToastOwnerAction(write:()=>Promise<void>,refresh:()=>Promise<void>,onCommitted?:()=>void){
  await write();
+ // Report the confirmed server result now, even if the status refresh is slow or unavailable.
+ onCommitted?.();
  try{await refresh();return {refreshAvailable:true};}
  catch{return {refreshAvailable:false};}
 }
