@@ -3460,6 +3460,7 @@
     "itemInputsRate": "Rate",
     "metricReasonUnknown": "This figure uses available records; its source needs confirmation.",
     "periodLatestData": "Latest data: {from}–{to}",
+    "laborProjectedToMonth": "Payroll projected from {covered} completed open days to {planned} open days this month.",
     "laborPartialCoverage": "Payroll projected from {covered} of {total} days; other days are not recorded.",
     "laborRecorded": "Recorded wages and payroll tax.",
     "laborOwnerProvided": "Owner-provided monthly payroll.",
