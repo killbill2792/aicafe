@@ -70,7 +70,7 @@ export default function ToastOwnerDashboard({businessId,currency,children}:{busi
   refresh();
   return()=>{unsubscribe();gate.invalidate();};
  },[load,reloadKey]);
- async function post(url:string,payload:unknown,kind:ToastActionKind,target=""){ 
+ async function post(url:string,payload:unknown,kind:ToastActionKind,target=""){
   if(busy)return false;setBusy(true);setMessage(t("pending"));setFeedback({target,key:"pending"});
   let result={ok:false,key:"ownerError"};
   try{
