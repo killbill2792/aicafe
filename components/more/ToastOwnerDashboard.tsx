@@ -1,7 +1,8 @@
 "use client";
-import {useCallback,useEffect,useRef,useState} from "react";
+import {useCallback,useEffect,useRef,useState,type ReactNode} from "react";
 import {useLocale,useTranslations} from "next-intl";
 import ToastSummaryComparison from "./ToastSummaryComparison";
+import ToastOnboardingChecklist from "./ToastOnboardingChecklist";
 import {statusSchema} from "@/lib/pos/toast/statusSchema";
 import {subscribeToastConnectionChanges,createToastStatusRequestGate} from "./toastConnectionEvents";
 import {canStartToastImport,canRepullToastDay,commitToastOwnerAction,queueToastBackfillChunks,PartialToastQueueError,toastActionResult,type ToastActionKind} from "./toastOwnerActionState";
@@ -10,10 +11,11 @@ type Snapshot=z.infer<typeof statusSchema>;
 const dateShift=(d:string,days:number)=>new Date(Date.parse(d+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
 function localDate(zone:string,instant:number){return new Intl.DateTimeFormat("en-CA",{timeZone:zone,
  year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(instant));}
-export default function ToastOwnerDashboard({businessId,currency}:{businessId:string;currency:string}){
+export default function ToastOwnerDashboard({businessId,currency,children}:{businessId:string;currency:string;children:ReactNode}){
  const t=useTranslations("ToastConnect");const locale=useLocale();
  const [data,setData]=useState<Snapshot|null>(null),[bad,setBad]=useState(false);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
+ const [feedback,setFeedback]=useState<{target:string;key:string}|null>(null);
  const [start,setStart]=useState(""),[note,setNote]=useState("");
  const [selected,setSelected]=useState<string[]>([]);
  const [analytics,setAnalytics]=useState({apiUrl:"",managementGroupGuid:"",clientId:"",clientSecret:""});
@@ -34,7 +36,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
      ...(action==="connect"?{body:JSON.stringify({businessId,...analytics})}:{})});
     if(!response.ok){const result=await response.json() as {error?:string};throw Error(result.error??"unavailable");}
     setAnalytics(old=>({...old,clientSecret:""}));
-   },load);
+   },load,()=>setMessage(t("ownerSaved")));
    setMessage(t("ownerSaved"));
   }catch(error){const category=error instanceof Error?error.message:"unavailable";
    setMessage(t(category==="missing_permissions"?"analyticsErrorPermissions":category==="authentication"?"analyticsErrorAuthentication":category==="invalid_host"?"analyticsErrorHost":"ownerError"));
@@ -68,8 +70,8 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   refresh();
   return()=>{unsubscribe();gate.invalidate();};
  },[load,reloadKey]);
- async function post(url:string,payload:unknown,kind:ToastActionKind){
-  if(busy)return false;setBusy(true);setMessage("");
+ async function post(url:string,payload:unknown,kind:ToastActionKind,target=""){ 
+  if(busy)return false;setBusy(true);setMessage(t("pending"));setFeedback({target,key:"pending"});
   let result={ok:false,key:"ownerError"};
   try{
    await commitToastOwnerAction(async()=>{
@@ -77,10 +79,10 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
      body:JSON.stringify({businessId,...(payload as object)})});
     result=toastActionResult(kind,response.status,await response.json().catch(()=>null));
     if(!result.ok)throw Error(result.key);
-   },load);
+   },load,()=>{setMessage(t(result.key));setFeedback({target,key:result.key});});
   }catch{/* result says why */}
   finally{setBusy(false);}
-  setMessage(t(result.key));return result.ok;
+  setMessage(t(result.key));setFeedback({target,key:result.key});return result.ok;
  }
  // While a re-pull is queued, refresh the page every 30 seconds so its result shows up.
  const pending=(data?.queuedRanges.length??0)>0;
@@ -93,7 +95,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
   if(!data)return;const end=dateShift(localDate(data.timeZone,Date.now()),-1);
   if(start>end||start<"2015-12-02"){setMessage(t("ownerInvalidDate"));return;}
   // Queue bounded slices; a range longer than 400 days is never sent to SQL.
-  setBusy(true);setMessage("");
+  setBusy(true);setMessage(t("pending"));
   try{
    await commitToastOwnerAction(async()=>{
     await queueToastBackfillChunks(start,end,async(from,to)=>{
@@ -101,7 +103,7 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
       headers:{"Content-Type":"application/json"},body:JSON.stringify({businessId,from,to})});
      if(!r.ok)throw Error("unavailable");
     },dateShift);
-   },load);
+   },load,()=>setMessage(t("ownerQueued")));
    setMessage(t("ownerQueued"));
   }catch(error){
    if(error instanceof PartialToastQueueError&&error.queuedChunks>0){
@@ -112,17 +114,18 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    }else setMessage(t("ownerError"));
   }finally{setBusy(false);}
  }
- if(bad)return <section role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">
+ const lead=<><ToastOnboardingChecklist businessId={businessId} status={data}/>{children}</>;
+ if(bad)return <>{lead}<section role="alert" className="rounded-card-lg bg-warn-tint p-4 text-warn">
   <p>{t("ownerStatusUnavailable")}</p>
   {message&&<p role="status" className="mt-2">{message}</p>}
   <button type="button" className="mt-3 min-h-12 rounded-full border border-warn px-5"
    onClick={()=>setReloadKey(k=>k+1)}>{t("ownerRefreshStatus")}</button>
- </section>;
- if(!data)return <p role="status" className="text-ink-muted">{t("pending")}</p>;
+ </section></>;
+ if(!data)return <>{lead}<p role="status" className="text-ink-muted">{t("pending")}</p></>;
  const yesterday=lastLoadedAt?dateShift(localDate(data.timeZone,lastLoadedAt),-1):"";
  const relative=data.lastGoodSyncAt&&lastLoadedAt?new Intl.RelativeTimeFormat(locale,{numeric:"auto"}).format(
   -Math.max(0,Math.round((lastLoadedAt-Date.parse(data.lastGoodSyncAt))/3600000)),"hour"):t("noSyncYet");
- return <div className="flex flex-col gap-4 text-[17px]" dir={locale==="ar"?"rtl":"ltr"}>
+ return <>{lead}<div className="flex flex-col gap-4 text-[17px]" dir={locale==="ar"?"rtl":"ltr"}>
   {data.connection==="connected"&&<section className="rounded-card-lg bg-card p-4 text-sm text-muted">
     {t("ownerPayrollLimitsNote")}
   </section>}
@@ -158,7 +161,8 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    </>}
    {data.backfill.resumeAt&&<p className="text-warn">{t("ownerPaused",{time:new Date(data.backfill.resumeAt).toLocaleString(locale)})}</p>}
    {data.failedRuns>0&&<button disabled={busy||!data.importEnabled} className="mt-3 min-h-12 rounded-full border border-line px-5"
-     onClick={()=>void post("/api/pos/toast/retry",{},"retry")}>{t("ownerTryAgain")}</button>}
+     onClick={()=>void post("/api/pos/toast/retry",{},"retry","retry")}>{t("ownerTryAgain")}</button>}
+   {feedback?.target==="retry"&&<p role="status" className="mt-2 text-ink-muted">{t(feedback.key)}</p>}
   </section>
   {data.firstImportCheck==="due"&&<section className="rounded-card-lg bg-card p-5">
    <h2 className="text-xl font-bold">{t("ownerFirstCheck")}</h2>
@@ -179,10 +183,11 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
     className="mt-3 min-h-20 w-full rounded-xl border border-line p-3"/>
    <div className="mt-3 flex flex-wrap gap-2">
     <button disabled={busy} className="min-h-12 rounded-full bg-good-tint px-5 text-good"
-     onClick={()=>void post("/api/pos/toast/first-import-check",{answer:"looks_right",flaggedDates:[]},"first_check")}>{t("ownerLooksRight")}</button>
+     onClick={()=>void post("/api/pos/toast/first-import-check",{answer:"looks_right",flaggedDates:[]},"first_check","first-check")}>{t("ownerLooksRight")}</button>
     <button disabled={busy||!selected.length} className="min-h-12 rounded-full bg-warn-tint px-5 text-warn"
-     onClick={()=>void post("/api/pos/toast/first-import-check",{answer:"something_off",flaggedDates:selected,note},"first_check")}>{t("ownerSomethingOff")}</button>
+     onClick={()=>void post("/api/pos/toast/first-import-check",{answer:"something_off",flaggedDates:selected,note},"first_check","first-check")}>{t("ownerSomethingOff")}</button>
    </div>
+   {feedback?.target==="first-check"&&<p role="status" className="mt-2">{t(feedback.key)}</p>}
   </section>}
   <ToastSummaryComparison restaurantNames={data.restaurantNames} businessId={businessId} days={data.comparisonDays} currency={currency} onSaved={load}/>
   <section className="rounded-card-lg bg-card p-5">
@@ -203,11 +208,12 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
      {data.queuedRanges.some(range=>range.from<=row.date&&range.to>=row.date)
       ?<p role="status" className="flex min-h-12 items-center text-ink-muted">{t("ownerRepullRunning")}</p>
       :<button disabled={!canRepullToastDay(data.importEnabled,busy,row.date,yesterday,data.queuedRanges)} className="min-h-12 rounded-full border border-line px-4"
-      onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date,repull:true},"repull")}>{t("ownerRepull")}</button>}
+      onClick={()=>void post("/api/pos/toast/backfill",{from:row.date,to:row.date,repull:true},"repull",row.restaurantGuid+":"+row.date)}>{t("ownerRepull")}</button>}
      <button disabled={busy} className="min-h-12 rounded-full border border-line px-4"
       onClick={()=>void post("/api/pos/toast/day-flag",{restaurantGuid:row.restaurantGuid,date:row.date,
-       action:row.reason==="owner_flag"?"clear":"flag",note},"flag")}>{t(row.reason==="owner_flag"?"ownerClearFlag":"ownerFlagDay")}</button>
+       action:row.reason==="owner_flag"?"clear":"flag",note},"flag",row.restaurantGuid+":"+row.date)}>{t(row.reason==="owner_flag"?"ownerClearFlag":"ownerFlagDay")}</button>
     </div>
+    {feedback?.target===row.restaurantGuid+":"+row.date&&<p role="status" className="mt-2">{t(feedback.key)}</p>}
    </div>)}
   </section>
   <section className="rounded-card-lg bg-card p-5">
@@ -252,5 +258,5 @@ export default function ToastOwnerDashboard({businessId,currency}:{businessId:st
    </details>
   </section>
   {message&&<p role="status" className="rounded-xl bg-card p-3">{message}</p>}
- </div>;
+ </div></>;
 }
