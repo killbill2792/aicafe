@@ -71,7 +71,7 @@ export const eventsTools={
         notCovered:[...new Set([...outlook.notCovered,
           ...(hours?.available?[]:["openingHoursUnavailable"]),
           ...(ctx.readWeekSchedule&&schedules.every(s=>!s?.ok)?["scheduleUnavailable"]:[]),
-          ...(pastDates.length&&pastItems.every(([,items])=>items===null)?["pastItemSalesUnavailable"]:[])])};
+          ...(pastDates.length&&pastItems.every(([,items])=>items===null)?["pastItemSalesUnavailable"]:[])])]};
     },
   },
 } as const;
