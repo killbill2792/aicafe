@@ -36,6 +36,8 @@ import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
+import {readCafeLocation} from "@/lib/data/cafeLocation.server";
+import {searchNearbyEvents} from "@/lib/events/nearbyEventsSearch.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -155,6 +157,9 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       readEconomics:async()=>readSupervisorEconomics(await createServerSupabaseClient(),scope.businessId,identity.asOf),
       // Toast credentials are service-role only; the café comes from the authenticated scope.
       readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId),
+      // Location comes from the café profile or the owner's saved answer, never from the model.
+      cafeLocation:async()=>readCafeLocation(await createServerSupabaseClient(),scope.businessId,ownerFactRead.facts),
+      searchNearbyEvents,
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       goals:{

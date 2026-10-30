@@ -55,6 +55,8 @@ export type ChatStartProps = {
   onSuggestion: (prompt: string) => void;
   suggestionsDisabled: boolean;
   unavailableMessage?: string;
+  /** The "Coming up" card (events, holidays, decisions); loads on its own. */
+  comingUp?: import("react").ReactNode;
 };
 
 function SafeAction({ item }: { item: ChatStartAttentionItem }) {
@@ -67,7 +69,7 @@ function SafeAction({ item }: { item: ChatStartAttentionItem }) {
 }
 
 /** One chat-start surface, never a second Home dashboard or attention query. */
-export default function ChatStart({ data, copy, hasMessages, expanded, onToggle, onSuggestion, suggestionsDisabled, unavailableMessage }: ChatStartProps) {
+export default function ChatStart({ data, copy, hasMessages, expanded, onToggle, onSuggestion, suggestionsDisabled, unavailableMessage, comingUp }: ChatStartProps) {
   const tops = topChatStartItems(data.attention);
   return <div className="w-full min-w-0 space-y-3" data-testid="chat-start">
     {hasMessages && <button type="button" aria-expanded={expanded} onClick={onToggle}
@@ -100,6 +102,7 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
         </p>}
         <Link href="/money" className="mt-1 inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline">{copy.details}</Link>
       </section>
+      {comingUp}
       {data.board && (data.board.running.length > 0 || data.board.reports.length > 0) &&
         <section className="min-w-0 space-y-3 rounded-2xl border border-line bg-card p-3" data-testid="operating-board">
           {([[copy.boardRunning, data.board.running, "running"], [copy.boardReports, data.board.reports, "reports"]] as const)

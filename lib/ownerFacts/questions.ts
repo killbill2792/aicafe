@@ -11,7 +11,7 @@ const labels:Record<string,keyof typeof en.OwnerQuestions>={
  payroll:"payroll",bills:"bills",cardFee:"cardFee",payrollExtras:"payrollExtras",
  cardSalesShare:"cardSalesShare",cardTransactionsShare:"cardTransactionsShare",
  cardFixedFee:"cardFixedFee",averageTicket:"averageTicket",processor:"processor",
- itemCost:"itemCost",hours:"hours",schedule:"schedule",generic:"generic",
+ itemCost:"itemCost",hours:"hours",cafeAddress:"cafeAddress",schedule:"schedule",generic:"generic",
  milkBase:"milkBase",milkTarget:"milkTarget",milkNoSize:"milkNoSize",milkVolume:"milkVolume",milkBaseCost:"milkBaseCost",milkOatCost:"milkOatCost",milkTargetCost:"milkTargetCost"
 };
 export function ownerFactLabel(key:string,labelKey:string,locale:AgentLocale):string{
@@ -29,7 +29,8 @@ export function ownerFactLabel(key:string,labelKey:string,locale:AgentLocale):st
  return size?label+" ("+size[1]+" oz)":label;
 }
 export function readableSource(source:string,locale:AgentLocale):string{
- const key: keyof typeof en.OwnerQuestions=/schedule|shift|coverage|staff|team/.test(source)?"shifts":
+ const key: keyof typeof en.OwnerQuestions=/nearby_events/.test(source)?"events":
+  /schedule|shift|coverage|staff|team/.test(source)?"shifts":
   /payroll|labor|employee|clock/.test(source)?"labor":
   /fees|processing/.test(source)?"fees":
   /price|menu|item|product|ingredient/.test(source)?"menu":
