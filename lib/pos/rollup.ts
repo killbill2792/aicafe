@@ -133,7 +133,7 @@ export async function recomputeDailyRollup(
   // which started today. End is exclusive, including at DST boundaries.
   const timecards=await readAllPosRows((first,last)=>supabase
     .from("timecards")
-    .select("id, clock_in, clock_out, hourly_wage_cents, wage_source, breaks, source_type")
+    .select("id, clock_in, clock_out, hourly_wage_cents, wage_source, breaks, source_type, provider_regular_hours, provider_overtime_hours")
     .eq("business_id", businessId)
     .lt("clock_in", dayEndUtc)
     .or("clock_out.is.null,clock_out.gt."+dayStartUtc)
@@ -148,7 +148,9 @@ export async function recomputeDailyRollup(
   const wagesCents=paidTimecards.length===0&&toastSales?null:paidTimecards.reduce((sum,tc)=>{
     const amount=timecardWagesForLocalDay({
       clockIn:tc.clock_in,clockOut:tc.clock_out,
-      hourlyWageCents:tc.hourly_wage_cents,breaks:tc.breaks??[]
+      hourlyWageCents:tc.hourly_wage_cents,breaks:tc.breaks??[],
+      providerRegularHours:tc.provider_regular_hours==null?null:Number(tc.provider_regular_hours),
+      providerOvertimeHours:tc.provider_overtime_hours==null?null:Number(tc.provider_overtime_hours),
     },businessDate,timezone);
     return sum+(amount??0);
   },0);

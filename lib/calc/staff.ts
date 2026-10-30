@@ -17,8 +17,27 @@ export function paidHoursForTimecard(timecard: Timecard, now: Date = new Date())
   return Math.max(0, totalMs - unpaidBreakMs) / 3_600_000;
 }
 
+/** US overtime rule (FLSA): overtime hours are paid at 1.5× the hourly wage. Toast reports
+ * overtime hours but not the multiplier, so this is the one place it is set. */
+export const OVERTIME_PAY_MULTIPLIER = 1.5;
+
+/** A closed Toast shift is paid exactly from Toast's own hours:
+ * regular hours × wage + overtime hours × wage × 1.5. Null when Toast gave no hours. */
+export function providerShiftPayCents(shift: {
+  clockOut: string | null; hourlyWageCents: number | null;
+  providerRegularHours?: number | null; providerOvertimeHours?: number | null;
+}): number | null {
+  if (shift.clockOut === null || shift.hourlyWageCents === null) return null;
+  const regular = shift.providerRegularHours, overtime = shift.providerOvertimeHours;
+  if ((regular == null && overtime == null)) return null;
+  const r = Number(regular ?? 0), o = Number(overtime ?? 0);
+  if (!Number.isFinite(r) || !Number.isFinite(o) || r < 0 || o < 0) return null;
+  return (r + o * OVERTIME_PAY_MULTIPLIER) * shift.hourlyWageCents;
+}
+
 export function wagesCentsForTimecard(timecard: Timecard, now: Date = new Date()): number | null {
-  return timecard.hourlyWageCents===null?null:paidHoursForTimecard(timecard, now)*timecard.hourlyWageCents;
+  if (timecard.hourlyWageCents === null) return null;
+  return providerShiftPayCents(timecard) ?? paidHoursForTimecard(timecard, now) * timecard.hourlyWageCents;
 }
 
 export function wagesCentsForTimecards(timecards: Timecard[], now: Date = new Date()): number | null {

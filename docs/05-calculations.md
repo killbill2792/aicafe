@@ -13,7 +13,7 @@ Round only at the end of a calculation (half-up to the cent). Never round interm
 | Card fees | sum of POS processing fees (Square reports the fee per payment) |
 | Effective fee rate | card fees ÷ net sales, over the last 28 days |
 | Ingredients (theoretical) | Σ over order lines: quantity × recipe cost (recipe lines × current ingredient price, plus modifier deltas) |
-| Wages | Σ timecards: paid hours × hourly wage (paid breaks count, unpaid breaks don't; open shifts count up to now) |
+| Wages | Σ timecards. A closed Toast shift: Toast regular hours × Toast wage + Toast overtime hours × Toast wage × 1.5 (US overtime rule; Toast does not send the multiplier). A shift Toast sends without a wage (salaried job, or no wage set) is $0, as in Toast. A shift over midnight splits its pay by paid time on each day. Other shifts: paid hours × hourly wage (paid breaks count, unpaid breaks don't; open shifts count up to now) |
 | Payroll taxes | wages × business.payroll_tax_rate (default 0.12) |
 | Staff cost (loaded) | wages + payroll taxes |
 | Running costs for a period | Σ over running-cost categories: monthly amount ÷ days in that month × days of the period that fall in that month |
