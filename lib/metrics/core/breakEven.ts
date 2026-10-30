@@ -11,6 +11,13 @@ export function moneyLeftAfterPriceChangeCents(oldMoneyLeft:number,deltaPriceCen
 export function dailyBreakEvenCostsCents(bills:number,staff:number):number{
   return bills+staff;
 }
+/** Sales needed per open day: the monthly break-even spread over the café's open
+ * days, rounded up to a whole cent so the daily target never falls short. */
+export function dailyBreakEvenSalesCents(monthlyCents:number|null,openDays:number):number|null{
+  if(monthlyCents===null||!Number.isSafeInteger(monthlyCents)||monthlyCents<0)return null;
+  if(!Number.isInteger(openDays)||openDays<=0||openDays>31)return null;
+  return Math.ceil(monthlyCents/openDays);
+}
 export function drinksTargetPerDay(dailyCosts:number,moneyLeft:number):number{
   return moneyLeft<=0?Infinity:Math.ceil(dailyCosts/moneyLeft);
 }

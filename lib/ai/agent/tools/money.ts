@@ -12,6 +12,8 @@ import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
 import {prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 import {figure,unifiedBreakEven} from "@/lib/calc/supervisorEconomics";
+import {dailyBreakEvenSalesCents} from "@/lib/metrics/core/breakEven";
+import {laborForPeriod} from "@/lib/metrics/core/labor";
 
 const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const empty=z.strictObject({});
@@ -21,6 +23,7 @@ const breakEvenInput=z.strictObject({
   ownerProcessingFeePercent:z.number().min(0).max(99.99).nullable().optional(),
   ownerNetSalesCents:z.number().int().nonnegative().nullable().optional(),
   ownerSalesDays:z.number().int().positive().nullable().optional(),
+  ownerOpenDaysPerMonth:z.number().int().min(1).max(31).nullable().optional(),
   ownerInputs:ownerInputsSchema.nullable().optional(),
 });
 const unavailable=(source:string,period:{from:string;to:string}|null,missing:string[]):AgentToolResult=>
@@ -77,7 +80,7 @@ export const moneyTools={
     },
   },
   get_break_even:{
-    agentId:"leo",schema:breakEvenInput,description:"Read recorded daily fixed costs and calculate break-even sales using the owner's ingredient+packaging percentage and their net sales/days when they supply them. Do not demand imported sales when the owner supplies net sales. Pass null for unknown owner inputs; never invent them. If processing-fee rate is unknown, still calculate but explicitly say this estimate excludes processing fees.",
+    agentId:"leo",schema:breakEvenInput,description:"Break-even sales per month and per open day (dailyBreakEvenCents), calculated from recorded bills, payroll, ingredient and fee rates, and the café's open days from its saved opening hours (openDaysPerMonth). Call it first with all owner inputs null and use what it returns. Never ask the owner for labor, bills, ingredient percent, fee rate or open days that the result already has; ask only for a field that comes back null or is listed in missing. Pass an owner input only when the owner states it (e.g. 'we close Sundays' -> ownerOpenDaysPerMonth). Never divide the monthly figure yourself; quote dailyBreakEvenCents. Do not demand imported sales when the owner supplies net sales. If processing-fee rate is unknown, still calculate but say this estimate excludes processing fees.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const owner=breakEvenInput.parse(raw),provided=owner.ownerInputs;
       if(ctx.readEconomics){
@@ -100,10 +103,26 @@ export const moneyTools={
           overridden.feeRate=owner.ownerProcessingFeePercent/100;
           overridden.feeStatus="owner";
         }
+        const ownerOpenDays=owner.ownerOpenDaysPerMonth??null;
+        if(ownerOpenDays!==null){
+          overridden.daysInMonth=ownerOpenDays;
+          // Recorded payroll is projected per open day; re-spread it over the
+          // owner's day count. Owner-stated labor and monthly extras stay as they are.
+          const evidence=economics.laborEvidence;
+          if(overridden.monthlyStaff.status!=="owner"&&evidence){
+            const month=calendarMonth(ctx.asOf),extras=economics.knownMonthlyLaborExtrasCents??null;
+            const labor=laborForPeriod(evidence.dates,evidence.records,null,
+              extras===null?null:{monthlyCents:extras,from:month.from,to:month.to},ownerOpenDays);
+            overridden.monthlyStaff={...overridden.monthlyStaff,valueCents:labor.projectedMonthlyLaborCents};
+          }
+        }
         const result=unifiedBreakEven(overridden);
         const monthly=result.monthlyBreakEven.valueCents;
+        const daily=dailyBreakEvenSalesCents(monthly,overridden.daysInMonth);
         return {source:"break_even",period:calendarMonth(ctx.asOf),agentId:"leo",
           monthlyBreakEvenCents:monthly,knownCostBreakEvenFloorCents:result.knownCostBreakEvenFloorCents,
+          dailyBreakEvenCents:daily,openDaysPerMonth:overridden.daysInMonth,
+          openDaysSource:ownerOpenDays!==null?"owner":overridden.openDaysBasis??"calendar",
           drinksPerDay:result.drinksPerDay,
           observedProcessingFeesCents:result.observedProcessingFeesCents,
           observedIngredientCents:result.observedIngredientCents,
@@ -117,6 +136,7 @@ export const moneyTools={
            missingDays:overridden.missingDays,
           missing:result.missing,ownerInputs:provided??null,
           numberEstimates:[...(monthly===null?[]:[{value:monthly,unit:"cents" as const,detail:"breakEvenSales"}]),
+            ...(daily===null?[]:[{value:daily,unit:"cents" as const,detail:"breakEvenSales"}]),
             ...(result.knownCostBreakEvenFloorCents===null?[]:[{value:result.knownCostBreakEvenFloorCents,
               unit:"cents" as const,detail:"breakEvenSales"}]),
             ...(result.monthlyFixedKnownCents?[{value:result.monthlyFixedKnownCents,unit:"cents" as const,detail:"dailyOverhead"}]:[])],
