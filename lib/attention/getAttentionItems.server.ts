@@ -4,8 +4,6 @@ import { getLocale, getTranslations } from "next-intl/server";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import type { BusinessSnapshot } from "@/lib/data/types";
-import { readUsageVariance } from "@/lib/data/usageVariance.server";
-import { usageWeekEnding } from "@/lib/calc/usageDates";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
 import { daysForPeriod, type Period } from "@/lib/viewmodels/period";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
@@ -13,6 +11,7 @@ import { isSquareConfigured } from "@/lib/pos/square/oauth";
 import { getOpenAlerts } from "@/lib/data/getAlerts";
 import { describeAlert } from "@/components/alerts/alertContent";
 import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
+import { timeReader } from "@/lib/perf/timeReader.server";
 import { gettingStartedAttention } from "@/components/home/GettingStartedCard";
 import { homeAttentionHref, homeShiftHref, showAlertInHome, type HomeAttentionItem } from "@/components/home/homeAttention";
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
@@ -70,24 +69,30 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
   const locale=requestedLocale==="es"||requestedLocale==="ar"?requestedLocale:"en";
   const [snapshot,menu]=await Promise.all([args.snapshot??getSnapshot(period),args.menu??getMenuControlCenter()]);
   const vm=buildHomeViewModel(snapshot,period);
-  const usagePeriod=usageWeekEnding(snapshot.todayDateStr);
-  const usageRead=await readUsageVariance({from:usagePeriod.from,to:usagePeriod.to})
-    .then(r=>({over:r.rows.filter(x=>x.status==="over"),unavailable:false}))
-    .catch(()=>({over:[],unavailable:true}));
-  const [t,tOperations,tCategories,tExperiment,tAlerts,tReconnect,tBrief,tGoals]=await Promise.all([
-    getTranslations("Home"),getTranslations("Operations"),getTranslations("Categories"),
-    getTranslations("SupervisorExperiment"),getTranslations("Alerts"),getTranslations("Reconnect"),
-    getTranslations("DailyBrief"),getTranslations("Goals"),
+  // Weekly usage variance scans thousands of order lines. Pantry already reads
+  // that report on demand; Home/chat must not await it to show attention items.
+  // Independent secondary signals start together, with timings limited to names/ms.
+  const [[t,tOperations,tCategories,tExperiment,tAlerts,tReconnect,tBrief,tGoals],
+    posStatus,stored,alerts,unmatched]=await Promise.all([
+    timeReader("Home","getAttentionTranslations",()=>Promise.all([
+      getTranslations("Home"),getTranslations("Operations"),getTranslations("Categories"),
+      getTranslations("SupervisorExperiment"),getTranslations("Alerts"),getTranslations("Reconnect"),
+      getTranslations("DailyBrief"),getTranslations("Goals"),
+    ])),
+    timeReader("Home","getPosConnectionStatus",getPosConnectionStatus),
+    isSupabaseConfigured()
+      ?timeReader("Home","readPersistedOperatingTasks",()=>readPersistedOperatingTasks(snapshot.business.id))
+      :Promise.resolve([]),
+    // Optional failures should remain visible as an unavailable alert/match item.
+    timeReader("Home","getOpenAlerts",getOpenAlerts).catch(()=>null),
+    timeReader("Home","getCatalogMatchReview",getCatalogMatchReview).catch(()=>null),
   ]);
-  const posStatus=await getPosConnectionStatus();
   const squareReconnectReady=isSquareConfigured()&&Boolean(process.env.SQUARE_REDIRECT_URI);
   const derivedTeam=buildOperationsTeamViewModel(snapshot,menu);
   // Page loads are strictly READ-ONLY. Persisted task lifecycle is authoritative;
   // ephemeral derived actions remain visible until a dedicated task-refresh job
   // is wired (outside Prompt B's allowed files).
   const derived=[...derivedTeam.needsYou,...derivedTeam.handled,...derivedTeam.watching];
-  const stored=isSupabaseConfigured()?
-    await readPersistedOperatingTasks(snapshot.business.id):[];
   const storedIds=new Set(stored.map(task=>task.id));
   const team=projectOperatingTasks([...stored,
     ...derived.filter(task=>!storedIds.has(task.id))]);
@@ -141,14 +146,6 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
     return { id: task.id, agentId: task.agentId, agentName: agentNames[task.agentId], title, href: operatingTaskHref(task) };
   };
 
-  const [alerts, unmatched] = await Promise.all([
-    // Alerts are a secondary Home signal: a failing alert refresh must not
-    // take the owner’s financial snapshot and chat offline.
-    getOpenAlerts().catch(() => null),
-    // Matching is a secondary Home signal. A temporary match-query failure must
-    // not take down the owner’s key numbers and chat; the review link remains visible.
-    getCatalogMatchReview().catch(() => null),
-  ]);
   const alertItems: HomeAttentionItem[] = (alerts ?? []).filter(alert => showAlertInHome(alert.kind)).map(alert => {
     const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
     // The legacy manage-staff redirect opens Team, not Schedule. Link directly
@@ -200,14 +197,6 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       id:"unmatched",title:t("attentionUnmatched",{count:unmatched.length}),actionLabel:t("attentionMatch"),
       href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
     }]:[]),
-    ...(usageRead.unavailable ? [{
-      id:"usage-unavailable",title:t("attentionUsageUnavailable"),actionLabel:t("usageReview"),
-      href:homeAttentionHref({kind:"pantry" as const}),impactCents:null,
-    }] : []),
-    ...(usageRead.over.length>0 ? [{
-      id:"pantry",title:t("usageOverAlert"),actionLabel:t("usageReview"),
-      href:homeAttentionHref({kind:"pantry" as const}),impactCents:null
-    }]:[]),
     ...alertItems,
     ...team.needsYou.filter(task=>!(task.kind==="data_quality" && coveredBills.has(String(task.payload.categoryCode))) &&
       !(task.kind==="data_quality" && vm.missingCategories.some(line=>line.categoryCode===task.payload.categoryCode)))
@@ -222,10 +211,10 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
     const task=taskMap.get(item.id),alert=alertMap.get(item.id);
     const kind=task?.kind??alert?.kind??(item.id.startsWith("bill:")?"bill":item.id);
     const source=task?"operating_tasks":alert?"alerts":item.id==="unmatched"?"pos_catalog_matches":
-      item.id.startsWith("bill:")?"missing_costs":item.id==="pantry"?"usage_variance":"home";
+      item.id.startsWith("bill:")?"missing_costs":"home";
     const agentId:AgentId=task?.agentId??(kind==="staff_coverage"||kind==="meal_break"||
       kind==="early_clockin"||kind==="overstaffed"||kind==="getting-started-staff"?"olivia":
-      kind==="unmatched"||kind==="match-unavailable"||kind==="pantry"||kind==="supply_check"?"maya":
+      kind==="unmatched"||kind==="match-unavailable"||kind==="supply_check"?"maya":
       kind==="bill"||kind==="fees"||kind==="data_quality"||kind==="money_update"||
       kind==="missing_bill"||kind==="getting-started-bills"?"leo":"alex");
     // Preserve the actual next-intl key and interpolation arguments as provenance.
@@ -285,8 +274,6 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       key="Home.attentionSalesMissing";params={count:vm.coverage.expectedDays-vm.coverage.actualDays};
     }else if(item.id==="reconnect")key=posStatus?.provider==="square"&&!squareReconnectReady?
       "Home.attentionRegisterSetupUnavailable":"Reconnect.banner";
-    else if(item.id==="pantry")key="Home.usageOverAlert";
-    else if(item.id==="usage-unavailable")key="Home.attentionUsageUnavailable";
     else if(item.id==="getting-started-connect")key="Home.gettingStartedConnectRegister";
     else if(item.id==="getting-started-sales")key="Home.gettingStartedUploadSales";
     else if(item.id==="getting-started-bills")key="Home.gettingStartedAddBills";
