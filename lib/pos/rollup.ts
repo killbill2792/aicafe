@@ -9,6 +9,7 @@ import { processingFeeForRollup } from "./processingFees";
 import { ensureOwnerConfirmedProcessingFeeEstimateForDay } from "./processingFeeEstimate.server";
 import {refreshToastPaymentFeeForDay} from "./toast/paymentFeeFacts.server";
 import {hasIncompleteToastLabor, type StagedToastShift} from "./toast/laborCoverage";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import { resolveSalesDataStatus, type SalesDataStatus } from "./salesCoverage";
 
 /**
@@ -22,7 +23,10 @@ export async function recomputeDailyRollup(
   businessDate: string,
   options: { salesDataStatus?: SalesDataStatus; dryRun?: boolean } = {},
 ): Promise<void | Record<string, unknown>> {
-  const { data: business } = await supabase.from("businesses").select("payroll_tax_rate, payroll_tax_rate_source, timezone").eq("id", businessId).single();
+  const { data: business, error: businessError } = await supabase.from("businesses").select("payroll_tax_rate, payroll_tax_rate_source, timezone").eq("id", businessId).single();
+  // This RLS-protected read is the authorization boundary for the caller-supplied
+  // café ID, before any service-only Toast staging evidence can be accessed.
+  if (businessError || !business) throw new Error("Rollup business scope unavailable");
   const payrollTaxRate = Number(business?.payroll_tax_rate ?? 0.12);
   const payrollTaxRateSource = business?.payroll_tax_rate_source ?? "system_estimate";
   const timezone = business?.timezone ?? "America/Los_Angeles";
@@ -149,7 +153,14 @@ export async function recomputeDailyRollup(
   const toastAttendance=paidTimecards.some(tc=>tc.pos_timecard_id?.startsWith("toast:"));
   let stagedGap=false;
   if(toastSales||toastAttendance){
-    const staged=await readAllPosRows((first,last)=>supabase.from("toast_labor_entries")
+    // Toast staging is service-role-only by migration 045. The original caller
+    // may be an authenticated owner finalizing a CSV import, not a cron job.
+    // After checking that caller can read this business above, read only this
+    // business's narrowly bounded staging evidence with the server-only client.
+    // No raw provider row leaves this canonical rollup writer.
+    const laborDb=process.env.SUPABASE_SERVICE_ROLE_KEY
+      ?createAdminSupabaseClient():supabase;
+    const staged=await readAllPosRows((first,last)=>laborDb.from("toast_labor_entries")
       .select("restaurant_guid,external_time_entry_id,clock_in,clock_out,hourly_wage_cents,provider_regular_hours,provider_overtime_hours,deleted")
       .eq("business_id",businessId).eq("deleted",false)
       .lt("clock_in",dayEndUtc)
