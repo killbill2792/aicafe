@@ -9,8 +9,8 @@ describe("holidays from the maintained date-holidays data",()=>{
     const week=holidaysBetween("2026-10-30","2026-11-05","US");
     expect(week.map(h=>[h.key,h.date,h.kind])).toEqual([["halloween","2026-10-31","observance"]]);
     expect(weekdayOf("2026-10-31")).toBe(6);
-    expect(week[0].usualEffect).toBe("busier");
-    expect(week[0].why).toMatch(/trick-or-treat/iu);
+    // A holiday is a date and name, not a café sales/staffing prediction.
+    expect(week[0]).toEqual({key:"halloween",name:"Halloween",date:"2026-10-31",kind:"observance",dayOff:false});
     expect(week[0].dayOff).toBe(false);
   });
   it("works out moving US holidays every year (no fixed dates in our code)",()=>{

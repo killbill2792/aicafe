@@ -3681,7 +3681,7 @@
     "basisEvent": "Event nearby{distance}",
     "basisGeneral": "General pattern, not your sales yet",
     "moreEvents": "+{count} more",
-    "nothingSpecial": "Nothing special in the next 7 days. Normal staffing.",
+    "nothingSpecial": "No holidays or local events listed in the next 7 days.",
     "addAddress": "Add your café address to see local events too.",
     "addAddressButton": "Add address",
     "addressPrompt": "Find events near my café",
