@@ -144,9 +144,13 @@ async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|"ar",
       eventPlans:{propose:async input=>{
         // Race-safe: old facts may change during a long model call.
         const latest=await readCafeEvents(db,b.id,day.date,day.date);
-        if(effectHash(eventPlanFacts(latest.filter(e=>input.eventIds.includes(e.id))))!==day.hash||
+        const stillFound=latest.filter(e=>e.status==="found")
+          .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
+        if(effectHash(eventPlanFacts(stillFound))!==day.hash||
           input.startDate!==day.date||input.endDate!==day.date||
-          input.eventIds.length!==facts.length)
+          input.eventIds.length!==facts.length||
+          new Set(input.eventIds).size!==facts.length||
+          facts.some(f=>!input.eventIds.includes(f.id)))
           throw new Error("event_facts_changed");
         const proposal=await proposeLoop(scope,supervisorLoopRegistry,
           new SupabaseLoopRepository(),eventReadinessCapabilityId,input,requestKey);
