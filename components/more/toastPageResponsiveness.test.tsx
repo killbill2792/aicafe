@@ -35,7 +35,7 @@ it("the checklist reflects the exact verified snapshot rather than its own reque
  const connected={
   connection:"connected",startDate:"2026-10-01",firstImportCheck:"answered",
   analytics:{verified:true}
- } as z.infer<typeof statusSchema>;
+ } as unknown as z.infer<typeof statusSchema>;
  const html=render("en",createElement(ToastOnboardingChecklist,{businessId,status:connected}));
  expect(html.match(/✓/g)).toHaveLength(8);
  expect(html).not.toContain('aria-hidden="true">…');
