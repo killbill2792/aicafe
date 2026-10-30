@@ -31,6 +31,10 @@
     {
       "path": "/api/cron/today-live",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/events-lookahead",
+      "schedule": "10 15 * * *"
     }
   ]
 }
