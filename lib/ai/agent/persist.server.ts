@@ -70,7 +70,7 @@ export function agentReplyPayload(turn: AgentTurn) {
   const blocks=isOnlyQuestion?[]:splitAgentText(turn.text,turn.provenance??turn.unverified);
   const proposalIds=[...new Set(turn.results.flatMap(result=>
     (result.source==="price_change_proposal"||result.source==="staff_proposal"||result.source==="purchase_proposal"||
-      result.source==="goal_proposal")&&
+      result.source==="goal_proposal"||result.source==="event_plan_proposal")&&
       (result.source==="purchase_proposal"||result.missing.length===0)&&result.draft===true&&
       result.saved===false&&
       typeof result.proposalId==="string"&&
