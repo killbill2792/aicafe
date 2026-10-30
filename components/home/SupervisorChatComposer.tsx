@@ -820,7 +820,7 @@ export default function SupervisorChatComposer({
   const durationLabel = String(Math.floor(elapsed / 60)) + ":" + String(elapsed % 60).padStart(2, "0");
   // A tap on a saved event opens that day in the same Supervisor conversation.
   const boardAskDisabled = !enabled || !canUseAi || sending || uploading || dictation === "recognizing" || resumedRunning;
-  const chatAboutEventDay=async(date:string,title:string,prompt:string,existingThreadId?:string)=>{
+  const chatAboutEventDay=async(date:string,title:string,existingThreadId?:string)=>{
     if(boardAskDisabled||openingEvent.current)return;
     openingEvent.current=true;
     try{
@@ -830,7 +830,7 @@ export default function SupervisorChatComposer({
         return;
       }
       await openEventDayThread({
-        date,title,prompt,known:eventThreadIds.current,
+        date,title,known:eventThreadIds.current,
         create:async title=>{
           // Existing owner-scoped thread API handles idempotency and permissions.
           const created=await jsonFrom<{thread:ConversationThread}>(await fetch("/api/ai/threads",{
@@ -841,7 +841,6 @@ export default function SupervisorChatComposer({
           return created.thread;
         },
         select:id=>selectThread(id),
-        send:async(prompt,id,files)=>sendText(prompt,undefined,id,files),
       });
     }catch{
       setError(true);setFailureCode("agent_request_failed");
@@ -849,7 +848,7 @@ export default function SupervisorChatComposer({
   };
   // Only saved event facts are read on Home; no paid search starts when opening the panel.
   const comingUpCard = enabled && canUseAi ? <SavedEventsCard locale={locale}
-    onChatAboutDay={(date,title,prompt,existingThreadId)=>void chatAboutEventDay(date,title,prompt,existingThreadId)} disabled={boardAskDisabled}/> : undefined;
+    onChatAboutDay={(date,title,existingThreadId)=>void chatAboutEventDay(date,title,existingThreadId)} disabled={boardAskDisabled}/> : undefined;
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
