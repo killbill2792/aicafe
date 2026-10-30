@@ -67,7 +67,7 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
 /** Opens over the same Supervisor conversation. Reads saved PR 3 facts and loop plans only. */
 export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   locale:Locale;disabled:boolean;
-  onChatAboutDay:(date:string,title:string,prompt:string)=>void;
+  onChatAboutDay:(date:string,title:string,prompt:string,existingThreadId?:string)=>void;
 }){
   const t=useMemo(()=>createTranslator({locale,messages:{en,es,ar}[locale],namespace:"EventsPanel"}) as unknown as T,[locale]);
   const [timeline,setTimeline]=useState<Timeline|null>(null);
@@ -135,7 +135,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
       name:e.name,venue:e.venue,area:e.areaLabel,source:e.sourceUrl})),
       plan:dayPlan?{summary:dayPlan.summary,threadId:dayPlan.threadId}:null});
     onChatAboutDay(date,(matched[0]?.name??dayPlan?.summary??date).slice(0,120),
-      t("chatPrompt",{date,context}));
+      t("chatPrompt",{date,context}),dayPlan?.threadId);
     setPanel(null);
   };
   const saveTick=async(index:number,state:"done"|"dismissed")=>{
