@@ -1,7 +1,7 @@
 import type { Period } from "@/lib/viewmodels/period";
 
-export function periodFromUrl(value: string | null): Period {
-  return value === "week" || value === "month" ? value : "today";
+export function periodFromUrl(value: string | null, fallback: Period = "today"): Period {
+  return value === "today" || value === "week" || value === "month" ? value : fallback;
 }
 
 /** Keep the thread, experiment, and any other query state when changing only the period. */
