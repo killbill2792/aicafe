@@ -13,6 +13,7 @@ import {prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 import {figure,unifiedBreakEven} from "@/lib/calc/supervisorEconomics";
 import {dailyBreakEvenSalesCents} from "@/lib/metrics/core/breakEven";
+import {laborForPeriod} from "@/lib/metrics/core/labor";
 
 const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const empty=z.strictObject({});
@@ -103,7 +104,18 @@ export const moneyTools={
           overridden.feeStatus="owner";
         }
         const ownerOpenDays=owner.ownerOpenDaysPerMonth??null;
-        if(ownerOpenDays!==null)overridden.daysInMonth=ownerOpenDays;
+        if(ownerOpenDays!==null){
+          overridden.daysInMonth=ownerOpenDays;
+          // Recorded payroll is projected per open day; re-spread it over the
+          // owner's day count. Owner-stated labor and monthly extras stay as they are.
+          const evidence=economics.laborEvidence;
+          if(overridden.monthlyStaff.status!=="owner"&&evidence){
+            const month=calendarMonth(ctx.asOf),extras=economics.knownMonthlyLaborExtrasCents??null;
+            const labor=laborForPeriod(evidence.dates,evidence.records,null,
+              extras===null?null:{monthlyCents:extras,from:month.from,to:month.to},ownerOpenDays);
+            overridden.monthlyStaff={...overridden.monthlyStaff,valueCents:labor.projectedMonthlyLaborCents};
+          }
+        }
         const result=unifiedBreakEven(overridden);
         const monthly=result.monthlyBreakEven.valueCents;
         const daily=dailyBreakEvenSalesCents(monthly,overridden.daysInMonth);

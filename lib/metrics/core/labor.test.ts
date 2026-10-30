@@ -43,3 +43,14 @@ describe("known and projected labor",()=>{
     expect(laborPercentForPeriod(100,0)).toBeNull();
   });
 });
+
+describe("laborForPeriod projectedDays",()=>{
+  it("spreads the covered-day average over the given days and leaves monthly extras unscaled",()=>{
+    const days=Array.from({length:31},(_,i)=>({date:"2026-10-"+String(i+1).padStart(2,"0")}));
+    const wages=days.slice(0,10).map(({date})=>({date,wagesCents:9000,staffTaxCents:1000}));
+    const extras={monthlyCents:5000,from:"2026-10-01",to:"2026-10-31"};
+    expect(laborForPeriod(days,wages,null,extras).projectedMonthlyLaborCents).toBe(315000);
+    expect(laborForPeriod(days,wages,null,extras,26).projectedMonthlyLaborCents).toBe(265000);
+    expect(()=>laborForPeriod(days,wages,null,null,0)).toThrow(RangeError);
+  });
+});
