@@ -49,20 +49,18 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Typecheck
-        run: npx tsc --noEmit
-      - name: Lint changed JavaScript and TypeScript
-        shell: bash
+      # All PRs additionally run the complete global baseline.
+      - name: Voice and conversation regressions
+        run: npx vitest run lib/ai/conversations
+      - name: Voice and conversation scoped ESLint
+        run: npx eslint lib/ai/conversations
+      # Standalone historical pushes have no universal PR baseline.
+      - name: Standalone full verification (historical push only)
+        if: github.event_name == 'push'
         run: |
-          mapfile -d '' -t changed < <(git diff --name-only --diff-filter=ACMR -z origin/main...HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs')
-          if (( ${#changed[@]} > 0 )); then
-            npx eslint "${changed[@]}"
-          else
-            echo "No changed JS/TS sources."
-          fi
-      - name: All unit and regression tests
-        run: npm test
-      - name: Production build
-        run: npm run build
+          npx tsc --noEmit
+          npm run lint
+          npm test
+          npm run build -- --webpack
       - name: Whitespace
         run: git diff --check origin/main...HEAD

@@ -9,14 +9,22 @@ import MenuCatalog from "@/components/menu/MenuCatalog";
 import { Link } from "@/i18n/navigation";
 import PageShell from "@/components/shared/PageShell";
 import { getLocale } from "next-intl/server";
-import { getMenuCatalogPhotos } from "@/lib/data/getProductPhoto";
+import { getMenuCatalogPhotos, type ProductPhoto } from "@/lib/data/getProductPhoto";
+import { timeReader } from "@/lib/perf/timeReader.server";
 
 export const dynamic = "force-dynamic";
 
 export default async function MenuPage() {
   await requireOwnBusiness();
-  const [items, pendingMatches, t, menuBuilderT, locale, unpriced] = await Promise.all([getMenuControlCenter(), getCatalogMatchReview(), getTranslations("Menu"), getTranslations("MenuBuilder"), getLocale(), getUnpricedPublishedMenu()]);
-  const photos = await getMenuCatalogPhotos(items);
+  const [items, pendingMatches, t, menuBuilderT, locale, unpriced] = await Promise.all([timeReader("Menu", "catalogReady", () => getMenuControlCenter({ catalogOnly: true })), getCatalogMatchReview(), getTranslations("Menu"), getTranslations("MenuBuilder"), getLocale(), getUnpricedPublishedMenu()]);
+  // Start the existing tenant-scoped batch photo read without blocking search,
+  // category tabs, prices or item links. A storage failure leaves a usable
+  // catalog and logs only a safe category, never a signed URL.
+  const photosPromise = timeReader("Menu", "signedPhotos", () => getMenuCatalogPhotos(items))
+    .catch(() => {
+      console.warn("[menu-photos] signed_photo_read_failed");
+      return {} as Record<string, ProductPhoto>;
+    });
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
       <header className="flex flex-col gap-3 px-1 md:flex-row md:items-start md:justify-between">
@@ -35,7 +43,7 @@ export default async function MenuPage() {
         <span className="font-bold text-ink">{t("itemsNeedMatching",{count:new Intl.NumberFormat(locale).format(pendingMatches.length)})}</span>
         <span className="font-bold text-accent-text">{t("matchItems")}</span>
       </Link>}
-      <MenuCatalog items={items} photos={photos} />
+      <MenuCatalog items={items} photosPromise={photosPromise} />
       {unpriced.length>0&&<section aria-label={t("unpricedPublished")} className="mt-3">
         <h2 className="mb-3 font-headline text-xl font-bold text-ink">{t("unpricedPublished")}</h2>
         <div className="grid gap-3 md:grid-cols-2">

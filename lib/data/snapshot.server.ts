@@ -14,6 +14,7 @@ import {getOwnerConfirmedProcessingFeePlans} from "@/lib/pos/processingFeeEstima
 import type {OwnerFeePlan} from "@/lib/metrics/core/fees";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {hasSalesCoverage} from "@/lib/calc/dayWindows";
+import {timeReader} from "@/lib/perf/timeReader.server";
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
@@ -27,11 +28,11 @@ export async function getBusinessSnapshotFromDb(
   if(typeof costPeriod==="object")
     return readHistoricalBusinessSnapshot(supabase,businessId,costPeriod);
   const [businessRead,locationRead]=await Promise.all([
-    supabase.from("businesses").select(
+    timeReader("Snapshot","business",async()=>supabase.from("businesses").select(
       "id, name, timezone, currency, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status, owner_monthly_payroll_extras_cents")
-      .eq("id",businessId).single(),
-    supabase.from("locations").select("open_hours").eq("business_id",businessId)
-      .order("name",{ascending:true}).limit(1).maybeSingle(),
+      .eq("id",businessId).single()),
+    timeReader("Snapshot","location",async()=>supabase.from("locations").select("open_hours").eq("business_id",businessId)
+      .order("name",{ascending:true}).limit(1).maybeSingle()),
   ]);
   const {data:businessRow,error:businessError}=businessRead;
   const {data:locationRow,error:locationError}=locationRead;
@@ -50,19 +51,30 @@ export async function getBusinessSnapshotFromDb(
   const prevMonthDays = new Date(year, month - 1, 0).getDate();
   const prevMonthEnd = `${prevMonthKey}-${String(prevMonthDays).padStart(2, "0")}`;
 
-  // All source reads here are independent; no schedule/alert writes on page load.
-  const [rollupResult,recurringResult,expensesResult,priorExpenseResult,recoveryOrderResult]=
+  // All of these are independent once the café's timezone fixes the date window.
+  // Start item cost, staff, alert and fee evidence alongside daily/cost reads,
+  // instead of serializing two database waves. Every read remains RLS-scoped.
+  const minusSix=new Date(Date.parse(todayDateStr+"T12:00:00Z")-6*86_400_000).toISOString().slice(0,10);
+  const periodFrom=costPeriod==="today"?todayDateStr:costPeriod==="week"?minusSix:monthStart;
+  const [rollupResult,recurringResult,expensesResult,priorExpenseResult,recoveryOrderResult,
+    allMenuItemSnapshots,periodItemSales,staffShiftsToday,alertsRead,ownerFeePlans]=
     await Promise.all([
-      readDailyFactRows(supabase,businessId,prevMonthStart,todayDateStr)
+      timeReader("Snapshot","dailyFacts",()=>readDailyFactRows(supabase,businessId,prevMonthStart,todayDateStr))
         .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
-      supabase.from("recurring_costs").select("category_code, amount_cents, is_estimate, active_from, active_to")
-        .eq("business_id",businessId),
-      supabase.from("expenses").select("category_code, amount_cents, status")
-        .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr),
-      supabase.from("expenses").select("category_code").eq("business_id",businessId)
-        .gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd),
-      supabase.from("recovery_order").select("bucket_code, position")
-        .eq("business_id",businessId).order("position",{ascending:true}),
+      timeReader("Snapshot","recurringCosts",async()=>supabase.from("recurring_costs")
+        .select("category_code, amount_cents, is_estimate, active_from, active_to").eq("business_id",businessId)),
+      timeReader("Snapshot","expenses",async()=>supabase.from("expenses").select("category_code, amount_cents, status")
+        .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)),
+      timeReader("Snapshot","priorExpenses",async()=>supabase.from("expenses").select("category_code")
+        .eq("business_id",businessId).gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd)),
+      timeReader("Snapshot","recoveryOrder",async()=>supabase.from("recovery_order")
+        .select("bucket_code, position").eq("business_id",businessId).order("position",{ascending:true})),
+      timeReader("Snapshot","menuCosts",()=>getMenuItemSnapshots(supabase,businessId,todayDateStr)),
+      timeReader("Snapshot","periodItemSales",()=>readPeriodItemSales(supabase,businessId,{from:periodFrom,to:todayDateStr})),
+      timeReader("Snapshot","staffShifts",()=>getStaffShiftsToday(supabase,businessId,timezone,todayDateStr)),
+      timeReader("Snapshot","alerts",async()=>supabase.from("alerts").select("impact_cents",{count:"exact"})
+        .eq("business_id",businessId).in("status",["new","seen"])),
+      timeReader("Snapshot","feePlans",()=>getOwnerConfirmedProcessingFeePlans(supabase,businessId)),
     ]);
   const {data:rollupRows,error:rollupError}=rollupResult;
   if(rollupError)throw rollupError;
@@ -119,18 +131,7 @@ export async function getBusinessSnapshotFromDb(
       return { categoryCode: code, label: RUNNING_COST_LABELS[code] ?? code, amountCents: 0, isEstimate: false, isMissing: isExpected, isExpected };
     });
 
-  // Requested period, not last28Days, is the item-cost evidence boundary.
-  const minusSix=new Date(Date.parse(todayDateStr+"T12:00:00Z")-6*86_400_000).toISOString().slice(0,10);
-  const periodFrom=costPeriod==="today"?todayDateStr:costPeriod==="week"?minusSix:monthStart;
-  const [allMenuItemSnapshots,periodItemSales,staffShiftsToday,alertsRead,ownerFeePlans]=
-    await Promise.all([
-      getMenuItemSnapshots(supabase,businessId,todayDateStr),
-      readPeriodItemSales(supabase,businessId,{from:periodFrom,to:todayDateStr}),
-      getStaffShiftsToday(supabase,businessId,timezone,todayDateStr),
-      supabase.from("alerts").select("impact_cents",{count:"exact"}).eq("business_id",businessId)
-        .in("status",["new","seen"]),
-      getOwnerConfirmedProcessingFeePlans(supabase,businessId),
-    ]);
+  // Requested period, not last28Days, remains the item-cost evidence boundary.
   if(alertsRead.error)throw alertsRead.error;
   const menuItems=allMenuItemSnapshots.filter(item=>item.active!==false);
   const breakEvenProductCosts=allMenuItemSnapshots.filter(item=>item.quantitySoldLast28Days>0);

@@ -1,4 +1,5 @@
 import "server-only";
+import {timeReader} from "@/lib/perf/timeReader.server";
 import {readToastPlannedShifts} from "./toastScheduledShifts.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {prepareScheduleCopy} from "@/lib/calc/scheduling/scheduleMessages";
@@ -27,7 +28,20 @@ export async function getWeekSchedule(raw:unknown){
   dates,weekStart:p.data.weekStart,team:[],displayTeam:[],shifts:[],posShifts:[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
   gaps:[],adjacentShifts:[],posScheduleError:null,openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],profileAvailability:[],readOnly:true,timezone:owner.timezone,countryCode:null as string|null
  }};
- const [people,shifts,profile,ruleResult,availability,profileAvailability]=await Promise.all([
+ // Start the optional external planned-shift read alongside the independent
+ // roster queries. It stays read-only and never becomes a paid/approved shift.
+ // Catch its own failure so the existing internal schedule still renders.
+ const external=timeReader("Staff","getWeekSchedule.external",async()=>{
+  try{
+   return {posShifts:await readToastPlannedShifts(createAdminSupabaseClient(),
+    owner.businessId,dates[0],dates[6],owner.timezone),posScheduleError:null as string|null};
+  }catch(error){
+   return {posShifts:[] as Awaited<ReturnType<typeof readToastPlannedShifts>>,
+    posScheduleError:error instanceof Error?error.message:
+     (error&&typeof error==="object"&&"message" in error?String(error.message):"unavailable")};
+  }
+ });
+ const [people,shifts,profile,ruleResult,availability,profileAvailability]=await timeReader("Staff","getWeekSchedule.records",()=>Promise.all([
   owner.supabase.from("employees").select("id,display_name,role,active,default_hourly_wage_cents,wage_amount_cents,wage_period,available_days,min_weekly_minutes,max_weekly_minutes,phone_e164,whatsapp_opt_in,preferred_language,color_index")
     .eq("business_id",owner.businessId).order("display_name"),
   owner.supabase.from("scheduled_shifts").select("*").eq("business_id",owner.businessId)
@@ -39,21 +53,9 @@ export async function getWeekSchedule(raw:unknown){
   owner.supabase.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to")
    .eq("business_id",owner.businessId).lte("effective_from",owner.today)
    .or(`effective_to.is.null,effective_to.gte.${owner.today}`)
- ]);
+ ]));
  if(people.error||shifts.error||profile.error||availability.error||profileAvailability.error||!ruleResult.ok)return {ok:false as const,error:"storage_unavailable"};
- // External future plans never become approved internal shifts or paid timecards.
- let posShifts:Awaited<ReturnType<typeof readToastPlannedShifts>>=[];
- let posScheduleError:string|null=null;
- {
-  try{
-   // staffReadScope established membership; privileged reads remain bound to that business.
-   posShifts=await readToastPlannedShifts(createAdminSupabaseClient(),
-    owner.businessId,dates[0],dates[6],owner.timezone);
-  }catch(error){
-   posScheduleError=error instanceof Error?error.message:
-    (error&&typeof error==="object"&&"message" in error?String(error.message):"unavailable");
-  }
- }
+ const {posShifts,posScheduleError}=await external;
  const allEmployees=(people.data??[]).map(p=>({active:p.active as boolean,
    id:p.id as string,name:p.display_name as string,role:p.role as string|null,
    wageCents: p.wage_period==="hour" ? ((p.wage_amount_cents as number|null)??(p.default_hourly_wage_cents as number|null))
