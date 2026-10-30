@@ -47,7 +47,7 @@ export function safeMetric(raw:unknown):NavMetric|null {
     !["phone","desktop"].includes(v.device as string)||
     !["usable","timeout"].includes(v.status as string)||
     !duration(v.feedbackMs)||!duration(v.pendingMs)||!duration(v.usableMs)||!duration(v.ttfbMs)||
-    !Number.isInteger(v.rscRequests)||(v.rscRequests as number)<0||(v.rscRequests as number)>100||
+    typeof v.rscRequests!=="number"||!Number.isInteger(v.rscRequests)||(v.rscRequests as number)<0||(v.rscRequests as number)>100||
     (v.trace!==undefined&&(typeof v.trace!=="string"||!/^[a-f0-9]{16}$/.test(v.trace)))||
     (v.status==="usable"&&v.usableMs===null)||
     (v.status==="timeout"&&v.usableMs!==null))return null;

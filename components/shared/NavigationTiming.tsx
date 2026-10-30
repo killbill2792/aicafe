@@ -38,9 +38,12 @@ export default function NavigationTiming() {
       pending.current=null;
       p.observer.disconnect();
       window.clearTimeout(p.timeout);
-      send({route:p.route,action:p.action,session:"client",device:device(),status,
+      const event:NavMetric={route:p.route,action:p.action,session:"client",device:device(),status,
         trace:p.trace,feedbackMs:p.feedbackMs,pendingMs:p.pendingMs,
-        usableMs:status==="usable"?Math.round(performance.now()-p.start):null,...stats(p.start)});
+        usableMs:status==="usable"?Math.round(performance.now()-p.start):null,...stats(p.start)};
+      send(event);
+      if(status==="usable"&&p.route==="home"&&document.querySelector('[data-testid="chat-start"]'))
+        send({...event,route:"chat-start"});
       clearTrace();
     }
     function checkReady() {
