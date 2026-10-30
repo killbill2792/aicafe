@@ -1143,7 +1143,7 @@ export const canonicalDictionary = {
         "example": "Which check?"
       },
       "counts_in_sales": {
-        "meaning": "False when this record or its order/check is voided or deleted; null for non-order records. Filter true for sales.",
+        "meaning": "Same rule as imported sales: false for voided or deleted orders, checks and items, test-mode and excess-food orders, gift card and house-account items, and declined, cancelled, errored or voided payments; null for non-order records. Filter true for sales.",
         "unit": "boolean",
         "source": "app",
         "example": "Did this count?"

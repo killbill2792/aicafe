@@ -114,6 +114,9 @@ function t(table, opts = {}) {
     // (the same condition is used for both cafés, so their fingerprints compare like for like).
     sourceFilter: opts.sourceFilter ?? null,
     fingerprintIgnore: opts.fingerprintIgnore ?? [], // copied, but bookkeeping that changes without the data changing
+    // Text ids of the form "toast:<restaurant guid>:<id>": the guid is remapped like restaurant_guid,
+    // so views joining them to remapped restaurant_guid columns still match in the destination.
+    toastGuidIn: opts.toastGuidIn ?? [],
     // "target": on conflict (pk) do nothing — pk must match a real constraint (see migrationConstraints.mjs test).
     // "none": on conflict do nothing, no target — use when the exact constraint shape shouldn't be hard-coded.
     // "plain": no on-conflict clause at all — only safe when the row range was already deleted in this transaction.
@@ -222,7 +225,7 @@ export const REFRESH_WINDOW_TABLES = [
   t("employee_sales_rollup", { pk: ["business_id", "business_date", "employee_id"], fk: { employee_id: "employees" }, conflictMode: "plain" }),
   t("hourly_sales_rollup", { pk: ["business_id", "business_date", "hour_local"], fk: { location_id: "locations" }, conflictMode: "plain" }),
   t("daily_rollups", { pk: ["business_id", "business_date"] }),
-  t("timecards", { remapOwnId: true, fk: { employee_id: "employees", schedule_id: "staff_schedules" }, dateColumn: "clock_in" }),
+  t("timecards", { remapOwnId: true, fk: { employee_id: "employees", schedule_id: "staff_schedules" }, dateColumn: "clock_in", toastGuidIn: ["pos_timecard_id"] }),
   t("processing_fee_daily_candidates", { pk: ["business_id", "business_date", "source_type", "provider"] }),
   t("processing_fee_daily_facts", { pk: ["business_id", "business_date"] }),
   // Moved here from insert-if-missing: these are Toast-derived day-level facts that should track
@@ -257,6 +260,12 @@ export const REFRESH_WINDOW_TABLES = [
 // Copy order: parents before children. Delete order is the reverse.
 export const DAY_MIRROR_ORDER = ["orders", "order_lines", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts", "toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts", "toast_payment_facts", "toast_payment_summaries", "toast_open_labor_summaries", "toast_void_facts", "toast_refund_facts", "toast_raw_records", "toast_raw_samples"];
 
+const TOAST_GUID_PREFIX = /^toast:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):/i;
+export function remapToastGuidPrefix(value) {
+  if (typeof value !== "string") return value;
+  return value.replace(TOAST_GUID_PREFIX, (_, guid) => `toast:${remapId("toast_restaurant_guid", guid)}:`);
+}
+
 export function remapRow(table, row, cfg) {
   const out = { ...row };
   if ("business_id" in out) out.business_id = DEST_BUSINESS_ID;
@@ -264,6 +273,7 @@ export function remapRow(table, row, cfg) {
   for (const [col, targetTable] of Object.entries(cfg.fk ?? {})) {
     if (out[col] != null) out[col] = remapId(targetTable, row[col]);
   }
+  for (const col of cfg.toastGuidIn ?? []) out[col] = remapToastGuidPrefix(out[col]);
   for (const col of cfg.nullOut ?? []) out[col] = null;
   for (const [col, value] of Object.entries(cfg.setValues ?? {})) out[col] = value;
   for (const col of cfg.dropColumns ?? []) delete out[col];
@@ -389,23 +399,50 @@ export async function syncTodayLive(client) {
 // GitHub Actions' workflow_dispatch "full_copy" input replaces every day of every mirrored table.
 const FORCE_FULL_COPY = process.env.FULL_COPY === "true";
 
-// Columns that legitimately differ between the two cafés (the business, remapped ids, columns
-// reset on copy) are left out of a day's fingerprint, so equal days compare equal.
+// Columns that legitimately differ between the two cafés (the business, remapped own ids, columns
+// reset on copy) are left out of a day's fingerprint, so equal days compare equal. Links to other
+// rows (foreign keys) are compared, translated into the destination's ids (see sourceIdOverrides).
 export function fingerprintIgnoredColumns(cfg) {
-  return [...new Set(["business_id", ...(cfg.remapOwnId ? ["id"] : []), ...Object.keys(cfg.fk ?? {}), ...(cfg.nullOut ?? []), ...Object.keys(cfg.setValues ?? {}), ...(cfg.dropColumns ?? []), ...(cfg.fingerprintIgnore ?? [])])];
+  return [...new Set(["business_id", ...(cfg.remapOwnId ? ["id"] : []), ...(cfg.joinCol ? [cfg.joinCol] : []), ...(cfg.nullOut ?? []), ...Object.keys(cfg.setValues ?? {}), ...(cfg.dropColumns ?? []), ...(cfg.fingerprintIgnore ?? [])])];
+}
+
+// SQL that rewrites a source row's links into the ids the destination copy has (remapId, computed
+// in the database by pg_temp.sync_v5), so a changed link (an order line moved to another menu item)
+// changes the fingerprint, and an unchanged one compares equal.
+export function sourceIdOverrides(cfg) {
+  const ignored = new Set(fingerprintIgnoredColumns(cfg));
+  const v5 = (target, expr) => `pg_temp.sync_v5('${DEST_BUSINESS_ID}|${target}|' || ${expr})`;
+  const pairs = Object.entries(cfg.fk ?? {}).filter(([col]) => !ignored.has(col))
+    .map(([col, target]) => `'${col}', case when t.${col} is null then null else ${v5(target, `t.${col}::text`)} end`);
+  for (const col of cfg.toastGuidIn ?? []) {
+    pairs.push(`'${col}', case when t.${col} ~* '^toast:[0-9a-f-]{36}:' then 'toast:' || ${v5("toast_restaurant_guid", `lower(substr(t.${col}, 7, 36))`)} || substr(t.${col}, 43) else t.${col} end`);
+  }
+  return pairs.length ? ` || jsonb_build_object(${pairs.join(", ")})` : "";
 }
 
 // One row per business day: md5 over every row of that day (minus ignored columns), in a fixed order.
 // Order lines have no business or date of their own: they belong to their order's day and are
-// keyed by the order's POS id, which is the same in both cafés.
-export function dayFingerprintSql(cfg) {
+// keyed by the order's POS id, which is the same in both cafés. The source side translates links.
+export function dayFingerprintSql(cfg, side = "dest") {
+  const links = side === "source" ? sourceIdOverrides(cfg) : "";
   if (cfg.joinScope) {
-    const row = `p.pos_order_id || ':' || (to_jsonb(t) - $2::text[])::text`;
+    const row = `p.pos_order_id || ':' || ((to_jsonb(t) - $2::text[])${links})::text`;
     return `select (p.${cfg.dateColumn})::date::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t join ${cfg.joinScope} p on t.${cfg.joinCol} = p.id where p.business_id = $1 group by 1`;
   }
-  const row = `(to_jsonb(t) - $2::text[])::text`;
+  const row = `((to_jsonb(t) - $2::text[])${links})::text`;
   const filter = cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : "";
   return `select (t.${cfg.dateColumn})::date::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t where t.business_id = $1${filter} group by 1`;
+}
+
+// remapId in SQL: the same name-based UUID (version 5) the copy gives each row, using pgcrypto's sha1.
+export async function defineSqlRemapId(client) {
+  const { rows } = await client.query(`select n.nspname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where p.proname = 'digest' order by n.nspname = 'extensions' desc limit 1`, []);
+  if (!rows.length) throw Object.assign(new Error("pgcrypto missing"), { code: "PGCRYPTO_MISSING" });
+  const ns = NAMESPACE.replace(/-/g, "");
+  await client.query(`create or replace function pg_temp.sync_v5(name text) returns text language sql immutable as $f$
+    select substr(h, 1, 8) || '-' || substr(h, 9, 4) || '-5' || substr(h, 14, 3) || '-' ||
+      substr('89ab', (('x' || substr(h, 17, 1))::bit(4)::int & 3) + 1, 1) || substr(h, 18, 3) || '-' || substr(h, 21, 12)
+    from (select encode(${rows[0].nspname}.digest(decode('${ns}', 'hex') || convert_to(name, 'UTF8'), 'sha1'), 'hex') as h) x $f$`, []);
 }
 
 // Days whose rows differ between source and destination, including days only one side has.
@@ -417,7 +454,8 @@ export function daysToReplace(sourceDays, destDays, force = false) {
 }
 
 async function readDayFingerprints(client, cfg, businessId) {
-  const { rows } = await client.query(dayFingerprintSql(cfg), [businessId, fingerprintIgnoredColumns(cfg)]);
+  const side = businessId === SOURCE_BUSINESS_ID ? "source" : "dest";
+  const { rows } = await client.query(dayFingerprintSql(cfg, side), [businessId, fingerprintIgnoredColumns(cfg)]);
   return new Map(rows.map((r) => [r.day ?? "none", r.fp]));
 }
 
@@ -452,6 +490,7 @@ async function copySourceDays(client, cfg, days) {
 export async function runDayMirrorSync(client, counts) {
   const byTable = Object.fromEntries(REFRESH_WINDOW_TABLES.map((cfg) => [cfg.table, cfg]));
   const plans = {};
+  await defineSqlRemapId(client);
   for (const tableName of DAY_MIRROR_ORDER) {
     const cfg = byTable[tableName];
     const [source, dest] = [await readDayFingerprints(client, cfg, SOURCE_BUSINESS_ID), await readDayFingerprints(client, cfg, DEST_BUSINESS_ID)];
@@ -549,6 +588,29 @@ if (process.env.VITEST !== "true" && !process.env.SYNC_CAFE_DATA_SKIP_MAIN) {
   await main();
 }
 
+// Every copy step, in order. `step` is told which step is running (for the error log).
+export async function syncAll(client, counts, step = () => {}) {
+  step("toast_api_credentials");
+  await ensureToastCredentialsPlaceholder(client); // must exist before toast_location_mappings below
+
+  for (const cfg of INSERT_IF_MISSING_TABLES) {
+    step(cfg.table);
+    counts[cfg.table] = await syncTable(client, cfg);
+  }
+
+  step("toast_sync_runs");
+  counts.toast_sync_runs = await syncImportRuns(client); // before the archive and day status that name them
+
+  step("day_mirror");
+  await runDayMirrorSync(client, counts);
+
+  step("timezone_and_hours");
+  await syncTimezoneAndHours(client);
+
+  step("toast_today_live");
+  counts.toast_today_live = await syncTodayLive(client);
+}
+
 export async function main() {
   const supabaseRootCa = readFileSync(path.join(__dirname, "supabase-root-ca.pem"), "utf8");
   const client = wrapClientForSafety(new Client({ connectionString: process.env.SUPABASE_DB_URL, ssl: { rejectUnauthorized: true, ca: supabaseRootCa } }));
@@ -560,25 +622,7 @@ export async function main() {
   try {
     runId = await startRun(client);
 
-    currentTable = "toast_api_credentials";
-    await ensureToastCredentialsPlaceholder(client); // must exist before toast_location_mappings below
-
-    for (const cfg of INSERT_IF_MISSING_TABLES) {
-      currentTable = cfg.table;
-      counts[cfg.table] = await syncTable(client, cfg);
-    }
-
-    currentTable = "toast_sync_runs";
-    counts.toast_sync_runs = await syncImportRuns(client); // before the archive and day status that name them
-
-    currentTable = "day_mirror";
-    await runDayMirrorSync(client, counts);
-
-    currentTable = "timezone_and_hours";
-    await syncTimezoneAndHours(client);
-
-    currentTable = "toast_today_live";
-    counts.toast_today_live = await syncTodayLive(client);
+    await syncAll(client, counts, (name) => { currentTable = name; });
 
     await finishRun(client, runId, { status: "success", counts });
 
