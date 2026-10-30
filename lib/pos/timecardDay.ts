@@ -1,9 +1,11 @@
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
+import { providerShiftPayCents } from "@/lib/calc/staff";
 
 type PaidBreak = {start:string;end:string;paid:boolean};
 export type PricedShift = {
   clockIn:string;clockOut:string|null;hourlyWageCents:number|null;
   breaks?:readonly PaidBreak[]|null;
+  providerRegularHours?:number|null;providerOvertimeHours?:number|null;
 };
 const DAY_MS=86400000;
 const nextDay=(day:string)=>new Date(Date.parse(day+"T12:00:00Z")+DAY_MS).toISOString().slice(0,10);
@@ -33,6 +35,8 @@ export function affectedLocalDays(start:string,end:string,timezone:string):strin
 /** Splits a shift's actual paid duration by café-local midnight, including
  * time-zone/DST transitions and unpaid breaks. Wages remain nullable.
  * This is used only for actual timecards; scheduled hours aren't paid.
+ * A shift with Toast's own hours is paid from those (overtime at 1.5×), and that pay is split
+ * across days in proportion to the paid time on each day.
  */
 export function timecardWagesForLocalDay(shift:PricedShift,day:string,
  timezone:string,now:Date=new Date()):number|null{
@@ -48,5 +52,20 @@ export function timecardWagesForLocalDay(shift:PricedShift,day:string,
  const breaks=(shift.breaks??[]).filter(b=>!b.paid).reduce((n,b)=>
   n+overlap(Math.max(inMs,validTime(b.start)),
     Math.min(effectiveOut,validTime(b.end))),0);
- return Math.max(0,total-breaks)/3600000*shift.hourlyWageCents;
+ const dayPaidMs=Math.max(0,total-breaks);
+ const providerPay=providerShiftPayCents(shift);
+ if(providerPay===null)return dayPaidMs/3600000*shift.hourlyWageCents;
+ const shiftPaidMs=paidMsBetween(shift,inMs,effectiveOut);
+ if(shiftPaidMs<=0){
+  // No paid clock time to split by: the whole shift belongs to its clock-in day.
+  return formatInTimeZone(inMs,timezone,"yyyy-MM-dd")===day?providerPay:0;
+ }
+ return providerPay*dayPaidMs/shiftPaidMs;
+}
+
+function paidMsBetween(shift:PricedShift,from:number,to:number):number{
+ const total=Math.max(0,to-from);
+ const breaks=(shift.breaks??[]).filter(b=>!b.paid).reduce((n,b)=>
+  n+Math.max(0,Math.min(to,validTime(b.end))-Math.max(from,validTime(b.start))),0);
+ return Math.max(0,total-breaks);
 }

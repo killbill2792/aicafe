@@ -155,13 +155,21 @@ begin
  (b,r,loc,'cccccccc-cccc-4ccc-8ccc-cccccccc0027',
   'cccccccc-cccc-4ccc-8ccc-cccccccc0011',
   '2026-11-01T09:00:00Z','2026-11-01T11:00:00Z',2000,'verified','[]',false);
+ update public.toast_labor_entries set provider_regular_hours=2.5,provider_overtime_hours=0.5
+  where business_id=b and external_time_entry_id='cccccccc-cccc-4ccc-8ccc-cccccccc0021';
  select public.pos_import_toast_attendance(b,r) into changes;
- if (changes->>'changed')::int<>4 or (changes->>'skipped')::int<>1 then
-  raise exception 'attendance must import four valid entries and review one paid overlap: %',changes;
+ -- Toast is the source of truth: every closed, linked Toast shift is imported, including the one
+ -- that overlaps an app-entered shift (Toast's version replaces it).
+ if (changes->>'changed')::int<>5 or (changes->>'skipped')::int<>0 then
+  raise exception 'attendance must import all five closed Toast entries: %',changes;
  end if;
  select count(*) into n from public.timecards
   where business_id=b and source_provider='Toast';
- if n<>4 then raise exception 'automatic attendance row count: %',n;end if;
+ if n<>5 then raise exception 'automatic attendance row count: %',n;end if;
+ if not exists(select 1 from public.timecards where business_id=b
+  and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0021'
+  and provider_regular_hours=2.5 and provider_overtime_hours=0.5)
+ then raise exception 'Toast regular and overtime hours must be stored on the shift';end if;
  -- A stale unlinked review resolves only after the identical Toast GUID is canonical.
  insert into public.pos_import_reviews(business_id,provider,review_type,source_key,detail)
  values(b,'toast','unlinked_timecard',
@@ -176,14 +184,16 @@ begin
  n:=public.toast_resolve_linked_timecard_reviews(b,r);
  if n<>0 then raise exception 'resolved review was counted a second time';end if;
 
+ -- Toast sends no wage for salaried jobs or jobs with no wage set; Toast's own cost for those
+ -- shifts is $0. The app's staff wage (1500 here) is never filled in.
  if not exists(select 1 from public.timecards
   where business_id=b and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0022'
-  and hourly_wage_cents=1500 and wage_source='estimate')
- then raise exception 'employee default wage must be explicitly estimated';end if;
+  and hourly_wage_cents=0 and wage_source='pos')
+ then raise exception 'a shift Toast sends without a wage must be $0 from Toast, not the app wage';end if;
  if not exists(select 1 from public.timecards
   where business_id=b and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0023'
-  and hourly_wage_cents is null and wage_source='unknown')
- then raise exception 'unknown hourly wage must remain SQL NULL';end if;
+  and hourly_wage_cents=0 and wage_source='pos')
+ then raise exception 'a shift Toast sends without a wage must be $0';end if;
  if exists(select 1 from public.timecards where business_id=b
   and source_type='owner_schedule' and employee_id=a)
  then raise exception 'owner plan was not replaced by Toast clock-in';end if;
@@ -194,16 +204,19 @@ begin
   and review_type='overlapping_timecard'
   and source_key='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0027')
  then raise exception 'plan must not create a paid-overlap review';end if;
- if not exists(select 1 from public.pos_import_reviews
-  where business_id=b and review_type='overlapping_timecard'
-  and source_key='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0024')
- then raise exception 'overlapping owner timecard must be reviewed';end if;
+ if exists(select 1 from public.timecards where business_id=b
+  and source_type='owner_manual' and employee_id=a)
+ then raise exception 'an app shift overlapping a Toast shift must be replaced by Toast';end if;
+ if not exists(select 1 from public.timecards where business_id=b
+  and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0024'
+  and hourly_wage_cents=1800)
+ then raise exception 'Toast shift must replace the overlapping app shift';end if;
  select public.pos_import_toast_attendance(b,r) into changes;
  if (changes->>'changed')::int<>0 then
   raise exception 'second attendance import changed canonical rows: %',changes;end if;
  select count(*) into n from public.pos_import_reviews
   where business_id=b and review_type='overlapping_timecard';
- if n<>1 then raise exception 'one review for true paid overlap; no duplicate reviews';end if;
+ if n<>0 then raise exception 'Toast replaces overlaps; no review is needed: %',n;end if;
  update public.toast_labor_entries set clock_out='2026-10-26T10:00:00Z'
   where business_id=b and restaurant_guid=r
   and external_time_entry_id='cccccccc-cccc-4ccc-8ccc-cccccccc0021';
@@ -217,15 +230,22 @@ begin
   where business_id=b and restaurant_guid=r
   and external_time_entry_id='cccccccc-cccc-4ccc-8ccc-cccccccc0021';
  select public.pos_import_toast_attendance(b,r) into changes;
- if (changes->>'changed')::int<>0 or not exists(
-  select 1 from public.pos_import_reviews where business_id=b
-  and review_type='shift_corrected'
-  and source_key='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0021')
- then raise exception 'owner-edited shift must never be replaced by Toast';end if;
- if (select clock_out from public.timecards where business_id=b
-   and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0021')
-    <>'2026-10-26T10:00:00Z'::timestamptz then
-  raise exception 'provider overwrite of owner-controlled timecard';end if;
+ -- Toast is the source of truth: an app edit is overwritten by Toast's latest version.
+ if (changes->>'changed')::int<>1 then
+  raise exception 'Toast must overwrite an app-edited shift: %',changes;end if;
+ if not exists(select 1 from public.timecards where business_id=b
+   and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0021'
+   and clock_out='2026-10-26T11:00:00Z'::timestamptz and wage_source='pos'
+   and not pos_owner_edited) then
+  raise exception 'app-edited shift must take Toast''s values';end if;
+ -- A shift Toast deletes is removed.
+ update public.toast_labor_entries set deleted=true
+  where business_id=b and restaurant_guid=r
+  and external_time_entry_id='cccccccc-cccc-4ccc-8ccc-cccccccc0021';
+ select public.pos_import_toast_attendance(b,r) into changes;
+ if (changes->>'changed')::int<>1 or exists(select 1 from public.timecards where business_id=b
+   and pos_timecard_id='toast:'||r::text||':cccccccc-cccc-4ccc-8ccc-cccccccc0021') then
+  raise exception 'a shift Toast deleted must be removed: %',changes;end if;
 end
 $integration$;
 

@@ -80,6 +80,9 @@ export type Timecard = {
   scheduleId?: string | null;
   sourceType?: "owner_schedule" | "owner_manual" | "connected_pos" | "imported" | "ai_cafe";
   sourceProvider?: string | null;
+  /** Toast's own regular and overtime hours for a closed shift. When present, pay uses these. */
+  providerRegularHours?: number | null;
+  providerOvertimeHours?: number | null;
 };
 
 export type RecipeLine = {
