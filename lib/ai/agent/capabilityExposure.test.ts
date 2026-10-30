@@ -7,8 +7,11 @@ import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceCha
 import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
+import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 /** Intentional omissions require a safe owner-facing explanation here. */
-export const notAgentExposed:Record<string,string>={};
+export const notAgentExposed:Record<string,string>={
+  [eventReadinessCapabilityId]:"PR 3 only registers the inert lifecycle; propose_event_plan is exposed in PR 4 after the saved-event look-ahead job.",
+};
 describe("loop capability exposure",()=>{
  it("exposes or explicitly documents every registered capability",()=>{
   const exposed=new Map<string,string>([

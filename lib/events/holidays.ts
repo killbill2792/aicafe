@@ -1,35 +1,11 @@
 import Holidays from "date-holidays";
 
-/** Public holidays and observances from the maintained `date-holidays` data
- * (about 200 countries, state/region holidays, moving dates such as Easter,
- * Ramadan or Eid). We never keep our own list of dates: the library is updated
- * when a country adds or moves a holiday. The only thing written here is a short
- * café note for a few well-known days; it is a general pattern, never the
- * café's data, and the café's own past Toast sales always win. */
+/** Public holidays and observances from maintained date-holidays data.
+ * This is a calendar only: the AI interprets possible café effects. */
 
 export type HolidayKind="public_holiday"|"observance"|"school";
-export type UsualEffect="busier"|"quieter"|"varies";
-export type HolidayDay={key:string;name:string;date:string;kind:HolidayKind;dayOff:boolean;
-  usualEffect:UsualEffect;why:string|null};
+export type HolidayDay={key:string;name:string;date:string;kind:HolidayKind;dayOff:boolean};
 
-type Note={effect:UsualEffect;why:string};
-const OFFICES_CLOSED="Offices, banks and schools are closed. Cafés near offices or commuter routes are often quieter; neighborhood, park and shopping-area cafés are often busier.";
-/** Matched on the English holiday name. Unmatched public holidays get OFFICES_CLOSED. */
-const CAFE_NOTES:Array<[RegExp,Note]>=[
-  [/^halloween$/iu,{effect:"busier",why:"Trick-or-treating and costume parties from late afternoon: more families and foot traffic in residential and downtown areas, especially on a weekend. Seasonal drinks and treats sell more; late evening can be quiet once people go home."}],
-  [/^valentine/iu,{effect:"busier",why:"Treats, pastries and gift cards sell more; couples and friends meet for coffee."}],
-  [/^mother'?s day$/iu,{effect:"busier",why:"One of the busiest brunch and treat days; families go out in the morning."}],
-  [/^father'?s day$/iu,{effect:"busier",why:"Families go out for breakfast and treats."}],
-  [/^thanksgiving/iu,{effect:"quieter",why:"Most people are at home with family; early morning may be busy with travelers, then very quiet."}],
-  [/^day after thanksgiving/iu,{effect:"varies",why:"Black Friday: shoppers out early, busy near shopping areas, quiet near offices."}],
-  [/^christmas eve$/iu,{effect:"varies",why:"Busy last-minute morning (gift cards, treats); very quiet by afternoon."}],
-  [/^christmas day$/iu,{effect:"quieter",why:"Most people are at home; many cafés close."}],
-  [/^new year'?s day$/iu,{effect:"quieter",why:"Late night before: slow morning, afternoon picks up."}],
-  [/^new year'?s eve$/iu,{effect:"varies",why:"Normal or quiet daytime; people go out in the evening."}],
-  [/^easter sunday$/iu,{effect:"varies",why:"Morning brunch crowds in some areas; many families stay home in the afternoon."}],
-  [/^st\.? patrick/iu,{effect:"varies",why:"Parades and evening crowds in some cities; daytime is usually normal."}],
-  [/^independence day/iu,{effect:"varies",why:"Parades and fireworks: busy near event areas, quiet in office areas. Many people travel."}],
-];
 const KINDS:Record<string,HolidayKind|undefined>={public:"public_holiday",observance:"observance",optional:"observance",school:"school"};
 
 let countries:Set<string>|null=null;
@@ -64,10 +40,7 @@ export function holidaysBetween(from:string,to:string,country:string|null,region
       const key=slug(englishName)+(h.substitute?"_observed":"");
       if(seen.has(key+date))continue;
       seen.add(key+date);
-      const note=CAFE_NOTES.find(([re])=>re.test(englishName))?.[1];
-      out.push({key,name,date,kind,dayOff:kind==="public_holiday",
-        usualEffect:note?.effect??"varies",
-        why:note?.why??(kind==="public_holiday"?OFFICES_CLOSED:null)});
+      out.push({key,name,date,kind,dayOff:kind==="public_holiday"});
     }
   }
   return out.sort((a,b)=>a.date.localeCompare(b.date)||a.key.localeCompare(b.key));

@@ -24,8 +24,10 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    reader (migration, owner approves) · PR 4 find once / plan once job · PR 5 Home strip + events panel
    (Past/Now/Coming up, calendar) · PR 6 live watch · PR 7 report card · PR 8 distance (after decision D3) ·
    PR 9 chat about any event + answer anything (web search). Waves: {1,2,3,9} → {4,5} → {6,7,8}.
-   - [x] **Nearby-events PR 9:** General read-only web search in Supervisor and event-day “Chat about this” threads (this PR; other nearby-events stages remain open).
    - [x] Nearby events PR 1 — retry unparseable HTTP 200 searches, holiday-specific queries, outcomes and safe diagnostics; recorded-response tests. PRs 2–9 remain open.
+   - [x] **Nearby-events PR 2 — facts only + AI plans/questions:** removed hard-coded event staffing advice; Home and chat use the same factual holiday/event and usual-hour evidence; owner answers can use an optional “Other” text response saved by event/year. PR 1 search repair, storage and monitoring remain separate.
+   - [x] PR 3 implementation: event-readiness capability, RLS-backed storage, shared reader, saved-events chat tool (migration **not applied**, awaiting owner approval).
+   - [x] **Nearby-events PR 9:** General read-only web search in Supervisor and event-day “Chat about this” threads.
 
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.

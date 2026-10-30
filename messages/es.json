@@ -3681,19 +3681,19 @@
     "basisEvent": "Evento cerca{distance}",
     "basisGeneral": "Patrón general, aún no son tus ventas",
     "moreEvents": "+{count} más",
-    "nothingSpecial": "Nada especial en los próximos 7 días. Personal habitual.",
+    "nothingSpecial": "No hay días festivos ni eventos locales en los próximos 7 días.",
     "addAddress": "Agrega la dirección de tu café para ver también los eventos cercanos.",
     "addAddressButton": "Agregar dirección",
     "addressPrompt": "Busca eventos cerca de mi café",
     "askDay": "¿Qué debo planear para {what} ({when})?",
-    "chatAboutThis": "Hablar de esto",
-    "chatDayTitle": "{date} · {what}",
-    "chatDayPrompt": "Hablemos del {date}. Datos de la tarjeta Próximamente de mi café: {context}. Consulta los datos actuales del café o fuentes públicas si hace falta. ¿Qué debería saber?",
     "askWeek": "Preguntar por la semana",
     "weekPrompt": "¿Qué viene cerca de mi café esta semana?",
     "searchPartial": "Pueden faltar algunos eventos cercanos. No se pudo consultar: {missed}.",
     "searchGeneral": "eventos cercanos generales",
     "searchOther": "algunas búsquedas cercanas",
-    "searchDown": "No se pudieron revisar los eventos cercanos ahora."
+    "searchDown": "No se pudieron revisar los eventos cercanos ahora.",
+    "chatAboutThis": "Hablar de esto",
+    "chatDayTitle": "{date} · {what}",
+    "chatDayPrompt": "Hablemos del {date}. Datos de la tarjeta Próximamente de mi café: {context}. Consulta los datos actuales del café o fuentes públicas si hace falta. ¿Qué debería saber?"
   }
 }

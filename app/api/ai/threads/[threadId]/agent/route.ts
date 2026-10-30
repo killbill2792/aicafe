@@ -1,3 +1,4 @@
+import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys} from "@/lib/ai/supervisor/loop/receiptAllocation";
@@ -39,6 +40,7 @@ import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
 import {searchNearbyEvents} from "@/lib/events/nearbyEventsSearch.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
+import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -162,6 +164,10 @@ async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwn
       cafeLocation:async()=>readCafeLocation(await createServerSupabaseClient(),scope.businessId,ownerFactRead.facts),
       searchNearbyEvents,
       webSearch:async(query,budget)=>{await assertCafeAiAccess(scope.businessId);return searchWeb(query,budget);},
+      savedEvents:async(from,to)=>readSavedEventTimeline(await createServerSupabaseClient(),
+        {businessId:scope.businessId,ownerUserId:scope.ownerUserId},from,to),
+      readWeekSchedule:weekStart=>getWeekSchedule({weekStart}),
+      ownerFacts:ownerFactRead.facts,
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       goals:{

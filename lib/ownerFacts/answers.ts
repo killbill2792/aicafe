@@ -30,7 +30,11 @@ export function validateOwnerAnswers(
       new Date(raw+"T12:00:00Z").toISOString().slice(0,10)!==raw)
      throw new Error("invalid_owner_date");
   }else if(field.inputType==="choice"){
-   if(!field.choices?.some(choice=>choice.value===raw))throw new Error("invalid_owner_choice");
+   // "Other" is an explicit owner selection on facts choice cards. Text after
+   // the colon is optional, and may never be mistaken for a verified option ID.
+   const custom=raw==="other"||/^other:[\s\S]{1,200}$/.test(raw);
+   if(!field.choices?.some(choice=>choice.value===raw)&&!custom)
+     throw new Error("invalid_owner_choice");
   }else if(field.inputType==="text"){
    if(!raw.trim()||raw.length>1000)throw new Error("invalid_owner_text");
   }else throw new Error("invalid_owner_field");
