@@ -848,6 +848,7 @@ export default function SupervisorChatComposer({
   };
   // Only saved event facts are read on Home; no paid search starts when opening the panel.
   const comingUpCard = enabled && canUseAi ? <SavedEventsCard locale={locale}
+    compact={hasChatMessages&&!startExpanded}
     onChatAboutDay={(date,title,existingThreadId)=>void chatAboutEventDay(date,title,existingThreadId)} chatDisabled={boardAskDisabled}/> : undefined;
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
@@ -871,14 +872,14 @@ export default function SupervisorChatComposer({
         <Plus size={22} aria-hidden="true" />
       </button>
     </header>
-    {chatStartPromise&&hasChatMessages&&<div className="max-h-[55dvh] shrink-0 overflow-y-auto">
+    {chatStartPromise&&hasChatMessages&&<div className="max-h-[40dvh] shrink-0 overflow-y-auto md:max-h-[55dvh]">
       <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
         <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
           hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
           onSuggestion={()=>{}} suggestionsDisabled comingUp={comingUpCard}/>
       </Suspense>
     </div>}
-    {!chatStartPromise&&chatStartData&&chatStartCopy&&hasChatMessages&&<div className="max-h-[55dvh] shrink-0 overflow-y-auto">
+    {!chatStartPromise&&chatStartData&&chatStartCopy&&hasChatMessages&&<div className="max-h-[40dvh] shrink-0 overflow-y-auto md:max-h-[55dvh]">
       <ChatStart data={chatStartData} copy={{...chatStartCopy,suggestions:copy.suggestions}}
         hasMessages expanded={startExpanded} onToggle={()=>setStartExpanded(v=>!v)}
         onSuggestion={()=>{}} suggestionsDisabled
