@@ -95,6 +95,10 @@ describe("one canonical menu reader: catalog versus full item evidence", () => {
     expect(catalog[0].unitsSold).toBe(full[0].unitsSold);
     expect(catalog[0].pricing).toEqual(full[0].pricing);
     expect(catalog[0].pricingBasis).toEqual(full[0].pricingBasis);
+    const beforeBytes = Buffer.byteLength(JSON.stringify(full), "utf8");
+    const afterBytes = Buffer.byteLength(JSON.stringify(catalog), "utf8");
+    expect(afterBytes).toBeLessThan(beforeBytes);
+    console.info("[menu-fixture] full_dto_bytes=" + beforeBytes + " catalog_dto_bytes=" + afterBytes);
     expect(full[0].pricingEvidence).toHaveProperty("salesResponse");
     expect(catalog[0].revenueCents).toBeNull();
     expect(deps.timed).toHaveBeenCalledWith("Menu", "menu.pricingInputs", expect.any(Function));
