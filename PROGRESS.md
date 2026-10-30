@@ -27,6 +27,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    - [x] Nearby events PR 1 — retry unparseable HTTP 200 searches, holiday-specific queries, outcomes and safe diagnostics; recorded-response tests. PRs 2–9 remain open.
    - [x] **Nearby-events PR 2 — facts only + AI plans/questions:** removed hard-coded event staffing advice; Home and chat use the same factual holiday/event and usual-hour evidence; owner answers can use an optional “Other” text response saved by event/year. PR 1 search repair, storage and monitoring remain separate.
    - [x] PR 3 implementation: event-readiness capability, RLS-backed storage, shared reader, saved-events chat tool (migration **not applied**, awaiting owner approval).
+   - [x] **Nearby-events PR 4 — find once / plan once:** cron-only two-week Monday discovery, rolling daily/day-before checks, deduplicated café event facts, bounded Supervisor `propose_event_plan` drafts using the PR 3 approval lifecycle, day-specific chat threads and one Operations inbox item per day. Three-day-per-café daily cap, retry-safe delivery, cron auth and AI-access checks. Default-off pending owner-approved migration/rollout; baseline typecheck, lint, full Vitest, build and whitespace gate green (#284).
    - [x] **Nearby-events PR 9:** General read-only web search in Supervisor and event-day “Chat about this” threads.
 
 ### Owner actions

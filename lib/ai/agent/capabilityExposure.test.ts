@@ -10,7 +10,7 @@ import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 /** Intentional omissions require a safe owner-facing explanation here. */
 export const notAgentExposed:Record<string,string>={
-  [eventReadinessCapabilityId]:"PR 3 only registers the inert lifecycle; propose_event_plan is exposed in PR 4 after the saved-event look-ahead job.",
+
 };
 describe("loop capability exposure",()=>{
  it("exposes or explicitly documents every registered capability",()=>{
@@ -19,6 +19,7 @@ describe("loop capability exposure",()=>{
    [priceExperimentCapabilityId,"propose_price_experiment"],
    [purchaseCapabilityId,"propose_purchases"],
    [goalCapabilityId,"propose_goal"],
+   [eventReadinessCapabilityId,"propose_event_plan"],
    ...Object.keys(staffProposalInputs).map(name=>[staffCapabilityId(name as keyof typeof staffProposalInputs),name] as [string,string]),
   ]);
   const tools=new Set(agentToolDefinitions.map(tool=>tool.name));

@@ -38,6 +38,8 @@ export type AttentionArgs={period?:Period;locale?:"en"|"es"|"ar";snapshot?:Busin
 /** Home and chat must call this same owner-scoped source. A failed optional read is
  * reported as its own action, never silently replaced with no work. */
 function operatingTaskHref(task: OperatingTask): string {
+  if(task.kind==="event_plan" && typeof task.payload.threadId==="string")
+    return "/?thread="+encodeURIComponent(task.payload.threadId);
   if(task.kind==="price_experiment_report"){
     const thread=task.payload.threadId,proposal=task.payload.proposalId;
     if(typeof thread==="string"&&typeof proposal==="string")
@@ -128,6 +130,8 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       title = tOperations("homePriceAwaitingVerification", { item: itemName });
     } else if (task.kind === "price_review" && task.status === "watching" && typeof task.payload.snoozeMode === "string") {
       title = tOperations("homePriceReviewLater", { item: itemName });
+    } else if (task.kind === "event_plan") {
+      title = tOperations("eventPlanReview", {date:String(task.payload.businessDate ?? "")});
     } else if (task.kind === "price_review") {
       const direction = priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents));
       title = tOperations(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName });
