@@ -191,7 +191,13 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");
   if(name==="ask_owner")return askOwnerTools.ask_owner.execute(raw,ctx);
-  if(name==="describe_data")return dataQueryTools.describe_data.execute(raw);
+  if(name==="describe_data"){
+    // Field names for one Toast record type need the café-scoped reader.
+    const scoped=raw&&typeof raw==="object"&&typeof (raw as {record_type?:unknown}).record_type==="string";
+    if(!scoped||!ctx.canonicalData)return dataQueryTools.describe_data.execute(raw);
+    try{return dataQueryTools.describe_data.execute(raw,await ctx.canonicalData());}
+    catch{return {source:"toast_fields",period:null,missing:["source_read_failed"]};}
+  }
   if(name==="query_data"){
     if(!ctx.canonicalData)return {source:"canonical_data",period:null,missing:["canonical_reader_unavailable"],rows:[],empty:true};
     try{return dataQueryTools.query_data.execute(raw,await ctx.canonicalData());}

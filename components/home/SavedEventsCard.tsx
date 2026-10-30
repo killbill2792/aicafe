@@ -68,6 +68,22 @@ const hoursFor=(plan:Plan|undefined):Array<{start:string;end:string}>=>
     (h):h is {start:string;end:string}=>typeof h==="object"&&h!==null&&
       typeof h.start==="string"&&typeof h.end==="string"):[];
 const sourceUrl=(url:string|null)=>url&&/^https:\/\//i.test(url)?url:null;
+/** Use the last canonical in-progress report; never infer live figures from a plan. */
+export function liveEventHeadline(plan:Plan|undefined,date:string,t:T):string|null{
+ if(plan?.reportStatus!=="in_progress"||!plan.report||typeof plan.report!=="object")return null;
+ const raw=(plan.report as {liveWatch?:unknown}).liveWatch;
+ if(!raw||typeof raw!=="object")return null;
+ const live=raw as Record<string,unknown>;
+ if(live.businessDate!==date||live.coverage!=="provisional"||
+   typeof live.changePercent!=="number"||!Number.isFinite(live.changePercent)||
+   typeof live.asOfLocal!=="string"||!/^([01]\d|2[0-3]):[0-5]\d$/.test(live.asOfLocal))
+   return null;
+ return t(live.changePercent>=0?"liveAhead":"liveBehind",{
+   change:Math.abs(live.changePercent),time:live.asOfLocal,
+   hourEnd:live.asOfLocal.slice(0,2)+":59",
+ });
+}
+
 
 export function eventStripDays(today:string){return Array.from({length:7},(_,i)=>dayAt(today,i));}
 export function eventListDays(timeline:Timeline,tab:Tab,affectsOnly:boolean){
@@ -234,7 +250,8 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
         <CalendarDays size={20} aria-hidden="true"/><span className="flex-1 text-[17px]">{t("title")}</span>
         <span className="text-[15px] text-accent-text">{t("seeAll")}</span>
       </button>
-      <p className="mb-2 text-[17px] leading-snug text-ink" dir="auto">{lead?(lead.plan?.summary||lead.events.map(e=>e.name).join(" · ")):t("nothingSaved")}</p>
+      <p className="mb-2 text-[17px] leading-snug text-ink" dir="auto">{lead?(lead.date===today?liveEventHeadline(lead.plan,today,t):null)||
+          (lead.plan?.summary||lead.events.map(e=>e.name).join(" · ")):t("nothingSaved")}</p>
       <div className="grid grid-cols-7 gap-1">
         {days.map(date=>{
           const dayPlan=planOn(timeline.plans,date);

@@ -3,7 +3,7 @@ import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {readCanonicalView} from "@/lib/data/canonical/reads.server";
 import {canonicalDictionary,canonicalViewNames,
- isCanonicalColumn,type CanonicalView} from "@/lib/data/canonical/dictionary";
+ isCanonicalColumn,isDataField,type CanonicalView} from "@/lib/data/canonical/dictionary";
 
 export type DataQueryContext={db:SupabaseClient;businessId:string};
 const DEFAULT_ROWS=50,MAX_ROWS=100;
@@ -36,13 +36,39 @@ const empty=(code:string)=>({source:"canonical_data",period:null,
 function validColumns(view:CanonicalView,columns:string[]):boolean{
  return columns.every(col=>isCanonicalColumn(view,col));
 }
+/** Keeps a tool result compact (AGENTS.md: about 1.5k tokens): whole rows are
+ * dropped from the end until the rows fit, and the result says it was cut. */
+const MAX_ROW_CHARS=6000;
+export function fitRows(rows:unknown[]):{rows:unknown[];cut:boolean}{
+ let size=2;const kept:unknown[]=[];
+ for(const row of rows){
+  size+=JSON.stringify(row).length+1;
+  if(size>MAX_ROW_CHARS)return {rows:kept,cut:true};
+  kept.push(row);
+ }
+ return {rows:kept,cut:false};
+}
+const describeSchema=z.strictObject({record_type:z.string().min(1).max(80).nullable()});
 export const dataQueryTools={
  describe_data:{
   agentId:"alex" as const,
-  schema:z.strictObject({}),
-  description:"List permitted canonical café views and plain-language column meanings; no SQL.",
-  execute:async(_raw:unknown)=>{
-   z.strictObject({}).parse(_raw);
+  schema:describeSchema,
+  description:"List permitted canonical café views and plain-language column meanings; no SQL. With record_type (e.g. \"item\", \"order\", \"labor/v1/timeEntries\"), instead list the field names inside cv_toast_records data for that type, with an example value each.",
+  execute:async(raw:unknown,ctx?:DataQueryContext)=>{
+   const parsed=describeSchema.safeParse({record_type:null,...(raw&&typeof raw==="object"?raw:{})});
+   if(!parsed.success)return {source:"canonical_dictionary",period:null,missing:["invalid_query"],views:[]};
+   const recordType=parsed.data.record_type;
+   if(recordType!==null){
+    if(!ctx?.db||!z.uuid().safeParse(ctx.businessId).success)
+     return {source:"toast_fields",period:null,missing:["invalid_scope"],record_type:recordType,fields:[]};
+    try{
+     const {data,error}=await ctx.db.rpc("ai_toast_fields",{p_business_id:ctx.businessId,p_record_type:recordType});
+     if(error)return {source:"toast_fields",period:null,missing:["source_read_failed"],record_type:recordType,fields:[]};
+     const fields=Array.isArray(data)?data:[];
+     return {source:"toast_fields",period:null,missing:fields.length?[]:["empty"],record_type:recordType,
+      view:"cv_toast_records",fields};
+    }catch{return {source:"toast_fields",period:null,missing:["source_read_failed"],record_type:recordType,fields:[]};}
+   }
    return {source:"canonical_dictionary",period:null,missing:[],
     views:canonicalViewNames.map(view=>({name:view,meaning:canonicalDictionary[view].meaning,
      columns:Object.entries(canonicalDictionary[view].columns).map(([name,metadata])=>({
@@ -70,13 +96,17 @@ export const dataQueryTools={
    // Simple rows use the same bounded canonical reader available to owner screens.
    // Grouped sums/averages continue through the server-side invoker SQL RPC;
    // never sum a truncated or partial row slice in JavaScript.
-   if(!(p.filters?.length)&&!(p.group_by?.length)&&!(p.metrics?.length)&&!p.order_by){
+   // Toast records and named data fields always go through the database
+   // function, which reads single fields instead of whole JSON records.
+   if(!(p.filters?.length)&&!(p.group_by?.length)&&!(p.metrics?.length)&&!p.order_by&&
+    p.view!=="cv_toast_records"&&!all.some(isDataField)){
     try{
      const result=await readCanonicalView(ctx.db,ctx.businessId,p.view,
       {dateFrom:p.date_from,dateTo:p.date_to},p.limit??DEFAULT_ROWS);
      if(result.error)return empty(result.error);
-     const rows=result.rows.map(row=>p.columns?.length?
-      Object.fromEntries(p.columns.map(column=>[column,row[column]??null])):row);
+     const fit=fitRows(result.rows.map(row=>p.columns?.length?
+      Object.fromEntries(p.columns.map(column=>[column,row[column]??null])):row));
+     const rows=fit.rows,truncated=result.truncated||fit.cut;
      const mix:Record<string,number>={};
      for(const row of result.rows){
       const source=typeof row.source==="string"?row.source:"unknown";
@@ -86,9 +116,9 @@ export const dataQueryTools={
      return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
       missing:[...(rows.length===0?["empty"]:[]),...snapshotNote(p.view),
        ...(hasIncomplete?["incompleteEvidence"]:[]),
-       ...(result.truncated?["result_truncated"]:[])],
+       ...(truncated?["result_truncated"]:[])],
       empty:rows.length===0,error:undefined as string|undefined,
-      rows,rowCount:rows.length,truncated:result.truncated,sourceMix:mix};
+      rows,rowCount:rows.length,truncated,sourceMix:mix};
     }catch{return empty("source_read_failed");}
    }
    // The database independently validates the view and columns. It executes as
@@ -103,13 +133,14 @@ export const dataQueryTools={
     if(error)return empty("source_read_failed");
     const result=data as {rows?:unknown[];rowCount?:number;truncated?:boolean;
       sourceMix?:Record<string,number>;sourceCount?:number;hasIncomplete?:boolean}|null;
-    const rows=Array.isArray(result?.rows)?result.rows:[];
+    const fit=fitRows(Array.isArray(result?.rows)?result.rows:[]);
+    const rows=fit.rows,truncated=result?.truncated===true||fit.cut;
     return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
      missing:[...(rows.length===0||result?.sourceCount===0?["empty"]:[]),...snapshotNote(p.view),
       ...(result?.hasIncomplete?["incompleteEvidence"]:[]),
-      ...(result?.truncated?["result_truncated"]:[])],
+      ...(truncated?["result_truncated"]:[])],
      empty:rows.length===0||result?.sourceCount===0,error:undefined as string|undefined,rows,rowCount:rows.length,
-     truncated:result?.truncated===true,sourceMix:result?.sourceMix??{}};
+     truncated,sourceMix:result?.sourceMix??{}};
    }catch{return empty("source_read_failed");}
   }
  }

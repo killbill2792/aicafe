@@ -38,7 +38,8 @@ async function postMidRunUpdate(db:ReturnType<typeof createAdminSupabaseClient>,
   const delivery=report.delivery;
   if(delivery){
     const task=await db.from("operating_tasks").upsert({
-      business_id:scope.businessId,id:"supervisor:"+p.capabilityId+":"+p.id+":midrun",agent_id:delivery.agentId,
+      business_id:scope.businessId,id:"supervisor:"+p.capabilityId+":"+p.id+":midrun"+
+        (report.midRunKey?":"+report.midRunKey:""),agent_id:delivery.agentId,
       kind:delivery.taskKind,entity_type:delivery.entityType,entity_id:delivery.entityId,status:"watching",
       confidence:"low",payload:{...delivery.payload,outcomeStatus:"in_progress",midRun:true,
         proposalId:p.id,threadId:p.threadId},evidence:delivery.evidence,
@@ -48,10 +49,12 @@ async function postMidRunUpdate(db:ReturnType<typeof createAdminSupabaseClient>,
   const {data:business,error}=await db.from("businesses").select("timezone").eq("id",scope.businessId).single();
   if(error||!business?.timezone)throw new Error("Café timezone unavailable");
   const inserted=await db.from("ai_messages").insert({
-    id:stableMessageId("supervisor-midrun:"+p.id),business_id:scope.businessId,thread_id:scope.threadId,
+    id:stableMessageId("supervisor-midrun:"+p.id+(report.midRunKey?":"+report.midRunKey:"")),business_id:scope.businessId,thread_id:scope.threadId,
     owner_user_id:scope.ownerUserId,author_user_id:null,role:"supervisor",content_type:"blocks",
     text_content:null,structured_content:[{type:"text",text}],
-    grounding:{status:"estimated",intent:"menu_pricing",evidence:[{source:"operating_tasks",
+    grounding:{status:"estimated",
+      intent:p.capabilityId==="alex.event_readiness.v1"?"cafe_overview":"menu_pricing",
+      evidence:[{source:p.capabilityId==="alex.event_readiness.v1"?"cafe_events":"operating_tasks",
       identifier:"supervisor-midrun:"+p.id,asOf:cafeToday(business.timezone)}]},
   });
   if(inserted.error&&inserted.error.code!=="23505")failed(inserted.error,"Supervisor mid-run update unavailable");
