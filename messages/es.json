@@ -1438,6 +1438,7 @@
     "priceQuestion": "¿Subir {item} de {current} → {suggested}?",
     "pricingEvidence": "Recomendación del motor determinista de precios. No se cambió el precio en la caja.",
     "missingCosts": "{count, plural, one {Falta # costo este mes.} other {Faltan # costos este mes.}}",
+    "eventPlanReview": "Revisa el plan para el evento del {date}.",
     "mayaWatching": "Vigilando los costos ingresados de vasos e ingredientes.",
     "inventoryUnavailable": "El inventario no está conectado, así que Maya no adivinará existencias.",
     "transportUnavailable": "La mensajería al personal no está conectada. Olivia puede estructurar solicitudes, pero todavía no enviarlas.",
