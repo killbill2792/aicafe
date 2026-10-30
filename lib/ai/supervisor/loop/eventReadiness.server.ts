@@ -10,7 +10,8 @@ import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {indexHourlyRevenue,compareEventDaySales} from "@/lib/metrics/core/eventReadiness";
 import {cafeToday} from "@/lib/metrics/core/clock";
-import {eventFinalNarrative} from "@/lib/events/eventFinalReport.server";
+import {eventFinalNarrative,eventReportFactsHash,eventReportFallback,eventReportNumericEvidence}
+  from "@/lib/events/eventFinalReport.server";
 import {effectHash,registerLoopCapability,utcDateOffset} from "./engine";
 
 const time=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -157,18 +158,26 @@ export const eventReadinessCapability=registerLoopCapability({
      ?await eventFinalNarrative(scope,window.proposalId,effect.facts.map(f=>f.name),
        effect.summary,result,status==="complete"?"complete":"insufficient_evidence")
      :null;
+   const terminal=windowComplete&&Boolean(window?.proposalId);
+   const reportText=narrative?.text??(terminal?eventReportFallback(scope.locale,result):null);
+   const provenance=narrative?.provenance??[];
+   const factsHash=eventReportFactsHash(result,status,effect.summary,effect.facts.map(f=>f.name));
    return {status,recommendation:"adjust",source:"hourly_sales_rollup+daily_rollups",
-     result:{...result,...(narrative?{reportText:narrative.text,reportFactsHash:narrative.hash}:{})},
-     ...(narrative?{delivery:{
+     result:{...result,...(reportText?{reportText,reportFactsHash:factsHash,
+       reportTextOrigin:narrative?"model":"facts",reportProvenance:provenance,
+       reportNumericEvidence:eventReportNumericEvidence(result)}:{})},
+     ...(terminal&&reportText?{delivery:{
        agentId:"alex" as const,taskKind:"event_plan" as const,
        entityType:"event_day",entityId:effect.startDate,
        confidence:status==="complete"?"high" as const:"low" as const,
        payload:{itemName:effect.summary,businessDate:effect.startDate,
-         eventReport:true,outcomeStatus:status,text:narrative.text},
+         eventReport:true,outcomeStatus:status,text:reportText},
        evidence:[{source:"hourly_sales_rollup+daily_rollups",
          facts:{observedDays:actual.length,expectedDays:expected,
            doneActions:checklist.done,totalActions:checklist.total,nonCausal:true}}],
-       threadText:narrative.text,
+       numberProvenance:provenance,
+       numericEvidence:eventReportNumericEvidence(result),
+       threadText:reportText,
      }}:{}),
    };
  },
