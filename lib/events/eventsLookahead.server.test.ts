@@ -1,4 +1,4 @@
-import {describe,expect,it,vi} from "vitest";
+import {describe,expect,it} from "vitest";
 import {effectHash} from "@/lib/ai/supervisor/loop/engine";
 import {eventPlanFacts} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {pendingEventDays} from "./eventsLookahead.server";
