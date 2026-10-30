@@ -1,4 +1,5 @@
 import "server-only";
+import {createHash} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
@@ -10,8 +11,9 @@ import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {typicalHourlySales} from "@/lib/metrics/core/dayOutlook";
 import {cafeToday} from "@/lib/metrics/core/clock";
-import {cafeCountry,holidaysBetween,addDays} from "./holidays";
-import {eventIdentity,eventScanWindows,savedEventKind} from "./eventsLookahead";
+import {cafeCountry,holidaysBetween,addDays,weekdayOf} from "./holidays";
+import {eventIdentity,eventScanWindows,savedEventKind,type EventScanState} from "./eventsLookahead";
+import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
 import {verifyUpcomingEventChanges} from "./eventVerification.server";
 import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -32,7 +34,7 @@ const planMessageId=(businessId:string,ownerId:string,date:string,hash:string,pr
 /** No heuristic predicts whether a holiday will be busy. A day qualifies
  * only because a saved external fact exists; the single AI agent judges impact. */
 export function pendingEventDays(events:readonly CafeEvent[],
-  plans:readonly {startDate:string;factsHash:string}[],from:string,to:string):Array<{
+  plans:readonly {startDate:string;factsHash:string;status?:string}[],from:string,to:string):Array<{
     date:string;events:CafeEvent[];hash:string
   }>{
   const result:Array<{date:string;events:CafeEvent[];hash:string}>=[];
@@ -41,7 +43,9 @@ export function pendingEventDays(events:readonly CafeEvent[],
       .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
     if(!found.length)continue;
     const hash=effectHash(eventPlanFacts(found));
-    if(!plans.some(p=>p.startDate===day&&p.factsHash===hash))
+    // A saved approval or rejection is an owner decision, not a draft to replace.
+    if(!plans.some(p=>p.startDate===day&&(p.factsHash===hash||
+      (p.status!==undefined&&p.status!=="draft"&&p.status!=="stale"&&p.status!=="expired"))))
       result.push({date:day,events:found,hash});
   }
   return result;
@@ -50,12 +54,27 @@ const requireOk=(error:unknown)=>{if(error)throw new Error("events_store_unavail
 
 /** Only confirmed search results and calendar dates are persisted. Absence
  * from web results does NOT prove cancellation, so never delete by omission. */
-async function scanCafe(db:Db,b:Business,today:string):Promise<number>{
+export async function scanCafe(db:Db,b:Business,today:string,
+  search:NearbyEventsSearch=searchNearbyEvents):Promise<number>{
   const facts=await loadOwnerFacts(b.id,db);
   const location=await readCafeLocation(db,b.id,facts);
   const country=cafeCountry(location?.countryCode,b.timezone);
+  const locationHash=location?createHash("sha256").update(location.label).digest("hex"):null;
+  const stored=locationHash?await db.from("cafe_event_search_state")
+    .select("location_hash,scanned_through_date,weekly_researched_on")
+    .eq("business_id",b.id).maybeSingle():null;
+  if(stored)requireOk(stored.error);
+  const state:EventScanState|null=stored?.data?{
+    locationHash:stored.data.location_hash,
+    scannedThroughDate:stored.data.scanned_through_date,
+    weeklyResearchedOn:stored.data.weekly_researched_on,
+  }:null;
   let count=0;
-  for(const range of eventScanWindows(today)){
+  // With no known location, only persist calendar holidays; do not record
+  // a completed web search or prevent the initial search after address setup.
+  const windows=locationHash?eventScanWindows(today,state,locationHash):
+    [{from:today,to:addDays(today,13),reason:"initial" as const}];
+  for(const range of windows){
     const now=new Date().toISOString();
     const holidays=holidaysBetween(range.from,range.to,country.country,
       location?.region??null,"en");
@@ -64,12 +83,14 @@ async function scanCafe(db:Db,b:Business,today:string):Promise<number>{
       business_id:b.id,name:h.name,kind:"holiday",start_date:h.date,end_date:h.date,
       source_url:null,status:"found",last_checked_at:now,
     }));
+    let completed=false;
     if(location){
       // Search happens ONLY in cron, after owner role + AI access were checked.
-      const result=await searchNearbyEvents({location:location.label,city:location.city,
+      const result=await search({location:location.label,city:location.city,
         region:location.region,countryCode:location.countryCode??country.country,
         from:range.from,to:range.to});
       if(result.available){
+        completed=!result.partial;
         for(const e of result.events){
           rows.push({
             id:stableMessageId("cafe-event:"+b.id+":"+eventIdentity(e)),
@@ -88,10 +109,23 @@ async function scanCafe(db:Db,b:Business,today:string):Promise<number>{
       }
     }
     if(rows.length){
+      // Weekly research adds discoveries; never resets cancelled/moved events,
+      // edits a previously saved fact, or overwrites an owner decision.
       const saved=await db.from("cafe_events").upsert(rows,
-        {onConflict:"business_id,id"});
+        {onConflict:"business_id,id",ignoreDuplicates:true});
       requireOk(saved.error);
       count+=rows.length;
+    }
+    // Persist even empty successful searches. Only complete search coverage
+    // advances the cursor; failed/partial searches are retried safely.
+    if(completed&&locationHash){
+      const saved=await db.from("cafe_event_search_state").upsert({
+        business_id:b.id,location_hash:locationHash,
+        scanned_through_date:range.to,
+        weekly_researched_on:range.reason==="weekly"||range.reason==="initial"&&weekdayOf(today)===1
+          ?today:state?.weeklyResearchedOn??null,
+      },{onConflict:"business_id"});
+      requireOk(saved.error);
     }
   }
   return count;
@@ -287,8 +321,8 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
           {businessId:b.id,ownerUserId:owner.data.user_id},today,to);
         const verifiedChanges=await verifyUpcomingEventChanges(db,b.id,owner.data.user_id,
           b.timezone,today,timeline,now);
-        // Status changes invalidate the in-memory snapshot used for proposing new plans.
-        // Approved plans are never updated by verification.
+        // Verify before proposing: never draft against a just-cancelled event.
+        // Owner-approved plans and checklist rows remain untouched.
         if(verifiedChanges)timeline=await readSavedEventTimeline(db,
           {businessId:b.id,ownerUserId:owner.data.user_id},today,to);
         const candidates=pendingEventDays(timeline.events,timeline.plans,today,to);
