@@ -1,5 +1,6 @@
 import {describe,expect,it,vi} from "vitest";
 import {openEventDayThread} from "./eventDayThread";
+import {buildAgentSendBody} from "./agentSendBody";
 
 describe("Chat about this event day",()=>{
   it("creates and selects a dedicated thread, sending the selected day's facts there",async()=>{
@@ -7,8 +8,12 @@ describe("Chat about this event day",()=>{
     const known=new Map<string,string>();
     const create=vi.fn(async(title:string)=>{calls.push("create "+title);return {id:"thread-for-31"};});
     const select=vi.fn((id:string)=>calls.push("select "+id));
+    const priorThreadAttachments=[{id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",mediaType:"image/jpeg"}];
     const send=vi.fn(async(prompt:string,id:string,files:readonly [])=>{
       calls.push("send "+id+" "+prompt);expect(files).toEqual([]);
+      expect(priorThreadAttachments).toHaveLength(1); // state has not rerendered yet
+      expect(buildAgentSendBody("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",prompt,"en",files))
+        .toMatchObject({attachmentIds:[]});
     });
     const args={date:"2026-10-31",title:"Halloween",prompt:"Event context: Halloween",
       known,create,select,send};
