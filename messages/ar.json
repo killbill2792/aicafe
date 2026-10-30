@@ -3676,6 +3676,7 @@
     "liveObservations": "المبيعات المرصودة اليوم",
     "venueUnknown": "المكان غير مسجّل",
     "verificationPending": "التحقق غير مكتمل؛ قد تكون المعلومات المحفوظة قديمة",
+    "lastSavedOn": "آخر فحص محفوظ: {date} · لم يتأكد التحقق",
     "verifiedOn": "آخر تحقق: {date}",
     "importanceHigh": "أهمية عالية · تقدير الذكاء الاصطناعي",
     "importanceMedium": "أهمية متوسطة · تقدير الذكاء الاصطناعي",
