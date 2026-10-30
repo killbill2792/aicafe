@@ -17,6 +17,8 @@ vi.mock("next-intl/server", () => ({
   getLocale: async () => "en",
 }));
 vi.mock("@/components/menu/MenuCatalog", () => ({ default: () => null }));
+vi.mock("@/i18n/navigation", () => ({ Link: "a" }));
+vi.mock("@/components/shared/PageShell", () => ({ default: "main" }));
 
 import MenuPage from "./page";
 
