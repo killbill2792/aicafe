@@ -77,3 +77,10 @@ it("does not certify the daily fee while orders remain unparsed",async()=>{
  expect(result).toMatchObject({status:"missing",reason:"coverage_incomplete"});
  expect(m.upsert).not.toHaveBeenCalled();
 });
+it("does not rewrite payments whose saved fee is already correct",async()=>{
+ const f=db([{...visa,payment_ref:"same",processing_fee_cents:33,fee_status:"actual",fee_basis:"toast"},
+  {...visa,payment_ref:"new"}]);
+ const result=await refreshToastPaymentFeeForDay(f.db,b,"2026-10-20");
+ expect(result).toMatchObject({status:"actual",amountCents:66,count:2});
+ expect(f.writes).toEqual([{processing_fee_cents:33,fee_status:"actual",fee_basis:"toast"}]);
+});

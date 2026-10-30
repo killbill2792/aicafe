@@ -8,11 +8,12 @@
 //    (table, source id, dest business id) via uuidv5, so re-running only inserts rows that are
 //    new on the source side — it never updates or deletes a row already in the destination, so
 //    test modifications there are untouched.
-//  - "Refresh window" (REFRESH_WINDOW_TABLES, see runRefreshWindowSync): sales/labor/Toast-
-//    derived facts (orders, order lines, rollups, timecards, card-fee facts). On the first run
-//    (destination has no orders yet) these are fully copied. On every later run, inside a single
-//    transaction, only the last 8 business days are deleted from the destination and re-copied
-//    from the source — older destination history is left alone.
+//  - "Day mirror" (REFRESH_WINDOW_TABLES, see runDayMirrorSync): sales/labor/Toast-derived facts
+//    (orders, order lines, rollups, timecards, card-fee and payment facts, voids, refunds). Each
+//    run compares a fingerprint of every business day in the source and the destination, across
+//    all history, and replaces only the days that differ, inside one transaction. A day that
+//    arrives or changes late on the source (a re-pull, a late timecard) is copied too, and
+//    unchanged days are never rewritten.
 //
 // Deliberately excludes: AI chat/threads, owner notifications, supervisor proposals/reports,
 // scheduling AI-plan audit trail, screen view analytics, product photos (storage object isn't
@@ -27,7 +28,11 @@ import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import crypto from "node:crypto";
-import { Client } from "pg";
+import pg, { Client } from "pg";
+
+// Read dates and timestamps as Postgres's own text. JavaScript dates keep milliseconds only, so a
+// copied timestamp lost its microseconds and every day holding one looked changed on every run.
+for (const oid of [1082, 1114, 1184]) pg.types.setTypeParser(oid, (value) => value);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -35,7 +40,6 @@ const rootDir = path.resolve(__dirname, "..");
 export const SOURCE_BUSINESS_ID = "0200c26e-b971-4236-ac6b-56dd191ec59b";
 export const DEST_BUSINESS_ID = "719af528-af8e-4203-bb25-4c118c9ff832";
 const NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"; // fixed uuidv5 namespace, arbitrary but stable
-const REFRESH_WINDOW_DAYS = 8;
 
 export function uuidv5(name) {
   const namespaceBytes = Buffer.from(NAMESPACE.replace(/-/g, ""), "hex");
@@ -61,7 +65,7 @@ export function remapId(targetTable, sourceId) {
 // Columns backed by a real Postgres array type (smallint[], date[], etc.) rather than jsonb —
 // these must be handed to pg as a native JS array (the driver serializes it as an array
 // literal), never JSON.stringify'd, or Postgres rejects it as an invalid array literal.
-const NATIVE_ARRAY_COLUMNS = new Set(["available_days", "unavailable_weekdays", "flagged_dates"]);
+const NATIVE_ARRAY_COLUMNS = new Set(["available_days", "unavailable_weekdays", "flagged_dates", "field_paths"]);
 
 export function toParam(column, value) {
   if (value === null || value === undefined) return null;
@@ -86,6 +90,13 @@ export function wrapClientForSafety(client) {
   return client;
 }
 
+// Rows of each day's latest Toast import (what toast_day_status.last_import_run_id points at).
+export const LATEST_ORDERS_FILTER = `t.entity = 'order' and exists (select 1 from toast_day_status d where d.business_id = t.business_id and d.restaurant_guid = t.restaurant_guid and d.business_date = t.business_date and d.import_state = 'imported' and d.last_import_run_id = t.run_id)`;
+// Toast endpoints captured per business day; every other endpoint is a setup list, kept newest only.
+const DATED_CAPTURES = `('labor/v1/shifts','labor/v1/timeEntries','cashmgmt/v1/deposits','cashmgmt/v1/entries','kitchen/v1/export/itemFulfillments')`;
+// The newest successful capture of each dated endpoint per day, and of each setup list overall.
+export const LATEST_CAPTURE_FILTER = `t.http_status between 200 and 299 and t.error_code is null and t.endpoint not like 'orders/%' and t.endpoint not like '%{%' and coalesce(t.capture_id::text, 'row:' || t.id::text) = (select coalesce(x.capture_id::text, 'row:' || x.id::text) from toast_raw_samples x where x.business_id = t.business_id and x.restaurant_guid = t.restaurant_guid and x.endpoint = t.endpoint and x.http_status between 200 and 299 and x.error_code is null and (x.business_date is not distinct from t.business_date or not (t.endpoint in ${DATED_CAPTURES} or t.endpoint like 'era/%')) order by x.fetched_at desc, x.id desc limit 1)`;
+
 function t(table, opts = {}) {
   return {
     table,
@@ -97,7 +108,15 @@ function t(table, opts = {}) {
     joinScope: opts.joinScope ?? null, // parent table to scope by, for tables with no business_id column
     joinCol: opts.joinCol ?? null, // this table's column that references joinScope.id
     matchColumn: opts.matchColumn ?? null, // dedupe against an existing dest row sharing this column's value
-    dateColumn: opts.dateColumn ?? "business_date", // refresh-window tables only: column compared against the cutoff
+    dateColumn: opts.dateColumn ?? "business_date", // day-mirror tables only: the column whose date groups a row into a day
+    dropColumns: opts.dropColumns ?? [], // never copied (e.g. an identity id the destination generates itself)
+    // Day-mirror tables only: SQL condition on alias "t" choosing which rows of a day are mirrored
+    // (the same condition is used for both cafés, so their fingerprints compare like for like).
+    sourceFilter: opts.sourceFilter ?? null,
+    fingerprintIgnore: opts.fingerprintIgnore ?? [], // copied, but bookkeeping that changes without the data changing
+    // Text ids of the form "toast:<restaurant guid>:<id>": the guid is remapped like restaurant_guid,
+    // so views joining them to remapped restaurant_guid columns still match in the destination.
+    toastGuidIn: opts.toastGuidIn ?? [],
     // "target": on conflict (pk) do nothing — pk must match a real constraint (see migrationConstraints.mjs test).
     // "none": on conflict do nothing, no target — use when the exact constraint shape shouldn't be hard-coded.
     // "plain": no on-conflict clause at all — only safe when the row range was already deleted in this transaction.
@@ -163,7 +182,7 @@ export const INSERT_IF_MISSING_TABLES = [
   // Toast integration *data* (no credentials). toast_location_mappings depends on a
   // toast_api_credentials row existing for the business (see ensureToastCredentialsPlaceholder).
   // toast_day_status / toast_day_owner_flags also depend on it (FK on business_id+restaurant_guid)
-  // but are synced later, in the refresh-window group — this insert-if-missing pass still has to
+  // but are synced later, in the day-mirror group — this insert-if-missing pass still has to
   // run first so that FK target exists by then.
   // restaurant_guid is remapped too (via the synthetic "toast_restaurant_guid" namespace, not a
   // real table): a global unique index (toast_one_cafe_per_restaurant_uidx) allows only one
@@ -190,32 +209,62 @@ export const INSERT_IF_MISSING_TABLES = [
   t("ingredient_unit_conversions", { remapOwnId: true, joinScope: "ingredients", joinCol: "ingredient_id", fk: { ingredient_id: "ingredients" }, conflictMode: "none" }),
 ];
 
-// Sales/labor/Toast-derived facts: fully copied on the first run, then refreshed (deleted +
-// re-copied) for only the last REFRESH_WINDOW_DAYS business days on every later run. See
-// runRefreshWindowSync. Order matters: children before parents on delete, parents before
+// Sales/labor/Toast-derived facts, mirrored day by day: only days that differ between the two
+// cafés are deleted and re-copied. See runDayMirrorSync. Order matters: children before parents on delete, parents before
 // children on insert.
 export const REFRESH_WINDOW_TABLES = [
   t("orders", { remapOwnId: true, fk: { location_id: "locations", employee_id: "employees" } }),
   // order_lines has no business_id/business_date of its own — scoped via its parent order, and
-  // its cutoff always mirrors orders' own decision (see runRefreshWindowSync), never its own.
+  // its days always mirror orders' days (see runDayMirrorSync), never its own.
   t("order_lines", { remapOwnId: true, joinScope: "orders", joinCol: "order_id", fk: { order_id: "orders", menu_item_id: "menu_items" } }),
   // Neither table has a primary key or unique constraint in the migrations that create them
   // (confirmed against supabase/migrations, not just the live database — see
   // sync-cafe-data.test.ts). A named ON CONFLICT target would error outright on a database built
-  // fresh from migrations. Plain insert is safe here because the whole 8-day window (or all rows,
-  // on a first/full copy) is always deleted earlier in the same transaction first.
+  // fresh from migrations. Plain insert is safe here because every day being copied is deleted from
+  // the destination earlier in the same transaction.
   t("employee_sales_rollup", { pk: ["business_id", "business_date", "employee_id"], fk: { employee_id: "employees" }, conflictMode: "plain" }),
   t("hourly_sales_rollup", { pk: ["business_id", "business_date", "hour_local"], fk: { location_id: "locations" }, conflictMode: "plain" }),
   t("daily_rollups", { pk: ["business_id", "business_date"] }),
-  t("timecards", { remapOwnId: true, fk: { employee_id: "employees", schedule_id: "staff_schedules" }, dateColumn: "clock_in" }),
+  t("timecards", { remapOwnId: true, fk: { employee_id: "employees", schedule_id: "staff_schedules" }, dateColumn: "clock_in", toastGuidIn: ["pos_timecard_id"] }),
   t("processing_fee_daily_candidates", { pk: ["business_id", "business_date", "source_type", "provider"] }),
   t("processing_fee_daily_facts", { pk: ["business_id", "business_date"] }),
   // Moved here from insert-if-missing: these are Toast-derived day-level facts that should track
-  // the same rolling window as the rest of the day's sales data, not be seeded once and left stale.
+  // the same days as the rest of the day's sales data, not be seeded once and left stale.
   t("toast_day_status", { pk: ["business_id", "restaurant_guid", "business_date"], fk: { restaurant_guid: "toast_restaurant_guid" }, nullOut: ["last_import_run_id"] }),
   t("toast_day_owner_flags", { pk: ["business_id", "restaurant_guid", "business_date"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
   t("pos_scheduled_shifts", { pk: ["business_id", "provider", "external_shift_id"], fk: { location_id: "locations" }, dateColumn: "scheduled_start" }),
+  // Per-payment card fees and payment details, open Toast timecards, voids and refunds: the
+  // rows the app's payment, labor and voids/refunds readers use.
+  t("toast_payment_facts", { pk: ["business_id", "restaurant_guid", "business_date", "payment_ref"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
+  t("toast_payment_summaries", { pk: ["business_id", "restaurant_guid", "business_date", "payment_ref"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
+  t("toast_open_labor_summaries", { pk: ["business_id", "restaurant_guid", "external_time_entry_id"], fk: { restaurant_guid: "toast_restaurant_guid" }, dateColumn: "clock_in" }),
+  t("toast_void_facts", { pk: ["business_id", "selection_guid"], fk: { location_id: "locations" }, dateColumn: "order_business_date" }),
+  // id is an identity column the destination generates; the whole day is deleted first.
+  t("toast_refund_facts", { pk: ["id"], fk: { restaurant_guid: "toast_restaurant_guid" }, dateColumn: "order_business_date", dropColumns: ["id"], conflictMode: "plain" }),
+  // The Toast archive: only each day's latest imported orders (the version the app and the AI read).
+  // Its run is the destination's copy of that import run (see syncImportRuns), so the AI's Toast
+  // records view and typed order details (discounts, modifier prices, order times) work the same.
+  // Typed details are rebuilt in the destination by the archive's own insert trigger.
+  t("toast_raw_records", {
+    fk: { restaurant_guid: "toast_restaurant_guid", run_id: "toast_sync_runs" },
+    remapOwnId: true,
+    nullOut: ["seen_run_id", "superseded_by"],
+    fingerprintIgnore: ["first_seen", "last_seen", "source_page", "source_index", "capture_key"],
+    sourceFilter: LATEST_ORDERS_FILTER,
+  }),
+  // Daily Toast captures (labor, cash, kitchen, menus, setup): the newest successful capture only.
+  // Orders are left out: the archive above already holds them.
+  t("toast_raw_samples", { remapOwnId: true, fk: { restaurant_guid: "toast_restaurant_guid" }, sourceFilter: LATEST_CAPTURE_FILTER }),
 ];
+
+// Copy order: parents before children. Delete order is the reverse.
+export const DAY_MIRROR_ORDER = ["orders", "order_lines", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts", "toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts", "toast_payment_facts", "toast_payment_summaries", "toast_open_labor_summaries", "toast_void_facts", "toast_refund_facts", "toast_raw_records", "toast_raw_samples"];
+
+const TOAST_GUID_PREFIX = /^toast:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):/i;
+export function remapToastGuidPrefix(value) {
+  if (typeof value !== "string") return value;
+  return value.replace(TOAST_GUID_PREFIX, (_, guid) => `toast:${remapId("toast_restaurant_guid", guid)}:`);
+}
 
 export function remapRow(table, row, cfg) {
   const out = { ...row };
@@ -224,8 +273,10 @@ export function remapRow(table, row, cfg) {
   for (const [col, targetTable] of Object.entries(cfg.fk ?? {})) {
     if (out[col] != null) out[col] = remapId(targetTable, row[col]);
   }
+  for (const col of cfg.toastGuidIn ?? []) out[col] = remapToastGuidPrefix(out[col]);
   for (const col of cfg.nullOut ?? []) out[col] = null;
   for (const [col, value] of Object.entries(cfg.setValues ?? {})) out[col] = value;
+  for (const col of cfg.dropColumns ?? []) delete out[col];
   return out;
 }
 
@@ -345,109 +396,171 @@ export async function syncTodayLive(client) {
   return 1;
 }
 
-// Full-copy vs. refresh-window is decided per table (whether THAT table is empty in the
-// destination), not from one global signal like "does the destination have any orders yet" —
-// tables can genuinely be in different states (e.g. a prior run could add a brand new table
-// before the destination has caught up on it). GitHub Actions' workflow_dispatch "full_copy"
-// input forces every refresh-window table to a full copy regardless of its current state.
+// GitHub Actions' workflow_dispatch "full_copy" input replaces every day of every mirrored table.
 const FORCE_FULL_COPY = process.env.FULL_COPY === "true";
 
-async function isDestEmpty(client, table) {
-  const { rows } = await client.query(`select count(*)::int as c from ${table} where business_id = $1`, [DEST_BUSINESS_ID]);
-  return rows[0].c === 0;
+// Columns that legitimately differ between the two cafés (the business, remapped own ids, columns
+// reset on copy) are left out of a day's fingerprint, so equal days compare equal. Links to other
+// rows (foreign keys) are compared, translated into the destination's ids (see sourceIdOverrides).
+export function fingerprintIgnoredColumns(cfg) {
+  return [...new Set(["business_id", ...(cfg.remapOwnId ? ["id"] : []), ...(cfg.joinCol ? [cfg.joinCol] : []), ...(cfg.nullOut ?? []), ...Object.keys(cfg.setValues ?? {}), ...(cfg.dropColumns ?? []), ...(cfg.fingerprintIgnore ?? [])])];
 }
 
-// The shared date anchor every refresh-window table's cutoff is computed from: the source's own
-// most recent order. Each table still independently decides whether to apply that cutoff at all
-// (see isDestEmpty) or copy everything, so this is just "where would the window start if this
-// table ends up windowed" — not itself a decision about whether windowing happens.
-async function getSharedCutoffDate(client) {
-  const { rows } = await client.query(`select max(business_date) as maxd from orders where business_id = $1`, [SOURCE_BUSINESS_ID]);
-  const maxDate = rows[0].maxd;
-  if (!maxDate) return null;
-  const cutoff = new Date(maxDate);
-  cutoff.setUTCDate(cutoff.getUTCDate() - (REFRESH_WINDOW_DAYS - 1));
-  return cutoff;
-}
-
-// `cutoff` governs what's copied FROM the source (null = everything, a date = only that window).
-// `deleteMode` governs what's removed from the destination first, which is a separate decision:
-// an empty destination has nothing to delete either way, but a FORCE_FULL_COPY on a destination
-// that already has historical data must wipe ALL of it before the full re-copy, not skip
-// deleting just because the copy itself is unwindowed.
-async function getPlanForTable(client, table, sharedCutoff) {
-  const empty = await isDestEmpty(client, table);
-  if (empty) return { cutoff: null, deleteMode: "skip" };
-  if (FORCE_FULL_COPY) return { cutoff: null, deleteMode: "all" };
-  return { cutoff: sharedCutoff, deleteMode: "window" };
-}
-
-async function copyRefreshTable(client, cfg, cutoff) {
-  const { table, pk, joinScope, joinCol, dateColumn, conflictMode } = cfg;
-  let selectSql;
-  const params = [SOURCE_BUSINESS_ID];
-  if (joinScope) {
-    selectSql = `select t.* from ${table} t join ${joinScope} p on t.${joinCol} = p.id where p.business_id = $1`;
-    if (cutoff) {
-      selectSql += ` and p.${dateColumn} >= $2`;
-      params.push(cutoff);
-    }
-  } else {
-    selectSql = `select * from ${table} where business_id = $1`;
-    if (cutoff) {
-      selectSql += ` and ${dateColumn} >= $2`;
-      params.push(cutoff);
-    }
+// SQL that rewrites a source row's links into the ids the destination copy has (remapId, computed
+// in the database by pg_temp.sync_v5), so a changed link (an order line moved to another menu item)
+// changes the fingerprint, and an unchanged one compares equal.
+export function sourceIdOverrides(cfg) {
+  const ignored = new Set(fingerprintIgnoredColumns(cfg));
+  const v5 = (target, expr) => `pg_temp.sync_v5('${DEST_BUSINESS_ID}|${target}|' || ${expr})`;
+  const pairs = Object.entries(cfg.fk ?? {}).filter(([col]) => !ignored.has(col))
+    .map(([col, target]) => `'${col}', case when t.${col} is null then null else ${v5(target, `t.${col}::text`)} end`);
+  for (const col of cfg.toastGuidIn ?? []) {
+    pairs.push(`'${col}', case when t.${col} ~* '^toast:[0-9a-f-]{36}:' then 'toast:' || ${v5("toast_restaurant_guid", `lower(substr(t.${col}, 7, 36))`)} || substr(t.${col}, 43) else t.${col} end`);
   }
-
-  const { rows } = await client.query(selectSql, params);
-  if (rows.length === 0) return 0;
-  const rowsToInsert = rows.map((row) => remapRow(table, row, cfg));
-  return chunkedInsert(client, table, rowsToInsert, pk, conflictMode);
+  return pairs.length ? ` || jsonb_build_object(${pairs.join(", ")})` : "";
 }
 
-async function deleteDestWindow(client, cfg, plan) {
-  if (plan.deleteMode === "skip") return; // destination already has nothing for this table
+// One row per business day: md5 over every row of that day (minus ignored columns), in a fixed order.
+// Order lines have no business or date of their own: they belong to their order's day and are
+// keyed by the order's POS id, which is the same in both cafés. The source side translates links.
+export function dayFingerprintSql(cfg, side = "dest") {
+  const links = side === "source" ? sourceIdOverrides(cfg) : "";
+  if (cfg.joinScope) {
+    const row = `p.pos_order_id || ':' || ((to_jsonb(t) - $2::text[])${links})::text`;
+    return `select (p.${cfg.dateColumn})::date::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t join ${cfg.joinScope} p on t.${cfg.joinCol} = p.id where p.business_id = $1 group by 1`;
+  }
+  const row = `((to_jsonb(t) - $2::text[])${links})::text`;
+  const filter = cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : "";
+  return `select (t.${cfg.dateColumn})::date::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t where t.business_id = $1${filter} group by 1`;
+}
+
+// remapId in SQL: the same name-based UUID (version 5) the copy gives each row, using pgcrypto's sha1.
+export async function defineSqlRemapId(client) {
+  const { rows } = await client.query(`select n.nspname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where p.proname = 'digest' order by n.nspname = 'extensions' desc limit 1`, []);
+  if (!rows.length) throw Object.assign(new Error("pgcrypto missing"), { code: "PGCRYPTO_MISSING" });
+  const ns = NAMESPACE.replace(/-/g, "");
+  await client.query(`create or replace function pg_temp.sync_v5(name text) returns text language sql immutable as $f$
+    select substr(h, 1, 8) || '-' || substr(h, 9, 4) || '-5' || substr(h, 14, 3) || '-' ||
+      substr('89ab', (('x' || substr(h, 17, 1))::bit(4)::int & 3) + 1, 1) || substr(h, 18, 3) || '-' || substr(h, 21, 12)
+    from (select encode(${rows[0].nspname}.digest(decode('${ns}', 'hex') || convert_to(name, 'UTF8'), 'sha1'), 'hex') as h) x $f$`, []);
+}
+
+// Days whose rows differ between source and destination, including days only one side has.
+export function daysToReplace(sourceDays, destDays, force = false) {
+  const days = new Set();
+  for (const [day, fp] of sourceDays) if (force || destDays.get(day) !== fp) days.add(day);
+  for (const day of destDays.keys()) if (force || !sourceDays.has(day)) days.add(day);
+  return [...days].sort();
+}
+
+async function readDayFingerprints(client, cfg, businessId) {
+  const side = businessId === SOURCE_BUSINESS_ID ? "source" : "dest";
+  const { rows } = await client.query(dayFingerprintSql(cfg, side), [businessId, fingerprintIgnoredColumns(cfg)]);
+  return new Map(rows.map((r) => [r.day ?? "none", r.fp]));
+}
+
+// SQL condition selecting the given dates ($2) and, when $3 is true, rows without a date.
+function dayCondition(column) {
+  return `((${column})::date = any($2::date[]) or ($3::boolean and ${column} is null))`;
+}
+const dayParams = (businessId, days) => [businessId, days.filter((d) => d !== "none"), days.includes("none")];
+
+async function deleteDestDays(client, cfg, days) {
   const { table, joinScope, joinCol, dateColumn } = cfg;
-  const dateFilter = plan.deleteMode === "all" ? "" : ` and ${joinScope ? "p." : ""}${dateColumn} >= $2`;
-  const params = plan.deleteMode === "all" ? [DEST_BUSINESS_ID] : [DEST_BUSINESS_ID, plan.cutoff];
+  const params = dayParams(DEST_BUSINESS_ID, days);
   if (joinScope) {
-    await client.query(`delete from ${table} where ${joinCol} in (select id from ${joinScope} p where p.business_id = $1${dateFilter})`, params);
+    await client.query(`delete from ${table} where ${joinCol} in (select p.id from ${joinScope} p where p.business_id = $1 and ${dayCondition(`p.${dateColumn}`)})`, params);
   } else {
-    await client.query(`delete from ${table} where business_id = $1${dateFilter}`, params);
+    await client.query(`delete from ${table} where business_id = $1 and ${dayCondition(dateColumn)}`, params);
   }
 }
 
-// Runs the whole refresh-window group — deletes + re-copies — inside one transaction, so a
-// failure partway through never leaves the destination with some tables refreshed and others not.
-async function runRefreshWindowSync(client, counts) {
-  const byTable = Object.fromEntries(REFRESH_WINDOW_TABLES.map((cfg) => [cfg.table, cfg]));
-  const sharedCutoff = await getSharedCutoffDate(client);
+async function copySourceDays(client, cfg, days) {
+  const { table, pk, joinScope, joinCol, dateColumn, conflictMode } = cfg;
+  const selectSql = joinScope
+    ? `select t.* from ${table} t join ${joinScope} p on t.${joinCol} = p.id where p.business_id = $1 and ${dayCondition(`p.${dateColumn}`)}`
+    : `select t.* from ${table} t where t.business_id = $1 and ${dayCondition(`t.${dateColumn}`)}${cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : ""}`;
+  const { rows } = await client.query(selectSql, dayParams(SOURCE_BUSINESS_ID, days));
+  if (rows.length === 0) return 0;
+  return chunkedInsert(client, table, rows.map((row) => remapRow(table, row, cfg)), pk, conflictMode);
+}
 
+// Compares every table day by day and replaces only the days that differ, in one transaction, so a
+// failure partway through never leaves the destination with some tables refreshed and others not.
+export async function runDayMirrorSync(client, counts) {
+  const byTable = Object.fromEntries(REFRESH_WINDOW_TABLES.map((cfg) => [cfg.table, cfg]));
   const plans = {};
-  for (const tableName of Object.keys(byTable)) {
-    if (tableName === "order_lines") continue; // decided below: must mirror orders', not its own state
-    plans[tableName] = await getPlanForTable(client, tableName, sharedCutoff);
+  await defineSqlRemapId(client);
+  for (const tableName of DAY_MIRROR_ORDER) {
+    const cfg = byTable[tableName];
+    const [source, dest] = [await readDayFingerprints(client, cfg, SOURCE_BUSINESS_ID), await readDayFingerprints(client, cfg, DEST_BUSINESS_ID)];
+    plans[tableName] = daysToReplace(source, dest, FORCE_FULL_COPY);
   }
-  // order_lines has no business_id/business_date of its own and is entirely derived from its
-  // parent order — it must be windowed exactly like orders, never decided independently.
-  plans.order_lines = plans.orders;
+  // An order and its lines are one unit: replacing an order day replaces its lines too (they
+  // cascade on delete), and a day whose lines differ replaces its orders as well.
+  // A re-import with unchanged orders keeps the archive identical but names a new run:
+  // re-copy those days so the destination's archive rows name the run its day status points at.
+  plans.toast_raw_records = [...new Set([...plans.toast_raw_records, ...(await daysWithNewRun(client))])].sort();
+  const orderDays = [...new Set([...plans.orders, ...plans.order_lines])].sort();
+  plans.orders = orderDays;
+  plans.order_lines = orderDays;
 
   await client.query("begin");
   try {
-    for (const tableName of ["order_lines", "orders", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts", "toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts"]) {
-      await deleteDestWindow(client, byTable[tableName], plans[tableName]);
+    for (const tableName of [...DAY_MIRROR_ORDER].reverse()) {
+      if (plans[tableName].length) await deleteDestDays(client, byTable[tableName], plans[tableName]);
     }
-
-    for (const tableName of ["orders", "order_lines", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts", "toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts"]) {
-      counts[tableName] = await copyRefreshTable(client, byTable[tableName], plans[tableName].cutoff);
+    for (const tableName of DAY_MIRROR_ORDER) {
+      counts[tableName] = plans[tableName].length ? await copySourceDays(client, byTable[tableName], plans[tableName]) : 0;
+      if (plans[tableName].length) counts[`${tableName}_days`] = plans[tableName].length;
     }
-
+    counts.toast_day_status_runs = await linkImportRuns(client);
     await client.query("commit");
   } catch (err) {
     await client.query("rollback");
     throw err;
   }
+}
+
+// The destination keeps a copy of each import run a source day points at, so the copied archive
+// and day status can name the same run. Copies are always "completed": the destination has no
+// Toast connection and its scheduler skips it (its mapping is never verified).
+export async function syncImportRuns(client) {
+  const { rows } = await client.query(
+    `select r.id, r.restaurant_guid, r.kind, r.requested_from, r.requested_to, r.started_at, r.finished_at, r.days_done, r.days_total, r.orders_seen
+     from toast_sync_runs r where r.business_id = $1 and r.id in (select last_import_run_id from toast_day_status where business_id = $1)`,
+    [SOURCE_BUSINESS_ID]);
+  const copies = rows.map((r) => ({ ...r, id: remapId("toast_sync_runs", r.id), business_id: DEST_BUSINESS_ID,
+    restaurant_guid: remapId("toast_restaurant_guid", r.restaurant_guid), state: "completed" }));
+  return chunkedInsert(client, "toast_sync_runs", copies, ["id"]);
+}
+
+// Days whose latest source import run differs from the run the destination's copy names.
+async function daysWithNewRun(client) {
+  const read = async (businessId) => (await client.query(
+    `select business_date::text as day, restaurant_guid, last_import_run_id from toast_day_status where business_id = $1 and last_import_run_id is not null`,
+    [businessId])).rows;
+  const dest = new Map((await read(DEST_BUSINESS_ID)).map((r) => [`${r.day}|${r.restaurant_guid}`, r.last_import_run_id]));
+  return [...new Set((await read(SOURCE_BUSINESS_ID))
+    .filter((r) => dest.get(`${r.day}|${remapId("toast_restaurant_guid", r.restaurant_guid)}`) !== remapId("toast_sync_runs", r.last_import_run_id))
+    .map((r) => r.day))];
+}
+
+// A day status is copied without its run (the database refuses an import that names a finished
+// run), then pointed at the run's copy here. Only the run column changes, so no import trigger fires.
+export async function linkImportRuns(client) {
+  const { rows } = await client.query(
+    `select business_date::text as day, restaurant_guid, last_import_run_id from toast_day_status where business_id = $1 and last_import_run_id is not null`,
+    [SOURCE_BUSINESS_ID]);
+  if (!rows.length) return 0;
+  const result = await client.query(
+    `update toast_day_status d set last_import_run_id = m.run
+     from (select unnest($2::date[]) as day, unnest($3::uuid[]) as guid, unnest($4::uuid[]) as run) m
+     where d.business_id = $1 and d.business_date = m.day and d.restaurant_guid = m.guid
+       and d.last_import_run_id is distinct from m.run`,
+    [DEST_BUSINESS_ID, rows.map((r) => r.day), rows.map((r) => remapId("toast_restaurant_guid", r.restaurant_guid)),
+      rows.map((r) => remapId("toast_sync_runs", r.last_import_run_id))]);
+  return result.rowCount;
 }
 
 async function startRun(client) {
@@ -475,6 +588,29 @@ if (process.env.VITEST !== "true" && !process.env.SYNC_CAFE_DATA_SKIP_MAIN) {
   await main();
 }
 
+// Every copy step, in order. `step` is told which step is running (for the error log).
+export async function syncAll(client, counts, step = () => {}) {
+  step("toast_api_credentials");
+  await ensureToastCredentialsPlaceholder(client); // must exist before toast_location_mappings below
+
+  for (const cfg of INSERT_IF_MISSING_TABLES) {
+    step(cfg.table);
+    counts[cfg.table] = await syncTable(client, cfg);
+  }
+
+  step("toast_sync_runs");
+  counts.toast_sync_runs = await syncImportRuns(client); // before the archive and day status that name them
+
+  step("day_mirror");
+  await runDayMirrorSync(client, counts);
+
+  step("timezone_and_hours");
+  await syncTimezoneAndHours(client);
+
+  step("toast_today_live");
+  counts.toast_today_live = await syncTodayLive(client);
+}
+
 export async function main() {
   const supabaseRootCa = readFileSync(path.join(__dirname, "supabase-root-ca.pem"), "utf8");
   const client = wrapClientForSafety(new Client({ connectionString: process.env.SUPABASE_DB_URL, ssl: { rejectUnauthorized: true, ca: supabaseRootCa } }));
@@ -486,22 +622,7 @@ export async function main() {
   try {
     runId = await startRun(client);
 
-    currentTable = "toast_api_credentials";
-    await ensureToastCredentialsPlaceholder(client); // must exist before toast_location_mappings below
-
-    for (const cfg of INSERT_IF_MISSING_TABLES) {
-      currentTable = cfg.table;
-      counts[cfg.table] = await syncTable(client, cfg);
-    }
-
-    currentTable = "refresh_window";
-    await runRefreshWindowSync(client, counts);
-
-    currentTable = "timezone_and_hours";
-    await syncTimezoneAndHours(client);
-
-    currentTable = "toast_today_live";
-    counts.toast_today_live = await syncTodayLive(client);
+    await syncAll(client, counts, (name) => { currentTable = name; });
 
     await finishRun(client, runId, { status: "success", counts });
 

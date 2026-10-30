@@ -9,10 +9,16 @@ import {
   wrapClientForSafety,
   INSERT_IF_MISSING_TABLES,
   REFRESH_WINDOW_TABLES,
+  DAY_MIRROR_ORDER,
+  daysToReplace,
+  fingerprintIgnoredColumns,
+  dayFingerprintSql,
   SOURCE_BUSINESS_ID,
   DEST_BUSINESS_ID,
   syncTodayLive,
+  remapToastGuidPrefix,
 } from "./sync-cafe-data.mjs";
+import pg from "pg";
 import { extractUniqueConstraints } from "./migrationConstraints.mjs";
 
 const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "..", "supabase", "migrations");
@@ -283,5 +289,75 @@ describe("syncTodayLive", () => {
   it("does nothing when there is no reading or the table is not installed yet", async () => {
     expect(await syncTodayLive(fakeClient([]).client)).toBe(0);
     expect(await syncTodayLive(fakeClient(Object.assign(new Error("missing"), { code: "42P01" })).client)).toBe(0);
+  });
+});
+
+describe("day mirror", () => {
+  it("replaces only the days whose rows differ, including days only one café has", () => {
+    const source = new Map([["2026-08-22", "a"], ["2026-08-23", "b"], ["2026-08-25", "late"]]);
+    const dest = new Map([["2026-08-22", "a"], ["2026-08-23", "old"], ["2026-08-24", "gone"]]);
+    expect(daysToReplace(source, dest)).toEqual(["2026-08-23", "2026-08-24", "2026-08-25"]);
+  });
+  it("replaces nothing when every day matches, and everything on a forced full copy", () => {
+    const same = new Map([["2026-08-22", "a"]]);
+    expect(daysToReplace(same, new Map(same))).toEqual([]);
+    expect(daysToReplace(same, new Map(same), true)).toEqual(["2026-08-22"]);
+  });
+  it("leaves own ids, reset and dropped columns out of the fingerprint, but compares links", () => {
+    const tc = REFRESH_WINDOW_TABLES.find((c) => c.table === "timecards");
+    expect(fingerprintIgnoredColumns(tc)).toEqual(["business_id", "id"]);
+    const status = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_day_status");
+    expect(fingerprintIgnoredColumns(status)).toContain("last_import_run_id");
+    expect(fingerprintIgnoredColumns(status)).not.toContain("restaurant_guid");
+    const refunds = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_refund_facts");
+    expect(fingerprintIgnoredColumns(refunds)).toContain("id");
+  });
+  it("groups order lines by their order's day and keys them by the order's POS id", () => {
+    const sql = dayFingerprintSql(REFRESH_WINDOW_TABLES.find((c) => c.table === "order_lines"));
+    expect(sql).toContain("join orders p on t.order_id = p.id");
+    expect(sql).toContain("p.pos_order_id");
+    expect(sql).toContain("(p.business_date)::date");
+  });
+  it("mirrors every table in a parent-first order, and copies the payment, labor, void and refund facts", () => {
+    expect([...DAY_MIRROR_ORDER].sort()).toEqual(REFRESH_WINDOW_TABLES.map((c) => c.table).sort());
+    expect(DAY_MIRROR_ORDER.indexOf("orders")).toBeLessThan(DAY_MIRROR_ORDER.indexOf("order_lines"));
+    for (const name of ["toast_payment_facts", "toast_payment_summaries", "toast_open_labor_summaries", "toast_void_facts", "toast_refund_facts"]) {
+      expect(DAY_MIRROR_ORDER).toContain(name);
+    }
+  });
+  it("never copies a refund's identity id", () => {
+    const refunds = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_refund_facts");
+    const out = remapRow("toast_refund_facts", { id: 7, business_id: SOURCE_BUSINESS_ID, restaurant_guid: "r", amount_cents: 5 }, refunds);
+    expect(out).not.toHaveProperty("id");
+    expect(out.business_id).toBe(DEST_BUSINESS_ID);
+  });
+});
+
+describe("test café gets the Toast archive and daily captures (database behavior: sync-cafe-data-db-integration.mjs)", () => {
+  it("points a copied archive row at the copied import run", () => {
+    const archive = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_raw_records")!;
+    const out = remapRow("toast_raw_records", { id: "a", business_id: SOURCE_BUSINESS_ID, restaurant_guid: "g", run_id: "r", seen_run_id: "r", payload: {} }, archive);
+    expect(out.run_id).toBe(remapId("toast_sync_runs", "r"));
+    expect(out.seen_run_id).toBeNull();
+    expect(out.business_id).toBe(DEST_BUSINESS_ID);
+  });
+  it("passes capture field lists to Postgres as a real array", () => {
+    expect(toParam("field_paths", ["a", "b"])).toEqual(["a", "b"]);
+  });
+  it("reads timestamps with their full precision, so unchanged days compare equal", () => {
+    expect(pg.types.getTypeParser(1184)("2026-10-30 18:27:54.382047+00")).toBe("2026-10-30 18:27:54.382047+00");
+    expect(pg.types.getTypeParser(1082)("2026-10-30")).toBe("2026-10-30");
+  });
+});
+
+describe("Toast ids that embed the restaurant", () => {
+  it("remaps the restaurant inside a timecard id the same way as restaurant_guid", () => {
+    const guid = "a0000000-0000-4000-8000-000000000001";
+    expect(remapToastGuidPrefix(`toast:${guid}:te-1`)).toBe(`toast:${remapId("toast_restaurant_guid", guid)}:te-1`);
+    expect(remapToastGuidPrefix("manual-1")).toBe("manual-1");
+    expect(remapToastGuidPrefix(null)).toBeNull();
+    const tc = REFRESH_WINDOW_TABLES.find((c) => c.table === "timecards")!;
+    expect(remapRow("timecards", { id: "x", business_id: SOURCE_BUSINESS_ID, pos_timecard_id: `toast:${guid}:te-1` }, tc).pos_timecard_id)
+      .toBe(`toast:${remapId("toast_restaurant_guid", guid)}:te-1`);
   });
 });
