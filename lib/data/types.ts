@@ -12,6 +12,9 @@ export type BusinessSettings = {
   payrollTaxRateSource?: string;
   targetOperatingMargin?: number;
   targetOperatingMarginStatus?: "default" | "confirmed";
+  /** Saved owner ingredient percentage retained when recipe evidence is incomplete. */
+  targetIngredientCostRate?:number|null;
+  targetIngredientCostRateStatus?:string|null;
   /** Current regular weekly hours for the primary location; absent means unknown/unconfigured. */
   openHours?: OpenHours | null;
 };

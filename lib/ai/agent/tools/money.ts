@@ -6,7 +6,9 @@ import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import { requestedPeriod } from "./period";
 import {resolveOwnerPeriod,resolveEntity,choicePayload,periodChoicePayload} from "../resolve";
-import {money,percent,count} from "../explain";
+import {money,percent,count,type ExplainLine} from "../explain";
+import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.server";
+import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {safeSumCents} from "@/lib/calc/explainMath";
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
 import {prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
@@ -28,6 +30,94 @@ const breakEvenInput=z.strictObject({
 });
 const unavailable=(source:string,period:{from:string;to:string}|null,missing:string[]):AgentToolResult=>
   ({source,period,agentId:"leo",missing:missing.length?missing:["sourceUnavailable"]});
+type CanonicalBreakEven=NonNullable<SupervisorEconomicsRead["canonicalBreakEven"]>;
+/** Standard owner answer: numbers and inputs come from the same core result used by
+ * Money and Plan. Owner-specific hypothetical overrides keep their separate path. */
+function canonicalBreakEvenAnswer(
+ basis:CanonicalBreakEven,asOf:string,locale:"en"|"es"|"ar",
+ openDaysSource:"opening_hours"|"calendar"="calendar",
+):AgentToolResult{
+ const period=calendarMonth(asOf),calc=basis.shared.calculation;
+ const monthly=basis.shared.salesPerMonthCents;
+ const daily=dailyBreakEvenSalesCents(monthly,basis.openDayCount);
+ const covered=basis.elapsedOpenDates.length-basis.missingLaborDates.length;
+ const laborPartial=basis.missingLaborDates.length>0;
+ const projecting=basis.elapsedOpenDates.length<basis.openDates.length;
+ const laborEstimate=basis.monthLabor.basis!=="recorded"||projecting||
+   basis.estimatedStaffTax||basis.ownerExtrasPresent;
+ const laborReason=laborPartial?"laborPartialCoverage":
+   projecting?"laborEstimated":basis.ownerExtrasPresent?"laborOwnerExtras":
+   basis.estimatedStaffTax?"laborEstimated":"laborRecorded";
+ const bills=figure(basis.monthlyBillsCents,
+   basis.missingBills||basis.estimatedBills?"estimate":"actual",
+   basis.missingBills?"billsPartial":"billsRecorded");
+ const staff=figure(basis.monthlyStaffCents,laborEstimate?"estimate":"actual",
+   laborReason,basis.missingLaborDates,{covered,total:basis.elapsedOpenDates.length,
+     planned:basis.openDates.length});
+ const missing=[
+   ...(basis.missingBills?["monthlyBillsPartial"]:[]),
+   ...(basis.monthlyStaffCents===null?["monthlyLabor"]:[]),
+   ...(laborPartial?["laborDaysIncomplete"]:[]),
+   ...(basis.ingredientMissing?["productCostsIncomplete"]:[]),
+   ...(basis.missingFees?["processingFeeDaysIncomplete"]:[]),
+   ...(monthly===null?["breakEvenUnavailable"]:[]),
+ ];
+ const feeRate=calc.kind==="ready"?calc.processingFeeRate:null;
+ const ingredientRate=calc.kind==="ready"?calc.ingredientRate:null;
+ const observedProcessingFeesCents=basis.feeResult.amountCents;
+ const observedIngredientCents=basis.observedIngredientCents;
+ const status=monthly===null?"missing":basis.estimatesUsed?"estimate":"actual";
+ const reason=missing.length?"breakEvenKnownInputs":status==="actual"?"laborRecorded":"profitFeesEstimated";
+ const reasonParams={missing:missing.join(", "),covered,total:basis.elapsedOpenDates.length};
+ // The exact integer-cents formula is displayed using all five inputs, not a
+ // rounded displayed percentage that could falsely imply cent-level equality.
+ const explain:ExplainLine[]=monthly!==null&&calc.kind==="ready"?[{
+   label:"Monthly break-even sales",
+   inputs:[
+     {name:"billsPerMonth",value:money(calc.monthlyBillsCents)},
+     {name:"laborPerMonth",value:money(calc.monthlyStaffCents)},
+     {name:"netSales",value:money(basis.observedSalesCents)},
+     {name:"ingredients",value:money(observedIngredientCents)},
+     {name:"fee",value:money(observedProcessingFeesCents)},
+   ],
+   formula:"breakEven",result:money(monthly),period,
+   source:"get_break_even",provenance:status==="actual"?"recorded":"estimate",
+   basis:status==="actual"?"actual":"projected",
+ }]:[];
+ return {
+   source:"break_even",period,agentId:"leo",
+   monthlyBreakEvenCents:monthly,
+   knownCostBreakEvenFloorCents:missing.length&&monthly!==null?monthly:basis.shared.knownCostFloorCents,
+   dailyBreakEvenCents:daily,openDaysPerMonth:basis.openDayCount,openDaysSource,
+   drinksPerDay:basis.shared.drinksPerDay,
+   observedProcessingFeesCents,observedIngredientCents,
+   monthlyBills:{...bills,reasonKey:bills.reason,reason:localizedMetricReason(bills.reason,locale)},
+   monthlyLabor:{...staff,reasonKey:staff.reason,
+     reason:localizedMetricReason(staff.reason,locale,staff.reasonParams)},
+   ingredientRate,ingredientStatus:basis.ingredientStatus,feeRate,
+   feeStatus:basis.feeResult.basis==="actual"?"actual":"estimate",
+   status,reasonKey:reason,reason:localizedMetricReason(reason,locale,reasonParams),
+   missingDays:basis.missingLaborDates,missing,
+   laborCoverage:{from:period.from,to:basis.elapsedOpenDates.at(-1)??period.from,
+     covered,total:basis.elapsedOpenDates.length,missingDates:basis.missingLaborDates},
+   salesCalibration:{from:shiftCafeDate(asOf,-28),to:shiftCafeDate(asOf,-1),
+     covered:basis.shared.coveredDays,expected:basis.shared.expectedDays},
+   estimated:basis.estimatesUsed?[
+     ...(laborEstimate?["monthlyLaborProjection"]:[]),
+     ...(basis.feeResult.basis!=="actual"?["processingFeeEstimate"]:[]),
+     ...(basis.estimatedBills?["monthlyBillsEstimate"]:[]),
+     ...(basis.productCosts.usesEstimatedProductCosts?["productCostEstimate"]:[]),
+     ...(basis.ingredientSource==="saved_rate"?["savedIngredientRate"]:[]),
+   ]:[],
+   explain,
+   numberEstimates:[
+     ...(monthly===null?[]:[{value:monthly,unit:"cents" as const,detail:"breakEvenSales"}]),
+     ...(daily===null?[]:[{value:daily,unit:"cents" as const,detail:"breakEvenSales"}]),
+     ...(calc.kind==="ready"?[{value:calc.fixedMonthlyCostsCents,unit:"cents" as const,detail:"dailyOverhead"}]:[]),
+   ],
+ };
+}
+
 export const moneyTools={
   get_expenses:{
     agentId:"leo",schema:period.extend({category:z.string().max(100).nullable()}),description:"Recorded actual expenses separately from recurring category estimates.",
@@ -84,7 +174,14 @@ export const moneyTools={
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const owner=breakEvenInput.parse(raw),provided=owner.ownerInputs;
       if(ctx.readEconomics){
-        const {economics}=await ctx.readEconomics();
+        const {economics,canonicalBreakEven}=await ctx.readEconomics();
+        const ownerOverride=owner.ownerNetSalesCents!=null||owner.ownerSalesDays!=null||
+          owner.ownerIngredientPackagingPercent!=null||owner.ownerProcessingFeePercent!=null||
+          owner.ownerOpenDaysPerMonth!=null||provided!=null;
+        if(canonicalBreakEven&&!ownerOverride){
+          return canonicalBreakEvenAnswer(canonicalBreakEven,ctx.asOf,ctx.locale,
+            economics.openDaysBasis??"calendar");
+        }
         const overridden={...economics};
         // Owner-provided figures belong to this answer, never silently fall back
         // to the import window. No persistence or POS mutation is performed here.

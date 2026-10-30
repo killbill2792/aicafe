@@ -6,6 +6,7 @@ import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runn
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
 import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
+import {recurringCostMonthlyEquivalentCents} from "@/lib/expenses/recurringMonthlyTotal";
 import { normalizeOpenHours } from "@/lib/business/openHours";
 import { readPeriodItemSales } from "./periodItemSales.server";
 import {readMenuComboCostComponents} from "./comboCosts.server";
@@ -29,7 +30,7 @@ export async function getBusinessSnapshotFromDb(
     return readHistoricalBusinessSnapshot(supabase,businessId,costPeriod);
   const [businessRead,locationRead]=await Promise.all([
     timeReader("Snapshot","business",async()=>supabase.from("businesses").select(
-      "id, name, timezone, currency, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status, owner_monthly_payroll_extras_cents")
+      "id, name, timezone, currency, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status, target_ingredient_cost_rate, target_ingredient_cost_rate_status, owner_monthly_payroll_extras_cents")
       .eq("id",businessId).single()),
     timeReader("Snapshot","location",async()=>supabase.from("locations").select("open_hours").eq("business_id",businessId)
       .order("name",{ascending:true}).limit(1).maybeSingle()),
@@ -62,7 +63,7 @@ export async function getBusinessSnapshotFromDb(
       timeReader("Snapshot","dailyFacts",()=>readDailyFactRows(supabase,businessId,prevMonthStart,todayDateStr))
         .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
       timeReader("Snapshot","recurringCosts",async()=>supabase.from("recurring_costs")
-        .select("category_code, amount_cents, is_estimate, active_from, active_to").eq("business_id",businessId)),
+        .select("category_code, amount_cents, frequency, is_estimate, active_from, active_to").eq("business_id",businessId)),
       timeReader("Snapshot","expenses",async()=>supabase.from("expenses").select("category_code, amount_cents, status")
         .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)),
       timeReader("Snapshot","priorExpenses",async()=>supabase.from("expenses").select("category_code")
@@ -122,7 +123,9 @@ export async function getBusinessSnapshotFromDb(
         return {
           categoryCode: code,
           label: RUNNING_COST_LABELS[code] ?? code,
-          amountCents: activeRecurring.reduce((sum, r) => sum + r.amount_cents, 0),
+          amountCents: activeRecurring.reduce((sum,r)=>sum+recurringCostMonthlyEquivalentCents({
+             amountCents:Number(r.amount_cents),
+             frequency:r.frequency as "monthly"|"weekly"|"quarterly"|"yearly"}),0),
           isEstimate: activeRecurring.some((r) => r.is_estimate),
           isMissing: false,
           isExpected: true,
@@ -150,6 +153,8 @@ export async function getBusinessSnapshotFromDb(
       payrollTaxRateSource: businessRow.payroll_tax_rate_source ?? "system_estimate",
       targetOperatingMargin: Number(businessRow.target_operating_margin ?? 0.15),
       targetOperatingMarginStatus: businessRow.target_operating_margin_status ?? "default",
+       targetIngredientCostRate:businessRow.target_ingredient_cost_rate==null?null:Number(businessRow.target_ingredient_cost_rate),
+       targetIngredientCostRateStatus:businessRow.target_ingredient_cost_rate_status??null,
       openHours: normalizeOpenHours(locationRow?.open_hours),
     },
     todayDateStr,
@@ -344,7 +349,7 @@ async function readHistoricalBusinessSnapshot(
     !/^\d{4}-\d{2}-\d{2}$/.test(period.to)||period.from>period.to)
     throw new Error("Invalid historical café period");
   const {data:business,error:businessError}=await supabase.from("businesses")
-    .select("id,name,timezone,currency,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source,target_operating_margin,target_operating_margin_status,owner_monthly_payroll_extras_cents")
+    .select("id,name,timezone,currency,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source,target_operating_margin,target_operating_margin_status,target_ingredient_cost_rate,target_ingredient_cost_rate_status,owner_monthly_payroll_extras_cents")
     .eq("id",businessId).single();
   if(businessError||!business||!business.timezone)throw new Error("Historical café scope unavailable");
   const today=formatInTimeZone(new Date(),business.timezone,"yyyy-MM-dd");
@@ -358,7 +363,7 @@ async function readHistoricalBusinessSnapshot(
     readDailyFactRows(supabase,businessId,period.from,period.to)
       .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
     supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,is_estimate,active_from,active_to")
+      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to")
       .eq("business_id",businessId).lte("active_from",period.to).order("id",{ascending:true}).range(0,999),
     supabase.from("expenses").select("id,category_code,amount_cents,status,spent_on")
       .eq("business_id",businessId).gte("spent_on",first).lte("spent_on",monthEnd).order("spent_on",{ascending:true}).order("category_code",{ascending:true}).order("id",{ascending:true}).range(0,999),
@@ -383,7 +388,7 @@ async function readHistoricalBusinessSnapshot(
   const allRecurring=[...(recurring.data??[])];
   for(let offset=1000;offset<=allRecurring.length;offset+=1000){
     const page=await supabase.from("recurring_costs")
-      .select("id,category_code,amount_cents,is_estimate,active_from,active_to")
+      .select("id,category_code,amount_cents,frequency,is_estimate,active_from,active_to")
       .eq("business_id",businessId).lte("active_from",period.to)
       .order("id",{ascending:true}).range(offset,offset+999);
     if(page.error)throw page.error;
@@ -414,7 +419,11 @@ async function readHistoricalBusinessSnapshot(
       const configured=allRecurring.filter(r=>r.category_code===categoryCode&&
         r.active_from<=finalDay&&(!r.active_to||r.active_to>=key+"-01"));
       const rows=actual.length?actual:configured;
-      const amountCents=rows.reduce((sum,r)=>sum+Number(r.amount_cents),0);
+      const amountCents=actual.length?
+         actual.reduce((sum,r)=>sum+Number(r.amount_cents),0):
+         configured.reduce((sum,r)=>sum+recurringCostMonthlyEquivalentCents({
+           amountCents:Number(r.amount_cents),
+           frequency:r.frequency as "monthly"|"weekly"|"quarterly"|"yearly"}),0);
       const isEstimate=actual.length?actual.some(r=>r.status==="estimated"):
         configured.some(r=>r.is_estimate);
       const isMissing=rows.length===0;
@@ -442,6 +451,8 @@ async function readHistoricalBusinessSnapshot(
       payrollTaxRateSource:business.payroll_tax_rate_source,
       targetOperatingMargin:Number(business.target_operating_margin??.15),
       targetOperatingMarginStatus:business.target_operating_margin_status,
+       targetIngredientCostRate:business.target_ingredient_cost_rate==null?null:Number(business.target_ingredient_cost_rate),
+       targetIngredientCostRateStatus:business.target_ingredient_cost_rate_status??null,
       openHours:normalizeOpenHours(locations.data?.[0]?.open_hours)},
     todayDateStr:today,monthKey,daysInMonth:new Date(year,month,0).getDate(),
     monthActualDays:sales.filter(d=>d.date.slice(0,7)===monthKey),

@@ -14,12 +14,12 @@ vi.mock("@/lib/pos/processingFeeEstimate.server",()=>({
 }));
 import {readSupervisorEconomics} from "./supervisorEconomics.server";
 
-function fixtureDb(rows:Record<string,unknown>[]):SupabaseClient{
+function fixtureDb(rows:Record<string,unknown>[], options?:{employees?:Record<string,unknown>[];timecards?:Record<string,unknown>[]}):SupabaseClient{
  const collections:Record<string,unknown[]>={
   businesses:[{timezone:"America/New_York",payroll_tax_rate:.12,
    target_ingredient_cost_rate:null,owner_monthly_payroll_extras_cents:null}],
   daily_rollups:rows,locations:[{open_hours:null}],recurring_costs:[],
-  employees:[],timecards:[],
+  employees:options?.employees??[],timecards:options?.timecards??[],
  };
  return {from(table:string){
   const data=collections[table]??[];
@@ -64,5 +64,30 @@ describe("Supervisor economics shares Money metrics/core evidence",()=>{
   expect(read.economics.feeRate).toBe(fees.amountCents/2000000);
   expect(read.economics.feeStatus).toBe("estimate");
   expect(fees.actualDays).toBe(1);
+ });
+ it("staff wage scenarios use the rolling timecard window, not elapsed month labor coverage",async()=>{
+  const rollingDays=Array.from({length:30},(_,i)=>
+   new Date(Date.UTC(2026,8,2+i)).toISOString().slice(0,10));
+  const history=rollingDays.map(date=>({business_date:date,sales_data_status:"actual",
+   net_sales_cents:100000,ingredients_cents:20000,card_fees_cents:3000,
+   card_fees_status:"actual",staff_wages_cents:date==="2026-10-01"?10000:null,
+   staff_tax_cents:date==="2026-10-01"?1200:null,
+   labor_wage_status:date==="2026-10-01"?"actual":"missing",
+   staff_tax_status:date==="2026-10-01"?"actual":"missing",
+   drinks_count:100,orders_count:50}));
+  const shifts=rollingDays.slice(0,15).map(date=>({employee_id:"staff-1",
+   clock_in:date+"T12:00:00Z",clock_out:date+"T20:00:00Z",
+   hourly_wage_cents:1800,source_type:"toast"}));
+  stubs.pricing.mockResolvedValue({items:[],business:{monthlyRevenueCents:100000,
+   monthlyVariableProductCostCents:0,productCostsStatus:"missing",
+   targetOperatingMargin:.15},menuPriceBasis:{runningKnownCents:0,
+   monthlyRunningCents:0,runningStatus:"recorded",missingRunningCategories:[]}});
+  stubs.items.mockResolvedValue({menuItems:[],breakEvenProductCosts:[]});
+  stubs.plans.mockResolvedValue([]);
+  const result=await readSupervisorEconomics(fixtureDb(history,{
+   employees:[{id:"staff-1",display_name:"A",role:"barista",default_hourly_wage_cents:1800}],
+   timecards:shifts}),"test-business","2026-10-02");
+  expect(result.economics.laborWindowDays).toBe(1);
+  expect(result.staff[0].weeklyHours).toBe(28);
  });
 });
