@@ -2,13 +2,13 @@ import "server-only";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import {holidaysBetween} from "./holidays";
 import {MAX_EVENTS,nearbyEventsJsonSchema,nearbyEventsPrompt,parseNearbyEvents,responseOutputText,
-  type NearbyEvent,type NearbyEventsSearch,type SearchFailureCategory} from "./nearbyEvents";
+  type NearbyEvent,type NearbyEventsSearch,type SearchFailureCategory,type UnsearchedEventScope} from "./nearbyEvents";
 
 /** Web search is read-only. Addresses and fetched page text must never be logged. */
-export const SEARCH_MAX_OUTPUT_TOKENS=4000; // Proposal D4: 1200 starved reasoning + web-search output; verify in test café.
+export const SEARCH_MAX_OUTPUT_TOKENS=1200; // AGENTS.md per-call cap; D4 increase awaits explicit approval.
 const SEARCH_TIMEOUT_MS=25_000;
 const CACHE_MS=3*60*60*1000;
-const cache=new Map<string,{at:number;events:NearbyEvent[];partial:boolean}>();
+const cache=new Map<string,{at:number;events:NearbyEvent[];failedSearches:UnsearchedEventScope[]}>();
 
 type Fetch=typeof fetch;
 type Failure={category:SearchFailureCategory;reason:"searchFailed"|"timeout";httpStatus?:number};
@@ -27,7 +27,8 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
     const key=[input.location,input.city,input.region,input.countryCode,input.from,input.to].join("|").toLowerCase();
     const hit=cache.get(key);
     if(hit&&now()-hit.at<CACHE_MS)return hit.events.length?
-      {available:true,outcome:"found",events:hit.events,partial:hit.partial}:
+      {available:true,outcome:"found",events:hit.events,partial:hit.failedSearches.length>0,
+        failedSearches:hit.failedSearches}:
       {available:true,outcome:"none_found",events:[],partial:false};
 
     const model=deps.model??(process.env.EVENTS_SEARCH_OPENAI_MODEL?.trim()||configuredSupervisorModel());
@@ -110,13 +111,13 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
       try{holidays=holidaysBetween(input.from,input.to,input.countryCode,input.region,"en");}
       catch{holidays=holidaysBetween(input.from,input.to,input.countryCode,null,"en");}
     }
-    const queries:[string,"general"|"holiday"][]=[
-      [nearbyEventsPrompt(input.location,input.from,input.to),"general"],
-      ...holidays.map(h=>[nearbyEventsPrompt(input.location,input.from,input.to,
-        {name:h.name,date:h.date}),"holiday"] as [string,"holiday"]),
+    const queries:Array<{prompt:string;scope:UnsearchedEventScope}>=[
+      {prompt:nearbyEventsPrompt(input.location,input.from,input.to),scope:{kind:"general"}},
+      ...holidays.map(h=>({prompt:nearbyEventsPrompt(input.location,input.from,input.to,
+        {name:h.name,date:h.date}),scope:{kind:"holiday" as const,name:h.name,date:h.date}})),
     ];
     // Independent requests overlap, so a holiday doesn't add its latency to the general search.
-    const results=await Promise.all(queries.map(([prompt,kind])=>oneQuery(prompt,kind)));
+    const results=await Promise.all(queries.map(({prompt,scope})=>oneQuery(prompt,scope.kind)));
     const found:NearbyEvent[]=[],seen=new Set<string>();
     for(const result of results){
       if(!result.ok)continue;
@@ -129,11 +130,12 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
       if(found.length>=MAX_EVENTS)break;
     }
     const errors=results.filter((r):r is Attempt&Failure=>!r.ok);
+    const failedSearches=queries.filter((_,i)=>!results[i].ok).map(q=>q.scope);
     if(found.length){
-      const partial=errors.length>0;
       if(cache.size>=200)cache.delete(cache.keys().next().value!);
-      cache.set(key,{at:now(),events:found,partial});
-      return {available:true,outcome:"found",events:found,partial};
+      cache.set(key,{at:now(),events:found,failedSearches});
+      return {available:true,outcome:"found",events:found,
+        partial:failedSearches.length>0,failedSearches};
     }
     if(errors.length){
       const error=errors.find(e=>e.category==="timeout")??errors[0];
@@ -142,7 +144,7 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
       return {available:false,outcome:"failed",reason:error.reason,category:error.category};
     }
     if(cache.size>=200)cache.delete(cache.keys().next().value!);
-    cache.set(key,{at:now(),events:[],partial:false});
+    cache.set(key,{at:now(),events:[],failedSearches:[]});
     return {available:true,outcome:"none_found",events:[],partial:false};
   };
 }
