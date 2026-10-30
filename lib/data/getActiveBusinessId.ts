@@ -15,14 +15,18 @@ export const ACTIVE_BUSINESS_COOKIE = "active_business_id";
 export async function getActiveBusinessId(userId:string):Promise<string>{
   return getActiveBusinessIdCached(userId);
 }
-const getActiveBusinessIdCached=cache(async function getActiveBusinessIdCached(userId:string):Promise<string>{
+/** One authenticated membership read per server render, shared with the onboarding guard.
+ * React cache() is request-scoped: never share member rows across users or requests. */
+export const readActiveBusinessMemberships=cache(async function readActiveBusinessMemberships(userId:string){
   const supabase = await createServerSupabaseClient();
   const { data: memberships } = await supabase
     .from("memberships")
     .select("business_id, businesses(is_demo)")
     .eq("user_id", userId);
-
-  const rows = memberships ?? [];
+  return memberships ?? [];
+});
+const getActiveBusinessIdCached=cache(async function getActiveBusinessIdCached(userId:string):Promise<string>{
+  const rows = await readActiveBusinessMemberships(userId);
   if (rows.length === 0) return DEMO_BUSINESS_ID;
 
   const cookieStore = await cookies();

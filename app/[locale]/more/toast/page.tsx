@@ -5,7 +5,6 @@ import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import PageShell from "@/components/shared/PageShell";
 import BackHeader from "@/components/shared/BackHeader";
-import ToastOnboardingChecklist from "@/components/more/ToastOnboardingChecklist";
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
 import ToastOwnerDashboard from "@/components/more/ToastOwnerDashboard";
 import {trustedToastOrigin} from "@/lib/pos/toast/client";
@@ -51,7 +50,7 @@ export default async function ToastConnectionPage() {
         <p className="text-lg font-semibold">{t("notEnabledPlain")}</p>
         <p className="mt-3 text-base">{t("askToEnable")}</p>
       </section> : <>
-      <ToastOnboardingChecklist businessId={businessId}/>
+      <ToastOwnerDashboard businessId={businessId} currency={business.currency??"USD"}>
       <ToastConnectionForm
         businessId={businessId}
         locations={locations??[]}
@@ -77,7 +76,7 @@ export default async function ToastConnectionPage() {
           connectedLastSync:t.raw("connectedLastSync"),noSyncYet:t("noSyncYet"),
           manualLocationHint:t("manualLocationHint"),chooseApiUrl:t("chooseApiUrl"),
         }}/>
-      <ToastOwnerDashboard businessId={businessId} currency={business.currency??"USD"}/>
+      </ToastOwnerDashboard>
       </>}
     </PageShell>
   );
