@@ -52,3 +52,31 @@ export function lastTimeOutlook(days:readonly OutlookSalesDay[],pastDate:string,
   return {date:pastDate,netSalesCents:day.netSalesCents,typicalCents:base.typicalCents,
     changePercent:change,sampleDays:base.sampleDays};
 }
+
+/** Same-weekday hourly medians from the existing canonical hourly POS reader.
+ * Multiple locations in a day/hour are summed before taking the median.
+ * Missing hours stay unknown: they must never be converted to observed zero. */
+export type OutlookHour={hourLocal:number;typicalCents:number;sampleDays:number};
+export type OutlookHourlyRow={date:string;hourLocal:number;netSalesCents:number};
+export function typicalHourlySales(rows:readonly OutlookHourlyRow[],target:string,before:string,
+  options:{weeks?:number;exclude?:ReadonlySet<string>}={}):OutlookHour[]{
+  const from=shift(before,-(options.weeks??8)*7),to=shift(before,-1),want=weekday(target);
+  const perDayHour=new Map<string,number>();
+  for(const row of rows){
+    if(row.date<from||row.date>to||weekday(row.date)!==want||options.exclude?.has(row.date)||
+       !Number.isInteger(row.hourLocal)||row.hourLocal<0||row.hourLocal>23||
+       !Number.isSafeInteger(row.netSalesCents)||row.netSalesCents<0)continue;
+    const key=row.date+"|"+row.hourLocal;
+    const next=(perDayHour.get(key)??0)+row.netSalesCents;
+    if(Number.isSafeInteger(next))perDayHour.set(key,next);
+  }
+  const byHour=new Map<number,number[]>();
+  for(const [key,value] of perDayHour){
+    const hour=Number(key.slice(-2).replace(/^\\|/,""));
+    if(!Number.isInteger(hour))continue;
+    byHour.set(hour,[...(byHour.get(hour)??[]),value]);
+  }
+  return [...byHour].flatMap(([hourLocal,values])=>
+    values.length>=MIN_TYPICAL_SAMPLE?[{hourLocal,typicalCents:medianCents(values)!,sampleDays:values.length}]:[])
+    .sort((a,b)=>a.hourLocal-b.hourLocal);
+}
