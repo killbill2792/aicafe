@@ -14,6 +14,7 @@ import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 
 import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
+import type {HomeStartPayload} from "@/components/home/DeferredChatStart";
 import {getCafeAccess} from "@/lib/access/access.server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 
@@ -53,42 +54,49 @@ function isPeriod(value: string | undefined): value is Period {
 }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string; thread?: string; experiment?: string }> }) {
+  // Authorize the owner before starting any café-scoped data read or streaming the chat.
   const signedInUser = await timeReader("Home","requireOwnBusiness",requireOwnBusiness);
-  const [requestedLocale, chatReadiness, {period:periodParam,thread:initialThread,experiment:initialExperiment}] = await Promise.all([
-    timeReader("Home","getLocale",getLocale),
-    timeReader("Home","getSupervisorChatReadiness",()=>getSupervisorChatReadiness(Boolean(signedInUser))),
-    searchParams,
+  const [requestedLocale, {period:periodParam,thread:initialThread,experiment:initialExperiment}] = await Promise.all([
+    timeReader("Home","getLocale",getLocale), searchParams,
   ]);
   const locale = requestedLocale === "es" || requestedLocale === "ar" ? requestedLocale : "en";
-  const cafeAccess=signedInUser ? await timeReader("Home","getCafeAccess",async()=>getCafeAccess(
-    await timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id)))) : null;
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
-  // Match Money’s selected-period evidence; the default month snapshot cannot prove Today or Week ingredient coverage.
-  const [snapshot, menu, identity] = await Promise.all([
-    timeReader("Home","getSnapshot",()=>getSnapshot(period)),
-    timeReader("Home","getMenuControlCenter",()=>getMenuControlCenter({includeSalesEvidence:false})),
-    signedInUser?timeReader("Home","readSupervisorCafeIdentity",async()=>readSupervisorCafeIdentity(
-      await timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id)))):Promise.resolve(null),
-  ]);
-  const cafeCurrency=identity?.currency??null;
-  const vm = buildHomeViewModel(snapshot, period);
-  // Money and Supervisor agree on known costs and their evidence. Home must not
-  // bypass that canonical completeness gate when showing owner profit.
-  const moneyVm = buildProfitAndCostsViewModel(snapshot, period);
-  const [t,tChat,tCommon,tAccess,tGoals,tEvents,items,businessId]=await Promise.all([
+  // Start the existing canonical reads early; neither one gates the chat surface.
+  const snapshotPromise = timeReader("Home","getSnapshot",()=>getSnapshot(period));
+  const menuPromise = timeReader("Home","getMenuControlCenter",()=>getMenuControlCenter({includeSalesEvidence:false}));
+  const businessIdPromise = signedInUser
+    ? timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id))
+    : Promise.resolve(null);
+  const identityPromise = signedInUser
+    ? timeReader("Home","readSupervisorCafeIdentity",async()=>readSupervisorCafeIdentity(await businessIdPromise))
+    : Promise.resolve(null);
+  // Chat enablement, access and currency must be verified before composing messages.
+  const [chatReadiness,cafeAccess,identity,t,tChat,tCommon,tAccess,tGoals,tEvents] = await Promise.all([
+    timeReader("Home","getSupervisorChatReadiness",()=>getSupervisorChatReadiness(Boolean(signedInUser))),
+    signedInUser ? timeReader("Home","getCafeAccess",async()=>getCafeAccess(await businessIdPromise)) : Promise.resolve(null),
+    identityPromise,
     timeReader("Home","getTranslations.Home",()=>getTranslations("Home")),
     timeReader("Home","getTranslations.SupervisorChat",()=>getTranslations("SupervisorChat")),
     timeReader("Home","getTranslations.Common",()=>getTranslations("Common")),
     timeReader("Home","getTranslations.FreeAccess",()=>getTranslations("FreeAccess")),
     timeReader("Home","getTranslations.Goals",()=>getTranslations("Goals")),
     timeReader("Home","getTranslations.EventsPanel",()=>getTranslations("EventsPanel")),
-    timeReader("Home","getAttentionItems",()=>getAttentionItems({period,locale,snapshot,menu})),
-    signedInUser?timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id)):Promise.resolve(null),
   ]);
-  const board=businessId&&identity&&signedInUser
-    ?await timeReader("Home","readOperatingBoard",async()=>readOperatingBoard(await createServerSupabaseClient(),
-      {businessId,ownerUserId:signedInUser.id},identity.asOf)):null;
+  const cafeCurrency = identity?.currency??null;
+  const chatStartPromise: Promise<HomeStartPayload | null> = (async()=>{
+    try {
+      const [snapshot, menu] = await Promise.all([snapshotPromise, menuPromise]);
+      // All figures come from the same selected-period canonical snapshot as Money and chat.
+      const vm = buildHomeViewModel(snapshot, period);
+      const moneyVm = buildProfitAndCostsViewModel(snapshot, period);
+      const [items,businessId] = await Promise.all([
+        timeReader("Home","getAttentionItems",()=>getAttentionItems({period,locale,snapshot,menu})),
+        businessIdPromise,
+      ]);
+      const board=businessId&&identity&&signedInUser
+        ?await timeReader("Home","readOperatingBoard",async()=>readOperatingBoard(await createServerSupabaseClient(),
+          {businessId,ownerUserId:signedInUser.id},identity.asOf)):null;
   const { costCompleteness, hasPartial, canShowProfit, hasEstimatedCosts, profitChangePct } = homeMoneyQuality(vm,moneyVm);
   const money=(cents:number)=>formatCafeCurrency(cents,locale,cafeCurrency).text;
   // The existence of a rollup row does not mean today's closeout was imported.
@@ -131,13 +139,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     pct:number(Math.abs(Math.round(profitChangePct))),
     direction:profitChangePct>=0?t("more"):t("less"),
   })+(vm.comparisonState.kind==="available"&&vm.comparisonState.partialPeriod?" · "+tCommon("partialPeriod"):"");
-  return <PageShell wide className="flex flex-col gap-4 px-3 pb-4 pt-3 md:px-4 md:pt-4">
-    {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px]">
-      {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
-      {" "}<Link href="/pricing" className="underline">{tAccess("haveCode")}</Link>
-    </p>}
-    <SupervisorHomePanel cafeCurrency={cafeCurrency}
-      chatStartData={{
+
+      return {
+        data: {
+
         period,sales,costs,kept,attention:items,
         partial:hasPartial,estimated:hasEstimatedCosts,
         incomplete:!canShowProfit && vm.coverage.actualDays>0,
@@ -160,8 +165,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               :r.recommendation==="revert"?t("boardReportRevert",{item:r.productName})
               :t("boardReportAdjust",{item:r.productName})})),
         }:undefined,
-      }}
-      chatStartCopy={{
+              },
+        copy: {
+
         keyNumbers:t("keyNumbers"),sales:t("sales"),knownCosts:t("knownCosts"),
         youKeep:t("youKeep"),partial:t("partialPill"),estimate:t("estimatePill"),
         incomplete:t("costsIncomplete"),details:t("chatStartDetails"),
@@ -172,7 +178,21 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         experimentPrompt:t("chatStartExperimentPrompt"),suggestionsLabel:t("askAnything"),
         handledLabel:t("attentionHandled"),
         boardRunning:t("boardRunning"),boardReports:t("boardReports"),
-      }}
+              },
+      };
+    } catch {
+      // Keep the owner-authenticated chat usable; never fabricate missing money.
+      console.error("home.summary.read_failed");
+      return null;
+    }
+  })();
+  return <PageShell wide className="flex flex-col gap-4 px-3 pb-4 pt-3 md:px-4 md:pt-4">
+    {cafeAccess&&(cafeAccess.remind||!cafeAccess.active)&&<p role="status" className="rounded-xl border border-amber-300 p-4 text-[17px]">
+      {cafeAccess.remind ? tAccess("renewSoon",{date:cafeAccess.accessEnd??""}) : tAccess("expired")}
+      {" "}<Link href="/pricing" className="underline">{tAccess("haveCode")}</Link>
+    </p>}
+    <SupervisorHomePanel cafeCurrency={cafeCurrency}
+      chatStartPromise={chatStartPromise}
       initialThreadId={initialThread} initialProposalId={initialExperiment}
           locale={locale}
       languageSwitch={<LanguageSwitch href="/" compact />}
