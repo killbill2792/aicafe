@@ -78,7 +78,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   const [affectsOnly,setAffectsOnly]=useState(false);
   const [calendar,setCalendar]=useState(false);
   const [month,setMonth]=useState<string|null>(null);
-  const [ticks,setTicks]=useState<EventChecklistTick[]>([]);
+  const [tickData,setTickData]=useState<{proposalId:string;ticks:EventChecklistTick[]}|null>(null);
   const [busy,setBusy]=useState(false);
   const [actionError,setActionError]=useState(false);
 
@@ -92,18 +92,25 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   }
   useEffect(()=>{
     const controller=new AbortController();
-    void refresh(controller.signal).catch(()=>{if(!controller.signal.aborted)setError(true);});
+    void fetch("/api/events/saved",{cache:"no-store",signal:controller.signal})
+      .then(async response=>{
+        if(!response.ok)throw new Error("events_unavailable");
+        const data=await response.json() as Timeline;
+        if(!Array.isArray(data.events)||!Array.isArray(data.plans)||
+          !/^\\d{4}-\\d{2}-\\d{2}$/.test(data.today))throw new Error("invalid_events");
+        if(!controller.signal.aborted)setTimeline(data);
+      }).catch(()=>{if(!controller.signal.aborted)setError(true);});
     return ()=>controller.abort();
   },[]);
   useEffect(()=>{
     if(!selected||!timeline)return;
     const plan=planOn(timeline.plans,selected);
-    if(!plan){setTicks([]);return;}
+    if(!plan)return;
     const controller=new AbortController();
     void fetch("/api/events/saved?proposalId="+encodeURIComponent(plan.proposalId),
       {cache:"no-store",signal:controller.signal})
       .then(r=>r.ok?r.json():Promise.reject(new Error("checklist_unavailable")))
-      .then((data:{ticks:EventChecklistTick[]})=>setTicks(data.ticks))
+      .then((data:{ticks:EventChecklistTick[]})=>setTickData({proposalId:plan.proposalId,ticks:data.ticks}))
       .catch(()=>{if(!controller.signal.aborted)setActionError(true);});
     return ()=>controller.abort();
   },[selected,timeline]);
@@ -121,6 +128,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   const plan=planOn(timeline.plans,chosen);
   const dayEvents=eventsOn(timeline.events,chosen);
   const actions=actionsFor(plan);
+  const ticks=tickData?.proposalId===plan?.proposalId?tickData.ticks:[];
   const calendarMonth=month??today.slice(0,7);
   const calendarFirst=calendarMonth+"-01";
   const weekday=new Date(calendarFirst+"T00:00:00Z").getUTCDay();
@@ -147,7 +155,8 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
           proposalId:plan.proposalId,actionIndex:index,state,
         })});
       if(!response.ok)throw new Error("tick_unavailable");
-      setTicks(previous=>[...previous.filter(x=>x.actionIndex!==index),{actionIndex:index,state}]);
+      setTickData(previous=>({proposalId:plan.proposalId,ticks:[...(previous?.proposalId===plan.proposalId?previous.ticks:[])
+        .filter(x=>x.actionIndex!==index),{actionIndex:index,state}]}));
     }catch{setActionError(true);}finally{setBusy(false);}
   };
   const approve=async()=>{
