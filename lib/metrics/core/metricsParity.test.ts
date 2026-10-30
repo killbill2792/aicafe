@@ -10,7 +10,7 @@ import {profitForPeriod} from "./profit";
 import type {BusinessSnapshot} from "@/lib/data/types";
 import {summarizeResolvedSoldProductCosts,type DailyFacts} from "@/lib/calc";
 import {shiftCafeDate} from "./clock";
-import {moneyTools,canonicalBreakEvenAnswer} from "@/lib/ai/agent/tools/money";
+import {moneyTools} from "@/lib/ai/agent/tools/money";
 import {acceptedExplainLines,type ExplainLine} from "@/lib/ai/agent/explain";
 import HowIGotThis from "@/components/home/HowIGotThis";
 import {renderToStaticMarkup} from "react-dom/server";
@@ -164,7 +164,7 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
    const expectedBreakEven=recovery.breakEven.kind==="ready"?
      recovery.breakEven.breakEvenSalesCents:null;
    expect(chat.monthlyBreakEvenCents).toBe(expectedBreakEven);
-   expect(chat.drinksPerDay).toBe(plan.drinksNeededPerDay);
+   expect(chat.drinksPerDay).toBe(plan.unavailableReason?null:plan.drinksNeededPerDay);
    expect(chat.openDaysPerMonth).toBe(plan.openDaysPerMonth);
    expect(chat.salesCalibration).toMatchObject({expected:28});
    expect(chat.laborCoverage).toMatchObject({
@@ -201,10 +201,10 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
 });
 
 describe("October closed-day parity, verified Toast zero fees and visible working",()=>{
- it("Money, Plan, standard Supervisor and its formula use identical cents and elapsed coverage",()=>{
+ it("Money, Plan, standard Supervisor and its formula use identical cents and elapsed coverage",async()=>{
    const base=demo("complete");
    const dateRow=(date:string,fees:number,status:"actual"|"estimated"):DailyFacts=>({
-     ...base.monthActualDays[0],date,netSalesCents:100_000,
+     ...base.monthActualDays[0],date,netSalesCents:1_000_000,
      drinksCount:200,ordersCount:90,wagesCents:0,staffTaxCents:0,
      laborWageStatus:"actual",staffTaxStatus:"actual",
      cardFeesCents:fees,cardFeesStatus:status,salesDataStatus:"actual",
@@ -218,7 +218,15 @@ describe("October closed-day parity, verified Toast zero fees and visible workin
    const inputs=breakEvenSnapshotInputs(snapshot);
    const money=buildCostRecoveryViewModel(snapshot);
    const plan=buildBreakEvenViewModel(snapshot);
-   const chat=canonicalBreakEvenAnswer(inputs,snapshot.todayDateStr,"en");
+   const toolAnswer=(basis:ReturnType<typeof breakEvenSnapshotInputs>)=>
+     moneyTools.get_break_even.execute({},{
+       asOf:snapshot.todayDateStr,timezone:snapshot.business.timezone,locale:"en",
+       tools:{} as AgentToolContext["tools"],
+       readEconomics:async()=>({canonicalBreakEven:basis,items:[],staff:[],
+         ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null,
+         economics:{openDaysBasis:"opening_hours"} as Economics}),
+     } as AgentToolContext);
+   const chat=await toolAnswer(inputs);
    expect(inputs.monthLabor.projectedMonthlyLaborCents).toBe(0);
    expect(inputs.feeResult.basis).toBe("actual");
    expect(inputs.feeResult.amountCents).toBe(10_821);
@@ -259,6 +267,6 @@ describe("October closed-day parity, verified Toast zero fees and visible workin
    const missing=breakEvenSnapshotInputs(missingFee);
    expect(missing.feeResult.amountCents).not.toBe(10_821);
    expect(missing.feeResult.basis).not.toBe("actual");
-   expect(canonicalBreakEvenAnswer(missing,"2026-10-15","en").status).toBe("estimate");
+   expect((await toolAnswer(missing)).status).toBe("estimate");
  });
 });
