@@ -145,8 +145,8 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
 }
 
 /** Opens over the same Supervisor conversation. Reads saved PR 3 facts and loop plans only. */
-export default function SavedEventsCard({locale,chatDisabled,onChatAboutDay}:{
-  locale:Locale;chatDisabled:boolean;
+export default function SavedEventsCard({locale,chatDisabled,compact=false,onChatAboutDay}:{
+  locale:Locale;chatDisabled:boolean;compact?:boolean;
   onChatAboutDay:(date:string,title:string,existingThreadId?:string)=>void;
 }){
   const t=useMemo(()=>createTranslator({locale,messages:{en,es,ar}[locale],namespace:"EventsPanel"}) as unknown as T,[locale]);
@@ -226,7 +226,7 @@ export default function SavedEventsCard({locale,chatDisabled,onChatAboutDay}:{
         <CalendarDays size={20} aria-hidden="true"/><span className="flex-1 text-[17px]">{t("title")}</span>
         <span className="text-[15px] text-accent-text">{t("seeAll")}</span>
       </button>
-      {lead?<button type="button" onClick={()=>openDay(lead.date)}
+      {!compact&&(lead?<button type="button" onClick={()=>openDay(lead.date)}
         className="mb-3 w-full min-w-0 rounded-2xl bg-surface2 p-3 text-start disabled:opacity-60">
         <p className="text-[15px] font-semibold text-accent-text">{dateLabel(lead.date,locale,"long")} · {lead.date===today?t("now"):t("upcoming")}</p>
         <h3 className="mt-1 break-words font-headline text-[20px] font-bold leading-snug text-ink" dir="auto">
@@ -246,8 +246,8 @@ export default function SavedEventsCard({locale,chatDisabled,onChatAboutDay}:{
         {lead.plan?.summary&&<p className="mt-2 line-clamp-3 text-[17px] leading-relaxed text-ink" dir="auto">{lead.plan.summary}</p>}
         {lead.date===today&&liveEventHeadline(lead.plan,today,t)&&<p className="mt-2 rounded-xl bg-card p-2 text-[17px]">{liveEventHeadline(lead.plan,today,t)}</p>}
         <span className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text">{t("readInsights")} <ChevronRight size={19} className="ms-1 rtl:rotate-180" aria-hidden="true"/></span>
-      </button>:<p className="mb-3 text-[17px] leading-snug text-ink-muted">{t("nothingSaved")}</p>}
-      <div className="grid grid-cols-7 gap-1">
+      </button>:<p className="mb-3 text-[17px] leading-snug text-ink-muted">{t("nothingSaved")}</p>)}
+      {!compact&&<div className="grid grid-cols-7 gap-1">
         {days.map(date=>{
           const dayPlan=planOn(timeline.plans,date);
           const events=eventsOn(timeline.events,date);
@@ -260,7 +260,7 @@ export default function SavedEventsCard({locale,chatDisabled,onChatAboutDay}:{
             <span aria-hidden="true" className={"h-2 w-2 rounded-full "+(dayPlan?"bg-accent":events.length?"bg-warn-text":"bg-line")}/>
           </button>;
         })}
-      </div>
+      </div>}
     </section>
     {panel&&<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 md:items-center"
       role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPanel(null);}}>
