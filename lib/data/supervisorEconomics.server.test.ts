@@ -55,6 +55,31 @@ describe("Supervisor economics shares Money metrics/core evidence",()=>{
   expect(read.economics.monthlyStaff.reason).toBe("laborPartialCoverage");
   expect(read.economics.monthlyStaff.reasonParams).toMatchObject({covered:3,total:20});
  });
+ it("reports missing labor only for elapsed open days of October, not September sales or future dates",async()=>{
+  stubs.pricing.mockResolvedValue({items:[],business:{monthlyRevenueCents:2000000,
+   monthlyVariableProductCostCents:400000,productCostsStatus:"actual",targetOperatingMargin:.15},
+   menuPriceBasis:{runningKnownCents:30000,runningStatus:"recorded",
+    monthlyRunningCents:30000,missingRunningCategories:[]}});
+  stubs.items.mockResolvedValue({menuItems:[],breakEvenProductCosts:[]});
+  stubs.plans.mockResolvedValue([]);
+  const september=Array.from({length:8},(_,i)=>"2026-09-"+String(i+23).padStart(2,"0"));
+  const october=Array.from({length:9},(_,i)=>"2026-10-"+String(i+1).padStart(2,"0"));
+  const records=[...september,...october].map(date=>({
+   ...rows[0],business_date:date,
+   staff_wages_cents:date==="2026-10-03"?null:10000,
+   staff_tax_cents:date==="2026-10-03"?null:1200,
+   labor_wage_status:date==="2026-10-03"?"missing":"actual",
+  }));
+  const read=await readSupervisorEconomics(fixtureDb(records),"test-business","2026-10-10");
+  expect(read.economics.laborWindowDays).toBe(9);
+  expect(read.economics.laborCoveredDays).toBe(8);
+  expect(read.economics.missingDays).toEqual(["2026-10-03"]);
+  expect(read.economics.monthlyStaff.missingDays).toEqual(["2026-10-03"]);
+  expect(read.economics.monthlyStaff.reasonParams).toMatchObject({covered:8,total:9});
+  // October 10 is still in progress and October 11-31 are projections, not missing history.
+  expect(read.economics.missingDays).not.toContain("2026-10-10");
+  expect(read.economics.missingDays).not.toContain("2026-10-31");
+ });
  it("fee effective rate matches shared actual > owner plan > estimated/default precedence",async()=>{
   const read=await readSupervisorEconomics(fixtureDb(rows),"test-business","2026-10-21");
   const days=rows.map(r=>({date:r.business_date,netSalesCents:r.net_sales_cents,
