@@ -105,8 +105,15 @@ end $$;
 revoke all on function public.pos_import_toast_attendance(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.pos_import_toast_attendance(uuid,uuid) to service_role;
 
--- Bring shifts already saved in line with Toast now, then queue their days for recompute.
-with fixed as (
+-- Bring shifts already saved in line with Toast now, then queue both their old and new days for
+-- recompute (a shift moved in the app leaves stale costs on the day it was moved to).
+-- "before" reads the rows as they were, since every part of one statement sees the same snapshot.
+with before as (
+ select t.id,t.business_id,t.clock_in,t.clock_out from public.timecards t
+ join public.toast_labor_entries l on t.business_id=l.business_id
+  and t.pos_timecard_id='toast:'||l.restaurant_guid::text||':'||l.external_time_entry_id::text
+ where not l.deleted and l.clock_out is not null and l.clock_out>l.clock_in
+), fixed as (
  update public.timecards t set
   hourly_wage_cents=coalesce(l.hourly_wage_cents,0),wage_source='pos',
   clock_in=l.clock_in,clock_out=l.clock_out,breaks=l.breaks,
@@ -121,10 +128,14 @@ with fixed as (
    t.provider_regular_hours,t.provider_overtime_hours,t.pos_owner_edited)
    is distinct from row(coalesce(l.hourly_wage_cents,0),'pos'::text,l.clock_in,l.clock_out,l.breaks,
    l.provider_regular_hours,l.provider_overtime_hours,false)
- returning t.business_id,t.clock_in,t.clock_out
+ returning t.id,t.business_id,t.clock_in,t.clock_out
+), spans as (
+ select business_id,clock_in,clock_out from fixed
+ union all
+ select b.business_id,b.clock_in,b.clock_out from before b join fixed f on f.id=b.id
 ), days as (
  select distinct f.business_id,d::date as business_date
- from fixed f join public.businesses b on b.id=f.business_id
+ from spans f join public.businesses b on b.id=f.business_id
  cross join lateral generate_series(
   (f.clock_in at time zone b.timezone)::date,
   (coalesce(f.clock_out,f.clock_in) at time zone b.timezone)::date,
