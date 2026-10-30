@@ -14,6 +14,8 @@ on:
       - 'scripts/toast-archive-incremental-sql-integration.sql'
       - 'scripts/ai-toast-records-sql-integration.sql'
       - 'supabase/migrations/20261031000130_ai_reads_all_toast_fields.sql'
+      - 'scripts/sync-cafe-data.mjs'
+      - 'scripts/sync-cafe-data-db-integration.mjs'
       - '.github/workflows/toast-db-integration.yml'
   workflow_dispatch:
 concurrency:
@@ -80,6 +82,15 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f scripts/ai-toast-records-sql-integration.sql
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies for the test café copy check
+        run: npm ci --ignore-scripts
+      - name: Verify the test café copy against real PostgreSQL
+        run: node scripts/sync-cafe-data-db-integration.mjs
+        env:
+          SYNC_TEST_DB_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres
       - name: Stop disposable Supabase
         if: always()
         run: supabase stop --no-backup
