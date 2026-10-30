@@ -138,7 +138,9 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
           })}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-5 gap-y-1">
-          <Link href="/operations" className="inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline">
+          {/* Same period as the count above, so Operations shows the same list. */}
+          <Link href={{ pathname: "/operations", query: data.period === "today" ? {} : { period: data.period } }}
+            className="inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline">
             {copy.seeAll}
           </Link>
           <Link href="/operations?status=handled" className="inline-flex min-h-12 items-center text-[15px] font-semibold text-accent-text underline">

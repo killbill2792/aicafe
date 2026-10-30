@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { suggestPrice } from "@/lib/calc/pricingEngine";
 import { getPricingProfile } from "@/lib/pricing/profiles";
-import { agentForTask } from "@/lib/operating/tasks";
+import { agentForTask, type OperatingTask } from "@/lib/operating/tasks";
 import type { BusinessSnapshot, RunningCostLine } from "@/lib/data/types";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
-import { buildOperationsTeamViewModel } from "./operationsTeam";
+import { buildOperationsTeamViewModel, needsYouFromAttention } from "./operationsTeam";
 
 const pricing = suggestPrice({
   productCostCents: 180,
@@ -49,5 +49,38 @@ describe("operations team presentation", () => {
     const team = buildOperationsTeamViewModel(snapshot(2), [], new Date("2026-10-02T12:00:00Z"));
     expect(team.needsYou.filter((task) => task.agentId === "leo")).toHaveLength(2);
     expect(team.members.find((member) => member.agentId === "leo")?.attentionCount).toBe(2);
+  });
+});
+
+describe("Operations Needs you matches Home's attention list", () => {
+  const items = [
+    { id: "bill:rent", agentId: "leo" as const, displayTitle: "Add rent", actionLabel: "Fix", href: "/more/bills", impactCents: null },
+    { id: "unmatched", agentId: "maya" as const, displayTitle: "3 items not matched", actionLabel: "Match", href: "/menu", impactCents: null },
+    { id: "alert:1", agentId: "olivia" as const, displayTitle: "Missed meal break", actionLabel: "Open", href: "/staff", impactCents: 900 },
+    { id: "price:item-0", agentId: "alex" as const, displayTitle: "Latte price is low", actionLabel: "Fix", href: "/menu/item-0", impactCents: 120 },
+  ];
+  const task = { id: "price:item-0", businessId: "business", agentId: "alex", kind: "price_review", status: "needs_owner",
+    payload: {}, confidence: "high", evidence: [], createdAt: "2026-10-02T12:00:00Z" } satisfies OperatingTask;
+
+  it("lists every Home item, in Home's order, so the counts are equal", () => {
+    const { rows } = needsYouFromAttention(items, [task]);
+    expect(rows.map((row) => row.id)).toEqual(items.map((item) => item.id));
+  });
+
+  it("counts each teammate's items from the same list", () => {
+    const { counts } = needsYouFromAttention(items, [task]);
+    expect(counts).toEqual({ alex: 1, olivia: 1, maya: 1, leo: 1 });
+    expect(Object.values(counts).reduce((sum, n) => sum + n, 0)).toBe(items.length);
+  });
+
+  it("keeps the stored task for a task row so its own actions stay available", () => {
+    const { rows } = needsYouFromAttention(items, [task]);
+    expect(rows[3]).toBe(task);
+    expect(rows[0]).toBe(items[0]);
+  });
+
+  it("never adds a stored task that Home does not show", () => {
+    const { rows } = needsYouFromAttention([], [task]);
+    expect(rows).toEqual([]);
   });
 });

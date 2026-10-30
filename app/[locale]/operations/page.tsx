@@ -7,7 +7,10 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { syncAndGetOperatingTasks } from "@/lib/data/operatingTasks";
-import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
+import { buildOperationsTeamViewModel, needsYouFromAttention, projectOperatingTasks, type NeedsYouItem } from "@/lib/viewmodels/operationsTeam";
+import { getAttentionItems } from "@/lib/attention/getAttentionItems.server";
+import { topChatStartItems } from "@/components/home/chatStartAttention";
+import type { Period } from "@/lib/viewmodels/period";
 import { formatCents } from "@/lib/calc";
 import { selectedInboxTaskId } from "@/lib/viewmodels/selectedInboxTask";
 import { parseAgentId, type AgentId, type OperatingTask } from "@/lib/operating/tasks";
@@ -24,15 +27,25 @@ import {staffScheduleHref} from "@/lib/scheduling/staffScheduleLinks";
 export const dynamic = "force-dynamic";
 type InboxStatus = "needs_you" | "handled" | "watching";
 const parseStatus = (value?: string): InboxStatus => value === "handled" || value === "watching" ? value : "needs_you";
+const parsePeriod = (value?: string): Period => value === "week" || value === "month" ? value : "today";
+const isNeed = (row: OperatingTask | NeedsYouItem): row is NeedsYouItem => "displayTitle" in row;
 
-export default async function OperationsPage({ searchParams }: { searchParams: Promise<{ agent?: string; status?: string; task?: string }> }) {
+export default async function OperationsPage({ searchParams }: { searchParams: Promise<{ agent?: string; status?: string; task?: string; period?: string }> }) {
   await requireOwnBusiness();
-  const [{ agent, status, task }, snapshot, menu, t, tCategories, tRules, tExperiment] = await Promise.all([searchParams, getSnapshot(), getMenuControlCenter(), getTranslations("Operations"), getTranslations("Categories"), getTranslations("TeamRules"), getTranslations("SupervisorExperiment")]);
+  const [{ agent, status, task, period: periodParam }, snapshot, menu, t, tCategories, tRules, tExperiment] = await Promise.all([searchParams, getSnapshot(), getMenuControlCenter(), getTranslations("Operations"), getTranslations("Categories"), getTranslations("TeamRules"), getTranslations("SupervisorExperiment")]);
   const tBrief = await getTranslations("DailyBrief");
   const tGoals = await getTranslations("Goals");
   const derived = buildOperationsTeamViewModel(snapshot, menu);
-  const persisted = await syncAndGetOperatingTasks([...derived.needsYou, ...derived.handled, ...derived.watching]);
+  // "Needs you" is the same shared attention list Home counts, for the period Home showed.
+  const period = parsePeriod(periodParam);
+  const [persisted, attention] = await Promise.all([
+    syncAndGetOperatingTasks([...derived.needsYou, ...derived.handled, ...derived.watching]),
+    getAttentionItems({ period, menu }),
+  ]);
   const team = projectOperatingTasks(persisted.tasks);
+  const needs = needsYouFromAttention(attention, team.needsYou);
+  const tops = topChatStartItems(attention);
+  const periodQuery: Record<string, string> = period === "today" ? {} : { period };
   const selectedAgent = parseAgentId(agent);
   const selectedStatus = parseStatus(status);
   const statusQuery = status === "needs_you" || status === "handled" || status === "watching" ? status : undefined;
@@ -40,14 +53,16 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   const tStaffRules=await getTranslations("StaffSchedule");
   const names: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const scoped = (tasks: OperatingTask[]) => selectedAgent ? tasks.filter((task) => task.agentId === selectedAgent) : tasks;
-  const lists = { needs_you: scoped(team.needsYou), handled: scoped(team.handled), watching: scoped(team.watching) };
+  const lists = { needs_you: needs.rows.filter((row) => !selectedAgent || row.agentId === selectedAgent),
+    handled: scoped(team.handled), watching: scoped(team.watching) };
+  const members = team.members.map((member) => ({ ...member, attentionCount: needs.counts[member.agentId] }));
   // Query IDs are in-page presentation hints, never selectors for a database read.
   const selectedTaskId=selectedInboxTaskId(lists[selectedStatus],task);
-  const copy = { title: t("teamTitle"), aiLabel: t("aiLabel"), brandLabel: t("brandLabel"), names, roles: { alex: t("alexRole"), olivia: t("oliviaRole"), maya: t("mayaRole"), leo: t("leoRole") }, status: (member: (typeof team.members)[number]) => member.statusKey === "prices" ? t("prices", { count: member.attentionCount }) : member.statusKey === "attention" ? t("attention", { count: member.attentionCount }) : member.statusKey === "coverage_clear" ? t("coverageClear") : t("supplies") };
+  const copy = { title: t("teamTitle"), aiLabel: t("aiLabel"), brandLabel: t("brandLabel"), names, roles: { alex: t("alexRole"), olivia: t("oliviaRole"), maya: t("mayaRole"), leo: t("leoRole") }, status: (member: (typeof team.members)[number]) => t("attention", { count: member.attentionCount }), need: (member: (typeof team.members)[number]) => tops[member.agentId]?.displayTitle ?? null };
 
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-28 pt-6">
     <header><p className="text-sm font-semibold text-ink-muted">{t("eyebrow")}</p><h1 className="font-headline text-3xl font-bold text-ink">{t("title")}</h1><p className="mt-1 text-[17px] text-ink-muted">{selectedAgent ? t("focusedOn", { name: names[selectedAgent], role: copy.roles[selectedAgent] }) : t("intro")}</p></header>
-    <AITeamCard team={team} copy={copy} selectedAgent={selectedAgent} selectedStatus={statusQuery} />
+    <AITeamCard team={{ ...team, members }} copy={copy} selectedAgent={selectedAgent} selectedStatus={statusQuery} extraQuery={periodQuery} />
     <Link href="/staff/rules" className="flex min-h-12 items-center self-start rounded-xl border border-line px-4 text-accent-text underline">{tStaffRules("rulesCard")}</Link>
 
     {ownerCanSubscribe && <section id="team-rules" className="flex flex-col gap-3" aria-labelledby="selected-agent-rules">
@@ -75,9 +90,9 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
       }}/>
     </section>}
     <nav className="grid grid-cols-3 gap-1 rounded-2xl bg-card p-1" aria-label={t("inboxStatusLabel")}>
-      {(["needs_you", "handled", "watching"] as const).map((value) => <Link key={value} href={{ pathname: "/operations", query: { ...(selectedAgent ? { agent: selectedAgent } : {}), status: value } }} aria-current={selectedStatus === value ? "page" : undefined} className={`flex min-h-12 items-center justify-center rounded-xl px-2 text-center text-sm font-bold no-underline ${selectedStatus === value ? "bg-accent text-on-accent" : "text-ink-muted"}`}>{t(value === "needs_you" ? "needsYou" : value)} {lists[value].length}</Link>)}
+      {(["needs_you", "handled", "watching"] as const).map((value) => <Link key={value} href={{ pathname: "/operations", query: { ...(selectedAgent ? { agent: selectedAgent } : {}), status: value, ...periodQuery } }} aria-current={selectedStatus === value ? "page" : undefined} className={`flex min-h-12 items-center justify-center rounded-xl px-2 text-center text-sm font-bold no-underline ${selectedStatus === value ? "bg-accent text-on-accent" : "text-ink-muted"}`}>{t(value === "needs_you" ? "needsYou" : value)} {lists[value].length}</Link>)}
     </nav>
-    <TaskList tasks={lists[selectedStatus]} empty={t(selectedStatus === "needs_you" ? "needsYouEmpty" : selectedStatus === "handled" ? "handledEmpty" : "watchingEmpty")} names={names} t={t} tExperiment={tExperiment} tBrief={tBrief} tGoals={tGoals} category={(code) => tCategories(code as ExpenseCategoryCode)} selectedTaskId={selectedTaskId} />
+    <TaskList rows={lists[selectedStatus]} empty={t(selectedStatus === "needs_you" ? "needsYouEmpty" : selectedStatus === "handled" ? "handledEmpty" : "watchingEmpty")} names={names} t={t} tExperiment={tExperiment} tBrief={tBrief} tGoals={tGoals} category={(code) => tCategories(code as ExpenseCategoryCode)} selectedTaskId={selectedTaskId} />
     {ownerCanSubscribe && <OwnerWhatsAppAlerts copy={{
       title: t("whatsAppAlertsTitle"), description: t("whatsAppAlertsDescription"),
       enable: t("whatsAppAlertsEnable"), disable: t("whatsAppAlertsDisable"),
@@ -111,10 +126,11 @@ function taskHref(task: OperatingTask): string {
   return "/more/uploads/ingredients";
 }
 
-function TaskList({ tasks, empty, names, t, tExperiment, tBrief, tGoals, category, selectedTaskId }: { tasks: OperatingTask[]; empty: string; names: Record<AgentId, string>; t: Awaited<ReturnType<typeof getTranslations<"Operations">>>; tExperiment: Awaited<ReturnType<typeof getTranslations<"SupervisorExperiment">>>; tBrief: Awaited<ReturnType<typeof getTranslations<"DailyBrief">>>; tGoals: Awaited<ReturnType<typeof getTranslations<"Goals">>>; category: (code: string) => string; selectedTaskId: string|null }) {
-  if (tasks.length === 0) return <section className="rounded-card-lg bg-card p-[18px]"><p className="text-[17px] text-ink-muted">{empty}</p></section>;
-  return <section className="flex flex-col gap-3">{tasks.map((task) => {
+function TaskList({ rows, empty, names, t, tExperiment, tBrief, tGoals, category, selectedTaskId }: { rows: (OperatingTask | NeedsYouItem)[]; empty: string; names: Record<AgentId, string>; t: Awaited<ReturnType<typeof getTranslations<"Operations">>>; tExperiment: Awaited<ReturnType<typeof getTranslations<"SupervisorExperiment">>>; tBrief: Awaited<ReturnType<typeof getTranslations<"DailyBrief">>>; tGoals: Awaited<ReturnType<typeof getTranslations<"Goals">>>; category: (code: string) => string; selectedTaskId: string|null }) {
+  if (rows.length === 0) return <section className="rounded-card-lg bg-card p-[18px]"><p className="text-[17px] text-ink-muted">{empty}</p></section>;
+  return <section className="flex flex-col gap-3">{rows.map((task) => {
     const visual = agentVisuals[task.agentId];
+    if (isNeed(task)) return <NeedCard key={task.id} item={task} name={names[task.agentId]} selected={task.id === selectedTaskId} />;
     const price = task.kind === "price_review";
     const experiment=task.kind==="price_experiment_report";
     const midRun=experiment&&task.payload.midRun===true;
@@ -150,4 +166,20 @@ function TaskList({ tasks, empty, names, t, tExperiment, tBrief, tGoals, categor
       {experiment && task.status === "needs_owner" && <ExperimentReportActions taskId={task.id} acknowledgeLabel={tExperiment("reportAcknowledge")} errorLabel={tExperiment("reportAcknowledgeError")} />}
     </article>;
   })}</section>;
+}
+
+/** A shared attention item that is not a stored task (missing bill, unmatched items, alert…). */
+function NeedCard({ item, name, selected }: { item: NeedsYouItem; name: string; selected: boolean }) {
+  const visual = agentVisuals[item.agentId];
+  const action = "mt-3 flex min-h-12 items-center justify-center rounded-full bg-accent px-4 text-center font-bold text-on-accent no-underline";
+  // The shared reader only returns relative links; OAuth setup needs a real navigation.
+  return <article id={selected ? "selected-task" : undefined} tabIndex={selected ? -1 : undefined}
+    data-selected-task={selected ? "true" : undefined} data-attention-id={item.id}
+    className={`scroll-mt-24 rounded-card-lg border-s-4 p-[18px] ${visual.border} ${visual.softSurface} ${selected ? "ring-4 ring-ink shadow-lg" : ""}`}>
+    <div className="flex items-center gap-2"><AgentAvatar agentId={item.agentId} size="task" /><p className={`font-bold ${visual.accent}`}>{name} · AI</p></div>
+    <h2 className="mt-3 text-lg font-bold text-ink" dir="auto">{item.displayTitle}</h2>
+    {item.href.startsWith("/api/")
+      ? <a href={item.href} className={action}>{item.actionLabel}</a>
+      : <Link href={item.href} className={action}>{item.actionLabel}</Link>}
+  </article>;
 }
