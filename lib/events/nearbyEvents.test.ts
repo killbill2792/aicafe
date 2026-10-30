@@ -262,8 +262,8 @@ describe("web search call",()=>{
   it("keeps all-incomplete scans failed and retries them on the next invocation",async()=>{
     const fixture={status:"incomplete",incomplete_details:{reason:"max_output_tokens"},
       output:[{type:"web_search_call",status:"completed"},{type:"reasoning",summary:[]}]};
-    const fetch=vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(fixture),{status:200}));
+    // A new request gets a new response body; Response.json() consumes it once.
+    const fetch=vi.fn(async()=>new Response(JSON.stringify(fixture),{status:200}));
     const search=createNearbyEventsSearch({fetch,apiKey:"k",model:"m"});
     expect(await search(input)).toEqual({available:false,outcome:"failed",
       reason:"searchFailed",category:"incomplete"});
@@ -281,6 +281,19 @@ describe("web search call",()=>{
     const result=await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})({
       ...input,countryCode:"US",to:"2026-10-31"});
     expect(result).toMatchObject({available:false,outcome:"failed",category:"http_error"});
+  });
+
+  it("reports complete failure across general and holiday searches, with bounded attempts",async()=>{
+    const fetch=vi.fn(async()=>new Response(JSON.stringify({
+      status:"incomplete",incomplete_details:{reason:"max_output_tokens"},
+      output:[{type:"web_search_call",status:"completed"},{type:"reasoning",summary:[]}],
+    }),{status:200}));
+    const params={...input,countryCode:"US",to:"2026-10-31"};
+    const scopes=1+holidaysBetween(params.from,params.to,"US","TX","en").length;
+    const result=await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})(params);
+    expect(result).toEqual({available:false,outcome:"failed",
+      reason:"searchFailed",category:"incomplete"});
+    expect(fetch).toHaveBeenCalledTimes(scopes*2);
   });
 
   it("caches an explicitly empty, fully successful search",async()=>{
