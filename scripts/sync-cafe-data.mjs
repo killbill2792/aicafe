@@ -169,7 +169,7 @@ export const INSERT_IF_MISSING_TABLES = [
   t("staff_scheduling_compensation", { remapOwnId: true, fk: { employee_id: "employees" } }),
   t("staff_scheduling_preferences", { remapOwnId: true, fk: { employee_id: "employees" } }),
   t("scheduling_coverage_requirements", { remapOwnId: true, fk: { location_id: "locations" } }),
-  t("employee_pay_period_facts", { remapOwnId: true, fk: { employee_id: "employees" }, conflictMode: "updateSafetyColumns", updateColumnsOnConflict: ["gross_pay_cents", "employer_taxes_cents", "net_pay_cents"] }),
+  t("employee_pay_period_facts", { remapOwnId: true, fk: { employee_id: "employees" }, conflictMode: "updateSafetyColumns", updateColumnsOnConflict: ["regular_cents", "overtime_cents", "double_overtime_cents", "gross_cents", "employee_tax_cents", "employer_tax_cents", "net_cents", "pay_period_end", "source"] }),
   t("expenses", { remapOwnId: true, fk: { recurring_cost_id: "recurring_costs" }, conflictMode: "updateSafetyColumns", updateColumnsOnConflict: ["amount_cents", "spent_on", "status", "category_code", "recurring_cost_id"] }),
   t("expense_lines", { remapOwnId: true, joinScope: "expenses", joinCol: "expense_id", fk: { expense_id: "expenses", ingredient_id: "ingredients" } }),
   t("vendor_rules", { pk: ["business_id", "normalized_vendor"] }),
