@@ -1,8 +1,7 @@
 name: AI CAFE Pull Request Baseline
 
-# This gate intentionally runs for *every* PR targeting main. Most existing
-# domain workflows are path-filtered, so their check names cannot be required
-# globally without permanently blocking unrelated PRs.
+# Run for every PR to main. Keep the original required check name in the
+# final gate; all jobs must succeed, including all three regression shards.
 on:
   pull_request:
     branches:
@@ -17,10 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  baseline:
-    name: AI CAFE PR baseline
+  quality:
+    name: TypeScript, full ESLint and patch hygiene
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,18 +34,62 @@ jobs:
         run: npx tsc --noEmit
       - name: Full repository ESLint
         run: npm run lint
-      - name: Complete Vitest regression suite
-        run: npm test
-      - name: ESLint changed JS/TS sources
-        shell: bash
-        run: |
-          mapfile -d '' -t changed < <(git diff --name-only --diff-filter=ACMR -z origin/main...HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs')
-          if (( ${#changed[@]} > 0 )); then
-            npx eslint "${changed[@]}"
-          else
-            echo "No changed JavaScript or TypeScript files."
-          fi
-      - name: Production build
-        run: npm run build -- --webpack
       - name: Verify Git patch whitespace
         run: git diff --check origin/main...HEAD
+
+  regressions:
+    name: Full Vitest regressions (shard ${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      # Vitest shards test FILES. Together, the three jobs execute the same
+      # complete suite as npm test, without skipping any existing test.
+      - name: Complete regression suite (shard ${{ matrix.shard }}/3)
+        run: npm test -- --shard=${{ matrix.shard }}/3
+
+  production-build:
+    name: Next.js Webpack production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Production build
+        run: npm run build -- --webpack
+
+  baseline:
+    # Preserve this required check name for existing branch protection.
+    name: AI CAFE PR baseline
+    if: always()
+    needs: [quality, regressions, production-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every baseline verification to pass
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          TEST_RESULT: ${{ needs.regressions.result }}
+          BUILD_RESULT: ${{ needs.production-build.result }}
+        run: |
+          echo "Quality: $QUALITY_RESULT"
+          echo "Full test suite (all shards): $TEST_RESULT"
+          echo "Production build: $BUILD_RESULT"
+          test "$QUALITY_RESULT" = success
+          test "$TEST_RESULT" = success
+          test "$BUILD_RESULT" = success
