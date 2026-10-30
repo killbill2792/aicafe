@@ -77,12 +77,16 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const laborEvidence=laborForPeriod(dayList.map(date=>({date})),laborRows,null,
   ownerMonthlyPayrollExtrasCents===null?null:{monthlyCents:ownerMonthlyPayrollExtrasCents,
    from:month.from,to:month.to});
+ const monthStillOpen=laborWindow.length<dayList.length;
  const payroll=figure(laborEvidence.projectedMonthlyLaborCents,
-  laborEvidence.basis==="recorded"?"actual":"estimate",
-  laborEvidence.coveredDays<laborEvidence.totalDays?"laborPartialCoverage":
+  laborEvidence.basis==="recorded"&&!laborEvidence.notes.includes("laborEstimated")&&
+    ownerMonthlyPayrollExtrasCents===null?"actual":"estimate",
+  laborMissing.length?"laborPartialCoverage":
+    laborEvidence.coveredDays===0?"laborNoCoveredDays":
+    monthStillOpen?"laborProjectedToMonth":
     ownerMonthlyPayrollExtrasCents!==null?"laborOwnerExtras":
     laborEvidence.notes.includes("laborEstimated")?"laborEstimated":"laborRecorded",
-  laborMissing,{covered:laborDays.length,total:laborWindow.length});
+  laborMissing,{covered:laborDays.length,total:laborWindow.length,planned:dayList.length});
  const active=(recurring.data??[]).filter(row=>!row.active_to||row.active_to>=asOf);
  const billTotal=active.length?totalMonthlyRecurringCostsCents(active.map(row=>({
   amountCents:Number(row.amount_cents),frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly"
