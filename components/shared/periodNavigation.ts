@@ -21,3 +21,14 @@ export function needsPeriodRecovery(
 ): boolean {
   return !navigationPending && serverPeriod !== urlPeriod && !alreadyTried;
 }
+
+/** An interrupted/stale navigation may be retried without trapping every period button. */
+export function periodTapAction(
+  target: Period,
+  serverPeriod: Period,
+  urlPeriod: Period,
+  navigating: boolean,
+): "none" | "replace" | "refresh" {
+  if (navigating || (target === serverPeriod && target === urlPeriod)) return "none";
+  return target === urlPeriod ? "refresh" : "replace";
+}
