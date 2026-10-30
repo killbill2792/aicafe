@@ -57,7 +57,7 @@ describe("web search call",()=>{
     const search=createNearbyEventsSearch({fetch:fetch as unknown as typeof globalThis.fetch,apiKey:"k",model:"m"});
     const r=await search(input);
     expect(r).toEqual({available:true,outcome:"found",events:[expect.objectContaining({name:"Austin AI Week",
-      venueAddress:"500 E Cesar Chavez St, Austin, TX",startTime:"09:00"})],partial:false});
+      venueAddress:"500 E Cesar Chavez St, Austin, TX",startTime:"09:00"})],partial:false,failedSearches:[]});
     const body=JSON.parse(String(fetch.mock.calls[0][1]?.body));
     expect(body.tools).toEqual([{type:"web_search",user_location:{type:"approximate",city:"Austin",region:"TX"}}]);
     expect(body.text.format).toMatchObject({type:"json_schema",strict:true,name:"nearby_events"});
@@ -78,7 +78,7 @@ describe("web search call",()=>{
       .mockResolvedValueOnce(new Response(JSON.stringify({output:[{type:"message",content:[{type:"output_text",
         text:"```json\n"+JSON.stringify({events:[event()]})+"\n```"}]}]}),{status:200}));
     const r=await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})(input);
-    expect(r).toEqual({available:true,outcome:"found",events:[expect.objectContaining({name:"Austin AI Week"})],partial:false});
+    expect(r).toEqual({available:true,outcome:"found",events:[expect.objectContaining({name:"Austin AI Week"})],partial:false,failedSearches:[]});
     const last=JSON.parse(String(fetch.mock.calls[2][1].body));
     expect(last.tools[0].type).toBe("web_search");
     expect(last.text).toBeUndefined();
