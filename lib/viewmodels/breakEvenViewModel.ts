@@ -41,6 +41,7 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot) {
       to:snapshot.monthKey+"-"+String(snapshot.daysInMonth).padStart(2,"0")});
   const feePlans=(snapshot as BusinessSnapshot&{ownerFeePlans?:OwnerFeePlan[]}).ownerFeePlans;
   const feeResult=cardFeesForDays(days,feePlans??null);
+  const observedSalesCents=sumCents(days,day=>day.netSalesCents);
   const openDayCount=openDates.length||snapshot.daysInMonth;
   const shared=breakEvenFor({days,asOfDate:snapshot.todayDateStr,daysInMonth:openDayCount,
     monthlyBillsCents,monthlyStaffCents:monthLabor.projectedMonthlyLaborCents,
@@ -53,15 +54,18 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot) {
     .map(day=>day.date));
   const missingLaborDates=elapsedOpenDates.filter(date=>!completeLaborDates.has(date));
   const missingBills=snapshot.runningCostLines.some(line=>line.isMissing&&line.isExpected);
+  const estimatedBills=snapshot.runningCostLines.some(line=>line.isEstimate&&line.amountCents>0);
+  const estimatedStaffTax=monthRecords.some(day=>day.staffTaxStatus==="estimated");
+  const ownerExtrasPresent=extras!=null;
   const missingFees=days.some(day=>day.cardFeesStatus==="missing");
   const estimatesUsed=missingBills||missingFees||productCosts.missingProductCosts||
     productCosts.usesEstimatedProductCosts||monthLabor.notes.includes("laborEstimated")||
     missingLaborDates.length>0||elapsedOpenDates.length<openDates.length||
-    feeResult.basis!=="actual"||
-    snapshot.runningCostLines.some(line=>line.isEstimate&&line.amountCents>0);
+    feeResult.basis!=="actual"||estimatedBills||estimatedStaffTax||ownerExtrasPresent;
   return {days,productCosts,monthlyBillsCents,monthlyStaffCents:monthLabor.projectedMonthlyLaborCents,
     monthLabor,feeResult,shared,openDayCount,openDates,elapsedOpenDates,missingLaborDates,
-    missingBills,missingFees,estimatesUsed};
+    missingBills,missingFees,estimatedBills,estimatedStaffTax,ownerExtrasPresent,observedSalesCents,
+    estimatesUsed};
 }
 
 export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
