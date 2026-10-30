@@ -3681,7 +3681,7 @@
     "basisEvent": "Evento cerca{distance}",
     "basisGeneral": "Patrón general, aún no son tus ventas",
     "moreEvents": "+{count} más",
-    "nothingSpecial": "Nada especial en los próximos 7 días. Personal habitual.",
+    "nothingSpecial": "No hay días festivos ni eventos locales en los próximos 7 días.",
     "addAddress": "Agrega la dirección de tu café para ver también los eventos cercanos.",
     "addAddressButton": "Agregar dirección",
     "addressPrompt": "Busca eventos cerca de mi café",
