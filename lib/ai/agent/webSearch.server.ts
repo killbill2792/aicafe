@@ -13,7 +13,7 @@ type Fetch=typeof fetch;
 function publicSource(value:unknown):{title:string;url:string}|null{
   if(!value||typeof value!=="object")return null;
   const row=value as {url?:unknown;title?:unknown};
-  if(typeof row.url!=="string")return null;
+  if(typeof row.url!=="string"||row.url.length>500)return null;
   try{
     const url=new URL(row.url);
     if(url.protocol!=="https:"||url.username||url.password||url.hostname.length===0)return null;
@@ -25,7 +25,8 @@ function publicSource(value:unknown):{title:string;url:string}|null{
 export function extractWebSearchAnswer(body:unknown):{answer:string;sources:Array<{title:string;url:string}>}|null{
   if(!body||typeof body!=="object")return null;
   const response=body as {status?:unknown;output?:unknown};
-  if(response.status==="incomplete"||response.status==="failed"||!Array.isArray(response.output))return null;
+  if(typeof response.status==="string"&&response.status!=="completed")return null;
+  if(!Array.isArray(response.output))return null;
   const paragraphs:string[]=[],sources:Array<{title:string;url:string}>=[];
   const urls=new Set<string>();
   for(const item of response.output){
