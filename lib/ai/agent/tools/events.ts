@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {savedEventsTools} from "./getEvents";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {buildEventsOutlook,hourlyOutlookRead} from "@/lib/events/outlook";
 import {CAFE_ADDRESS_FACT} from "@/lib/data/cafeLocation.server";
@@ -12,14 +13,24 @@ export const nearbyEventsInput=z.strictObject({
   days:z.number().int().min(1).max(10).nullable(),
 });
 
-/** "What's happening near my café?" Same builder as the Home "Coming up" card.
- * Read-only: it never changes a schedule; staffing changes stay propose_* cards. */
+/** Compatibility tool for older event prompts. Authenticated chat reads the same
+ * saved timeline as Home; only the scheduled discovery job performs event searches.
+ * The older outlook builder remains for callers that do not have saved storage. */
 export const eventsTools={
   get_nearby_events:{
     agentId:"alex",schema:nearbyEventsInput,
-    description:"Read-only facts for holidays and events near the signed-in café: dated names, event sources, venue/time, regular hours, same-weekday hourly Toast medians, last occurrence's sales, recorded top items, existing schedule and saved owner answers. No staffing decisions, forecasts or hard-coded holiday advice. Use for questions about upcoming days and busy hours; start_date null=today, days null=7. Never invent crowd counts or fill missing evidence with zero. If scheduleStatus is unavailable or partial, never interpret an empty scheduledPeople list as nobody scheduled; explain the incomplete schedule or Toast data. If hourlySalesQuality or notCovered reports partial POS data, qualify all affected historical hour medians and planning estimates. Give a useful AI-written plan immediately: expected busy hours (label estimates), 1–3 actions across staffing, prep, ordering, promotion, hours or operations with a reason grounded in these facts. If a holiday has no past history and no saved event answer, add at most one ask_owner kind=facts choice field named event_outcome:<holiday key>:<last year>, with 2–4 owner-friendly options (e.g. busy, normal, quiet, closed) and an Other response. The owner answer is saved and the same chat updates the plan. If the café address is missing still explain known holidays, then ask for cafe_address. Never pretend the AI's plan comes from code.",
+    description:"For saved nearby events, read the same saved event timeline as Home; never run a discovery search in chat. For explicitly requested fresh public information use web_search. Read-only facts for holidays and events near the signed-in café: dated names, event sources, venue/time, regular hours, same-weekday hourly Toast medians, last occurrence's sales, recorded top items, existing schedule and saved owner answers. No staffing decisions, forecasts or hard-coded holiday advice. Use for questions about upcoming days and busy hours; start_date null=today, days null=7. Never invent crowd counts or fill missing evidence with zero. If scheduleStatus is unavailable or partial, never interpret an empty scheduledPeople list as nobody scheduled; explain the incomplete schedule or Toast data. If hourlySalesQuality or notCovered reports partial POS data, qualify all affected historical hour medians and planning estimates. Give a useful AI-written plan immediately: expected busy hours (label estimates), 1–3 actions across staffing, prep, ordering, promotion, hours or operations with a reason grounded in these facts. If a holiday has no past history and no saved event answer, add at most one ask_owner kind=facts choice field named event_outcome:<holiday key>:<last year>, with 2–4 owner-friendly options (e.g. busy, normal, quiet, closed) and an Other response. The owner answer is saved and the same chat updates the plan. If the café address is missing still explain known holidays, then ask for cafe_address. Never pretend the AI's plan comes from code.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=nearbyEventsInput.parse(raw);
+      // Home and the authenticated Supervisor both use this ONE saved timeline.
+      // Even an older model calling this compatibility name must not spend money
+      // re-discovering an event, or replace its saved status, sources and reports.
+      if(ctx.savedEvents){
+        const from=input.start_date??ctx.asOf;
+        const end=new Date(from+"T00:00:00Z");
+        end.setUTCDate(end.getUTCDate()+(input.days??7)-1);
+        return savedEventsTools.get_events.execute({from,to:end.toISOString().slice(0,10)},ctx);
+      }
       const outlook=await buildEventsOutlook({today:ctx.asOf,timezone:ctx.timezone,locale:ctx.locale,
         from:input.start_date,days:input.days,readLocation:ctx.cafeLocation,search:ctx.searchNearbyEvents,
         readHourlySales:ctx.tools.getPeakHours?async(from,to)=>{
