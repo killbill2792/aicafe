@@ -23,8 +23,7 @@ const effect=eventReadinessEffect.parse({
    venue:"Square",areaLabel:"Downtown",sourceUrl:"https://example.org"}],
  factsHash:"a".repeat(64),
 });
-const proposal={id:"proposal-id",capabilityId:"alex.event_readiness.v1",threadId:scope.threadId}
- as LoopProposal;
+const proposal={id:"proposal-id",capabilityId:"alex.event_readiness.v1",threadId:scope.threadId} as LoopProposal;
 const sample={businessDate:date,source:"toast_today_live+hourly_sales_rollup",
  observation:{coverage:"provisional",asOf:"2026-10-31T19:01:00.000Z",asOfLocal:"12:01",
   actualCents:5000,typicalCents:10000,changePercent:-50,baselineDays:5,notable:true}};
