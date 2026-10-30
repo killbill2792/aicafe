@@ -33,9 +33,10 @@ export async function GET(request:Request){
       if(proposals.length!==1)throw new ConversationApiError(404,"event_plan_not_found");
       return conversationJson({ticks:await readEventChecklist(db,scope.businessId,id)});
     }
-    const today=(await readSupervisorCafeIdentity(scope.businessId)).asOf;
+    const identity=await readSupervisorCafeIdentity(scope.businessId);
+    const today=identity.asOf;
     const timeline=await readSavedEventTimeline(db,scope,utcDateOffset(today,-14),utcDateOffset(today,14));
-    return conversationJson({today,...timeline});
+    return conversationJson({today,currency:identity.currency,...timeline});
   }catch(error){return conversationError(error);}
 }
 

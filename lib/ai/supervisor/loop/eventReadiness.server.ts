@@ -15,6 +15,8 @@ import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {indexHourlyRevenue,compareEventDaySales,compareLiveEventSales} from "@/lib/metrics/core/eventReadiness";
 import {cafeToday} from "@/lib/metrics/core/clock";
+import {eventFinalNarrative,eventReportFactsHash,eventReportFallback,eventReportNumericEvidence}
+  from "@/lib/events/eventFinalReport.server";
 import {effectHash,registerLoopCapability,utcDateOffset} from "./engine";
 
 const time=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -204,14 +206,42 @@ export const eventReadinessCapability=registerLoopCapability({
          usualThroughHourEnd:hourEnd,partialCurrentHour:true}}],
      threadText:midRunText,
    }:undefined;
-   return {status:!windowComplete?"in_progress":complete?"complete":"insufficient_evidence",
-     midRunText,midRunKey:liveWatch?.businessDate,delivery,
+   const status=!windowComplete?"in_progress":complete?"complete":"insufficient_evidence";
+   const result={
+     eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
+     factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
+     checklist,liveWatch,
+     missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
+     days:actual.map(s=>({date:s.businessDate,...s.observation})),
+     caveat:"Comparison is observational, not evidence that an event caused a change.",
+   };
+   // Keep PR 6's live reporting and PR 7's final report in the same canonical loop.
+   const terminal=windowComplete&&Boolean(window?.proposalId);
+   const narrative=terminal&&window?.proposalId
+     ?await eventFinalNarrative(scope,window.proposalId,effect.facts.map(f=>f.name),
+       effect.summary,result,status==="complete"?"complete":"insufficient_evidence")
+     :null;
+   const reportText=narrative?.text??(terminal?eventReportFallback(scope.locale,result):null);
+   const provenance=narrative?.provenance??[];
+   const factsHash=eventReportFactsHash(result,status,effect.summary,effect.facts.map(f=>f.name));
+   const finalDelivery=terminal&&reportText?{
+     agentId:"alex" as const,taskKind:"event_plan" as const,
+     entityType:"event_day",entityId:effect.startDate,
+     confidence:status==="complete"?"high" as const:"low" as const,
+     payload:{itemName:effect.summary,businessDate:effect.startDate,
+       eventReport:true,outcomeStatus:status,text:reportText},
+     evidence:[{source:"hourly_sales_rollup+daily_rollups",
+       facts:{observedDays:actual.length,expectedDays:expected,
+         doneActions:checklist.done,totalActions:checklist.total,nonCausal:true}}],
+     numberProvenance:provenance,numericEvidence:eventReportNumericEvidence(result),
+     threadText:reportText,
+   }:undefined;
+   return {status,midRunText,midRunKey:liveWatch?.businessDate,
+     delivery:finalDelivery??delivery,
      recommendation:"adjust",source:"hourly_sales_rollup+daily_rollups",
-     result:{eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
-       factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
-       checklist,liveWatch,
-       missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
-       days:actual.map(s=>({date:s.businessDate,...s.observation})),
-       caveat:"Comparison is observational, not evidence that an event caused a change."}};
+     result:{...result,...(reportText?{reportText,reportFactsHash:factsHash,
+       reportTextOrigin:narrative?"model":"facts",reportProvenance:provenance,
+       reportNumericEvidence:eventReportNumericEvidence(result)}:{})}};
+
  },
 });
