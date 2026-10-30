@@ -4,7 +4,7 @@ import { subDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { normalizeOpenHours } from "@/lib/business/openHours";
 import { selectedFeeCoverageForSalesDays } from "@/components/more/processingFeeDefaults";
-import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { getActiveBusinessId, readActiveBusinessMemberships } from "@/lib/data/getActiveBusinessId";
 import { getUploadHistory } from "@/lib/data/getUploadHistory";
 import type { RecurringCostRow } from "@/lib/data/getRecurringCosts";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
@@ -67,10 +67,11 @@ export async function getMoreBadgeInputs(userId: string | undefined): Promise<Mo
   if (!userId || !isSupabaseConfigured()) return {};
   const db = await createServerSupabaseClient();
   const businessId = await getActiveBusinessId(userId);
-  const { data: membership, error: membershipError } = await db.from("memberships")
-    .select("role, businesses(is_demo,currency,timezone)").eq("business_id", businessId)
-    .eq("user_id", userId).maybeSingle();
-  if (membershipError || !membership) return {};
+  // The active selector and the onboarding guard already read these authenticated
+  // memberships for this request. Do not issue another membership query for badges.
+  const membership = (await readActiveBusinessMemberships(userId))
+    .find((row) => row.business_id === businessId);
+  if (!membership) return {};
   const raw = membership.businesses as unknown as
     {is_demo: boolean; currency: string; timezone: string} |
     {is_demo: boolean; currency: string; timezone: string}[] | null;

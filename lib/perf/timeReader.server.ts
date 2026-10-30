@@ -13,7 +13,7 @@ const context=cache(async()=>{
 
 /** Existing reader timings extended with privacy-safe request correlation. */
 export async function timeReader<T>(
-  page:"Home"|"Money"|"Toast"|"Snapshot"|"Staff"|"Menu",
+  page:"Home"|"Money"|"Toast"|"Snapshot"|"Staff"|"Menu"|"More",
   name:string,
   read:()=>Promise<T>,
 ):Promise<T> {

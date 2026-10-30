@@ -2,6 +2,7 @@ import "server-only";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
+import { getOptionalAuthenticatedUser } from "@/lib/auth/requireUser";
 import type { IngredientImportSummary, LaborImportSummary, ProcessingFeeImportSummary, SalesImportSummary } from "@/lib/actions/csvImport";
 
 export type UploadHistoryRow = {
@@ -17,7 +18,9 @@ export type UploadReview = UploadHistoryRow & { jobId: string | null };
 async function uploadContext() {
   if (!isSupabaseConfigured()) return null;
   const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  // The More page has already authenticated this request. Reusing its
+  // request-scoped user avoids another Auth network call for the upload badge.
+  const user = await getOptionalAuthenticatedUser();
   if (!user) return null;
   const businessId = await getActiveBusinessId(user.id);
   return { supabase, businessId };

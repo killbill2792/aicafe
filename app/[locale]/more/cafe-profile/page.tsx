@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getCafeProfile } from "@/lib/data/getCafeProfile";
+import { timeReader } from "@/lib/perf/timeReader.server";
 import BackHeader from "@/components/shared/BackHeader";
 import CafeProfileForm from "@/components/more/CafeProfileForm";
 import PageShell from "@/components/shared/PageShell";
@@ -11,7 +12,7 @@ export default async function CafeProfilePage({ searchParams }: { searchParams: 
   const focusHours = (await searchParams).focus === "hours";
   const user = await requireOwnBusiness();
   const [profile, t, tCommon] = await Promise.all([
-    getCafeProfile(),
+    timeReader("More", "getCafeProfile", () => getCafeProfile()),
     getTranslations("CafeProfile"),
     getTranslations("Common"),
   ]);
