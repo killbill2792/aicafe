@@ -66,3 +66,42 @@ describe("historical attendance versus active on-clock roster",()=>{
     expect(reads).toEqual([]);
   });
 });
+
+describe("shifts with no hourly wage",()=>{
+  function withUnpaid(rows:unknown[]|"error"){
+    const q=(data:unknown)=>{const query:Record<string,unknown>={};
+      for(const k of ["select","eq","gte","lte","order","in"])query[k]=()=>query;
+      query.limit=async()=>data;
+      query.then=(yes:(v:unknown)=>unknown)=>Promise.resolve(data).then(yes);
+      return query;};
+    return {from(table:string){
+      if(table==="timecards")return q({data:[card("current","2026-10-12T18:00:00Z")],error:null});
+      if(table==="employees")return q({data:[{id:"current",display_name:"Sam"}],error:null});
+      if(table==="cv_labor_entries")return q(rows==="error"?{data:null,error:{code:"42P01"}}:{data:rows,error:null});
+      throw new Error("unexpected table "+table);
+    }} as unknown as SupabaseClient;
+  }
+  const month={from:"2026-10-01",to:"2026-10-28"};
+  it("names each finished shift that has no wage, so the owner is asked only about those",async()=>{
+    const client=withUnpaid([
+      {business_date:"2026-10-12",data:{employee_id:"current"},regular_hours:6.5,overtime_hours:0},
+      {business_date:"2026-10-14",data:{employee_guid:"toast-guid"},regular_hours:null,overtime_hours:null},
+    ]);
+    const result=await supervisorHistoricalReaders(client,BUSINESS).staffAttendance(BUSINESS,month,"America/Los_Angeles");
+    expect(result.available).toBe(true);
+    if(!result.available)return;
+    expect(result.value.missingWageShifts).toEqual([
+      {date:"2026-10-12",employeeName:"Sam",hours:6.5},
+      {date:"2026-10-14",employeeName:null,hours:null},
+    ]);
+  });
+  it("never claims every wage is known when the labor view cannot be read",async()=>{
+    const result=await supervisorHistoricalReaders(withUnpaid("error"),BUSINESS)
+      .staffAttendance(BUSINESS,month,"America/Los_Angeles");
+    expect(result.available).toBe(true);
+    if(!result.available)return;
+    expect(result.value.missingWageShifts).toBeUndefined();
+    expect(result.quality.missingInputs).toContain("missingWageShiftsUnavailable");
+    expect(result.value.timecardCount).toBe(1);
+  });
+});
