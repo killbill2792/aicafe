@@ -3,7 +3,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
 import type { OperatingTask, OperatingTaskResponse } from "@/lib/operating/tasks";
-import { reconcileOperatingTasks } from "@/lib/operating/reconcileTasks";
+import { reconcileOperatingTasks, taskRefreshChangesRow } from "@/lib/operating/reconcileTasks";
 
 type TaskRow = {
   id: string; business_id: string; agent_id: OperatingTask["agentId"]; kind: OperatingTask["kind"];
@@ -35,7 +35,11 @@ export async function syncAndGetOperatingTasks(derived: OperatingTask[]): Promis
   {
     const { data: existingRows, error: existingError } = await supabase.from("operating_tasks").select("id, business_id, agent_id, kind, entity_type, entity_id, status, payload, confidence, evidence, created_at, resolved_at").eq("business_id", businessId);
     if (existingError) throw existingError;
-    const plan = reconcileOperatingTasks((existingRows as TaskRow[]).map(fromRow), derived, new Date());
+    const existing = (existingRows as TaskRow[]).map(fromRow);
+    const plan = reconcileOperatingTasks(existing, derived, new Date());
+    // Most loads change nothing; writing every task each time made the page slow.
+    const existingById = new Map(existing.map((task) => [task.id, task]));
+    const changed = plan.refresh.filter((task) => taskRefreshChangesRow(existingById.get(task.id), task));
     const missing = plan.insert.map((task) => ({
       id: task.id, business_id: businessId, agent_id: task.agentId, kind: task.kind,
       entity_type: task.entityType ?? null, entity_id: task.entityId ?? null, status: task.status,
@@ -45,7 +49,7 @@ export async function syncAndGetOperatingTasks(derived: OperatingTask[]): Promis
       const { error } = await supabase.from("operating_tasks").upsert(missing, { onConflict: "business_id,id", ignoreDuplicates: true });
       if (error) throw error;
     }
-    await Promise.all(plan.refresh.map(async (task) => {
+    await Promise.all(changed.map(async (task) => {
       const { error } = await supabase.from("operating_tasks").update({ agent_id: task.agentId, kind: task.kind,
         entity_type: task.entityType ?? null, entity_id: task.entityId ?? null, payload: task.payload,
         confidence: task.confidence, evidence: task.evidence, status: task.status,

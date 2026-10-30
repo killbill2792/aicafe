@@ -142,3 +142,24 @@ export function reconcileOperatingTasks(existing: OperatingTask[], derived: Oper
 
   return { insert, refresh, expire };
 }
+
+function sameJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const leftKeys = Object.keys(left).filter((key) => (left as Record<string, unknown>)[key] !== undefined);
+  const rightKeys = Object.keys(right).filter((key) => (right as Record<string, unknown>)[key] !== undefined);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) =>
+    sameJson((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]));
+}
+
+/** True when a refresh would write something different from the stored row. Stored JSON
+ * comes back with its keys reordered, so values are compared, not text. */
+export function taskRefreshChangesRow(stored: OperatingTask | undefined, refreshed: OperatingTask): boolean {
+  if (!stored) return true;
+  return stored.agentId !== refreshed.agentId || stored.kind !== refreshed.kind ||
+    (stored.entityType ?? null) !== (refreshed.entityType ?? null) || (stored.entityId ?? null) !== (refreshed.entityId ?? null) ||
+    stored.status !== refreshed.status || (stored.resolvedAt ?? null) !== (refreshed.resolvedAt ?? null) ||
+    stored.confidence !== refreshed.confidence || !sameJson(stored.payload, refreshed.payload) ||
+    !sameJson(stored.evidence, refreshed.evidence);
+}

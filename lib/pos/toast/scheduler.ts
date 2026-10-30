@@ -294,9 +294,11 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     await scanModifiedDates(db,m,now,deadlineAt);
    });
    await isolated("payment_gaps",async()=>{
-   // Hourly, after the first import: re-pull imported days that have no saved
-   // Toast payments (and so no processing fees). Runs in the repull phase below.
-   if(!pendingBackfills.length&&now.getUTCMinutes()<10&&Date.now()<deadlineAt)
+   // Hourly: re-pull imported days that have no saved Toast payments (and so
+   // no processing fees). Runs in the repull phase below, with the shared pacing.
+   // Not gated on pending backfills: a stuck or paused one-day backfill must
+   // never stop fee recovery for other, already imported days.
+   if(now.getUTCMinutes()<10&&Date.now()<deadlineAt)
     await queueToastPaymentGaps(db,m,localClock(now,m.toast_time_zone).today,deadlineAt);
    });
    await isolated("repull",async()=>{
