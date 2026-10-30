@@ -79,6 +79,12 @@ describe("Supervisor economics shares Money metrics/core evidence",()=>{
   // October 10 is still in progress and October 11-31 are projections, not missing history.
   expect(read.economics.missingDays).not.toContain("2026-10-10");
   expect(read.economics.missingDays).not.toContain("2026-10-31");
+  const complete=records.map(row=>({...row,
+   staff_wages_cents:10000,staff_tax_cents:1200,labor_wage_status:"actual"}));
+  const projected=await readSupervisorEconomics(fixtureDb(complete),"test-business","2026-10-10");
+  expect(projected.economics.missingDays).toEqual([]);
+  expect(projected.economics.monthlyStaff.reason).toBe("laborProjectedToMonth");
+  expect(projected.economics.monthlyStaff.reasonParams).toMatchObject({covered:9,total:9,planned:31});
  });
  it("fee effective rate matches shared actual > owner plan > estimated/default precedence",async()=>{
   const read=await readSupervisorEconomics(fixtureDb(rows),"test-business","2026-10-21");
