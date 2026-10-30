@@ -2,7 +2,7 @@ import {describe,it,expect} from "vitest";
 import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
 import {cafeStateFromSnapshot} from "@/lib/operating/cafeState";
 import {buildProfitAndCostsViewModel,buildCostRecoveryViewModel} from "@/lib/viewmodels/moneyViewModel";
-import {buildBreakEvenViewModel} from "@/lib/viewmodels/breakEvenViewModel";
+import {buildBreakEvenViewModel,breakEvenSnapshotInputs} from "@/lib/viewmodels/breakEvenViewModel";
 import {breakEvenFor} from "./breakEven";
 import {cardFeesForDays} from "./fees";
 import {laborForPeriod} from "./labor";
@@ -10,7 +10,11 @@ import {profitForPeriod} from "./profit";
 import type {BusinessSnapshot} from "@/lib/data/types";
 import {summarizeResolvedSoldProductCosts,type DailyFacts} from "@/lib/calc";
 import {shiftCafeDate} from "./clock";
-import {moneyTools} from "@/lib/ai/agent/tools/money";
+import {moneyTools,canonicalBreakEvenAnswer} from "@/lib/ai/agent/tools/money";
+import {acceptedExplainLines,type ExplainLine} from "@/lib/ai/agent/explain";
+import HowIGotThis from "@/components/home/HowIGotThis";
+import {renderToStaticMarkup} from "react-dom/server";
+import en from "@/messages/en.json";
 import {newItemPriceTools} from "@/lib/ai/agent/tools/newItemPrice";
 import {staffTools} from "@/lib/ai/agent/tools/staff";
 import type {AgentToolContext} from "@/lib/ai/agent/tools/index";
@@ -71,9 +75,10 @@ describe("metricsParity — one observed café through screen and structured cha
       expect(p.profitCents).toBe(screen.ownerProfitCents);
       const productCostEvidence=summarizeResolvedSoldProductCosts(snapshot.breakEvenProductCosts??snapshot.menuItems);
       const core=breakEvenFor({days:snapshot.last28Days,asOfDate:snapshot.todayDateStr,
-        daysInMonth:30,monthlyBillsCents:recovery.monthlyBillsCents,
+        daysInMonth:plan.openDaysPerMonth,monthlyBillsCents:recovery.monthlyBillsCents,
         monthlyStaffCents:recovery.monthlyStaffCents,
         observedIngredientCents:productCostEvidence.totalCostCents});
+      expect(recovery.breakEven).toEqual(plan.breakEven);
       expect(recovery.breakEven.kind).toBe(core.calculation.kind);
       if(recovery.breakEven.kind==="ready"&&core.calculation.kind==="ready"){
         expect(recovery.breakEven.breakEvenSalesCents).toBe(core.calculation.breakEvenSalesCents);
@@ -151,7 +156,7 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
      // The production reader (lib/ai/tools.ts) returns cafe state's businessCosts.
      getBusinessCostSummary:async()=>cafeStateFromSnapshot(snapshot,period).businessCosts,
     } as unknown as AgentToolContext["tools"],
-    readEconomics:async()=>({economics,items:[],staff:[],
+    readEconomics:async()=>({economics,canonicalBreakEven:breakEvenSnapshotInputs(snapshot),items:[],staff:[],
      ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null}),
    };
    const chat=await moneyTools.get_break_even.execute({},ctx);
@@ -159,6 +164,14 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
      recovery.breakEven.breakEvenSalesCents:null;
    expect(chat.monthlyBreakEvenCents).toBe(expectedBreakEven);
    expect(chat.drinksPerDay).toBe(plan.drinksNeededPerDay);
+   expect(chat.openDaysPerMonth).toBe(plan.openDaysPerMonth);
+   expect(chat.salesCalibration).toMatchObject({expected:28});
+   expect(chat.laborCoverage).toMatchObject({
+     from:snapshot.monthKey+"-01",
+     covered:breakEvenSnapshotInputs(snapshot).elapsedOpenDates.length-
+       breakEvenSnapshotInputs(snapshot).missingLaborDates.length,
+     total:breakEvenSnapshotInputs(snapshot).elapsedOpenDates.length,
+   });
    expect(chat.observedProcessingFeesCents).toBe(recovery.observedProcessingFeesCents);
    expect((chat.monthlyLabor as {valueCents:number|null}).valueCents).toBe(recovery.monthlyStaffCents);
    expect((chat.monthlyBills as {valueCents:number|null}).valueCents).toBe(recovery.monthlyBillsCents);
@@ -184,4 +197,67 @@ describe("parity across real chat tool handlers and screens (a)-(g)",()=>{
    }
   });
  }
+});
+
+describe("October closed-day parity, verified Toast zero fees and visible working",()=>{
+ it("Money, Plan, standard Supervisor and its formula use identical cents and elapsed coverage",()=>{
+   const base=demo("complete");
+   const dateRow=(date:string,fees:number,status:"actual"|"estimated"):DailyFacts=>({
+     ...base.monthActualDays[0],date,netSalesCents:100_000,
+     drinksCount:200,ordersCount:90,wagesCents:0,staffTaxCents:0,
+     laborWageStatus:"actual",staffTaxStatus:"actual",
+     cardFeesCents:fees,cardFeesStatus:status,salesDataStatus:"actual",
+   });
+   const history=[dateRow("2026-10-12",5_357,"actual"),
+     dateRow("2026-10-14",5_464,"actual")];
+   const snapshot:BusinessSnapshot={...base,todayDateStr:"2026-10-15",
+     monthKey:"2026-10",daysInMonth:31,monthActualDays:history,
+     monthRecordedDays:history,last28Days:history,breakEvenDays:history,
+     ownerMonthlyPayrollExtrasCents:null};
+   const inputs=breakEvenSnapshotInputs(snapshot);
+   const money=buildCostRecoveryViewModel(snapshot);
+   const plan=buildBreakEvenViewModel(snapshot);
+   const chat=canonicalBreakEvenAnswer(inputs,snapshot.todayDateStr,"en");
+   expect(inputs.monthLabor.projectedMonthlyLaborCents).toBe(0);
+   expect(inputs.feeResult.basis).toBe("actual");
+   expect(inputs.feeResult.amountCents).toBe(10_821);
+   expect(money.observedProcessingFeesCents).toBe(10_821);
+   expect(plan.breakEven).toEqual(money.breakEven);
+   expect(chat.monthlyBreakEvenCents).toBe(money.breakEven.kind==="ready"?
+     money.breakEven.breakEvenSalesCents:null);
+   expect(chat.drinksPerDay).toBe(plan.drinksNeededPerDay);
+   expect(chat.openDaysPerMonth).toBe(plan.openDaysPerMonth);
+   expect(chat.dailyBreakEvenCents).toBe(money.breakEven.kind==="ready"?
+     Math.ceil(money.breakEven.breakEvenSalesCents/plan.openDaysPerMonth):null);
+   expect(chat.laborCoverage).toMatchObject({from:"2026-10-01",to:"2026-10-14",
+     missingDates:inputs.missingLaborDates});
+   expect(inputs.missingLaborDates.every(date=>date.startsWith("2026-10-")&&
+     date<"2026-10-15")).toBe(true);
+   expect(chat.salesCalibration).toMatchObject({expected:28,covered:2});
+   const monthly=chat.monthlyBreakEvenCents as number;
+   if(money.breakEven.kind!=="ready")throw Error("Fixture requires sales");
+   const disclosures=chat.explain as ExplainLine[];
+   expect(disclosures).toHaveLength(1);
+   expect(disclosures[0].result).toEqual({kind:"money",cents:monthly});
+   const reply="Monthly break-even: $"+new Intl.NumberFormat("en-US",{
+     minimumFractionDigits:2,maximumFractionDigits:2}).format(monthly/100);
+   const accepted=acceptedExplainLines(disclosures,[{tool:"break_even",values:[{
+     key:"2026-10-01/2026-10-31/breakEvenSales",
+     value:monthly,unit:"cents"}]}],reply,[],"en");
+   expect(accepted).toEqual(disclosures);
+   const html=renderToStaticMarkup(<HowIGotThis lines={accepted} locale="en"
+     currency={snapshot.business.currency??null} copy={en.SupervisorChat}/>);
+   expect(html).toContain("<details");
+   expect(html).toContain("10,821"); // cents remain accessible as formatted actual fee
+   expect(html).toContain("÷");
+   const missingFee:BusinessSnapshot={...snapshot,
+     monthActualDays:[history[0],dateRow("2026-10-14",0,"estimated")],
+     monthRecordedDays:[history[0],dateRow("2026-10-14",0,"estimated")],
+     last28Days:[history[0],dateRow("2026-10-14",0,"estimated")],
+     breakEvenDays:[history[0],dateRow("2026-10-14",0,"estimated")]};
+   const missing=breakEvenSnapshotInputs(missingFee);
+   expect(missing.feeResult.amountCents).not.toBe(10_821);
+   expect(missing.feeResult.basis).not.toBe("actual");
+   expect(canonicalBreakEvenAnswer(missing,"2026-10-15","en").status).toBe("estimate");
+ });
 });
