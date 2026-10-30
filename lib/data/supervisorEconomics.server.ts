@@ -14,8 +14,10 @@ import {getOwnerConfirmedProcessingFeePlans,ownerConfirmedPlanForDate} from "@/l
 import {validateOwnerConfirmedProcessingFeePlan} from "@/lib/pos/processingFeeEstimate";
 import {cardFeesForDays} from "@/lib/metrics/core/fees";
 import {laborForPeriod,type LaborRecord} from "@/lib/metrics/core/labor";
+import {breakEvenSnapshotInputs} from "@/lib/viewmodels/breakEvenViewModel";
 
 export type SupervisorEconomicsRead={economics:Economics;items:PricingItemInput[];
+ canonicalBreakEven?:ReturnType<typeof breakEvenSnapshotInputs>|null;
  ownerMonthlyPayrollExtrasCents:number|null;ownerIngredientRate:number|null;
  staff:Array<{id:string;displayName:string;role:string|null;wageCents:number|null;weeklyHours:number|null}>};
 /** All rows are filtered through the caller's authenticated RLS client, and the
@@ -52,7 +54,11 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  const latest=salesDays.at(-1);
  const first=latest?salesDays.find(day=>day>=dateOffset(latest,-29)):undefined;
  const coveredDates=new Set(salesDays.filter(day=>first&&latest&&day>=first&&day<=latest));
- const laborWindow=[...coveredDates].filter(open);
+ // Labor coverage tracks elapsed OPEN days of the calendar month, not rolling sales.
+ // Today enters the denominator only once the actual closeout has been recorded.
+ const closedSalesDates=new Set(days.filter(d=>d.salesDataStatus==="actual").map(d=>d.date));
+ const laborWindow=dayList.filter(date=>date<asOf||
+   (date===asOf&&closedSalesDates.has(date)));
  const timecards=await db.from("timecards")
   .select("employee_id,clock_in,clock_out,hourly_wage_cents,source_type")
   .eq("business_id",businessId)
@@ -73,11 +79,14 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   ownerMonthlyPayrollExtrasCents===null?null:{monthlyCents:ownerMonthlyPayrollExtrasCents,
    from:month.from,to:month.to});
  const payroll=figure(laborEvidence.projectedMonthlyLaborCents,
-  laborEvidence.basis==="recorded"?"actual":"estimate",
-  laborEvidence.coveredDays<laborEvidence.totalDays?"laborPartialCoverage":
+  laborEvidence.basis==="recorded"&&!laborEvidence.notes.includes("laborEstimated")&&
+   ownerMonthlyPayrollExtrasCents===null?"actual":"estimate",
+  laborMissing.length?"laborPartialCoverage":
+    laborEvidence.coveredDays===0?"laborNoCoveredDays":
+    laborWindow.length<dayList.length?"laborEstimated":
     ownerMonthlyPayrollExtrasCents!==null?"laborOwnerExtras":
     laborEvidence.notes.includes("laborEstimated")?"laborEstimated":"laborRecorded",
-  laborMissing,{covered:laborDays.length,total:laborWindow.length});
+  laborMissing,{covered:laborDays.length,total:laborWindow.length,planned:dayList.length});
  const active=(recurring.data??[]).filter(row=>!row.active_to||row.active_to>=asOf);
  const billTotal=active.length?totalMonthlyRecurringCostsCents(active.map(row=>({
   amountCents:Number(row.amount_cents),frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly"
@@ -130,7 +139,11 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   Math.round(totalDrinks*dayList.length/salesOpenDays):null;
  const averagePriceCents=totalDrinks>0&&observedRevenueCents>0?
   Math.round(observedRevenueCents/totalDrinks):null;
- return {economics:{
+ // Snapshot is already loaded for product costs. Reuse its single period input
+ // path for owner-facing break-even, with a guard for menu-only unit fixtures.
+ const canonicalBreakEven=Array.isArray(resolvedItems.last28Days)&&
+  Array.isArray(resolvedItems.monthActualDays)?breakEvenSnapshotInputs(resolvedItems):null;
+ return {canonicalBreakEven,economics:{
   monthlyBills,monthlyStaff:payroll,
   knownMonthlyLaborExtrasCents:ownerMonthlyPayrollExtrasCents,
   monthlyRevenue:figure(monthlyRevenueCents,"estimate",
