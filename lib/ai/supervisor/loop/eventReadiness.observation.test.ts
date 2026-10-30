@@ -39,6 +39,8 @@ describe("saved event observation is never owner approval",()=>{
     expect(draft).toMatchObject({status:"draft",monitoringStartDate:null,revision:1});
     expect(observation).not.toBe(draft);
     expect(selectEventObservations([draft])).toEqual([observation]);
+    expect(selectEventObservations([proposal("draft","revised"),draft],
+      new Set([draft.id])).map(x=>x.id)).toEqual([draft.id]);
   });
   it("keeps owner decisions and forbids stale, rejected, altered and unrelated effects",()=>{
     expect(readOnlyEventObservation(proposal("rejected"))).toBeNull();
@@ -66,19 +68,28 @@ describe("canonical Toast item/discount/shift evidence",()=>{
       {source:"toast",status:"actual",data:{name:"Latte"}},
     ]));
     vi.mocked(readDiscounts).mockResolvedValue(ready([
-      {source:"toast",status:"actual",amount_cents:250,data:{order_id:"o"}},
+      {source:"toast",status:"actual",amount_cents:250,data:{order_id:"o"},
+        check_discounts:[{name:"Parade Special",amountCents:250,level:"check"}]},
     ]));
     vi.mocked(readLaborEntries).mockResolvedValue(ready([
-      {source:"toast",status:"actual",data:{clock_in:"2026-10-31T12:00:00Z"}},
+      {source:"toast",status:"actual",data:{
+        clock_in:"2026-10-31T12:00:00Z",clock_out:"2026-10-31T17:00:00Z"}},
+      {source:"toast",status:"needs_match",data:{
+        clock_in:"2026-10-31T14:00:00Z",clock_out:"2026-10-31T18:00:00Z"}},
+      {source:"toast",status:"estimated",data:{
+        clock_in:"2026-10-31T15:00:00Z",clock_out:"2026-10-31T19:00:00Z"}},
     ]));
-    const evidence=await eventToastEvidence({} as never,proposal().businessId,date);
+    const evidence=await eventToastEvidence({} as never,proposal().businessId,date,
+      [{area:"promo",action:"Offer Parade Special discount"}]);
     expect(evidence.itemSales).toEqual({coverage:"verified",
       items:[{name:"Latte",quantity:2}]});
     expect(evidence.discountAmounts).toEqual({coverage:"verified",observedOrders:1});
-    expect(evidence.namedDiscounts).toEqual({coverage:"missing",names:[]});
-    expect(evidence.laborEntries).toEqual({coverage:"verified",recordedShifts:1});
+    expect(evidence.namedDiscounts).toEqual({coverage:"verified",
+      names:["Parade Special"],matchedRecommendationNames:["Parade Special"]});
+    expect(evidence.laborEntries).toEqual({coverage:"verified",
+      recordedShifts:3,wageCoverage:"partial"});
     expect(evidence.recommendedComboImplemented).toBe("unverified");
-    expect(evidence.recommendedDiscountImplemented).toBe("unverified");
+    expect(evidence.recommendedDiscountImplemented).toBe("verified");
     expect(evidence.physicalPreparationImplemented).toBe("unverified");
   });
   it("does not assert full item coverage on a capped Toast read",async()=>{
