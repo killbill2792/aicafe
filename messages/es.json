@@ -3666,6 +3666,8 @@
     "taskCheckinAction": "Responder en el chat"
   },
   "EventsPanel": {
+    "liveAhead": "Las ventas de hoy hasta ahora están un {change}% por encima de lo habitual hasta las {time} (provisional).",
+    "liveBehind": "Las ventas de hoy hasta ahora están un {change}% por debajo de lo habitual hasta las {time} (provisional).",
     "areaStaff": "Personal",
     "areaPrep": "Preparación",
     "areaOrdering": "Pedidos",
