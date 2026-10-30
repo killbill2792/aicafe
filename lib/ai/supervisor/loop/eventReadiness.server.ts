@@ -7,6 +7,7 @@ import {readCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {medianCents,changePercent} from "@/lib/metrics/core/dayOutlook";
+import {indexHourlyRevenue,hourlyMatchesDaily} from "@/lib/metrics/core/eventReadiness";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {effectHash,registerLoopCapability,utcDateOffset} from "./engine";
 
@@ -86,18 +87,10 @@ export const eventReadinessCapability=registerLoopCapability({
    const certified=days.filter(d=>d.salesDataStatus==="actual");
    const today=certified.find(d=>d.date===businessDate);
    if(!today||!hours.available||!hours.value)return null;
-   const byDay=new Map<string,Map<number,number>>();
-   for(const h of hours.value.hours){
-     const byHour=byDay.get(h.date)??new Map<number,number>();
-     byHour.set(h.hourLocal,(byHour.get(h.hourLocal)??0)+h.netSalesCents);
-     byDay.set(h.date,byHour);
-   }
-   // Verify that the hourly breakdown reconciles to the ONE canonical daily
-   // sales total. Any missing or truncated hour leaves the day unknown.
-   const reconcile=(day:{date:string;netSalesCents:number})=>{
-     const rows=byDay.get(day.date);
-     return rows&&[...rows.values()].reduce((a,b)=>a+b,0)===day.netSalesCents;
-   };
+   const byDay=indexHourlyRevenue(hours.value.hours);
+   // Unknown or incomplete hours must not be treated as a zero-sales day.
+   const reconcile=(day:{date:string;netSalesCents:number})=>
+     hourlyMatchesDaily(byDay.get(day.date),day.netSalesCents);
    if(!reconcile(today)||hours.quality.missingInputs.some(x=>x==="hourlySalesPageLimit"||x==="hourlySalesUnavailable"))return null;
    const excluded=new Set(exclusions.filter(e=>e.status==="found").flatMap(e=>{
      const dates:string[]=[];
