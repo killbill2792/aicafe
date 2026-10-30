@@ -14,6 +14,7 @@ import {moneyTools,canonicalBreakEvenAnswer} from "@/lib/ai/agent/tools/money";
 import {acceptedExplainLines,type ExplainLine} from "@/lib/ai/agent/explain";
 import HowIGotThis from "@/components/home/HowIGotThis";
 import {renderToStaticMarkup} from "react-dom/server";
+import {createElement} from "react";
 import en from "@/messages/en.json";
 import {newItemPriceTools} from "@/lib/ai/agent/tools/newItemPrice";
 import {staffTools} from "@/lib/ai/agent/tools/staff";
@@ -245,10 +246,10 @@ describe("October closed-day parity, verified Toast zero fees and visible workin
      key:"2026-10-01/2026-10-31/breakEvenSales",
      value:monthly,unit:"cents"}]}],reply,[],"en");
    expect(accepted).toEqual(disclosures);
-   const html=renderToStaticMarkup(<HowIGotThis lines={accepted} locale="en"
-     currency={snapshot.business.currency??null} copy={en.SupervisorChat}/>);
+   const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:accepted,locale:"en",
+     currency:snapshot.business.currency??null,copy:en.SupervisorChat}));
    expect(html).toContain("<details");
-   expect(html).toContain("10,821"); // cents remain accessible as formatted actual fee
+   expect(html).toContain("108.21"); // verified Toast fee appears in the formula
    expect(html).toContain("÷");
    const missingFee:BusinessSnapshot={...snapshot,
      monthActualDays:[history[0],dateRow("2026-10-14",0,"estimated")],
