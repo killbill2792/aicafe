@@ -1,10 +1,11 @@
 "use client";
 
 import type {ReactNode} from "react";
+import {ChatMarkdown} from "./ChatMarkdown";
 
 export type EventReport={
   status?:unknown;reportText?:unknown;observedDays?:unknown;expectedDays?:unknown;
-  checklist?:unknown;days?:unknown;caveat?:unknown;
+  checklist?:unknown;days?:unknown;caveat?:unknown;reportProvenance?:unknown;
 };
 type ReportDay={date:string;actualCents:number|null;typicalCents:number|null;
   hours:Array<{hourLocal:number;actualCents:number;usualCents:number|null}>};
@@ -13,6 +14,7 @@ const cents=(x:unknown):number|null=>
 export function safeEventReport(raw:unknown):{
   text:string|null;observedDays:number|null;expectedDays:number|null;
   done:number|null;total:number|null;days:ReportDay[];
+  provenance?:Array<{start:number;end:number;source:"owner"|"estimate"|"unchecked"}>;
 }|null{
   if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
   const r=raw as EventReport;
@@ -35,7 +37,16 @@ export function safeEventReport(raw:unknown):{
   }):[];
   return {text:typeof r.reportText==="string"&&r.reportText.trim()?r.reportText:null,
     observedDays:cents(r.observedDays),expectedDays:cents(r.expectedDays),
-    done:cents(checklist.done),total:cents(checklist.total),days};
+    done:cents(checklist.done),total:cents(checklist.total),days,
+    ...(Array.isArray(r.reportProvenance)?{provenance:r.reportProvenance.flatMap((raw:unknown)=>{
+      if(!raw||typeof raw!=="object")return [];
+      const v=raw as Record<string,unknown>;
+      const text=typeof r.reportText==="string"?r.reportText:"";
+      if(!Number.isSafeInteger(v.start)||!Number.isSafeInteger(v.end)||
+        Number(v.start)<0||Number(v.end)<=Number(v.start)||Number(v.end)>text.length||
+        (v.source!=="owner"&&v.source!=="estimate"&&v.source!=="unchecked"))return [];
+      return [{start:Number(v.start),end:Number(v.end),source:v.source}];
+    })}:{})};
 }
 type Copy=(key:string,params?:Record<string,string|number>)=>string;
 export function EventReportCard({report,status,currency,locale,t,onChat}:{
@@ -53,7 +64,8 @@ export function EventReportCard({report,status,currency,locale,t,onChat}:{
     aria-label={t("reportTitle")}>
     <h4 className="font-bold">{t("reportTitle")} · {status==="complete"?
       t("reportComplete"):t("reportIncomplete")}</h4>
-    {parsed.text&&<p className="whitespace-pre-wrap" dir="auto">{parsed.text}</p>}
+    {parsed.text&&<div dir="auto"><ChatMarkdown text={parsed.text} locale={locale}
+      unverified={parsed.provenance??[]} label={t("reportUnchecked")}/></div>}
     <p>{t("reportDays",{actual:count(parsed.observedDays),expected:count(parsed.expectedDays)})}</p>
     <p>{t("reportChecklist",{done:count(parsed.done),total:count(parsed.total)})}</p>
     {!currency&&<p className="text-ink-muted">{t("reportCurrencyMissing")}</p>}
