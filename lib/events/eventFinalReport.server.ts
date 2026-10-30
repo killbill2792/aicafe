@@ -16,9 +16,9 @@ type EventResult={
   caveat:string;
   toastEvidence?:{
     itemSales:{coverage:string;items:Array<{name:string;quantity:number}>};
-    namedDiscounts:{coverage:string;names:string[]};
+    namedDiscounts:{coverage:string;names:string[];matchedRecommendationNames?:string[]};
     discountAmounts:{coverage:string;observedOrders:number};
-    laborEntries:{coverage:string;recordedShifts:number};
+    laborEntries:{coverage:string;recordedShifts:number;wageCoverage?:string};
     recommendedComboImplemented:string;
     recommendedDiscountImplemented:string;
     physicalPreparationImplemented:string;
