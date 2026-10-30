@@ -192,26 +192,35 @@ async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|"ar",
 
 /** A proposal write can succeed while its later message/task write fails.
  * The next cron repairs that delivery without asking the model to propose again. */
-async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string,today:string,
+export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string,today:string,
   events:readonly CafeEvent[],
   plans:readonly {proposalId:string;threadId:string;startDate:string;factsHash:string;
-    status:string;summary:string}[],capacity:number):Promise<number>{
-  if(capacity<=0)return 0;
+    status:string;summary:string}[],capacity:number):Promise<{repaired:number;created:number}>{
   const latest=plans.filter(p=>p.status==="draft"&&p.startDate>=today&&
     p.startDate<=addDays(today,13)&&p.factsHash===effectHash(eventPlanFacts(
       events.filter(e=>e.status==="found"&&e.startDate<=p.startDate&&
         e.endDate>=p.startDate).sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8))));
-  if(!latest.length)return 0;
-  const rows=await db.from("operating_tasks").select("id").eq("business_id",businessId)
+  if(!latest.length)return {repaired:0,created:0};
+  const rows=await db.from("operating_tasks").select("id,payload").eq("business_id",businessId)
     .in("id",latest.map(p=>"event-plan:"+p.startDate));
   requireOk(rows.error);
-  const known=new Set((rows.data??[]).map(t=>t.id));
-  let repaired=0;
+  const known=new Map<string,Record<string,unknown>>((rows.data??[]).map(t=>[
+    t.id,t.payload&&typeof t.payload==="object"&&!Array.isArray(t.payload)
+      ?t.payload as Record<string,unknown>:{},
+  ]));
+  let repaired=0,created=0;
   for(const p of latest){
     const taskId="event-plan:"+p.startDate;
-    if(known.has(taskId)||repaired>=capacity)continue;
+    const previous=known.get(taskId);
     const messageId=stableMessageId("event-plan-message:"+businessId+":"+ownerId+
       ":"+p.startDate+":"+p.factsHash);
+    // A revised proposal reuses the day-keyed task. Its old payload does not
+    // prove that the new approval card and inbox link were delivered.
+    if(previous?.proposalId===p.proposalId&&previous.messageId===messageId&&
+      previous.threadId===p.threadId)continue;
+    // Revisions repair existing inbox rows even after today's new-day cap.
+    // Only newly delivered days consume that cap.
+    if(!previous&&created>=capacity)continue;
     const message=await db.from("ai_messages").insert({
       id:messageId,business_id:businessId,owner_user_id:ownerId,thread_id:p.threadId,
       author_user_id:null,role:"supervisor",content_type:"blocks",text_content:null,
@@ -224,14 +233,17 @@ async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string,today:
     const task=await db.from("operating_tasks").upsert({
       id:taskId,business_id:businessId,agent_id:"alex",kind:"event_plan",
       entity_type:"event_day",entity_id:p.startDate,status:"needs_owner",confidence:"low",
-      payload:{businessDate:p.startDate,plannedOn:today,threadId:p.threadId,
-        proposalId:p.proposalId,messageId,needsApproval:true},
+      payload:{businessDate:p.startDate,
+        plannedOn:typeof previous?.plannedOn==="string"?previous.plannedOn:today,
+        threadId:p.threadId,proposalId:p.proposalId,messageId,needsApproval:true},
       evidence:[{source:"cafe_events",facts:{businessDate:p.startDate}}],
-    },{onConflict:"business_id,id",ignoreDuplicates:true});
+    },{onConflict:"business_id,id"});
     requireOk(task.error);
-    known.add(taskId);repaired++;
+    if(!previous)created++;
+    known.set(taskId,{proposalId:p.proposalId,threadId:p.threadId,messageId});
+    repaired++;
   }
-  return repaired;
+  return {repaired,created};
 }
 
 /** Triggered exclusively by cron. No screen or chat read calls this writer. */
@@ -263,10 +275,10 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
           .eq("business_id",b.id).eq("kind","event_plan").contains("payload",{plannedOn:today});
         requireOk(quota.error);
         const capacity=Math.max(0,maxPlansPerDay-(quota.count??0));
-        const repaired=await recoverPlanDelivery(db,b.id,owner.data.user_id,today,
+        const delivery=await recoverPlanDelivery(db,b.id,owner.data.user_id,today,
           timeline.events,timeline.plans,capacity);
-        result.planned+=repaired;
-        const remaining=capacity-repaired;
+        result.planned+=delivery.repaired;
+        const remaining=capacity-delivery.created;
         if(!candidates.length||!remaining){result.skipped++;continue;}
         const from=addDays(today,-56),until=addDays(today,-1);
         const [days,hours,localeRow]=await Promise.all([
