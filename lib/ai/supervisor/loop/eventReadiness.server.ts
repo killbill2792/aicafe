@@ -62,6 +62,23 @@ export function readOnlyEventObservation(p:LoopProposal):LoopProposal|null{
 }
 
 
+/** One canonical monitored plan per event-day. A committed owner choice wins over
+ * an unapproved revised draft; reruns never generate parallel report threads. */
+export function selectEventObservations(proposals:readonly LoopProposal[]):LoopProposal[]{
+  const priority=(status:LoopProposal["status"])=>
+    status==="committed"||status==="manual_confirmed"?2:status==="approved"?1:0;
+  const chosen=new Map<string,LoopProposal>();
+  for(const original of [...proposals].sort((a,b)=>
+    priority(b.status)-priority(a.status)||
+    b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id))){
+    const observation=readOnlyEventObservation(original);
+    if(!observation)continue;
+    const start=observation.monitoringStartDate!;
+    if(!chosen.has(start))chosen.set(start,observation);
+  }
+  return [...chosen.values()];
+}
+
 // A scheduled run has no browser cookie. Only this server-side factory may mint
 // a system scope, after checking current owner membership AND AI entitlement.
 const approvedScheduledScopes=new WeakSet<object>();
