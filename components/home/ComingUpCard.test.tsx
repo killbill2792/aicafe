@@ -30,7 +30,7 @@ const outlook:EventsOutlook={from:"2026-10-30",to:"2026-11-05",today:"2026-10-30
       decision:{expect:"busier",action:"add_staff",basis:"nearby_event"}},
   ]};
 const view=(state:ComingUpState,locale:"en"|"es"|"ar"="en")=>renderToStaticMarkup(createElement(ComingUpView,
-  {state,locale,t:t(locale),onAsk:()=>{},disabled:false}));
+  {state,locale,t:t(locale),onAsk:()=>{},onChatAboutDay:()=>{},disabled:false}));
 
 describe("Coming up card",()=>{
   it("shows each notable day as one plain decision, at most three",()=>{
@@ -44,6 +44,7 @@ describe("Coming up card",()=>{
     expect(html.match(/<li/gu)).toHaveLength(3);
     expect(html).not.toContain("Wed, Nov 4"); // the fourth notable day stays in chat
     expect(html).toContain("Ask about the week");
+    expect(html.match(/Chat about this/gu)).toHaveLength(3);
   });
   it("says a quiet week plainly and asks for the address when missing",()=>{
     const html=view({status:"ready",outlook:{...outlook,days:[outlook.days[0]],localEvents:[],addressMissing:true,location:null}});
@@ -54,6 +55,8 @@ describe("Coming up card",()=>{
   it("is in the owner's language and stays out of the way while loading or failing",()=>{
     expect(view({status:"ready",outlook},"es")).toContain("Espera más clientes");
     expect(view({status:"ready",outlook},"ar")).toContain("توقّع زبائن أكثر");
+    expect(view({status:"ready",outlook},"es")).toContain("Hablar de esto");
+    expect(view({status:"ready",outlook},"ar")).toContain("تحدث عن هذا");
     expect(view({status:"loading"})).toContain("Checking what");
     expect(view({status:"error"})).toBe("");
   });
