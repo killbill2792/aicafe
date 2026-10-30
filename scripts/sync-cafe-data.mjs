@@ -494,7 +494,7 @@ async function deleteDestDays(client, cfg, days) {
 async function copySourceDays(client, cfg, days) {
   const { table, pk, joinScope, joinCol, conflictMode } = cfg;
   const selectSql = joinScope
-    ? `select t.* from ${table} t join ${joinScope} p on t.${joinCol} = p.id where p.business_id = $1 and ${dayCondition(`p.${dateColumn}`)}`
+    ? `select t.* from ${table} t join ${joinScope} p on t.${joinCol} = p.id where p.business_id = $1 and ${dayCondition(businessDaySql(cfg, "p"))}`
     : `select t.* from ${table} t where t.business_id = $1 and ${dayCondition(businessDaySql(cfg, "t"))}${cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : ""}`;
   const { rows } = await client.query(selectSql, dayParams(SOURCE_BUSINESS_ID, days));
   if (rows.length === 0) return 0;
