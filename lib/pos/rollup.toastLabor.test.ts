@@ -1,6 +1,10 @@
-import {describe,expect,it,vi} from "vitest";
+import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
+const admin=vi.hoisted(()=>({make:vi.fn()}));
+vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:admin.make}));
 vi.mock("server-only",()=>({}));
+beforeEach(()=>vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY",""));
+afterEach(()=>vi.unstubAllEnvs());
 vi.mock("./processingFeeEstimate.server",()=>({
  ensureOwnerConfirmedProcessingFeeEstimateForDay:vi.fn()
 }));
@@ -18,14 +22,15 @@ type TimecardFixture=Omit<typeof planned,"hourly_wage_cents">&{
  hourly_wage_cents:number|null;pos_timecard_id?:string;
  provider_regular_hours?:number|null;provider_overtime_hours?:number|null;
 };
-function previewDb(timecards:Array<TimecardFixture>,orders=[toastOrder],staged:Array<Record<string,unknown>>=[]){
+function previewDb(timecards:Array<TimecardFixture>,orders=[toastOrder],staged:Array<Record<string,unknown>>=[],denyStage=false){
  const from=(table:string)=>{
   const q={
    select:()=>q,eq:()=>q,lt:()=>q,or:()=>q,order:()=>q,in:()=>q,
    lte:()=>q,gte:()=>q,
    range:async(start:number,end:number)=>({
-    data:(table==="orders"?orders:table==="timecards"?timecards:table==="toast_labor_entries"?staged:[]).slice(start,end+1),
-    error:null
+    data:table==="toast_labor_entries"&&denyStage?null:
+      (table==="orders"?orders:table==="timecards"?timecards:table==="toast_labor_entries"?staged:[]).slice(start,end+1),
+    error:table==="toast_labor_entries"&&denyStage?{code:"42501"}:null
    }),
    single:async()=>({data:{timezone:"America/Los_Angeles",
     payroll_tax_rate:0.12,payroll_tax_rate_source:"system_estimate"},error:null}),
@@ -87,4 +92,17 @@ describe("daily rollup guards incomplete Toast attendance",()=>{
   expect(result).toMatchObject({labor_wage_status:"missing",
    staff_wages_cents:null,staff_tax_cents:null});
  });
+});
+
+it("reads service-only staging only after the authenticated business scope was checked",async()=>{
+  const staged=[stagedShift(0,null),stagedShift(1,1800)];
+  const canonical=[providerShift(0,0),providerShift(1,1800)];
+  const ownerDb=previewDb(canonical,[toastOrder],[],true);
+  const serviceDb=previewDb(canonical,[toastOrder],staged);
+  admin.make.mockReturnValue(serviceDb);
+  vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","private-test-key");
+  const result=await recomputeDailyRollup(ownerDb,"business",day,{dryRun:true});
+  expect(result).toMatchObject({labor_wage_status:"actual",
+   staff_wages_cents:1800,staff_tax_cents:216});
+  expect(admin.make).toHaveBeenCalledTimes(1);
 });
