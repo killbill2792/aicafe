@@ -21,7 +21,10 @@ describe("PeriodSwitch navigation behavior", () => {
 
   it("uses one replace when the committed server period agrees, and a single recovery for stale RSC", () => {
     expect(periodFromUrl(null)).toBe("today");
-    expect(periodFromUrl("invalid")).toBe("today");\n    expect(periodFromUrl(null, "month")).toBe("month");\n    expect(periodFromUrl("bad", "month")).toBe("month");\n    expect(needsPeriodRecovery("month", periodFromUrl(null, "month"), false, false)).toBe(false);
+    expect(periodFromUrl("invalid")).toBe("today");
+    expect(periodFromUrl(null, "month")).toBe("month");
+    expect(periodFromUrl("bad", "month")).toBe("month");
+    expect(needsPeriodRecovery("month", periodFromUrl(null, "month"), false, false)).toBe(false);
     expect(needsPeriodRecovery("today", "month", true, false)).toBe(false);
     expect(needsPeriodRecovery("month", "month", false, false)).toBe(false);
     expect(needsPeriodRecovery("today", "month", false, false)).toBe(true);
