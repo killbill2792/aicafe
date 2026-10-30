@@ -1,5 +1,5 @@
 import "server-only";
-import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
+import {DEFAULT_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import {holidaysBetween} from "./holidays";
 import {MAX_EVENTS,nearbyEventsJsonSchema,nearbyEventsPrompt,parseNearbyEvents,responseOutputText,
   type NearbyEvent,type NearbyEventsSearch,type SearchFailureCategory,type UnsearchedEventScope} from "./nearbyEvents";
@@ -7,6 +7,8 @@ import {MAX_EVENTS,nearbyEventsJsonSchema,nearbyEventsPrompt,parseNearbyEvents,r
 /** Web search is read-only. Addresses and fetched page text must never be logged. */
 export const SEARCH_MAX_OUTPUT_TOKENS=1200; // AGENTS.md per-call cap; D4 increase awaits explicit approval.
 const SEARCH_TIMEOUT_MS=25_000;
+// A retry must not double the original 25-second deadline for every query.
+const SEARCH_RETRY_TIMEOUT_MS=12_000;
 const CACHE_MS=3*60*60*1000;
 const cache=new Map<string,{at:number;events:NearbyEvent[];failedSearches:UnsearchedEventScope[]}>();
 
@@ -31,22 +33,25 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
         failedSearches:hit.failedSearches}:
       {available:true,outcome:"none_found",events:[],partial:false};
 
-    const model=deps.model??(process.env.EVENTS_SEARCH_OPENAI_MODEL?.trim()||configuredSupervisorModel());
+    // The Supervisor may use a reasoning model. Search needs a compact answer within
+    // the immutable 1,200-token limit, so its default is a non-reasoning model.
+    const model=deps.model??(process.env.EVENTS_SEARCH_OPENAI_MODEL?.trim()||
+      DEFAULT_SUPERVISOR_OPENAI_MODEL);
     const userLocation=input.city||input.countryCode?{type:"approximate",
       ...(input.city?{city:input.city}:{}),...(input.region?{region:input.region}:{}),
       ...(input.countryCode?{country:input.countryCode}:{})}:null;
 
     const attempt=async(prompt:string,tool:"web_search"|"web_search_preview",
-      strictJson:boolean,number:number,kind:"general"|"holiday"):Promise<Attempt>=>{
+      strictJson:boolean,number:number,kind:"general"|"holiday",requestModel=model):Promise<Attempt>=>{
       const start=now();
       let httpStatus:number|null=null,status:string|null=null,incompleteReason:string|null=null;
       let outputTypes:string[]=[];
       let failure:SearchFailureCategory|null=null;
       try{
         const response=await doFetch("https://api.openai.com/v1/responses",{
-          method:"POST",signal:AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+          method:"POST",signal:AbortSignal.timeout(number===1?SEARCH_TIMEOUT_MS:SEARCH_RETRY_TIMEOUT_MS),
           headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},
-          body:JSON.stringify({model,max_output_tokens:SEARCH_MAX_OUTPUT_TOKENS,store:false,
+          body:JSON.stringify({model:requestModel,max_output_tokens:SEARCH_MAX_OUTPUT_TOKENS,store:false,
             tools:[{type:tool,...(userLocation?{user_location:userLocation}:{})}],
             input:strictJson?prompt:prompt+" Respond with only a JSON object containing an events array, "+
               "with name, startDate, endDate, venue, venueAddress, startTime, endTime, distance, "+
@@ -66,6 +71,7 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
             outputTypes=Array.isArray(b?.output)?b.output.slice(0,12).map((v:unknown)=>
               safeValue(v&&typeof v==="object"?(v as {type?:unknown}).type:undefined,outputKinds)??"other"):[];
             if(b?.status==="incomplete")failure="incomplete";
+            else if(b?.status==="failed"||b?.status==="in_progress")failure="invalid_response";
             else{
               const text=responseOutputText(body);
               if(text===null)failure="missing_message";
@@ -99,10 +105,17 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
       if(first.httpStatus===400){
         const preview=await attempt(prompt,"web_search_preview",true,2,kind);
         if(preview.ok||preview.httpStatus!==400)return preview;
-        return attempt(prompt,"web_search",false,3,kind);
+        return attempt(prompt,"web_search",false,3,kind,DEFAULT_SUPERVISOR_OPENAI_MODEL);
       }
-      // HTTP 200 can contain incomplete, reasoning-only, prose or no output.
-      if(first.httpStatus===200)return attempt(prompt,"web_search",false,2,kind);
+      // A 200-incomplete/reasoning-only response still has no searched results.
+      // Recover using plain JSON and a non-reasoning model, without raising the token cap.
+      if(first.httpStatus===200)return attempt(prompt,"web_search",false,2,kind,
+        DEFAULT_SUPERVISOR_OPENAI_MODEL);
+      // Retry a transient timeout/network error or HTTP 408, 429 or 5xx exactly once.
+      // Authentication and other client errors must not trigger paid retries.
+      if(first.category==="timeout"||first.category==="network"||first.httpStatus===408||
+        first.httpStatus===429||(first.httpStatus!==undefined&&first.httpStatus>=500))
+        return attempt(prompt,"web_search",false,2,kind,DEFAULT_SUPERVISOR_OPENAI_MODEL);
       return first;
     };
 
@@ -132,8 +145,12 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
     const errors=results.filter((r):r is Attempt&Failure=>!r.ok);
     const failedSearches=queries.filter((_,i)=>!results[i].ok).map(q=>q.scope);
     if(found.length){
-      if(cache.size>=200)cache.delete(cache.keys().next().value!);
-      cache.set(key,{at:now(),events:found,failedSearches});
+      // Partial evidence remains usable, but never cache it as completed coverage:
+      // the next cron must get a chance to retry failed query scopes.
+      if(!failedSearches.length){
+        if(cache.size>=200)cache.delete(cache.keys().next().value!);
+        cache.set(key,{at:now(),events:found,failedSearches:[]});
+      }
       return {available:true,outcome:"found",events:found,
         partial:failedSearches.length>0,failedSearches};
     }
