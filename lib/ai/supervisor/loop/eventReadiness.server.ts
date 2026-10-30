@@ -12,6 +12,7 @@ import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {readCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
+import {readItemSales,readDiscounts,readLaborEntries,readMenu} from "@/lib/data/canonical/reads.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {indexHourlyRevenue,compareEventDaySales,compareLiveEventSales} from "@/lib/metrics/core/eventReadiness";
 import {cafeToday} from "@/lib/metrics/core/clock";
@@ -77,6 +78,54 @@ export function selectEventObservations(proposals:readonly LoopProposal[]):LoopP
     if(!chosen.has(start))chosen.set(start,observation);
   }
   return [...chosen.values()];
+}
+
+/** Read existing café-scoped Toast views only. Named discounts and combo
+ * adoption require identifiable POS evidence: a generic discount amount or
+ * sale of separate items cannot prove that a proposal was implemented. */
+export async function eventToastEvidence(db:ReturnType<typeof createAdminSupabaseClient>,
+  businessId:string,day:string){
+  const range={dateFrom:day,dateTo:day};
+  const [items,discounts,shifts,menu]=await Promise.all([
+    readItemSales(db,businessId,range),
+    readDiscounts(db,businessId,range),
+    readLaborEntries(db,businessId,range),
+    readMenu(db,businessId,range),
+  ]);
+  const unavailable=(v:{error?:string;truncated:boolean})=>Boolean(v.error||v.truncated);
+  const itemRows=items.rows.filter(r=>r.source==="toast"&&r.status==="actual");
+  const menuNames=new Set(menu.rows.filter(r=>r.source==="toast"&&r.status==="actual")
+    .map(r=>(r.data as {name?:unknown}|null)?.name)
+    .filter((v):v is string=>typeof v==="string"));
+  const sold=itemRows.flatMap(r=>{
+    const data=r.data as {name?:unknown;quantity?:unknown}|null;
+    return typeof data?.name==="string"&&
+      typeof data.quantity==="number"&&Number.isFinite(data.quantity)&&
+      data.quantity>0&&menuNames.has(data.name)
+      ?[{name:data.name,quantity:data.quantity}]:[];
+  });
+  const recordedDiscounts=discounts.rows.filter(r=>r.source==="toast"&&
+    r.status==="actual"&&typeof r.amount_cents==="number");
+  // The current canonical discount view exposes amount/order ID, not the
+  // applied discount's *name*. Thus there is no identifiable promotion proof.
+  const namedDiscounts:{coverage:"missing"|"verified";names:string[]}={
+    coverage:"missing",names:[],
+  };
+  const labor=shifts.rows.filter(r=>r.source==="toast"&&r.status==="actual");
+  return {
+    itemSales:{coverage:unavailable(items)||unavailable(menu)?"partial" as const:
+      sold.length?"verified" as const:"missing" as const,items:sold.slice(0,8)},
+    namedDiscounts,
+    discountAmounts:{coverage:unavailable(discounts)?"partial" as const:
+      recordedDiscounts.length?"verified" as const:"missing" as const,
+      observedOrders:recordedDiscounts.length},
+    laborEntries:{coverage:unavailable(shifts)?"partial" as const:
+      labor.length?"verified" as const:"missing" as const,
+      recordedShifts:labor.length},
+    recommendedComboImplemented:"unverified" as const,
+    recommendedDiscountImplemented:"unverified" as const,
+    physicalPreparationImplemented:"unverified" as const,
+  };
 }
 
 // A scheduled run has no browser cookie. Only this server-side factory may mint
@@ -203,6 +252,10 @@ export const eventReadinessCapability=registerLoopCapability({
      .sort((a,b)=>a.businessDate.localeCompare(b.businessDate));
    const expected=Math.round((Date.parse(effect.endDate)-Date.parse(effect.startDate))/86400000)+1;
    const actual=observed.filter(s=>s.observation.coverage==="actual");
+   // A completed business day can have actual sales but missing item/discount
+   // details. Keep that distinction in the same saved Supervisor report.
+   const toastEvidence=windowComplete?await eventToastEvidence(
+     createAdminSupabaseClient(),scope.businessId,effect.endDate):null;
    const complete=windowComplete&&actual.length===expected&&
      actual.every(s=>typeof s.observation.typicalCents==="number");
    const live=!windowComplete?[...observed].reverse().find(s=>
@@ -244,10 +297,10 @@ export const eventReadinessCapability=registerLoopCapability({
    const result={
      eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
      factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
-     checklist,liveWatch,
+     checklist,liveWatch,toastEvidence,
      missingBaselineDays:actual.filter(s=>s.observation.typicalCents===null).map(s=>s.businessDate),
      days:actual.map(s=>({date:s.businessDate,...s.observation})),
-     caveat:"Comparison is observational, not evidence that an event caused a change.",
+     caveat:"Event-day sales are observational, not proof of event causality. Recorded item sales, discount totals and staff timecards do not prove a proposed combo, discount or physical preparation was implemented; owner checklist markers are not POS evidence.",
    };
    // Keep PR 6's live reporting and PR 7's final report in the same canonical loop.
    const terminal=windowComplete&&Boolean(window?.proposalId);
