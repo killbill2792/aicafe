@@ -31,9 +31,8 @@ export async function GET(request:Request){
  const db=createAdminSupabaseClient(),repo=new SupabaseLoopRepository();
  const {data,error}=await db.from("supervisor_proposals").select("*")
    .in("status",["manual_confirmed","committed"]).not("monitoring_start_date","is",null)
-   // Event observation is reconciled by the Events cron, including inert drafts.
-   // Exclude committed events here to prevent two jobs writing one report.
-   .neq("capability_id",eventReadinessCapabilityId)
+   // Events are handled by the Events cron, not by this generic monitor.
+   // Keep the original bounded query chain and rotate skipped rows below.
    // Oldest never permanently crowds out newer tenants: every checked
    // proposal rotates to the back of this stable bounded queue.
    .order("monitor_checked_at",{ascending:true,nullsFirst:true})
@@ -42,6 +41,9 @@ export async function GET(request:Request){
  let sampled=0,reported=0,failed=0;
  for(const row of data??[]){
   try{
+   // One event-report writer: the Events cron. Rotate skipped committed rows
+   // so they never crowd the bounded generic queue.
+   if(row.capability_id===eventReadinessCapabilityId)continue;
    const member=await db.from("memberships").select("role").eq("business_id",row.business_id)
      .eq("user_id",row.owner_user_id).maybeSingle();
    if(member.error||member.data?.role!=="owner"){failed++;continue;}
