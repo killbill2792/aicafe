@@ -35,7 +35,9 @@ describe("Coming up endpoint",()=>{
     expect(calls.slice(0,2)).toEqual(["auth","access:cafe-1"]);
     expect(calls).toContain("search");
     const body=await res.json();
-    expect(body.days[1]).toMatchObject({date:"2026-10-31",notable:true});
+    expect(body.days[1]).toMatchObject({date:"2026-10-31",holidays:[{name:"Halloween"}],usualHourlySales:[]});
+    expect(body.days[1]).not.toHaveProperty("notable");
+    expect(body.days[1]).not.toHaveProperty("decision");
     expect(res.headers.get("cache-control")).toContain("no-store");
   });
 });
