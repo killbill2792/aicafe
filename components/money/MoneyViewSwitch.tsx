@@ -27,6 +27,7 @@ export default function MoneyViewSwitch({
       {(["recovery", "profit"] as const).map((view) => (
         <button
           key={view}
+          data-perf-nav="money-view" data-perf-value={view}
           type="button"
           aria-pressed={current === view}
           onClick={() => setView(view)}
