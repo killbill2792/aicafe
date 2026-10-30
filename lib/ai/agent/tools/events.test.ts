@@ -90,6 +90,62 @@ describe("get_nearby_events",()=>{
     expect((r.days as Day[])[1]).not.toHaveProperty("decision");
   });
 
+  it("leaves only the failed week unknown when the other week's schedule is readable",async()=>{
+    const {c}=ctx();
+    const original=c.readWeekSchedule!;
+    c.readWeekSchedule=async week=>{
+      if(week==="2026-11-02")throw new Error("schedule backend unavailable");
+      return original(week);
+    };
+    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:7},c);
+    const days=r.days as Array<Day&{scheduleStatus:string}>;
+    expect(days[1]).toMatchObject({date:"2026-10-31",scheduledPeople:["Jane"],scheduleStatus:"complete"});
+    expect(days[4]).toMatchObject({date:"2026-11-03",scheduledPeople:null,scheduleStatus:"unavailable"});
+    expect(r.scheduleUnavailableWeeks).toEqual(["2026-11-02"]);
+    expect(r.toastSchedulePartialWeeks).toEqual([]);
+    expect(r.notCovered).toContain("scheduleUnavailable");
+  });
+
+  it("keeps recorded staff and flags incomplete Toast schedules separately",async()=>{
+    const {c}=ctx();
+    const original=c.readWeekSchedule!;
+    c.readWeekSchedule=async week=>{
+      const result=await original(week);
+      return result.ok?{...result,data:{...result.data,posScheduleError:"timeout"}}:result;
+    };
+    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:2},c);
+    expect((r.days as Array<Day&{scheduleStatus:string}>)[1]).toMatchObject({
+      scheduledPeople:["Jane"],scheduleStatus:"partial"
+    });
+    expect((r.days as Array<Day&{scheduleStatus:string}>)[0]).toMatchObject({
+      scheduledPeople:[],scheduleStatus:"partial"
+    });
+    expect(r.scheduleUnavailableWeeks).toEqual([]);
+    expect(r.toastSchedulePartialWeeks).toEqual(["2026-10-26"]);
+    expect(r.notCovered).toContain("toastScheduleReadFailed");
+  });
+
+  it("passes partial canonical hourly import warnings through with usable medians",async()=>{
+    const {c}=ctx();
+    const original=c.tools.getPeakHours!;
+    c.tools.getPeakHours=async period=>{
+      const read=await original(period);
+      if(!read.available)return read;
+      return {...read,quality:{...read.quality,missingInputs:["toastImportIncompleteDays","hourlySalesUnavailable"],
+        notes:["hourly data partially imported"]}};
+    };
+    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:2},c);
+    expect((r.days as Day[])[1].usualHourlySales).toEqual([
+      {hourLocal:14,typicalCents:12_000,sampleDays:8}
+    ]);
+    expect(r.notCovered).toEqual(expect.arrayContaining(["toastImportIncompleteDays",
+      "hourlySalesUnavailable","hourly data partially imported"]));
+    expect(r.hourlySalesQuality).toMatchObject({
+      missingInputs:["toastImportIncompleteDays","hourlySalesUnavailable"],
+      notes:["hourly data partially imported"]
+    });
+  });
+
   it("without an address still gives holidays and asks for the address, never searching blind",async()=>{
     const {c,searchNearbyEvents}=ctx({cafeLocation:async()=>null});
     const r=await executeAgentTool("get_nearby_events",{start_date:null,days:2},c);
