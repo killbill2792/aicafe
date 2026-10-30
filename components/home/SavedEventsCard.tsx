@@ -315,7 +315,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                 {saved.length>3&&<button type="button" className={button+" bg-surface2"}
                   onClick={()=>openDay(date)}>{t("moreEvents",{count:saved.length-3})}</button>}
                 {tab==="past"&&dayPlan&&<EventReportCard report={dayPlan.report}
-                  status={dayPlan.reportStatus} currency={timeline.currency}
+                  status={dayPlan.reportStatus} currency={timeline.currency??null}
                   locale={locale} t={t} onChat={()=>chat(date)}/>}
               </section>;
             })}
@@ -356,7 +356,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
               {!approved&&plan.status!=="draft"&&<p>{t("planNotActive")}</p>}
               {plan.status==="draft"&&<p className="text-ink-muted">{t("approveFirst")}</p>}
               <EventReportCard report={plan.report} status={plan.reportStatus}
-                currency={timeline.currency} locale={locale} t={t} onChat={()=>chat(chosen)}/>
+                currency={timeline.currency??null} locale={locale} t={t} onChat={()=>chat(chosen)}/>
             </>:<p className="text-ink-muted">{t("noPlan")}</p>}
             {actionError&&<p role="alert">{t("saveFailed")}</p>}
             <button type="button" onClick={()=>chat(chosen)}
