@@ -19,7 +19,7 @@ it, asks only what it can't know, watches the day, and reports back.
   highlighted), one plain sentence explaining why, at most one question, and a "Get ready" checklist
   (staff, prep, ordering, bringing people in, hours, operations). Each item has its reason, and the
   owner ticks it off. A staffing item drafts the shift change as the usual approval card.
-- **Question card:** the AI's options (e.g. Busier / About the same / Quieter / Not open then) **plus
+- **Question card** (shown under the AI's first plan, never instead of it): the AI's options (e.g. Busier / About the same / Quieter / Not open then) **plus
   "Other"**, which opens a text box. Typing is optional.
 - **On the day:** the Home headline becomes a live watch: sales so far vs a usual day, checklist status,
   and live notes ("38 hot chocolates since 2pm, milk may run out by 5pm").
@@ -40,8 +40,13 @@ Design mockup (sample data): https://claude.ai/artifact/UBRTrUsFqQAtxjTqi5JqK7
 
 1. **All plans and advice come from the AI.** No hard-coded advice, holiday notes, "busier/quieter"
    rules or default actions in code. Code only supplies facts and calculates numbers.
-2. **No evidence → ask, don't guess.** If the café has no history for a day like it, the AI asks the
-   owner (options + Other). The answer is saved as an owner fact and used every year after.
+2. **Answer first, then ask to make it better.** The AI always gives its best plan straight away from
+   what it has (events, the café's usual hours for that weekday, its own general knowledge), and labels
+   what is an estimate. If an owner answer would make the plan better (e.g. no Toast data for last
+   Halloween), it adds ONE question (options + "Other"). The owner's answer is sent back to the AI,
+   which updates the plan in the same thread ("since last Halloween was quiet, skip the extra person")
+   and saves the answer as an owner fact for every year after. The owner is never left waiting on a
+   question.
 3. **Search once, keep it.** Events and plans are saved. Opening the app reads the saved rows; it never
    triggers a new search or rewrites advice the owner has already seen. Refresh only when: a new day
    enters the 14-day window, the address changes, or the day-before check finds a change (cancelled,
@@ -129,16 +134,17 @@ Each PR: small (ideally < 400 changed lines), one concern, tests for the behavio
   source), café opening hours that day, usual sales for that weekday **by hour** (peak-hours reader),
   last-year same day if any, top items on similar days, people scheduled, saved owner answers.
   Keep it under ~1.5k tokens.
-- Tool description and system prompt: the AI writes the plan (expected busy hours, actions across
-  staff / prep / ordering / promo / hours / operations, each with a reason from the facts); with no
-  history for a day like it, it asks the owner instead of advising.
+- Tool description and system prompt: the AI always writes its best plan first (expected busy hours,
+  actions across staff / prep / ordering / promo / hours / operations, each with a reason from the
+  facts), labelling estimates; with no history for a day like it, it adds one question. The owner's
+  answer goes back to the AI, which updates the plan and saves the answer.
 - **Question card with "Other":** the facts-card `choice` field renders today as a `<select>` with no
   free text. Make choices tap buttons and add an "Other" button that opens an optional text box
   (`components/home/ClarifyCard.tsx`). Save the answer as an owner fact keyed by event and year, e.g.
   `event_outcome:halloween:2025`.
 - The current "Coming up" card shows facts only (no verdict pill) until PR 5 replaces it.
-- Check: "anything happening this week?" on the test café gives an AI-written plan with hours, or one
-  question, and never "add staff" without evidence.
+- Check: "anything happening this week?" on the test café gives an AI-written plan with hours at once
+  (estimates labelled), plus at most one question; answering it updates the plan.
 
 > **Prompt:** "Read AGENTS.md and docs/plans/nearby-events.md. Do PR 2 only: remove the hard-coded
 > advice, make get_nearby_events facts-only with hourly usual sales, and add the 'Other' option to the
