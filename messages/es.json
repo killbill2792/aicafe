@@ -3666,6 +3666,13 @@
     "taskCheckinAction": "Responder en el chat"
   },
   "EventsPanel": {
+    "areaStaff": "Personal",
+    "areaPrep": "Preparación",
+    "areaOrdering": "Pedidos",
+    "areaPromo": "Promoción",
+    "areaHours": "Horario de apertura",
+    "areaOperations": "Operaciones",
+    "areaOther": "Otro",
     "answerInChat": "Responder en la conversación",
     "boardEventRunning": "Plan para evento · {title}",
     "boardEventReport": "Informe del evento · {title}",

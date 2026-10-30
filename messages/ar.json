@@ -3666,6 +3666,13 @@
     "taskCheckinAction": "أجب في المحادثة"
   },
   "EventsPanel": {
+    "areaStaff": "الموظفون",
+    "areaPrep": "التحضير",
+    "areaOrdering": "طلب المستلزمات",
+    "areaPromo": "الترويج",
+    "areaHours": "ساعات العمل",
+    "areaOperations": "العمليات",
+    "areaOther": "أخرى",
     "answerInChat": "الإجابة في المحادثة",
     "boardEventRunning": "خطة فعالية · {title}",
     "boardEventReport": "تقرير فعالية · {title}",

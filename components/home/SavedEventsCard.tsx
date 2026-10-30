@@ -7,6 +7,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import type {CafeEvent,EventChecklistTick,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
+import {eventActionAreaLabel} from "@/lib/events/eventActionArea";
 
 type Locale="en"|"es"|"ar";
 type T=(key:string,values?:Record<string,string|number>)=>string;
@@ -343,7 +344,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                     <span className="font-semibold" dir="auto">{action.action}</span>
                   </label>
                   <p className="mt-1 text-ink-muted" dir="auto">{action.reason}</p>
-                  <p className="text-[15px] text-ink-muted">{action.area}</p>
+                  <p className="text-[15px] text-ink-muted">{eventActionAreaLabel(action.area,locale)}</p>
                 </li>;
               })}</ul>
               {plan.status==="draft"&&<button type="button" disabled={busy}
