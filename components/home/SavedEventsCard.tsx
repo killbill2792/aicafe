@@ -225,6 +225,17 @@ export default function SavedEventsCard({locale,chatDisabled,onChatAboutDay}:{
         <h3 className="mt-1 break-words font-headline text-[20px] font-bold leading-snug text-ink" dir="auto">
           {lead.events.map(e=>e.name).join(" · ")||t("savedInsight")}
         </h3>
+        {lead.events.filter(e=>e.status!=="found").map(e=><p key={e.id} role="alert"
+          className="mt-2 rounded-lg bg-card p-2 font-semibold text-warn-text">
+          {e.name}: {e.status==="cancelled"?t("cancelled"):t("moved")}
+        </p>)}
+        {lead.events[0]&&<p className="mt-1 text-[15px] text-ink-muted">
+          {lead.events[0].verificationFailedAt&&(!lead.events[0].lastVerifiedAt||
+            lead.events[0].verificationFailedAt>lead.events[0].lastVerifiedAt)
+            ?t("verificationPending"):lead.events[0].lastVerifiedAt
+              ?t("verifiedOn",{date:lead.events[0].lastVerifiedAt.slice(0,10)})
+              :t("lastSavedOn",{date:lead.events[0].lastCheckedAt.slice(0,10)})}
+        </p>}
         {lead.plan?.summary&&<p className="mt-2 line-clamp-3 text-[17px] leading-relaxed text-ink" dir="auto">{lead.plan.summary}</p>}
         {lead.date===today&&liveEventHeadline(lead.plan,today,t)&&<p className="mt-2 rounded-xl bg-card p-2 text-[17px]">{liveEventHeadline(lead.plan,today,t)}</p>}
         <span className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text">{t("readInsights")} <ChevronRight size={19} className="ms-1 rtl:rotate-180" aria-hidden="true"/></span>
