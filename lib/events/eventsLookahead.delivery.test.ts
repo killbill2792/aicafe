@@ -79,8 +79,9 @@ describe("event-day delivery recovery after an interrupted revision",()=>{
       proposalId:previous.proposalId,threadId:previous.threadId,
       messageId:oldMessageId,plannedOn:"2026-10-29",
     }}],[oldMessageId]);
+    // The canonical proposal reader supplies newest first.
     expect(await recoverPlanDelivery(store.db,businessId,ownerId,today,
-      [event("Updated parade time")],[previous,current],0))
+      [event("Updated parade time")],[current,previous],0))
       .toEqual({repaired:1,created:0});
     const updated=store.tasks.get(taskId)?.payload;
     expect(updated).toMatchObject({
@@ -91,7 +92,7 @@ describe("event-day delivery recovery after an interrupted revision",()=>{
     expect(store.messageWrites).toEqual([updated?.messageId]);
     expect(store.taskWrites[0].options).toEqual({onConflict:"business_id,id"});
     expect(await recoverPlanDelivery(store.db,businessId,ownerId,today,
-      [event("Updated parade time")],[previous,current],0))
+      [event("Updated parade time")],[current,previous],0))
       .toEqual({repaired:0,created:0});
     expect(store.taskWrites).toHaveLength(1);
   });
