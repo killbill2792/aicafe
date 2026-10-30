@@ -63,8 +63,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
   // Start the existing canonical reads early; neither one gates the chat surface.
-  const snapshotPromise = timeReader("Home","getSnapshot",()=>getSnapshot(period));
-  const menuPromise = timeReader("Home","getMenuControlCenter",()=>getMenuControlCenter({includeSalesEvidence:false}));
+  const corePromise = Promise.all([
+    timeReader("Home","getSnapshot",()=>getSnapshot(period)),
+    timeReader("Home","getMenuControlCenter",()=>getMenuControlCenter({includeSalesEvidence:false})),
+  ]).catch(()=>null);
   const businessIdPromise = signedInUser
     ? timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id))
     : Promise.resolve(null);
@@ -86,7 +88,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const cafeCurrency = identity?.currency??null;
   const chatStartPromise: Promise<HomeStartPayload | null> = (async()=>{
     try {
-      const [snapshot, menu] = await Promise.all([snapshotPromise, menuPromise]);
+      const core = await corePromise;
+      if (!core) throw new Error("canonical_home_reads_failed");
+      const [snapshot, menu] = core;
       // All figures come from the same selected-period canonical snapshot as Money and chat.
       const vm = buildHomeViewModel(snapshot, period);
       const moneyVm = buildProfitAndCostsViewModel(snapshot, period);
