@@ -19,7 +19,8 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    production the web search fails (`nearby_events_search_unparsed`) and the advice is hard-coded. Next,
    in order: PR 1 search fix · PR 2 facts-only + AI plans and asks (with "Other") · PR 3 storage + one
    reader (migration, owner approves) · PR 4 find once / plan once job · PR 5 Home strip + events panel
-   (Past/Now/Coming up, calendar) · PR 6 live watch · PR 7 report card · PR 8 distance (after decision D3).
+   (Past/Now/Coming up, calendar) · PR 6 live watch · PR 7 report card · PR 8 distance (after decision D3) ·
+   PR 9 chat about any event + answer anything (web search). Waves: {1,2,3,9} → {4,5} → {6,7,8}.
 
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.

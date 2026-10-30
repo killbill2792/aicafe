@@ -23,6 +23,13 @@ it, asks only what it can't know, watches the day, and reports back.
   "Other"**, which opens a text box. Typing is optional.
 - **On the day:** the Home headline becomes a live watch: sales so far vs a usual day, checklist status,
   and live notes ("38 hot chocolates since 2pm, milk may run out by 5pm").
+- **Chat about any event, any time.** Every day plan, event row, live note and report card has
+  "Chat about this". It opens the Supervisor chat for that day (its own thread), with the event, the
+  plan and the facts already in context. The owner can ask **anything** there, not only about the plan:
+  "what's the parade route?", "is it going to rain?", "give me 3 Halloween drink names", "move the extra
+  shift to 3pm", "how did this go last year?". The Supervisor answers like a capable general assistant:
+  it uses its café tools, a general web search, and its own knowledge. It never answers "I can only help
+  with…", so the owner never leaves the app to ask another AI. Actions still go through approval cards.
 - **Report card** the morning after: what happened vs the plan. Report cards show in Past for 14 days,
   are kept in the database for good, and the chat can answer about any of them at any time ("how did
   Halloween go last year?").
@@ -43,7 +50,14 @@ Design mockup (sample data): https://claude.ai/artifact/UBRTrUsFqQAtxjTqi5JqK7
    hours, operations (road closures, deliveries).
 5. **One data layer.** Everything (events, plans, answers, checklist status, reports) is in tables read
    by one set of readers in `lib/data/`. The board panels and the chat tools use the same readers.
-6. Numbers: only from `lib/metrics/core` tools or `calculate` (AGENTS.md 7.2); "usual" means the café's
+6. **The conversation is never restrictive.** Any question gets a real answer: café data through
+   tools, the outside world through web search (with source links), ideas and writing from the
+   model itself. If something truly can't be done, the AI says what it can do instead.
+7. **Not noisy:** at most 1–3 actions per day, ranked by impact. The day-before reminder appears only
+   if a checklist item is still open. One inbox item per planned day; no duplicates.
+8. **Every new API route and job** checks the owner role and the café's AI access before any paid AI or
+   search call (`authenticatedConversationContext` + `assertCafeAiAccess`, as in #271).
+9. Numbers: only from `lib/metrics/core` tools or `calculate` (AGENTS.md 7.2); "usual" means the café's
    own Toast days; unknown is never shown as zero.
 
 ## What exists today (after #271)
@@ -80,6 +94,7 @@ Design mockup (sample data): https://claude.ai/artifact/UBRTrUsFqQAtxjTqi5JqK7
 | D3 | Distance: a geocoding service (Google Maps / Mapbox) for "0.3 mi" tags vs the venue/area name only | **Open**: until decided, show the venue or area name; never a guessed number |
 | D4 | Output-token budget for the internal search call (above the 1,200 used for chat turns) | **Open**: PR 1 proposes a number with evidence; owner approves |
 | D5 | Look-ahead timing: weekly on Monday morning + one new day each day + day-before check | Proposed |
+| D6 | A general web search tool for the chat (PR 9), small cost per search | Proposed: needed so the owner never leaves the app |
 
 ## PRs, in order
 
@@ -187,6 +202,23 @@ Each PR: small (ideally < 400 changed lines), one concern, tests for the behavio
   AI writes the report into `cafe_event_reports` and the thread; an inbox item. Past tab shows 14 days.
   Next year's plan reads this report as evidence.
 
+### PR 9 — Chat about any event, and answer anything (can run in wave 1)
+
+- A general, read-only `web_search` chat tool (strict schema, compact results with source links, safe
+  logs, counted in the turn budget, AI-access checked). The model uses it for any outside-world
+  question: weather, routes, opening times, ideas, news.
+- System prompt: answer every owner question helpfully, café-related or general; never refuse with
+  "I only help with…"; use tools for café facts, web search for the outside world, and own knowledge
+  for ideas and writing; say plainly when something can't be done and offer what can.
+- "Chat about this" on an event or day opens its own thread with the event, plan and facts as context
+  (through the PR 3 reader once merged; the event facts from `get_nearby_events` before that).
+- Golden owner questions for event threads, e.g. "what's the parade route?", "3 Halloween drink names",
+  "move the extra shift to 3pm" (→ approval card).
+
+> **Prompt:** "Read AGENTS.md and docs/plans/nearby-events.md. Do PR 9 only: a general read-only
+> web_search chat tool, a never-restrictive answer rule in the system prompt, and 'Chat about this' for
+> an event day opening its own thread with the event context. Open a PR when the Done checks pass."
+
 ### PR 8 (optional, after D3) — Real distance
 
 - Geocode the café once and each venue once; store lat/lng; show "0.3 mi". Until then: venue or area name.
@@ -196,5 +228,21 @@ Each PR: small (ideally < 400 changed lines), one concern, tests for the behavio
 1. Merge the PR that adds this file first, so every new chat reads it from `main`.
 2. One Claude Code session per PR, started from the latest `main`, using that PR's prompt above.
 3. Each session opens its PR. Codex reviews it; fix and re-request review in that same session.
-4. Merge in order; PR 3's migration is applied only after you approve it.
-5. After each merge, check the test café, then start the next PR's session.
+4. PR 3's migration is applied only after you approve it.
+5. After each merge, check the test café.
+
+### Running PRs at the same time (waves)
+
+PRs in the same wave don't depend on each other and can run in parallel, one chat each. Start a wave
+only after the previous wave is merged.
+
+| Wave | PRs in parallel | Why they can |
+|---|---|---|
+| 1 | PR 1 (search), PR 2 (facts-only + "Other"), PR 3 (storage), PR 9 (open chat + web search) | Different files; none needs another |
+| 2 | PR 4 (find once / plan once), PR 5 (Home strip + panels) | Both need PR 3; PR 4 also uses PR 1–2 |
+| 3 | PR 6 (live watch), PR 7 (report card), PR 8 (distance, after D3) | Need PRs 4–5 |
+
+Shared files will clash a little: `lib/ai/agent/tools/index.ts`, the pinned tool list in
+`lib/ai/agent/agent.test.ts`, the system prompt in `lib/ai/agent/loop.server.ts`, `messages/*.json`
+and `PROGRESS.md`. The second PR to merge does a normal "merge main into branch" and keeps both sides.
+Ask that PR's chat to do it. Keep to at most 4 chats at once, so reviews and merges stay manageable.
