@@ -184,11 +184,28 @@ export const eventReadinessCapability=registerLoopCapability({
    const direction=liveWatch?.changePercent===null?null:
      liveWatch&&liveWatch.changePercent!==null?
      liveWatch.changePercent>=0?"liveAhead":"liveBehind":null;
-   const midRunText=liveWatch?.notable&&direction?
+   const hourEnd=liveWatch?liveWatch.asOfLocal.slice(0,2)+":59":null;
+   const midRunText=liveWatch?.notable&&direction&&hourEnd?
      copy[direction].replace("{change}",String(Math.abs(liveWatch.changePercent!)))
-       .replace("{time}",liveWatch.asOfLocal):undefined;
+       .replace("{time}",liveWatch.asOfLocal).replace("{hourEnd}",hourEnd):undefined;
+   // The event monitor owns an existing Operations-task delivery contract.
+   // Only notable live findings are delivered here; PR 7 owns final reports.
+   const delivery=midRunText&&liveWatch&&hourEnd?{
+     agentId:"alex" as const,taskKind:"event_plan" as const,
+     entityType:"event_day",entityId:liveWatch.businessDate,confidence:"low" as const,
+     payload:{businessDate:liveWatch.businessDate,asOf:liveWatch.asOf,
+       asOfLocal:liveWatch.asOfLocal,note:midRunText,provisional:true,
+       changePercent:liveWatch.changePercent,baselineDays:liveWatch.baselineDays,
+       usualThroughHourEnd:hourEnd},
+     evidence:[{source:"toast_today_live+hourly_sales_rollup",
+       facts:{businessDate:liveWatch.businessDate,
+         actualCents:liveWatch.actualCents,typicalCents:liveWatch.typicalCents,
+         baselineDays:liveWatch.baselineDays,
+         usualThroughHourEnd:hourEnd,partialCurrentHour:true}}],
+     threadText:midRunText,
+   }:undefined;
    return {status:!windowComplete?"in_progress":complete?"complete":"insufficient_evidence",
-     midRunText,midRunKey:liveWatch?.businessDate,
+     midRunText,midRunKey:liveWatch?.businessDate,delivery,
      recommendation:"adjust",source:"hourly_sales_rollup+daily_rollups",
      result:{eventIds:effect.eventIds,startDate:effect.startDate,endDate:effect.endDate,
        factsHash:effect.factsHash,observedDays:actual.length,expectedDays:expected,
