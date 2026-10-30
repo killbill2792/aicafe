@@ -11,7 +11,10 @@ vi.mock("./holidays",async importOriginal=>{
   const actual=await importOriginal<typeof import("./holidays")>();
   return {...actual,holidaysBetween:()=>[]};
 });
-import {scanCafe} from "./eventsLookahead.server";
+import {pendingEventDays,scanCafe} from "./eventsLookahead.server";
+import {effectHash} from "@/lib/ai/supervisor/loop/engine";
+import {eventPlanFacts} from "@/lib/ai/supervisor/loop/eventReadiness.server";
+import type {CafeEvent} from "@/lib/data/cafeEvents.server";
 
 const business={id:"cafe-a",timezone:"America/Los_Angeles",is_demo:false};
 const one={name:"Neighborhood market",startDate:"2026-11-04",endDate:"2026-11-04",
@@ -20,6 +23,7 @@ function fixture(){
   let state:Record<string,unknown>|null=null;
   const events=new Map<string,Record<string,unknown>>();
   const writes:Array<{table:string;options:Record<string,unknown>}>=[],requests:string[]=[];
+  const responses:Array<Record<string,unknown>>=[];
   const db={
     from(table:string){
       if(table==="cafe_event_search_state")return {
@@ -44,9 +48,9 @@ function fixture(){
   } as unknown as SupabaseClient;
   search.mockImplementation(async(input:{from:string;to:string})=>{
     requests.push(input.from+".."+input.to);
-    return {available:true,outcome:"none_found",events:[],partial:false};
+    return responses.shift()??{available:true,outcome:"none_found",events:[],partial:false};
   });
-  return {db,events,writes,requests,getState:()=>state};
+  return {db,events,writes,requests,responses,getState:()=>state};
 }
 describe("cron-only discovery and preservation",()=>{
   beforeEach(()=>search.mockReset());
@@ -62,14 +66,14 @@ describe("cron-only discovery and preservation",()=>{
   });
   it("weekly research adds newly announced events without replacing old facts or status",async()=>{
     const f=fixture();
-    search.mockImplementationOnce(async()=>({available:true,outcome:"found",events:[one],partial:false}));
+    f.responses.push({available:true,outcome:"found",events:[one],partial:false});
     await scanCafe(f.db,business,"2026-11-03");
     const row=[...f.events.values()][0],id=String(row.id);
     f.events.set(id,{...row,status:"cancelled",venue:"Owner-confirmed venue"});
-    search.mockImplementationOnce(async()=>({available:true,outcome:"found",
+    f.responses.push({available:true,outcome:"found",
       events:[{...one,venue:"Provider changed venue"},
         {...one,name:"Newly announced market",sourceUrl:"https://example.org/new"}],
-      partial:false}));
+      partial:false});
     await scanCafe(f.db,business,"2026-11-09");
     expect(f.requests).toEqual(["2026-11-03..2026-11-16","2026-11-09..2026-11-22"]);
     expect(f.events.get(id)).toMatchObject({status:"cancelled",venue:"Owner-confirmed venue"});
@@ -78,12 +82,26 @@ describe("cron-only discovery and preservation",()=>{
     await scanCafe(f.db,business,"2026-11-09");
     expect(f.requests).toHaveLength(2);
   });
+  it("keeps an approved or rejected plan even after newly discovered event facts",()=>{
+    const saved={id:"11111111-1111-4111-8111-111111111111",name:"Original",
+      kind:"community",startDate:"2026-11-04",endDate:"2026-11-04",
+      startTime:null,endTime:null,venue:null,venueAddress:null,areaLabel:null,
+      sourceUrl:"https://example.org/market",status:"found",
+      foundAt:"2026-11-01T00:00:00Z",lastCheckedAt:"2026-11-01T00:00:00Z"} as CafeEvent;
+    const oldHash=effectHash(eventPlanFacts([saved]));
+    const newEvent={...saved,name:"Newly announced"};
+    for(const status of ["committed","rejected"]){
+      expect(pendingEventDays([saved,newEvent],
+        [{startDate:"2026-11-04",factsHash:oldHash,status}],
+        "2026-11-03","2026-11-16")).toEqual([]);
+    }
+  });
   it("never advances the scan cursor for a failed or partial search",async()=>{
     const f=fixture();
-    search.mockResolvedValueOnce({available:false,outcome:"failed",reason:"searchFailed"});
+    f.responses.push({available:false,outcome:"failed",reason:"searchFailed"});
     await scanCafe(f.db,business,"2026-11-05");
     expect(f.getState()).toBeNull();
-    search.mockResolvedValueOnce({available:true,outcome:"found",events:[one],partial:true});
+    f.responses.push({available:true,outcome:"found",events:[one],partial:true});
     await scanCafe(f.db,business,"2026-11-05");
     expect(f.getState()).toBeNull();
     await scanCafe(f.db,business,"2026-11-05");
