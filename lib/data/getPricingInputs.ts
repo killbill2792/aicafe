@@ -11,6 +11,8 @@ import {cardFeesForDays} from "@/lib/metrics/core/fees";
 import { menuPriceSourceBasis, type MenuPriceSourceBasis } from "@/lib/calc/menuPriceSourceBasis";
 import {readMenuComboCostComponents} from "./comboCosts.server";
 import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
+import { timeReader } from "@/lib/perf/timeReader.server";
+import { ordersMayAffectPricing } from "./pricingOrderGate";
 
 /** `productCostCents` is the fractional (unrounded) cost when `recipeStatus === "READY"`, and `0`
  * otherwise (safe for the aggregate sums below — a NO_RECIPE/MISSING_INGREDIENT_COST item should
@@ -37,8 +39,13 @@ export function monthlyPayrollFromDays(days: Pick<DailyFacts,
       "actual" as const:"estimated" as const};
 }
 
-export async function getPricingInputs(supabase: SupabaseClient, businessId: string): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput; menuPriceBasis: MenuPriceSourceBasis }> {
-  const { data: businessRow, error: businessError } = await supabase.from("businesses").select("timezone, currency, target_operating_margin, target_operating_margin_status, payroll_tax_rate_status").eq("id", businessId).single();
+export async function getPricingInputs(supabase: SupabaseClient, businessId: string, options: { attentionOnly?: boolean } = {}): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput; menuPriceBasis: MenuPriceSourceBasis }> {
+  // Keep all pricing math and evidence in this reader. Home's stages share the
+  // existing per-request trace but emit no café, item or financial data.
+  const measure = <T>(stage: string, read: () => Promise<T>): Promise<T> =>
+    options.attentionOnly ? timeReader("Home", "pricing." + stage, read) : read();
+  const { data: businessRow, error: businessError } = await measure("business", async () =>
+    await supabase.from("businesses").select("timezone, currency, target_operating_margin, target_operating_margin_status, payroll_tax_rate_status").eq("id", businessId).single());
   if (businessError) throw businessError;
   if (!businessRow?.timezone) throw new Error("Café timezone missing");
   const timezone = businessRow.timezone;
@@ -50,26 +57,38 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     .toISOString().slice(0,10);
   const windowDays = 90;
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
-  const [itemsResult, rollupsResult, recurringResult, ordersResult, expenseResult, priorExpenseResult] = await Promise.all([
+  // Begin independent work together. Only the Home attention projection may
+  // omit the trusted-order query, and only when even unlimited trusted orders
+  // cannot change the canonical engine's BENCHMARK decision.
+  const daysPromise = measure("dailyFacts", () => readDailyFacts(supabase, businessId, fromDateStr, todayDateStr));
+  const readOrders = () => measure("trustedOrders", async () => await supabase.from("orders")
+    .select("business_date, pos_order_id, net_sales_cents, processing_fee_provider")
+    .eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null)
+    .gte("business_date", fromDateStr).lte("business_date", todayDateStr));
+  const ordersPromise = options.attentionOnly
+    ? daysPromise.then(days => ordersMayAffectPricing(days.filter(day => day.netSalesCents > 0).length, windowDays)
+      ? readOrders() : { data: [], error: null })
+    : readOrders();
+  const [itemsResult, days, recurringResult, ordersResult, expenseResult, priorExpenseResult, ownerFeePlans] = await Promise.all([
     supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
-    readDailyFacts(supabase, businessId, fromDateStr, todayDateStr).then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
+    daysPromise,
     supabase.from("recurring_costs").select("amount_cents, category_code, frequency, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
-    supabase.from("orders").select("business_date, pos_order_id, net_sales_cents, processing_fee_provider").eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
+    ordersPromise,
     supabase.from("expenses").select("category_code, amount_cents, status")
       .eq("business_id",businessId).gte("spent_on",firstOfMonth).lte("spent_on",todayDateStr),
     supabase.from("expenses").select("category_code")
       .eq("business_id",businessId).eq("status","actual")
       .gte("spent_on",previousMonthStart).lt("spent_on",firstOfMonth),
+    measure("feePlans", () => getOwnerConfirmedProcessingFeePlans(supabase, businessId)),
   ]);
   if (itemsResult.error) throw itemsResult.error;
-  if (rollupsResult.error) throw rollupsResult.error;
   if (recurringResult.error) throw recurringResult.error;
   if (ordersResult.error) throw ordersResult.error;
   if (expenseResult.error) throw expenseResult.error;
   if (priorExpenseResult.error) throw priorExpenseResult.error;
   const rawItems = itemsResult.data ?? [];
   const itemIds = rawItems.map((item) => item.id);
-  const comboRows=await readMenuComboCostComponents(supabase,businessId,itemIds);
+  const comboRows=await measure("comboCosts", () => readMenuComboCostComponents(supabase,businessId,itemIds));
   // Pricing only loads active products by default, but components of a saved
   // combo may since have been deactivated: still cost the ingredients honestly.
   const componentIds=[...new Set(comboRows.map(x=>x.componentItemId))].filter(id=>!itemIds.includes(id));
@@ -79,16 +98,16 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   if(componentResult.error)throw componentResult.error;
   const costRows=[...rawItems,...(componentResult.data??[])];
   const costIds=[...new Set(costRows.map(item=>item.id))];
-  const [recipesResult, quantitiesResult, fallbackResult] = itemIds.length ? await Promise.all([
+  const [recipesResult, quantitiesResult, fallbackResult] = itemIds.length ? await measure("recipeAndUnits", () => Promise.all([
     supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", costIds),
     supabase.rpc("menu_item_quantities_sold", { p_business_id: businessId, p_from: fromDateStr, p_to: todayDateStr }),
     supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status").eq("business_id", businessId).in("menu_item_id", costIds),
-  ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
+  ])) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
   if (recipesResult.error) throw recipesResult.error;
   if (quantitiesResult.error) throw quantitiesResult.error;
   if (fallbackResult.error) throw fallbackResult.error;
   const ingredientIds = [...new Set((recipesResult.data ?? []).map((line) => line.ingredient_id))];
-  const priceResult = ingredientIds.length ? await supabase.from("ingredient_prices").select("ingredient_id, cost_per_base_unit_micros, effective_from").in("ingredient_id", ingredientIds).lte("effective_from", todayDateStr).order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true }) : { data: [], error: null };
+  const priceResult = ingredientIds.length ? await measure("ingredientPrices", async () => await supabase.from("ingredient_prices").select("ingredient_id, cost_per_base_unit_micros, effective_from").in("ingredient_id", ingredientIds).lte("effective_from", todayDateStr).order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })) : { data: [], error: null };
   if (priceResult.error) throw priceResult.error;
   const prices: Record<string, number> = {};
   for (const row of priceResult.data ?? []) prices[row.ingredient_id] = row.cost_per_base_unit_micros;
@@ -122,14 +141,12 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
       unitsSoldInWindow: units.get(item.id) ?? 0,
     };
   });
-  const days: DailyFacts[] = rollupsResult.data ?? [];
   const scale = 30 / windowDays;
   const monthlyRevenueCents = Math.round(days.reduce((sum, day) => sum + day.netSalesCents, 0) * scale);
   const {monthlyWagesCents,monthlyStaffCostCents,payrollCostsStatus} =
     monthlyPayrollFromDays(days,scale);
   // Use the same actual -> owner fee plan -> labeled estimate path as the Money screen.
   // A null/missing fee is NOT a verified zero. This reader never writes to the database.
-  const ownerFeePlans=await getOwnerConfirmedProcessingFeePlans(supabase,businessId);
   const feeResult=cardFeesForDays(days,ownerFeePlans);
   const monthlyProcessingFeesCents=Math.round(feeResult.amountCents*scale);
   const salesDayFeeStatuses = days.filter(day => day.netSalesCents > 0).map(day => day.cardFeesStatus ?? "missing");
