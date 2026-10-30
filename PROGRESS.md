@@ -89,7 +89,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
      addendum to `docs/plans/nearby-events.md` (keep historical PR 1–12 text).
      **No** edits to A search files or C-owned UI/API/reader/localization.
 
-   - [ ] **Events Fix C — rich Events-first Home UI (owner P0).**
+   - [ ] **Events Fix C — rich Events-first Home UI (owner P0).** **Draft PR #313; implementation awaiting final green CI, Codex P1 re-review, B dependency and authenticated desktop/mobile visual gate.**
      Own: `components/home/SavedEventsCard.tsx`,
      `components/home/ChatStart.tsx`, `components/home/SupervisorChatComposer.tsx`,
      `components/home/eventDayThread.ts`, `lib/operating/board.ts`,
