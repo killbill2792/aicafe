@@ -192,7 +192,7 @@ describe("owner asks 'anything happening nearby?' in chat",()=>{
       return async function*(){for(const e of list[i++]??[])yield {...e,type:String(e.type)};};};
     const {c}=ctx();
     const turn=await runAgentTurn({ownerText:"Anything happening nearby?",context:c,
-      provider:provider(rounds("Tomorrow is Halloween (Saturday). Last Halloween you sold 32% more than a usual day. Estimate: 2–6pm could be busiest; consider extra afternoon cover, pastry prep and a seasonal special. Austin AI Week runs Nov 2–5 near you."))});
+      provider:provider(rounds("Tomorrow is Halloween (Saturday). Last Halloween you sold 32% more than a usual day. Estimate: afternoon hours could be busy; consider extra afternoon cover, pastry prep and a seasonal special. Austin AI Week runs Nov 2–5 near you."))});
     expect(turn.tools).toContain("get_nearby_events");
     expect(turn.unverified).toEqual([]);
     expect(turn.text).toContain("Halloween");
