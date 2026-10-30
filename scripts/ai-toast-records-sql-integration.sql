@@ -122,6 +122,26 @@ BEGIN
  perform pg_temp.assert_true(public.ai_toast_fields(b,'item') @> '[{"field":"data.price","type":"number"}]'
   and not (public.ai_toast_fields(b,'order') @> '[{"field":"data.checks.0.amount"}]'),
   'lists the field names of a record type');
+ -- A signed-in user who does not own this café reads nothing, and the archive table stays closed.
+ perform set_config('request.jwt.claim.sub','cccccccc-cccc-4ccc-8ccc-ccccccccccff',true);
+ perform set_config('request.jwt.claims','{"sub":"cccccccc-cccc-4ccc-8ccc-ccccccccccff","role":"authenticated"}',true);
+ execute 'set local role authenticated';
+ perform pg_temp.assert_true((select count(*)=0 from public.toast_records_for(b,null,null)),
+  'another user cannot read this café''s Toast records');
+ perform pg_temp.assert_true(not has_table_privilege('public.toast_raw_records','SELECT'),
+  'the archive table itself stays closed to signed-in users');
+ execute 'reset role';
+ -- The café's owner, signed in, reads them.
+ insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
+  values('cccccccc-cccc-4ccc-8ccc-ccccccccccee','00000000-0000-0000-0000-000000000000','authenticated',
+   'authenticated','ai-fields-owner@example.test','',now(),now());
+ insert into public.memberships(business_id,user_id,role) values(b,'cccccccc-cccc-4ccc-8ccc-ccccccccccee','owner');
+ perform set_config('request.jwt.claim.sub','cccccccc-cccc-4ccc-8ccc-ccccccccccee',true);
+ perform set_config('request.jwt.claims','{"sub":"cccccccc-cccc-4ccc-8ccc-ccccccccccee","role":"authenticated"}',true);
+ execute 'set local role authenticated';
+ perform pg_temp.assert_true((select count(*)>0 from public.toast_records_for(b,null,null)),
+  'the owner reads their café''s Toast records');
+ execute 'reset role';
  begin
   execute q into res using b,array['data.price) from x; --'],null::jsonb,null::text[],null::jsonb,d;
   failed:=false;
