@@ -245,13 +245,18 @@ export class SupabaseLoopRepository implements LoopRepository{
     })).digest("hex");
     const messageId=digest.slice(0,8)+"-"+digest.slice(8,12)+"-4"+
       digest.slice(13,16)+"-a"+digest.slice(17,20)+"-"+digest.slice(20,32);
+    const verification=delivery.numberProvenance?{
+      unverified:delivery.numberProvenance.map(span=>({...span,blockIndex:0})),
+      evidence:delivery.numericEvidence??[],
+    }:null;
     const inserted=await db.from("ai_messages").insert({
       id:messageId,business_id:scope.businessId,thread_id:scope.threadId,
       owner_user_id:scope.ownerUserId,author_user_id:null,
       role:"supervisor",content_type:"blocks",text_content:null,
       structured_content:[{type:"text",text:delivery.threadText}],
       grounding:{status:report.status==="insufficient_evidence"?
-        "insufficient_evidence":"estimated",intent:"menu_pricing",evidence:[ref]},
+        "insufficient_evidence":"estimated",intent:"menu_pricing",evidence:[ref],
+        ...(verification?{agentMetadata:verification}:{})},
     });
     if(inserted.error&&inserted.error.code!=="23505")
       failed(inserted.error,"Supervisor thread report unavailable");
