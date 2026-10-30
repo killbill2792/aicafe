@@ -221,7 +221,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   return <>
     <section data-testid="coming-up" aria-label={t("title")}
       className="min-w-0 rounded-2xl border border-line bg-card p-3">
-      <button type="button" onClick={openEvents} disabled={disabled}
+      <button type="button" onClick={openEvents}
         className="flex min-h-12 w-full items-center gap-2 text-start font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <CalendarDays size={20} aria-hidden="true"/><span className="flex-1 text-[17px]">{t("title")}</span>
         <span className="text-[15px] text-accent-text">{t("seeAll")}</span>
