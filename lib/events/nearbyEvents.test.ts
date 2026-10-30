@@ -82,7 +82,7 @@ describe("web search call",()=>{
     const last=JSON.parse(String(fetch.mock.calls[2][1].body));
     expect(last.tools[0].type).toBe("web_search");
     expect(last.text).toBeUndefined();
-    expect(last.input).toMatch(/Answer with only this JSON/u);
+    expect(last.input).toMatch(/Respond with only a JSON object/u);
   });
   it("reports failures without logging the address",async()=>{
     const log=vi.spyOn(console,"error").mockImplementation(()=>{});
@@ -102,7 +102,7 @@ describe("web search call",()=>{
   const prose={id:"resp_prose",status:"completed",output:[{type:"message",role:"assistant",
     content:[{type:"output_text",text:"I found events, but I cannot return JSON."}]}]};
   const fenced={id:"resp_fenced",status:"completed",output:[{type:"message",role:"assistant",
-    content:[{type:"output_text",text:"\x60\x60\x60json\\n"+JSON.stringify({events:[event()]})+"\\n\x60\x60\x60"}]}]};
+    content:[{type:"output_text",text:"\x60\x60\x60json\n"+JSON.stringify({events:[event()]})+"\n\x60\x60\x60"}]}]};
 
   it.each([
     ["incomplete",incomplete,"incomplete"],
