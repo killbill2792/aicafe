@@ -1,7 +1,7 @@
 import "server-only";
 import {formatInTimeZone} from "date-fns-tz";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {eventReadinessCapabilityId,authorizedScheduledEventScope}
+import {eventReadinessCapabilityId,authorizedScheduledEventScope,selectEventObservations}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {monitorLoop,utcDateOffset} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -28,29 +28,40 @@ export async function watchLiveEvents(businessId:string,businessDate:string):Pro
  const {data:proposals,error}=await db.from("supervisor_proposals")
    .select("id,owner_user_id,thread_id,monitoring_start_date,monitor_spec")
    .eq("business_id",businessId).eq("capability_id",eventReadinessCapabilityId)
-   .eq("status","committed").lte("monitoring_start_date",today)
-   .order("created_at",{ascending:false}).limit(20);
+   .in("status",["draft","approved","committed","manual_confirmed"])
+   .order("created_at",{ascending:false}).limit(100);
  if(error)throw new Error("event_live_proposals_unavailable");
  let checked=0,updated=0,failed=0;
  const repo=new SupabaseLoopRepository();
+ const eligible=[];
  for(const row of proposals??[]){
-   const start=row.monitoring_start_date;
-   const duration=Number((row.monitor_spec as {durationDays?:unknown}|null)?.durationDays);
-   if(typeof start!=="string"||!Number.isSafeInteger(duration)||duration<1||
-     duration>14||today>utcDateOffset(start,duration-1))continue;
-   if(checked>=4)break; // Bound a single café's live watch workload.
+   const scope={businessId,ownerUserId:row.owner_user_id,threadId:row.thread_id,
+     locale:"en" as const};
+   try{
+     const proposal=await repo.load(scope,row.id);
+     eligible.push(proposal);
+   }catch{
+     failed++;
+     console.warn("events_live_watch_load_failed");
+   }
+ }
+ for(const proposal of selectEventObservations(eligible)){
+   const start=proposal.monitoringStartDate!;
+   const end=utcDateOffset(start,proposal.monitorSpec.durationDays-1);
+   if(today<start||today>end)continue;
+   if(checked>=4)break;
    checked++;
    try{
      const scope=await authorizedScheduledEventScope({
-       businessId,ownerUserId:row.owner_user_id,threadId:row.thread_id,locale:"en",
+       businessId,ownerUserId:proposal.ownerUserId,threadId:proposal.threadId,
+       locale:proposal.locale,
      });
-     const proposal=await repo.load(scope,row.id);
      const report=await monitorLoop(scope,supervisorLoopRegistry,repo,
        proposal,today,true,true,true);
      if(report)updated++;
    }catch{
      failed++;
-     console.warn("events_live_watch_failed"); // No owner or café identifiers in logs.
+     console.warn("events_live_watch_failed");
    }
  }
  return {checked,updated,failed};
