@@ -33,7 +33,7 @@ const unavailable=(source:string,period:{from:string;to:string}|null,missing:str
 type CanonicalBreakEven=NonNullable<SupervisorEconomicsRead["canonicalBreakEven"]>;
 /** Standard owner answer: numbers and inputs come from the same core result used by
  * Money and Plan. Owner-specific hypothetical overrides keep their separate path. */
-export function canonicalBreakEvenAnswer(
+function canonicalBreakEvenAnswer(
  basis:CanonicalBreakEven,asOf:string,locale:"en"|"es"|"ar",
  openDaysSource:"opening_hours"|"calendar"="calendar",
 ):AgentToolResult{
