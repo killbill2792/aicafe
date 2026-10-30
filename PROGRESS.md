@@ -65,7 +65,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
      bounded retries and dedupe. **No** writer/cron route, lifecycle, UI, locale
      or migration edits. Send any scan-status writer follow-up to B.
 
-   - [ ] **Events Fix B — automatic read-only observation & Toast-backed reports.**
+   - [x] **Events Fix B — automatic read-only observation & Toast-backed reports.**
      Own: `lib/events/eventsLookahead.server.ts`,
      `lib/events/eventLiveWatch.server.ts`,
      `lib/ai/supervisor/loop/eventReadiness.server.ts`,
