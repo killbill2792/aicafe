@@ -218,8 +218,16 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
         <CalendarDays size={20} aria-hidden="true"/><span className="flex-1 text-[17px]">{t("title")}</span>
         <span className="text-[15px] text-accent-text">{t("seeAll")}</span>
       </button>
-      <p className="mb-2 text-[17px] leading-snug text-ink" dir="auto">{lead?(lead.date===today?liveEventHeadline(lead.plan,today,t):null)||
-          (lead.plan?.summary||lead.events.map(e=>e.name).join(" · ")):t("nothingSaved")}</p>
+      {lead?<button type="button" disabled={disabled} onClick={()=>openDay(lead.date)}
+        className="mb-3 w-full min-w-0 rounded-2xl bg-surface2 p-3 text-start disabled:opacity-60">
+        <p className="text-[15px] font-semibold text-accent-text">{dateLabel(lead.date,locale,"long")} · {lead.date===today?t("now"):t("upcoming")}</p>
+        <h3 className="mt-1 break-words font-headline text-[20px] font-bold leading-snug text-ink" dir="auto">
+          {lead.events.map(e=>e.name).join(" · ")||t("savedInsight")}
+        </h3>
+        {lead.plan?.summary&&<p className="mt-2 line-clamp-3 text-[17px] leading-relaxed text-ink" dir="auto">{lead.plan.summary}</p>}
+        {lead.date===today&&liveEventHeadline(lead.plan,today,t)&&<p className="mt-2 rounded-xl bg-card p-2 text-[17px]">{liveEventHeadline(lead.plan,today,t)}</p>}
+        <span className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text">{t("readInsights")} <ChevronRight size={19} className="ms-1 rtl:rotate-180" aria-hidden="true"/></span>
+      </button>:<p className="mb-3 text-[17px] leading-snug text-ink-muted">{t("nothingSaved")}</p>}
       <div className="grid grid-cols-7 gap-1">
         {days.map(date=>{
           const dayPlan=planOn(timeline.plans,date);
@@ -239,26 +247,28 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
       role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPanel(null);}}>
       <section role="dialog" aria-modal="true" aria-label={panel==="day"?dateLabel(chosen,locale,"long"):t("title")}
         dir={locale==="ar"?"rtl":"ltr"}
-        className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-surface text-ink shadow-xl md:rounded-3xl">
-        <header className="flex items-center gap-2 border-b border-line p-3">
+        className="flex max-h-[94dvh] w-full min-w-0 max-w-3xl flex-col overflow-hidden rounded-t-3xl bg-surface text-ink shadow-xl md:max-h-[90dvh] md:rounded-3xl">
+        <header className="flex shrink-0 items-center gap-2 border-b border-line p-3">
           {panel==="day"&&<button type="button" onClick={()=>setPanel("events")} aria-label={t("back")}
             className={button}><ChevronLeft size={20} className="rtl:rotate-180" aria-hidden="true"/></button>}
-          <h3 className="flex-1 text-[19px] font-bold">{panel==="day"?dateLabel(chosen,locale,"long"):t("title")}</h3>
+          <h3 className="min-w-0 flex-1 break-words font-headline text-[20px] font-bold">{panel==="day"?dateLabel(chosen,locale,"long"):t("title")}</h3>
           <button type="button" onClick={()=>setPanel(null)} aria-label={t("close")} className={button}>
             <X size={22} aria-hidden="true"/></button>
         </header>
-        <div className="min-h-0 space-y-4 overflow-y-auto p-4 text-[17px]">
+        <div className="min-h-0 min-w-0 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain p-3 text-[17px] leading-relaxed sm:p-5">
           {panel==="events"?<>
             <div className="grid grid-cols-3 gap-1" role="group" aria-label={t("title")}>
               {(["past","now","upcoming"] as const).map(key=><button key={key} type="button"
                 aria-pressed={tab===key} onClick={()=>setTab(key)}
-                className={button+" "+(tab===key?"bg-accent text-on-accent":"bg-surface2")}>{t(key)}</button>)}
+                className="min-h-12 min-w-0 rounded-xl px-1 text-[16px] font-semibold sm:px-4">{t(key)}</button>)}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button type="button" className={button+" bg-surface2"} onClick={()=>setCalendar(v=>!v)}
                 aria-expanded={calendar}><CalendarDays size={19} className="me-2 inline" aria-hidden="true"/>{t("calendar")}</button>
               <button type="button" className={button+" bg-surface2"} aria-pressed={affectsOnly}
                 onClick={()=>setAffectsOnly(v=>!v)}>{affectsOnly?t("affectsYou"):t("all")}</button>
+              {tab==="upcoming"&&<button type="button" className={button+" bg-surface2"}
+                aria-pressed={sortByDate} onClick={()=>setSortByDate(v=>!v)}>{sortByDate?t("dateFirst"):t("importanceFirst")}</button>}
             </div>
             {calendar&&<div className="rounded-2xl bg-surface2 p-2">
               <div className="flex items-center justify-between">
@@ -278,7 +288,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                   <span key={"blank-"+i}/>)}
               </div>
             </div>}
-            {!listDates.length&&<p>{t("noEvents")}</p>}
+            {!listDates.length&&<p className="rounded-xl bg-surface2 p-4 text-ink-muted">{t("noEvents")}</p>}
             {listDates.map(date=>{
               const saved=visibleEvents(date);
               const dayPlan=planOn(timeline.plans,date);
@@ -287,11 +297,12 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                   {dateLabel(date,locale,"long")}{dayPlan?" · "+t("hasPlan"):""}
                 </button>
                 {saved.slice(0,3).map(event=><article key={event.id} className="rounded-xl border border-line p-3">
-                  <p className="font-semibold" dir="auto">{event.name}</p>
+                  <p className="break-words font-headline text-[19px] font-semibold" dir="auto">{event.name}</p>
                   <p className="text-ink-muted" dir="auto">{event.startDate!==event.endDate?
                     event.startDate+" – "+event.endDate:event.startTime??""}
                     {event.venue||event.areaLabel?" · "+(event.venue??event.areaLabel):""}</p>
-                  {event.status!=="found"&&<p>{event.status==="cancelled"?t("cancelled"):t("moved")}</p>}
+                  {event.status!=="found"&&<p role="status" className="font-semibold text-warn-text">{event.status==="cancelled"?t("cancelled"):t("moved")}</p>}
+                  <p className="text-[15px] text-ink-muted">{event.verificationFailedAt?t("verificationPending"):t("verifiedOn",{date:event.lastVerifiedAt?.slice(0,10)??event.lastCheckedAt.slice(0,10)})}</p>
                   <VenueMapLink address={event.venueAddress} t={t}/>
                   {sourceUrl(event.sourceUrl)&&<a href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer"
                     className="inline-flex min-h-12 items-center text-accent-text underline">{t("source")}</a>}
@@ -300,55 +311,48 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                 </article>)}
                 {saved.length>3&&<button type="button" className={button+" bg-surface2"}
                   onClick={()=>openDay(date)}>{t("moreEvents",{count:saved.length-3})}</button>}
+                {dayPlan?.summary&&<p className="rounded-xl bg-surface2 p-3 text-[17px]" dir="auto">{dayPlan.summary}</p>}
                 {tab==="past"&&dayPlan&&<EventReportCard report={dayPlan.report}
                   status={dayPlan.reportStatus} currency={timeline.currency??null}
                   locale={locale} t={t} onChat={()=>chat(date)}/>}
               </section>;
             })}
           </>:<>
-            {dayEvents.map(event=><article key={event.id} className="rounded-xl bg-surface2 p-3">
-              <p className="font-semibold" dir="auto">{event.name}</p>
-              <p className="text-ink-muted" dir="auto">{event.venue??event.areaLabel??""}{event.startTime?" · "+event.startTime:""}</p>
+            {dayEvents.map(event=><article key={event.id} className="space-y-2 rounded-2xl border border-line bg-card p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <h4 className="min-w-0 flex-1 break-words font-headline text-[22px] font-bold leading-snug" dir="auto">{event.name}</h4>
+                {event.status!=="found"&&<span role="status" className="rounded-lg bg-surface2 px-2 py-1 text-[15px] font-semibold text-warn-text">{event.status==="cancelled"?t("cancelled"):t("moved")}</span>}
+              </div>
+              <p className="text-ink-muted" dir="auto">{event.venue??event.areaLabel??t("venueUnknown")}{event.startTime?" · "+event.startTime:""}</p>
+              <p className="text-[15px] text-ink-muted">{event.verificationFailedAt?t("verificationPending"):t("verifiedOn",{date:event.lastVerifiedAt?.slice(0,10)??event.lastCheckedAt.slice(0,10)})}</p>
               <VenueMapLink address={event.venueAddress} t={t}/>
               {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
                 href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
             </article>)}
-            {plan?<>
-              <p className="font-semibold" dir="auto">{plan.summary}</p>
+            {plan?<section className="space-y-4 rounded-2xl border border-line bg-card p-4" aria-label={t("savedInsight")}>
+              <div>
+                <p className="text-[15px] font-semibold text-accent-text">{t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
+                <p className="mt-2 break-words font-headline text-[20px] font-semibold leading-snug" dir="auto">{plan.summary}</p>
+              </div>
               <PlanHours plan={plan} t={t}/>
-              {question&&<section className="space-y-2 rounded-2xl border border-line bg-surface2 p-3">
-                <h4 className="font-semibold" dir="auto">{question.question}</h4>
-                <div className="flex flex-wrap gap-2">
-                  {question.options.map(option=><button type="button" key={option}
-                    onClick={()=>chat(chosen)} className={button+" bg-surface text-accent-text"}>{option}</button>)}
-                  <button type="button" onClick={()=>chat(chosen)}
-                    className={button+" bg-surface text-accent-text"}>{t("answerInChat")}</button>
-                </div>
+              {actions.length>0&&<div className="space-y-2">
+                <h4 className="font-bold">{t("recommendations")}</h4>
+                <div className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
+                  <article key={index} className="min-w-0 rounded-xl border border-line bg-surface2 p-3">
+                    <h5 className="break-words font-semibold" dir="auto">{action.action}</h5>
+                    <p className="mt-2 break-words text-ink-muted" dir="auto">{action.reason}</p>
+                  </article>)}</div>
+              </div>}
+              {chosen===today&&liveEventHeadline(plan,chosen,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
+                <h4 className="font-bold">{t("liveObservations")}</h4>
+                <p role="status">{liveEventHeadline(plan,chosen,t)}</p>
               </section>}
-              <h4 className="text-[17px] font-bold">{t("getReady")}</h4>
-              <ul className="space-y-2">{actions.map((action,index)=>{
-                const done=ticks.find(x=>x.actionIndex===index)?.state==="done";
-                return <li key={index} className="rounded-xl border border-line p-3">
-                  <label className="flex min-h-12 items-center gap-3">
-                    <input type="checkbox" className="h-6 w-6 accent-accent" checked={done}
-                      disabled={!approved||busy} onChange={()=>void saveTick(index,done?"dismissed":"done")}/>
-                    <span className="font-semibold" dir="auto">{action.action}</span>
-                  </label>
-                  <p className="mt-1 text-ink-muted" dir="auto">{action.reason}</p>
-                  <p className="text-[15px] text-ink-muted">{eventActionAreaLabel(action.area,locale)}</p>
-                </li>;
-              })}</ul>
-              {plan.status==="draft"&&<button type="button" disabled={busy}
-                onClick={()=>void approve()} className={button+" w-full bg-accent text-on-accent"}>{t("usePlan")}</button>}
-              {!approved&&plan.status!=="draft"&&<p>{t("planNotActive")}</p>}
-              {plan.status==="draft"&&<p className="text-ink-muted">{t("approveFirst")}</p>}
               <EventReportCard report={plan.report} status={plan.reportStatus}
                 currency={timeline.currency??null} locale={locale} t={t} onChat={()=>chat(chosen)}/>
-            </>:<p className="text-ink-muted">{t("noPlan")}</p>}
-            {actionError&&<p role="alert">{t("saveFailed")}</p>}
+            </section>:<p className="rounded-xl bg-surface2 p-4 text-ink-muted">{t("noPlan")}</p>}
+            {dayEvents.length===0&&!plan&&<p className="text-ink-muted">{t("noEvents")}</p>}
             <button type="button" onClick={()=>chat(chosen)}
-              className={button+" w-full bg-surface2 text-accent-text"}>{t("chatAbout")}</button>
-            {plan&&<p className="text-ink-muted">{t("questionInChat")}</p>}
+              className={button+" w-full bg-accent text-on-accent"}>{t("chatAbout")}</button>
           </>}
         </div>
       </section>
