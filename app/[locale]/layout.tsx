@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import localFont from "next/font/local";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
@@ -62,6 +63,12 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+// The navigation is interactive while its authorized café label loads.
+async function ActiveCafeNavigation() {
+  const activeCafeName = await getActiveCafeName();
+  return <SideNav cafeName={activeCafeName} languageSwitch={<LanguageSwitch href="/" compact />} />;
+}
+
 export default async function LocaleLayout({
   children,
   params,
@@ -76,7 +83,6 @@ export default async function LocaleLayout({
 
   const locale = await getLocale();
   const dir = getDirection(locale);
-  const activeCafeName = await getActiveCafeName();
   const cookieStore = await cookies();
   const theme = parseThemeCookie(cookieStore.get("cp_theme")?.value);
   const mode = parseModeCookie(cookieStore.get("cp_mode")?.value);
@@ -97,7 +103,9 @@ export default async function LocaleLayout({
           <ScreenViewLogger />
           <NavigationTiming />
           <div className="flex min-h-screen w-full flex-1">
-            <SideNav cafeName={activeCafeName} languageSwitch={<LanguageSwitch href="/" compact />} />
+            <Suspense fallback={<SideNav cafeName="" languageSwitch={<LanguageSwitch href="/" compact />} />}>
+              <ActiveCafeNavigation />
+            </Suspense>
             <div className="w-full min-w-0 flex-1 pb-24 md:pb-10">{children}</div>
           </div>
           <TabBar />
