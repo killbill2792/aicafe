@@ -3676,6 +3676,7 @@
     "liveObservations": "Today's observed sales",
     "venueUnknown": "Venue not recorded",
     "verificationPending": "Verification incomplete — last saved facts may be stale",
+    "lastSavedOn": "Last saved check: {date} · not confirmed verified",
     "verifiedOn": "Last verified: {date}",
     "importanceHigh": "High importance · AI judgment",
     "importanceMedium": "Medium importance · AI judgment",
