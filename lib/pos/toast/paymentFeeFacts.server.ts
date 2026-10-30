@@ -52,8 +52,7 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
   return {status:"not_installed" as const};
  if(raw.error)throw raw.error;
  const rows=await readAllPages((start,end)=>db.from("toast_payment_facts").select(
-  "payment_ref,payment_type,payment_status,card_type,card_entry_mode,amount_cents,original_processing_fee_cents,"+
-  "processing_fee_cents,fee_status,fee_basis")
+  "payment_ref,payment_type,payment_status,card_type,card_entry_mode,amount_cents,original_processing_fee_cents,processing_fee_cents,fee_status,fee_basis")
   .eq("business_id",businessId).eq("business_date",businessDate)
   .order("payment_ref").range(start,end)) as Row[];
  const plans=await getOwnerConfirmedProcessingFeePlans(db,businessId);
