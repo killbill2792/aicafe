@@ -116,6 +116,11 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
      Tests: date boundaries (Oct 30/31, Nov 1), all tabs/entry points, importance
      and date sorting, within-panel details, no involuntary chat or approval,
      empty/error/retry, 360–430px + desktop, EN/ES/AR RTL, accessibility.
+     **Visual acceptance gate:** attach before/after desktop + 390px mobile
+     screenshots of the test café's Halloween flow (Oct 30 Upcoming, Oct 31
+     Today, Nov 1 Past), including expanded detail and report cards; inspect
+     overflow, contrast, scrolling and tap targets against the approved mockup.
+     No merge based on unit tests alone if the screen remains a text-only link.
      **No** edits to A/B writer, search, monitor, Toast, migration files.
      C may be coded in parallel but **merge B before C** so removing the
      approval control cannot strand existing monitoring in production.
