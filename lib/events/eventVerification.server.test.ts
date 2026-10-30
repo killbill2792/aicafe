@@ -20,17 +20,21 @@ const plan={proposalId:"proposal-id",threadId:"thread-id",status:"committed",rev
   startDate:"2026-11-06",endDate:"2026-11-06",summary:"Plan owner approved",
   actions:[{area:"staff",action:"Consider a second barista"}],
   expectedBusyHours:[],factsHash:"original",reportStatus:null,report:null};
-function fakeDb(){
+function fakeDb(options:{failFirstTaskRead?:boolean}={}){
   const writes:Array<{table:string;patch:Record<string,unknown>;filters:Array<[string,string]>}>=[];
-  let taskExists=false;
+  let taskExists=false,taskReadCount=0;
   const db={
     from:(table:string)=>{
       const filters:Array<[string,string]>=[];
       const query={
         eq(key:string,value:string){filters.push([key,value]);return this;},
         order(){return this;},limit(){return this;},select(){return this;},
-        maybeSingle:async()=>({data:table==="operating_tasks"?taskExists?{id:"existing"}:null:
-          table==="supervisor_proposals"?{locale:"en"}:{id:event.id},error:null}),
+        maybeSingle:async()=>{
+          const failed=table==="operating_tasks"&&options.failFirstTaskRead&&++taskReadCount===1;
+          return {data:table==="operating_tasks"?taskExists?{id:"existing"}:null:
+            table==="supervisor_proposals"?{locale:"en"}:{id:event.id},
+            error:failed?new Error("temporarily unavailable"):null};
+        },
         then(resolve:(v:{error:null})=>unknown){
           writes.push({table,patch:{},filters:[...filters]});
           return Promise.resolve(resolve({error:null}));
@@ -114,6 +118,29 @@ describe("persisted change alerts through the existing inbox and chat",()=>{
    expect(changes[0].patch.status).toBe("found");
    const details=changes[0].patch.verification_details as {history:Array<{verdict:string}>};
    expect(details.history.map(h=>h.verdict)).toEqual(["cancelled","reinstated"]);
+   expect(writes.filter(w=>w.table==="operating_tasks")).toHaveLength(1);
+ });
+ it("failed pending delivery cannot block verifying a separate upcoming planned event",async()=>{
+   const {db,writes}=fakeDb({failFirstTaskRead:true});
+   const prior={
+     id:event.id,previousStatus:"found",status:"cancelled",verdict:"cancelled",
+     sourceUrl:event.sourceUrl!,statement:"City cancelled event.",newDate:null,newVenue:null,
+     verifiedAt:"2026-10-31T12:00:00Z",
+   };
+   const pending={...event,status:"cancelled" as const,
+     lastAttemptedAt:"2026-11-01T11:00:00Z",
+     verificationDetails:{change:prior,pendingNotice:true,history:[prior]}};
+   const next={...event,id:"00000000-0000-4000-8000-000000000022",name:"Other parade"};
+   let sourceChecks=0;
+   const changed=await verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC",
+     "2026-11-01",timeline([pending,next]),new Date("2026-11-01T12:00:00Z"),
+     async()=>{sourceChecks++;return {evidence:{verdict:"cancelled",
+       sourceUrl:event.sourceUrl,statement:"Organizer confirmed cancellation.",
+       newDate:null,newVenue:null},citedUrls:[event.sourceUrl!]};});
+   expect(changed).toBe(1);
+   expect(sourceChecks).toBe(1);
+   expect(writes.some(w=>w.table==="cafe_events"&&w.patch.status==="cancelled"&&
+     w.filters.some(([key,value])=>key==="id"&&value===next.id))).toBe(true);
    expect(writes.filter(w=>w.table==="operating_tasks")).toHaveLength(1);
  });
  it("does not replay an already-delivered notice or recheck immediately",async()=>{
