@@ -44,7 +44,8 @@ describe("Menu catalog first-use render", () => {
     const { items, photosPromise } = catalogProps(page);
     expect(items).toEqual([{ id: "latte", priceCents: 550 }]);
     expect(photosPromise).toBeInstanceOf(Promise);
-    expect(deps.menu).toHaveBeenCalledExactlyOnceWith({ catalogOnly: true });
+    expect(deps.menu).toHaveBeenCalledTimes(1);
+    expect(deps.menu).toHaveBeenCalledWith({ catalogOnly: true });
     expect(deps.photos).toHaveBeenCalledTimes(1);
     expect(deps.timed).toHaveBeenCalledWith("Menu", "signedPhotos", expect.any(Function));
   });
