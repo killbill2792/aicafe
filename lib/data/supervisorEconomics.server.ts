@@ -140,6 +140,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
   observedIngredientCentsOverride:summarizeResolvedSoldProductCosts((resolvedItems.breakEvenProductCosts??resolvedItems.menuItems).filter(x=>x.quantitySoldLast28Days>0)).totalCostCents,
   missingIngredientCosts:summarizeResolvedSoldProductCosts((resolvedItems.breakEvenProductCosts??resolvedItems.menuItems).filter(x=>x.quantitySoldLast28Days>0)).missingProductCosts,
   daysInMonth:dayList.length||Number(month.to.slice(-2)),
+  openDaysBasis:hours&&dayList.length?"opening_hours":"calendar",
   laborCoveredDays:laborDays.length,laborWindowDays:laborWindow.length,
   laborEvidence:{dates:dayList.map(date=>({date})),records:laborRows},
   salesCoverage:first&&latest?{from:first,to:latest,openDays:salesOpenDays}:undefined,

@@ -3567,7 +3567,7 @@
     "itemCost": "el coste del producto",
     "hours": "el horario de apertura",
     "saved": "He guardado estas respuestas para tu cafetería.",
-    "savedBut": "He guardado la respuesta. Algunas cifras necesitan un plan de comisiones o desglose de gastos completo.",
+    "savedBut": "Entendido, lo he guardado. Lo usaré en el chat; las demás pantallas siguen mostrando tus cifras registradas.",
     "needNumber": "el número que quieres comprobar",
     "error": "No pude consultar {source} para {period}.",
     "errorSave": "No pude guardar {source}. Inténtalo de nuevo.",
