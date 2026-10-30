@@ -6,8 +6,7 @@ import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {readCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
-import {medianCents,changePercent} from "@/lib/metrics/core/dayOutlook";
-import {indexHourlyRevenue,hourlyMatchesDaily} from "@/lib/metrics/core/eventReadiness";
+import {indexHourlyRevenue,compareEventDaySales} from "@/lib/metrics/core/eventReadiness";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {effectHash,registerLoopCapability,utcDateOffset} from "./engine";
 
@@ -34,8 +33,6 @@ export const eventReadinessEffect=eventReadinessInput.extend({
  factsHash:z.string().regex(/^[a-f0-9]{64}$/),
 });
 export const eventReadinessCapabilityId="alex.event_readiness.v1";
-const isWeekday=(day:string,target:string)=>new Date(day+"T12:00:00Z").getUTCDay()===
-  new Date(target+"T12:00:00Z").getUTCDay();
 
 /** No new monitoring store: one sample per business day in supervisor_monitor_samples. */
 export const eventReadinessCapability=registerLoopCapability({
@@ -88,31 +85,18 @@ export const eventReadinessCapability=registerLoopCapability({
    const today=certified.find(d=>d.date===businessDate);
    if(!today||!hours.available||!hours.value)return null;
    const byDay=indexHourlyRevenue(hours.value.hours);
-   // Unknown or incomplete hours must not be treated as a zero-sales day.
-   const reconcile=(day:{date:string;netSalesCents:number})=>
-     hourlyMatchesDaily(byDay.get(day.date),day.netSalesCents);
-   if(!reconcile(today)||hours.quality.missingInputs.some(x=>x==="hourlySalesPageLimit"||x==="hourlySalesUnavailable"))return null;
+   if(hours.quality.missingInputs.some(x=>x==="hourlySalesPageLimit"||x==="hourlySalesUnavailable"))return null;
    const excluded=new Set(exclusions.filter(e=>e.status==="found").flatMap(e=>{
      const dates:string[]=[];
      for(let d=e.startDate;d<=e.endDate&&dates.length<90;d=utcDateOffset(d,1))dates.push(d);
      return dates;
    }));
-   const previous=certified.filter(d=>d.date<businessDate&&isWeekday(d.date,businessDate)&&
-     !excluded.has(d.date)&&reconcile(d));
-   const observed=byDay.get(businessDate)!;
-   const byHour=Array.from({length:24},(_,hourLocal)=>{
-     const values=previous.map(d=>byDay.get(d.date)?.get(hourLocal)??0);
-     const usualCents=values.length>=3?medianCents(values):null;
-     const actualCents=observed.get(hourLocal)??0;
-     return {hourLocal,actualCents,usualCents,
-       changePercent:usualCents===null?null:changePercent(actualCents,usualCents)};
-   });
-   const typicalCents=previous.length>=3?medianCents(previous.map(d=>d.netSalesCents)):null;
-   return {businessDate,source:"hourly_sales_rollup+daily_rollups",observation:{
-     coverage:"actual",actualCents:today.netSalesCents,typicalCents,
-     changePercent:typicalCents===null?null:changePercent(today.netSalesCents,typicalCents),
-     baselineDays:previous.length,hours:byHour,
-   }};
+   // One canonical usual-day definition, shared with get_nearby_events.
+   // Missing hourly coverage only reduces the per-hour comparison sample.
+   const comparison=compareEventDaySales(certified,byDay,businessDate,excluded);
+   if(!comparison)return null;
+   return {businessDate,source:"hourly_sales_rollup+daily_rollups",
+     observation:{coverage:"actual",...comparison}};
  },
  report:async(scope,effect,samples,windowComplete,window)=>{
    const ticks=window?.proposalId?await readEventChecklist(
