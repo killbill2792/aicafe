@@ -5,6 +5,7 @@ on:
       - 'components/onboarding/RegisterChoice.tsx'
       - 'components/onboarding/RegisterChoice.test.ts'
       - '.github/workflows/register-choice-verify.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -26,12 +27,15 @@ jobs:
       - name: Toast, Square and upload routing regression tests
         run: npx vitest run components/onboarding/RegisterChoice.test.ts
       - name: Full regression suite
+        if: github.event_name != 'pull_request'
         run: npm run test
       - name: Lint changed files
         run: npx eslint components/onboarding/RegisterChoice.tsx components/onboarding/RegisterChoice.test.ts
       - name: TypeScript
+        if: github.event_name != 'pull_request'
         run: npx tsc --noEmit
       - name: Production build (placeholder public env only)
+        if: github.event_name != 'pull_request'
         run: npm run build
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co

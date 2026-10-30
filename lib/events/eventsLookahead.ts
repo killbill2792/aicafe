@@ -1,17 +1,23 @@
 import {addDays,weekdayOf} from "./holidays";
 import type {NearbyEvent} from "./nearbyEvents";
 
-/** Monday refreshes the whole two-week window. Other days only search the
- * newly entering day and recheck tomorrow for a confirmed change. */
-export type EventScanWindow={from:string;to:string;reason:"weekly"|"new_day"|"day_before"};
-export function eventScanWindows(today:string):EventScanWindow[]{
-  const next=addDays(today,1);
-  return weekdayOf(today)===1
-    ?[{from:today,to:addDays(today,6),reason:"weekly"},
-      {from:addDays(today,7),to:addDays(today,13),reason:"weekly"},
-      {from:next,to:next,reason:"day_before"}]
-    :[{from:addDays(today,13),to:addDays(today,13),reason:"new_day"},
-      {from:next,to:next,reason:"day_before"}];
+/** Search completion is durable, including searches that returned no events. */
+export type EventScanState={
+  locationHash:string;scannedThroughDate:string;weeklyResearchedOn:string|null;
+};
+export type EventScanWindow={from:string;to:string;reason:"initial"|"weekly"|"new_day"};
+/** Initial activation/address change covers all 14 days on ANY weekday.
+ * The daily job adds one entering day; Monday separately researches the
+ * whole saved window for late announcements. A rerun never pays twice. */
+export function eventScanWindows(today:string,state:EventScanState|null,
+  locationHash:string):EventScanWindow[]{
+  const horizon=addDays(today,13);
+  if(!state||state.locationHash!==locationHash)
+    return [{from:today,to:horizon,reason:"initial"}];
+  if(weekdayOf(today)===1&&state.weeklyResearchedOn!==today)
+    return [{from:today,to:horizon,reason:"weekly"}];
+  return state.scannedThroughDate<horizon
+    ?[{from:horizon,to:horizon,reason:"new_day"}]:[];
 }
 /** Supporting table has only these factual kinds; never turn crowd guesses
  * into café advice, or write unrecognized provider enums. */

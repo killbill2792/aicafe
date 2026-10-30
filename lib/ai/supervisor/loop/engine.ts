@@ -36,12 +36,17 @@ export type LoopReport={status:"in_progress"|"complete"|"insufficient_evidence";
   /** Short owner message for the one mid-run update; only sent when the
    * monitor asks for it (see monitorLoop's midRun flag). */
   midRunText?:string;
+  /** Event live notes are deduplicated by their business day. */
+  midRunKey?:string;
   /** Domain-owned delivery into the existing Operations inbox and owner thread.
    * No platform branch may assume a drink, task kind or specialist identity. */
   delivery?:{
     agentId:AgentId;taskKind:OperatingTaskKind;entityType:string;entityId:string;
     payload:OperatingTask["payload"];confidence:OperatingTask["confidence"];
     evidence:OperatingTask["evidence"];threadText:string;
+    /** Verified number offsets from the SAME agent checkNumbers path. */
+    numberProvenance?:readonly import("@/lib/ai/agent/checkNumbers").NumberProvenance[];
+    numericEvidence?:readonly import("@/lib/ai/agent/checkNumbers").NumericEvidence[];
   };
 };
 export type RegisteredLoopCapability={
@@ -220,7 +225,7 @@ export function midRunDay(start:string,durationDays:number):string{
 }
 export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeof loopRegistry>,
   repo:LoopRepository,p:LoopProposal,businessDate:string,allowEarlyReport=false,
-  midRun=false):Promise<LoopReport|null>{
+  midRun=false,liveNow=false):Promise<LoopReport|null>{
   assertProposalScope(scope,p);
   if(!["manual_confirmed","committed"].includes(p.status)||!p.monitoringStartDate)return null;
   // The proposal captured the owner locale when created. Subsequent cron/API
@@ -235,23 +240,26 @@ export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
     const sample=await def.monitor(reportScope,effect,businessDate);
     if(sample){
       if(sample.businessDate!==businessDate)throw new Error("Monitor date scope mismatch");
+      if(liveNow&&sample.observation.coverage!=="provisional")return null;
       await repo.addSample(scope,p.id,sample);
     }else{
+      if(liveNow)return null;
       // A corrected POS sync can revoke an earlier day's "actual" coverage.
       // Never preserve a stale sample and call a now-incomplete period complete.
       await repo.clearSample(scope,p.id,businessDate);
     }
   }
-  if(!allowEarlyReport&&businessDate<end)return null;
+  const inProgress=liveNow||businessDate<end;
+  if(!allowEarlyReport&&inProgress)return null;
   const samples=(await repo.samples(scope,p.id))
     .filter(x=>x.businessDate>=p.monitoringStartDate!&&x.businessDate<=end);
   // The days the report covers: every one counts, sampled or not.
-  const generated=await def.report(reportScope,effect,samples,businessDate>=end,
+  const generated=await def.report(reportScope,effect,samples,!inProgress,
     {start:p.monitoringStartDate,through:businessDate<end?businessDate:end,proposalId:p.id});
   // "In progress" is a window property, not evidence of a future zero-sales day.
   // At the end, missing actual-coverage observations become a durable
   // insufficient-evidence report rather than an endlessly open experiment.
-  const finalStatus=businessDate<end
+  const finalStatus=inProgress
     ?"in_progress":generated.status==="complete"?"complete":"insufficient_evidence";
   const report:LoopReport={...generated,status:finalStatus,
     recommendation:finalStatus==="complete"?generated.recommendation:"adjust",

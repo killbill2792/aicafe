@@ -52,3 +52,46 @@ export function compareEventDaySales(
    changePercent:typical.typicalCents===null?null:changePercent(actual.netSalesCents,typical.typicalCents),
    baselineDays:typical.sampleDays,hours};
 }
+
+
+/** Provisional today-so-far sales against reconciled same-weekday hours. A
+ * complete historical hour is the smallest comparison bucket available;
+ * the current hour is partial, so results are explicitly provisional.
+ * Missing historical hourly coverage is excluded, never replaced by zero. */
+export function compareLiveEventSales(
+ certifiedDays:readonly OutlookSalesDay[],
+ hourlyByDate:ReadonlyMap<string,ReadonlyMap<number,number>>,
+ businessDate:string,liveCents:number,throughHour:number,excluded:ReadonlySet<string>,
+){
+ if(!Number.isSafeInteger(liveCents)||liveCents<0||
+   !Number.isInteger(throughHour)||throughHour<0||throughHour>23)return null;
+ const comparable=certifiedDays.filter(d=>d.date<businessDate&&
+   hourlyMatchesDaily(hourlyByDate.get(d.date),d.netSalesCents))
+   .map(d=>{
+     let throughCents=0,completedCents=0;
+     for(const [hour,cents] of hourlyByDate.get(d.date)!){
+       if(hour<=throughHour)throughCents+=cents;
+       if(hour<throughHour)completedCents+=cents;
+     }
+     return {date:d.date,netSalesCents:throughCents,completedCents};
+   }).filter(d=>Number.isSafeInteger(d.netSalesCents)&&d.netSalesCents>=0&&
+     Number.isSafeInteger(d.completedCents)&&d.completedCents>=0);
+ const usual=typicalDaySales(comparable,businessDate,businessDate,{exclude:excluded});
+ const completed=typicalDaySales(comparable.map(d=>({
+   date:d.date,netSalesCents:d.completedCents,
+ })),businessDate,businessDate,{exclude:excluded});
+ const change=usual.typicalCents===null?null:changePercent(liveCents,usual.typicalCents);
+ const delta=usual.typicalCents===null?null:liveCents-usual.typicalCents;
+ const ahead=change!==null&&delta!==null&&change>=25&&delta>=5000;
+ // Today's live total includes a PARTIAL current hour, while historic through
+ // this hour includes its FULL sales. Only warn about being behind when today's
+ // sales also trail the fully completed hours by a material amount.
+ const completedChange=completed.typicalCents===null?null:
+   changePercent(liveCents,completed.typicalCents);
+ const behind=change!==null&&change<=-25&&completedChange!==null&&
+   completedChange<=-25&&completed.typicalCents!==null&&
+   completed.typicalCents-liveCents>=5000;
+ return {actualCents:liveCents,typicalCents:usual.typicalCents,
+   changePercent:change,baselineDays:usual.sampleDays,throughHour,
+   notable:ahead||behind};
+}

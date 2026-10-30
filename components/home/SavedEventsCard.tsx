@@ -8,11 +8,12 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import type {CafeEvent,EventChecklistTick,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {eventActionAreaLabel} from "@/lib/events/eventActionArea";
+import {EventReportCard} from "./EventReportCard";
 
 type Locale="en"|"es"|"ar";
 type T=(key:string,values?:Record<string,string|number>)=>string;
 type Plan=SavedEventTimeline["plans"][number];
-type Timeline=SavedEventTimeline&{today:string};
+type Timeline=SavedEventTimeline&{today:string;currency?:string|null};
 type Tab="past"|"now"|"upcoming";
 type Panel="events"|"day"|null;
 type Action={area:string;action:string;reason:string};
@@ -67,6 +68,39 @@ const hoursFor=(plan:Plan|undefined):Array<{start:string;end:string}>=>
     (h):h is {start:string;end:string}=>typeof h==="object"&&h!==null&&
       typeof h.start==="string"&&typeof h.end==="string"):[];
 const sourceUrl=(url:string|null)=>url&&/^https:\/\//i.test(url)?url:null;
+/** Use the last canonical in-progress report; never infer live figures from a plan. */
+export function liveEventHeadline(plan:Plan|undefined,date:string,t:T):string|null{
+ if(plan?.reportStatus!=="in_progress"||!plan.report||typeof plan.report!=="object")return null;
+ const raw=(plan.report as {liveWatch?:unknown}).liveWatch;
+ if(!raw||typeof raw!=="object")return null;
+ const live=raw as Record<string,unknown>;
+ if(live.businessDate!==date||live.coverage!=="provisional"||
+   typeof live.changePercent!=="number"||!Number.isFinite(live.changePercent)||
+   typeof live.asOfLocal!=="string"||!/^([01]\d|2[0-3]):[0-5]\d$/.test(live.asOfLocal))
+   return null;
+ return t(live.changePercent>=0?"liveAhead":"liveBehind",{
+   change:Math.abs(live.changePercent),time:live.asOfLocal,
+   hourEnd:live.asOfLocal.slice(0,2)+":59",
+ });
+}
+
+
+/** A read-only link from the saved venue address. No geocoding or guessed distance. */
+export function eventVenueMapUrl(address:string|null):string|null{
+  const value=address?.trim();
+  if(!value||value.length>500||/[\u0000-\u001f\u007f]/u.test(value))return null;
+  return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(value);
+}
+export function VenueMapLink({address,t}:{address:string|null;t:T}){
+  const url=eventVenueMapUrl(address);
+  if(!url||!address)return null;
+  return <a href={url} target="_blank" rel="noopener noreferrer"
+    aria-label={t("mapLink")+": "+address.trim()}
+    className="inline-flex min-h-12 max-w-full flex-wrap items-center gap-1 text-[17px] text-accent-text underline">
+    <span dir="auto" className="break-words">{address.trim()}</span>
+    <span className="whitespace-nowrap">· {t("mapLink")}</span>
+  </a>;
+}
 
 export function eventStripDays(today:string){return Array.from({length:7},(_,i)=>dayAt(today,i));}
 export function eventListDays(timeline:Timeline,tab:Tab,affectsOnly:boolean){
@@ -233,7 +267,8 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
         <CalendarDays size={20} aria-hidden="true"/><span className="flex-1 text-[17px]">{t("title")}</span>
         <span className="text-[15px] text-accent-text">{t("seeAll")}</span>
       </button>
-      <p className="mb-2 text-[17px] leading-snug text-ink" dir="auto">{lead?(lead.plan?.summary||lead.events.map(e=>e.name).join(" · ")):t("nothingSaved")}</p>
+      <p className="mb-2 text-[17px] leading-snug text-ink" dir="auto">{lead?(lead.date===today?liveEventHeadline(lead.plan,today,t):null)||
+          (lead.plan?.summary||lead.events.map(e=>e.name).join(" · ")):t("nothingSaved")}</p>
       <div className="grid grid-cols-7 gap-1">
         {days.map(date=>{
           const dayPlan=planOn(timeline.plans,date);
@@ -306,6 +341,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                     event.startDate+" – "+event.endDate:event.startTime??""}
                     {event.venue||event.areaLabel?" · "+(event.venue??event.areaLabel):""}</p>
                   {event.status!=="found"&&<p>{event.status==="cancelled"?t("cancelled"):t("moved")}</p>}
+                  <VenueMapLink address={event.venueAddress} t={t}/>
                   {sourceUrl(event.sourceUrl)&&<a href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer"
                     className="inline-flex min-h-12 items-center text-accent-text underline">{t("source")}</a>}
                   <button type="button" onClick={()=>chat(date)}
@@ -313,12 +349,16 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                 </article>)}
                 {saved.length>3&&<button type="button" className={button+" bg-surface2"}
                   onClick={()=>openDay(date)}>{t("moreEvents",{count:saved.length-3})}</button>}
+                {tab==="past"&&dayPlan&&<EventReportCard report={dayPlan.report}
+                  status={dayPlan.reportStatus} currency={timeline.currency??null}
+                  locale={locale} t={t} onChat={()=>chat(date)}/>}
               </section>;
             })}
           </>:<>
             {dayEvents.map(event=><article key={event.id} className="rounded-xl bg-surface2 p-3">
               <p className="font-semibold" dir="auto">{event.name}</p>
               <p className="text-ink-muted" dir="auto">{event.venue??event.areaLabel??""}{event.startTime?" · "+event.startTime:""}</p>
+              <VenueMapLink address={event.venueAddress} t={t}/>
               {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
                 href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
             </article>)}
@@ -351,7 +391,8 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                 onClick={()=>void approve()} className={button+" w-full bg-accent text-on-accent"}>{t("usePlan")}</button>}
               {!approved&&plan.status!=="draft"&&<p>{t("planNotActive")}</p>}
               {plan.status==="draft"&&<p className="text-ink-muted">{t("approveFirst")}</p>}
-              {plan.reportStatus&&<p className="rounded-xl bg-surface2 p-3">{t("reportAvailable")}</p>}
+              <EventReportCard report={plan.report} status={plan.reportStatus}
+                currency={timeline.currency??null} locale={locale} t={t} onChat={()=>chat(chosen)}/>
             </>:<p className="text-ink-muted">{t("noPlan")}</p>}
             {actionError&&<p role="alert">{t("saveFailed")}</p>}
             <button type="button" onClick={()=>chat(chosen)}

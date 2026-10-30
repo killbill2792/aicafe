@@ -34,6 +34,7 @@ const status=()=>({business_date:day,import_state:"imported",recon_state:"pendin
  recon_source:null as string|null,analytics_state:null as string|null,
  internal_state:null as string|null,internal_reasons:[] as string[],paid_other_day:0,
  reconciled_at:null as string|null,payment_repull_at:null as string|null,
+ last_import_run_id:null as string|null,
  last_error_category:null as string|null});
 function fakeDb(analytics:boolean){
  mocked.mode=analytics?"official":"internal";
@@ -42,6 +43,7 @@ function fakeDb(analytics:boolean){
  const selection={or:[] as string[],is:[] as string[]};
  const calls:string[]=[];let certifiedVoids=false;
  const cacheRows:Record<string,unknown>[]=[];let job:Record<string,unknown>|null=null;
+ const archive:unknown[]=[];
  let matchedOrder:Record<string,unknown>|null=null,otherDay:Record<string,unknown>|null=null;
  const db={
   from(table:string){
@@ -89,7 +91,8 @@ function fakeDb(analytics:boolean){
      }).sort((a,b)=>(a.last_recon_attempt_at?1:0)-(b.last_recon_attempt_at?1:0)||
        String(b.business_date).localeCompare(String(a.business_date))).slice(0,queryLimit);
      const data=table==="toast_day_status"&&!patch?eligible:
-      table==="toast_internal_check_cache"?cacheRows:[];
+      table==="toast_internal_check_cache"?cacheRows:
+      table==="toast_raw_records"&&filters.run_id===item.last_import_run_id?archive.map(payload=>({payload})):[];
      return Promise.resolve({data,error:null}).then(yes,no);
     }
    };return q;
@@ -108,6 +111,7 @@ function fakeDb(analytics:boolean){
   setJob(value:Record<string,unknown>){job=value;},
   setOrder(value:Record<string,unknown>|null){matchedOrder=value;},
   setOtherDay(value:Record<string,unknown>|null){otherDay=value;},
+  setArchive(rows:unknown[]){archive.splice(0,archive.length,...rows);},
    setBatch(value:Array<Record<string,unknown>>){batch=value;}};
 }
 const orderWithAutoGratAndGiftCard=()=>[{
@@ -667,4 +671,60 @@ it("preserves an incomplete payment-GUID diagnostic without a fake financial mis
  expect(f.item.recon_state).toBe("pending");
  expect(f.item.internal_state).toBeNull();
  expect(f.item.internal_reasons).toContain("missing_payment_guid");
+});
+
+describe("Checks that download the whole day again are rationed",()=>{
+ it("checks a day waiting for another day's re-import hourly, not every 9 minutes",async()=>{
+  const f=fakeDb(false);
+  Object.assign(f.item,{payment_repull_at:new Date(Date.now()-2*3600000).toISOString(),
+   last_recon_attempt_at:new Date(Date.now()-20*60000).toISOString()});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.request).not.toHaveBeenCalled();
+  expect(f.writes).toEqual([]);
+ });
+ it("checks a day with an unknown payment order once a day",async()=>{
+  const f=fakeDb(false);
+  Object.assign(f.item,{last_error_category:"unverified_payment_order",
+   last_recon_attempt_at:new Date(Date.now()-2*3600000).toISOString()});
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.request).not.toHaveBeenCalled();
+  f.item.last_recon_attempt_at=new Date(Date.now()-25*3600000).toISOString();
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.writes.length).toBeGreaterThan(0);
+ });
+});
+
+describe("The day check uses the day saved at import",()=>{
+ it("checks the saved orders and asks Toast only for its payment list",async()=>{
+  const f=fakeDb(false);
+  Object.assign(f.item,{last_import_run_id:"run-latest"});
+  f.setArchive(orderWithAutoGratAndGiftCard());
+  mocked.request.mockImplementation(async(path:string)=>path.includes("paidBusinessDate")?[payment]:
+   orderWithAutoGratAndGiftCard());
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("checked_internal");
+  const paths=mocked.request.mock.calls.map(c=>String(c[0]));
+  expect(paths.some(x=>x.includes("ordersBulk"))).toBe(false);
+  expect(paths.some(x=>x.includes("paidBusinessDate"))).toBe(true);
+ });
+ it("still finds a payment Toast lists that the saved day does not have",async()=>{
+  const f=fakeDb(false);
+  Object.assign(f.item,{last_import_run_id:"run-latest"});
+  f.setArchive(orderWithAutoGratAndGiftCard());
+  const extra="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  mocked.request.mockImplementation(async(path:string)=>path.includes("paidBusinessDate")?[payment,extra]:
+   path.includes("/payments/"+extra)?{guid:extra,orderGuid:"12345678-1234-4234-8234-123456789012",paidBusinessDate:20261016}:
+   path.includes("/orders/")?{guid:"12345678-1234-4234-8234-123456789012",businessDate:20261016}:
+   orderWithAutoGratAndGiftCard());
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(f.item.recon_state).toBe("pending");
+  expect(f.writes.some(w=>(w.internal_reasons as string[]|undefined)?.includes("unknown_payment_order"))).toBe(true);
+ });
+ it("downloads from Toast only when the day was imported before the archive existed",async()=>{
+  const f=fakeDb(false);
+  mocked.request.mockImplementation(async(path:string)=>path.includes("paidBusinessDate")?[payment]:
+   orderWithAutoGratAndGiftCard());
+  await reconcileToastDays(f.db,p,Date.now()+20000);
+  expect(mocked.request.mock.calls.some(c=>String(c[0]).includes("ordersBulk"))).toBe(true);
+ });
 });
