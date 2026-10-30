@@ -57,6 +57,12 @@ describe("event morning-after narrative",()=>{
       ["Halloween"],"Ready for the holiday",result,"complete")).rejects.toThrow("owner_required");
     expect(runAgentTurn).not.toHaveBeenCalled();
   });
+  it("preserves numeric results without spending when AI access expires",async()=>{
+    vi.mocked(assertCafeAiAccess).mockRejectedValueOnce(new Error("AI access unavailable"));
+    expect(await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
+      ["Halloween"],"Ready for the holiday",result,"insufficient_evidence")).toBeNull();
+    expect(runAgentTurn).not.toHaveBeenCalled();
+  });
   it("never invents a narrative when the provider returns empty text",async()=>{
     vi.mocked(runAgentTurn).mockResolvedValue({text:""} as Awaited<ReturnType<typeof runAgentTurn>>);
     expect(await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
