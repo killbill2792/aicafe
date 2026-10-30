@@ -3569,7 +3569,7 @@
     "cafeAddress": "your café's address (street, city and ZIP or postal code)",
     "events": "nearby events",
     "saved": "I've saved these answers for this café.",
-    "savedBut": "I've saved the answer. Some screen figures need a complete rate plan or cost breakdown.",
+    "savedBut": "Got it, I've saved that. I'll use it in chat; your other screens still show your recorded numbers.",
     "needNumber": "the number you want to check",
     "error": "I couldn't read {source} for {period}.",
     "errorSave": "I couldn't save {source}. Please try again.",

@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
 import {breakEvenFor,moneyLeftPerDrinkCents,dailyBreakEvenCostsCents,
-  drinksTargetPerDay} from "./breakEven";
+  drinksTargetPerDay,dailyBreakEvenSalesCents} from "./breakEven";
 const d=Array.from({length:28},(_,i)=>({
  date:new Date(Date.UTC(2026,8,1+i,12)).toISOString().slice(0,10),
  netSalesCents:240000,ingredientsCents:65000,cardFeesCents:7000,drinksCount:480,
@@ -30,5 +30,17 @@ describe("28 complete-day break-even",()=>{
     expect(out.salesPerMonthCents).toBeGreaterThan(0);
     expect(out.knownCostFloorCents).toBe(out.salesPerMonthCents);
     expect(out.notes).toContain("breakEvenBillsMissing");
+  });
+});
+
+describe("dailyBreakEvenSalesCents",()=>{
+  it("spreads the monthly target over open days and rounds up to a whole cent",()=>{
+    expect(dailyBreakEvenSalesCents(2608041,31)).toBe(84131);
+    expect(dailyBreakEvenSalesCents(3000000,30)).toBe(100000);
+  });
+  it("returns null instead of zero when the inputs are unknown or invalid",()=>{
+    expect(dailyBreakEvenSalesCents(null,31)).toBeNull();
+    expect(dailyBreakEvenSalesCents(100000,0)).toBeNull();
+    expect(dailyBreakEvenSalesCents(100000,32)).toBeNull();
   });
 });

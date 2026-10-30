@@ -39,7 +39,7 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
-- [ ] Decide: may the chat's ad-hoc data queries (`describe_data`/`query_data`, canonical `cv_*` views) answer sales/fee numbers, or only the main tools? Today they are a second path.
+- [x] Decided (Oct 30): screen numbers (profit, labor cost, card fees, break-even, item cost) come only from their `lib/metrics/core` tools; everything else may be read with `describe_data`/`query_data` and computed with `calculate` (AGENTS.md 7.2).
 
 ### Today's live sales (owner priority)
 - [x] Chat doesn't use the live reading for "today's sales". The system prompt in `lib/ai/agent/loop.server.ts` never maps today questions to `get_today_so_far`, so the model calls `get_sales`, which only knows closed days. Fix: add the mapping; and in `lib/ai/agent/tools/coverage.ts` / `tools/index.ts`, when the period is today and not imported, return the live reading from `ctx.readTodaySoFar()` with `provisional: true` and its read time.
@@ -70,6 +70,12 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 - [ ] Today / Week / Month to date buttons "don't work" on the test café. On demo data (no Supabase) they work: each tap changes the URL to `?period=week|month` and all three numbers change (checked with Playwright). So the cause is specific to the live café data or an open chat thread. Check first, on the test café: (1) does the URL change after a tap? If not, look at `components/shared/PeriodSwitch.tsx` (`router.replace` + `router.refresh`) with a `?thread=` in the URL. (2) If the URL changes but numbers stay blank, run `select business_date, sales_data_status, net_sales_cents from daily_rollups where business_id = '719af528-af8e-4203-bb25-4c118c9ff832' and business_date >= current_date - 31 order by 1;` — Week/Month costs need at least one `actual` day; if the copy job (`scripts/sync-cafe-data.mjs`) brings rows without `actual`, fix the copy. (3) A slow Home render can look like a dead tap: check the `Home` timing logs (#244).
 - [x] Some Supervisor answers are blank: only "Supervisor" and Helpful / Not helpful show (owner, Oct 29: "what is my breakeven cost?", "monitor for 7 days"). Cause: when the whole reply is a question, `lib/ai/agent/persist.server.ts` saves only the question card (no text, so it isn't shown twice), and `clarifyCardState` (`components/home/supervisorChatBehavior.ts`) hid every card without option buttons, i.e. all typed-answer cards (`facts`, `fill`). Fixed: every card kind shows; an older typed-answer card keeps its question instead of "Skipped". Check: `components/home/questionOnlyReply.test.ts` (a question-only reply of each card kind is never blank).
 
+### Where the money goes (owner request, Oct 30)
+The owner wants to see exactly where her money goes. The Money screen has the breakdown ("From sales to pocket": ingredients, staff, card fees, each bill, you keep); the Supervisor chat start shows only three totals.
+- [ ] Chat start: tapping "Known business costs" opens the same breakdown as the Money screen, from the same view model (`buildProfitAndCostsViewModel` in `lib/viewmodels/moneyViewModel.ts`, rendered like `components/money/ProfitCostsView.tsx`). No new calculation. Check: every line and total equals the Money screen for the same period.
+- [ ] Ingredients by ingredient: split the single "Ingredients and cups" line into the biggest ingredients (milk, coffee, cups…) from recipes × items sold, through `lib/metrics/core`. Items with no recipe show as one "not broken down" line, never hidden.
+- [ ] Biggest changes vs last period: the 3 cost lines that moved most (e.g. "card fees up $120"), from the same breakdown for both periods; only when both periods have the data (partial periods labeled).
+
 ### One path (AGENTS.md rule 3)
 - [x] (#243) Fold the row mappers in `lib/data/getPricingInputs.ts` and `lib/data/supervisorEconomics.server.ts` into `rowToDailyFacts` (they already read through `lib/data/dailyFacts.server.ts`).
 - [x] (#254) Chat's menu list reads `menu_items` itself (`menuCatalog` in `lib/ai/supervisorReads.server.ts`) instead of the Menu screen's `lib/data/getMenuItemsForEdit.ts`. Make one shared menu reader both use. Check: chat and Menu screen list the same items and prices.
@@ -81,6 +87,14 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 ### Supervisor chat asks the same question twice
 - [x] Owner, Oct 29: "raise the latte 10¢" → picked a latte on the card → what-if answer → "draft price change approval" → asked "which latte?" again. Cause: `newResolveState` (`lib/ai/agent/resolve.ts`) trusted a card pick only on the message right after the card; later, the price-change and menu tools accept a product only if the owner names it again or types one of a few fixed "yes, do it" phrases. Fixed: the pick on the latest choice card stays trusted (`recentChoiceIds`) for that exact record until a newer choice card is shown or the owner names the item again (any word from that card's options, e.g. "latte", "iced"); then their own words decide, as before. It never resolves a different item. Check: `lib/ai/agent/rememberCardChoice.test.ts` replays the owner's conversation.
 - [x] A reply that is only a typed-answer question (`facts`/`fill` card) was invisible to the AI on the next turn: the history built in `app/api/ai/threads/[threadId]/agent/route.ts` kept text blocks and choice cards only. Fixed: one `historyContent` (`lib/ai/agent/history.ts`) adds those cards as "Question card (owner answers in its form): <question> Fields: …"; choice cards keep the exact "Asked: … Options:" form the pick memory reads. Check: `lib/ai/agent/history.test.ts`.
+
+### Universal answers (owner-approved design, Oct 30; AGENTS.md 7.2)
+The AI works out how to answer any question; no new tool or scenario per question type. One PR per step, in order.
+- [x] Step 4: AGENTS.md rule 7.2: no arithmetic in the model's head; screen numbers from `lib/metrics/core`; all other math through `calculate`, steps shown.
+- [ ] Step 3: one general `calculate` tool: + − × ÷, sum, percent; every input from a tool result or saved owner fact; inputs, formula and steps shown, labeled calculation or estimate; test that it never rebuilds a screen number.
+- [ ] Step 5: owner answers saved once, used everywhere. Ask only ingredient %, payroll, bills, card fee %, opening hours. Save each where the calculators already read it (ingredient % → `target_ingredient_cost_rate`; payroll → payroll extras; bills → recurring costs; card fee → fee plan). Use only where real data is missing, per day and per item, labeled estimate; real data replaces it automatically. Every other gap is a one-line note, not a question.
+- [ ] Step 6: test that the same fact is never asked twice.
+- [ ] Step 7: retire one-off fixes: drop the "ingredients 20%" branch (`fix/cost-summary-ingredient-percent`, never merged); once `calculate` works, retire `simulate_scenario`'s fixed options.
 
 ### Rules for any agent working on these
 1. AGENTS.md is the only source of agent instructions; follow it.

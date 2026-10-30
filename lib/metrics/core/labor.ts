@@ -29,11 +29,17 @@ export type LaborResult={
   basis:"owner_provided"|"recorded"|"projected"|"partial";
   notes:string[];
 };
+/** `projectedDays` replaces the number of days the covered-day average is spread
+ * over (e.g. an owner-corrected open-day count). Monthly extras are not rescaled. */
 export function laborForPeriod(days:readonly {date:string}[],wages:readonly LaborRecord[],
-  ownerMonthlyPayroll:number|null=null,ownerExtras:OwnerPayrollExtras|null=null):LaborResult{
+  ownerMonthlyPayroll:number|null=null,ownerExtras:OwnerPayrollExtras|null=null,
+  projectedDays:number|null=null):LaborResult{
+  if(projectedDays!==null&&(!Number.isInteger(projectedDays)||projectedDays<=0))
+    throw new RangeError("Invalid projected labor days");
   const dates=new Set(days.map(day=>day.date));
   const included=wages.filter(d=>dates.has(d.date));
   const totalDays=dates.size;
+  const spreadDays=projectedDays??totalDays;
   const covered=included.filter(d=>d.wagesCents!==null&&d.staffTaxCents!==null&&d.laborWageStatus!=="missing");
   const clockedCents=included.reduce((sum,d)=>sum+(d.wagesCents??0)+(d.staffTaxCents??0),0);
   const knownLaborCents=clockedCents+(ownerMonthlyPayroll===null&&ownerExtras?
@@ -56,7 +62,7 @@ export function laborForPeriod(days:readonly {date:string}[],wages:readonly Labo
   }
   return {
     knownLaborCents,projectedMonthlyLaborCents:coveredDays>0?
-      Math.round(projectedBase*totalDays/coveredDays)+(ownerExtras?.monthlyCents??0):
+      Math.round(projectedBase*spreadDays/coveredDays)+(ownerExtras?.monthlyCents??0):
       ownerExtras?proratedOwnerPayrollExtrasCents(ownerExtras):null,
     coveredDays,totalDays,
     basis:coveredDays===0?"partial":coveredDays<totalDays?"projected":"recorded",
