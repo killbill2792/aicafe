@@ -175,7 +175,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   const dayEvents=eventsOn(timeline.events,chosen);
   const actions=actionsFor(plan);
   const ticks=tickData&&tickData.proposalId===plan?.proposalId?tickData.ticks:[];
-  const question=questionData?.proposalId===plan?.proposalId?questionData.value:null;
+  const question=questionData&&questionData.proposalId===plan?.proposalId?questionData.value:null;
   const calendarMonth=month??today.slice(0,7);
   const calendarFirst=calendarMonth+"-01";
   const weekday=new Date(calendarFirst+"T00:00:00Z").getUTCDay();
