@@ -20,7 +20,7 @@ export default function SupervisorHomePanel({
   chatCopy: Omit<SupervisorChatCopy, keyof SupervisorCopy>;
   chatStartData?: ChatStartData;
   chatStartPromise?: Promise<HomeStartPayload | null>;
-  chatStartCopy: Omit<ChatStartCopy, "suggestions">;
+  chatStartCopy?: Omit<ChatStartCopy, "suggestions">;
   initialThreadId?:string;initialProposalId?:string;
   languageSwitch?: React.ReactNode;
   chatEnabled: boolean;
