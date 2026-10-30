@@ -48,7 +48,7 @@ async function postMidRunUpdate(db:ReturnType<typeof createAdminSupabaseClient>,
   const {data:business,error}=await db.from("businesses").select("timezone").eq("id",scope.businessId).single();
   if(error||!business?.timezone)throw new Error("Café timezone unavailable");
   const inserted=await db.from("ai_messages").insert({
-    id:stableMessageId("supervisor-midrun:"+p.id+":"+(report.midRunKey??"once")),business_id:scope.businessId,thread_id:scope.threadId,
+    id:stableMessageId("supervisor-midrun:"+p.id+(report.midRunKey?":"+report.midRunKey:"")),business_id:scope.businessId,thread_id:scope.threadId,
     owner_user_id:scope.ownerUserId,author_user_id:null,role:"supervisor",content_type:"blocks",
     text_content:null,structured_content:[{type:"text",text}],
     grounding:{status:"estimated",
