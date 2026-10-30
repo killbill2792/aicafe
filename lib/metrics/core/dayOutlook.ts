@@ -72,7 +72,7 @@ export function typicalHourlySales(rows:readonly OutlookHourlyRow[],target:strin
   }
   const byHour=new Map<number,number[]>();
   for(const [key,value] of perDayHour){
-    const hour=Number(key.slice(-2).replace(/^\\|/,""));
+    const hour=Number(key.split("|")[1]);
     if(!Number.isInteger(hour))continue;
     byHour.set(hour,[...(byHour.get(hour)??[]),value]);
   }
