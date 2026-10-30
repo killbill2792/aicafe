@@ -94,10 +94,51 @@ export type ResolveState = {
   priorAssistantText?:string|null;
   seenIds: Set<string>;
   chosenIds: Set<string>;
+  /** The record the owner picked on the latest choice card earlier in this conversation,
+   * while they are still on that topic. It confirms only that exact record (e.g. drafting
+   * the price change for the latte they already picked); it never resolves another name. */
+  recentChoiceIds?: Set<string>;
   ambiguous: ChoiceCandidate[][];
   asked: boolean;
   usageMissing:Map<string,{name:string;unit:string;kind:"endCount"|"purchase";date:string}>;
 };
+/** One option per entry: "<label> (<trusted id>)". The final parentheses wrap the ID;
+ * display names themselves may contain parentheses, such as "Latte (Oat)" or "Maria (AM)". */
+function cardOptions(content:string):{label:string;id:string}[]{
+  if(!content.includes("Asked:")||!content.includes("Options:"))return [];
+  return content.split("Options:").slice(1).join("Options:").split(";").flatMap(entry=>{
+    const match=entry.trim().match(/^(.+)\s\(([^()]{1,100})\)$/u);
+    return match?[{label:normalizedName(match[1]),id:match[2].trim().toLowerCase()}]:[];
+  });
+}
+/** The owner's pick on the latest choice card in the recent history, kept for later
+ * messages on the same topic so the owner is never asked the same question twice.
+ * Dropped when a newer choice card was shown, or when the owner later names the item again
+ * with any word from that card's options; that message is then resolved on its own words. */
+export function recentCardChoice(history:readonly {role:string;content:string}[],ownerText:string):Set<string>{
+  const cardAt=history.findLastIndex(m=>m.role==="assistant"&&cardOptions(m.content).length>0);
+  if(cardAt<0)return new Set();
+  const options=cardOptions(history[cardAt].content);
+  const later=[...history.slice(cardAt+1).filter(m=>m.role==="user").map(m=>m.content),ownerText];
+  const picked=options.filter(option=>option.label===normalizedName(later[0]));
+  if(picked.length!==1)return new Set();
+  // Any later mention of the item ("latte", "iced", "the regular latte, not the iced one")
+  // means the owner is describing it again: their own words then decide, as for any message.
+  // Only follow-ups that don't name the item ("draft price change approval") reuse the pick.
+  const cardWords=new Set(options.flatMap(o=>o.label.split(" ")).filter(word=>word.length>=2&&/\p{L}/u.test(word)));
+  const renamed=later.slice(1).some(text=>normalizedName(text).split(" ").some(word=>cardWords.has(word)));
+  return renamed?new Set():new Set([picked[0].id]);
+}
+/** True when the owner chose this record on a card: just now, or earlier on the same topic. */
+export function ownerChose(state:ResolveState|undefined,id:string):boolean{
+  const key=id.toLowerCase();
+  return Boolean(state&&(state.chosenIds.has(key)||state.recentChoiceIds?.has(key)));
+}
+/** An ambiguous name the owner already settled on a card earlier in this conversation. */
+export function rememberedCandidate(state:ResolveState|undefined,candidates:readonly ChoiceCandidate[]):string|null{
+  const remembered=candidates.filter(candidate=>state?.recentChoiceIds?.has(candidate.id.toLowerCase()));
+  return remembered.length===1?remembered[0].id:null;
+}
 export function newResolveState(ownerText: string, history: readonly {role:string;content:string}[] = []): ResolveState {
   const last=history.at(-1);
   const previous=history.at(-2);
@@ -115,7 +156,7 @@ export function newResolveState(ownerText: string, history: readonly {role:strin
   }
   return {ownerText,priorChoice:lastAsk?ownerText:null,
     priorAssistantText:last?.role==="assistant"?last.content:null,
-    seenIds:new Set(),chosenIds,ambiguous:[],asked:false,usageMissing:new Map()};
+    seenIds:new Set(),chosenIds,recentChoiceIds:recentCardChoice(history,ownerText),ambiguous:[],asked:false,usageMissing:new Map()};
 }
 export function choicePayload(result: EntityResolution<unknown>, source: string, period: {from:string;to:string}|null) {
   return result.status==="ambiguous"
@@ -136,7 +177,7 @@ export function resolveChosenEntity<T>(
  * the ID recorded from the previous clarification card. */
 export function ownerNamedTarget(state:ResolveState|undefined,id:string,label:string):boolean {
   if(!state)return true; // Direct legacy tool invocations have no turn state.
-  if(state.chosenIds.has(id.toLowerCase()))return true;
+  if(ownerChose(state,id))return true;
   const name=normalizedName(label);
   const words=" "+normalizedName(state.ownerText)+" ";
   return Boolean(name)&&words.includes(" "+name+" ");
@@ -172,7 +213,7 @@ export function ownerChoiceGuard(
   state:ResolveState|undefined,targetId:string,additionalCandidates:readonly ChoiceCandidate[]=[],
 ) {
   if(!state)return null;
-  if(state.chosenIds.has(targetId.toLowerCase()))return null;
+  if(ownerChose(state,targetId))return null;
   const owner = " "+normalizedName(state.ownerText)+" ";
   const groups=[...state.ambiguous,...(additionalCandidates.length>1?[additionalCandidates]:[])];
   for(const candidates of groups) {

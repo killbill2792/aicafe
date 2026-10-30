@@ -39,11 +39,15 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 
 ### One path (AGENTS.md rule 3)
 - [x] (#243) Fold the row mappers in `lib/data/getPricingInputs.ts` and `lib/data/supervisorEconomics.server.ts` into `rowToDailyFacts` (they already read through `lib/data/dailyFacts.server.ts`).
-- [ ] (in progress) Chat's menu list reads `menu_items` itself (`menuCatalog` in `lib/ai/supervisorReads.server.ts`) instead of the Menu screen's `lib/data/getMenuItemsForEdit.ts`. Make one shared menu reader both use. Check: chat and Menu screen list the same items and prices.
+- [x] (#254) Chat's menu list reads `menu_items` itself (`menuCatalog` in `lib/ai/supervisorReads.server.ts`) instead of the Menu screen's `lib/data/getMenuItemsForEdit.ts`. Make one shared menu reader both use. Check: chat and Menu screen list the same items and prices.
 - [ ] Café settings (currency, timezone, is_demo) are read from `businesses` in ~10 places (`getCafeProfile`, `snapshot.server`, `readSupervisorCafeIdentity`, `getPricingInputs`, `staffReadScope`, `dailyBrief`, `getMoreBadges`, supervisor loop `goal`/`menuPriceChange`/`priceExperiment`). Add one `readCafeSettings(businessId)` reader (React `cache()`d) and switch callers to it.
 - [ ] `suggestPrice` (price math) lives in `lib/calc/pricingEngine.ts`; move it to `lib/metrics/core/` per AGENTS.md, with no change to results.
 - [ ] Screen-vs-chat equality: `lib/metrics/core/metricsParity.test.ts` covers profit, labor, fees and break-even on a fixture; add cases for period/coverage preparation (partial weeks, missing days) so both paths must agree.
 - [ ] Remove the remaining hard-coded USD listed in `lib/ai/agent/bannedPatterns.test.ts`; merge duplicate money formulas listed in `lib/metrics/core/canonicalOnly.test.ts`.
+
+### Supervisor chat asks the same question twice
+- [x] Owner, Oct 29: "raise the latte 10¢" → picked a latte on the card → what-if answer → "draft price change approval" → asked "which latte?" again. Cause: `newResolveState` (`lib/ai/agent/resolve.ts`) trusted a card pick only on the message right after the card; later, the price-change and menu tools accept a product only if the owner names it again or types one of a few fixed "yes, do it" phrases. Fixed: the pick on the latest choice card stays trusted (`recentChoiceIds`) for that exact record until a newer choice card is shown or the owner names the item again (any word from that card's options, e.g. "latte", "iced"); then their own words decide, as before. It never resolves a different item. Check: `lib/ai/agent/rememberCardChoice.test.ts` replays the owner's conversation.
+- [ ] A reply that is only a typed-answer question (`facts`/`fill` card) is invisible to the AI on the next turn: the history built in `app/api/ai/threads/[threadId]/agent/route.ts` keeps text blocks and choice cards only. Add those cards as "Question card: <question>" so the AI knows what it just asked.
 
 ### Rules for any agent working on these
 1. AGENTS.md is the only source of agent instructions; follow it.
