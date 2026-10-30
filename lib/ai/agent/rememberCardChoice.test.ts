@@ -25,11 +25,11 @@ function card(menu:Menu){
  return {labels:resolved.candidates.map(c=>c.label),
   content:"Asked: Which latte? Options: "+resolved.candidates.map(c=>c.label+" ("+c.id+")").join("; ")};
 }
-function conversation(menu:Menu,afterPick:string[]=[]){
+function conversation(menu:Menu,afterPick:string[]=[],pick=0){
  const shown=card(menu);
  return [{role:"user" as const,content:"I want to increase the price of latte by 10 cents"},
   {role:"assistant" as const,content:shown.content},
-  {role:"user" as const,content:shown.labels[0]},
+  {role:"user" as const,content:shown.labels[pick]},
   {role:"assistant" as const,content:"This is only a what-if; the price hasn't changed. Want me to draft the price change for your approval?"},
   ...afterPick.flatMap(text=>[{role:"user" as const,content:text},{role:"assistant" as const,content:"Done."}])];
 }
@@ -73,6 +73,21 @@ describe("the owner's card pick holds for the rest of that topic",()=>{
   const draft=await proposalTools.propose_price_change.execute({product_id:hot,new_price_cents:785},ctx);
   expect(draft.missing.length).toBeGreaterThan(0);
   expect(proposePriceChange).not.toHaveBeenCalled();
+ });
+ it("is dropped when the owner switches to a shorter option (picked Iced Latte, then 'the regular latte')",async()=>{
+  const menu=menus.icedName;
+  expect(card(menu).labels[1]).toBe("Iced Latte");
+  const {ctx,proposePriceChange}=context(menu,"actually the regular latte, not the iced one",conversation(menu,[],1));
+  const read=await executeAgentTool("get_menu_items",{query:"latte",limit:null},ctx);
+  expect(read.needsOwnerChoice).toBe(true);
+  const draft=await proposalTools.propose_price_change.execute({product_id:iced,new_price_cents:535},ctx);
+  expect(draft.missing.length).toBeGreaterThan(0);
+  expect(proposePriceChange).not.toHaveBeenCalled();
+ });
+ it("is dropped when the owner names the item again, so their new words decide",()=>{
+  const menu=menus.sameName;
+  for(const text of ["draft it for the latte","not that one, the iced latte"])
+   expect([...newResolveState(text,conversation(menu)).recentChoiceIds??[]]).toEqual([]);
  });
  it("is dropped when a newer choice card was shown",()=>{
   const menu=menus.sameName;

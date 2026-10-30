@@ -113,8 +113,8 @@ function cardOptions(content:string):{label:string;id:string}[]{
 }
 /** The owner's pick on the latest choice card in the recent history, kept for later
  * messages on the same topic so the owner is never asked the same question twice.
- * Dropped when a newer choice card was shown, or when the owner later uses a word that
- * only another option of that card has (e.g. "iced" after picking the hot latte). */
+ * Dropped when a newer choice card was shown, or when the owner later names the item again
+ * with any word from that card's options; that message is then resolved on its own words. */
 export function recentCardChoice(history:readonly {role:string;content:string}[],ownerText:string):Set<string>{
   const cardAt=history.findLastIndex(m=>m.role==="assistant"&&cardOptions(m.content).length>0);
   if(cardAt<0)return new Set();
@@ -122,11 +122,12 @@ export function recentCardChoice(history:readonly {role:string;content:string}[]
   const later=[...history.slice(cardAt+1).filter(m=>m.role==="user").map(m=>m.content),ownerText];
   const picked=options.filter(option=>option.label===normalizedName(later[0]));
   if(picked.length!==1)return new Set();
-  const own=new Set(picked[0].label.split(" "));
-  const otherWords=new Set(options.filter(o=>o.id!==picked[0].id)
-    .flatMap(o=>o.label.split(" ")).filter(word=>word.length>=2&&!own.has(word)));
-  const switched=later.slice(1).some(text=>normalizedName(text).split(" ").some(word=>otherWords.has(word)));
-  return switched?new Set():new Set([picked[0].id]);
+  // Any later mention of the item ("latte", "iced", "the regular latte, not the iced one")
+  // means the owner is describing it again: their own words then decide, as for any message.
+  // Only follow-ups that don't name the item ("draft price change approval") reuse the pick.
+  const cardWords=new Set(options.flatMap(o=>o.label.split(" ")).filter(word=>word.length>=2&&/\p{L}/u.test(word)));
+  const renamed=later.slice(1).some(text=>normalizedName(text).split(" ").some(word=>cardWords.has(word)));
+  return renamed?new Set():new Set([picked[0].id]);
 }
 /** True when the owner chose this record on a card: just now, or earlier on the same topic. */
 export function ownerChose(state:ResolveState|undefined,id:string):boolean{
