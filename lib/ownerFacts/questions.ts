@@ -81,20 +81,28 @@ export function questionFromReasons(
  const copy=copyByLocale[locale];
  const effective=reasons.some(reason=>reason.tool)?
   reasons.filter(reason=>reason.kind!=="uncertain"&&reason.kind!=="number"):reasons;
- const wanted=Array.from(new Map(effective.flatMap(reason=>{
+ const all=Array.from(new Map(effective.flatMap(reason=>{
   const key=scopedOwnerQuestionKey(reason,results,ownerText);
   const definition=catalogForMissing(key);
   const keys=definition.factKey==="card_fee_rate_percent"?[
     "card_fee_rate_percent","card_sales_share_percent","card_transactions_share_percent",
     "card_fixed_fee_cents","card_processor_label","card_average_ticket_cents"]:[definition.factKey];
   return keys.map(factKey=>[factKey,{reason,definition:catalogForMissing(factKey)}] as const);
- })).values()).filter(x=>savedValue(savedFacts,x.definition.factKey)===undefined).slice(0,6);
+ })).values()).filter(x=>savedValue(savedFacts,x.definition.factKey)===undefined);
+ // Unknown missing keys all share one vague label. Asking for several of them
+ // showed the owner the same "missing information" field over and over, so
+ // keep only the fields we can name, or one field naming the topic.
+ const named=all.filter(x=>x.definition.labelKey!=="generic");
+ const wanted=(named.length?named:all.slice(0,1)).slice(0,6);
  if(!wanted.length)return null;
  const first=wanted[0],r=results.find(x=>x.source===first.reason.tool);
  const period=r?.period?String(r.period.from)+" – "+String(r.period.to):"";
  const detail=first.reason.kind==="failed"?copy.failed:first.reason.kind==="empty"?copy.empty:copy.missing;
  const word=(x:typeof first)=>{
-  return ownerFactLabel(x.definition.factKey,x.definition.labelKey,locale);
+  if(x.definition.labelKey!=="generic")
+   return ownerFactLabel(x.definition.factKey,x.definition.labelKey,locale);
+  const source=readableSource(x.reason.tool??"",locale);
+  return source===copy.generic?source:copy.aboutSource.replace("{source}",source);
  };
  const question=copy.question.replace("{source}",readableSource(first.reason.tool??"",locale)+(period?" ("+period+")":""))
   .replace("{detail}",detail).replace("{what}",wanted.map(word).join(", ")).slice(0,200);

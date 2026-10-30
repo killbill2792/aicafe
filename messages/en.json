@@ -3559,6 +3559,7 @@
     "failed": "the read failed",
     "missing": "some information is missing",
     "generic": "the missing information",
+    "aboutSource": "details about {source}",
     "schedule": "who works, and what hours",
     "payroll": "monthly payroll cost",
     "bills": "monthly bills",
