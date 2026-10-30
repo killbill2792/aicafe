@@ -137,7 +137,7 @@ describe("web search call",()=>{
   it("returns a typed failure when HTTP 200 and plain retry both lack a message",async()=>{
     const info=vi.spyOn(console,"info").mockImplementation(()=>{});
     const error=vi.spyOn(console,"error").mockImplementation(()=>{});
-    const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify(reasoningOnly),{status:200}));
+    const fetch=vi.fn(async()=>new Response(JSON.stringify(reasoningOnly),{status:200}));
     expect(await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})(input))
       .toEqual({available:false,outcome:"failed",reason:"searchFailed",category:"missing_message"});
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -151,7 +151,7 @@ describe("web search call",()=>{
     const halloween=holidaysBetween("2026-10-30","2026-10-31","US","TX","en")
       .find(h=>/halloween/iu.test(h.name));
     expect(halloween).toEqual(expect.objectContaining({date:"2026-10-31"}));
-    const fetch=vi.fn().mockResolvedValue(ok([event({name:"Halloween parade",
+    const fetch=vi.fn(async()=>ok([event({name:"Halloween parade",
       startDate:"2026-10-31",endDate:null})]));
     const search=createNearbyEventsSearch({fetch,apiKey:"k",model:"m"});
     const result=await search({...input,countryCode:"US",to:"2026-10-31"});
