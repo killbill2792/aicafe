@@ -80,12 +80,14 @@ function sameChange(a:VerifiedChange,b:VerifiedChange):boolean{
 async function writeAttempt(db:Db,businessId:string,event:CafeEvent,at:string,
   verification:CheckResult):Promise<VerifiedChange|null>{
   const prior=storedChange(event);
-  const change=verification?verifiedEventChange(event,verification.evidence,
-    verification.citedUrls,at):null;
+  const confirmed=verification&&!["unverified","conflicting"].includes(verification.evidence.verdict)
+    ?verification:null;
+  const change=confirmed?verifiedEventChange(event,confirmed.evidence,
+    confirmed.citedUrls,at):null;
   const isNew=!!change&&(!prior||!sameChange(prior.change,change));
   const patch:Record<string,unknown>={
     last_verification_attempt_at:at,
-    ...(verification?{last_verified_at:at,verification_failed_at:null}:
+    ...(confirmed?{last_verified_at:at,verification_failed_at:null}:
       {verification_failed_at:at}),
   };
   if(isNew&&change){
@@ -94,9 +96,9 @@ async function writeAttempt(db:Db,businessId:string,event:CafeEvent,at:string,
   }
   // Optimistic status guard: never race an owner's newer saved event revision.
   const updated=await db.from("cafe_events").update(patch).eq("business_id",businessId)
-    .eq("id",event.id).eq("status",event.status);
+    .eq("id",event.id).eq("status",event.status).select("id").maybeSingle();
   if(updated.error)throw updated.error;
-  return isNew?change:null;
+  return updated.data&&isNew?change:null;
 }
 async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:string,
   today:string,event:CafeEvent,plan:Planned,change:VerifiedChange):Promise<void>{
@@ -173,7 +175,7 @@ export async function verifyUpcomingEventChanges(db:Db,businessId:string,ownerId
   for(const event of timeline.events){
     const pending=storedChange(event);
     const plan=planned(event);
-    if(pending?.pendingNotice&&plan){
+    if(pending?.pendingNotice&&pending.change.status===event.status&&plan){
       await deliverChange(db,businessId,ownerId,timezone,today,event,plan,pending.change);
     }
   }
