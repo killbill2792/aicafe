@@ -16,6 +16,7 @@ import {
   SOURCE_BUSINESS_ID,
   DEST_BUSINESS_ID,
   syncTodayLive,
+  remapToastGuidPrefix,
 } from "./sync-cafe-data.mjs";
 import { extractUniqueConstraints } from "./migrationConstraints.mjs";
 
@@ -301,11 +302,12 @@ describe("day mirror", () => {
     expect(daysToReplace(same, new Map(same))).toEqual([]);
     expect(daysToReplace(same, new Map(same), true)).toEqual(["2026-08-22"]);
   });
-  it("leaves remapped, reset and dropped columns out of the fingerprint", () => {
+  it("leaves own ids, reset and dropped columns out of the fingerprint, but compares links", () => {
     const tc = REFRESH_WINDOW_TABLES.find((c) => c.table === "timecards");
-    expect(fingerprintIgnoredColumns(tc)).toEqual(["business_id", "id", "employee_id", "schedule_id"]);
+    expect(fingerprintIgnoredColumns(tc)).toEqual(["business_id", "id"]);
     const status = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_day_status");
-    expect(fingerprintIgnoredColumns(status)).toEqual(expect.arrayContaining(["restaurant_guid", "last_import_run_id"]));
+    expect(fingerprintIgnoredColumns(status)).toContain("last_import_run_id");
+    expect(fingerprintIgnoredColumns(status)).not.toContain("restaurant_guid");
     const refunds = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_refund_facts");
     expect(fingerprintIgnoredColumns(refunds)).toContain("id");
   });
@@ -327,5 +329,17 @@ describe("day mirror", () => {
     const out = remapRow("toast_refund_facts", { id: 7, business_id: SOURCE_BUSINESS_ID, restaurant_guid: "r", amount_cents: 5 }, refunds);
     expect(out).not.toHaveProperty("id");
     expect(out.business_id).toBe(DEST_BUSINESS_ID);
+  });
+});
+
+describe("Toast ids that embed the restaurant", () => {
+  it("remaps the restaurant inside a timecard id the same way as restaurant_guid", () => {
+    const guid = "a0000000-0000-4000-8000-000000000001";
+    expect(remapToastGuidPrefix(`toast:${guid}:te-1`)).toBe(`toast:${remapId("toast_restaurant_guid", guid)}:te-1`);
+    expect(remapToastGuidPrefix("manual-1")).toBe("manual-1");
+    expect(remapToastGuidPrefix(null)).toBeNull();
+    const tc = REFRESH_WINDOW_TABLES.find((c) => c.table === "timecards")!;
+    expect(remapRow("timecards", { id: "x", business_id: SOURCE_BUSINESS_ID, pos_timecard_id: `toast:${guid}:te-1` }, tc).pos_timecard_id)
+      .toBe(`toast:${remapId("toast_restaurant_guid", guid)}:te-1`);
   });
 });
