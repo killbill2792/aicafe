@@ -83,7 +83,7 @@ describe("read-only venue map links",()=>{
     expect(eventVenueMapUrl(null)).toBeNull();
     expect(eventVenueMapUrl("   ")).toBeNull();
     expect(renderToStaticMarkup(createElement(VenueMapLink,{address:null,t}))).toBe("");
-    expect(eventVenueMapUrl("Location\\nnot confirmed")).toBeNull();
+    expect(eventVenueMapUrl("Location"+String.fromCharCode(10)+"not confirmed")).toBeNull();
     expect(eventVenueMapUrl("x".repeat(501))).toBeNull();
   });
   it("encodes special characters as a map query, not as a new URL or parameter",()=>{
