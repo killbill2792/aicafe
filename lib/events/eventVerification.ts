@@ -20,14 +20,18 @@ const canonical=(value:string)=>value.replace(/\/$/u,"").replace(/#.*$/u,"");
 
 /** Search omission is never proof. Only a cited page from the saved source's host
  * can change a known event's status; a positive "confirmed" can't reinstate it. */
+export function credibleEventEvidence(event:CafeEvent,evidence:EventEvidence,
+  citedUrls:readonly string[]):boolean{
+  if(!event.sourceUrl||!evidence.sourceUrl||!evidence.statement?.trim()||
+    evidence.statement.length>500)return false;
+  const original=safeUrl(event.sourceUrl),source=safeUrl(evidence.sourceUrl);
+  return !!original&&!!source&&original.hostname.replace(/^www\./u,"")===
+    source.hostname.replace(/^www\./u,"")&&
+    citedUrls.some(url=>canonical(url)===canonical(evidence.sourceUrl!));
+}
 export function verifiedEventChange(event:CafeEvent,evidence:EventEvidence,
   citedUrls:readonly string[],at:string):VerifiedChange|null{
-  if(!event.sourceUrl||!evidence.sourceUrl||!evidence.statement?.trim()||
-    evidence.statement.length>500)return null;
-  const original=safeUrl(event.sourceUrl),source=safeUrl(evidence.sourceUrl);
-  if(!original||!source||original.hostname.replace(/^www\./u,"")!==
-    source.hostname.replace(/^www\./u,"")||
-    !citedUrls.some(url=>canonical(url)===canonical(evidence.sourceUrl!)))return null;
+  if(!credibleEventEvidence(event,evidence,citedUrls))return null;
   const status:CafeEvent["status"]=
     evidence.verdict==="cancelled"?"cancelled":
     evidence.verdict==="postponed"||evidence.verdict==="venue_changed"?"moved":
