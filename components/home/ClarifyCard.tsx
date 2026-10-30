@@ -23,6 +23,7 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
  const [selectedUnits,setSelectedUnits]=useState<Record<string,string>>({});
  const [busy,setBusy]=useState(false),[failure,setFailure]=useState<"invalid"|"save"|null>(null);
  const [factValues,setFactValues]=useState<Record<string,string>>({});
+ const [factOtherText,setFactOtherText]=useState<Record<string,string>>({});
  if(state==="hidden")return null;
  if(state==="chosen")return <p dir={locale==="ar"?"rtl":"ltr"} className="text-[17px] text-ink-muted">{copy.clarifyYouChose.replace("{choice}",choice??"")}</p>;
  // A typed-answer card is answered in its own form, so a later message does not mean
@@ -34,14 +35,17 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
    const save=async()=>{
      if(disabled||busy||!onFacts)return;
      const supplied=block.fields.filter(f=>(factValues[f.key]??"").trim().length>0);
-     const answers=supplied.map(f=>({fieldKey:f.key,value:factValues[f.key]??""}));
+     const answers=supplied.map(f=>({fieldKey:f.key,value:factValues[f.key]==="__other__"?
+       "other"+((factOtherText[f.key]??"").trim()?":"+(factOtherText[f.key]??"").trim():""):
+       factValues[f.key]??""}));
      const valid=supplied.length>0&&supplied.every((f,i)=>{
        const raw=answers[i].value;
        if(f.inputType==="number"||f.inputType==="money"||f.inputType==="percent"){
          const parsed=parseOwnerFactDecimal(raw,locale);
          return parsed!==null&&(f.inputType!=="percent"||parsed<=100);
        }
-       if(f.inputType==="choice")return f.choices?.some(o=>o.value===raw)===true;
+       if(f.inputType==="choice")return f.choices?.some(o=>o.value===raw)===true||
+         raw==="other"||/^other:[\\s\\S]{1,200}$/.test(raw);
        if(f.inputType==="date")return /^\\d{4}-\\d{2}-\\d{2}$/.test(raw);
        return raw.trim().length>0;
      });
@@ -52,22 +56,37 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
    };
    return <section dir={locale==="ar"?"rtl":"ltr"} className="space-y-3 rounded-2xl border border-line bg-surface p-3">
      <h3 className="text-[17px] font-semibold">{block.question}</h3>
-     {block.fields.map(field=><label key={field.key} className="block text-[17px]">{field.label}
-       {field.inputType==="choice"?<select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
-         value={factValues[field.key]??""} disabled={disabled||busy} aria-label={field.label}
-         onChange={e=>setFactValues(old=>({...old,[field.key]:e.target.value}))}>
-         <option value="">{copy.clarifyOtherPlaceholder}</option>
-         {(field.choices??[]).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-       </select>:
-       field.inputType==="text"?<textarea rows={3} maxLength={1000} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
-         value={factValues[field.key]??""} disabled={disabled||busy} aria-label={field.label}
-         onChange={e=>setFactValues(old=>({...old,[field.key]:e.target.value}))}/>:
-       <input type={field.inputType==="date"?"date":"text"}
-         inputMode={field.inputType==="number"||field.inputType==="money"||field.inputType==="percent"?"decimal":undefined}
-         className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
-         value={factValues[field.key]??""} disabled={disabled||busy} aria-label={field.label}
-         onChange={e=>setFactValues(old=>({...old,[field.key]:e.target.value}))}/>}
-     </label>)}
+     {block.fields.map(field=><div key={field.key} className="text-[17px]">
+       {field.inputType==="choice"?<>
+         <p className="font-semibold">{field.label}</p>
+         <div className="mt-1 grid gap-2" role="group" aria-label={field.label}>
+           {(field.choices??[]).map(o=><button key={o.value} type="button"
+             disabled={disabled||busy} aria-pressed={factValues[field.key]===o.value}
+             onClick={()=>setFactValues(old=>({...old,[field.key]:o.value}))}
+             className="min-h-12 rounded-xl border border-line bg-surface2 px-3 text-start text-[17px] aria-pressed:border-accent aria-pressed:bg-accent-soft">
+             {o.label}</button>)}
+           <button type="button" disabled={disabled||busy}
+             aria-pressed={factValues[field.key]==="__other__"}
+             onClick={()=>setFactValues(old=>({...old,[field.key]:"__other__"}))}
+             className="min-h-12 rounded-xl border border-line bg-surface2 px-3 text-start text-[17px] aria-pressed:border-accent aria-pressed:bg-accent-soft">
+             {copy.clarifyOther}</button>
+         </div>
+         {factValues[field.key]==="__other__"&&<textarea rows={2} maxLength={200}
+           aria-label={copy.clarifyOtherPlaceholder} placeholder={copy.clarifyOtherPlaceholder}
+           className="mt-2 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+           value={factOtherText[field.key]??""} disabled={disabled||busy}
+           onChange={e=>setFactOtherText(old=>({...old,[field.key]:e.target.value}))}/>}
+       </>:<label className="block">{field.label}
+         {field.inputType==="text"?<textarea rows={3} maxLength={1000} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+           value={factValues[field.key]??""} disabled={disabled||busy} aria-label={field.label}
+           onChange={e=>setFactValues(old=>({...old,[field.key]:e.target.value}))}/>:
+         <input type={field.inputType==="date"?"date":"text"}
+           inputMode={field.inputType==="number"||field.inputType==="money"||field.inputType==="percent"?"decimal":undefined}
+           className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3"
+           value={factValues[field.key]??""} disabled={disabled||busy} aria-label={field.label}
+           onChange={e=>setFactValues(old=>({...old,[field.key]:e.target.value}))}/>}
+       </label>}
+     </div>)}
      <button type="button" disabled={disabled||busy||!onFacts} onClick={()=>void save()}
        className="min-h-12 rounded-xl bg-accent px-4 text-[17px] font-bold text-on-accent disabled:opacity-50">{copy.clarifySend}</button>
      {failure&&<p role="alert" className="text-[17px] text-neg">{failure==="save"?copy.clarifySaveError:copy.clarifyFillError}</p>}
