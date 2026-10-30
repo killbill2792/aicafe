@@ -31,6 +31,7 @@ export default function PeriodSwitch({ current }: { current: Period }) {
         return (
           <button
             key={period}
+            data-perf-nav="period" data-perf-value={period}
             type="button"
             aria-pressed={active}
             onClick={() => setPeriod(period)}
