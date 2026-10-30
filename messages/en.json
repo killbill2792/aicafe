@@ -3712,6 +3712,8 @@
     "reportUnknown": "Not available",
     "reportCurrencyMissing": "Café currency not set. Amounts shown in cents.",
     "reportNonCausal": "An event's effect cannot be proven from sales comparison alone.",
+    "reportFactsFallback": "Event results for {date}: certified sales for {observed} of {expected} days; {done} of {total} checklist items completed. Open the report to see recorded sales by hour.",
+    "reportUnchecked": "Not verified against your café's records",
     "noPlan": "No saved plan for this day. Ask the Supervisor about it.",
     "saveFailed": "Couldn't save your change. Please try again.",
     "questionInChat": "Any question from the Supervisor is in this day's chat.",
