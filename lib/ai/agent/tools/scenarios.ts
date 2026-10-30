@@ -1,6 +1,6 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {resolveEntity,choicePayload,ownerNamedTarget} from "../resolve";
+import {resolveEntity,choicePayload,ownerNamedTarget,ownerChose} from "../resolve";
 import {simulateEconomics,type ScenarioDelta} from "@/lib/calc/supervisorEconomics";
 const schema=z.strictObject({
  kind:z.enum(["bill","item_price","item_cost","shift","staff_wage","drinks","margin"]),
@@ -40,7 +40,7 @@ export const scenarioTools={simulate_scenario:{
    if(!product)return {source:"scenario",period:null,missing:["itemNotFound"]};
    const choice=resolveEntity("product",product.name,products,{idOf:p=>p.id,nameOf:p=>p.name,
     describe:p=>p.category+" · "+(p.priceCents===null?"price unavailable":(p.priceCents/100).toFixed(2))});
-   if(choice.status==="ambiguous"&&!ctx.resolveState?.chosenIds.has(product.id.toLowerCase()))
+   if(choice.status==="ambiguous"&&!ownerChose(ctx.resolveState,product.id))
     return {...choicePayload(choice,"scenario",null),agentId:"leo"};
    if(!ownerNamedTarget(ctx.resolveState,product.id,product.name))
     return {source:"scenario",period:null,missing:["itemNotConfirmed"]};

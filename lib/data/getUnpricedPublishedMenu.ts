@@ -3,6 +3,7 @@ import {isSupabaseConfigured} from "@/lib/supabase/client";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {getActiveBusinessId} from "./getActiveBusinessId";
 import {readAllPosRows,posIdBatches} from "@/lib/pos/pagedReads";
+import {readMenuCatalogRows} from "./menuCatalog.server";
 
 export type UnpricedPublishedItem={
  id:string;name:string;baseName:string;sizeLabel:string|null;
@@ -22,10 +23,9 @@ export async function getUnpricedPublishedMenu():Promise<UnpricedPublishedItem[]
  if(authError)throw authError;
  if(!user)return [];
  const businessId=await getActiveBusinessId(user.id);
- const items=await readAllPosRows((from,to)=>db.from("menu_items")
-  .select("id,name,base_name,size_label,category,menu_group,description,pos_visibility,pos_pricing_strategy")
-  .eq("business_id",businessId).eq("is_active",true)
-  .is("price_cents",null).order("id").range(from,to),"unpriced menu items");
+ const items=(await readMenuCatalogRows(db,businessId))
+  .filter(item=>item.is_active&&item.price_cents===null)
+  .sort((a,b)=>a.id.localeCompare(b.id));
  if(items.length===0)return [];
  const links: {menu_item_id:string;pos_group_id:string;pos_group_name:string|null}[]=[];
  for(const batch of posIdBatches(items.map(item=>item.id))){
