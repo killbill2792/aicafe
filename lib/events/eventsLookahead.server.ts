@@ -203,14 +203,15 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
   // Only the newest eligible draft may own the day-keyed inbox notification.
   const seenDays=new Set<string>();
   const latest=plans.filter(p=>{
-    if(p.status!=="draft"||p.startDate<today||p.startDate>addDays(today,13)||
-      seenDays.has(p.startDate))return false;
+    if(p.startDate<today||p.startDate>addDays(today,13)||seenDays.has(p.startDate))
+      return false;
+    // A later owner-approved/rejected plan supersedes older drafts too.
+    seenDays.add(p.startDate);
+    if(p.status!=="draft")return false;
     const facts=eventPlanFacts(events.filter(e=>e.status==="found"&&
       e.startDate<=p.startDate&&e.endDate>=p.startDate)
       .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8));
-    if(p.factsHash!==effectHash(facts))return false;
-    seenDays.add(p.startDate);
-    return true;
+    return p.factsHash===effectHash(facts);
   });
   if(!latest.length)return {repaired:0,created:0};
   const rows=await db.from("operating_tasks").select("id,payload").eq("business_id",businessId)
