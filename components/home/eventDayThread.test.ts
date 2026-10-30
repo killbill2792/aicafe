@@ -7,7 +7,9 @@ describe("Chat about this event day",()=>{
     const known=new Map<string,string>();
     const create=vi.fn(async(title:string)=>{calls.push("create "+title);return {id:"thread-for-31"};});
     const select=vi.fn((id:string)=>calls.push("select "+id));
-    const send=vi.fn(async(prompt:string,id:string)=>{calls.push("send "+id+" "+prompt);});
+    const send=vi.fn(async(prompt:string,id:string,files:readonly [])=>{
+      calls.push("send "+id+" "+prompt);expect(files).toEqual([]);
+    });
     const args={date:"2026-10-31",title:"Halloween",prompt:"Event context: Halloween",
       known,create,select,send};
     expect(await openEventDayThread(args)).toBe("thread-for-31");
@@ -18,6 +20,7 @@ describe("Chat about this event day",()=>{
     expect(calls).toEqual(["select thread-for-31"]);
     expect(create).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith("Event context: Halloween","thread-for-31",[]);
   });
 
   it("doesn't cache or select a new thread when creation is denied",async()=>{
