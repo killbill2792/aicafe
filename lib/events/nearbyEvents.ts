@@ -5,10 +5,21 @@ import {z} from "zod";
 export const EVENT_KINDS=["festival","conference","sports","concert","parade","market","holiday_event",
   "school","community","road_closure","public_holiday","other"] as const;
 export const CROWD_SIZES=["small","medium","large","unknown"] as const;
-export type NearbyEvent={name:string;startDate:string;endDate:string;venue:string|null;distance:string|null;
+export type NearbyEvent={name:string;startDate:string;endDate:string;venue:string|null;venueAddress?:string|null;
+  startTime?:string|null;endTime?:string|null;distance:string|null;
   kind:typeof EVENT_KINDS[number];expectedCrowd:typeof CROWD_SIZES[number];sourceUrl:string;sourceName:string|null};
+export type SearchFailureCategory="not_configured"|"http_error"|"incomplete"|"missing_message"|
+  "empty_text"|"invalid_json"|"invalid_shape"|"invalid_response"|"timeout"|"network";
+/** The public-event query that could not be completed, without exposing the café address. */
+export type UnsearchedEventScope={kind:"general"}|{kind:"holiday";name:string;date:string};
+/** Optional metadata keeps older search stubs compatible; the production search always sets it. */
+export type NearbyEventsResult=
+  |{available:true;outcome?:"found"|"none_found";events:NearbyEvent[];partial?:boolean;
+      failedSearches?:UnsearchedEventScope[]}
+  |{available:false;outcome?:"failed";reason:"notConfigured"|"searchFailed"|"timeout";
+      category?:SearchFailureCategory};
 export type NearbyEventsSearch=(input:{location:string;city:string|null;region:string|null;countryCode:string|null;
-  from:string;to:string})=>Promise<{available:true;events:NearbyEvent[]}|{available:false;reason:"notConfigured"|"searchFailed"|"timeout"}>;
+  from:string;to:string})=>Promise<NearbyEventsResult>;
 
 export const MAX_EVENTS=8;
 const nullableText=(max:number)=>z.union([z.string(),z.null()]).transform(v=>{
@@ -17,7 +28,10 @@ const isoDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).refine(d=>!Number.isNaN(D
 const eventSchema=z.object({
   name:z.string().transform(v=>v.replace(/\s+/gu," ").trim().slice(0,90)).pipe(z.string().min(2)),
   startDate:isoDate,endDate:z.union([isoDate,z.null()]),
-  venue:nullableText(80),distance:nullableText(40),
+  venue:nullableText(80),venueAddress:nullableText(160).optional().transform(v=>v??null),
+  startTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable().optional().transform(v=>v??null),
+  endTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable().optional().transform(v=>v??null),
+  distance:nullableText(40),
   kind:z.enum(EVENT_KINDS).catch("other"),expectedCrowd:z.enum(CROWD_SIZES).catch("unknown"),
   sourceUrl:z.string().url().max(400).refine(u=>u.startsWith("https://")||u.startsWith("http://")),
   sourceName:nullableText(60),
@@ -27,23 +41,32 @@ const eventSchema=z.object({
 export const nearbyEventsJsonSchema={
   type:"object",additionalProperties:false,required:["events"],
   properties:{events:{type:"array",items:{type:"object",additionalProperties:false,
-    required:["name","startDate","endDate","venue","distance","kind","expectedCrowd","sourceUrl","sourceName"],
+    required:["name","startDate","endDate","venue","venueAddress","startTime","endTime","distance",
+      "kind","expectedCrowd","sourceUrl","sourceName"],
     properties:{
       name:{type:"string"},startDate:{type:"string",description:"YYYY-MM-DD"},
       endDate:{type:["string","null"],description:"YYYY-MM-DD, null for one day"},
-      venue:{type:["string","null"]},distance:{type:["string","null"],description:"e.g. '0.5 mi' or 'downtown'"},
+      venue:{type:["string","null"]},venueAddress:{type:["string","null"]},
+      startTime:{type:["string","null"],description:"Local HH:MM, null if unconfirmed"},
+      endTime:{type:["string","null"],description:"Local HH:MM, null if unconfirmed"},
+      distance:{type:["string","null"],description:"Verified distance or area name, never a guessed number"},
       kind:{type:"string",enum:[...EVENT_KINDS]},expectedCrowd:{type:"string",enum:[...CROWD_SIZES]},
       sourceUrl:{type:"string",description:"The page that confirms the date"},sourceName:{type:["string","null"]},
     }}}},
 } as const;
 
-export function nearbyEventsPrompt(location:string,from:string,to:string):string{
-  return "Search the web for public events happening near this café: "+location+". Dates: "+from+" to "+to+
-    " (inclusive). Include anything that could change how many people walk past or visit a café within about "+
+export function nearbyEventsPrompt(location:string,from:string,to:string,
+  holiday?:{name:string;date:string}):string{
+  const focus=holiday?"Search specifically for "+holiday.name+" events near "+location+" on "+holiday.date+
+    ". Include only confirmed events for that holiday. ":"Search the web for public events happening near this café: "+
+    location+". Dates: "+from+" to "+to+" (inclusive). ";
+  return focus+
+    "Include anything that could change how many people walk past or visit a café within about "+
     "2 miles / 3 km: festivals, conferences and conventions, tech or trade weeks, sports games, concerts, parades, "+
     "markets, holiday events (Halloween, trick-or-treat events, tree lightings), school or university events, "+
     "marathons and road closures. Also include public holidays in that country during those dates (kind public_holiday). "+
     "Only include events whose date in this window is confirmed by a page you found; give that page as sourceUrl. "+
+    "Provide the venue address and local start/end times when a source confirms them; otherwise use null. "+
     "Never guess or invent an event, a date or a crowd size; use expectedCrowd unknown when not stated. "+
     "Up to "+MAX_EVENTS+" events, the ones most likely to affect a café first. If nothing is found, return an empty list.";
 }

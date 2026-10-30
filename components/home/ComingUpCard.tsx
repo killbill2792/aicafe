@@ -86,6 +86,10 @@ export function ComingUpView({ state, locale, t, onAsk, disabled }:
         {outlook.addressMissing && <p className="mt-2 text-[15px] text-ink-muted">{t("addAddress")}{" "}
           <button type="button" disabled={disabled} className={button} onClick={() => onAsk(t("addressPrompt"))}>{t("addAddressButton")}</button>
         </p>}
+        {outlook.notCovered.includes("localEventsSearchPartial") && <p className="mt-2 text-[13px] text-ink-muted" role="status">
+          {t("searchPartial", {missed:outlook.localEventsSearchGaps?.map(g=>g.kind==="general"?
+            t("searchGeneral"):g.name+" ("+g.date+")").join(", ")||t("searchOther")})}
+        </p>}
         {outlook.notCovered.includes("localEventsSearchFailed") && <p className="mt-2 text-[13px] text-ink-muted">{t("searchDown")}</p>}
         {!outlook.addressMissing && <button type="button" disabled={disabled} className={button} onClick={() => onAsk(t("weekPrompt"))}>
           {t("askWeek")}
