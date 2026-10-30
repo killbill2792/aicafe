@@ -3666,6 +3666,8 @@
     "taskCheckinAction": "أجب في المحادثة"
   },
   "EventsPanel": {
+    "boardEventRunning": "خطة فعالية · {title}",
+    "boardEventReport": "تقرير فعالية · {title}",
     "title": "فعاليات بالقرب من مقهاك",
     "loading": "جارٍ تحميل الفعاليات المحفوظة…",
     "seeAll": "عرض الفعاليات",
