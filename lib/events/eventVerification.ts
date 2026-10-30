@@ -51,8 +51,8 @@ export function eventVerificationDue(event:CafeEvent,today:string,now:Date):bool
   const days=(Date.parse(event.startDate+"T00:00:00Z")-Date.parse(today+"T00:00:00Z"))/86400000;
   if(days>13)return false;
   const attempt=event.lastAttemptedAt?Date.parse(event.lastAttemptedAt):NaN;
-  // Early checks are at least every three days, but imminent events are daily.
-  const gapMs=days<=2?20*3600000:60*3600000;
+  // Daily source checks, even well before the first preparation or ordering decision.
+  const gapMs=20*3600000;
   return !Number.isFinite(attempt)||now.getTime()-attempt>=gapMs;
 }
 export function importantVerificationQueue(events:readonly CafeEvent[],
@@ -61,6 +61,9 @@ export function importantVerificationQueue(events:readonly CafeEvent[],
   return events.filter(e=>plans.some(p=>p.status!=="rejected"&&p.status!=="expired"&&
     p.startDate<=e.endDate&&p.endDate>=e.startDate)&&
     eventVerificationDue(e,today,now))
-    .sort((a,b)=>a.startDate.localeCompare(b.startDate)||a.id.localeCompare(b.id))
+    // With a bounded daily budget, prioritize never-checked / oldest attempts,
+    // otherwise crowded calendars can starve later events forever.
+    .sort((a,b)=>(a.lastAttemptedAt??"").localeCompare(b.lastAttemptedAt??"")||
+      a.startDate.localeCompare(b.startDate)||a.id.localeCompare(b.id))
     .slice(0,limit);
 }
