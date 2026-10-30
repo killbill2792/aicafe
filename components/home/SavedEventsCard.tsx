@@ -15,6 +15,37 @@ type Timeline=SavedEventTimeline&{today:string};
 type Tab="past"|"now"|"upcoming";
 type Panel="events"|"day"|null;
 type Action={area:string;action:string;reason:string};
+type SavedQuestion={question:string;options:string[]};
+type Message={role:string;blocks:unknown[]|null};
+/** The existing chat owns the question and how it is answered; the panel only
+ * mirrors the latest unanswered question without creating another question. */
+export function latestEventQuestion(messages:readonly Message[],locale:Locale):SavedQuestion|null{
+  const latest=messages[messages.length-1];
+  if(latest?.role!=="supervisor"||!Array.isArray(latest.blocks))return null;
+  for(const raw of latest.blocks){
+    if(!raw||typeof raw!=="object")continue;
+    const block=raw as Record<string,unknown>;
+    if(block.type==="clarify"&&typeof block.question==="string"){
+      const options=Array.isArray(block.options)?block.options.flatMap(option=>{
+        if(!option||typeof option!=="object")return [];
+        const label=(option as {label?:unknown}).label;
+        return typeof label==="string"?[label]:[];
+      }):[];
+      return {question:block.question,options};
+    }
+    if(block.type==="owner_question"){
+      const title=block.title as Record<string,unknown>|null;
+      if(!title||typeof title[locale]!=="string")continue;
+      const input=block.input as {kind?:unknown;options?:unknown}|null;
+      const options=Array.isArray(input?.options)?input.options.flatMap(option=>{
+        const labels=option&&typeof option==="object"?(option as {label?:Record<string,unknown>}).label:null;
+        return labels&&typeof labels[locale]==="string"?[labels[locale]]:[];
+      }):[];
+      return {question:title[locale] as string,options};
+    }
+  }
+  return null;
+}
 const dayAt=(date:string,n:number)=>{
   const value=new Date(date+"T00:00:00Z");
   value.setUTCDate(value.getUTCDate()+n);
@@ -79,6 +110,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   const [calendar,setCalendar]=useState(false);
   const [month,setMonth]=useState<string|null>(null);
   const [tickData,setTickData]=useState<{proposalId:string;ticks:EventChecklistTick[]}|null>(null);
+  const [questionData,setQuestionData]=useState<{proposalId:string;value:SavedQuestion|null}|null>(null);
   const [busy,setBusy]=useState(false);
   const [actionError,setActionError]=useState(false);
 
@@ -114,6 +146,20 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
       .catch(()=>{if(!controller.signal.aborted)setActionError(true);});
     return ()=>controller.abort();
   },[selected,timeline]);
+  useEffect(()=>{
+    if(panel!=="day"||!selected||!timeline)return;
+    const plan=planOn(timeline.plans,selected);
+    if(!plan)return;
+    const controller=new AbortController();
+    void fetch("/api/ai/threads/"+encodeURIComponent(plan.threadId)+"/messages?offset=0",
+      {cache:"no-store",signal:controller.signal})
+      .then(r=>r.ok?r.json():Promise.reject(new Error("messages_unavailable")))
+      .then((page:{items:Message[]})=>{
+        if(!controller.signal.aborted&&Array.isArray(page.items))
+          setQuestionData({proposalId:plan.proposalId,value:latestEventQuestion(page.items,locale)});
+      }).catch(()=>{});
+    return ()=>controller.abort();
+  },[panel,selected,timeline,locale]);
   if(!timeline)return error?null:<section data-testid="coming-up" aria-label={t("title")}
     className="rounded-2xl border border-line bg-card p-3 text-[17px] text-ink-muted" role="status">{t("loading")}</section>;
 
@@ -129,6 +175,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
   const dayEvents=eventsOn(timeline.events,chosen);
   const actions=actionsFor(plan);
   const ticks=tickData?.proposalId===plan?.proposalId?tickData.ticks:[];
+  const question=questionData?.proposalId===plan?.proposalId?questionData.value:null;
   const calendarMonth=month??today.slice(0,7);
   const calendarFirst=calendarMonth+"-01";
   const weekday=new Date(calendarFirst+"T00:00:00Z").getUTCDay();
@@ -277,6 +324,15 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
             {plan?<>
               <p className="font-semibold" dir="auto">{plan.summary}</p>
               <PlanHours plan={plan} t={t}/>
+              {question&&<section className="space-y-2 rounded-2xl border border-line bg-surface2 p-3">
+                <h4 className="font-semibold" dir="auto">{question.question}</h4>
+                <div className="flex flex-wrap gap-2">
+                  {question.options.map(option=><button type="button" key={option}
+                    onClick={()=>chat(chosen)} className={button+" bg-surface text-accent-text"}>{option}</button>)}
+                  <button type="button" onClick={()=>chat(chosen)}
+                    className={button+" bg-surface text-accent-text"}>{t("answerInChat")}</button>
+                </div>
+              </section>}
               <h4 className="text-[17px] font-bold">{t("getReady")}</h4>
               <ul className="space-y-2">{actions.map((action,index)=>{
                 const done=ticks.find(x=>x.actionIndex===index)?.state==="done";
