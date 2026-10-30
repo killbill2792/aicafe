@@ -4,13 +4,14 @@ export async function openEventDayThread(args:{
   date:string;title:string;prompt:string;known:Map<string,string>;
   create:(title:string)=>Promise<{id:string}>;
   select:(id:string)=>void;
-  send:(prompt:string,id:string)=>Promise<void>;
+  send:(prompt:string,id:string,attachments:readonly [])=>Promise<void>;
 }):Promise<string>{
   const existing=args.known.get(args.date);
   if(existing){args.select(existing);return existing;}
   const created=await args.create(args.title);
   args.known.set(args.date,created.id);
   args.select(created.id);
-  await args.send(args.prompt,created.id);
+  // A new thread cannot use attachments belonging to the prior conversation.
+  await args.send(args.prompt,created.id,[]);
   return created.id;
 }
