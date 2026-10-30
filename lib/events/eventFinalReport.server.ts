@@ -35,7 +35,7 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
   ]);
   if(member.error||member.data?.role!=="owner"||business.error||
     !business.data?.timezone||business.data.is_demo)throw new Error("owner_required");
-  await assertCafeAiAccess(scope.businessId);
+  try{await assertCafeAiAccess(scope.businessId);}catch{return null;}
 
   // The model sees only certified, pre-calculated facts, never SQL or a
   // second calculation path. All 24 hours stay in the saved canonical report.
@@ -60,7 +60,7 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
       toolNames:[],
       ownerText:"Scheduled event-day FINAL report, not an owner request. Write a short, "+
         "clear owner-facing report card comparing the certified actual and usual hourly "+
-        "sales, the original plan and checklist completion. Use only supplied numbers "+
+        "sales, the original plan and checklist completion. Write in "+scope.locale+". Use only supplied numbers "+
         "without doing additional arithmetic. Label missing evidence, never invent "+
         "causes or money currency. Keep below 1000 characters, in the locale provided. "+
         "Suggest a next step only when evidence supports it. No approval or action.",
