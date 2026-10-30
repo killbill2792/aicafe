@@ -1,4 +1,5 @@
 import "server-only";
+import {redactToastRaw} from "./redact";
 import {createHash} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
@@ -47,16 +48,19 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    const {data:staged,error:se}=await db.from("toast_day_pages").select("payload")
      .eq("run_id",p.runId).eq("business_date",p.businessDate).eq("page",page).maybeSingle();
    if(se)throw new ToastApiError("unavailable");
-   const payload=staged?.payload??await client.request(
+   const fetched=staged?.payload??await client.request(
      "/orders/v2/ordersBulk?businessDate="+p.businessDate.replaceAll("-","")+"&pageSize=100&page="+page,
      p.restaurantGuid,pageSchema,{deadlineAt});
-   if(payload.length>100)throw new ToastApiError("invalid_response");
+   // Redact here, once, before anything is stored: the database only saves.
+   // Redacting a whole day inside the import request exceeded its time limit.
+   const payload=redactToastRaw(fetched,0,"",undefined,"orders") as unknown[];
+   if(!Array.isArray(payload)||payload.length>100)throw new ToastApiError("invalid_response");
    if(!staged){
     const {error:saved}=await db.rpc("toast_stage_day_page",{
      p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,p_run_id:p.runId,
      p_business_date:p.businessDate,p_page:page,p_payload:payload
     });
-    if(saved)throw new ToastApiError("unavailable");
+    if(saved){console.error("toast_stage_day_page_failed",{code:saved.code??null});throw new ToastApiError("unavailable");}
    }
    pages.push({page,payload});
    if(payload.length<100)break;
@@ -102,7 +106,11 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    p_restaurant_guid:p.restaurantGuid,p_business_date:p.businessDate,
    p_orders:normalized,p_summary:summary,p_run_id:p.runId
   });
-  if(error)throw new ToastApiError("unavailable");
+  if(error){
+   // The error code only (e.g. 57014 = statement timeout); never the payload.
+   console.error("toast_import_day_failed",{code:error.code??null});
+   throw new ToastApiError("unavailable");
+  }
   // The database day transaction has committed. Derived refresh failures must
   // NEVER enter the outer import error/checkpoint path or replay a good day.
   let derivedRefresh={derivedRefreshPending:true,derivedRefreshNote:"derived_refresh_unavailable" as string|null};

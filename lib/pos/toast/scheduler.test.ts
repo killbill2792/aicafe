@@ -2,12 +2,13 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
 const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstCatalog:vi.fn(),
- refresh:vi.fn(),costs:vi.fn(),request:vi.fn()}));
+ refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
 vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional,ensureToastFirstCatalog:m.firstCatalog}));
 vi.mock("./restaurantInfo",()=>({refreshToastRestaurantInfo:m.refresh}));
+vi.mock("./paymentGaps",()=>({queueToastPaymentGaps:m.paymentGaps}));
 vi.mock("./rollupRetries",()=>({retryToastRollupRefreshes:m.costs}));
 vi.mock("./client",()=>{
  class ToastApiError extends Error{
@@ -124,6 +125,7 @@ beforeEach(()=>{
  m.costs.mockResolvedValue({processed:0,deferred:0});
  m.reconcile.mockResolvedValue(0);
  m.refresh.mockResolvedValue(null);
+ m.paymentGaps.mockResolvedValue([]);
 });
 describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
  it("flag off performs no database writes or lease claims",async()=>{
@@ -209,6 +211,15 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   await runToastSyncTick(f.db,now,Date.now()+60000);
   expect(events).toEqual(["backfill","optional"]);
   expect(f.imports).toEqual(["2026-10-19"]);
+ });
+ it("re-pulls days missing processing fees even while a one-day backfill is paused",async()=>{
+  const f=makeDB();
+  f.status.add(d);
+  f.runs.push({id:"stuck-backfill",kind:"backfill",state:"paused_rate_limited",
+   requested_from:"2026-09-12",requested_to:"2026-09-12",days_done:0,days_total:1,cursor:{},
+   resume_at:new Date(now.getTime()+3600_000).toISOString()});
+  await runToastSyncTick(f.db,now,Date.now()+60000);
+  expect(m.paymentGaps).toHaveBeenCalledTimes(1);
  });
  it("starts a queued 65-day first backfill before four repulls, within the full single-café tick",async()=>{
   vi.useFakeTimers();vi.setSystemTime(now);
