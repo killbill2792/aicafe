@@ -140,7 +140,7 @@ try {
   await q("update daily_rollups set staff_wages_cents=staff_wages_cents+136 where business_id=$1 and business_date='2026-10-12'",[S]);
   const beforeFailure = await parity(D,"2026-10-12");
   const failingClient = { query: async (sql, params) => {
-    if (/^\s*delete from timecards /i.test(sql)) throw Object.assign(new Error("injected mirror failure"),{ code:"23503" });
+    if (/^\s*delete from daily_rollups /i.test(sql)) throw Object.assign(new Error("injected mirror failure"),{ code:"23503" });
     return client.query(sql,params);
   } };
   let failed = false;
