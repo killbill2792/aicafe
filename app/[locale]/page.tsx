@@ -76,12 +76,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   // Money and Supervisor agree on known costs and their evidence. Home must not
   // bypass that canonical completeness gate when showing owner profit.
   const moneyVm = buildProfitAndCostsViewModel(snapshot, period);
-  const [t,tChat,tCommon,tAccess,tGoals,items,businessId]=await Promise.all([
+  const [t,tChat,tCommon,tAccess,tGoals,tEvents,items,businessId]=await Promise.all([
     timeReader("Home","getTranslations.Home",()=>getTranslations("Home")),
     timeReader("Home","getTranslations.SupervisorChat",()=>getTranslations("SupervisorChat")),
     timeReader("Home","getTranslations.Common",()=>getTranslations("Common")),
     timeReader("Home","getTranslations.FreeAccess",()=>getTranslations("FreeAccess")),
     timeReader("Home","getTranslations.Goals",()=>getTranslations("Goals")),
+    timeReader("Home","getTranslations.EventsPanel",()=>getTranslations("EventsPanel")),
     timeReader("Home","getAttentionItems",()=>getAttentionItems({period,locale,snapshot,menu})),
     signedInUser?timeReader("Home","getActiveBusinessId",()=>getActiveBusinessId(signedInUser.id)):Promise.resolve(null),
   ]);
@@ -144,7 +145,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         board:board?{
           running:board.running.map(r=>({key:r.proposalId,
             href:boardHref(r),
-            text:r.goal?(r.day!==null&&r.day>=1?tGoals("boardGoal",{title:r.productName,day:number(r.day),days:number(r.days??0)})
+            text:r.event?tEvents("boardEventRunning",{title:r.productName}):r.goal?(r.day!==null&&r.day>=1?tGoals("boardGoal",{title:r.productName,day:number(r.day),days:number(r.days??0)})
                 :tGoals("boardGoalStarts",{title:r.productName}))
               :r.stage==="waitingOnOwner"?t("boardWaiting",{item:r.productName,price:money(r.newPriceCents)})
               :r.day!==null&&r.day>=1?t("boardMonitoring",{item:r.productName,old:money(r.oldPriceCents),
@@ -152,7 +153,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               :t("boardMonitoringStarts",{item:r.productName,old:money(r.oldPriceCents),new:money(r.newPriceCents)})})),
           reports:board.recentReports.map(r=>({key:r.proposalId,
             href:boardHref(r),
-            text:r.goal?(r.status==="insufficient_evidence"||r.goal.met===null?tGoals("boardGoalInsufficient",{title:r.productName})
+            text:r.event?tEvents("boardEventReport",{title:r.productName}):r.goal?(r.status==="insufficient_evidence"||r.goal.met===null?tGoals("boardGoalInsufficient",{title:r.productName})
                 :r.goal.met?tGoals("boardGoalMet",{title:r.productName}):tGoals("boardGoalMissed",{title:r.productName}))
               :r.status==="insufficient_evidence"?t("boardReportInsufficient",{item:r.productName})
               :r.recommendation==="keep"?t("boardReportKeep",{item:r.productName})
