@@ -1,16 +1,19 @@
 -- The AI must reach every field Toast gives us, not only the ones copied into
--- the fixed views. Additive: one new view, one owner read rule, and the query
--- function learns to read fields inside a view's "data" JSON by name
--- ("data.server.guid"). Existing views and columns are unchanged.
+-- the fixed views. Additive: one owner-checked reader function, one view over it,
+-- and the query function learns to read fields inside a view's "data" JSON by
+-- name ("data.server.guid"). Existing views and columns are unchanged.
 
--- 1. Owners can read their own archive. It is already cleaned before saving
--- (no guest names, contact details, card numbers, credentials or notes), the
--- same cleaning toast_raw_samples uses, which owners can already read.
-alter table public.toast_raw_records enable row level security;
-drop policy if exists "owner read" on public.toast_raw_records;
-create policy "owner read" on public.toast_raw_records for select to authenticated
- using (public.scheduling_is_owner(business_id));
-grant select on public.toast_raw_records to authenticated;
+-- 1. The archive table stays closed to app users (no grant, no read rule).
+-- toast_records_for reads it for the AI only after checking that the signed-in
+-- user owns the café, and only for the dates asked, so the date filter uses the
+-- archive's index. Saved records are already cleaned (no guest names, contact
+-- details, card numbers, credentials or notes).
+create or replace function public.toast_records_allowed(p_business_id uuid) returns boolean
+language sql stable security definer set search_path=public as $$
+ select current_setting('role',true) is distinct from 'authenticated'
+  or public.scheduling_is_owner(p_business_id) $$;
+revoke all on function public.toast_records_allowed(uuid) from public,anon,authenticated;
+grant execute on function public.toast_records_allowed(uuid) to service_role;
 
 -- 2. Every Toast record, one row each, full cleaned JSON in "data".
 -- Orders come from the archive, only the latest import of each day, split into
@@ -19,10 +22,10 @@ grant select on public.toast_raw_records to authenticated;
 -- their own rows). Every other Toast endpoint (labor, cash, kitchen, menus,
 -- setup) comes from the newest daily capture. Setup lists have no business
 -- date: only the newest copy is shown.
-create or replace view public.cv_toast_records
- (business_id,source,source_ref,status,business_date,record_type,record_ref,
- order_ref,check_ref,counts_in_sales,data)
- with (security_invoker=true) as
+create or replace function public.toast_records_for(p_business_id uuid,p_from date,p_to date)
+returns table(business_id uuid,source text,source_ref text,status text,business_date date,
+ record_type text,record_ref text,order_ref text,check_ref text,counts_in_sales boolean,data jsonb)
+language sql stable security definer set search_path=public as $records$
 with orders as not materialized (
  select r.business_id,r.business_date,r.id,r.payload o,
   -- Same exclusions as the importer (lib/pos/toast/dayParser.ts): deleted, voided,
@@ -34,7 +37,11 @@ with orders as not materialized (
   and d.restaurant_guid=r.restaurant_guid and d.business_date=r.business_date
   and d.import_state='imported'
   and (r.run_id=d.last_import_run_id or r.seen_run_id=d.last_import_run_id)
- where r.entity='order' and jsonb_typeof(r.payload)='object'),
+ where r.entity='order' and jsonb_typeof(r.payload)='object'
+  and (p_business_id is null or r.business_id=p_business_id)
+  and (p_from is null or r.business_date>=p_from) and (p_to is null or r.business_date<=p_to)
+  and case when p_business_id is not null then (select public.toast_records_allowed(p_business_id))
+   else public.toast_records_allowed(r.business_id) end),
 checks as not materialized (
  select o.*,c.v c,c.n cn,
   o.o_void or (c.v->'voided') is not distinct from 'true'::jsonb or (c.v->'deleted') is not distinct from 'true'::jsonb c_void
@@ -55,6 +62,9 @@ samples as not materialized (
  from public.toast_raw_samples s
  where s.http_status between 200 and 299 and s.error_code is null
   and s.endpoint not like 'orders/%' and s.endpoint not like '%{%'
+  and (p_business_id is null or s.business_id=p_business_id)
+  and case when p_business_id is not null then (select public.toast_records_allowed(p_business_id))
+   else public.toast_records_allowed(s.business_id) end
   and coalesce(s.capture_id::text,'row:'||s.id::text)=(
    select coalesce(t.capture_id::text,'row:'||t.id::text) from public.toast_raw_samples t
    where t.business_id=s.business_id and t.restaurant_guid=s.restaurant_guid
@@ -119,7 +129,19 @@ from samples s cross join lateral jsonb_array_elements(case when jsonb_typeof(s.
  when jsonb_typeof(s.sample->'results')='array' then s.sample->'results'
  when jsonb_typeof(s.sample->'menus')='array' then s.sample->'menus'
  else jsonb_build_array(s.sample) end) with ordinality x(v,n)
-where jsonb_typeof(x.v)='object';
+where jsonb_typeof(x.v)='object'
+ and (s.setup or ((p_from is null or s.business_date>=p_from) and (p_to is null or s.business_date<=p_to)))
+$records$;
+revoke all on function public.toast_records_for(uuid,date,date) from public,anon;
+grant execute on function public.toast_records_for(uuid,date,date) to authenticated,service_role;
+
+-- The canonical view lists the same rows for the cafés the user owns. The AI's
+-- query function reads toast_records_for directly with its café and dates.
+create or replace view public.cv_toast_records
+ (business_id,source,source_ref,status,business_date,record_type,record_ref,
+ order_ref,check_ref,counts_in_sales,data)
+ with (security_invoker=true) as
+ select * from public.toast_records_for(null,null,null);
 revoke all on public.cv_toast_records from public,anon;
 grant select on public.cv_toast_records to authenticated,service_role;
 
@@ -146,7 +168,7 @@ declare
  v_col text;v_metric jsonb;v_filter jsonb;v_fn text;v_op text;v_val jsonb;
  v_where text:='business_id = $1';v_select text:='';v_group text:='';
  v_sql text;v_rows jsonb;v_mix jsonb;v_limit integer;v_n integer;
- v_order text:='';v_field text;v_dir text;v_expr text;v_path text[];v_has_data boolean;
+ v_order text:='';v_field text;v_dir text;v_expr text;v_path text[];v_has_data boolean;v_source text;
  v_source_count bigint;v_incomplete boolean;
 begin
  if p_view is null or not (p_view=any(allowed_views)) then raise exception 'invalid view';end if;
@@ -159,6 +181,10 @@ begin
  coalesce(jsonb_array_length(coalesce(p_filters,'[]'::jsonb)),0)>15 or
  coalesce(jsonb_array_length(coalesce(p_metrics,'[]'::jsonb)),0)>10
  then raise exception 'query too large';end if;
+ -- Toast records: the owner-checked reader with this café and these dates.
+ v_source:=case when p_view='cv_toast_records'
+  then format('public.toast_records_for($1,%L::date,%L::date)',p_date_from,p_date_to)
+  else format('public.%I',p_view) end;
  v_has_data:=exists(select 1 from information_schema.columns c where c.table_schema='public'
   and c.table_name=p_view and c.column_name='data' and c.data_type='jsonb');
  -- Enforce the physical canonical view's exact column allowlist, or a field path in data.
@@ -257,8 +283,8 @@ begin
  end if;
  v_limit:=p_limit+1;
  v_sql:=format('select coalesce(jsonb_agg(to_jsonb(q)),''[]''::jsonb)
- from (select %s from public.%I where %s%s%s limit %s) q',
-  v_select,p_view,v_where,v_group,v_order,v_limit);
+ from (select %s from %s where %s%s%s limit %s) q',
+  v_select,v_source,v_where,v_group,v_order,v_limit);
  execute v_sql into v_rows using p_business_id;
  v_n:=jsonb_array_length(v_rows);
  if v_n>p_limit then
@@ -266,10 +292,10 @@ begin
     select value from jsonb_array_elements(v_rows) with ordinality as v(value,idx)
     where idx<=p_limit order by idx) limited);
  end if;
- execute format('select count(*),coalesce(bool_or(status in (''open'',''estimated'',''needs_match'')),false) from public.%I where %s',p_view,v_where)
+ execute format('select count(*),coalesce(bool_or(status in (''open'',''estimated'',''needs_match'')),false) from %s where %s',v_source,v_where)
  into v_source_count,v_incomplete using p_business_id;
  execute format('select coalesce(jsonb_object_agg(source,n),''{}''::jsonb) from
- (select source,count(*) n from public.%I where %s group by source) mix',p_view,v_where)
+ (select source,count(*) n from %s where %s group by source) mix',v_source,v_where)
  into v_mix using p_business_id;
  return jsonb_build_object('rows',v_rows,'rowCount',jsonb_array_length(v_rows),
   'truncated',v_n>p_limit,'sourceMix',v_mix,
@@ -285,9 +311,8 @@ grant execute on function public.ai_query_view(uuid,text,text[],jsonb,text[],jso
 create or replace function public.ai_toast_fields(p_business_id uuid,p_record_type text)
 returns jsonb language sql stable security invoker set search_path=public as $$
  with recursive recs as (
-  select data from public.cv_toast_records
-  where business_id=p_business_id and record_type=p_record_type
-   and (business_date>=current_date-35 or business_date is null)
+  select data from public.toast_records_for(p_business_id,current_date-35,current_date)
+  where record_type=p_record_type
   order by business_date desc nulls first limit 30),
  walk(path,v,depth) as (
   select 'data'::text,data,0 from recs
