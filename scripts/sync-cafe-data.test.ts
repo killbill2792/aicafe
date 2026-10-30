@@ -334,8 +334,8 @@ describe("day mirror", () => {
 });
 
 describe("test café gets the Toast archive and daily captures", () => {
-  const archive = () => REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_raw_records");
-  const captures = () => REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_raw_samples");
+  const archive = () => REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_raw_records")!;
+  const captures = () => REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_raw_samples")!;
   it("copies only each day's latest imported orders, naming the copied run", () => {
     expect(archive().sourceFilter).toBe(LATEST_ORDERS_FILTER);
     expect(LATEST_ORDERS_FILTER).toContain("t.entity = 'order'");
