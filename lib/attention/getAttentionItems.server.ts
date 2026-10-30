@@ -38,7 +38,7 @@ export type AttentionArgs={period?:Period;locale?:"en"|"es"|"ar";snapshot?:Busin
 /** Home and chat must call this same owner-scoped source. A failed optional read is
  * reported as its own action, never silently replaced with no work. */
 function operatingTaskHref(task: OperatingTask): string {
-  if(task.kind==="event_plan" && typeof task.payload.threadId==="string")
+  if((task.kind==="event_plan"||task.kind==="event_change") && typeof task.payload.threadId==="string")
     return "/?thread="+encodeURIComponent(task.payload.threadId);
   if(task.kind==="price_experiment_report"){
     const thread=task.payload.threadId,proposal=task.payload.proposalId;
@@ -130,6 +130,8 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       title = tOperations("homePriceAwaitingVerification", { item: itemName });
     } else if (task.kind === "price_review" && task.status === "watching" && typeof task.payload.snoozeMode === "string") {
       title = tOperations("homePriceReviewLater", { item: itemName });
+    } else if (task.kind === "event_change") {
+      title = tOperations("eventChangeReview", {event:String(task.payload.eventName ?? "")});
     } else if (task.kind === "event_plan") {
       title = tOperations("eventPlanReview", {date:String(task.payload.businessDate ?? "")});
     } else if (task.kind === "price_review") {
@@ -204,7 +206,7 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
     ...alertItems,
     ...team.needsYou.filter(task=>!(task.kind==="data_quality" && coveredBills.has(String(task.payload.categoryCode))) &&
       !(task.kind==="data_quality" && vm.missingCategories.some(line=>line.categoryCode===task.payload.categoryCode)))
-      .map(task=>({...taskPreview(task),actionLabel:t("attentionFix"),impactCents:
+      .map(task=>({...taskPreview(task),actionLabel:task.kind==="event_change"?tOperations("eventChangeReviewAction"):t("attentionFix"),impactCents:
         typeof task.payload.impactCents==="number" ? task.payload.impactCents :
         typeof task.payload.estimatedAmountCents==="number" ? task.payload.estimatedAmountCents : null})),
   ];
