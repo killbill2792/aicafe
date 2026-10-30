@@ -14,6 +14,9 @@ const CARD_SECRET=/(?:cardNumber|cardLast4|lastFour|last4|first5|firstFive|first
 const AUTH_SECRET=/(?:password|secret|authorization|token|apiKey|credential|sessionToken|signature|passcode|pin$|routingNumber|accountNumber|deviceId)/i;
 const FREEFORM=/(?:notes?|memo|comment|message|instructions?|^text$|^tabName$|receiptText|^description$)/i;
 const CUSTOMER_ID=/(?:^customer(?:Id|Guid|Identifier|AccountId|AccountGuid|Number|ExternalId)$|^guest(?:Id|Guid|Identifier)$|^loyalty(?:Id|Guid|Identifier|AccountId|AccountGuid|AccountNumber|CustomerId|CustomerGuid)$|^card(?:Id|Guid|Fingerprint|TokenId|NumberIdentifier)$|^creditCard(?:Id|Guid|Fingerprint)$|^giftCard(?:Id|Guid|Fingerprint)$|^cardPaymentId$|^paymentCardId$|^cardTokenId$|^networkTransactionIdentifier$|^tenderTransactionGuid$|^maskedLoyaltyIdentifier$)/i;
+// Restaurant setup objects named on an order ("Dine In", "Patio", "Coffee").
+// Their "name" is business data, not a guest's name.
+const BUSINESS_REF=/^(?:diningOption|revenueCenter|serviceArea|table|restaurantService|salesCategory|voidReason)$/;
 export const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
 const isPersonalContext=(context:string)=>PERSONAL_PARENT.test(context);
 export const isSensitiveId=(key:string,context:string)=>CUSTOMER_ID.test(key)||
@@ -42,7 +45,7 @@ export function redactToastRaw(value:unknown,depth=0,key="",hashKey?:string,cont
    .filter(([k,v])=>!isPersonalContext(context)||typeof v!=="string"||
     isSensitiveId(k,context)||/^(?:type|status|state|currency|cardType|cardEntryMode|jobTitle|jobCode|title|paymentStatus|source)$/i.test(k)||
     /(?:Date|Time|At|Timestamp)$/i.test(k))
-   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,k==="selections"||k==="discounts"||k==="appliedDiscounts"||k==="appliedServiceCharges"||k==="modifiers"||k==="items"||k==="menuItems"?"":(PERSONAL_PARENT.test(k)||/^(?:giftCard|giftCardInfo|orders?|checks?|payments?|employee|staff|server|cashier)$/i.test(k))?k:context,scope)])
+   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,hashKey,k==="selections"||k==="discounts"||k==="appliedDiscounts"||k==="appliedServiceCharges"||k==="modifiers"||k==="items"||k==="menuItems"||BUSINESS_REF.test(k)?"":(PERSONAL_PARENT.test(k)||/^(?:giftCard|giftCardInfo|orders?|checks?|payments?|employee|staff|server|cashier)$/i.test(k))?k:context,scope)])
    .filter(([,v])=>v!==undefined));
  }
  if(isSensitiveId(key,context)){

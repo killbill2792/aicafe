@@ -37,17 +37,17 @@ describe("Toast day pages are redacted once in the app",()=>{
   const parse=(page:unknown)=>parseToastDayPage(page,restaurant,day,"America/Los_Angeles",4);
   expect(parse(raw).orders).toHaveLength(2);
   expect(parse(raw).orders[0].normalized?.netSalesCents).toBeGreaterThan(0);
-  expect(parse(redactToastRaw(raw))).toEqual(parse(raw));
+  expect(parse(redactToastRaw(raw,0,"",undefined,"orders"))).toEqual(parse(raw));
  });
  it("drops customer details and card data but keeps the payment fee fields",()=>{
-  const safe=JSON.stringify(redactToastRaw([order]));
-  for(const leaked of ["Lopez","ana@example.com","555-123-4567","4242","ANA LOPEZ",'"tabName"'])
+  const safe=JSON.stringify(redactToastRaw([{...order,name:"Ana's order",displayName:"Ana L",nickname:"Ani"}],0,"",undefined,"orders"));
+  for(const leaked of ["Ana's order","Ana L","Ani","Lopez","ana@example.com","555-123-4567","4242","ANA LOPEZ",'"tabName"'])
    expect(safe).not.toContain(leaked);
   expect(safe).toContain('"originalProcessingFee":0.41');
   expect(safe).toContain('"cardType":"VISA"');
  });
  it("is stable when a page is redacted twice (staged pages are read back)",()=>{
-  const once=redactToastRaw([order]);
-  expect(redactToastRaw(once)).toEqual(once);
+  const once=redactToastRaw([order],0,"",undefined,"orders");
+  expect(redactToastRaw(once,0,"",undefined,"orders")).toEqual(once);
  });
 });

@@ -53,7 +53,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
      p.restaurantGuid,pageSchema,{deadlineAt});
    // Redact here, once, before anything is stored: the database only saves.
    // Redacting a whole day inside the import request exceeded its time limit.
-   const payload=redactToastRaw(fetched) as unknown[];
+   const payload=redactToastRaw(fetched,0,"",undefined,"orders") as unknown[];
    if(!Array.isArray(payload)||payload.length>100)throw new ToastApiError("invalid_response");
    if(!staged){
     const {error:saved}=await db.rpc("toast_stage_day_page",{
