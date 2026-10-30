@@ -14,7 +14,7 @@ it, asks only what it can't know, watches the day, and reports back.
   - Tabs: **Past (14 days) · Now · Coming up (14 days)**, plus a **month calendar** to jump to any date.
   - Coming up: grouped by day, ranked by how much each event affects the café. Filter "Affects you · 6 /
     All · 10". A multi-day event is one row. Small events are folded away ("4 small events…").
-  - Each event shows: name, time, **distance tag ("0.3 mi")**, source link.
+  - Each event shows: name, time, venue/area, saved address (opens Maps), source link. No invented numeric distance.
 - **Day plan** (tap a day): expected busy hours (usual hourly sales for that weekday, with event hours
   highlighted), one plain sentence explaining why, at most one question, and a "Get ready" checklist
   (staff, prep, ordering, bringing people in, hours, operations). Each item has its reason, and the
@@ -47,10 +47,15 @@ Design mockup (sample data): https://claude.ai/artifact/UBRTrUsFqQAtxjTqi5JqK7
    which updates the plan in the same thread ("since last Halloween was quiet, skip the extra person")
    and saves the answer as an owner fact for every year after. The owner is never left waiting on a
    question.
-3. **Search once, keep it.** Events and plans are saved. Opening the app reads the saved rows; it never
-   triggers a new search or rewrites advice the owner has already seen. Refresh only when: a new day
-   enters the 14-day window, the address changes, or the day-before check finds a change (cancelled,
-   moved).
+3. **Discover, save and verify without repeated full research.** Opening Home and reading saved events
+   in chat never starts research or rewrites owner decisions. The target schedule (PR 10): bootstrap
+   the full 14-day window once, then search only the one new boundary day each day; once a week look
+   specifically for newly announced events in already covered dates without replacing saved facts.
+   Verify important upcoming events *early enough to protect preparation decisions* (not just the day
+   before), and again as their dates approach. Confirm cancellations, postponements and venue/time
+   changes against reliable sources; missing search results or failed checks are **not** cancellations.
+   Retain original event history, notify the owner through the existing inbox/thread, and let the AI
+   explain the impact on preparation. Never silently cancel staff, orders or an approved plan.
 4. **Advice is more than staffing:** staff, prep/stock, ordering (lead times), menu/promo, opening
    hours, operations (road closures, deliveries).
 5. **One system, one data layer (AGENTS.md sections 3 and 5).** A day's readiness plan is a
@@ -101,9 +106,9 @@ Design mockup (sample data): https://claude.ai/artifact/UBRTrUsFqQAtxjTqi5JqK7
 |---|---|---|
 | D1 | Panels over the chat (not standalone screens) for the events list, calendar, day plan, past reports | **Agreed** |
 | D2 | New supporting tables for found events and checklist ticks (migration, RLS). Plans and reports use the existing `supervisor_proposals` / `supervisor_reports` | Owner approves the migration PR before merge |
-| D3 | Distance: a geocoding service (Google Maps / Mapbox) for "0.3 mi" tags vs the venue/area name only | **Open**: until decided, show the venue or area name; never a guessed number |
+| D3 | No geocoding, numeric distance or extra location dependency. Show the saved venue/area and a clickable saved address opening Maps. | **Agreed Oct 30** (PR 8) |
 | D4 | Output-token budget for the internal search call (above the 1,200 used for chat turns) | **Open**: PR 1 proposes a number with evidence; owner approves |
-| D5 | Look-ahead timing: weekly on Monday morning + one new day each day + day-before check | Proposed |
+| D5 | Bootstrap 14 days once; daily one new date; weekly newly announced events; early verification of important saved events and imminent-event checks, with confirmed changes and owner notification. No wholesale weekly refresh. | **Agreed Oct 30**; PR 10 must implement and test |
 | D6 | A general web search tool for the chat (PR 9), small cost per search | Proposed: needed so the owner never leaves the app |
 
 ## PRs, in order
@@ -253,9 +258,52 @@ Each PR: small (ideally < 400 changed lines), one concern, tests for the behavio
 > web_search chat tool, a never-restrictive answer rule in the system prompt, and 'Chat about this' for
 > an event day opening its own thread with the event context. Open a PR when the Done checks pass."
 
-### PR 8 (optional, after D3) — Real distance
+### PR 8 — Saved venue map links (D3 agreed)
 
-- Geocode the café once and each venue once; store lat/lng; show "0.3 mi". Until then: venue or area name.
+- In the existing PR 5 events list and day panel, show a **saved venue address** as a one-tap
+  external Google Maps search link so owners can inspect distance and directions themselves.
+  If no sourced venue address was saved, show the venue/area and source link only.
+- No guessed distances, geocoder, new API, coordinates, migration, browser location or research on open.
+  Retain the existing panels and EN/ES/AR + RTL + 48px touch behavior. Test link safety,
+  missing addresses and localization. Keep PR 6/7 event-monitor/report code untouched.
+
+### PR 10 — Early event verification, rolling discovery and change notifications (after PRs 6–8)
+
+- Extend **the existing** PR 4 scheduled search and `cafe_events` facts, not a second event system.
+  On first eligible run (on any weekday), cover 14 days. Thereafter only discover the new boundary day
+  each day; the weekly pass asks for recently announced events in the already-covered window and
+  merges *new* facts without resetting confirmed records, owner decisions or saved plans.
+- Verify saved **important** upcoming events daily before likely owner preparations (ordering/shift
+  lead time), again on imminent days; use source-backed AI research for cancellation, postponed,
+  reopened, moved or changed time/venue. Model assesses significance, code validates and stores only
+  sourced factual changes. Missing or failed search is unknown, **never** evidence of cancellation.
+- Preserve original event and changes, update status only on verified evidence, and use the **existing**
+  `operating_tasks` inbox plus event-day Supervisor thread for one deduplicated owner alert:
+  what changed, when checked, why it may affect prep, and what to review. Do **not** amend an approved
+  schedule, purchase, staff plan or POS automatically. The AI proposes; owner chooses any action.
+- Track successful vs failed/unsearched date coverage (including dates with zero events), without
+  another events store. If a schema change truly proves necessary, request owner approval separately.
+  Test non-Monday bootstrap, daily boundary, weekly late announcements, cancellation known 5 days
+  ahead, moved/reopened, failed checks, unchanged event, no duplicate inbox, and owner approval.
+- Feature remains default-off until owner-approved migration/rollout and real café smoke tests.
+
+### PR 11 — One saved-events read for chat and Home (after PR 10)
+
+- Make the active `get_nearby_events` chat experience read the same owner-scoped saved facts and
+  plans as the PR 5 Home panel / `get_events` reader by default. No paid live search just because
+  the owner asks what is already saved; use the existing general web-search tool only when the owner
+  explicitly asks for fresh external information. Avoid duplicate business-data readers.
+- Verify exact saved event/status/plan parity between chat and Home, no search on screen open,
+  honest never-searched/failed coverage, and access to older saved event reports by date.
+  Remove or retire obsolete read paths only in a separate deletion-only cleanup PR if appropriate.
+
+### Owner acceptance / rollout (not a separate new system)
+
+- After PRs 6, 7, 8, 10 and 11 are reviewed/merged, verify the approved café-events RLS migration,
+  cron/live-watch flags and authorized test café access before activation. Run a real 14-day bootstrap,
+  a next-day boundary, an early sourced cancellation with existing prep plans, owner inbox review,
+  live monitoring, next-morning saved report, EN/ES/AR and 360–430px phone screenshots.
+  Do not merge, activate flags, apply migrations or deploy without owner approval.
 
 ## How to run this with new chats
 
@@ -274,7 +322,10 @@ only after the previous wave is merged.
 |---|---|---|
 | 1 | PR 1 (search), PR 2 (facts-only + "Other"), PR 3 (storage), PR 9 (open chat + web search) | Different files; none needs another |
 | 2 | PR 4 (find once / plan once), PR 5 (Home strip + panels) | Both need PR 3; PR 4 also uses PR 1–2 |
-| 3 | PR 6 (live watch), PR 7 (report card), PR 8 (distance, after D3) | Need PRs 4–5 |
+| 3 | PR 6 (live watch), PR 7 (report card), PR 8 (Maps links) | Need PRs 4–5; PR 8 merges after PRs 6 and 7 per owner |
+
+After wave 3: PR 10 (search/status verification) then PR 11 (saved chat parity). These are explicit
+follow-up PRs, **not** part of PR 8. Confirm final event flows on the test café before rollout.
 
 Shared files will clash a little: `lib/ai/agent/tools/index.ts`, the pinned tool list in
 `lib/ai/agent/agent.test.ts`, the system prompt in `lib/ai/agent/loop.server.ts`, `messages/*.json`

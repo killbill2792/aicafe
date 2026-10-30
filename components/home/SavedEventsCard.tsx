@@ -8,6 +8,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import type {CafeEvent,EventChecklistTick,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {eventActionAreaLabel} from "@/lib/events/eventActionArea";
+import EventMapLink from "./EventMapLink";
 
 type Locale="en"|"es"|"ar";
 type T=(key:string,values?:Record<string,string|number>)=>string;
@@ -305,6 +306,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
                   <p className="text-ink-muted" dir="auto">{event.startDate!==event.endDate?
                     event.startDate+" – "+event.endDate:event.startTime??""}
                     {event.venue||event.areaLabel?" · "+(event.venue??event.areaLabel):""}</p>
+                  <EventMapLink address={event.venueAddress} label={t("viewMap")}/>
                   {event.status!=="found"&&<p>{event.status==="cancelled"?t("cancelled"):t("moved")}</p>}
                   {sourceUrl(event.sourceUrl)&&<a href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer"
                     className="inline-flex min-h-12 items-center text-accent-text underline">{t("source")}</a>}
@@ -319,6 +321,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
             {dayEvents.map(event=><article key={event.id} className="rounded-xl bg-surface2 p-3">
               <p className="font-semibold" dir="auto">{event.name}</p>
               <p className="text-ink-muted" dir="auto">{event.venue??event.areaLabel??""}{event.startTime?" · "+event.startTime:""}</p>
+              <EventMapLink address={event.venueAddress} label={t("viewMap")}/>
               {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
                 href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
             </article>)}
