@@ -3666,6 +3666,7 @@
     "taskCheckinAction": "Answer in chat"
   },
   "EventsPanel": {
+    "answerInChat": "Answer in the conversation",
     "boardEventRunning": "Event plan · {title}",
     "boardEventReport": "Event report · {title}",
     "title": "Events near your café",
