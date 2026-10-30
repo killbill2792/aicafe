@@ -69,7 +69,7 @@ export type AgentToolContext = {
   /** Read-only web search for public events near a location. */
   searchNearbyEvents?:import("@/lib/events/nearbyEvents").NearbyEventsSearch;
   /** General outside-world lookup; server checks current café AI access before each paid call. */
-  webSearch?:(query:string)=>Promise<import("../webSearch.server").WebSearchResult>;
+  webSearch?:(query:string,budget?:import("../webSearch.server").WebSearchBudget)=>Promise<import("../webSearch.server").WebSearchResult>;
   menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
