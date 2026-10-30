@@ -12,6 +12,8 @@ import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
 import {prorate,periodDays,calendarMonth} from "@/lib/calc/periods";
 import { ownerReportedDailyBreakEven, recordedDailyFixedCosts, percentToBasisPoints } from "@/lib/calc/ownerReportedBreakEven";
 import {figure,unifiedBreakEven} from "@/lib/calc/supervisorEconomics";
+import {ingredientCostFromSalesShareCents,knownCostsWithIngredientEstimateCents} from "@/lib/metrics/core/ingredients";
+import {savedValue,type SavedFact} from "@/lib/ownerFacts/inject";
 
 const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
 const empty=z.strictObject({});
@@ -23,6 +25,12 @@ const breakEvenInput=z.strictObject({
   ownerSalesDays:z.number().int().positive().nullable().optional(),
   ownerInputs:ownerInputsSchema.nullable().optional(),
 });
+const costSummaryInput=period.extend({
+  ownerIngredientPercent:z.number().min(0).max(99.99).nullable().optional(),
+});
+/** Missing keys the owner answers with one café-wide ingredient percentage. */
+const ingredientGap=(key:string)=>/^(?:productCost:|itemSalesCoverage$|historicalIngredientCostCoverage$)/u.test(key);
+export const INGREDIENT_PERCENT_FACT="ingredient_cost_percent_of_sales";
 const unavailable=(source:string,period:{from:string;to:string}|null,missing:string[]):AgentToolResult=>
   ({source,period,agentId:"leo",missing:missing.length?missing:["sourceUnavailable"]});
 export const moneyTools={
@@ -258,10 +266,11 @@ export const moneyTools={
     },
   },
   get_cost_summary:{
-    agentId:"leo",schema:period,description:"Observed business cost components; respect incomplete coverage.",
+    agentId:"leo",schema:costSummaryInput,description:"Observed business cost components; respect incomplete coverage. If items have no recipe cost and the owner gives one ingredient percentage of price for all items (e.g. \"20% of price for all\"), pass it as ownerIngredientPercent; do not ask per item. Pass null when unknown.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       if(!ctx.timezone)return unavailable("business_costs",null,["cafeTimezoneMissing"]);
-      const chosen=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
+      const input=costSummaryInput.parse(raw);
+      const chosen=resolveOwnerPeriod(input.period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(chosen.status!=="resolved")return periodChoicePayload("business_costs",chosen);
       const p={from:chosen.value.from,to:chosen.value.to};
       if(!ctx.tools.getBusinessCostSummary)return unavailable("business_costs",p,["costSummaryReaderUnavailable"]);
@@ -276,7 +285,28 @@ export const moneyTools={
           {name:{en,es,ar}[ctx.locale].MetricsNotes.itemInputsFee,value:money(costs[2])},{name:{en,es,ar}[ctx.locale].MetricsNotes.itemInputsBills,value:money(costs[3])}],
           formula:"sum" as const,result:money(s.knownTotalCents),period:p,source:"get_cost_summary",
           provenance:s.estimatedInputs.length?"estimate" as const:"recorded" as const}]:[];
-      return {source:"business_costs",period:p,agentId:"leo",missing:s.missingInputs,explain,
+      // Per-item recipe gaps become ONE café-wide question. Once the owner answers
+      // (this turn or a saved fact), show a labeled estimate and stop asking.
+      const saved=savedValue((ctx as {savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[],INGREDIENT_PERCENT_FACT);
+      const ownerPercent=input.ownerIngredientPercent??(typeof saved==="number"?saved:null);
+      const ownerBps=percentToBasisPoints(ownerPercent);
+      const hasGap=s.missingInputs.some(ingredientGap);
+      const netSales=s.coverage.coveredNetSalesCents;
+      const estimatedIngredients=hasGap&&ownerBps!==null&&netSales!==undefined&&s.completeness!=="unavailable"?
+        ingredientCostFromSalesShareCents(netSales,ownerBps):null;
+      const estimatedTotal=estimatedIngredients===null?null:knownCostsWithIngredientEstimateCents({
+        knownTotalCents:s.knownTotalCents,recordedIngredientsCents:s.components.ingredientsCents,
+        estimatedIngredientsCents:estimatedIngredients});
+      const applied=estimatedIngredients!==null&&estimatedTotal!==null;
+      const missing=hasGap?[...s.missingInputs.filter(key=>!ingredientGap(key)),
+        ...(applied?[]:[INGREDIENT_PERCENT_FACT])]:s.missingInputs;
+      return {source:"business_costs",period:p,agentId:"leo",missing,explain,
+        ...(applied?{ownerIngredientEstimate:{ingredientPercent:ownerPercent,
+          coveredNetSalesCents:netSales,ingredientsCents:estimatedIngredients,
+          knownTotalWithEstimateCents:estimatedTotal,provenance:"owner_estimate",
+          note:"Ingredients estimated as the owner's percentage of sales; recorded known total is unchanged."},
+          numberEstimates:[{value:estimatedIngredients,unit:"cents" as const,detail:"ownerIngredientEstimate"},
+            {value:estimatedTotal,unit:"cents" as const,detail:"knownTotalWithOwnerIngredientEstimate"}]}:{}),
         completeness:s.completeness,knownTotalCents:s.completeness==="unavailable"?null:s.knownTotalCents,
         // The deterministic cost engine uses zero sentinels for unknown components.
         // Never allow those sentinels to masquerade as observed zero-cost amounts.
@@ -285,7 +315,7 @@ export const moneyTools={
           loadedStaffCents:s.observed.loadedStaff?s.components.loadedStaffCents:null,
           cardFeesCents:s.observed.cardFees?s.components.cardFeesCents:null,
           runningCostsCents:s.observed.runningCosts?s.components.runningCostsCents:null,
-        },observed:s.observed,estimated:s.estimatedInputs,
+        },observed:s.observed,estimated:applied?[...s.estimatedInputs,"ownerIngredientPercent"]:s.estimatedInputs,
         coverage:{salesDays:s.coverage.salesDays,laborDays:s.coverage.laborDays,
           expectedDays:s.coverage.expectedDays,missingProductCostCount:s.coverage.missingProductCostCount,
           itemSalesCovered:s.coverage.itemSalesCovered}};

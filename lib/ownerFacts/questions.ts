@@ -11,7 +11,7 @@ const labels:Record<string,keyof typeof en.OwnerQuestions>={
  payroll:"payroll",bills:"bills",cardFee:"cardFee",payrollExtras:"payrollExtras",
  cardSalesShare:"cardSalesShare",cardTransactionsShare:"cardTransactionsShare",
  cardFixedFee:"cardFixedFee",averageTicket:"averageTicket",processor:"processor",
- itemCost:"itemCost",hours:"hours",schedule:"schedule",generic:"generic",
+ itemCost:"itemCost",ingredientPercent:"ingredientPercent",hours:"hours",schedule:"schedule",generic:"generic",
  milkBase:"milkBase",milkTarget:"milkTarget",milkNoSize:"milkNoSize",milkVolume:"milkVolume",milkBaseCost:"milkBaseCost",milkOatCost:"milkOatCost",milkTargetCost:"milkTargetCost"
 };
 export function ownerFactLabel(key:string,labelKey:string,locale:AgentLocale):string{

@@ -14,6 +14,7 @@ const entries:Record<string,FactDefinition>={
   card_average_ticket_cents:{factKey:"card_average_ticket_cents",type:"money",labelKey:"averageTicket",target:"processing_fee_rate_plans"},
   card_processor_label:{factKey:"card_processor_label",type:"text",labelKey:"processor",target:"processing_fee_rate_plans"},
   payroll_extras_monthly_cents:{factKey:"payroll_extras_monthly_cents",type:"money",labelKey:"payrollExtras",target:"businesses"},
+  ingredient_cost_percent_of_sales:{factKey:"ingredient_cost_percent_of_sales",type:"percent",labelKey:"ingredientPercent",target:"owner_facts"},
   unit_cost_cents:{factKey:"unit_cost_cents",type:"money",labelKey:"itemCost",target:"owner_facts"},
   payroll:{factKey:"monthly_payroll_cents",type:"money",labelKey:"payroll",target:"owner_facts"},
   payrollMissing:{factKey:"monthly_payroll_cents",type:"money",labelKey:"payroll",target:"owner_facts"},

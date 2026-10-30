@@ -3565,6 +3565,7 @@
     "cardFee": "el porcentaje de comisión por tarjeta",
     "payrollExtras": "los extras mensuales de nómina",
     "itemCost": "el coste del producto",
+    "ingredientPercent": "costo de ingredientes como % del precio (para cada producto sin receta)",
     "hours": "el horario de apertura",
     "saved": "He guardado estas respuestas para tu cafetería.",
     "savedBut": "He guardado la respuesta. Algunas cifras necesitan un plan de comisiones o desglose de gastos completo.",

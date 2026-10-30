@@ -163,6 +163,7 @@ export function businessCostSummaryFromSnapshot(snapshot:BusinessSnapshot,period
       soldProductIds:soldItems.map(item=>item.id),
       missingProductCostIds:missingProducts.map(item=>item.id),
       estimatedProductCostIds:estimatedProducts.map(item=>item.id),
-      missingOperatingCategories:missingExpenses.map(line=>({code:line.categoryCode,label:line.label})).slice(0,8)},
+      missingOperatingCategories:missingExpenses.map(line=>({code:line.categoryCode,label:line.label})).slice(0,8),
+      coveredNetSalesCents:salesDays.reduce((sum,day)=>sum+day.netSalesCents,0)},
   };
 }

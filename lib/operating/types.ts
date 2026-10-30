@@ -15,7 +15,9 @@ export type BusinessCostSummary = {
     historicalIngredientCostsProven:boolean;
     /** Evidence-only identifiers; never sent to the owner-facing text renderer. */
     soldProductIds:string[];missingProductCostIds:string[];estimatedProductCostIds:string[];
-    missingFeeDays:number;missingOperatingCategories:Array<{code:string;label:string}>};
+    missingFeeDays:number;missingOperatingCategories:Array<{code:string;label:string}>;
+    /** Net sales on the sales-covered days used for ingredients and fees. */
+    coveredNetSalesCents?:number};
 };
 
 /** Period-specific, verified output from the existing deterministic profit functions.

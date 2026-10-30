@@ -3565,6 +3565,7 @@
     "cardFee": "the card processing percentage",
     "payrollExtras": "monthly payroll extras",
     "itemCost": "the item cost",
+    "ingredientPercent": "ingredient cost as a % of the price (for every item without a recipe)",
     "hours": "opening hours",
     "saved": "I've saved these answers for this café.",
     "savedBut": "I've saved the answer. Some screen figures need a complete rate plan or cost breakdown.",
