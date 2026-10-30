@@ -5,6 +5,22 @@ Each item below is one small PR, in order. Do not start an item from "Next" befo
 Each item says what is wrong, where, and how to check it. Before starting, read AGENTS.md and the
 rules at the end of this section. One item = one small PR. Tick it here in the same PR.
 
+### Owner priorities (Oct 30) — do these first, in this order
+1. [ ] **"Where is my money going?"** The chat can already split costs into ingredients, staff, card
+   fees and bills (`get_cost_summary`), recorded expenses by category (`get_expenses`) and recurring
+   bills (`get_bills`), and the Money screen's Profit & costs tab shows the same split. Gaps: the
+   system prompt in `lib/ai/agent/loop.server.ts` never points this question at those tools; there is
+   no golden owner question for it; nothing ranks the biggest single expenses; Today is blank before
+   closeout (see "Supervisor chat start" below). Fix: add it as a golden owner question with exact
+   numbers checked on the chat and Money screen paths, add the prompt mapping, then ask it on the test
+   café. Missing buckets must say "missing", never zero.
+2. [ ] **Excel sheet.** Owner to confirm what it is: an export of the café's numbers to Excel, or
+   importing an owner's Excel sheet (costs, staff, menu)? Write the scope here before starting.
+3. [ ] **Event tracker and updates.** Owner to confirm what it is: tracking café events (catering,
+   holidays, local events) and their effect on sales, or following running experiments/monitors with
+   updates (Operating Board "Running" + inbox, AGENTS.md section 4)? Must use the one existing
+   experiment/monitor system and inbox; no second system. Write the scope here before starting.
+
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
 - [ ] Decide: may the chat's ad-hoc data queries (`describe_data`/`query_data`, canonical `cv_*` views) answer sales/fee numbers, or only the main tools? Today they are a second path.
