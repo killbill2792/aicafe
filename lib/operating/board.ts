@@ -71,6 +71,8 @@ export function buildOperatingBoard(proposals:readonly BoardProposalRow[],report
   today:string):OperatingBoard{
   const byId=new Map(proposals.map(p=>[p.id,p]));
   const running=proposals.flatMap((p):BoardRunning[]=>{
+    // Event insights and their reports live only in the dedicated Events panel.
+    if(p.capability_id===EVENT_CAPABILITY)return [];
     const effect=priceEffect(p.canonical_effect_payload,p.capability_id);
     if(!effect)return [];
     if(p.status==="manual_pending")
@@ -86,6 +88,7 @@ export function buildOperatingBoard(proposals:readonly BoardProposalRow[],report
   const cutoff=Date.parse(today+"T00:00:00Z")-RECENT_REPORT_DAYS*86_400_000;
   const recentReports=reports.flatMap((r):BoardReport[]=>{
     const p=byId.get(r.proposal_id);
+    if(p?.capability_id===EVENT_CAPABILITY)return [];
     const effect=p?priceEffect(p.canonical_effect_payload,p.capability_id):null;
     if(!p||!effect||(r.status!=="complete"&&r.status!=="insufficient_evidence"))return [];
     if(!(Date.parse(r.generated_at)>=cutoff))return [];
