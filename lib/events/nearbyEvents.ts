@@ -68,7 +68,9 @@ export function nearbyEventsPrompt(location:string,from:string,to:string,
     "Only include events whose date in this window is confirmed by a page you found; give that page as sourceUrl. "+
     "Provide the venue address and local start/end times when a source confirms them; otherwise use null. "+
     "Never guess or invent an event, a date or a crowd size; use expectedCrowd unknown when not stated. "+
-    "Up to "+MAX_EVENTS+" events, the ones most likely to affect a café first. If nothing is found, return an empty list.";
+    "Return at most "+Math.min(MAX_EVENTS,5)+" confirmed events per search, prioritizing those most likely "+
+    "to affect this café. Keep each field concise to fit the response limit. No explanation, only JSON. "+
+    "If nothing is found, return an empty list.";
 }
 
 /** Keep only well-formed events inside [from, to], deduplicated, at most MAX_EVENTS. */
@@ -79,17 +81,22 @@ export function parseNearbyEvents(text:string,from:string,to:string):NearbyEvent
     (raw as {events:unknown[]}).events:null;
   if(!list)return null;
   const seen=new Set<string>(),out:NearbyEvent[]=[];
+  let inWindow=0;
   for(const item of list){
     const parsed=eventSchema.safeParse(item);
     if(!parsed.success)continue;
     const e=parsed.data,end=e.endDate&&e.endDate>=e.startDate?e.endDate:e.startDate;
     if(end<from||e.startDate>to)continue; // outside the asked window
+    inWindow++;
     const key=e.name.toLowerCase()+"|"+e.startDate;
     if(seen.has(key))continue;
     seen.add(key);
     out.push({...e,endDate:end});
     if(out.length>=MAX_EVENTS)break;
   }
+  // A nonempty but entirely unusable list is not evidence that no events exist.
+  // Only an explicitly empty array is a verified empty answer.
+  if(list.length>0&&inWindow===0)return null;
   return out;
 }
 
