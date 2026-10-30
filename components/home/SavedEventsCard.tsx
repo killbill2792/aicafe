@@ -86,7 +86,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
     const response=await fetch("/api/events/saved",{cache:"no-store",signal});
     if(!response.ok)throw new Error("events_unavailable");
     const data=await response.json() as Timeline;
-    if(!Array.isArray(data.events)||!Array.isArray(data.plans)||!/^\d{4}-\d{2}-\d{2}$/.test(data.today))
+    if(!Array.isArray(data.events)||!Array.isArray(data.plans)||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(data.today))
       throw new Error("invalid_events");
     setTimeline(data);
   }
@@ -97,7 +97,7 @@ export default function SavedEventsCard({locale,disabled,onChatAboutDay}:{
         if(!response.ok)throw new Error("events_unavailable");
         const data=await response.json() as Timeline;
         if(!Array.isArray(data.events)||!Array.isArray(data.plans)||
-          !/^\\d{4}-\\d{2}-\\d{2}$/.test(data.today))throw new Error("invalid_events");
+          !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(data.today))throw new Error("invalid_events");
         if(!controller.signal.aborted)setTimeline(data);
       }).catch(()=>{if(!controller.signal.aborted)setError(true);});
     return ()=>controller.abort();
