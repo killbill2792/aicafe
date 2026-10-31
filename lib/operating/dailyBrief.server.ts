@@ -5,15 +5,22 @@ import {SnapshotCafeStateService} from "./cafeState";
 import {briefDue,briefMessageId,briefText,type BriefLocale} from "./dailyBrief";
 
 export type BriefRun={checked:number;sent:number;skipped:number;failed:number};
+/** PR A will supply a verified, default-OFF durable-outbox adapter after it merges.
+ * A callback is never a provider send and must be idempotent for retries. */
+export type BriefOutboxHook=(input:{
+  businessId:string;ownerUserId:string;threadId:string;websiteMessageId:string;
+  businessName:string;currency:string|null;today:string;yesterday:string;now:Date;
+  websiteText:string;
+})=>Promise<void>;
 
 /** Morning brief: one short message per café per day in the owner's latest
  * thread. Yesterday's numbers come from the same reader as the chat's
  * "how did yesterday go" answer. Off unless DAILY_BRIEF_ENABLED=true. */
-export async function sendDailyBriefs(db:SupabaseClient,now=new Date()):Promise<BriefRun>{
+export async function sendDailyBriefs(db:SupabaseClient,now=new Date(),outbox?:BriefOutboxHook):Promise<BriefRun>{
   const run:BriefRun={checked:0,sent:0,skipped:0,failed:0};
   const states=new SnapshotCafeStateService(async(id,period)=>getBusinessSnapshotFromDb(db,id,period??"month"));
   for(let offset=0;;offset+=100){
-    const {data,error}=await db.from("businesses").select("id,timezone,currency,is_demo")
+    const {data,error}=await db.from("businesses").select("id,name,timezone,currency,is_demo")
       .order("id",{ascending:true}).range(offset,offset+99);
     if(error)throw new Error("businesses_unavailable");
     for(const b of data??[]){
@@ -22,7 +29,7 @@ export async function sendDailyBriefs(db:SupabaseClient,now=new Date()):Promise<
       if(!when.due)continue;
       run.checked++;
       try{
-        if(await sendOne(db,states,b as {id:string;currency:string|null},when))run.sent++;else run.skipped++;
+        if(await sendOne(db,states,b as {id:string;name?:string;currency:string|null},when,now,outbox))run.sent++;else run.skipped++;
       }catch{run.failed++;}
     }
     if((data??[]).length<100)break;
@@ -30,12 +37,12 @@ export async function sendDailyBriefs(db:SupabaseClient,now=new Date()):Promise<
   return run;
 }
 
-async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:string;currency:string|null},
-  when:{today:string;yesterday:string}):Promise<boolean>{
+async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:string;name?:string;currency:string|null},
+  when:{today:string;yesterday:string},now:Date,outbox?:BriefOutboxHook):Promise<boolean>{
   const messageId=briefMessageId(b.id,when.today);
-  const sent=await db.from("ai_messages").select("id").eq("id",messageId).maybeSingle();
+  const sent=await db.from("ai_messages").select("id,structured_content").eq("id",messageId).maybeSingle();
   if(sent.error)throw sent.error;
-  if(sent.data)return false;
+  if(sent.data&&!outbox)return false;
   const owner=await db.from("memberships").select("user_id").eq("business_id",b.id).eq("role","owner")
     .order("created_at",{ascending:true}).limit(1).maybeSingle();
   if(owner.error)throw owner.error;
@@ -60,6 +67,7 @@ async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:s
     yesterday:p.available?{netSalesCents:p.value.netSalesCents,
       totalCostsCents:p.value.totalCostsCents,ownerProfitCents:p.value.ownerProfitCents,
       complete:state.businessCosts.completeness==="complete"}:null});
+  if(!sent.data){
   const inserted=await db.from("ai_messages").insert({
     id:messageId,business_id:b.id,thread_id:thread.data.id,owner_user_id:owner.data.user_id,author_user_id:null,
     role:"supervisor",content_type:"blocks",text_content:null,structured_content:[{type:"text",text}],
@@ -80,5 +88,16 @@ async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:s
     updated_at:new Date().toISOString()}).eq("business_id",b.id).eq("kind","daily_brief")
     .eq("status","watching").neq("id",taskId);
   if(retired.error)throw retired.error;
-  return true;
+  }
+  // On a retry the existing website message is authoritative. Do not repost it;
+  // let PR A's unique recipient/day outbox decide whether delivery is already queued.
+  if(outbox){
+    const stored=sent.data?.structured_content as Array<{type?:string;text?:string}>|null|undefined;
+    const websiteText=sent.data?stored?.find(block=>block.type==="text")?.text:text;
+    if(!websiteText)throw new Error("daily_brief_website_message_missing");
+    await outbox({businessId:b.id,ownerUserId:owner.data.user_id,threadId:thread.data.id,
+      websiteMessageId:messageId,businessName:b.name??"",currency:b.currency,
+      today:when.today,yesterday:when.yesterday,now,websiteText});
+  }
+  return !sent.data;
 }
