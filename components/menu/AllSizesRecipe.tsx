@@ -6,7 +6,8 @@ import {useRouter} from "@/i18n/navigation";
 import {saveProductRecipes} from "@/lib/actions/pantry";
 import NewPantryInlineRow from "./NewPantryInlineRow";
 import {setIngredientUnitConversion} from "@/lib/actions/ingredientUnitConversions";
-import {suggestedRecipeMeasure} from "@/lib/calc/suggestedRecipeMeasures";
+import {suggestedRecipeMeasure,suggestedIngredientDensity} from "@/lib/calc/suggestedRecipeMeasures";
+import {densityFromStoredRecipe} from "@/lib/calc/recipeUnits";
 import {updateMenuItemPrice,setMenuItemActive} from "@/lib/actions/menuItems";
 import type {UnpricedMenuSize} from "@/lib/data/getUnpricedProductSizes";
 import {swapIngredient} from "@/lib/actions/pantry";
@@ -32,7 +33,8 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  const [swapSizeId,setSwapSizeId]=useState<string|null>(null);
  const [quantityInputs,setQuantityInputs]=useState<Record<string,string>>({});
  const [calibration,setCalibration]=useState<Record<string,string>>({});
- const [newRowAmount,setNewRowAmount]=useState("1"),[newRowUnit,setNewRowUnit]=useState<RecipeDisplayUnit>("ml");
+ const [densityInputs,setDensityInputs]=useState<Record<string,string>>({});
+ const [newRowAmount,setNewRowAmount]=useState("1"),[newRowUnit,setNewRowUnit]=useState<RecipeDisplayUnit>("ml"),[newRowDensity,setNewRowDensity]=useState("");
  const [newPantry,setNewPantry]=useState(false);
  const selectedItems=items.filter(i=>i.id===focusedSize), ingredientRows=[...new Map(selectedItems.flatMap(item=>item.recipe.map(line=>[line.ingredientId,line.ingredientName] as const))).entries()];
  const hasUnsavedChanges=Object.entries(drafts).some(([key,d])=>{
@@ -41,6 +43,22 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  });
  const mobileColumns={gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,selectedItems.length))},minmax(0,1fr))`};
  const invalidQuantity=Object.values(quantityInputs).some(value=>value.trim()===""||!Number.isFinite(Number(value))||Number(value)<=0);
+ function requiresDensity(base:"g"|"ml"|"each",unit:RecipeDisplayUnit){
+  return (base==="ml"&&unit==="g")||(base==="g"&&(unit==="ml"||unit==="fl_oz"));
+ }
+ function densityFor(item:MenuItemForEdit,line:MenuItemForEdit["recipe"][number],unit:RecipeDisplayUnit):number|undefined{
+  if(!requiresDensity(line.baseUnit,unit))return undefined;
+  const key=k(item.id,line.ingredientId),userInput=densityInputs[key];
+  if(userInput!==undefined){
+   const n=Number(userInput);return userInput.trim()!==""&&Number.isFinite(n)&&n>0&&n<=5?n:undefined;
+  }
+  const existing=densityFromStoredRecipe(line.baseUnit,line.quantity,(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,line.displayQuantity??line.quantity);
+  return existing??suggestedIngredientDensity(line.ingredientName)??undefined;
+ }
+ const invalidDensity=selectedItems.some(item=>item.recipe.some(line=>{
+  const draft=drafts[k(item.id,line.ingredientId)],unit=(draft?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit;
+  return !draft?.removed&&requiresDensity(line.baseUnit,unit)&&densityFor(item,line,unit)===undefined;
+ }));
  function conversionFor(id:string,unit:RecipeDisplayUnit):IngredientUnitConversion[]{
   const saved=conversions[id]??[],raw=calibration[id+":"+unit];
   if(!needsIngredientConversion(unit)||raw===undefined)return saved;
@@ -80,6 +98,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
     costCents:line.costCents,displayUnit:d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,
     displayQuantity:d?.quantity??line.displayQuantity??line.quantity,
     removed:d?.removed??false,conversions:conversionFor(line.ingredientId,d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit),
+    densityGramsPerMl:densityFor(item,line,(d?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit),
    };
   }));
   const cost=preview.costCents??(item.costSource==="owner_total"?item.ownerTotalCostCents??null:null);
@@ -100,22 +119,28 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
     ...item.recipe.flatMap(line=>{
       const d=drafts[k(item.id,line.ingredientId)];
       if(d?.removed||d?.quantity===0)return [];
-      return [{ingredientId:line.ingredientId,displayUnit:(d?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit,displayQuantity:d?.quantity??line.displayQuantity??line.quantity}];
+      const displayUnit=(d?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit;
+      return [{ingredientId:line.ingredientId,displayUnit,displayQuantity:d?.quantity??line.displayQuantity??line.quantity,
+        ...(requiresDensity(line.baseUnit,displayUnit)?{densityGramsPerMl:densityFor(item,line,displayUnit)}:{})}];
     }),
     ...(newIngredientId?(()=>{
       const ingredient=ingredients.find(i=>i.id===newIngredientId)??(newIngredientBase?{id:newIngredientId!,baseUnit:newIngredientBase,name:""}:null);
-      return ingredient&&!item.recipe.some(line=>line.ingredientId===ingredient.id)?[{ingredientId:ingredient.id,displayUnit:newIngredientBase??newRowUnit,displayQuantity:newIngredientBase?1:Number(newRowAmount)}]:[];
+      return ingredient&&!item.recipe.some(line=>line.ingredientId===ingredient.id)?[{ingredientId:ingredient.id,
+        displayUnit:newIngredientBase??newRowUnit,displayQuantity:newIngredientBase?1:Number(newRowAmount),
+        ...(requiresDensity(ingredient.baseUnit,newRowUnit)?{densityGramsPerMl:Number(newRowDensity)}:{})}]:[];
     })():[])
    ],
   }));
  }
- function save(){if(!selectedItems[0]||invalidQuantity)return;setError("");start(async()=>{
+ function save(){if(!selectedItems[0]||invalidQuantity||invalidDensity){if(invalidDensity)setError(t("densityNeeded"));return;}setError("");start(async()=>{
   if(!await saveMeasurements())return;
   const result=await saveProductRecipes({productId:selectedItems[0].id,sizes:recipeChanges()});
   if(!result.ok){setError(t("error"));return;}
   setSaved(true);setToast("");router.refresh();
  });}
  function append(){if(!add||!selectedItems[0]||selectedItems.length===0||!(Number(newRowAmount)>0))return;
+  const ingredient=ingredients.find(i=>i.id===add);
+  if(ingredient&&requiresDensity(ingredient.baseUnit,newRowUnit)&&!(Number(newRowDensity)>0&&Number(newRowDensity)<=5)){setError(t("densityNeeded"));return;}
   setError("");start(async()=>{
    const newIng=ingredients.find(i=>i.id===add);
    if(!await saveMeasurements(newIng?{id:newIng.id,name:newIng.name,base:newIng.baseUnit,unit:newRowUnit}:undefined))return;
@@ -167,7 +192,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  /** Use the one canonical unit-compatibility helper; no parallel conversion rules in the UI. */
  function availableUnits(line:MenuItemForEdit["recipe"][number]):RecipeDisplayUnit[]{
   if(line.baseUnit==="each")return ["each"];
-  return [...new Set([...recipeDisplayUnitsFor(line.baseUnit,conversions[line.ingredientId]??[]),"shot","pump"])] as RecipeDisplayUnit[];
+  return [...new Set([...recipeDisplayUnitsFor(line.baseUnit,conversions[line.ingredientId]??[]),"g","ml","fl_oz","shot","pump"])] as RecipeDisplayUnit[];
  }
  function unitLabel(unit:RecipeDisplayUnit){
   return ({shot:units("recipeUnitShot"),pump:units("recipeUnitPump"),g:units("recipeUnitG"),ml:units("recipeUnitMl"),fl_oz:units("recipeUnitFlOz"),each:units("recipeUnitEach")} as Record<RecipeDisplayUnit,string>)[unit];
@@ -189,8 +214,20 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
     const suggested=measureDefault(id,line.ingredientName,line.baseUnit,unit);
     if(suggested!==null)setCalibration(prev=>({...prev,[id+":"+unit]:String(suggested)}));
    }
+   if(requiresDensity(line.baseUnit,unit)&&densityInputs[key]===undefined){
+    const suggested=densityFor(item,line,unit);
+    if(suggested!==undefined)setDensityInputs(prev=>({...prev,[key]:String(suggested)}));
+   }
   }} className="min-h-12 w-[95px] shrink-0 rounded-lg border border-line bg-card px-1 text-[15px]">{availableUnits(line).map(u=><option key={u} value={u}>{unitLabel(u)}</option>)}</select>
  </div>
+  {requiresDensity(line.baseUnit,actual.unit)&&<label className="mt-1 flex flex-wrap items-center gap-1 text-[13px] text-ink-muted">
+   <span>1 ml ≈</span><input type="number" step="any" inputMode="decimal" min=".000001" max="5"
+     aria-label={t("densityValue",{ingredient:line.ingredientName})}
+     value={densityInputs[key]??String(densityFor(item,line,actual.unit)??"")}
+     onChange={e=>setDensityInputs(prev=>({...prev,[key]:e.target.value}))}
+     className="min-h-12 w-24 rounded-lg border border-line bg-card px-2 text-[17px]"/>
+   <span>g · {t("measureSuggested")}</span>
+  </label>}
   {needsIngredientConversion(actual.unit)&&pendingMeasure(id,actual.unit)&&<label className="mt-1 flex flex-wrap items-center gap-1 text-[13px] text-ink-muted">
    <span>1 {unitLabel(actual.unit)} =</span>
    <input type="number" inputMode="decimal" min=".000001" step="any" aria-label={t("measureValue",{unit:unitLabel(actual.unit),ingredient:line.ingredientName})}
@@ -221,7 +258,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  <div className="space-y-2 lg:hidden">{ingredientRows.map(([id,name])=><div key={id} className="rounded-2xl border border-line bg-card p-3"><div className="mb-2 flex min-h-12 items-center gap-2"><strong className="min-w-0 flex-1 break-words">{name}</strong><button type="button" onClick={()=>beginAddRow(id)} aria-label={t("addRecipeRowAfter",{name})} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Plus size={18}/></button><button type="button" onClick={()=>openSwap(id)} className="min-h-12 rounded-xl bg-paper px-2 text-[13px] font-bold text-accent-text"><ArrowLeftRight size={15} className="me-1 inline"/>{t("swap")}</button><button type="button" aria-label={t("remove")} onClick={()=>removeRow(id)} className="flex min-h-12 min-w-12 items-center justify-center rounded-full bg-paper"><X size={17}/></button></div>{cells(id)}{add!==null&&addAfter===id&&<div className="mt-3">{addPicker()}</div>}</div>)}</div>
  <div className="hidden overflow-x-auto rounded-2xl border border-line bg-card lg:block"><table className="w-full table-fixed"><thead><tr className="border-b border-line bg-paper"><th className="w-[28%] p-3 text-start">{t("name")}</th>{selectedItems.map(item=><th key={item.id} className="p-3">{item.sizeLabel??item.name}</th>)}</tr></thead><tbody>{ingredientRows.map(([id,name])=><Fragment key={id}><tr className="border-b border-line"><th className="p-3 text-start"><div className="flex items-center gap-2"><span className="min-w-0 flex-1">{name}</span><button type="button" onClick={()=>beginAddRow(id)} aria-label={t("addRecipeRowAfter",{name})} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Plus size={18}/></button></div><div><button type="button" className="min-h-12 text-sm text-accent-text" onClick={()=>openSwap(id)}>{t("swap")}</button><button type="button" className="ms-2 min-h-12 text-sm text-warn" onClick={()=>removeRow(id)}>{t("remove")}</button></div></th>{selectedItems.map(item=><td key={item.id} className="p-2">{cells(id,item)}</td>)}</tr>{add!==null&&addAfter===id&&<tr><td colSpan={selectedItems.length+1} className="p-2">{addPicker()}</td></tr>}</Fragment>)}</tbody></table></div>
  {error&&<p role="alert" className="mt-2 text-warn">{error}</p>}{saved&&<p role="status" className="mt-2 text-good">{t("saved")}</p>}
- <div className="sticky bottom-24 z-20 mt-6 rounded-2xl border border-line bg-card p-3 shadow-xl"><h2 className="mb-3 font-headline text-xl font-extrabold">{t("whatYouKeep")}</h2><div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-col">{selectedItems.map(item=>{const p=prices[item.id];return <div key={item.id} className="min-w-0 rounded-xl bg-paper p-2 text-center text-[13px]"><p className="font-bold">{item.sizeLabel??item.name}</p><p>{t("cost")} {p?.cost===null?"—":formatCents(p.cost)}</p><p>{t("price")} {formatCents(item.priceCents)}</p><p className="font-extrabold text-good">{p?.summary.keepCents===null?"—":t("keep",{amount:formatCents(p.summary.keepCents),percent:p.summary.keepPercent ?? 0})}</p>{p?.estimated&&<p className="text-warn">{t("estimate")}</p>}</div>})}</div><button type="button" onClick={save} disabled={pending||invalidQuantity||selectedItems.length===0} className="mt-3 min-h-14 w-full rounded-xl bg-accent font-bold text-on-accent disabled:opacity-50">{t("saveItem",{name:items[0]?.baseName??""})}</button></div>
+ <div className="sticky bottom-24 z-20 mt-6 rounded-2xl border border-line bg-card p-3 shadow-xl"><h2 className="mb-3 font-headline text-xl font-extrabold">{t("whatYouKeep")}</h2><div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-col">{selectedItems.map(item=>{const p=prices[item.id];return <div key={item.id} className="min-w-0 rounded-xl bg-paper p-2 text-center text-[13px]"><p className="font-bold">{item.sizeLabel??item.name}</p><p>{t("cost")} {p?.cost===null?"—":formatCents(p.cost)}</p><p>{t("price")} {formatCents(item.priceCents)}</p><p className="font-extrabold text-good">{p?.summary.keepCents===null?"—":t("keep",{amount:formatCents(p.summary.keepCents),percent:p.summary.keepPercent ?? 0})}</p>{p?.estimated&&<p className="text-warn">{t("estimate")}</p>}</div>})}</div><button type="button" onClick={save} disabled={pending||invalidQuantity||invalidDensity||selectedItems.length===0} className="mt-3 min-h-14 w-full rounded-xl bg-accent font-bold text-on-accent disabled:opacity-50">{t("saveItem",{name:items[0]?.baseName??""})}</button></div>
  {toast&&<div role="status" className="fixed bottom-40 start-4 z-30 flex items-center gap-2 rounded-2xl bg-ink px-4 py-3 text-card">{t("removed",{name:toast})} · <button type="button" onClick={undo} className="min-h-10 font-bold underline">{t("undo")}</button></div>}
  {priceDraft&&<div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"><div className="w-full max-w-sm rounded-t-2xl bg-card p-5 text-ink sm:rounded-2xl"><h2 className="mb-3 font-headline text-xl font-bold">{t("setPrice")}</h2><label className="block font-bold">{t("itemPrice")}<input autoFocus type="number" min=".01" step=".01" value={draftPrice} onChange={e=>setDraftPrice(e.target.value)} className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label><div className="mt-4 flex gap-2"><button type="button" className="min-h-12 flex-1 rounded-xl border border-line" onClick={()=>setPriceDraft(null)}>{t("cancel")}</button><button type="button" disabled={pending||!(Number(draftPrice)>0)} className="min-h-12 flex-1 rounded-xl bg-accent text-on-accent" onClick={saveDraftSizePrice}>{t("save")}</button></div></div></div>}
  {sizeDialog&&items[0]&&<AddSizeDialog baseName={items[0].baseName} category={items[0].category} menuGroup={items[0].menuGroup} siblingSizes={items.map(item=>({id:item.id,name:item.name,sizeLabel:item.sizeLabel,priceCents:item.priceCents}))} onDone={()=>{setSizeDialog(false);router.refresh();}} onClose={()=>setSizeDialog(false)}/>}
