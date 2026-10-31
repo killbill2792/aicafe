@@ -1,6 +1,8 @@
 import {describe,expect,it,vi,beforeEach} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {briefDue,briefMessageId,briefText} from "./dailyBrief";
+import {briefDue,briefMessageId,briefText,briefWindow} from "./dailyBrief";
+vi.mock("@/lib/data/dailyFacts.server",()=>({readDailyFactRows:vi.fn(async()=>[
+  {business_date:"2026-10-28",sales_data_status:"actual",net_sales_cents:240000}])}));
 
 const state={profitability:{available:true,value:{netSalesCents:240_000,totalCostsCents:160_000,ownerProfitCents:80_000}},
   businessCosts:{completeness:"complete"}};
@@ -10,10 +12,20 @@ import {sendDailyBriefs} from "./dailyBrief.server";
 
 const zone="America/Los_Angeles";
 describe("daily brief text and timing",()=>{
-  it("is due between 8:00 and 12:00 café time and reports yesterday",()=>{
-    expect(briefDue(new Date("2026-10-29T15:30:00Z"),zone)).toEqual({due:true,today:"2026-10-29",yesterday:"2026-10-28"});
-    expect(briefDue(new Date("2026-10-29T14:59:00Z"),zone).due).toBe(false);
-    expect(briefDue(new Date("2026-10-29T19:00:00Z"),zone).due).toBe(false);
+  it("uses 05:50–06:00 café-local publication through fall and spring DST",()=>{
+    const at=(time:string)=>new Date(time);
+    expect(briefDue(at("2026-10-29T11:59:00Z"),zone).due).toBe(false); // 04:59
+    expect(briefDue(at("2026-10-29T12:10:00Z"),zone).due).toBe(true);  // 05:10 readiness
+    expect(briefDue(at("2026-10-29T12:50:00Z"),zone)).toEqual(
+      {due:true,today:"2026-10-29",yesterday:"2026-10-28"});
+    expect(briefWindow(at("2026-10-29T12:50:00Z"),zone))
+      .toEqual({readyToPublish:true,beforeDeadline:true,fallback:false});
+    expect(briefWindow(at("2026-10-29T13:00:00Z"),zone))
+      .toEqual({readyToPublish:true,beforeDeadline:false,fallback:true});
+    expect(briefDue(at("2026-10-29T13:23:00Z"),zone).due).toBe(false);
+    expect(briefDue(at("2026-11-01T13:50:00Z"),zone).today).toBe("2026-11-01");
+    expect(briefWindow(at("2026-11-01T13:50:00Z"),zone).beforeDeadline).toBe(true);
+    expect(briefDue(at("2027-03-14T12:50:00Z"),zone).today).toBe("2027-03-14");
   });
   it("has one stable message id per café and day",()=>{
     expect(briefMessageId("a","2026-10-29")).toBe(briefMessageId("a","2026-10-29"));
@@ -31,6 +43,8 @@ describe("daily brief text and timing",()=>{
     expect(briefText({locale:"en",currency:null,needsOwner:0,
       yesterday:{netSalesCents:0,totalCostsCents:5_000,ownerProfitCents:-5_000,complete:true}}))
       .toContain("Your café currency isn't set, so these amounts have no currency.");
+    expect(briefText({locale:"en",currency:"USD",needsOwner:0,yesterday:null,
+      verifiedNetSalesCents:139262})).toContain("net sales $1,392.62. Cost coverage is incomplete.");
     expect(briefText({locale:"es",currency:"EUR",needsOwner:0,yesterday:null}))
       .toBe("Buenos días. Las ventas de ayer todavía no han llegado. Nada te necesita ahora mismo.");
   });
@@ -55,7 +69,7 @@ function fakeDb(opts:{already?:boolean;thread?:boolean}={}){
   return {db:{from:q} as unknown as SupabaseClient,inserts};
 }
 describe("sending the daily brief",()=>{
-  const morning=new Date("2026-10-29T15:30:00Z");
+  const morning=new Date("2026-10-29T12:50:00Z");
   beforeEach(()=>vi.clearAllMocks());
   it("posts one supervisor message in the owner's latest thread, never for demo cafés",async()=>{
     const {db,inserts}=fakeDb();
