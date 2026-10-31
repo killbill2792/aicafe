@@ -144,6 +144,7 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
     mode,asOf,periodEnd:mode==="today"?asOf:mode==="month_to_date"?
       (lastClosed??asOf):monthEnd,forecastLabor,todayLaborReady,
     observedFeesCents:observedFeeCents,
+    feeRateOverridden:options.feeRateOverride!==undefined,
     historicalFeeBasis:feeResult.basis,
     historicalActualFeeDays:feeResult.actualDays,
     historicalEstimatedFeeDays:feeResult.estimatedDays,
