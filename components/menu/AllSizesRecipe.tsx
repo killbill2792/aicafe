@@ -3,7 +3,7 @@ import {Fragment,useEffect,useState,useTransition} from "react";
 import {useTranslations} from "next-intl";
 import {Plus,X,ArrowLeftRight,ArrowUp,ArrowDown} from "lucide-react";
 import {insertRecipeRowAfter,moveRecipeRow} from "@/lib/menu/recipeRowOrder";
-import {hasPendingRecipeMeasurements,planRecipeSizeSwitch} from "@/lib/menu/recipeDraftGuard";
+import {hasPendingRecipeMeasurements,planRecipeSizeSwitch,resolveRecipeCalibration} from "@/lib/menu/recipeDraftGuard";
 import {useRouter} from "@/i18n/navigation";
 import {saveProductRecipes} from "@/lib/actions/pantry";
 import NewPantryInlineRow from "./NewPantryInlineRow";
@@ -156,8 +156,8 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
    // An existing recipe with missing calibration cannot silently gain a
    // guessed conversion merely because the owner saved another ingredient.
    if(raw===undefined&&!isNewSelection){setError(t("measureNeeded"));return false;}
-   const factor=Number(raw??measureDefault(entry.id,entry.name,entry.base,entry.unit));
-   if(raw===""||!Number.isFinite(factor)||factor<=0){setError(t("measureNeeded"));return false;}
+   const factor=resolveRecipeCalibration(raw,measureDefault(entry.id,entry.name,entry.base,entry.unit));
+   if(factor===null){setError(t("measureNeeded"));return false;}
    const saved=await setIngredientUnitConversion({ingredientId:entry.id,unit:entry.unit,baseUnitsPerUnit:factor});
    if(!saved.ok){setError(t("measureSaveError"));return false;}
   }
