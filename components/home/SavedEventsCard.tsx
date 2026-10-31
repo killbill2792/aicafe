@@ -2,7 +2,7 @@
 
 import {useCallback,useEffect,useMemo,useState} from "react";
 import {createTranslator} from "next-intl";
-import {CalendarDays,ChevronLeft,ChevronRight,X} from "lucide-react";
+import {CalendarDays,ChevronLeft,ChevronRight,Lightbulb,X} from "lucide-react";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -16,6 +16,17 @@ type Timeline=SavedEventTimeline&{today:string;currency?:string|null};
 type Tab="past"|"now"|"upcoming";
 type Panel="events"|"day"|null;
 type Action={area:string;action:string;reason:string};
+
+/** Suggestions are read-only advice, never actionable checkboxes. */
+export function EventAdviceItem({action}:{action:Action}){
+  return <li className="flex min-w-0 items-start gap-3 rounded-xl border border-line bg-surface2 p-3">
+    <Lightbulb aria-hidden="true" size={22} className="mt-0.5 shrink-0 text-accent-text"/>
+    <div className="min-w-0">
+      <h5 className="break-words font-semibold" dir="auto">{action.action}</h5>
+      <p className="mt-1 break-words text-ink-muted" dir="auto">{action.reason}</p>
+    </div>
+  </li>;
+}
 type SavedQuestion={question:string;options:string[]};
 type Message={role:string;blocks:unknown[]|null};
 
@@ -371,11 +382,8 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
               <PlanHours plan={plan} t={t}/>
               {actions.length>0&&<div className="space-y-2">
                 <h4 className="font-bold">{t("recommendations")}</h4>
-                <div className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
-                  <article key={index} className="min-w-0 rounded-xl border border-line bg-surface2 p-3">
-                    <h5 className="break-words font-semibold" dir="auto">{action.action}</h5>
-                    <p className="mt-2 break-words text-ink-muted" dir="auto">{action.reason}</p>
-                  </article>)}</div>
+                <ul className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
+                  <EventAdviceItem key={index} action={action}/>)}</ul>
               </div>}
               {chosen===today&&liveEventHeadline(plan,chosen,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
                 <h4 className="font-bold">{t("liveObservations")}</h4>
