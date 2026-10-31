@@ -25,12 +25,17 @@ export const MAX_EVENTS=8;
 const nullableText=(max:number)=>z.union([z.string(),z.null()]).transform(v=>{
   const t=v?.replace(/\s+/gu," ").trim();return t?t.slice(0,max):null;});
 const isoDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).refine(d=>!Number.isNaN(Date.parse(d+"T00:00:00Z")));
+// Unknown optional dates/times may be null, missing or blank in plain fallback JSON.
+const optionalDate=z.union([z.string(),z.null()]).optional()
+  .transform(v=>v?.trim()||null).pipe(z.union([isoDate,z.null()]));
+const optionalTime=z.union([z.string(),z.null()]).optional()
+  .transform(v=>v?.trim()||null)
+  .pipe(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable());
 const eventSchema=z.object({
   name:z.string().transform(v=>v.replace(/\s+/gu," ").trim().slice(0,90)).pipe(z.string().min(2)),
-  startDate:isoDate,endDate:z.union([isoDate,z.null()]).optional().transform(v=>v??null),
+  startDate:isoDate,endDate:optionalDate,
   venue:nullableText(80).optional().transform(v=>v??null),venueAddress:nullableText(160).optional().transform(v=>v??null),
-  startTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable().optional().transform(v=>v??null),
-  endTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable().optional().transform(v=>v??null),
+  startTime:optionalTime,endTime:optionalTime,
   distance:nullableText(40).optional().transform(v=>v??null),
   kind:z.enum(EVENT_KINDS).catch("other"),expectedCrowd:z.enum(CROWD_SIZES).catch("unknown"),
   sourceUrl:z.string().url().max(400).refine(u=>u.startsWith("https://")||u.startsWith("http://")),
