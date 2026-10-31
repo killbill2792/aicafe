@@ -5,7 +5,7 @@ import type {OwnerLoopScope} from "./engine";
 
 /** Only the inert simulate path may use this explicitly verified read client.
  * The eventual approval/commit routes never receive it. */
-export async function simulationOwnerReader(scope:OwnerLoopScope){
+export async function simulationOwnerReader(scope:Pick<OwnerLoopScope,"businessId"|"ownerUserId"|"verifiedReadClient">){
  const explicit=Boolean(scope.verifiedReadClient);
  const client=scope.verifiedReadClient??await createServerSupabaseClient();
  if(!explicit){
