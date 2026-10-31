@@ -75,7 +75,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  // A density-only edit changes the saved physical quantity even if the
  // visible amount/unit stayed unchanged. Guard every size/serving switch.
  const hasUnsavedChanges=hasPendingRecipeMeasurements(densityInputs,calibration)||
-  newPantry||add!==null||Object.keys(replacements).length>0||items.some(item=>
+  Object.keys(replacements).length>0||items.some(item=>
   JSON.stringify(orderDrafts[item.id])!==JSON.stringify(item.recipe.map(line=>line.ingredientId)))
   ||Object.entries(drafts).some(([key,d])=>{
   for(const item of items){for(const line of item.recipe){if(key===k(item.id,line.ingredientId))return d.removed||d.quantity!==(line.displayQuantity??line.quantity)||d.unit!==(line.displayUnit??line.baseUnit);}}
@@ -84,7 +84,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  const mobileColumns={gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,selectedItems.length))},minmax(0,1fr))`};
  const invalidQuantity=Object.values(quantityInputs).some(value=>value.trim()===""||!Number.isFinite(Number(value))||Number(value)<=0);
  // Preserve drafts when the adjacent product card changes a price or serving status.
- const editorDraftDirty=hasUnsavedChanges||invalidQuantity;
+ const editorDraftDirty=hasUnsavedChanges||invalidQuantity||newPantry||add!==null;
  useEffect(()=>{onDraftDirtyChange?.(editorDraftDirty);},[editorDraftDirty,onDraftDirtyChange]);
  function requiresDensity(base:"g"|"ml"|"each",unit:RecipeDisplayUnit){
   return (base==="ml"&&unit==="g")||(base==="g"&&(unit==="ml"||unit==="fl_oz"));
@@ -273,7 +273,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
    </select>;
  }
  function toggleSize(item:MenuItemForEdit){
-  if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeSizeChange"));return;}
+  if(editorDraftDirty){setError(t("saveBeforeSizeChange"));return;}
   setError("");start(async()=>{
    const result=await setMenuItemActive(item.id,!item.active);
    if(!result.ok){setError(t("error"));return;}
@@ -375,7 +375,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  return <div className="relative pb-24 text-ink">
  <div className="mb-3 flex flex-wrap items-center gap-2">
   <span className="font-bold">{t("sizesSell")}</span>
-  {items.map(item=><button key={item.id} type="button" aria-pressed={focusedSize===item.id} onClick={()=>{if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeSizeChange"));return;}setFocusedSize(item.id);onFocusedSizeChange?.(item.id);setAdd(null);setToast("");setError("");}} className={`min-h-12 rounded-full border px-4 font-bold ${focusedSize===item.id?"border-accent bg-accent text-on-accent":"border-line bg-card"}`}>{item.sizeLabel??item.name}{!active.includes(item.id)?" · "+t("priceNotSet"):""}</button>)}
+  {items.map(item=><button key={item.id} type="button" aria-pressed={focusedSize===item.id} onClick={()=>{if(editorDraftDirty){setError(t("saveBeforeSizeChange"));return;}setFocusedSize(item.id);onFocusedSizeChange?.(item.id);setAdd(null);setToast("");setError("");}} className={`min-h-12 rounded-full border px-4 font-bold ${focusedSize===item.id?"border-accent bg-accent text-on-accent":"border-line bg-card"}`}>{item.sizeLabel??item.name}{!active.includes(item.id)?" · "+t("priceNotSet"):""}</button>)}
   {draftSizes.map(draft=><button key={draft.id} type="button" onClick={()=>{setPriceDraft(draft.id);setDraftPrice("");}} className="min-h-12 rounded-full border border-dashed border-warn px-4">{draft.sizeLabel??draft.name}</button>)}
   <button type="button" onClick={()=>setSizeDialog(true)} className="min-h-12 rounded-full border border-dashed border-accent px-4 text-accent-text">{t("addSize")}</button>
  </div>
