@@ -38,7 +38,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
 import SavedEventsCard from "./SavedEventsCard";
-import {openEventDayThread,eventContextFromTitle,eventOwnerMessage,eventThreadKey,type EventChatContext} from "./eventDayThread";
+import {openEventDayThread,eventContextFromTitle,eventOwnerMessage,eventThreadKey,eventThreadFromHistory,type EventChatContext} from "./eventDayThread";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
@@ -839,6 +839,8 @@ export default function SupervisorChatComposer({
         setEventContext({date,title,threadId:existingThreadId});
         return;
       }
+      const recovered=eventThreadFromHistory(threads,date,eventId);
+      if(recovered)eventThreadIds.current.set(eventThreadKey(date,eventId),recovered);
       const chosenId=await openEventDayThread({
         date,title,eventId,known:eventThreadIds.current,
         create:async title=>{
