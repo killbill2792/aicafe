@@ -161,9 +161,11 @@ export async function saveUsageEntry(kind:"count"|"purchase",raw:unknown):Promis
  if(!parsed.success||kind==="purchase"&&parsed.data.quantity===0)return {ok:false,error:"invalid_quantity"};
  try{
   const {db,businessId}=await scope();
-  const {data:ingredient,error:readError}=await db.from("ingredients").select("id,base_unit")
+  const {data:ingredient,error:readError}=await db.from("ingredients").select("id,base_unit,archived_at")
    .eq("business_id",businessId).eq("id",parsed.data.ingredientId).maybeSingle();
-  if(readError||!ingredient)return {ok:false,error:"ingredient_not_found"};
+  // Counts and new manual purchases are not historical edits. A stale or
+  // forged archived ingredient ID must fail closed before any upsert/write.
+  if(readError||!ingredient||ingredient.archived_at)return {ok:false,error:"ingredient_not_found"};
   const quantity=packBaseQuantity(parsed.data.quantity,parsed.data.unit,ingredient.base_unit as BaseUnit);
   // A zero count is valid (an empty shelf), not missing.
   const inBase=parsed.data.quantity===0&&kind==="count"&&
