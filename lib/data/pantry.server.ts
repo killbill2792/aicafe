@@ -8,7 +8,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE, MENU_SAVE_FAILURE_MESSAGE } from "@/lib/data/queryError";
 import { calculatePantryPriceImpact, type PantryImpactRow } from "@/lib/calc/pantryImpact";
-import { packToCostPerBaseMicros, toBaseUnitQuantity, type BaseUnit, type RecipeDisplayUnit, type IngredientUnitConversion } from "@/lib/calc/recipeUnits";
+import {densityFromStoredRecipe, packToCostPerBaseMicros, toBaseUnitQuantity, type BaseUnit, type RecipeDisplayUnit, type IngredientUnitConversion } from "@/lib/calc/recipeUnits";
 import { PANTRY_STARTERS_BY_KEY, displayPantryStarterName } from "@/lib/menu/pantryStarter";
 import { RECIPE_TEMPLATES_BY_KEY, recipeSizesFor, templateRecipeForSize, scaledTemplateLines, type TemplateLine, type RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
 
@@ -403,7 +403,8 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
  * rows and locks all siblings, including inactive/unpriced drafts, before replacing anything. */
 const ownerLine = z.strictObject({
  ingredientId: uuid,displayUnit:z.enum(["g","ml","fl_oz","each","shot","pump"]),
- displayQuantity:z.number().finite().positive().max(100000)
+ displayQuantity:z.number().finite().positive().max(100000),
+ densityGramsPerMl:z.number().finite().positive().max(5).optional()
 });
 const expectedLine = z.strictObject({
  ingredientId:uuid,quantity:z.number().finite().positive(),
@@ -452,8 +453,14 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
   }
   const lines:ReplacementLine[]=[];
   for(const line of edit.lines){
-   const quantity=toBaseUnitQuantity(line.displayUnit,line.displayQuantity,baseById.get(line.ingredientId)!,
-     conversions.get(line.ingredientId)??[]);
+   const existing=rows.find(r=>r.menu_item_id===id&&r.ingredient_id===line.ingredientId);
+   const base=baseById.get(line.ingredientId)!;
+   const storedDensity=existing?densityFromStoredRecipe(base,Number(existing.quantity),
+      (existing.display_unit??base) as RecipeDisplayUnit,
+      existing.display_quantity===null?Number(existing.quantity):Number(existing.display_quantity)):null;
+   const density=line.densityGramsPerMl??storedDensity??undefined;
+   const quantity=toBaseUnitQuantity(line.displayUnit,line.displayQuantity,base,
+     conversions.get(line.ingredientId)??[],density);
    if(quantity===null)return bad("ingredient_unit_mismatch");
    lines.push({...line,quantity});
   }
