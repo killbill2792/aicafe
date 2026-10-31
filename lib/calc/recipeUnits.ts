@@ -38,19 +38,90 @@ export function toBaseUnitQuantity(
   quantity: number,
   baseUnit: BaseUnit,
   conversions: IngredientUnitConversion[] = [],
+  densityGramsPerMl?: number,
 ): number | null {
   if (!(quantity > 0)) return null;
+  const density=typeof densityGramsPerMl==="number"&&Number.isFinite(densityGramsPerMl)
+    &&densityGramsPerMl>0&&densityGramsPerMl<=5?densityGramsPerMl:null;
   if (needsIngredientConversion(unit)) {
     const conversion = conversions.find((c) => c.unit === unit);
     return conversion ? quantity * conversion.baseUnitsPerUnit : null;
   }
-  if (unit === "g") return baseUnit === "g" ? quantity : null;
-  if (unit === "ml") return baseUnit === "ml" ? quantity : null;
-  if (unit === "fl_oz") return baseUnit === "ml" ? quantity * ML_PER_FL_OZ : null;
+  if (unit === "g") return baseUnit === "g" ? quantity : baseUnit === "ml" && density !== null ? quantity / density : null;
+  if (unit === "ml") return baseUnit === "ml" ? quantity : baseUnit === "g" && density !== null ? quantity * density : null;
+  if (unit === "fl_oz") return baseUnit === "ml" ? quantity * ML_PER_FL_OZ : baseUnit === "g" && density !== null ? quantity * ML_PER_FL_OZ * density : null;
   if (unit === "each") return baseUnit === "each" ? quantity : null;
   return null;
 }
 
+/** Re-express a recipe amount without changing its physical quantity.
+ * Unavailable pump/shot or density calibration returns null instead of
+ * reinterpreting an unchanged number as a new measurement. */
+export function reexpressRecipeQuantity(
+ fromUnit:RecipeDisplayUnit,toUnit:RecipeDisplayUnit,amount:number,baseUnit:BaseUnit,
+ conversions:IngredientUnitConversion[]=[],densityGramsPerMl?:number,
+):number|null{
+ const base=toBaseUnitQuantity(fromUnit,amount,baseUnit,conversions,densityGramsPerMl);
+ if(base===null)return null;
+ if(toUnit===baseUnit)return base;
+ if(toUnit==="each")return baseUnit==="each"?base:null;
+ const density=typeof densityGramsPerMl==="number"&&Number.isFinite(densityGramsPerMl)
+  &&densityGramsPerMl>0&&densityGramsPerMl<=5?densityGramsPerMl:null;
+ if(needsIngredientConversion(toUnit)){
+  const conversion=conversions.find(c=>c.unit===toUnit);
+  return conversion&&conversion.baseUnitsPerUnit>0?base/conversion.baseUnitsPerUnit:null;
+ }
+ if(toUnit==="fl_oz"){
+  if(baseUnit==="ml")return base/ML_PER_FL_OZ;
+  return baseUnit==="g"&&density!==null?base/density/ML_PER_FL_OZ:null;
+ }
+ if(toUnit==="g")return baseUnit==="ml"&&density!==null?base*density:null;
+ if(toUnit==="ml")return baseUnit==="g"&&density!==null?base/density:null;
+ return null;
+}
+
+/** Recover an owner-confirmed density from an existing recipe line, using only
+ * quantities already stored in recipe_lines. No new table or rewritten rows. */
+export function densityFromStoredRecipe(baseUnit:BaseUnit,baseQuantity:number,displayUnit:RecipeDisplayUnit,displayQuantity:number):number|null{
+ if(!(baseQuantity>0)||!(displayQuantity>0))return null;
+ const density=baseUnit==="ml"&&displayUnit==="g"?displayQuantity/baseQuantity:
+   baseUnit==="g"&&displayUnit==="ml"?baseQuantity/displayQuantity:
+   baseUnit==="g"&&displayUnit==="fl_oz"?baseQuantity/(displayQuantity*ML_PER_FL_OZ):null;
+ return density!==null&&Number.isFinite(density)&&density>0&&density<=5?density:null;
+}
+
+
+/** Convert a saved recipe line for an ingredient replacement without transferring the
+ * ORIGINAL ingredient's density or operational-unit calibration to the replacement.
+ *
+ * When both ingredients share a canonical base unit, preserve the saved physical
+ * base quantity exactly. Express it in the destination's existing display unit
+ * only if the destination itself can convert it; otherwise display its base unit.
+ * Thus saved 103 g / canonical 100 ml milk -> new milk 100 ml, not 103 ml or a
+ * guessed 103 g of new milk. A calibrated pump changes count, not base quantity.
+ * Cross-base swaps remain explicit: the saved display unit must be directly
+ * convertible with destination conversions, or we fail closed.
+ */
+export function replacementRecipeLine(
+  storedBaseQuantity:number,
+  displayUnit:RecipeDisplayUnit,
+  displayQuantity:number,
+  sourceBaseUnit:BaseUnit,
+  targetBaseUnit:BaseUnit,
+  targetConversions:IngredientUnitConversion[]=[]
+):{quantity:number;displayUnit:RecipeDisplayUnit;displayQuantity:number}|null{
+ if(!Number.isFinite(storedBaseQuantity)||storedBaseQuantity<=0||
+    !Number.isFinite(displayQuantity)||displayQuantity<=0)return null;
+ if(sourceBaseUnit===targetBaseUnit){
+  const newDisplayQuantity=reexpressRecipeQuantity(targetBaseUnit,displayUnit,
+    storedBaseQuantity,targetBaseUnit,targetConversions);
+  return {quantity:storedBaseQuantity,
+    displayUnit:newDisplayQuantity===null?targetBaseUnit:displayUnit,
+    displayQuantity:newDisplayQuantity===null?storedBaseQuantity:newDisplayQuantity};
+ }
+ const converted=toBaseUnitQuantity(displayUnit,displayQuantity,targetBaseUnit,targetConversions);
+ return converted===null?null:{quantity:converted,displayUnit,displayQuantity};
+}
 
 /** Purchase packs are defined against an ingredient's canonical g/ml/each unit. The same
  * bottle label "oz" means *fluid* ounces only for liquids and *weight* ounces for solids. */

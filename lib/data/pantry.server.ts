@@ -8,21 +8,22 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE, MENU_SAVE_FAILURE_MESSAGE } from "@/lib/data/queryError";
 import { calculatePantryPriceImpact, type PantryImpactRow } from "@/lib/calc/pantryImpact";
-import { packToCostPerBaseMicros, toBaseUnitQuantity, type BaseUnit, type RecipeDisplayUnit, type IngredientUnitConversion } from "@/lib/calc/recipeUnits";
+import {densityFromStoredRecipe, packToCostPerBaseMicros, replacementRecipeLine, toBaseUnitQuantity, type BaseUnit, type RecipeDisplayUnit, type IngredientUnitConversion } from "@/lib/calc/recipeUnits";
 import { PANTRY_STARTERS_BY_KEY, displayPantryStarterName } from "@/lib/menu/pantryStarter";
 import { RECIPE_TEMPLATES_BY_KEY, recipeSizesFor, templateRecipeForSize, scaledTemplateLines, type TemplateLine, type RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
 
 type Db = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 type Scope = { db: Db; businessId: string; today: string };
 type PantryFailure = { ok: false; error: string; missingPantry?: string[]; missingConversions?: string[] };
-type PantrySuccess = { ok: true; itemIds?: string[]; addedKeys?: string[] };
+type PantrySuccess = { ok: true; id?: string; itemIds?: string[]; addedKeys?: string[] };
 type PantryResult = PantryFailure | PantrySuccess;
 type Ingredient = { id: string; name: string; base_unit: BaseUnit; starter_key: string | null; category: string | null };
 type StoredLine = { menu_item_id: string; ingredient_id: string; quantity: number; display_unit: string | null; display_quantity: number | null };
 type ReplacementLine = { ingredientId: string; quantity: number; displayUnit: RecipeDisplayUnit; displayQuantity: number };
 type SnapshotLine = { ingredientId: string; quantity: number; displayUnit: string | null; displayQuantity: number | null };
-type Change = { menuItemId: string; lines: ReplacementLine[];
+type Change = { menuItemId: string; lines: ReplacementLine[]; expectedOrder?: string[];
   expectedLines?: SnapshotLine[]; expectedSourceLines?: SnapshotLine[];
+  expectedSourceOrder?: string[];
   expectedSiblingIds?: string[]; checkOnly?: boolean };
 function snapshotLines(rows: readonly StoredLine[]): SnapshotLine[] {
   return rows.map((row) => ({
@@ -53,17 +54,23 @@ function queryFailed(operation: string, error: { message: string } | null): Pant
   return saveFailed();
 }
 const uuid = z.string().uuid();
+const originalPackInput = z.strictObject({
+  count: z.number().finite().positive().max(1_000_000),
+  unitQuantity: z.number().finite().positive().max(1_000_000),
+  unit: z.string().min(1).max(40),
+});
 const packInput = z.object({
   ingredientId: uuid,
   packQuantity: z.number().finite().positive().max(1_000_000),
   packUnit: z.string().regex(/^(gal|qt|l|ml|fl_oz|lb|kg|oz_wt|g|oz|each|dozen|case\([1-9][0-9]*\))$/),
   packCostCents: z.number().int().positive().max(1_000_000_000),
+  originalPack: originalPackInput.nullable().optional(),
 }).strict();
 
 async function currentPrices(scope: Scope, ids: string[]) {
-  if (!ids.length) return new Map<string, { cost: number; packQuantity: number | null; packUnit: string | null; packCostCents: number | null }>();
+  if (!ids.length) return new Map<string, { cost: number; packQuantity: number | null; packUnit: string | null; packCostCents: number | null; originalPack: z.infer<typeof originalPackInput> | null }>();
   const { data, error, count } = await scope.db.from("ingredient_prices")
-    .select("ingredient_id, cost_per_base_unit_micros, pack_quantity, pack_unit, pack_cost_cents", { count: "exact" })
+    .select("ingredient_id, cost_per_base_unit_micros, pack_quantity, pack_unit, pack_cost_cents, original_pack", { count: "exact" })
     .in("ingredient_id", ids).lte("effective_from", scope.today)
     .order("effective_from", { ascending: true })
     .order("recorded_at", { ascending: true })
@@ -72,11 +79,13 @@ async function currentPrices(scope: Scope, ids: string[]) {
     logQueryError("pantry:currentPrices", error);
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   }
-  const prices = new Map<string, { cost: number; packQuantity: number | null; packUnit: string | null; packCostCents: number | null }>();
+  const prices = new Map<string, { cost: number; packQuantity: number | null; packUnit: string | null; packCostCents: number | null; originalPack: z.infer<typeof originalPackInput> | null }>();
   for (const row of data) prices.set(row.ingredient_id, {
     cost: Number(row.cost_per_base_unit_micros),
     packQuantity: row.pack_quantity === null ? null : Number(row.pack_quantity),
     packUnit: row.pack_unit, packCostCents: row.pack_cost_cents === null ? null : Number(row.pack_cost_cents),
+    originalPack: originalPackInput.safeParse(row.original_pack).success
+      ? originalPackInput.parse(row.original_pack) : null,
   });
   return prices;
 }
@@ -85,12 +94,13 @@ async function currentPrices(scope: Scope, ids: string[]) {
 export async function listPantry(): Promise<Array<{
   id: string; name: string; category: string | null; starterKey: string | null; baseUnit: BaseUnit;
   costPerBaseMicros: number | null; packQuantity: number | null; packUnit: string | null;
-  packCostCents: number | null; usedInCount: number;
+  packCostCents: number | null; originalPack: z.infer<typeof originalPackInput> | null;
+  archivedAt: string | null; usedInCount: number;
 }>> {
   const scope = await activeScope();
   if (!scope) return [];
   const { data, error, count } = await scope.db.from("ingredients")
-    .select("id, name, base_unit, category, starter_key", { count: "exact" }).eq("business_id", scope.businessId).order("name");
+    .select("id, name, base_unit, category, starter_key, archived_at", { count: "exact" }).eq("business_id", scope.businessId).order("name");
   if (error || !data || count === null || count !== data.length) throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   const translate = await getTranslations("Pantry.starters");
   const ids = data.map((r) => r.id);
@@ -111,6 +121,7 @@ export async function listPantry(): Promise<Array<{
       starterKey: ingredient.starter_key, baseUnit: ingredient.base_unit as BaseUnit,
       costPerBaseMicros: price?.cost ?? null, packQuantity: price?.packQuantity ?? null,
       packUnit: price?.packUnit ?? null, packCostCents: price?.packCostCents ?? null,
+      originalPack: price?.originalPack ?? null, archivedAt: ingredient.archived_at,
       usedInCount: counts.get(ingredient.id) ?? 0,
     };
   });
@@ -146,6 +157,10 @@ export async function savePackPrice(input: z.infer<typeof packInput>): Promise<P
   const { data: ingredient, error } = await scope.db.from("ingredients")
     .select("id, base_unit").eq("id", parsed.data.ingredientId).eq("business_id", scope.businessId).single();
   if (error || !ingredient) return bad("ingredient_not_found");
+  const original = parsed.data.originalPack ?? null;
+  if (original && (original.unit !== parsed.data.packUnit ||
+    Math.abs(original.count * original.unitQuantity - parsed.data.packQuantity) > 0.000001))
+    return bad("invalid_pack");
   const micros = packToCostPerBaseMicros(parsed.data.packQuantity, parsed.data.packUnit,
     parsed.data.packCostCents, ingredient.base_unit as BaseUnit);
   if (micros === null) return bad("pack_unit_mismatch");
@@ -154,6 +169,7 @@ export async function savePackPrice(input: z.infer<typeof packInput>): Promise<P
     source: "manual", cost_per_base_unit_micros: micros,
     pack_quantity: parsed.data.packQuantity, pack_unit: parsed.data.packUnit,
     pack_cost_cents: parsed.data.packCostCents,
+    original_pack: original,
   });
   if (writeError) return queryFailed("pantry:savePackPrice", writeError);
   return { ok: true };
@@ -285,12 +301,13 @@ export async function prepareIngredientSwap(productId: string, fromId: string, t
   const siblings = await productSiblings(scope, productId);
   if (!siblings) return bad("product_not_found");
   const { data: ingredients, error: ingredientsError } = await scope.db.from("ingredients")
-    .select("id, base_unit").eq("business_id", scope.businessId).in("id", [fromId, toId]);
+    .select("id, base_unit, archived_at").eq("business_id", scope.businessId).in("id", [fromId, toId]);
   if (ingredientsError || !ingredients || ingredients.length !== (fromId === toId ? 1 : 2)) return bad("ingredient_not_found");
   const to = ingredients.find((ingredient) => ingredient.id === toId)!;
   if (fromId === toId) return { ok: true, changes: [] };
+  if (to.archived_at) return bad("ingredient_archived");
   const { data: rows, error, count } = await scope.db.from("recipe_lines")
-    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity", { count: "exact" })
+    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, sort_order", { count: "exact" })
     .in("menu_item_id", siblings.map((s) => s.id));
   if (error || !rows || count === null || count !== rows.length) return bad("incomplete_recipe_source");
   const { data: allBases, error: basesError, count: basesCount } = await scope.db.from("ingredients")
@@ -301,12 +318,15 @@ export async function prepareIngredientSwap(productId: string, fromId: string, t
   const conversions = await conversionsFor(scope, [toId]);
   const changes: Change[] = [];
   for (const sibling of siblings) {
-    const existing = rows.filter((row) => row.menu_item_id === sibling.id);
+    const existing = rows.filter((row) => row.menu_item_id === sibling.id)
+      .sort((a,b)=>(a.sort_order??Number.MAX_SAFE_INTEGER)-(b.sort_order??Number.MAX_SAFE_INTEGER)
+        ||a.ingredient_id.localeCompare(b.ingredient_id,"en"));
     if (!existing.some((row) => row.ingredient_id === fromId)) {
       // Check-only entries are validated while holding the transaction's family lock.
       // They prevent a concurrent scale/apply from introducing the old ingredient
       // into a sibling that was missing it when the swap began.
-      changes.push({ menuItemId: sibling.id, lines: [], expectedLines: snapshotLines(existing), checkOnly: true });
+      changes.push({ menuItemId: sibling.id, lines: [], expectedOrder: existing.map(row=>row.ingredient_id),
+        expectedLines: snapshotLines(existing), checkOnly: true });
       continue;
     }
     if (existing.some((row) => row.ingredient_id === toId)) return bad("ingredient_already_present");
@@ -317,17 +337,28 @@ export async function prepareIngredientSwap(productId: string, fromId: string, t
       if (!originalIngredient) return bad("ingredient_not_found");
       const displayUnit = (row.display_unit || originalIngredient.base_unit) as RecipeDisplayUnit;
       const displayQuantity = row.display_quantity === null ? Number(row.quantity) : Number(row.display_quantity);
-      const quantity = isChanged ? toBaseUnitQuantity(displayUnit, displayQuantity,
-        to.base_unit as BaseUnit, conversions.get(toId) ?? []) : Number(row.quantity);
-      if (quantity === null) return bad("ingredient_unit_mismatch");
+      const replacement = isChanged ? replacementRecipeLine(
+        Number(row.quantity), displayUnit, displayQuantity,
+        originalIngredient.base_unit as BaseUnit, to.base_unit as BaseUnit,
+        conversions.get(toId) ?? []) : null;
+      if (isChanged && !replacement) return bad("ingredient_unit_mismatch");
+      // Do not copy an old milk's density or pump/shot calibration to a new
+      // ingredient; when a saved display is not valid for the replacement,
+      // keep the original canonical physical amount and use the base-unit label.
       lines.push({ ingredientId: isChanged ? toId : row.ingredient_id,
-        quantity, displayUnit, displayQuantity });
+        quantity: replacement?.quantity ?? Number(row.quantity),
+        displayUnit: replacement?.displayUnit ?? displayUnit,
+        displayQuantity: replacement?.displayQuantity ?? displayQuantity });
     }
-    changes.push({ menuItemId: sibling.id, lines, expectedLines: snapshotLines(existing) });
+    changes.push({ menuItemId: sibling.id, lines, expectedOrder: existing.map(row=>row.ingredient_id),
+      expectedLines: snapshotLines(existing) });
   }
   if (!changes.some((change) => !change.checkOnly)) return bad("ingredient_not_in_product");
   // Covers changes to the anchor between sibling discovery and atomic replacement.
   changes[0].expectedSourceLines = snapshotLines(rows.filter((row) => row.menu_item_id === productId));
+  changes[0].expectedSourceOrder = rows.filter(row=>row.menu_item_id===productId)
+    .sort((a,b)=>(a.sort_order??Number.MAX_SAFE_INTEGER)-(b.sort_order??Number.MAX_SAFE_INTEGER)
+      ||a.ingredient_id.localeCompare(b.ingredient_id,"en")).map(row=>row.ingredient_id);
   changes[0].expectedSiblingIds = siblings.map((sibling) => sibling.id).sort();
   return {ok:true,changes};
 }
@@ -356,11 +387,15 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
   const fromOz = Number(fromSize[1]), toOz = Number(toSize[1]);
   if (fromItemId === toItemId) return { ok: true, itemIds: [] };
   const { data: pairRows, error, count: sourceCount } = await scope.db.from("recipe_lines")
-    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity", { count: "exact" })
+    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, sort_order", { count: "exact" })
     .in("menu_item_id", [fromItemId, toItemId]);
   if (error || !pairRows || sourceCount === null || sourceCount !== pairRows.length) return bad("incomplete_recipe_source");
-  const source = pairRows.filter((row) => row.menu_item_id === fromItemId);
-  const target = pairRows.filter((row) => row.menu_item_id === toItemId);
+  const source = pairRows.filter((row) => row.menu_item_id === fromItemId)
+    .sort((a,b)=>(a.sort_order??Number.MAX_SAFE_INTEGER)-(b.sort_order??Number.MAX_SAFE_INTEGER)
+      ||a.ingredient_id.localeCompare(b.ingredient_id,"en"));
+  const target = pairRows.filter((row) => row.menu_item_id === toItemId)
+    .sort((a,b)=>(a.sort_order??Number.MAX_SAFE_INTEGER)-(b.sort_order??Number.MAX_SAFE_INTEGER)
+      ||a.ingredient_id.localeCompare(b.ingredient_id,"en"));
   if (!source.length) return bad("source_recipe_missing");
   const { data: available, error: ingredientsError, count: availableCount } = await scope.db.from("ingredients")
     .select("id, base_unit, starter_key", { count: "exact" }).eq("business_id", scope.businessId);
@@ -385,8 +420,12 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
     const ingredient = value.starterKey.startsWith("custom:")
       ? byId.get(value.starterKey.slice(7)) : byKey.get(value.starterKey);
     if (!ingredient) return { ok: false, error: "missing_pantry", missingPantry: [value.starterKey] };
+    const original=source.find(row=>row.ingredient_id===ingredient.id);
+    const density=original?densityFromStoredRecipe(ingredient.base_unit as BaseUnit,
+      Number(original.quantity),(original.display_unit??ingredient.base_unit) as RecipeDisplayUnit,
+      Number(original.display_quantity??original.quantity)):null;
     const quantity = toBaseUnitQuantity(value.displayUnit, value.displayQuantity,
-      ingredient.base_unit as BaseUnit, conversions.get(ingredient.id) ?? []);
+      ingredient.base_unit as BaseUnit, conversions.get(ingredient.id) ?? [],density??undefined);
     if (quantity === null) return bad("ingredient_unit_mismatch");
     if (lines.some((line) => line.ingredientId === ingredient.id)) return bad("duplicate_ingredient");
     lines.push({ ingredientId: ingredient.id, quantity,
@@ -394,7 +433,9 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
   }
   return verifiedWrite(scope, fromItemId, [{
     menuItemId: toItemId, lines, expectedLines: snapshotLines(target),
+    expectedOrder: target.map(row=>row.ingredient_id),
     expectedSourceLines: snapshotLines(source),
+    expectedSourceOrder: source.map(row=>row.ingredient_id),
     expectedSiblingIds: siblings.map((sibling) => sibling.id).sort(),
   }]);
 }
@@ -403,7 +444,8 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
  * rows and locks all siblings, including inactive/unpriced drafts, before replacing anything. */
 const ownerLine = z.strictObject({
  ingredientId: uuid,displayUnit:z.enum(["g","ml","fl_oz","each","shot","pump"]),
- displayQuantity:z.number().finite().positive().max(100000)
+ displayQuantity:z.number().finite().positive().max(100000),
+ densityGramsPerMl:z.number().finite().positive().max(5).optional()
 });
 const expectedLine = z.strictObject({
  ingredientId:uuid,quantity:z.number().finite().positive(),
@@ -412,6 +454,7 @@ const expectedLine = z.strictObject({
 const ownerChanges = z.strictObject({
  productId:uuid,
  sizes:z.array(z.strictObject({itemId:uuid,expected:z.array(expectedLine).max(100),
+  expectedOrder:z.array(uuid).max(100).optional(),
   lines:z.array(ownerLine).max(100)})).min(1).max(20)
 });
 export type OwnerRecipeChanges=z.infer<typeof ownerChanges>;
@@ -432,16 +475,20 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
  }
  const allIngredients=[...new Set(parsed.data.sizes.flatMap(s=>s.lines.map(l=>l.ingredientId)))];
  const {data:found,error:ingredientError,count}=allIngredients.length?
-  await scope.db.from("ingredients").select("id,base_unit",{count:"exact"}).eq("business_id",scope.businessId).in("id",allIngredients):
+  await scope.db.from("ingredients").select("id,base_unit,archived_at",{count:"exact"}).eq("business_id",scope.businessId).in("id",allIngredients):
   {data:[],error:null,count:0};
  if(ingredientError||!found||count!==allIngredients.length)return bad("ingredient_not_found");
  const baseById=new Map(found.map(i=>[i.id,i.base_unit as BaseUnit]));
  const conversions=await conversionsFor(scope,allIngredients);
  const {data:rows,error:rowError,count:rowCount}=await scope.db.from("recipe_lines")
-  .select("menu_item_id,ingredient_id,quantity,display_unit,display_quantity",{count:"exact"})
+  .select("menu_item_id,ingredient_id,quantity,display_unit,display_quantity,sort_order",{count:"exact"})
   .in("menu_item_id",siblingIds);
  if(rowError||!rows||rowCount!==rows.length)return bad("incomplete_recipe_source");
  const edited=new Map(parsed.data.sizes.map(s=>[s.itemId,s]));
+ const orderFor=(id:string)=>rows.filter(row=>row.menu_item_id===id)
+   .sort((a,b)=>(a.sort_order??Number.MAX_SAFE_INTEGER)-(b.sort_order??Number.MAX_SAFE_INTEGER)
+     ||a.ingredient_id.localeCompare(b.ingredient_id,"en"))
+   .map(row=>row.ingredient_id);
  const changes:Change[]=[];
  for(const id of siblingIds){
   const edit=edited.get(id);
@@ -450,18 +497,31 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
     expectedLines:snapshotLines(rows.filter(row=>row.menu_item_id===id))});
    continue;
   }
+  if(edit.expectedOrder&&JSON.stringify(edit.expectedOrder)!==JSON.stringify(orderFor(id)))
+   return bad("recipe_changed");
   const lines:ReplacementLine[]=[];
+  const alreadyThere=new Set(rows.filter(row=>row.menu_item_id===id).map(row=>row.ingredient_id));
   for(const line of edit.lines){
-   const quantity=toBaseUnitQuantity(line.displayUnit,line.displayQuantity,baseById.get(line.ingredientId)!,
-     conversions.get(line.ingredientId)??[]);
+   if(found.find(i=>i.id===line.ingredientId)?.archived_at&&!alreadyThere.has(line.ingredientId))
+    return bad("ingredient_archived");
+   const existing=rows.find(r=>r.menu_item_id===id&&r.ingredient_id===line.ingredientId);
+   const base=baseById.get(line.ingredientId)!;
+   const storedDensity=existing?densityFromStoredRecipe(base,Number(existing.quantity),
+      (existing.display_unit??base) as RecipeDisplayUnit,
+      existing.display_quantity===null?Number(existing.quantity):Number(existing.display_quantity)):null;
+   const density=line.densityGramsPerMl??storedDensity??undefined;
+   const quantity=toBaseUnitQuantity(line.displayUnit,line.displayQuantity,base,
+     conversions.get(line.ingredientId)??[],density);
    if(quantity===null)return bad("ingredient_unit_mismatch");
    lines.push({...line,quantity});
   }
-  changes.push({menuItemId:id,lines,expectedLines:[...edit.expected].sort((a,b)=>a.ingredientId.localeCompare(b.ingredientId))});
+  changes.push({menuItemId:id,lines,expectedOrder:edit.expectedOrder??orderFor(id),
+   expectedLines:[...edit.expected].sort((a,b)=>a.ingredientId.localeCompare(b.ingredientId))});
  }
  changes[0].expectedSiblingIds=siblingIds;
  const anchorEdit=edited.get(parsed.data.productId);
  changes[0].expectedSourceLines=anchorEdit?[...anchorEdit.expected].sort((a,b)=>a.ingredientId.localeCompare(b.ingredientId)):snapshotLines(rows.filter(row=>row.menu_item_id===parsed.data.productId));
+ changes[0].expectedSourceOrder=anchorEdit?.expectedOrder??orderFor(parsed.data.productId);
  return verifiedWrite(scope,parsed.data.productId,changes);
 }
 
@@ -474,9 +534,9 @@ const customPantryInput=z.strictObject({
 export async function createPantryIngredient(input:z.infer<typeof customPantryInput>):Promise<PantryResult>{
  const parsed=customPantryInput.safeParse(input);if(!parsed.success)return bad("invalid_input");
  const scope=await activeScope();if(!scope)return bad("sign_in_required");
- const {error}=await scope.db.from("ingredients").insert({business_id:scope.businessId,name:parsed.data.name,category:parsed.data.category,base_unit:parsed.data.baseUnit});
- if(error)return queryFailed("pantry:createIngredient",error);
- return{ok:true};
+ const {data,error}=await scope.db.from("ingredients").insert({business_id:scope.businessId,name:parsed.data.name,category:parsed.data.category,base_unit:parsed.data.baseUnit}).select("id").single();
+ if(error||!data)return queryFailed("pantry:createIngredient",error??{message:"ingredient_id_missing"});
+ return{ok:true,id:data.id};
 }
 const editPantryInput=customPantryInput.pick({name:true,category:true}).extend({id:uuid}).strict();
 export async function updatePantryIngredient(input:z.infer<typeof editPantryInput>):Promise<PantryResult>{
@@ -487,4 +547,16 @@ export async function updatePantryIngredient(input:z.infer<typeof editPantryInpu
  if(error)return queryFailed("pantry:updateIngredient",error);
  if(!data?.length)return bad("ingredient_not_found");
  return{ok:true};
+}
+
+/** Reversible owner-scoped Pantry archive. Linked recipes, prices, stock and
+ * purchase rows are intentionally left untouched. No client DELETE is used. */
+export async function setPantryArchived(id:string,archived:boolean):Promise<PantryResult>{
+ if(!uuid.safeParse(id).success||typeof archived!=="boolean")return bad("invalid_ingredient");
+ const scope=await activeScope();if(!scope)return bad("sign_in_required");
+ const {data,error}=await scope.db.rpc("pantry_set_archived",{
+  p_business_id:scope.businessId,p_ingredient_id:id,p_archived:archived,
+ });
+ if(error)return queryFailed("pantry:setArchived",error);
+ return data===true?{ok:true}:bad("ingredient_not_found");
 }

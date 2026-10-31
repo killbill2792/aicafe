@@ -13,6 +13,7 @@ import {
   saveProductRecipes as persistProductRecipes,
   createPantryIngredient as insertCustomPantry,
   updatePantryIngredient as editCustomPantry,
+  setPantryArchived as persistArchive,
 } from "@/lib/data/pantry.server";
 import type { RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
 
@@ -64,6 +65,10 @@ export async function createPantryIngredient(input:Parameters<typeof insertCusto
 }
 export async function updatePantryIngredient(input:Parameters<typeof editCustomPantry>[0]):Promise<Awaited<ReturnType<typeof editCustomPantry>>>{
  const result=await editCustomPantry(input);if(result.ok)invalidatePantry();return result;
+}
+
+export async function setPantryArchived(id:string,archived:boolean):Promise<Awaited<ReturnType<typeof persistArchive>>>{
+ const result=await persistArchive(id,archived);if(result.ok)invalidatePantry();return result;
 }
 
 export async function saveUsageEntry(kind:"count"|"purchase",input:unknown){const result=await writeUsage(kind,input);if(result.ok){revalidatePath("/menu/pantry");revalidatePath("/");}return result;}

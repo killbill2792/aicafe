@@ -11,18 +11,21 @@ const ID1="33333333-3333-4333-8333-333333333333";
 const ID2="44444444-4444-4444-8444-444444444444";
 const line=(id:string):PurchaseLineInput=>({lineId:id,ingredientId:INGREDIENT,
  date:"2026-10-25",quantity:4,unit:"gal",costCents:2199});
-function fakeDb(role="owner",is_demo=false){
+function fakeDb(role="owner",is_demo=false,archived=false,existingHistoricalLine=false){
  const rpc=vi.fn(async(_name:string,_args:Record<string,unknown>):Promise<{error:{code:string}|null}>=>({error:null}));
  const from=vi.fn((table:string)=>{
   if(table==="memberships")return {select:()=>({eq:()=>({eq:()=>({
     maybeSingle:async()=>({data:{role,businesses:{is_demo}},error:null})
   })})})};
   if(table==="ingredients")return {select:()=>({eq:()=>({eq:()=>({
-   maybeSingle:async()=>({data:{id:INGREDIENT,base_unit:"ml"},error:null})
+   maybeSingle:async()=>({data:{id:INGREDIENT,base_unit:"ml",archived_at:archived?"2026-10-31T12:00:00Z":null},error:null})
   })})})};
   if(table==="ingredient_unit_conversions")return {select:()=>({eq:async()=>({
     data:[],error:null
   })})};
+  if(table==="pantry_stock_purchases")return {select:()=>({eq:()=>({eq:()=>({eq:()=>({
+    maybeSingle:async()=>({data:existingHistoricalLine?{line_id:ID1}:null,error:null})
+  })})})})};
   throw Error("Unexpected direct purchase table access: "+table);
  });
  return {db:{auth:{getUser:async()=>({data:{user:{id:"owner"}}})},from,rpc},rpc,from};
@@ -70,6 +73,25 @@ describe("single transactional purchase path",()=>{
   const normal=await recordPurchases([line(ID1)],"manual",null);
   expect(normal[0].ok).toBe(true);
   expect(rpc.mock.calls[1][0]).toBe("pantry_write_purchase_line");
+ });
+ it("blocks a stale new purchase of an archived ingredient without losing saved history",async()=>{
+  const {db,rpc}=fakeDb("owner",false,true,false);
+  vi.mocked(createServerSupabaseClient).mockResolvedValue(db as never);
+  expect(await recordPurchases([line(ID1)],"bulk",null)).toEqual([
+   {lineId:ID1,ok:false,error:"ingredient_not_found"}]);
+  expect(await recordPurchases([line(ID1)],"manual",null)).toEqual([
+   {lineId:ID1,ok:false,error:"ingredient_not_found"}]);
+  expect(rpc).not.toHaveBeenCalled();
+ });
+ it("retains idempotent archived historical purchase edits and retries",async()=>{
+  const {db,rpc}=fakeDb("owner",false,true,true);
+  vi.mocked(createServerSupabaseClient).mockResolvedValue(db as never);
+  expect(await recordPurchases([{...line(ID1),expectedRevision:2}],"bulk",null)).toEqual([
+   {lineId:ID1,ok:true}]);
+  expect(rpc).toHaveBeenCalledTimes(1);
+  expect(rpc).toHaveBeenCalledWith("pantry_write_purchase_line",expect.objectContaining({
+   p_line_id:ID1,p_expected_revision:2,p_ingredient_id:INGREDIENT
+  }));
  });
  it("rejects demo and non-owner requests before writing stock",async()=>{
   for(const [role,demo] of [["owner",true],["member",false]] as const){
