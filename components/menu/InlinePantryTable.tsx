@@ -18,7 +18,11 @@ type PantryItem={
 };
 function PantryTableRow({item,t}:{item:PantryItem;t:Record<string,string>}){
  const router=useRouter(),locale=useLocale(),[pending,start]=useTransition();
- const initialPack=purchasePackLabel(item.packQuantity,item.packUnit,item.baseUnit,locale,item.originalPack);
+ const initialPack=purchasePackLabel(item.packQuantity,item.packUnit,item.baseUnit,locale,item.originalPack,{
+ fl_oz:t.packUnitFlOz,oz_wt:t.packUnitOzWt,ml:t.packUnitMl,g:t.packUnitG,
+ kg:t.packUnitKg,l:t.packUnitL,lb:t.packUnitLb,gal:t.packUnitGal,qt:t.packUnitQt,
+ each:t.packUnitEach,dozen:t.packUnitDozen,
+ });
  const [name,setName]=useState(item.name);
  const [pack,setPack]=useState(initialPack);
  const [price,setPrice]=useState(item.packCostCents===null?"":(item.packCostCents/100).toFixed(2));
