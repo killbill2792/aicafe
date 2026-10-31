@@ -33,7 +33,7 @@ function evidence(overrides:Partial<MorningBriefEvidence>={}):MorningBriefEviden
 describe("Meta's seven ordered daily-brief values",()=>{
  it("uses covered drinks, groups sizes and retains canonical net sales, event and local weekday",()=>{
    const result=prepareMorningBrief(evidence(),now);
-   expect(result).toEqual({parameters:["Café One","€2,400.00","11","Latte","9",
+   expect(result).toEqual({netSalesCents:240000,parameters:["Café One","€2,400.00","11","Latte","9",
      "Halloween festival at Moscone Center at 15:00","Saturday"],
      businessDate:"2026-10-30",today:"2026-10-31",
      provenance:{sales:"daily_rollups",items:"menu_item_quantities_sold",menu:"menu_items",
