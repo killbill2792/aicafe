@@ -2,13 +2,13 @@ import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
- active:vi.fn(),allowed:vi.fn(),prepare:vi.fn(),enqueue:vi.fn(),
+ active:vi.fn(),allowed:vi.fn(),prepare:vi.fn(),enqueue:vi.fn(),dispatch:vi.fn(),
 }));
 vi.mock("./identity.server",()=>({activeBinding:mocks.active}));
 vi.mock("./transport.server",()=>({providerAllowed:mocks.allowed}));
-vi.mock("./queue.server",()=>({enqueueWhatsApp:mocks.enqueue}));
+vi.mock("./queue.server",()=>({enqueueWhatsApp:mocks.enqueue,dispatchOutboundOnce:mocks.dispatch}));
 vi.mock("./morningBrief.server",()=>({readPreparedMorningBrief:mocks.prepare}));
-import {eligibleBriefBinding,prepareBoundBrief,enqueueBoundBrief} from "./morningBriefDelivery.server";
+import {eligibleBriefBinding,prepareBoundBrief,enqueueBoundBrief,dispatchDueMorningBriefs} from "./morningBriefDelivery.server";
 import {renderMorningBrief} from "./morningBrief";
 
 const now=new Date("2026-10-31T12:50:00Z"); // 05:50 PDT
@@ -41,6 +41,7 @@ beforeEach(()=>{
  mocks.allowed.mockReset().mockReturnValue(true);
  mocks.prepare.mockReset().mockResolvedValue(prepared);
  mocks.enqueue.mockReset().mockResolvedValue(binding.id);
+ mocks.dispatch.mockReset().mockResolvedValue("empty");
  for(const name of envNames)process.env[name]="true";
 });
 afterEach(()=>{for(const name of envNames){
@@ -84,6 +85,45 @@ describe("PR A verified morning-brief integration",()=>{
    expect(await prepareBoundBrief(db,scope,new Date("2026-10-31T13:00:00Z"),binding)).toBeNull();
    expect(await prepareBoundBrief(db,scope,new Date("2026-10-31T12:10:00Z"),binding)).toBeNull();
    expect(mocks.prepare).not.toHaveBeenCalled();
+ });
+ it("fails closed until the guarded DB claim is installed",async()=>{
+   const db={rpc:vi.fn(async()=>({data:null,error:{message:"missing"}}))} as unknown as SupabaseClient;
+   expect(await dispatchDueMorningBriefs(db)).toBe(0);
+   expect(mocks.dispatch).not.toHaveBeenCalled();
+ });
+ it("checks every leased café's own day and zone at actual Meta send time",async()=>{
+   let businessDate="2026-10-31",timezone="America/Los_Angeles";
+   const db={rpc:vi.fn(async()=>({data:true,error:null})),
+     from:vi.fn((table:string)=>{
+       const query:Record<string,unknown>={};
+       for(const method of ["select","eq","is"])query[method]=()=>query;
+       query.limit=async()=>({data:table==="whatsapp_owner_bindings"?[{id:binding.id}]:
+         [{business_date:businessDate}],error:null});
+       query.maybeSingle=async()=>({data:{timezone},error:null});
+       return query;
+     })} as unknown as SupabaseClient;
+   const send=vi.fn(async()=>new Response("{}",{status:200}));
+   mocks.dispatch.mockImplementation(async(_kind:string,guardedSend:typeof fetch)=>{
+     const response=await guardedSend("https://graph.facebook.com/test",{
+       method:"POST",body:JSON.stringify({to:binding.waId,type:"template"})});
+     return response.ok?"accepted":"failed";
+   });
+   expect(await dispatchDueMorningBriefs(db,send as typeof fetch,
+     ()=>new Date("2026-10-31T12:59:59Z"))).toBe(10);
+   expect(send).toHaveBeenCalledTimes(10);
+   send.mockClear();
+   expect(await dispatchDueMorningBriefs(db,send as typeof fetch,
+     ()=>new Date("2026-10-31T13:00:00Z"))).toBe(0);
+   expect(send).not.toHaveBeenCalled();
+   timezone="America/New_York";
+   expect(await dispatchDueMorningBriefs(db,send as typeof fetch,
+     ()=>new Date("2026-10-31T12:50:00Z"))).toBe(0);
+   timezone="America/Los_Angeles";businessDate="2026-10-30";
+   expect(await dispatchDueMorningBriefs(db,send as typeof fetch,
+     ()=>new Date("2026-10-31T12:50:00Z"))).toBe(0);
+   businessDate="2026-11-01";
+   expect(await dispatchDueMorningBriefs(db,send as typeof fetch,
+     ()=>new Date("2026-11-01T13:50:00Z"))).toBe(10);
  });
  it("enqueues against PR A's unique owner/café/day key and saved website message",async()=>{
    const {db}=dbFactory();
