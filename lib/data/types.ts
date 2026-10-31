@@ -27,8 +27,6 @@ export type RunningCostLine = {
   amountSource?: "recorded_expense" | "recurring" | "missing";
   isEstimate: boolean;
   isMissing: boolean;
-  /** Actual month-to-date cash expense is NOT a full-month recurring-rate assumption. */
-  basis?:"actual_incurred"|"monthly_equivalent";
   /** Of the actual month-to-date expenses, the amount specifically spent today. */
   actualTodayCents?:number;
   /** False when this category has no recurring row, prior actual, or other deterministic evidence
