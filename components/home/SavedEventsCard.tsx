@@ -18,6 +18,16 @@ type Panel="events"|"day"|null;
 type Action={area:string;action:string;reason:string};
 type SavedQuestion={question:string;options:string[]};
 type Message={role:string;blocks:unknown[]|null};
+
+/** One navigation control shared by Home, the Events index and event details. */
+export function EventsTabs({tab,onChoose,t}:{tab:Tab;onChoose:(next:Tab)=>void;t:T}){
+  return <div className="grid grid-cols-3 gap-2" role="group" aria-label={t("title")}>
+    {(["past","now","upcoming"] as const).map(key=><button key={key} type="button"
+      aria-pressed={tab===key} onClick={()=>onChoose(key)}
+      className={"min-h-12 min-w-0 rounded-xl px-2 text-[16px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
+        (tab===key?"bg-accent text-on-accent":"bg-surface2 text-ink")}>{t(key)}</button>)}
+  </div>;
+}
 /** The existing chat owns the question and how it is answered; the panel only
  * mirrors the latest unanswered question without creating another question. */
 export function latestEventQuestion(messages:readonly Message[],locale:Locale):SavedQuestion|null{
@@ -193,7 +203,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
     events:eventsOn(timeline.events,date)}))
     .find(d=>Boolean(d.plan)||d.events.length>0);
   const openDay=(date:string)=>{setSelected(date);setPanel("day");setTab(date<today?"past":date===today?"now":"upcoming");setMonth(date.slice(0,7));};
-  const openEvents=()=>{setPanel("events");setSelected(null);setTab("upcoming");setMonth(today.slice(0,7));};
+  const openEvents=(next:Tab="upcoming")=>{setPanel("events");setSelected(null);setTab(next);setMonth(today.slice(0,7));};
   const chosen=selected??today;
   const plan=planOn(timeline.plans,chosen);
   const dayEvents=eventsOn(timeline.events,chosen);
@@ -221,11 +231,12 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   return <>
     <section data-testid="coming-up" aria-label={t("title")}
       className="min-w-0 rounded-2xl border border-line bg-card p-3">
-      <button type="button" onClick={openEvents}
+      <button type="button" onClick={()=>openEvents()}
         className="flex min-h-12 w-full items-center gap-2 text-start font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <CalendarDays size={20} aria-hidden="true"/><span className="flex-1 text-[17px]">{t("title")}</span>
         <span className="text-[15px] text-accent-text">{t("seeAll")}</span>
       </button>
+      <div className="mt-2"><EventsTabs tab={tab} onChoose={openEvents} t={t}/></div>
       {!compact&&(lead?<button type="button" onClick={()=>openDay(lead.date)}
         className="mb-3 w-full min-w-0 rounded-2xl bg-surface2 p-3 text-start disabled:opacity-60">
         <p className="text-[15px] font-semibold text-accent-text">{dateLabel(lead.date,locale,"long")} · {lead.date===today?t("now"):t("upcoming")}</p>
@@ -274,13 +285,11 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
           <button type="button" onClick={()=>setPanel(null)} aria-label={t("close")} className={button}>
             <X size={22} aria-hidden="true"/></button>
         </header>
+        <div className="shrink-0 border-b border-line p-3">
+          <EventsTabs tab={tab} onChoose={next=>{setTab(next);setPanel("events");}} t={t}/>
+        </div>
         <div className="min-h-0 min-w-0 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain p-3 text-[17px] leading-relaxed sm:p-5">
           {panel==="events"?<>
-            <div className="grid grid-cols-3 gap-1" role="group" aria-label={t("title")}>
-              {(["past","now","upcoming"] as const).map(key=><button key={key} type="button"
-                aria-pressed={tab===key} onClick={()=>setTab(key)}
-                className={"min-h-12 min-w-0 rounded-xl px-1 text-[16px] font-semibold sm:px-4 "+(tab===key?"bg-accent text-on-accent":"bg-surface2 text-ink")}>{t(key)}</button>)}
-            </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button type="button" className={button+" bg-surface2"} onClick={()=>setCalendar(v=>!v)}
                 aria-expanded={calendar}><CalendarDays size={19} className="me-2 inline" aria-hidden="true"/>{t("calendar")}</button>
