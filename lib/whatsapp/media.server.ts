@@ -112,21 +112,41 @@ export async function saveWhatsAppMediaDraft(params:{
    .eq("thread_id",threadId).maybeSingle();
  const prior=await getExisting();
  if(prior.error)throw prior.error;
+ const sameMetadata=(row:{media_type?:unknown;bytes?:unknown;original_name?:unknown})=>
+   row.media_type===parsed.mimeType&&row.bytes===parsed.bytes&&row.original_name===parsed.filename;
  if(prior.data){
-   if(prior.data.media_type!==parsed.mimeType||prior.data.bytes!==parsed.bytes||
-     prior.data.original_name!==parsed.filename)throw new Error("whatsapp_attachment_conflict");
+   if(!sameMetadata(prior.data))throw new Error("whatsapp_attachment_conflict");
    return {attachmentId:id,state:"stored_unanalysed"};
  }
  const path=[scope.businessId,scope.ownerUserId,threadId,id,safeFileName(parsed.filename)].join("/");
- const uploaded=await db.storage.from("ai-chat-private").upload(path,media.bytes,{
+ const storage=db.storage.from("ai-chat-private");
+ const uploaded=await storage.upload(path,media.bytes,{
     contentType:parsed.mimeType,cacheControl:"no-store",upsert:false,
  });
- if(uploaded.error)throw uploaded.error;
+ if(uploaded.error){
+   // A prior worker may have died after uploading, before metadata insert.
+   // Never blindly use upsert:true: only recover a byte-for-byte identical,
+   // bounded private object at the deterministic tenant-owned path.
+   const read=await storage.download(path);
+   if(read.error||!read.data||read.data.size!==media.bytes.byteLength)
+     throw uploaded.error;
+   const stored=new Uint8Array(await read.data.arrayBuffer());
+   if(!Buffer.from(stored).equals(Buffer.from(media.bytes)))
+     throw new Error("whatsapp_media_storage_conflict");
+ }
  const {error}=await db.from("ai_attachments").insert({
     id,business_id:scope.businessId,owner_user_id:scope.ownerUserId,
     thread_id:threadId,object_path:path,original_name:parsed.filename,
     media_type:parsed.mimeType,bytes:parsed.bytes,processing_state:"stored_unanalysed",
  });
- if(error){await db.storage.from("ai-chat-private").remove([path]);throw error;}
+ if(error){
+   const again=await getExisting();
+   if(!again.error&&again.data&&sameMetadata(again.data))
+     return {attachmentId:id,state:"stored_unanalysed"};
+   // Only a freshly uploaded object can be rolled back. Never delete an
+   // existing orphan that another concurrent worker may be recovering.
+   if(!uploaded.error)await storage.remove([path]);
+   throw error;
+ }
  return {attachmentId:id,state:"stored_unanalysed"};
 }
