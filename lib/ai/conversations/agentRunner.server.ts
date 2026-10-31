@@ -124,7 +124,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
         content: historyContent(m) })).filter(m => m.content);
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db,businessId:scope.businessId}),
-      menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf),
+      menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,external?db:undefined),
       readEconomics:async()=>readSupervisorEconomics(db,scope.businessId,identity.asOf),
       // Toast credentials are service-role only; the café comes from the authenticated scope.
       readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId),
