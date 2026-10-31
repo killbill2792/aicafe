@@ -14,6 +14,8 @@ vi.mock("./cafeState",()=>({SnapshotCafeStateService:class{
   }));
 }}));
 import {sendDailyBriefs,type BriefOutboxHook} from "./dailyBrief.server";
+import {eligibleBriefBinding,prepareBoundBrief} from "@/lib/whatsapp/morningBriefDelivery.server";
+import {renderMorningBrief} from "@/lib/whatsapp/morningBrief";
 import {briefMessageId} from "./dailyBrief";
 
 const morning=new Date("2026-10-31T12:50:00Z");
@@ -42,6 +44,29 @@ function dbFactory(existing=false,opts:{revoked?:boolean;wrongCafe?:boolean}={})
   return {db:{from:q} as unknown as SupabaseClient,mutations,scopedReads};
 }
 describe("morning brief optional durable-outbox seam",()=>{
+  it("puts EXACT same approved seven-field text in the one web message and outbound opportunity",async()=>{
+    const {db,mutations}=dbFactory();
+    const params=["Shop A","$109.00","3","Latte","3","Festival at 15:00","Saturday"] as const;
+    const webText=renderMorningBrief(params);
+    const binding={id:"binding-1",businessId:"cafe-a",ownerUserId:"owner-a",
+      threadId:"thread-a",waId:"15556506570",phoneNumberId:"1322195347653883",
+      lastOwnerMessageAt:"2026-10-31T05:00:00Z"};
+    const eligible={binding,websiteText:webText,prepared:{parameters:params,
+      netSalesCents:10900,businessDate:"2026-10-30",today:"2026-10-31",
+      provenance:{sales:"daily_rollups",items:"menu_item_quantities_sold",
+        menu:"menu_items",eventId:"e1",monitorProposalId:"m1"}}};
+    vi.mocked(eligibleBriefBinding).mockResolvedValueOnce(binding);
+    vi.mocked(prepareBoundBrief).mockResolvedValueOnce(eligible);
+    const hook=vi.fn(async (_input:Parameters<BriefOutboxHook>[0])=>{});
+    expect(await sendDailyBriefs(db,morning,hook)).toMatchObject({sent:1,failed:0});
+    expect(mutations[0]).toMatchObject({table:"ai_messages",
+      row:{thread_id:"thread-a",structured_content:[{type:"text",text:webText}]}});
+    expect(mutations[1]).toMatchObject({table:"operating_tasks",
+      row:{payload:{threadId:"thread-a",text:webText}}});
+    expect(hook.mock.calls[0][0].eligible?.prepared.parameters).toEqual(params);
+    expect(hook.mock.calls[0][0].websiteText).toBe(webText);
+  });
+
   it("persists the canonical website and inbox brief before offering the same day to transport",async()=>{
     const {db,mutations}=dbFactory();
     const hook=vi.fn(async (_input:Parameters<BriefOutboxHook>[0])=>{expect(mutations.map(m=>m.table))
