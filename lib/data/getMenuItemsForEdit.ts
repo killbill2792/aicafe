@@ -23,6 +23,8 @@ export type RecipeLineForEdit = {
    * just fall back to showing `quantity`/`baseUnit`. Cost math always uses `quantity`/`baseUnit`. */
   displayUnit: string | null;
   displayQuantity: number | null;
+  /** Optional per-size order; older lines fall back to ingredient UUID. */
+  sortOrder?: number | null;
   costCents: number | null;
   priceSource: "manual" | "receipt" | "statement" | "invoice" | null;
 };
@@ -75,7 +77,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
 
   const [catalogRows, ingredientsResult, businessResult] = await Promise.all([
     readMenuCatalogRows(supabase, businessId),
-    supabase.from("ingredients").select("id, name, base_unit, starter_key").eq("business_id", businessId).order("name"),
+    supabase.from("ingredients").select("id, name, base_unit, starter_key").eq("business_id", businessId).is("archived_at",null).order("name"),
     supabase.from("businesses").select("timezone").eq("id", businessId).single(),
   ]);
   if (ingredientsResult.error) {
@@ -94,7 +96,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   const [recipeLinesResult, aggregateCostsResult] =
     itemIds.length > 0
       ? await Promise.all([
-          supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, ingredients(name, base_unit, starter_key)").in("menu_item_id", itemIds),
+          supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, sort_order, ingredients(name, base_unit, starter_key)").in("menu_item_id", itemIds),
           supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, source_type, status").eq("business_id", businessId).in("menu_item_id", itemIds),
         ])
       : [{ data: [] as never[], error: null }, { data: [] as never[], error: null }];
@@ -131,6 +133,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
       quantity: Number(row.quantity),
       displayUnit: row.display_unit ?? null,
       displayQuantity: row.display_quantity === null ? null : Number(row.display_quantity),
+      sortOrder: row.sort_order === null ? null : Number(row.sort_order),
     });
     recipeByItem.set(row.menu_item_id, list);
   }
@@ -161,7 +164,9 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   }
 
   const menuItems: MenuItemForEdit[] = (items ?? []).map((item) => {
-    const recipe = (recipeByItem.get(item.id) ?? []).sort((a, b) => a.ingredientName.localeCompare(b.ingredientName));
+    const recipe = (recipeByItem.get(item.id) ?? []).sort((a, b) =>
+      (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER)
+      || a.ingredientId.localeCompare(b.ingredientId, "en"));
     const recipeCost = evaluateRecipeCost(
       recipe.map((r) => ({ ingredientId: r.ingredientId, quantity: r.quantity })),
       latestPriceMicros,
