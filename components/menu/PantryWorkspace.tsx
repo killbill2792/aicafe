@@ -8,6 +8,7 @@ import { useRouter } from "@/i18n/navigation";
 import {saveUsageEntry,addFromStarter,savePackPrice,createPantryIngredient,updatePantryIngredient} from "@/lib/actions/pantry";
 import {usageEntryErrorKey} from "@/lib/calc/usageEntryErrors";
 import { packBaseQuantity } from "@/lib/calc/recipeUnits";
+import {selectedActiveIngredient} from "@/lib/menu/stockEntrySelection";
 import type { BaseUnit } from "@/lib/calc/recipeUnits";
 import type { PantryCategory } from "@/lib/menu/pantryStarter";
 
@@ -20,11 +21,13 @@ function categoryOf(value:string|null) { if(value==="syrup"||value==="sauce")ret
 const units:Record<BaseUnit,string[]>={ml:["gal","qt","l","ml","fl_oz"],g:["lb","kg","oz_wt","g"],each:["each","dozen","case(100)","case(1000)"]};
 export default function PantryWorkspace({items,starters,labels:t,variance,businessToday,inventoryPanel}:{items:Item[];starters:Starter[];labels:Record<string,string>;variance:Variance|null;businessToday:string;inventoryPanel?:ReactNode}) {
  const pendingPurchaseId=useRef<string|null>(null);
- const router=useRouter();const [entryKind,setEntryKind]=useState<"count"|"purchase">("count"); const [entryItem,setEntryItem]=useState(items.find(item=>!item.archivedAt)?.id??""); const [entryQuantity,setEntryQuantity]=useState(""); const [entryUnit,setEntryUnit]=useState<string>(items[0]?.baseUnit??"each"); const [entryDate,setEntryDate]=useState(businessToday); const [entryError,setEntryError]=useState(""); const [entryDone,setEntryDone]=useState(false);
+ const router=useRouter();const [entryKind,setEntryKind]=useState<"count"|"purchase">("count"); const [entryItem,setEntryItem]=useState(items.find(item=>!item.archivedAt)?.id??""); const [entryQuantity,setEntryQuantity]=useState(""); const [entryUnit,setEntryUnit]=useState<string>(items.find(item=>!item.archivedAt)?.baseUnit??"each"); const [entryDate,setEntryDate]=useState(businessToday); const [entryError,setEntryError]=useState(""); const [entryDone,setEntryDone]=useState(false);
  const [query,setQuery]=useState("");const [filter,setFilter]=useState<string>("all");const [dialog,setDialog]=useState<"starter"|"custom"|"price"|"edit"|null>(null);
  const [selected,setSelected]=useState<Item|null>(null);const [chosen,setChosen]=useState<string[]>([]);const [name,setName]=useState("");const [category,setCategory]=useState<PantryCategory>("other");const [baseUnit,setBaseUnit]=useState<BaseUnit>("each");
  const [quantity,setQuantity]=useState("1");const [unit,setUnit]=useState("each");const [price,setPrice]=useState("");const [error,setError]=useState("");const [pending,start]=useTransition();
  const activeItems=items.filter(item=>!item.archivedAt);
+ const activeStockEntry=selectedActiveIngredient(items,entryItem);
+ const validStockUnit=activeStockEntry!==null&&packBaseQuantity(1,entryUnit,activeStockEntry.baseUnit)!==null;
  const [showArchived,setShowArchived]=useState(false);
  const missing=activeItems.filter(item=>item.packCostCents===null).length;
  const visible=useMemo(()=>items.filter(item=>Boolean(item.archivedAt)===showArchived&&(filter==="all"||categoryOf(item.category)===filter)&&item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())),[items,filter,query,showArchived]);
@@ -34,7 +37,12 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  function submitStarters(){start(async()=>{const result=await addFromStarter(chosen);if(!result.ok)setError(t.error);else{setDialog(null);setChosen([]);router.refresh();}});}
  function submitEdit(){if(!selected)return;start(async()=>{const result=await updatePantryIngredient({id:selected.id,name,category});if(!result.ok)setError(t.error);else{setDialog(null);router.refresh();}});}
  function submitCustom(){start(async()=>{const result=await createPantryIngredient({name,category,baseUnit});if(!result.ok)setError(t.error);else{setDialog(null);setName("");router.refresh();}});}
- function saveEntry(){const chosen=items.find(i=>i.id===entryItem);if(!chosen)return;setEntryError("");setEntryDone(false);if(entryKind==="purchase"&&!pendingPurchaseId.current)pendingPurchaseId.current=crypto.randomUUID();start(async()=>{try{const result=await saveUsageEntry(entryKind,{ingredientId:chosen.id,quantity:Number(entryQuantity),unit:entryUnit,date:entryDate,...(entryKind==="purchase"?{lineId:pendingPurchaseId.current}: {})});if(!result.ok)setEntryError(result.error);else{pendingPurchaseId.current=null;setEntryQuantity("");setEntryDone(true);router.refresh();}}catch{setEntryError("save_failed");}});}
+ function saveEntry(){
+  // The displayed option and submitted ID must be the SAME active ingredient,
+  // even immediately after an archive-triggered router.refresh().
+  const chosen=activeStockEntry;
+  if(!chosen||!validStockUnit){setEntryDone(false);setEntryError("ingredient_not_found");return;}
+  setEntryError("");setEntryDone(false);if(entryKind==="purchase"&&!pendingPurchaseId.current)pendingPurchaseId.current=crypto.randomUUID();start(async()=>{try{const result=await saveUsageEntry(entryKind,{ingredientId:chosen.id,quantity:Number(entryQuantity),unit:entryUnit,date:entryDate,...(entryKind==="purchase"?{lineId:pendingPurchaseId.current}: {})});if(!result.ok)setEntryError(result.error);else{pendingPurchaseId.current=null;setEntryQuantity("");setEntryDone(true);router.refresh();}}catch{setEntryError("save_failed");}});}
  const fmt=(pattern:string,values:Record<string,string|number>)=>Object.entries(values).reduce((text,[key,value])=>text.replaceAll("{"+key+"}",String(value)),pattern);
  return <div className="mx-auto w-full max-w-5xl text-ink">
  <div className="mb-4 flex items-center justify-between gap-3"><h1 className="font-headline text-3xl font-extrabold">{t.title}</h1><div className="flex flex-wrap items-center justify-end gap-2"><button type="button" onClick={()=>{setError("");setDialog("starter");}} className="min-h-12 rounded-xl border border-line bg-card px-3 font-bold text-accent-text">{t.chooseStarter}</button></div></div>
@@ -64,12 +72,12 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  <section id="pantry-stock-record" className="mb-5 scroll-mt-4 rounded-2xl border border-line bg-card p-4"><h2 className="font-headline text-xl font-bold">{t.usageRecord}</h2>
  <div className="mt-3 flex gap-2">{(["count","purchase"] as const).map(k=><button type="button" key={k} aria-pressed={entryKind===k} onClick={()=>setEntryKind(k)} className={`min-h-12 rounded-xl border px-4 font-bold ${entryKind===k?"bg-accent text-on-accent":"border-line"}`}>{t["usage_"+k]}</button>)}</div>
  <div className="mt-3 grid gap-3 sm:grid-cols-2">
- <label>{t.usageIngredient}<select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3" value={entryItem} onChange={e=>{setEntryItem(e.target.value);setEntryUnit(items.find(i=>i.id===e.target.value)?.baseUnit??"each");}}>{activeItems.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
+ <label>{t.usageIngredient}<select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3" value={activeStockEntry?.id??""} onChange={e=>{setEntryItem(e.target.value);setEntryUnit(activeItems.find(i=>i.id===e.target.value)?.baseUnit??"each");}}><option value="" disabled>{t.usageIngredient}</option>{activeItems.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
  <label>{t.usageQuantity}<input type="number" min={entryKind==="count"?"0":"0.0001"} step="any" value={entryQuantity} onChange={e=>setEntryQuantity(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label>
- <label>{t.usageUnit}<select value={entryUnit} onChange={e=>setEntryUnit(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3">{(units[activeItems.find(i=>i.id===entryItem)?.baseUnit??"each"]).map(u=><option key={u} value={u}>{u}</option>)}</select></label>
+ <label>{t.usageUnit}<select value={validStockUnit?entryUnit:""} onChange={e=>setEntryUnit(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3"><option value="" disabled>{t.usageUnit}</option>{(activeStockEntry?units[activeStockEntry.baseUnit]:[]).map(u=><option key={u} value={u}>{u}</option>)}</select></label>
  <label>{t.usageDate}<input type="date" value={entryDate} onChange={e=>setEntryDate(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label></div>
  {!!entryError&&<p role="alert" className="mt-2 text-warn">{t.error}: {t[usageEntryErrorKey(entryError)]??t.usageErrorSaveFailed}</p>}{entryDone&&<p role="status" className="mt-2">{t.usageSaved}</p>}
- <button type="button" disabled={pending||!entryItem||entryQuantity.trim()===""||Number(entryQuantity)<0} onClick={saveEntry} className="mt-3 min-h-12 rounded-xl bg-accent px-6 font-bold text-on-accent disabled:opacity-50">{t.save}</button>
+ <button type="button" disabled={pending||!activeStockEntry||!validStockUnit||entryQuantity.trim()===""||Number(entryQuantity)<0} onClick={saveEntry} className="mt-3 min-h-12 rounded-xl bg-accent px-6 font-bold text-on-accent disabled:opacity-50">{t.save}</button>
  <p className="mt-2 text-sm text-ink-muted">{t.usageCountNote}</p></section>
  {dialog&&<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label={dialog==="price"?t.priceTitle:dialog==="starter"?t.chooseStarter:dialog==="edit"?t.edit:t.newIngredient}><div className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-[24px] bg-card p-5 text-ink shadow-xl">
  <h2 className="font-headline text-xl font-bold">{dialog==="price"?t.priceTitle:dialog==="starter"?t.chooseStarter:t.newIngredient}</h2>
