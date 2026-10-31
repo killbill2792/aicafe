@@ -2568,6 +2568,14 @@
     }
   },
   "MenuBuilder": {
+    "archiveIngredient": "Archivar ingrediente",
+    "restoreIngredient": "Restaurar ingrediente",
+    "archivedIngredient": "Archivado · se conserva el historial",
+    "archiveConfirm": "¿Archivar este ingrediente? Se conservarán las recetas y el historial.",
+    "activeIngredients": "Ingredientes activos",
+    "archivedIngredients": "Ingredientes archivados",
+    "moveIngredientUp": "Subir {name}",
+    "moveIngredientDown": "Bajar {name}",
     "title": "Despensa",
     "search": "Buscar en despensa",
     "all": "Todos",
