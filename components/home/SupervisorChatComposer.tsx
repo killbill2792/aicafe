@@ -38,7 +38,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
 import SavedEventsCard from "./SavedEventsCard";
-import {openEventDayThread} from "./eventDayThread";
+import {openEventDayThread,eventContextFromTitle,eventOwnerMessage,type EventChatContext} from "./eventDayThread";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
@@ -259,6 +259,7 @@ export default function SupervisorChatComposer({
   const [progressStatus, setProgressStatus] = useState<SupervisorProgress>(null);
   const [streamedText, setStreamedText] = useState("");
   const [threadTitle, setThreadTitle] = useState<string | null>(null);
+  const [eventContext,setEventContext]=useState<EventChatContext|null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [dictation, dispatchDictation] = useReducer(nextDictationStage, "idle");
@@ -383,7 +384,10 @@ export default function SupervisorChatComposer({
       .then((page) => {
         if (controller.signal.aborted) return;
         setMessages(page.items); setNextOffset(page.nextOffset);setLoadedThreadId(threadId);
-        setThreadTitle(threads.find((thread) => thread.id === threadId)?.title ?? null);
+        const title=threads.find((thread) => thread.id === threadId)?.title??null;
+        setThreadTitle(title);
+        setEventContext(current=>current?.threadId===threadId?current:
+          title?eventContextFromTitle(title,threadId):null);
       }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [enabled, threadId, sending, threads, reloadVersion]);
@@ -515,7 +519,9 @@ export default function SupervisorChatComposer({
   }
   async function sendText(value: string, existingKey?: string, targetThreadId?: string,
     attachmentOverride?:readonly StoredAttachment[]) {
-    const text = value.trim() || (attachments.some(file=>file.mediaType.startsWith("image/"))?copy.photoRequest:"");
+    const inputText=value.trim() || (attachments.some(file=>file.mediaType.startsWith("image/"))?copy.photoRequest:"");
+    const context=eventContext?.threadId===(targetThreadId??threadId)?eventContext:null;
+    const text=eventOwnerMessage(inputText,context);
     // A confirmed background job accepts follow-ups while the first response streams.
     // The main-turn double-tap guard must not intercept this separate path.
     if (!targetThreadId && !existingKey && enabled && canUseAi && text && (sending ? Boolean(liveJobId) : resumedRunning) &&
@@ -622,7 +628,7 @@ export default function SupervisorChatComposer({
       } else {
         if (!existingKey) {
           setOptimisticOwner(null);
-          setDraft(current=>current || text);
+          setDraft(current=>current || inputText);
         }
         if (jobConfirmed) setFailureCode(failure instanceof Error ? failure.message : "agent_turn_failed");
         setError(true);
@@ -672,7 +678,9 @@ export default function SupervisorChatComposer({
     setOptimisticOwner(null);
     openingThread.current = Boolean(id); pinned.current = true;
     setShowNewMessage(false);
-    setThreadTitle(threads.find((thread) => thread.id === id)?.title ?? null);
+    const title=threads.find((thread) => thread.id === id)?.title??null;
+    setThreadTitle(title);
+    setEventContext(id&&title?eventContextFromTitle(title,id):null);
     setDraft(""); setMediaNotice(""); setError(false); setHistoryOpen(false);
     setFailureCode(null); setQueuedOwner([]);
     retryId.current = null; threadRequestId.current = null;
@@ -827,9 +835,10 @@ export default function SupervisorChatComposer({
       if(existingThreadId){
         eventThreadIds.current.set(date,existingThreadId);
         selectThread(existingThreadId);
+        setEventContext({date,title,threadId:existingThreadId});
         return;
       }
-      await openEventDayThread({
+      const chosenId=await openEventDayThread({
         date,title,known:eventThreadIds.current,
         create:async title=>{
           // Existing owner-scoped thread API handles idempotency and permissions.
@@ -842,6 +851,7 @@ export default function SupervisorChatComposer({
         },
         select:id=>selectThread(id),
       });
+      setEventContext({date,title,threadId:chosenId});
     }catch{
       setError(true);setFailureCode("agent_request_failed");
     }finally{openingEvent.current=false;}
@@ -1010,6 +1020,14 @@ export default function SupervisorChatComposer({
           <Paperclip size={17} aria-hidden="true" /><span className="truncate">{file.originalName}</span>
         </a>)}
       </div>}
+      {eventContext?.threadId===threadId&&
+        <div role="status" className="mb-2 flex min-h-10 items-center gap-2 rounded-xl bg-accent-soft px-3 py-2 text-[15px] font-semibold text-ink">
+          <span className="min-w-0 flex-1 break-words">@event {eventContext.title} · {eventContext.date}</span>
+          <button type="button" onClick={()=>setEventContext(null)} aria-label={copy.closeHistory}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+            <X size={18} aria-hidden="true"/>
+          </button>
+        </div>}
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
         className="flex items-end gap-1 rounded-[22px] border border-line bg-surface p-1.5 shadow-sm">
         <input ref={filePicker} type="file" className="sr-only"
