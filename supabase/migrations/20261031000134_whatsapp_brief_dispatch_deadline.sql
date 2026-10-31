@@ -65,10 +65,20 @@ grant execute on function public.whatsapp_brief_dispatch_ready() to service_role
 -- A daily-brief inbox row links to the owner's private ai_threads record.
 -- Existing operating_tasks policies admit every café member, so constrain these
 -- NEW owner-specific entries without changing the shared inbox for other kinds.
--- Legacy café-level daily rows without an ownerUserId retain historic visibility.
+-- Legacy café-level daily rows remain visible ONLY to the saved message owner.
 create policy whatsapp_owner_daily_brief_inbox_scope
  on public.operating_tasks as restrictive for all to authenticated
- using (kind<>'daily_brief' or payload->>'ownerUserId' is null
-   or payload->>'ownerUserId'=(select auth.uid())::text)
- with check (kind<>'daily_brief' or payload->>'ownerUserId' is null
-   or payload->>'ownerUserId'=(select auth.uid())::text);
+ using (kind<>'daily_brief'
+   or payload->>'ownerUserId'=(select auth.uid())::text
+   or (payload->>'ownerUserId' is null and exists (
+     select 1 from public.ai_messages m
+     where m.id::text=payload->>'messageId'
+       and m.business_id=operating_tasks.business_id
+       and m.owner_user_id=(select auth.uid()))))
+ with check (kind<>'daily_brief'
+   or payload->>'ownerUserId'=(select auth.uid())::text
+   or (payload->>'ownerUserId' is null and exists (
+     select 1 from public.ai_messages m
+     where m.id::text=payload->>'messageId'
+       and m.business_id=operating_tasks.business_id
+       and m.owner_user_id=(select auth.uid()))));
