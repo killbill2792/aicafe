@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eligibleWhatsAppTextReply, supervisorQuestionForWhatsApp, withinWhatsAppServiceWindow } from "./supervisor";
+import { eligibleWhatsAppTextReply, supervisorQuestionForWhatsApp, withinWhatsAppServiceWindow, whatsappPlainTextFromSavedBlocks } from "./supervisor";
 
 describe("WhatsApp owner prompts use payloads, never display labels", () => {
   it.each([
@@ -36,4 +36,22 @@ describe("WhatsApp freeform reply window",()=>{
     expect(eligibleWhatsAppTextReply("a".repeat(4097),received,new Date("2026-10-31T08:00:01Z"))).toBe(false);
     expect(eligibleWhatsAppTextReply("  ",received,new Date("2026-10-31T08:00:01Z"))).toBe(false);
   });
+});
+
+describe("stored Supervisor response replay",()=>{
+ it("round-trips persisted text blocks without rewriting the model response",()=>{
+   expect(whatsappPlainTextFromSavedBlocks([
+     {type:"text",text:"Net sales: "},{type:"text",text:"$123.45\nPartial."},
+     {type:"how",lines:[]},{type:"proposal_card",proposalId:"fake"},
+   ])).toBe("Net sales: $123.45\nPartial.");
+ });
+ it("uses a saved clarify question when the model text was represented only by a card",()=>{
+   expect(whatsappPlainTextFromSavedBlocks([
+     {type:"clarify",question:"Which café day?"}
+   ])).toBe("Which café day?");
+ });
+ it("never sends a proposal-card-only response as model text",()=>{
+   expect(whatsappPlainTextFromSavedBlocks([
+     {type:"proposal_card",proposalId:"fake"}])).toBeNull();
+ });
 });
