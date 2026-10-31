@@ -13,6 +13,7 @@ vi.mock("@/i18n/navigation",()=>({useRouter:()=>({refresh:vi.fn()})}));
 vi.mock("@/lib/actions/pantry",()=>({
  saveProductRecipes:vi.fn(),createPantryIngredient:vi.fn(),swapIngredient:vi.fn(),
 }));
+vi.mock("@/lib/actions/ingredientUnitConversions",()=>({setIngredientUnitConversion:vi.fn()}));
 vi.mock("@/lib/actions/menuItems",()=>({
  updateMenuItemPrice:vi.fn(),setMenuItemActive:vi.fn(),
 }));
@@ -49,7 +50,7 @@ describe("inline product recipe",()=>{
   const html=render();
   expect(html).toContain("type=\"number\"");
   expect(html).toContain("value=\"3\"");
-  expect(html).toContain("value=\"4\"");
+  expect(html).not.toContain("value=\"4\""); // Only the focused size is editable.
   expect(html).toContain("recipeUnitPump");
   expect(html).toContain("recipeUnitFlOz");
   expect(html).not.toContain("decreaseQuantity");
@@ -63,6 +64,7 @@ describe("inline product recipe",()=>{
   expect(html).toContain('aria-label="addRecipeRowAfter Vanilla syrup"');
   expect(html).toContain('aria-label="addRecipeRowAfter Whole milk"');
   expect(html).toContain("saveItem");
+  expect(html).toContain("sizesSell");
  });
  it("uses the existing canonical unit conversion rather than a screen-only calculator",()=>{
   expect(toBaseUnitQuantity("pump",3,"ml",[{unit:"pump",baseUnitsPerUnit:7.39}]))
