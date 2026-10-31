@@ -16,7 +16,7 @@ export function parsePurchasePack(text:string,baseUnit:BaseUnit):PurchasePack|nu
   .replace(/gramos?|غرام(?:ات|ًا)?|جرام(?:ات)?/g,"grams")
   .replace(/kilogramos?|كيلوغرام(?:ات)?/g,"kilograms")
   .replace(/\s+/g," ").replace(/\s+(?:cans?|bottles?|cartons?|jugs?|bags?|boxes?)$/,"");
- const match=/^(?:(\d+(?:\.\d+)?)\s*(?:x|×)\s*)?(\d+(?:\.\d+)?)\s*(fl\s*oz|fluid\s+ounces?|ounces?\s+by\s+weight|oz\s+weight|oz|ounces?|ml|millilit(?:er|re)s?|g|grams?|kg|kilograms?|lb|lbs|pounds?|l|lit(?:er|re)s?|gal|gallons?|qt|quarts?|each|pieces?|dozen)$/i.exec(cleaned);
+ const match=/^(?:(\d+(?:\.\d+)?)\s*(?:x|×)\s*)?(\d+(?:\.\d+)?)\s*(fl\s*oz|fluid\s+ounces?|ounces?\s+by\s+weight|oz\s+weight|oz|ounces?|ml|millilit(?:er|re)s?|g|grams?|kg|kilograms?|lb|lbs|pounds?|l|lit(?:er|re)s?|gal|gallons?|qt|quarts?|each|pieces?|dozen|case\([1-9]\d*\))$/i.exec(cleaned);
  if(!match)return null;
  const count=match[1]?Number(match[1]):1,amount=Number(match[2]);
  const unit=match[3].replace(/\s+/g," ");
@@ -32,6 +32,7 @@ export function parsePurchasePack(text:string,baseUnit:BaseUnit):PurchasePack|nu
  else if(unit==="gal"||unit.startsWith("gallon"))packUnit="gal";
  else if(unit==="qt"||unit.startsWith("quart"))packUnit="qt";
  else if(unit==="dozen")packUnit="dozen";
+ else if(/^case\([1-9]\d*\)$/.test(unit))packUnit=unit;
  else packUnit="each";
  const packQuantity=count*amount;
  return Number.isFinite(packQuantity)&&packBaseQuantity(packQuantity,packUnit,baseUnit)!==null?{packQuantity,packUnit}:null;
@@ -50,5 +51,7 @@ export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit
   return new Intl.NumberFormat(locale,{style:"unit",unit:unitNames[resolvedUnit],unitDisplay:"long"}).format(quantity);
  }
  const other:Record<string,string>={qt:"quarts",each:"pieces",dozen:"dozen"};
+ // Preserve existing case(N) units when owners edit only their purchase price.
+ if(/^case\([1-9]\d*\)$/.test(resolvedUnit))return new Intl.NumberFormat(locale).format(quantity)+" "+resolvedUnit;
  return new Intl.NumberFormat(locale).format(quantity)+" "+(other[resolvedUnit]??resolvedUnit);
 }
