@@ -29,7 +29,7 @@ const EMPTY_PRICE_EVIDENCE = {
  nearbyMarket: { status: "unavailable" as const, verifiedNearbyCount: 0, minimumCompetitors: 3 },
 };
 export default function ProductDetailScreen({item,pantry,savedAddons,posModifierGroups,draftSizes,ingredients,ingredientConversions,siblingSizes,productEditItems,photo,businessId,focusedSizeId,initialTab,initialPriceItemId}:{item:MenuControlItem;pantry:PricedPantry[];savedAddons:MenuAddon[];posModifierGroups:PublishedModifierGroup[];draftSizes:UnpricedMenuSize[];ingredients:IngredientOption[];menuGroupOptions:string[];ingredientConversions:Record<string,IngredientUnitConversion[]>;siblingSizes:MenuControlItem[];productEditItems:MenuItemForEdit[];photo:ProductPhoto;businessId:string|null;focusedSizeId?:string;justCreated?:boolean;initialTab:MenuDetailTab;initialPriceItemId?:string;copiedFrom?:string}){
- const t=useTranslations("Menu");const te=useTranslations("ManageMenu");const builder=useTranslations("MenuBuilder");const useAddonsLabel=builder("addons");const router=useRouter();const pathname=usePathname();const statusChip=usePricingStatusChip();const all=stableSortSizes([item,...siblingSizes]);const [tab,setTab]=useState(initialTab);const [editingPriceId,setEditingPriceId]=useState<string|null>(all.some(size=>size.id===initialPriceItemId)?initialPriceItemId??null:null);const [renaming,setRenaming]=useState(false);const [name,setName]=useState(item.baseName);const [pending,start]=useTransition();const [error,setError]=useState<string|null>(null);const productActive=all.some(size=>size.active);
+ const t=useTranslations("Menu");const te=useTranslations("ManageMenu");const builder=useTranslations("MenuBuilder");const useAddonsLabel=builder("addons");const router=useRouter();const pathname=usePathname();const statusChip=usePricingStatusChip();const all=stableSortSizes([item,...siblingSizes]);const [tab,setTab]=useState(initialTab);const [editingPriceId,setEditingPriceId]=useState<string|null>(all.some(size=>size.id===initialPriceItemId)?initialPriceItemId??null:null);const [renaming,setRenaming]=useState(false);const [name,setName]=useState(item.baseName);const [pending,start]=useTransition();const [error,setError]=useState<string|null>(null);const productActive=all.some(size=>size.active);const [focusedSize,setFocusedSize]=useState(focusedSizeId&&all.some(size=>size.id===focusedSizeId)?focusedSizeId:all.find(size=>size.active)?.id??item.id);
  function navigate(next:MenuDetailTab,size?:string){setTab(next);router.replace(`${pathname}?tab=${next}${size?`&size=${encodeURIComponent(size)}`:""}`,{scroll:false});}
  function saveName(){start(async()=>{const r=await renameProduct({menuItemId:item.id,name});if(r.ok){setRenaming(false);router.refresh();}else setError(r.error);});}
  return <>
@@ -47,12 +47,28 @@ export default function ProductDetailScreen({item,pantry,savedAddons,posModifier
         <ul className="mt-2 space-y-1">{group.options.map((option,j)=><li key={j} className="flex justify-between gap-2 text-sm"><span>{option.name}</span><span>{option.priceCents===null?builder("priceNotSet"):formatCents(option.priceCents)}</span></li>)}</ul>
       </div>)}</div>
     </section>}</>}
-  {tab==="recipe"&&<>
-   <AllSizesRecipe key={productEditItems.map(size=>`${size.id}:${size.active}:${size.priceCents}:${size.recipe.map(line=>`${line.ingredientId}-${line.quantity}-${line.displayUnit}-${line.displayQuantity}`).join(",")}`).join("|")} items={productEditItems} ingredients={ingredients} conversions={ingredientConversions} pantry={pantry} draftSizes={draftSizes}/>
-   {productEditItems.some(entry=>entry.recipe.length===0)&&<AggregateProductCostEditor items={productEditItems.filter(entry=>entry.recipe.length===0)}
+  {tab==="recipe"&&<div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(350px,.8fr)]">
+   <div className="min-w-0">
+    <AllSizesRecipe key={productEditItems.map(size=>`${size.id}:${size.active}:${size.priceCents}:${size.recipe.map(line=>`${line.ingredientId}-${line.quantity}-${line.displayUnit}-${line.displayQuantity}`).join(",")}`).join("|")}
+     items={productEditItems} ingredients={ingredients} conversions={ingredientConversions} pantry={pantry} draftSizes={draftSizes}
+     focusedSizeId={focusedSize} onFocusedSizeChange={setFocusedSize}/>
+       {productEditItems.some(entry=>entry.recipe.length===0)&&<AggregateProductCostEditor items={productEditItems.filter(entry=>entry.recipe.length===0)}
      labels={{title:t("aggregateCostTitle"),help:t("aggregateCostHelp"),perSize:t("aggregateCostPerSize"),input:t("aggregateCostInput"),save:t("aggregateCostSave"),remove:t("aggregateCostRemove"),saved:t("aggregateCostSaved"),usingOwner:t("aggregateCostOwnerActive"),usingOwnerEstimate:t("aggregateCostOwnerEstimateActive"),usingImported:t("aggregateCostImportedActive"),usingImportedEstimate:t("aggregateCostImportedEstimateActive"),usingRecipe:t("aggregateCostRecipeActive"),recipeOnly:t("aggregateCostRecipeOnly"),missing:t("aggregateCostMissing"),recipeHigher:t("aggregateCostRecipeHigher"),recipeLower:t("aggregateCostRecipeLower"),same:t("aggregateCostSame"),invalid:t("aggregateCostInvalid"),error:t("aggregateCostError")}}/>}
-   <section className="mt-5"><h2 className="mb-2 font-headline text-2xl font-bold">{t("priceBasisTitle")}</h2><div className="grid gap-4 xl:grid-cols-2">{all.map(size=><SizeCard key={size.id} size={size} t={t} chip={statusChip(size)} editing={editingPriceId===size.id} onPrice={()=>{setEditingPriceId(size.id);router.replace(pathname+"?tab=recipe&editPrice="+encodeURIComponent(size.id),{scroll:false});}} onPriceClose={()=>{setEditingPriceId(null);router.replace(pathname+"?tab=recipe",{scroll:false});}} saveLabel={te("saveChanges")} cancelLabel={te("cancel")} onRecipe={()=>navigate("recipe",size.id)} onToggle={()=>start(async()=>{const r=await setMenuItemActive(size.id,!size.active);if(r.ok)router.refresh();else setError(r.error);})}/>)}</div></section>
-  </>}
+
+   </div>
+   <aside className="min-w-0 space-y-3 xl:sticky xl:top-6">
+    <h2 className="font-headline text-xl font-bold">{t("priceBasisTitle")}</h2>
+    <p className="text-[15px] text-ink-muted">{t("savedEconomicsHint")}</p>
+    {all.filter(size=>size.id===focusedSize).map(size=><SizeCard key={size.id} size={size} t={t} chip={statusChip(size)}
+      editing={editingPriceId===size.id} onPrice={()=>{setEditingPriceId(size.id);router.replace(pathname+"?tab=recipe&editPrice="+encodeURIComponent(size.id),{scroll:false});}}
+      onPriceClose={()=>{setEditingPriceId(null);router.replace(pathname+"?tab=recipe",{scroll:false});}}
+      saveLabel={te("saveChanges")} cancelLabel={te("cancel")}
+      onRecipe={()=>navigate("recipe",size.id)}
+      onToggle={()=>start(async()=>{const r=await setMenuItemActive(size.id,!size.active);if(r.ok)router.refresh();else setError(r.error);})}
+     />)}
+   </aside>
+  </div>}
+
  </>;
 }
 function SizeCard({size,t,chip,editing,onPrice,onPriceClose,saveLabel,cancelLabel,onRecipe,onToggle}:{size:MenuControlItem;t:ReturnType<typeof useTranslations<"Menu">>;chip:{label:string;good:boolean};editing:boolean;onPrice:()=>void;onPriceClose:()=>void;saveLabel:string;cancelLabel:string;onRecipe:()=>void;onToggle:()=>void}){
