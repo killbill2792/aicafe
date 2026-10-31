@@ -38,17 +38,30 @@ export function toBaseUnitQuantity(
   quantity: number,
   baseUnit: BaseUnit,
   conversions: IngredientUnitConversion[] = [],
+  densityGramsPerMl?: number,
 ): number | null {
   if (!(quantity > 0)) return null;
+  const density=Number.isFinite(densityGramsPerMl)&&densityGramsPerMl!>0&&densityGramsPerMl!<=5
+    ?densityGramsPerMl!:null;
   if (needsIngredientConversion(unit)) {
     const conversion = conversions.find((c) => c.unit === unit);
     return conversion ? quantity * conversion.baseUnitsPerUnit : null;
   }
-  if (unit === "g") return baseUnit === "g" ? quantity : null;
-  if (unit === "ml") return baseUnit === "ml" ? quantity : null;
-  if (unit === "fl_oz") return baseUnit === "ml" ? quantity * ML_PER_FL_OZ : null;
+  if (unit === "g") return baseUnit === "g" ? quantity : baseUnit === "ml" && density !== null ? quantity / density : null;
+  if (unit === "ml") return baseUnit === "ml" ? quantity : baseUnit === "g" && density !== null ? quantity * density : null;
+  if (unit === "fl_oz") return baseUnit === "ml" ? quantity * ML_PER_FL_OZ : baseUnit === "g" && density !== null ? quantity * ML_PER_FL_OZ * density : null;
   if (unit === "each") return baseUnit === "each" ? quantity : null;
   return null;
+}
+
+/** Recover an owner-confirmed density from an existing recipe line, using only
+ * quantities already stored in recipe_lines. No new table or rewritten rows. */
+export function densityFromStoredRecipe(baseUnit:BaseUnit,baseQuantity:number,displayUnit:RecipeDisplayUnit,displayQuantity:number):number|null{
+ if(!(baseQuantity>0)||!(displayQuantity>0))return null;
+ const density=baseUnit==="ml"&&displayUnit==="g"?displayQuantity/baseQuantity:
+   baseUnit==="g"&&displayUnit==="ml"?baseQuantity/displayQuantity:
+   baseUnit==="g"&&displayUnit==="fl_oz"?baseQuantity/(displayQuantity*ML_PER_FL_OZ):null;
+ return density!==null&&Number.isFinite(density)&&density>0&&density<=5?density:null;
 }
 
 
