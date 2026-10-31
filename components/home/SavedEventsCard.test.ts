@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,SavedEventListCard,selectedSavedEvent,eventDetailDay,eventPlanFor,SavedEventAnalysis} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -171,5 +171,128 @@ describe("saved event advice is informational, not a checklist",()=>{
     expect(html).not.toContain('type="checkbox"');
     expect(html).not.toContain("<input");
     expect(html).not.toContain("<button");
+  });
+});
+
+describe("opening a specific saved event from the Events list",()=>{
+  const translations={
+    en:{openEvent:"Open {title} on {date}",readInsights:"Read event insights"},
+    es:{openEvent:"Abrir {title} el {date}",readInsights:"Ver análisis del evento"},
+    ar:{openEvent:"فتح {title} بتاريخ {date}",readInsights:"عرض تحليل الحدث"},
+  } as const;
+  it("makes each event title/date a large clickable target without showing save-check metadata",()=>{
+    const halloween={...event("halloween","2026-10-31"),name:"Halloween at The EndUp",
+      venue:null,areaLabel:null,lastVerifiedAt:null};
+    for(const locale of ["en","es","ar"] as const){
+      const t=(key:string,values?:Record<string,string|number>)=>{
+        const template=(translations[locale] as Record<string,string>)[key]??key;
+        return template.replace(/\{(\w+)\}/g,(_,name:string)=>String(values?.[name]??""));
+      };
+      const html=renderToStaticMarkup(createElement(SavedEventListCard,{
+        event:halloween,locale,t,onOpen:()=>{},hasAnalysis:true,
+      }));
+      expect(html).toContain('type="button"');
+      expect(html).toContain("Halloween at The EndUp");
+      expect(html).toContain("2026");
+      expect(html).toContain(translations[locale].readInsights);
+      expect(html).not.toContain("Last saved check");
+      expect(html).not.toContain("Venue not recorded");
+      expect(html).not.toContain("Verification incomplete");
+      expect(html.match(/<button\b/g)).toHaveLength(1);
+      expect(html).not.toContain('type="checkbox"');
+      expect(html).not.toContain("<a ");
+    }
+  });
+  it("opens an ongoing event on the displayed Today date, not its past start day",()=>{
+    const ongoing=event("multi-day","2026-10-27","2026-11-02");
+    expect(eventDetailDay(ongoing,"2026-10-30")).toBe("2026-10-30");
+    expect(selectedSavedEvent([ongoing],"2026-10-30",ongoing.id)).toEqual(ongoing);
+    // The owner can still deliberately open historical dates from the Past list.
+    expect(eventDetailDay(ongoing,"2026-10-29")).toBe("2026-10-29");
+    expect(eventDetailDay(ongoing,"2026-11-05")).toBe("2026-10-27");
+  });
+  it("opens the exact clicked event, even when two have the same start date",()=>{
+    const first={...event("one","2026-10-31"),name:"Halloween market"};
+    const second={...event("two","2026-10-31"),name:"Halloween concert"};
+    expect(selectedSavedEvent([first,second],"2026-10-31","two")).toEqual(second);
+    expect(selectedSavedEvent([first,second],"2026-10-31","one")).toEqual(first);
+    expect(selectedSavedEvent([first,second],"2026-11-01","two")).toBeNull();
+    expect(selectedSavedEvent([first,second],"2026-10-31","nonexistent")).toBeNull();
+    const clicked:CafeEvent[]=[];
+    const card=SavedEventListCard({event:second,locale:"en",
+      t:(key,values)=>key==="openEvent"?String(values?.title):key,
+      onOpen:e=>clicked.push(e),hasAnalysis:false,
+    }) as {props:{children:{props:{onClick:()=>void}}}};
+    card.props.children.props.onClick();
+    expect(clicked).toEqual([second]);
+    const html=renderToStaticMarkup(createElement(SavedEventListCard,{
+      event:second,locale:"en",hasAnalysis:false,onOpen:()=>{},
+      t:key=>key==="viewEventDetails"?"View event details":key,
+    }));
+    expect(html).toContain("View event details");
+    expect(html).not.toContain("Read event insights");
+  });
+});
+
+describe("saved AI analysis inside a selected event detail",()=>{
+  const t=(key:string,values?:Record<string,string|number>)=>
+    key==="dayWideInsight"?"Analysis covers "+values?.date+" and may include other events":
+    key==="noEventInsight"?"No saved AI analysis for this event yet":key;
+  const selected={...event("halloween","2026-10-31"),name:"Halloween at The EndUp"};
+  const props={selectedEvent:selected,date:"2026-10-31",today:"2026-10-30",
+    currency:"USD",locale:"en" as const,t,onChat:()=>{}};
+  it("opens the saved day-wide AI reasoning and preparation advice for the chosen event",()=>{
+    const plan={...fixture.plans[0],summary:"Expect late-night pedestrian traffic",
+      expectedBusyHours:[{start:"20:00",end:"23:00"}],
+      actions:[{area:"operations",action:"Check usual Saturday staffing",
+        reason:"Visitor volume may differ from the usual evening"}]};
+    const html=renderToStaticMarkup(createElement(SavedEventAnalysis,{...props,plan}));
+    expect(html).toContain("Expect late-night pedestrian traffic");
+    expect(html).toContain("20:00");
+    expect(html).toContain("Check usual Saturday staffing");
+    expect(html).toContain("Visitor volume may differ");
+    expect(html).toContain("Analysis covers");
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain("Last saved check");
+  });
+  it("is transparent when no AI plan was saved instead of inventing an analysis",()=>{
+    const html=renderToStaticMarkup(createElement(SavedEventAnalysis,{...props,plan:undefined}));
+    expect(html).toContain("No saved AI analysis for this event yet");
+    expect(html).not.toContain("Expect late-night pedestrian traffic");
+  });
+});
+
+describe("date- and ID-scoped event AI analysis",()=>{
+  const plan=(id:string,startDate:string,endDate:string,status="draft")=>({
+    ...fixture.plans[0],proposalId:id,startDate,endDate,eventIds:[id],
+    status,summary:id+" explanation",
+  });
+  it("never attaches another same-day event's AI plan to the tapped card",()=>{
+    const first=plan("first","2026-10-31","2026-10-31");
+    const second=plan("second","2026-10-31","2026-10-31");
+    expect(eventPlanFor([first,second],"first","2026-10-31")).toEqual(first);
+    expect(eventPlanFor([first,second],"second","2026-10-31")).toEqual(second);
+    expect(eventPlanFor([first,second],"third","2026-10-31")).toBeUndefined();
+    expect(eventPlanFor([{...first,eventIds:undefined}],"first","2026-10-31"))
+      .toBeUndefined();
+  });
+  it("keeps each day of a multi-day event's saved analysis separate",()=>{
+    const saturday={...plan("festival","2026-10-31","2026-10-31"),summary:"Saturday"};
+    const sunday={...plan("festival","2026-11-01","2026-11-01"),
+      proposalId:"sunday",summary:"Sunday"};
+    expect(eventPlanFor([sunday,saturday],"festival","2026-10-31")?.summary)
+      .toBe("Saturday");
+    expect(eventPlanFor([sunday,saturday],"festival","2026-11-01")?.summary)
+      .toBe("Sunday");
+    expect(eventPlanFor([sunday,saturday],"festival","2026-10-30"))
+      .toBeUndefined();
+    expect(eventDetailDay(event("festival","2026-10-30","2026-11-02"),
+      "2026-10-31")).toBe("2026-10-31");
+  });
+  it("preserves the approved event plan instead of another draft",()=>{
+    const draft=plan("festival","2026-10-31","2026-10-31");
+    const committed={...draft,status:"committed",proposalId:"approved"};
+    expect(eventPlanFor([draft,committed],"festival","2026-10-31"))
+      .toEqual(committed);
   });
 });

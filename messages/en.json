@@ -3489,7 +3489,6 @@
     "profitLaborMissing": "Labor is incomplete; profit is a known-cost subtotal.",
     "profitProductCostsMissing": "Some ingredient costs are missing; profit is a known-cost subtotal.",
     "profitBillsEstimated": "Some bills are estimated.",
-    "breakEvenEstimate": "Break-even uses recorded costs and clearly labeled projections.",
     "profitFeesEstimated": "Processing fees include an estimate.",
     "profitLaborEstimated": "Some labor is estimated.",
     "profitProductCostsEstimated": "Some product costs are estimated.",
@@ -3513,7 +3512,8 @@
     "modifierUnknownMilk": "unknown milk",
     "modifierMilkCostMissing": "Cost for {milk}",
     "modifierMilkVolumeMissing": "Milk amount for {size}",
-    "modifierProductCostTargetMissing": "Product-cost target"
+    "modifierProductCostTargetMissing": "Product-cost target",
+    "breakEvenEstimate": "Break-even uses recorded costs and clearly labeled projections."
   },
   "OwnerQuestions": {
     "milkBase": "Which milk is currently used?",
@@ -3673,6 +3673,10 @@
     "loadFailed": "Saved events could not be loaded.",
     "retry": "Try again",
     "readInsights": "Read event insights",
+    "openEvent": "Open {title} on {date}",
+    "viewEventDetails": "View event details",
+    "dayWideInsight": "This saved AI analysis covers {date} as a whole. It may refer to other events on the same day.",
+    "noEventInsight": "No saved AI analysis for this event yet. You can ask the Supervisor about this specific event in chat.",
     "savedInsight": "AI event insight",
     "recommendations": "Preparation insights",
     "liveObservations": "Today's observed sales",

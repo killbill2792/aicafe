@@ -3489,7 +3489,6 @@
     "profitLaborMissing": "Faltan costes laborales; el beneficio es parcial.",
     "profitProductCostsMissing": "Faltan costes de ingredientes; el beneficio es parcial.",
     "profitBillsEstimated": "Algunas facturas son estimadas.",
-    "breakEvenEstimate": "El punto de equilibrio usa costos registrados y proyecciones identificadas.",
     "profitFeesEstimated": "Las comisiones incluyen una estimación.",
     "profitLaborEstimated": "Parte de la nómina es estimada.",
     "profitProductCostsEstimated": "Algunos costes de producto son estimados.",
@@ -3513,7 +3512,8 @@
     "modifierUnknownMilk": "leche desconocida",
     "modifierMilkCostMissing": "Costo de {milk}",
     "modifierMilkVolumeMissing": "Cantidad de leche para {size}",
-    "modifierProductCostTargetMissing": "Objetivo de costo del producto"
+    "modifierProductCostTargetMissing": "Objetivo de costo del producto",
+    "breakEvenEstimate": "El punto de equilibrio usa costos registrados y proyecciones identificadas."
   },
   "OwnerQuestions": {
     "milkBase": "¿Qué leche se usa actualmente?",
@@ -3673,6 +3673,10 @@
     "loadFailed": "No se pudieron cargar las actividades guardadas.",
     "retry": "Reintentar",
     "readInsights": "Ver análisis del evento",
+    "openEvent": "Abrir {title} el {date}",
+    "viewEventDetails": "Ver detalles del evento",
+    "dayWideInsight": "Este análisis de IA guardado abarca todo el día {date}. Puede incluir otros eventos de esa fecha.",
+    "noEventInsight": "Aún no hay un análisis de IA guardado para este evento. Puedes preguntarle al Supervisor sobre este evento en el chat.",
     "savedInsight": "Análisis de IA del evento",
     "recommendations": "Ideas para prepararse",
     "liveObservations": "Ventas observadas hoy",

@@ -75,9 +75,18 @@ const dayAt=(date:string,n:number)=>{
 };
 const dateLabel=(date:string,locale:Locale,style:"short"|"long"="short")=>
   new Intl.DateTimeFormat(locale,{timeZone:"UTC",month:style==="short"?"short":"long",
-    day:"numeric",weekday:style==="long"?"long":undefined}).format(new Date(date+"T00:00:00Z"));
+    day:"numeric",year:style==="long"?"numeric":undefined,
+    weekday:style==="long"?"long":undefined}).format(new Date(date+"T00:00:00Z"));
 const eventsOn=(events:readonly CafeEvent[],date:string)=>
   events.filter(e=>e.startDate<=date&&e.endDate>=date);
+/** Never substitute another event from the same date for the owner's exact tap. */
+export function selectedSavedEvent(events:readonly CafeEvent[],date:string,eventId:string|null){
+  return eventId?eventsOn(events,date).find(e=>e.id===eventId)??null:null;
+}
+/** A multi-day event opens the date the owner tapped, not its historic start day. */
+export function eventDetailDay(event:Pick<CafeEvent,"startDate"|"endDate">,viewDate:string){
+  return viewDate>=event.startDate&&viewDate<=event.endDate?viewDate:event.startDate;
+}
 /** Preserve the exact tapped event across Home, chat and saved day reports. */
 export function eventChatTarget(date:string,event?:Pick<CafeEvent,"id"|"name">,
   plan?:Pick<Plan,"summary"|"threadId">){
@@ -86,6 +95,13 @@ export function eventChatTarget(date:string,event?:Pick<CafeEvent,"id"|"name">,
 }
 const planOn=(plans:readonly Plan[],date:string)=>
   plans.find(p=>p.startDate<=date&&p.endDate>=date);
+/** A dated event can have multiple proposals. Never show another event's or day's
+ * AI analysis; prefer the owner-approved choice over a draft on the same date. */
+export function eventPlanFor(plans:readonly Plan[],eventId:string,date:string):Plan|undefined{
+  const matching=plans.filter(p=>p.eventIds?.includes(eventId)&&
+    p.startDate<=date&&p.endDate>=date);
+  return matching.find(p=>["approved","committed","manual_confirmed"].includes(p.status))??matching[0];
+}
 const actionsFor=(plan:Plan|undefined):Action[]=>Array.isArray(plan?.actions)?
   plan.actions.filter((a):a is Action=>typeof a==="object"&&a!==null&&
     typeof a.action==="string"&&typeof a.reason==="string"&&typeof a.area==="string"):[];
@@ -126,6 +142,33 @@ export function VenueMapLink({address,t}:{address:string|null;t:T}){
     <span dir="auto" className="break-words">{address.trim()}</span>
     <span className="whitespace-nowrap">· {t("mapLink")}</span>
   </a>;
+}
+
+/** An individual event opens its own saved read-only detail, not its chat or day header. */
+export function SavedEventListCard({event,locale,t,onOpen,hasAnalysis}:{
+  event:CafeEvent;locale:Locale;t:T;onOpen:(event:CafeEvent)=>void;hasAnalysis:boolean;
+}){
+  return <article className="min-w-0 rounded-2xl border border-line bg-card">
+    <button type="button" onClick={()=>onOpen(event)}
+      aria-label={t("openEvent",{title:event.name,date:dateLabel(event.startDate,locale,"long")})}
+      className="flex min-h-20 w-full min-w-0 items-center gap-3 rounded-2xl p-4 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="text-[15px] font-semibold text-accent-text">
+          <CalendarDays size={16} className="me-1 inline align-[-3px]" aria-hidden="true"/>
+          {dateLabel(event.startDate,locale,"long")}
+          {event.endDate!==event.startDate?" – "+dateLabel(event.endDate,locale,"long"):""}
+          {event.startTime?" · "+event.startTime:""}
+        </p>
+        <h4 className="break-words font-headline text-[19px] font-bold leading-snug text-ink" dir="auto">{event.name}</h4>
+        {(event.venue||event.areaLabel)&&<p className="break-words text-[16px] text-ink-muted" dir="auto">{event.venue??event.areaLabel}</p>}
+        {event.status!=="found"&&<p role="status" className="font-semibold text-warn-text">
+          {event.status==="cancelled"?t("cancelled"):t("moved")}
+        </p>}
+        <p className="text-[15px] font-semibold text-accent-text">{t(hasAnalysis?"readInsights":"viewEventDetails")}</p>
+      </div>
+      <ChevronRight size={22} className="shrink-0 text-accent-text rtl:rotate-180" aria-hidden="true"/>
+    </button>
+  </article>;
 }
 
 export function eventStripDays(today:string){return Array.from({length:7},(_,i)=>dayAt(today,i));}
@@ -171,6 +214,36 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
   </div>;
 }
 
+/** Existing AI proposal is date-scoped; never misrepresent it as verified event-specific analysis. */
+export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,locale,t,onChat}:{
+  plan:Plan|undefined;selectedEvent:CafeEvent|null;date:string;today:string;currency:string|null;
+  locale:Locale;t:T;onChat:()=>void;
+}){
+  if(!plan)return <p className="rounded-xl bg-surface2 p-4 text-ink-muted">
+    {selectedEvent?t("noEventInsight"):t("noPlan")}
+  </p>;
+  const actions=actionsFor(plan);
+  return <section className="space-y-4 rounded-2xl border border-line bg-card p-4" aria-label={t("savedInsight")}>
+    <div>
+      <p className="text-[15px] font-semibold text-accent-text">{t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
+      {selectedEvent&&<p className="mt-1 text-[15px] text-ink-muted">{t("dayWideInsight",{date:dateLabel(date,locale,"long")})}</p>}
+      <p className="mt-2 break-words font-headline text-[20px] font-semibold leading-snug" dir="auto">{plan.summary}</p>
+    </div>
+    <PlanHours plan={plan} t={t}/>
+    {actions.length>0&&<div className="space-y-2">
+      <h4 className="font-bold">{t("recommendations")}</h4>
+      <ul className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
+        <EventAdviceItem key={index} action={action}/>)}</ul>
+    </div>}
+    {date===today&&liveEventHeadline(plan,date,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
+      <h4 className="font-bold">{t("liveObservations")}</h4>
+      <p role="status">{liveEventHeadline(plan,date,t)}</p>
+    </section>}
+    <EventReportCard report={plan.report} status={plan.reportStatus}
+      currency={currency} locale={locale} t={t} onChat={onChat}/>
+  </section>;
+}
+
 /** Opens over the same Supervisor conversation. Reads saved PR 3 facts and loop plans only. */
 export default function SavedEventsCard({locale,chatDisabled,compact=false,onChatAboutDay}:{
   locale:Locale;chatDisabled:boolean;compact?:boolean;
@@ -181,6 +254,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const [error,setError]=useState(false);
   const [panel,setPanel]=useState<Panel>(null);
   const [selected,setSelected]=useState<string|null>(null);
+  const [selectedEventId,setSelectedEventId]=useState<string|null>(null);
   const [tab,setTab]=useState<Tab>("upcoming");
   const [affectsOnly,setAffectsOnly]=useState(false);
   const [calendar,setCalendar]=useState(false);
@@ -219,12 +293,19 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const lead=days.map(date=>({date,plan:planOn(timeline.plans,date),
     events:eventsOn(timeline.events,date)}))
     .find(d=>Boolean(d.plan)||d.events.length>0);
-  const openDay=(date:string)=>{setSelected(date);setPanel("day");setTab(date<today?"past":date===today?"now":"upcoming");setMonth(date.slice(0,7));};
-  const openEvents=(next:Tab="upcoming")=>{setPanel("events");setSelected(null);setTab(next);setMonth(today.slice(0,7));};
+  const openDay=(date:string,eventId:string|null=null)=>{
+    setSelected(date);setSelectedEventId(eventId);setPanel("day");
+    setTab(date<today?"past":date===today?"now":"upcoming");setMonth(date.slice(0,7));
+  };
+  const openEvent=(event:CafeEvent,viewDate:string)=>openDay(eventDetailDay(event,viewDate),event.id);
+  const openEvents=(next:Tab="upcoming")=>{setPanel("events");setSelected(null);setSelectedEventId(null);setTab(next);setMonth(today.slice(0,7));};
   const chosen=selected??today;
-  const plan=planOn(timeline.plans,chosen);
-  const dayEvents=eventsOn(timeline.events,chosen);
-  const actions=actionsFor(plan);
+  const allDayEvents=eventsOn(timeline.events,chosen);
+  const selectedEvent=selectedSavedEvent(timeline.events,chosen,selectedEventId);
+  const plan=selectedEventId?
+    (selectedEvent?eventPlanFor(timeline.plans,selectedEvent.id,chosen):undefined):
+    planOn(timeline.plans,chosen);
+  const dayEvents=selectedEvent?[selectedEvent]:allDayEvents;
   const calendarMonth=month??today.slice(0,7);
   const calendarFirst=calendarMonth+"-01";
   const weekday=new Date(calendarFirst+"T00:00:00Z").getUTCDay();
@@ -262,13 +343,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
           className="mt-2 rounded-lg bg-card p-2 font-semibold text-warn-text">
           {e.name}: {e.status==="cancelled"?t("cancelled"):t("moved")}
         </p>)}
-        {lead.events[0]&&<p className="mt-1 text-[15px] text-ink-muted">
-          {lead.events[0].verificationFailedAt&&(!lead.events[0].lastVerifiedAt||
-            lead.events[0].verificationFailedAt>lead.events[0].lastVerifiedAt)
-            ?t("verificationPending"):lead.events[0].lastVerifiedAt
-              ?t("verifiedOn",{date:lead.events[0].lastVerifiedAt.slice(0,10)})
-              :t("lastSavedOn",{date:lead.events[0].lastCheckedAt.slice(0,10)})}
-        </p>}
+        {lead.events[0]?.venue&&<p className="mt-1 break-words text-[15px] text-ink-muted" dir="auto">{lead.events[0].venue}</p>}
         {lead.plan?.summary&&<p className="mt-2 line-clamp-3 text-[17px] leading-relaxed text-ink" dir="auto">{lead.plan.summary}</p>}
         {lead.date===today&&liveEventHeadline(lead.plan,today,t)&&<p className="mt-2 rounded-xl bg-card p-2 text-[17px]">{liveEventHeadline(lead.plan,today,t)}</p>}
         <span className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text">{t("readInsights")} <ChevronRight size={19} className="ms-1 rtl:rotate-180" aria-hidden="true"/></span>
@@ -290,13 +365,13 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
     </section>
     {panel&&<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 md:items-center"
       role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPanel(null);}}>
-      <section role="dialog" aria-modal="true" aria-label={panel==="day"?dateLabel(chosen,locale,"long"):t("title")}
+      <section role="dialog" aria-modal="true" aria-label={panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}
         dir={locale==="ar"?"rtl":"ltr"}
         className="flex max-h-[94dvh] w-full min-w-0 max-w-3xl flex-col overflow-hidden rounded-t-3xl bg-surface text-ink shadow-xl md:max-h-[90dvh] md:rounded-3xl">
         <header className="flex shrink-0 items-center gap-2 border-b border-line p-3">
-          {panel==="day"&&<button type="button" onClick={()=>setPanel("events")} aria-label={t("back")}
+          {panel==="day"&&<button type="button" onClick={()=>openEvents(tab)} aria-label={t("back")}
             className={button}><ChevronLeft size={20} className="rtl:rotate-180" aria-hidden="true"/></button>}
-          <h3 className="min-w-0 flex-1 break-words font-headline text-[20px] font-bold">{panel==="day"?dateLabel(chosen,locale,"long"):t("title")}</h3>
+          <h3 className="min-w-0 flex-1 break-words font-headline text-[20px] font-bold">{panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}</h3>
           <button type="button" onClick={()=>setPanel(null)} aria-label={t("close")} className={button}>
             <X size={22} aria-hidden="true"/></button>
         </header>
@@ -339,21 +414,9 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                 <button type="button" onClick={()=>openDay(date)} className={button+" w-full bg-surface2 text-start"}>
                   {dateLabel(date,locale,"long")}{dayPlan?" · "+t("hasPlan"):""}
                 </button>
-                {saved.slice(0,3).map(event=><article key={event.id} className="rounded-xl border border-line p-3">
-                  <p className="break-words font-headline text-[19px] font-semibold" dir="auto">{event.name}</p>
-                  <p className="text-ink-muted" dir="auto">{event.startDate!==event.endDate?
-                    event.startDate+" – "+event.endDate:event.startTime??""}
-                    {event.venue||event.areaLabel?" · "+(event.venue??event.areaLabel):""}</p>
-                  {event.status!=="found"&&<p role="status" className="font-semibold text-warn-text">{event.status==="cancelled"?t("cancelled"):t("moved")}</p>}
-                  <p className="text-[15px] text-ink-muted">{event.verificationFailedAt&&(!event.lastVerifiedAt||event.verificationFailedAt>event.lastVerifiedAt)?t("verificationPending"):event.lastVerifiedAt?t("verifiedOn",{date:event.lastVerifiedAt.slice(0,10)}):t("lastSavedOn",{date:event.lastCheckedAt.slice(0,10)})}</p>
-                  <VenueMapLink address={event.venueAddress} t={t}/>
-                  {sourceUrl(event.sourceUrl)&&<a href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex min-h-12 items-center text-accent-text underline">{t("source")}</a>}
-                  <button type="button" onClick={()=>chat(date,event)}
-                    className={button+" ms-3 text-accent-text underline"}>{t("chatAbout")}</button>
-                </article>)}
-                {saved.length>3&&<button type="button" className={button+" bg-surface2"}
-                  onClick={()=>openDay(date)}>{t("moreEvents",{count:saved.length-3})}</button>}
+                {saved.map(event=><SavedEventListCard key={event.id} event={event} locale={locale} t={t}
+                  hasAnalysis={Boolean(eventPlanFor(timeline.plans,event.id,date))}
+                  onOpen={event=>openEvent(event,date)}/>)}
                 {dayPlan?.summary&&<p className="rounded-xl bg-surface2 p-3 text-[17px]" dir="auto">{dayPlan.summary}</p>}
                 {tab==="past"&&dayPlan&&<EventReportCard report={dayPlan.report}
                   status={dayPlan.reportStatus} currency={timeline.currency??null}
@@ -366,34 +429,22 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                 <h4 className="min-w-0 flex-1 break-words font-headline text-[22px] font-bold leading-snug" dir="auto">{event.name}</h4>
                 {event.status!=="found"&&<span role="status" className="rounded-lg bg-surface2 px-2 py-1 text-[15px] font-semibold text-warn-text">{event.status==="cancelled"?t("cancelled"):t("moved")}</span>}
               </div>
-              <p className="text-ink-muted" dir="auto">{event.venue??event.areaLabel??t("venueUnknown")}{event.startTime?" · "+event.startTime:""}</p>
-              <p className="text-[15px] text-ink-muted">{event.verificationFailedAt&&(!event.lastVerifiedAt||event.verificationFailedAt>event.lastVerifiedAt)?t("verificationPending"):event.lastVerifiedAt?t("verifiedOn",{date:event.lastVerifiedAt.slice(0,10)}):t("lastSavedOn",{date:event.lastCheckedAt.slice(0,10)})}</p>
+              <p className="font-semibold text-accent-text"><CalendarDays size={18} className="me-2 inline" aria-hidden="true"/>{dateLabel(event.startDate,locale,"long")}{event.endDate!==event.startDate?" – "+dateLabel(event.endDate,locale,"long"):""}{event.startTime?" · "+event.startTime:""}</p>
+              {(event.venue||event.areaLabel)&&<p className="break-words text-ink-muted" dir="auto">{event.venue??event.areaLabel}</p>}
+              {event.verificationFailedAt&&(!event.lastVerifiedAt||event.verificationFailedAt>event.lastVerifiedAt)&&
+                <p className="text-[15px] text-ink-muted">{t("verificationPending")}</p>}
+              {event.lastVerifiedAt&&<p className="text-[15px] text-ink-muted">{t("verifiedOn",{date:event.lastVerifiedAt.slice(0,10)})}</p>}
               <VenueMapLink address={event.venueAddress} t={t}/>
               {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
                 href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
-              <button type="button" onClick={()=>chat(chosen,event)} disabled={chatDisabled}
-                className={button+" ms-3 text-accent-text underline"}>{t("chatAbout")}</button>
+              {!selectedEvent&&<button type="button" onClick={()=>chat(chosen,event)} disabled={chatDisabled}
+                className={button+" ms-3 text-accent-text underline"}>{t("chatAbout")}</button>}
             </article>)}
-            {plan?<section className="space-y-4 rounded-2xl border border-line bg-card p-4" aria-label={t("savedInsight")}>
-              <div>
-                <p className="text-[15px] font-semibold text-accent-text">{t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
-                <p className="mt-2 break-words font-headline text-[20px] font-semibold leading-snug" dir="auto">{plan.summary}</p>
-              </div>
-              <PlanHours plan={plan} t={t}/>
-              {actions.length>0&&<div className="space-y-2">
-                <h4 className="font-bold">{t("recommendations")}</h4>
-                <ul className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
-                  <EventAdviceItem key={index} action={action}/>)}</ul>
-              </div>}
-              {chosen===today&&liveEventHeadline(plan,chosen,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
-                <h4 className="font-bold">{t("liveObservations")}</h4>
-                <p role="status">{liveEventHeadline(plan,chosen,t)}</p>
-              </section>}
-              <EventReportCard report={plan.report} status={plan.reportStatus}
-                currency={timeline.currency??null} locale={locale} t={t} onChat={()=>chat(chosen)}/>
-            </section>:<p className="rounded-xl bg-surface2 p-4 text-ink-muted">{t("noPlan")}</p>}
+            <SavedEventAnalysis plan={plan} selectedEvent={selectedEvent} date={chosen}
+              today={today} currency={timeline.currency??null} locale={locale} t={t}
+              onChat={()=>chat(chosen,selectedEvent??undefined)}/>
             {dayEvents.length===0&&!plan&&<p className="text-ink-muted">{t("noEvents")}</p>}
-            <button type="button" onClick={()=>chat(chosen)} disabled={chatDisabled}
+            <button type="button" onClick={()=>chat(chosen,selectedEvent??undefined)} disabled={chatDisabled}
               className={button+" w-full bg-accent text-on-accent"}>{t("chatAbout")}</button>
           </>}
         </div>

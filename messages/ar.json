@@ -3489,7 +3489,6 @@
     "profitLaborMissing": "العمالة غير مكتملة؛ الربح المعروض جزئي.",
     "profitProductCostsMissing": "بعض تكاليف المكونات مفقودة؛ الربح المعروض جزئي.",
     "profitBillsEstimated": "بعض الفواتير تقديرية.",
-    "breakEvenEstimate": "يستخدم حساب التعادل التكاليف المسجلة والتوقعات الموضحة بوضوح.",
     "profitFeesEstimated": "تشمل رسوم البطاقات تقديرًا.",
     "profitLaborEstimated": "بعض تكاليف العمالة تقديرية.",
     "profitProductCostsEstimated": "بعض تكاليف المنتجات تقديرية.",
@@ -3513,7 +3512,8 @@
     "modifierUnknownMilk": "حليب غير معروف",
     "modifierMilkCostMissing": "تكلفة {milk}",
     "modifierMilkVolumeMissing": "كمية الحليب لحجم {size}",
-    "modifierProductCostTargetMissing": "هدف تكلفة المنتج"
+    "modifierProductCostTargetMissing": "هدف تكلفة المنتج",
+    "breakEvenEstimate": "يستخدم حساب التعادل التكاليف المسجلة والتوقعات الموضحة بوضوح."
   },
   "OwnerQuestions": {
     "milkBase": "ما نوع الحليب المستخدم حاليًا؟",
@@ -3673,6 +3673,10 @@
     "loadFailed": "تعذّر تحميل الفعاليات المحفوظة.",
     "retry": "إعادة المحاولة",
     "readInsights": "عرض رؤى الفعالية",
+    "openEvent": "فتح {title} بتاريخ {date}",
+    "viewEventDetails": "عرض تفاصيل الحدث",
+    "dayWideInsight": "يغطي تحليل الذكاء الاصطناعي المحفوظ يوم {date} بأكمله، وقد يشمل أحداثًا أخرى في اليوم نفسه.",
+    "noEventInsight": "لا يوجد تحليل ذكاء اصطناعي محفوظ لهذا الحدث بعد. يمكنك سؤال المشرف عن هذا الحدث تحديدًا في الدردشة.",
     "savedInsight": "رؤى الذكاء الاصطناعي للفعالية",
     "recommendations": "أفكار للاستعداد",
     "liveObservations": "المبيعات المرصودة اليوم",
