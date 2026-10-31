@@ -1,4 +1,5 @@
 import "server-only";
+import {simulationOwnerReader} from "./simulationOwner.server";
 import {z} from "zod";
 import {diffFieldSchema,diffFields} from "@/lib/format/values";
 import en from "@/messages/en.json";
@@ -6,7 +7,6 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
-import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {formatCardValue} from "@/lib/format/values";
 import {evaluatePriceExperiment,simulatePriceExperiment,priceExperimentEstimatedUplift,
@@ -50,20 +50,16 @@ export const priceExperimentCapability=registerLoopCapability({
   dependencyScope:(effect)=>({version:2,kind:"menu_price",productId:effect.productId}),
   simulate:async(scope,input)=>{
     // Existing canonical UI read model has recipe-cost quality + covered item sales.
-    const client=await createServerSupabaseClient();
-    const {data:{user}}=await client.auth.getUser();
-    if(!user||user.id!==scope.ownerUserId)throw new ToolError("unauthorized");
-    if(await getActiveBusinessId(user.id)!==scope.businessId)throw new ToolError("scope_mismatch");
-    const {data:membership}=await client.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle();
+    const {client,explicit}=await simulationOwnerReader(scope);
     const {data:business}=await client.from("businesses").select("currency,is_demo").eq("id",scope.businessId).maybeSingle();
-    if(membership?.role!=="owner"||business?.is_demo)throw new ToolError("unauthorized");
+    if(!business||business.is_demo)throw new ToolError("unauthorized");
     // Any café currency works; an unset or invalid currency cannot label money.
     const currency=typeof business?.currency==="string"&&/^[A-Z]{3}$/.test(business.currency)?business.currency:null;
     if(!currency)throw new ToolError("validation","Set your café currency in Café profile before starting a price experiment.");
-    const matches=(await getMenuControlCenter()).filter(x=>x.active&&x.id===input.productId);
+    const matches=(await (explicit?getMenuControlCenter({},{client,businessId:scope.businessId}):getMenuControlCenter())).filter(x=>x.active&&x.id===input.productId);
     if(matches.length!==1)throw new ToolError("not_found");
     const item=matches[0];
-    const verifiedUnits=await readPriceExperimentBaselineUnits(scope.businessId,item.id);
+    const verifiedUnits=await readPriceExperimentBaselineUnits(scope.businessId,item.id,explicit?client:undefined);
     const result=simulatePriceExperiment({productId:item.id,productName:item.name,
       currentPriceCents:item.priceCents,increaseCents:input.increaseCents,
       ingredientCostCents:item.pricing?.productCostCents??null,
