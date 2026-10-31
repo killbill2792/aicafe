@@ -72,7 +72,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   return needsIngredientConversion(unit)&&(!(conversions[id]??[]).some(c=>c.unit===unit)||calibration[id+":"+unit]!==undefined);
  }
  async function saveMeasurements(extra?:{id:string;name:string;base:"g"|"ml"|"each";unit:RecipeDisplayUnit}){
-  const entries=selectedItems.flatMap(item=>item.recipe.flatMap(line=>{
+  const entries:Array<{id:string;name:string;base:"g"|"ml"|"each";unit:RecipeDisplayUnit}>=selectedItems.flatMap(item=>item.recipe.flatMap(line=>{
    const draft=drafts[k(item.id,line.ingredientId)];
    return draft&&!draft.removed&&needsIngredientConversion(draft.unit)?[{id:line.ingredientId,name:line.ingredientName,base:line.baseUnit,unit:draft.unit}]:[];
   }));
