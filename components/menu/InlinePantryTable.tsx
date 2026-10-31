@@ -54,7 +54,7 @@ function PantryTableRow({item,t}:{item:PantryItem;t:Record<string,string>}){
   <label className="min-w-0 text-[13px] font-semibold text-ink-muted">
    <span className="md:sr-only">{t.packSize}</span>
    <input value={pack} onChange={e=>{setPack(e.target.value);setSaved(false);}}
-    placeholder={item.baseUnit==="ml"?"12 × 32 fluid ounces":item.baseUnit==="g"?"2 × 5 pounds":"12 pieces"}
+    placeholder={item.baseUnit==="ml"?t.purchasePackExampleLiquid:item.baseUnit==="g"?t.purchasePackExampleWeight:t.purchasePackExampleCount}
     aria-label={t.packSize+": "+item.name}
     className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px] text-ink md:mt-0"/>
   </label>
