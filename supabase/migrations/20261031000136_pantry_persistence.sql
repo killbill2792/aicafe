@@ -40,7 +40,7 @@ create policy "members update" on public.ingredients for update
 -- reach archived_at. Keep ordinary member edits permitted while enforcing this
 -- one sensitive field at the database boundary.
 create or replace function public.pantry_archive_owner_guard()
-returns trigger language plpgsql security invoker set search_path=public as $
+returns trigger language plpgsql security invoker set search_path=public as $$
 begin
   if new.archived_at is distinct from old.archived_at and (
     auth.uid() is null or not exists (
@@ -50,7 +50,7 @@ begin
   ) then raise exception 'only cafe owner may archive ingredient' using errcode='42501'; end if;
   return new;
 end;
-$;
+$$;
 drop trigger if exists pantry_archive_owner_guard on public.ingredients;
 create trigger pantry_archive_owner_guard
   before update of archived_at on public.ingredients for each row
