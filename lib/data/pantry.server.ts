@@ -300,12 +300,13 @@ export async function prepareIngredientSwap(productId: string, fromId: string, t
   const siblings = await productSiblings(scope, productId);
   if (!siblings) return bad("product_not_found");
   const { data: ingredients, error: ingredientsError } = await scope.db.from("ingredients")
-    .select("id, base_unit").eq("business_id", scope.businessId).in("id", [fromId, toId]);
+    .select("id, base_unit, archived_at").eq("business_id", scope.businessId).in("id", [fromId, toId]);
   if (ingredientsError || !ingredients || ingredients.length !== (fromId === toId ? 1 : 2)) return bad("ingredient_not_found");
   const to = ingredients.find((ingredient) => ingredient.id === toId)!;
   if (fromId === toId) return { ok: true, changes: [] };
+  if (to.archived_at) return bad("ingredient_archived");
   const { data: rows, error, count } = await scope.db.from("recipe_lines")
-    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity", { count: "exact" })
+    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, sort_order", { count: "exact" })
     .in("menu_item_id", siblings.map((s) => s.id));
   if (error || !rows || count === null || count !== rows.length) return bad("incomplete_recipe_source");
   const { data: allBases, error: basesError, count: basesCount } = await scope.db.from("ingredients")
@@ -316,7 +317,9 @@ export async function prepareIngredientSwap(productId: string, fromId: string, t
   const conversions = await conversionsFor(scope, [toId]);
   const changes: Change[] = [];
   for (const sibling of siblings) {
-    const existing = rows.filter((row) => row.menu_item_id === sibling.id);
+    const existing = rows.filter((row) => row.menu_item_id === sibling.id)
+      .sort((a,b)=>(a.sort_order??Number.MAX_SAFE_INTEGER)-(b.sort_order??Number.MAX_SAFE_INTEGER)
+        ||a.ingredient_id.localeCompare(b.ingredient_id,"en"));
     if (!existing.some((row) => row.ingredient_id === fromId)) {
       // Check-only entries are validated while holding the transaction's family lock.
       // They prevent a concurrent scale/apply from introducing the old ingredient
@@ -371,11 +374,15 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
   const fromOz = Number(fromSize[1]), toOz = Number(toSize[1]);
   if (fromItemId === toItemId) return { ok: true, itemIds: [] };
   const { data: pairRows, error, count: sourceCount } = await scope.db.from("recipe_lines")
-    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity", { count: "exact" })
+    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, sort_order", { count: "exact" })
     .in("menu_item_id", [fromItemId, toItemId]);
   if (error || !pairRows || sourceCount === null || sourceCount !== pairRows.length) return bad("incomplete_recipe_source");
-  const source = pairRows.filter((row) => row.menu_item_id === fromItemId);
-  const target = pairRows.filter((row) => row.menu_item_id === toItemId);
+  const source = pairRows.filter((row) => row.menu_item_id === fromItemId)
+    .sort((a,b)=>(a.sort_order??Number.MAX_SAFE_INTEGER)-(b.sort_order??Number.MAX_SAFE_INTEGER)
+      ||a.ingredient_id.localeCompare(b.ingredient_id,"en"));
+  const target = pairRows.filter((row) => row.menu_item_id === toItemId)
+    .sort((a,b)=>(a.sort_order??Number.MAX_SAFE_INTEGER)-(b.sort_order??Number.MAX_SAFE_INTEGER)
+      ||a.ingredient_id.localeCompare(b.ingredient_id,"en"));
   if (!source.length) return bad("source_recipe_missing");
   const { data: available, error: ingredientsError, count: availableCount } = await scope.db.from("ingredients")
     .select("id, base_unit, starter_key", { count: "exact" }).eq("business_id", scope.businessId);
