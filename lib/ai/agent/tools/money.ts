@@ -55,7 +55,7 @@ function canonicalBreakEvenAnswer(
  const laborEstimate=laborPartial||laborForecast||
    basis.monthLabor.basis!=="recorded"||taxEstimated||basis.ownerExtrasPresent;
  const bills=figure(basis.monthlyBillsCents,
-   basis.missingBills||basis.estimatedBills?"estimate":"actual",
+   basis.ownerBillsOverride?"owner":basis.missingBills||basis.estimatedBills?"estimate":"actual",
    basis.missingBills?"billsPartial":"billsRecorded");
  const staff=figure(basis.monthlyStaffCents,laborEstimate?"estimate":"actual",
    laborPartial?"laborPartialCoverage":
@@ -123,7 +123,8 @@ function canonicalBreakEvenAnswer(
      futureProcessingFeeRate:basis.feeRateOverridden?"owner_override":
        feeActual?"projected_from_actual":"estimate",
      ingredients:basis.ingredientSource,
-     bills:basis.missingBills?"partial":basis.estimatedBills?"estimated":"recorded",
+     bills:basis.ownerBillsOverride?"owner_override":
+       basis.missingBills?"partial":basis.estimatedBills?"estimated":"recorded",
    },
    status,reasonKey:reason,reason:localizedMetricReason(reason,locale,reasonParams),
    missingDays:basis.missingLaborDates,missing,
@@ -140,6 +141,7 @@ function canonicalBreakEvenAnswer(
      ...(basis.feeRateOverridden?["ownerProcessingFeeOverride"]:
        feeActual?["futureFeeRateProjectedFromActual"]:[]),
      ...(basis.estimatedBills?["monthlyBillsEstimate"]:[]),
+     ...(basis.ownerBillsOverride?["ownerBillsOverride"]:[]),
      ...(basis.productCosts.usesEstimatedProductCosts?["productCostEstimate"]:[]),
      ...(basis.ingredientSource==="saved_rate"?["savedIngredientRate"]:[]),
    ],
@@ -219,6 +221,11 @@ export const moneyTools={
          const suppliedLabor=provided?.laborCents!=null&&provided.laborPeriod?
            prorate(provided.laborCents,ownerPeriod(provided.laborPeriod,ctx.asOf)!,calendarMonth(ctx.asOf)):undefined;
          const ownerSales=owner.ownerNetSalesCents??provided?.netSalesCents??undefined;
+         const costPeriod=ownerPeriod(provided?.overheadPeriod??null,ctx.asOf)??calendarMonth(ctx.asOf);
+         const ownerRent=provided?.rentCents==null?undefined:
+           prorate(provided.rentCents,costPeriod,calendarMonth(ctx.asOf));
+         const ownerOther=provided?.otherOverheadCents==null?undefined:
+           prorate(provided.otherOverheadCents,costPeriod,calendarMonth(ctx.asOf));
          const options:BreakEvenInputOptions={period:mode,
            ...(owner.ownerIngredientPackagingPercent!=null&&
              (saved.ingredientStatus!=="owner"||
@@ -230,6 +237,8 @@ export const moneyTools={
              {feeRateOverride:owner.ownerProcessingFeePercent/100}:{}),
            ...(ownerSales!==undefined?{observedSalesCentsOverride:ownerSales}:{}),
            ...(suppliedLabor!==undefined?{monthlyLaborCentsOverride:suppliedLabor}:{}),
+           ...(ownerRent!==undefined?{monthlyRentCentsOverride:ownerRent}:{}),
+           ...(ownerOther!==undefined?{monthlyOtherOverheadCentsOverride:ownerOther}:{}),
            ...(owner.ownerOpenDaysPerMonth!=null?{openDaysOverride:owner.ownerOpenDaysPerMonth}:{})
          };
          return canonicalBreakEvenAnswer(breakEvenSnapshotInputs(canonicalSnapshot,options),
