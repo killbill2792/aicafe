@@ -8,7 +8,7 @@ vi.mock("./cafeState",()=>({SnapshotCafeStateService:class{
     businessCosts:{completeness:"complete"},
   }));
 }}));
-import {sendDailyBriefs} from "./dailyBrief.server";
+import {sendDailyBriefs,type BriefOutboxHook} from "./dailyBrief.server";
 import {briefMessageId} from "./dailyBrief";
 
 const morning=new Date("2026-10-31T15:30:00Z");
@@ -34,7 +34,7 @@ function dbFactory(existing=false){
 describe("morning brief optional durable-outbox seam",()=>{
   it("persists the canonical website and inbox brief before offering the same day to transport",async()=>{
     const {db,mutations}=dbFactory();
-    const hook=vi.fn(async()=>{expect(mutations.map(m=>m.table))
+    const hook=vi.fn(async (_input:Parameters<BriefOutboxHook>[0])=>{expect(mutations.map(m=>m.table))
       .toEqual(["ai_messages","operating_tasks","operating_tasks"]);});
     expect(await sendDailyBriefs(db,morning,hook)).toEqual({checked:1,sent:1,skipped:0,failed:0});
     expect(hook).toHaveBeenCalledTimes(1);
@@ -45,7 +45,7 @@ describe("morning brief optional durable-outbox seam",()=>{
   });
   it("retries an outbox opportunity without duplicating the web message or inbox",async()=>{
     const {db,mutations}=dbFactory(true);
-    const hook=vi.fn(async()=>{});
+    const hook=vi.fn(async (_input:Parameters<BriefOutboxHook>[0])=>{});
     expect(await sendDailyBriefs(db,morning,hook)).toEqual({checked:1,sent:0,skipped:1,failed:0});
     expect(mutations).toEqual([]);
     expect(hook).toHaveBeenCalledTimes(1);
