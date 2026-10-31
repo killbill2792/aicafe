@@ -1765,6 +1765,7 @@
     "emptyIntro": "Ask about your café's sales, costs, menu or Team. I'll check what the records actually show.",
     "historyTitle": "Chat history",
     "closeHistory": "Close history",
+    "removeEventContext": "Remove event context",
     "startNewChat": "New chat",
     "reviewHint": "Review the transcript before sending",
     "taskOpen": "Open task",

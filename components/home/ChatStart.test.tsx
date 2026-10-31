@@ -72,6 +72,19 @@ describe("PR F shared attention and chat entry",()=>{
   expect(render(true)).toContain('aria-expanded="true"');
   expect(render(true)).toContain('data-attention-id="a2"');
  });
+ it("keeps Events visible when an existing conversation collapses the board",()=>{
+  const comingUp=createElement("div",{"data-testid":"events-shortcuts"},"Past · Today · Upcoming");
+  const render=(expanded:boolean)=>renderToStaticMarkup(createElement(ChatStart,{
+    data,copy,hasMessages:true,expanded,onToggle:()=>{},onSuggestion:()=>{},
+    suggestionsDisabled:false,comingUp,
+  }));
+  for(const expanded of [false,true]){
+    const html=render(expanded);
+    expect(html).toContain("Past · Today · Upcoming");
+    expect(html.match(/data-testid="events-shortcuts"/g)).toHaveLength(1);
+  }
+  expect(render(false)).not.toContain('data-attention-id="a2"');
+ });
  it("removes duplicate Home list and experiment panel, guards rapid sends",()=>{
   const home=readFileSync("app/[locale]/page.tsx","utf8");
   const composer=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");

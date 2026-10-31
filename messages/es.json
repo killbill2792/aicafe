@@ -1765,6 +1765,7 @@
     "emptyIntro": "Pregunta por ventas, costos, el menú o el equipo. Revisaré los datos registrados.",
     "historyTitle": "Historial de chat",
     "closeHistory": "Cerrar historial",
+    "removeEventContext": "Quitar contexto del evento",
     "startNewChat": "Chat nuevo",
     "reviewHint": "Revisa la transcripción antes de enviarla",
     "taskOpen": "Abrir tarea",

@@ -9,6 +9,7 @@ import OwnerScheduleSendPanel from "@/components/staff/OwnerScheduleSendPanel";
 import {scheduleApprovalReply} from "@/lib/calc/scheduling/ownerDeliveryLinks";
 import {priceInputCents,priceEditString} from "@/lib/calc/menuPriceProposal";
 import {parseOwnerDecimal} from "@/lib/calc/localeDecimal";
+import {Lightbulb} from "lucide-react";
 import {eventActionAreaLabel} from "@/lib/events/eventActionArea";
 type Locale="en"|"es"|"ar";
 export type ProposalView={proposalId:string;revision:number;state:string;capabilityId?:string;
@@ -19,6 +20,39 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
     receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
   ingredientOptions?:Array<{id:string;name:string;base_unit:string}>;};
 const dict={en,es,ar} as const;
+
+/** Historical event proposals are informational. Keep their saved content,
+ * but do not present old approval actions or physical checkboxes. */
+export function EventReadinessPreview({value,locale}:{value:ProposalView;locale:Locale}){
+  const t=dict[locale].EventsPanel;
+  const rows=value.preview??[];
+  return <section dir={locale==="ar"?"rtl":"ltr"} aria-label={t.savedInsight}
+    className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm">
+    <div className="flex items-center gap-2 text-[17px] font-bold text-accent-text">
+      <Lightbulb size={22} aria-hidden="true"/><span>{t.savedInsight}</span>
+    </div>
+    {value.productName&&<h3 className="mt-2 break-words text-xl font-semibold" dir="auto">{value.productName}</h3>}
+    {rows.length>0&&<div className="mt-3">
+      <h4 className="mb-2 font-semibold">{t.recommendations}</h4>
+      <ul className="space-y-3">
+        {rows.map((row,index)=>{
+          const typed="field" in row;
+          const valueToShow=typed?(row.after??row.before):null;
+          const detail=typed?(valueToShow?formatCardValue(valueToShow,locale,value.currency??null):null):
+            (row.after??row.before);
+          return <li key={index} className="flex items-start gap-3 rounded-xl bg-surface2 p-3">
+            <Lightbulb size={20} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-text"/>
+            <div className="min-w-0">
+              <p className="font-semibold" dir="auto">{eventActionAreaLabel(row.label,locale)}</p>
+              {detail&&<p className="mt-1 whitespace-pre-wrap break-words text-ink-muted" dir="auto">{detail}</p>}
+            </div>
+          </li>;
+        })}
+      </ul>
+    </div>}
+  </section>;
+}
+
 export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   threadId:string;proposalId:string;locale:Locale;
 }){
@@ -97,6 +131,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const goal=value.capabilityId==="leo.goal.v1";
   const eventPlan=value.capabilityId==="alex.event_readiness.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
+  if(eventPlan)return <EventReadinessPreview value={value} locale={locale}/>;
   if(purchase&&value.purchase){
     const copy=dict[locale].InventoryApprovalCard;
     const p=value.purchase;
@@ -224,7 +259,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     </section>;
   }
   const rows:ApprovalPreviewRow[]=value.preview?.length?value.preview:((value.oldPriceCents!=null&&value.newPriceCents!=null)?diffFields([{field:"price",label:"Price",value:{kind:"money",cents:value.oldPriceCents}}],[{field:"price",label:"Price",value:{kind:"money",cents:value.newPriceCents}}]):[]);
-  const localizedRows=eventPlan?rows.map(row=>({...row,label:eventActionAreaLabel(row.label,locale)})):rows;
+  const localizedRows=rows;
   const pending=value.state==="pending"&&!busy;
   const statuses={...copy.states,...(experiment?{manual_pending:copy.manualPending}:{}),
     ...(goal?{tracking:dict[locale].Goals.cardTracking}:{})} as Record<string,string>;
@@ -243,8 +278,8 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     {["failed","conflict","stale"].includes(value.state)&&<p className="mt-2">{copy.stale}</p>}
     {pending&&<div className="mt-4 flex flex-wrap gap-2">
       <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}
-        onClick={()=>void invoke("approve")}>{eventPlan?dict[locale].EventsPanel.usePlan:copy.approve}</button>
-      {!experiment&&!goal&&!eventPlan&&<button type="button" disabled={busy} className={button+" border border-line"}
+        onClick={()=>void invoke("approve")}>{copy.approve}</button>
+      {!experiment&&!goal&&<button type="button" disabled={busy} className={button+" border border-line"}
         onClick={()=>{setEditing(x=>!x);setPrice(priceEditString(value.newPriceCents!));}}>{copy.edit}</button>}
       <button type="button" disabled={busy} className={button+" border border-line"}
         onClick={()=>void invoke("cancel")}>{copy.cancel}</button>

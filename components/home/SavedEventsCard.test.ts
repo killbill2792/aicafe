@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -126,5 +126,50 @@ describe("Events Fix C date and saved-importance contract",()=>{
     expect(eventListDays(timeline,"past",false)).toEqual(["2026-11-05","2026-10-31"]);
     expect(eventListDays(timeline,"now",false)).toEqual([]);
     expect(eventListDays(timeline,"upcoming",false)).toEqual(["2026-11-07"]);
+  });
+});
+
+describe("persistent Events category navigation",()=>{
+  const t=(key:string)=>({past:"Past",now:"Today",upcoming:"Upcoming",title:"Events near your café"} as Record<string,string>)[key]??key;
+  it("renders three accessible choices and identifies the selected category",()=>{
+    const html=renderToStaticMarkup(createElement(EventsTabs,{tab:"upcoming",onChoose:()=>{},t}));
+    for(const label of ["Past","Today","Upcoming"])expect(html).toContain(label);
+    expect(html).toContain('role="group"');
+    expect(html).toContain('aria-label="Events near your café"');
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html.match(/min-h-12/g)).toHaveLength(3);
+  });
+});
+
+describe("per-event chat selection",()=>{
+  const sameDay="2026-10-31";
+  const a=event("event-a",sameDay),b=event("event-b",sameDay);
+  it("never substitutes the first event when the owner taps another card on that date",()=>{
+    const plan={summary:"Shared day outlook",threadId:"shared-day-thread"};
+    const first=eventChatTarget(sameDay,a,plan);
+    const second=eventChatTarget(sameDay,b,plan);
+    expect(first).toEqual({date:sameDay,title:"event-a",eventId:"event-a",existingThreadId:undefined});
+    expect(second).toEqual({date:sameDay,title:"event-b",eventId:"event-b",existingThreadId:undefined});
+    expect(second.eventId).not.toBe(first.eventId);
+  });
+  it("keeps the day report's existing thread without pretending an event was tapped",()=>{
+    expect(eventChatTarget(sameDay,undefined,{summary:"Shared outlook",threadId:"day-thread"}))
+      .toEqual({date:sameDay,title:"Shared outlook",eventId:undefined,existingThreadId:"day-thread"});
+  });
+});
+
+describe("saved event advice is informational, not a checklist",()=>{
+  it("shows a recognizable recommendation icon and the original AI explanation",()=>{
+    const html=renderToStaticMarkup(createElement(EventAdviceItem,{
+      action:{area:"operations",action:"Review normal Saturday supplies",
+        reason:"No prior Halloween trading record; use the usual Saturday baseline."},
+    }));
+    expect(html).toContain("<li");
+    expect(html).toContain("<svg");
+    expect(html).toContain("Review normal Saturday supplies");
+    expect(html).toContain("No prior Halloween trading record");
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain("<input");
+    expect(html).not.toContain("<button");
   });
 });
