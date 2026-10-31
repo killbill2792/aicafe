@@ -6,9 +6,11 @@ import {readMenuCatalogRows} from "@/lib/data/menuCatalog.server";
 import {readCafeEvents} from "@/lib/data/cafeEvents.server";
 import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
 import {prepareMorningBrief,type PreparedMorningBrief} from "./morningBrief";
+import {briefDue} from "@/lib/operating/dailyBrief";
 
 export type MorningBriefRecipient={
   businessId:string;ownerUserId:string;businessName:string;currency:string|null;
+  timezone:string;
   today:string;yesterday:string;
   /** A's binding/outbox adapter must verify both before calling this reader. */
   verifiedBinding:boolean;followupPermitted:boolean;
@@ -20,6 +22,11 @@ export type MorningBriefRecipient={
 export async function readPreparedMorningBrief(db:SupabaseClient,recipient:MorningBriefRecipient,
   now:Date):Promise<PreparedMorningBrief|null>{
   if(!recipient.verifiedBinding||!recipient.followupPermitted)return null;
+  // A message for a different UTC day (or an invalid IANA zone) cannot be
+  // made eligible by a caller supplying an arbitrary day or stale binding.
+  let local:{due:boolean;today:string;yesterday:string};
+  try{local=briefDue(now,recipient.timezone);}catch{return null;}
+  if(!local.due||local.today!==recipient.today||local.yesterday!==recipient.yesterday)return null;
   const day={from:recipient.yesterday,to:recipient.yesterday};
   const [daily,items,menu,events,monitors]=await Promise.all([
     readDailyFactRows(db,recipient.businessId,day.from,day.to),
