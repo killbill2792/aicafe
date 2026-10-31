@@ -119,7 +119,7 @@ try {
   }
   await db.query(readFileSync(new URL("../supabase/migrations/20261022000079_pantry_packs.sql", import.meta.url), "utf8"));
   await db.query(readFileSync(new URL("../supabase/migrations/20261022000080_menu_options_combos.sql", import.meta.url), "utf8"));
-  await db.query(readFileSync(new URL("../supabase/migrations/20261031000134_pantry_persistence.sql", import.meta.url), "utf8"));
+  await db.query(readFileSync(new URL("../supabase/migrations/20261031000136_pantry_persistence.sql", import.meta.url), "utf8"));
   await db.query("grant all on public.menu_product_addons, public.menu_combo_components to authenticated");
   await db.query("grant execute on function public.save_menu_product_addons(uuid,uuid,jsonb) to authenticated");
   await db.query("insert into businesses(id) values($1),($2)",[A,B]);
