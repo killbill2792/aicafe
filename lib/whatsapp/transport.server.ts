@@ -34,7 +34,7 @@ export async function sendMeta(kind:Channel,to:string,outbound:Outbound,send:typ
     if(!response.ok)return {state:"failed",reason:"provider_rejected"};
     const receipt:unknown=await response.json();
     const id=(receipt as {messages?:{id?:unknown}[]}|null)?.messages?.[0]?.id;
-    return typeof id==="string"&&/^wamid\.[A-Za-z0-9_.:-]{1,240}$/.test(id)
+    return typeof id==="string"&&/^wamid\.[A-Za-z0-9_.:-]{1,240}={0,2}$/.test(id)
       ?{state:"accepted",wamid:id}:{state:"uncertain",reason:"missing_acceptance_id"};
   }catch{return {state:"uncertain",reason:"network_or_timeout_ambiguous"};}
   finally{clearTimeout(timeout);}

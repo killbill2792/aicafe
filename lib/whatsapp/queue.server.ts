@@ -114,7 +114,9 @@ export async function dispatchOutboundOnce(kind:Channel,send:typeof fetch=fetch)
      bound.waId!==lease.wa_id||bound.phoneNumberId!==lease.phone_number_id)
     outcome={state:"failed",reason:"binding_revoked"};
   else if(kind==="reply"&&(!bound.lastOwnerMessageAt||
-    Date.now()-new Date(bound.lastOwnerMessageAt).getTime()>=24*60*60*1000))
+    (!Number.isFinite(Date.parse(bound.lastOwnerMessageAt))||
+     Date.now()<Date.parse(bound.lastOwnerMessageAt)||
+     Date.now()-Date.parse(bound.lastOwnerMessageAt)>=24*60*60*1000)))
     outcome={state:"failed",reason:"outside_service_window"};
   else {
     const payload=lease.payload as {fields?:unknown;text?:unknown}|null;

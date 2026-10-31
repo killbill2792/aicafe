@@ -1,12 +1,18 @@
 import "server-only";
+import type {OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
+import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
-type StaffSourceScope={businessId:string;ownerUserId:string};
+type StaffSourceScope=Pick<OwnerLoopScope,"businessId"|"ownerUserId"|"verifiedReadClient">;
 export type StaffProposalPerson={id:string;display_name:string;role:string|null;active:boolean;
  wage_period:string;wage_amount_cents:number|null;default_hourly_wage_cents?:number|null;phone_e164:string|null;whatsapp_opt_in:boolean};
 export type StaffProposalShift={id:string;employee_id:string;local_date:string;start_local:string;end_local:string;break_minutes:number;status:string;deleted_at:string|null};
 
 async function verifyOwner(scope:StaffSourceScope){
+ if(scope.verifiedReadClient){
+  const {client}=await simulationOwnerReader(scope);
+  return {businessId:scope.businessId,supabase:client};
+ }
  const owner=await requireSchedulingOwner();
  if(!owner||owner.businessId!==scope.businessId)throw new Error("Only the current café owner can propose staff changes");
  const user=await owner.supabase.auth.getUser();

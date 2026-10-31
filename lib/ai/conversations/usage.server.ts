@@ -2,6 +2,7 @@ import { standardModelTokenRates } from "@/lib/calc/supervisorTokenCost";
 import {modelFamily} from "@/lib/ai/conversations/modelFamily";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { ConversationApiError } from "./auth.server";
@@ -90,8 +91,8 @@ export function ownerModelCallsLimit(value = process.env.AI_OWNER_MAX_MODEL_CALL
   return /^\d+$/.test(value) && Number.isSafeInteger(limit) && limit > 0
     ? limit : MAX_OWNER_MODEL_CALLS_PER_DAY;
 }
-export async function assertOwnerAgentTurnAvailable(scope: ConversationScope): Promise<void> {
-  const session = await createServerSupabaseClient();
+export async function assertOwnerAgentTurnAvailable(scope: ConversationScope, scopedClient?:SupabaseClient): Promise<void> {
+  const session = scopedClient ?? await createServerSupabaseClient();
   // allowed: UTC quota bucket. ai_usage_events.attempt_day is an existing UTC quota key,
   // not a café calendar date or a date shown to the owner.
   const utcQuotaBucketDay = new Date().toISOString().slice(0, 10);

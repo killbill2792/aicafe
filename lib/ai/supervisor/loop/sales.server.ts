@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {formatInTimeZone} from "date-fns-tz";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {aggregatePriceExperimentSalesRows,type PriceExperimentDay} from "@/lib/calc/priceExperiment";
@@ -60,9 +61,9 @@ export async function readPriceExperimentSalesDays(
  * partially synchronized current business day in the baseline forecast.
  */
 export async function readPriceExperimentBaselineUnits(
- businessId:string,productId:string
+ businessId:string,productId:string,scopedClient?:SupabaseClient
 ):Promise<number|null>{
- const db=createAdminSupabaseClient();
+ const db=scopedClient??createAdminSupabaseClient();
  const {data,error}=await db.from("businesses").select("timezone")
    .eq("id",businessId).single();
  if(error||!data)return null;

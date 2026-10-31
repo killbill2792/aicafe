@@ -1,5 +1,7 @@
 import { posFactReaders } from "@/lib/data/posFactReaders.server";
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
+import type {ConversationScope} from "@/lib/ai/conversations/contracts";
 import {cache} from "react";
 import {readUsageVariance} from "@/lib/data/usageVariance.server";
 import {readSchedulingDraftInputs} from "@/lib/data/schedulingDraftInputs.server";
@@ -41,14 +43,22 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
   if (!user) throw new Error("Authenticated owner required");
   const businessId = await getActiveBusinessId(user.id);
   const client = await createServerSupabaseClient();
+  return createOwnerScopedCafeTools({businessId,ownerUserId:user.id},client,true);
+}
 
+/** Accepts ONLY an owner/café binding reverified by the caller (e.g. Meta's
+ * durable verified owner mapping); uses canonical readers with explicit scoped
+ * DB access. Never looks at an active browser café or impersonates a session. */
+export function createOwnerScopedCafeTools(scope:ConversationScope,client:SupabaseClient,browserSession=false):BusinessScopedCafeTools {
+  const businessId=scope.businessId;
+  const explicit={client,businessId};
   const assertBusiness = (requested: string) => {
     if (requested !== businessId) throw new Error("Café access scope mismatch");
   };
   const pricingMenu = async (requested: string) => {
     assertBusiness(requested);
     // Uses the exact data source and pricing engine already used by Menu and Team.
-    return getMenuControlCenter();
+    return browserSession?getMenuControlCenter():getMenuControlCenter({},explicit);
   };
   // Read the active roster once per authenticated café turn. Never infer active
   // membership from timecards, recurring patterns or historic POS display names.
@@ -63,8 +73,8 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       id: row.id, name: row.display_name, role: row.role, active: true,
     }));
   })();
-  let snapshotPromise: ReturnType<typeof getSnapshot> | null = null;
-  const currentSnapshot = () => snapshotPromise ??= getSnapshot();
+  let snapshotPromise: ReturnType<typeof getBusinessSnapshotFromDb> | null = null;
+  const currentSnapshot = () => snapshotPromise ??= browserSession?getSnapshot():getBusinessSnapshotFromDb(client,businessId);
   const states = new SnapshotCafeStateService(
     async (requested,period) => {
       assertBusiness(requested);
@@ -87,7 +97,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       .flatMap((item) => item.pricing ? signalsFromPricing(item.id, item.pricing) : []),
     async (requested) => {
       assertBusiness(requested);
-      return readPersistedOperatingTasks(requested);
+      return readPersistedOperatingTasks(requested,browserSession?undefined:explicit);
     },
     supervisorFactReaders(client, businessId),
     supervisorHistoricalReaders(client, businessId),
@@ -104,7 +114,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       },
       recurringSchedule: async (requested,range,asOf) => {
         assertBusiness(requested);
-        const [rows, team] = await Promise.all([getStaffSchedules(), activeTeam()]);
+        const [rows, team] = await Promise.all([getStaffSchedules(browserSession?undefined:explicit), activeTeam()]);
         const activeById = Object.fromEntries(team.map(e=>[e.id,e.name]));
         return projectRecurringSchedule(rows.filter(row=>Object.hasOwn(activeById,row.employeeId)),
           activeById,range,asOf);
@@ -116,7 +126,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
         return projectBreakEven(snapshot);
       },
     },
-    async (requested,input)=>{assertBusiness(requested);return readUsageVariance(input);},
+    async (requested,input)=>{assertBusiness(requested);return readUsageVariance(input,browserSession?undefined:explicit);},
     async(requested)=>{
       assertBusiness(requested);
       const {data,error}=await client.from("businesses")
@@ -173,8 +183,8 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
 }
 
 /** Owner-scoped calendar and café identity without loading the mutable Home snapshot. */
-export const readSupervisorCafeIdentity=cache(async function readSupervisorCafeIdentity(authorizedBusinessId: string) {
-  const client = await createServerSupabaseClient();
+export const readSupervisorCafeIdentity=cache(async function readSupervisorCafeIdentity(authorizedBusinessId: string, scopedClient?:SupabaseClient) {
+  const client = scopedClient??await createServerSupabaseClient();
   const { data, error } = await client.from("businesses").select("id,name,timezone,currency")
     .eq("id",authorizedBusinessId).single();
   if (error || !data || data.id !== authorizedBusinessId) throw new Error("Café identity unavailable");

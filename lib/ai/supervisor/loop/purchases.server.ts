@@ -1,8 +1,7 @@
 import "server-only";
+import {simulationOwnerReader} from "./simulationOwner.server";
 import {z} from "zod";
 import {registerLoopCapability} from "./engine";
-import {createServerSupabaseClient} from "@/lib/supabase/server";
-import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {recordPurchases} from "@/lib/inventory/recordPurchases.server";
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 export const purchaseInputSchema=z.strictObject({
@@ -26,15 +25,7 @@ export const purchaseCapability=registerLoopCapability({
  proposalDescription:"Draft ONE receipt or typed inventory purchase line for owner approval. Resolve to an existing ingredient by name before recording; never create an unknown item automatically. Approval only via the existing proposal card.",
  dependencyScope:effect=>({kind:"inventory",ingredientId:effect.ingredientId,date:effect.date}),
  simulate:async(scope,input)=>{
-  const db=await createServerSupabaseClient();
-  const {data:{user}}=await db.auth.getUser();
-  if(!user||user.id!==scope.ownerUserId||await getActiveBusinessId(user.id)!==scope.businessId)
-   throw new Error("owner_required");
-  const {data:member}=await db.from("memberships").select("role,businesses(is_demo)")
-   .eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle();
-  const bs=member?.businesses as unknown as {is_demo:boolean}|{is_demo:boolean}[]|null;
-  if(member?.role!=="owner"||(Array.isArray(bs)?bs[0]?.is_demo:bs?.is_demo)!==false)
-   throw new Error("owner_required");
+  const {client:db}=await simulationOwnerReader(scope);
   const {data:ingredients,error}=await db.from("ingredients").select("id,name,base_unit")
    .eq("business_id",scope.businessId).limit(2000);
   if(error||!ingredients)throw new Error("ingredients_unavailable");

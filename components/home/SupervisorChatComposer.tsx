@@ -375,6 +375,46 @@ export default function SupervisorChatComposer({
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [enabled]);
+  // WhatsApp and other browser tabs append to the same stored conversation.
+  // Refresh only when idle: never replace an active stream, a typed draft,
+  // an optimistic owner turn, or the selected thread with a different thread.
+  useEffect(() => {
+    if (!enabled) return;
+    let stopped = false, checking = false;
+    const controller = new AbortController();
+    const refreshExternal = async () => {
+      if (stopped || checking || sending || document.visibilityState === "hidden") return;
+      checking = true;
+      const selected = selectedThreadId.current;
+      try {
+        const page = await jsonFrom<ConversationPage<ConversationThread>>(await fetch("/api/ai/threads", {
+          credentials: "same-origin", cache: "no-store", signal: controller.signal,
+        }));
+        if (stopped || controller.signal.aborted) return;
+        setThreads(page.items);
+        // The linked WhatsApp thread may be recent while the owner is viewing
+        // a different web thread. Refresh only the selected thread's messages.
+        if (selected && selectedThreadId.current === selected)
+          setReloadVersion(v => v + 1);
+        else if (!selected && page.items.length)
+          setThreadId(current => current ?? page.items[0].id);
+      } catch {
+        // Offline/focus race: existing messages and draft remain intact.
+      } finally { checking = false; }
+    };
+    const onFocus = () => { void refreshExternal(); };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refreshExternal();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    const timer = window.setInterval(() => { void refreshExternal(); }, 25_000);
+    return () => {
+      stopped = true; controller.abort(); window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [enabled, sending]);
   useEffect(() => {
     if (!enabled || !threadId || sending) return;
     const controller = new AbortController();
@@ -392,7 +432,7 @@ export default function SupervisorChatComposer({
     return () => controller.abort();
   }, [enabled, threadId, sending, threads, reloadVersion]);
   useEffect(() => {
-    if (!enabled || !threadId) return;
+    if (!enabled || !threadId || sending) return;
     const controller = new AbortController();
     void fetch("/api/ai/threads/" + encodeURIComponent(threadId) + "/attachments",
       { signal: controller.signal, cache: "no-store" })
@@ -400,7 +440,7 @@ export default function SupervisorChatComposer({
       .then((page) => { if (!controller.signal.aborted) setAttachments(page.items); })
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [enabled, threadId]);
+  }, [enabled, threadId, sending, reloadVersion]);
   useLayoutEffect(() => { selectedThreadId.current = threadId; }, [threadId]);
 
   function scrollToLatest() {

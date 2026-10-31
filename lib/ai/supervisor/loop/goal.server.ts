@@ -1,12 +1,11 @@
 import "server-only";
+import {simulationOwnerReader} from "./simulationOwner.server";
 import {z} from "zod";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
-import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {readMetricDay} from "@/lib/data/metricDay.server";
 import {computeMetric,type MetricDailyInput} from "@/lib/calc/metrics/catalog";
 import {cafeToday} from "@/lib/metrics/core/clock";
-import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {GOAL_METRICS,GOAL_MIN_DAYS,GOAL_MAX_DAYS,BASELINE_DAYS,MAX_GUARDRAILS,ITEM_METRICS,
   goalEffectSchema,goalMetricsFromRequest,baselineDatesFor,addDays,scoreGoal,
   type GoalEffect,type GoalObservation} from "@/lib/calc/goals/goalSpec";
@@ -49,15 +48,9 @@ export const goalCapability=registerLoopCapability({
   proposalDescription:"Draft an inert goal for the owner to confirm. Tracking a goal changes nothing in the café or the POS.",
   dependencyScope:(effect)=>({version:1,kind:"goal",metric:effect.metrics[0].metricKey,itemId:effect.metrics[0].itemId}),
   simulate:async(scope,input)=>{
-    const client=await createServerSupabaseClient();
-    const {data:{user}}=await client.auth.getUser();
-    if(!user||user.id!==scope.ownerUserId)throw new ToolError("unauthorized");
-    if(await getActiveBusinessId(user.id)!==scope.businessId)throw new ToolError("scope_mismatch");
-    const [{data:membership},{data:business}]=await Promise.all([
-      client.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle(),
-      client.from("businesses").select("currency,timezone,is_demo").eq("id",scope.businessId).maybeSingle(),
-    ]);
-    if(membership?.role!=="owner"||business?.is_demo||!business?.timezone)throw new ToolError("unauthorized");
+    const {client,explicit}=await simulationOwnerReader(scope);
+    const {data:business}=await client.from("businesses").select("currency,timezone,is_demo").eq("id",scope.businessId).maybeSingle();
+    if(!business||business.is_demo||!business.timezone)throw new ToolError("unauthorized");
     const currency=typeof business.currency==="string"&&/^[A-Z]{3}$/.test(business.currency)?business.currency:null;
     const all=[{metric:input.metric,itemId:input.itemId},...input.guardrails];
     for(const m of all)if(ITEM_METRICS.has(m.metric)!==(m.itemId!==null))
@@ -65,7 +58,7 @@ export const goalCapability=registerLoopCapability({
     const ids=[...new Set(all.flatMap(m=>m.itemId?[m.itemId]:[]))];
     const names=new Map<string,string>();
     if(ids.length){
-      const menu=(await getMenuControlCenter()).filter(x=>x.active&&ids.includes(x.id));
+      const menu=(await (explicit?getMenuControlCenter({},{client,businessId:scope.businessId}):getMenuControlCenter())).filter(x=>x.active&&ids.includes(x.id));
       if(menu.length!==ids.length)throw new ToolError("not_found");
       for(const item of menu)names.set(item.id,item.name);
     }

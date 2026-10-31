@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {dateOffset} from "@/lib/calc/periods";
 import {priceCheck,priceSource,realizedUnitAverage,type PriceCheck,type PriceEvidenceStatus} from "@/lib/calc/menuPriceCheck";
@@ -9,9 +10,9 @@ export type MenuPriceEvidence={
 };
 /** Date-bounded, paged and tenant-scoped; never calculate an average from a truncated page. */
 export async function readMenuPriceEvidence(businessId:string,
- items:ReadonlyArray<{id:string;priceCents:number}>,asOf:string):Promise<Record<string,MenuPriceEvidence>>{
+ items:ReadonlyArray<{id:string;priceCents:number}>,asOf:string,scopedClient?:SupabaseClient):Promise<Record<string,MenuPriceEvidence>>{
  if(!items.length)return {};
- const db=await createServerSupabaseClient(),ids=items.map(x=>x.id);
+ const db=scopedClient??await createServerSupabaseClient(),ids=items.map(x=>x.id);
  const [history,catalog,coverage]=await Promise.all([
   db.from("menu_price_history").select("menu_item_id,source_type,changed_at")
     .eq("business_id",businessId).in("menu_item_id",ids).order("changed_at",{ascending:false}),
