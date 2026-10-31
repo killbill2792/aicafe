@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
@@ -84,13 +85,16 @@ export async function syncAndGetOperatingTasks(derived: OperatingTask[]): Promis
  * expires, or responds to tasks. Future Supervisor summaries must use these
  * statuses, not raw engine signals, for Needs You / Handled / Watching claims.
  */
-export async function readPersistedOperatingTasks(businessId: string): Promise<OperatingTask[]> {
+export async function readPersistedOperatingTasks(businessId: string, explicit?:{client:SupabaseClient;businessId:string}): Promise<OperatingTask[]> {
   if (!isSupabaseConfigured()) throw new Error("Persisted café tasks are unavailable");
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Authenticated owner required");
-  const activeBusinessId = await getActiveBusinessId(user.id);
-  if (businessId !== activeBusinessId) throw new Error("Café task access scope mismatch");
+  const supabase = explicit?.client ?? await createServerSupabaseClient();
+  if (explicit) {
+    if(businessId !== explicit.businessId)throw new Error("Café task access scope mismatch");
+  } else {
+    const {data:{user}}=await supabase.auth.getUser();
+    if(!user || businessId !== await getActiveBusinessId(user.id))
+      throw new Error("Café task access scope mismatch");
+  }
   const { data, error } = await supabase
     .from("operating_tasks")
     .select("id, business_id, agent_id, kind, entity_type, entity_id, status, payload, confidence, evidence, created_at, resolved_at")
