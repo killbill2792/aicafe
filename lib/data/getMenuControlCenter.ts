@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import { readDailyFactRows } from "./dailyFacts.server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -61,14 +62,14 @@ const EMPTY_EVIDENCE: MenuPricingEvidence = {
 };
 
 /** One canonical read model for both the menu catalog and product detail. */
-export async function getMenuControlCenter(options: { includeSalesEvidence?: boolean; catalogOnly?: boolean } = {}): Promise<MenuControlItem[]> {
+export async function getMenuControlCenter(options: { includeSalesEvidence?: boolean; catalogOnly?: boolean } = {}, explicit?:{client:SupabaseClient;businessId:string}): Promise<MenuControlItem[]> {
   const attentionOnly = options.includeSalesEvidence === false;
   // Catalog cards only show the canonical price and recipe status. Item detail
   // and Supervisor still request complete quantity periods and 90-day evidence.
   const catalogOnly = options.catalogOnly === true;
   const measure = <T>(stage: string, read: () => Promise<T>): Promise<T> =>
     attentionOnly || catalogOnly ? timeReader(attentionOnly ? "Home" : "Menu", "menu." + stage, read) : read();
-  const { items } = await measure("catalog", getMenuItemsForEdit);
+  const { items } = await measure("catalog", () => getMenuItemsForEdit(explicit));
   if (!isSupabaseConfigured() || items.length === 0) {
     return items.map((item) => ({
       ...item,
@@ -83,11 +84,11 @@ export async function getMenuControlCenter(options: { includeSalesEvidence?: boo
     }));
   }
 
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
+  const supabase = explicit?.client ?? await createServerSupabaseClient();
+  const user = explicit ? null : (await supabase.auth.getUser()).data.user;
+  if (!explicit && !user) return [];
 
-  const businessId = await getActiveBusinessId(user.id);
+  const businessId = explicit?.businessId ?? await getActiveBusinessId(user!.id);
   const pricingInputs = await measure("pricingInputs", () =>
     getPricingInputs(supabase, businessId, { attentionOnly, profile: catalogOnly ? "Menu" : undefined }));
   const pricingById = new Map(buildPricingViewModel(pricingInputs).map((row) => [row.itemId, row.result]));
