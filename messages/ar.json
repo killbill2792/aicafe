@@ -2623,6 +2623,7 @@
     "densityShort": "غرامات لكل ملليلتر",
     "densityNeeded": "أدخل غرامات المكوّن لكل ملليلتر قبل الحفظ.",
     "measureShort": "مقدار {unit} واحد",
+    "chooseMeasurement": "اختر ما إذا كان هذا المكوّن يُقاس كسائل أو بالوزن أو بالقطع.",
     "addRecipeRow": "إضافة صف للوصفة",
     "addRecipeRowAfter": "إضافة صف بعد {name}",
     "addPantryItem": "إنشاء مكوّن في المخزن",
