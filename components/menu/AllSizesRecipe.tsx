@@ -3,7 +3,7 @@ import {Fragment,useEffect,useState,useTransition} from "react";
 import {useTranslations} from "next-intl";
 import {Plus,X,ArrowLeftRight,ArrowUp,ArrowDown} from "lucide-react";
 import {insertRecipeRowAfter,moveRecipeRow} from "@/lib/menu/recipeRowOrder";
-import {hasPendingRecipeMeasurements} from "@/lib/menu/recipeDraftGuard";
+import {hasPendingRecipeMeasurements,planRecipeSizeSwitch} from "@/lib/menu/recipeDraftGuard";
 import {useRouter} from "@/i18n/navigation";
 import {saveProductRecipes} from "@/lib/actions/pantry";
 import NewPantryInlineRow from "./NewPantryInlineRow";
@@ -375,7 +375,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  return <div className="relative pb-24 text-ink">
  <div className="mb-3 flex flex-wrap items-center gap-2">
   <span className="font-bold">{t("sizesSell")}</span>
-  {items.map(item=><button key={item.id} type="button" aria-pressed={focusedSize===item.id} onClick={()=>{if(editorDraftDirty){setError(t("saveBeforeSizeChange"));return;}setFocusedSize(item.id);onFocusedSizeChange?.(item.id);setAdd(null);setToast("");setError("");}} className={`min-h-12 rounded-full border px-4 font-bold ${focusedSize===item.id?"border-accent bg-accent text-on-accent":"border-line bg-card"}`}>{item.sizeLabel??item.name}{!active.includes(item.id)?" · "+t("priceNotSet"):""}</button>)}
+  {items.map(item=><button key={item.id} type="button" aria-pressed={focusedSize===item.id} onClick={()=>{const move=planRecipeSizeSwitch(focusedSize,item.id,editorDraftDirty);if(move.blocked){setError(t("saveBeforeSizeChange"));return;}setFocusedSize(move.focusedSize);onFocusedSizeChange?.(move.focusedSize);setAdd(null);setToast("");setError("");}} className={`min-h-12 rounded-full border px-4 font-bold ${focusedSize===item.id?"border-accent bg-accent text-on-accent":"border-line bg-card"}`}>{item.sizeLabel??item.name}{!active.includes(item.id)?" · "+t("priceNotSet"):""}</button>)}
   {draftSizes.map(draft=><button key={draft.id} type="button" onClick={()=>{setPriceDraft(draft.id);setDraftPrice("");}} className="min-h-12 rounded-full border border-dashed border-warn px-4">{draft.sizeLabel??draft.name}</button>)}
   <button type="button" onClick={()=>setSizeDialog(true)} className="min-h-12 rounded-full border border-dashed border-accent px-4 text-accent-text">{t("addSize")}</button>
  </div>
