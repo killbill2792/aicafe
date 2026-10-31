@@ -2624,6 +2624,8 @@
     "densityNeeded": "أدخل غرامات المكوّن لكل ملليلتر قبل الحفظ.",
     "measureShort": "مقدار {unit} واحد",
     "chooseMeasurement": "اختر ما إذا كان هذا المكوّن يُقاس كسائل أو بالوزن أو بالقطع.",
+    "changeRecipeIngredient": "اختر بديلاً عن {name}",
+    "duplicateRecipeIngredient": "اختر مكوّنًا آخر بنفس نوع القياس؛ هذا المكوّن موجود بالفعل في الوصفة.",
     "addRecipeRow": "إضافة صف للوصفة",
     "addRecipeRowAfter": "إضافة صف بعد {name}",
     "addPantryItem": "إنشاء مكوّن في المخزن",
