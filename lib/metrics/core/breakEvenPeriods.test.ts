@@ -137,4 +137,62 @@ describe("canonical period break-even and Toast provenance",()=>{
     expect(chat.ingredientStatus).toBe("missing");
     expect(chat.status).toBe("estimate");
   });
+
+  it("does not certify placeholder zeros as Toast labor but retains a genuine $0 shift",async()=>{
+    const snapshot=fixture();
+    const placeholder:BusinessSnapshot={...snapshot,
+      todayDay:{...snapshot.todayDay,wagesCents:0,staffTaxCents:0,
+        laborWageStatus:undefined,salesDataStatus:"missing"}};
+    const unknown=breakEvenSnapshotInputs(placeholder,{period:"today"});
+    expect(unknown.todayLaborReady).toBe(false);
+    expect(unknown.monthlyStaffCents).toBeNull();
+    const reply=await moneyTools.get_break_even.execute({period:"today"},context(placeholder));
+    expect(reply.missing).toContain("todayLaborUnavailable");
+    expect(reply.costProvenance).toMatchObject({wages:"missing"});
+    const genuine={...placeholder.todayDay,laborWageStatus:"actual" as const,
+      wagesCents:0,staffTaxCents:0};
+    const withShift:BusinessSnapshot={...placeholder,todayDay:genuine,
+      monthRecordedDays:[...(placeholder.monthRecordedDays??[]),genuine]};
+    const actual=breakEvenSnapshotInputs(withShift,{period:"today"});
+    expect(actual.todayLaborReady).toBe(true);
+    expect(actual.monthlyStaffCents).toBe(0);
+  });
+
+  it("preserves owner labor stated for exactly today or month-to-date",async()=>{
+    const snapshot=fixture();
+    const ownerInputs=(laborCents:number,laborPeriod:{from:string;to:string})=>({
+      netSalesCents:null,salesPeriod:null,laborCents,laborPeriod,
+      rentCents:null,otherOverheadCents:null,overheadPeriod:null,
+      unitCostCents:null,itemsSoldPerDay:null,
+    });
+    const today=await moneyTools.get_break_even.execute({period:"today",
+      ownerOpenDaysPerMonth:27,
+      ownerInputs:ownerInputs(10_000,{from:"2026-10-30",to:"2026-10-30"})},
+      context(snapshot));
+    expect((today.monthlyLabor as {valueCents:number|null}).valueCents).toBe(10_000);
+    const mtd=await moneyTools.get_break_even.execute({period:"month_to_date",
+      ownerOpenDaysPerMonth:27,
+      ownerInputs:ownerInputs(487_200,{from:"2026-10-01",to:"2026-10-29"})},
+      context(snapshot));
+    expect((mtd.monthlyLabor as {valueCents:number|null}).valueCents).toBe(487_200);
+  });
+
+  it("includes actual expenses already incurred MTD, prorating recurring bills only",()=>{
+    const snapshot=fixture();
+    const lines=snapshot.runningCostLines.filter(line=>line.categoryCode!=="repairs")
+      .map(line=>({...line,amountSource:"recurring" as const}));
+    const repaired:BusinessSnapshot={...snapshot,runningCostLines:[
+      ...lines,{categoryCode:"repairs",label:"Repairs",amountCents:31_000,
+        amountSource:"recorded_expense",isEstimate:false,isMissing:false,isExpected:true},
+    ]};
+    const forecast=breakEvenSnapshotInputs(repaired,{period:"month_forecast"});
+    const mtd=breakEvenSnapshotInputs(repaired,{period:"month_to_date"});
+    const recurringCents=lines.filter(line=>!line.isMissing)
+      .reduce((sum,line)=>sum+line.amountCents,0);
+    expect(forecast.monthlyBillsCents).toBe(recurringCents+31_000);
+    expect(mtd.monthlyBillsCents).toBe(31_000+Math.round(recurringCents*29/31));
+    expect(mtd.monthlyBillsCents).toBeGreaterThan(
+      Math.round(forecast.monthlyBillsCents*29/31));
+  });
+
 });
