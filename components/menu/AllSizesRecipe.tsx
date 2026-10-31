@@ -19,6 +19,16 @@ import AddSizeDialog from "./AddSizeDialog";
 import type {PricedPantry} from "./MenuAddonsPanel";
 type Draft={unit:RecipeDisplayUnit;quantity:number;removed:boolean};
 function k(item:string,ingredient:string){return item+":"+ingredient;}
+/** A replacement ingredient must never inherit the original ingredient's density.
+ * Cross weight/volume conversions require the replacement's confirmed density. */
+export function safeRecipeDensity(replacing:boolean,raw:string|undefined,
+  stored:number|null|undefined,suggested:number|null|undefined):number|undefined{
+ if(raw!==undefined){
+  const value=Number(raw);
+  return raw.trim()!==""&&Number.isFinite(value)&&value>0&&value<=5?value:undefined;
+ }
+ return replacing?undefined:stored??suggested??undefined;
+}
 export default function AllSizesRecipe({items,ingredients,conversions,pantry,draftSizes,focusedSizeId,onFocusedSizeChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void}){
  const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),menu=useTranslations("Menu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
  const [active,setActive]=useState<string[]>(items.filter(i=>i.active).map(i=>i.id));
@@ -47,11 +57,9 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  function densityFor(item:MenuItemForEdit,line:MenuItemForEdit["recipe"][number],unit:RecipeDisplayUnit):number|undefined{
   if(!requiresDensity(line.baseUnit,unit))return undefined;
   const key=k(item.id,line.ingredientId),userInput=densityInputs[key];
-  if(userInput!==undefined){
-   const n=Number(userInput);return userInput.trim()!==""&&Number.isFinite(n)&&n>0&&n<=5?n:undefined;
-  }
+  const replacing=Boolean(replacements[key]&&replacements[key]!==line.ingredientId);
   const existing=densityFromStoredRecipe(line.baseUnit,line.quantity,(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,line.displayQuantity??line.quantity);
-  return existing??suggestedIngredientDensity(line.ingredientName)??undefined;
+  return safeRecipeDensity(replacing,userInput,existing,suggestedIngredientDensity(line.ingredientName));
  }
  const invalidDensity=selectedItems.some(item=>item.recipe.some(line=>{
   const draft=drafts[k(item.id,line.ingredientId)],unit=(draft?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit;
@@ -165,6 +173,8 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
     setError(t("duplicateRecipeIngredient"));return;
   }
   const key=k(item.id,id);
+  // Typed/stored density was for the old ingredient; clear it on every swap.
+  setDensityInputs(prev=>Object.fromEntries(Object.entries(prev).filter(([entry])=>entry!==key)));
   setReplacements(prev=>target===id?Object.fromEntries(Object.entries(prev).filter(([entry])=>entry!==key)):{...prev,[key]:target});
   setEditingIngredient(null);setSaved(false);setError("");
  }
