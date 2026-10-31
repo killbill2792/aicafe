@@ -223,44 +223,6 @@ try {
       "failed concurrent recipe change must never change saved default milk");
     assert.equal((await c.query("select ingredient_id from recipe_lines where menu_item_id=$1 and ingredient_id=$2",[target,alt])).rowCount,1);
   });
-  // P1: A recipe saved as 103 g at confirmed density 1.03 g/ml has a
-  // canonical 100 ml quantity. Replacing the default milk MUST NOT reuse
-  // whole milk's density for oat milk, overwrite 103 g as 103 ml, or fail.
-  // The JS prepareIngredientSwap projects this persisted line into 100 ml
-  // (covered by recipeUnits.density.test); verify the combined SQL writer.
-  await asOwner(db,async c=>{
-    const milk=owned["milk-whole"];
-    const item=(await c.query(`insert into menu_items(business_id,name,base_name,price_cents)
-      values($1,'Density Latte','Density Latte',600) returning id`,[A])).rows[0].id;
-    const oat=(await c.query(`insert into ingredients(business_id,name,base_unit)
-      values($1,'Oat Milk Density Swap','ml') returning id`,[A])).rows[0].id;
-    const first=[{ingredientId:milk,quantity:100,displayUnit:"g",displayQuantity:103}];
-    await c.query(rpc("pantry_replace_recipes",[],3),[A,item,JSON.stringify([{
-      menuItemId:item,lines:first,expectedOrder:[],
-    }])]);
-    const reopened=(await c.query(`select ingredient_id,quantity,display_unit,display_quantity,sort_order
-      from recipe_lines where menu_item_id=$1`,[item])).rows[0];
-    assert.equal(Number(reopened.quantity),100);
-    assert.equal(reopened.display_unit,"g");
-    assert.equal(Number(reopened.display_quantity),103);
-    const expected=[{ingredientId:milk,quantity:100,displayUnit:"g",displayQuantity:103}];
-    const next=[{ingredientId:oat,quantity:100,displayUnit:"ml",displayQuantity:100}];
-    const option={ingredientId:oat,kind:"milk",enabled:true,isDefault:true,
-      upchargeCents:25,displayUnit:"ml",displayQuantity:100};
-    const plan=[{menuItemId:item,expectedLines:expected,expectedOrder:[milk],
-      expectedSourceLines:expected,expectedSourceOrder:[milk],expectedSiblingIds:[item],lines:next}];
-    await c.query("select public.save_menu_product_addons($1,$2,$3)",[A,item,
-      JSON.stringify({options:[option],recipeChanges:plan})]);
-    const after=(await c.query(`select ingredient_id,quantity,display_unit,display_quantity
-      from recipe_lines where menu_item_id=$1`,[item])).rows;
-    assert.deepEqual(after.map(row=>({ingredientId:row.ingredient_id,quantity:Number(row.quantity),
-      displayUnit:row.display_unit,displayQuantity:Number(row.display_quantity)})),next);
-    assert.equal((await c.query(`select ingredient_id from menu_product_addons
-      where menu_item_id=$1 and is_default=true`,[item])).rows[0].ingredient_id,oat);
-    await rejectStatement(c,"select public.save_menu_product_addons($1,$2,$3)",[A,item,
-      JSON.stringify({options:[option],recipeChanges:plan})],"40001");
-    assert.equal(Number((await c.query("select quantity from recipe_lines where menu_item_id=$1",[item])).rows[0].quantity),100);
-  });
   // A legacy editor updates an unrelated line in an open transaction. The
   // bulk RPC must wait for its ROW EXCLUSIVE lock, then detect the stale
   // source snapshot instead of losing that committed owner edit.
@@ -389,6 +351,44 @@ try {
   await asOwner(db,async c=>{
     await rejectStatement(c,rpc("pantry_set_archived",[],3),[A,owned["milk-whole"],true],"42501");
   },OTHER);
+  // P1: A recipe saved as 103 g at confirmed density 1.03 g/ml has a
+  // canonical 100 ml quantity. Replacing the default milk MUST NOT reuse
+  // whole milk's density for oat milk, overwrite 103 g as 103 ml, or fail.
+  // The JS prepareIngredientSwap projects this persisted line into 100 ml
+  // (covered by recipeUnits.density.test); verify the combined SQL writer.
+  await asOwner(db,async c=>{
+    const milk=owned["milk-whole"];
+    const item=(await c.query(`insert into menu_items(business_id,name,base_name,price_cents)
+      values($1,'Density Latte','Density Latte',600) returning id`,[A])).rows[0].id;
+    const oat=(await c.query(`insert into ingredients(business_id,name,base_unit)
+      values($1,'Oat Milk Density Swap','ml') returning id`,[A])).rows[0].id;
+    const first=[{ingredientId:milk,quantity:100,displayUnit:"g",displayQuantity:103}];
+    await c.query(rpc("pantry_replace_recipes",[],3),[A,item,JSON.stringify([{
+      menuItemId:item,lines:first,expectedOrder:[],
+    }])]);
+    const reopened=(await c.query(`select ingredient_id,quantity,display_unit,display_quantity,sort_order
+      from recipe_lines where menu_item_id=$1`,[item])).rows[0];
+    assert.equal(Number(reopened.quantity),100);
+    assert.equal(reopened.display_unit,"g");
+    assert.equal(Number(reopened.display_quantity),103);
+    const expected=[{ingredientId:milk,quantity:100,displayUnit:"g",displayQuantity:103}];
+    const next=[{ingredientId:oat,quantity:100,displayUnit:"ml",displayQuantity:100}];
+    const option={ingredientId:oat,kind:"milk",enabled:true,isDefault:true,
+      upchargeCents:25,displayUnit:"ml",displayQuantity:100};
+    const plan=[{menuItemId:item,expectedLines:expected,expectedOrder:[milk],
+      expectedSourceLines:expected,expectedSourceOrder:[milk],expectedSiblingIds:[item],lines:next}];
+    await c.query("select public.save_menu_product_addons($1,$2,$3)",[A,item,
+      JSON.stringify({options:[option],recipeChanges:plan})]);
+    const after=(await c.query(`select ingredient_id,quantity,display_unit,display_quantity
+      from recipe_lines where menu_item_id=$1`,[item])).rows;
+    assert.deepEqual(after.map(row=>({ingredientId:row.ingredient_id,quantity:Number(row.quantity),
+      displayUnit:row.display_unit,displayQuantity:Number(row.display_quantity)})),next);
+    assert.equal((await c.query(`select ingredient_id from menu_product_addons
+      where menu_item_id=$1 and is_default=true`,[item])).rows[0].ingredient_id,oat);
+    await rejectStatement(c,"select public.save_menu_product_addons($1,$2,$3)",[A,item,
+      JSON.stringify({options:[option],recipeChanges:plan})],"40001");
+    assert.equal(Number((await c.query("select quantity from recipe_lines where menu_item_id=$1",[item])).rows[0].quantity),100);
+  });
   console.log("PR #319 PostgreSQL: ordered save/reopen, packs, archive/restore, history, RLS and tenant isolation passed");
   console.log("P1 PostgreSQL: migration parses; RLS, idempotency, size identity, draft safety, rollback and recipe CAS passed");
 } finally {
