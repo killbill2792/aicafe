@@ -8,6 +8,7 @@ import { requestedPeriod } from "./period";
 import {resolveOwnerPeriod,resolveEntity,choicePayload,periodChoicePayload} from "../resolve";
 import {money,percent,count,type ExplainLine} from "../explain";
 import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.server";
+import {breakEvenSnapshotInputs,type BreakEvenPeriodMode,type BreakEvenInputOptions} from "@/lib/viewmodels/breakEvenViewModel";
 import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {safeSumCents} from "@/lib/calc/explainMath";
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
@@ -27,6 +28,7 @@ const breakEvenInput=z.strictObject({
   ownerSalesDays:z.number().int().positive().nullable().optional(),
   ownerOpenDaysPerMonth:z.number().int().min(1).max(31).nullable().optional(),
   ownerInputs:ownerInputsSchema.nullable().optional(),
+  period:z.enum(["month","month_to_date","today"]).nullable().optional(),
 });
 const unavailable=(source:string,period:{from:string;to:string}|null,missing:string[]):AgentToolResult=>
   ({source,period,agentId:"leo",missing:missing.length?missing:["sourceUnavailable"]});
@@ -37,83 +39,112 @@ function canonicalBreakEvenAnswer(
  basis:CanonicalBreakEven,asOf:string,locale:"en"|"es"|"ar",
  openDaysSource:"opening_hours"|"calendar"="calendar",
 ):AgentToolResult{
- const period=calendarMonth(asOf),calc=basis.shared.calculation;
- const monthly=basis.shared.salesPerMonthCents;
- const daily=dailyBreakEvenSalesCents(monthly,basis.openDayCount);
+ const mode=basis.mode??"month_forecast";
+ const month=calendarMonth(asOf);
+ const period=mode==="today"?{from:asOf,to:asOf}:
+   mode==="month_to_date"?{from:month.from,to:basis.periodEnd}:month;
+ const calc=basis.shared.calculation;
+ const amount=basis.shared.salesPerMonthCents;
+ const daily=mode==="today"?amount:
+   dailyBreakEvenSalesCents(amount,Math.max(1,basis.targetOpenDays));
  const covered=basis.elapsedOpenDates.length-basis.missingLaborDates.length;
  const laborPartial=basis.missingLaborDates.length>0;
- const projecting=basis.elapsedOpenDates.length<basis.openDates.length;
- const laborEstimate=basis.monthLabor.basis!=="recorded"||projecting||
-   basis.estimatedStaffTax||basis.ownerExtrasPresent;
- const laborReason=laborPartial?"laborPartialCoverage":
-   projecting?"laborEstimated":basis.ownerExtrasPresent?"laborOwnerExtras":
-   basis.estimatedStaffTax?"laborEstimated":"laborRecorded";
+ const laborForecast=mode==="month_forecast"&&basis.forecastLabor;
+ const taxEstimated=basis.estimatedStaffTax||basis.payrollTaxRateStatus==="estimated";
+ const laborEstimate=laborPartial||laborForecast||
+   basis.monthLabor.basis!=="recorded"||taxEstimated||basis.ownerExtrasPresent;
  const bills=figure(basis.monthlyBillsCents,
    basis.missingBills||basis.estimatedBills?"estimate":"actual",
    basis.missingBills?"billsPartial":"billsRecorded");
  const staff=figure(basis.monthlyStaffCents,laborEstimate?"estimate":"actual",
-   laborReason,basis.missingLaborDates,{covered,total:basis.elapsedOpenDates.length,
+   laborPartial?"laborPartialCoverage":
+     laborForecast?"laborEstimated":taxEstimated?"laborEstimated":
+     basis.ownerExtrasPresent?"laborOwnerExtras":"laborRecorded",
+   basis.missingLaborDates,{covered,total:basis.elapsedOpenDates.length,
      planned:basis.openDates.length});
  const missing=[
    ...(basis.missingBills?["monthlyBillsPartial"]:[]),
-   ...(basis.monthlyStaffCents===null?["monthlyLabor"]:[]),
+   ...(basis.monthlyStaffCents===null?[mode==="today"?"todayLaborUnavailable":"monthlyLabor"]:[]),
    ...(laborPartial?["laborDaysIncomplete"]:[]),
-   ...(basis.ingredientMissing?["productCostsIncomplete"]:[]),
+   ...(basis.ingredientMissing?["ingredientRateMissing:ask_owner"]:[]),
    ...(basis.missingFees?["processingFeeDaysIncomplete"]:[]),
-   ...(monthly===null?["breakEvenUnavailable"]:[]),
+   ...(amount===null?["breakEvenUnavailable"]:[]),
  ];
- const feeRate=calc.kind==="ready"?calc.processingFeeRate:null;
+ const feeActual=basis.historicalFeeBasis==="actual";
  const ingredientRate=calc.kind==="ready"?calc.ingredientRate:null;
- const observedProcessingFeesCents=basis.feeResult.amountCents;
- const observedIngredientCents=basis.observedIngredientCents;
- const status=monthly===null?"missing":basis.estimatesUsed?"estimate":"actual";
- const reason=missing.length?"breakEvenKnownInputs":status==="actual"?"laborRecorded":"profitFeesEstimated";
+ const feeRate=calc.kind==="ready"?calc.processingFeeRate:null;
+ const status=amount===null?"missing":basis.estimatesUsed?"estimate":"actual";
+ // Never classify an estimated TAX or future LABOR amount as estimated Toast fees.
+ const reason=missing.length?"breakEvenKnownInputs":
+   status==="actual"?"laborRecorded":"breakEvenEstimate";
  const reasonParams={missing:missing.join(", "),covered,total:basis.elapsedOpenDates.length};
- // The exact integer-cents formula is displayed using all five inputs, not a
- // rounded displayed percentage that could falsely imply cent-level equality.
- const explain:ExplainLine[]=monthly!==null&&calc.kind==="ready"?[{
-   label:"Monthly break-even sales",
+ const explain:ExplainLine[]=amount!==null&&calc.kind==="ready"?[{
+   label:mode==="today"?"Today's break-even sales":
+     mode==="month_to_date"?"Month-to-date break-even sales":"Monthly break-even sales",
    inputs:[
-     {name:"billsPerMonth",value:money(calc.monthlyBillsCents)},
-     {name:"laborPerMonth",value:money(calc.monthlyStaffCents)},
-     {name:"netSales",value:money(basis.observedSalesCents)},
-     {name:"ingredients",value:money(observedIngredientCents)},
-     {name:"fee",value:money(observedProcessingFeesCents)},
+     {name:"billsForPeriod",value:money(calc.monthlyBillsCents)},
+     {name:"loadedLaborForPeriod",value:money(calc.monthlyStaffCents)},
+     {name:"observedNetSales",value:money(basis.observedSalesCents)},
+     {name:"ingredientCostCalibration",value:money(basis.observedIngredientCents)},
+     {name:"actualOrEstimatedHistoricalFees",value:money(basis.observedFeesCents)},
    ],
-   formula:"breakEven",result:money(monthly),period,
+   formula:"breakEven",result:money(amount),period,
    source:"get_break_even",provenance:status==="actual"?"recorded":"estimate",
    basis:status==="actual"?"actual":"projected",
  }]:[];
  return {
-   source:"break_even",period,agentId:"leo",
-   monthlyBreakEvenCents:monthly,
-   knownCostBreakEvenFloorCents:missing.length&&monthly!==null?monthly:basis.shared.knownCostFloorCents,
-   dailyBreakEvenCents:daily,openDaysPerMonth:basis.openDayCount,openDaysSource,
+   source:"break_even",period,periodKind:mode,agentId:"leo",
+   monthlyBreakEvenCents:mode==="month_forecast"?amount:null,
+   periodBreakEvenCents:amount,
+   knownCostBreakEvenFloorCents:missing.length&&amount!==null?
+     amount:basis.shared.knownCostFloorCents,
+   dailyBreakEvenCents:daily,openDaysPerMonth:basis.openDayCount,
+   periodOpenDays:basis.targetOpenDays,openDaysSource,
    drinksPerDay:basis.shared.drinksPerDay,
-   observedProcessingFeesCents,observedIngredientCents,
-   monthlyBills:{...bills,reasonKey:bills.reason,reason:localizedMetricReason(bills.reason,locale)},
+   observedProcessingFeesCents:basis.observedFeesCents,
+   observedIngredientCents:basis.observedIngredientCents,
+   monthlyBills:{...bills,reasonKey:bills.reason,
+     reason:localizedMetricReason(bills.reason,locale)},
    monthlyLabor:{...staff,reasonKey:staff.reason,
      reason:localizedMetricReason(staff.reason,locale,staff.reasonParams)},
    ingredientRate,ingredientStatus:basis.ingredientStatus,feeRate,
-   feeStatus:basis.feeResult.basis==="actual"?"actual":"estimate",
+   feeStatus:feeActual?"actual":"estimate",
+   historicalFeeCoverage:{actualDays:basis.historicalActualFeeDays,
+     estimatedDays:basis.historicalEstimatedFeeDays,
+     source:feeActual?"toast_actual":"estimated"},
+   costProvenance:{
+     wages:mode==="today"&&!basis.todayLaborReady?"missing":
+       laborPartial?"partial":"toast_actual",
+     employerPayrollTax:taxEstimated?"saved_rate_estimate":"recorded",
+     futureLabor:mode==="month_forecast"&&laborForecast?"projected":"not_projected",
+     historicalProcessingFees:feeActual?"toast_actual":"estimated",
+     futureProcessingFeeRate:feeActual?"projected_from_actual":"estimate",
+     ingredients:basis.ingredientSource,
+     bills:basis.missingBills?"partial":basis.estimatedBills?"estimated":"recorded",
+   },
    status,reasonKey:reason,reason:localizedMetricReason(reason,locale,reasonParams),
    missingDays:basis.missingLaborDates,missing,
-   laborCoverage:{from:period.from,to:basis.elapsedOpenDates.at(-1)??period.from,
-     covered,total:basis.elapsedOpenDates.length,missingDates:basis.missingLaborDates},
+   laborCoverage:{from:period.from,to:basis.periodEnd,
+     covered:mode==="today"?(basis.todayLaborReady?1:0):covered,
+     total:mode==="today"?1:basis.elapsedOpenDates.length,
+     missingDates:basis.missingLaborDates},
    salesCalibration:{from:shiftCafeDate(asOf,-28),to:shiftCafeDate(asOf,-1),
      covered:basis.shared.coveredDays,expected:basis.shared.expectedDays},
-   estimated:basis.estimatesUsed?[
-     ...(laborEstimate?["monthlyLaborProjection"]:[]),
-     ...(basis.feeResult.basis!=="actual"?["processingFeeEstimate"]:[]),
+   estimated:[
+     ...(laborForecast?["monthlyLaborProjection"]:[]),
+     ...(taxEstimated?["employerTaxFromSavedRate"]:[]),
+     ...(!feeActual?["historicalProcessingFeeEstimate"]:[]),
+     ...(feeActual?["futureFeeRateProjectedFromActual"]:[]),
      ...(basis.estimatedBills?["monthlyBillsEstimate"]:[]),
      ...(basis.productCosts.usesEstimatedProductCosts?["productCostEstimate"]:[]),
      ...(basis.ingredientSource==="saved_rate"?["savedIngredientRate"]:[]),
-   ]:[],
+   ],
    explain,
    numberEstimates:[
-     ...(monthly===null?[]:[{value:monthly,unit:"cents" as const,detail:"breakEvenSales"}]),
+     ...(amount===null?[]:[{value:amount,unit:"cents" as const,detail:"breakEvenSales"}]),
      ...(daily===null?[]:[{value:daily,unit:"cents" as const,detail:"breakEvenSales"}]),
-     ...(calc.kind==="ready"?[{value:calc.fixedMonthlyCostsCents,unit:"cents" as const,detail:"dailyOverhead"}]:[]),
+     ...(calc.kind==="ready"?[{value:calc.fixedMonthlyCostsCents,
+       unit:"cents" as const,detail:"dailyOverhead"}]:[]),
    ],
  };
 }
@@ -174,7 +205,32 @@ export const moneyTools={
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const owner=breakEvenInput.parse(raw),provided=owner.ownerInputs;
       if(ctx.readEconomics){
-        const {economics,canonicalBreakEven}=await ctx.readEconomics();
+        const {economics,canonicalBreakEven,canonicalSnapshot}=await ctx.readEconomics();
+       // All production period and owner-input scenarios start with the SAME
+       // authenticated business snapshot as Money and Plan, never unifiedBreakEven.
+       if(canonicalSnapshot){
+         const mode:BreakEvenPeriodMode=owner.period==="today"?"today":
+           owner.period==="month_to_date"?"month_to_date":"month_forecast";
+         const saved=canonicalBreakEven??breakEvenSnapshotInputs(canonicalSnapshot);
+         const suppliedLabor=provided?.laborCents!=null&&provided.laborPeriod?
+           prorate(provided.laborCents,ownerPeriod(provided.laborPeriod,ctx.asOf)!,calendarMonth(ctx.asOf)):undefined;
+         const ownerSales=owner.ownerNetSalesCents??provided?.netSalesCents??undefined;
+         const options:BreakEvenInputOptions={period:mode,
+           ...(owner.ownerIngredientPackagingPercent!=null&&
+             (saved.ingredientStatus!=="owner"||
+              saved.ingredientSource!=="saved_rate"||
+              Math.abs((saved.shared.calculation.kind==="ready"?
+                saved.shared.calculation.ingredientRate:0)-owner.ownerIngredientPackagingPercent/100)>1e-9)
+             ?{ingredientRateOverride:owner.ownerIngredientPackagingPercent/100}:{}),
+           ...(owner.ownerProcessingFeePercent!=null?
+             {feeRateOverride:owner.ownerProcessingFeePercent/100}:{}),
+           ...(ownerSales!==undefined?{observedSalesCentsOverride:ownerSales}:{}),
+           ...(suppliedLabor!==undefined?{monthlyLaborCentsOverride:suppliedLabor}:{}),
+           ...(owner.ownerOpenDaysPerMonth!=null?{openDaysOverride:owner.ownerOpenDaysPerMonth}:{})
+         };
+         return canonicalBreakEvenAnswer(breakEvenSnapshotInputs(canonicalSnapshot,options),
+           ctx.asOf,ctx.locale,economics.openDaysBasis??"calendar");
+       }
         const ownerOverride=owner.ownerNetSalesCents!=null||owner.ownerSalesDays!=null||
           owner.ownerIngredientPackagingPercent!=null||owner.ownerProcessingFeePercent!=null||
           owner.ownerOpenDaysPerMonth!=null||provided!=null;
