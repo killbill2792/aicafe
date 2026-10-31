@@ -2,7 +2,9 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {getBusinessSnapshotFromDb} from "@/lib/data/snapshot.server";
 import {SnapshotCafeStateService} from "./cafeState";
-import {briefDue,briefMessageId,briefText,type BriefLocale} from "./dailyBrief";
+import {briefDue,briefMessageId,briefText,briefWindow,type BriefLocale} from "./dailyBrief";
+import {readCoveredSalesDates} from "@/lib/data/dailyFacts.server";
+import {eligibleBriefBinding,prepareBoundBrief,type EligibleBrief} from "@/lib/whatsapp/morningBriefDelivery.server";
 
 export type BriefRun={checked:number;sent:number;skipped:number;failed:number};
 /** PR A will supply a verified, default-OFF durable-outbox adapter after it merges.
@@ -10,7 +12,7 @@ export type BriefRun={checked:number;sent:number;skipped:number;failed:number};
 export type BriefOutboxHook=(input:{
   businessId:string;ownerUserId:string;threadId:string;websiteMessageId:string;
   businessName:string;currency:string|null;timezone:string;today:string;yesterday:string;now:Date;
-  websiteText:string;
+  websiteText:string;eligible:EligibleBrief|null;
 })=>Promise<void>;
 
 /** Morning brief: one short message per café per day in the owner's latest
@@ -39,6 +41,14 @@ export async function sendDailyBriefs(db:SupabaseClient,now=new Date(),outbox?:B
 
 async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:string;name?:string;currency:string|null;timezone:string},
   when:{today:string;yesterday:string},now:Date,outbox?:BriefOutboxHook):Promise<boolean>{
+  const window=briefWindow(now,b.timezone);
+  // Never cement an incomplete sales report while the closed Toast day may still arrive.
+  // At 06:00 a truthful in-app missing-data brief is permitted; Meta is not.
+  if(!window.readyToPublish)return false;
+  if(window.beforeDeadline){
+    const covered=await readCoveredSalesDates(db,b.id,when.yesterday,when.yesterday);
+    if(!covered.includes(when.yesterday))return false;
+  }
   const messageId=briefMessageId(b.id,when.today);
   const sent=await db.from("ai_messages")
     .select("id,business_id,thread_id,owner_user_id,structured_content").eq("id",messageId).maybeSingle();
@@ -54,21 +64,29 @@ async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:s
     :ownerQuery.order("created_at",{ascending:true}).limit(1).maybeSingle());
   if(owner.error)throw owner.error;
   if(!owner.data||(persisted&&owner.data.user_id!==persisted.owner_user_id))return false;
-  // Revalidate the persisted thread belongs to the same café and owner.
+  const scope={businessId:b.id,ownerUserId:owner.data.user_id,
+    businessName:b.name??"",currency:b.currency,timezone:b.timezone,
+    today:when.today,yesterday:when.yesterday};
+  const binding=outbox?await eligibleBriefBinding(db,scope):null;
+  // The web brief must enter the exact explicitly linked WhatsApp thread,
+  // not an unrelated newer website conversation.
   const threadQuery=db.from("ai_threads").select("id").eq("business_id",b.id)
     .eq("owner_user_id",owner.data.user_id);
   const thread=await (persisted
     ?threadQuery.eq("id",persisted.thread_id).limit(1).maybeSingle()
+    :binding?threadQuery.eq("id",binding.threadId).limit(1).maybeSingle()
     :threadQuery.order("last_message_at",{ascending:false,nullsFirst:false}).limit(1).maybeSingle());
   if(thread.error)throw thread.error;
   if(!thread.data||(persisted&&thread.data.id!==persisted.thread_id))return false;
+  const eligible=outbox?await prepareBoundBrief(db,{...scope,threadId:thread.data.id},now,binding):null;
   if(persisted){
     const stored=persisted.structured_content as Array<{type?:string;text?:string}>|null;
     const websiteText=stored?.find(block=>block.type==="text")?.text;
     if(!websiteText)throw new Error("daily_brief_website_message_missing");
     await outbox!({businessId:b.id,ownerUserId:owner.data.user_id,threadId:thread.data.id,
       websiteMessageId:messageId,businessName:b.name??"",currency:b.currency,timezone:b.timezone,
-      today:when.today,yesterday:when.yesterday,now,websiteText});
+      today:when.today,yesterday:when.yesterday,now,websiteText,
+      eligible:eligible?.websiteText===websiteText?eligible:null});
     return false;
   }
   const [state,tasks,lastLocale]=await Promise.all([
@@ -78,13 +96,17 @@ async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:s
       .order("created_at",{ascending:false}).limit(1).maybeSingle(),
   ]);
   if(tasks.error)throw tasks.error;
+  if(!state.profitability.available&&window.beforeDeadline)return false;
   const locale:BriefLocale=lastLocale.data?.locale==="es"||lastLocale.data?.locale==="ar"?lastLocale.data.locale:"en";
   const p=state.profitability;
-  const text=briefText({locale,currency:b.currency,needsOwner:tasks.count??0,
+  const legacyText=briefText({locale,currency:b.currency,needsOwner:tasks.count??0,
     // A recorded zero or negative day is still yesterday's result, not missing data.
     yesterday:p.available?{netSalesCents:p.value.netSalesCents,
       totalCostsCents:p.value.totalCostsCents,ownerProfitCents:p.value.ownerProfitCents,
       complete:state.businessCosts.completeness==="complete"}:null});
+  const matched=locale==="en"&&eligible&&p.available&&
+    eligible.prepared.netSalesCents===p.value.netSalesCents?eligible:null;
+  const text=matched?matched.websiteText:legacyText;
   const inserted=await db.from("ai_messages").insert({
     id:messageId,business_id:b.id,thread_id:thread.data.id,owner_user_id:owner.data.user_id,author_user_id:null,
     role:"supervisor",content_type:"blocks",text_content:null,structured_content:[{type:"text",text}],
@@ -109,7 +131,7 @@ async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:s
   if(outbox){
     await outbox({businessId:b.id,ownerUserId:owner.data.user_id,threadId:thread.data.id,
       websiteMessageId:messageId,businessName:b.name??"",currency:b.currency,timezone:b.timezone,
-      today:when.today,yesterday:when.yesterday,now,websiteText:text});
+      today:when.today,yesterday:when.yesterday,now,websiteText:text,eligible:matched});
   }
   return true;
 }
