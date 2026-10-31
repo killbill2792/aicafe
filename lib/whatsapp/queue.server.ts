@@ -2,7 +2,7 @@ import "server-only";
 import {createHash} from "node:crypto";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {activeBinding} from "./identity.server";
-import {buttonQuestion,buildOutbound,type Outbound} from "./transport";
+import {buttonQuestion,buildOutbound,type Outbound,type TemplateFields} from "./transport";
 import {providerAllowed,sendMeta,type Channel} from "./transport.server";
 import type {Incoming} from "./webhook";
 
@@ -30,18 +30,21 @@ export async function recordSignedStatus(event:Extract<Incoming,{type:"status"}>
 }
 export async function enqueueWhatsApp(
   bindingId:string,dedupeKey:string,outbound:Outbound,provenance:Record<string,unknown>,
-  inReplyTo?:string,
+  inReplyTo?:string,businessDate?:string,
 ):Promise<string> {
   const kind:Channel=outbound.kind==="daily_brief"?"daily_brief":"reply";
   // Provenance is supplied by the canonical producer, never invented by transport.
   if(!buildOutbound("15555550123",outbound)||typeof provenance.source!=="string"||
     typeof provenance.period!=="string"||!provenance.source||!provenance.period||
-    (kind==="reply"&&!inReplyTo)||(kind==="daily_brief"&&inReplyTo))
+    (kind==="reply"&&(!inReplyTo||businessDate!==undefined))||
+    (kind==="daily_brief"&&(inReplyTo!==undefined||!businessDate||
+       !/^\\d{4}-\\d{2}-\\d{2}$/.test(businessDate))))
     throw new Error("invalid_outbound");
   const {data,error}=await db().rpc("whatsapp_enqueue_outbound",{
     p_binding_id:bindingId,p_key:dedupeKey,p_kind:kind,
     p_payload:outbound.kind==="daily_brief"?{fields:outbound.fields}:{text:outbound.text},
     p_provenance:provenance,p_in_reply_to:inReplyTo??null,
+    p_business_date:businessDate??null,
   });
   if(error||typeof data!=="string"||!uuid.test(data))throw new Error("queue_unavailable");
   return data;
@@ -114,7 +117,7 @@ export async function dispatchOutboundOnce(kind:Channel,send:typeof fetch=fetch)
   else {
     const payload=lease.payload as {fields?:unknown;text?:unknown}|null;
     const outbound:Outbound|null=kind==="daily_brief"&&Array.isArray(payload?.fields)?
-      {kind:"daily_brief",fields:payload.fields as Outbound & never}:
+      {kind:"daily_brief",fields:payload.fields as TemplateFields}:
       kind==="reply"&&typeof payload?.text==="string"?
         {kind:"reply",text:payload.text}:null;
     const built=outbound&&buildOutbound(bound.waId,outbound);
