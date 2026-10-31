@@ -32,6 +32,18 @@ describe("café pantry purchase-pack entry",()=>{
   expect(parsePurchasePack("12 cases of ??","each")).toBeNull();
   expect(parsePurchasePack("NaN grams","g")).toBeNull();
  });
+ it("round trips long and fractional saved quantities across languages",()=>{
+  const examples:[number,string,"ml"|"g"|"each",string][]=[
+   [1000,"ml","ml","en"],[1.5,"l","ml","es"],[1.5,"l","ml","ar"],
+   [384,"fl_oz","ml","es"],[2.5,"oz_wt","g","es"],[2.5,"oz_wt","g","ar"],
+   [12,"each","each","es"],[12,"each","each","ar"],
+   [1,"case(1000)","each","en"],
+  ];
+  for(const [quantity,unit,baseUnit,locale] of examples){
+   expect(parsePurchasePack(purchasePackLabel(quantity,unit,baseUnit,locale),baseUnit))
+    .toEqual({packQuantity:quantity,packUnit:unit});
+  }
+ });
  it("displays a plain-language unit without changing the stored representation",()=>{
   expect(purchasePackLabel(384,"fl_oz","ml")).toBe("384 fluid ounces");
   expect(purchasePackLabel(32,"oz_wt","g")).toBe("32 ounces by weight");
