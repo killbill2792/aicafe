@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,SavedEventListCard,selectedSavedEvent} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -171,5 +171,51 @@ describe("saved event advice is informational, not a checklist",()=>{
     expect(html).not.toContain('type="checkbox"');
     expect(html).not.toContain("<input");
     expect(html).not.toContain("<button");
+  });
+});
+
+describe("opening a specific saved event from the Events list",()=>{
+  const translations={
+    en:{openEvent:"Open {title} on {date}",readInsights:"Read event insights"},
+    es:{openEvent:"Abrir {title} el {date}",readInsights:"Ver análisis del evento"},
+    ar:{openEvent:"فتح {title} بتاريخ {date}",readInsights:"عرض تحليل الحدث"},
+  } as const;
+  it("makes each event title/date a large clickable target without showing save-check metadata",()=>{
+    const halloween={...event("halloween","2026-10-31"),name:"Halloween at The EndUp",
+      venue:null,areaLabel:null,lastVerifiedAt:null};
+    for(const locale of ["en","es","ar"] as const){
+      const t=(key:string,values?:Record<string,string|number>)=>{
+        const template=(translations[locale] as Record<string,string>)[key]??key;
+        return template.replace(/\{(\w+)\}/g,(_,name:string)=>String(values?.[name]??""));
+      };
+      const html=renderToStaticMarkup(createElement(SavedEventListCard,{
+        event:halloween,locale,t,onOpen:()=>{},
+      }));
+      expect(html).toContain('type="button"');
+      expect(html).toContain("Halloween at The EndUp");
+      expect(html).toContain("2026");
+      expect(html).toContain(translations[locale].readInsights);
+      expect(html).not.toContain("Last saved check");
+      expect(html).not.toContain("Venue not recorded");
+      expect(html).not.toContain("Verification incomplete");
+      expect(html.match(/<button\b/g)).toHaveLength(1);
+      expect(html).not.toContain('type="checkbox"');
+      expect(html).not.toContain("<a ");
+    }
+  });
+  it("opens the exact clicked event, even when two have the same start date",()=>{
+    const first={...event("one","2026-10-31"),name:"Halloween market"};
+    const second={...event("two","2026-10-31"),name:"Halloween concert"};
+    expect(selectedSavedEvent([first,second],"2026-10-31","two")).toEqual(second);
+    expect(selectedSavedEvent([first,second],"2026-10-31","one")).toEqual(first);
+    expect(selectedSavedEvent([first,second],"2026-11-01","two")).toBeNull();
+    expect(selectedSavedEvent([first,second],"2026-10-31","nonexistent")).toBeNull();
+    const clicked:CafeEvent[]=[];
+    const card=SavedEventListCard({event:second,locale:"en",
+      t:(key,values)=>key==="openEvent"?String(values?.title):key,
+      onOpen:e=>clicked.push(e),
+    }) as {props:{children:{props:{onClick:()=>void}}}};
+    card.props.children.props.onClick();
+    expect(clicked).toEqual([second]);
   });
 });
