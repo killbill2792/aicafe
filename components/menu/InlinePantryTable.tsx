@@ -7,6 +7,8 @@ import {savePackPrice,updatePantryIngredient} from "@/lib/actions/pantry";
 import {packBaseQuantity,type BaseUnit} from "@/lib/calc/recipeUnits";
 import {formatCents} from "@/lib/calc";
 import {parsePurchasePack,purchasePackLabel} from "./purchasePackEntry";
+import NewPantryInlineRow from "./NewPantryInlineRow";
+import {Plus} from "lucide-react";
 
 type PantryItem={
  id:string;name:string;category:string|null;baseUnit:BaseUnit;
@@ -76,7 +78,10 @@ function PantryTableRow({item,t}:{item:PantryItem;t:Record<string,string>}){
 }
 
 export default function InlinePantryTable({items,t}:{items:PantryItem[];t:Record<string,string>}){
+ const [newRow,setNewRow]=useState(false);
  return <section className="overflow-hidden rounded-2xl border border-line bg-card">
+  <div className="flex items-center justify-between gap-3 border-b border-line bg-paper px-3 py-3"><span className="font-bold">{t.title}</span><button type="button" onClick={()=>setNewRow(true)} className="flex min-h-12 items-center gap-2 rounded-xl bg-accent px-3 font-bold text-on-accent"><Plus size={18} aria-hidden="true"/>{t.newIngredient}</button></div>
+  {newRow&&<div className="p-3"><NewPantryInlineRow onCancel={()=>setNewRow(false)}/></div>}
   <div className="hidden grid-cols-[minmax(160px,1.3fr)_minmax(160px,1fr)_minmax(120px,.7fr)_auto] gap-2 border-b border-line bg-paper px-3 py-3 text-[15px] font-bold text-ink md:grid">
    <span>{t.name}</span><span>{t.packSize}</span><span>{t.packPrice}</span><span>{t.edit}</span>
   </div>
