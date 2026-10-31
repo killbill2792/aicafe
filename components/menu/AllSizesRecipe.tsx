@@ -7,7 +7,7 @@ import {saveProductRecipes} from "@/lib/actions/pantry";
 import NewPantryInlineRow from "./NewPantryInlineRow";
 import {setIngredientUnitConversion} from "@/lib/actions/ingredientUnitConversions";
 import {suggestedRecipeMeasure,suggestedIngredientDensity} from "@/lib/calc/suggestedRecipeMeasures";
-import {densityFromStoredRecipe} from "@/lib/calc/recipeUnits";
+import {densityFromStoredRecipe,reexpressRecipeQuantity} from "@/lib/calc/recipeUnits";
 import {updateMenuItemPrice,setMenuItemActive} from "@/lib/actions/menuItems";
 import type {UnpricedMenuSize} from "@/lib/data/getUnpricedProductSizes";
 import {recipeDisplayUnitsFor,needsIngredientConversion} from "@/lib/calc/recipeUnits";
@@ -227,15 +227,24 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
    if(text!==""&&Number.isFinite(value)&&value>0){setDrafts(prev=>({...prev,[key]:{quantity:value,unit:actual.unit,removed:false}}));setSaved(false);}
   }} className="min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-center text-[17px] font-bold"/>
   <select aria-label={t("unit")} value={actual.unit} onChange={e=>{
-   const unit=e.target.value as RecipeDisplayUnit;setDrafts(prev=>({...prev,[key]:{quantity:actual.quantity,unit,removed:false}}));setSaved(false);
-   if(needsIngredientConversion(unit)&&!(conversions[id]??[]).some(c=>c.unit===unit)){
-    const suggested=measureDefault(id,line.ingredientName,line.baseUnit,unit);
-    if(suggested!==null)setCalibration(prev=>({...prev,[id+":"+unit]:String(suggested)}));
-   }
-   if(requiresDensity(line.baseUnit,unit)&&densityInputs[key]===undefined){
-    const suggested=densityFor(item,line,unit);
-    if(suggested!==undefined)setDensityInputs(prev=>({...prev,[key]:String(suggested)}));
-   }
+   const unit=e.target.value as RecipeDisplayUnit;
+   const suggested=needsIngredientConversion(unit)?measureDefault(id,line.ingredientName,line.baseUnit,unit):null;
+   const density=densityFor(item,line,unit);
+   const existing=conversionFor(id,actual.unit);
+   const all=unit!==actual.unit&&needsIngredientConversion(unit)&&suggested!==null
+     ?[...existing.filter(c=>c.unit!==unit),{unit,baseUnitsPerUnit:suggested}]:existing;
+   const entered=Number(quantityInputs[key]??String(actual.quantity));
+   const translated=reexpressRecipeQuantity(actual.unit,unit,entered,line.baseUnit,all,density);
+   // Invalid/uncalibrated conversions must not silently reuse the old number.
+   const amount=translated===null?0:Number(translated.toFixed(4));
+   setDrafts(prev=>({...prev,[key]:{quantity:amount,unit,removed:false}}));
+   setQuantityInputs(prev=>({...prev,[key]:translated===null?"":String(amount)}));
+   setSaved(false);
+   if(needsIngredientConversion(unit)&&!(conversions[id]??[]).some(c=>c.unit===unit)&&suggested!==null)
+    setCalibration(prev=>({...prev,[id+":"+unit]:String(suggested)}));
+   if(requiresDensity(line.baseUnit,unit)&&densityInputs[key]===undefined&&density!==undefined)
+    setDensityInputs(prev=>({...prev,[key]:String(density)}));
+   if(translated===null)setError(t("measureNeeded"));else setError("");
   }} className="min-h-12 w-[95px] shrink-0 rounded-lg border border-line bg-card px-1 text-[15px]">{availableUnits(line).map(u=><option key={u} value={u}>{unitLabel(u)}</option>)}</select>
  </div>
   {requiresDensity(line.baseUnit,actual.unit)&&<label className="mt-1 flex flex-wrap items-center gap-1 text-[13px] text-ink-muted">
