@@ -474,9 +474,9 @@ const customPantryInput=z.strictObject({
 export async function createPantryIngredient(input:z.infer<typeof customPantryInput>):Promise<PantryResult>{
  const parsed=customPantryInput.safeParse(input);if(!parsed.success)return bad("invalid_input");
  const scope=await activeScope();if(!scope)return bad("sign_in_required");
- const {error}=await scope.db.from("ingredients").insert({business_id:scope.businessId,name:parsed.data.name,category:parsed.data.category,base_unit:parsed.data.baseUnit});
- if(error)return queryFailed("pantry:createIngredient",error);
- return{ok:true};
+ const {data,error}=await scope.db.from("ingredients").insert({business_id:scope.businessId,name:parsed.data.name,category:parsed.data.category,base_unit:parsed.data.baseUnit}).select("id").single();
+ if(error||!data)return queryFailed("pantry:createIngredient",error??{message:"ingredient_id_missing"});
+ return{ok:true,id:data.id};
 }
 const editPantryInput=customPantryInput.pick({name:true,category:true}).extend({id:uuid}).strict();
 export async function updatePantryIngredient(input:z.infer<typeof editPantryInput>):Promise<PantryResult>{
