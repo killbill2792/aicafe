@@ -209,7 +209,8 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   // A 10 ml pump cannot silently turn into a 5 ml pump.
   if(target!==id&&needsIngredientConversion(current.unit)){
    const entered=Number(quantityInputs[key]??String(current.quantity));
-   const converted=preservedReplacementQuantity(current.unit,entered,line.baseUnit,conversionFor(id),conversionFor(target));
+   const previousIngredientId=replacements[key]??id;
+   const converted=preservedReplacementQuantity(current.unit,entered,line.baseUnit,conversionFor(previousIngredientId),conversionFor(target));
    if(converted===null||!(converted>0)){setError(t("measureNeeded"));return;}
    const amount=Number(converted.toFixed(4));
    setDrafts(prev=>({...prev,[key]:{...current,quantity:amount}}));
