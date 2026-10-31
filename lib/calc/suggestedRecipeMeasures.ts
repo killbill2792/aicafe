@@ -13,3 +13,12 @@ export function suggestedRecipeMeasure(name:string,baseUnit:BaseUnit,unit:Operat
   return {baseUnitsPerUnit:18,reference:"espressoDose"}; // typical double espresso basket, varies
  return null;
 }
+
+/** Typical density for a specifically named ingredient, in grams per milliliter.
+ * This is a suggested assumption, never applied to existing stored recipes. */
+export function suggestedIngredientDensity(name:string):number|null{
+ const normalized=name.toLocaleLowerCase();
+ if(/\b(milk|leche|lait)\b|حليب/i.test(normalized))return 1.03;
+ if(/\b(heavy cream|whipping cream|crema espesa)\b|كريمة ثقيلة/i.test(normalized))return 0.994;
+ return null;
+}
