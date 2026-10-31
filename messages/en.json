@@ -2624,6 +2624,7 @@
     "densityNeeded": "Enter the ingredient's grams per milliliter before saving.",
     "measureShort": "1 {unit} equals",
     "savedEconomicsHint": "Saved numbers refresh after you save the recipe.",
+    "chooseMeasurement": "Choose whether this ingredient is measured as liquid, weight or pieces.",
     "addRecipeRow": "Add recipe row",
     "addRecipeRowAfter": "Add recipe row after {name}",
     "addPantryItem": "Create pantry item",
