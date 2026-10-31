@@ -17,6 +17,14 @@ describe("WhatsApp owner prompts use payloads, never display labels", () => {
     expect(supervisorQuestionForWhatsApp({type:"text",text:"  ما هي مبيعات الأمس؟  "})).toBe("ما هي مبيعات الأمس؟");
     expect(supervisorQuestionForWhatsApp({type:"text",text:"Can you check inventory?"})).toBe("Can you check inventory?");
   });
+  it("sends owner media to the same Supervisor but never auto-records invoices",()=>{
+    const photo=supervisorQuestionForWhatsApp({type:"media",kind:"image"});
+    const pdf=supervisorQuestionForWhatsApp({type:"media",kind:"document"});
+    expect(photo).toContain("draft purchase lines");
+    expect(photo).toContain("Do not record or approve anything");
+    expect(pdf).toContain("not analyzed");
+    expect(pdf).toContain("Do not infer items");
+  });
   it("rejects unknown payloads and never interprets button labels as identifiers", () => {
     expect(()=>supervisorQuestionForWhatsApp({type:"button",payload:"Where did my money go?"})).toThrow("unknown_whatsapp_button_payload");
     expect(()=>supervisorQuestionForWhatsApp({type:"button",payload:"approve_purchase"})).toThrow();
