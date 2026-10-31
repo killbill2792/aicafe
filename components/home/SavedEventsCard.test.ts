@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,EventListEntry,eventPlanFor,eventDateLabel} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -126,6 +126,47 @@ describe("Events Fix C date and saved-importance contract",()=>{
     expect(eventListDays(timeline,"past",false)).toEqual(["2026-11-05","2026-10-31"]);
     expect(eventListDays(timeline,"now",false)).toEqual([]);
     expect(eventListDays(timeline,"upcoming",false)).toEqual(["2026-11-07"]);
+  });
+});
+
+describe("each saved event opens its own dated AI detail",()=>{
+  const t=(key:string)=>({readInsights:"Read event insights"} as Record<string,string>)[key]??key;
+  it("makes the event name itself an accessible full-card button with the actual date and year",()=>{
+    const halloween={...event("halloween","2026-10-31"),name:"Halloween parade",
+      venue:null,areaLabel:null,lastVerifiedAt:null,verificationFailedAt:null};
+    const html=renderToStaticMarkup(createElement(EventListEntry,{
+      event:halloween,locale:"en",t,onOpen:()=>{},
+    }));
+    expect(html).toContain("<button");
+    expect(html).toContain("Halloween parade");
+    expect(html).toContain("October 31, 2026");
+    expect(html).toContain("Read event insights");
+    expect(html).toContain("min-h-20");
+    expect(html).not.toContain("Venue not recorded");
+    expect(html).not.toContain("Verification incomplete");
+    expect(html).not.toContain("Last saved check");
+    expect(html).not.toContain("lastCheckedAt");
+    expect(html).not.toContain("disabled");
+    expect(eventDateLabel(halloween,"es")).toContain("2026");
+    expect(eventDateLabel(halloween,"ar")).toContain("٢٠٢٦");
+    expect(eventDateLabel({...halloween,endDate:"2026-11-01"},"en"))
+      .toContain("November 1, 2026");
+  });
+  it("shows only AI analysis associated with the tapped event, never another event on the same day",()=>{
+    const eventA="first-event-uuid",eventB="other-event-uuid";
+    const planA={...fixture.plans[0],eventIds:[eventA],
+      summary:"Event A insight",status:"draft"};
+    const planB={...fixture.plans[0],proposalId:"pb",eventIds:[eventB],
+      summary:"Event B insight",status:"draft"};
+    expect(eventPlanFor([planA,planB],eventA)?.summary).toBe("Event A insight");
+    expect(eventPlanFor([planA,planB],eventB)?.summary).toBe("Event B insight");
+    expect(eventPlanFor([planA,planB],"unanalysed")).toBeUndefined();
+    expect(eventPlanFor([{...planA,eventIds:undefined}],eventA)).toBeUndefined();
+  });
+  it("preserves an already committed event proposal over a conflicting newer draft",()=>{
+    const draft={...fixture.plans[0],eventIds:["a"],status:"draft",summary:"Later draft"};
+    const approved={...draft,proposalId:"approved",status:"committed",summary:"Owner's chosen plan"};
+    expect(eventPlanFor([draft,approved],"a")?.summary).toBe("Owner's chosen plan");
   });
 });
 
