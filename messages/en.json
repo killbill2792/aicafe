@@ -3607,7 +3607,8 @@
     "allClear": "Nothing needs you right now.",
     "currencyMissing": "Your café currency isn't set, so these amounts have no currency.",
     "taskTitle": "Morning brief",
-    "taskAction": "Open in chat"
+    "taskAction": "Open in chat",
+    "whatsappTemplate": "Good morning ☀️\n\nHere's {{1}}'s daily brief from Cafe Profit.\n\n*Yesterday*\n💰 Net sales: {{2}}\n☕ Drinks sold: {{3}}\n🏆 Best seller: {{4}}, with {{5}} sold\n\n📅 Today: {{6}}\n\nI'm watching today's sales against your usual {{7}} pattern and will message you if anything looks off.\n\nTap a question below, or reply with anything about your café."
   },
   "Goals": {
     "metric": {
