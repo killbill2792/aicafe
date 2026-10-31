@@ -123,6 +123,9 @@ export function prepareMorningBrief(e:MorningBriefEvidence,now:Date):PreparedMor
 /** The approved Meta template text is also the website's canonical owner-facing brief.
  * Never reconstruct the same fact in a second, independently worded notification. */
 export function renderMorningBrief(parameters:DailyBriefParameters):string{
-  return parameters.reduce<string>((text,value,index)=>
-    text.replaceAll("{{"+(index+1)+"}}",value),en.DailyBrief.whatsappTemplate);
+  // Single pass: provider fields are literal data, never replacement patterns.
+  // "  return parameters.reduce<string>((text,value,index)=>
+    text.replaceAll("{{"+(index+1)+"}}",value),en.DailyBrief.whatsappTemplate);", "$" and embedded "{{2}}" remain unchanged inside a café name.
+  return en.DailyBrief.whatsappTemplate.replace(/\{\{([1-7])\}\}/g,
+    (_match,index:string)=>parameters[Number(index)-1]);
 }
