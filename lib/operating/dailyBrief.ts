@@ -33,6 +33,7 @@ export type BriefInput={
   /** Yesterday from the same reader as the chat's profit answer; null when it had no sales data. */
   yesterday:{netSalesCents:number;totalCostsCents:number;ownerProfitCents:number;complete:boolean}|null;
   needsOwner:number;currency:string|null;locale:BriefLocale;
+  verifiedNetSalesCents?:number|null;
 };
 export function briefText(i:BriefInput):string{
   const copy=({en,es,ar} as const)[i.locale].DailyBrief;
@@ -44,7 +45,8 @@ export function briefText(i:BriefInput):string{
     ?copy.yesterday.replace("{sales}",money(i.yesterday.netSalesCents))
       .replace("{costs}",money(i.yesterday.totalCostsCents)).replace("{kept}",money(i.yesterday.ownerProfitCents))
       +(i.yesterday.complete?"":" "+copy.partial)
-    :copy.noSales];
+    :i.verifiedNetSalesCents!==null&&i.verifiedNetSalesCents!==undefined
+      ?copy.netOnly.replace("{sales}",money(i.verifiedNetSalesCents)) :copy.noSales];
   if(currencyMissing)parts.push(copy.currencyMissing);
   parts.push(i.needsOwner>0?copy.needsYou.replace("{count}",count(i.needsOwner)):copy.allClear);
   return parts.join(" ");
