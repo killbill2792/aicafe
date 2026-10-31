@@ -77,13 +77,19 @@ export async function enqueueBoundBrief(input:EligibleBrief,scope:BriefScope,
  * claim-deadline guard is installed. No alternative queue or provider client.
  * A final request-time check prevents a lease obtained at 05:59:59 from
  * initiating a Meta send after 06:00. */
+function briefFollowupAllowed():boolean{
+  return providerAllowed("daily_brief")&&
+    process.env.WHATSAPP_OWNER_REPLY_SEND_ENABLED==="true"&&
+    process.env.WHATSAPP_MONITOR_FOLLOWUP_APPROVED==="true";
+}
 export async function dispatchDueMorningBriefs(db:SupabaseClient,
   send:typeof fetch=fetch,clock:()=>Date=()=>new Date()):Promise<number>{
-  if(!providerAllowed("daily_brief"))return 0;
+  if(!briefFollowupAllowed())return 0;
   const {data:ready,error}=await db.rpc("whatsapp_brief_dispatch_ready");
   if(error||ready!==true)return 0;
   const guardedSend:typeof fetch=async(url,init)=>{
     const rejected=()=>new Response(null,{status:400});
+    if(!briefFollowupAllowed())return rejected();
     if(typeof init?.body!=="string")return rejected();
     let to:string;
     try{
@@ -105,7 +111,7 @@ export async function dispatchDueMorningBriefs(db:SupabaseClient,
     const actual=clock(),due=briefDue(actual,cafe.data.timezone);
     const window=briefWindow(actual,cafe.data.timezone);
     if(!due.due||!window.readyToPublish||!window.beforeDeadline||
-       due.today!==lease.data[0].business_date)return rejected();
+       due.today!==lease.data[0].business_date||!briefFollowupAllowed())return rejected();
     return send(url,init);
   };
   let accepted=0;
