@@ -33,6 +33,18 @@ export async function GET(request:Request){
   const today=cafeToday(business.timezone);
   const kind=safeTaskKind(task);
   if(!kind)continue;
+  // The canonical daily WhatsApp brief supersedes the older one-task template.
+  // Suppress only for this exact owner/café/local date, using A's durable outbox
+  // (including uncertain receipts, which must not be blindly resent).
+  const prior=await db.from("whatsapp_outbox").select("id")
+    .eq("business_id",sub.business_id).eq("owner_user_id",sub.owner_user_id)
+    .eq("business_date",today).eq("kind","daily_brief")
+    .in("state",["queued","leased","accepted","sent","delivered","read","uncertain"])
+    .limit(1);
+  // When the WhatsApp migration/reader is unavailable do not risk two provider
+  // templates to the same owner; the Operations task still remains on the web.
+  if(prior.error){failed++;continue;}
+  if((prior.data??[]).length>0)continue;
   // Reserve before external send. A timeout cannot accidentally trigger a duplicate.
   const {data:reservation,error:reserveError}=await db.from("ai_delivery_attempts").insert({
    business_id:sub.business_id,owner_user_id:sub.owner_user_id,
