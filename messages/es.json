@@ -3607,6 +3607,7 @@
     "allClear": "Nada te necesita ahora mismo.",
     "currencyMissing": "La moneda de tu café no está configurada, así que estos importes no tienen moneda.",
     "taskTitle": "Resumen de la mañana",
+    "netOnly": "Buenos días. Ayer: ventas netas {sales}. Los datos de costes están incompletos.",
     "taskAction": "Abrir en el chat"
   },
   "Goals": {
