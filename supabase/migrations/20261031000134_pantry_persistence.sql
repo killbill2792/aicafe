@@ -68,6 +68,7 @@ declare
   ln jsonb;
   item uuid;
   ingredient uuid;
+  ingredient_archive timestamptz;
   actual jsonb;
   source_expected jsonb;
   sibling_ids jsonb;
@@ -146,9 +147,15 @@ begin
       ingredient := (ln->>'ingredientId')::uuid;
       if ingredient=any(seen_ingredients) then raise exception 'duplicate ingredient'; end if;
       seen_ingredients := array_append(seen_ingredients,ingredient);
-      perform 1 from public.ingredients
+      select archived_at into ingredient_archive from public.ingredients
         where id=ingredient and business_id=p_business_id;
       if not found then raise exception 'ingredient not in business'; end if;
+      -- A previously used ingredient may remain in its historical recipe, but
+      -- archiving prevents NEW inclusion in a different product or size.
+      if ingredient_archive is not null and not exists (
+        select 1 from public.recipe_lines
+          where menu_item_id=item and ingredient_id=ingredient
+      ) then raise exception 'ingredient archived'; end if;
       if (ln->>'quantity')::numeric <= 0
         or (ln->>'quantity')::numeric > 999999
         or (ln->>'displayQuantity')::numeric <= 0
