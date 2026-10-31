@@ -28,13 +28,14 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  const [drafts,setDrafts]=useState<Record<string,Draft>>(()=>Object.fromEntries(items.flatMap(item=>item.recipe.map(line=>[k(item.id,line.ingredientId),{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false}]))));
  const [priceDraft,setPriceDraft]=useState<string|null>(null),[draftPrice,setDraftPrice]=useState("");
  const [sizeDialog,setSizeDialog]=useState(false);const [add,setAdd]=useState<string|null>(null),[addAfter,setAddAfter]=useState<string>("top"),[toast,setToast]=useState("");
+ const [lastRemovedId,setLastRemovedId]=useState<string|null>(null);
  const [editingIngredient,setEditingIngredient]=useState<string|null>(null),[replacements,setReplacements]=useState<Record<string,string>>({});
  const [quantityInputs,setQuantityInputs]=useState<Record<string,string>>({});
  const [calibration,setCalibration]=useState<Record<string,string>>({});
  const [densityInputs,setDensityInputs]=useState<Record<string,string>>({});
  const [newRowAmount,setNewRowAmount]=useState("1"),[newRowUnit,setNewRowUnit]=useState<RecipeDisplayUnit>("ml"),[newRowDensity,setNewRowDensity]=useState("");
  const [newPantry,setNewPantry]=useState(false);
- const selectedItems=items.filter(i=>i.id===focusedSize), ingredientRows=[...new Map(selectedItems.flatMap(item=>item.recipe.map(line=>[line.ingredientId,line.ingredientName] as const))).entries()];
+ const selectedItems=items.filter(i=>i.id===focusedSize), ingredientRows=[...new Map(selectedItems.flatMap(item=>item.recipe.filter(line=>!drafts[k(item.id,line.ingredientId)]?.removed).map(line=>[line.ingredientId,line.ingredientName] as const))).entries()];
  const hasUnsavedChanges=Object.keys(replacements).length>0||Object.entries(drafts).some(([key,d])=>{
   for(const item of items){for(const line of item.recipe){if(key===k(item.id,line.ingredientId))return d.removed||d.quantity!==(line.displayQuantity??line.quantity)||d.unit!==(line.displayUnit??line.baseUnit);}}
   return false;
@@ -108,9 +109,9 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  function removeRow(id:string){const item=selectedItems[0],line=item?.recipe.find(l=>l.ingredientId===id);if(!item||!line)return;
   const key=k(item.id,id);setQuantityInputs(prev=>Object.fromEntries(Object.entries(prev).filter(([entry])=>entry!==key)));
   setDrafts(prev=>({...prev,[key]:{...prev[key],unit:(prev[key]?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit,quantity:prev[key]?.quantity??line.displayQuantity??line.quantity,removed:true}}));
-  setToast(line.ingredientName);setSaved(false);
+  setLastRemovedId(id);setToast(line.ingredientName);setSaved(false);
  }
- function undo(){const id=ingredientRows.find(row=>row[1]===toast)?.[0],item=selectedItems[0];if(!id||!item)return;setDrafts(prev=>({...prev,[k(item.id,id)]:{...prev[k(item.id,id)],removed:false}}));setToast("");}
+ function undo(){const id=lastRemovedId,item=selectedItems[0];if(!id||!item)return;setDrafts(prev=>({...prev,[k(item.id,id)]:{...prev[k(item.id,id)],removed:false}}));setToast("");setLastRemovedId(null);}
  function recipeChanges(newIngredientId?:string,newIngredientBase?: "g"|"ml"|"each"){
   return selectedItems.map(item=>({
    itemId:item.id,
