@@ -75,8 +75,8 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
    const report=byProposal.get(p.id);
    return {proposalId:p.id,threadId:p.thread_id,status:p.status,revision:p.revision,
      startDate:String(effect.startDate),endDate:String(effect.endDate),
-     // Preserve the saved proposal's exact event identities. A day can contain
-     // several unrelated events; the UI must not attach its insight to all of them.
+     // Preserve identity from the existing owner-scoped Supervisor proposal.
+     // A legacy day-only plan without event IDs must never be assigned to an event.
      eventIds:Array.isArray(effect.eventIds)?effect.eventIds.filter(
        (id):id is string=>typeof id==="string"):[],
      summary:typeof effect.summary==="string"?effect.summary:"",
