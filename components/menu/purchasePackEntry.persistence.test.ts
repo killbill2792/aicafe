@@ -28,6 +28,28 @@ describe("owner purchase-pack factor persistence",()=>{
   expect(parsePurchasePackWithOriginal("1 case(100)","each"))
    .toEqual({packQuantity:1,packUnit:"case(100)"});
  });
+ it("factorized save/reopen/price-only edit is parseable across every supported unit and EN/ES/AR grammar",()=>{
+  const specs:[string,"ml"|"g"|"each",string][]=[
+   ["fl_oz","ml","fl oz"],["ml","ml","ml"],["l","ml","liters"],
+   ["gal","ml","gallons"],["qt","ml","quarts"],
+   ["oz_wt","g","ounces by weight"],["g","g","grams"],
+   ["kg","g","kilograms"],["lb","g","pounds"],
+   ["each","each","pieces"],["dozen","each","dozen"],
+   ["case(100)","each","case(100)"],["case(1000)","each","case(1000)"],
+  ];
+  for(const [unit,baseUnit,typedUnit] of specs){
+   for(const eachUnit of [1,2,32]){
+    const typed=parsePurchasePackWithOriginal(`12 × ${eachUnit} ${typedUnit}`,baseUnit);
+    expect(typed?.packUnit,typedUnit).toBe(unit);
+    expect(typed?.originalPack,typedUnit).toEqual({count:12,unitQuantity:eachUnit,unit});
+    for(const locale of ["en","es","ar"]){
+     const reopened=purchasePackLabel(typed!.packQuantity,typed!.packUnit,baseUnit,locale,typed!.originalPack);
+     expect(reopened,locale+" "+unit).toContain(`12 × ${eachUnit} `);
+     expect(parsePurchasePackWithOriginal(reopened,baseUnit),locale+" "+unit).toEqual(typed);
+    }
+   }
+  }
+ });
  it("never accepts malformed or cross-family factors as cost metadata",()=>{
   expect(parsePurchasePackWithOriginal("12 × 32 fluid ounces","g")).toBeNull();
   expect(parsePurchasePackWithOriginal("0 × 32 fluid ounces","ml")).toBeNull();
