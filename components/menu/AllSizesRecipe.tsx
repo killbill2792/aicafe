@@ -81,7 +81,12 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   for(const entry of entries){
    const key=entry.id+":"+entry.unit;if(once.has(key)||!pendingMeasure(entry.id,entry.unit))continue;once.add(key);
    if(!needsIngredientConversion(entry.unit))continue;
-   const raw=calibration[key];const factor=Number(raw??measureDefault(entry.id,entry.name,entry.base,entry.unit));
+   const raw=calibration[key];
+   // An existing recipe with missing calibration cannot silently gain a
+   // guessed conversion merely because the owner saved another ingredient.
+   const isNewSelection=extra?.id===entry.id&&extra.unit===entry.unit;
+   if(raw===undefined&&!isNewSelection){setError(t("measureNeeded"));return false;}
+   const factor=Number(raw??measureDefault(entry.id,entry.name,entry.base,entry.unit));
    if(raw===""||!Number.isFinite(factor)||factor<=0){setError(t("measureNeeded"));return false;}
    const saved=await setIngredientUnitConversion({ingredientId:entry.id,unit:entry.unit,baseUnitsPerUnit:factor});
    if(!saved.ok){setError(t("measureSaveError"));return false;}
