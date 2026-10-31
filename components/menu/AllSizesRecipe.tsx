@@ -29,6 +29,13 @@ export function safeRecipeDensity(replacing:boolean,raw:string|undefined,
  }
  return replacing?undefined:stored??suggested??undefined;
 }
+/** Keep a saved recipe's physical amount intact when its ingredient changes.
+ * Both conversions use the one canonical unit conversion routine. */
+export function preservedReplacementQuantity(unit:RecipeDisplayUnit,amount:number,
+ base:"g"|"ml"|"each",original:IngredientUnitConversion[],replacement:IngredientUnitConversion[]):number|null{
+ const baseAmount=reexpressRecipeQuantity(unit,base,amount,base,original);
+ return baseAmount===null?null:reexpressRecipeQuantity(base,unit,baseAmount,base,replacement);
+}
 export default function AllSizesRecipe({items,ingredients,conversions,draftSizes,focusedSizeId,onFocusedSizeChange,onDraftDirtyChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void;onDraftDirtyChange?:(dirty:boolean)=>void}){
  const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),menu=useTranslations("Menu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
  // Serving status is supplied by the canonical parent after refresh. Keep the
@@ -202,8 +209,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   // A 10 ml pump cannot silently turn into a 5 ml pump.
   if(target!==id&&needsIngredientConversion(current.unit)){
    const entered=Number(quantityInputs[key]??String(current.quantity));
-   const base=reexpressRecipeQuantity(current.unit,line.baseUnit,entered,line.baseUnit,conversionFor(id));
-   const converted=base===null?null:reexpressRecipeQuantity(line.baseUnit,current.unit,base,line.baseUnit,conversionFor(target));
+   const converted=preservedReplacementQuantity(current.unit,entered,line.baseUnit,conversionFor(id),conversionFor(target));
    if(converted===null||!(converted>0)){setError(t("measureNeeded"));return;}
    const amount=Number(converted.toFixed(4));
    setDrafts(prev=>({...prev,[key]:{...current,quantity:amount}}));
