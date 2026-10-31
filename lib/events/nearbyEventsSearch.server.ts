@@ -1,7 +1,8 @@
 import "server-only";
 import {DEFAULT_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import {holidaysBetween} from "./holidays";
-import {MAX_EVENTS,nearbyEventsJsonSchema,nearbyEventsPrompt,parseNearbyEvents,responseOutputText,
+import {MAX_EVENTS,nearbyEventsJsonSchema,nearbyEventsPrompt,parseNearbyEvents,
+  diagnoseNearbyEventsShape,responseOutputText,
   type NearbyEvent,type NearbyEventsSearch,type SearchFailureCategory,type UnsearchedEventScope} from "./nearbyEvents";
 
 /** Web search is read-only. Addresses and fetched page text must never be logged. */
@@ -47,15 +48,17 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
       let httpStatus:number|null=null,status:string|null=null,incompleteReason:string|null=null;
       let outputTypes:string[]=[];
       let failure:SearchFailureCategory|null=null;
+      let shapeIssue:ReturnType<typeof diagnoseNearbyEventsShape>|null=null;
       try{
         const response=await doFetch("https://api.openai.com/v1/responses",{
           method:"POST",signal:AbortSignal.timeout(number===1?SEARCH_TIMEOUT_MS:SEARCH_RETRY_TIMEOUT_MS),
           headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},
           body:JSON.stringify({model:requestModel,max_output_tokens:SEARCH_MAX_OUTPUT_TOKENS,store:false,
             tools:[{type:tool,...(userLocation?{user_location:userLocation}:{})}],
-            input:strictJson?prompt:prompt+" Respond with only a JSON object containing an events array, "+
-              "with name, startDate, endDate, venue, venueAddress, startTime, endTime, distance, "+
-              "kind, expectedCrowd, sourceUrl and sourceName for each event. Use null for unknown fields.",
+            input:strictJson?prompt:prompt+
+              " Return only a compact JSON object with an events array. Each item needs exactly "+
+              "name, startDate (confirmed YYYY-MM-DD) and sourceUrl (page confirming that date). "+
+              "Omit events without evidence. For none confirmed use an empty events array.",
             ...(strictJson?{text:{format:{type:"json_schema",name:"nearby_events",strict:true,
               schema:nearbyEventsJsonSchema}}}:{})})});
         httpStatus=response.status;
@@ -81,7 +84,7 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
                 if(events!==null)return {ok:true,events};
                 try{JSON.parse(text.trim().replace(/^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$/gu,""));}
                 catch{failure="invalid_json";}
-                if(!failure)failure="invalid_shape";
+                if(!failure){failure="invalid_shape";shapeIssue=diagnoseNearbyEventsShape(text,input.from,input.to);}
               }
             }
           }
@@ -93,7 +96,7 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
         // One privacy-safe record per attempt, whether it succeeded, failed, or timed out.
         console.info("nearby_events_search_attempt",{queryKind:kind,attempt:number,
           format:strictJson?"schema":"plain",tool,status,httpStatus,incompleteReason,
-          outputTypes,parseFailure:failure,durationMs:Math.max(0,now()-start)});
+          outputTypes,parseFailure:failure,shapeIssue,durationMs:Math.max(0,now()-start)});
       }
       return {ok:false,category:failure??"invalid_response",
         reason:failure==="timeout"?"timeout":"searchFailed",...(httpStatus!==null?{httpStatus}:{})};
