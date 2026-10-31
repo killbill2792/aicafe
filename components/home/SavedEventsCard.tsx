@@ -202,6 +202,36 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
   </div>;
 }
 
+/** Existing AI proposal is date-scoped; never misrepresent it as verified event-specific analysis. */
+export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,locale,t,onChat}:{
+  plan:Plan|undefined;selectedEvent:CafeEvent|null;date:string;today:string;currency:string|null;
+  locale:Locale;t:T;onChat:()=>void;
+}){
+  if(!plan)return <p className="rounded-xl bg-surface2 p-4 text-ink-muted">
+    {selectedEvent?t("noEventInsight"):t("noPlan")}
+  </p>;
+  const actions=actionsFor(plan);
+  return <section className="space-y-4 rounded-2xl border border-line bg-card p-4" aria-label={t("savedInsight")}>
+    <div>
+      <p className="text-[15px] font-semibold text-accent-text">{t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
+      {selectedEvent&&<p className="mt-1 text-[15px] text-ink-muted">{t("dayWideInsight",{date:dateLabel(date,locale,"long")})}</p>}
+      <p className="mt-2 break-words font-headline text-[20px] font-semibold leading-snug" dir="auto">{plan.summary}</p>
+    </div>
+    <PlanHours plan={plan} t={t}/>
+    {actions.length>0&&<div className="space-y-2">
+      <h4 className="font-bold">{t("recommendations")}</h4>
+      <ul className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
+        <EventAdviceItem key={index} action={action}/>)}</ul>
+    </div>}
+    {date===today&&liveEventHeadline(plan,date,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
+      <h4 className="font-bold">{t("liveObservations")}</h4>
+      <p role="status">{liveEventHeadline(plan,date,t)}</p>
+    </section>}
+    <EventReportCard report={plan.report} status={plan.reportStatus}
+      currency={currency} locale={locale} t={t} onChat={onChat}/>
+  </section>;
+}
+
 /** Opens over the same Supervisor conversation. Reads saved PR 3 facts and loop plans only. */
 export default function SavedEventsCard({locale,chatDisabled,compact=false,onChatAboutDay}:{
   locale:Locale;chatDisabled:boolean;compact?:boolean;
@@ -262,7 +292,6 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const allDayEvents=eventsOn(timeline.events,chosen);
   const selectedEvent=selectedSavedEvent(timeline.events,chosen,selectedEventId);
   const dayEvents=selectedEvent?[selectedEvent]:allDayEvents;
-  const actions=actionsFor(plan);
   const calendarMonth=month??today.slice(0,7);
   const calendarFirst=calendarMonth+"-01";
   const weekday=new Date(calendarFirst+"T00:00:00Z").getUTCDay();
@@ -395,25 +424,9 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
               {!selectedEvent&&<button type="button" onClick={()=>chat(chosen,event)} disabled={chatDisabled}
                 className={button+" ms-3 text-accent-text underline"}>{t("chatAbout")}</button>}
             </article>)}
-            {plan?<section className="space-y-4 rounded-2xl border border-line bg-card p-4" aria-label={t("savedInsight")}>
-              <div>
-                <p className="text-[15px] font-semibold text-accent-text">{t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
-                {selectedEvent&&<p className="mt-1 text-[15px] text-ink-muted">{t("dayWideInsight",{date:dateLabel(chosen,locale,"long")})}</p>}
-                <p className="mt-2 break-words font-headline text-[20px] font-semibold leading-snug" dir="auto">{plan.summary}</p>
-              </div>
-              <PlanHours plan={plan} t={t}/>
-              {actions.length>0&&<div className="space-y-2">
-                <h4 className="font-bold">{t("recommendations")}</h4>
-                <ul className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
-                  <EventAdviceItem key={index} action={action}/>)}</ul>
-              </div>}
-              {chosen===today&&liveEventHeadline(plan,chosen,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
-                <h4 className="font-bold">{t("liveObservations")}</h4>
-                <p role="status">{liveEventHeadline(plan,chosen,t)}</p>
-              </section>}
-              <EventReportCard report={plan.report} status={plan.reportStatus}
-                currency={timeline.currency??null} locale={locale} t={t} onChat={()=>chat(chosen)}/>
-            </section>:<p className="rounded-xl bg-surface2 p-4 text-ink-muted">{selectedEvent?t("noEventInsight"):t("noPlan")}</p>}
+            <SavedEventAnalysis plan={plan} selectedEvent={selectedEvent} date={chosen}
+              today={today} currency={timeline.currency??null} locale={locale} t={t}
+              onChat={()=>chat(chosen,selectedEvent??undefined)}/>
             {dayEvents.length===0&&!plan&&<p className="text-ink-muted">{t("noEvents")}</p>}
             <button type="button" onClick={()=>chat(chosen,selectedEvent??undefined)} disabled={chatDisabled}
               className={button+" w-full bg-accent text-on-accent"}>{t("chatAbout")}</button>
