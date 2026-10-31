@@ -2,7 +2,7 @@ export type EventChatContext={date:string;title:string;threadId:string};
 
 /** Encode a specific day in a human-readable thread title, not an event JSON blob. */
 export function eventThreadTitle(date:string,title:string):string {
-  return "Events · "+date+" · "+title.replace(/[\r\n<>]/g," ").trim().slice(0,100);
+  return "Events · "+date+" · "+title.replace(/[\r\n<>]/g," ").trim().slice(0,96);
 }
 export function eventContextFromTitle(title:string,threadId:string):EventChatContext|null {
   const match=/^Events · (\d{4}-\d{2}-\d{2}) · (.{1,100})$/.exec(title);
