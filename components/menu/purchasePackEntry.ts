@@ -10,7 +10,7 @@ export function parsePurchasePack(text:string,baseUnit:BaseUnit):PurchasePack|nu
   .replace(/onzas?\s+l[ií]quidas?|أونص(?:ة|ات)\s+سائلة/g,"fluid ounces")
   .replace(/onzas?\s+de\s+peso/g,"ounces by weight")
   .replace(/libras?|أرطال|رطلاً|رطلًا|رطل/g,"pounds")
-  .replace(/unidades?|piezas?|قطع|قطعة|وحدات?|وحدة/g,"pieces")
+  .replace(/unidades?|piezas?|قطعة|قطع|وحدات?|وحدة/g,"pieces")
   .replace(/mililitros?|مليلتر(?:ات)?|ملليلتر(?:ات)?/g,"milliliters")
   .replace(/litros?|لترات?|لتر/g,"liters")
   .replace(/gramos?|غرام(?:ات|ًا)?|جرام(?:ات)?/g,"grams")
@@ -42,6 +42,10 @@ export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit
  const unitNames:Record<string,string>={fl_oz:"fluid-ounce",oz_wt:"ounce",ml:"milliliter",g:"gram",
   kg:"kilogram",l:"liter",lb:"pound",gal:"gallon"};
  const resolvedUnit=unit==="oz"?(baseUnit==="ml"?"fl_oz":"oz_wt"):unit;
+ if(resolvedUnit==="oz_wt"){
+  const value=new Intl.NumberFormat(locale,{style:"unit",unit:"ounce",unitDisplay:"long"}).format(quantity);
+  return value+(locale.startsWith("es")?" por peso":locale.startsWith("ar")?" بالوزن":" by weight");
+ }
  if(unitNames[resolvedUnit]){
   return new Intl.NumberFormat(locale,{style:"unit",unit:unitNames[resolvedUnit],unitDisplay:"long"}).format(quantity);
  }
