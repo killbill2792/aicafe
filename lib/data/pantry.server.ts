@@ -23,6 +23,7 @@ type ReplacementLine = { ingredientId: string; quantity: number; displayUnit: Re
 type SnapshotLine = { ingredientId: string; quantity: number; displayUnit: string | null; displayQuantity: number | null };
 type Change = { menuItemId: string; lines: ReplacementLine[]; expectedOrder?: string[];
   expectedLines?: SnapshotLine[]; expectedSourceLines?: SnapshotLine[];
+  expectedSourceOrder?: string[];
   expectedSiblingIds?: string[]; checkOnly?: boolean };
 function snapshotLines(rows: readonly StoredLine[]): SnapshotLine[] {
   return rows.map((row) => ({
@@ -324,7 +325,8 @@ export async function prepareIngredientSwap(productId: string, fromId: string, t
       // Check-only entries are validated while holding the transaction's family lock.
       // They prevent a concurrent scale/apply from introducing the old ingredient
       // into a sibling that was missing it when the swap began.
-      changes.push({ menuItemId: sibling.id, lines: [], expectedLines: snapshotLines(existing), checkOnly: true });
+      changes.push({ menuItemId: sibling.id, lines: [], expectedOrder: existing.map(row=>row.ingredient_id),
+        expectedLines: snapshotLines(existing), checkOnly: true });
       continue;
     }
     if (existing.some((row) => row.ingredient_id === toId)) return bad("ingredient_already_present");
@@ -341,11 +343,15 @@ export async function prepareIngredientSwap(productId: string, fromId: string, t
       lines.push({ ingredientId: isChanged ? toId : row.ingredient_id,
         quantity, displayUnit, displayQuantity });
     }
-    changes.push({ menuItemId: sibling.id, lines, expectedLines: snapshotLines(existing) });
+    changes.push({ menuItemId: sibling.id, lines, expectedOrder: existing.map(row=>row.ingredient_id),
+      expectedLines: snapshotLines(existing) });
   }
   if (!changes.some((change) => !change.checkOnly)) return bad("ingredient_not_in_product");
   // Covers changes to the anchor between sibling discovery and atomic replacement.
   changes[0].expectedSourceLines = snapshotLines(rows.filter((row) => row.menu_item_id === productId));
+  changes[0].expectedSourceOrder = rows.filter(row=>row.menu_item_id===productId)
+    .sort((a,b)=>(a.sort_order??Number.MAX_SAFE_INTEGER)-(b.sort_order??Number.MAX_SAFE_INTEGER)
+      ||a.ingredient_id.localeCompare(b.ingredient_id,"en")).map(row=>row.ingredient_id);
   changes[0].expectedSiblingIds = siblings.map((sibling) => sibling.id).sort();
   return {ok:true,changes};
 }
@@ -420,7 +426,9 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
   }
   return verifiedWrite(scope, fromItemId, [{
     menuItemId: toItemId, lines, expectedLines: snapshotLines(target),
+    expectedOrder: target.map(row=>row.ingredient_id),
     expectedSourceLines: snapshotLines(source),
+    expectedSourceOrder: source.map(row=>row.ingredient_id),
     expectedSiblingIds: siblings.map((sibling) => sibling.id).sort(),
   }]);
 }
@@ -506,6 +514,7 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
  changes[0].expectedSiblingIds=siblingIds;
  const anchorEdit=edited.get(parsed.data.productId);
  changes[0].expectedSourceLines=anchorEdit?[...anchorEdit.expected].sort((a,b)=>a.ingredientId.localeCompare(b.ingredientId)):snapshotLines(rows.filter(row=>row.menu_item_id===parsed.data.productId));
+ changes[0].expectedSourceOrder=anchorEdit?.expectedOrder??orderFor(parsed.data.productId);
  return verifiedWrite(scope,parsed.data.productId,changes);
 }
 
