@@ -3,7 +3,7 @@ vi.mock("server-only",()=>({}));
 const m=vi.hoisted(()=>({
  row:null as Record<string,unknown>|null,
  binding:null as Record<string,unknown>|null,
- ready:[] as Record<string,unknown>[],
+ ready:[] as Record<string,unknown>[],pending:[] as Record<string,unknown>[],ownerRecord:null as Record<string,unknown>|null,
  messages:[] as Record<string,unknown>[],
  process:vi.fn(),download:vi.fn(),save:vi.fn(),enqueue:vi.fn(),
  consume:vi.fn(),send:vi.fn(),
@@ -21,12 +21,12 @@ const db={
  from:(table:string)=>{
    const query={
      select:()=>query,eq:()=>query,in:()=>query,
-     maybeSingle:async()=>({data:table==="whatsapp_inbound"?m.row:null,error:null}),
+     maybeSingle:async()=>({data:table==="whatsapp_inbound"?m.row:table==="ai_messages"?m.ownerRecord:null,error:null}),
      limit:async()=>({data:table==="ai_messages"?m.messages:[],error:null}),
    };
    return query;
  },
- rpc:async()=>({data:m.ready,error:null}),
+ rpc:async(name:string)=>({data:name==="whatsapp_pending_supervisor_turns"?m.pending:m.ready,error:null}),
 };
 vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>db}));
 vi.mock("./identity.server",()=>({activeBinding:async()=>m.binding}));
@@ -36,7 +36,7 @@ vi.mock("./queue.server",()=>({
 }));
 vi.mock("./media.server",()=>({downloadWhatsAppMedia:m.download,saveWhatsAppMediaDraft:m.save}));
 vi.mock("./supervisor.server",()=>({processVerifiedWhatsAppOwnerTurn:m.process}));
-import {dispatchVerifiedWhatsAppInbound,reconcileWhatsAppSupervisorReplies,
+import {dispatchVerifiedWhatsAppInbound,reconcileWhatsAppSupervisorReplies,recoverWhatsAppSupervisorTurn,
  runWhatsAppSupervisorWorker} from "./supervisor-bridge.server";
 const transportMessage={
  wamid:providerId,scope:{businessId:cafe,ownerUserId:owner},threadId:thread,
@@ -76,7 +76,7 @@ beforeEach(()=>{
    return "done";
  });
  m.send.mockResolvedValue("disabled");
- m.ready=[readyRow()];
+ m.ready=[readyRow()];m.pending=[];m.ownerRecord=null;
  setMessages();
 });
 describe("PR A signed durable dispatch -> ONE Supervisor",()=>{
@@ -197,6 +197,28 @@ describe("durable web/WA reply reconciliation",()=>{
   setMessages("x".repeat(4097));
   expect(await reconcileWhatsAppSupervisorReplies()).toEqual({enqueued:0,skipped:1});
   expect(m.enqueue).not.toHaveBeenCalled();
+ });
+ it("recovers a crashed/stale Supervisor job using the same owner message, never a second chat",async()=>{
+   m.pending=[{...readyRow(),text_content:"What was my slowest hour yesterday?"}];
+   m.ownerRecord={id:ownerMessageId,role:"owner",content_type:"text",
+     client_message_id:clientMessageId,text_content:"What was my slowest hour yesterday?",
+     grounding:{sourceChannel:"whatsapp",receivedAt}};
+   m.process.mockResolvedValueOnce({status:"answered",ownerMessageId,completed:[]});
+   const state=await recoverWhatsAppSupervisorTurn();
+   expect(state).toBe("answered");
+   expect(m.process).toHaveBeenCalledWith(expect.objectContaining({
+     wamid:providerId,clientMessageId,threadId:thread,
+     input:{type:"text",text:"What was my slowest hour yesterday?"},
+   }));
+   expect(m.enqueue).not.toHaveBeenCalled();
+ });
+ it("does not retry a claimed job after the persisted owner identity changes",async()=>{
+   m.pending=[{...readyRow(),text_content:"What was my slowest hour yesterday?"}];
+   m.ownerRecord={id:ownerMessageId,role:"owner",content_type:"text",
+     client_message_id:clientMessageId,text_content:"different text",
+     grounding:{sourceChannel:"whatsapp",receivedAt}};
+   await expect(recoverWhatsAppSupervisorTurn()).rejects.toThrow("recovery_provenance_conflict");
+   expect(m.process).not.toHaveBeenCalled();
  });
  it("never crosses café even with a falsely scoped ready-reply RPC result",async()=>{
   m.ready=[{...readyRow(),business_id:"99999999-9999-4999-8999-999999999999"}];
