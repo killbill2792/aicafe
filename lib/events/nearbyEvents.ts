@@ -69,7 +69,7 @@ export function nearbyEventsPrompt(location:string,from:string,to:string,
     "Include anything that could change how many people walk past or visit a café within about "+
     "2 miles / 3 km: festivals, conferences and conventions, tech or trade weeks, sports games, concerts, parades, "+
     "markets, holiday events (Halloween, trick-or-treat events, tree lightings), school or university events, "+
-    "marathons and road closures. Also include public holidays in that country during those dates (kind public_holiday). "+
+    "marathons and road closures. Also include public holidays during those dates when a source confirms the date. "+
     "Only include events whose date in this window is confirmed by a page you found; give that page as sourceUrl. "+
     "Return only a compact JSON object with an events array. Each event has exactly "+
     "name, startDate (YYYY-MM-DD), and sourceUrl (the specific page confirming that date). "+
