@@ -2,7 +2,7 @@ import {describe,it,expect,vi} from "vitest";
 import {renderToStaticMarkup} from "react-dom/server";
 import type {MenuItemForEdit} from "@/lib/data/getMenuItemsForEdit";
 import {toBaseUnitQuantity} from "@/lib/calc/recipeUnits";
-import AllSizesRecipe, {safeRecipeDensity,preservedReplacementQuantity} from "./AllSizesRecipe";
+import AllSizesRecipe, {safeRecipeDensity,preservedReplacementQuantity,nextReplacementDisplayQuantity} from "./AllSizesRecipe";
 
 vi.mock("next-intl",()=>({
  useLocale:()=> "en",
@@ -97,6 +97,13 @@ describe("replacement ingredient calibration parity",()=>{
   const reverted=preservedReplacementQuantity("pump",amount!,"ml",replacement,old);
   expect(reverted).toBe(3);
   expect(toBaseUnitQuantity("pump",reverted!,"ml",old)).toBe(30);
+  // Exercise the picker adapter rather than only the lower-level helper:
+  // previousId B and targetId A must still trigger the conversion.
+  const first=nextReplacementDisplayQuantity("syrup-a","syrup-b","pump",3,"ml",old,replacement);
+  expect(first).toBe(6);
+  const back=nextReplacementDisplayQuantity("syrup-b","syrup-a","pump",first!,"ml",replacement,old);
+  expect(back).toBe(3);
+  expect(nextReplacementDisplayQuantity("syrup-a","syrup-a","pump",3,"ml",old,old)).toBe(3);
   expect(preservedReplacementQuantity("pump",3,"ml",old,[])).toBeNull();
  });
 });
