@@ -130,6 +130,8 @@ create table public.whatsapp_inbound (
         and text_content is null and button_payload is null))
 );
 create index whatsapp_inbound_claim_idx on public.whatsapp_inbound (state,received_at);
+create unique index whatsapp_inbound_one_lease_per_owner on public.whatsapp_inbound(owner_user_id)
+  where state='leased';
 alter table public.whatsapp_inbound enable row level security;
 
 create table public.whatsapp_outbox (
@@ -140,6 +142,7 @@ create table public.whatsapp_outbox (
   owner_user_id uuid not null,
   thread_id uuid not null,
   kind text not null check(kind in ('daily_brief','reply')),
+  business_date date,
   payload jsonb not null,
   provenance jsonb not null default '{}'::jsonb,
   in_reply_to text references public.whatsapp_inbound(wamid),
@@ -154,10 +157,15 @@ create table public.whatsapp_outbox (
   accepted_at timestamptz,
   delivered_at timestamptz,
   foreign key (binding_id,business_id,owner_user_id,thread_id)
-    references public.whatsapp_owner_bindings(id,business_id,owner_user_id,thread_id)
+    references public.whatsapp_owner_bindings(id,business_id,owner_user_id,thread_id),
+  check ((kind='daily_brief' and business_date is not null)
+    or (kind='reply' and business_date is null))
 );
+-- A fresh dedupe key cannot bypass one brief per selected owner/cafe/local date.
+create unique index whatsapp_one_brief_per_local_day on public.whatsapp_outbox(binding_id,business_date)
+  where kind='daily_brief';
 create index whatsapp_outbox_claim_idx on public.whatsapp_outbox (state,created_at);
-create unique index whatsapp_outbox_one_lease_per_binding on public.whatsapp_outbox(binding_id)
+create unique index whatsapp_outbox_one_lease_per_binding on public.whatsapp_outbox(owner_user_id)
   where state = 'leased';
 alter table public.whatsapp_outbox enable row level security;
 
@@ -244,7 +252,8 @@ grant execute on function public.whatsapp_record_status(text,text) to service_ro
 
 -- The producer (B) and shared-agent adapter (C) may only queue against a live binding.
 create function public.whatsapp_enqueue_outbound(p_binding_id uuid,p_key text,p_kind text,
- p_payload jsonb,p_provenance jsonb,p_in_reply_to text default null)
+ p_payload jsonb,p_provenance jsonb,p_in_reply_to text default null,
+ p_business_date date default null)
 returns uuid language plpgsql security definer set search_path=public as $$
 declare b public.whatsapp_owner_bindings; result uuid;
 begin
@@ -258,11 +267,13 @@ begin
  if p_kind='reply' and (p_in_reply_to is null or not exists
    (select 1 from public.whatsapp_inbound i where i.wamid=p_in_reply_to
     and i.binding_id=b.id and i.state='completed')) then raise exception 'reply_not_ready'; end if;
- if p_kind='daily_brief' and p_in_reply_to is not null then raise exception 'invalid_brief'; end if;
+ if p_kind='daily_brief' and (p_in_reply_to is not null or p_business_date is null)
+   then raise exception 'invalid_brief'; end if;
+ if p_kind='reply' and p_business_date is not null then raise exception 'invalid_reply_date'; end if;
  insert into public.whatsapp_outbox(dedupe_key,binding_id,business_id,owner_user_id,
-   thread_id,kind,payload,provenance,in_reply_to)
+   thread_id,kind,business_date,payload,provenance,in_reply_to)
  values(p_key,b.id,b.business_id,b.owner_user_id,b.thread_id,
-   p_kind,p_payload,p_provenance,p_in_reply_to)
+   p_kind,p_business_date,p_payload,p_provenance,p_in_reply_to)
  on conflict(dedupe_key) do nothing returning id into result;
  if result is null then
    select id into result from public.whatsapp_outbox
@@ -270,7 +281,7 @@ begin
  end if;
  return result;
 end $$;
-revoke all on function public.whatsapp_enqueue_outbound(uuid,text,text,jsonb,jsonb,text) from public,anon,authenticated;
+revoke all on function public.whatsapp_enqueue_outbound(uuid,text,text,jsonb,jsonb,text,date) from public,anon,authenticated;
 grant execute on function public.whatsapp_enqueue_outbound(uuid,text,text,jsonb,jsonb,text) to service_role;
 
 -- A lease is never blindly replayed after a provider timeout. Worker chooses one binding at
@@ -285,7 +296,9 @@ begin
    where state='leased' and leased_until<now();
  for b in select x.* from public.whatsapp_owner_bindings x where x.opted_in
    order by x.id for update skip locked loop
-   if not public.whatsapp_binding_active(b.id) then continue; end if;
+   if not public.whatsapp_binding_active(b.id) or exists (
+     select 1 from public.whatsapp_outbox a where a.owner_user_id=b.owner_user_id and a.state='leased'
+   ) then continue; end if;
    select * into q from public.whatsapp_outbox
      where binding_id=b.id and state='queued' and kind=p_kind and attempts<5
      order by created_at,id limit 1 for update skip locked;
@@ -318,7 +331,8 @@ begin
    then raise exception 'missing_provider_wamid'; end if;
  select * into s from public.whatsapp_status_ledger where provider_wamid=p_provider_wamid;
  update public.whatsapp_outbox set
-   state=case when p_outcome='retry' then 'queued'
+   state=case when p_outcome='retry' and q.attempts>=5 then 'failed'
+     when p_outcome='retry' then 'queued'
      when p_outcome='accepted' and s.state is not null then s.state else p_outcome end,
    provider_wamid=case when p_outcome='accepted' then p_provider_wamid else null end,
    accepted_at=case when p_outcome='accepted' then now() else null end,
@@ -343,7 +357,7 @@ begin
  for b in select x.* from public.whatsapp_owner_bindings x where x.opted_in
    order by x.id for update skip locked loop
    if not public.whatsapp_binding_active(b.id) then continue; end if;
-   if exists (select 1 from public.whatsapp_inbound j where j.binding_id=b.id and j.state='leased')
+   if exists (select 1 from public.whatsapp_inbound j where j.owner_user_id=b.owner_user_id and j.state='leased')
      then continue; end if;
    select * into i from public.whatsapp_inbound
      where binding_id=b.id and state='queued' and attempts<5
@@ -374,7 +388,8 @@ begin
     and m.owner_user_id=i.owner_user_id and m.role='owner')) then
    raise exception 'missing_authenticated_owner_turn';
  end if;
- update public.whatsapp_inbound set state=p_state,owner_message_id=case
+ update public.whatsapp_inbound set state=case when p_state='queued' and attempts>=5
+     then 'failed' else p_state end,owner_message_id=case
    when p_state='completed' then p_owner_message_id else owner_message_id end,
    error_code=p_error,lease_token=null,leased_until=null where wamid=p_wamid;
  return true;
