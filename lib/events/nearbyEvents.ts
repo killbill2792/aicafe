@@ -24,7 +24,10 @@ export type NearbyEventsSearch=(input:{location:string;city:string|null;region:s
 export const MAX_EVENTS=8;
 const nullableText=(max:number)=>z.union([z.string(),z.null()]).transform(v=>{
   const t=v?.replace(/\s+/gu," ").trim();return t?t.slice(0,max):null;});
-const isoDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).refine(d=>!Number.isNaN(Date.parse(d+"T00:00:00Z")));
+const isoDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).refine(d=>{
+  const parsed=new Date(d+"T00:00:00Z");
+  return !Number.isNaN(parsed.getTime())&&parsed.toISOString().slice(0,10)===d;
+});
 // Unknown optional dates/times may be null, missing or blank in plain fallback JSON.
 const optionalDate=z.union([z.string(),z.null()]).optional()
   .transform(v=>v?.trim()||null).pipe(z.union([isoDate,z.null()]));
@@ -73,7 +76,7 @@ export function nearbyEventsPrompt(location:string,from:string,to:string,
     "Do not return extra fields, commentary, markdown or citations outside the JSON. "+
     "Never guess an event, date or URL; omit any event without a dated source page. "+
     "Return at most "+Math.min(MAX_EVENTS,5)+" confirmed events prioritizing likely local impact. "+
-    "If none can be confirmed, return {\\\"events\\\":[]}. ";
+    "If none can be confirmed, return an events array with zero items.";
 }
 
 /** Accept a small, finite set of common, semantically identical JSON wrappers
@@ -138,7 +141,11 @@ const normalizedEvent=(row:Record<string,unknown>):Record<string,unknown>=>{
   const date=first(row,["startDate","start_date","date","date_start","eventDate","event_date"]);
   return {
     name:first(row,["name","title","eventName","event_name"]),
-    startDate:canonicalDate(date),endDate:canonicalDate(first(row,["endDate","end_date"])??null),
+    startDate:canonicalDate(date),
+    endDate:(()=>{
+      const end=canonicalDate(first(row,["endDate","end_date"])??null);
+      return typeof end==="string"&&isoDate.safeParse(end).success?end:null;
+    })(),
     venue:typeof venue==="string"?venue:(record(venue)?first(venue,["name","title"]):null)??first(location??{},["name","venue"]),
     venueAddress:first(row,["venueAddress","venue_address","address"])??first(location??{},["address"]),
     startTime:optionalClock(first(row,["startTime","start_time"])),
