@@ -1,5 +1,6 @@
 import {describe,it,expect,vi,beforeEach} from "vitest";
-import {parseNearbyEvents,responseOutputText,nearbyEventsPrompt,MAX_EVENTS} from "./nearbyEvents";
+import {parseNearbyEvents,responseOutputText,nearbyEventsPrompt,nearbyEventsMinimalPrompt,
+  nearbyEventsShapeProblem,MAX_EVENTS} from "./nearbyEvents";
 import {createNearbyEventsSearch,clearNearbyEventsCache,SEARCH_MAX_OUTPUT_TOKENS} from "./nearbyEventsSearch.server";
 import {holidaysBetween} from "./holidays";
 
@@ -137,7 +138,7 @@ describe("web search call",()=>{
     ["prose",prose,"invalid_json"],
     ["empty text",{status:"completed",output:[{type:"message",content:[{type:"output_text",text:"  "}]}]},"empty_text"],
     ["invalid shape",{status:"completed",output:[{type:"message",content:[{type:"output_text",text:"{}"}]}]},"invalid_shape"],
-  ])("retries HTTP 200 %s once as plain JSON",async(_label,fixture,category)=>{
+  ])("recovers HTTP 200 %s using bounded format-aware fallback",async(_label,fixture,category)=>{
     const info=vi.spyOn(console,"info").mockImplementation(()=>{});
     const fetch=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(fixture),{status:200}))
       .mockResolvedValueOnce(ok([]));
@@ -145,10 +146,17 @@ describe("web search call",()=>{
     expect(result).toEqual({available:true,outcome:"none_found",events:[],partial:false});
     expect(fetch).toHaveBeenCalledTimes(2);
     const second=JSON.parse(String(fetch.mock.calls[1][1].body));
-    expect(second.text).toBeUndefined();
+    if(category==="invalid_shape"){
+      expect(second.text?.format).toMatchObject({type:"json_schema",
+        name:"nearby_events_minimal",strict:true});
+      expect(Object.keys(second.text.format.schema.properties.events.items.properties))
+        .toEqual(["name","startDate","sourceUrl"]);
+      expect(second.max_output_tokens).toBe(SEARCH_MAX_OUTPUT_TOKENS);
+    }else expect(second.text).toBeUndefined();
     const logs=info.mock.calls.map(c=>c[1] as Record<string,unknown>);
     expect(logs[0]).toMatchObject({attempt:1,httpStatus:200,parseFailure:category});
-    expect(logs[1]).toMatchObject({attempt:2,format:"plain",parseFailure:null});
+    expect(logs[1]).toMatchObject({attempt:2,
+      format:category==="invalid_shape"?"minimal":"plain",parseFailure:null});
     expect(logs[0].durationMs).toEqual(expect.any(Number));
     expect(JSON.stringify(logs)).not.toContain("Main St");
     info.mockRestore();
@@ -170,6 +178,72 @@ describe("web search call",()=>{
       partial:false});
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+  it("recovers 200 invalid_shape from all three scopes using the compact sourced schema",async()=>{
+    const info=vi.spyOn(console,"info").mockImplementation(()=>{});
+    const unknownSource={status:"completed",output:[
+      {type:"web_search_call",status:"completed"},
+      {type:"message",content:[{type:"output_text",
+        text:JSON.stringify({events:[{name:"Halloween market",startDate:"2026-10-31",
+          sourceUrl:""}]})}]},
+    ]};
+    const confirmed={status:"completed",output:[
+      {type:"web_search_call",status:"completed"},
+      {type:"message",content:[{type:"output_text",
+        text:JSON.stringify({events:[{name:"Halloween market",startDate:"2026-10-31",
+          sourceUrl:"https://city.example.org/halloween"}]})}]},
+    ]};
+    const fetch=vi.fn(async(_url:string|URL|Request,init?:RequestInit)=>{
+      const body=JSON.parse(String(init?.body)) as {text?:{format?:{name:string}}};
+      return new Response(JSON.stringify(body.text?.format?.name==="nearby_events_minimal"?
+        confirmed:unknownSource),{status:200});
+    });
+    try{
+      const params={...input,countryCode:"US",to:"2026-10-31"};
+      const result=await createNearbyEventsSearch({fetch,apiKey:"k",model:"m"})(params);
+      expect(result).toMatchObject({available:true,outcome:"found",partial:false,
+        events:[{name:"Halloween market",startDate:"2026-10-31",
+          sourceUrl:"https://city.example.org/halloween"}]});
+      const scopes=1+holidaysBetween(params.from,params.to,"US","TX","en").length;
+      expect(fetch).toHaveBeenCalledTimes(scopes*2);
+      const logs=info.mock.calls.map(c=>c[1] as Record<string,unknown>);
+      expect(logs.filter(c=>c.parseFailure==="invalid_shape")).toHaveLength(scopes);
+      expect(logs.filter(c=>c.format==="minimal"&&c.parseFailure===null)).toHaveLength(scopes);
+      expect(logs[0]).toMatchObject({shapeFailure:"missing_or_invalid_source_url"});
+      expect(JSON.stringify(logs)).not.toContain("Main St");
+      expect(JSON.stringify(logs)).not.toContain("city.example.org");
+    }finally{info.mockRestore();}
+  });
+
+  it("diagnoses valid JSON with unusable events without revealing event names or links",()=>{
+    expect(nearbyEventsShapeProblem(JSON.stringify({events:[{name:"Secret event",
+      startDate:"2026-10-31",sourceUrl:""}]}),"2026-10-30","2026-11-05"))
+      .toBe("missing_or_invalid_source_url");
+    expect(nearbyEventsShapeProblem(JSON.stringify({events:[{name:"Secret event",
+      startDate:"tomorrow",sourceUrl:"https://private.example"}]}),
+      "2026-10-30","2026-11-05")).toBe("missing_or_invalid_iso_date");
+    expect(nearbyEventsShapeProblem("{}","2026-10-30","2026-11-05"))
+      .toBe("missing_events_array");
+    const prompt=nearbyEventsMinimalPrompt("Austin TX","2026-10-30","2026-11-05");
+    expect(prompt).toContain("actual source page HTTPS URL");
+    expect(prompt).toContain("at most 3 verifiable events");
+    expect(prompt).not.toContain("expectedCrowd");
+  });
+  it("accepts event-local sources attached under url/link or source.url but never absent proof",()=>{
+    for(const variant of [
+      {url:"https://city.example.org/event"},
+      {link:"https://city.example.org/event"},
+      {source:{url:"https://city.example.org/event"}},
+    ]){
+      const result=parseNearbyEvents(JSON.stringify({events:[{
+        name:"Town market",startDate:"2026-10-31",...variant}]}),
+        "2026-10-30","2026-11-05");
+      expect(result).toEqual([expect.objectContaining({
+        name:"Town market",sourceUrl:"https://city.example.org/event"})]);
+    }
+    expect(parseNearbyEvents(JSON.stringify({events:[{name:"Town market",
+      startDate:"2026-10-31"}]}),"2026-10-30","2026-11-05")).toBeNull();
+  });
+
   it("keeps malformed completed 200 searches failed, without caching false empty coverage",async()=>{
     const response={status:"completed",output:[{type:"message",content:[{type:"output_text",
       text:JSON.stringify({results:[{title:"Halloween",date:"2026-10-31"}]})}]}]};
