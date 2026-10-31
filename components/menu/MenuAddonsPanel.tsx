@@ -23,7 +23,8 @@ export default function MenuAddonsPanel({itemId,items,pantry,saved,conversions}:
  const defaultMilkId=options.find(option=>option.kind==="milk"&&option.isDefault)?.ingredientId??milkLine?.ingredientId??null;
  const current=pantry.find(item=>item.id===defaultMilkId);
  const currentLine=first?.recipe.find(line=>line.ingredientId===defaultMilkId)??milkLine;
- const selectedMilk=milkRows.filter(m=>m.id!==defaultMilkId);
+ const selectedMilk=allMilkRows.filter(m=>m.id!==defaultMilkId&&
+  (!m.archivedAt||options.some(option=>option.kind==="milk"&&option.ingredientId===m.id)));
  const extras=options.filter(option=>option.kind==="extra");
  function milkOption(id:string):MenuAddon{return options.find(o=>o.kind==="milk"&&o.ingredientId===id)??{ingredientId:id,kind:"milk",enabled:false,isDefault:false,upchargeCents:0,displayUnit:"ml",displayQuantity:1};}
  function update(option:MenuAddon){setOptions(old=>[...old.filter(o=>!(o.kind===option.kind&&o.ingredientId===option.ingredientId)),option]);}
