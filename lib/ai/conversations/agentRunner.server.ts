@@ -1,6 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createOwnerScopedCafeTools} from "@/lib/ai/cafeTools.server";
+import {recordedWhatsAppImageIds} from "@/lib/ai/conversations/authorizedTurn.server";
 import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {TeamRulesService} from "@/lib/ai/policies/service";
 import {SupabaseTeamRulesRepository} from "@/lib/ai/policies/repository.server";
@@ -251,7 +252,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           supervisorLoopRegistry,new SupabaseLoopRepository(),staffCapabilityId(name),input,requestKey);
         return {proposalId:proposal.id,revision:proposal.revision,capabilityId:proposal.capabilityId};
       }} };
-    const ownerImages=await readOwnerImages(scope,id,p.attachmentIds??[],p.externalClient);
+    const recordedIds=process.env.WHATSAPP_SUPERVISOR_ENABLED==="true"
+      ?await recordedWhatsAppImageIds(scope,id,owner.id):null;
+    const ownerImages=await readOwnerImages(scope,id,recordedIds??p.attachmentIds??[],p.externalClient);
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages, history, context,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
