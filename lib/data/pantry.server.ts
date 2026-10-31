@@ -21,7 +21,7 @@ type Ingredient = { id: string; name: string; base_unit: BaseUnit; starter_key: 
 type StoredLine = { menu_item_id: string; ingredient_id: string; quantity: number; display_unit: string | null; display_quantity: number | null };
 type ReplacementLine = { ingredientId: string; quantity: number; displayUnit: RecipeDisplayUnit; displayQuantity: number };
 type SnapshotLine = { ingredientId: string; quantity: number; displayUnit: string | null; displayQuantity: number | null };
-type Change = { menuItemId: string; lines: ReplacementLine[];
+type Change = { menuItemId: string; lines: ReplacementLine[]; expectedOrder?: string[];
   expectedLines?: SnapshotLine[]; expectedSourceLines?: SnapshotLine[];
   expectedSiblingIds?: string[]; checkOnly?: boolean };
 function snapshotLines(rows: readonly StoredLine[]): SnapshotLine[] {
@@ -53,17 +53,23 @@ function queryFailed(operation: string, error: { message: string } | null): Pant
   return saveFailed();
 }
 const uuid = z.string().uuid();
+const originalPackInput = z.strictObject({
+  count: z.number().finite().positive().max(1_000_000),
+  unitQuantity: z.number().finite().positive().max(1_000_000),
+  unit: z.string().min(1).max(40),
+});
 const packInput = z.object({
   ingredientId: uuid,
   packQuantity: z.number().finite().positive().max(1_000_000),
   packUnit: z.string().regex(/^(gal|qt|l|ml|fl_oz|lb|kg|oz_wt|g|oz|each|dozen|case\([1-9][0-9]*\))$/),
   packCostCents: z.number().int().positive().max(1_000_000_000),
+  originalPack: originalPackInput.nullable().optional(),
 }).strict();
 
 async function currentPrices(scope: Scope, ids: string[]) {
-  if (!ids.length) return new Map<string, { cost: number; packQuantity: number | null; packUnit: string | null; packCostCents: number | null }>();
+  if (!ids.length) return new Map<string, { cost: number; packQuantity: number | null; packUnit: string | null; packCostCents: number | null; originalPack: z.infer<typeof originalPackInput> | null }>();
   const { data, error, count } = await scope.db.from("ingredient_prices")
-    .select("ingredient_id, cost_per_base_unit_micros, pack_quantity, pack_unit, pack_cost_cents", { count: "exact" })
+    .select("ingredient_id, cost_per_base_unit_micros, pack_quantity, pack_unit, pack_cost_cents, original_pack", { count: "exact" })
     .in("ingredient_id", ids).lte("effective_from", scope.today)
     .order("effective_from", { ascending: true })
     .order("recorded_at", { ascending: true })
@@ -72,11 +78,13 @@ async function currentPrices(scope: Scope, ids: string[]) {
     logQueryError("pantry:currentPrices", error);
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   }
-  const prices = new Map<string, { cost: number; packQuantity: number | null; packUnit: string | null; packCostCents: number | null }>();
+  const prices = new Map<string, { cost: number; packQuantity: number | null; packUnit: string | null; packCostCents: number | null; originalPack: z.infer<typeof originalPackInput> | null }>();
   for (const row of data) prices.set(row.ingredient_id, {
     cost: Number(row.cost_per_base_unit_micros),
     packQuantity: row.pack_quantity === null ? null : Number(row.pack_quantity),
     packUnit: row.pack_unit, packCostCents: row.pack_cost_cents === null ? null : Number(row.pack_cost_cents),
+    originalPack: originalPackInput.safeParse(row.original_pack).success
+      ? originalPackInput.parse(row.original_pack) : null,
   });
   return prices;
 }
@@ -85,12 +93,13 @@ async function currentPrices(scope: Scope, ids: string[]) {
 export async function listPantry(): Promise<Array<{
   id: string; name: string; category: string | null; starterKey: string | null; baseUnit: BaseUnit;
   costPerBaseMicros: number | null; packQuantity: number | null; packUnit: string | null;
-  packCostCents: number | null; usedInCount: number;
+  packCostCents: number | null; originalPack: z.infer<typeof originalPackInput> | null;
+  archivedAt: string | null; usedInCount: number;
 }>> {
   const scope = await activeScope();
   if (!scope) return [];
   const { data, error, count } = await scope.db.from("ingredients")
-    .select("id, name, base_unit, category, starter_key", { count: "exact" }).eq("business_id", scope.businessId).order("name");
+    .select("id, name, base_unit, category, starter_key, archived_at", { count: "exact" }).eq("business_id", scope.businessId).order("name");
   if (error || !data || count === null || count !== data.length) throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   const translate = await getTranslations("Pantry.starters");
   const ids = data.map((r) => r.id);
@@ -111,6 +120,7 @@ export async function listPantry(): Promise<Array<{
       starterKey: ingredient.starter_key, baseUnit: ingredient.base_unit as BaseUnit,
       costPerBaseMicros: price?.cost ?? null, packQuantity: price?.packQuantity ?? null,
       packUnit: price?.packUnit ?? null, packCostCents: price?.packCostCents ?? null,
+      originalPack: price?.originalPack ?? null, archivedAt: ingredient.archived_at,
       usedInCount: counts.get(ingredient.id) ?? 0,
     };
   });
@@ -146,6 +156,10 @@ export async function savePackPrice(input: z.infer<typeof packInput>): Promise<P
   const { data: ingredient, error } = await scope.db.from("ingredients")
     .select("id, base_unit").eq("id", parsed.data.ingredientId).eq("business_id", scope.businessId).single();
   if (error || !ingredient) return bad("ingredient_not_found");
+  const original = parsed.data.originalPack ?? null;
+  if (original && (original.unit !== parsed.data.packUnit ||
+    Math.abs(original.count * original.unitQuantity - parsed.data.packQuantity) > 0.000001))
+    return bad("invalid_pack");
   const micros = packToCostPerBaseMicros(parsed.data.packQuantity, parsed.data.packUnit,
     parsed.data.packCostCents, ingredient.base_unit as BaseUnit);
   if (micros === null) return bad("pack_unit_mismatch");
@@ -154,6 +168,7 @@ export async function savePackPrice(input: z.infer<typeof packInput>): Promise<P
     source: "manual", cost_per_base_unit_micros: micros,
     pack_quantity: parsed.data.packQuantity, pack_unit: parsed.data.packUnit,
     pack_cost_cents: parsed.data.packCostCents,
+    original_pack: original,
   });
   if (writeError) return queryFailed("pantry:savePackPrice", writeError);
   return { ok: true };
@@ -437,16 +452,20 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
  }
  const allIngredients=[...new Set(parsed.data.sizes.flatMap(s=>s.lines.map(l=>l.ingredientId)))];
  const {data:found,error:ingredientError,count}=allIngredients.length?
-  await scope.db.from("ingredients").select("id,base_unit",{count:"exact"}).eq("business_id",scope.businessId).in("id",allIngredients):
+  await scope.db.from("ingredients").select("id,base_unit,archived_at",{count:"exact"}).eq("business_id",scope.businessId).in("id",allIngredients):
   {data:[],error:null,count:0};
  if(ingredientError||!found||count!==allIngredients.length)return bad("ingredient_not_found");
  const baseById=new Map(found.map(i=>[i.id,i.base_unit as BaseUnit]));
  const conversions=await conversionsFor(scope,allIngredients);
  const {data:rows,error:rowError,count:rowCount}=await scope.db.from("recipe_lines")
-  .select("menu_item_id,ingredient_id,quantity,display_unit,display_quantity",{count:"exact"})
+  .select("menu_item_id,ingredient_id,quantity,display_unit,display_quantity,sort_order",{count:"exact"})
   .in("menu_item_id",siblingIds);
  if(rowError||!rows||rowCount!==rows.length)return bad("incomplete_recipe_source");
  const edited=new Map(parsed.data.sizes.map(s=>[s.itemId,s]));
+ const orderFor=(id:string)=>rows.filter(row=>row.menu_item_id===id)
+   .sort((a,b)=>(a.sort_order??Number.MAX_SAFE_INTEGER)-(b.sort_order??Number.MAX_SAFE_INTEGER)
+     ||a.ingredient_id.localeCompare(b.ingredient_id,"en"))
+   .map(row=>row.ingredient_id);
  const changes:Change[]=[];
  for(const id of siblingIds){
   const edit=edited.get(id);
@@ -456,7 +475,10 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
    continue;
   }
   const lines:ReplacementLine[]=[];
+  const alreadyThere=new Set(rows.filter(row=>row.menu_item_id===id).map(row=>row.ingredient_id));
   for(const line of edit.lines){
+   if(found.find(i=>i.id===line.ingredientId)?.archived_at&&!alreadyThere.has(line.ingredientId))
+    return bad("ingredient_archived");
    const existing=rows.find(r=>r.menu_item_id===id&&r.ingredient_id===line.ingredientId);
    const base=baseById.get(line.ingredientId)!;
    const storedDensity=existing?densityFromStoredRecipe(base,Number(existing.quantity),
@@ -468,7 +490,8 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
    if(quantity===null)return bad("ingredient_unit_mismatch");
    lines.push({...line,quantity});
   }
-  changes.push({menuItemId:id,lines,expectedLines:[...edit.expected].sort((a,b)=>a.ingredientId.localeCompare(b.ingredientId))});
+  changes.push({menuItemId:id,lines,expectedOrder:orderFor(id),
+   expectedLines:[...edit.expected].sort((a,b)=>a.ingredientId.localeCompare(b.ingredientId))});
  }
  changes[0].expectedSiblingIds=siblingIds;
  const anchorEdit=edited.get(parsed.data.productId);
@@ -498,4 +521,16 @@ export async function updatePantryIngredient(input:z.infer<typeof editPantryInpu
  if(error)return queryFailed("pantry:updateIngredient",error);
  if(!data?.length)return bad("ingredient_not_found");
  return{ok:true};
+}
+
+/** Reversible owner-scoped Pantry archive. Linked recipes, prices, stock and
+ * purchase rows are intentionally left untouched. No client DELETE is used. */
+export async function setPantryArchived(id:string,archived:boolean):Promise<PantryResult>{
+ if(!uuid.safeParse(id).success||typeof archived!=="boolean")return bad("invalid_ingredient");
+ const scope=await activeScope();if(!scope)return bad("sign_in_required");
+ const {data,error}=await scope.db.rpc("pantry_set_archived",{
+  p_business_id:scope.businessId,p_ingredient_id:id,p_archived:archived,
+ });
+ if(error)return queryFailed("pantry:setArchived",error);
+ return data===true?{ok:true}:bad("ingredient_not_found");
 }
