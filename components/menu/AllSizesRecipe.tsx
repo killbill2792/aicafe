@@ -29,7 +29,7 @@ export function safeRecipeDensity(replacing:boolean,raw:string|undefined,
  }
  return replacing?undefined:stored??suggested??undefined;
 }
-export default function AllSizesRecipe({items,ingredients,conversions,pantry,draftSizes,focusedSizeId,onFocusedSizeChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void}){
+export default function AllSizesRecipe({items,ingredients,conversions,pantry,draftSizes,focusedSizeId,onFocusedSizeChange,onDraftDirtyChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void;onDraftDirtyChange?:(dirty:boolean)=>void}){
  const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),menu=useTranslations("Menu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
  const [active,setActive]=useState<string[]>(items.filter(i=>i.active).map(i=>i.id));
  const activeIds=items.filter(i=>i.active).map(i=>i.id).join("|");
@@ -53,6 +53,10 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  });
  const mobileColumns={gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,selectedItems.length))},minmax(0,1fr))`};
  const invalidQuantity=Object.values(quantityInputs).some(value=>value.trim()===""||!Number.isFinite(Number(value))||Number(value)<=0);
+ // Preserve drafts when the adjacent product card changes a price or serving status.
+ const editorDraftDirty=hasUnsavedChanges||invalidQuantity||Object.keys(calibration).length>0||
+  Object.keys(densityInputs).length>0||newPantry||add!==null;
+ useEffect(()=>{onDraftDirtyChange?.(editorDraftDirty);},[editorDraftDirty,onDraftDirtyChange]);
  function requiresDensity(base:"g"|"ml"|"each",unit:RecipeDisplayUnit){
   return (base==="ml"&&unit==="g")||(base==="g"&&(unit==="ml"||unit==="fl_oz"));
  }
