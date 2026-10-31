@@ -30,7 +30,7 @@ function safeText(value:string,max=160):string|null{
   const s=Array.from(value,ch=>{
     const code=ch.codePointAt(0)??0;
     return code<32||code===127?" ":ch;
-  }).join("").replace(/[\\*_~\`<>]/g,"").replace(/\s+/g," ").trim();
+  }).join("").replace(/[\\*_~`<>]/g,"").replace(/\s+/g," ").trim();
   return s.length>0&&s.length<=max?s:null;
 }
 function isDay(day:string):boolean{
