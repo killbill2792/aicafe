@@ -157,7 +157,7 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
 /** Opens over the same Supervisor conversation. Reads saved PR 3 facts and loop plans only. */
 export default function SavedEventsCard({locale,chatDisabled,compact=false,onChatAboutDay}:{
   locale:Locale;chatDisabled:boolean;compact?:boolean;
-  onChatAboutDay:(date:string,title:string,existingThreadId?:string)=>void;
+  onChatAboutDay:(date:string,title:string,eventId?:string,existingThreadId?:string)=>void;
 }){
   const t=useMemo(()=>createTranslator({locale,messages:{en,es,ar}[locale],namespace:"EventsPanel"}) as unknown as T,[locale]);
   const [timeline,setTimeline]=useState<Timeline|null>(null);
@@ -215,12 +215,13 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const calendarDays=Array.from({length:weekday+monthLength},(_,i)=>i<weekday?null:
     calendarMonth+"-"+String(i-weekday+1).padStart(2,"0"));
   const button="min-h-12 rounded-xl px-4 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
-  const chat=(date:string)=>{
+  const chat=(date:string,event?:CafeEvent)=>{
     if(chatDisabled)return;
-    const matched=eventsOn(timeline.events,date);
     const dayPlan=planOn(timeline.plans,date);
-    onChatAboutDay(date,(matched[0]?.name??dayPlan?.summary??date).slice(0,120),
-      dayPlan?.threadId);
+    // An event card binds its own stable identity. A whole-day report remains
+    // day-scoped: never silently substitute the first of several events.
+    onChatAboutDay(date,event?.name??dayPlan?.summary??date,event?.id,
+      event?undefined:dayPlan?.threadId);
     setPanel(null);
   };
   const listDates=eventListDays(timeline,tab,affectsOnly,sortByDate);
@@ -334,7 +335,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                   <VenueMapLink address={event.venueAddress} t={t}/>
                   {sourceUrl(event.sourceUrl)&&<a href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer"
                     className="inline-flex min-h-12 items-center text-accent-text underline">{t("source")}</a>}
-                  <button type="button" onClick={()=>chat(date)}
+                  <button type="button" onClick={()=>chat(date,event)}
                     className={button+" ms-3 text-accent-text underline"}>{t("chatAbout")}</button>
                 </article>)}
                 {saved.length>3&&<button type="button" className={button+" bg-surface2"}
@@ -356,6 +357,8 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
               <VenueMapLink address={event.venueAddress} t={t}/>
               {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
                 href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
+              <button type="button" onClick={()=>chat(chosen,event)} disabled={chatDisabled}
+                className={button+" ms-3 text-accent-text underline"}>{t("chatAbout")}</button>
             </article>)}
             {plan?<section className="space-y-4 rounded-2xl border border-line bg-card p-4" aria-label={t("savedInsight")}>
               <div>
