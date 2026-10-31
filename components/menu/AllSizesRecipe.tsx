@@ -78,13 +78,23 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   .map(line=>[line.ingredientId,line.ingredientName] as const))).entries()];
  // A density-only edit changes the saved physical quantity even if the
  // visible amount/unit stayed unchanged. Guard every size/serving switch.
- const hasUnsavedChanges=hasPendingRecipeMeasurements(densityInputs,calibration)||
-  Object.keys(replacements).length>0||items.some(item=>
+ const recipeLineDraftDirty=Object.keys(replacements).length>0||items.some(item=>
   JSON.stringify(orderDrafts[item.id])!==JSON.stringify(item.recipe.map(line=>line.ingredientId)))
   ||Object.entries(drafts).some(([key,d])=>{
   for(const item of items){for(const line of item.recipe){if(key===k(item.id,line.ingredientId))return d.removed||d.quantity!==(line.displayQuantity??line.quantity)||d.unit!==(line.displayUnit??line.baseUnit);}}
   return false;
  });
+ // Full draft guard for size navigation: even the pending new-row pump/shot
+ // conversion must not be silently discarded by switching to another size.
+ const hasUnsavedChanges=recipeLineDraftDirty||hasPendingRecipeMeasurements(densityInputs,calibration);
+ // Append is different: its own custom calibration is the input being saved,
+ // not an unsaved edit to the previously stored recipe. Ignore ONLY this one
+ // key, while still blocking edits to any existing row or other conversion.
+ const newRowCalibrationKey=add&&needsIngredientConversion(newRowUnit)&&
+  selectedItems.every(item=>!item.recipe.some(line=>line.ingredientId===add))
+   ?add+":"+newRowUnit:undefined;
+ const appendBlockedByDrafts=recipeLineDraftDirty||
+  hasPendingRecipeMeasurements(densityInputs,calibration,newRowCalibrationKey);
  const mobileColumns={gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,selectedItems.length))},minmax(0,1fr))`};
  const invalidQuantity=Object.values(quantityInputs).some(value=>value.trim()===""||!Number.isFinite(Number(value))||Number(value)<=0);
  // Preserve drafts when the adjacent product card changes a price or serving status.
@@ -227,7 +237,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   setSaved(true);setToast("");router.refresh();
  });}
  function append(){if(!add||!selectedItems[0]||selectedItems.length===0||!(Number(newRowAmount)>0))return;
-   if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeAddingIngredient"));return;}
+   if(appendBlockedByDrafts||invalidQuantity){setError(t("saveBeforeAddingIngredient"));return;}
   const ingredient=ingredients.find(i=>i.id===add);
   if(ingredient&&requiresDensity(ingredient.baseUnit,newRowUnit)&&!(Number(newRowDensity)>0&&Number(newRowDensity)<=5)){setError(t("densityNeeded"));return;}
   setError("");start(async()=>{
