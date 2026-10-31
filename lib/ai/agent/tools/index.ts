@@ -101,7 +101,7 @@ export type AgentToolName = keyof typeof schemas;
  * strict schema accepts a target must declare the corresponding field here;
  * creation inputs have explicit exemptions below. */
 export const resolverCoverage:Partial<Record<AgentToolName,readonly string[]>>={
-  get_profit:["period"],get_sales:["period"],get_menu_items:["query"],
+  get_profit:["period"],get_sales:["period"],get_break_even:["period"],get_menu_items:["query"],
   get_labor:["period"],get_team:["name"],get_shift_cost:["employee_id"],
   get_expenses:["period","category"],get_cost_summary:["period"],
   get_item_sales:["period","query"],get_price_recommendation:["itemId"],
