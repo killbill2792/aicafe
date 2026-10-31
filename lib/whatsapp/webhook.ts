@@ -1,7 +1,7 @@
 import {createHash,createHmac,timingSafeEqual} from "node:crypto";
 import {BUTTONS,normalizeRecipient} from "./transport";
 export const MAX_WEBHOOK_BYTES=128*1024;
-const idPattern=/^wamid\.[A-Za-z0-9_.:-]{1,240}$/;
+const idPattern=/^wamid\.[A-Za-z0-9_.:-]{1,240}={0,2}$/;
 const allowedButtons=new Set<string>(BUTTONS.map(b=>b.payload));
 type RecordValue=Record<string,unknown>;
 const object=(v:unknown):v is RecordValue=>typeof v==="object"&&v!==null&&!Array.isArray(v);
