@@ -95,6 +95,13 @@ export function eventChatTarget(date:string,event?:Pick<CafeEvent,"id"|"name">,
 }
 const planOn=(plans:readonly Plan[],date:string)=>
   plans.find(p=>p.startDate<=date&&p.endDate>=date);
+/** A dated event can have multiple proposals. Never show another event's or day's
+ * AI analysis; prefer the owner-approved choice over a draft on the same date. */
+export function eventPlanFor(plans:readonly Plan[],eventId:string,date:string):Plan|undefined{
+  const matching=plans.filter(p=>p.eventIds?.includes(eventId)&&
+    p.startDate<=date&&p.endDate>=date);
+  return matching.find(p=>["approved","committed","manual_confirmed"].includes(p.status))??matching[0];
+}
 const actionsFor=(plan:Plan|undefined):Action[]=>Array.isArray(plan?.actions)?
   plan.actions.filter((a):a is Action=>typeof a==="object"&&a!==null&&
     typeof a.action==="string"&&typeof a.reason==="string"&&typeof a.area==="string"):[];
@@ -293,9 +300,11 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const openEvent=(event:CafeEvent,viewDate:string)=>openDay(eventDetailDay(event,viewDate),event.id);
   const openEvents=(next:Tab="upcoming")=>{setPanel("events");setSelected(null);setSelectedEventId(null);setTab(next);setMonth(today.slice(0,7));};
   const chosen=selected??today;
-  const plan=planOn(timeline.plans,chosen);
   const allDayEvents=eventsOn(timeline.events,chosen);
   const selectedEvent=selectedSavedEvent(timeline.events,chosen,selectedEventId);
+  const plan=selectedEventId?
+    (selectedEvent?eventPlanFor(timeline.plans,selectedEvent.id,chosen):undefined):
+    planOn(timeline.plans,chosen);
   const dayEvents=selectedEvent?[selectedEvent]:allDayEvents;
   const calendarMonth=month??today.slice(0,7);
   const calendarFirst=calendarMonth+"-01";
@@ -406,7 +415,8 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                   {dateLabel(date,locale,"long")}{dayPlan?" · "+t("hasPlan"):""}
                 </button>
                 {saved.map(event=><SavedEventListCard key={event.id} event={event} locale={locale} t={t}
-                  hasAnalysis={Boolean(dayPlan)} onOpen={event=>openEvent(event,date)}/>)}
+                  hasAnalysis={Boolean(eventPlanFor(timeline.plans,event.id,date))}
+                  onOpen={event=>openEvent(event,date)}/>)}
                 {dayPlan?.summary&&<p className="rounded-xl bg-surface2 p-3 text-[17px]" dir="auto">{dayPlan.summary}</p>}
                 {tab==="past"&&dayPlan&&<EventReportCard report={dayPlan.report}
                   status={dayPlan.reportStatus} currency={timeline.currency??null}

@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,SavedEventListCard,selectedSavedEvent,eventDetailDay,SavedEventAnalysis} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,SavedEventListCard,selectedSavedEvent,eventDetailDay,eventPlanFor,SavedEventAnalysis} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -259,5 +259,40 @@ describe("saved AI analysis inside a selected event detail",()=>{
     const html=renderToStaticMarkup(createElement(SavedEventAnalysis,{...props,plan:undefined}));
     expect(html).toContain("No saved AI analysis for this event yet");
     expect(html).not.toContain("Expect late-night pedestrian traffic");
+  });
+});
+
+describe("date- and ID-scoped event AI analysis",()=>{
+  const plan=(id:string,startDate:string,endDate:string,status="draft")=>({
+    ...fixture.plans[0],proposalId:id,startDate,endDate,eventIds:[id],
+    status,summary:id+" explanation",
+  });
+  it("never attaches another same-day event's AI plan to the tapped card",()=>{
+    const first=plan("first","2026-10-31","2026-10-31");
+    const second=plan("second","2026-10-31","2026-10-31");
+    expect(eventPlanFor([first,second],"first","2026-10-31")).toEqual(first);
+    expect(eventPlanFor([first,second],"second","2026-10-31")).toEqual(second);
+    expect(eventPlanFor([first,second],"third","2026-10-31")).toBeUndefined();
+    expect(eventPlanFor([{...first,eventIds:undefined}],"first","2026-10-31"))
+      .toBeUndefined();
+  });
+  it("keeps each day of a multi-day event's saved analysis separate",()=>{
+    const saturday={...plan("festival","2026-10-31","2026-10-31"),summary:"Saturday"};
+    const sunday={...plan("festival","2026-11-01","2026-11-01"),
+      proposalId:"sunday",summary:"Sunday"};
+    expect(eventPlanFor([sunday,saturday],"festival","2026-10-31")?.summary)
+      .toBe("Saturday");
+    expect(eventPlanFor([sunday,saturday],"festival","2026-11-01")?.summary)
+      .toBe("Sunday");
+    expect(eventPlanFor([sunday,saturday],"festival","2026-10-30"))
+      .toBeUndefined();
+    expect(eventDetailDay(event("festival","2026-10-30","2026-11-02"),
+      "2026-10-31")).toBe("2026-10-31");
+  });
+  it("preserves the approved event plan instead of another draft",()=>{
+    const draft=plan("festival","2026-10-31","2026-10-31");
+    const committed={...draft,status:"committed",proposalId:"approved"};
+    expect(eventPlanFor([draft,committed],"festival","2026-10-31"))
+      .toEqual(committed);
   });
 });
