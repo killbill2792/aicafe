@@ -91,6 +91,38 @@ export function densityFromStoredRecipe(baseUnit:BaseUnit,baseQuantity:number,di
 }
 
 
+/** Convert a saved recipe line for an ingredient replacement without transferring the
+ * ORIGINAL ingredient's density or operational-unit calibration to the replacement.
+ *
+ * When both ingredients share a canonical base unit, preserve the saved physical
+ * base quantity exactly. Express it in the destination's existing display unit
+ * only if the destination itself can convert it; otherwise display its base unit.
+ * Thus saved 103 g / canonical 100 ml milk -> new milk 100 ml, not 103 ml or a
+ * guessed 103 g of new milk. A calibrated pump changes count, not base quantity.
+ * Cross-base swaps remain explicit: the saved display unit must be directly
+ * convertible with destination conversions, or we fail closed.
+ */
+export function replacementRecipeLine(
+  storedBaseQuantity:number,
+  displayUnit:RecipeDisplayUnit,
+  displayQuantity:number,
+  sourceBaseUnit:BaseUnit,
+  targetBaseUnit:BaseUnit,
+  targetConversions:IngredientUnitConversion[]=[]
+):{quantity:number;displayUnit:RecipeDisplayUnit;displayQuantity:number}|null{
+ if(!Number.isFinite(storedBaseQuantity)||storedBaseQuantity<=0||
+    !Number.isFinite(displayQuantity)||displayQuantity<=0)return null;
+ if(sourceBaseUnit===targetBaseUnit){
+  const newDisplayQuantity=reexpressRecipeQuantity(targetBaseUnit,displayUnit,
+    storedBaseQuantity,targetBaseUnit,targetConversions);
+  return {quantity:storedBaseQuantity,
+    displayUnit:newDisplayQuantity===null?targetBaseUnit:displayUnit,
+    displayQuantity:newDisplayQuantity===null?storedBaseQuantity:newDisplayQuantity};
+ }
+ const converted=toBaseUnitQuantity(displayUnit,displayQuantity,targetBaseUnit,targetConversions);
+ return converted===null?null:{quantity:converted,displayUnit,displayQuantity};
+}
+
 /** Purchase packs are defined against an ingredient's canonical g/ml/each unit. The same
  * bottle label "oz" means *fluid* ounces only for liquids and *weight* ounces for solids. */
 export type PackUnit = "gal" | "qt" | "l" | "ml" | "fl_oz" | "lb" | "kg" | "oz_wt" | "g" | "each" | "dozen" | `case(${number})` | "oz";
