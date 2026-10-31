@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {hasPendingRecipeMeasurements,planRecipeSizeSwitch} from "./recipeDraftGuard";
+import {hasPendingRecipeMeasurements,planRecipeSizeSwitch,resolveRecipeCalibration} from "./recipeDraftGuard";
 import {toBaseUnitQuantity} from "@/lib/calc/recipeUnits";
 
 describe("recipe size-switch draft guard",()=>{
@@ -48,5 +48,27 @@ describe("density-only change, navigation and save reconciliation",()=>{
  });
  it("keeps same-size actions available without changing the focused recipe",()=>{
   expect(planRecipeSizeSwitch("size-A","size-A",true)).toEqual({focusedSize:"size-A",blocked:false});
+ });
+});
+
+describe("Add Ingredient calibration is not an existing-recipe draft",()=>{
+ it("allows a custom unsuggested pump/shot factor to be validated and saved",()=>{
+  const pendingNewRowFactor="6.75";
+  // New-row state is separate; the recipe editor's protection still sees no
+  // changes to already-saved recipe lines, so the Add action may execute.
+  expect(hasPendingRecipeMeasurements({},{})).toBe(false);
+  expect(resolveRecipeCalibration(pendingNewRowFactor,null)).toBe(6.75);
+  expect(resolveRecipeCalibration("8",7.5)).toBe(8);
+  expect(resolveRecipeCalibration(undefined,7.5)).toBe(7.5);
+ });
+ it("rejects empty or unsafe calibration without silently inserting a guessed dose",()=>{
+  for(const raw of ["","0","-1","bad"]){expect(resolveRecipeCalibration(raw,null)).toBeNull();}
+  expect(resolveRecipeCalibration(undefined,null)).toBeNull();
+ });
+ it("continues blocking an unrelated existing-recipe calibration or density edit",()=>{
+  const pendingNewRowFactor="6.75";
+  expect(resolveRecipeCalibration(pendingNewRowFactor,null)).toBe(6.75);
+  expect(hasPendingRecipeMeasurements({},{"existing-syrup:pump":"7"})).toBe(true);
+  expect(hasPendingRecipeMeasurements({"12oz:milk":"1.08"},{})).toBe(true);
  });
 });
