@@ -135,10 +135,14 @@ const canonicalDate=(raw:unknown):unknown=>{
   return !Number.isNaN(time.getTime())&&time.toISOString().slice(0,10)===formatted?formatted:raw;
 };
 const optionalClock=(raw:unknown):unknown=>typeof raw==="string"&&/^([01]\d|2[0-3]):[0-5]\d$/u.test(raw)?raw:null;
+/** Optional metadata does not invalidate a sourced event if the model uses invalid types. */
+const optionalText=(raw:unknown):string|null=>typeof raw==="string"?raw:null;
 const normalizedEvent=(row:Record<string,unknown>):Record<string,unknown>=>{
   const venue=first(row,["venue","locationName","location_name"]);
   const location=record(row.location)?row.location:null;
   const date=first(row,["startDate","start_date","date","date_start","eventDate","event_date"]);
+  const venueName=typeof venue==="string"?venue:
+    ((record(venue)?first(venue,["name","title"]):null)??first(location??{},["name","venue"]));
   return {
     name:first(row,["name","title","eventName","event_name"]),
     startDate:canonicalDate(date),
@@ -146,13 +150,14 @@ const normalizedEvent=(row:Record<string,unknown>):Record<string,unknown>=>{
       const end=canonicalDate(first(row,["endDate","end_date"])??null);
       return typeof end==="string"&&isoDate.safeParse(end).success?end:null;
     })(),
-    venue:typeof venue==="string"?venue:(record(venue)?first(venue,["name","title"]):null)??first(location??{},["name","venue"]),
-    venueAddress:first(row,["venueAddress","venue_address","address"])??first(location??{},["address"]),
+    venue:optionalText(venueName),
+    venueAddress:optionalText(first(row,["venueAddress","venue_address","address"])??
+      first(location??{},["address"])),
     startTime:optionalClock(first(row,["startTime","start_time"])),
     endTime:optionalClock(first(row,["endTime","end_time"])),
-    distance:first(row,["distance"]),kind:first(row,["kind","type","category"]),
+    distance:optionalText(first(row,["distance"])),kind:first(row,["kind","type","category"]),
     expectedCrowd:first(row,["expectedCrowd","expected_crowd"]),
-    sourceUrl:verifiedSource(row),sourceName:first(row,["sourceName","source_name"]),
+    sourceUrl:verifiedSource(row),sourceName:optionalText(first(row,["sourceName","source_name"])),
   };
 };
 /** Privacy-safe reason codes. Do not log the actual event, source or location. */

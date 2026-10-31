@@ -67,6 +67,24 @@ describe("parsing searched events",()=>{
       })]);
     }
   });
+  it("preserves a source-backed event despite malformed optional model metadata",()=>{
+    const text=JSON.stringify({events:[{
+      name:"Halloween market",startDate:"2026-10-31",sourceUrl:"https://city.example/halloween",
+      venue:99,venueAddress:{street:"unknown"},startTime:"9am",endTime:"evening",
+      endDate:"TBD",distance:{miles:2},sourceName:["city source"],
+    }]});
+    expect(parseNearbyEvents(text,"2026-10-30","2026-11-05")).toEqual([
+      expect.objectContaining({
+        name:"Halloween market",startDate:"2026-10-31",endDate:"2026-10-31",
+        sourceUrl:"https://city.example/halloween",venue:null,venueAddress:null,
+        startTime:null,endTime:null,distance:null,sourceName:null,
+      }),
+    ]);
+    expect(parseNearbyEvents(JSON.stringify({events:[{
+      name:"Unverified",startDate:"2026-10-31",sourceUrl:null,
+    }]}),"2026-10-30","2026-11-05")).toBeNull();
+  });
+
   it("keeps one valid sourced row even when other rows have wrong shape",()=>{
     const text=JSON.stringify({events:[
       {title:"Unsourced street festival",date:"2026-10-31"},
