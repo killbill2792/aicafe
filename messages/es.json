@@ -3673,6 +3673,7 @@
     "retry": "Reintentar",
     "readInsights": "Ver análisis del evento",
     "openEvent": "Abrir {title} el {date}",
+    "viewEventDetails": "Ver detalles del evento",
     "dayWideInsight": "Este análisis de IA guardado abarca todo el día {date}. Puede incluir otros eventos de esa fecha.",
     "noEventInsight": "Aún no hay un análisis de IA guardado para este evento. Puedes preguntarle al Supervisor sobre este evento en el chat.",
     "savedInsight": "Análisis de IA del evento",
