@@ -1,6 +1,7 @@
 "use client";
 
 import {useState,useTransition} from "react";
+import {useLocale} from "next-intl";
 import {useRouter} from "@/i18n/navigation";
 import {savePackPrice,updatePantryIngredient} from "@/lib/actions/pantry";
 import {packBaseQuantity,type BaseUnit} from "@/lib/calc/recipeUnits";
@@ -13,8 +14,8 @@ type PantryItem={
  costPerBaseMicros:number|null;
 };
 function PantryTableRow({item,t}:{item:PantryItem;t:Record<string,string>}){
- const router=useRouter(),[pending,start]=useTransition();
- const initialPack=purchasePackLabel(item.packQuantity,item.packUnit,item.baseUnit);
+ const router=useRouter(),locale=useLocale(),[pending,start]=useTransition();
+ const initialPack=purchasePackLabel(item.packQuantity,item.packUnit,item.baseUnit,locale);
  const [name,setName]=useState(item.name);
  const [pack,setPack]=useState(initialPack);
  const [price,setPrice]=useState(item.packCostCents===null?"":(item.packCostCents/100).toFixed(2));
