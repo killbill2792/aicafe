@@ -15,7 +15,7 @@ import { RECIPE_TEMPLATES_BY_KEY, recipeSizesFor, templateRecipeForSize, scaledT
 type Db = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 type Scope = { db: Db; businessId: string; today: string };
 type PantryFailure = { ok: false; error: string; missingPantry?: string[]; missingConversions?: string[] };
-type PantrySuccess = { ok: true; itemIds?: string[]; addedKeys?: string[] };
+type PantrySuccess = { ok: true; id?: string; itemIds?: string[]; addedKeys?: string[] };
 type PantryResult = PantryFailure | PantrySuccess;
 type Ingredient = { id: string; name: string; base_unit: BaseUnit; starter_key: string | null; category: string | null };
 type StoredLine = { menu_item_id: string; ingredient_id: string; quantity: number; display_unit: string | null; display_quantity: number | null };
