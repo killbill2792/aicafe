@@ -21,7 +21,7 @@ import {toBaseUnitQuantity} from "@/lib/calc/recipeUnits";
 type Draft={unit:RecipeDisplayUnit;quantity:number;removed:boolean};
 function k(item:string,ingredient:string){return item+":"+ingredient;}
 export default function AllSizesRecipe({items,ingredients,conversions,pantry,draftSizes,focusedSizeId,onFocusedSizeChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void}){
- const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
+ const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),menu=useTranslations("Menu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
  const [active,setActive]=useState<string[]>(items.filter(i=>i.active).map(i=>i.id));
  const [focusedSize,setFocusedSize]=useState(focusedSizeId&&items.some(i=>i.id===focusedSizeId)?focusedSizeId:items.find(i=>i.active)?.id??items[0]?.id??"");
  const [searchIngredient,setSearchIngredient]=useState("");
@@ -263,7 +263,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   {draftSizes.map(draft=><button key={draft.id} type="button" onClick={()=>{setPriceDraft(draft.id);setDraftPrice("");}} className="min-h-12 rounded-full border border-dashed border-warn px-4">{draft.sizeLabel??draft.name}</button>)}
   <button type="button" onClick={()=>setSizeDialog(true)} className="min-h-12 rounded-full border border-dashed border-accent px-4 text-accent-text">{t("addSize")}</button>
  </div>
- <button type="button" disabled={pending||!selectedItems[0]} onClick={()=>selectedItems[0]&&toggleSize(selectedItems[0])} className="mb-3 min-h-12 rounded-xl border border-line px-4 text-[17px]">{active.includes(focusedSize)?units("remove"):units("add")}</button>
+ <button type="button" disabled={pending||!selectedItems[0]} onClick={()=>selectedItems[0]&&toggleSize(selectedItems[0])} className="mb-3 min-h-12 rounded-xl border border-line px-4 text-[17px]">{active.includes(focusedSize)?menu("noLongerServing"):menu("serveAgain")}</button>
  <div className="mb-3 flex flex-wrap gap-2"><button type="button" onClick={()=>beginAddRow("top")} className="min-h-12 rounded-xl border border-line bg-card px-4 font-bold text-accent-text"><Plus className="me-1 inline size-4"/>{t("addRecipeRow")}</button><button type="button" onClick={()=>setNewPantry(v=>!v)} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent"><Plus className="me-1 inline size-4"/>{t("addPantryItem")}</button></div>
  {newPantry&&<div className="mb-3"><NewPantryInlineRow onCancel={()=>setNewPantry(false)} onCreated={async created=>{
   if(!selectedItems[0]){router.refresh();return;}
