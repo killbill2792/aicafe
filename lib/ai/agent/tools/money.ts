@@ -250,6 +250,18 @@ export const moneyTools={
          return canonicalBreakEvenAnswer(breakEvenSnapshotInputs(canonicalSnapshot,options),
            ctx.asOf,ctx.locale,economics.openDaysBasis??"calendar");
        }
+       // A precomputed canonical core result is the same one-path monetary answer.
+       // It can support a standard monthly read without requiring the entire
+       // underlying snapshot. Never silently ignore an owner what-if or treat
+       // today's/MTD calculations as a month-average result.
+       const noOverrides=owner.ownerNetSalesCents==null&&owner.ownerSalesDays==null&&
+         owner.ownerIngredientPackagingPercent==null&&owner.ownerProcessingFeePercent==null&&
+         owner.ownerOpenDaysPerMonth==null&&provided==null;
+       if(canonicalBreakEven&&noOverrides&&
+          (owner.period==null||owner.period==="month")){
+         return canonicalBreakEvenAnswer(canonicalBreakEven,ctx.asOf,ctx.locale,
+           economics.openDaysBasis??"calendar");
+       }
       }
       // A missing canonical snapshot is missing financial evidence, not permission
       // to run an alternate break-even formula or synthesize fixed daily costs.
