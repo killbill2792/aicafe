@@ -60,8 +60,14 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  function requiresDensity(base:"g"|"ml"|"each",unit:RecipeDisplayUnit){
   return (base==="ml"&&unit==="g")||(base==="g"&&(unit==="ml"||unit==="fl_oz"));
  }
- function densityFor(item:MenuItemForEdit,line:MenuItemForEdit["recipe"][number],unit:RecipeDisplayUnit):number|undefined{
-  if(!requiresDensity(line.baseUnit,unit))return undefined;
+ function effectiveIngredient(item:MenuItemForEdit,line:MenuItemForEdit["recipe"][number]){
+  const id=replacements[k(item.id,line.ingredientId)]??line.ingredientId;
+  return {id,name:ingredients.find(i=>i.id===id)?.name??line.ingredientName};
+ }
+ function densityFor(item:MenuItemForEdit,line:MenuItemForEdit["recipe"][number],unit:RecipeDisplayUnit,sourceUnit:RecipeDisplayUnit=unit):number|undefined{
+  // A conversion may need density to interpret its SOURCE, even if its destination
+  // is the base unit. E.g. 103 g -> 100 ml milk needs 1.03 g/ml.
+  if(!requiresDensity(line.baseUnit,unit)&&!requiresDensity(line.baseUnit,sourceUnit))return undefined;
   const key=k(item.id,line.ingredientId),userInput=densityInputs[key];
   const replacing=Boolean(replacements[key]&&replacements[key]!==line.ingredientId);
   const existing=densityFromStoredRecipe(line.baseUnit,line.quantity,(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,line.displayQuantity??line.quantity);
@@ -71,11 +77,20 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   const draft=drafts[k(item.id,line.ingredientId)],unit=(draft?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit;
   return !draft?.removed&&requiresDensity(line.baseUnit,unit)&&densityFor(item,line,unit)===undefined;
  }));
- function conversionFor(id:string,unit:RecipeDisplayUnit):IngredientUnitConversion[]{
-  const saved=conversions[id]??[],raw=calibration[id+":"+unit];
-  if(!needsIngredientConversion(unit)||raw===undefined)return saved;
-  const factor=Number(raw);
-  return raw!==""&&Number.isFinite(factor)&&factor>0?[...saved.filter(c=>c.unit!==unit),{unit,baseUnitsPerUnit:factor}]:saved.filter(c=>c.unit!==unit);
+ function conversionFor(id:string):IngredientUnitConversion[]{
+  // Both source and destination operational units must use the selected
+  // ingredient's saved or pending calibration, never the replaced ingredient's.
+  const latest=[...(conversions[id]??[])];
+  for(const unit of ["shot","pump"] as const){
+   const raw=calibration[id+":"+unit];
+   if(raw===undefined)continue;
+   const previous=latest.findIndex(c=>c.unit===unit);
+   if(previous>=0)latest.splice(previous,1);
+   const factor=Number(raw);
+   if(raw.trim()!==""&&Number.isFinite(factor)&&factor>0)
+    latest.push({unit,baseUnitsPerUnit:factor});
+  }
+  return latest;
  }
  function measureDefault(id:string,name:string,base:"g"|"ml"|"each",unit:RecipeDisplayUnit){
   if(!needsIngredientConversion(unit))return null;
@@ -88,7 +103,9 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  async function saveMeasurements(extra?:{id:string;name:string;base:"g"|"ml"|"each";unit:RecipeDisplayUnit}){
   const entries:Array<{id:string;name:string;base:"g"|"ml"|"each";unit:RecipeDisplayUnit}>=selectedItems.flatMap(item=>item.recipe.flatMap(line=>{
    const draft=drafts[k(item.id,line.ingredientId)];
-   return draft&&!draft.removed&&needsIngredientConversion(draft.unit)?[{id:line.ingredientId,name:line.ingredientName,base:line.baseUnit,unit:draft.unit}]:[];
+   if(!draft||draft.removed||!needsIngredientConversion(draft.unit))return [];
+    const ingredient=effectiveIngredient(item,line);
+    return [{id:ingredient.id,name:ingredient.name,base:line.baseUnit,unit:draft.unit}];
   }));
   if(extra)entries.push(extra);
   const once=new Set<string>();
@@ -117,7 +134,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
     ingredientId:line.ingredientId,originalBaseQuantity:line.quantity,baseUnit:line.baseUnit,
     costCents:currentCost,displayUnit:d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,
     displayQuantity:d?.quantity??line.displayQuantity??line.quantity,
-    removed:d?.removed??false,conversions:conversionFor(line.ingredientId,d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit),
+    removed:d?.removed??false,conversions:conversionFor(effectiveIngredient(item,line).id),
     densityGramsPerMl:densityFor(item,line,(d?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit),
    };
   }));
@@ -179,7 +196,19 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
     item.recipe.some(l=>l.ingredientId===target&&l.ingredientId!==id)){
     setError(t("duplicateRecipeIngredient"));return;
   }
-  const key=k(item.id,id);
+  const key=k(item.id,id),current=drafts[key]??{unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,
+   quantity:line.displayQuantity??line.quantity,removed:false};
+  // Preserve the physical base quantity across calibrated pump/shot swaps.
+  // A 10 ml pump cannot silently turn into a 5 ml pump.
+  if(target!==id&&needsIngredientConversion(current.unit)){
+   const entered=Number(quantityInputs[key]??String(current.quantity));
+   const base=reexpressRecipeQuantity(current.unit,line.baseUnit,entered,line.baseUnit,conversionFor(id));
+   const converted=base===null?null:reexpressRecipeQuantity(line.baseUnit,current.unit,base,line.baseUnit,conversionFor(target));
+   if(converted===null||!(converted>0)){setError(t("measureNeeded"));return;}
+   const amount=Number(converted.toFixed(4));
+   setDrafts(prev=>({...prev,[key]:{...current,quantity:amount}}));
+   setQuantityInputs(prev=>({...prev,[key]:String(amount)}));
+  }
   // Typed/stored density was for the old ingredient; clear it on every swap.
   setDensityInputs(prev=>Object.fromEntries(Object.entries(prev).filter(([entry])=>entry!==key)));
   setReplacements(prev=>target===id?Object.fromEntries(Object.entries(prev).filter(([entry])=>entry!==key)):{...prev,[key]:target});
@@ -243,6 +272,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  if(!line||draft?.removed)return <p key={item.id} className="p-2 text-center text-ink-muted">—</p>;
  const actual=draft??{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false};
  const key=k(item.id,id),cost=prices[item.id]?.lineCosts?.[id]??null;
+ const effective=effectiveIngredient(item,line);
  return <div key={item.id} className="min-w-0"><div className="flex min-w-0 gap-1 rounded-xl bg-paper p-1">
   <input type="number" inputMode="decimal" min="0.0001" step="any" aria-label={t("editQuantityForSize",{ingredient:line.ingredientName,size:item.sizeLabel??item.name})}
    value={quantityInputs[key]??String(actual.quantity)} onChange={e=>{
@@ -251,11 +281,13 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   }} className="min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-center text-[17px] font-bold"/>
   <select aria-label={t("unit")} value={actual.unit} onChange={e=>{
    const unit=e.target.value as RecipeDisplayUnit;
-   const suggested=needsIngredientConversion(unit)?measureDefault(id,line.ingredientName,line.baseUnit,unit):null;
-   const density=densityFor(item,line,unit);
-   const existing=conversionFor(id,actual.unit);
-   const all=unit!==actual.unit&&needsIngredientConversion(unit)&&suggested!==null
-     ?[...existing.filter(c=>c.unit!==unit),{unit,baseUnitsPerUnit:suggested}]:existing;
+   const existing=conversionFor(effective.id);
+   const calibrated=existing.find(c=>c.unit===unit)?.baseUnitsPerUnit??null;
+   const suggested=needsIngredientConversion(unit)
+     ?(calibrated??measureDefault(effective.id,effective.name,line.baseUnit,unit)):null;
+   const density=densityFor(item,line,unit,actual.unit);
+   const all=unit!==actual.unit&&needsIngredientConversion(unit)&&suggested!==null&&!existing.some(c=>c.unit===unit)
+     ?[...existing,{unit,baseUnitsPerUnit:suggested}]:existing;
    const entered=Number(quantityInputs[key]??String(actual.quantity));
    const translated=reexpressRecipeQuantity(actual.unit,unit,entered,line.baseUnit,all,density);
    // Invalid/uncalibrated conversions must not silently reuse the old number.
@@ -263,8 +295,8 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
    setDrafts(prev=>({...prev,[key]:{quantity:amount,unit,removed:false}}));
    setQuantityInputs(prev=>({...prev,[key]:translated===null?"":String(amount)}));
    setSaved(false);
-   if(needsIngredientConversion(unit)&&!(conversions[id]??[]).some(c=>c.unit===unit)&&suggested!==null)
-    setCalibration(prev=>({...prev,[id+":"+unit]:String(suggested)}));
+   if(needsIngredientConversion(unit)&&!(conversions[effective.id]??[]).some(c=>c.unit===unit)&&suggested!==null)
+    setCalibration(prev=>({...prev,[effective.id+":"+unit]:String(suggested)}));
    if(requiresDensity(line.baseUnit,unit)&&densityInputs[key]===undefined&&density!==undefined)
     setDensityInputs(prev=>({...prev,[key]:String(density)}));
    if(translated===null)setError(t("measureNeeded"));else setError("");
@@ -278,11 +310,11 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
      className="min-h-12 w-24 rounded-lg border border-line bg-card px-2 text-[17px]"/>
    <span>{t("densityConversionSuffix")} · {t("measureSuggested")}</span>
   </label>}
-  {needsIngredientConversion(actual.unit)&&pendingMeasure(id,actual.unit)&&<label className="mt-1 flex flex-wrap items-center gap-1 text-[13px] text-ink-muted">
+  {needsIngredientConversion(actual.unit)&&pendingMeasure(effective.id,actual.unit)&&<label className="mt-1 flex flex-wrap items-center gap-1 text-[13px] text-ink-muted">
    <span>{t("measurePerUnit",{unit:unitLabel(actual.unit)})}</span>
    <input type="number" inputMode="decimal" min=".000001" step="any" aria-label={t("measureValue",{unit:unitLabel(actual.unit),ingredient:line.ingredientName})}
-    value={calibration[id+":"+actual.unit]??String(measureDefault(id,line.ingredientName,line.baseUnit,actual.unit)??"")}
-    onChange={e=>setCalibration(prev=>({...prev,[id+":"+actual.unit]:e.target.value}))}
+    value={calibration[effective.id+":"+actual.unit]??String(measureDefault(effective.id,effective.name,line.baseUnit,actual.unit)??"")}
+    onChange={e=>setCalibration(prev=>({...prev,[effective.id+":"+actual.unit]:e.target.value}))}
     className="min-h-12 w-24 rounded-lg border border-line bg-card px-2 text-[17px]"/>
    <span>{line.baseUnit==="g"?units("recipeUnitG"):line.baseUnit==="ml"?units("recipeUnitMl"):units("recipeUnitEach")} · {t("measureSuggested")}</span>
   </label>}
