@@ -1,4 +1,9 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
+import {createOwnerScopedCafeTools} from "@/lib/ai/cafeTools.server";
+import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
+import {TeamRulesService} from "@/lib/ai/policies/service";
+import {SupabaseTeamRulesRepository} from "@/lib/ai/policies/repository.server";
 import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
@@ -55,13 +60,15 @@ type TurnParams = {
   service: ConversationService;
   emit: Emit; job: AgentJob | null; jobs: JobsModule | null;
   attachmentIds?:string[];
+  /** Only a caller that reverified a signed, consented Meta owner binding can supply this. */
+  externalClient?:SupabaseClient;
 };
 /** Read only IDs explicitly selected for this turn. An old thread file is never
  * silently inserted into a subsequent model turn, even within the same café. */
-async function readOwnerImages(scope:ConversationScope,threadId:string,ids:readonly string[]){
+async function readOwnerImages(scope:ConversationScope,threadId:string,ids:readonly string[], scopedClient?:SupabaseClient){
  if(ids.length===0)return [];
  if(ids.length>3||new Set(ids).size!==ids.length)throw new ConversationApiError(422,"invalid_attachments");
- const db=await createServerSupabaseClient();
+ const db=scopedClient??await createServerSupabaseClient();
  const {data,error}=await db.from("ai_attachments")
   .select("id,object_path,media_type,bytes")
   .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
@@ -87,10 +94,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
   let completedTurn: AgentTurn | undefined;
   let steps: Promise<void> = Promise.resolve();
   try {
+    const db=p.externalClient??await createServerSupabaseClient();
+    const external=p.externalClient!==undefined;
     const [tools, identity, page, memory, ownerFactRead] = await Promise.all([
-      createAuthenticatedCafeTools(), readSupervisorCafeIdentity(scope.businessId), p.service.listMessages(id, 0),
-      loadMemory(),
-       loadOwnerFacts(scope.businessId)
+      external?createOwnerScopedCafeTools(scope,db):createAuthenticatedCafeTools(),
+      readSupervisorCafeIdentity(scope.businessId,external?db:undefined), p.service.listMessages(id, 0),
+      loadMemory(external?scope:undefined,external?db:undefined),
+       loadOwnerFacts(scope.businessId,external?db:undefined)
          .then(facts => ({facts,failed:false}))
          .catch(() => {console.error('owner_facts_read_failed'); return {facts:[],failed:true};}),
     ]);
@@ -113,18 +123,20 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
         content: historyContent(m) })).filter(m => m.content);
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
-      canonicalData:async()=>({db:await createServerSupabaseClient(),businessId:scope.businessId}),
+      canonicalData:async()=>({db,businessId:scope.businessId}),
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf),
-      readEconomics:async()=>readSupervisorEconomics(await createServerSupabaseClient(),scope.businessId,identity.asOf),
+      readEconomics:async()=>readSupervisorEconomics(db,scope.businessId,identity.asOf),
       // Toast credentials are service-role only; the café comes from the authenticated scope.
       readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId),
       // Location comes from the café profile or the owner's saved answer, never from the model.
-      cafeLocation:async()=>readCafeLocation(await createServerSupabaseClient(),scope.businessId,ownerFactRead.facts),
+      cafeLocation:async()=>readCafeLocation(db,scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
       webSearch:async(query,budget)=>{await assertCafeAiAccess(scope.businessId);return searchWeb(query,budget);},
-      savedEvents:async(from,to)=>readSavedEventTimeline(await createServerSupabaseClient(),
+      savedEvents:async(from,to)=>readSavedEventTimeline(db,
         {businessId:scope.businessId,ownerUserId:scope.ownerUserId},from,to),
-      readWeekSchedule:weekStart=>getWeekSchedule({weekStart}),
+      readWeekSchedule:weekStart=>external?
+        scopedWeekSchedule({weekStart},{client:db,businessId:scope.businessId,ownerUserId:scope.ownerUserId}):
+        getWeekSchedule({weekStart}),
       ownerFacts:ownerFactRead.facts,
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
@@ -145,13 +157,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
         recordCheckin:async(goalId,date,answer,note)=>{
           // Only a goal this owner owns, read with the owner's own session.
           const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-          const [goal]=await readOwnerProposals(await createServerSupabaseClient(),owner,{id:goalId,limit:1});
+          if(external)return {missing:["requiresWebsiteReview"]};
+          const [goal]=await readOwnerProposals(db,owner,{id:goalId,limit:1});
           if(!goal||goal.capability_id!==goalCapabilityId)return {missing:["goalNotFound"]};
           const saved=await recordGoalCheckin(createAdminSupabaseClient(),owner,goalId,{date,answer,note});
           return saved?{saved:true,checkin:saved}:{missing:["noOpenCheckin"]};
         },
         status:async(goalId)=>{
-          const db=await createServerSupabaseClient();
           const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
           if(!goalId)return {goals:await listOwnerGoals(db,owner)};
           const read=await readGoalStatus(db,{...owner,locale:p.locale},goalId,identity.asOf);
@@ -235,7 +247,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
           supervisorLoopRegistry,new SupabaseLoopRepository(),staffCapabilityId(name),input,requestKey);
         return {proposalId:proposal.id,revision:proposal.revision,capabilityId:proposal.capabilityId};
       }} };
-    const ownerImages=await readOwnerImages(scope,id,p.attachmentIds??[]);
+    const ownerImages=await readOwnerImages(scope,id,p.attachmentIds??[],external?db:undefined);
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages, history, context,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
@@ -294,11 +306,12 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
 }
 
 /** café memory: approved café facts + the draft-only memory tool (RLS client). */
-async function loadMemory() {
+async function loadMemory(scope?:ConversationScope,db?:SupabaseClient) {
   const [{ authenticatedTeamRulesService }, { loadCafeMemory, cafeMemoryPort }, { memoryToolDefinition }] = await Promise.all([
     import("@/lib/ai/policies/auth.server"), import("@/lib/ai/agent/memory.server"), import("@/lib/ai/agent/tools/memory")]);
   try {
-    const rules = await authenticatedTeamRulesService();
+    const rules = scope && db ? new TeamRulesService(new SupabaseTeamRulesRepository(db),scope) :
+      await authenticatedTeamRulesService();
     return { facts: await loadCafeMemory(rules), port: cafeMemoryPort(rules), tool: memoryToolDefinition };
   } catch { console.error("agent_memory_unavailable"); return null; }
 }
