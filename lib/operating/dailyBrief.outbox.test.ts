@@ -19,7 +19,7 @@ import {renderMorningBrief} from "@/lib/whatsapp/morningBrief";
 import {briefMessageId} from "./dailyBrief";
 
 const morning=new Date("2026-10-31T12:50:00Z");
-function dbFactory(existing=false,opts:{revoked?:boolean;wrongCafe?:boolean}={}){
+function dbFactory(existing=false,opts:{revoked?:boolean;wrongCafe?:boolean;taskMissing?:boolean}={}){
   const mutations:Array<{table:string;op:string;row:unknown}>=[];
   const scopedReads:Array<{table:string;column:string;value:unknown}>=[];
   const q=(table:string)=>{
@@ -35,7 +35,8 @@ function dbFactory(existing=false,opts:{revoked?:boolean;wrongCafe?:boolean}={})
         thread_id:"thread-original",
         structured_content:[{type:"text",text:"Previously persisted website brief."}]}:null):
       table==="memberships"?(opts.revoked?null:{user_id:existing?"owner-original":"owner-a"}):
-      table==="ai_threads"?{id:existing?"thread-original":"thread-a"}:null});
+      table==="ai_threads"?{id:existing?"thread-original":"thread-a"}:
+      table==="operating_tasks"&&existing&&!opts.taskMissing?{id:"existing-task"}:null});
     self.then=(resolve:(v:unknown)=>void)=>resolve({count:1,error:null});
     self.insert=async(row:unknown)=>{mutations.push({table,op:"insert",row});return {error:null};};
     self.upsert=async(row:unknown)=>{mutations.push({table,op:"upsert",row});return {error:null};};
@@ -89,6 +90,17 @@ describe("morning brief optional durable-outbox seam",()=>{
       threadId:"thread-original",websiteText:"Previously persisted website brief."});
     expect(scopedReads).toContainEqual({table:"memberships",column:"user_id",value:"owner-original"});
     expect(scopedReads).toContainEqual({table:"ai_threads",column:"id",value:"thread-original"});
+  });
+  it("repairs a missing inbox record after a saved Supervisor message without duplicating chat",async()=>{
+    const {db,mutations}=dbFactory(true,{taskMissing:true});
+    const hook=vi.fn(async (_input:Parameters<BriefOutboxHook>[0])=>{});
+    expect(await sendDailyBriefs(db,morning,hook)).toMatchObject({sent:0,skipped:1,failed:0});
+    expect(mutations).toHaveLength(1);
+    expect(mutations[0]).toMatchObject({table:"operating_tasks",op:"upsert",
+      row:{id:"daily-brief:2026-10-31:owner-original",
+        payload:{ownerUserId:"owner-original",threadId:"thread-original",
+          text:"Previously persisted website brief."}}});
+    expect(hook).toHaveBeenCalledTimes(1);
   });
   it("skips revoked ownership or a foreign café instead of sending the persisted brief",async()=>{
     for(const opts of [{revoked:true},{wrongCafe:true}]){
