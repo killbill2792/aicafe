@@ -52,7 +52,7 @@ export default async function MenuItemPage({
       <BackHeader title={editItem.baseName} backHref="/menu" backLabel={common("back")} />
       {comboParts.length>0?<SavedComboDetail name={editItem.baseName} priceCents={editItem.priceCents} parts={comboParts} items={editItems}/>:<ProductDetailScreen
         item={item}
-        pantry={pantry.map(({id,name,category,baseUnit,costPerBaseMicros})=>({id,name,category,baseUnit,costPerBaseMicros}))}
+        pantry={pantry.map(({id,name,category,baseUnit,costPerBaseMicros,archivedAt})=>({id,name,category,baseUnit,costPerBaseMicros,archivedAt}))}
         savedAddons={savedAddons}
         posModifierGroups={posModifierGroups}
         draftSizes={draftSizes}
