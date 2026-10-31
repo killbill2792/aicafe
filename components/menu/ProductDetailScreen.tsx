@@ -16,6 +16,7 @@ import ProductPhotoEditor from "./ProductPhotoEditor";
 import AggregateProductCostEditor from "./AggregateProductCostEditor";
 import MenuPricePreview from "./MenuPricePreview";
 import AllSizesRecipe from "./AllSizesRecipe";
+import {recipeEditorKey} from "@/lib/viewmodels/recipeEditorKey";
 import MenuAddonsPanel, {type PricedPantry} from "./MenuAddonsPanel";
 import type {MenuAddon} from "@/lib/actions/menuAddons";
 import type {UnpricedMenuSize} from "@/lib/data/getUnpricedProductSizes";
@@ -49,7 +50,7 @@ export default function ProductDetailScreen({item,pantry,savedAddons,posModifier
     </section>}</>}
   {tab==="recipe"&&<div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(350px,.8fr)]">
    <div className="min-w-0">
-    <AllSizesRecipe key={productEditItems.map(size=>`${size.id}:${size.active}:${size.priceCents}:${size.recipe.map(line=>`${line.ingredientId}-${line.quantity}-${line.displayUnit}-${line.displayQuantity}`).join(",")}`).join("|")}
+    <AllSizesRecipe key={recipeEditorKey(productEditItems)}
      items={productEditItems} ingredients={ingredients} conversions={ingredientConversions} pantry={pantry} draftSizes={draftSizes}
      focusedSizeId={focusedSize} onFocusedSizeChange={setFocusedSize}/>
        {productEditItems.some(entry=>entry.recipe.length===0)&&<AggregateProductCostEditor items={productEditItems.filter(entry=>entry.recipe.length===0)}
