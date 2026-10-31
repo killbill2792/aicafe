@@ -114,6 +114,7 @@ export async function getBusinessSnapshotFromDb(
           categoryCode: code,
           label: RUNNING_COST_LABELS[code] ?? code,
           amountCents: expensesThisMonth.reduce((sum, e) => sum + e.amount_cents, 0),
+          amountSource: "recorded_expense" as const,
           isEstimate: expensesThisMonth.some((e) => e.status === "estimated"),
           isMissing: false,
           isExpected: true,
