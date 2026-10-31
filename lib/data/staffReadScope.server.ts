@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {isSupabaseConfigured} from "@/lib/supabase/client";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
@@ -6,7 +7,25 @@ import {DEMO_BUSINESS_ID} from "@/lib/constants";
 import {localDateInZone} from "@/lib/scheduling/localDate";
 
 /** Read scope accepts members and the demo; all mutations use requireSchedulingOwner. */
-export async function staffReadScope(){
+export async function staffReadScope(explicit?:{client:SupabaseClient;businessId:string;ownerUserId:string}){
+ if(explicit){
+  const db=explicit.client;
+  const [{data:membership,error},{data:business,error:businessError}]=await Promise.all([
+   db.from("memberships").select("role").eq("business_id",explicit.businessId)
+     .eq("user_id",explicit.ownerUserId).maybeSingle(),
+   db.from("businesses").select("timezone,currency,is_demo").eq("id",explicit.businessId).maybeSingle(),
+  ]);
+  if(error||businessError||membership?.role!=="owner"||!business)
+   return {ok:false as const,error:"unauthorized"};
+  const timezone=business.timezone as string;
+  if(!timezone)return {ok:false as const,error:"unauthorized"};
+  if(typeof business.currency!=="string"||!/^[A-Z]{3}$/.test(business.currency))
+   return {ok:false as const,error:"currency_not_set"};
+  return {ok:true as const,supabase:db,businessId:explicit.businessId,
+    readOnly:business.is_demo===true||explicit.businessId===DEMO_BUSINESS_ID,
+    timezone,currency:business.currency as string,
+    today:localDateInZone(new Date(),timezone)};
+ }
  if(!isSupabaseConfigured())return {
   ok:true as const, supabase:null,businessId:DEMO_BUSINESS_ID,
   readOnly:true,timezone:"America/Los_Angeles",currency:"USD",today:localDateInZone(new Date(),"America/Los_Angeles")

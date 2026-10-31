@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 import {staffReadScope} from "@/lib/scheduling/staffScope.server";
@@ -20,8 +21,8 @@ const shape={
 };
 const teamRulePatch=z.strictObject(Object.fromEntries(Object.entries(shape).map(([k,v])=>[k,v.optional()])) as {[K in keyof typeof shape]:z.ZodOptional<(typeof shape)[K]>});
 const ruleKeys=Object.keys(shape) as (keyof typeof shape)[];
-export async function getTeamRules(){
- const owner=await staffReadScope();
+export async function getTeamRules(explicit?:{client:SupabaseClient;businessId:string;ownerUserId:string}){
+ const owner=await staffReadScope(explicit);
  if(!owner.ok)return {ok:false as const,error:"unauthorized"};
  if(!owner.supabase)return {ok:true as const,data:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},readOnly:true};
  const {data,error}=await owner.supabase.from("team_rules").select("*").eq("business_id",owner.businessId).maybeSingle();

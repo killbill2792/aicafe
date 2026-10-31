@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {usageBusinessDay} from "@/lib/calc/usageDates";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -16,7 +17,8 @@ const stockInput=z.strictObject({
  ingredientId:z.string().uuid(),date:iso,quantity:z.number().finite().nonnegative().max(1000000000),
  unit:z.string().min(1).max(40),lineId:z.string().uuid().optional()
 });
-async function scope(){
+async function scope(explicit?:{client:SupabaseClient;businessId:string}){
+  if(explicit)return {db:explicit.client,businessId:explicit.businessId};
  const db=await createServerSupabaseClient();
  const {data:{user}}=await db.auth.getUser();
  if(!user)throw new Error("sign_in_required");
@@ -44,7 +46,7 @@ async function allRows<T>(load:(first:number,last:number)=>PromiseLike<{data:T[]
  throw new Error("usage_rows_exceed_safe_limit");
 }
 /** UI and Maya use this same owner-scoped read; no LLM/client-supplied business ID. */
-export async function readUsageVariance(raw:z.input<typeof readInput>):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null}>{
+export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?:{client:SupabaseClient;businessId:string}):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null}>{
  const input=readInput.parse(raw);
  const {db,businessId}=await scope();
  const {data:ingredients,error:ie}=await db.from("ingredients").select("id,name,base_unit,category")

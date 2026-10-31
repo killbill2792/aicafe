@@ -1,4 +1,5 @@
 import "server-only";
+import {simulationOwnerReader} from "./simulationOwner.server";
 import {z} from "zod";
 import {formatInTimeZone} from "date-fns-tz";
 import en from "@/messages/en.json";
@@ -8,8 +9,6 @@ import {readSavedTodayLive} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import type {OwnerLoopScope,LoopProposal} from "./engine";
-import {createServerSupabaseClient} from "@/lib/supabase/server";
-import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {readCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {readItemSales,readDiscounts,readLaborEntries,readMenu} from "@/lib/data/canonical/reads.server";
@@ -221,12 +220,7 @@ export const eventReadinessCapability=registerLoopCapability({
  dependencyScope:effect=>({kind:"event_readiness",eventIds:effect.eventIds,start:effect.startDate,end:effect.endDate}),
  simulate:async(scope,input)=>{
    const system=approvedScheduledScopes.has(scope);
-   const db=system?createAdminSupabaseClient():await createServerSupabaseClient();
-   if(!system){
-     const {data:{user}}=await db.auth.getUser();
-     if(!user||user.id!==scope.ownerUserId||await getActiveBusinessId(user.id)!==scope.businessId)
-       throw new Error("owner_required");
-   }
+   const db=system?createAdminSupabaseClient():(await simulationOwnerReader(scope)).client;
    const [{data:member},{data:business}]=await Promise.all([
      db.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",scope.ownerUserId).maybeSingle(),
      db.from("businesses").select("timezone,is_demo").eq("id",scope.businessId).maybeSingle(),
