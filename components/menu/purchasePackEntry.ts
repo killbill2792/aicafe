@@ -5,7 +5,17 @@ export type PurchasePack={packQuantity:number;packUnit:string};
 /** Accept café purchase labels without adding another persisted quantity system.
  * 12 × 32 fluid ounces is saved as 384 fl_oz by the existing pantry action. */
 export function parsePurchasePack(text:string,baseUnit:BaseUnit):PurchasePack|null{
- const cleaned=text.trim().toLowerCase().replace(/\s+/g," ").replace(/\s+(?:cans?|bottles?|cartons?|jugs?|bags?|boxes?)$/,"");
+ const cleaned=text.normalize("NFKC").toLowerCase()
+  .replace(/[٠-٩۰-۹]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d)>=0?"٠١٢٣٤٥٦٧٨٩".indexOf(d):"۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+  .replace(/onzas?\s+l[ií]quidas?|أونص(?:ة|ات)\s+سائلة/g,"fluid ounces")
+  .replace(/onzas?\s+de\s+peso/g,"ounces by weight")
+  .replace(/libras?|أرطال|رطلاً|رطلًا|رطل/g,"pounds")
+  .replace(/unidades?|piezas?|قطع|قطعة|وحدات?|وحدة/g,"pieces")
+  .replace(/mililitros?|مليلتر(?:ات)?|ملليلتر(?:ات)?/g,"milliliters")
+  .replace(/litros?|لترات?|لتر/g,"liters")
+  .replace(/gramos?|غرام(?:ات|ًا)?|جرام(?:ات)?/g,"grams")
+  .replace(/kilogramos?|كيلوغرام(?:ات)?/g,"kilograms")
+  .replace(/\s+/g," ").replace(/\s+(?:cans?|bottles?|cartons?|jugs?|bags?|boxes?)$/,"");
  const match=/^(?:(\d+(?:\.\d+)?)\s*(?:x|×)\s*)?(\d+(?:\.\d+)?)\s*(fl\s*oz|fluid\s+ounces?|ounces?\s+by\s+weight|oz\s+weight|oz|ounces?|ml|millilit(?:er|re)s?|g|grams?|kg|kilograms?|lb|lbs|pounds?|l|lit(?:er|re)s?|gal|gallons?|qt|quarts?|each|pieces?|dozen)$/i.exec(cleaned);
  if(!match)return null;
  const count=match[1]?Number(match[1]):1,amount=Number(match[2]);
@@ -27,8 +37,14 @@ export function parsePurchasePack(text:string,baseUnit:BaseUnit):PurchasePack|nu
  return Number.isFinite(packQuantity)&&packBaseQuantity(packQuantity,packUnit,baseUnit)!==null?{packQuantity,packUnit}:null;
 }
 
-export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit:BaseUnit):string{
+export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit:BaseUnit,locale="en"):string{
  if(quantity===null||!unit)return "";
- const label:Record<string,string>={fl_oz:"fluid ounces",oz_wt:"ounces by weight",ml:"milliliters",g:"grams",kg:"kilograms",l:"liters",lb:"pounds",gal:"gallons",qt:"quarts",each:"pieces",dozen:"dozen"};
- return String(quantity)+" "+(label[unit]??(unit==="oz"?(baseUnit==="ml"?"fluid ounces":"ounces by weight"):unit));
+ const unitNames:Record<string,string>={fl_oz:"fluid-ounce",oz_wt:"ounce",ml:"milliliter",g:"gram",
+  kg:"kilogram",l:"liter",lb:"pound",gal:"gallon"};
+ const resolvedUnit=unit==="oz"?(baseUnit==="ml"?"fl_oz":"oz_wt"):unit;
+ if(unitNames[resolvedUnit]){
+  return new Intl.NumberFormat(locale,{style:"unit",unit:unitNames[resolvedUnit],unitDisplay:"long"}).format(quantity);
+ }
+ const other:Record<string,string>={qt:"quarts",each:"pieces",dozen:"dozen"};
+ return new Intl.NumberFormat(locale).format(quantity)+" "+(other[resolvedUnit]??resolvedUnit);
 }
