@@ -108,7 +108,7 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
   const mtdCalendarDays=lastClosed?Number(lastClosed.slice(-2)):0;
   const elapsedLaborCents=elapsedLaborRecords.filter(day=>completeLaborDates.has(day.date))
     .reduce((total,day)=>total+day.wagesCents!+day.staffTaxCents!,0);
-  const recordedLabor=elapsedLaborCents+(extras===null?0:
+  const recordedLabor=elapsedLaborCents+(extras==null?0:
     Math.round(extras*elapsedOpenDates.length/openDayCount));
   const todayRow=snapshot.todayDay;
   const todayLaborReady=todayRow.date===asOf&&todayRow.wagesCents!==null&&
@@ -127,7 +127,7 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
     mode==="month_forecast"?monthLabor.projectedMonthlyLaborCents:
       mode==="month_to_date"?(elapsedOpenDates.length?recordedLabor:null):
         todayLaborReady?todayRow.wagesCents!+todayRow.staffTaxCents!+
-          (extras===null?0:Math.round(extras/openDayCount)):null;
+          (extras==null?0:Math.round(extras/openDayCount)):null;
   const shared=breakEvenFor({days,asOfDate:snapshot.todayDateStr,
     daysInMonth:Math.max(1,targetOpenDays),
     monthlyBillsCents:periodBillsCents,monthlyStaffCents:periodLaborCents,
