@@ -7,9 +7,7 @@ import InlinePantryTable from "./InlinePantryTable";
 import { useRouter } from "@/i18n/navigation";
 import {saveUsageEntry,addFromStarter,savePackPrice,createPantryIngredient,updatePantryIngredient} from "@/lib/actions/pantry";
 import {usageEntryErrorKey} from "@/lib/calc/usageEntryErrors";
-import {pantryUnitCostCents} from "@/lib/calc/pantryDisplay";
 import { packBaseQuantity } from "@/lib/calc/recipeUnits";
-import { formatCents } from "@/lib/calc";
 import type { BaseUnit } from "@/lib/calc/recipeUnits";
 import type { PantryCategory } from "@/lib/menu/pantryStarter";
 
@@ -29,8 +27,6 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  const missing=items.filter(item=>item.packCostCents===null).length;
  const visible=useMemo(()=>items.filter(item=>(filter==="all"||categoryOf(item.category)===filter)&&item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())),[items,filter,query]);
  const unused=starters.filter(s=>!items.some(item=>item.starterKey===s.key));
- function editItem(item:Item){setSelected(item);setBaseUnit(item.baseUnit);setName(item.name);setCategory((item.category??"other") as PantryCategory);setError("");setDialog("edit");}
- function choosePrice(item:Item){setSelected(item);setQuantity(String(item.packQuantity??starters.find(s=>s.key===item.starterKey)?.packQuantity??1));setUnit(item.packUnit??starters.find(s=>s.key===item.starterKey)?.packUnit??units[item.baseUnit][0]);setPrice(item.packCostCents===null?"":(item.packCostCents/100).toFixed(2));setError("");setDialog("price");}
  function submitPrice(){if(!selected)return;const cents=Math.round(Number(price)*100);if(!(cents>0)||!(Number(quantity)>0)||packBaseQuantity(Number(quantity),unit,selected.baseUnit)===null){setError(t.error);return;}start(async()=>{const result=await savePackPrice({ingredientId:selected.id,packQuantity:Number(quantity),packUnit:unit,packCostCents:cents});if(!result.ok)setError(t.error);else{setDialog(null);router.refresh();}});}
  function submitStarters(){start(async()=>{const result=await addFromStarter(chosen);if(!result.ok)setError(t.error);else{setDialog(null);setChosen([]);router.refresh();}});}
  function submitEdit(){if(!selected)return;start(async()=>{const result=await updatePantryIngredient({id:selected.id,name,category});if(!result.ok)setError(t.error);else{setDialog(null);router.refresh();}});}
