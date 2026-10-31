@@ -1,38 +1,50 @@
-export type EventChatContext={date:string;title:string;threadId:string};
+export type EventChatContext={date:string;title:string;threadId:string;eventId?:string};
 
-/** Encode a specific day in a human-readable thread title, not an event JSON blob. */
-export function eventThreadTitle(date:string,title:string):string {
-  return "Events · "+date+" · "+title.replace(/[\r\n<>]/g," ").trim().slice(0,96);
+/** Individual saved events never share a thread solely because they share a date. */
+export function eventThreadKey(date:string,eventId?:string):string{
+  return eventId?"event:"+eventId:"day:"+date;
+}
+
+/** Persist the saved event ID in the thread title to restore identity on reload. */
+export function eventThreadTitle(date:string,title:string,eventId?:string):string {
+  const suffix=eventId?" · event:"+eventId:"";
+  const prefix="Events · "+date+" · ";
+  const safe=title.replace(/[\r\n<>]/g," ").trim().slice(0,Math.max(0,120-prefix.length-suffix.length));
+  return prefix+safe+suffix;
 }
 export function eventContextFromTitle(title:string,threadId:string):EventChatContext|null {
-  const match=/^Events · (\d{4}-\d{2}-\d{2}) · (.{1,100})$/.exec(title);
-  if(match&&Number.isFinite(Date.parse(match[1]+"T12:00:00Z")))
-    return {date:match[1],title:match[2],threadId};
-  // Older saved day threads were titled just "Events · YYYY-MM-DD".
-  // Recover their date without inventing an event name or erasing chat history.
+  const exact=/^Events · (\d{4}-\d{2}-\d{2}) · (.+) · event:([\da-f-]{36})$/i.exec(title);
+  if(exact&&Number.isFinite(Date.parse(exact[1]+"T12:00:00Z")))
+    return {date:exact[1],title:exact[2],eventId:exact[3],threadId};
+  const old=/^Events · (\d{4}-\d{2}-\d{2}) · (.{1,100})$/.exec(title);
+  if(old&&Number.isFinite(Date.parse(old[1]+"T12:00:00Z")))
+    return {date:old[1],title:old[2],threadId};
+  // Historical day-only threads remain day-scoped; never infer an event ID.
   const legacy=/^Events · (\d{4}-\d{2}-\d{2})$/.exec(title);
   return legacy&&Number.isFinite(Date.parse(legacy[1]+"T12:00:00Z"))?
     {date:legacy[1],title:"Event",threadId}:null;
 }
-/** The saved owner's message carries its event anchor across thread reloads. */
+
+/** Persist a compact, explicit anchor with each owner message, without plan JSON. */
 export function eventOwnerMessage(text:string,context:EventChatContext|null):string {
   const trimmed=text.trim();
   if(!context||!trimmed||/^@event\s/i.test(trimmed))return trimmed;
   const safeTitle=context.title.replace(/[\r\n<>]/g," ").trim().slice(0,100);
-  return "@event "+safeTitle+" ("+context.date+")\n"+trimmed;
+  const id=context.eventId?" [id:"+context.eventId+"]":"";
+  return "@event "+safeTitle+" ("+context.date+")"+id+"\n"+trimmed;
 }
 
-/** Only an explicit Chat about this tap selects/creates the ordinary chat thread.
- * Never send saved JSON, plan text, or an unsolicited approval prompt. */
+/** Explicit tap only; the event ID is used for the cache, never date alone. */
 export async function openEventDayThread(args:{
-  date:string;title:string;known:Map<string,string>;
+  date:string;title:string;eventId?:string;known:Map<string,string>;
   create:(title:string)=>Promise<{id:string}>;
   select:(id:string)=>void;
 }):Promise<string>{
-  const existing=args.known.get(args.date);
+  const key=eventThreadKey(args.date,args.eventId);
+  const existing=args.known.get(key);
   if(existing){args.select(existing);return existing;}
-  const created=await args.create(eventThreadTitle(args.date,args.title));
-  args.known.set(args.date,created.id);
+  const created=await args.create(eventThreadTitle(args.date,args.title,args.eventId));
+  args.known.set(key,created.id);
   args.select(created.id);
   return created.id;
 }
