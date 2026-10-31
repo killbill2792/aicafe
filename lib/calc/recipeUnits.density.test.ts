@@ -47,6 +47,23 @@ describe("volume and weight recipe conversions",()=>{
   expect(reexpressRecipeQuantity("ml","g",180,"ml")).toBeNull();
   expect(reexpressRecipeQuantity("ml","g",180,"ml",[],1.03)).toBeCloseTo(185.4,6);
  });
+ it("returns from milk grams to milliliters using the SOURCE density",()=>{
+  const density=densityFromStoredRecipe("ml",100,"g",103);
+  expect(density).toBeCloseTo(1.03,9);
+  // The destination is the base unit. Density is still needed for source grams.
+  const milliliters=reexpressRecipeQuantity("g","ml",103,"ml",[],density!);
+  expect(milliliters).toBeCloseTo(100,8);
+  expect(toBaseUnitQuantity("ml",milliliters!,"ml")).toBeCloseTo(100,8);
+  expect(reexpressRecipeQuantity("ml","g",milliliters!,"ml",[],density!)).toBeCloseTo(103,8);
+  expect(reexpressRecipeQuantity("g","ml",103,"ml",[])).toBeNull();
+ });
+ it("returns a gram-based ingredient from fluid ounces to grams",()=>{
+  const density=1.1;
+  const ounces=reexpressRecipeQuantity("g","fl_oz",110,"g",[],density);
+  const restored=reexpressRecipeQuantity("fl_oz","g",ounces!,"g",[],density);
+  expect(restored).toBeCloseTo(110,8);
+  expect(reexpressRecipeQuantity("fl_oz","g",ounces!,"g")).toBeNull();
+ });
  it("rejects invalid densities rather than producing misleading costs",()=>{
   expect(toBaseUnitQuantity("g",120,"ml",[],0)).toBeNull();
   expect(toBaseUnitQuantity("g",120,"ml",[],100)).toBeNull();
