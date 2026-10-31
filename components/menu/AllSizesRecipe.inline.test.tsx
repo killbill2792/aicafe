@@ -2,7 +2,7 @@ import {describe,it,expect,vi} from "vitest";
 import {renderToStaticMarkup} from "react-dom/server";
 import type {MenuItemForEdit} from "@/lib/data/getMenuItemsForEdit";
 import {toBaseUnitQuantity} from "@/lib/calc/recipeUnits";
-import AllSizesRecipe from "./AllSizesRecipe";
+import AllSizesRecipe, {safeRecipeDensity} from "./AllSizesRecipe";
 
 vi.mock("next-intl",()=>({
  useLocale:()=> "en",
@@ -71,5 +71,16 @@ describe("inline product recipe",()=>{
    .toBeCloseTo(22.17,6);
   expect(toBaseUnitQuantity("fl_oz",1,"ml",[])).toBeCloseTo(29.5735,4);
   expect(toBaseUnitQuantity("g",120,"ml",[])).toBeNull();
+ });
+});
+
+describe("cross-unit ingredient swaps",()=>{
+ it("requires density from the selected replacement, not the old recipe ingredient",()=>{
+  // A 103 g / 100 ml milk recipe must not become a water recipe with milk's 1.03 density.
+  expect(safeRecipeDensity(true,undefined,1.03,1.03)).toBeUndefined();
+  expect(safeRecipeDensity(true,"",1.03,1.03)).toBeUndefined();
+  expect(safeRecipeDensity(true,"1",1.03,1.03)).toBe(1);
+  expect(safeRecipeDensity(true,"0",1.03,1.03)).toBeUndefined();
+  expect(safeRecipeDensity(false,undefined,1.03,1)).toBe(1.03);
  });
 });
