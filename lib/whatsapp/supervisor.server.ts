@@ -8,7 +8,7 @@ import {authorizedExternalConversation,externalOwnerClientMessageId,markWhatsApp
 import {assertOwnerAgentTurnAvailable} from "@/lib/ai/conversations/usage.server";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {runOneTurn,errorCode} from "@/lib/ai/conversations/agentRunner.server";
-import {eligibleWhatsAppTextReply,supervisorQuestionForWhatsApp,type WhatsAppOwnerInput} from "./supervisor";
+import {eligibleWhatsAppTextReply,supervisorQuestionForWhatsApp,whatsappPlainTextFromSavedBlocks,type WhatsAppOwnerInput} from "./supervisor";
 import type {AgentJob} from "@/lib/ai/agent/jobState";
 
 const CONTINUATION_BUDGET_MS=75_000;
@@ -58,14 +58,22 @@ export async function processVerifiedWhatsAppOwnerTurn(
  // Store the channel before joining the shared job. Never expose wa_id or
  // provider tokens in the agent's history or prompt.
  await markWhatsAppOwnerProvenance(scope,registration.owner,receivedAt.toISOString());
- if(registration.prior)return {status:"replayed",completed:[]};
+ if(registration.prior){
+   const priorText=whatsappPlainTextFromSavedBlocks(registration.prior.blocks);
+   if(!priorText)return {status:"replayed",completed:[]};
+   return {status:"replayed",completed:[{
+     ownerMessageId:registration.owner.id,replyId:registration.prior.id,
+     replyText:priorText,receivedAt:receivedAt.toISOString(),
+     eligibleAtCompletion:eligibleWhatsAppTextReply(priorText,receivedAt),
+   }]};
+ }
  const jobs=await import("@/lib/ai/agent/jobs.server");
  const start=await jobs.startAgentJob(scope,threadId,registration.owner.id);
  if(start.mode!=="started")return {status:"queued",completed:[]};
 
  const completed:WhatsAppSupervisorCompletion[]=[];
  let job:AgentJob|null=start.job, owner=registration.owner;
- let since=Date.now();
+ const since=Date.now();
  while(job){
    // Each continuation is still the owner's selected café/thread and under
    // current membership/AI access. No browser cookie is fabricated.
