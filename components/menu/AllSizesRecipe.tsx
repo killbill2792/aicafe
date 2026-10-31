@@ -5,6 +5,8 @@ import {Plus,X,ArrowLeftRight} from "lucide-react";
 import {useRouter} from "@/i18n/navigation";
 import {saveProductRecipes} from "@/lib/actions/pantry";
 import NewPantryInlineRow from "./NewPantryInlineRow";
+import {setIngredientUnitConversion} from "@/lib/actions/ingredientUnitConversions";
+import {suggestedRecipeMeasure} from "@/lib/calc/suggestedRecipeMeasures";
 import {updateMenuItemPrice,setMenuItemActive} from "@/lib/actions/menuItems";
 import type {UnpricedMenuSize} from "@/lib/data/getUnpricedProductSizes";
 import {swapIngredient} from "@/lib/actions/pantry";
@@ -29,6 +31,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  const [sizeDialog,setSizeDialog]=useState(false);const [add,setAdd]=useState<string|null>(null),[addAfter,setAddAfter]=useState<string>("top"),[swap,setSwap]=useState<string|null>(null),[choice,setChoice]=useState(""),[toast,setToast]=useState("");
  const [swapSizeId,setSwapSizeId]=useState<string|null>(null);
  const [quantityInputs,setQuantityInputs]=useState<Record<string,string>>({});
+ const [calibration,setCalibration]=useState<Record<string,string>>({});
  const [newRowAmount,setNewRowAmount]=useState("1"),[newRowUnit,setNewRowUnit]=useState<RecipeDisplayUnit>("ml");
  const [newPantry,setNewPantry]=useState(false);
  const selectedItems=items.filter(i=>i.id===focusedSize), ingredientRows=[...new Map(selectedItems.flatMap(item=>item.recipe.map(line=>[line.ingredientId,line.ingredientName] as const))).entries()];
@@ -38,6 +41,37 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  });
  const mobileColumns={gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,selectedItems.length))},minmax(0,1fr))`};
  const invalidQuantity=Object.values(quantityInputs).some(value=>value.trim()===""||!Number.isFinite(Number(value))||Number(value)<=0);
+ function conversionFor(id:string,unit:RecipeDisplayUnit):IngredientUnitConversion[]{
+  const saved=conversions[id]??[],raw=calibration[id+":"+unit];
+  if(!needsIngredientConversion(unit)||raw===undefined)return saved;
+  const factor=Number(raw);
+  return raw!==""&&Number.isFinite(factor)&&factor>0?[...saved.filter(c=>c.unit!==unit),{unit,baseUnitsPerUnit:factor}]:saved.filter(c=>c.unit!==unit);
+ }
+ function measureDefault(id:string,name:string,base:"g"|"ml"|"each",unit:RecipeDisplayUnit){
+  if(!needsIngredientConversion(unit))return null;
+  return (conversions[id]??[]).find(c=>c.unit===unit)?.baseUnitsPerUnit
+   ??suggestedRecipeMeasure(name,base,unit)?.baseUnitsPerUnit??null;
+ }
+ function pendingMeasure(id:string,unit:RecipeDisplayUnit){
+  return needsIngredientConversion(unit)&&(!(conversions[id]??[]).some(c=>c.unit===unit)||calibration[id+":"+unit]!==undefined);
+ }
+ async function saveMeasurements(extra?:{id:string;name:string;base:"g"|"ml"|"each";unit:RecipeDisplayUnit}){
+  const entries=selectedItems.flatMap(item=>item.recipe.flatMap(line=>{
+   const draft=drafts[k(item.id,line.ingredientId)];
+   return draft&&!draft.removed&&needsIngredientConversion(draft.unit)?[{id:line.ingredientId,name:line.ingredientName,base:line.baseUnit,unit:draft.unit}]:[];
+  }));
+  if(extra)entries.push(extra);
+  const once=new Set<string>();
+  for(const entry of entries){
+   const key=entry.id+":"+entry.unit;if(once.has(key)||!pendingMeasure(entry.id,entry.unit))continue;once.add(key);
+   if(!needsIngredientConversion(entry.unit))continue;
+   const raw=calibration[key];const factor=Number(raw??measureDefault(entry.id,entry.name,entry.base,entry.unit));
+   if(raw===""||!Number.isFinite(factor)||factor<=0){setError(t("measureNeeded"));return false;}
+   const saved=await setIngredientUnitConversion({ingredientId:entry.id,unit:entry.unit,baseUnitsPerUnit:factor});
+   if(!saved.ok){setError(t("measureSaveError"));return false;}
+  }
+  return true;
+ }
  const prices=Object.fromEntries(selectedItems.map(item=>{
   const preview=draftRecipeCosts(item.recipe.map(line=>{
    const d=drafts[k(item.id,line.ingredientId)];
@@ -45,7 +79,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
     ingredientId:line.ingredientId,originalBaseQuantity:line.quantity,baseUnit:line.baseUnit,
     costCents:line.costCents,displayUnit:d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,
     displayQuantity:d?.quantity??line.displayQuantity??line.quantity,
-    removed:d?.removed??false,conversions:conversions[line.ingredientId]??[],
+    removed:d?.removed??false,conversions:conversionFor(line.ingredientId,d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit),
    };
   }));
   const cost=preview.costCents??(item.costSource==="owner_total"?item.ownerTotalCostCents??null:null);
@@ -76,12 +110,15 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   }));
  }
  function save(){if(!selectedItems[0]||invalidQuantity)return;setError("");start(async()=>{
+  if(!await saveMeasurements())return;
   const result=await saveProductRecipes({productId:selectedItems[0].id,sizes:recipeChanges()});
   if(!result.ok){setError(t("error"));return;}
   setSaved(true);setToast("");router.refresh();
  });}
  function append(){if(!add||!selectedItems[0]||selectedItems.length===0||!(Number(newRowAmount)>0))return;
   setError("");start(async()=>{
+   const newIng=ingredients.find(i=>i.id===add);
+   if(!await saveMeasurements(newIng?{id:newIng.id,name:newIng.name,base:newIng.baseUnit,unit:newRowUnit}:undefined))return;
    const result=await saveProductRecipes({productId:selectedItems[0].id,sizes:recipeChanges(add)});
    if(!result.ok){setError(t("error"));return;}
    setAdd(null);router.refresh();
@@ -124,13 +161,13 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
    <option value="">{t("addToRecipe")}</option>{ingredients.filter(i=>selectedItems.some(item=>!item.recipe.some(line=>line.ingredientId===i.id))&&i.name.toLocaleLowerCase().includes(searchIngredient.toLocaleLowerCase())).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
   </select></label>
   <label className="w-24 text-[13px] font-bold">{t("quantity")}<input type="number" min="0.0001" step="any" inputMode="decimal" value={newRowAmount} onChange={e=>setNewRowAmount(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]"/></label>
-  <label className="min-w-[105px] text-[13px] font-bold">{t("unit")}<select value={newRowUnit} onChange={e=>setNewRowUnit(e.target.value as RecipeDisplayUnit)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]">{(add?recipeDisplayUnitsFor(ingredients.find(ingredient=>ingredient.id===add)?.baseUnit??"ml",conversions[add]??[]):[]).filter(unit=>!needsIngredientConversion(unit)||(conversions[add??""]??[]).some(c=>c.unit===unit)).map(unit=><option key={unit} value={unit}>{unitLabel(unit)}</option>)}</select></label>
+  <label className="min-w-[105px] text-[13px] font-bold">{t("unit")}<select value={newRowUnit} onChange={e=>setNewRowUnit(e.target.value as RecipeDisplayUnit)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]">{(add?recipeDisplayUnitsFor(ingredients.find(ingredient=>ingredient.id===add)?.baseUnit??"ml",conversions[add]??[]):[]).filter(unit=>true).map(unit=><option key={unit} value={unit}>{unitLabel(unit)}</option>)}</select></label>
   <button type="button" disabled={pending||!add||invalidQuantity||!(Number(newRowAmount)>0)} onClick={append} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{t("add")}</button>
   <button type="button" onClick={()=>setAdd(null)} className="min-h-12 px-3">{t("cancel")}</button></div>;}
  /** Use the one canonical unit-compatibility helper; no parallel conversion rules in the UI. */
  function availableUnits(line:MenuItemForEdit["recipe"][number]):RecipeDisplayUnit[]{
-  return recipeDisplayUnitsFor(line.baseUnit,conversions[line.ingredientId]??[]).filter(unit=>
-   !needsIngredientConversion(unit)||(conversions[line.ingredientId]??[]).some(c=>c.unit===unit)||unit===(line.displayUnit??line.baseUnit));
+  if(line.baseUnit==="each")return ["each"];
+  return [...new Set([...recipeDisplayUnitsFor(line.baseUnit,conversions[line.ingredientId]??[]),"shot","pump"])] as RecipeDisplayUnit[];
  }
  function unitLabel(unit:RecipeDisplayUnit){
   return ({shot:units("recipeUnitShot"),pump:units("recipeUnitPump"),g:units("recipeUnitG"),ml:units("recipeUnitMl"),fl_oz:units("recipeUnitFlOz"),each:units("recipeUnitEach")} as Record<RecipeDisplayUnit,string>)[unit];
@@ -148,8 +185,21 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   }} className="min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-2 text-center text-[17px] font-bold"/>
   <select aria-label={t("unit")} value={actual.unit} onChange={e=>{
    const unit=e.target.value as RecipeDisplayUnit;setDrafts(prev=>({...prev,[key]:{quantity:actual.quantity,unit,removed:false}}));setSaved(false);
+   if(needsIngredientConversion(unit)&&!(conversions[id]??[]).some(c=>c.unit===unit)){
+    const suggested=measureDefault(id,line.ingredientName,line.baseUnit,unit);
+    if(suggested!==null)setCalibration(prev=>({...prev,[id+":"+unit]:String(suggested)}));
+   }
   }} className="min-h-12 w-[95px] shrink-0 rounded-lg border border-line bg-card px-1 text-[15px]">{availableUnits(line).map(u=><option key={u} value={u}>{unitLabel(u)}</option>)}</select>
- </div><p className="mt-1 text-center text-[13px] text-ink-muted">{cost===null?"—":formatCents(cost)}</p></div>;
+ </div>
+  {needsIngredientConversion(actual.unit)&&pendingMeasure(id,actual.unit)&&<label className="mt-1 flex flex-wrap items-center gap-1 text-[13px] text-ink-muted">
+   <span>1 {unitLabel(actual.unit)} =</span>
+   <input type="number" inputMode="decimal" min=".000001" step="any" aria-label={t("measureValue",{unit:unitLabel(actual.unit),ingredient:line.ingredientName})}
+    value={calibration[id+":"+actual.unit]??String(measureDefault(id,line.ingredientName,line.baseUnit,actual.unit)??"")}
+    onChange={e=>setCalibration(prev=>({...prev,[id+":"+actual.unit]:e.target.value}))}
+    className="min-h-12 w-24 rounded-lg border border-line bg-card px-2 text-[17px]"/>
+   <span>{line.baseUnit} · {t("measureSuggested")}</span>
+  </label>}
+  <p className="mt-1 text-center text-[13px] text-ink-muted">{cost===null?"—":formatCents(cost)}</p></div>;
  })}</div>;}
  return <div className="relative pb-24 text-ink">
  <div className="mb-3 flex flex-wrap items-center gap-2">
