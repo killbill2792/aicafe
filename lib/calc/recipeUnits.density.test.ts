@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {toBaseUnitQuantity,densityFromStoredRecipe} from "./recipeUnits";
+import {toBaseUnitQuantity,densityFromStoredRecipe,reexpressRecipeQuantity} from "./recipeUnits";
 import {draftRecipeCosts} from "./recipePreview";
 import {suggestedIngredientDensity} from "./suggestedRecipeMeasures";
 describe("volume and weight recipe conversions",()=>{
@@ -26,6 +26,26 @@ describe("volume and weight recipe conversions",()=>{
    costCents:20,displayUnit:"g",displayQuantity:103,removed:false,conversions:[],densityGramsPerMl:1.03}]);
   expect(preview.costCents).toBeCloseTo(20);
   expect(preview.estimated).toBe(false);
+ });
+ it("switching milliliters to fluid ounces preserves canonical milk cost",()=>{
+  const ounces=reexpressRecipeQuantity("ml","fl_oz",180,"ml");
+  expect(ounces).toBeCloseTo(6.08652,4);
+  expect(toBaseUnitQuantity("fl_oz",ounces!,"ml")).toBeCloseTo(180,7);
+  const cost=draftRecipeCosts([{ingredientId:"milk",baseUnit:"ml",originalBaseQuantity:180,
+   costCents:36,displayUnit:"fl_oz",displayQuantity:ounces!,removed:false,conversions:[]}]);
+  expect(cost.costCents).toBeCloseTo(36,6);
+ });
+ it("switches calibrated syrup pumps to fluid ounces without changing cost",()=>{
+  const conversions=[{unit:"pump" as const,baseUnitsPerUnit:7.393375}];
+  const oz=reexpressRecipeQuantity("pump","fl_oz",3,"ml",conversions);
+  expect(oz).toBeCloseTo(.75,4);
+  expect(toBaseUnitQuantity("fl_oz",oz!,"ml")).toBeCloseTo(22.180125,4);
+  expect(reexpressRecipeQuantity("ml","pump",22.180125,"ml",conversions)).toBeCloseTo(3,6);
+ });
+ it("does not reinterpret unconfigured shots or unknown weight/volume",()=>{
+  expect(reexpressRecipeQuantity("ml","pump",180,"ml")).toBeNull();
+  expect(reexpressRecipeQuantity("ml","g",180,"ml")).toBeNull();
+  expect(reexpressRecipeQuantity("ml","g",180,"ml",[],1.03)).toBeCloseTo(185.4,6);
  });
  it("rejects invalid densities rather than producing misleading costs",()=>{
   expect(toBaseUnitQuantity("g",120,"ml",[],0)).toBeNull();
