@@ -2568,6 +2568,17 @@
     }
   },
   "MenuBuilder": {
+    "packUnitFlOz": "أونصة سائلة",
+    "packUnitOzWt": "أونصة بالوزن",
+    "packUnitMl": "مليلتر",
+    "packUnitG": "غرام",
+    "packUnitKg": "كيلوغرام",
+    "packUnitL": "لتر",
+    "packUnitLb": "رطل",
+    "packUnitGal": "غالون",
+    "packUnitQt": "كوارت",
+    "packUnitEach": "قطعة",
+    "packUnitDozen": "دزينة",
     "archiveIngredient": "أرشفة المكوّن",
     "restoreIngredient": "استعادة المكوّن",
     "archivedIngredient": "مؤرشف · السجل محفوظ",
