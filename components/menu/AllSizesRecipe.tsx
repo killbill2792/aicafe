@@ -122,6 +122,11 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   <label className="min-w-[105px] text-[13px] font-bold">{t("unit")}<select value={newRowUnit} onChange={e=>setNewRowUnit(e.target.value as RecipeDisplayUnit)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]">{(add?recipeDisplayUnitsFor(ingredients.find(ingredient=>ingredient.id===add)?.baseUnit??"ml",conversions[add]??[]):[]).filter(unit=>!needsIngredientConversion(unit)||(conversions[add??""]??[]).some(c=>c.unit===unit)).map(unit=><option key={unit} value={unit}>{unitLabel(unit)}</option>)}</select></label>
   <button type="button" disabled={pending||!add||invalidQuantity||!(Number(newRowAmount)>0)} onClick={append} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{t("add")}</button>
   <button type="button" onClick={()=>setAdd(null)} className="min-h-12 px-3">{t("cancel")}</button></div>;}
+ /** Use the one canonical unit-compatibility helper; no parallel conversion rules in the UI. */
+ function availableUnits(line:MenuItemForEdit["recipe"][number]):RecipeDisplayUnit[]{
+  return recipeDisplayUnitsFor(line.baseUnit,conversions[line.ingredientId]??[]).filter(unit=>
+   !needsIngredientConversion(unit)||(conversions[line.ingredientId]??[]).some(c=>c.unit===unit)||unit===(line.displayUnit??line.baseUnit));
+ }
  function unitLabel(unit:RecipeDisplayUnit){
   return ({shot:units("recipeUnitShot"),pump:units("recipeUnitPump"),g:units("recipeUnitG"),ml:units("recipeUnitMl"),fl_oz:units("recipeUnitFlOz"),each:units("recipeUnitEach")} as Record<RecipeDisplayUnit,string>)[unit];
  }
