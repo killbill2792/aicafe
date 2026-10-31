@@ -82,7 +82,7 @@ describe("verified WhatsApp Supervisor worker",()=>{
  });
  it("does not start a duplicate agent when the canonical job was attached",async()=>{
    mock.start.mockResolvedValue({mode:"attached",job:{id:"job1"}});
-   expect(await processVerifiedWhatsAppOwnerTurn(input)).toEqual({status:"queued",completed:[]});
+   expect(await processVerifiedWhatsAppOwnerTurn(input)).toEqual({status:"queued",ownerMessageId:owner.id,completed:[]});
    expect(mock.run).not.toHaveBeenCalled();
  });
  it("replays the same verified stored answer without re-running the model",async()=>{
