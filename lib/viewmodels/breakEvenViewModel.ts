@@ -31,6 +31,8 @@ export type BreakEvenInputOptions={
  feeRateOverride?:number;
  observedSalesCentsOverride?:number;
  monthlyLaborCentsOverride?:number;
+ /** The owner stated this amount for today's or MTD's exact selected period. */
+ periodLaborCentsOverride?:number;
  monthlyRentCentsOverride?:number;
  monthlyOtherOverheadCentsOverride?:number;
  openDaysOverride?:number;
@@ -126,7 +128,8 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
       // Today accrues one calendar day's bills; the monthly average target
       // separately divides across planned OPEN days.
       Math.round(monthlyBillsCents/snapshot.daysInMonth);
-  const periodLaborCents=options.monthlyLaborCentsOverride!==undefined?
+  const periodLaborCents=options.periodLaborCentsOverride!==undefined?
+    options.periodLaborCentsOverride:options.monthlyLaborCentsOverride!==undefined?
     mode==="month_forecast"?options.monthlyLaborCentsOverride:
       mode==="month_to_date"?Math.round(options.monthlyLaborCentsOverride*
         elapsedOpenDates.length/openDayCount):
@@ -150,7 +153,7 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
     periodMissingLaborDates.length>0||forecastLabor||
     feeResult.basis!=="actual"||estimatedBills||estimatedStaffTax||ownerExtrasPresent||
     options.feeRateOverride!==undefined||options.ingredientRateOverride!==undefined||
-    options.monthlyLaborCentsOverride!==undefined||ownerBillsOverride||
+    options.monthlyLaborCentsOverride!==undefined||options.periodLaborCentsOverride!==undefined||ownerBillsOverride||
     options.observedSalesCentsOverride!==undefined;
   return {days,productCosts,monthlyBillsCents:periodBillsCents,
     monthlyStaffCents:periodLaborCents,
