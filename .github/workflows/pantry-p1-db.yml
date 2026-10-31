@@ -4,7 +4,7 @@ on:
     branches: [main]
     paths:
       - "supabase/migrations/20261022000079_pantry_packs.sql"
-      - "supabase/migrations/20261031000134_pantry_persistence.sql"
+      - "supabase/migrations/20261031000136_pantry_persistence.sql"
       - "scripts/test-pantry-db.mjs"
       - "scripts/test-pr-g-inventory-db.mjs"
       - "supabase/migrations/20261027000099_inventory_purchases.sql"
