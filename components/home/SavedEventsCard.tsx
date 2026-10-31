@@ -2,7 +2,7 @@
 
 import {useCallback,useEffect,useMemo,useState} from "react";
 import {createTranslator} from "next-intl";
-import {CalendarDays,ChevronLeft,ChevronRight,X} from "lucide-react";
+import {CalendarDays,ChevronLeft,ChevronRight,Lightbulb,X} from "lucide-react";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -16,8 +16,29 @@ type Timeline=SavedEventTimeline&{today:string;currency?:string|null};
 type Tab="past"|"now"|"upcoming";
 type Panel="events"|"day"|null;
 type Action={area:string;action:string;reason:string};
+
+/** Suggestions are read-only advice, never actionable checkboxes. */
+export function EventAdviceItem({action}:{action:Action}){
+  return <li className="flex min-w-0 items-start gap-3 rounded-xl border border-line bg-surface2 p-3">
+    <Lightbulb aria-hidden="true" size={22} className="mt-0.5 shrink-0 text-accent-text"/>
+    <div className="min-w-0">
+      <h5 className="break-words font-semibold" dir="auto">{action.action}</h5>
+      <p className="mt-1 break-words text-ink-muted" dir="auto">{action.reason}</p>
+    </div>
+  </li>;
+}
 type SavedQuestion={question:string;options:string[]};
 type Message={role:string;blocks:unknown[]|null};
+
+/** One navigation control shared by Home, the Events index and event details. */
+export function EventsTabs({tab,onChoose,t}:{tab:Tab;onChoose:(next:Tab)=>void;t:T}){
+  return <div className="grid grid-cols-3 gap-2" role="group" aria-label={t("title")}>
+    {(["past","now","upcoming"] as const).map(key=><button key={key} type="button"
+      aria-pressed={tab===key} onClick={()=>onChoose(key)}
+      className={"min-h-12 min-w-0 rounded-xl px-2 text-[16px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
+        (tab===key?"bg-accent text-on-accent":"bg-surface2 text-ink")}>{t(key)}</button>)}
+  </div>;
+}
 /** The existing chat owns the question and how it is answered; the panel only
  * mirrors the latest unanswered question without creating another question. */
 export function latestEventQuestion(messages:readonly Message[],locale:Locale):SavedQuestion|null{
@@ -57,6 +78,12 @@ const dateLabel=(date:string,locale:Locale,style:"short"|"long"="short")=>
     day:"numeric",weekday:style==="long"?"long":undefined}).format(new Date(date+"T00:00:00Z"));
 const eventsOn=(events:readonly CafeEvent[],date:string)=>
   events.filter(e=>e.startDate<=date&&e.endDate>=date);
+/** Preserve the exact tapped event across Home, chat and saved day reports. */
+export function eventChatTarget(date:string,event?:Pick<CafeEvent,"id"|"name">,
+  plan?:Pick<Plan,"summary"|"threadId">){
+  return {date,title:event?.name??plan?.summary??date,eventId:event?.id,
+    existingThreadId:event?undefined:plan?.threadId};
+}
 const planOn=(plans:readonly Plan[],date:string)=>
   plans.find(p=>p.startDate<=date&&p.endDate>=date);
 const actionsFor=(plan:Plan|undefined):Action[]=>Array.isArray(plan?.actions)?
@@ -147,7 +174,7 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
 /** Opens over the same Supervisor conversation. Reads saved PR 3 facts and loop plans only. */
 export default function SavedEventsCard({locale,chatDisabled,compact=false,onChatAboutDay}:{
   locale:Locale;chatDisabled:boolean;compact?:boolean;
-  onChatAboutDay:(date:string,title:string,existingThreadId?:string)=>void;
+  onChatAboutDay:(date:string,title:string,eventId?:string,existingThreadId?:string)=>void;
 }){
   const t=useMemo(()=>createTranslator({locale,messages:{en,es,ar}[locale],namespace:"EventsPanel"}) as unknown as T,[locale]);
   const [timeline,setTimeline]=useState<Timeline|null>(null);
@@ -193,7 +220,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
     events:eventsOn(timeline.events,date)}))
     .find(d=>Boolean(d.plan)||d.events.length>0);
   const openDay=(date:string)=>{setSelected(date);setPanel("day");setTab(date<today?"past":date===today?"now":"upcoming");setMonth(date.slice(0,7));};
-  const openEvents=()=>{setPanel("events");setSelected(null);setTab("upcoming");setMonth(today.slice(0,7));};
+  const openEvents=(next:Tab="upcoming")=>{setPanel("events");setSelected(null);setTab(next);setMonth(today.slice(0,7));};
   const chosen=selected??today;
   const plan=planOn(timeline.plans,chosen);
   const dayEvents=eventsOn(timeline.events,chosen);
@@ -205,12 +232,10 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const calendarDays=Array.from({length:weekday+monthLength},(_,i)=>i<weekday?null:
     calendarMonth+"-"+String(i-weekday+1).padStart(2,"0"));
   const button="min-h-12 rounded-xl px-4 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
-  const chat=(date:string)=>{
+  const chat=(date:string,event?:CafeEvent)=>{
     if(chatDisabled)return;
-    const matched=eventsOn(timeline.events,date);
-    const dayPlan=planOn(timeline.plans,date);
-    onChatAboutDay(date,(matched[0]?.name??dayPlan?.summary??date).slice(0,120),
-      dayPlan?.threadId);
+    const target=eventChatTarget(date,event,planOn(timeline.plans,date));
+    onChatAboutDay(target.date,target.title,target.eventId,target.existingThreadId);
     setPanel(null);
   };
   const listDates=eventListDays(timeline,tab,affectsOnly,sortByDate);
@@ -221,11 +246,12 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   return <>
     <section data-testid="coming-up" aria-label={t("title")}
       className="min-w-0 rounded-2xl border border-line bg-card p-3">
-      <button type="button" onClick={openEvents}
+      <button type="button" onClick={()=>openEvents()}
         className="flex min-h-12 w-full items-center gap-2 text-start font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <CalendarDays size={20} aria-hidden="true"/><span className="flex-1 text-[17px]">{t("title")}</span>
         <span className="text-[15px] text-accent-text">{t("seeAll")}</span>
       </button>
+      <div className="mt-2"><EventsTabs tab={tab} onChoose={openEvents} t={t}/></div>
       {!compact&&(lead?<button type="button" onClick={()=>openDay(lead.date)}
         className="mb-3 w-full min-w-0 rounded-2xl bg-surface2 p-3 text-start disabled:opacity-60">
         <p className="text-[15px] font-semibold text-accent-text">{dateLabel(lead.date,locale,"long")} · {lead.date===today?t("now"):t("upcoming")}</p>
@@ -274,13 +300,11 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
           <button type="button" onClick={()=>setPanel(null)} aria-label={t("close")} className={button}>
             <X size={22} aria-hidden="true"/></button>
         </header>
+        <div className="shrink-0 border-b border-line p-3">
+          <EventsTabs tab={tab} onChoose={next=>{setTab(next);setPanel("events");}} t={t}/>
+        </div>
         <div className="min-h-0 min-w-0 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain p-3 text-[17px] leading-relaxed sm:p-5">
           {panel==="events"?<>
-            <div className="grid grid-cols-3 gap-1" role="group" aria-label={t("title")}>
-              {(["past","now","upcoming"] as const).map(key=><button key={key} type="button"
-                aria-pressed={tab===key} onClick={()=>setTab(key)}
-                className={"min-h-12 min-w-0 rounded-xl px-1 text-[16px] font-semibold sm:px-4 "+(tab===key?"bg-accent text-on-accent":"bg-surface2 text-ink")}>{t(key)}</button>)}
-            </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button type="button" className={button+" bg-surface2"} onClick={()=>setCalendar(v=>!v)}
                 aria-expanded={calendar}><CalendarDays size={19} className="me-2 inline" aria-hidden="true"/>{t("calendar")}</button>
@@ -325,7 +349,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                   <VenueMapLink address={event.venueAddress} t={t}/>
                   {sourceUrl(event.sourceUrl)&&<a href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer"
                     className="inline-flex min-h-12 items-center text-accent-text underline">{t("source")}</a>}
-                  <button type="button" onClick={()=>chat(date)}
+                  <button type="button" onClick={()=>chat(date,event)}
                     className={button+" ms-3 text-accent-text underline"}>{t("chatAbout")}</button>
                 </article>)}
                 {saved.length>3&&<button type="button" className={button+" bg-surface2"}
@@ -347,6 +371,8 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
               <VenueMapLink address={event.venueAddress} t={t}/>
               {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
                 href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
+              <button type="button" onClick={()=>chat(chosen,event)} disabled={chatDisabled}
+                className={button+" ms-3 text-accent-text underline"}>{t("chatAbout")}</button>
             </article>)}
             {plan?<section className="space-y-4 rounded-2xl border border-line bg-card p-4" aria-label={t("savedInsight")}>
               <div>
@@ -356,11 +382,8 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
               <PlanHours plan={plan} t={t}/>
               {actions.length>0&&<div className="space-y-2">
                 <h4 className="font-bold">{t("recommendations")}</h4>
-                <div className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
-                  <article key={index} className="min-w-0 rounded-xl border border-line bg-surface2 p-3">
-                    <h5 className="break-words font-semibold" dir="auto">{action.action}</h5>
-                    <p className="mt-2 break-words text-ink-muted" dir="auto">{action.reason}</p>
-                  </article>)}</div>
+                <ul className="grid gap-3 sm:grid-cols-2">{actions.map((action,index)=>
+                  <EventAdviceItem key={index} action={action}/>)}</ul>
               </div>}
               {chosen===today&&liveEventHeadline(plan,chosen,t)&&<section aria-label={t("liveObservations")} className="rounded-xl bg-surface2 p-3">
                 <h4 className="font-bold">{t("liveObservations")}</h4>

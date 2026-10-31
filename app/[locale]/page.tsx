@@ -215,7 +215,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         clarifyOther:tChat("clarifyOther"),clarifySend:tChat("clarifySend"),
         clarifyYouChose:tChat("clarifyYouChose"),clarifySkipped:tChat("clarifySkipped"),
         clarifyOtherPlaceholder:tChat("clarifyOtherPlaceholder"),
-        howIGotThis:tChat("howIGotThis"),howCalculated:tChat("howCalculated"),
+        howIGotThis:tChat("howIGotThis"),howCalculated:tChat("howCalculated"),removeEventContext:tChat("removeEventContext"),
         explainMissing:tChat("explainMissing"),
         pricingLaborPrefix:tChat("pricingLaborPrefix"),pricingBillsPrefix:tChat("pricingBillsPrefix"),
         explainYouToldMe:tChat("explainYouToldMe"),
