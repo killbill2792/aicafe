@@ -31,6 +31,8 @@ export type BreakEvenInputOptions={
  feeRateOverride?:number;
  observedSalesCentsOverride?:number;
  monthlyLaborCentsOverride?:number;
+ monthlyRentCentsOverride?:number;
+ monthlyOtherOverheadCentsOverride?:number;
  openDaysOverride?:number;
 };
 export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakEvenInputOptions={}) {
@@ -40,8 +42,12 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
     day.date<snapshot.todayDateStr&&day.salesDataStatus!=="missing");
   const costRows=snapshot.breakEvenProductCosts??snapshot.menuItems;
   const productCosts=summarizeResolvedSoldProductCosts(costRows);
-  const monthlyBillsCents=snapshot.runningCostLines.filter(line=>!line.isMissing)
-    .reduce((total,line)=>total+line.amountCents,0);
+  const rentLines=snapshot.runningCostLines.filter(line=>line.categoryCode==="rent"&&!line.isMissing);
+  const otherLines=snapshot.runningCostLines.filter(line=>line.categoryCode!=="rent"&&!line.isMissing);
+  // Owner what-ifs REPLACE only the stated component; never double-count a bill.
+  const monthlyBillsCents=
+    (options.monthlyRentCentsOverride??rentLines.reduce((n,row)=>n+row.amountCents,0))+
+    (options.monthlyOtherOverheadCentsOverride??otherLines.reduce((n,row)=>n+row.amountCents,0));
   const openDates=Array.from({length:snapshot.daysInMonth},(_,i)=>
     snapshot.monthKey+"-"+String(i+1).padStart(2,"0")).filter(date=>
       regularHoursStateForDate(snapshot.business.openHours,date)!=="closed");
@@ -88,7 +94,10 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
     day.wagesCents!==null&&day.staffTaxCents!==null&&day.laborWageStatus!=="missing")
     .map(day=>day.date));
   const missingLaborDates=elapsedOpenDates.filter(date=>!completeLaborDates.has(date));
-  const missingBills=snapshot.runningCostLines.some(line=>line.isMissing&&line.isExpected);
+  const missingBills=snapshot.runningCostLines.some(line=>
+    line.isMissing&&line.isExpected&&
+    !(line.categoryCode==="rent"&&options.monthlyRentCentsOverride!==undefined)&&
+    !(line.categoryCode!=="rent"&&options.monthlyOtherOverheadCentsOverride!==undefined));
   const estimatedBills=snapshot.runningCostLines.some(line=>line.isEstimate&&line.amountCents>0);
   const estimatedStaffTax=monthRecords.some(day=>day.staffTaxStatus==="estimated");
   const ownerExtrasPresent=extras!=null;
@@ -127,18 +136,21 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
   const forecastLabor=mode==="month_forecast"&&elapsedOpenDates.length<openDates.length;
   const periodMissingLaborDates=mode==="today"?
     (todayLaborReady?[]:[asOf]):missingLaborDates;
+  const ownerBillsOverride=options.monthlyRentCentsOverride!==undefined||
+    options.monthlyOtherOverheadCentsOverride!==undefined;
   const estimatesUsed=missingBills||missingFees||ingredientSource!=="recipe"||
     productCosts.usesEstimatedProductCosts||monthLabor.notes.includes("laborEstimated")||
     periodMissingLaborDates.length>0||forecastLabor||
     feeResult.basis!=="actual"||estimatedBills||estimatedStaffTax||ownerExtrasPresent||
     options.feeRateOverride!==undefined||options.ingredientRateOverride!==undefined||
-    options.monthlyLaborCentsOverride!==undefined||
+    options.monthlyLaborCentsOverride!==undefined||ownerBillsOverride||
     options.observedSalesCentsOverride!==undefined;
   return {days,productCosts,monthlyBillsCents:periodBillsCents,
     monthlyStaffCents:periodLaborCents,
     monthLabor,feeResult,shared,openDayCount,targetOpenDays,openDates,elapsedOpenDates,
     missingLaborDates:periodMissingLaborDates,
     missingBills,missingFees,estimatedBills,estimatedStaffTax,ownerExtrasPresent,
+    ownerBillsOverride,
     observedSalesCents,observedIngredientCents:observedIngredientCents,
     ingredientSource,ingredientStatus,ingredientMissing,estimatesUsed,
     mode,asOf,periodEnd:mode==="today"?asOf:mode==="month_to_date"?
