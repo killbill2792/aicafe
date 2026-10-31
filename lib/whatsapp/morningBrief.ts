@@ -1,3 +1,4 @@
+import en from "@/messages/en.json";
 import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
 import {addCalendarDays} from "@/lib/pos/toast/scheduleDates";
 import type {CafeEvent} from "@/lib/data/cafeEvents.server";
@@ -17,6 +18,7 @@ export type MorningBriefEvidence={
   verifiedBinding:boolean;followupPermitted:boolean;
 };
 export type PreparedMorningBrief={
+  netSalesCents:number;
   parameters:DailyBriefParameters;
   businessDate:string;today:string;
   provenance:{sales:"daily_rollups";items:"menu_item_quantities_sold";menu:"menu_items";
@@ -113,7 +115,14 @@ export function prepareMorningBrief(e:MorningBriefEvidence,now:Date):PreparedMor
   const parameters=[businessName,money.text,String(total),best[0],String(best[1]),
     event.text,weekday] as const;
   if(parameters.some(v=>!safeText(v,240)))return null;
-  return {parameters,businessDate:e.yesterday,today:e.today,
+  return {netSalesCents:e.netSalesCents,parameters,businessDate:e.yesterday,today:e.today,
     provenance:{sales:"daily_rollups",items:"menu_item_quantities_sold",menu:"menu_items",
       eventId:event.id,monitorProposalId:monitorId}};
+}
+
+/** The approved Meta template text is also the website's canonical owner-facing brief.
+ * Never reconstruct the same fact in a second, independently worded notification. */
+export function renderMorningBrief(parameters:DailyBriefParameters):string{
+  return parameters.reduce<string>((text,value,index)=>
+    text.replaceAll("{{"+(index+1)+"}}",value),en.DailyBrief.whatsappTemplate);
 }
