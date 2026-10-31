@@ -158,15 +158,32 @@ describe("each saved event opens its own dated AI detail",()=>{
       summary:"Event A insight",status:"draft"};
     const planB={...fixture.plans[0],proposalId:"pb",eventIds:[eventB],
       summary:"Event B insight",status:"draft"};
-    expect(eventPlanFor([planA,planB],eventA)?.summary).toBe("Event A insight");
-    expect(eventPlanFor([planA,planB],eventB)?.summary).toBe("Event B insight");
-    expect(eventPlanFor([planA,planB],"unanalysed")).toBeUndefined();
-    expect(eventPlanFor([{...planA,eventIds:undefined}],eventA)).toBeUndefined();
+    expect(eventPlanFor([planA,planB],eventA,"2026-10-31")?.summary).toBe("Event A insight");
+    expect(eventPlanFor([planA,planB],eventB,"2026-10-31")?.summary).toBe("Event B insight");
+    expect(eventPlanFor([planA,planB],"unanalysed","2026-10-31")).toBeUndefined();
+    expect(eventPlanFor([{...planA,eventIds:undefined}],eventA,"2026-10-31")).toBeUndefined();
+  });
+  it("does not show a later day's plan when the same event spans several days",()=>{
+    const ongoing=event("ongoing","2026-10-30","2026-11-02");
+    const base=fixture.plans[0];
+    const today={...base,proposalId:"today",eventIds:[ongoing.id],
+      startDate:"2026-10-31",endDate:"2026-10-31",summary:"Saturday insight"};
+    const tomorrow={...base,proposalId:"tomorrow",eventIds:[ongoing.id],
+      startDate:"2026-11-01",endDate:"2026-11-01",summary:"Sunday report"};
+    const other={...base,proposalId:"unrelated",eventIds:["other-event"],
+      startDate:"2026-10-31",endDate:"2026-10-31",summary:"Other event"};
+    // Newest proposals arrive first; the date and event ID both determine relevance.
+    expect(eventPlanFor([tomorrow,other,today],ongoing.id,"2026-10-31")?.summary)
+      .toBe("Saturday insight");
+    expect(eventPlanFor([tomorrow,other,today],ongoing.id,"2026-11-01")?.summary)
+      .toBe("Sunday report");
+    expect(eventPlanFor([tomorrow,other,today],ongoing.id,"2026-10-30"))
+      .toBeUndefined();
   });
   it("preserves an already committed event proposal over a conflicting newer draft",()=>{
     const draft={...fixture.plans[0],eventIds:["a"],status:"draft",summary:"Later draft"};
     const approved={...draft,proposalId:"approved",status:"committed",summary:"Owner's chosen plan"};
-    expect(eventPlanFor([draft,approved],"a")?.summary).toBe("Owner's chosen plan");
+    expect(eventPlanFor([draft,approved],"a","2026-10-31")?.summary).toBe("Owner's chosen plan");
   });
 });
 
