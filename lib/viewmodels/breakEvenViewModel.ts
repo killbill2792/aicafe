@@ -123,8 +123,20 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
   const todayIsOpen=regularHoursStateForDate(snapshot.business.openHours,asOf)!=="closed";
   const targetOpenDays=mode==="month_forecast"?openDayCount:
     mode==="month_to_date"?elapsedOpenDates.length:todayIsOpen?1:0;
+  // MTD includes all already-incurred actual expenses; only recurring monthly
+  // assumptions are prorated. Owner replacements are monthly assumptions.
+  const unoverriddenLines=snapshot.runningCostLines.filter(line=>!line.isMissing&&
+    !(line.categoryCode==="rent"&&options.monthlyRentCentsOverride!==undefined)&&
+    !(line.categoryCode!=="rent"&&options.monthlyOtherOverheadCentsOverride!==undefined));
+  const incurredBillsMtd=unoverriddenLines.filter(line=>line.amountSource==="recorded_expense")
+    .reduce((total,line)=>total+line.amountCents,0);
+  const recurringBillsMtd=unoverriddenLines.filter(line=>line.amountSource!=="recorded_expense")
+    .reduce((total,line)=>total+line.amountCents,0)+
+    (options.monthlyRentCentsOverride??0)+(options.monthlyOtherOverheadCentsOverride??0);
+  const mtdBillsCents=incurredBillsMtd+
+    Math.round(recurringBillsMtd*mtdCalendarDays/snapshot.daysInMonth);
   const periodBillsCents=mode==="month_forecast"?monthlyBillsCents:
-    mode==="month_to_date"?Math.round(monthlyBillsCents*mtdCalendarDays/snapshot.daysInMonth):
+    mode==="month_to_date"?mtdBillsCents:
       // Today accrues one calendar day's bills; the monthly average target
       // separately divides across planned OPEN days.
       Math.round(monthlyBillsCents/snapshot.daysInMonth);
