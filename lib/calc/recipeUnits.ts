@@ -54,6 +54,32 @@ export function toBaseUnitQuantity(
   return null;
 }
 
+/** Re-express a recipe amount without changing its physical quantity.
+ * Unavailable pump/shot or density calibration returns null instead of
+ * reinterpreting an unchanged number as a new measurement. */
+export function reexpressRecipeQuantity(
+ fromUnit:RecipeDisplayUnit,toUnit:RecipeDisplayUnit,amount:number,baseUnit:BaseUnit,
+ conversions:IngredientUnitConversion[]=[],densityGramsPerMl?:number,
+):number|null{
+ const base=toBaseUnitQuantity(fromUnit,amount,baseUnit,conversions,densityGramsPerMl);
+ if(base===null)return null;
+ if(toUnit===baseUnit)return base;
+ if(toUnit==="each")return baseUnit==="each"?base:null;
+ const density=typeof densityGramsPerMl==="number"&&Number.isFinite(densityGramsPerMl)
+  &&densityGramsPerMl>0&&densityGramsPerMl<=5?densityGramsPerMl:null;
+ if(needsIngredientConversion(toUnit)){
+  const conversion=conversions.find(c=>c.unit===toUnit);
+  return conversion&&conversion.baseUnitsPerUnit>0?base/conversion.baseUnitsPerUnit:null;
+ }
+ if(toUnit==="fl_oz"){
+  if(baseUnit==="ml")return base/ML_PER_FL_OZ;
+  return baseUnit==="g"&&density!==null?base/density/ML_PER_FL_OZ:null;
+ }
+ if(toUnit==="g")return baseUnit==="ml"&&density!==null?base*density:null;
+ if(toUnit==="ml")return baseUnit==="g"&&density!==null?base/density:null;
+ return null;
+}
+
 /** Recover an owner-confirmed density from an existing recipe line, using only
  * quantities already stored in recipe_lines. No new table or rewritten rows. */
 export function densityFromStoredRecipe(baseUnit:BaseUnit,baseQuantity:number,displayUnit:RecipeDisplayUnit,displayQuantity:number):number|null{
