@@ -432,7 +432,7 @@ export default function SupervisorChatComposer({
     return () => controller.abort();
   }, [enabled, threadId, sending, threads, reloadVersion]);
   useEffect(() => {
-    if (!enabled || !threadId) return;
+    if (!enabled || !threadId || sending) return;
     const controller = new AbortController();
     void fetch("/api/ai/threads/" + encodeURIComponent(threadId) + "/attachments",
       { signal: controller.signal, cache: "no-store" })
@@ -440,7 +440,7 @@ export default function SupervisorChatComposer({
       .then((page) => { if (!controller.signal.aborted) setAttachments(page.items); })
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [enabled, threadId]);
+  }, [enabled, threadId, sending, reloadVersion]);
   useLayoutEffect(() => { selectedThreadId.current = threadId; }, [threadId]);
 
   function scrollToLatest() {
