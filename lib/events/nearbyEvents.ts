@@ -74,7 +74,7 @@ export function nearbyEventsPrompt(location:string,from:string,to:string,
     "Return only a compact JSON object with an events array. Each event has exactly "+
     "name, startDate (YYYY-MM-DD), and sourceUrl (the specific page confirming that date). "+
     "Do not return extra fields, commentary, markdown or citations outside the JSON. "+
-    "Never guess an event, date or URL; omit any event without a dated source page. "+
+    "Never guess or invent an event, date or URL; omit any event without a dated source page. "+
     "Return at most "+Math.min(MAX_EVENTS,5)+" confirmed events prioritizing likely local impact. "+
     "If none can be confirmed, return an events array with zero items.";
 }
