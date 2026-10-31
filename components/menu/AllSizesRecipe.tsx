@@ -3,7 +3,8 @@ import {Fragment,useState,useTransition} from "react";
 import {useTranslations} from "next-intl";
 import {Plus,X,ArrowLeftRight} from "lucide-react";
 import {useRouter} from "@/i18n/navigation";
-import {saveProductRecipes,createPantryIngredient} from "@/lib/actions/pantry";
+import {saveProductRecipes} from "@/lib/actions/pantry";
+import NewPantryInlineRow from "./NewPantryInlineRow";
 import {updateMenuItemPrice,setMenuItemActive} from "@/lib/actions/menuItems";
 import type {UnpricedMenuSize} from "@/lib/data/getUnpricedProductSizes";
 import {swapIngredient} from "@/lib/actions/pantry";
@@ -29,7 +30,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  const [swapSizeId,setSwapSizeId]=useState<string|null>(null);
  const [quantityInputs,setQuantityInputs]=useState<Record<string,string>>({});
  const [newRowAmount,setNewRowAmount]=useState("1"),[newRowUnit,setNewRowUnit]=useState<RecipeDisplayUnit>("ml");
- const [newPantry,setNewPantry]=useState(false),[newPantryName,setNewPantryName]=useState(""),[newPantryUnit,setNewPantryUnit]=useState<"g"|"ml"|"each">("ml");
+ const [newPantry,setNewPantry]=useState(false);
  const selectedItems=items.filter(i=>i.id===focusedSize), ingredientRows=[...new Map(selectedItems.flatMap(item=>item.recipe.map(line=>[line.ingredientId,line.ingredientName] as const))).entries()];
  const hasUnsavedChanges=Object.entries(drafts).some(([key,d])=>{
   for(const item of items){for(const line of item.recipe){if(key===k(item.id,line.ingredientId))return d.removed||d.quantity!==(line.displayQuantity??line.quantity)||d.unit!==(line.displayUnit??line.baseUnit);}}
@@ -57,7 +58,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   setToast(line.ingredientName);setSaved(false);
  }
  function undo(){const id=ingredientRows.find(row=>row[1]===toast)?.[0],item=selectedItems[0];if(!id||!item)return;setDrafts(prev=>({...prev,[k(item.id,id)]:{...prev[k(item.id,id)],removed:false}}));setToast("");}
- function recipeChanges(newIngredientId?:string){
+ function recipeChanges(newIngredientId?:string,newIngredientBase?: "g"|"ml"|"each"){
   return selectedItems.map(item=>({
    itemId:item.id,
    expected:item.recipe.map(line=>({ingredientId:line.ingredientId,quantity:line.quantity,displayUnit:line.displayUnit,displayQuantity:line.displayQuantity})),
@@ -68,8 +69,8 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
       return [{ingredientId:line.ingredientId,displayUnit:(d?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit,displayQuantity:d?.quantity??line.displayQuantity??line.quantity}];
     }),
     ...(newIngredientId?(()=>{
-      const ingredient=ingredients.find(i=>i.id===newIngredientId);
-      return ingredient&&!item.recipe.some(line=>line.ingredientId===ingredient.id)?[{ingredientId:ingredient.id,displayUnit:newRowUnit,displayQuantity:Number(newRowAmount)}]:[];
+      const ingredient=ingredients.find(i=>i.id===newIngredientId)??(newIngredientBase?{id:newIngredientId!,baseUnit:newIngredientBase,name:""}:null);
+      return ingredient&&!item.recipe.some(line=>line.ingredientId===ingredient.id)?[{ingredientId:ingredient.id,displayUnit:newIngredientBase??newRowUnit,displayQuantity:newIngredientBase?1:Number(newRowAmount)}]:[];
     })():[])
    ],
   }));
@@ -116,10 +117,6 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   return base===null?null:additiveCostCents(base,candidate.costPerBaseMicros);
  }
  function beginAddRow(after:string){setAdd("");setAddAfter(after);setNewRowAmount("1");setSearchIngredient("");setError("");}
- function createPantry(){if(!newPantryName.trim())return;setError("");start(async()=>{
-  const result=await createPantryIngredient({name:newPantryName.trim(),category:"other",baseUnit:newPantryUnit});
-  if(!result.ok){setError(t("error"));return;}setNewPantry(false);setNewPantryName("");router.refresh();
- });}
  function addPicker(){return <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent-soft p-3">
   <label className="min-w-[160px] flex-1 text-[13px] font-bold">{t("addRecipeRow")}
    <input autoFocus value={searchIngredient} onChange={e=>{setSearchIngredient(e.target.value);setAdd("");}} placeholder={t("search")} aria-label={t("search")} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]"/>
@@ -163,7 +160,12 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  </div>
  <button type="button" disabled={pending||!selectedItems[0]} onClick={()=>selectedItems[0]&&toggleSize(selectedItems[0])} className="mb-3 min-h-12 rounded-xl border border-line px-4 text-[17px]">{active.includes(focusedSize)?units("remove"):units("add")}</button>
  <div className="mb-3 flex flex-wrap gap-2"><button type="button" onClick={()=>beginAddRow("top")} className="min-h-12 rounded-xl border border-line bg-card px-4 font-bold text-accent-text"><Plus className="me-1 inline size-4"/>{t("addRecipeRow")}</button><button type="button" onClick={()=>setNewPantry(v=>!v)} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent"><Plus className="me-1 inline size-4"/>{t("addPantryItem")}</button></div>
- {newPantry&&<div className="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-line bg-card p-3"><label className="min-w-[180px] flex-1">{t("newIngredient")}<input autoFocus className="mt-1 min-h-12 w-full rounded-lg border border-line bg-card px-3" value={newPantryName} onChange={e=>setNewPantryName(e.target.value)}/></label><label>{t("measurementType")}<select className="mt-1 min-h-12 w-full rounded-lg border border-line bg-card px-2" value={newPantryUnit} onChange={e=>setNewPantryUnit(e.target.value as "g"|"ml"|"each")}><option value="ml">{t("liquidMeasurement")}</option><option value="g">{t("weightMeasurement")}</option><option value="each">{t("pieceMeasurement")}</option></select></label><button type="button" disabled={pending||!newPantryName.trim()} onClick={createPantry} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent">{t("create")}</button><button type="button" className="min-h-12 px-3" onClick={()=>setNewPantry(false)}>{t("cancel")}</button></div>}
+ {newPantry&&<div className="mb-3"><NewPantryInlineRow onCancel={()=>setNewPantry(false)} onCreated={async created=>{
+  if(!selectedItems[0]){router.refresh();return;}
+  const result=await saveProductRecipes({productId:selectedItems[0].id,sizes:recipeChanges(created.id,created.baseUnit)});
+  if(!result.ok){setError(t("createdWithoutRecipe"));router.refresh();return;}
+  setNewPantry(false);setSaved(true);router.refresh();
+ }}/></div>}
  {add!==null&&addAfter==="top"&&addPicker()}
  <div className="mb-2 grid gap-1.5 lg:hidden" style={mobileColumns}>{selectedItems.map(item=><div key={item.id} className="rounded-xl bg-paper p-2 text-center font-bold">{item.sizeLabel??item.name}</div>)}</div>
  <div className="space-y-2 lg:hidden">{ingredientRows.map(([id,name])=><div key={id} className="rounded-2xl border border-line bg-card p-3"><div className="mb-2 flex min-h-12 items-center gap-2"><strong className="min-w-0 flex-1 break-words">{name}</strong><button type="button" onClick={()=>beginAddRow(id)} aria-label={t("addRecipeRowAfter",{name})} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Plus size={18}/></button><button type="button" onClick={()=>openSwap(id)} className="min-h-12 rounded-xl bg-paper px-2 text-[13px] font-bold text-accent-text"><ArrowLeftRight size={15} className="me-1 inline"/>{t("swap")}</button><button type="button" aria-label={t("remove")} onClick={()=>removeRow(id)} className="flex min-h-12 min-w-12 items-center justify-center rounded-full bg-paper"><X size={17}/></button></div>{cells(id)}{add!==null&&addAfter===id&&<div className="mt-3">{addPicker()}</div>}</div>)}</div>
