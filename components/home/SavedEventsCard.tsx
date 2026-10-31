@@ -416,10 +416,10 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                 <p role="status">{liveEventHeadline(plan,chosen,t)}</p>
               </section>}
               <EventReportCard report={plan.report} status={plan.reportStatus}
-                currency={timeline.currency??null} locale={locale} t={t} onChat={()=>chat(chosen)}/>
+                currency={timeline.currency??null} locale={locale} t={t} onChat={()=>chat(chosen,chosenEvent)}/>
             </section>:<p className="rounded-xl bg-surface2 p-4 text-ink-muted">{chosenEvent?t("noEventInsight"):t("noPlan")}</p>}
             {dayEvents.length===0&&!plan&&<p className="text-ink-muted">{t("noEvents")}</p>}
-            <button type="button" onClick={()=>chat(chosen)} disabled={chatDisabled}
+            <button type="button" onClick={()=>chat(chosen,chosenEvent)} disabled={chatDisabled}
               className={button+" w-full bg-accent text-on-accent"}>{t("chatAbout")}</button>
           </>}
         </div>
