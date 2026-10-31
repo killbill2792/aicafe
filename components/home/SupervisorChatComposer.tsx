@@ -38,7 +38,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { groupReplyBlocks, originalReplyBlockIndex } from "./supervisorReplyPresentation";
 import SavedEventsCard from "./SavedEventsCard";
-import {openEventDayThread,eventContextFromTitle,eventOwnerMessage,type EventChatContext} from "./eventDayThread";
+import {openEventDayThread,eventContextFromTitle,eventOwnerMessage,eventThreadKey,type EventChatContext} from "./eventDayThread";
 import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
@@ -828,18 +828,19 @@ export default function SupervisorChatComposer({
   const durationLabel = String(Math.floor(elapsed / 60)) + ":" + String(elapsed % 60).padStart(2, "0");
   // A tap on a saved event opens that day in the same Supervisor conversation.
   const boardAskDisabled = !enabled || !canUseAi || sending || uploading || dictation === "recognizing" || resumedRunning;
-  const chatAboutEventDay=async(date:string,title:string,existingThreadId?:string)=>{
+  const chatAboutEventDay=async(date:string,title:string,eventId?:string,existingThreadId?:string)=>{
     if(boardAskDisabled||openingEvent.current)return;
     openingEvent.current=true;
     try{
-      if(existingThreadId){
-        eventThreadIds.current.set(date,existingThreadId);
+      // Existing plan threads represent a whole day, not one saved event.
+      if(existingThreadId&&!eventId){
+        eventThreadIds.current.set(eventThreadKey(date),existingThreadId);
         selectThread(existingThreadId);
         setEventContext({date,title,threadId:existingThreadId});
         return;
       }
       const chosenId=await openEventDayThread({
-        date,title,known:eventThreadIds.current,
+        date,title,eventId,known:eventThreadIds.current,
         create:async title=>{
           // Existing owner-scoped thread API handles idempotency and permissions.
           const created=await jsonFrom<{thread:ConversationThread}>(await fetch("/api/ai/threads",{
@@ -851,7 +852,7 @@ export default function SupervisorChatComposer({
         },
         select:id=>selectThread(id),
       });
-      setEventContext({date,title,threadId:chosenId});
+      setEventContext({date,title,eventId,threadId:chosenId});
     }catch{
       setError(true);setFailureCode("agent_request_failed");
     }finally{openingEvent.current=false;}
@@ -859,7 +860,7 @@ export default function SupervisorChatComposer({
   // Only saved event facts are read on Home; no paid search starts when opening the panel.
   const comingUpCard = enabled && canUseAi ? <SavedEventsCard locale={locale}
     compact={hasChatMessages&&!startExpanded}
-    onChatAboutDay={(date,title,existingThreadId)=>void chatAboutEventDay(date,title,existingThreadId)} chatDisabled={boardAskDisabled}/> : undefined;
+    onChatAboutDay={(date,title,eventId,existingThreadId)=>void chatAboutEventDay(date,title,eventId,existingThreadId)} chatDisabled={boardAskDisabled}/> : undefined;
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
