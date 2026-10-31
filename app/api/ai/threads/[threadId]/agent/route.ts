@@ -13,7 +13,7 @@ import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { addOwnerMessageInput, threadIdInput, type ConversationMessage, type ConversationScope } from "@/lib/ai/conversations/contracts";
 import { conversationError, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
-import { getExistingSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
+import { registerAuthorizedSupervisorTurn } from "@/lib/ai/conversations/authorizedTurn.server";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
@@ -28,7 +28,7 @@ import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
 import { persistAgentReply, recordAgentTurnUsage, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
-import { labelSupervisorThread, assertOwnerAgentTurnAvailable } from "@/lib/ai/conversations/usage.server";
+import { assertOwnerAgentTurnAvailable } from "@/lib/ai/conversations/usage.server";
 import { styleReport } from "@/lib/ai/agent/style";
 import type { AgentToolContext } from "@/lib/ai/agent/tools";
 import { isJobStepAgent, type AgentJob } from "@/lib/ai/agent/jobState";
@@ -356,14 +356,9 @@ export async function POST(request: Request, context: RouteContext) {
     await assertCafeAiAccess(scope.businessId);
     const readiness = await getSupervisorChatReadiness(true);
     if (!readiness.enabled) throw new ConversationApiError(503, readiness.reason);
-    const thread = await service.getThread(id);
-    try { await assertOwnerAgentTurnAvailable(scope); }
-    catch(error){ if(error instanceof ConversationApiError)console.error("agent_sse_error",{code:error.code}); throw error; }
-    const owner = await service.addOwnerMessage(id, input.clientMessageId, input.text);
-    const prior = await getExistingSupervisorReply(scope, owner);
-    if (thread.title === null) {
-      try { await labelSupervisorThread(scope, id, input.text); } catch { /* title is optional */ }
-    }
+    const { owner, prior } = await registerAuthorizedSupervisorTurn({
+      scope, service, threadId: id, clientMessageId: input.clientMessageId, text: input.text,
+    });
     const base = { scope, threadId: id, owner, ownerText: input.text, locale: input.locale, service,
       attachmentIds:input.attachmentIds??[] };
 
