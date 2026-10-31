@@ -5,7 +5,7 @@ const mock=vi.hoisted(()=>({
 }));
 const owner={id:"33333333-3333-4333-8333-333333333333",threadId:"22222222-2222-4222-8222-222222222222",
  role:"owner",contentType:"text",text:"Where did my money go yesterday?",clientMessageId:"44444444-4444-4444-8444-444444444444",
- blocks:null,grounding:null,createdAt:"2026-10-31T08:00:00Z"};
+ blocks:null,grounding:null,createdAt:"2026-10-30T08:00:00Z"};
 vi.mock("@/lib/ai/conversations/authorizedTurn.server",()=>({
  authorizedExternalConversation:mock.scope,externalOwnerClientMessageId:()=>owner.clientMessageId,
  registerAuthorizedSupervisorTurn:mock.register,markWhatsAppOwnerProvenance:mock.provenance,
@@ -25,14 +25,14 @@ vi.mock("@/lib/ai/agent/jobs.server",()=>({
 vi.mock("@/lib/supabase/admin",()=>({
  createAdminSupabaseClient:()=>({from:()=>({
    select:()=>({eq:()=>({eq:()=>({eq:()=>({eq:()=>({
-     single:async()=>({data:{grounding:{sourceChannel:"whatsapp",receivedAt:"2026-10-31T08:00:00.000Z"}},error:null}),
+     single:async()=>({data:{grounding:{sourceChannel:"whatsapp",receivedAt:"2026-10-30T08:00:00.000Z"}},error:null}),
    })})})})}),
  })}),
 }));
 import {processVerifiedWhatsAppOwnerTurn} from "./supervisor.server";
 const input={scope:{businessId:"11111111-1111-4111-8111-111111111111",
   ownerUserId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
- threadId:owner.threadId,wamid:"wamid.HBg123",receivedAt:"2026-10-31T08:00:00Z",
+ threadId:owner.threadId,wamid:"wamid.HBg123",receivedAt:"2026-10-30T08:00:00Z",
  locale:"en" as const,input:{type:"button" as const,payload:"money_went"}};
 describe("verified WhatsApp Supervisor worker",()=>{
  beforeEach(()=>{
