@@ -60,3 +60,50 @@ export async function registerAuthorizedSupervisorTurn(input: {
   }
   return {thread,owner,prior};
 }
+
+/** Channel provenance is stored on the owner turn, not in model history. Only
+ * the verified transport's server caller may mark it; browser owner messages
+ * cannot set grounding and WhatsApp payloads cannot approve actions. */
+export async function markWhatsAppOwnerProvenance(
+ scope:ConversationScope,owner:ConversationMessage,receivedAt:string,
+):Promise<void>{
+ const date=new Date(receivedAt);
+ if(!Number.isFinite(date.getTime())||date.getTime()>Date.now()+60_000)
+   throw new ConversationApiError(422,"invalid_whatsapp_received_at");
+ const client=createAdminSupabaseClient();
+ const query=()=>client.from("ai_messages").select("role,grounding")
+   .eq("id",owner.id).eq("thread_id",owner.threadId)
+   .eq("owner_user_id",scope.ownerUserId).eq("business_id",scope.businessId).maybeSingle();
+ const {data,error}=await query();
+ if(error||data?.role!=="owner")throw new ConversationApiError(403,"message_scope_mismatch");
+ const grounding=data.grounding as Record<string,unknown>|null;
+ const expected={sourceChannel:"whatsapp",receivedAt:date.toISOString()};
+ if(grounding){
+   if(grounding.sourceChannel!=="whatsapp"||grounding.receivedAt!==expected.receivedAt)
+     throw new ConversationApiError(409,"message_channel_conflict");
+   return;
+ }
+ const result=await client.from("ai_messages").update({grounding:expected})
+   .eq("id",owner.id).eq("thread_id",owner.threadId).eq("owner_user_id",scope.ownerUserId)
+   .eq("business_id",scope.businessId).is("grounding",null).select("id");
+ if(result.error)throw result.error;
+ if(result.data?.length!==1){
+   const replay=await query();
+   if(replay.error||replay.data?.grounding?.sourceChannel!=="whatsapp"||
+     replay.data?.grounding?.receivedAt!==expected.receivedAt)
+     throw new ConversationApiError(409,"message_channel_conflict");
+ }
+}
+
+/** Query scope is always explicit, so a continuation for an external message
+ * cannot silently become a web-only answer (or vice versa). */
+export async function storedOwnerMessageChannel(
+ scope:ConversationScope,threadId:string,messageId:string,
+):Promise<"whatsapp"|"web">{
+ const {data,error}=await createAdminSupabaseClient().from("ai_messages")
+   .select("role,grounding").eq("id",messageId)
+   .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+   .eq("thread_id",threadId).maybeSingle();
+ if(error||data?.role!=="owner")throw new ConversationApiError(403,"message_scope_mismatch");
+ return (data.grounding as {sourceChannel?:unknown}|null)?.sourceChannel==="whatsapp"?"whatsapp":"web";
+}
