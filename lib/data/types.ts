@@ -23,8 +23,12 @@ export type RunningCostLine = {
   categoryCode: ExpenseCategoryCode;
   label: string;
   amountCents: number;
+  /** Actual expenses already recorded this month must not be prorated as recurring bills. */
+  amountSource?: "recorded_expense" | "recurring" | "missing";
   isEstimate: boolean;
   isMissing: boolean;
+  /** Of the actual month-to-date expenses, the amount specifically spent today. */
+  actualTodayCents?:number;
   /** False when this category has no recurring row, prior actual, or other deterministic evidence
    * that this café uses it. An unused category is not a missing cost. */
   isExpected?: boolean;

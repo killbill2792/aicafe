@@ -37,6 +37,8 @@ export function breakEvenFor(input:{
   days:readonly BreakEvenDay[];asOfDate:string;daysInMonth:number;
   monthlyBillsCents:number|null;monthlyStaffCents:number|null;
   observedIngredientCents?:number|null;observedProcessingFeesCents?:number|null;
+  /** Owner what-if sales replace ONLY the calibration denominator, not saved Toast days. */
+  observedSalesCentsOverride?:number|null;
   ownerFeePlans?:readonly OwnerFeePlan[];
 }):BreakEvenResult{
   const start=shiftCafeDate(input.asOfDate,-28);
@@ -47,7 +49,10 @@ export function breakEvenFor(input:{
   if(coveredDays<28)notes.push("breakEvenCoveragePartial");
   if(input.monthlyBillsCents===null)notes.push("breakEvenBillsMissing");
   if(input.monthlyStaffCents===null)notes.push("breakEvenLaborMissing");
-  const observedSalesCents=window.reduce((sum,d)=>sum+d.netSalesCents,0);
+  const recordedSalesCents=window.reduce((sum,d)=>sum+d.netSalesCents,0);
+  const observedSalesCents=input.observedSalesCentsOverride??recordedSalesCents;
+  if(!Number.isSafeInteger(observedSalesCents)||observedSalesCents<0)
+    throw new RangeError("Invalid break-even sales override");
   const observedIngredientCents=input.observedIngredientCents??window.reduce((sum,d)=>sum+d.ingredientsCents,0);
   const feeResult=cardFeesForDays(window,input.ownerFeePlans??null);
   const observedProcessingFeesCents=input.observedProcessingFeesCents??feeResult.amountCents;

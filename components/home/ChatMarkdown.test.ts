@@ -52,6 +52,32 @@ describe("chat message rendering", () => {
     expect(html).toContain("<em");
     expect(html.match(/<ol/g)).toHaveLength(1);
   });
+  it("turns a legacy explanation into a usable, localized disclosure, preserving source marks",()=>{
+    for(const [locale,label] of [["en","How I got this"],["es","Cómo"],["ar","كيف"]] as const){
+      const text="<details>\n<summary>How I got this</summary>\n</details>\n\nEstimated monthly bills $7108.";
+      const start=text.indexOf("$7108");
+      const html=renderToStaticMarkup(createElement(ChatMarkdown,{
+        text,locale,unverified:[{start,end:start+5,source:"estimate"}],
+      }));
+      expect(html).toContain("<details");
+      expect(html).toContain("<summary");
+      expect(html).toContain(label);
+      expect(html).toContain("Estimated monthly bills");
+      expect(html).not.toContain("&lt;summary&gt;");
+      expect(html).toContain('aria-label="Estimate"');
+    }
+    const inline="<details>\n<summary>How I got this</summary>\nVerified sales **$50**\n</details>";
+    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:inline}));
+    expect(html).toContain("<details");
+    expect(html).toContain("<strong");
+  });
+  it("still escapes all unrelated or unsafe model HTML",()=>{
+    const html=renderToStaticMarkup(createElement(ChatMarkdown,{
+      text:"<details>\n<summary>Click me</summary>\n<script>bad()</script>\n</details>",
+    }));
+    expect(html).toContain("&lt;details&gt;");
+    expect(html).not.toContain("<script>");
+  });
   it("escapes model HTML rather than injecting it", () => {
     const html = renderToStaticMarkup(createElement(ChatMarkdown, {
       text: "<script>alert('bad')</script>", label: "Unverified",

@@ -55,6 +55,22 @@ describe("recorded Responses streaming fixtures", () => {
       content:"Café local date: 2026-10-27 (Tuesday), timezone America/Los_Angeles; weeks start Monday"});
   });
 
+  it("passes a visible @event anchor to the model even with unrelated history",async()=>{
+    const inputs:Record<string,unknown>[]=[];
+    const provider:AgentProvider=async function*(params){
+      inputs.push(params);
+      yield text("Halloween is the selected event.");yield completed;
+    };
+    await runAgentTurn({
+      ownerText:"@event Halloween (2026-10-31)\nExplain this",
+      history:[{role:"assistant",content:"We were reviewing break-even costs."}],
+      context,provider,
+    });
+    const input=inputs[0].input as Array<{role:string;content:string}>;
+    expect(input.at(-1)).toEqual({role:"user",content:"@event Halloween (2026-10-31)\nExplain this"});
+    expect(String(inputs[0].instructions)).toContain("that exact named event and date is the current subject");
+    expect(String(inputs[0].instructions)).toContain("never emit HTML details or summary tags");
+  });
   it("answers without tools and tracks usage", async () => {
     const deltas: string[] = [];
     const result = await runAgentTurn({ownerText:"Hello",context,
