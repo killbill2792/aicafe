@@ -36,6 +36,13 @@ export function preservedReplacementQuantity(unit:RecipeDisplayUnit,amount:numbe
  const baseAmount=reexpressRecipeQuantity(unit,base,amount,base,original);
  return baseAmount===null?null:reexpressRecipeQuantity(base,unit,baseAmount,base,replacement);
 }
+/** Use current ingredient identity for A→B and B→A recipe swaps. */
+export function nextReplacementDisplayQuantity(currentId:string,targetId:string,
+ unit:RecipeDisplayUnit,quantity:number,base:"g"|"ml"|"each",
+ currentConversions:IngredientUnitConversion[],targetConversions:IngredientUnitConversion[]):number|null{
+ if(currentId===targetId||!needsIngredientConversion(unit))return quantity>0?quantity:null;
+ return preservedReplacementQuantity(unit,quantity,base,currentConversions,targetConversions);
+}
 export default function AllSizesRecipe({items,ingredients,conversions,draftSizes,focusedSizeId,onFocusedSizeChange,onDraftDirtyChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void;onDraftDirtyChange?:(dirty:boolean)=>void}){
  const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),menu=useTranslations("Menu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
  // Serving status is supplied by the canonical parent after refresh. Keep the
@@ -180,6 +187,14 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   if(!await saveMeasurements())return;
   const result=await saveProductRecipes({productId:selectedItems[0].id,sizes:recipeChanges()});
   if(!result.ok){setError(t("error"));return;}
+  // Clearing only after success ensures failed saves preserve owner drafts.
+  // No-op round trips may keep the same recipeEditorKey and remain mounted.
+  setDrafts(Object.fromEntries(items.flatMap(item=>item.recipe.map(line=>[
+   k(item.id,line.ingredientId),{quantity:line.displayQuantity??line.quantity,
+    unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false}
+  ]))));
+  setCalibration({});setDensityInputs({});setQuantityInputs({});setReplacements({});
+  setAdd(null);setNewPantry(false);setEditingIngredient(null);
   setSaved(true);setToast("");router.refresh();
  });}
  function append(){if(!add||!selectedItems[0]||selectedItems.length===0||!(Number(newRowAmount)>0))return;
@@ -205,13 +220,13 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   }
   const key=k(item.id,id),current=drafts[key]??{unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,
    quantity:line.displayQuantity??line.quantity,removed:false};
-  // Preserve the physical base quantity across calibrated pump/shot swaps.
-  // A 10 ml pump cannot silently turn into a 5 ml pump.
-  if(target!==id&&needsIngredientConversion(current.unit)){
-   const entered=Number(quantityInputs[key]??String(current.quantity));
-   const previousIngredientId=replacements[key]??id;
-   const converted=preservedReplacementQuantity(current.unit,entered,line.baseUnit,conversionFor(previousIngredientId),conversionFor(target));
-   if(converted===null||!(converted>0)){setError(t("measureNeeded"));return;}
+  // A → B → A must use B as the source when reverting to the original A.
+  const previousIngredientId=replacements[key]??id;
+  const entered=Number(quantityInputs[key]??String(current.quantity));
+  const converted=nextReplacementDisplayQuantity(previousIngredientId,target,current.unit,entered,
+   line.baseUnit,conversionFor(previousIngredientId),conversionFor(target));
+  if(converted===null||!(converted>0)){setError(t("measureNeeded"));return;}
+  if(converted!==entered){
    const amount=Number(converted.toFixed(4));
    setDrafts(prev=>({...prev,[key]:{...current,quantity:amount}}));
    setQuantityInputs(prev=>({...prev,[key]:String(amount)}));
