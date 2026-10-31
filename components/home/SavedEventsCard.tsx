@@ -95,8 +95,8 @@ const planOn=(plans:readonly Plan[],date:string)=>
   plans.find(p=>p.startDate<=date&&p.endDate>=date);
 /** A day can have several unrelated events; only show a proposal that explicitly
  * names the selected event ID. Preserve approved/committed choices over drafts. */
-export function eventPlanFor(plans:readonly Plan[],eventId:string):Plan|undefined{
-  const matching=plans.filter(p=>p.eventIds?.includes(eventId));
+export function eventPlanFor(plans:readonly Plan[],eventId:string,date:string):Plan|undefined{
+  const matching=plans.filter(p=>p.eventIds?.includes(eventId)&&p.startDate<=date&&p.endDate>=date);
   return matching.find(p=>["approved","committed","manual_confirmed"].includes(p.status))??matching[0];
 }
 const actionsFor=(plan:Plan|undefined):Action[]=>Array.isArray(plan?.actions)?
@@ -259,7 +259,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const chosen=selected??today;
   const dayEvents=eventsOn(timeline.events,chosen);
   const chosenEvent=selectedEventId?dayEvents.find(event=>event.id===selectedEventId):undefined;
-  const plan=chosenEvent?eventPlanFor(timeline.plans,chosenEvent.id):planOn(timeline.plans,chosen);
+  const plan=chosenEvent?eventPlanFor(timeline.plans,chosenEvent.id,chosen):planOn(timeline.plans,chosen);
   const actions=actionsFor(plan);
   const calendarMonth=month??today.slice(0,7);
   const calendarFirst=calendarMonth+"-01";
