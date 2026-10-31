@@ -9,7 +9,7 @@ export type BriefRun={checked:number;sent:number;skipped:number;failed:number};
  * A callback is never a provider send and must be idempotent for retries. */
 export type BriefOutboxHook=(input:{
   businessId:string;ownerUserId:string;threadId:string;websiteMessageId:string;
-  businessName:string;currency:string|null;today:string;yesterday:string;now:Date;
+  businessName:string;currency:string|null;timezone:string;today:string;yesterday:string;now:Date;
   websiteText:string;
 })=>Promise<void>;
 
@@ -29,7 +29,7 @@ export async function sendDailyBriefs(db:SupabaseClient,now=new Date(),outbox?:B
       if(!when.due)continue;
       run.checked++;
       try{
-        if(await sendOne(db,states,b as {id:string;name?:string;currency:string|null},when,now,outbox))run.sent++;else run.skipped++;
+        if(await sendOne(db,states,b as {id:string;name?:string;currency:string|null;timezone:string},when,now,outbox))run.sent++;else run.skipped++;
       }catch{run.failed++;}
     }
     if((data??[]).length<100)break;
@@ -37,7 +37,7 @@ export async function sendDailyBriefs(db:SupabaseClient,now=new Date(),outbox?:B
   return run;
 }
 
-async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:string;name?:string;currency:string|null},
+async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:string;name?:string;currency:string|null;timezone:string},
   when:{today:string;yesterday:string},now:Date,outbox?:BriefOutboxHook):Promise<boolean>{
   const messageId=briefMessageId(b.id,when.today);
   const sent=await db.from("ai_messages").select("id,structured_content").eq("id",messageId).maybeSingle();
@@ -96,7 +96,7 @@ async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:s
     const websiteText=sent.data?stored?.find(block=>block.type==="text")?.text:text;
     if(!websiteText)throw new Error("daily_brief_website_message_missing");
     await outbox({businessId:b.id,ownerUserId:owner.data.user_id,threadId:thread.data.id,
-      websiteMessageId:messageId,businessName:b.name??"",currency:b.currency,
+      websiteMessageId:messageId,businessName:b.name??"",currency:b.currency,timezone:b.timezone,
       today:when.today,yesterday:when.yesterday,now,websiteText});
   }
   return !sent.data;
