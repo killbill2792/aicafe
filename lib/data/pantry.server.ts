@@ -385,8 +385,12 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
     const ingredient = value.starterKey.startsWith("custom:")
       ? byId.get(value.starterKey.slice(7)) : byKey.get(value.starterKey);
     if (!ingredient) return { ok: false, error: "missing_pantry", missingPantry: [value.starterKey] };
+    const original=source.find(row=>row.ingredient_id===ingredient.id);
+    const density=original?densityFromStoredRecipe(ingredient.base_unit as BaseUnit,
+      Number(original.quantity),(original.display_unit??ingredient.base_unit) as RecipeDisplayUnit,
+      Number(original.display_quantity??original.quantity)):null;
     const quantity = toBaseUnitQuantity(value.displayUnit, value.displayQuantity,
-      ingredient.base_unit as BaseUnit, conversions.get(ingredient.id) ?? []);
+      ingredient.base_unit as BaseUnit, conversions.get(ingredient.id) ?? [],density??undefined);
     if (quantity === null) return bad("ingredient_unit_mismatch");
     if (lines.some((line) => line.ingredientId === ingredient.id)) return bad("duplicate_ingredient");
     lines.push({ ingredientId: ingredient.id, quantity,
