@@ -119,7 +119,7 @@ export async function dispatchOutboundOnce(kind:Channel,send:typeof fetch=fetch)
   else {
     const payload=lease.payload as {fields?:unknown;text?:unknown}|null;
     const outbound:Outbound|null=kind==="daily_brief"&&Array.isArray(payload?.fields)?
-      {kind:"daily_brief",fields:payload.fields as TemplateFields}:
+      {kind:"daily_brief",fields:payload.fields as unknown as TemplateFields}:
       kind==="reply"&&typeof payload?.text==="string"?
         {kind:"reply",text:payload.text}:null;
     const built=outbound&&buildOutbound(bound.waId,outbound);
