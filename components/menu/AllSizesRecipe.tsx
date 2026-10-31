@@ -49,7 +49,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   return [item.id,{cost,summary:keepPreview(item.priceCents,cost),
    lineCosts:preview.lineCosts,estimated:preview.estimated||item.costSource==="owner_total"||item.ownerTotalCostStatus==="estimated"}];
  }));
- function removeRow(id:string){setDrafts(prev=>({...prev,...Object.fromEntries(items.filter(item=>item.recipe.some(l=>l.ingredientId===id)).map(item=>{const key=k(item.id,id);const line=item.recipe.find(l=>l.ingredientId===id)!;return[key,{...(prev[key]??{unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,quantity:line.displayQuantity??line.quantity}),removed:true}]}))}));setToast(ingredientRows.find(row=>row[0]===id)?.[1]??"");}
+ function removeRow(id:string){setQuantityInputs(prev=>Object.fromEntries(Object.entries(prev).filter(([key])=>!key.endsWith(":"+id))));setDrafts(prev=>({...prev,...Object.fromEntries(items.filter(item=>item.recipe.some(l=>l.ingredientId===id)).map(item=>{const key=k(item.id,id);const line=item.recipe.find(l=>l.ingredientId===id)!;return[key,{...(prev[key]??{unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,quantity:line.displayQuantity??line.quantity}),removed:true}]}))}));setToast(ingredientRows.find(row=>row[0]===id)?.[1]??"");}
  function undo(){const id=ingredientRows.find(row=>row[1]===toast)?.[0];if(!id)return;setDrafts(prev=>({...prev,...Object.fromEntries(items.filter(i=>i.recipe.some(l=>l.ingredientId===id)).map(item=>[k(item.id,id),{...prev[k(item.id,id)],removed:false}]))}));setToast("");}
  function recipeChanges(newIngredientId?:string){
   return items.map(item=>({
