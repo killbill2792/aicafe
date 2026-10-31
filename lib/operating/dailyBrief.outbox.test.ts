@@ -75,7 +75,7 @@ describe("morning brief optional durable-outbox seam",()=>{
     expect(await sendDailyBriefs(db,morning,hook)).toEqual({checked:1,sent:1,skipped:0,failed:0});
     expect(hook).toHaveBeenCalledTimes(1);
     expect(hook.mock.calls[0][0]).toMatchObject({businessId:"cafe-a",ownerUserId:"owner-a",
-      threadId:"thread-a",websiteMessageId:briefMessageId("cafe-a","2026-10-31"),
+      threadId:"thread-a",websiteMessageId:briefMessageId("cafe-a","2026-10-31","owner-a"),
       today:"2026-10-31",yesterday:"2026-10-30",businessName:"Shop A"});
     expect(hook.mock.calls[0][0].websiteText).toContain("Yesterday:");
   });
