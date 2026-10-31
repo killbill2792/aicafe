@@ -51,7 +51,7 @@ export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit
  const value=validBreakdown?String(originalPack.count)+" × "+String(originalPack.unitQuantity):String(quantity);
  if(unitNames[resolvedUnit]){
   const format=new Intl.NumberFormat(locale,{style:"unit",unit:unitNames[resolvedUnit],unitDisplay:"long",maximumFractionDigits:15});
-  const unitLabel=format.formatToParts(quantity).find(part=>part.type==="unit")?.value??resolvedUnit;
+  const unitLabel=format.formatToParts(validBreakdown?originalPack.unitQuantity:quantity).find(part=>part.type==="unit")?.value??resolvedUnit;
   const suffix=resolvedUnit==="oz_wt"?(locale.startsWith("es")?" de peso":locale.startsWith("ar")?" بالوزن":" by weight"):"";
   return value+" "+unitLabel+suffix;
  }
