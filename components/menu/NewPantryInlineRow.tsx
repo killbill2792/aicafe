@@ -4,7 +4,7 @@ import {useState,useTransition} from "react";
 import {useTranslations} from "next-intl";
 import {useRouter} from "@/i18n/navigation";
 import {createPantryIngredient,savePackPrice} from "@/lib/actions/pantry";
-import {parsePurchasePack} from "./purchasePackEntry";
+import {parsePurchasePackWithOriginal} from "./purchasePackEntry";
 import type {BaseUnit} from "@/lib/calc/recipeUnits";
 
 type Created={id:string;baseUnit:BaseUnit;name:string};
@@ -14,7 +14,7 @@ export default function NewPantryInlineRow({onCancel,onCreated}:{onCancel:()=>vo
  const [measure,setMeasure]=useState<BaseUnit|null>(null),[error,setError]=useState("");
  const [partial,setPartial]=useState(false);
  const matches=(["ml","g","each"] as const).flatMap(baseUnit=>{
-  const parsed=parsePurchasePack(pack,baseUnit);return parsed?[{baseUnit,...parsed}]:[];
+  const parsed=parsePurchasePackWithOriginal(pack,baseUnit);return parsed?[{baseUnit,...parsed}]:[];
  });
  // The purchase label normally determines the physical unit. If it says just
  // "ounces", never silently choose a liquid rather than a weight.
@@ -31,7 +31,7 @@ export default function NewPantryInlineRow({onCancel,onCreated}:{onCancel:()=>vo
    if(!result.ok||!result.id){setError(t("error"));return;}
    if(selected){
     const cents=Math.round(Number(price)*100);
-    const priceResult=await savePackPrice({ingredientId:result.id,packQuantity:selected.packQuantity,packUnit:selected.packUnit,packCostCents:cents});
+    const priceResult=await savePackPrice({ingredientId:result.id,packQuantity:selected.packQuantity,packUnit:selected.packUnit,packCostCents:cents,originalPack:selected.originalPack??null});
     if(!priceResult.ok){setPartial(true);setError(t("createdWithoutPrice"));router.refresh();return;}
    }
    if(onCreated)await onCreated({id:result.id,baseUnit,name:name.trim()});
