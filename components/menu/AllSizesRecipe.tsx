@@ -22,10 +22,10 @@ import {toBaseUnitQuantity} from "@/lib/calc/recipeUnits";
 import {swapPortionDifferenceCents,additiveCostCents} from "@/lib/calc/menuAddons";
 type Draft={unit:RecipeDisplayUnit;quantity:number;removed:boolean};
 function k(item:string,ingredient:string){return item+":"+ingredient;}
-export default function AllSizesRecipe({items,ingredients,conversions,pantry,draftSizes}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[]}){
+export default function AllSizesRecipe({items,ingredients,conversions,pantry,draftSizes,focusedSizeId,onFocusedSizeChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void}){
  const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
  const [active,setActive]=useState<string[]>(items.filter(i=>i.active).map(i=>i.id));
- const [focusedSize,setFocusedSize]=useState(items.find(i=>i.active)?.id??items[0]?.id??"");
+ const [focusedSize,setFocusedSize]=useState(focusedSizeId&&items.some(i=>i.id===focusedSizeId)?focusedSizeId:items.find(i=>i.active)?.id??items[0]?.id??"");
  const [searchIngredient,setSearchIngredient]=useState("");
  const [drafts,setDrafts]=useState<Record<string,Draft>>(()=>Object.fromEntries(items.flatMap(item=>item.recipe.map(line=>[k(item.id,line.ingredientId),{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false}]))));
  const [priceDraft,setPriceDraft]=useState<string|null>(null),[draftPrice,setDraftPrice]=useState("");
@@ -256,7 +256,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  return <div className="relative pb-24 text-ink">
  <div className="mb-3 flex flex-wrap items-center gap-2">
   <span className="font-bold">{t("sizesSell")}</span>
-  {items.map(item=><button key={item.id} type="button" aria-pressed={focusedSize===item.id} onClick={()=>{if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeSizeChange"));return;}setFocusedSize(item.id);setAdd(null);setToast("");setError("");}} className={`min-h-12 rounded-full border px-4 font-bold ${focusedSize===item.id?"border-accent bg-accent text-on-accent":"border-line bg-card"}`}>{item.sizeLabel??item.name}{!active.includes(item.id)?" · "+t("priceNotSet"):""}</button>)}
+  {items.map(item=><button key={item.id} type="button" aria-pressed={focusedSize===item.id} onClick={()=>{if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeSizeChange"));return;}setFocusedSize(item.id);onFocusedSizeChange?.(item.id);setAdd(null);setToast("");setError("");}} className={`min-h-12 rounded-full border px-4 font-bold ${focusedSize===item.id?"border-accent bg-accent text-on-accent":"border-line bg-card"}`}>{item.sizeLabel??item.name}{!active.includes(item.id)?" · "+t("priceNotSet"):""}</button>)}
   {draftSizes.map(draft=><button key={draft.id} type="button" onClick={()=>{setPriceDraft(draft.id);setDraftPrice("");}} className="min-h-12 rounded-full border border-dashed border-warn px-4">{draft.sizeLabel??draft.name}</button>)}
   <button type="button" onClick={()=>setSizeDialog(true)} className="min-h-12 rounded-full border border-dashed border-accent px-4 text-accent-text">{t("addSize")}</button>
  </div>
