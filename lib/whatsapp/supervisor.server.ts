@@ -27,7 +27,7 @@ export type WhatsAppSupervisorCompletion={
  receivedAt:string; eligibleAtCompletion:boolean;
 };
 export type WhatsAppSupervisorProcessing={
- status:"answered"|"queued"|"replayed";
+ status:"answered"|"queued"|"replayed";ownerMessageId:string;
  completed:WhatsAppSupervisorCompletion[];
 };
 
@@ -65,8 +65,8 @@ export async function processVerifiedWhatsAppOwnerTurn(
  await markWhatsAppOwnerProvenance(scope,registration.owner,receivedAt.toISOString(),verified.attachmentIds);
  if(registration.prior){
    const priorText=whatsappPlainTextFromSavedBlocks(registration.prior.blocks);
-   if(!priorText)return {status:"replayed",completed:[]};
-   return {status:"replayed",completed:[{
+   if(!priorText)return {status:"replayed",ownerMessageId:registration.owner.id,completed:[]};
+   return {status:"replayed",ownerMessageId:registration.owner.id,completed:[{
      ownerMessageId:registration.owner.id,replyId:registration.prior.id,
      replyText:priorText,receivedAt:receivedAt.toISOString(),
      eligibleAtCompletion:eligibleWhatsAppTextReply(priorText,receivedAt),
@@ -74,7 +74,8 @@ export async function processVerifiedWhatsAppOwnerTurn(
  }
  const jobs=await import("@/lib/ai/agent/jobs.server");
  const start=await jobs.startAgentJob(scope,threadId,registration.owner.id);
- if(start.mode!=="started")return {status:"queued",completed:[]};
+ if(start.mode==="failed"||start.mode==="busy")throw new ConversationApiError(503,"agent_job_not_available");
+ if(start.mode!=="started")return {status:"queued",ownerMessageId:registration.owner.id,completed:[]};
 
  const completed:WhatsAppSupervisorCompletion[]=[];
  let job:AgentJob|null=start.job, owner=registration.owner;
@@ -135,5 +136,6 @@ export async function processVerifiedWhatsAppOwnerTurn(
  // A completed job without a persisted reply for this particular inbound is
  // not a delivered answer. The inbound lease must remain retryable; a later
  // attempt replays the canonical reply only after it exists in ai_messages.
- return completed.length?{status:"answered",completed}:{status:"queued",completed:[]};
+ return completed.length?{status:"answered",ownerMessageId:registration.owner.id,completed}:
+   {status:"queued",ownerMessageId:registration.owner.id,completed:[]};
 }
