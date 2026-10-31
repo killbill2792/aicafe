@@ -66,6 +66,17 @@ describe("inline product recipe",()=>{
   expect(html).toContain("saveItem");
   expect(html).toContain("sizesSell");
  });
+ it("renders the parent-selected size when URL/card navigation supplies controlled focus",()=>{
+  const html=renderToStaticMarkup(<AllSizesRecipe items={items}
+    ingredients={[{id:"vanilla",name:"Vanilla syrup",baseUnit:"ml"},
+     {id:"milk",name:"Whole milk",baseUnit:"ml"}]}
+    conversions={{vanilla:[{unit:"pump",baseUnitsPerUnit:7.39}]}}
+    pantry={[{id:"vanilla",name:"Vanilla syrup",baseUnit:"ml",category:"syrup",costPerBaseMicros:200000}]}
+    draftSizes={[]} focusedSizeId="16" onFocusedSizeChange={()=>{}}/>);
+  expect(html).toContain('aria-pressed="true"');
+  expect(html).toContain('value="4"');
+  expect(html).not.toContain('value="3"');
+ });
  it("uses the existing canonical unit conversion rather than a screen-only calculator",()=>{
   expect(toBaseUnitQuantity("pump",3,"ml",[{unit:"pump",baseUnitsPerUnit:7.39}]))
    .toBeCloseTo(22.17,6);
