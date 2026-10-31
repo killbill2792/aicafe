@@ -1,4 +1,4 @@
-import {beforeEach,describe,expect,it,vi} from "vitest";
+import {beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 const spies=vi.hoisted(()=>({
   enabled:vi.fn(),kind:vi.fn(),deliver:vi.fn(),db:vi.fn(),
 }));
@@ -33,10 +33,12 @@ function setup(hasBrief:boolean){
 }
 beforeEach(()=>{
   process.env.CRON_SECRET="unit-cron-secret";
+  process.env.WHATSAPP_OWNER_BRIEF_SEND_ENABLED="true";
   spies.db.mockReset();spies.enabled.mockReset().mockReturnValue(true);
   spies.kind.mockReset().mockReturnValue("money_update");
   spies.deliver.mockReset().mockResolvedValue({sent:true,providerId:"provider-1"});
 });
+afterEach(()=>delete process.env.WHATSAPP_OWNER_BRIEF_SEND_ENABLED);
 describe("legacy WhatsApp task-alert coexists with canonical morning brief",()=>{
   const req=()=>new Request("https://example.test/api/cron/team-alerts",{
     headers:{authorization:"Bearer unit-cron-secret"}});
@@ -47,6 +49,13 @@ describe("legacy WhatsApp task-alert coexists with canonical morning brief",()=>
     expect(await response.json()).toMatchObject({sent:0});
     expect(spies.deliver).not.toHaveBeenCalled();
     expect(mutations).toEqual([]);
+  });
+  it("preserves legacy alerts when the new owner daily-brief feature is off",async()=>{
+    delete process.env.WHATSAPP_OWNER_BRIEF_SEND_ENABLED;
+    setup(true);
+    const response=await GET(req());
+    expect(await response.json()).toMatchObject({sent:1,failed:0});
+    expect(spies.deliver).toHaveBeenCalledTimes(1);
   });
   it("keeps the existing legacy task notification when no daily brief exists",async()=>{
     const {mutations}=setup(false);
