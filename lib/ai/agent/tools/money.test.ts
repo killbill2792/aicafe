@@ -1,6 +1,7 @@
 import { describe,expect,it } from "vitest";
 import { moneyTools } from "./money";
 import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
+import {breakEvenSnapshotInputs} from "@/lib/viewmodels/breakEvenViewModel";
 import {businessCostSummaryFromSnapshot} from "@/lib/operating/businessCosts";
 import {newResolveState} from "../resolve";
 import {figure,type Economics} from "@/lib/calc/supervisorEconomics";
@@ -38,6 +39,23 @@ describe("Leo scoped money reads",()=>{
       expect(result.dailyBreakEvenCents).toBeNull();
       expect(result.explain).toEqual([]);
     }
+  });
+  it("accepts an already-calculated canonical result but never bypasses owner changes",async()=>{
+    const snapshot=getFixtureSnapshot();
+    const basis=breakEvenSnapshotInputs(snapshot);
+    const context:AgentToolContext={...ctx({}),asOf:snapshot.todayDateStr,
+      readEconomics:async()=>({canonicalBreakEven:basis,
+        economics:{openDaysBasis:"opening_hours"} as unknown as Economics,
+        items:[],staff:[],ownerMonthlyPayrollExtrasCents:null,ownerIngredientRate:null})};
+    const standard=await moneyTools.get_break_even.execute({},context);
+    expect(standard.monthlyBreakEvenCents).toBe(basis.shared.salesPerMonthCents);
+    const override=await moneyTools.get_break_even.execute(
+      {ownerIngredientPackagingPercent:25},context);
+    expect(override.missing).toContain("canonicalBreakEvenUnavailable");
+    expect(override.monthlyBreakEvenCents).toBeNull();
+    const today=await moneyTools.get_break_even.execute({period:"today"},context);
+    expect(today.missing).toContain("canonicalBreakEvenUnavailable");
+    expect(today.dailyBreakEvenCents).toBeNull();
   });
   it("get_cost_summary renders the ledger label in EN ES and AR",async()=>{
     const snapshot=getFixtureSnapshot();
