@@ -14,7 +14,7 @@ export type EventChecklistTick={actionIndex:number;state:"done"|"dismissed"};
 export type SavedEventTimeline={
  events:CafeEvent[];
  plans:Array<{proposalId:string;threadId:string;status:string;revision:number;
-   startDate:string;endDate:string;summary:string;actions:unknown;expectedBusyHours:unknown;
+   startDate:string;endDate:string;eventIds:string[];summary:string;actions:unknown;expectedBusyHours:unknown;
    factsHash:string;importance?:"high"|"medium"|"low"|null;
    reportStatus:string|null;report:unknown|null}>;
 };
@@ -75,6 +75,10 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
    const report=byProposal.get(p.id);
    return {proposalId:p.id,threadId:p.thread_id,status:p.status,revision:p.revision,
      startDate:String(effect.startDate),endDate:String(effect.endDate),
+     // Preserve the saved proposal's exact event identities. A day can contain
+     // several unrelated events; the UI must not attach its insight to all of them.
+     eventIds:Array.isArray(effect.eventIds)?effect.eventIds.filter(
+       (id):id is string=>typeof id==="string"):[],
      summary:typeof effect.summary==="string"?effect.summary:"",
      actions:effect.actions??[],expectedBusyHours:effect.expectedBusyHours??[],
      factsHash:typeof effect.factsHash==="string"?effect.factsHash:"",
