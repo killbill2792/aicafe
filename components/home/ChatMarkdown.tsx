@@ -1,4 +1,7 @@
 import { tokenizeNumbers } from "@/lib/ai/agent/numberTokens";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import { useEffect, useReducer, useRef, useState, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
 
@@ -268,6 +271,35 @@ export function ChatMarkdown({text,unverified=[],label,labels,locale="en",showLe
   let index = 0;
   while (index < lines.length) {
     if (!lines[index].text.trim()) { index++; continue; }
+
+    // Older model replies may contain literal HTML-like disclosure markers.
+    // Recognize only this exact "How I got this" shape, never arbitrary HTML.
+    if(lines[index].text.trim()==="<details>"&&
+      /^<summary>How I got this<\/summary>$/.test(lines[index+1]?.text.trim()??"")){
+      const opened=index;
+      let closing=index+2;
+      while(closing<lines.length&&lines[closing].text.trim()!=="</details>"&&closing-index<40)closing++;
+      if(closing<lines.length&&lines[closing].text.trim()==="</details>"){
+        const inside=lines.slice(index+2,closing).filter(line=>line.text.trim());
+        if(inside.length===0){
+          // Model sometimes closes the details tag *before* its explanation.
+          // Treat the next contiguous explanation as the body of the control.
+          let next=closing+1;
+          while(next<lines.length&&!lines[next].text.trim())next++;
+          while(next<lines.length&&lines[next].text.trim()&&next-closing<12)inside.push(lines[next++]);
+          closing=next-1;
+        }
+        blocks.push(<details key={opened} className="rounded-xl border border-line bg-surface2 text-ink">
+          <summary className="min-h-12 cursor-pointer rounded-xl px-4 py-3 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+            {({en,es,ar}[locale]).SupervisorChat.howIGotThis}
+          </summary>
+          <div className="space-y-2 border-t border-line px-4 py-3">{inside.map((line,j)=>
+            <p key={j} className="whitespace-pre-line">{inlineMarkdown(line.text,line.start,spans,copy,badged,locale)}</p>)}</div>
+        </details>);
+        index=closing+1;
+        continue;
+      }
+    }
 
     const table=tableHeader(lines,index);
     if(table){
