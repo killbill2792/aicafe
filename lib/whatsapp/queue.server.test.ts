@@ -65,10 +65,10 @@ describe("durable WhatsApp handoff",()=>{
   it("only queues validated outbound payloads and requires source provenance",async()=>{
     const fields=["Cafe North","$10","1","Latte","1","verified event","Saturday"] as const;
     expect(await enqueueWhatsApp(U,"cafeA:2026-10-31:morning",{kind:"daily_brief",fields},
-      {source:"canonical_daily_brief",period:"2026-10-30"},undefined,"2026-10-31")).toBe(U);
+      {source:"canonical_daily_brief",period:"2026-10-30"},U,undefined,"2026-10-31")).toBe(U);
     const call=mocks.rpc.mock.calls.find(args=>args[0]==="whatsapp_enqueue_outbound");
     expect(call?.[1]).toMatchObject({p_kind:"daily_brief",p_binding_id:U,
-      p_payload:{fields:[...fields]},p_business_date:"2026-10-31"});
+      p_payload:{fields:[...fields]},p_business_date:"2026-10-31",p_source_message_id:U});
     await expect(enqueueWhatsApp(U,"invalid",{kind:"reply",text:"hi"},{})).rejects.toThrow("invalid_outbound");
   });
   it("rechecks binding before every send, and never sends when it is revoked",async()=>{
