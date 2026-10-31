@@ -1,4 +1,5 @@
 import {createHash} from "node:crypto";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
 import type {AgentId,OperatingTaskKind,OperatingTask} from "@/lib/operating/tasks";
 
@@ -8,7 +9,11 @@ export class ProposalRequestConflictError extends Error {
 }
 import {cafeToday,shiftCafeDate} from "@/lib/metrics/core/clock";
 export type LoopLocale="en"|"es"|"ar";
-export type OwnerLoopScope={businessId:string;ownerUserId:string;threadId:string;locale:LoopLocale};
+export type OwnerLoopScope={businessId:string;ownerUserId:string;threadId:string;locale:LoopLocale;
+  /** Server-provided and revalidated for read-only draft simulation only.
+   * Never serialized into proposal payloads or accepted by approval routes. */
+  verifiedReadClient?:SupabaseClient;
+};
 export type ProposalStatus="draft"|"approved"|"executing"|"committed"|"manual_pending"|
   "manual_confirmed"|"monitored"|"rejected"|"expired"|"stale";
 export type LoopProposal={
