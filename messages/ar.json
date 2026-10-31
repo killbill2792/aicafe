@@ -2568,6 +2568,14 @@
     }
   },
   "MenuBuilder": {
+    "archiveIngredient": "أرشفة المكوّن",
+    "restoreIngredient": "استعادة المكوّن",
+    "archivedIngredient": "مؤرشف · السجل محفوظ",
+    "archiveConfirm": "هل تريد أرشفة هذا المكوّن؟ ستبقى الوصفات والسجلات محفوظة.",
+    "activeIngredients": "المكوّنات النشطة",
+    "archivedIngredients": "المكوّنات المؤرشفة",
+    "moveIngredientUp": "نقل {name} لأعلى",
+    "moveIngredientDown": "نقل {name} لأسفل",
     "title": "المخزون",
     "search": "ابحث في المخزون",
     "all": "الكل",
