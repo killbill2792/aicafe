@@ -178,5 +178,3 @@ begin
   return jsonb_build_object('itemIds',to_jsonb(updated_ids));
 end;
 $$;
-
-
