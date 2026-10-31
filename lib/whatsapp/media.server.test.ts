@@ -37,6 +37,21 @@ describe("private WhatsApp media acceptance",()=>{
   expect(fetcher).toHaveBeenCalledTimes(2);
   expect(fetcher.mock.calls[0][0]).toBe("https://graph.facebook.com/v21.0/12345");
  });
+ it("uses Graph-certified PDF MIME from signed document kind, not a guessed webhook MIME",async()=>{
+   const fetcher=vi.fn(async(url:string|URL)=>{
+     if(String(url).startsWith("https://graph.facebook.com/"))
+       return Response.json({url:"https://lookaside.fbsbx.com/whatsapp_business/attachments/123",
+         mime_type:"application/pdf",file_size:pdf.length,sha256:sha});
+     return new Response(pdf,{headers:{"content-type":"application/pdf",
+       "content-length":String(pdf.length)}});
+   });
+   const result=await downloadWhatsAppMedia({mediaId:"12345",kind:"document"},
+     "token",fetcher as unknown as typeof fetch);
+   expect(result).toMatchObject({mimeType:"application/pdf",name:"attachment.pdf"});
+   expect(result.bytes).toEqual(pdf);
+   await expect(downloadWhatsAppMedia({mediaId:"12345",kind:"image"},
+     "token",fetcher as unknown as typeof fetch)).rejects.toThrow("unsupported_whatsapp_media");
+ });
  it("rejects wrong MIME or oversize Graph file before the bearer download",async()=>{
   const fetcher=vi.fn(async()=>Response.json({url:"https://lookaside.fbsbx.com/whatsapp_business/attachments/123",
      mime_type:"application/pdf",file_size:2097153,sha256:sha}));
