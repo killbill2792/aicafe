@@ -8,6 +8,18 @@ language plpgsql security definer set search_path=public as $$
 declare b public.whatsapp_owner_bindings; q public.whatsapp_outbox;
 begin
  if auth.role()<>'service_role' then raise exception 'service_role_only'; end if;
+ if p_kind='daily_brief' then
+   -- The one canonical outbox also records deadline misses as failed.
+   update public.whatsapp_outbox o set state='failed',
+     failure_code='brief_deadline_expired'
+     from public.businesses business
+     where o.business_id=business.id and o.kind='daily_brief' and o.state='queued'
+       and business.timezone is not null
+       and exists (select 1 from pg_catalog.pg_timezone_names z where z.name=business.timezone)
+       and ((now() at time zone business.timezone)::date>o.business_date
+         or ((now() at time zone business.timezone)::date=o.business_date
+           and (now() at time zone business.timezone)::time>=time '06:00:00'));
+ end if;
  update public.whatsapp_outbox set state='uncertain',failure_code='lease_expired',
    lease_token=null,leased_until=null
    where state='leased' and leased_until<now();
