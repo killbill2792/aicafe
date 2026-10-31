@@ -27,8 +27,10 @@ const drinkCategories=new Set(["ESPRESSO_DRINK","BREWED_COFFEE","COLD_BREW","TEA
 const otherCategories=new Set(["PASTRY","FOOD","RETAIL","food"]);
 function safeText(value:string,max=160):string|null{
   // Meta body variables must not introduce line breaks, markup or control characters.
-  const s=value.replace(/[\u0000-\u001f\u007f]/g," ")
-    .replace(/[\\*_~`<>]/g,"").replace(/\s+/g," ").trim();
+  const s=Array.from(value,ch=>{
+    const code=ch.codePointAt(0)??0;
+    return code<32||code===127?" ":ch;
+  }).join("").replace(/[\\*_~\`<>]/g,"").replace(/\s+/g," ").trim();
   return s.length>0&&s.length<=max?s:null;
 }
 function isDay(day:string):boolean{
