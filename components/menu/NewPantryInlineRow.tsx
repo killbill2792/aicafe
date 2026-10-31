@@ -27,7 +27,7 @@ export default function NewPantryInlineRow({onCancel,onCreated}:{onCancel:()=>vo
   setError("");start(async()=>{
    // No duplicate writer: compose the existing tenant-scoped create and pack-price actions.
    const result=await createPantryIngredient({name:name.trim(),category:"other",baseUnit});
-   if(!result.ok){setError(t("error"));return;}
+   if(!result.ok||!result.id){setError(t("error"));return;}
    if(selected){
     const cents=Math.round(Number(price)*100);
     const priceResult=await savePackPrice({ingredientId:result.id,packQuantity:selected.packQuantity,packUnit:selected.packUnit,packCostCents:cents});
