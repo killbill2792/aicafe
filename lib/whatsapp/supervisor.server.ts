@@ -97,7 +97,11 @@ export async function processVerifiedWhatsAppOwnerTurn(
      // Do not send any text when the canonical job cannot be marked complete.
      throw new ConversationApiError(503,"agent_job_finish_failed");
    }
-   if("replyId" in result && channel==="whatsapp"){
+   // Only hand the initiating inbound its own reply. Other WA messages
+   // consumed by this canonical continuation chain are retrieved separately
+   // by their own durable PR A inbound leases (then replayed via ai_messages).
+   // Never route a second wamid's answer to the initial phone/message.
+   if("replyId" in result && channel==="whatsapp" && owner.id===registration.owner.id){
      const {data,error}=await db.from("ai_messages")
        .select("grounding").eq("id",owner.id).eq("business_id",scope.businessId)
        .eq("owner_user_id",scope.ownerUserId).eq("thread_id",threadId).single();
