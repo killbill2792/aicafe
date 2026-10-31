@@ -11,7 +11,7 @@ vi.mock("@/lib/data/cafeEvents.server",()=>({readCafeEvents:reads.events}));
 vi.mock("@/lib/ai/supervisor/loop/reads.server",()=>({readOwnerProposals:reads.monitors}));
 import {readPreparedMorningBrief} from "./morningBrief.server";
 
-const db={} as SupabaseClient,now=new Date("2026-10-31T15:30:00Z");
+const db={} as SupabaseClient,now=new Date("2026-10-31T12:50:00Z");
 const recipient={
   businessId:"cafe-a",ownerUserId:"owner-a",businessName:"Shop A",currency:"USD",
   today:"2026-10-31",yesterday:"2026-10-30",timezone:"America/Los_Angeles",
