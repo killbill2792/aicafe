@@ -8,7 +8,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE, MENU_SAVE_FAILURE_MESSAGE } from "@/lib/data/queryError";
 import { calculatePantryPriceImpact, type PantryImpactRow } from "@/lib/calc/pantryImpact";
-import {densityFromStoredRecipe, packToCostPerBaseMicros, toBaseUnitQuantity, type BaseUnit, type RecipeDisplayUnit, type IngredientUnitConversion } from "@/lib/calc/recipeUnits";
+import {densityFromStoredRecipe, packToCostPerBaseMicros, replacementRecipeLine, toBaseUnitQuantity, type BaseUnit, type RecipeDisplayUnit, type IngredientUnitConversion } from "@/lib/calc/recipeUnits";
 import { PANTRY_STARTERS_BY_KEY, displayPantryStarterName } from "@/lib/menu/pantryStarter";
 import { RECIPE_TEMPLATES_BY_KEY, recipeSizesFor, templateRecipeForSize, scaledTemplateLines, type TemplateLine, type RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
 
@@ -337,11 +337,18 @@ export async function prepareIngredientSwap(productId: string, fromId: string, t
       if (!originalIngredient) return bad("ingredient_not_found");
       const displayUnit = (row.display_unit || originalIngredient.base_unit) as RecipeDisplayUnit;
       const displayQuantity = row.display_quantity === null ? Number(row.quantity) : Number(row.display_quantity);
-      const quantity = isChanged ? toBaseUnitQuantity(displayUnit, displayQuantity,
-        to.base_unit as BaseUnit, conversions.get(toId) ?? []) : Number(row.quantity);
-      if (quantity === null) return bad("ingredient_unit_mismatch");
+      const replacement = isChanged ? replacementRecipeLine(
+        Number(row.quantity), displayUnit, displayQuantity,
+        originalIngredient.base_unit as BaseUnit, to.base_unit as BaseUnit,
+        conversions.get(toId) ?? []) : null;
+      if (isChanged && !replacement) return bad("ingredient_unit_mismatch");
+      // Do not copy an old milk's density or pump/shot calibration to a new
+      // ingredient; when a saved display is not valid for the replacement,
+      // keep the original canonical physical amount and use the base-unit label.
       lines.push({ ingredientId: isChanged ? toId : row.ingredient_id,
-        quantity, displayUnit, displayQuantity });
+        quantity: replacement?.quantity ?? Number(row.quantity),
+        displayUnit: replacement?.displayUnit ?? displayUnit,
+        displayQuantity: replacement?.displayQuantity ?? displayQuantity });
     }
     changes.push({ menuItemId: sibling.id, lines, expectedOrder: existing.map(row=>row.ingredient_id),
       expectedLines: snapshotLines(existing) });
