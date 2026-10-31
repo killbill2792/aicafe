@@ -224,11 +224,11 @@ export const moneyTools={
            mode==="month_to_date"?{from:calendarMonth(ctx.asOf).from,
              to:breakEvenSnapshotInputs(canonicalSnapshot,{period:mode}).periodEnd}:
              calendarMonth(ctx.asOf);
-         const ownerLaborMatchesPeriod=provided?.laborCents!=null&&ownerLaborPeriod!==null&&
-           ownerLaborPeriod.from===targetPeriod.from&&ownerLaborPeriod.to===targetPeriod.to;
-         const suppliedPeriodLabor=ownerLaborMatchesPeriod?provided!.laborCents!:undefined;
-         const suppliedLabor=provided?.laborCents!=null&&ownerLaborPeriod&&!ownerLaborMatchesPeriod?
-           prorate(provided.laborCents,ownerLaborPeriod,calendarMonth(ctx.asOf)):undefined;
+         // Use a single calendar prorate from the OWNER'S original period to
+         // this answer's exact period. Do not convert to month and then
+         // divide by open days: that inflates an exact $100 today statement.
+         const suppliedPeriodLabor=provided?.laborCents!=null&&ownerLaborPeriod?
+           prorate(provided.laborCents,ownerLaborPeriod,targetPeriod):undefined;
          const ownerSales=owner.ownerNetSalesCents??provided?.netSalesCents??undefined;
          const costPeriod=ownerPeriod(provided?.overheadPeriod??null,ctx.asOf)??calendarMonth(ctx.asOf);
          const ownerRent=provided?.rentCents==null?undefined:
@@ -245,7 +245,6 @@ export const moneyTools={
            ...(owner.ownerProcessingFeePercent!=null?
              {feeRateOverride:owner.ownerProcessingFeePercent/100}:{}),
            ...(ownerSales!==undefined?{observedSalesCentsOverride:ownerSales}:{}),
-           ...(suppliedLabor!==undefined?{monthlyLaborCentsOverride:suppliedLabor}:{}),
            ...(suppliedPeriodLabor!==undefined?{periodLaborCentsOverride:suppliedPeriodLabor}:{}),
            ...(ownerRent!==undefined?{monthlyRentCentsOverride:ownerRent}:{}),
            ...(ownerOther!==undefined?{monthlyOtherOverheadCentsOverride:ownerOther}:{}),
