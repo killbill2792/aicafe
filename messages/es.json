@@ -2568,6 +2568,17 @@
     }
   },
   "MenuBuilder": {
+    "packUnitFlOz": "onzas líquidas",
+    "packUnitOzWt": "onzas de peso",
+    "packUnitMl": "mililitros",
+    "packUnitG": "gramos",
+    "packUnitKg": "kilogramos",
+    "packUnitL": "litros",
+    "packUnitLb": "libras",
+    "packUnitGal": "galones",
+    "packUnitQt": "cuartos",
+    "packUnitEach": "unidades",
+    "packUnitDozen": "docena",
     "archiveIngredient": "Archivar ingrediente",
     "restoreIngredient": "Restaurar ingrediente",
     "archivedIngredient": "Archivado · se conserva el historial",
