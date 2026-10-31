@@ -118,7 +118,9 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
     mode==="month_to_date"?elapsedOpenDates.length:todayIsOpen?1:0;
   const periodBillsCents=mode==="month_forecast"?monthlyBillsCents:
     mode==="month_to_date"?Math.round(monthlyBillsCents*mtdCalendarDays/snapshot.daysInMonth):
-      Math.round(monthlyBillsCents/openDayCount);
+      // Today accrues one calendar day's bills; the monthly average target
+      // separately divides across planned OPEN days.
+      Math.round(monthlyBillsCents/snapshot.daysInMonth);
   const periodLaborCents=options.monthlyLaborCentsOverride!==undefined?
     mode==="month_forecast"?options.monthlyLaborCentsOverride:
       mode==="month_to_date"?Math.round(options.monthlyLaborCentsOverride*
