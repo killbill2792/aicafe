@@ -8,6 +8,7 @@ const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
 const OWNER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const OTHER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const MANAGER = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const PARENT = "33333333-3333-4333-8333-333333333333";
 const FOREIGN_ING = "44444444-4444-4444-8444-444444444444";
 let owned = {};
@@ -124,6 +125,7 @@ try {
   await db.query("grant execute on function public.save_menu_product_addons(uuid,uuid,jsonb) to authenticated");
   await db.query("insert into businesses(id) values($1),($2)",[A,B]);
   await db.query("insert into memberships(business_id,user_id) values($1,$2),($3,$4)",[A,OWNER,B,OTHER]);
+  await db.query("insert into memberships(business_id,user_id,role) values($1,$2,'manager')",[A,MANAGER]);
   await db.query("insert into menu_items(id,business_id,name,base_name,price_cents) values($1,$2,'Latte','Latte',550)",[PARENT,A]);
   await db.query("insert into ingredients(id,business_id,name,base_unit) values($1,$2,'Other business milk','ml')",[FOREIGN_ING,B]);
 
@@ -285,6 +287,9 @@ try {
     assert.deepEqual((await c.query(`select ingredient_id from recipe_lines where menu_item_id=$1
       order by sort_order nulls last,ingredient_id`,[PARENT])).rows.map(r=>r.ingredient_id),
       moved.map(r=>r.ingredientId),"moved order must persist");
+    await rejectStatement(c,rpc("pantry_replace_recipes",[],3),[A,PARENT,JSON.stringify([{
+      menuItemId:PARENT,expectedSourceOrder:next.map(x=>x.ingredientId),lines:moved,
+    }])],"40001");
     const siblings=await c.query(`select menu_item_id,count(*) from recipe_lines
       where menu_item_id<>$1 group by menu_item_id`,[PARENT]);
     assert.equal(siblings.rows.length,3,"other sizes remain intact");
@@ -335,6 +340,14 @@ try {
       "RLS must prohibit direct destructive deletion");
     assert.equal((await c.query("select count(*) from ingredients where id=$1",[milk])).rows[0].count,"1");
   });
+  await asOwner(db,async c=>{
+    await rejectStatement(c,"update ingredients set archived_at=now() where id=$1",
+      [owned["milk-whole"]],"42501");
+    await rejectStatement(c,"insert into ingredients(business_id,name,base_unit,archived_at)
+      values($1,'Forged Archived','ml',now())",[A],"42501");
+    const rename=await c.query("update ingredients set name=name where id=$1 returning id",[owned["milk-whole"]]);
+    assert.equal(rename.rowCount,1,"ordinary manager ingredient edits must still work");
+  },MANAGER);
   await asOwner(db,async c=>{
     await rejectStatement(c,rpc("pantry_set_archived",[],3),[A,owned["milk-whole"],true],"42501");
   },OTHER);
