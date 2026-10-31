@@ -27,14 +27,14 @@ const nullableText=(max:number)=>z.union([z.string(),z.null()]).transform(v=>{
 const isoDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).refine(d=>!Number.isNaN(Date.parse(d+"T00:00:00Z")));
 const eventSchema=z.object({
   name:z.string().transform(v=>v.replace(/\s+/gu," ").trim().slice(0,90)).pipe(z.string().min(2)),
-  startDate:isoDate,endDate:z.union([isoDate,z.null()]),
-  venue:nullableText(80),venueAddress:nullableText(160).optional().transform(v=>v??null),
+  startDate:isoDate,endDate:z.union([isoDate,z.null()]).optional().transform(v=>v??null),
+  venue:nullableText(80).optional().transform(v=>v??null),venueAddress:nullableText(160).optional().transform(v=>v??null),
   startTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable().optional().transform(v=>v??null),
   endTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable().optional().transform(v=>v??null),
-  distance:nullableText(40),
+  distance:nullableText(40).optional().transform(v=>v??null),
   kind:z.enum(EVENT_KINDS).catch("other"),expectedCrowd:z.enum(CROWD_SIZES).catch("unknown"),
   sourceUrl:z.string().url().max(400).refine(u=>u.startsWith("https://")||u.startsWith("http://")),
-  sourceName:nullableText(60),
+  sourceName:nullableText(60).optional().transform(v=>v??null),
 });
 
 /** Strict JSON schema the search model must answer with (OpenAI strict mode). */
@@ -77,13 +77,32 @@ export function nearbyEventsPrompt(location:string,from:string,to:string,
 export function parseNearbyEvents(text:string,from:string,to:string):NearbyEvent[]|null{
   let raw:unknown;
   try{raw=JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/gu,""));}catch{return null;}
-  const list=raw&&typeof raw==="object"&&Array.isArray((raw as {events?:unknown}).events)?
-    (raw as {events:unknown[]}).events:null;
+  // Plain web-search fallback responses sometimes use a bare list or "results"
+  // instead of the strict schema wrapper. Neither shape relaxes source/date proof.
+  const list=Array.isArray(raw)?raw:raw&&typeof raw==="object"?
+    (Array.isArray((raw as {events?:unknown}).events)?(raw as {events:unknown[]}).events:
+      Array.isArray((raw as {results?:unknown}).results)?(raw as {results:unknown[]}).results:null):null;
   if(!list)return null;
   const seen=new Set<string>(),out:NearbyEvent[]=[];
   let inWindow=0;
   for(const item of list){
-    const parsed=eventSchema.safeParse(item);
+    // Accept common JSON keys from completed search responses. Essential fields
+    // (confirmed ISO date, name and source URL) are still mandatory and checked.
+    const candidate=item&&typeof item==="object"&&!Array.isArray(item)?
+      item as Record<string,unknown>:null;
+    const normalized=candidate?{
+      ...candidate,
+      name:candidate.name??candidate.title,
+      startDate:candidate.startDate??candidate.start_date??candidate.date,
+      endDate:candidate.endDate??candidate.end_date,
+      sourceUrl:candidate.sourceUrl??candidate.source_url,
+      sourceName:candidate.sourceName??candidate.source_name,
+      venueAddress:candidate.venueAddress??candidate.venue_address,
+      startTime:candidate.startTime??candidate.start_time,
+      endTime:candidate.endTime??candidate.end_time,
+      expectedCrowd:candidate.expectedCrowd??candidate.expected_crowd,
+    }:item;
+    const parsed=eventSchema.safeParse(normalized);
     if(!parsed.success)continue;
     const e=parsed.data,end=e.endDate&&e.endDate>=e.startDate?e.endDate:e.startDate;
     if(end<from||e.startDate>to)continue; // outside the asked window
