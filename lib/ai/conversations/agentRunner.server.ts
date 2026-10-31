@@ -306,7 +306,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
     emit("done", { reply, status: result.status, endReason: result.endReason,
       unverified: result.unverified, usage: result.usage,
       ...(job ? { jobId: job.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] } : {}) });
-    return { replyId: reply.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] };
+    return { replyId: reply.id, replyText:result.text, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] };
   } catch (error) {
     if(!logged)console.info("agent_turn",{turn:"agent",endReason:"error",status:"unavailable",
       modelCalls:0,toolCalls:0,tools:[],latencyMs:Date.now()-startedAt,unverifiedCount:0});
