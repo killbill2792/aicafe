@@ -61,9 +61,19 @@ export async function recordPurchases(
   const line=parsed.data;
   if(seen.has(lineId)){results.push({lineId,ok:false,error:"repeated_line_id"});continue;}
   seen.add(lineId);
-  const {data:ingredient,error:ingredientError}=await db.from("ingredients").select("id,base_unit")
+  const {data:ingredient,error:ingredientError}=await db.from("ingredients").select("id,base_unit,archived_at")
    .eq("business_id",businessId).eq("id",line.ingredientId).maybeSingle();
   if(ingredientError||!ingredient){results.push({lineId,ok:false,error:"ingredient_not_found"});continue;}
+  // A new bulk/manually entered purchase cannot select an archived ingredient,
+  // even if a stale client sends its old ID after a refresh. Existing purchase
+  // lines may still be retried/edited: their identity and financial history are
+  // preserved, not deleted or made uneditable by archival.
+  if(ingredient.archived_at&&(source==="bulk"||source==="manual")){
+   const {data:previous,error:previousError}=await db.from("pantry_stock_purchases")
+    .select("line_id").eq("business_id",businessId).eq("line_id",line.lineId)
+    .eq("ingredient_id",line.ingredientId).maybeSingle();
+   if(previousError||!previous){results.push({lineId,ok:false,error:"ingredient_not_found"});continue;}
+  }
   const {data:conversionRows,error:conversionError}=await db.from("ingredient_unit_conversions")
    .select("unit,base_units_per_unit").eq("ingredient_id",line.ingredientId);
   if(conversionError){results.push({lineId,ok:false,error:"conversion_unavailable"});continue;}

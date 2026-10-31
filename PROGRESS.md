@@ -147,6 +147,50 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
 
 **Parallel work/merge order:** Start three separate chats from latest `main`, with independent branches and owned files. A alone edits this shared `PROGRESS.md` scope initially; after A merges B and C tick **only their own checkbox** without rearranging the file. B/C can implement their isolated modules concurrently; their final integration and merge follow **A → B → C**, rebasing against latest main and preserving other PRs. Existing Pantry PR #319 is out of scope. Each needs exact behavioral tests, `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run build`, green final-head CI, independent Codex review/P1 fixes. **No merges/deployment/production migration/live send** without owner approval. Meta template/category/AI-primary eligibility and explicit opt-in must be verified before an owner-facing pilot; test-number behavior is not production permission.
 
+
+3. [ ] **PR #319 — Finish all three Pantry/recipe persistence gaps in ONE PR (owner scope, Oct 30).**
+   Do not mark #319 ready to merge solely because the current UI works or CI is green.
+   The three owner-identified remaining issues below belong to #319 together; do not
+   split them into three follow-up PRs or silently defer one in the PR description.
+   - **Recipe ingredient order stays where inserted.** The adjacent "+" must place
+     the new recipe ingredient immediately below the tapped row **after save, reload,
+     and reopening the same product/size**. Currently the saved reader in
+     `lib/data/pantry.server.ts` sorts by ingredient ID and the recipe write
+     appends a new row. Introduce one durable per-size recipe row order through a
+     backwards-compatible, additive schema field and the existing canonical
+     recipe read/write path; preserve old recipes with a deterministic fallback.
+     Retain optimistic concurrency, duplicate protections and other-size isolation.
+     Test add-middle → save → refresh/reopen, multiple inserts, move/replace/remove,
+     and unchanged ingredient amounts and cost calculations.
+   - **Remember the original purchase-pack breakdown.** Entering
+     `12 × 32 fl oz` must reopen as `12 × 32 fl oz`, rather than only its
+     normalized `384 fl oz` total. Store optional original pack factors/units as
+     additive metadata on the existing ingredient-price record; continue to use
+     the existing normalized quantity and canonical cost-per-base-unit calculation
+     as the financial source of truth. Older normalized records must remain valid:
+     show them as recorded totals, never fabricate an original case breakdown.
+     Preserve original `case(100)`/`case(1000)` meanings and EN/ES/AR parsing,
+     price edits and conversions. Test create → save → reload → price edit → reload
+     with identical cost, and old records without metadata.
+   - **Safe Pantry archive instead of destructive delete.** Add an explicit
+     reversible **Archive ingredient** action, not a raw delete/cascade. The current
+     ingredient relationships can delete recipe lines, prices or stock/purchase
+     history if the ingredient itself is deleted. Use an additive archive marker,
+     tenant-scoped/RLS-safe actions, and hide archived items from *new* selections
+     while preserving existing recipes, historical purchases, prices, sold-item
+     economics and reports. Expose an appropriate restore path. Archive must not
+     erase historical facts or silently remove recipe ingredients. Test archive →
+     history still readable and unchanged → absent from new picker → restore,
+     including cross-café access denial and referenced ingredients.
+   **Shared #319 acceptance:** one coherent migration/reader/action/UI change,
+   never a second recipe reader, pricing formula or destructive data rewrite.
+   Migration must be additive, idempotent where applicable, RLS-safe, reviewed
+   and owner-approved before **production application**; no self-deployment.
+   Include actual save/reopen tests on desktop and 390px mobile (EN/ES/AR/RTL),
+   full final-head `npx tsc --noEmit`, `npm run lint`, `npm test`,
+   `npm run build`, green CI and latest-head Codex review with P1s fixed.
+   Mark this single checkbox complete only when **all three** work end-to-end.
+
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
 - [x] Decided (Oct 30): screen numbers (profit, labor cost, card fees, break-even, item cost) come only from their `lib/metrics/core` tools; everything else may be read with `describe_data`/`query_data` and computed with `calculate` (AGENTS.md 7.2).
