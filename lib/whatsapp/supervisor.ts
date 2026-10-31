@@ -10,6 +10,7 @@ export type WhatsAppQuickReplyPayload = keyof typeof WHATSAPP_QUICK_REPLY_QUESTI
 export type WhatsAppOwnerInput =
   | { type: "text"; text: string }
   | { type: "button"; payload: string; text?: string }
+  | { type: "media"; kind: "image" | "document" }
   | { type: "interactive"; interactive: { type: "button_reply"; button_reply: { id: string; title?: string } } };
 
 export function supervisorQuestionForWhatsApp(input: WhatsAppOwnerInput): string {
@@ -18,6 +19,12 @@ export function supervisorQuestionForWhatsApp(input: WhatsAppOwnerInput): string
     if (!text || text.length > 4000) throw new Error("invalid_whatsapp_owner_text");
     return text;
   }
+  // Images can become private, review-only receipt drafts. PDFs are retained
+  // unanalysed for web review and must never inspire invented line items.
+  if(input.type==="media")
+    return input.kind==="image"
+      ?"Please review my attached receipt or invoice photo. If the details are legible, prepare only draft purchase lines for my review in AI Cafe. Do not record or approve anything."
+      :"I attached a PDF receipt or invoice for private review in AI Cafe. The PDF was saved but not analyzed; please ask me to review its details on the website. Do not infer items, costs or record expenses.";
   // Never match on visible button text or interactive title. Unknown IDs fail closed.
   const payload = input.type === "button" ? input.payload : input.interactive.button_reply.id;
   if (!Object.hasOwn(WHATSAPP_QUICK_REPLY_QUESTIONS, payload))
