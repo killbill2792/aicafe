@@ -64,7 +64,7 @@ export async function getBusinessSnapshotFromDb(
         .then(data=>({data,error:null}),(error:Error)=>({data:null,error})),
       timeReader("Snapshot","recurringCosts",async()=>supabase.from("recurring_costs")
         .select("category_code, amount_cents, frequency, is_estimate, active_from, active_to").eq("business_id",businessId)),
-      timeReader("Snapshot","expenses",async()=>supabase.from("expenses").select("category_code, amount_cents, status")
+      timeReader("Snapshot","expenses",async()=>supabase.from("expenses").select("category_code, amount_cents, status, spent_on")
         .eq("business_id",businessId).gte("spent_on",monthStart).lte("spent_on",todayDateStr)),
       timeReader("Snapshot","priorExpenses",async()=>supabase.from("expenses").select("category_code")
         .eq("business_id",businessId).gte("spent_on",prevMonthStart).lte("spent_on",prevMonthEnd)),
@@ -115,6 +115,8 @@ export async function getBusinessSnapshotFromDb(
           label: RUNNING_COST_LABELS[code] ?? code,
           amountCents: expensesThisMonth.reduce((sum, e) => sum + e.amount_cents, 0),
           amountSource: "recorded_expense" as const,
+          actualTodayCents:expensesThisMonth.filter(e=>e.spent_on===todayDateStr)
+            .reduce((sum,e)=>sum+e.amount_cents,0),
           isEstimate: expensesThisMonth.some((e) => e.status === "estimated"),
           isMissing: false,
           isExpected: true,
