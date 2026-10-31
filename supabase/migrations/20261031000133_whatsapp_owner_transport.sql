@@ -163,7 +163,7 @@ create table public.whatsapp_outbox (
     or (kind='reply' and business_date is null))
 );
 -- A fresh dedupe key cannot bypass one brief per selected owner/cafe/local date.
-create unique index whatsapp_one_brief_per_local_day on public.whatsapp_outbox(binding_id,business_date)
+create unique index whatsapp_one_brief_per_local_day on public.whatsapp_outbox(business_id,owner_user_id,business_date)
   where kind='daily_brief';
 create unique index whatsapp_one_reply_per_wamid on public.whatsapp_outbox(in_reply_to)
   where kind='reply';
