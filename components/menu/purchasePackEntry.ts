@@ -1,5 +1,6 @@
 import {packBaseQuantity,type BaseUnit} from "@/lib/calc/recipeUnits";
 
+export type OriginalPurchasePack={count:number;unitQuantity:number;unit:string};
 export type PurchasePack={packQuantity:number;packUnit:string};
 
 /** Accept café purchase labels without adding another persisted quantity system.
@@ -40,12 +41,14 @@ export function parsePurchasePack(text:string,baseUnit:BaseUnit):PurchasePack|nu
 
 /** Editable values keep an ungrouped decimal (e.g. 1000.5), while the localized unit is
  * derived from Intl's unit part. Thus changing only a price never invalidates a saved pack. */
-export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit:BaseUnit,locale="en"):string{
+export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit:BaseUnit,locale="en",originalPack:OriginalPurchasePack|null=null):string{
  if(quantity===null||!unit)return "";
  const unitNames:Record<string,string>={fl_oz:"fluid-ounce",oz_wt:"ounce",ml:"milliliter",g:"gram",
   kg:"kilogram",l:"liter",lb:"pound",gal:"gallon"};
  const resolvedUnit=unit==="oz"?(baseUnit==="ml"?"fl_oz":"oz_wt"):unit;
- const value=String(quantity);
+ const validBreakdown=originalPack&&originalPack.unit===resolvedUnit&&originalPack.count>0&&
+  originalPack.unitQuantity>0&&Math.abs(originalPack.count*originalPack.unitQuantity-quantity)<0.000001;
+ const value=validBreakdown?String(originalPack.count)+" × "+String(originalPack.unitQuantity):String(quantity);
  if(unitNames[resolvedUnit]){
   const format=new Intl.NumberFormat(locale,{style:"unit",unit:unitNames[resolvedUnit],unitDisplay:"long",maximumFractionDigits:15});
   const unitLabel=format.formatToParts(quantity).find(part=>part.type==="unit")?.value??resolvedUnit;
@@ -55,4 +58,20 @@ export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit
  const other:Record<string,string>={qt:"quarts",each:locale.startsWith("es")?"unidades":locale.startsWith("ar")?"قطعة":"pieces",dozen:"dozen"};
  // A pre-existing case(N) quantity remains case(N), not silently converted to each.
  return value+" "+(other[resolvedUnit]??resolvedUnit);
+}
+
+/** Preserve factorization only when the owner supplied it. A legacy normalized
+ * pack must NEVER be reverse-engineered into invented cases. */
+export function parsePurchasePackWithOriginal(text:string,baseUnit:BaseUnit):PurchasePack&{originalPack?:OriginalPurchasePack}|null{
+ const normalized=parsePurchasePack(text,baseUnit);
+ if(!normalized)return null;
+ const digits=text.normalize("NFKC").replace(/[٠-٩۰-۹]/g,d=>{
+  const arabic="٠١٢٣٤٥٦٧٨٩".indexOf(d);
+  return String(arabic>=0?arabic:"۰۱۲۳۴۵۶۷۸۹".indexOf(d));
+ });
+ const match=/^\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)(?=\s)/i.exec(digits);
+ if(!match)return normalized;
+ const count=Number(match[1]),unitQuantity=Number(match[2]);
+ if(!(count>0&&unitQuantity>0)||Math.abs(count*unitQuantity-normalized.packQuantity)>0.000001)return normalized;
+ return {...normalized,originalPack:{count,unitQuantity,unit:normalized.packUnit}};
 }
