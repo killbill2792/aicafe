@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -155,5 +155,21 @@ describe("per-event chat selection",()=>{
   it("keeps the day report's existing thread without pretending an event was tapped",()=>{
     expect(eventChatTarget(sameDay,undefined,{summary:"Shared outlook",threadId:"day-thread"}))
       .toEqual({date:sameDay,title:"Shared outlook",eventId:undefined,existingThreadId:"day-thread"});
+  });
+});
+
+describe("saved event advice is informational, not a checklist",()=>{
+  it("shows a recognizable recommendation icon and the original AI explanation",()=>{
+    const html=renderToStaticMarkup(createElement(EventAdviceItem,{
+      action:{area:"operations",action:"Review normal Saturday supplies",
+        reason:"No prior Halloween trading record; use the usual Saturday baseline."},
+    }));
+    expect(html).toContain("<li");
+    expect(html).toContain("<svg");
+    expect(html).toContain("Review normal Saturday supplies");
+    expect(html).toContain("No prior Halloween trading record");
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain("<input");
+    expect(html).not.toContain("<button");
   });
 });
