@@ -305,24 +305,25 @@ Official policy references (verify again when enabling):
 - https://www.whatsapp.com/legal/business-solution-terms
 - https://www.whatsapp.com/legal/meta-terms-whatsapp-business
 
-## Independent implementation PRs, ordered by dependency
+## Three concurrent implementation PRs (replaces earlier five-PR split)
 
-| PR | Scope and ownership | Acceptance gate |
+The owner prefers **three** implementation PRs, no additional planning PR; the scoped checklist is in `PROGRESS.md`. This division supersedes any older five-PR table below or elsewhere in this RFC. Work can start in three separate chats, but **integrate and merge sequentially A → B → C**. Only A changes the shared plan/checklist initially. No production sends, merges, SQL application or deployments without explicit owner approval.
+
+| PR | Exclusive file ownership and scope | Gate |
 | --- | --- | --- |
-| **0: this RFC** | New docs file only; design contract, no runtime changes | Owner reviews this plan, Meta eligibility examined |
-| **1: secure transport** | Isolated signed webhook, durable inbound/outbound/idempotency layer, owner binding, test-only kill switch | Spoofed signature/owner or duplicate webhook cannot send or leak data; zero external sends by default |
-| **2: one morning brief** | Extend existing briefing + approved safe template; per owner/day/channel delivery, local-time configuration, disable redundant team-alert send when active | Five distinct test recipient mappings, exactly one owner brief per local date, DST and partial-data tests |
-| **3: conversations** | Extract shared authorized Supervisor turn service; inbound text -> same thread/tool loop -> outbound reply | Exact chat/screen financial parity, two-café isolation, saved owner context, web chat unchanged, no approvals via WhatsApp |
-| **4: limited pilot hardening** | Delivery status telemetry, opt-out, quotas, safe errors, operator rollback, supported locale and cost measurements | End-to-end staging traces, no cross-tenant data, no duplicate replies; only after Meta eligibility and owner approval |
+| **A — verified transport/foundation** | `app/api/whatsapp/webhook/route.ts`, new `lib/whatsapp/{transport,webhook,identity,queue}*.ts`, new RLS-protected schema and dedupe/delivery ledgers, plus these plan texts. Expose a fail-closed dispatcher boundary for C. No chat/brief modifications. | Signed raw-body webhook, durable enqueue-before-200, Meta test sender, validated binding, correct payload handling, safe outbound, deduplication, disable/consent tests. |
+| **B — canonical morning-brief content** | `lib/operating/dailyBrief*.ts` + new `lib/whatsapp/morningBrief*.ts`, optionally existing daily-brief cron and their tests; don't edit A/C files. | Seven truthful template parameters, covered drink counts, closed-day sales, saved event/monitor eligibility, one recipient/day, skip missing data, screen/chat financial parity, correct daily-brief inbox message. |
+| **C — shared Supervisor conversation + media** | `app/api/ai/threads/[threadId]/agent/route.ts`, new shared `lib/ai/conversations/*` service, `lib/whatsapp/{supervisor,media}*.ts`, existing website chat refresh code, tests; wire A dispatcher after A merge. | One `ai_threads`/`ai_messages` history across channels, jobs serialized, four payloads and free text answered by same loop, owner/café isolation, web refresh/focus, secure image/PDF drafts, no unauthorized actions, 24-hour send gate. |
 
-Each implementation PR starts from latest `main`, checks active PRs/owned
-files, changes one concern, and follows `AGENTS.md`: tests and parity
-fixtures, `npx tsc --noEmit`, `npm run lint`, `npm test`,
-`npm run build`, independent Codex review with P1 fixes, owner approval
-before merge, **no production send, SQL application or deployment**.
-Any new schema requires RLS and explicit owner approval before production
-migration. Keep `PROGRESS.md` untouched by this docs-only proposal
-to avoid concurrent PR conflicts.
+### One conversation, two delivery surfaces
+
+Current web chat uses `ConversationService` / `SupabaseConversationRepository` scoped by `{businessId,ownerUserId}`; owner messages live in `ai_messages` as `role:"owner"`, replies as `role:"supervisor"`, with `thread_id`. The current `lib/ai/agent/jobs.server.ts` coordinates in-flight web turns. WhatsApp is a **channel adapter**, not a second table of AI messages or an alternate agent. A binding must resolve an explicitly selected, currently authorized `thread_id` (existing web chat thread when linked, otherwise a single linked thread created safely), and keep it stable. If a user intentionally opens a different web thread, the linked WhatsApp history remains accessible in the thread list rather than being silently merged into the wrong conversation. Fresh WhatsApp arrivals must bump thread ordering so the linked thread appears as recent.
+
+Persist the morning brief *once* as a Supervisor message in that linked thread and log WhatsApp delivery in the outbox; never duplicate the same brief to the web and WhatsApp as two independent `ai_messages`. When the owner taps, record exactly one inbound `ai_messages` owner turn with a deterministic client-message UUID tied to Meta's `wamid`, preserving the Meta id in the dedicated inbound ledger. The same Supervisor tool loop creates one `role:"supervisor"` reply with its usual evidence and source rules. Keep per-inbound channel and provider-outbox records **outside** the model's conversational state; do not blindly mirror web-only agent replies back into WhatsApp. Replays and retries must produce no duplicate `ai_messages` or outbound sends.
+
+**Website behavior:** Opening the linked thread in AI Cafe should display all WhatsApp-origin owner turns and Supervisor replies in chronological order with web-native rich cards/evidence. The current website loads `/api/ai/threads/{threadId}/messages` on opening/thread change but does not provide automatic idle external-message refresh. PR C adds a safe focus/reconnect refresh (plus bounded idle refresh or existing realtime) and preserves unsent drafts/active streams; no page reload necessary. When already viewing a different thread, show the linked WhatsApp thread as recent; do not append a message into the wrong thread. Concurrent web/WhatsApp turns must be serialized through the existing `ai_agent_jobs` lifecycle. An absorbed/continued owner follow-up must not be double-replied or delivered to the wrong channel.
+
+**Security:** Web requests retain cookie-based user authentication; the webhook uses verified Meta signature plus prior phone/owner/café consent binding and current membership checks. Do not fake browser cookies from a webhook. Extract the already-authorized service loop to a channel-neutral server boundary without changing numbers, model text, tool budgets or approval rules. Save incoming attachments privately and offer review; a WhatsApp “yes” never counts as an in-app approval.
 
 ## Golden tests and product success measures
 
@@ -443,13 +444,12 @@ To acknowledge fast **without losing events**, insert/enqueue the signed, bounde
 
 **Media:** for signed, bound owner messages of supported image/document type: `GET /v21.0/{media_id}` with bearer token, validate response `url` host/HTTPS; download URL with bearer token before expiration; enforce byte, MIME/signature, filename/extension, timeout and malware/content policy checks; private storage and retention; record as a **draft** attachment in the existing `ai_attachments`/receipt-review flow. Images and PDFs have different supported paths; **never auto-post an expense, invoice, inventory item or purchase** without authenticated owner review/approval. Do not treat every unsolicited image as a receipt. If file type or parsing is unsupported, answer with a concise limitation rather than pretend it was processed.
 
-### Small implementation PRs and tests (no merge or production switch-on)
+### Three PRs and test sequence (no merge or production switch-on)
 
-1. **PR A: transport + webhook security (default off).** Pure template payload/field validation (7 parameters, 4 buttons), graph client with configurable version, handshake and raw signature tests, inbound event parser, status receipts, retry safety. Existing task sender remains independent until a reviewed single transport adapter is in use. Test missing env, bad signature, 4 button mappings, malformed body, provider timeout, no API access when flag off.
-2. **PR B: verified binding + durable queue/outbox.** Minimal RLS-protected schema/consent, one owner+café mapping, unique inbound `wamid` and outbound per recipient/date, retries and recovery. Test spoofed/ambiguous/revoked owner, café A/B isolation, duplicate/reordered webhooks, duplicate sends and delivery receipt status. **Migration is staged only** until owner approves production SQL.
-3. **PR C: canonical daily-brief adapter.** Extend existing daily brief reader/inbox, seven-field closed-day evidence and covered drink classifications, saved event and actual monitor status, skip-on-missing, per-owner delivery and same café-local business date. Don't write a parallel financial or events reader. Add normal-day alternative only after separately approved template. Tests for DST, incomplete data, wrong product classifications, disabled tracking sentence and money parity.
-4. **PR D: one Supervisor turn bridge + four button prompts.** Shared authorized service for browser and WhatsApp, same thread/context/tools; 24h send-window gate and <=4096 safe output; no direct approval by messaging. Test each button and arbitrary text, wrong owner, same-owner multiple cafés, checkNumber outcomes, timeouts and web-chat parity.
-5. **PR E: media drafts + observability.** Secure Graph media, private attachment integration, receipt/invoice drafts and review flow, anti-SSRF/size/MIME protections, delivery statuses, rate limits/consent/opt-out. Test JPEG/PNG/PDF, bad URL, too large, unknown type, duplicate media and never auto-commit.
-6. **Staging-only pilot:** GET verification; signed webhook replay; send once to one verified Meta test recipient; click each button; free text; owner A/B negative test; image and PDF; 24-hour expiry boundary; confirm actual Meta delivered/read statuses; 5 owners only after distinct verified bindings. Obtain required independent Codex review, all `AGENTS.md` checks and explicit owner approval before merge, migration or deploy. Meta category/AI-provider eligibility is a **separate mandatory launch gate**; sandbox success alone does not settle it.
+1. **A**: secure Meta send/webhook, RLS owner binding, durable inbox/outbox and dedupe. Send disabled until test readiness and owner authorization.
+2. **B**: grounded, same-data morning briefing, seven ordered parameters, event/monitor fact gate, one daily message; import A transport only when available.
+3. **C**: shared Supervisor turn across website/WhatsApp, four mapped button payloads, free text, website thread visibility/refresh and secure photo/PDF draft intake, then integrate with A dispatcher.
+
+**End-to-end staging acceptance:** verified GET challenge; forged signature denied; signed webhook durable before 200; one actual test owner/café; one populated real-data briefing; all four Quick Reply interactions; free text; unknown-number/cross-café denied; photo/PDF review draft; concurrent browser/WhatsApp turn; page reopens with same messages; 24-hour expiration; one safe send per message. All standard AGENTS.md checks and independent Codex reviews. Confirm actual template approval/category and AI-provider applicability before permitting an owner-facing pilot.
 
 **Acceptance criteria:** This template's event and monitoring claims are only sent when actually supported, no missing facts turn into zeros, every authorized WhatsApp question appears once in the same Supervisor thread, never a cross-café reply, no browser-route cookie forgery, and no duplicate WhatsApp messages. Track curiosity button selection and subsequent substantive follow-up without using click behavior to evade Meta messaging restrictions.
