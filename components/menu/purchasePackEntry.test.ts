@@ -7,6 +7,12 @@ describe("café pantry purchase-pack entry",()=>{
   expect(parsePurchasePack("12 x 32 oz","ml")).toEqual({packQuantity:384,packUnit:"fl_oz"});
   expect(parsePurchasePack("1 × 1 gallon","ml")).toEqual({packQuantity:1,packUnit:"gal"});
  });
+ it("preserves existing case-sized starter packs when editing a purchase price",()=>{
+  expect(parsePurchasePack("1 case(1000)","each")).toEqual({packQuantity:1,packUnit:"case(1000)"});
+  expect(parsePurchasePack("2 case(100)","each")).toEqual({packQuantity:2,packUnit:"case(100)"});
+  expect(parsePurchasePack(purchasePackLabel(1,"case(1000)","each"),"each")).toEqual({packQuantity:1,packUnit:"case(1000)"});
+  expect(parsePurchasePack("1 case(1000)","g")).toBeNull();
+ });
  it("handles weight ounces differently from liquid ounces",()=>{
   expect(parsePurchasePack("2 x 16 ounces","g")).toEqual({packQuantity:32,packUnit:"oz_wt"});
   expect(parsePurchasePack("2 x 16 fluid ounces","g")).toBeNull();
