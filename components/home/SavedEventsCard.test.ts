@@ -91,3 +91,40 @@ describe("read-only venue map links",()=>{
       "https://www.google.com/maps/search/?api=1&query=Hall%20%26%20Market%20%233%3F");
   });
 });
+
+describe("Events Fix C date and saved-importance contract",()=>{
+  const snapshot=(today:string)=>({...fixture,today});
+  it("moves Halloween from Upcoming to Today to Past only on café-local dates",()=>{
+    expect(eventListDays(snapshot("2026-10-30"),"upcoming",false)).toContain("2026-10-31");
+    expect(eventListDays(snapshot("2026-10-30"),"now",false)).not.toContain("2026-10-31");
+    expect(eventListDays(snapshot("2026-10-31"),"now",false)).toContain("2026-10-31");
+    expect(eventListDays(snapshot("2026-11-01"),"past",false)).toContain("2026-10-31");
+    expect(eventListDays(snapshot("2026-11-01"),"upcoming",false)).not.toContain("2026-10-31");
+  });
+  it("sorts only the next 7 days by saved AI importance, supports date toggle and keeps older rows chronological",()=>{
+    const timeline={...fixture,events:[
+      event("low","2026-11-01"),event("high","2026-11-03"),event("unknown","2026-11-04"),
+      event("later","2026-11-09"),event("further","2026-11-10"),
+    ],plans:[
+      {...fixture.plans[0],startDate:"2026-11-01",endDate:"2026-11-01",importance:"low" as const},
+      {...fixture.plans[0],proposalId:"p2",startDate:"2026-11-03",endDate:"2026-11-03",importance:"high" as const},
+    ]};
+    expect(eventListDays(timeline,"upcoming",false)).toEqual([
+      "2026-11-03","2026-11-01","2026-11-04","2026-11-09","2026-11-10",
+    ]);
+    expect(eventListDays(timeline,"upcoming",false,true)).toEqual([
+      "2026-11-01","2026-11-03","2026-11-04","2026-11-09","2026-11-10",
+    ]);
+    const withoutImportance={...timeline,plans:timeline.plans.map(p=>({...p,importance:null}))};
+    expect(eventListDays(withoutImportance,"upcoming",false)).toEqual(
+      eventListDays(withoutImportance,"upcoming",false,true));
+  });
+  it("keeps Past reports newest first and today's result separate from upcoming",()=>{
+    const timeline={...fixture,today:"2026-11-06",events:[
+      event("past1","2026-10-31"),event("past2","2026-11-05"),event("future","2026-11-07"),
+    ],plans:[]};
+    expect(eventListDays(timeline,"past",false)).toEqual(["2026-11-05","2026-10-31"]);
+    expect(eventListDays(timeline,"now",false)).toEqual([]);
+    expect(eventListDays(timeline,"upcoming",false)).toEqual(["2026-11-07"]);
+  });
+});

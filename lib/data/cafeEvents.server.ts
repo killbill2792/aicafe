@@ -15,7 +15,8 @@ export type SavedEventTimeline={
  events:CafeEvent[];
  plans:Array<{proposalId:string;threadId:string;status:string;revision:number;
    startDate:string;endDate:string;summary:string;actions:unknown;expectedBusyHours:unknown;
-   factsHash:string;reportStatus:string|null;report:unknown|null}>;
+   factsHash:string;importance?:"high"|"medium"|"low"|null;
+   reportStatus:string|null;report:unknown|null}>;
 };
 
 function assertRange(from:string,to:string){
@@ -77,6 +78,9 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
      summary:typeof effect.summary==="string"?effect.summary:"",
      actions:effect.actions??[],expectedBusyHours:effect.expectedBusyHours??[],
      factsHash:typeof effect.factsHash==="string"?effect.factsHash:"",
+     // Optional metadata from B; old proposals remain readable without an invented rank.
+     importance:effect.importance==="high"||effect.importance==="medium"||effect.importance==="low"
+       ?effect.importance:null,
      reportStatus:report?.status??null,report:report?.report??null};
  })};
 }

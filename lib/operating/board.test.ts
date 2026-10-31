@@ -42,6 +42,19 @@ describe("Operating Board",()=>{
     expect(boardHref({threadId:"t2",proposalId:"p2",capabilityId:"alex.menu_price_change.v1"}))
       .toBe("/?thread=t2");
   });
+  it("keeps event monitoring and reports in the dedicated Events panel, not generic Running",()=>{
+    const event=row("halloween","committed","2026-10-31",{
+      capability_id:"alex.event_readiness.v1",
+      canonical_effect_payload:{summary:"Halloween café insight",startDate:"2026-10-31"},
+    });
+    const other=row("latte","committed","2026-10-30");
+    const board=buildOperatingBoard([event,other],[
+      {proposal_id:"halloween",status:"complete",report:{},generated_at:"2026-11-01T10:00:00Z"},
+      {proposal_id:"latte",status:"complete",report:{recommendation:"keep"},generated_at:"2026-11-01T10:00:00Z"},
+    ],"2026-11-01");
+    expect(board.running.map(x=>x.proposalId)).toEqual(["latte"]);
+    expect(board.recentReports.map(x=>x.proposalId)).toEqual(["latte"]);
+  });
   it("shows at most three of each",()=>{
     const rows=["a","b","c","d"].map(id=>row(id,"manual_pending",null));
     expect(buildOperatingBoard(rows,[],"2026-10-29").running).toHaveLength(3);
