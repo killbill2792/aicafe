@@ -93,6 +93,10 @@ describe("replacement ingredient calibration parity",()=>{
   expect(amount).toBe(6);
   // The canonical writer now resolves the replacement to 30 ml, not 15 ml.
   expect(toBaseUnitQuantity("pump",amount!,"ml",replacement)).toBe(30);
+  // Undoing the replacement must use the current syrup B calibration as source.
+  const reverted=preservedReplacementQuantity("pump",amount!,"ml",replacement,old);
+  expect(reverted).toBe(3);
+  expect(toBaseUnitQuantity("pump",reverted!,"ml",old)).toBe(30);
   expect(preservedReplacementQuantity("pump",3,"ml",old,[])).toBeNull();
  });
 });
