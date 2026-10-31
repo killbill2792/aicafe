@@ -120,6 +120,26 @@ async function sendOne(db:SupabaseClient,b:Business,ownerId:string,
     const stored=persisted.structured_content as Array<{type?:string;text?:string}>|null;
     const websiteText=stored?.find(block=>block.type==="text")?.text;
     if(!websiteText)throw new Error("daily_brief_website_message_missing");
+    // A previous run might have committed ai_messages and crashed before the
+    // Operations upsert. Repair the SAME inbox row without creating a second
+    // notification or reviving a handled/expired task.
+    const taskId="daily-brief:"+when.today+":"+ownerId;
+    const existingTask=await db.from("operating_tasks").select("id")
+      .eq("business_id",b.id).eq("id",taskId).maybeSingle();
+    if(existingTask.error)throw existingTask.error;
+    const legacyTask=await db.from("operating_tasks").select("id")
+      .eq("business_id",b.id).eq("id","daily-brief:"+when.today).maybeSingle();
+    if(legacyTask.error)throw legacyTask.error;
+    if(!existingTask.data&&!legacyTask.data){
+      const recovered=await db.from("operating_tasks").upsert({
+        business_id:b.id,id:taskId,agent_id:"leo",kind:"daily_brief",
+        status:"watching",confidence:"low",
+        payload:{ownerUserId:ownerId,businessDate:when.yesterday,
+          threadId:thread.data.id,messageId,text:websiteText},
+        evidence:[{source:"historical_rollups",facts:{businessDate:when.yesterday}}],
+      },{onConflict:"business_id,id",ignoreDuplicates:true});
+      if(recovered.error)throw recovered.error;
+    }
     await outbox!({...scope,threadId:thread.data.id,websiteMessageId:messageId,
       now,websiteText,eligible:eligible?.websiteText===websiteText?eligible:null});
     return false;
