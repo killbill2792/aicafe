@@ -14,7 +14,7 @@ vi.mock("./cafeState",()=>({SnapshotCafeStateService:class{
   }));
 }}));
 import {sendDailyBriefs,type BriefOutboxHook} from "./dailyBrief.server";
-import {eligibleBriefBinding,prepareBoundBrief} from "@/lib/whatsapp/morningBriefDelivery.server";
+import {eligibleBriefBinding,prepareBoundBrief,type EligibleBrief} from "@/lib/whatsapp/morningBriefDelivery.server";
 import {renderMorningBrief} from "@/lib/whatsapp/morningBrief";
 import {briefMessageId} from "./dailyBrief";
 
@@ -53,7 +53,7 @@ describe("morning brief optional durable-outbox seam",()=>{
     const binding={id:"binding-1",businessId:"cafe-a",ownerUserId:"owner-a",
       threadId:"thread-a",waId:"15556506570",phoneNumberId:"1322195347653883",
       lastOwnerMessageAt:"2026-10-31T05:00:00Z"};
-    const eligible={binding,websiteText:webText,prepared:{parameters:params,
+    const eligible:EligibleBrief={binding,websiteText:webText,prepared:{parameters:params,
       netSalesCents:10900,businessDate:"2026-10-30",today:"2026-10-31",
       provenance:{sales:"daily_rollups",items:"menu_item_quantities_sold",
         menu:"menu_items",eventId:"e1",monitorProposalId:"m1"}}};
