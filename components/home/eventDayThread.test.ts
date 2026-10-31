@@ -1,5 +1,5 @@
 import {describe,expect,it,vi} from "vitest";
-import {openEventDayThread,eventOwnerMessage,eventContextFromTitle,eventThreadTitle,eventThreadKey} from "./eventDayThread";
+import {openEventDayThread,eventOwnerMessage,eventContextFromTitle,eventThreadTitle,eventThreadKey,eventThreadFromHistory} from "./eventDayThread";
 
 describe("Chat about this event day",()=>{
   it("only creates and selects the day thread on explicit tap, with no automatic message",async()=>{
@@ -83,5 +83,26 @@ describe("multiple events on the same calendar date",()=>{
     expect(day).toBe("day-thread");
     expect(known.get(eventThreadKey(date,firstId))).toBe("event-thread");
     expect(known.get(eventThreadKey(date))).toBe("day-thread");
+  });
+});
+
+describe("saved-thread recovery is scoped to one event, not the date",()=>{
+  const date="2026-10-31";
+  const a="11111111-1111-4111-8111-111111111111";
+  const b="22222222-2222-4222-8222-222222222222";
+  const threads=[
+    {id:"day",title:eventThreadTitle(date,"Halloween overview")},
+    {id:"a",title:eventThreadTitle(date,"Halloween",a)},
+    {id:"b",title:eventThreadTitle(date,"Halloween",b)},
+    {id:"other",title:"Break-even analysis"},
+  ];
+  it("restores the tapped event even if another event shares its name and date",()=>{
+    expect(eventThreadFromHistory(threads,date,b)).toBe("b");
+    expect(eventThreadFromHistory(threads,date,a)).toBe("a");
+    expect(eventThreadFromHistory(threads,date,"33333333-3333-4333-8333-333333333333")).toBeNull();
+  });
+  it("does not restore an event thread as the generic day thread",()=>{
+    expect(eventThreadFromHistory(threads,date)).toBe("day");
+    expect(eventThreadFromHistory(threads,"2026-11-01")).toBeNull();
   });
 });
