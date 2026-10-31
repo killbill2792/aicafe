@@ -79,7 +79,6 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
         <ChevronDown size={18} className="shrink-0" aria-hidden="true" />}
     </button>}
     {comingUp}
-    {hasMessages && !expanded && comingUp}
     {(!hasMessages || expanded) && <>
       <section className="min-w-0 rounded-2xl border border-line bg-card p-3" aria-label={copy.keyNumbers}>
         <PeriodSwitch current={data.period} />
