@@ -3,7 +3,7 @@
 type SavedRecipeLine={
  ingredientId:string;quantity:number;displayUnit?:string|null;displayQuantity?:number|null;
 };
-type SavedRecipeSize={id:string;recipe:readonly SavedRecipeLine[]};
+type SavedRecipeSize={id:string;recipe:readonly SavedRecipeLine[];priceCents?:number;active?:boolean};
 export function recipeEditorKey(items:readonly SavedRecipeSize[]):string{
  return JSON.stringify(items.map(item=>[
   item.id,item.recipe.map(line=>[
