@@ -31,9 +31,9 @@ describe("shared inert proposal simulation authorization",()=>{
  it("rejects a cross-café member or non-owner even with a service client",async()=>{
    const other=clientFor("member");
    await expect(simulationOwnerReader({...scope,verifiedReadClient:other as never}))
-     .rejects.toThrow("owner_required");
+     .rejects.toMatchObject({code:"unauthorized"});
    const demo=clientFor("owner",scope.businessId,true);
    await expect(simulationOwnerReader({...scope,verifiedReadClient:demo as never}))
-     .rejects.toThrow("owner_required");
+     .rejects.toMatchObject({code:"unauthorized"});
  });
 });
