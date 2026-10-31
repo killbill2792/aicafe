@@ -2,7 +2,7 @@ import {NextResponse} from "next/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {verifyBearer} from "@/lib/security/bearer";
 import {sendDailyBriefs} from "@/lib/operating/dailyBrief.server";
-import {enqueueBoundBrief} from "@/lib/whatsapp/morningBriefDelivery.server";
+import {enqueueBoundBrief,dispatchDueMorningBriefs} from "@/lib/whatsapp/morningBriefDelivery.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=300;
@@ -21,9 +21,9 @@ export async function GET(request:Request){
         businessName:input.businessName,currency:input.currency,timezone:input.timezone,
         today:input.today,yesterday:input.yesterday},input.websiteMessageId,now);
     });
-    // Queue only. PR A's global dispatchOutboundOnce currently cannot select an
-    // eligible café/local-day lease, so waking it here could send another café's
-    // stale brief. A scoped, deadline-enforced worker is a hard integration gate.
+    // Staging migration 134 guards A's SINGLE global claim by the queued
+    // café-local date and 05:50–06:00. Missing migration/flags means no send.
+    await dispatchDueMorningBriefs(db);
     return reply(200,result);
   }catch{return reply(503,{error:"brief_unavailable"});}
 }
