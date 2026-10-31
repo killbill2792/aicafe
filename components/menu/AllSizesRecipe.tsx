@@ -65,6 +65,9 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  const [calibration,setCalibration]=useState<Record<string,string>>({});
  const [densityInputs,setDensityInputs]=useState<Record<string,string>>({});
  const [newRowAmount,setNewRowAmount]=useState("1"),[newRowUnit,setNewRowUnit]=useState<RecipeDisplayUnit>("ml"),[newRowDensity,setNewRowDensity]=useState("");
+ // A new ingredient's pump/shot calibration is a separate draft, like its
+ // amount and density. It is not an edit to any existing saved recipe row.
+ const [newRowCalibration,setNewRowCalibration]=useState<string|undefined>(undefined);
  const [newPantry,setNewPantry]=useState(false);
  const [orderDrafts,setOrderDrafts]=useState<Record<string,string[]>>(()=>Object.fromEntries(
   items.map(item=>[item.id,item.recipe.map(line=>line.ingredientId)])));
@@ -87,14 +90,6 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  // Full draft guard for size navigation: even the pending new-row pump/shot
  // conversion must not be silently discarded by switching to another size.
  const hasUnsavedChanges=recipeLineDraftDirty||hasPendingRecipeMeasurements(densityInputs,calibration);
- // Append is different: its own custom calibration is the input being saved,
- // not an unsaved edit to the previously stored recipe. Ignore ONLY this one
- // key, while still blocking edits to any existing row or other conversion.
- const newRowCalibrationKey=add&&needsIngredientConversion(newRowUnit)&&
-  selectedItems.every(item=>!item.recipe.some(line=>line.ingredientId===add))
-   ?add+":"+newRowUnit:undefined;
- const appendBlockedByDrafts=recipeLineDraftDirty||
-  hasPendingRecipeMeasurements(densityInputs,calibration,newRowCalibrationKey);
  const mobileColumns={gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,selectedItems.length))},minmax(0,1fr))`};
  const invalidQuantity=Object.values(quantityInputs).some(value=>value.trim()===""||!Number.isFinite(Number(value))||Number(value)<=0);
  // Preserve drafts when the adjacent product card changes a price or serving status.
@@ -155,10 +150,11 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   for(const entry of entries){
    const key=entry.id+":"+entry.unit;if(once.has(key)||!pendingMeasure(entry.id,entry.unit))continue;once.add(key);
    if(!needsIngredientConversion(entry.unit))continue;
-   const raw=calibration[key];
+   // Never mix the new-row input with measurements of existing recipe lines.
+   const isNewSelection=extra?.id===entry.id&&extra.unit===entry.unit;
+   const raw=isNewSelection?newRowCalibration:calibration[key];
    // An existing recipe with missing calibration cannot silently gain a
    // guessed conversion merely because the owner saved another ingredient.
-   const isNewSelection=extra?.id===entry.id&&extra.unit===entry.unit;
    if(raw===undefined&&!isNewSelection){setError(t("measureNeeded"));return false;}
    const factor=Number(raw??measureDefault(entry.id,entry.name,entry.base,entry.unit));
    if(raw===""||!Number.isFinite(factor)||factor<=0){setError(t("measureNeeded"));return false;}
@@ -237,7 +233,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   setSaved(true);setToast("");router.refresh();
  });}
  function append(){if(!add||!selectedItems[0]||selectedItems.length===0||!(Number(newRowAmount)>0))return;
-   if(appendBlockedByDrafts||invalidQuantity){setError(t("saveBeforeAddingIngredient"));return;}
+   if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeAddingIngredient"));return;}
   const ingredient=ingredients.find(i=>i.id===add);
   if(ingredient&&requiresDensity(ingredient.baseUnit,newRowUnit)&&!(Number(newRowDensity)>0&&Number(newRowDensity)<=5)){setError(t("densityNeeded"));return;}
   setError("");start(async()=>{
@@ -245,7 +241,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
    if(!await saveMeasurements(newIng?{id:newIng.id,name:newIng.name,base:newIng.baseUnit,unit:newRowUnit}:undefined))return;
    const result=await saveProductRecipes({productId:selectedItems[0].id,sizes:recipeChanges(add)});
    if(!result.ok){setError(t("error"));return;}
-   setAdd(null);router.refresh();
+   setAdd(null);setNewRowCalibration(undefined);router.refresh();
   });
  }
  function saveDraftSizePrice(){if(!priceDraft)return;const cents=Math.round(Number(draftPrice)*100);if(!Number.isSafeInteger(cents)||cents<=0)return;start(async()=>{const result=await updateMenuItemPrice({menuItemId:priceDraft,priceCents:cents});if(!result.ok)setError(result.error);else{setPriceDraft(null);router.refresh();}});}
@@ -299,15 +295,15 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   setOrderDrafts(prev=>({...prev,[item.id]:moveRecipeRow(prev[item.id]??item.recipe.map(line=>line.ingredientId),id,direction)}));
   setSaved(false);
  }
- function beginAddRow(after:string){if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeAddingIngredient"));return;}setAdd("");setAddAfter(after);setNewRowAmount("1");setSearchIngredient("");setError("");}
+ function beginAddRow(after:string){if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeAddingIngredient"));return;}setAdd("");setAddAfter(after);setNewRowAmount("1");setNewRowCalibration(undefined);setSearchIngredient("");setError("");}
  function addPicker(){return <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent-soft p-3">
   <label className="min-w-[160px] flex-1 text-[13px] font-bold">{t("addRecipeRow")}
-   <input autoFocus value={searchIngredient} onChange={e=>{setSearchIngredient(e.target.value);setAdd("");}} placeholder={t("search")} aria-label={t("search")} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]"/>
-   <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]" aria-label={t("addToRecipe")} value={add??""} onChange={e=>{setAdd(e.target.value);setNewRowUnit(ingredients.find(ingredient=>ingredient.id===e.target.value)?.baseUnit??"ml");setNewRowDensity("");}}>
+   <input autoFocus value={searchIngredient} onChange={e=>{setSearchIngredient(e.target.value);setAdd("");setNewRowCalibration(undefined);}} placeholder={t("search")} aria-label={t("search")} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]"/>
+   <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]" aria-label={t("addToRecipe")} value={add??""} onChange={e=>{setAdd(e.target.value);setNewRowUnit(ingredients.find(ingredient=>ingredient.id===e.target.value)?.baseUnit??"ml");setNewRowDensity("");setNewRowCalibration(undefined);}}>
    <option value="">{t("addToRecipe")}</option>{ingredients.filter(i=>selectedItems.some(item=>!item.recipe.some(line=>line.ingredientId===i.id))&&i.name.toLocaleLowerCase().includes(searchIngredient.toLocaleLowerCase())).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
   </select></label>
   <label className="w-24 text-[13px] font-bold">{t("quantity")}<input type="number" min="0.0001" step="any" inputMode="decimal" value={newRowAmount} onChange={e=>setNewRowAmount(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]"/></label>
-  <label className="min-w-[105px] text-[13px] font-bold">{t("unit")}<select value={newRowUnit} onChange={e=>{const unit=e.target.value as RecipeDisplayUnit;setNewRowUnit(unit);const entry=ingredients.find(i=>i.id===add);if(entry&&requiresDensity(entry.baseUnit,unit))setNewRowDensity(String(suggestedIngredientDensity(entry.name)??""));}} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]">{(add?(()=>{
+  <label className="min-w-[105px] text-[13px] font-bold">{t("unit")}<select value={newRowUnit} onChange={e=>{const unit=e.target.value as RecipeDisplayUnit;setNewRowUnit(unit);setNewRowCalibration(undefined);const entry=ingredients.find(i=>i.id===add);if(entry&&requiresDensity(entry.baseUnit,unit))setNewRowDensity(String(suggestedIngredientDensity(entry.name)??""));}} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]">{(add?(()=>{
    const base=ingredients.find(ingredient=>ingredient.id===add)?.baseUnit??"ml";
    return base==="each"?["each"] as RecipeDisplayUnit[]:[...new Set([...recipeDisplayUnitsFor(base,conversions[add]??[]),"g","ml","fl_oz","shot","pump"])] as RecipeDisplayUnit[];
   })():[]).map(unit=><option key={unit} value={unit}>{unitLabel(unit)}</option>)}</select></label>
@@ -319,12 +315,12 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   {add&&needsIngredientConversion(newRowUnit)&&!(conversions[add]??[]).some(c=>c.unit===newRowUnit)&&
    <label className="w-36 text-[13px] font-bold">{t("measureShort",{unit:unitLabel(newRowUnit)})}
     <input type="number" min=".000001" step="any" inputMode="decimal"
-      value={calibration[add+":"+newRowUnit]??String(measureDefault(add,ingredients.find(i=>i.id===add)?.name??"",ingredients.find(i=>i.id===add)?.baseUnit??"ml",newRowUnit)??"")}
-      onChange={e=>setCalibration(prev=>({...prev,[add+":"+newRowUnit]:e.target.value}))}
+      value={newRowCalibration??String(measureDefault(add,ingredients.find(i=>i.id===add)?.name??"",ingredients.find(i=>i.id===add)?.baseUnit??"ml",newRowUnit)??"")}
+      onChange={e=>setNewRowCalibration(e.target.value)}
       className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]"/>
    </label>}
   <button type="button" disabled={pending||!add||invalidQuantity||!(Number(newRowAmount)>0)} onClick={append} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{t("add")}</button>
-  <button type="button" onClick={()=>setAdd(null)} className="min-h-12 px-3">{t("cancel")}</button></div>;}
+  <button type="button" onClick={()=>{setAdd(null);setNewRowCalibration(undefined);}} className="min-h-12 px-3">{t("cancel")}</button></div>;}
  /** Use the one canonical unit-compatibility helper; no parallel conversion rules in the UI. */
  function availableUnits(line:MenuItemForEdit["recipe"][number]):RecipeDisplayUnit[]{
   if(line.baseUnit==="each")return ["each"];
