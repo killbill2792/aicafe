@@ -124,6 +124,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       !(job && m.role === "owner" && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
         content: historyContent(m) })).filter(m => m.content);
+    const proposalScope={...scope,threadId:id,locale:p.locale,
+      ...(external?{verifiedReadClient:p.externalClient}: {})};
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
@@ -144,14 +146,14 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(memory ? { memory: memory.port } : {}),
       eventPlans:{propose:async(input)=>{
         const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,eventPlan:input}));
-        const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},
+        const proposal=await proposeLoop(proposalScope,
           supervisorLoopRegistry,new SupabaseLoopRepository(),eventReadinessCapabilityId,input,key);
         return {proposalId:proposal.id,revision:proposal.revision};
       }},
       goals:{
         propose:async(input)=>{
           const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,goal:input}));
-          const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},supervisorLoopRegistry,
+          const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
             new SupabaseLoopRepository(),goalCapabilityId,input,key);
           return {proposalId:proposal.id,revision:proposal.revision,
             title:String((proposal.canonicalEffectPayload as {title:string}).title)};
@@ -188,7 +190,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         const stable=JSON.stringify({ownerMessageId:owner.id,productId,newPriceCents});
         // RFC 4122 UUIDv5: the thread UUID is the namespace.
         const requestKey=proposalRequestKey(id,stable);
-        const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},
+        const proposal=await proposeLoop(proposalScope,
           supervisorLoopRegistry,new SupabaseLoopRepository(),menuPriceChangeCapabilityId,
           {productId,newPriceCents},requestKey);
         const effect=proposal.canonicalEffectPayload as {
@@ -206,7 +208,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         const increase=increaseCents??(newPriceCents===null?null:newPriceCents-item.priceCents);
         if(increase===null||increase<=0)throw new ToolError("validation","Enter a positive price increase.");
         const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,productId,increase,days}));
-        const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},supervisorLoopRegistry,
+        const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
           new SupabaseLoopRepository(),priceExperimentCapabilityId,{productId,increaseCents:increase},key);
         const effect=proposal.canonicalEffectPayload as {productName:string;oldPriceCents:number;newPriceCents:number};
         return {proposalId:proposal.id,revision:proposal.revision,productName:effect.productName,oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents};
@@ -232,7 +234,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           try{
             const requestKey=requestKeys[index];
             const receiptLineIndex=input.source==="receipt_chat"?indexes[index]:null;
-            const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},supervisorLoopRegistry,
+            const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
               new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:input.source,
                 receiptGroupId:input.source==="receipt_chat"?owner.id:null,
                 receiptLineIndex,
@@ -245,7 +247,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       },
       proposeStaff:async({name,input})=>{
         const requestKey=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,name,input}));
-        const proposal=await proposeLoop({...scope,threadId:id,locale:p.locale},
+        const proposal=await proposeLoop(proposalScope,
           supervisorLoopRegistry,new SupabaseLoopRepository(),staffCapabilityId(name),input,requestKey);
         return {proposalId:proposal.id,revision:proposal.revision,capabilityId:proposal.capabilityId};
       }} };
