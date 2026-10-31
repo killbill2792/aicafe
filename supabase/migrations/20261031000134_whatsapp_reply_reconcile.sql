@@ -1,3 +1,9 @@
+-- Post-PR-A compatibility fix: actual Meta wamid may include Base64 padding.
+-- The original A migration remains immutable; apply this in A→C order.
+alter table public.whatsapp_inbound drop constraint whatsapp_inbound_wamid_check;
+alter table public.whatsapp_inbound add constraint whatsapp_inbound_wamid_check
+  check (wamid ~ '^wamid[.][A-Za-z0-9_.:-]{1,240}={0,2}$');
+
 -- PR C: durable recovery of cross-channel Supervisor replies after PR A's
 -- signed inbound lease has completed. Staging-only; do NOT apply to production.
 -- No new conversation table: ai_messages remains the source of truth.
