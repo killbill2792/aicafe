@@ -69,7 +69,7 @@ describe("durable WhatsApp handoff",()=>{
     const call=mocks.rpc.mock.calls.find(args=>args[0]==="whatsapp_enqueue_outbound");
     expect(call?.[1]).toMatchObject({p_kind:"daily_brief",p_binding_id:U,
       p_payload:{fields:[...fields]},p_business_date:"2026-10-31",p_source_message_id:U});
-    await expect(enqueueWhatsApp(U,"invalid",{kind:"reply",text:"hi"},{})).rejects.toThrow("invalid_outbound");
+    await expect(enqueueWhatsApp(U,"invalid",{kind:"reply",text:"hi"},{},U)).rejects.toThrow("invalid_outbound");
   });
   it("rechecks binding before every send, and never sends when it is revoked",async()=>{
     const out={...lease,id:U,kind:"reply",payload:{text:"Allowed text"},
