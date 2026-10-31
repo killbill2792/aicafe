@@ -65,7 +65,7 @@ export async function registerAuthorizedSupervisorTurn(input: {
  * the verified transport's server caller may mark it; browser owner messages
  * cannot set grounding and WhatsApp payloads cannot approve actions. */
 export async function markWhatsAppOwnerProvenance(
- scope:ConversationScope,owner:ConversationMessage,receivedAt:string,
+ scope:ConversationScope,owner:ConversationMessage,receivedAt:string,attachmentIds?:readonly string[],
 ):Promise<void>{
  const date=new Date(receivedAt);
  if(!Number.isFinite(date.getTime())||date.getTime()>Date.now()+60_000)
@@ -77,9 +77,23 @@ export async function markWhatsAppOwnerProvenance(
  const {data,error}=await query();
  if(error||data?.role!=="owner")throw new ConversationApiError(403,"message_scope_mismatch");
  const grounding=data.grounding as Record<string,unknown>|null;
- const expected={sourceChannel:"whatsapp",receivedAt:date.toISOString()};
+ const ids=attachmentIds===undefined&&Array.isArray(grounding?.attachmentIds)
+   ?grounding.attachmentIds as string[]:[...(attachmentIds??[])];
+ if(ids.length>3||new Set(ids).size!==ids.length||
+    ids.some(id=>typeof id!=="string"||!/^[a-f0-9-]{36}$/i.test(id)))
+   throw new ConversationApiError(422,"invalid_whatsapp_attachments");
+ if(ids.length){
+   const {data:owned,error:ownedError}=await client.from("ai_attachments")
+      .select("id,media_type").eq("business_id",scope.businessId)
+      .eq("owner_user_id",scope.ownerUserId).eq("thread_id",owner.threadId).in("id",ids);
+   if(ownedError||!owned||owned.length!==ids.length||
+     owned.some(row=>!["image/jpeg","image/png","application/pdf"].includes(row.media_type)))
+     throw new ConversationApiError(403,"attachments_not_available");
+ }
+ const expected={sourceChannel:"whatsapp",receivedAt:date.toISOString(),attachmentIds:ids};
  if(grounding){
-   if(grounding.sourceChannel!=="whatsapp"||grounding.receivedAt!==expected.receivedAt)
+   if(grounding.sourceChannel!=="whatsapp"||grounding.receivedAt!==expected.receivedAt||
+     JSON.stringify(grounding.attachmentIds??[])!==JSON.stringify(expected.attachmentIds))
      throw new ConversationApiError(409,"message_channel_conflict");
    return;
  }
@@ -90,7 +104,8 @@ export async function markWhatsAppOwnerProvenance(
  if(result.data?.length!==1){
    const replay=await query();
    if(replay.error||replay.data?.grounding?.sourceChannel!=="whatsapp"||
-     replay.data?.grounding?.receivedAt!==expected.receivedAt)
+     replay.data?.grounding?.receivedAt!==expected.receivedAt||
+     JSON.stringify(replay.data?.grounding?.attachmentIds??[])!==JSON.stringify(expected.attachmentIds))
      throw new ConversationApiError(409,"message_channel_conflict");
  }
 }
@@ -106,4 +121,31 @@ export async function storedOwnerMessageChannel(
    .eq("thread_id",threadId).maybeSingle();
  if(error||data?.role!=="owner")throw new ConversationApiError(403,"message_scope_mismatch");
  return (data.grounding as {sourceChannel?:unknown}|null)?.sourceChannel==="whatsapp"?"whatsapp":"web";
+}
+
+/** Images attached to a queued WhatsApp owner turn are durable in the same
+ * private ai_attachments store. PDFs remain stored for web owner review,
+ * not inserted as unsupported image bytes into the model. */
+export async function recordedWhatsAppImageIds(scope:ConversationScope,
+ threadId:string,ownerMessageId:string):Promise<string[]|null>{
+ const client=createAdminSupabaseClient();
+ const {data,error}=await client.from("ai_messages").select("role,grounding")
+   .eq("id",ownerMessageId).eq("business_id",scope.businessId)
+   .eq("owner_user_id",scope.ownerUserId).eq("thread_id",threadId).maybeSingle();
+ if(error||data?.role!=="owner")throw new ConversationApiError(403,"message_scope_mismatch");
+ const record=data.grounding as {sourceChannel?:unknown;attachmentIds?:unknown}|null;
+ if(record?.sourceChannel!=="whatsapp")return null;
+ const ids=record.attachmentIds??[];
+ if(!Array.isArray(ids)||ids.length>3||new Set(ids).size!==ids.length||
+   ids.some(id=>typeof id!=="string"||!/^[a-f0-9-]{36}$/i.test(id)))
+   throw new ConversationApiError(422,"invalid_whatsapp_attachments");
+ if(!ids.length)return [];
+ const {data:owned,error:ownedError}=await client.from("ai_attachments")
+   .select("id,media_type").eq("business_id",scope.businessId)
+   .eq("owner_user_id",scope.ownerUserId).eq("thread_id",threadId).in("id",ids);
+ if(ownedError||!owned||owned.length!==ids.length)
+   throw new ConversationApiError(403,"attachments_not_available");
+ if(owned.some(row=>!["image/jpeg","image/png","application/pdf"].includes(row.media_type)))
+   throw new ConversationApiError(422,"unsupported_whatsapp_media");
+ return ids.filter(id=>owned.some(row=>row.id===id&&row.media_type!=="application/pdf"));
 }
