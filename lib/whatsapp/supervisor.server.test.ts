@@ -60,6 +60,13 @@ describe("verified WhatsApp Supervisor worker",()=>{
      replyText:"Verified sales: $100",eligibleAtCompletion:false}]});
    expect(mock.finish).toHaveBeenCalledWith("job1",{status:"done",replyMessageId:"reply1"});
  });
+ it("preserves the verified dispatcher client-message ID across idempotent replay",async()=>{
+   const fromTransport="eeeeeeee-eeee-5eee-8eee-eeeeeeeeeeee";
+   await processVerifiedWhatsAppOwnerTurn({...input,clientMessageId:fromTransport});
+   expect(mock.register).toHaveBeenCalledWith(expect.objectContaining({clientMessageId:fromTransport}));
+   await expect(processVerifiedWhatsAppOwnerTurn({...input,clientMessageId:"not-a-uuid"}))
+     .rejects.toThrow("invalid_whatsapp_client_message_id");
+ });
  it("never hands another WhatsApp owner's queued answer to this inbound reply",async()=>{
    const nextOwner={...owner,id:"55555555-5555-4555-8555-555555555555",text:"Other WA question"};
    mock.finish.mockResolvedValueOnce({continuation:{id:"job2",ownerMessageId:nextOwner.id}})
