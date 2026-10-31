@@ -156,7 +156,7 @@ describe("web search call",()=>{
     const last=JSON.parse(String(fetch.mock.calls[2][1].body));
     expect(last.tools[0].type).toBe("web_search");
     expect(last.text).toBeUndefined();
-    expect(last.input).toMatch(/Respond with only a JSON object/u);
+    expect(last.input).toMatch(/Return only a compact JSON object/u);
   });
   it("reports failures without logging the address",async()=>{
     const log=vi.spyOn(console,"error").mockImplementation(()=>{});
