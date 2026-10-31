@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
@@ -16,14 +17,12 @@ export type StaffScheduleRow = {
 };
 
 /** Every employee's current recurring schedule rows (Manage staff's weekly-schedule editor). */
-export async function getStaffSchedules(): Promise<StaffScheduleRow[]> {
+export async function getStaffSchedules(explicit?:{client:SupabaseClient;businessId:string}): Promise<StaffScheduleRow[]> {
   if (!isSupabaseConfigured()) return [];
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
-  const businessId = await getActiveBusinessId(user.id);
+  const supabase = explicit?.client ?? await createServerSupabaseClient();
+  const user = explicit ? null : (await supabase.auth.getUser()).data.user;
+  if (!explicit && !user) return [];
+  const businessId = explicit?.businessId ?? await getActiveBusinessId(user!.id);
 
   const { data } = await supabase
     .from("staff_schedules")
