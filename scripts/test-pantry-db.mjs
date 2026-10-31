@@ -123,7 +123,7 @@ try {
   await db.query("grant all on public.menu_product_addons, public.menu_combo_components to authenticated");
   await db.query("grant execute on function public.save_menu_product_addons(uuid,uuid,jsonb) to authenticated");
   await db.query("insert into businesses(id) values($1),($2)",[A,B]);
-  await db.query("insert into memberships values($1,$2),($3,$4)",[A,OWNER,B,OTHER]);
+  await db.query("insert into memberships(business_id,user_id) values($1,$2),($3,$4)",[A,OWNER,B,OTHER]);
   await db.query("insert into menu_items(id,business_id,name,base_name,price_cents) values($1,$2,'Latte','Latte',550)",[PARENT,A]);
   await db.query("insert into ingredients(id,business_id,name,base_unit) values($1,$2,'Other business milk','ml')",[FOREIGN_ING,B]);
 
@@ -314,9 +314,10 @@ try {
     assert.equal((await c.query(`select original_pack from ingredient_prices
       where ingredient_id=$1`,[owned["cup-hot-12"]])).rows[0].original_pack,null);
     // Archive preserves every dependent row and blocks fresh recipe selections.
+    const beforeArchiveRecipeCount=(await c.query("select count(*) from recipe_lines where ingredient_id=$1",[milk])).rows[0].count;
     await c.query(rpc("pantry_set_archived",[],3),[A,milk,true]);
     assert.equal((await c.query("select archived_at from ingredients where id=$1",[milk])).rows[0].archived_at!==null,true);
-    assert.equal((await c.query("select count(*) from recipe_lines where ingredient_id=$1",[milk])).rows[0].count,"4");
+    assert.equal((await c.query("select count(*) from recipe_lines where ingredient_id=$1",[milk])).rows[0].count,beforeArchiveRecipeCount);
     assert.equal((await c.query("select count(*) from ingredient_prices where ingredient_id=$1",[milk])).rows[0].count,"2");
     const separate=(await c.query(`insert into menu_items(business_id,name,base_name,price_cents)
       values($1,'Archived test','Archived test',250) returning id`,[A])).rows[0].id;
@@ -330,7 +331,9 @@ try {
     await c.query(rpc("pantry_set_archived",[],3),[A,milk,false]);
     assert.equal((await c.query("select archived_at from ingredients where id=$1",[milk])).rows[0].archived_at,null);
     assert.equal((await c.query("select count(*) from ingredient_prices where ingredient_id=$1",[milk])).rows[0].count,"2");
-    await rejectStatement(c,"delete from ingredients where id=$1",[milk],"42501");
+    assert.equal((await c.query("delete from ingredients where id=$1 returning id",[milk])).rowCount,0,
+      "RLS must prohibit direct destructive deletion");
+    assert.equal((await c.query("select count(*) from ingredients where id=$1",[milk])).rows[0].count,"1");
   });
   await asOwner(db,async c=>{
     await rejectStatement(c,rpc("pantry_set_archived",[],3),[A,owned["milk-whole"],true],"42501");
