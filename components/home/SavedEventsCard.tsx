@@ -402,7 +402,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
             </article>}
             {plan?<section className="space-y-4 rounded-2xl border border-line bg-card p-4" aria-label={t("savedInsight")}>
               <div>
-                <p className="text-[15px] font-semibold text-accent-text">{chosenEvent&&plan.eventIds?.length>1?t("sharedDayInsight"):t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
+                <p className="text-[15px] font-semibold text-accent-text">{chosenEvent&&(plan.eventIds?.length??0)>1?t("sharedDayInsight"):t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
                 <p className="mt-2 break-words font-headline text-[20px] font-semibold leading-snug" dir="auto">{plan.summary}</p>
               </div>
               <PlanHours plan={plan} t={t}/>
