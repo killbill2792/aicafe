@@ -32,8 +32,9 @@ function safeText(value:string,max=160):string|null{
   return s.length>0&&s.length<=max?s:null;
 }
 function isDay(day:string):boolean{
-  return /^\d{4}-\d{2}-\d{2}$/.test(day)&&
-    new Date(day+"T12:00:00Z").toISOString().slice(0,10)===day;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return false;
+  const d=new Date(day+"T12:00:00Z");
+  return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===day;
 }
 function activeSameWeekdayMonitor(monitors:readonly OwnerProposalRow[],today:string):string|null{
   for(const m of monitors){
