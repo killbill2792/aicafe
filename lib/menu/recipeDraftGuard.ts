@@ -15,3 +15,10 @@ export function hasPendingRecipeMeasurements(
 ):boolean{
  return Object.keys(densityInputs).length>0||Object.keys(calibration).length>0;
 }
+
+/** New-row pump/shot inputs can have no suggested dose at all. A typed custom
+ * factor takes priority; never guess a missing dose or accept blank/zero. */
+export function resolveRecipeCalibration(raw:string|undefined,suggested:number|null):number|null{
+ const value=raw===undefined?suggested:Number(raw);
+ return raw!==""&&value!==null&&Number.isFinite(value)&&value>0?value:null;
+}
