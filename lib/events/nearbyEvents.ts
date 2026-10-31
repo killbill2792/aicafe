@@ -152,7 +152,7 @@ export function parseNearbyEvents(text:string,from:string,to:string):NearbyEvent
  * Never log raw model text, addresses, event names, source URLs or prompts. */
 export function nearbyEventsShapeProblem(text:string,from:string,to:string):string {
   let raw:unknown;
-  try{raw=JSON.parse(text.trim().replace(/^```(?:json)?\\s*|\\s*```$/gu,""));}catch{return "invalid_json";}
+  try{raw=JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/gu,""));}catch{return "invalid_json";}
   const list=Array.isArray(raw)?raw:raw&&typeof raw==="object"?
     (Array.isArray((raw as {events?:unknown}).events)?(raw as {events:unknown[]}).events:
       Array.isArray((raw as {results?:unknown}).results)?(raw as {results:unknown[]}).results:null):null;
@@ -168,8 +168,8 @@ export function nearbyEventsShapeProblem(text:string,from:string,to:string):stri
       (event.source&&typeof event.source==="object"&&!Array.isArray(event.source)?
         (event.source as {url?:unknown}).url:undefined);
     if(typeof name!=="string"||name.trim().length<2)noName++;
-    else if(typeof date!=="string"||!/^\\d{4}-\\d{2}-\\d{2}$/u.test(date))noDate++;
-    else if(typeof source!=="string"||!/^https?:\\/\\//u.test(source))noSource++;
+    else if(typeof date!=="string"||!/^\d{4}-\d{2}-\d{2}$/u.test(date))noDate++;
+    else if(typeof source!=="string"||!/^https?:\/\//u.test(source))noSource++;
     else if(date<from||date>to)outside++;
     else other++;
   }
