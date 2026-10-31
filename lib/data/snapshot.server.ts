@@ -127,6 +127,7 @@ export async function getBusinessSnapshotFromDb(
           amountCents: activeRecurring.reduce((sum,r)=>sum+recurringCostMonthlyEquivalentCents({
              amountCents:Number(r.amount_cents),
              frequency:r.frequency as "monthly"|"weekly"|"quarterly"|"yearly"}),0),
+          amountSource: "recurring" as const,
           isEstimate: activeRecurring.some((r) => r.is_estimate),
           isMissing: false,
           isExpected: true,
