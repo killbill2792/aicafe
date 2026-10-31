@@ -259,7 +259,7 @@ try {
       where menu_item_id=$1 and is_default=true`,[item])).rows[0].ingredient_id,oat);
     await rejectStatement(c,"select public.save_menu_product_addons($1,$2,$3)",[A,item,
       JSON.stringify({options:[option],recipeChanges:plan})],"40001");
-    assert.equal((await c.query("select quantity from recipe_lines where menu_item_id=$1",[item])).rows[0].quantity,"100");
+    assert.equal(Number((await c.query("select quantity from recipe_lines where menu_item_id=$1",[item])).rows[0].quantity),100);
   });
   // A legacy editor updates an unrelated line in an open transaction. The
   // bulk RPC must wait for its ROW EXCLUSIVE lock, then detect the stale
