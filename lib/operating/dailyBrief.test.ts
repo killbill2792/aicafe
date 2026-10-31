@@ -51,7 +51,7 @@ describe("daily brief text and timing",()=>{
 });
 
 type Rows=Record<string,unknown>;
-function fakeDb(opts:{already?:boolean;thread?:boolean}={}){
+function fakeDb(opts:{already?:boolean;thread?:boolean;owners?:string[]}={}){
   const inserts:Rows[]=[];
   const q=(table:string)=>{
     const self:Record<string,unknown>={};
@@ -59,7 +59,8 @@ function fakeDb(opts:{already?:boolean;thread?:boolean}={}){
     self.upsert=async(row:Rows)=>{inserts.push({table,...row});return {error:null};};
     self.update=(row:Rows)=>{inserts.push({table,op:"update",...row});return self;};
     self.range=async()=>({data:table==="businesses"?[{id:"b1",timezone:zone,currency:"USD",is_demo:false},
-      {id:"demo",timezone:zone,currency:"USD",is_demo:true}]:[],error:null});
+      {id:"demo",timezone:zone,currency:"USD",is_demo:true}]:
+      table==="memberships"?(opts.owners??["u1"]).map(user_id=>({user_id})):[],error:null});
     self.maybeSingle=async()=>({error:null,data:table==="ai_messages"?(opts.already?{id:"x"}:null):
       table==="memberships"?{user_id:"u1"}:table==="ai_threads"?(opts.thread===false?null:{id:"t1"}):null});
     self.then=(r:(v:unknown)=>void)=>r({count:2,error:null});
@@ -75,11 +76,12 @@ describe("sending the daily brief",()=>{
     const {db,inserts}=fakeDb();
     expect(await sendDailyBriefs(db,morning)).toEqual({checked:1,sent:1,skipped:0,failed:0});
     expect(inserts.map(r=>r.table)).toEqual(["ai_messages","operating_tasks","operating_tasks"]);
-    expect(inserts[1]).toMatchObject({id:"daily-brief:2026-10-29",kind:"daily_brief",status:"watching",
+    expect(inserts[1]).toMatchObject({id:"daily-brief:2026-10-29:u1",kind:"daily_brief",status:"watching",
       payload:{businessDate:"2026-10-28",threadId:"t1"}});
     // The previous day's brief is retired in the inbox.
     expect(inserts[2]).toMatchObject({op:"update",status:"expired"});
-    expect(inserts[0]).toMatchObject({id:briefMessageId("b1","2026-10-29"),thread_id:"t1",owner_user_id:"u1",
+    expect(inserts[1]).toMatchObject({payload:{ownerUserId:"u1"}});
+    expect(inserts[0]).toMatchObject({id:briefMessageId("b1","2026-10-29","u1"),thread_id:"t1",owner_user_id:"u1",
       role:"supervisor",structured_content:[{type:"text",
         text:"Good morning. Yesterday: sales $2,400.00, known costs $1,600.00, you kept $800.00. 2 things need you. Ask me about any of them."}]});
   });
