@@ -110,8 +110,9 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  const prices=Object.fromEntries(selectedItems.map(item=>{
   const preview=draftRecipeCosts(item.recipe.map(line=>{
    const d=drafts[k(item.id,line.ingredientId)];
-   const replacement=pantry.find(p=>p.id===replacements[k(item.id,line.ingredientId)]);
-   const currentCost=replacement?(needsIngredientConversion(d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit)?null:replacement.costPerBaseMicros===null?null:line.quantity*replacement.costPerBaseMicros/1_000_000):line.costCents;
+   // A replacement does not inherit the old ingredient's quantity/cost. Until
+   // canonical save/re-read resolves it, show unknown instead of a false margin.
+   const currentCost=replacements[k(item.id,line.ingredientId)]?null:line.costCents;
    return {
     ingredientId:line.ingredientId,originalBaseQuantity:line.quantity,baseUnit:line.baseUnit,
     costCents:currentCost,displayUnit:d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,
