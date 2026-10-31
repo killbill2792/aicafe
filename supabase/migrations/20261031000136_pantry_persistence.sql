@@ -7,7 +7,7 @@ alter table public.ingredient_prices add column if not exists original_pack json
 
 -- NULL denotes legacy rows. New writes use a distinct 1-based position per size.
 alter table public.recipe_lines add constraint recipe_lines_sort_order_bounds
-  check (sort_order is null or sort_order between 1 and 80);
+  check (sort_order is null or sort_order between 1 and 100);
 create unique index if not exists recipe_lines_order_unique
   on public.recipe_lines(menu_item_id, sort_order) where sort_order is not null;
 create index if not exists ingredients_archive_by_business
