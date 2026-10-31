@@ -61,3 +61,14 @@ create function public.whatsapp_brief_dispatch_ready() returns boolean
   language sql security definer set search_path=public as $$ select true; $$;
 revoke all on function public.whatsapp_brief_dispatch_ready() from public,anon,authenticated;
 grant execute on function public.whatsapp_brief_dispatch_ready() to service_role;
+
+-- A daily-brief inbox row links to the owner's private ai_threads record.
+-- Existing operating_tasks policies admit every café member, so constrain these
+-- NEW owner-specific entries without changing the shared inbox for other kinds.
+-- Legacy café-level daily rows without an ownerUserId retain historic visibility.
+create policy whatsapp_owner_daily_brief_inbox_scope
+ on public.operating_tasks as restrictive for all to authenticated
+ using (kind<>'daily_brief' or payload->>'ownerUserId' is null
+   or payload->>'ownerUserId'=(select auth.uid())::text)
+ with check (kind<>'daily_brief' or payload->>'ownerUserId' is null
+   or payload->>'ownerUserId'=(select auth.uid())::text);
