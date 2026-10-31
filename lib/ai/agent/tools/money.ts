@@ -87,7 +87,7 @@ function canonicalBreakEvenAnswer(
      {name:"loadedLaborForPeriod",value:money(calc.monthlyStaffCents)},
      {name:"observedNetSales",value:money(basis.observedSalesCents)},
      {name:"ingredientCostCalibration",value:money(basis.observedIngredientCents)},
-     {name:"actualOrEstimatedHistoricalFees",value:money(basis.observedFeesCents)},
+     {name:"feeCalibrationForScenario",value:money(basis.observedFeesCents)},
    ],
    formula:"breakEven",result:money(amount),period,
    source:"get_break_even",provenance:status==="actual"?"recorded":"estimate",
