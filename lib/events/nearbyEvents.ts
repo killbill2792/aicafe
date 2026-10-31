@@ -60,6 +60,28 @@ export const nearbyEventsJsonSchema={
     }}}},
 } as const;
 
+/** A second chance after an HTTP-200 response contains valid JSON but no usable
+ * evidence-backed events. Ask only for essential facts, not twelve optional fields. */
+export const nearbyEventsMinimalJsonSchema={
+  type:"object",additionalProperties:false,required:["events"],
+  properties:{events:{type:"array",items:{type:"object",additionalProperties:false,
+    required:["name","startDate","sourceUrl"],
+    properties:{name:{type:"string"},startDate:{type:"string"},
+      sourceUrl:{type:"string"}}}}},
+} as const;
+
+export function nearbyEventsMinimalPrompt(location:string,from:string,to:string,
+  holiday?:{name:string;date:string}):string{
+  const subject=holiday?
+    "Search for confirmed public events related to "+holiday.name+" on "+holiday.date+" near "+location+".":
+    "Search for important public events near "+location+" between "+from+" and "+to+" inclusive.";
+  return subject+
+    " For each event copy its actual source page HTTPS URL, which must confirm that event's exact date."+
+    " Include only name, startDate (YYYY-MM-DD), sourceUrl. Do not invent URLs, dates, or events."+
+    " Omit anything without a confirming page; return at most 3 verifiable events."+
+    ' Return a JSON object with an events array; use {"events":[]} if none can be verified.';
+}
+
 export function nearbyEventsPrompt(location:string,from:string,to:string,
   holiday?:{name:string;date:string}):string{
   const focus=holiday?"Search specifically for "+holiday.name+" events near "+location+" on "+holiday.date+
@@ -100,7 +122,9 @@ export function parseNearbyEvents(text:string,from:string,to:string):NearbyEvent
       name:candidate.name??candidate.title,
       startDate:candidate.startDate??candidate.start_date??candidate.date,
       endDate:candidate.endDate??candidate.end_date,
-      sourceUrl:candidate.sourceUrl??candidate.source_url,
+      sourceUrl:candidate.sourceUrl||candidate.source_url||candidate.url||candidate.link||
+        (candidate.source&&typeof candidate.source==="object"&&!Array.isArray(candidate.source)?
+          (candidate.source as {url?:unknown}).url:undefined),
       sourceName:candidate.sourceName??candidate.source_name,
       venueAddress:candidate.venueAddress??candidate.venue_address,
       startTime:candidate.startTime??candidate.start_time,
@@ -122,6 +146,35 @@ export function parseNearbyEvents(text:string,from:string,to:string):NearbyEvent
   // Only an explicitly empty array is a verified empty answer.
   if(list.length>0&&inWindow===0)return null;
   return out;
+}
+
+/** Privacy-safe reason for an HTTP-200 JSON response with invalid event shape.
+ * Never log raw model text, addresses, event names, source URLs or prompts. */
+export function nearbyEventsShapeProblem(text:string,from:string,to:string):string {
+  let raw:unknown;
+  try{raw=JSON.parse(text.trim().replace(/^```(?:json)?\\s*|\\s*```$/gu,""));}catch{return "invalid_json";}
+  const list=Array.isArray(raw)?raw:raw&&typeof raw==="object"?
+    (Array.isArray((raw as {events?:unknown}).events)?(raw as {events:unknown[]}).events:
+      Array.isArray((raw as {results?:unknown}).results)?(raw as {results:unknown[]}).results:null):null;
+  if(!list)return "missing_events_array";
+  if(!list.length)return "unexpected_empty";
+  let noName=0,noDate=0,noSource=0,outside=0,other=0;
+  for(const item of list){
+    if(!item||typeof item!=="object"||Array.isArray(item)){other++;continue;}
+    const event=item as Record<string,unknown>;
+    const name=event.name??event.title;
+    const date=event.startDate??event.start_date??event.date;
+    const source=event.sourceUrl||event.source_url||event.url||event.link||
+      (event.source&&typeof event.source==="object"&&!Array.isArray(event.source)?
+        (event.source as {url?:unknown}).url:undefined);
+    if(typeof name!=="string"||name.trim().length<2)noName++;
+    else if(typeof date!=="string"||!/^\\d{4}-\\d{2}-\\d{2}$/u.test(date))noDate++;
+    else if(typeof source!=="string"||!/^https?:\\/\\//u.test(source))noSource++;
+    else if(date<from||date>to)outside++;
+    else other++;
+  }
+  return noSource?"missing_or_invalid_source_url":noDate?"missing_or_invalid_iso_date":
+    noName?"missing_event_name":outside?"event_outside_window":"invalid_optional_fields";
 }
 
 /** The text answer of a Responses API result (raw HTTP shape). */
