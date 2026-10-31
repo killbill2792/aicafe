@@ -2568,6 +2568,17 @@
     }
   },
   "MenuBuilder": {
+    "packUnitFlOz": "fluid ounces",
+    "packUnitOzWt": "ounces by weight",
+    "packUnitMl": "milliliters",
+    "packUnitG": "grams",
+    "packUnitKg": "kilograms",
+    "packUnitL": "liters",
+    "packUnitLb": "pounds",
+    "packUnitGal": "gallons",
+    "packUnitQt": "quarts",
+    "packUnitEach": "pieces",
+    "packUnitDozen": "dozen",
     "archiveIngredient": "Archive ingredient",
     "restoreIngredient": "Restore ingredient",
     "archivedIngredient": "Archived · history kept",
