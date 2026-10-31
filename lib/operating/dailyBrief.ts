@@ -24,8 +24,9 @@ export function briefDue(now:Date,timezone:string):{due:boolean;today:string;yes
     yesterday:addCalendarDays(c.today,-1)};
 }
 /** UUID-shaped and stable per café and day, so a repeated run cannot post twice. */
-export function briefMessageId(businessId:string,day:string):string{
-  const d=createHash("sha256").update("daily-brief:"+businessId+":"+day).digest("hex");
+export function briefMessageId(businessId:string,day:string,ownerUserId?:string):string{
+  const key="daily-brief:"+businessId+":"+day+(ownerUserId?":"+ownerUserId:"");
+  const d=createHash("sha256").update(key).digest("hex");
   return d.slice(0,8)+"-"+d.slice(8,12)+"-4"+d.slice(13,16)+"-a"+d.slice(17,20)+"-"+d.slice(20,32);
 }
 
