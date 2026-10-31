@@ -29,7 +29,7 @@ export function safeRecipeDensity(replacing:boolean,raw:string|undefined,
  }
  return replacing?undefined:stored??suggested??undefined;
 }
-export default function AllSizesRecipe({items,ingredients,conversions,pantry,draftSizes,focusedSizeId,onFocusedSizeChange,onDraftDirtyChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void;onDraftDirtyChange?:(dirty:boolean)=>void}){
+export default function AllSizesRecipe({items,ingredients,conversions,draftSizes,focusedSizeId,onFocusedSizeChange,onDraftDirtyChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void;onDraftDirtyChange?:(dirty:boolean)=>void}){
  const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),menu=useTranslations("Menu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
  const [active,setActive]=useState<string[]>(items.filter(i=>i.active).map(i=>i.id));
  const activeIds=items.filter(i=>i.active).map(i=>i.id).join("|");
