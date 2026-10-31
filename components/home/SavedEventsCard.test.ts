@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -126,5 +126,17 @@ describe("Events Fix C date and saved-importance contract",()=>{
     expect(eventListDays(timeline,"past",false)).toEqual(["2026-11-05","2026-10-31"]);
     expect(eventListDays(timeline,"now",false)).toEqual([]);
     expect(eventListDays(timeline,"upcoming",false)).toEqual(["2026-11-07"]);
+  });
+});
+
+describe("persistent Events category navigation",()=>{
+  const t=(key:string)=>({past:"Past",now:"Today",upcoming:"Upcoming",title:"Events near your café"} as Record<string,string>)[key]??key;
+  it("renders three accessible choices and identifies the selected category",()=>{
+    const html=renderToStaticMarkup(createElement(EventsTabs,{tab:"upcoming",onChoose:()=>{},t}));
+    for(const label of ["Past","Today","Upcoming"])expect(html).toContain(label);
+    expect(html).toContain('role="group"');
+    expect(html).toContain('aria-label="Events near your café"');
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html.match(/min-h-12/g)).toHaveLength(3);
   });
 });
