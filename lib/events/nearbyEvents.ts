@@ -22,15 +22,15 @@ export type NearbyEventsSearch=(input:{location:string;city:string|null;region:s
   from:string;to:string})=>Promise<NearbyEventsResult>;
 
 export const MAX_EVENTS=8;
-const nullableText=(max:number)=>z.union([z.string(),z.null()]).transform(v=>{
+const nullableText=(max:number)=>z.union([z.string(),z.null()]).catch(null).transform(v=>{
   const t=v?.replace(/\s+/gu," ").trim();return t?t.slice(0,max):null;});
 const isoDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).refine(d=>!Number.isNaN(Date.parse(d+"T00:00:00Z")));
 // Unknown optional dates/times may be null, missing or blank in plain fallback JSON.
 const optionalDate=z.union([z.string(),z.null()]).optional()
-  .transform(v=>v?.trim()||null).pipe(z.union([isoDate,z.null()]));
+  .transform(v=>v?.trim()||null).pipe(z.union([isoDate,z.null()])).catch(null);
 const optionalTime=z.union([z.string(),z.null()]).optional()
   .transform(v=>v?.trim()||null)
-  .pipe(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable());
+  .pipe(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).nullable()).catch(null);
 const eventSchema=z.object({
   name:z.string().transform(v=>v.replace(/\s+/gu," ").trim().slice(0,90)).pipe(z.string().min(2)),
   startDate:isoDate,endDate:optionalDate,
