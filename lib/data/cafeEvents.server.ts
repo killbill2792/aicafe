@@ -14,7 +14,7 @@ export type EventChecklistTick={actionIndex:number;state:"done"|"dismissed"};
 export type SavedEventTimeline={
  events:CafeEvent[];
  plans:Array<{proposalId:string;threadId:string;status:string;revision:number;
-   startDate:string;endDate:string;eventIds:string[];summary:string;actions:unknown;expectedBusyHours:unknown;
+   startDate:string;endDate:string;eventIds?:string[];summary:string;actions:unknown;expectedBusyHours:unknown;
    factsHash:string;importance?:"high"|"medium"|"low"|null;
    reportStatus:string|null;report:unknown|null}>;
 };
