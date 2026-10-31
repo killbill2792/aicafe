@@ -86,7 +86,7 @@ async function readOwnerImages(scope:ConversationScope,threadId:string,ids:reado
  return images;
 }
 /** One owner turn: tools → loop → persist → usage. Emits done/error and never throws. */
-export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; absorbedOwnerMessageIds: string[] } | { errorCode: string }> {
+export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; replyText:string; absorbedOwnerMessageIds: string[] } | { errorCode: string }> {
   const { scope, threadId: id, owner, emit, job, jobs } = p;
   let logged = false;
   const startedAt = Date.now();
@@ -94,13 +94,15 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
   let completedTurn: AgentTurn | undefined;
   let steps: Promise<void> = Promise.resolve();
   try {
-    const db=p.externalClient??await createServerSupabaseClient();
     const external=p.externalClient!==undefined;
+    // Browser work keeps its previous lazy RLS reads. External jobs use a
+    // verified, explicitly scoped admin client without forging a session.
+    const getDb=()=>p.externalClient?Promise.resolve(p.externalClient):createServerSupabaseClient();
     const [tools, identity, page, memory, ownerFactRead] = await Promise.all([
-      external?createOwnerScopedCafeTools(scope,db):createAuthenticatedCafeTools(),
-      readSupervisorCafeIdentity(scope.businessId,external?db:undefined), p.service.listMessages(id, 0),
-      loadMemory(external?scope:undefined,external?db:undefined),
-       loadOwnerFacts(scope.businessId,external?db:undefined)
+      external?createOwnerScopedCafeTools(scope,p.externalClient!):createAuthenticatedCafeTools(),
+      readSupervisorCafeIdentity(scope.businessId,p.externalClient), p.service.listMessages(id, 0),
+      loadMemory(external?scope:undefined,p.externalClient),
+       loadOwnerFacts(scope.businessId,p.externalClient)
          .then(facts => ({facts,failed:false}))
          .catch(() => {console.error('owner_facts_read_failed'); return {facts:[],failed:true};}),
     ]);
@@ -123,19 +125,19 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
         content: historyContent(m) })).filter(m => m.content);
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
-      canonicalData:async()=>({db,businessId:scope.businessId}),
-      menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,external?db:undefined),
-      readEconomics:async()=>readSupervisorEconomics(db,scope.businessId,identity.asOf),
+      canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
+      menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
+      readEconomics:async()=>readSupervisorEconomics(await getDb(),scope.businessId,identity.asOf),
       // Toast credentials are service-role only; the café comes from the authenticated scope.
       readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId),
       // Location comes from the café profile or the owner's saved answer, never from the model.
-      cafeLocation:async()=>readCafeLocation(db,scope.businessId,ownerFactRead.facts),
+      cafeLocation:async()=>readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
       webSearch:async(query,budget)=>{await assertCafeAiAccess(scope.businessId);return searchWeb(query,budget);},
-      savedEvents:async(from,to)=>readSavedEventTimeline(db,
+      savedEvents:async(from,to)=>readSavedEventTimeline(await getDb(),
         {businessId:scope.businessId,ownerUserId:scope.ownerUserId},from,to),
       readWeekSchedule:weekStart=>external?
-        scopedWeekSchedule({weekStart},{client:db,businessId:scope.businessId,ownerUserId:scope.ownerUserId}):
+        getDb().then(client=>scopedWeekSchedule({weekStart},{client,businessId:scope.businessId,ownerUserId:scope.ownerUserId})):
         getWeekSchedule({weekStart}),
       ownerFacts:ownerFactRead.facts,
       threadId:id,ownerMessageId:owner.id,
@@ -158,15 +160,15 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
           // Only a goal this owner owns, read with the owner's own session.
           const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
           if(external)return {missing:["requiresWebsiteReview"]};
-          const [goal]=await readOwnerProposals(db,owner,{id:goalId,limit:1});
+          const [goal]=await readOwnerProposals(await getDb(),owner,{id:goalId,limit:1});
           if(!goal||goal.capability_id!==goalCapabilityId)return {missing:["goalNotFound"]};
           const saved=await recordGoalCheckin(createAdminSupabaseClient(),owner,goalId,{date,answer,note});
           return saved?{saved:true,checkin:saved}:{missing:["noOpenCheckin"]};
         },
         status:async(goalId)=>{
           const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-          if(!goalId)return {goals:await listOwnerGoals(db,owner)};
-          const read=await readGoalStatus(db,{...owner,locale:p.locale},goalId,identity.asOf);
+          if(!goalId)return {goals:await listOwnerGoals(await getDb(),owner)};
+          const read=await readGoalStatus(await getDb(),{...owner,locale:p.locale},goalId,identity.asOf);
           if(!read)return {missing:["goalNotFound"]};
           const primary=read.effect.metrics.find(m=>m.role==="primary")!;
           const r=read.outcome.evaluation.results[primary.id];
@@ -247,7 +249,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; abso
           supervisorLoopRegistry,new SupabaseLoopRepository(),staffCapabilityId(name),input,requestKey);
         return {proposalId:proposal.id,revision:proposal.revision,capabilityId:proposal.capabilityId};
       }} };
-    const ownerImages=await readOwnerImages(scope,id,p.attachmentIds??[],external?db:undefined);
+    const ownerImages=await readOwnerImages(scope,id,p.attachmentIds??[],p.externalClient);
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages, history, context,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
