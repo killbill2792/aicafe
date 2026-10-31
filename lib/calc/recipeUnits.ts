@@ -41,8 +41,8 @@ export function toBaseUnitQuantity(
   densityGramsPerMl?: number,
 ): number | null {
   if (!(quantity > 0)) return null;
-  const density=Number.isFinite(densityGramsPerMl)&&densityGramsPerMl!>0&&densityGramsPerMl!<=5
-    ?densityGramsPerMl!:null;
+  const density=typeof densityGramsPerMl==="number"&&Number.isFinite(densityGramsPerMl)
+    &&densityGramsPerMl>0&&densityGramsPerMl<=5?densityGramsPerMl:null;
   if (needsIngredientConversion(unit)) {
     const conversion = conversions.find((c) => c.unit === unit);
     return conversion ? quantity * conversion.baseUnitsPerUnit : null;
