@@ -3,9 +3,6 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {verifyBearer} from "@/lib/security/bearer";
 import {sendDailyBriefs} from "@/lib/operating/dailyBrief.server";
 import {enqueueBoundBrief} from "@/lib/whatsapp/morningBriefDelivery.server";
-import {dispatchOutboundOnce} from "@/lib/whatsapp/queue.server";
-import {providerAllowed} from "@/lib/whatsapp/transport.server";
-import {formatInTimeZone} from "date-fns-tz";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=300;
@@ -24,27 +21,9 @@ export async function GET(request:Request){
         businessName:input.businessName,currency:input.currency,timezone:input.timezone,
         today:input.today,yesterday:input.yesterday},input.websiteMessageId,now);
     });
-    // Dispatch only during 05:50–05:59 at the queue item's café, never at 06:23.
-    // Provider receipt is tracked independently by A; acceptance != delivery.
-    if(providerAllowed("daily_brief")){
-      const {data:zones,error}=await db.from("businesses").select("timezone")
-        .eq("is_demo",false).limit(1000);
-      if(error)throw new Error("brief_dispatch_zones_unavailable");
-      const inWindow=(zones??[]).some(b=>{
-        if(!b.timezone)return false;
-        try{
-          const local=formatInTimeZone(now,b.timezone,"HH:mm");
-          return local>="05:50"&&local<"06:00";
-        }catch{return false;}
-      });
-      if(inWindow){
-        // A's outbox leases and unique owner/day index own concurrency and dedupe.
-        for(let i=0;i<10;i++){
-          const state=await dispatchOutboundOnce("daily_brief");
-          if(state==="empty"||state==="disabled")break;
-        }
-      }
-    }
+    // Queue only. PR A's global dispatchOutboundOnce currently cannot select an
+    // eligible café/local-day lease, so waking it here could send another café's
+    // stale brief. A scoped, deadline-enforced worker is a hard integration gate.
     return reply(200,result);
   }catch{return reply(503,{error:"brief_unavailable"});}
 }
