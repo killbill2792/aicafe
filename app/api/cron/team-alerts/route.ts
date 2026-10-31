@@ -33,6 +33,18 @@ export async function GET(request:Request){
   const today=cafeToday(business.timezone);
   const kind=safeTaskKind(task);
   if(!kind)continue;
+  if(process.env.WHATSAPP_OWNER_BRIEF_SEND_ENABLED==="true"){
+    // Only suppress the older template if this channel can actually reserve
+    // a canonical daily WhatsApp brief. The old task sender keeps working
+    // before PR A's staged migration and default-OFF feature are enabled.
+    const prior=await db.from("whatsapp_outbox").select("id")
+      .eq("business_id",sub.business_id).eq("owner_user_id",sub.owner_user_id)
+      .eq("business_date",today).eq("kind","daily_brief")
+      .in("state",["queued","leased","accepted","sent","delivered","read","uncertain"])
+      .limit(1);
+    if(prior.error){failed++;continue;}
+    if((prior.data??[]).length>0)continue;
+  }
   // Reserve before external send. A timeout cannot accidentally trigger a duplicate.
   const {data:reservation,error:reserveError}=await db.from("ai_delivery_attempts").insert({
    business_id:sub.business_id,owner_user_id:sub.owner_user_id,
