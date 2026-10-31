@@ -343,8 +343,8 @@ try {
   await asOwner(db,async c=>{
     await rejectStatement(c,"update ingredients set archived_at=now() where id=$1",
       [owned["milk-whole"]],"42501");
-    await rejectStatement(c,"insert into ingredients(business_id,name,base_unit,archived_at)
-      values($1,'Forged Archived','ml',now())",[A],"42501");
+    await rejectStatement(c,`insert into ingredients(business_id,name,base_unit,archived_at)
+      values($1,'Forged Archived','ml',now())`,[A],"42501");
     const rename=await c.query("update ingredients set name=name where id=$1 returning id",[owned["milk-whole"]]);
     assert.equal(rename.rowCount,1,"ordinary manager ingredient edits must still work");
   },MANAGER);
