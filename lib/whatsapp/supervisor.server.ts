@@ -127,5 +127,8 @@ export async function processVerifiedWhatsAppOwnerTurn(
      break;
    }
  }
- return {status:"answered",completed};
+ // A completed job without a persisted reply for this particular inbound is
+ // not a delivered answer. The inbound lease must remain retryable; a later
+ // attempt replays the canonical reply only after it exists in ai_messages.
+ return completed.length?{status:"answered",completed}:{status:"queued",completed:[]};
 }
