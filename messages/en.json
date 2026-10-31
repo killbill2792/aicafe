@@ -2623,7 +2623,6 @@
     "densityShort": "Grams per milliliter",
     "densityNeeded": "Enter the ingredient's grams per milliliter before saving.",
     "measureShort": "1 {unit} equals",
-    "savedEconomicsHint": "Saved numbers refresh after you save the recipe.",
     "chooseMeasurement": "Choose whether this ingredient is measured as liquid, weight or pieces.",
     "changeRecipeIngredient": "Choose replacement for {name}",
     "duplicateRecipeIngredient": "Choose a different ingredient with the same measurement type; this ingredient is already in the recipe.",
