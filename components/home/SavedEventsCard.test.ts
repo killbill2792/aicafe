@@ -189,7 +189,7 @@ describe("opening a specific saved event from the Events list",()=>{
         return template.replace(/\{(\w+)\}/g,(_,name:string)=>String(values?.[name]??""));
       };
       const html=renderToStaticMarkup(createElement(SavedEventListCard,{
-        event:halloween,locale,t,onOpen:()=>{},
+        event:halloween,locale,t,onOpen:()=>{},hasAnalysis:true,
       }));
       expect(html).toContain('type="button"');
       expect(html).toContain("Halloween at The EndUp");
@@ -213,10 +213,16 @@ describe("opening a specific saved event from the Events list",()=>{
     const clicked:CafeEvent[]=[];
     const card=SavedEventListCard({event:second,locale:"en",
       t:(key,values)=>key==="openEvent"?String(values?.title):key,
-      onOpen:e=>clicked.push(e),
+      onOpen:e=>clicked.push(e),hasAnalysis:false,
     }) as {props:{children:{props:{onClick:()=>void}}}};
     card.props.children.props.onClick();
     expect(clicked).toEqual([second]);
+    const html=renderToStaticMarkup(createElement(SavedEventListCard,{
+      event:second,locale:"en",hasAnalysis:false,onOpen:()=>{},
+      t:key=>key==="viewEventDetails"?"View event details":key,
+    }));
+    expect(html).toContain("View event details");
+    expect(html).not.toContain("Read event insights");
   });
 });
 
