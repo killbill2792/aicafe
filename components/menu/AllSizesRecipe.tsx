@@ -92,7 +92,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   const preview=draftRecipeCosts(item.recipe.map(line=>{
    const d=drafts[k(item.id,line.ingredientId)];
    const replacement=pantry.find(p=>p.id===replacements[k(item.id,line.ingredientId)]);
-   const currentCost=replacement?(replacement.costPerBaseMicros===null?null:line.quantity*replacement.costPerBaseMicros/1_000_000):line.costCents;
+   const currentCost=replacement?(needsIngredientConversion(d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit)?null:replacement.costPerBaseMicros===null?null:line.quantity*replacement.costPerBaseMicros/1_000_000):line.costCents;
    return {
     ingredientId:line.ingredientId,originalBaseQuantity:line.quantity,baseUnit:line.baseUnit,
     costCents:currentCost,displayUnit:d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,
@@ -171,7 +171,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
     onChange={e=>chooseReplacement(id,e.target.value)}
     className="mt-2 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]">
     <option value={id}>{line.ingredientName}</option>
-    {ingredients.filter(i=>i.baseUnit===line.baseUnit&&!item.recipe.some(l=>l.ingredientId===i.id)).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
+    {ingredients.filter(i=>i.baseUnit===line.baseUnit&&!item.recipe.some(l=>l.ingredientId===i.id)&&(!needsIngredientConversion((drafts[k(item.id,id)]?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit)||(conversions[i.id]??[]).some(c=>c.unit===(drafts[k(item.id,id)]?.unit??line.displayUnit??line.baseUnit)))).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
    </select>;
  }
  function toggleSize(item:MenuItemForEdit){
