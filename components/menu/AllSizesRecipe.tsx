@@ -1,5 +1,5 @@
 "use client";
-import {Fragment,useState,useTransition} from "react";
+import {Fragment,useEffect,useState,useTransition} from "react";
 import {useTranslations} from "next-intl";
 import {Plus,X,ArrowLeftRight} from "lucide-react";
 import {useRouter} from "@/i18n/navigation";
@@ -32,6 +32,8 @@ export function safeRecipeDensity(replacing:boolean,raw:string|undefined,
 export default function AllSizesRecipe({items,ingredients,conversions,pantry,draftSizes,focusedSizeId,onFocusedSizeChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void}){
  const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),menu=useTranslations("Menu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
  const [active,setActive]=useState<string[]>(items.filter(i=>i.active).map(i=>i.id));
+ const activeIds=items.filter(i=>i.active).map(i=>i.id).join("|");
+ useEffect(()=>{setActive(activeIds?activeIds.split("|"):[]);},[activeIds]);
  const [focusedSize,setFocusedSize]=useState(focusedSizeId&&items.some(i=>i.id===focusedSizeId)?focusedSizeId:items.find(i=>i.active)?.id??items[0]?.id??"");
  const [searchIngredient,setSearchIngredient]=useState("");
  const [drafts,setDrafts]=useState<Record<string,Draft>>(()=>Object.fromEntries(items.flatMap(item=>item.recipe.map(line=>[k(item.id,line.ingredientId),{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false}]))));
