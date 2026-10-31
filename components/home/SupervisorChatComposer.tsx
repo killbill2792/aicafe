@@ -61,7 +61,7 @@ export type SupervisorChatCopy = {
   answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string; provenanceOwner:string;provenanceEstimate:string;provenanceUnchecked:string;provenanceBreakEven:string;provenanceSalesGap:string;provenanceLegend:string;provenanceOverhead:string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
   clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifySaveError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string;
-  howIGotThis:string;howCalculated:string;explainMissing:string;
+  howIGotThis:string;howCalculated:string;explainMissing:string;removeEventContext:string;
   pricingLaborPrefix:string;pricingBillsPrefix:string;explainYouToldMe:string;explainEstimate:string;explainSold:string;
   explainMultiply:string;explainSum:string;explainDivide:string;explainRatio:string;explainProrate:string;explainSubtract:string;
   feedbackUp: string; feedbackDown: string; feedbackSaved: string; feedbackError: string;
@@ -1023,7 +1023,7 @@ export default function SupervisorChatComposer({
       {eventContext?.threadId===threadId&&
         <div role="status" className="mb-2 flex min-h-10 items-center gap-2 rounded-xl bg-accent-soft px-3 py-2 text-[15px] font-semibold text-ink">
           <span className="min-w-0 flex-1 break-words">@event {eventContext.title} · {eventContext.date}</span>
-          <button type="button" onClick={()=>setEventContext(null)} aria-label={copy.closeHistory}
+          <button type="button" onClick={()=>setEventContext(null)} aria-label={copy.removeEventContext}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
             <X size={18} aria-hidden="true"/>
           </button>
