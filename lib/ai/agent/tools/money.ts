@@ -50,7 +50,8 @@ function canonicalBreakEvenAnswer(
  const covered=basis.elapsedOpenDates.length-basis.missingLaborDates.length;
  const laborPartial=basis.missingLaborDates.length>0;
  const laborForecast=mode==="month_forecast"&&basis.forecastLabor;
- const taxEstimated=basis.estimatedStaffTax||basis.payrollTaxRateStatus==="estimated";
+ const taxEstimated=basis.estimatedStaffTax||
+   (laborForecast&&basis.payrollTaxRateStatus==="estimated");
  const laborEstimate=laborPartial||laborForecast||
    basis.monthLabor.basis!=="recorded"||taxEstimated||basis.ownerExtrasPresent;
  const bills=figure(basis.monthlyBillsCents,
@@ -101,7 +102,8 @@ function canonicalBreakEvenAnswer(
    dailyBreakEvenCents:daily,openDaysPerMonth:basis.openDayCount,
    periodOpenDays:basis.targetOpenDays,openDaysSource,
    drinksPerDay:basis.shared.drinksPerDay,
-   observedProcessingFeesCents:basis.observedFeesCents,
+   observedProcessingFeesCents:basis.feeResult.amountCents,
+   scenarioProcessingFeesCents:basis.observedFeesCents,
    observedIngredientCents:basis.observedIngredientCents,
    monthlyBills:{...bills,reasonKey:bills.reason,
      reason:localizedMetricReason(bills.reason,locale)},
@@ -118,7 +120,8 @@ function canonicalBreakEvenAnswer(
      employerPayrollTax:taxEstimated?"saved_rate_estimate":"recorded",
      futureLabor:mode==="month_forecast"&&laborForecast?"projected":"not_projected",
      historicalProcessingFees:feeActual?"toast_actual":"estimated",
-     futureProcessingFeeRate:feeActual?"projected_from_actual":"estimate",
+     futureProcessingFeeRate:basis.feeRateOverridden?"owner_override":
+       feeActual?"projected_from_actual":"estimate",
      ingredients:basis.ingredientSource,
      bills:basis.missingBills?"partial":basis.estimatedBills?"estimated":"recorded",
    },
@@ -134,7 +137,8 @@ function canonicalBreakEvenAnswer(
      ...(laborForecast?["monthlyLaborProjection"]:[]),
      ...(taxEstimated?["employerTaxFromSavedRate"]:[]),
      ...(!feeActual?["historicalProcessingFeeEstimate"]:[]),
-     ...(feeActual?["futureFeeRateProjectedFromActual"]:[]),
+     ...(basis.feeRateOverridden?["ownerProcessingFeeOverride"]:
+       feeActual?["futureFeeRateProjectedFromActual"]:[]),
      ...(basis.estimatedBills?["monthlyBillsEstimate"]:[]),
      ...(basis.productCosts.usesEstimatedProductCosts?["productCostEstimate"]:[]),
      ...(basis.ingredientSource==="saved_rate"?["savedIngredientRate"]:[]),
