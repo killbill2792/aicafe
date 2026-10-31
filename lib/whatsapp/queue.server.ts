@@ -30,11 +30,12 @@ export async function recordSignedStatus(event:Extract<Incoming,{type:"status"}>
 }
 export async function enqueueWhatsApp(
   bindingId:string,dedupeKey:string,outbound:Outbound,provenance:Record<string,unknown>,
-  inReplyTo?:string,businessDate?:string,
+  sourceMessageId:string,inReplyTo?:string,businessDate?:string,
 ):Promise<string> {
   const kind:Channel=outbound.kind==="daily_brief"?"daily_brief":"reply";
   // Provenance is supplied by the canonical producer, never invented by transport.
-  if(!buildOutbound("15555550123",outbound)||typeof provenance.source!=="string"||
+  if(!uuid.test(sourceMessageId)||!buildOutbound("15555550123",outbound)||
+    typeof provenance.source!=="string"||
     typeof provenance.period!=="string"||!provenance.source||!provenance.period||
     (kind==="reply"&&(!inReplyTo||businessDate!==undefined))||
     (kind==="daily_brief"&&(inReplyTo!==undefined||!businessDate||
@@ -43,7 +44,8 @@ export async function enqueueWhatsApp(
   const {data,error}=await db().rpc("whatsapp_enqueue_outbound",{
     p_binding_id:bindingId,p_key:dedupeKey,p_kind:kind,
     p_payload:outbound.kind==="daily_brief"?{fields:outbound.fields}:{text:outbound.text},
-    p_provenance:provenance,p_in_reply_to:inReplyTo??null,
+    p_provenance:provenance,p_source_message_id:sourceMessageId,
+    p_in_reply_to:inReplyTo??null,
     p_business_date:businessDate??null,
   });
   if(error||typeof data!=="string"||!uuid.test(data))throw new Error("queue_unavailable");
