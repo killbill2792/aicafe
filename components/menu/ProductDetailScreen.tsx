@@ -32,7 +32,14 @@ const EMPTY_PRICE_EVIDENCE = {
 export default function ProductDetailScreen({item,pantry,savedAddons,posModifierGroups,draftSizes,ingredients,ingredientConversions,siblingSizes,productEditItems,photo,businessId,focusedSizeId,initialTab,initialPriceItemId}:{item:MenuControlItem;pantry:PricedPantry[];savedAddons:MenuAddon[];posModifierGroups:PublishedModifierGroup[];draftSizes:UnpricedMenuSize[];ingredients:IngredientOption[];menuGroupOptions:string[];ingredientConversions:Record<string,IngredientUnitConversion[]>;siblingSizes:MenuControlItem[];productEditItems:MenuItemForEdit[];photo:ProductPhoto;businessId:string|null;focusedSizeId?:string;justCreated?:boolean;initialTab:MenuDetailTab;initialPriceItemId?:string;copiedFrom?:string}){
  const t=useTranslations("Menu");const te=useTranslations("ManageMenu");const builder=useTranslations("MenuBuilder");const useAddonsLabel=builder("addons");const router=useRouter();const pathname=usePathname();const statusChip=usePricingStatusChip();const all=stableSortSizes([item,...siblingSizes]);const [tab,setTab]=useState(initialTab);const [editingPriceId,setEditingPriceId]=useState<string|null>(all.some(size=>size.id===initialPriceItemId)?initialPriceItemId??null:null);const [renaming,setRenaming]=useState(false);const [name,setName]=useState(item.baseName);const [pending,start]=useTransition();const [error,setError]=useState<string|null>(null);const productActive=all.some(size=>size.active);const [focusedSize,setFocusedSize]=useState(focusedSizeId&&all.some(size=>size.id===focusedSizeId)?focusedSizeId:item.id);const [recipeDirty,setRecipeDirty]=useState(false);
  function blockWhileRecipeDirty(){if(!recipeDirty)return false;setError(builder("saveBeforeSizeChange"));return true;}
- function navigate(next:MenuDetailTab,size?:string){if(blockWhileRecipeDirty())return;setTab(next);router.replace(`${pathname}?tab=${next}${size?`&size=${encodeURIComponent(size)}`:""}`,{scroll:false});}
+ function navigate(next:MenuDetailTab,size?:string){
+  // The URL-selected size and the recipe editor must agree. The same pending
+  // density/calibration guard blocks both side-card links and top-level tabs.
+  if(blockWhileRecipeDirty())return;
+  if(size&&all.some(item=>item.id===size))setFocusedSize(size);
+  setTab(next);
+  router.replace(`${pathname}?tab=${next}${size?`&size=${encodeURIComponent(size)}`:""}`,{scroll:false});
+ }
  function saveName(){if(blockWhileRecipeDirty())return;start(async()=>{const r=await renameProduct({menuItemId:item.id,name});if(r.ok){setRenaming(false);router.refresh();}else setError(r.error);});}
  return <>
   <section className="grid gap-5 rounded-card-lg border border-line/60 bg-card p-[18px] shadow-sm md:grid-cols-[280px_1fr]">
