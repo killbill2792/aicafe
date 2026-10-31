@@ -13,19 +13,21 @@ import type { PantryCategory } from "@/lib/menu/pantryStarter";
 
 import type { UsageRow } from "@/lib/calc/usageVariance";
 type Variance={from:string;to:string;rows:UsageRow[]};
-type Item = {id:string;name:string;category:string|null;starterKey:string|null;baseUnit:BaseUnit;costPerBaseMicros:number|null;packQuantity:number|null;packUnit:string|null;packCostCents:number|null;usedInCount:number};
+type Item = {archivedAt:string|null;originalPack:{count:number;unitQuantity:number;unit:string}|null;id:string;name:string;category:string|null;starterKey:string|null;baseUnit:BaseUnit;costPerBaseMicros:number|null;packQuantity:number|null;packUnit:string|null;packCostCents:number|null;usedInCount:number};
 type Starter = {key:string;name:string;category:string;baseUnit:BaseUnit;packQuantity:number;packUnit:string};
 const categories=["all","coffee","milk","syrups","packaging","bakery","other"] as const;
 function categoryOf(value:string|null) { if(value==="syrup"||value==="sauce")return "syrups";if(value==="bakery"||value==="food")return "bakery";if(value==="coffee"||value==="milk"||value==="packaging")return value;return "other"; }
 const units:Record<BaseUnit,string[]>={ml:["gal","qt","l","ml","fl_oz"],g:["lb","kg","oz_wt","g"],each:["each","dozen","case(100)","case(1000)"]};
 export default function PantryWorkspace({items,starters,labels:t,variance,businessToday,inventoryPanel}:{items:Item[];starters:Starter[];labels:Record<string,string>;variance:Variance|null;businessToday:string;inventoryPanel?:ReactNode}) {
  const pendingPurchaseId=useRef<string|null>(null);
- const router=useRouter();const [entryKind,setEntryKind]=useState<"count"|"purchase">("count"); const [entryItem,setEntryItem]=useState(items[0]?.id??""); const [entryQuantity,setEntryQuantity]=useState(""); const [entryUnit,setEntryUnit]=useState<string>(items[0]?.baseUnit??"each"); const [entryDate,setEntryDate]=useState(businessToday); const [entryError,setEntryError]=useState(""); const [entryDone,setEntryDone]=useState(false);
+ const router=useRouter();const [entryKind,setEntryKind]=useState<"count"|"purchase">("count"); const [entryItem,setEntryItem]=useState(items.find(item=>!item.archivedAt)?.id??""); const [entryQuantity,setEntryQuantity]=useState(""); const [entryUnit,setEntryUnit]=useState<string>(items[0]?.baseUnit??"each"); const [entryDate,setEntryDate]=useState(businessToday); const [entryError,setEntryError]=useState(""); const [entryDone,setEntryDone]=useState(false);
  const [query,setQuery]=useState("");const [filter,setFilter]=useState<string>("all");const [dialog,setDialog]=useState<"starter"|"custom"|"price"|"edit"|null>(null);
  const [selected,setSelected]=useState<Item|null>(null);const [chosen,setChosen]=useState<string[]>([]);const [name,setName]=useState("");const [category,setCategory]=useState<PantryCategory>("other");const [baseUnit,setBaseUnit]=useState<BaseUnit>("each");
  const [quantity,setQuantity]=useState("1");const [unit,setUnit]=useState("each");const [price,setPrice]=useState("");const [error,setError]=useState("");const [pending,start]=useTransition();
- const missing=items.filter(item=>item.packCostCents===null).length;
- const visible=useMemo(()=>items.filter(item=>(filter==="all"||categoryOf(item.category)===filter)&&item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())),[items,filter,query]);
+ const activeItems=items.filter(item=>!item.archivedAt);
+ const [showArchived,setShowArchived]=useState(false);
+ const missing=activeItems.filter(item=>item.packCostCents===null).length;
+ const visible=useMemo(()=>items.filter(item=>Boolean(item.archivedAt)===showArchived&&(filter==="all"||categoryOf(item.category)===filter)&&item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())),[items,filter,query,showArchived]);
  const unused=starters.filter(s=>!items.some(item=>item.starterKey===s.key));
  function submitPrice(){if(!selected)return;const cents=Math.round(Number(price)*100);if(!(cents>0)||!(Number(quantity)>0)||packBaseQuantity(Number(quantity),unit,selected.baseUnit)===null){setError(t.error);return;}start(async()=>{const result=await savePackPrice({ingredientId:selected.id,packQuantity:Number(quantity),packUnit:unit,packCostCents:cents});if(!result.ok)setError(t.error);else{setDialog(null);router.refresh();}});}
  function submitStarters(){start(async()=>{const result=await addFromStarter(chosen);if(!result.ok)setError(t.error);else{setDialog(null);setChosen([]);router.refresh();}});}
@@ -38,7 +40,8 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  <div className="mb-4 space-y-3"> <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-line bg-card px-4"><Search className="size-5 text-ink-muted"/><input className="min-w-0 flex-1 bg-transparent text-[17px] outline-none" value={query} onChange={e=>setQuery(e.target.value)} placeholder={t.search}/></label>
  <div className="my-4 flex flex-wrap gap-2">{categories.map(key=><button type="button" key={key} onClick={()=>setFilter(key)} aria-pressed={filter===key} className={`min-h-12 rounded-full border px-4 text-[15px] font-semibold ${filter===key?"border-accent bg-accent text-on-accent":"border-line bg-card text-ink"}`}>{t[key]}</button>)}</div>
 
- {items.length>0&&missing>0&&<p className="mb-3 rounded-xl bg-warn-soft p-3 text-[15px] font-semibold text-warn">{fmt(t.confirmed,{done:items.length-missing,total:items.length})}</p>}
+ {activeItems.length>0&&missing>0&&<p className="mb-3 rounded-xl bg-warn-soft p-3 text-[15px] font-semibold text-warn">{fmt(t.confirmed,{done:activeItems.length-missing,total:activeItems.length})}</p>}
+ <div className="mb-3 flex flex-wrap gap-2"><button type="button" aria-pressed={!showArchived} onClick={()=>setShowArchived(false)} className="min-h-12 rounded-xl border border-line px-4 font-bold">{t.activeIngredients}</button><button type="button" aria-pressed={showArchived} onClick={()=>setShowArchived(true)} className="min-h-12 rounded-xl border border-line px-4 font-bold">{t.archivedIngredients} ({items.length-activeItems.length})</button></div>
  <InlinePantryTable items={visible} t={t}/></div>
  {inventoryPanel}
  <form method="get" className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-card p-3">
@@ -60,7 +63,7 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  <section id="pantry-stock-record" className="mb-5 scroll-mt-4 rounded-2xl border border-line bg-card p-4"><h2 className="font-headline text-xl font-bold">{t.usageRecord}</h2>
  <div className="mt-3 flex gap-2">{(["count","purchase"] as const).map(k=><button type="button" key={k} aria-pressed={entryKind===k} onClick={()=>setEntryKind(k)} className={`min-h-12 rounded-xl border px-4 font-bold ${entryKind===k?"bg-accent text-on-accent":"border-line"}`}>{t["usage_"+k]}</button>)}</div>
  <div className="mt-3 grid gap-3 sm:grid-cols-2">
- <label>{t.usageIngredient}<select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3" value={entryItem} onChange={e=>{setEntryItem(e.target.value);setEntryUnit(items.find(i=>i.id===e.target.value)?.baseUnit??"each");}}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
+ <label>{t.usageIngredient}<select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3" value={entryItem} onChange={e=>{setEntryItem(e.target.value);setEntryUnit(items.find(i=>i.id===e.target.value)?.baseUnit??"each");}}>{activeItems.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
  <label>{t.usageQuantity}<input type="number" min={entryKind==="count"?"0":"0.0001"} step="any" value={entryQuantity} onChange={e=>setEntryQuantity(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label>
  <label>{t.usageUnit}<select value={entryUnit} onChange={e=>setEntryUnit(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3">{(units[items.find(i=>i.id===entryItem)?.baseUnit??"each"]).map(u=><option key={u} value={u}>{u}</option>)}</select></label>
  <label>{t.usageDate}<input type="date" value={entryDate} onChange={e=>setEntryDate(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label></div>
