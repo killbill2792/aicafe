@@ -13,6 +13,7 @@ import {shiftCafeDate} from "@/lib/metrics/core/clock";
 import {safeSumCents} from "@/lib/calc/explainMath";
 import {ownerInputsSchema,ownerPeriod} from "./ownerInputs";
 import {prorate,calendarMonth} from "@/lib/calc/periods";
+import {figure} from "@/lib/calc/supervisorEconomics";
 import {dailyBreakEvenSalesCents} from "@/lib/metrics/core/breakEven";
 
 const period=z.strictObject({period:z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})])});
