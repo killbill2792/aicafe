@@ -2,7 +2,7 @@ import {describe,it,expect,vi} from "vitest";
 import {renderToStaticMarkup} from "react-dom/server";
 import type {MenuItemForEdit} from "@/lib/data/getMenuItemsForEdit";
 import {toBaseUnitQuantity} from "@/lib/calc/recipeUnits";
-import AllSizesRecipe, {safeRecipeDensity} from "./AllSizesRecipe";
+import AllSizesRecipe, {safeRecipeDensity,preservedReplacementQuantity} from "./AllSizesRecipe";
 
 vi.mock("next-intl",()=>({
  useLocale:()=> "en",
@@ -82,5 +82,17 @@ describe("cross-unit ingredient swaps",()=>{
   expect(safeRecipeDensity(true,"1",1.03,1.03)).toBe(1);
   expect(safeRecipeDensity(true,"0",1.03,1.03)).toBeUndefined();
   expect(safeRecipeDensity(false,undefined,1.03,1)).toBe(1.03);
+ });
+});
+
+describe("replacement ingredient calibration parity",()=>{
+ it("preserves 30 ml when swapping a 10 ml-pump syrup for a 5 ml-pump syrup",()=>{
+  const old=[{unit:"pump" as const,baseUnitsPerUnit:10}];
+  const replacement=[{unit:"pump" as const,baseUnitsPerUnit:5}];
+  const amount=preservedReplacementQuantity("pump",3,"ml",old,replacement);
+  expect(amount).toBe(6);
+  // The canonical writer now resolves the replacement to 30 ml, not 15 ml.
+  expect(toBaseUnitQuantity("pump",amount!,"ml",replacement)).toBe(30);
+  expect(preservedReplacementQuantity("pump",3,"ml",old,[])).toBeNull();
  });
 });
