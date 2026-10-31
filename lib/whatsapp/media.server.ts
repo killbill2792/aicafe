@@ -10,7 +10,9 @@ import { authorizedExternalConversation,externalOwnerClientMessageId } from "@/l
  * a signed-in owner reviews it on the web. */
 export type IncomingWhatsAppMedia = {
   mediaId:string;
-  mimeType:string;
+  /** A signed webhook provides kind; Graph metadata determines actual MIME. */
+  kind?:"image"|"document";
+  mimeType?:string;
   fileName?:string;
 };
 export type DownloadedWhatsAppMedia = {
@@ -73,24 +75,30 @@ export async function downloadWhatsAppMedia(
  fetcher:typeof fetch=fetch,
 ):Promise<DownloadedWhatsAppMedia>{
  if(!token||!mediaIdPattern.test(input.mediaId))throw new Error("invalid_meta_media_id");
- if(!acceptedTypes.some(t=>t===input.mimeType))throw new Error("unsupported_whatsapp_media");
+ if((!input.kind&&!input.mimeType)||
+   (input.mimeType&&!acceptedTypes.some(t=>t===input.mimeType)))
+   throw new Error("unsupported_whatsapp_media");
  const headers={Authorization:"Bearer "+token};
  const metadataResponse=await fetcher("https://graph.facebook.com/v21.0/"+encodeURIComponent(input.mediaId),
    {headers,redirect:"error",signal:AbortSignal.timeout(10_000)});
  if(!metadataResponse.ok)throw new Error("meta_media_metadata_failed");
  const meta=await metadataResponse.json() as Record<string,unknown>;
- if(meta.mime_type!==input.mimeType||typeof meta.sha256!=="string"||
+ const mimeType=meta.mime_type as DownloadedWhatsAppMedia["mimeType"];
+ if(!acceptedTypes.some(t=>t===mimeType)||
+    (input.mimeType!==undefined&&input.mimeType!==mimeType)||
+    (input.kind==="document"&&mimeType!=="application/pdf")||
+    (input.kind==="image"&&mimeType!=="image/jpeg"&&mimeType!=="image/png")||
+    typeof meta.sha256!=="string"||
     typeof meta.file_size!=="number"||!Number.isSafeInteger(meta.file_size)||
     meta.file_size<1||meta.file_size>MAX_BYTES)throw new Error("unsupported_whatsapp_media");
  const url=verifiedMetaMediaUrl(meta.url);
  const response=await fetcher(url,{headers,redirect:"error",signal:AbortSignal.timeout(10_000)});
- if(response.headers.get("content-type")?.split(";")[0].trim()!==input.mimeType)
+ if(response.headers.get("content-type")?.split(";")[0].trim()!==mimeType)
    throw new Error("meta_media_content_type_mismatch");
  const bytes=await boundedBytes(response);
  if(bytes.length!==meta.file_size||
-    !verifyMetaMediaContent(input.mimeType,bytes,meta.sha256))
+    !verifyMetaMediaContent(mimeType,bytes,meta.sha256))
     throw new Error("invalid_meta_media_signature");
- const mimeType=input.mimeType as DownloadedWhatsAppMedia["mimeType"];
  return {bytes,mimeType,name:chooseMetaMediaName(input.fileName,mimeType)};
 }
 
