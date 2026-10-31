@@ -78,6 +78,10 @@ const dateLabel=(date:string,locale:Locale,style:"short"|"long"="short")=>
     day:"numeric",weekday:style==="long"?"long":undefined}).format(new Date(date+"T00:00:00Z"));
 const eventsOn=(events:readonly CafeEvent[],date:string)=>
   events.filter(e=>e.startDate<=date&&e.endDate>=date);
+/** Never substitute another event from the same date for the owner's exact tap. */
+export function selectedSavedEvent(events:readonly CafeEvent[],date:string,eventId:string|null){
+  return eventId?eventsOn(events,date).find(e=>e.id===eventId)??null:null;
+}
 /** Preserve the exact tapped event across Home, chat and saved day reports. */
 export function eventChatTarget(date:string,event?:Pick<CafeEvent,"id"|"name">,
   plan?:Pick<Plan,"summary"|"threadId">){
@@ -256,7 +260,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const chosen=selected??today;
   const plan=planOn(timeline.plans,chosen);
   const allDayEvents=eventsOn(timeline.events,chosen);
-  const selectedEvent=selectedEventId?allDayEvents.find(e=>e.id===selectedEventId)??null:null;
+  const selectedEvent=selectedSavedEvent(timeline.events,chosen,selectedEventId);
   const dayEvents=selectedEvent?[selectedEvent]:allDayEvents;
   const actions=actionsFor(plan);
   const calendarMonth=month??today.slice(0,7);
