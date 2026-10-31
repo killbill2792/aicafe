@@ -1,9 +1,9 @@
 import "server-only";
+import {simulationOwnerReader} from "./simulationOwner.server";
 import {revalidatePath} from "next/cache";
 import {z} from "zod";
 import {diffFieldSchema,diffFields} from "@/lib/format/values";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
-import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {ownerMenuPrice} from "@/lib/data/proposalPrices.server";
 import {summarizeActualMenuSales} from "@/lib/calc/menuPriceProposal";
@@ -28,14 +28,9 @@ export const menuPriceChangeCapability=registerLoopCapability({
   effectSchema,
   dependencyScope:(effect)=>({version:2,kind:"menu_price",productId:effect.productId}),
   simulate:async(scope,input)=>{
-    const client=await createServerSupabaseClient();
-    const {data:{user}}=await client.auth.getUser();
-    if(!user||user.id!==scope.ownerUserId)throw new ToolError("unauthorized");
-    const active=await getActiveBusinessId(user.id);
-    if(active!==scope.businessId)throw new ToolError("scope_mismatch");
-    const {data:membership}=await client.from("memberships").select("role").eq("business_id",scope.businessId).eq("user_id",user.id).maybeSingle();
+    const {client}=await simulationOwnerReader(scope);
     const {data:business}=await client.from("businesses").select("currency,is_demo").eq("id",scope.businessId).maybeSingle();
-    if(membership?.role!=="owner"||business?.is_demo)throw new ToolError("unauthorized");
+    if(!business||business.is_demo)throw new ToolError("unauthorized");
     // Any café currency works; an unset or invalid currency cannot label money.
     const currency=typeof business?.currency==="string"&&/^[A-Z]{3}$/.test(business.currency)?business.currency:null;
     if(!currency)throw new ToolError("validation","Set your café currency in Café profile before changing a price.");
