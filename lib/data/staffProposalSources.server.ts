@@ -10,7 +10,7 @@ export type StaffProposalShift={id:string;employee_id:string;local_date:string;s
 
 async function verifyOwner(scope:StaffSourceScope){
  if(scope.verifiedReadClient){
-  const {client}=await simulationOwnerReader({...scope,threadId:"",locale:"en"});
+  const {client}=await simulationOwnerReader(scope);
   return {businessId:scope.businessId,supabase:client};
  }
  const owner=await requireSchedulingOwner();
