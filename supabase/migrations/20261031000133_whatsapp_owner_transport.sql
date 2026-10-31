@@ -26,18 +26,18 @@ create index whatsapp_bindings_owner on public.whatsapp_owner_bindings (owner_us
 alter table public.whatsapp_owner_bindings enable row level security;
 create policy whatsapp_binding_owner_read on public.whatsapp_owner_bindings for select to authenticated
   using (owner_user_id = (select auth.uid()) and exists
-    (select 1 from public.memberships m where m.business_id = business_id
+    (select 1 from public.memberships m where m.business_id = whatsapp_owner_bindings.business_id
        and m.user_id = (select auth.uid()) and m.role = 'owner'));
 create policy whatsapp_binding_owner_create on public.whatsapp_owner_bindings for insert to authenticated
   with check (owner_user_id = (select auth.uid()) and exists
-    (select 1 from public.memberships m where m.business_id = business_id
+    (select 1 from public.memberships m where m.business_id = whatsapp_owner_bindings.business_id
        and m.user_id = (select auth.uid()) and m.role = 'owner'));
 create policy whatsapp_binding_owner_update on public.whatsapp_owner_bindings for update to authenticated
   using (owner_user_id = (select auth.uid()) and exists
-    (select 1 from public.memberships m where m.business_id = business_id
+    (select 1 from public.memberships m where m.business_id = whatsapp_owner_bindings.business_id
        and m.user_id = (select auth.uid()) and m.role = 'owner'))
   with check (owner_user_id = (select auth.uid()) and exists
-    (select 1 from public.memberships m where m.business_id = business_id
+    (select 1 from public.memberships m where m.business_id = whatsapp_owner_bindings.business_id
        and m.user_id = (select auth.uid()) and m.role = 'owner'));
 grant select,insert,update on public.whatsapp_owner_bindings to authenticated;
 revoke delete on public.whatsapp_owner_bindings from authenticated;
@@ -49,6 +49,21 @@ create function public.whatsapp_guard_binding() returns trigger
   language plpgsql security definer set search_path = public as $$
 declare phone text;
 begin
+  -- Inbound service RPC may advance only the provider timestamp on an already
+  -- confirmed binding. It must not alter consent, ownership, receiver or thread.
+  if auth.role() = 'service_role' and tg_op = 'UPDATE' then
+    if (new.id,new.phone_number_id,new.wa_id,new.business_id,new.owner_user_id,
+        new.thread_id,new.opted_in,new.verified_at,new.consent_at,new.revoked_at)
+       is distinct from
+       (old.id,old.phone_number_id,old.wa_id,old.business_id,old.owner_user_id,
+        old.thread_id,old.opted_in,old.verified_at,old.consent_at,old.revoked_at)
+       or new.last_owner_message_at is null
+       or (old.last_owner_message_at is not null
+           and new.last_owner_message_at < old.last_owner_message_at) then
+      raise exception 'binding_immutable' using errcode = '42501';
+    end if;
+    return new;
+  end if;
   if auth.role() <> 'authenticated' or new.owner_user_id <> auth.uid() then
     raise exception 'authenticated_owner_required' using errcode = '42501';
   end if;
@@ -260,7 +275,7 @@ grant execute on function public.whatsapp_enqueue_outbound(uuid,text,text,jsonb,
 
 -- A lease is never blindly replayed after a provider timeout. Worker chooses one binding at
 -- a time; locking the binding prevents two workers from claiming the same owner concurrently.
-create function public.whatsapp_claim_outbound() returns jsonb
+create function public.whatsapp_claim_outbound(p_kind text) returns jsonb
 language plpgsql security definer set search_path=public as $$
 declare b public.whatsapp_owner_bindings; q public.whatsapp_outbox;
 begin
@@ -272,7 +287,7 @@ begin
    order by x.id for update skip locked loop
    if not public.whatsapp_binding_active(b.id) then continue; end if;
    select * into q from public.whatsapp_outbox
-     where binding_id=b.id and state='queued' and attempts<5
+     where binding_id=b.id and state='queued' and kind=p_kind and attempts<5
      order by created_at,id limit 1 for update skip locked;
    if not found then continue; end if;
    if q.kind='reply' and
@@ -287,8 +302,8 @@ begin
  end loop;
  return null;
 end $$;
-revoke all on function public.whatsapp_claim_outbound() from public,anon,authenticated;
-grant execute on function public.whatsapp_claim_outbound() to service_role;
+revoke all on function public.whatsapp_claim_outbound(text) from public,anon,authenticated;
+grant execute on function public.whatsapp_claim_outbound(text) to service_role;
 
 create function public.whatsapp_finish_outbound(p_id uuid,p_token uuid,p_outcome text,
  p_provider_wamid text default null,p_error text default null)
