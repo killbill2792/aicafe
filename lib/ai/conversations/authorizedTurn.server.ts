@@ -29,7 +29,7 @@ export async function authorizedExternalConversation(scope: ConversationScope, t
  * redelivery an idempotent owner turn without placing wamid in ai_messages.
  * The durable inbound ledger remains the authoritative provider ID mapping. */
 export function externalOwnerClientMessageId(scope: ConversationScope, wamid: string): string {
-  if (!scope.businessId || !scope.ownerUserId || !/^wamid\.[A-Za-z0-9._:-]{1,240}$/.test(wamid))
+  if (!scope.businessId || !scope.ownerUserId || !/^wamid\.[A-Za-z0-9._:-]{1,240}={0,2}$/.test(wamid))
     throw new Error("invalid_whatsapp_message_id");
   const bytes = createHash("sha256")
     .update("aicafe-whatsapp-owner-turn-v1\0").update(scope.businessId).update("\0")
