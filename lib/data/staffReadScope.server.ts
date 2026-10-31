@@ -19,9 +19,11 @@ export async function staffReadScope(explicit?:{client:SupabaseClient;businessId
    return {ok:false as const,error:"unauthorized"};
   const timezone=business.timezone as string;
   if(!timezone)return {ok:false as const,error:"unauthorized"};
+  if(typeof business.currency!=="string"||!/^[A-Z]{3}$/.test(business.currency))
+   return {ok:false as const,error:"currency_not_set"};
   return {ok:true as const,supabase:db,businessId:explicit.businessId,
     readOnly:business.is_demo===true||explicit.businessId===DEMO_BUSINESS_ID,
-    timezone,currency:(business.currency as string)||"USD",
+    timezone,currency:business.currency as string,
     today:localDateInZone(new Date(),timezone)};
  }
  if(!isSupabaseConfigured())return {
