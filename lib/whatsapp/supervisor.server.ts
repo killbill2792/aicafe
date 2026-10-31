@@ -1,6 +1,6 @@
 import "server-only";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {isSupervisorChatConfigured,getSupervisorChatReadiness} from "@/lib/ai/conversations/enabled.server";
+import {isSupervisorChatConfigured,getSupervisorChatReadinessForAuthorizedExternal} from "@/lib/ai/conversations/enabled.server";
 import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
 import type {ConversationScope} from "@/lib/ai/conversations/contracts";
 import {authorizedExternalConversation,externalOwnerClientMessageId,markWhatsAppOwnerProvenance,
@@ -49,7 +49,7 @@ export async function processVerifiedWhatsAppOwnerTurn(
  const db=createAdminSupabaseClient();
  const service=await authorizedExternalConversation(scope,threadId);
  await assertCafeAiAccess(scope.businessId);
- const ready=await getSupervisorChatReadiness(true);
+ const ready=await getSupervisorChatReadinessForAuthorizedExternal(scope,db);
  if(!ready.enabled)throw new ConversationApiError(503,ready.reason);
  const registration=await registerAuthorizedSupervisorTurn({
    scope,service,threadId,clientMessageId:externalOwnerClientMessageId(scope,wamid),
