@@ -53,7 +53,7 @@ export function eligibleWhatsAppTextReply(text: string, inboundAt: string | numb
 export function whatsappPlainTextFromSavedBlocks(blocks:readonly unknown[]|null):string|null {
  if(!blocks)return null;
  const text=blocks.flatMap(b=>b&&typeof b==="object"&&
-  (b as {type?:unknown}).type==="text"&&typeof (b as {text?:unknown}).text==="string"
+  ["text","warning"].includes(String((b as {type?:unknown}).type))&&typeof (b as {text?:unknown}).text==="string"
     ?[(b as {text:string}).text]:[]);
  if(text.length)return text.join("");
  const clarification=blocks.find(b=>b&&typeof b==="object"&&
