@@ -31,9 +31,9 @@ export function safeRecipeDensity(replacing:boolean,raw:string|undefined,
 }
 export default function AllSizesRecipe({items,ingredients,conversions,draftSizes,focusedSizeId,onFocusedSizeChange,onDraftDirtyChange}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[];focusedSizeId?:string;onFocusedSizeChange?:(id:string)=>void;onDraftDirtyChange?:(dirty:boolean)=>void}){
  const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),menu=useTranslations("Menu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
- const [active,setActive]=useState<string[]>(items.filter(i=>i.active).map(i=>i.id));
- const activeIds=items.filter(i=>i.active).map(i=>i.id).join("|");
- useEffect(()=>{setActive(activeIds?activeIds.split("|"):[]);},[activeIds]);
+ // Serving status is supplied by the canonical parent after refresh. Keep the
+ // recipe drafts mounted while reading updated status, without effect-setState.
+ const active=items.filter(i=>i.active).map(i=>i.id);
  const [focusedSize,setFocusedSize]=useState(focusedSizeId&&items.some(i=>i.id===focusedSizeId)?focusedSizeId:items.find(i=>i.active)?.id??items[0]?.id??"");
  const [searchIngredient,setSearchIngredient]=useState("");
  const [drafts,setDrafts]=useState<Record<string,Draft>>(()=>Object.fromEntries(items.flatMap(item=>item.recipe.map(line=>[k(item.id,line.ingredientId),{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false}]))));
@@ -201,7 +201,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   setError("");start(async()=>{
    const result=await setMenuItemActive(item.id,!item.active);
    if(!result.ok){setError(t("error"));return;}
-   setActive(prev=>item.active?prev.filter(x=>x!==item.id):[...prev,item.id]);router.refresh();
+   router.refresh();
   });
  }
  function beginAddRow(after:string){if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeAddingIngredient"));return;}setAdd("");setAddAfter(after);setNewRowAmount("1");setSearchIngredient("");setError("");}
