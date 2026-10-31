@@ -15,9 +15,12 @@ import {validateOwnerConfirmedProcessingFeePlan} from "@/lib/pos/processingFeeEs
 import {cardFeesForDays} from "@/lib/metrics/core/fees";
 import {laborForPeriod,type LaborRecord} from "@/lib/metrics/core/labor";
 import {breakEvenSnapshotInputs} from "@/lib/viewmodels/breakEvenViewModel";
+import type {BusinessSnapshot} from "./types";
 
 export type SupervisorEconomicsRead={economics:Economics;items:PricingItemInput[];
  canonicalBreakEven?:ReturnType<typeof breakEvenSnapshotInputs>|null;
+ /** Internal-only canonical snapshot, never shown to the model. */
+ canonicalSnapshot?:BusinessSnapshot;
  ownerMonthlyPayrollExtrasCents:number|null;ownerIngredientRate:number|null;
  staff:Array<{id:string;displayName:string;role:string|null;wageCents:number|null;weeklyHours:number|null}>};
 /** All rows are filtered through the caller's authenticated RLS client, and the
@@ -148,7 +151,7 @@ export async function readSupervisorEconomics(db:SupabaseClient,businessId:strin
  // path for owner-facing break-even, with a guard for menu-only unit fixtures.
  const canonicalBreakEven=Array.isArray(resolvedItems.last28Days)&&
   Array.isArray(resolvedItems.monthActualDays)?breakEvenSnapshotInputs(resolvedItems):null;
- return {canonicalBreakEven,economics:{
+ return {canonicalBreakEven,canonicalSnapshot:resolvedItems,economics:{
   monthlyBills,monthlyStaff:payroll,
   knownMonthlyLaborExtrasCents:ownerMonthlyPayrollExtrasCents,
   monthlyRevenue:figure(monthlyRevenueCents,"estimate",

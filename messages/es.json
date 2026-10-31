@@ -3512,7 +3512,8 @@
     "modifierUnknownMilk": "leche desconocida",
     "modifierMilkCostMissing": "Costo de {milk}",
     "modifierMilkVolumeMissing": "Cantidad de leche para {size}",
-    "modifierProductCostTargetMissing": "Objetivo de costo del producto"
+    "modifierProductCostTargetMissing": "Objetivo de costo del producto",
+    "breakEvenEstimate": "El punto de equilibrio usa costos registrados y proyecciones identificadas."
   },
   "OwnerQuestions": {
     "milkBase": "¿Qué leche se usa actualmente?",

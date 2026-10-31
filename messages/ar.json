@@ -3512,7 +3512,8 @@
     "modifierUnknownMilk": "حليب غير معروف",
     "modifierMilkCostMissing": "تكلفة {milk}",
     "modifierMilkVolumeMissing": "كمية الحليب لحجم {size}",
-    "modifierProductCostTargetMissing": "هدف تكلفة المنتج"
+    "modifierProductCostTargetMissing": "هدف تكلفة المنتج",
+    "breakEvenEstimate": "يستخدم حساب التعادل التكاليف المسجلة والتوقعات الموضحة بوضوح."
   },
   "OwnerQuestions": {
     "milkBase": "ما نوع الحليب المستخدم حاليًا؟",

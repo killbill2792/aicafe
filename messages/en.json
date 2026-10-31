@@ -3512,7 +3512,8 @@
     "modifierUnknownMilk": "unknown milk",
     "modifierMilkCostMissing": "Cost for {milk}",
     "modifierMilkVolumeMissing": "Milk amount for {size}",
-    "modifierProductCostTargetMissing": "Product-cost target"
+    "modifierProductCostTargetMissing": "Product-cost target",
+    "breakEvenEstimate": "Break-even uses recorded costs and clearly labeled projections."
   },
   "OwnerQuestions": {
     "milkBase": "Which milk is currently used?",

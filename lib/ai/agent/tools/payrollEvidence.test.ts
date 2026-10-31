@@ -19,26 +19,19 @@ function ctx(monthlyCents:number|null):AgentToolContext{
 const inputs={ownerIngredientPackagingPercent:20,ownerProcessingFeePercent:0,
  ownerNetSalesCents:null,ownerSalesDays:null,ownerInputs:null};
 describe("break-even owner payroll evidence",()=>{
- it("adds owner-stated monthly non-POS costs once, as a labeled estimate",async()=>{
+ it("never calculates from a legacy payroll extras reader without canonical facts",async()=>{
   const result=await moneyTools.get_break_even.execute(inputs,ctx(3000));
-  expect(result.ownerMonthlyPayrollExtrasCents).toBe(3000);
-  expect(result.ownerDailyPayrollExtrasCents).toBe(100);
-  expect(result.ownerMonthlyPayrollSource).toBe("owner_provided");
-  expect(result.ownerMonthlyPayrollStatus).toBe("estimated");
-  expect(result.estimated).toContain("ownerMonthlyPayrollExtras");
-  expect(result.ownerComparison).toMatchObject({
-   dailyFixedCostsCents:10100,dailyBreakEvenSalesCents:12625
-  });
+  expect(result.missing).toContain("canonicalBreakEvenUnavailable");
+  expect(result.monthlyBreakEvenCents).toBeNull();
+  expect(result.dailyBreakEvenCents).toBeNull();
+  expect(result.explain).toEqual([]);
  });
- it("never converts an unsaved monthly amount into zero or claims coverage",async()=>{
+ it("does not invent zero when owner extras are absent and canonical facts unavailable",async()=>{
   const result=await moneyTools.get_break_even.execute(inputs,ctx(null));
-  expect(result.ownerMonthlyPayrollExtrasCents).toBeNull();
-  expect(result.ownerDailyPayrollExtrasCents).toBeNull();
-  expect(result.missing).toContain(
-   "ownerMonthlyPayrollExtrasNotSet:estimateExcludesUnknownAdditionalPayroll");
+  expect(result.missing).toContain("canonicalBreakEvenUnavailable");
+  expect(result.periodBreakEvenCents).toBeNull();
  });
 });
-
 
 describe("get_payroll_facts known-only wages",()=>{
   it("keeps non-null missing-day wages UNKNOWN in AI, then accepts complete wages",async()=>{
