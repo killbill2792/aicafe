@@ -58,7 +58,7 @@ function fakeDb(opts:{already?:boolean;thread?:boolean;owners?:string[]}={}){
     let scopedOwner:string|null=null;
     for(const m of ["select","order","limit","in","neq"])self[m]=()=>self;
     self.eq=(column:string,value:unknown)=>{
-      if(column==="user_id"&&typeof value==="string")scopedOwner=value;
+      if((column==="user_id"||column==="owner_user_id")&&typeof value==="string")scopedOwner=value;
       return self;
     };
     self.upsert=async(row:Rows)=>{inserts.push({table,...row});return {error:null};};
