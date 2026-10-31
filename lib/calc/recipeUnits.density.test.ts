@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {toBaseUnitQuantity,densityFromStoredRecipe,reexpressRecipeQuantity} from "./recipeUnits";
+import {toBaseUnitQuantity,densityFromStoredRecipe,reexpressRecipeQuantity,replacementRecipeLine} from "./recipeUnits";
 import {draftRecipeCosts} from "./recipePreview";
 import {suggestedIngredientDensity} from "./suggestedRecipeMeasures";
 describe("volume and weight recipe conversions",()=>{
@@ -63,6 +63,40 @@ describe("volume and weight recipe conversions",()=>{
   const restored=reexpressRecipeQuantity("fl_oz","g",ounces!,"g",[],density);
   expect(restored).toBeCloseTo(110,8);
   expect(reexpressRecipeQuantity("fl_oz","g",ounces!,"g")).toBeNull();
+ });
+ it("save 103 g / 100 ml recipe -> reopen -> switch default milk without borrowing old milk density",()=>{
+  // The owner confirms 1.03 g/ml when writing the original whole-milk recipe.
+  const original={ingredientId:"whole-milk",quantity:toBaseUnitQuantity("g",103,"ml",[],1.03)!,
+   displayUnit:"g" as const,displayQuantity:103};
+  expect(original.quantity).toBeCloseTo(100,9);
+  const reopened=JSON.parse(JSON.stringify(original)) as typeof original;
+  // The next ingredient has no measured density. The canonical milk volume is
+  // retained, and the display falls back to ml instead of inheriting 1.03.
+  const replacement=replacementRecipeLine(reopened.quantity,reopened.displayUnit,
+    reopened.displayQuantity,"ml","ml",[]);
+  expect(replacement).toEqual({quantity:100,displayUnit:"ml",displayQuantity:100});
+  const savedAgain=JSON.parse(JSON.stringify({...replacement,ingredientId:"oat-milk"}));
+  expect(savedAgain).toEqual({ingredientId:"oat-milk",quantity:100,displayUnit:"ml",displayQuantity:100});
+  expect(toBaseUnitQuantity(savedAgain.displayUnit,savedAgain.displayQuantity,"ml")).toBe(100);
+ });
+ it("preserves each sibling's canonical amount when replacing default milk",()=>{
+  const saved=[{q:100,u:"g" as const,d:103},{q:180,u:"ml" as const,d:180},
+    {q:240,u:"fl_oz" as const,d:240/29.5735}];
+  expect(saved.map(s=>replacementRecipeLine(s.q,s.u,s.d,"ml","ml",[])))
+   .toEqual([{quantity:100,displayUnit:"ml",displayQuantity:100},
+    {quantity:180,displayUnit:"ml",displayQuantity:180},
+    {quantity:240,displayUnit:"fl_oz",displayQuantity:240/29.5735}]);
+ });
+ it("preserves physical amount across different ingredient pump calibrations, never inheriting the old dose",()=>{
+  expect(replacementRecipeLine(30,"pump",3,"ml","ml",[{unit:"pump",baseUnitsPerUnit:5}]))
+   .toEqual({quantity:30,displayUnit:"pump",displayQuantity:6});
+  expect(replacementRecipeLine(30,"pump",3,"ml","ml",[]))
+   .toEqual({quantity:30,displayUnit:"ml",displayQuantity:30});
+  // A genuinely cross-base g->ml swap still fails without a real, compatible
+  // physical unit or destination calibration; never read 100 g as 100 ml.
+  expect(replacementRecipeLine(103,"g",103,"g","ml",[])).toBeNull();
+  expect(replacementRecipeLine(103,"ml",100,"g","ml",[]))
+   .toEqual({quantity:100,displayUnit:"ml",displayQuantity:100});
  });
  it("rejects invalid densities rather than producing misleading costs",()=>{
   expect(toBaseUnitQuantity("g",120,"ml",[],0)).toBeNull();
