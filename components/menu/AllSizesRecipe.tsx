@@ -1,6 +1,6 @@
 "use client";
 import {Fragment,useState,useTransition} from "react";
-import {useLocale,useTranslations} from "next-intl";
+import {useTranslations} from "next-intl";
 import {Plus,X,ArrowLeftRight} from "lucide-react";
 import {useRouter} from "@/i18n/navigation";
 import {saveProductRecipes,createPantryIngredient} from "@/lib/actions/pantry";
@@ -19,7 +19,7 @@ import {swapPortionDifferenceCents,additiveCostCents} from "@/lib/calc/menuAddon
 type Draft={unit:RecipeDisplayUnit;quantity:number;removed:boolean};
 function k(item:string,ingredient:string){return item+":"+ingredient;}
 export default function AllSizesRecipe({items,ingredients,conversions,pantry,draftSizes}:{items:MenuItemForEdit[];ingredients:IngredientOption[];conversions:Record<string,IngredientUnitConversion[]>;pantry:PricedPantry[];draftSizes:UnpricedMenuSize[]}){
- const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),locale=useLocale(),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
+ const t=useTranslations("MenuBuilder"),units=useTranslations("ManageMenu"),router=useRouter();const [pending,start]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
  const [active,setActive]=useState<string[]>(items.filter(i=>i.active).map(i=>i.id));
  const [drafts,setDrafts]=useState<Record<string,Draft>>(()=>Object.fromEntries(items.flatMap(item=>item.recipe.map(line=>[k(item.id,line.ingredientId),{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false}]))));
  const [priceDraft,setPriceDraft]=useState<string|null>(null),[draftPrice,setDraftPrice]=useState("");
