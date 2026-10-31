@@ -134,8 +134,8 @@ export function VenueMapLink({address,t}:{address:string|null;t:T}){
 }
 
 /** An individual event opens its own saved read-only detail, not its chat or day header. */
-export function SavedEventListCard({event,locale,t,onOpen}:{
-  event:CafeEvent;locale:Locale;t:T;onOpen:(event:CafeEvent)=>void;
+export function SavedEventListCard({event,locale,t,onOpen,hasAnalysis}:{
+  event:CafeEvent;locale:Locale;t:T;onOpen:(event:CafeEvent)=>void;hasAnalysis:boolean;
 }){
   return <article className="min-w-0 rounded-2xl border border-line bg-card">
     <button type="button" onClick={()=>onOpen(event)}
@@ -153,7 +153,7 @@ export function SavedEventListCard({event,locale,t,onOpen}:{
         {event.status!=="found"&&<p role="status" className="font-semibold text-warn-text">
           {event.status==="cancelled"?t("cancelled"):t("moved")}
         </p>}
-        <p className="text-[15px] font-semibold text-accent-text">{t("readInsights")}</p>
+        <p className="text-[15px] font-semibold text-accent-text">{t(hasAnalysis?"readInsights":"viewEventDetails")}</p>
       </div>
       <ChevronRight size={22} className="shrink-0 text-accent-text rtl:rotate-180" aria-hidden="true"/>
     </button>
@@ -401,7 +401,8 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                 <button type="button" onClick={()=>openDay(date)} className={button+" w-full bg-surface2 text-start"}>
                   {dateLabel(date,locale,"long")}{dayPlan?" · "+t("hasPlan"):""}
                 </button>
-                {saved.map(event=><SavedEventListCard key={event.id} event={event} locale={locale} t={t} onOpen={openEvent}/>)}
+                {saved.map(event=><SavedEventListCard key={event.id} event={event} locale={locale} t={t}
+                  hasAnalysis={Boolean(dayPlan)} onOpen={openEvent}/>)}
                 {dayPlan?.summary&&<p className="rounded-xl bg-surface2 p-3 text-[17px]" dir="auto">{dayPlan.summary}</p>}
                 {tab==="past"&&dayPlan&&<EventReportCard report={dayPlan.report}
                   status={dayPlan.reportStatus} currency={timeline.currency??null}
