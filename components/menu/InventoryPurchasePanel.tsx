@@ -9,7 +9,7 @@ import type {PurchaseMonthLine} from "@/lib/data/inventory.server";
 import type {PurchaseLineInput} from "@/lib/inventory/recordPurchases.server";
 import {parseOwnerPurchaseNumbers} from "@/lib/calc/ownerPurchaseNumbers";
 
-type Item={id:string;name:string;baseUnit:"g"|"ml"|"each"};
+type Item={id:string;name:string;baseUnit:"g"|"ml"|"each";archivedAt?:string|null};
 type Draft=Omit<PurchaseLineInput,"quantity"|"costCents">&{quantity:string;cost:string};
 function emptyLine(items:Item[],date:string):Draft{
  return {lineId:crypto.randomUUID(),ingredientId:items[0]?.id??null,date,quantity:"1",
@@ -25,7 +25,8 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  t:Record<string,string>;today:string;unavailable:boolean;
 }){
  const router=useRouter(),[pending,start]=useTransition();
- const [drafts,setDrafts]=useState<Draft[]>(()=>[emptyLine(items,today)]);
+ const activeItems=items.filter(i=>!i.archivedAt);
+ const [drafts,setDrafts]=useState<Draft[]>(()=>[emptyLine(items.filter(i=>!i.archivedAt),today)]);
  const [errors,setErrors]=useState<Record<string,string>>({});
  const [editing,setEditing]=useState<string|null>(null),[editDraft,setEditDraft]=useState<Draft|null>(null);
  const [fileText,setFileText]=useState<string|null>(null),[fileHeaders,setFileHeaders]=useState<string[]>([]);
@@ -65,7 +66,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
    setErrors(Object.fromEntries(result.filter(r=>!r.ok).map(r=>[r.lineId,r.error??"save_failed"])));
    setDrafts(prev=>{
     const keep=prev.filter(r=>byId.get(r.lineId)?.ok!==true);
-    return keep.length?keep:[emptyLine(items,today)];
+    return keep.length?keep:[emptyLine(activeItems,today)];
    });
    if(result.some(r=>r.ok))router.refresh();
    }catch{setErrors(Object.fromEntries(drafts.map(line=>[line.lineId,"save_failed"])));}
@@ -125,10 +126,12 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  };
  const input="mt-1 min-h-12 w-full min-w-0 rounded-xl border border-line bg-surface px-3 text-[17px]";
  const button="min-h-12 rounded-xl border border-line px-4 text-[17px] font-semibold disabled:opacity-50";
- const fields=(d:Draft,onChange:(patch:Partial<Draft>)=>void)=><div className="grid gap-2 sm:grid-cols-5">
+ const fields=(d:Draft,onChange:(patch:Partial<Draft>)=>void,editingOld=false)=>{
+  const choices=editingOld?items:activeItems;
+  return <div className="grid gap-2 sm:grid-cols-5">
   <label className="text-[17px]">{t.item}<select value={d.ingredientId??""} className={input}
-    onChange={e=>{const i=items.find(x=>x.id===e.target.value);onChange({ingredientId:e.target.value,unit:i?.baseUnit??"each"});}}>
-    {items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
+    onChange={e=>{const i=choices.find(x=>x.id===e.target.value);onChange({ingredientId:e.target.value,unit:i?.baseUnit??"each"});}}>
+    {choices.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
   <label className="text-[17px]">{t.quantity}<input className={input} type="text" inputMode="decimal" value={d.quantity}
     onChange={e=>onChange({quantity:e.target.value})}/></label>
   <label className="text-[17px]">{t.unit}<select className={input} value={d.unit}
@@ -140,6 +143,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
   <label className="text-[17px]">{t.date}<input className={input} type="date" value={d.date}
     onChange={e=>onChange({date:e.target.value})}/></label>
  </div>;
+ };
  return <section dir={locale==="ar"?"rtl":"ltr"} className="mb-5 space-y-4 rounded-2xl border border-line bg-surface p-4 text-ink">
   <h2 className="text-xl font-bold">{t.heading}</h2>
   <div className="flex flex-wrap items-end gap-3">
@@ -158,7 +162,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
      <p className="text-[17px] font-semibold">{money(r.costCents)}</p>
     </div>
     {editing===r.lineId&&editDraft?<div className="mt-3 space-y-2">
-      {fields(editDraft,patch=>setEditDraft(v=>v?{...v,...patch}:v))}
+      {fields(editDraft,patch=>setEditDraft(v=>v?{...v,...patch}:v),true)}
       <button type="button" disabled={pending} className={button+" bg-accent text-on-accent"} onClick={saveEdit}>{t.save}</button>
       <button type="button" className={button} onClick={()=>setEditing(null)}>{t.cancel}</button>
      </div>:<div className="mt-2 flex gap-2">
@@ -181,8 +185,8 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
     <button type="button" className={button+" mt-2"} onClick={()=>setDrafts(v=>v.filter(x=>x.lineId!==d.lineId))}>{t.remove}</button>
    </div>)}
    <div className="flex flex-wrap gap-2">
-    <button type="button" className={button} onClick={()=>setDrafts(v=>[...v,emptyLine(items,today)])}>{t.addLine}</button>
-    <button type="button" disabled={pending||!drafts.length||!items.length} className={button+" bg-accent text-on-accent"}
+    <button type="button" className={button} onClick={()=>setDrafts(v=>[...v,emptyLine(activeItems,today)])}>{t.addLine}</button>
+    <button type="button" disabled={pending||!drafts.length||!activeItems.length} className={button+" bg-accent text-on-accent"}
      onClick={submit}>{t.saveAll}</button>
    </div>
   </div>
