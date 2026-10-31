@@ -27,7 +27,8 @@ function dbFactory(existing=false,opts:{revoked?:boolean;wrongCafe?:boolean}={})
     for(const method of ["select","order","limit","neq"])self[method]=()=>self;
     self.eq=(column:string,value:unknown)=>{scopedReads.push({table,column,value});return self;};
     self.range=async()=>({data:table==="businesses"?
-      [{id:"cafe-a",name:"Shop A",timezone:"America/Los_Angeles",currency:"USD",is_demo:false}]:[],error:null});
+      [{id:"cafe-a",name:"Shop A",timezone:"America/Los_Angeles",currency:"USD",is_demo:false}]:
+      table==="memberships"?[{user_id:existing?"owner-original":"owner-a"}]:[],error:null});
     self.maybeSingle=async()=>({error:null,data:table==="ai_messages"?
       (existing?{id:briefMessageId("cafe-a","2026-10-31"),
         business_id:opts.wrongCafe?"other-cafe":"cafe-a",owner_user_id:"owner-original",
