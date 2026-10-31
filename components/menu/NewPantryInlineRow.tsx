@@ -18,12 +18,13 @@ export default function NewPantryInlineRow({onCancel,onCreated}:{onCancel:()=>vo
  });
  // The purchase label normally determines the physical unit. If it says just
  // "ounces", never silently choose a liquid rather than a weight.
- const ambiguous=matches.length>1;
+ const needsMeasurement=matches.length!==1;
  const selected=measure?matches.find(x=>x.baseUnit===measure):matches.length===1?matches[0]:null;
  function submit(){
   if(pending||!name.trim()||name.trim().length>60)return;
   if((pack.trim()||price.trim())&&(!selected||!(Number(price)>0)||!/^\d+(?:\.\d{1,2})?$/.test(price.trim()))){setError(t("invalidPurchasePack"));return;}
-  const baseUnit=selected?.baseUnit??measure??"each";
+  if(!selected&&!measure){setError(t("chooseMeasurement"));return;}
+  const baseUnit=selected?.baseUnit??measure!;
   setError("");start(async()=>{
    // No duplicate writer: compose the existing tenant-scoped create and pack-price actions.
    const result=await createPantryIngredient({name:name.trim(),category:"other",baseUnit});
@@ -54,9 +55,9 @@ export default function NewPantryInlineRow({onCancel,onCreated}:{onCancel:()=>vo
      placeholder={t("packPrice")} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]"/>
    </label>
   </div>
-  {ambiguous&&<label className="mt-2 block font-semibold">{t("measurementType")}
+  {needsMeasurement&&<label className="mt-2 block font-semibold">{t("measurementType")}
    <select value={measure??""} onChange={e=>setMeasure(e.target.value as BaseUnit)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3">
-    <option value="">{t("measurementType")}</option>{matches.map(x=><option key={x.baseUnit} value={x.baseUnit}>{x.baseUnit==="ml"?t("liquidMeasurement"):x.baseUnit==="g"?t("weightMeasurement"):t("pieceMeasurement")}</option>)}
+    <option value="">{t("measurementType")}</option>{(matches.length?matches:[{baseUnit:"ml" as const},{baseUnit:"g" as const},{baseUnit:"each" as const}]).map(x=><option key={x.baseUnit} value={x.baseUnit}>{x.baseUnit==="ml"?t("liquidMeasurement"):x.baseUnit==="g"?t("weightMeasurement"):t("pieceMeasurement")}</option>)}
    </select>
   </label>}
   {!pack.trim()&&!price.trim()&&<p className="mt-2 text-[15px] text-ink-muted">{t("priceCanComeLater")}</p>}
