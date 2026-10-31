@@ -331,4 +331,3 @@ async function loadMemory(scope?:ConversationScope,db?:SupabaseClient) {
     return { facts: await loadCafeMemory(rules), port: cafeMemoryPort(rules), tool: memoryToolDefinition };
   } catch { console.error("agent_memory_unavailable"); return null; }
 }
-
