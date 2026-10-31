@@ -50,7 +50,11 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  // Serving status is supplied by the canonical parent after refresh. Keep the
  // recipe drafts mounted while reading updated status, without effect-setState.
  const active=items.filter(i=>i.active).map(i=>i.id);
- const [focusedSize,setFocusedSize]=useState(focusedSizeId&&items.some(i=>i.id===focusedSizeId)?focusedSizeId:items.find(i=>i.active)?.id??items[0]?.id??"");
+ const [localFocusedSize,setFocusedSize]=useState(focusedSizeId&&items.some(i=>i.id===focusedSizeId)?focusedSizeId:items.find(i=>i.active)?.id??items[0]?.id??"");
+ // The parent owns focus when supplying the controlled callback. A side-card
+ // URL transition must update the same size the recipe editor is editing.
+ const focusedSize=onFocusedSizeChange&&focusedSizeId&&items.some(i=>i.id===focusedSizeId)
+  ?focusedSizeId:localFocusedSize;
  const [searchIngredient,setSearchIngredient]=useState("");
  const [drafts,setDrafts]=useState<Record<string,Draft>>(()=>Object.fromEntries(items.flatMap(item=>item.recipe.map(line=>[k(item.id,line.ingredientId),{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false}]))));
  const [priceDraft,setPriceDraft]=useState<string|null>(null),[draftPrice,setDraftPrice]=useState("");
