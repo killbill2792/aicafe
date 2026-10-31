@@ -2568,6 +2568,14 @@
     }
   },
   "MenuBuilder": {
+    "archiveIngredient": "Archive ingredient",
+    "restoreIngredient": "Restore ingredient",
+    "archivedIngredient": "Archived · history kept",
+    "archiveConfirm": "Archive this ingredient? Existing recipes and history will remain.",
+    "activeIngredients": "Active ingredients",
+    "archivedIngredients": "Archived ingredients",
+    "moveIngredientUp": "Move {name} up",
+    "moveIngredientDown": "Move {name} down",
     "title": "Pantry",
     "search": "Search pantry",
     "all": "All",
