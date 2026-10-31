@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,SavedEventListCard,selectedSavedEvent} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,SavedEventListCard,selectedSavedEvent,SavedEventAnalysis} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -217,5 +217,33 @@ describe("opening a specific saved event from the Events list",()=>{
     }) as {props:{children:{props:{onClick:()=>void}}}};
     card.props.children.props.onClick();
     expect(clicked).toEqual([second]);
+  });
+});
+
+describe("saved AI analysis inside a selected event detail",()=>{
+  const t=(key:string,values?:Record<string,string|number>)=>
+    key==="dayWideInsight"?"Analysis covers "+values?.date+" and may include other events":
+    key==="noEventInsight"?"No saved AI analysis for this event yet":key;
+  const selected={...event("halloween","2026-10-31"),name:"Halloween at The EndUp"};
+  const props={selectedEvent:selected,date:"2026-10-31",today:"2026-10-30",
+    currency:"USD",locale:"en" as const,t,onChat:()=>{}};
+  it("opens the saved day-wide AI reasoning and preparation advice for the chosen event",()=>{
+    const plan={...fixture.plans[0],summary:"Expect late-night pedestrian traffic",
+      expectedBusyHours:[{start:"20:00",end:"23:00"}],
+      actions:[{area:"operations",action:"Check usual Saturday staffing",
+        reason:"Visitor volume may differ from the usual evening"}]};
+    const html=renderToStaticMarkup(createElement(SavedEventAnalysis,{...props,plan}));
+    expect(html).toContain("Expect late-night pedestrian traffic");
+    expect(html).toContain("20:00");
+    expect(html).toContain("Check usual Saturday staffing");
+    expect(html).toContain("Visitor volume may differ");
+    expect(html).toContain("Analysis covers");
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain("Last saved check");
+  });
+  it("is transparent when no AI plan was saved instead of inventing an analysis",()=>{
+    const html=renderToStaticMarkup(createElement(SavedEventAnalysis,{...props,plan:undefined}));
+    expect(html).toContain("No saved AI analysis for this event yet");
+    expect(html).not.toContain("Expect late-night pedestrian traffic");
   });
 });
