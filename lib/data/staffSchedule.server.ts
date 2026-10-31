@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {timeReader} from "@/lib/perf/timeReader.server";
 import {readToastPlannedShifts} from "./toastScheduledShifts.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
@@ -20,9 +21,9 @@ const weekInput=z.strictObject({weekStart:iso});
 
 const monday=(date:string)=>{const d=new Date(date+"T12:00:00Z");return d.getUTCDay()===1;};
 const plusDays=(date:string,n:number)=>new Date(Date.parse(date+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
-export async function getWeekSchedule(raw:unknown){
+export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseClient;businessId:string;ownerUserId:string}){
  const p=weekInput.safeParse(raw);if(!p.success||!monday(p.data.weekStart))return {ok:false as const,error:"invalid_week"};
- const owner=await staffReadScope();if(!owner.ok)return {ok:false as const,error:"unauthorized"};
+ const owner=await staffReadScope(explicit);if(!owner.ok)return {ok:false as const,error:"unauthorized"};
  const dates=Array.from({length:7},(_,i)=>plusDays(p.data.weekStart,i));
  if(!owner.supabase||owner.businessId===DEMO_BUSINESS_ID)return {ok:true as const,data:{
   dates,weekStart:p.data.weekStart,team:[],displayTeam:[],shifts:[],posShifts:[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
@@ -47,7 +48,7 @@ export async function getWeekSchedule(raw:unknown){
   owner.supabase.from("scheduled_shifts").select("*").eq("business_id",owner.businessId)
     .gte("local_date",plusDays(dates[0],-1)).lte("local_date",plusDays(dates[6],1)).is("deleted_at",null).order("start_local"),
   owner.supabase.from("locations").select("open_hours,country_code").eq("business_id",owner.businessId)
-   .order("name").limit(1).maybeSingle(),getTeamRules(),
+   .order("name").limit(1).maybeSingle(),getTeamRules(explicit),
   owner.supabase.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to")
    .eq("business_id",owner.businessId).lte("effective_from",dates[6]),
   owner.supabase.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to")
