@@ -3,6 +3,7 @@ import {Fragment,useEffect,useState,useTransition} from "react";
 import {useTranslations} from "next-intl";
 import {Plus,X,ArrowLeftRight,ArrowUp,ArrowDown} from "lucide-react";
 import {insertRecipeRowAfter,moveRecipeRow} from "@/lib/menu/recipeRowOrder";
+import {hasPendingRecipeMeasurements} from "@/lib/menu/recipeDraftGuard";
 import {useRouter} from "@/i18n/navigation";
 import {saveProductRecipes} from "@/lib/actions/pantry";
 import NewPantryInlineRow from "./NewPantryInlineRow";
@@ -71,7 +72,10 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  const ingredientRows=[...new Map(selectedItems.flatMap(item=>orderedSavedLines(item)
   .filter(line=>!drafts[k(item.id,line.ingredientId)]?.removed)
   .map(line=>[line.ingredientId,line.ingredientName] as const))).entries()];
- const hasUnsavedChanges=Object.keys(replacements).length>0||items.some(item=>
+ // A density-only edit changes the saved physical quantity even if the
+ // visible amount/unit stayed unchanged. Guard every size/serving switch.
+ const hasUnsavedChanges=hasPendingRecipeMeasurements(densityInputs,calibration)||
+  newPantry||add!==null||Object.keys(replacements).length>0||items.some(item=>
   JSON.stringify(orderDrafts[item.id])!==JSON.stringify(item.recipe.map(line=>line.ingredientId)))
   ||Object.entries(drafts).some(([key,d])=>{
   for(const item of items){for(const line of item.recipe){if(key===k(item.id,line.ingredientId))return d.removed||d.quantity!==(line.displayQuantity??line.quantity)||d.unit!==(line.displayUnit??line.baseUnit);}}
@@ -80,8 +84,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  const mobileColumns={gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,selectedItems.length))},minmax(0,1fr))`};
  const invalidQuantity=Object.values(quantityInputs).some(value=>value.trim()===""||!Number.isFinite(Number(value))||Number(value)<=0);
  // Preserve drafts when the adjacent product card changes a price or serving status.
- const editorDraftDirty=hasUnsavedChanges||invalidQuantity||Object.keys(calibration).length>0||
-  Object.keys(densityInputs).length>0||newPantry||add!==null;
+ const editorDraftDirty=hasUnsavedChanges||invalidQuantity;
  useEffect(()=>{onDraftDirtyChange?.(editorDraftDirty);},[editorDraftDirty,onDraftDirtyChange]);
  function requiresDensity(base:"g"|"ml"|"each",unit:RecipeDisplayUnit){
   return (base==="ml"&&unit==="g")||(base==="g"&&(unit==="ml"||unit==="fl_oz"));
@@ -270,7 +273,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
    </select>;
  }
  function toggleSize(item:MenuItemForEdit){
-  if(hasUnsavedChanges){setError(t("saveBeforeSizeChange"));return;}
+  if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeSizeChange"));return;}
   setError("");start(async()=>{
    const result=await setMenuItemActive(item.id,!item.active);
    if(!result.ok){setError(t("error"));return;}
