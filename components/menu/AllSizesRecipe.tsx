@@ -1,7 +1,8 @@
 "use client";
 import {Fragment,useEffect,useState,useTransition} from "react";
 import {useTranslations} from "next-intl";
-import {Plus,X,ArrowLeftRight} from "lucide-react";
+import {Plus,X,ArrowLeftRight,ArrowUp,ArrowDown} from "lucide-react";
+import {insertRecipeRowAfter,moveRecipeRow} from "@/lib/menu/recipeRowOrder";
 import {useRouter} from "@/i18n/navigation";
 import {saveProductRecipes} from "@/lib/actions/pantry";
 import NewPantryInlineRow from "./NewPantryInlineRow";
@@ -60,8 +61,19 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  const [densityInputs,setDensityInputs]=useState<Record<string,string>>({});
  const [newRowAmount,setNewRowAmount]=useState("1"),[newRowUnit,setNewRowUnit]=useState<RecipeDisplayUnit>("ml"),[newRowDensity,setNewRowDensity]=useState("");
  const [newPantry,setNewPantry]=useState(false);
- const selectedItems=items.filter(i=>i.id===focusedSize), ingredientRows=[...new Map(selectedItems.flatMap(item=>item.recipe.filter(line=>!drafts[k(item.id,line.ingredientId)]?.removed).map(line=>[line.ingredientId,line.ingredientName] as const))).entries()];
- const hasUnsavedChanges=Object.keys(replacements).length>0||Object.entries(drafts).some(([key,d])=>{
+ const [orderDrafts,setOrderDrafts]=useState<Record<string,string[]>>(()=>Object.fromEntries(
+  items.map(item=>[item.id,item.recipe.map(line=>line.ingredientId)])));
+ const selectedItems=items.filter(i=>i.id===focusedSize);
+ const orderedSavedLines=(item:MenuItemForEdit)=>{
+  const order=orderDrafts[item.id]??item.recipe.map(line=>line.ingredientId);
+  return [...item.recipe].sort((a,b)=>order.indexOf(a.ingredientId)-order.indexOf(b.ingredientId));
+ };
+ const ingredientRows=[...new Map(selectedItems.flatMap(item=>orderedSavedLines(item)
+  .filter(line=>!drafts[k(item.id,line.ingredientId)]?.removed)
+  .map(line=>[line.ingredientId,line.ingredientName] as const))).entries()];
+ const hasUnsavedChanges=Object.keys(replacements).length>0||items.some(item=>
+  JSON.stringify(orderDrafts[item.id])!==JSON.stringify(item.recipe.map(line=>line.ingredientId)))
+  ||Object.entries(drafts).some(([key,d])=>{
   for(const item of items){for(const line of item.recipe){if(key===k(item.id,line.ingredientId))return d.removed||d.quantity!==(line.displayQuantity??line.quantity)||d.unit!==(line.displayUnit??line.baseUnit);}}
   return false;
  });
@@ -162,26 +174,35 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
   setLastRemovedId(id);setToast(line.ingredientName);setSaved(false);
  }
  function undo(){const id=lastRemovedId,item=selectedItems[0];if(!id||!item)return;setDrafts(prev=>({...prev,[k(item.id,id)]:{...prev[k(item.id,id)],removed:false}}));setToast("");setLastRemovedId(null);}
- function recipeChanges(newIngredientId?:string,newIngredientBase?: "g"|"ml"|"each"){
-  return selectedItems.map(item=>({
-   itemId:item.id,
-   expected:item.recipe.map(line=>({ingredientId:line.ingredientId,quantity:line.quantity,displayUnit:line.displayUnit,displayQuantity:line.displayQuantity})),
-   lines:[
-    ...item.recipe.flatMap(line=>{
-      const d=drafts[k(item.id,line.ingredientId)];
-      if(d?.removed||d?.quantity===0)return [];
-      const displayUnit=(d?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit;
-      return [{ingredientId:replacements[k(item.id,line.ingredientId)]??line.ingredientId,displayUnit,displayQuantity:d?.quantity??line.displayQuantity??line.quantity,
-        ...(requiresDensity(line.baseUnit,displayUnit)?{densityGramsPerMl:densityFor(item,line,displayUnit)}:{})}];
-    }),
-    ...(newIngredientId?(()=>{
-      const ingredient=ingredients.find(i=>i.id===newIngredientId)??(newIngredientBase?{id:newIngredientId!,baseUnit:newIngredientBase,name:""}:null);
-      return ingredient&&!item.recipe.some(line=>line.ingredientId===ingredient.id)?[{ingredientId:ingredient.id,
-        displayUnit:newIngredientBase??newRowUnit,displayQuantity:newIngredientBase?1:Number(newRowAmount),
-        ...(requiresDensity(ingredient.baseUnit,newRowUnit)?{densityGramsPerMl:Number(newRowDensity)}:{})}]:[];
-    })():[])
-   ],
-  }));
+ function recipeChanges(newIngredientId?:string,newIngredientBase?:"g"|"ml"|"each"){
+  return selectedItems.map(item=>{
+   const current=orderedSavedLines(item).flatMap(line=>{
+    const d=drafts[k(item.id,line.ingredientId)];
+    if(d?.removed||d?.quantity===0)return [];
+    const displayUnit=(d?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit;
+    return [{originId:line.ingredientId,
+     ingredientId:replacements[k(item.id,line.ingredientId)]??line.ingredientId,
+     displayUnit,displayQuantity:d?.quantity??line.displayQuantity??line.quantity,
+     ...(requiresDensity(line.baseUnit,displayUnit)?{densityGramsPerMl:densityFor(item,line,displayUnit)}:{})}];
+   });
+   const ingredient=newIngredientId?(ingredients.find(i=>i.id===newIngredientId)
+     ??(newIngredientBase?{id:newIngredientId,baseUnit:newIngredientBase,name:""}:null)):null;
+   const added=ingredient&&!current.some(line=>line.ingredientId===ingredient.id)?{
+    originId:ingredient.id,ingredientId:ingredient.id,
+    displayUnit:newIngredientBase??newRowUnit,
+    displayQuantity:newIngredientBase?1:Number(newRowAmount),
+    ...(requiresDensity(ingredient.baseUnit,newIngredientBase??newRowUnit)
+     ?{densityGramsPerMl:Number(newRowDensity)}:{})
+   }:null;
+   const rows=added?insertRecipeRowAfter(current,added,addAfter,line=>line.originId):current;
+   return {
+    itemId:item.id,
+    expected:item.recipe.map(line=>({ingredientId:line.ingredientId,quantity:line.quantity,
+     displayUnit:line.displayUnit,displayQuantity:line.displayQuantity})),
+    expectedOrder:item.recipe.map(line=>line.ingredientId),
+    lines:rows.map(({originId: _originId,...row})=>row),
+   };
+  });
  }
  function save(){if(!selectedItems[0]||invalidQuantity||invalidDensity){if(invalidDensity)setError(t("densityNeeded"));return;}setError("");start(async()=>{
   if(!await saveMeasurements())return;
@@ -194,6 +215,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
     unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false}
   ]))));
   setCalibration({});setDensityInputs({});setQuantityInputs({});setReplacements({});
+  setOrderDrafts(Object.fromEntries(items.map(item=>[item.id,item.recipe.map(line=>line.ingredientId)])));
   setAdd(null);setNewPantry(false);setEditingIngredient(null);
   setSaved(true);setToast("");router.refresh();
  });}
@@ -254,6 +276,11 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
    if(!result.ok){setError(t("error"));return;}
    router.refresh();
   });
+ }
+ function moveRow(id:string,direction:-1|1){
+  const item=selectedItems[0];if(!item)return;
+  setOrderDrafts(prev=>({...prev,[item.id]:moveRecipeRow(prev[item.id]??item.recipe.map(line=>line.ingredientId),id,direction)}));
+  setSaved(false);
  }
  function beginAddRow(after:string){if(hasUnsavedChanges||invalidQuantity){setError(t("saveBeforeAddingIngredient"));return;}setAdd("");setAddAfter(after);setNewRowAmount("1");setSearchIngredient("");setError("");}
  function addPicker(){return <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent-soft p-3">
@@ -359,8 +386,8 @@ export default function AllSizesRecipe({items,ingredients,conversions,draftSizes
  }}/></div>}
  {add!==null&&addAfter==="top"&&addPicker()}
  <div className="mb-2 grid gap-1.5 lg:hidden" style={mobileColumns}>{selectedItems.map(item=><div key={item.id} className="rounded-xl bg-paper p-2 text-center font-bold">{item.sizeLabel??item.name}</div>)}</div>
- <div className="space-y-2 lg:hidden">{ingredientRows.map(([id,name])=><div key={id} className="rounded-2xl border border-line bg-card p-3"><div className="mb-2 flex min-h-12 items-center gap-2"><strong className="min-w-0 flex-1 break-words">{name}</strong><button type="button" onClick={()=>beginAddRow(id)} aria-label={t("addRecipeRowAfter",{name})} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Plus size={18}/></button><button type="button" onClick={()=>openSwap(id)} className="min-h-12 rounded-xl bg-paper px-2 text-[13px] font-bold text-accent-text"><ArrowLeftRight size={15} className="me-1 inline"/>{t("swap")}</button><button type="button" aria-label={t("remove")} onClick={()=>removeRow(id)} className="flex min-h-12 min-w-12 items-center justify-center rounded-full bg-paper"><X size={17}/></button></div>{editingIngredient===id&&replacementPicker(id)}{cells(id)}{add!==null&&addAfter===id&&<div className="mt-3">{addPicker()}</div>}</div>)}</div>
- <div className="hidden overflow-x-auto rounded-2xl border border-line bg-card lg:block"><table className="w-full table-fixed"><thead><tr className="border-b border-line bg-paper"><th className="w-[28%] p-3 text-start">{t("name")}</th>{selectedItems.map(item=><th key={item.id} className="p-3">{item.sizeLabel??item.name}</th>)}</tr></thead><tbody>{ingredientRows.map(([id,name])=><Fragment key={id}><tr className="border-b border-line"><th className="p-3 text-start"><div className="flex items-center gap-2"><span className="min-w-0 flex-1">{replacements[k(focusedSize,id)]?ingredients.find(i=>i.id===replacements[k(focusedSize,id)])?.name??name:name}</span><button type="button" onClick={()=>beginAddRow(id)} aria-label={t("addRecipeRowAfter",{name})} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Plus size={18}/></button></div>{editingIngredient===id&&replacementPicker(id)}<div><button type="button" className="min-h-12 text-sm text-accent-text" onClick={()=>openSwap(id)}>{t("swap")}</button><button type="button" className="ms-2 min-h-12 text-sm text-warn" onClick={()=>removeRow(id)}>{t("remove")}</button></div></th>{selectedItems.map(item=><td key={item.id} className="p-2">{cells(id,item)}</td>)}</tr>{add!==null&&addAfter===id&&<tr><td colSpan={selectedItems.length+1} className="p-2">{addPicker()}</td></tr>}</Fragment>)}</tbody></table></div>
+ <div className="space-y-2 lg:hidden">{ingredientRows.map(([id,name])=><div key={id} className="rounded-2xl border border-line bg-card p-3"><div className="mb-2 flex min-h-12 items-center gap-2"><strong className="min-w-0 flex-1 break-words">{name}</strong><button type="button" onClick={()=>beginAddRow(id)} aria-label={t("addRecipeRowAfter",{name})} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Plus size={18}/></button><button type="button" aria-label={t("moveIngredientUp",{name})} onClick={()=>moveRow(id,-1)} className="min-h-12 min-w-10 rounded-xl bg-paper"><ArrowUp size={17} className="mx-auto"/></button><button type="button" aria-label={t("moveIngredientDown",{name})} onClick={()=>moveRow(id,1)} className="min-h-12 min-w-10 rounded-xl bg-paper"><ArrowDown size={17} className="mx-auto"/></button><button type="button" onClick={()=>openSwap(id)} className="min-h-12 rounded-xl bg-paper px-2 text-[13px] font-bold text-accent-text"><ArrowLeftRight size={15} className="me-1 inline"/>{t("swap")}</button><button type="button" aria-label={t("remove")} onClick={()=>removeRow(id)} className="flex min-h-12 min-w-12 items-center justify-center rounded-full bg-paper"><X size={17}/></button></div>{editingIngredient===id&&replacementPicker(id)}{cells(id)}{add!==null&&addAfter===id&&<div className="mt-3">{addPicker()}</div>}</div>)}</div>
+ <div className="hidden overflow-x-auto rounded-2xl border border-line bg-card lg:block"><table className="w-full table-fixed"><thead><tr className="border-b border-line bg-paper"><th className="w-[28%] p-3 text-start">{t("name")}</th>{selectedItems.map(item=><th key={item.id} className="p-3">{item.sizeLabel??item.name}</th>)}</tr></thead><tbody>{ingredientRows.map(([id,name])=><Fragment key={id}><tr className="border-b border-line"><th className="p-3 text-start"><div className="flex items-center gap-2"><span className="min-w-0 flex-1">{replacements[k(focusedSize,id)]?ingredients.find(i=>i.id===replacements[k(focusedSize,id)])?.name??name:name}</span><button type="button" onClick={()=>beginAddRow(id)} aria-label={t("addRecipeRowAfter",{name})} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Plus size={18}/></button><button type="button" onClick={()=>moveRow(id,-1)} aria-label={t("moveIngredientUp",{name})} className="min-h-12 min-w-10 rounded-xl bg-paper"><ArrowUp size={16} className="mx-auto"/></button><button type="button" onClick={()=>moveRow(id,1)} aria-label={t("moveIngredientDown",{name})} className="min-h-12 min-w-10 rounded-xl bg-paper"><ArrowDown size={16} className="mx-auto"/></button></div>{editingIngredient===id&&replacementPicker(id)}<div><button type="button" className="min-h-12 text-sm text-accent-text" onClick={()=>openSwap(id)}>{t("swap")}</button><button type="button" className="ms-2 min-h-12 text-sm text-warn" onClick={()=>removeRow(id)}>{t("remove")}</button></div></th>{selectedItems.map(item=><td key={item.id} className="p-2">{cells(id,item)}</td>)}</tr>{add!==null&&addAfter===id&&<tr><td colSpan={selectedItems.length+1} className="p-2">{addPicker()}</td></tr>}</Fragment>)}</tbody></table></div>
  {error&&<p role="alert" className="mt-2 text-warn">{error}</p>}{saved&&<p role="status" className="mt-2 text-good">{t("saved")}</p>}
  <div className="sticky bottom-24 z-20 mt-6 rounded-2xl border border-line bg-card p-3 shadow-xl"><h2 className="mb-3 font-headline text-xl font-extrabold">{t("whatYouKeep")}</h2><div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-col">{selectedItems.map(item=>{const p=prices[item.id];return <div key={item.id} className="min-w-0 rounded-xl bg-paper p-2 text-center text-[13px]"><p className="font-bold">{item.sizeLabel??item.name}</p><p>{t("cost")} {p?.cost===null?"—":formatCents(p.cost)}</p><p>{t("price")} {formatCents(item.priceCents)}</p><p className="font-extrabold text-good">{p?.summary.keepCents===null?"—":t("keep",{amount:formatCents(p.summary.keepCents),percent:p.summary.keepPercent ?? 0})}</p>{p?.estimated&&<p className="text-warn">{t("estimate")}</p>}</div>})}</div><button type="button" onClick={save} disabled={pending||invalidQuantity||invalidDensity||selectedItems.length===0} className="mt-3 min-h-14 w-full rounded-xl bg-accent font-bold text-on-accent disabled:opacity-50">{t("saveItem",{name:items[0]?.baseName??""})}</button></div>
  {toast&&<div role="status" className="fixed bottom-40 start-4 z-30 flex items-center gap-2 rounded-2xl bg-ink px-4 py-3 text-card">{t("removed",{name:toast})} · <button type="button" onClick={undo} className="min-h-10 font-bold underline">{t("undo")}</button></div>}
