@@ -3,7 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {getBusinessSnapshotFromDb} from "@/lib/data/snapshot.server";
 import {SnapshotCafeStateService} from "./cafeState";
 import {briefDue,briefMessageId,briefText,briefWindow,type BriefLocale} from "./dailyBrief";
-import {readCoveredSalesDates} from "@/lib/data/dailyFacts.server";
+import {readDailyFactRows} from "@/lib/data/dailyFacts.server";
 import {eligibleBriefBinding,prepareBoundBrief,type EligibleBrief} from "@/lib/whatsapp/morningBriefDelivery.server";
 
 export type BriefRun={checked:number;sent:number;skipped:number;failed:number};
@@ -45,10 +45,11 @@ async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:s
   // Never cement an incomplete sales report while the closed Toast day may still arrive.
   // At 06:00 a truthful in-app missing-data brief is permitted; Meta is not.
   if(!window.readyToPublish)return false;
-  if(window.beforeDeadline){
-    const covered=await readCoveredSalesDates(db,b.id,when.yesterday,when.yesterday);
-    if(!covered.includes(when.yesterday))return false;
-  }
+  const rows=await readDailyFactRows(db,b.id,when.yesterday,when.yesterday);
+  const daily=rows.length===1&&rows[0].business_date===when.yesterday&&
+    rows[0].sales_data_status==="actual"&&
+    Number.isSafeInteger(rows[0].net_sales_cents)?rows[0]:null;
+  if(window.beforeDeadline&&!daily)return false;
   const messageId=briefMessageId(b.id,when.today);
   const sent=await db.from("ai_messages")
     .select("id,business_id,thread_id,owner_user_id,structured_content").eq("id",messageId).maybeSingle();
@@ -96,16 +97,16 @@ async function sendOne(db:SupabaseClient,states:SnapshotCafeStateService,b:{id:s
       .order("created_at",{ascending:false}).limit(1).maybeSingle(),
   ]);
   if(tasks.error)throw tasks.error;
-  if(!state.profitability.available&&window.beforeDeadline)return false;
   const locale:BriefLocale=lastLocale.data?.locale==="es"||lastLocale.data?.locale==="ar"?lastLocale.data.locale:"en";
   const p=state.profitability;
+  const sameNet=Boolean(daily&&p.available&&p.value.netSalesCents===daily.net_sales_cents);
   const legacyText=briefText({locale,currency:b.currency,needsOwner:tasks.count??0,
-    // A recorded zero or negative day is still yesterday's result, not missing data.
-    yesterday:p.available?{netSalesCents:p.value.netSalesCents,
+    yesterday:sameNet&&p.available?{netSalesCents:p.value.netSalesCents,
       totalCostsCents:p.value.totalCostsCents,ownerProfitCents:p.value.ownerProfitCents,
-      complete:state.businessCosts.completeness==="complete"}:null});
-  const matched=locale==="en"&&eligible&&p.available&&
-    eligible.prepared.netSalesCents===p.value.netSalesCents?eligible:null;
+      complete:state.businessCosts.completeness==="complete"}:null,
+    verifiedNetSalesCents:daily?.net_sales_cents??null});
+  const matched=locale==="en"&&eligible&&sameNet&&
+    eligible.prepared.netSalesCents===daily!.net_sales_cents?eligible:null;
   const text=matched?matched.websiteText:legacyText;
   const inserted=await db.from("ai_messages").insert({
     id:messageId,business_id:b.id,thread_id:thread.data.id,owner_user_id:owner.data.user_id,author_user_id:null,
