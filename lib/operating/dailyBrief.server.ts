@@ -136,8 +136,11 @@ async function sendOne(db:SupabaseClient,b:Business,ownerId:string,
       totalCostsCents:p.value.totalCostsCents,ownerProfitCents:p.value.ownerProfitCents,
       complete:state?.businessCosts.completeness==="complete"}:null,
     verifiedNetSalesCents:daily?.net_sales_cents??null});
-  const matched=locale==="en"&&eligible&&sameNet&&
-    eligible.prepared.netSalesCents===daily!.net_sales_cents?eligible:null;
+  // Meta needs certified net sales, not complete wage/bill profitability.
+  // Only block on a snapshot disagreement when that snapshot is available.
+  const matched=locale==="en"&&eligible&&daily&&
+    (!p?.available||sameNet)&&eligible.prepared.netSalesCents===daily.net_sales_cents
+    ?eligible:null;
   const text=matched?matched.websiteText:legacyText;
   const inserted=await db.from("ai_messages").insert({
     id:messageId,business_id:b.id,thread_id:thread.data.id,owner_user_id:ownerId,author_user_id:null,
