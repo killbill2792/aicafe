@@ -37,6 +37,9 @@ describe("event context is explicit and survives the owner's next message",()=>{
   });
   it("restores event threads without misidentifying unrelated conversations",()=>{
     expect(eventContextFromTitle(eventThreadTitle(context.date,context.title),context.threadId)).toEqual(context);
+    expect(eventContextFromTitle("Events · 2026-10-31",context.threadId)).toEqual({
+      date:"2026-10-31",title:"Event",threadId:context.threadId,
+    });
     expect(eventContextFromTitle("Break-even analysis",context.threadId)).toBeNull();
     expect(eventContextFromTitle("Events · not-a-day · Halloween",context.threadId)).toBeNull();
   });
