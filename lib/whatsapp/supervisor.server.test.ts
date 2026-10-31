@@ -14,7 +14,7 @@ vi.mock("@/lib/ai/conversations/authorizedTurn.server",()=>({
 vi.mock("@/lib/ai/conversations/usage.server",()=>({assertOwnerAgentTurnAvailable:mock.quota}));
 vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:mock.access}));
 vi.mock("@/lib/ai/conversations/enabled.server",()=>({
- isSupervisorChatConfigured:()=>true,getSupervisorChatReadiness:async()=>({enabled:true,reason:null}),
+ isSupervisorChatConfigured:()=>true,getSupervisorChatReadinessForAuthorizedExternal:async()=>({enabled:true,reason:null}),
 }));
 vi.mock("@/lib/ai/conversations/agentRunner.server",()=>({
  runOneTurn:mock.run,errorCode:()=> "agent_turn_failed",
