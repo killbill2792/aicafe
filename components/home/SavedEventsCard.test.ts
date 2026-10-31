@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -138,5 +138,22 @@ describe("persistent Events category navigation",()=>{
     expect(html).toContain('aria-label="Events near your café"');
     expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
     expect(html.match(/min-h-12/g)).toHaveLength(3);
+  });
+});
+
+describe("per-event chat selection",()=>{
+  const sameDay="2026-10-31";
+  const a=event("event-a",sameDay),b=event("event-b",sameDay);
+  it("never substitutes the first event when the owner taps another card on that date",()=>{
+    const plan={summary:"Shared day outlook",threadId:"shared-day-thread"};
+    const first=eventChatTarget(sameDay,a,plan);
+    const second=eventChatTarget(sameDay,b,plan);
+    expect(first).toEqual({date:sameDay,title:"event-a",eventId:"event-a",existingThreadId:undefined});
+    expect(second).toEqual({date:sameDay,title:"event-b",eventId:"event-b",existingThreadId:undefined});
+    expect(second.eventId).not.toBe(first.eventId);
+  });
+  it("keeps the day report's existing thread without pretending an event was tapped",()=>{
+    expect(eventChatTarget(sameDay,undefined,{summary:"Shared outlook",threadId:"day-thread"}))
+      .toEqual({date:sameDay,title:"Shared outlook",eventId:undefined,existingThreadId:"day-thread"});
   });
 });
