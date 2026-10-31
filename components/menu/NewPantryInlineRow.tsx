@@ -6,12 +6,14 @@ import {useRouter} from "@/i18n/navigation";
 import {createPantryIngredient,savePackPrice} from "@/lib/actions/pantry";
 import {parsePurchasePackWithOriginal} from "./purchasePackEntry";
 import type {BaseUnit} from "@/lib/calc/recipeUnits";
+import {PANTRY_CATEGORY_CHOICES} from "@/lib/menu/pantryCategoryChoices";
+import type {PantryCategory} from "@/lib/menu/pantryStarter";
 
 type Created={id:string;baseUnit:BaseUnit;name:string};
 export default function NewPantryInlineRow({onCancel,onCreated}:{onCancel:()=>void;onCreated?:(result:Created)=>Promise<void>|void}){
  const t=useTranslations("MenuBuilder"),router=useRouter(),[pending,start]=useTransition();
  const [name,setName]=useState(""),[pack,setPack]=useState(""),[price,setPrice]=useState("");
- const [measure,setMeasure]=useState<BaseUnit|null>(null),[error,setError]=useState("");
+ const [measure,setMeasure]=useState<BaseUnit|null>(null),[category,setCategory]=useState<PantryCategory>("other"),[error,setError]=useState("");
  const [partial,setPartial]=useState(false);
  const matches=(["ml","g","each"] as const).flatMap(baseUnit=>{
   const parsed=parsePurchasePackWithOriginal(pack,baseUnit);return parsed?[{baseUnit,...parsed}]:[];
@@ -27,7 +29,7 @@ export default function NewPantryInlineRow({onCancel,onCreated}:{onCancel:()=>vo
   const baseUnit=selected?.baseUnit??measure!;
   setError("");start(async()=>{
    // No duplicate writer: compose the existing tenant-scoped create and pack-price actions.
-   const result=await createPantryIngredient({name:name.trim(),category:"other",baseUnit});
+   const result=await createPantryIngredient({name:name.trim(),category,baseUnit});
    if(!result.ok||!result.id){setError(t("error"));return;}
    if(selected){
     const cents=Math.round(Number(price)*100);
@@ -55,6 +57,13 @@ export default function NewPantryInlineRow({onCancel,onCreated}:{onCancel:()=>vo
      placeholder={t("packPrice")} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]"/>
    </label>
   </div>
+  {/* Optional: the default stays Other, but milk must be classifiable for add-ons. */}
+  <label className="mt-2 block font-semibold">{t("category")}
+   <select value={category} onChange={e=>setCategory(e.target.value as PantryCategory)}
+    className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]">
+    {PANTRY_CATEGORY_CHOICES.map(choice=><option key={choice.value} value={choice.value}>{t(choice.labelKey)}</option>)}
+   </select>
+  </label>
   {needsMeasurement&&<label className="mt-2 block font-semibold">{t("measurementType")}
    <select value={measure??""} onChange={e=>setMeasure(e.target.value as BaseUnit)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3">
     <option value="">{t("measurementType")}</option>{(matches.length?matches:[{baseUnit:"ml" as const},{baseUnit:"g" as const},{baseUnit:"each" as const}]).map(x=><option key={x.baseUnit} value={x.baseUnit}>{x.baseUnit==="ml"?t("liquidMeasurement"):x.baseUnit==="g"?t("weightMeasurement"):t("pieceMeasurement")}</option>)}
