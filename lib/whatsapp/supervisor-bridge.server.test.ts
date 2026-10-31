@@ -173,12 +173,13 @@ describe("durable web/WA reply reconciliation",()=>{
   const first=await runWhatsAppSupervisorWorker();
   expect(first).toMatchObject({inbound:"done",replyQueue:{enqueued:0}});
   m.ready=[readyRow()];setMessages("This is the later website response");
+  m.consume.mockResolvedValueOnce("empty");
   const second=await runWhatsAppSupervisorWorker();
   expect(second.replyQueue.enqueued).toBe(1);
   expect(m.enqueue).toHaveBeenCalledWith(bindingId,expect.any(String),
     {kind:"reply",text:"This is the later website response"},
     expect.any(Object),replyId,providerId);
-  expect(m.process).toHaveBeenCalledTimes(2); // only the inbound, once per cron tick
+  expect(m.process).toHaveBeenCalledTimes(1); // reconciliation never re-asks the model
  });
  it("outbound SQL dedupe removes already queued rows on subsequent ticks",async()=>{
   await reconcileWhatsAppSupervisorReplies();
