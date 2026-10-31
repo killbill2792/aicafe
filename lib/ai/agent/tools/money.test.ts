@@ -132,7 +132,8 @@ describe("Leo scoped money reads",()=>{
       ownerIngredientPackagingPercent:20,ownerProcessingFeePercent:3,
     },ctx({
       getBreakEven:async()=>{called++;return {available:true,
-        value:{dailyCostsToCoverCents:70724},quality:q};},
+        value:{dailyCostsToCoverCents:70724,drinksNeededPerDay:80,drinksPerHour:7,
+          todayDrinks:null,averageMoneyLeftPerDrinkCents:165,progressPercent:null},quality:q};},
       getBusinessCostSummary:async()=>{called++;throw Error("Legacy fallback must not run");},
       getOwnerMonthlyPayrollExtras:async()=>{called++;throw Error("Legacy fallback must not run");},
     }));
