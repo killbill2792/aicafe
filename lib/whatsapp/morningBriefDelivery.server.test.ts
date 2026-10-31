@@ -124,6 +124,22 @@ describe("PR A verified morning-brief integration",()=>{
    businessDate="2026-11-01";
    expect(await dispatchDueMorningBriefs(db,send as typeof fetch,
      ()=>new Date("2026-11-01T13:50:00Z"))).toBe(10);
+   send.mockClear();
+   process.env.WHATSAPP_MONITOR_FOLLOWUP_APPROVED="false";
+   expect(await dispatchDueMorningBriefs(db,send as typeof fetch,
+     ()=>new Date("2026-11-01T13:50:00Z"))).toBe(0);
+   expect(send).not.toHaveBeenCalled();
+   process.env.WHATSAPP_MONITOR_FOLLOWUP_APPROVED="true";
+   mocks.dispatch.mockImplementationOnce(async(_kind:string,guardedSend:typeof fetch)=>{
+     // Owner turns off alert replies after claim but before the provider call.
+     process.env.WHATSAPP_OWNER_REPLY_SEND_ENABLED="false";
+     const response=await guardedSend("https://graph.facebook.com/test",{
+       method:"POST",body:JSON.stringify({to:binding.waId,type:"template"})});
+     return response.ok?"accepted":"failed";
+   });
+   expect(await dispatchDueMorningBriefs(db,send as typeof fetch,
+     ()=>new Date("2026-11-01T13:50:00Z"))).toBe(0);
+   expect(send).not.toHaveBeenCalled();
  });
  it("enqueues against PR A's unique owner/café/day key and saved website message",async()=>{
    const {db}=dbFactory();
