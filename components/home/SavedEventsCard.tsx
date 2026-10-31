@@ -83,6 +83,10 @@ const eventsOn=(events:readonly CafeEvent[],date:string)=>
 export function selectedSavedEvent(events:readonly CafeEvent[],date:string,eventId:string|null){
   return eventId?eventsOn(events,date).find(e=>e.id===eventId)??null:null;
 }
+/** A multi-day event opens the date the owner tapped, not its historic start day. */
+export function eventDetailDay(event:Pick<CafeEvent,"startDate"|"endDate">,viewDate:string){
+  return viewDate>=event.startDate&&viewDate<=event.endDate?viewDate:event.startDate;
+}
 /** Preserve the exact tapped event across Home, chat and saved day reports. */
 export function eventChatTarget(date:string,event?:Pick<CafeEvent,"id"|"name">,
   plan?:Pick<Plan,"summary"|"threadId">){
@@ -286,7 +290,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
     setSelected(date);setSelectedEventId(eventId);setPanel("day");
     setTab(date<today?"past":date===today?"now":"upcoming");setMonth(date.slice(0,7));
   };
-  const openEvent=(event:CafeEvent)=>openDay(event.startDate,event.id);
+  const openEvent=(event:CafeEvent,viewDate:string)=>openDay(eventDetailDay(event,viewDate),event.id);
   const openEvents=(next:Tab="upcoming")=>{setPanel("events");setSelected(null);setSelectedEventId(null);setTab(next);setMonth(today.slice(0,7));};
   const chosen=selected??today;
   const plan=planOn(timeline.plans,chosen);
@@ -402,7 +406,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                   {dateLabel(date,locale,"long")}{dayPlan?" · "+t("hasPlan"):""}
                 </button>
                 {saved.map(event=><SavedEventListCard key={event.id} event={event} locale={locale} t={t}
-                  hasAnalysis={Boolean(dayPlan)} onOpen={openEvent}/>)}
+                  hasAnalysis={Boolean(dayPlan)} onOpen={event=>openEvent(event,date)}/>)}
                 {dayPlan?.summary&&<p className="rounded-xl bg-surface2 p-3 text-[17px]" dir="auto">{dayPlan.summary}</p>}
                 {tab==="past"&&dayPlan&&<EventReportCard report={dayPlan.report}
                   status={dayPlan.reportStatus} currency={timeline.currency??null}
@@ -419,7 +423,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
               {(event.venue||event.areaLabel)&&<p className="break-words text-ink-muted" dir="auto">{event.venue??event.areaLabel}</p>}
               {event.verificationFailedAt&&(!event.lastVerifiedAt||event.verificationFailedAt>event.lastVerifiedAt)&&
                 <p className="text-[15px] text-ink-muted">{t("verificationPending")}</p>}
-              {event.lastVerifiedAt&&<p className="text-[15px] text-ink-muted">{t("verifiedOn",{date:event.lastVerifiedAt.slice(0,10)})}</p>
+              {event.lastVerifiedAt&&<p className="text-[15px] text-ink-muted">{t("verifiedOn",{date:event.lastVerifiedAt.slice(0,10)})}</p>}
               <VenueMapLink address={event.venueAddress} t={t}/>
               {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
                 href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
