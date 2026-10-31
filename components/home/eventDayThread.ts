@@ -13,7 +13,8 @@ export function eventContextFromTitle(title:string,threadId:string):EventChatCon
 export function eventOwnerMessage(text:string,context:EventChatContext|null):string {
   const trimmed=text.trim();
   if(!context||!trimmed||/^@event\s/i.test(trimmed))return trimmed;
-  return "@event "+context.title+" ("+context.date+")\n"+trimmed;
+  const safeTitle=context.title.replace(/[\r\n<>]/g," ").trim().slice(0,100);
+  return "@event "+safeTitle+" ("+context.date+")\n"+trimmed;
 }
 
 /** Only an explicit Chat about this tap selects/creates the ordinary chat thread.
