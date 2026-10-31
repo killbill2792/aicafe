@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,SavedEventListCard,selectedSavedEvent,SavedEventAnalysis} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,SavedEventListCard,selectedSavedEvent,eventDetailDay,SavedEventAnalysis} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -202,6 +202,14 @@ describe("opening a specific saved event from the Events list",()=>{
       expect(html).not.toContain('type="checkbox"');
       expect(html).not.toContain("<a ");
     }
+  });
+  it("opens an ongoing event on the displayed Today date, not its past start day",()=>{
+    const ongoing=event("multi-day","2026-10-27","2026-11-02");
+    expect(eventDetailDay(ongoing,"2026-10-30")).toBe("2026-10-30");
+    expect(selectedSavedEvent([ongoing],"2026-10-30",ongoing.id)).toEqual(ongoing);
+    // The owner can still deliberately open historical dates from the Past list.
+    expect(eventDetailDay(ongoing,"2026-10-29")).toBe("2026-10-29");
+    expect(eventDetailDay(ongoing,"2026-11-05")).toBe("2026-10-27");
   });
   it("opens the exact clicked event, even when two have the same start date",()=>{
     const first={...event("one","2026-10-31"),name:"Halloween market"};
