@@ -32,9 +32,29 @@ alter table public.ingredient_prices add constraint ingredient_prices_original_p
 -- prices, purchases or stock history. Existing SELECT/INSERT/UPDATE remain member-RLS.
 drop policy if exists "members write" on public.ingredients;
 create policy "members insert" on public.ingredients for insert
-  with check (public.is_member(business_id));
+  with check (public.is_member(business_id) and archived_at is null);
 create policy "members update" on public.ingredients for update
   using (public.is_member(business_id)) with check (public.is_member(business_id));
+
+-- Do not rely on the owner-only RPC: direct authenticated table UPDATEs also
+-- reach archived_at. Keep ordinary member edits permitted while enforcing this
+-- one sensitive field at the database boundary.
+create or replace function public.pantry_archive_owner_guard()
+returns trigger language plpgsql security invoker set search_path=public as $
+begin
+  if new.archived_at is distinct from old.archived_at and (
+    auth.uid() is null or not exists (
+      select 1 from public.memberships where business_id=old.business_id
+        and user_id=auth.uid() and role='owner'
+    )
+  ) then raise exception 'only cafe owner may archive ingredient' using errcode='42501'; end if;
+  return new;
+end;
+$;
+drop trigger if exists pantry_archive_owner_guard on public.ingredients;
+create trigger pantry_archive_owner_guard
+  before update of archived_at on public.ingredients for each row
+  execute function public.pantry_archive_owner_guard();
 
 -- Archive/restore is authorized for the owner of the explicit café, with INVOKER
 -- RLS in addition. A retry is idempotent; no linked row is ever deleted.
@@ -71,6 +91,7 @@ declare
   ingredient_archive timestamptz;
   actual jsonb;
   source_expected jsonb;
+  source_order_expected jsonb;
   sibling_ids jsonb;
   seen_items uuid[] := '{}';
   seen_ingredients uuid[];
@@ -115,6 +136,15 @@ begin
       from public.recipe_lines where menu_item_id=p_product_item_id;
     if actual is distinct from source_expected then
       raise exception 'recipe_changed' using errcode='40001'; end if;
+  end if;
+  -- Swap/scale edits derive their results from the source recipe; even an
+  -- order-only concurrent save must invalidate the source snapshot.
+  source_order_expected := p_changes->0->'expectedSourceOrder';
+  if source_order_expected is not null then
+    select coalesce(jsonb_agg(ingredient_id::text order by sort_order nulls last, ingredient_id), '[]'::jsonb)
+      into actual from public.recipe_lines where menu_item_id=p_product_item_id;
+    if actual is distinct from source_order_expected then
+      raise exception 'recipe_source_order_changed' using errcode='40001'; end if;
   end if;
   for c in select value from jsonb_array_elements(p_changes) loop
     item := (c->>'menuItemId')::uuid;
