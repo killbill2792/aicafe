@@ -45,6 +45,22 @@ describe("parsing searched events",()=>{
     expect(parseNearbyEvents(JSON.stringify({results:[]}),"2026-10-30","2026-11-05")).toEqual([]);
   });
 
+  it("keeps verifiable event names, dates and sources when optional model details are malformed",()=>{
+    const out=parseNearbyEvents(JSON.stringify({events:[event({
+      startDate:"2026-10-31",endDate:"TBD",venue:17,venueAddress:{text:"unknown"},
+      startTime:"9am",endTime:"?",distance:10,sourceName:{title:"City"},
+    })]}),"2026-10-30","2026-11-05");
+    expect(out).toEqual([expect.objectContaining({
+      name:"Austin AI Week",startDate:"2026-10-31",endDate:"2026-10-31",
+      sourceUrl:"https://example.org/ai-week",
+      venue:null,venueAddress:null,startTime:null,endTime:null,
+      distance:null,sourceName:null,
+    })]);
+    // Required evidence is never replaced with a guess.
+    expect(parseNearbyEvents(JSON.stringify({events:[event({
+      startDate:"tomorrow",sourceUrl:"https://example.org/ai-week",
+    })]}),"2026-10-30","2026-11-05")).toBeNull();
+  });
   it("keeps an event that started before the window but is still on",()=>{
     const out=parseNearbyEvents(JSON.stringify({events:[event({startDate:"2026-10-28",endDate:"2026-11-01"})]}),"2026-10-30","2026-11-05");
     expect(out).toHaveLength(1);
