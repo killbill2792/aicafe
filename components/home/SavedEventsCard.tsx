@@ -67,6 +67,12 @@ const dateLabel=(date:string,locale:Locale,style:"short"|"long"="short")=>
     day:"numeric",weekday:style==="long"?"long":undefined}).format(new Date(date+"T00:00:00Z"));
 const eventsOn=(events:readonly CafeEvent[],date:string)=>
   events.filter(e=>e.startDate<=date&&e.endDate>=date);
+/** Preserve the exact tapped event across Home, chat and saved day reports. */
+export function eventChatTarget(date:string,event?:Pick<CafeEvent,"id"|"name">,
+  plan?:Pick<Plan,"summary"|"threadId">){
+  return {date,title:event?.name??plan?.summary??date,eventId:event?.id,
+    existingThreadId:event?undefined:plan?.threadId};
+}
 const planOn=(plans:readonly Plan[],date:string)=>
   plans.find(p=>p.startDate<=date&&p.endDate>=date);
 const actionsFor=(plan:Plan|undefined):Action[]=>Array.isArray(plan?.actions)?
@@ -217,11 +223,8 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const button="min-h-12 rounded-xl px-4 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   const chat=(date:string,event?:CafeEvent)=>{
     if(chatDisabled)return;
-    const dayPlan=planOn(timeline.plans,date);
-    // An event card binds its own stable identity. A whole-day report remains
-    // day-scoped: never silently substitute the first of several events.
-    onChatAboutDay(date,event?.name??dayPlan?.summary??date,event?.id,
-      event?undefined:dayPlan?.threadId);
+    const target=eventChatTarget(date,event,planOn(timeline.plans,date));
+    onChatAboutDay(target.date,target.title,target.eventId,target.existingThreadId);
     setPanel(null);
   };
   const listDates=eventListDays(timeline,tab,affectsOnly,sortByDate);
