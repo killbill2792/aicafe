@@ -12,6 +12,8 @@ export function planRecipeSizeSwitch(current:string,next:string,dirty:boolean):{
 export function hasPendingRecipeMeasurements(
  densityInputs:Readonly<Record<string,string>>,
  calibration:Readonly<Record<string,string>>,
+ exceptNewRowCalibrationKey?:string,
 ):boolean{
- return Object.keys(densityInputs).length>0||Object.keys(calibration).length>0;
+ return Object.keys(densityInputs).length>0||
+  Object.keys(calibration).some(key=>key!==exceptNewRowCalibrationKey);
 }
