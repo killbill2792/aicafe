@@ -6,8 +6,13 @@ export function eventThreadTitle(date:string,title:string):string {
 }
 export function eventContextFromTitle(title:string,threadId:string):EventChatContext|null {
   const match=/^Events · (\d{4}-\d{2}-\d{2}) · (.{1,100})$/.exec(title);
-  return match&&Number.isFinite(Date.parse(match[1]+"T12:00:00Z"))?
-    {date:match[1],title:match[2],threadId}:null;
+  if(match&&Number.isFinite(Date.parse(match[1]+"T12:00:00Z")))
+    return {date:match[1],title:match[2],threadId};
+  // Older saved day threads were titled just "Events · YYYY-MM-DD".
+  // Recover their date without inventing an event name or erasing chat history.
+  const legacy=/^Events · (\d{4}-\d{2}-\d{2})$/.exec(title);
+  return legacy&&Number.isFinite(Date.parse(legacy[1]+"T12:00:00Z"))?
+    {date:legacy[1],title:"Event",threadId}:null;
 }
 /** The saved owner's message carries its event anchor across thread reloads. */
 export function eventOwnerMessage(text:string,context:EventChatContext|null):string {
