@@ -55,14 +55,19 @@ function fakeDb(opts:{already?:boolean;thread?:boolean;owners?:string[]}={}){
   const inserts:Rows[]=[];
   const q=(table:string)=>{
     const self:Record<string,unknown>={};
-    for(const m of ["select","eq","order","limit","in","neq"])self[m]=()=>self;
+    let scopedOwner:string|null=null;
+    for(const m of ["select","order","limit","in","neq"])self[m]=()=>self;
+    self.eq=(column:string,value:unknown)=>{
+      if(column==="user_id"&&typeof value==="string")scopedOwner=value;
+      return self;
+    };
     self.upsert=async(row:Rows)=>{inserts.push({table,...row});return {error:null};};
     self.update=(row:Rows)=>{inserts.push({table,op:"update",...row});return self;};
     self.range=async()=>({data:table==="businesses"?[{id:"b1",timezone:zone,currency:"USD",is_demo:false},
       {id:"demo",timezone:zone,currency:"USD",is_demo:true}]:
       table==="memberships"?(opts.owners??["u1"]).map(user_id=>({user_id})):[],error:null});
     self.maybeSingle=async()=>({error:null,data:table==="ai_messages"?(opts.already?{id:"x"}:null):
-      table==="memberships"?{user_id:"u1"}:table==="ai_threads"?(opts.thread===false?null:{id:"t1"}):null});
+      table==="memberships"?{user_id:scopedOwner??"u1"}:table==="ai_threads"?(opts.thread===false?null:{id:scopedOwner==="u2"?"t2":"t1"}):null});
     self.then=(r:(v:unknown)=>void)=>r({count:2,error:null});
     self.insert=async(row:Rows)=>{inserts.push({table,...row});return {error:null};};
     return self;
