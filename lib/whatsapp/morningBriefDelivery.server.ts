@@ -2,10 +2,10 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {fromZonedTime} from "date-fns-tz";
 import {activeBinding,type BoundOwner} from "./identity.server";
-import {enqueueWhatsApp} from "./queue.server";
+import {enqueueWhatsApp,dispatchOutboundOnce} from "./queue.server";
 import {providerAllowed} from "./transport.server";
 import {validTemplateFields} from "./transport";
-import {briefWindow} from "@/lib/operating/dailyBrief";
+import {briefWindow,briefDue} from "@/lib/operating/dailyBrief";
 import {readPreparedMorningBrief} from "./morningBrief.server";
 import {renderMorningBrief,type PreparedMorningBrief} from "./morningBrief";
 
@@ -71,4 +71,49 @@ export async function enqueueBoundBrief(input:EligibleBrief,scope:BriefScope,
       monitorId:input.prepared.provenance.monitorProposalId,
       readerSources:input.prepared.provenance},
     websiteMessageId,undefined,scope.today);
+}
+
+/** Send only through PR A's canonical worker and only when the staged SQL
+ * claim-deadline guard is installed. No alternative queue or provider client.
+ * A final request-time check prevents a lease obtained at 05:59:59 from
+ * initiating a Meta send after 06:00. */
+export async function dispatchDueMorningBriefs(db:SupabaseClient,
+  send:typeof fetch=fetch,clock:()=>Date=()=>new Date()):Promise<number>{
+  if(!providerAllowed("daily_brief"))return 0;
+  const {data:ready,error}=await db.rpc("whatsapp_brief_dispatch_ready");
+  if(error||ready!==true)return 0;
+  const guardedSend:typeof fetch=async(url,init)=>{
+    const rejected=()=>new Response(null,{status:400});
+    if(typeof init?.body!=="string")return rejected();
+    let to:string;
+    try{
+      const envelope=JSON.parse(init.body) as {to?:unknown;type?:unknown};
+      if(envelope.type!=="template"||typeof envelope.to!=="string")return rejected();
+      to=envelope.to;
+    }catch{return rejected();}
+    const {data:bindings,error:bindingError}=await db.from("whatsapp_owner_bindings")
+      .select("id").eq("wa_id",to).eq("opted_in",true).is("revoked_at",null).limit(2);
+    if(bindingError||bindings?.length!==1)return rejected();
+    const bound=await activeBinding(bindings[0].id);
+    if(!bound||bound.waId!==to)return rejected();
+    const [lease,cafe]=await Promise.all([
+      db.from("whatsapp_outbox").select("business_date")
+        .eq("binding_id",bound.id).eq("kind","daily_brief").eq("state","leased").limit(2),
+      db.from("businesses").select("timezone").eq("id",bound.businessId).maybeSingle(),
+    ]);
+    if(lease.error||cafe.error||lease.data?.length!==1||!cafe.data?.timezone)return rejected();
+    const actual=clock(),due=briefDue(actual,cafe.data.timezone);
+    const window=briefWindow(actual,cafe.data.timezone);
+    if(!due.due||!window.readyToPublish||!window.beforeDeadline||
+       due.today!==lease.data[0].business_date)return rejected();
+    return send(url,init);
+  };
+  let accepted=0;
+  for(let i=0;i<10;i++){
+    const state=await dispatchOutboundOnce("daily_brief",guardedSend);
+    if(state==="empty"||state==="disabled")break;
+    if(state==="accepted")accepted++;
+    if(state==="retry"||state==="uncertain")break;
+  }
+  return accepted;
 }
