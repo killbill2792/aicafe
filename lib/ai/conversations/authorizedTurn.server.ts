@@ -48,11 +48,11 @@ export type AuthorizedTurnRegistration = {
  * authorization. Start ai_agent_jobs after this call, never a second AI system. */
 export async function registerAuthorizedSupervisorTurn(input: {
   scope: ConversationScope; service: ConversationService; threadId: string;
-  clientMessageId: string; text: string;
+  clientMessageId: string; text: string; scopedClient?:import("@supabase/supabase-js").SupabaseClient;
 }): Promise<AuthorizedTurnRegistration> {
   const {scope,service,threadId,clientMessageId,text}=input;
   const thread=await service.getThread(threadId);
-  await assertOwnerAgentTurnAvailable(scope);
+  await assertOwnerAgentTurnAvailable(scope,input.scopedClient);
   const owner=await service.addOwnerMessage(threadId,clientMessageId,text);
   const prior=await getExistingSupervisorReply(scope,owner);
   if(thread.title===null) {
