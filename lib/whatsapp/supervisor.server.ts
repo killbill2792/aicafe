@@ -57,7 +57,7 @@ export async function processVerifiedWhatsAppOwnerTurn(
  });
  // Store the channel before joining the shared job. Never expose wa_id or
  // provider tokens in the agent's history or prompt.
- await markWhatsAppOwnerProvenance(scope,registration.owner,receivedAt.toISOString());
+ await markWhatsAppOwnerProvenance(scope,registration.owner,receivedAt.toISOString(),verified.attachmentIds);
  if(registration.prior){
    const priorText=whatsappPlainTextFromSavedBlocks(registration.prior.blocks);
    if(!priorText)return {status:"replayed",completed:[]};
