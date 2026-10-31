@@ -1,4 +1,5 @@
 import "server-only";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import { formatInTimeZone } from "date-fns-tz";
 import { getTranslations } from "next-intl/server";
 import { displayPantryStarterName } from "@/lib/menu/pantryStarter";
@@ -64,14 +65,12 @@ export type IngredientOption = { id: string; name: string; baseUnit: "g" | "ml" 
 
 /** Everything the "manage menu" screen needs: every menu item (active and inactive) with its
  * current recipe, plus the full ingredient list for the "pick an existing ingredient" dropdown. */
-export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[]; ingredients: IngredientOption[] }> {
+export async function getMenuItemsForEdit(explicit?:{client:SupabaseClient;businessId:string}): Promise<{ items: MenuItemForEdit[]; ingredients: IngredientOption[] }> {
   if (!isSupabaseConfigured()) return { items: [], ingredients: [] };
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { items: [], ingredients: [] };
-  const businessId = await getActiveBusinessId(user.id);
+  const supabase = explicit?.client ?? await createServerSupabaseClient();
+  const user = explicit ? null : (await supabase.auth.getUser()).data.user;
+  if (!explicit && !user) return { items: [], ingredients: [] };
+  const businessId = explicit?.businessId ?? await getActiveBusinessId(user!.id);
 
   const [catalogRows, ingredientsResult, businessResult] = await Promise.all([
     readMenuCatalogRows(supabase, businessId),
@@ -109,9 +108,9 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   const recipeLines = recipeLinesResult.data;
   const aggregateCostByItem = new Map((aggregateCostsResult.data ?? []).map((row) => [row.menu_item_id, row]));
 
-  const translate = await getTranslations("Pantry.starters");
+  const translate = explicit ? null : await getTranslations("Pantry.starters");
   const localized = (name: string, key: string | null | undefined) =>
-    displayPantryStarterName(name, key, (k) => translate(k as never));
+    translate ? displayPantryStarterName(name, key, (k) => translate(k as never)) : name;
   const ingredientOptions: IngredientOption[] = (ingredients ?? []).map((i) => ({
     id: i.id,
     name: localized(i.name, i.starter_key),
