@@ -39,3 +39,18 @@ export function eligibleWhatsAppTextReply(text: string, inboundAt: string | numb
   return Boolean(text.trim()) && Array.from(text).length <= 4096 &&
     withinWhatsAppServiceWindow(inboundAt, now);
 }
+
+/** Reconstruct the text exactly as splitAgentText persisted it. Interactive
+ * cards stay on the website; never serialize hidden proposal actions into WA.
+ * A clarify-only reply is represented by its canonical saved question. */
+export function whatsappPlainTextFromSavedBlocks(blocks:readonly unknown[]|null):string|null {
+ if(!blocks)return null;
+ const text=blocks.flatMap(b=>b&&typeof b==="object"&&
+  (b as {type?:unknown}).type==="text"&&typeof (b as {text?:unknown}).text==="string"
+    ?[(b as {text:string}).text]:[]);
+ if(text.length)return text.join("");
+ const clarification=blocks.find(b=>b&&typeof b==="object"&&
+   (b as {type?:unknown}).type==="clarify"&&
+   typeof (b as {question?:unknown}).question==="string") as {question?:string}|undefined;
+ return clarification?.question??null;
+}
