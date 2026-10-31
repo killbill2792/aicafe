@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { attachmentInput, MAX_BYTES, safeFileName, verifySignature } from "@/lib/ai/conversations/attachments";
 import type { ConversationScope } from "@/lib/ai/conversations/contracts";
-import { authorizedExternalConversation } from "@/lib/ai/conversations/authorizedTurn.server";
+import { authorizedExternalConversation,externalOwnerClientMessageId } from "@/lib/ai/conversations/authorizedTurn.server";
 
 /** Incoming media is reference material, NOT an authorization to record purchases,
  * change inventory or extract a verified receipt. PDF is stored unanalysed until
@@ -98,13 +98,25 @@ export async function downloadWhatsAppMedia(
  * no OCR/purchase/expense write occurs here. The browser's existing attachment
  * listing and signed download route remain the review surfaces. */
 export async function saveWhatsAppMediaDraft(params:{
- scope:ConversationScope;threadId:string;media:DownloadedWhatsAppMedia;
+ scope:ConversationScope;threadId:string;wamid:string;media:DownloadedWhatsAppMedia;
 }):Promise<{attachmentId:string;state:"stored_unanalysed"}>{
- const {scope,threadId,media}=params;
+ const {scope,threadId,media,wamid}=params;
  await authorizedExternalConversation(scope,threadId);
  const parsed=attachmentInput.parse({filename:media.name,mimeType:media.mimeType,bytes:media.bytes.byteLength});
  if(!verifySignature(parsed.mimeType,media.bytes))throw new Error("invalid_media_signature");
- const db=createAdminSupabaseClient(),id=crypto.randomUUID();
+ const db=createAdminSupabaseClient(),id=externalOwnerClientMessageId(scope,wamid);
+ // Meta can redeliver a signed inbound event and the durable worker may retry
+ // after persistence. Do not duplicate invoice drafts on any such replay.
+ const getExisting=()=>db.from("ai_attachments").select("id,media_type,bytes,original_name")
+   .eq("id",id).eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+   .eq("thread_id",threadId).maybeSingle();
+ const prior=await getExisting();
+ if(prior.error)throw prior.error;
+ if(prior.data){
+   if(prior.data.media_type!==parsed.mimeType||prior.data.bytes!==parsed.bytes||
+     prior.data.original_name!==parsed.filename)throw new Error("whatsapp_attachment_conflict");
+   return {attachmentId:id,state:"stored_unanalysed"};
+ }
  const path=[scope.businessId,scope.ownerUserId,threadId,id,safeFileName(parsed.filename)].join("/");
  const uploaded=await db.storage.from("ai-chat-private").upload(path,media.bytes,{
     contentType:parsed.mimeType,cacheControl:"no-store",upsert:false,
