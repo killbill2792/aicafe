@@ -7,12 +7,16 @@ that file, Meta's current terms or the current implementation changes.
 
 ## Owner journey and product goal
 
-A café owner opts in to one **morning briefing** at a café-local time. The briefing
-leads with what matters **today**: an evidence-backed demand outlook, readiness
-(staffing and known supply gaps), the most relevant verified prior-day result, and
-**one useful next step**. Owners can ask follow-ups in WhatsApp if this channel is
+A café owner opts in to one **morning briefing** at a café-local time.
+**Owner-validated priorities:** yesterday's net sales, where *known* money went,
+an actual product-mix insight (e.g. drinks sold and best-selling item), and
+**one** forward-looking observation/action when justified by saved events,
+comparable-day demand and verified costs. **Do not include month-to-date or
+year-to-date sales by default**: provide those on request. If staffing plans
+are unavailable, ask for them politely and at most when useful, rather than
+inventing coverage. Owners can ask follow-ups in WhatsApp if this channel is
 permitted. The same Supervisor answers with authorized café tools, not a generic
-LLM answering from the notification text. Actual business changes remain in-app
+LLM answering from notification text. Actual business changes remain in-app
 approval-card actions. An owner never has to manage a second inbox.
 
 **Why this is better than a general chatbot:** the Supervisor can compare canonical
@@ -24,26 +28,32 @@ numeric fact. Do not invent predictions, margins, staffing needs or event impact
 
 Illustrative experience (not data from a café):
 
-> Morning: “A nearby conference may raise lunch demand; there may be a coverage
-> gap 11–2. Yesterday's sales were above a comparable weekday. Suggested next
-> step: review lunch staffing. Open AI Cafe for the details.”
+> Morning: “Yesterday's **net sales** were $1,700. Recorded staff wages were
+> $480 (28.2% of net sales); ingredient costs are not yet verified. Of 190
+> drinks sold, 89 were matcha drinks (if these are correctly classified and
+> verified). Halloween is tomorrow and a saved nearby event may matter; it
+> is not a proven traffic forecast. On recent comparable Saturdays your busiest
+> measured sales period was 10 AM–noon. I don't have your future staffing plan
+> verified yet—could you share the shifts? Open AI Cafe for the details.”
 >
-> Owner: “Do I need one more person?”
+> Owner: “We have two people 8–12 and three 12–5.”
 >
-> Supervisor: reads that café's staffing schedule, comparable demand and
-> canonical labor economics, distinguishes observed facts from forecasts, and
-> gives an actionable recommendation with its uncertainty. If asked to change
-> the schedule, it prepares an inert proposal and points to an authenticated
-> approval card in the app; **WhatsApp text does not approve anything**.
+> Supervisor: explains the confirmed prior-day money and historical peaks,
+> checks the proposed shift coverage without presuming it was entered into
+> Toast, and offers an inert schedule preview. Only an authenticated in-app
+> approval can commit the schedule. **WhatsApp text does not approve anything**.
 
 ### UX contract
 
 - One message **maximum per opted-in owner/café-local day**, no redundant
   team-alert message alongside the morning brief. Configurable send time; a
   local-time due/quiet-hour gate handles DST and late/missing data.
-- Prioritize: (1) today's outlook, (2) readiness/risk, (3) relevant
-  yesterday-versus-comparable-day performance, (4) one recommended action.
-  Omit unhelpful sections; do not force sales into every briefing.
+- Consistent baseline: (1) yesterday's confirmed net sales, (2) *known*
+  cost breakdown with each percent of those same sales, (3) meaningful
+  sold-item count/top seller if reliably classified. Then *one* prioritized
+  verified event, unusual cost/performance pattern or readiness insight and
+  a practical next step. No default month-to-date/year-to-date total or
+  forced break-even number. Omit sections lacking trustworthy evidence.
 - Write a short answer first, then one next step; **actual/estimate/partial and
   source period/as-of** must be clear. No fabricated all-clear for missing data.
   Use the café's locale (EN/ES/AR) and currency, via existing localization.
@@ -56,6 +66,101 @@ Illustrative experience (not data from a café):
 - Treat replies as the next turn in the **same** owner/café conversation.
   Re-read current source facts; reuse stored owner-provided preferences/facts.
   Never claim an owner action happened merely because they said “yes”.
+
+### Owner-approved briefing content and comparisons (October 30 revision)
+
+**The product advantage isn't relaying Toast:** Toast already provides
+sales, labor, item-mix and hourly reports. AI Cafe must synthesize those
+with owners' verified operating knowledge, saved nearby events and
+canonical cost/recovery calculations: **what happened → why it might
+matter → what's next → what to monitor**. Avoid generic AI advice and
+unsupported causal attribution. No new calculation pipeline or second AI.
+
+**Example shape, not a Meta approval template** (all numbers/hours are
+hypothetical; the live message must omit unavailable facts):
+
+1. “Good morning. Yesterday's **net sales** were $1,700.”
+2. “Where the *known* sales went: recorded wages $480 (28.2% of net
+   sales); estimated ingredients $340 (20%) **only if ingredient evidence
+   supports that estimate**. Card fees, payroll taxes, rent and other
+   bills are labeled actual/estimated/missing; never suggest the remaining
+   sales amount is net profit.”
+3. “You sold 190 drinks. Matcha was the top-selling **drink group** at
+   89 units” only if group mapping, drinks-vs-all-items denominator,
+   modifiers/voids and quantity are verified in the canonical sales
+   reader. Prefer **one meaningful interpretation** such as “matcha
+   accounted for an unusually large share versus comparable Thursdays”,
+   only if the comparison is supported.
+4. “Halloween is tomorrow; we're tracking [a verified saved nearby event].
+   It *might* change foot traffic, but we can't establish the impact yet.
+   Your normal Saturday peak across the recent comparable Saturdays was
+   [verified time period], so use that as a preparation baseline.”
+5. “I don't have your **future staff plan** verified. Could you send
+   today's shifts or this week's schedule? You can reply in text;
+   photo/document intake will be offered **only when the channel really
+   supports and validates attachments**. I'll organize it for you to
+   review before anything is saved or acted on.”
+
+**Comparisons/coverage:**
+- For *yesterday's performance*, compare with the last **four complete
+  same weekdays** (e.g. this Thursday against four earlier Thursdays).
+  The latest week may be mentioned as context, but one week is not the
+  only baseline; show “based on N comparable days” and detect outliers.
+- For a *future day's busy periods*, aggregate **hourly net sales** across
+  the last **four comparable weekdays** and cross-check order/item
+  counts as available. Find consistently strong adjacent time windows,
+  not the largest single raw sample. Compare the immediately preceding
+  weekday as context. Fewer than four complete comparable days lowers
+  confidence and must be disclosed; none means “not enough history,”
+  not a made-up peak. Don't claim peak periods are a Halloween forecast.
+- With a past year's *same holiday* data, a special-event pattern could
+  be evaluated separately; without it, the usual-weekday baseline is
+  just a starting point. Event relevance must come from the existing
+  dated, saved Events records, not invented nearby crowds or weather.
+- **Wages vs loaded labor**: $480/$1,700 is ~28.2%, never 38%.
+  Identify the numerator honestly: Toast clocked wages exclude payroll
+  taxes unless loaded-labor cost is separately available. Show the
+  same period, café currency, actual/estimate and missing coverage.
+- **Ingredient costs are not supplied by Toast sales alone.** The
+  ingredient estimate must use existing validated recipe/item-cost
+  coverage, and say estimated/partial; otherwise say “ingredient
+  costs not fully available,” never assume a 20% ingredient cost.
+- Break-even is an *optional* important insight when the existing
+  Money/Plan/Supervisor canonical calculation has full enough evidence.
+  It is a target estimate, **not observed yesterday's profit**, and
+  should not be included merely to fill a slot.
+- Planned shifts are independent from past Toast *clocked time entries*.
+  Read any available Toast planned shifts and owner-supplied plans before
+  asking. Missing a plan is “schedule not available to AI Cafe,” never
+  “nobody scheduled.” Don't repeat requests every day; owner-provided
+  schedule facts should persist only with appropriate review and
+  approval. WhatsApp file/photo handling is **not currently built**.
+- **Message length discipline:** lead with yesterday's sales, known
+  costs, one product-mix insight, then one timely event/operating
+  insight and one optional staffing request. Short external copy;
+  detailed comparisons, evidence and charts remain in existing chat.
+  Never fabricate a concern just to fill sections.
+
+### New behavioral acceptance for the morning-brief PR
+
+- Fixture: four comparable Saturdays with differing hourly demand,
+  one unusual outlier and a Halloween event. Assert accurate hourly
+  aggregation, sample count, event uncertainty and no impact claim.
+- Fixture: one Saturday / partial hours; do not promote to a confident
+  “usual Saturday peak.” No data => no named peak hours.
+- Fixture: 190 sold drinks, 89 matcha; verify correct quantity,
+  classification and no double counting modifiers or refunds.
+- Fixture: wages $480, net sales $1,700; display 28.2% wages,
+  distinguish wage-only from loaded labor; missing recipe coverage
+  never yields a fabricated 20% ingredient estimate.
+- Fixture: missing manually managed schedule; ask politely once,
+  accept proposed text for review but never treat it as committed.
+  Unsupported WhatsApp photo/file attachments must be communicated
+  as unsupported rather than claimed saved.
+- No default month-to-date total; owner requests about MTD are answered
+  from the same canonical Toast reader on demand.
+- Exact-money parity with Money/Plan and the Supervisor; no replayed
+  sends and no cross-owner/multi-café data leakage.
 
 ## Architecture: a channel adapter, not a new Supervisor
 
