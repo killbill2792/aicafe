@@ -1056,7 +1056,7 @@ export default function SupervisorChatComposer({
           rows={1} maxLength={4000} value={draft}
           onChange={(event) => { setDraft(event.target.value); retryId.current = null; }}
           onKeyDown={composerKey} disabled={!enabled || !canUseAi || inputLocked}
-          placeholder={copy.askAnything}
+          placeholder={eventContext?.threadId===threadId?"@event "+eventContext.title+" · "+copy.askAnything:copy.askAnything}
           className="min-w-0 max-h-40 min-h-12 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-3 text-[17px] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
         <button type="submit" aria-label={copy.sendMessage}
           disabled={!enabled || !canUseAi || inputLocked || !draft.trim() || dictation === "listening" || dictation === "recognizing"}
