@@ -111,8 +111,13 @@ export function breakEvenSnapshotInputs(snapshot:BusinessSnapshot,options:BreakE
   const recordedLabor=elapsedLaborCents+(extras==null?0:
     Math.round(extras*elapsedOpenDates.length/openDayCount));
   const todayRow=snapshot.todayDay;
-  const todayLaborReady=todayRow.date===asOf&&todayRow.wagesCents!==null&&
-    todayRow.staffTaxCents!==null&&todayRow.laborWageStatus!=="missing";
+  // zeroDailyFacts is a display placeholder, not an imported $0 timecard.
+  // A real staff-only rollup is present in monthRecordedDays even without sales.
+  const todayHasLaborRow=monthRecords.some(day=>day.date===asOf&&
+    day.laborWageStatus!=="missing"&&day.wagesCents!==null&&day.staffTaxCents!==null);
+  const todayLaborReady=todayHasLaborRow&&todayRow.date===asOf&&
+    todayRow.wagesCents!==null&&todayRow.staffTaxCents!==null&&
+    todayRow.laborWageStatus!=="missing";
   const todayIsOpen=regularHoursStateForDate(snapshot.business.openHours,asOf)!=="closed";
   const targetOpenDays=mode==="month_forecast"?openDayCount:
     mode==="month_to_date"?elapsedOpenDates.length:todayIsOpen?1:0;
