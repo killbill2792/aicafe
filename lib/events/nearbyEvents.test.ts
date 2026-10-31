@@ -37,6 +37,10 @@ describe("parsing searched events",()=>{
       "2026-10-30","2026-11-05")).toBeNull();
     expect(parseNearbyEvents(JSON.stringify({events:[{...valid,date:"unknown"}]}),
       "2026-10-30","2026-11-05")).toBeNull();
+    expect(parseNearbyEvents(JSON.stringify({results:[{...valid,
+      endDate:"",startTime:"",endTime:""}]}),"2026-10-30","2026-11-05"))
+      .toEqual([expect.objectContaining({name:"Halloween market",endDate:"2026-10-31",
+        startTime:null,endTime:null})]);
     expect(parseNearbyEvents(JSON.stringify({results:[]}),"2026-10-30","2026-11-05")).toEqual([]);
   });
 
