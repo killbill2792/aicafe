@@ -8,7 +8,7 @@ export function parsePurchasePack(text:string,baseUnit:BaseUnit):PurchasePack|nu
  const cleaned=text.normalize("NFKC").toLowerCase()
   .replace(/[٠-٩۰-۹]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d)>=0?"٠١٢٣٤٥٦٧٨٩".indexOf(d):"۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
   .replace(/onzas?\s+l[ií]quidas?|أونص(?:ة|ات)\s+سائلة/g,"fluid ounces")
-  .replace(/onzas?\s+de\s+peso/g,"ounces by weight")
+  .replace(/onzas?\s+de\s+peso|أونص(?:ة|ات)\s+بالوزن/g,"ounces by weight")
   .replace(/libras?|أرطال|رطلاً|رطلًا|رطل/g,"pounds")
   .replace(/unidades?|piezas?|قطعة|قطع|وحدات?|وحدة/g,"pieces")
   .replace(/mililitros?|مليلتر(?:ات)?|ملليلتر(?:ات)?/g,"milliliters")
@@ -38,20 +38,21 @@ export function parsePurchasePack(text:string,baseUnit:BaseUnit):PurchasePack|nu
  return Number.isFinite(packQuantity)&&packBaseQuantity(packQuantity,packUnit,baseUnit)!==null?{packQuantity,packUnit}:null;
 }
 
+/** Editable values keep an ungrouped decimal (e.g. 1000.5), while the localized unit is
+ * derived from Intl's unit part. Thus changing only a price never invalidates a saved pack. */
 export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit:BaseUnit,locale="en"):string{
  if(quantity===null||!unit)return "";
  const unitNames:Record<string,string>={fl_oz:"fluid-ounce",oz_wt:"ounce",ml:"milliliter",g:"gram",
   kg:"kilogram",l:"liter",lb:"pound",gal:"gallon"};
  const resolvedUnit=unit==="oz"?(baseUnit==="ml"?"fl_oz":"oz_wt"):unit;
- if(resolvedUnit==="oz_wt"){
-  const value=new Intl.NumberFormat(locale,{style:"unit",unit:"ounce",unitDisplay:"long"}).format(quantity);
-  return value+(locale.startsWith("es")?" por peso":locale.startsWith("ar")?" بالوزن":" by weight");
- }
+ const value=String(quantity);
  if(unitNames[resolvedUnit]){
-  return new Intl.NumberFormat(locale,{style:"unit",unit:unitNames[resolvedUnit],unitDisplay:"long"}).format(quantity);
+  const format=new Intl.NumberFormat(locale,{style:"unit",unit:unitNames[resolvedUnit],unitDisplay:"long",maximumFractionDigits:15});
+  const unitLabel=format.formatToParts(quantity).find(part=>part.type==="unit")?.value??resolvedUnit;
+  const suffix=resolvedUnit==="oz_wt"?(locale.startsWith("es")?" de peso":locale.startsWith("ar")?" بالوزن":" by weight"):"";
+  return value+" "+unitLabel+suffix;
  }
- const other:Record<string,string>={qt:"quarts",each:"pieces",dozen:"dozen"};
- // Preserve existing case(N) units when owners edit only their purchase price.
- if(/^case\([1-9]\d*\)$/.test(resolvedUnit))return new Intl.NumberFormat(locale).format(quantity)+" "+resolvedUnit;
- return new Intl.NumberFormat(locale).format(quantity)+" "+(other[resolvedUnit]??resolvedUnit);
+ const other:Record<string,string>={qt:"quarts",each:locale.startsWith("es")?"unidades":locale.startsWith("ar")?"قطعة":"pieces",dozen:"dozen"};
+ // A pre-existing case(N) quantity remains case(N), not silently converted to each.
+ return value+" "+(other[resolvedUnit]??resolvedUnit);
 }
