@@ -1,7 +1,8 @@
 import "server-only";
 import {DEFAULT_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import {holidaysBetween} from "./holidays";
-import {MAX_EVENTS,nearbyEventsJsonSchema,nearbyEventsPrompt,parseNearbyEvents,responseOutputText,
+import {MAX_EVENTS,nearbyEventsJsonSchema,nearbyEventsMinimalJsonSchema,nearbyEventsMinimalPrompt,
+  nearbyEventsPrompt,nearbyEventsShapeProblem,parseNearbyEvents,responseOutputText,
   type NearbyEvent,type NearbyEventsSearch,type SearchFailureCategory,type UnsearchedEventScope} from "./nearbyEvents";
 
 /** Web search is read-only. Addresses and fetched page text must never be logged. */
@@ -42,22 +43,23 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
       ...(input.countryCode?{country:input.countryCode}:{})}:null;
 
     const attempt=async(prompt:string,tool:"web_search"|"web_search_preview",
-      strictJson:boolean,number:number,kind:"general"|"holiday",requestModel=model):Promise<Attempt>=>{
+      format:"schema"|"plain"|"minimal",number:number,kind:"general"|"holiday",requestModel=model):Promise<Attempt>=>{
       const start=now();
       let httpStatus:number|null=null,status:string|null=null,incompleteReason:string|null=null;
       let outputTypes:string[]=[];
-      let failure:SearchFailureCategory|null=null;
+      let failure:SearchFailureCategory|null=null,shapeFailure:string|null=null;
       try{
         const response=await doFetch("https://api.openai.com/v1/responses",{
           method:"POST",signal:AbortSignal.timeout(number===1?SEARCH_TIMEOUT_MS:SEARCH_RETRY_TIMEOUT_MS),
           headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},
           body:JSON.stringify({model:requestModel,max_output_tokens:SEARCH_MAX_OUTPUT_TOKENS,store:false,
             tools:[{type:tool,...(userLocation?{user_location:userLocation}:{})}],
-            input:strictJson?prompt:prompt+" Respond with only a JSON object containing an events array, "+
+            input:format==="plain"?prompt+" Respond with only a JSON object containing an events array, "+
               "with name, startDate, endDate, venue, venueAddress, startTime, endTime, distance, "+
-              "kind, expectedCrowd, sourceUrl and sourceName for each event. Use null for unknown fields.",
-            ...(strictJson?{text:{format:{type:"json_schema",name:"nearby_events",strict:true,
-              schema:nearbyEventsJsonSchema}}}:{})})});
+              "kind, expectedCrowd, sourceUrl and sourceName for each event. Use null for unknown fields.":prompt,
+            ...(format!=="plain"?{text:{format:{type:"json_schema",
+              name:format==="minimal"?"nearby_events_minimal":"nearby_events",strict:true,
+              schema:format==="minimal"?nearbyEventsMinimalJsonSchema:nearbyEventsJsonSchema}}}:{})})});
         httpStatus=response.status;
         if(!response.ok)failure="http_error";
         else {
@@ -81,7 +83,10 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
                 if(events!==null)return {ok:true,events};
                 try{JSON.parse(text.trim().replace(/^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$/gu,""));}
                 catch{failure="invalid_json";}
-                if(!failure)failure="invalid_shape";
+                if(!failure){
+                  failure="invalid_shape";
+                  shapeFailure=nearbyEventsShapeProblem(text,input.from,input.to);
+                }
               }
             }
           }
@@ -92,30 +97,35 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
       }finally{
         // One privacy-safe record per attempt, whether it succeeded, failed, or timed out.
         console.info("nearby_events_search_attempt",{queryKind:kind,attempt:number,
-          format:strictJson?"schema":"plain",tool,status,httpStatus,incompleteReason,
-          outputTypes,parseFailure:failure,durationMs:Math.max(0,now()-start)});
+          format,tool,status,httpStatus,incompleteReason,
+          outputTypes,parseFailure:failure,shapeFailure,durationMs:Math.max(0,now()-start)});
       }
       return {ok:false,category:failure??"invalid_response",
         reason:failure==="timeout"?"timeout":"searchFailed",...(httpStatus!==null?{httpStatus}:{})};
     };
 
-    const oneQuery=async(prompt:string,kind:"general"|"holiday"):Promise<Attempt>=>{
-      const first=await attempt(prompt,"web_search",true,1,kind);
+    const oneQuery=async(prompt:string,minimalPrompt:string,kind:"general"|"holiday"):Promise<Attempt>=>{
+      const first=await attempt(prompt,"web_search","schema",1,kind);
       if(first.ok)return first;
       if(first.httpStatus===400){
-        const preview=await attempt(prompt,"web_search_preview",true,2,kind);
+        const preview=await attempt(prompt,"web_search_preview","schema",2,kind);
         if(preview.ok||preview.httpStatus!==400)return preview;
-        return attempt(prompt,"web_search",false,3,kind,DEFAULT_SUPERVISOR_OPENAI_MODEL);
+        return attempt(prompt,"web_search","plain",3,kind,DEFAULT_SUPERVISOR_OPENAI_MODEL);
       }
-      // A 200-incomplete/reasoning-only response still has no searched results.
-      // Recover using plain JSON and a non-reasoning model, without raising the token cap.
-      if(first.httpStatus===200)return attempt(prompt,"web_search",false,2,kind,
+      // A well-formed JSON message with unusable event fields needs a simpler
+      // CONTRACT, not the same 12-field request again with schema removed.
+      // This bounded, three-field structured retry still requires date + source proof.
+      if(first.httpStatus===200&&first.category==="invalid_shape")
+        return attempt(minimalPrompt,"web_search","minimal",2,kind,
+          DEFAULT_SUPERVISOR_OPENAI_MODEL);
+      // Incomplete, missing or non-JSON replies still get one plain fallback.
+      if(first.httpStatus===200)return attempt(prompt,"web_search","plain",2,kind,
         DEFAULT_SUPERVISOR_OPENAI_MODEL);
       // Retry a transient timeout/network error or HTTP 408, 429 or 5xx exactly once.
       // Authentication and other client errors must not trigger paid retries.
       if(first.category==="timeout"||first.category==="network"||first.httpStatus===408||
         first.httpStatus===429||(first.httpStatus!==undefined&&first.httpStatus>=500))
-        return attempt(prompt,"web_search",false,2,kind,DEFAULT_SUPERVISOR_OPENAI_MODEL);
+        return attempt(prompt,"web_search","plain",2,kind,DEFAULT_SUPERVISOR_OPENAI_MODEL);
       return first;
     };
 
@@ -124,13 +134,19 @@ export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiK
       try{holidays=holidaysBetween(input.from,input.to,input.countryCode,input.region,"en");}
       catch{holidays=holidaysBetween(input.from,input.to,input.countryCode,null,"en");}
     }
-    const queries:Array<{prompt:string;scope:UnsearchedEventScope}>=[
-      {prompt:nearbyEventsPrompt(input.location,input.from,input.to),scope:{kind:"general"}},
+    const queries:Array<{prompt:string;minimalPrompt:string;scope:UnsearchedEventScope}>=[
+      {prompt:nearbyEventsPrompt(input.location,input.from,input.to),
+        minimalPrompt:nearbyEventsMinimalPrompt(input.location,input.from,input.to),
+        scope:{kind:"general"}},
       ...holidays.map(h=>({prompt:nearbyEventsPrompt(input.location,input.from,input.to,
-        {name:h.name,date:h.date}),scope:{kind:"holiday" as const,name:h.name,date:h.date}})),
+        {name:h.name,date:h.date}),
+        minimalPrompt:nearbyEventsMinimalPrompt(input.location,input.from,input.to,
+        {name:h.name,date:h.date}),
+        scope:{kind:"holiday" as const,name:h.name,date:h.date}})),
     ];
     // Independent requests overlap, so a holiday doesn't add its latency to the general search.
-    const results=await Promise.all(queries.map(({prompt,scope})=>oneQuery(prompt,scope.kind)));
+    const results=await Promise.all(queries.map(({prompt,minimalPrompt,scope})=>
+      oneQuery(prompt,minimalPrompt,scope.kind)));
     const found:NearbyEvent[]=[],seen=new Set<string>();
     for(const result of results){
       if(!result.ok)continue;
