@@ -182,11 +182,26 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  function addPicker(){return <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent-soft p-3">
   <label className="min-w-[160px] flex-1 text-[13px] font-bold">{t("addRecipeRow")}
    <input autoFocus value={searchIngredient} onChange={e=>{setSearchIngredient(e.target.value);setAdd("");}} placeholder={t("search")} aria-label={t("search")} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]"/>
-   <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]" aria-label={t("addToRecipe")} value={add??""} onChange={e=>{setAdd(e.target.value);setNewRowUnit(ingredients.find(ingredient=>ingredient.id===e.target.value)?.baseUnit??"ml");}}>
+   <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]" aria-label={t("addToRecipe")} value={add??""} onChange={e=>{setAdd(e.target.value);setNewRowUnit(ingredients.find(ingredient=>ingredient.id===e.target.value)?.baseUnit??"ml");setNewRowDensity("");}}>
    <option value="">{t("addToRecipe")}</option>{ingredients.filter(i=>selectedItems.some(item=>!item.recipe.some(line=>line.ingredientId===i.id))&&i.name.toLocaleLowerCase().includes(searchIngredient.toLocaleLowerCase())).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
   </select></label>
   <label className="w-24 text-[13px] font-bold">{t("quantity")}<input type="number" min="0.0001" step="any" inputMode="decimal" value={newRowAmount} onChange={e=>setNewRowAmount(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]"/></label>
-  <label className="min-w-[105px] text-[13px] font-bold">{t("unit")}<select value={newRowUnit} onChange={e=>setNewRowUnit(e.target.value as RecipeDisplayUnit)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]">{(add?recipeDisplayUnitsFor(ingredients.find(ingredient=>ingredient.id===add)?.baseUnit??"ml",conversions[add]??[]):[]).filter(unit=>true).map(unit=><option key={unit} value={unit}>{unitLabel(unit)}</option>)}</select></label>
+  <label className="min-w-[105px] text-[13px] font-bold">{t("unit")}<select value={newRowUnit} onChange={e=>{const unit=e.target.value as RecipeDisplayUnit;setNewRowUnit(unit);const entry=ingredients.find(i=>i.id===add);if(entry&&requiresDensity(entry.baseUnit,unit))setNewRowDensity(String(suggestedIngredientDensity(entry.name)??""));}} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]">{(add?(()=>{
+   const base=ingredients.find(ingredient=>ingredient.id===add)?.baseUnit??"ml";
+   return base==="each"?["each"] as RecipeDisplayUnit[]:[...new Set([...recipeDisplayUnitsFor(base,conversions[add]??[]),"g","ml","fl_oz","shot","pump"])] as RecipeDisplayUnit[];
+  })():[]).map(unit=><option key={unit} value={unit}>{unitLabel(unit)}</option>)}</select></label>
+  {add&&requiresDensity(ingredients.find(i=>i.id===add)?.baseUnit??"ml",newRowUnit)&&
+   <label className="w-32 text-[13px] font-bold">{t("densityShort")}
+    <input type="number" min=".000001" max="5" step="any" inputMode="decimal" value={newRowDensity}
+      onChange={e=>setNewRowDensity(e.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]"/>
+   </label>}
+  {add&&needsIngredientConversion(newRowUnit)&&!(conversions[add]??[]).some(c=>c.unit===newRowUnit)&&
+   <label className="w-36 text-[13px] font-bold">{t("measureShort",{unit:unitLabel(newRowUnit)})}
+    <input type="number" min=".000001" step="any" inputMode="decimal"
+      value={calibration[add+":"+newRowUnit]??String(measureDefault(add,ingredients.find(i=>i.id===add)?.name??"",ingredients.find(i=>i.id===add)?.baseUnit??"ml",newRowUnit)??"")}
+      onChange={e=>setCalibration(prev=>({...prev,[add+":"+newRowUnit]:e.target.value}))}
+      className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2 text-[17px]"/>
+   </label>}
   <button type="button" disabled={pending||!add||invalidQuantity||!(Number(newRowAmount)>0)} onClick={append} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">{t("add")}</button>
   <button type="button" onClick={()=>setAdd(null)} className="min-h-12 px-3">{t("cancel")}</button></div>;}
  /** Use the one canonical unit-compatibility helper; no parallel conversion rules in the UI. */
