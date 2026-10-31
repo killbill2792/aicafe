@@ -60,6 +60,19 @@ describe("verified WhatsApp Supervisor worker",()=>{
      replyText:"Verified sales: $100",eligibleAtCompletion:false}]});
    expect(mock.finish).toHaveBeenCalledWith("job1",{status:"done",replyMessageId:"reply1"});
  });
+ it("never hands another WhatsApp owner's queued answer to this inbound reply",async()=>{
+   const nextOwner={...owner,id:"55555555-5555-4555-8555-555555555555",text:"Other WA question"};
+   mock.finish.mockResolvedValueOnce({continuation:{id:"job2",ownerMessageId:nextOwner.id}})
+     .mockResolvedValueOnce({continuation:null});
+   mock.find.mockResolvedValue(nextOwner);
+   mock.run.mockResolvedValueOnce({replyId:"reply1",replyText:"Original reply",absorbedOwnerMessageIds:[]})
+     .mockResolvedValueOnce({replyId:"reply2",replyText:"Another inbound reply",absorbedOwnerMessageIds:[]});
+   const result=await processVerifiedWhatsAppOwnerTurn(input);
+   expect(mock.run).toHaveBeenCalledTimes(2);
+   expect(result.completed).toEqual([expect.objectContaining({
+     ownerMessageId:owner.id,replyId:"reply1",replyText:"Original reply",
+   })]);
+ });
  it("does not start a duplicate agent when the canonical job was attached",async()=>{
    mock.start.mockResolvedValue({mode:"attached",job:{id:"job1"}});
    expect(await processVerifiedWhatsAppOwnerTurn(input)).toEqual({status:"queued",completed:[]});
