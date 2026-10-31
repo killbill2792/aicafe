@@ -51,7 +51,8 @@ try {
     create function auth.uid() returns uuid language sql stable as
       $$ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $$;
     create table businesses(id uuid primary key, timezone text not null default 'America/Los_Angeles');
-    create table memberships(business_id uuid not null references businesses(id),user_id uuid not null,primary key(business_id,user_id));
+    create table memberships(business_id uuid not null references businesses(id),user_id uuid not null,
+      role text not null default 'owner', primary key(business_id,user_id));
     create function public.is_member(target_business_id uuid) returns boolean
       language sql security definer stable set search_path=public as
       $$ select exists(select 1 from memberships where business_id=target_business_id and user_id=auth.uid()) $$;
@@ -97,8 +98,14 @@ try {
   `);
   for(const table of ["menu_items", "ingredients"]) {
     await db.query(`alter table public.${table} enable row level security`);
-    await db.query(`create policy members on public.${table} for all
-      using (public.is_member(business_id)) with check (public.is_member(business_id))`);
+    if(table==="ingredients"){
+      await db.query(`create policy "members read" on public.ingredients for select using (public.is_member(business_id))`);
+      await db.query(`create policy "members write" on public.ingredients for all
+        using (public.is_member(business_id)) with check (public.is_member(business_id))`);
+    }else{
+      await db.query(`create policy members on public.${table} for all
+        using (public.is_member(business_id)) with check (public.is_member(business_id))`);
+    }
   }
   for(const [table,parent,col] of [
     ["recipe_lines","menu_items","menu_item_id"],
@@ -112,6 +119,7 @@ try {
   }
   await db.query(readFileSync(new URL("../supabase/migrations/20261022000079_pantry_packs.sql", import.meta.url), "utf8"));
   await db.query(readFileSync(new URL("../supabase/migrations/20261022000080_menu_options_combos.sql", import.meta.url), "utf8"));
+  await db.query(readFileSync(new URL("../supabase/migrations/20261031000134_pantry_persistence.sql", import.meta.url), "utf8"));
   await db.query("grant all on public.menu_product_addons, public.menu_combo_components to authenticated");
   await db.query("grant execute on function public.save_menu_product_addons(uuid,uuid,jsonb) to authenticated");
   await db.query("insert into businesses(id) values($1),($2)",[A,B]);
@@ -242,6 +250,92 @@ try {
       [PARENT,owned["milk-whole"]]);
     assert.equal(Number(updated.rows[0].quantity),Number(snapshot.find(r=>r.ingredientId===owned["milk-whole"]).quantity)+1);
   } finally { await writer.end(); }
+  // PR #319: real PostgreSQL save -> reload, case factor history and safe archive.
+  await asOwner(db, async c=>{
+    const milk=owned["milk-whole"],espresso=owned["espresso-beans"];
+    const saved=(await c.query(`select ingredient_id,quantity,display_unit,display_quantity,sort_order
+      from recipe_lines where menu_item_id=$1 order by sort_order nulls last,ingredient_id`,[PARENT])).rows;
+    const before=new Map(saved.map(row=>[row.ingredient_id,Number(row.quantity)]));
+    const newId=(await c.query(`insert into ingredients(business_id,name,base_unit)
+      values($1,'Cinnamon','ml') returning id`,[A])).rows[0].id;
+    const normalized=rows=>rows.map(x=>({ingredientId:x.ingredient_id,quantity:Number(x.quantity),
+      displayUnit:x.display_unit,displayQuantity:Number(x.display_quantity)}));
+    const order=saved.map(row=>row.ingredient_id);
+    const insert={ingredientId:newId,quantity:5,displayUnit:"ml",displayQuantity:5};
+    const first=normalized(saved);
+    const next=[first[0],insert,...first.slice(1)];
+    await c.query(rpc("pantry_replace_recipes",[],3),[A,PARENT,JSON.stringify([{
+      menuItemId:PARENT,expectedOrder:order,lines:next,
+    }])]);
+    const reopened=(await c.query(`select ingredient_id,quantity,sort_order from recipe_lines
+      where menu_item_id=$1 order by sort_order nulls last,ingredient_id`,[PARENT])).rows;
+    assert.deepEqual(reopened.map(r=>r.ingredient_id),next.map(x=>x.ingredientId),
+      "insert-after persists on saved reader after reload");
+    assert.deepEqual(reopened.map(r=>Number(r.sort_order)),[1,2,3,4]);
+    for(const [id,quantity] of before)
+      assert.equal(Number(reopened.find(r=>r.ingredient_id===id).quantity),quantity,
+        "reordering does not change the saved base quantity");
+    await rejectStatement(c,rpc("pantry_replace_recipes",[],3),[A,PARENT,JSON.stringify([{
+      menuItemId:PARENT,expectedOrder:order,lines:next,
+    }])],"40001");
+    const moved=[next[3],next[0],next[1],next[2]];
+    await c.query(rpc("pantry_replace_recipes",[],3),[A,PARENT,JSON.stringify([{
+      menuItemId:PARENT,expectedOrder:next.map(x=>x.ingredientId),lines:moved,
+    }])]);
+    assert.deepEqual((await c.query(`select ingredient_id from recipe_lines where menu_item_id=$1
+      order by sort_order nulls last,ingredient_id`,[PARENT])).rows.map(r=>r.ingredient_id),
+      moved.map(r=>r.ingredientId),"moved order must persist");
+    const siblings=await c.query(`select menu_item_id,count(*) from recipe_lines
+      where menu_item_id<>$1 group by menu_item_id`,[PARENT]);
+    assert.equal(siblings.rows.length,3,"other sizes remain intact");
+    // Store original factors only as metadata on the existing price-history row.
+    await c.query(`insert into ingredient_prices(ingredient_id,effective_from,source,
+      cost_per_base_unit_micros,pack_quantity,pack_unit,pack_cost_cents,original_pack)
+      values($1,'2026-10-31','manual',1000,384,'fl_oz',1234,
+      '{"count":12,"unitQuantity":32,"unit":"fl_oz"}'::jsonb)`,[milk]);
+    let prices=await c.query(`select pack_quantity,pack_unit,pack_cost_cents,
+      cost_per_base_unit_micros,original_pack from ingredient_prices where ingredient_id=$1`,[milk]);
+    assert.equal(Number(prices.rows[0].pack_quantity),384);
+    assert.deepEqual(prices.rows[0].original_pack,{count:12,unitQuantity:32,unit:"fl_oz"});
+    assert.equal(Number(prices.rows[0].cost_per_base_unit_micros),1000);
+    await c.query(`insert into ingredient_prices(ingredient_id,effective_from,source,
+      cost_per_base_unit_micros,pack_quantity,pack_unit,pack_cost_cents,original_pack)
+      values($1,'2026-11-01','manual',1000,384,'fl_oz',1500,
+      '{"count":12,"unitQuantity":32,"unit":"fl_oz"}'::jsonb)`,[milk]);
+    assert.equal((await c.query(`select count(*) from ingredient_prices where ingredient_id=$1`,[milk])).rows[0].count,"2");
+    await rejectStatement(c,`insert into ingredient_prices(ingredient_id,effective_from,source,
+      cost_per_base_unit_micros,pack_quantity,pack_unit,pack_cost_cents,original_pack)
+      values($1,'2026-11-02','manual',1000,384,'fl_oz',1500,
+      '{"count":12,"unitQuantity":31,"unit":"fl_oz"}'::jsonb)`,[milk],"23514");
+    // Any old price lacking original_pack remains a valid null-metadata row.
+    await c.query(`insert into ingredient_prices(ingredient_id,effective_from,source,
+      cost_per_base_unit_micros,pack_quantity,pack_unit,pack_cost_cents)
+      values($1,'2026-10-01','manual',1000,1,'case(1000)',450)`,[owned["cup-hot-12"]]);
+    assert.equal((await c.query(`select original_pack from ingredient_prices
+      where ingredient_id=$1`,[owned["cup-hot-12"]])).rows[0].original_pack,null);
+    // Archive preserves every dependent row and blocks fresh recipe selections.
+    await c.query(rpc("pantry_set_archived",[],3),[A,milk,true]);
+    assert.equal((await c.query("select archived_at from ingredients where id=$1",[milk])).rows[0].archived_at!==null,true);
+    assert.equal((await c.query("select count(*) from recipe_lines where ingredient_id=$1",[milk])).rows[0].count,"4");
+    assert.equal((await c.query("select count(*) from ingredient_prices where ingredient_id=$1",[milk])).rows[0].count,"2");
+    const separate=(await c.query(`insert into menu_items(business_id,name,base_name,price_cents)
+      values($1,'Archived test','Archived test',250) returning id`,[A])).rows[0].id;
+    await rejectStatement(c,rpc("pantry_replace_recipes",[],3),[A,separate,JSON.stringify([{
+      menuItemId:separate,lines:[{ingredientId:milk,quantity:10,displayUnit:"ml",displayQuantity:10}],
+    }])],"P0001");
+    // Existing products can still edit a referenced archived ingredient's quantities.
+    await c.query(rpc("pantry_replace_recipes",[],3),[A,PARENT,JSON.stringify([{
+      menuItemId:PARENT,expectedOrder:moved.map(r=>r.ingredientId),lines:moved,
+    }])]);
+    await c.query(rpc("pantry_set_archived",[],3),[A,milk,false]);
+    assert.equal((await c.query("select archived_at from ingredients where id=$1",[milk])).rows[0].archived_at,null);
+    assert.equal((await c.query("select count(*) from ingredient_prices where ingredient_id=$1",[milk])).rows[0].count,"2");
+    await rejectStatement(c,"delete from ingredients where id=$1",[milk],"42501");
+  });
+  await asOwner(db,async c=>{
+    await rejectStatement(c,rpc("pantry_set_archived",[],3),[A,owned["milk-whole"],true],"42501");
+  },OTHER);
+  console.log("PR #319 PostgreSQL: ordered save/reopen, packs, archive/restore, history, RLS and tenant isolation passed");
   console.log("P1 PostgreSQL: migration parses; RLS, idempotency, size identity, draft safety, rollback and recipe CAS passed");
 } finally {
   await db.end();
