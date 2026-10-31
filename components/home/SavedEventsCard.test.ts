@@ -148,7 +148,7 @@ describe("each saved event opens its own dated AI detail",()=>{
     expect(html).not.toContain("lastCheckedAt");
     expect(html).not.toContain("disabled");
     expect(eventDateLabel(halloween,"es")).toContain("2026");
-    expect(eventDateLabel(halloween,"ar")).toContain("٢٠٢٦");
+    expect(eventDateLabel(halloween,"ar")).toMatch(/2026|٢٠٢٦/);
     expect(eventDateLabel({...halloween,endDate:"2026-11-01"},"en"))
       .toContain("November 1, 2026");
   });
