@@ -6,6 +6,8 @@ import {isSupervisorChatConfigured,getSupervisorChatReadiness} from "@/lib/ai/co
 import {assertOwnerAgentTurnAvailable} from "@/lib/ai/conversations/usage.server";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {runOneTurn,errorCode} from "@/lib/ai/conversations/agentRunner.server";
+import {authorizedExternalConversation,storedOwnerMessageChannel} from "@/lib/ai/conversations/authorizedTurn.server";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import type {AgentJob} from "@/lib/ai/agent/jobState";
 
 export const runtime = "nodejs";
@@ -97,8 +99,14 @@ export async function POST(request: Request, context: RouteContext) {
       let job: AgentJob | null = started.job, owner = base.owner, ownerText = base.ownerText;
       try {
         while (job) {
+          const isExternal=process.env.WHATSAPP_SUPERVISOR_ENABLED==="true" &&
+            await storedOwnerMessageChannel(scope,id,owner.id)==="whatsapp";
+          if(isExternal)await authorizedExternalConversation(scope,id);
+          // A queued WhatsApp continuation runs under the same explicit owner
+          // scope, never a forged browser session or a separate agent pipeline.
           const outcome = await runOneTurn({ ...base, owner, ownerText,
-            attachmentIds:owner.id===base.owner.id?base.attachmentIds:[],emit: sink.emit, job, jobs });
+            attachmentIds:owner.id===base.owner.id?base.attachmentIds:[],emit:sink.emit,job,jobs,
+            ...(isExternal?{externalClient:createAdminSupabaseClient()}:{}) });
           let next: AgentJob | null = null;
           try {
             next = (await jobs.finishAgentJob(job.id, "replyId" in outcome
