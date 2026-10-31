@@ -12,24 +12,29 @@ import {sendDailyBriefs,type BriefOutboxHook} from "./dailyBrief.server";
 import {briefMessageId} from "./dailyBrief";
 
 const morning=new Date("2026-10-31T15:30:00Z");
-function dbFactory(existing=false){
+function dbFactory(existing=false,opts:{revoked?:boolean;wrongCafe?:boolean}={}){
   const mutations:Array<{table:string;op:string;row:unknown}>=[];
+  const scopedReads:Array<{table:string;column:string;value:unknown}>=[];
   const q=(table:string)=>{
     const self:Record<string,unknown>={};
-    for(const method of ["select","eq","order","limit","neq"])self[method]=()=>self;
+    for(const method of ["select","order","limit","neq"])self[method]=()=>self;
+    self.eq=(column:string,value:unknown)=>{scopedReads.push({table,column,value});return self;};
     self.range=async()=>({data:table==="businesses"?
       [{id:"cafe-a",name:"Shop A",timezone:"America/Los_Angeles",currency:"USD",is_demo:false}]:[],error:null});
     self.maybeSingle=async()=>({error:null,data:table==="ai_messages"?
       (existing?{id:briefMessageId("cafe-a","2026-10-31"),
+        business_id:opts.wrongCafe?"other-cafe":"cafe-a",owner_user_id:"owner-original",
+        thread_id:"thread-original",
         structured_content:[{type:"text",text:"Previously persisted website brief."}]}:null):
-      table==="memberships"?{user_id:"owner-a"}:table==="ai_threads"?{id:"thread-a"}:null});
+      table==="memberships"?(opts.revoked?null:{user_id:existing?"owner-original":"owner-a"}):
+      table==="ai_threads"?{id:existing?"thread-original":"thread-a"}:null});
     self.then=(resolve:(v:unknown)=>void)=>resolve({count:1,error:null});
     self.insert=async(row:unknown)=>{mutations.push({table,op:"insert",row});return {error:null};};
     self.upsert=async(row:unknown)=>{mutations.push({table,op:"upsert",row});return {error:null};};
     self.update=(row:unknown)=>{mutations.push({table,op:"update",row});return self;};
     return self;
   };
-  return {db:{from:q} as unknown as SupabaseClient,mutations};
+  return {db:{from:q} as unknown as SupabaseClient,mutations,scopedReads};
 }
 describe("morning brief optional durable-outbox seam",()=>{
   it("persists the canonical website and inbox brief before offering the same day to transport",async()=>{
@@ -44,12 +49,24 @@ describe("morning brief optional durable-outbox seam",()=>{
     expect(hook.mock.calls[0][0].websiteText).toContain("Yesterday:");
   });
   it("retries an outbox opportunity without duplicating the web message or inbox",async()=>{
-    const {db,mutations}=dbFactory(true);
+    const {db,mutations,scopedReads}=dbFactory(true);
     const hook=vi.fn(async (_input:Parameters<BriefOutboxHook>[0])=>{});
     expect(await sendDailyBriefs(db,morning,hook)).toEqual({checked:1,sent:0,skipped:1,failed:0});
     expect(mutations).toEqual([]);
     expect(hook).toHaveBeenCalledTimes(1);
-    expect(hook.mock.calls[0][0].websiteText).toBe("Previously persisted website brief.");
+    expect(hook.mock.calls[0][0]).toMatchObject({ownerUserId:"owner-original",
+      threadId:"thread-original",websiteText:"Previously persisted website brief."});
+    expect(scopedReads).toContainEqual({table:"memberships",column:"user_id",value:"owner-original"});
+    expect(scopedReads).toContainEqual({table:"ai_threads",column:"id",value:"thread-original"});
+  });
+  it("skips revoked ownership or a foreign café instead of sending the persisted brief",async()=>{
+    for(const opts of [{revoked:true},{wrongCafe:true}]){
+      const {db,mutations}=dbFactory(true,opts);
+      const hook=vi.fn(async (_input:Parameters<BriefOutboxHook>[0])=>{});
+      expect(await sendDailyBriefs(db,morning,hook)).toMatchObject({sent:0,skipped:1,failed:0});
+      expect(hook).not.toHaveBeenCalled();
+      expect(mutations).toEqual([]);
+    }
   });
   it("never delivers on the default path and never loses the web record on a failed outbox",async()=>{
     const {db,mutations}=dbFactory();
