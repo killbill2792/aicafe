@@ -8,14 +8,17 @@ export type PurchasePack={packQuantity:number;packUnit:string};
 export function parsePurchasePack(text:string,baseUnit:BaseUnit):PurchasePack|null{
  const cleaned=text.normalize("NFKC").toLowerCase()
   .replace(/[٠-٩۰-۹]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d)>=0?"٠١٢٣٤٥٦٧٨٩".indexOf(d):"۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
-  .replace(/onzas?\s+l[ií]quidas?|أونص(?:ة|ات)\s+سائلة/g,"fluid ounces")
-  .replace(/onzas?\s+de\s+peso|أونص(?:ة|ات)\s+بالوزن/g,"ounces by weight")
+  .replace(/onzas?\s+l[ií]quidas?|أونص(?:ة|ات|تان)\s+سائل(?:ة|تان|ات)/g,"fluid ounces")
+  .replace(/onzas?\s+de\s+peso|أونص(?:ة|ات|تان)\s+بالوزن/g,"ounces by weight")
   .replace(/libras?|أرطال|رطلاً|رطلًا|رطل/g,"pounds")
   .replace(/unidades?|piezas?|قطعة|قطع|وحدات?|وحدة/g,"pieces")
   .replace(/mililitros?|مليلتر(?:ات)?|ملليلتر(?:ات)?/g,"milliliters")
   .replace(/litros?|لترات?|لتر/g,"liters")
   .replace(/gramos?|غرام(?:ات|ًا)?|جرام(?:ات)?/g,"grams")
   .replace(/kilogramos?|كيلوغرام(?:ات)?/g,"kilograms")
+  .replace(/gal[oó]n(?:es)?|غالون(?:ات)?/g,"gallons")
+  .replace(/cuartos?|كوارت(?:ات)?/g,"quarts")
+  .replace(/docenas?|دزينة|دزينات/g,"dozen")
   .replace(/\s+/g," ").replace(/\s+(?:cans?|bottles?|cartons?|jugs?|bags?|boxes?)$/,"");
  const match=/^(?:(\d+(?:\.\d+)?)\s*(?:x|×)\s*)?(\d+(?:\.\d+)?)\s*(fl\s*oz|fluid\s+ounces?|ounces?\s+by\s+weight|oz\s+weight|oz|ounces?|ml|millilit(?:er|re)s?|g|grams?|kg|kilograms?|lb|lbs|pounds?|l|lit(?:er|re)s?|gal|gallons?|qt|quarts?|each|pieces?|dozen|case\([1-9]\d*\))$/i.exec(cleaned);
  if(!match)return null;
@@ -39,25 +42,33 @@ export function parsePurchasePack(text:string,baseUnit:BaseUnit):PurchasePack|nu
  return Number.isFinite(packQuantity)&&packBaseQuantity(packQuantity,packUnit,baseUnit)!==null?{packQuantity,packUnit}:null;
 }
 
-/** Editable values keep an ungrouped decimal (e.g. 1000.5), while the localized unit is
- * derived from Intl's unit part. Thus changing only a price never invalidates a saved pack. */
-export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit:BaseUnit,locale="en",originalPack:OriginalPurchasePack|null=null):string{
+/** Stable, translator-backed unit labels are deliberately grammar-independent.
+ * They must stay parseable after a price-only edit at 1, 2 or 32 units, including
+ * Arabic dual quantities (Intl may otherwise emit unsupported dual forms). */
+const stableUnits:Record<string,readonly [string,string,string]>={
+ fl_oz:["fluid ounces","onzas líquidas","أونصة سائلة"],
+ oz_wt:["ounces by weight","onzas de peso","أونصة بالوزن"],
+ ml:["milliliters","mililitros","مليلتر"],
+ g:["grams","gramos","غرام"],
+ kg:["kilograms","kilogramos","كيلوغرام"],
+ l:["liters","litros","لتر"],
+ lb:["pounds","libras","رطل"],
+ gal:["gallons","galones","غالون"],
+ qt:["quarts","cuartos","كوارت"],
+ each:["pieces","unidades","قطعة"],
+ dozen:["dozen","docena","دزينة"],
+};
+export function purchasePackLabel(quantity:number|null,unit:string|null,baseUnit:BaseUnit,
+ locale="en",originalPack:OriginalPurchasePack|null=null,labels:Partial<Record<string,string>>={}):string{
  if(quantity===null||!unit)return "";
- const unitNames:Record<string,string>={fl_oz:"fluid-ounce",oz_wt:"ounce",ml:"milliliter",g:"gram",
-  kg:"kilogram",l:"liter",lb:"pound",gal:"gallon"};
  const resolvedUnit=unit==="oz"?(baseUnit==="ml"?"fl_oz":"oz_wt"):unit;
  const validBreakdown=originalPack&&originalPack.unit===resolvedUnit&&originalPack.count>0&&
   originalPack.unitQuantity>0&&Math.abs(originalPack.count*originalPack.unitQuantity-quantity)<0.000001;
  const value=validBreakdown?String(originalPack.count)+" × "+String(originalPack.unitQuantity):String(quantity);
- if(unitNames[resolvedUnit]){
-  const format=new Intl.NumberFormat(locale,{style:"unit",unit:unitNames[resolvedUnit],unitDisplay:"long",maximumFractionDigits:15});
-  const unitLabel=format.formatToParts(validBreakdown?originalPack.unitQuantity:quantity).find(part=>part.type==="unit")?.value??resolvedUnit;
-  const suffix=resolvedUnit==="oz_wt"?(locale.startsWith("es")?" de peso":locale.startsWith("ar")?" بالوزن":" by weight"):"";
-  return value+" "+unitLabel+suffix;
- }
- const other:Record<string,string>={qt:"quarts",each:locale.startsWith("es")?"unidades":locale.startsWith("ar")?"قطعة":"pieces",dozen:"dozen"};
- // A pre-existing case(N) quantity remains case(N), not silently converted to each.
- return value+" "+(other[resolvedUnit]??resolvedUnit);
+ const localeIndex=locale.startsWith("es")?1:locale.startsWith("ar")?2:0;
+ const stable=stableUnits[resolvedUnit];
+ // A legacy case(100)/(1000) is not converted to 'each' or assigned fake factors.
+ return value+" "+(labels[resolvedUnit]??stable?.[localeIndex]??resolvedUnit);
 }
 
 /** Preserve factorization only when the owner supplied it. A legacy normalized
