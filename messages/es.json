@@ -2623,6 +2623,7 @@
     "densityShort": "Gramos por mililitro",
     "densityNeeded": "Introduce los gramos por mililitro de este ingrediente antes de guardar.",
     "measureShort": "1 {unit} equivale a",
+    "chooseMeasurement": "Elige si este ingrediente se mide como líquido, peso o piezas.",
     "addRecipeRow": "Añadir fila a la receta",
     "addRecipeRowAfter": "Añadir fila después de {name}",
     "addPantryItem": "Crear producto de despensa",
