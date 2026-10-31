@@ -25,6 +25,18 @@ export function eventContextFromTitle(title:string,threadId:string):EventChatCon
     {date:legacy[1],title:"Event",threadId}:null;
 }
 
+/** Reuse the exact existing event conversation after page reload; don't match only by day. */
+export function eventThreadFromHistory(
+  threads:readonly {id:string;title:string|null}[],date:string,eventId?:string,
+):string|null{
+  const key=eventThreadKey(date,eventId);
+  for(const thread of threads){
+    const context=thread.title?eventContextFromTitle(thread.title,thread.id):null;
+    if(context&&eventThreadKey(context.date,context.eventId)===key)return thread.id;
+  }
+  return null;
+}
+
 /** Persist a compact, explicit anchor with each owner message, without plan JSON. */
 export function eventOwnerMessage(text:string,context:EventChatContext|null):string {
   const trimmed=text.trim();
