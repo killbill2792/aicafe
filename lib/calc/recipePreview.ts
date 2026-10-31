@@ -25,7 +25,7 @@ export function draftLineCostCents(originalCostCents:number|null,originalDisplay
 export type DraftRecipeCostLine={
  ingredientId:string;originalBaseQuantity:number;baseUnit:BaseUnit;costCents:number|null;
  displayUnit:RecipeDisplayUnit;displayQuantity:number;removed:boolean;
- conversions:readonly IngredientUnitConversion[];
+ conversions:readonly IngredientUnitConversion[];densityGramsPerMl?:number;
 };
 export function draftRecipeCosts(lines:readonly DraftRecipeCostLine[]):{
  costCents:number|null;lineCosts:Record<string,number|null>;estimated:boolean;
@@ -35,7 +35,7 @@ export function draftRecipeCosts(lines:readonly DraftRecipeCostLine[]):{
  for(const line of lines){
   if(line.removed||line.displayQuantity===0)continue;
   hasLines=true;
-  const quantity=toBaseUnitQuantity(line.displayUnit,line.displayQuantity,line.baseUnit,[...line.conversions]);
+  const quantity=toBaseUnitQuantity(line.displayUnit,line.displayQuantity,line.baseUnit,[...line.conversions],line.densityGramsPerMl);
   if(quantity===null||!Number.isFinite(quantity)||!(line.originalBaseQuantity>0)
     ||line.costCents===null||!Number.isFinite(line.costCents)){
    lineCosts[line.ingredientId]=null;missing=true;continue;
