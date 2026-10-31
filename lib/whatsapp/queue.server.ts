@@ -38,7 +38,7 @@ export async function enqueueWhatsApp(
     typeof provenance.period!=="string"||!provenance.source||!provenance.period||
     (kind==="reply"&&(!inReplyTo||businessDate!==undefined))||
     (kind==="daily_brief"&&(inReplyTo!==undefined||!businessDate||
-       !/^\\d{4}-\\d{2}-\\d{2}$/.test(businessDate))))
+       !/^\d{4}-\d{2}-\d{2}$/.test(businessDate))))
     throw new Error("invalid_outbound");
   const {data,error}=await db().rpc("whatsapp_enqueue_outbound",{
     p_binding_id:bindingId,p_key:dedupeKey,p_kind:kind,
