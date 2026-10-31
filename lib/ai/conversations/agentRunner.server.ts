@@ -268,21 +268,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(memory ? { memoryFacts: memory.facts, extraTools: [memory.tool] } : {}),
       ...(job && jobs ? {
         takeFollowUps: async(max: number):Promise<OwnerFollowUp[]> => {
-           // External messages must NEVER be absorbed into a website turn:
-           // their replies need a separate provider-bound owner-message ID.
-           // Conversely WhatsApp jobs always serialize the next message as
-           // a continuation rather than swallowing it into one text reply.
-           if(external)return [];
-           const pending=await jobs.takeAgentJobInbox(job.id,max);
-           if(process.env.WHATSAPP_SUPERVISOR_ENABLED!=="true"||!pending.length)return pending;
-           const {data,error}=await createAdminSupabaseClient().from("ai_messages")
-             .select("id,grounding").eq("business_id",scope.businessId)
-             .eq("owner_user_id",scope.ownerUserId).eq("thread_id",id)
-             .in("id",pending.map(m=>m.id));
-           if(error||!data||data.length!==pending.length)return []; // fail closed
-           const externalIds=new Set(data.filter(row=>
-             (row.grounding as {sourceChannel?:unknown}|null)?.sourceChannel==="whatsapp").map(row=>row.id));
-           return pending.filter(m=>!externalIds.has(m.id));
+           // Once a second channel is enabled, NEVER take inbox messages here:
+           // the RPC atomically marks them absorbed, so filtering after taking
+           // already loses WhatsApp replies. The canonical job finisher will
+           // serialize each owner message as a distinct continuation instead.
+           // In web-only mode retain the original fast follow-up behavior.
+           if(external||process.env.WHATSAPP_SUPERVISOR_ENABLED==="true")return [];
+           return jobs.takeAgentJobInbox(job.id,max);
          },
         onFollowUp: (count: number) => emit("followup", { count }),
       } : {}) });
