@@ -241,6 +241,9 @@ begin
  r:=case p_state when 'sent' then 1 when 'failed' then 2
    when 'delivered' then 3 when 'read' then 4 else null end;
  if r is null or length(p_wamid) > 250 then raise exception 'invalid_status'; end if;
+ -- The API acceptance path takes this SAME per-provider lock before its outbox row lock.
+ -- A callback cannot race past a missing provider_wamid and lose delivered/read state.
+ perform pg_advisory_xact_lock(hashtextextended('wa_status:'||p_wamid,0));
  insert into public.whatsapp_status_ledger(provider_wamid,state,rank)
  values(p_wamid,p_state,r)
  on conflict(provider_wamid) do update set state=excluded.state,rank=excluded.rank,updated_at=now()
@@ -291,7 +294,7 @@ begin
  return result;
 end $$;
 revoke all on function public.whatsapp_enqueue_outbound(uuid,text,text,jsonb,jsonb,uuid,text,date) from public,anon,authenticated;
-grant execute on function public.whatsapp_enqueue_outbound(uuid,text,text,jsonb,jsonb,text) to service_role;
+grant execute on function public.whatsapp_enqueue_outbound(uuid,text,text,jsonb,jsonb,uuid,text,date) to service_role;
 
 -- A lease is never blindly replayed after a provider timeout. Worker chooses one binding at
 -- a time; locking the binding prevents two workers from claiming the same owner concurrently.
@@ -335,11 +338,16 @@ returns boolean language plpgsql security definer set search_path=public as $$
 declare q public.whatsapp_outbox; s public.whatsapp_status_ledger;
 begin
  if auth.role()<>'service_role' then raise exception 'service_role_only'; end if;
- select * into q from public.whatsapp_outbox where id=p_id for update;
- if not found or q.state<>'leased' or q.lease_token<>p_token then return false; end if;
  if p_outcome not in ('accepted','retry','uncertain','failed') then raise exception 'invalid_outcome'; end if;
  if p_outcome='accepted' and (p_provider_wamid is null or p_provider_wamid !~ '^wamid[.]')
    then raise exception 'missing_provider_wamid'; end if;
+ -- Lock in provider-id -> outbox-row order, matching whatsapp_record_status.
+ -- This makes ledger lookup and receipt completion atomic against delivery callbacks.
+ if p_outcome='accepted' then
+   perform pg_advisory_xact_lock(hashtextextended('wa_status:'||p_provider_wamid,0));
+ end if;
+ select * into q from public.whatsapp_outbox where id=p_id for update;
+ if not found or q.state<>'leased' or q.lease_token<>p_token then return false; end if;
  select * into s from public.whatsapp_status_ledger where provider_wamid=p_provider_wamid;
  update public.whatsapp_outbox set
    state=case when p_outcome='retry' and q.attempts>=5 then 'failed'
