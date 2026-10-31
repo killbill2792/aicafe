@@ -9,6 +9,8 @@ describe("stable external message ID",()=>{
    expect(externalOwnerClientMessageId(cafeA,"wamid.HBgM1234")).toBe(a);
    expect(externalOwnerClientMessageId(cafeA,"wamid.HBgM1235")).not.toBe(a);
    expect(externalOwnerClientMessageId(cafeB,"wamid.HBgM1234")).not.toBe(a);
+   expect(externalOwnerClientMessageId(cafeA,"wamid.HBgM1234AA==")).toMatch(/^[0-9a-f-]{36}$/);
+   expect(externalOwnerClientMessageId(cafeA,"wamid.HBgM1234AA==")).toBe(externalOwnerClientMessageId(cafeA,"wamid.HBgM1234AA=="));
  });
  it("rejects non-provider message IDs",()=>{
    expect(()=>externalOwnerClientMessageId(cafeA,"purchase_approved")).toThrow("invalid_whatsapp_message_id");
