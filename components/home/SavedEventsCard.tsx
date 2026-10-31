@@ -75,7 +75,8 @@ const dayAt=(date:string,n:number)=>{
 };
 const dateLabel=(date:string,locale:Locale,style:"short"|"long"="short")=>
   new Intl.DateTimeFormat(locale,{timeZone:"UTC",month:style==="short"?"short":"long",
-    day:"numeric",weekday:style==="long"?"long":undefined}).format(new Date(date+"T00:00:00Z"));
+    day:"numeric",year:style==="long"?"numeric":undefined,
+    weekday:style==="long"?"long":undefined}).format(new Date(date+"T00:00:00Z"));
 const eventsOn=(events:readonly CafeEvent[],date:string)=>
   events.filter(e=>e.startDate<=date&&e.endDate>=date);
 /** Never substitute another event from the same date for the owner's exact tap. */
