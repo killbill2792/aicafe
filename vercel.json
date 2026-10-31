@@ -26,7 +26,7 @@
     },
     {
       "path": "/api/cron/daily-brief",
-      "schedule": "23 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/today-live",
