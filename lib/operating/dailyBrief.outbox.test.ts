@@ -1,6 +1,11 @@
 import {describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 vi.mock("server-only",()=>({}));
+vi.mock("@/lib/data/dailyFacts.server",()=>({readDailyFactRows:vi.fn(async()=>[
+ {business_date:"2026-10-30",sales_data_status:"actual",net_sales_cents:10900}])}));
+vi.mock("@/lib/whatsapp/morningBriefDelivery.server",()=>({
+ eligibleBriefBinding:vi.fn(async()=>null),prepareBoundBrief:vi.fn(async()=>null),
+}));
 vi.mock("@/lib/data/snapshot.server",()=>({getBusinessSnapshotFromDb:vi.fn()}));
 vi.mock("./cafeState",()=>({SnapshotCafeStateService:class{
   getHistoricalState=vi.fn(async()=>({
@@ -11,7 +16,7 @@ vi.mock("./cafeState",()=>({SnapshotCafeStateService:class{
 import {sendDailyBriefs,type BriefOutboxHook} from "./dailyBrief.server";
 import {briefMessageId} from "./dailyBrief";
 
-const morning=new Date("2026-10-31T15:30:00Z");
+const morning=new Date("2026-10-31T12:50:00Z");
 function dbFactory(existing=false,opts:{revoked?:boolean;wrongCafe?:boolean}={}){
   const mutations:Array<{table:string;op:string;row:unknown}>=[];
   const scopedReads:Array<{table:string;column:string;value:unknown}>=[];
