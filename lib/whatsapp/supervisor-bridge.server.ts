@@ -148,9 +148,54 @@ export async function reconcileWhatsAppSupervisorReplies(limit=MAX_REPLIES_PER_T
   return {enqueued,skipped};
 }
 
+
+type PendingTurn=Omit<ReadyReply,"reply_id">&{text_content:string};
+/** Recover a failed or stale job only after the canonical DB query establishes
+ * no saved Supervisor reply and no healthy job; starting the existing job uses
+ * its advisory lock and at-most-five-attempt limit. */
+export async function recoverWhatsAppSupervisorTurn():Promise<"empty"|"queued"|"answered">{
+  if(process.env.WHATSAPP_SUPERVISOR_ENABLED!=="true")return "empty";
+  const db=createAdminSupabaseClient();
+  const {data,error}=await db.rpc("whatsapp_pending_supervisor_turns",{p_limit:1});
+  if(error||!Array.isArray(data))throw new Error("whatsapp_job_recovery_unavailable");
+  const record=data[0] as PendingTurn|undefined;
+  if(!record)return "empty";
+  if(![record.binding_id,record.business_id,record.owner_user_id,record.thread_id,
+      record.owner_message_id].every(id=>typeof id==="string"&&ID.test(id))||
+     typeof record.wamid!=="string"||typeof record.provider_at!=="string"||
+     typeof record.text_content!=="string"||!record.text_content.trim())
+    throw new Error("invalid_whatsapp_pending_turn");
+  const binding=await activeBinding(record.binding_id);
+  if(!binding||binding.businessId!==record.business_id||
+    binding.ownerUserId!==record.owner_user_id||binding.threadId!==record.thread_id||
+    !binding.lastOwnerMessageAt||
+    !withinWhatsAppServiceWindow(binding.lastOwnerMessageAt))
+    return "empty";
+  const {data:stored,error:storedError}=await db.from("ai_messages")
+    .select("id,role,content_type,client_message_id,text_content,grounding")
+    .eq("id",record.owner_message_id).eq("business_id",record.business_id)
+    .eq("owner_user_id",record.owner_user_id)
+    .eq("thread_id",record.thread_id).maybeSingle();
+  if(storedError||!stored||stored.role!=="owner"||stored.content_type!=="text"||
+     stored.client_message_id!==stableOwnerClientMessageId(record.wamid)||
+     stored.text_content!==record.text_content||
+     stored.grounding?.sourceChannel!=="whatsapp"||
+     stored.grounding?.receivedAt!==new Date(record.provider_at).toISOString())
+     throw new Error("whatsapp_recovery_provenance_conflict");
+  const result=await processVerifiedWhatsAppOwnerTurn({
+    scope:{businessId:record.business_id,ownerUserId:record.owner_user_id},
+    threadId:record.thread_id,wamid:record.wamid,receivedAt:record.provider_at,
+    clientMessageId:stableOwnerClientMessageId(record.wamid),
+    locale:"en",input:{type:"text",text:record.text_content},
+  });
+  if(result.ownerMessageId!==record.owner_message_id)
+    throw new Error("whatsapp_recovery_owner_message_mismatch");
+  return result.status==="answered"||result.status==="replayed"?"answered":"queued";
+}
+
 export async function runWhatsAppSupervisorWorker():Promise<{
  inbound:"disabled"|"empty"|"done"|"retry"|"revoked";
- replyQueue:{enqueued:number;skipped:number};outbound:string;
+ recovered:"empty"|"queued"|"answered";replyQueue:{enqueued:number;skipped:number};outbound:string;
 }>{
   if(process.env.WHATSAPP_WORKER_ENABLED!=="true"||
     process.env.WHATSAPP_SUPERVISOR_ENABLED!=="true")
@@ -158,7 +203,9 @@ export async function runWhatsAppSupervisorWorker():Promise<{
   const inbound=await consumeInboundOnce(dispatchVerifiedWhatsAppInbound);
   // ALWAYS scan after the current inbound lease is acknowledged. In subsequent
   // cron ticks this also reconciles WhatsApp turns finished by the WEB worker.
+  // Avoid running two model jobs in a single worker invocation.
+  const recovered=inbound==="empty"?await recoverWhatsAppSupervisorTurn():"empty";
   const replyQueue=await reconcileWhatsAppSupervisorReplies();
   const outbound=await dispatchOutboundOnce("reply");
-  return {inbound,replyQueue,outbound};
+  return {inbound,recovered,replyQueue,outbound};
 }
