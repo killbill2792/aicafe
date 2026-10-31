@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import type {CafeEvent} from "@/lib/data/cafeEvents.server";
 import type {OwnerProposalRow} from "@/lib/ai/supervisor/loop/reads.server";
-import {prepareMorningBrief,type MorningBriefEvidence} from "./morningBrief";
+import {prepareMorningBrief,renderMorningBrief,type MorningBriefEvidence} from "./morningBrief";
 
 const now=new Date("2026-10-31T16:00:00.000Z");
 const event:CafeEvent={
@@ -65,6 +65,14 @@ describe("Meta's seven ordered daily-brief values",()=>{
      [{...event,startDate:"2026-11-01",endDate:"2026-11-01"}],
      [{...event,lastVerifiedAt:"2026-10-20T00:00:00Z"}],
    ])expect(prepareMorningBrief(evidence({savedEvents}),now)).toBeNull();
+ });
+ it("renders replacement tokens and nested placeholders literally",()=>{
+   const parameters=[...prepareMorningBrief(evidence(),now)!.parameters] as
+     [string,string,string,string,string,string,string];
+   parameters[0]="Coffee $$ $& {{2}}";
+   const text=renderMorningBrief(parameters);
+   expect(text).toContain("Here's Coffee $$ $& {{2}}'s daily brief");
+   expect(text).toContain("Net sales: €2,400.00");
  });
  it("sanitizes owner-facing provider fields and rejects excessively long values",()=>{
    const result=prepareMorningBrief(evidence({businessName:"Café  *One*\n  <hello>",
