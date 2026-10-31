@@ -17,6 +17,8 @@ export type VerifiedWhatsAppOwnerTurn={
  /** Only PR A's signed webhook+consented durable binding dispatcher creates this.
   * NEVER construct scope/thread from an unverified phone/body payload. */
  scope:ConversationScope;threadId:string;wamid:string;receivedAt:string;
+ /** PR A's persisted deterministic idempotency key; same on all redeliveries. */
+ clientMessageId?:string;
  locale:Locale;input:WhatsAppOwnerInput;
  attachmentIds?:string[];
 };
@@ -43,6 +45,9 @@ export async function processVerifiedWhatsAppOwnerTurn(
  if(!Number.isFinite(receivedAt.getTime()) || receivedAt.getTime()>Date.now()+60_000)
    throw new ConversationApiError(422,"invalid_whatsapp_received_at");
  const {scope,threadId,wamid}=verified;
+ if(verified.clientMessageId!==undefined &&
+   !/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(verified.clientMessageId))
+   throw new ConversationApiError(422,"invalid_whatsapp_client_message_id");
  const question=supervisorQuestionForWhatsApp(verified.input);
  if(!["en","es","ar"].includes(verified.locale))
    throw new ConversationApiError(422,"invalid_locale");
@@ -52,7 +57,7 @@ export async function processVerifiedWhatsAppOwnerTurn(
  const ready=await getSupervisorChatReadinessForAuthorizedExternal(scope,db);
  if(!ready.enabled)throw new ConversationApiError(503,ready.reason);
  const registration=await registerAuthorizedSupervisorTurn({
-   scope,service,threadId,clientMessageId:externalOwnerClientMessageId(scope,wamid),
+   scope,service,threadId,clientMessageId:verified.clientMessageId??externalOwnerClientMessageId(scope,wamid),
    text:question,scopedClient:db,
  });
  // Store the channel before joining the shared job. Never expose wa_id or
