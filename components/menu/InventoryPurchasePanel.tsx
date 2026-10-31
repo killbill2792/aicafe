@@ -8,6 +8,7 @@ import {saveBulkPurchases,editInventoryPurchase,voidInventoryPurchase,importInve
 import type {PurchaseMonthLine} from "@/lib/data/inventory.server";
 import type {PurchaseLineInput} from "@/lib/inventory/recordPurchases.server";
 import {parseOwnerPurchaseNumbers} from "@/lib/calc/ownerPurchaseNumbers";
+import {selectedActiveIngredient} from "@/lib/menu/stockEntrySelection";
 
 type Item={id:string;name:string;baseUnit:"g"|"ml"|"each";archivedAt?:string|null};
 type Draft=Omit<PurchaseLineInput,"quantity"|"costCents">&{quantity:string;cost:string};
@@ -35,7 +36,10 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  const qty=(value:number)=>new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(value);
  const money=(cents:number|null)=>cents===null?t.unknown:
   new Intl.NumberFormat(locale,{style:"currency",currency}).format(cents/100);
- const parseDraft=(d:Draft):{line:PurchaseLineInput|null;error:string|null}=>{
+ const parseDraft=(d:Draft,editingHistory=false):{line:PurchaseLineInput|null;error:string|null}=>{
+  // A new draft must not silently retain an archived ingredient after refresh.
+  // The separate historical edit path deliberately keeps old archived records.
+  if(!editingHistory&&!selectedActiveIngredient(items,d.ingredientId))return {line:null,error:"ingredient_not_found"};
   const parsed=parseOwnerPurchaseNumbers({quantity:d.quantity,cost:d.cost},locale);
   if(!parsed.numbers)return {line:null,error:parsed.error};
   return {line:{lineId:d.lineId,ingredientId:d.ingredientId,date:d.date,
@@ -81,7 +85,7 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
   if(!editDraft)return;
   start(async()=>{
    try{
-   const parsed=parseDraft(editDraft);
+   const parsed=parseDraft(editDraft,true);
    if(!parsed.line){setErrors(prev=>({...prev,[editDraft.lineId]:parsed.error??"save_failed"}));return;}
    const result=await editInventoryPurchase(parsed.line);
    if(result.ok){setEditing(null);setEditDraft(null);router.refresh();}
@@ -128,15 +132,16 @@ export default function InventoryPurchasePanel({items,month,rows,currency,locale
  const button="min-h-12 rounded-xl border border-line px-4 text-[17px] font-semibold disabled:opacity-50";
  const fields=(d:Draft,onChange:(patch:Partial<Draft>)=>void,editingOld=false)=>{
   const choices=editingOld?items:activeItems;
+  const selected=editingOld?items.find(i=>i.id===d.ingredientId)??null:selectedActiveIngredient(items,d.ingredientId);
   return <div className="grid gap-2 sm:grid-cols-5">
-  <label className="text-[17px]">{t.item}<select value={d.ingredientId??""} className={input}
+  <label className="text-[17px]">{t.item}<select value={selected?.id??""} className={input}
     onChange={e=>{const i=choices.find(x=>x.id===e.target.value);onChange({ingredientId:e.target.value,unit:i?.baseUnit??"each"});}}>
-    {choices.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
+    <option value="" disabled>{t.item}</option>{choices.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>
   <label className="text-[17px]">{t.quantity}<input className={input} type="text" inputMode="decimal" value={d.quantity}
     onChange={e=>onChange({quantity:e.target.value})}/></label>
-  <label className="text-[17px]">{t.unit}<select className={input} value={d.unit}
+  <label className="text-[17px]">{t.unit}<select className={input} value={selected?d.unit:""}
     onChange={e=>onChange({unit:e.target.value})}>
-    {[...new Set([...commonUnits[items.find(i=>i.id===d.ingredientId)?.baseUnit??"each"],d.unit])].map(u=><option key={u}>{u}</option>)}</select></label>
+    <option value="" disabled>{t.unit}</option>{(selected?[...new Set([...commonUnits[selected.baseUnit],d.unit])]:[]).map(u=><option key={u}>{u}</option>)}</select></label>
   <label className="text-[17px]">{t.cost}<input className={input} type="text" inputMode="decimal"
     placeholder={t.optional} value={d.cost}
     onChange={e=>onChange({cost:e.target.value})}/></label>
