@@ -14,7 +14,8 @@ import {readPreparedMorningBrief} from "./morningBrief.server";
 const db={} as SupabaseClient,now=new Date("2026-10-31T15:30:00Z");
 const recipient={
   businessId:"cafe-a",ownerUserId:"owner-a",businessName:"Shop A",currency:"USD",
-  today:"2026-10-31",yesterday:"2026-10-30",verifiedBinding:true,followupPermitted:true,
+  today:"2026-10-31",yesterday:"2026-10-30",timezone:"America/Los_Angeles",
+  verifiedBinding:true,followupPermitted:true,
 };
 beforeEach(()=>{
   vi.clearAllMocks();
@@ -49,6 +50,8 @@ describe("canonical morning-brief reader",()=>{
   it("never reads or exposes a café when the verified binding or followup consent fails",async()=>{
     expect(await readPreparedMorningBrief(db,{...recipient,verifiedBinding:false},now)).toBeNull();
     expect(await readPreparedMorningBrief(db,{...recipient,followupPermitted:false},now)).toBeNull();
+    expect(await readPreparedMorningBrief(db,{...recipient,today:"2026-11-01"},now)).toBeNull();
+    expect(await readPreparedMorningBrief(db,{...recipient,timezone:"No/Valid_Zone"},now)).toBeNull();
     for(const read of Object.values(reads))expect(read).not.toHaveBeenCalled();
   });
   it("skips partial sales, uncovered Toast items and unverified event/monitor facts",async()=>{
