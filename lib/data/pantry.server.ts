@@ -432,6 +432,7 @@ const expectedLine = z.strictObject({
 const ownerChanges = z.strictObject({
  productId:uuid,
  sizes:z.array(z.strictObject({itemId:uuid,expected:z.array(expectedLine).max(100),
+  expectedOrder:z.array(uuid).max(100).optional(),
   lines:z.array(ownerLine).max(100)})).min(1).max(20)
 });
 export type OwnerRecipeChanges=z.infer<typeof ownerChanges>;
@@ -474,6 +475,8 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
     expectedLines:snapshotLines(rows.filter(row=>row.menu_item_id===id))});
    continue;
   }
+  if(edit.expectedOrder&&JSON.stringify(edit.expectedOrder)!==JSON.stringify(orderFor(id)))
+   return bad("recipe_changed");
   const lines:ReplacementLine[]=[];
   const alreadyThere=new Set(rows.filter(row=>row.menu_item_id===id).map(row=>row.ingredient_id));
   for(const line of edit.lines){
@@ -490,7 +493,7 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
    if(quantity===null)return bad("ingredient_unit_mismatch");
    lines.push({...line,quantity});
   }
-  changes.push({menuItemId:id,lines,expectedOrder:orderFor(id),
+  changes.push({menuItemId:id,lines,expectedOrder:edit.expectedOrder??orderFor(id),
    expectedLines:[...edit.expected].sort((a,b)=>a.ingredientId.localeCompare(b.ingredientId))});
  }
  changes[0].expectedSiblingIds=siblingIds;
