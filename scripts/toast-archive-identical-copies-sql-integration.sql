@@ -38,11 +38,11 @@ BEGIN
  -- A real change: the check amount.
  v_changed:=jsonb_set(v_old,'{checks,0,amount}','15'::jsonb);
  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state)
-  values(b,r,'backfill','completed') returning id into run_old;
+  values(b,r,'backfill','running') returning id into run_old;
  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state)
-  values(b,r,'backfill','completed') returning id into run_mid;
+  values(b,r,'backfill','running') returning id into run_mid;
  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state)
-  values(b,r,'backfill','completed') returning id into run_new;
+  values(b,r,'backfill','running') returning id into run_new;
  insert into public.toast_day_status(business_id,restaurant_guid,business_date,import_state,
   last_import_run_id,imported_at,unparsed_count)
   values(b,r,d,'imported',run_new,now(),0)
