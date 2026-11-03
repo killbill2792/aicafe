@@ -125,6 +125,9 @@ CREATE FUNCTION pg_temp.import_day(b uuid,pages jsonb,orders jsonb,summary jsonb
 RETURNS void LANGUAGE plpgsql AS $$
 declare run uuid; p record;
 begin
+ -- The whole script is one transaction (now() never moves); in production each import is
+ -- its own transaction. Move the previous import back an hour so this one is newer.
+ update public.toast_day_status set imported_at=imported_at-interval '1 hour' where business_id=b;
  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state)
   values(b,pg_temp.rest(b),'daily','running') returning id into run;
  for p in select x.v,x.i from jsonb_array_elements(pages) with ordinality x(v,i) loop
@@ -137,6 +140,12 @@ begin
  perform public.toast_import_day(b,pg_temp.loc(b),pg_temp.rest(b),'2026-10-21',orders,summary,run);
 end $$;
 
+-- A list compared as a bag: same items, any order.
+CREATE FUNCTION pg_temp.bag(j jsonb) RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
+ select case when jsonb_typeof(j)='array' then coalesce((select jsonb_agg(x order by x::text)
+  from jsonb_array_elements(j) x),'[]'::jsonb) else j end
+$$;
+
 -- Everything stored for a café, without its own IDs, run IDs or times.
 CREATE FUNCTION pg_temp.stored(b uuid) RETURNS jsonb LANGUAGE sql AS $$
  select jsonb_build_object(
@@ -148,8 +157,9 @@ CREATE FUNCTION pg_temp.stored(b uuid) RETURNS jsonb LANGUAGE sql AS $$
     from public.order_lines l join public.orders o on o.id=l.order_id where o.business_id=b),
   'archive',(select jsonb_agg(jsonb_build_array(r.entity_guid,md5(public.toast_stable_json(r.payload)::text))
     order by r.entity_guid) from public.toast_raw_records r where r.business_id=b and r.entity='order'),
-  'typed',(select jsonb_agg(jsonb_build_array(t.order_guid,t.check_discounts,t.item_taxes,t.modifier_prices,
-    t.void_details,t.refund_details) order by t.order_guid)
+  -- List order inside typed details follows the stored payload and carries no meaning.
+  'typed',(select jsonb_agg(jsonb_build_array(t.order_guid,pg_temp.bag(t.check_discounts),pg_temp.bag(t.item_taxes),
+    pg_temp.bag(t.modifier_prices),pg_temp.bag(t.void_details),pg_temp.bag(t.refund_details)) order by t.order_guid)
     from public.toast_order_typed_facts t where t.business_id=b),
   'voids',(select jsonb_agg(jsonb_build_array(v.selection_guid,v.amount_cents,v.void_business_date)
     order by v.selection_guid) from public.toast_void_facts v where v.business_id=b),
