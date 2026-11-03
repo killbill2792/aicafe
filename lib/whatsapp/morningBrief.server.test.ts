@@ -9,6 +9,7 @@ vi.mock("@/lib/data/periodItemSales.server",()=>({readPeriodItemSales:reads.item
 vi.mock("@/lib/data/menuCatalog.server",()=>({readMenuCatalogRows:reads.menu}));
 vi.mock("@/lib/data/cafeEvents.server",()=>({readCafeEvents:reads.events}));
 vi.mock("@/lib/ai/supervisor/loop/reads.server",()=>({readOwnerProposals:reads.monitors}));
+vi.mock("@/lib/data/menuCategoryLabels.server",()=>({readMenuCategoryLabels:async()=>new Map()}));
 import {readPreparedMorningBrief} from "./morningBrief.server";
 
 const db={} as SupabaseClient,now=new Date("2026-10-31T12:50:00Z");

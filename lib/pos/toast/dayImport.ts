@@ -1,5 +1,6 @@
 import "server-only";
 import {redactToastRaw} from "./redact";
+import {stableToastOrderPage} from "./stableOrder";
 import {createHash} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
@@ -53,8 +54,10 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
      p.restaurantGuid,pageSchema,{deadlineAt});
    // Redact here, once, before anything is stored: the database only saves.
    // Redacting a whole day inside the import request exceeded its time limit.
-   const payload=redactToastRaw(fetched,0,"",undefined,"orders") as unknown[];
-   if(!Array.isArray(payload)||payload.length>100)throw new ToastApiError("invalid_response");
+   const redacted=redactToastRaw(fetched,0,"",undefined,"orders");
+   if(!Array.isArray(redacted)||redacted.length>100)throw new ToastApiError("invalid_response");
+   // Same order content, same archive hash: an unchanged order is not saved again.
+   const payload=stableToastOrderPage(redacted);
    if(!staged){
     const {error:saved}=await db.rpc("toast_stage_day_page",{
      p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,p_run_id:p.runId,

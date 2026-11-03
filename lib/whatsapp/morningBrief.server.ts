@@ -3,6 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {readDailyFactRows} from "@/lib/data/dailyFacts.server";
 import {readPeriodItemSales} from "@/lib/data/periodItemSales.server";
 import {readMenuCatalogRows} from "@/lib/data/menuCatalog.server";
+import {readMenuCategoryLabels} from "@/lib/data/menuCategoryLabels.server";
 import {readCafeEvents} from "@/lib/data/cafeEvents.server";
 import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
 import {prepareMorningBrief,type PreparedMorningBrief} from "./morningBrief";
@@ -28,13 +29,14 @@ export async function readPreparedMorningBrief(db:SupabaseClient,recipient:Morni
   try{local=briefDue(now,recipient.timezone);}catch{return null;}
   if(!local.due||local.today!==recipient.today||local.yesterday!==recipient.yesterday)return null;
   const day={from:recipient.yesterday,to:recipient.yesterday};
-  const [daily,items,menu,events,monitors]=await Promise.all([
+  const [daily,items,menu,events,monitors,categoryLabels]=await Promise.all([
     readDailyFactRows(db,recipient.businessId,day.from,day.to),
     readPeriodItemSales(db,recipient.businessId,day),
     readMenuCatalogRows(db,recipient.businessId),
     readCafeEvents(db,recipient.businessId,recipient.today,recipient.today),
     readOwnerProposals(db,{businessId:recipient.businessId,ownerUserId:recipient.ownerUserId},
       {statuses:["committed","manual_confirmed"],limit:100}),
+    readMenuCategoryLabels(db,recipient.businessId),
   ]);
   const sales=daily.length===1&&daily[0].business_date===recipient.yesterday?daily[0]:null;
   return prepareMorningBrief({
@@ -44,6 +46,7 @@ export async function readPreparedMorningBrief(db:SupabaseClient,recipient:Morni
     netSalesCents:sales?.net_sales_cents??null,
     itemCoverage:items.covered,soldItems:items.soldItems,
     menu:menu.map(m=>({id:m.id,name:m.name,base_name:m.base_name,category:m.category})),
+    categoryLabels,
     savedEvents:events,monitors,
     verifiedBinding:recipient.verifiedBinding,followupPermitted:recipient.followupPermitted,
   },now);
