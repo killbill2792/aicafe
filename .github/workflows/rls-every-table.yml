@@ -7,6 +7,7 @@ on:
     paths:
       - 'supabase/migrations/**'
       - 'scripts/rls-all-public-tables.sql'
+      - 'scripts/ldi-e-db-contract.sql'
       - '.github/workflows/rls-every-table.yml'
   workflow_dispatch:
 concurrency:
@@ -35,6 +36,10 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f scripts/rls-all-public-tables.sql
+      - name: LDI E canonical RPC and two-café RLS contract on disposable PostgreSQL
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/ldi-e-db-contract.sql
       - name: Stop disposable Supabase
         if: always()
         run: supabase stop --no-backup
