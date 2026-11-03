@@ -68,6 +68,7 @@ screens and chat read the same tables and must not change.
    pages, one order on two pages, a crashed run then a retry, a partial day then the full day → the same stored
    rows as one clean import (orders, lines, archive, typed details, voids, refunds, card-fee facts, day totals,
    rollup, change log); a real tip change → the new data plus exactly one change line.
+   Found and fixed (migration 144): re-imports gave each refund snapshot a new row id, logged as a change.
 6. **More organized fields.** Toast sales category on order lines, item made/fulfilled times, server per
    payment, service charges — one additive change each.
 7. **WhatsApp brief sends every morning** (template unchanged, no new Meta approval):
