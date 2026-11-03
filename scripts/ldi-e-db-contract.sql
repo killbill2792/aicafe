@@ -31,6 +31,7 @@ SELECT public.ldi_upsert_city_event(
  'Civic Fair','other','2026-11-04','2026-11-04',
  'https://city.example.org/events/civic-fair','2026-11-03T11:00:00Z',
  NULL,NULL,NULL,NULL) AS replay_id \gset
+SELECT set_config('test.ldi.replay',:'replay_id',true);
 DO $check$
 BEGIN
  IF current_setting('test.ldi.city')::uuid<>current_setting('test.ldi.replay')::uuid THEN
@@ -67,9 +68,10 @@ SELECT public.ldi_upsert_city_event(
  'Civic Fair','other','2026-11-04','2026-11-04',
  'https://other.example.org/civic-fair','2026-11-03T13:00:00Z',
  NULL,NULL,NULL,NULL) AS unconfirmed_id \gset
+SELECT set_config('test.ldi.unconfirmed',:'unconfirmed_id',true);
 DO $check$
 BEGIN
- IF current_setting('test.ldi.city')::uuid=:'unconfirmed_id'::uuid
+ IF current_setting('test.ldi.city')::uuid=current_setting('test.ldi.unconfirmed')::uuid
  OR (SELECT count(*) FROM public.city_events WHERE city_key='us|ca|example')<>2
  THEN RAISE EXCEPTION 'A merged two unrelated source-only event URLs'; END IF;
 END $check$;
@@ -129,6 +131,7 @@ SELECT public.ldi_upsert_cafe_neighborhood(
  'unknown','Café B has no confirmed impact') AS place_b \gset
 SELECT set_config('test.ldi.place_a',:'place_a',true);
 SELECT set_config('test.ldi.place_b',:'place_b',true);
+SELECT set_config('test.ldi.cafe_event_a',:'cafe_event_a',true);
 INSERT INTO public.cafe_neighborhood_source_coverage(
  business_id,scope,address_hash,status,retry_eligible,checked_at)
 VALUES
@@ -141,7 +144,7 @@ BEGIN
  OR (SELECT count(*) FROM public.cafe_city_event_links
       WHERE city_event_id=current_setting('test.ldi.city')::uuid)<>2
  OR (SELECT count(*) FROM public.cafe_events WHERE status='cancelled'
-      AND id=:'cafe_event_a'::uuid)<>1
+      AND id=current_setting('test.ldi.cafe_event_a')::uuid)<>1
  THEN RAISE EXCEPTION 'shared event/place identity or legacy owner status corrupt'; END IF;
 END $check$;
 
