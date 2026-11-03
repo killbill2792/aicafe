@@ -264,7 +264,7 @@ export const eventReadinessCapability=registerLoopCapability({
    const [days,hours,exclusions]=await Promise.all([
      readDailyFacts(db,scope.businessId,from,businessDate),
      posFactReaders(db,scope.businessId).peakHours({from,to:businessDate}),
-     readCafeEvents(db,scope.businessId,from,utcDateOffset(businessDate,-1)),
+     readCanonicalCafeEvents(db,scope.businessId,from,utcDateOffset(businessDate,-1)),
    ]);
    const certified=days.filter(d=>d.salesDataStatus==="actual");
    const today=certified.find(d=>d.date===businessDate);
