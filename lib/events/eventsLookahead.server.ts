@@ -129,9 +129,14 @@ export async function scanCafe(db:Db,b:Business,today:string,
     if(completed&&locationHash){
       const saved=await db.from("cafe_event_search_state").upsert({
         business_id:b.id,location_hash:locationHash,
-        scanned_through_date:shared?.through??range.to,
-        weekly_researched_on:range.reason==="weekly"||range.reason==="initial"&&weekdayOf(today)===1
-          ?today:state?.weeklyResearchedOn??null,
+        // A delayed window completion must never move a previously certified
+        // search cursor backwards or mark a still-partial Monday pass complete.
+        scanned_through_date:(state?.scannedThroughDate??"")>
+          (shared?.through??range.to)?state!.scannedThroughDate:(shared?.through??range.to),
+        weekly_researched_on:(shared?.reason??range.reason)==="weekly"||
+          (shared?.reason??range.reason)==="initial"&&
+          weekdayOf(shared?.windowStart??today)===1
+          ?(shared?.windowStart??today):state?.weeklyResearchedOn??null,
       },{onConflict:"business_id"});
       requireOk(saved.error);
     }
