@@ -62,7 +62,7 @@ function trustedUrl(raw:string):URL|null{
   try{
     const url=new URL(raw);
     return (url.protocol==="https:"||url.protocol==="http:")&&
-      !url.username&&!url.password&&Boolean(url.hostname)&&!url.hash?url:null;
+      !url.username&&!url.password&&Boolean(url.hostname)?url:null;
   }catch{return null;}
 }
 function officialHost(url:URL,source:CityResearchSource):boolean{
@@ -108,5 +108,7 @@ export function parseCityResearchEvents(text:string,from:string,to:string,source
     seen.add(key);
     events.push(candidate);
   }
-  return {events,saturated:parsed.length>=CITY_RESEARCH_PER_CALL_LIMIT,filtered};
+  // A single compact answer is never treated as an unbounded event catalog.
+  return {events:events.slice(0,CITY_RESEARCH_PER_CALL_LIMIT),
+    saturated:parsed.length>=CITY_RESEARCH_PER_CALL_LIMIT,filtered};
 }
