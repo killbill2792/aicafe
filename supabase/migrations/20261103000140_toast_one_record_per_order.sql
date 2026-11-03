@@ -100,7 +100,8 @@ begin
    continue;
   end if;
   if cur.payload_sha256<>it.sha
-   and coalesce(it.payload->>'modifiedDate','')<coalesce(cur.payload->>'modifiedDate','') then
+   and it.payload->>'modifiedDate' is not null and cur.payload->>'modifiedDate' is not null
+   and (it.payload->>'modifiedDate')<(cur.payload->>'modifiedDate') then
    -- An older version than the one stored (e.g. the same order twice on a page):
    -- never replace newer data with older data.
    continue;
