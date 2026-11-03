@@ -1,10 +1,25 @@
 import {describe,it,expect} from "vitest";
-import {eventScanWindows,eventIdentity,savedEventKind} from "./eventsLookahead";
+import {eventScanWindows,eventIdentity,savedEventKind,dailyCafeScanOrder} from "./eventsLookahead";
 
 const state=(scannedThroughDate:string,weeklyResearchedOn:string|null=null)=>({
   locationHash:"location-a",scannedThroughDate,weeklyResearchedOn,
 });
 describe("scheduled event discovery",()=>{
+ it("rotates the shared six-task budget fairly across cafés and pages",()=>{
+   const cafes=Array.from({length:205},(_,i)=>({id:"cafe-"+i}));
+   const firsts=new Set<string>();
+   for(let delta=0;delta<cafes.length;delta++){
+     const now=new Date(Date.UTC(2026,10,3+delta));
+     const order=dailyCafeScanOrder(cafes,now);
+     expect(order).toHaveLength(205);
+     expect(new Set(order.map(c=>c.id)).size).toBe(205);
+     firsts.add(order[0].id);
+     // No café is dropped even if it lived outside the first page.
+     expect(order.some(c=>c.id==="cafe-204")).toBe(true);
+   }
+   expect(firsts.size).toBe(205);
+   expect(dailyCafeScanOrder([],new Date("2026-11-03T00:00:00Z"))).toEqual([]);
+ });
  it("first search covers fourteen days on every weekday, including Monday",()=>{
    expect(eventScanWindows("2026-11-03",null,"location-a")).toEqual([
      {from:"2026-11-03",to:"2026-11-16",reason:"initial"},

@@ -14,10 +14,31 @@ export function eventScanWindows(today:string,state:EventScanState|null,
   const horizon=addDays(today,13);
   if(!state||state.locationHash!==locationHash)
     return [{from:today,to:horizon,reason:"initial"}];
+  // The cursor may lag after bounded source retries or a temporarily disabled
+  // cron. Catch up EVERY uncovered day rather than jumping to today's horizon.
+  // Each B research window is at most 14 inclusive days.
+  const missed:EventScanWindow[]=[];
+  const missedEnd=weekdayOf(today)===1&&state.weeklyResearchedOn!==today
+    ?addDays(today,-1):horizon;
+  for(let from=addDays(state.scannedThroughDate,1);from<=missedEnd;){
+    const to=addDays(from,13)<missedEnd?addDays(from,13):missedEnd;
+    missed.push({from,to,reason:"new_day"});
+    from=addDays(to,1);
+  }
   if(weekdayOf(today)===1&&state.weeklyResearchedOn!==today)
-    return [{from:today,to:horizon,reason:"weekly"}];
-  return state.scannedThroughDate<horizon
-    ?[{from:horizon,to:horizon,reason:"new_day"}]:[];
+    missed.push({from:today,to:horizon,reason:"weekly"});
+  return missed;
+}
+/** Fair selection for one shared daily research budget. Stable UTC-day
+ * rotation prevents a café in the first DB page (or city) from permanently
+ * monopolizing all six city research attempts. All cafés are still processed
+ * through the SAME cron and approval/monitoring paths. */
+export function dailyCafeScanOrder<T>(cafes:readonly T[],now:Date):T[]{
+  if(cafes.length<2)return [...cafes];
+  const epochDay=Math.floor(now.getTime()/86_400_000);
+  if(!Number.isFinite(epochDay))throw new Error("invalid_scan_date");
+  const offset=((epochDay%cafes.length)+cafes.length)%cafes.length;
+  return [...cafes.slice(offset),...cafes.slice(0,offset)];
 }
 /** Supporting table has only these factual kinds; never turn crowd guesses
  * into café advice, or write unrecognized provider enums. */

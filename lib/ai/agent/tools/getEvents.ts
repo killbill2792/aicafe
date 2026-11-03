@@ -27,9 +27,26 @@ export const savedEventsTools={
    const result=await ctx.savedEvents(v.from,v.to);
    return {source:"cafe_events",period:{from:v.from,to:v.to},missing:[],
      agentId:"alex",unit:"cents",events:result.events.slice(0,8),
+     // Same canonical saved read as Home; city catalog is paginated for screens.
+     ...(result.cityCatalog?.available?{
+       cityEvents:result.cityCatalog.items.slice(0,6),
+       cityEventTotal:result.cityCatalog.total,
+       cityEventPage:result.cityCatalog.page,
+       omittedCityEvents:Math.max(0,result.cityCatalog.total-6),
+     }:{}),
+     ...(result.cityCoverage?{cityResearchCoverage:result.cityCoverage}:{}),
+     ...(result.neighborhoodCoverage?.length?{
+       neighborhoodResearchCoverage:result.neighborhoodCoverage}:{}),
+     ...(result.neighborhood?.length?{
+       neighborhood:result.neighborhood.slice(0,3).map(p=>({
+         name:p.name,kind:p.kind,sourceUrl:p.sourceUrl,calendarUrl:p.calendarUrl,
+         assessment:p.assessment,rationale:p.rationale,checkedAt:p.checkedAt})),
+       omittedNeighborhood:Math.max(0,result.neighborhood.length-3),
+     }:{}),
      plans:result.plans.slice(0,5).map(p=>({...p,report:compactReport(p.report)})),
      omittedEvents:Math.max(0,result.events.length-8),omittedPlans:Math.max(0,result.plans.length-5),
-     searched:false,empty:result.events.length===0&&result.plans.length===0};
+     searched:false,empty:result.events.length===0&&result.plans.length===0&&
+       (!result.cityCatalog?.available||result.cityCatalog.total===0)};
   },
  },
 } as const;

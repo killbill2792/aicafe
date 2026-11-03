@@ -6,16 +6,18 @@ import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import type {SavedFact} from "@/lib/ownerFacts/inject";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
-import {readCafeEvents,readSavedEventTimeline,type CafeEvent} from "@/lib/data/cafeEvents.server";
+import {readCanonicalCafeEvents,readSavedEventTimeline,type CafeEvent} from "@/lib/data/cafeEvents.server";
 import {readOwnerProposals,readOwnerReports} from "@/lib/ai/supervisor/loop/reads.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {typicalHourlySales} from "@/lib/metrics/core/dayOutlook";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {cafeCountry,holidaysBetween,addDays,weekdayOf} from "./holidays";
-import {eventIdentity,eventScanWindows,savedEventKind,type EventScanState} from "./eventsLookahead";
+import {eventIdentity,eventScanWindows,savedEventKind,dailyCafeScanOrder,
+  type EventScanState} from "./eventsLookahead";
 import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
+import {scanSharedResearch,newLdiBudget,type LdiBudget} from "./ldiIntegration.server";
 import {verifyUpcomingEventChanges} from "./eventVerification.server";
 import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {effectHash,proposeLoop,monitorLoop,utcDateOffset,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
@@ -56,7 +58,7 @@ const requireOk=(error:unknown)=>{if(error)throw new Error("events_store_unavail
 /** Only confirmed search results and calendar dates are persisted. Absence
  * from web results does NOT prove cancellation, so never delete by omission. */
 export async function scanCafe(db:Db,b:Business,today:string,
-  search:NearbyEventsSearch=searchNearbyEvents):Promise<number>{
+  search:NearbyEventsSearch=searchNearbyEvents,budget?:LdiBudget):Promise<number>{
   const facts=await loadOwnerFacts(b.id,db);
   const location=await readCafeLocation(db,b.id,facts);
   const country=cafeCountry(location?.countryCode,b.timezone);
@@ -85,7 +87,13 @@ export async function scanCafe(db:Db,b:Business,today:string,
       source_url:null,status:"found",last_checked_at:now,
     }));
     let completed=false;
-    if(location){
+    // The shared A+B+C path activates only after BOTH additive migrations exist.
+    // Legacy search stays functional before rollout; test injection remains unchanged.
+    const shared=location&&budget&&search===searchNearbyEvents?
+      await scanSharedResearch(db,{businessId:b.id,location,today,window:range,
+        checkedAt:now,budget}):null;
+    if(shared){completed=shared.completed;count+=shared.associations;}
+    if(location&&!shared){
       // Search happens ONLY in cron, after owner role + AI access were checked.
       const result=await search({location:location.label,city:location.city,
         region:location.region,countryCode:location.countryCode??country.country,
@@ -122,9 +130,14 @@ export async function scanCafe(db:Db,b:Business,today:string,
     if(completed&&locationHash){
       const saved=await db.from("cafe_event_search_state").upsert({
         business_id:b.id,location_hash:locationHash,
-        scanned_through_date:range.to,
-        weekly_researched_on:range.reason==="weekly"||range.reason==="initial"&&weekdayOf(today)===1
-          ?today:state?.weeklyResearchedOn??null,
+        // A delayed window completion must never move a previously certified
+        // search cursor backwards or mark a still-partial Monday pass complete.
+        scanned_through_date:(state?.scannedThroughDate??"")>
+          (shared?.through??range.to)?state!.scannedThroughDate:(shared?.through??range.to),
+        weekly_researched_on:(shared?.reason??range.reason)==="weekly"||
+          (shared?.reason??range.reason)==="initial"&&
+          weekdayOf(shared?.windowStart??today)===1
+          ?(shared?.windowStart??today):state?.weeklyResearchedOn??null,
       },{onConflict:"business_id"});
       requireOk(saved.error);
     }
@@ -213,7 +226,7 @@ async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|"ar",
       },
       eventPlans:{propose:async input=>{
         // Race-safe: old facts may change during a long model call.
-        const latest=await readCafeEvents(db,b.id,day.date,day.date);
+        const latest=await readCanonicalCafeEvents(db,b.id,day.date,day.date);
         const stillFound=latest.filter(e=>e.status==="found")
           .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
         if(effectHash(eventPlanFacts(stillFound))!==day.hash||
@@ -380,11 +393,20 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
 export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
   now=new Date()):Promise<LookaheadRun>{
   const result:LookaheadRun={checked:0,scanned:0,planned:0,skipped:0,failed:0};
+  // Shared across every authorized café in this SINGLE scheduled run.
+  const researchBudget=newLdiBudget();
+  // Read all business IDs in stable pages BEFORE rotating. A per-page
+  // rotation would still starve cafés past the first 100 whenever that page
+  // consumed the global city-research budget.
+  const businesses:Business[]=[];
   for(let offset=0;;offset+=100){
     const page=await db.from("businesses").select("id,timezone,is_demo")
       .order("id").range(offset,offset+99);
     requireOk(page.error);
-    for(const b of (page.data??[]) as Business[]){
+    businesses.push(...(page.data??[]) as Business[]);
+    if((page.data??[]).length<100)break;
+  }
+  for(const b of dailyCafeScanOrder(businesses,now)){
       if(!b.timezone||b.is_demo)continue;
       result.checked++;
       try{
@@ -403,7 +425,7 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
             return {checked:0,reported:0,failed:1};
           });
         result.failed+=observation.failed;
-        result.scanned+=await scanCafe(db,b,today);
+        result.scanned+=await scanCafe(db,b,today,searchNearbyEvents,researchBudget);
         const to=addDays(today,13);
         let timeline=await readSavedEventTimeline(db,
           {businessId:b.id,ownerUserId:owner.data.user_id},today,to);
@@ -448,8 +470,6 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
         result.failed++;
         console.warn("events_lookahead_cafe_failed",{stage:"read_or_search"});
       }
-    }
-    if((page.data??[]).length<100)break;
   }
   return result;
 }

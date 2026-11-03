@@ -9,7 +9,7 @@ import {readSavedTodayLive} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import type {OwnerLoopScope,LoopProposal} from "./engine";
-import {readCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
+import {readCanonicalCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {readItemSales,readDiscounts,readLaborEntries,readMenu} from "@/lib/data/canonical/reads.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
@@ -233,7 +233,7 @@ export const eventReadinessCapability=registerLoopCapability({
      input.startDate>utcDateOffset(today,90))throw new Error("invalid_event_window");
    if(new Set(input.eventIds).size!==input.eventIds.length||
      input.expectedBusyHours.some(h=>h.start>=h.end))throw new Error("invalid_event_plan");
-   const found=(await readCafeEvents(db,scope.businessId,input.startDate,input.endDate))
+   const found=(await readCanonicalCafeEvents(db,scope.businessId,input.startDate,input.endDate))
      .filter(e=>input.eventIds.includes(e.id)&&e.status==="found");
    if(found.length!==input.eventIds.length)throw new Error("event_facts_unavailable");
    const facts=eventPlanFacts(found);
@@ -264,7 +264,7 @@ export const eventReadinessCapability=registerLoopCapability({
    const [days,hours,exclusions]=await Promise.all([
      readDailyFacts(db,scope.businessId,from,businessDate),
      posFactReaders(db,scope.businessId).peakHours({from,to:businessDate}),
-     readCafeEvents(db,scope.businessId,from,utcDateOffset(businessDate,-1)),
+     readCanonicalCafeEvents(db,scope.businessId,from,utcDateOffset(businessDate,-1)),
    ]);
    const certified=days.filter(d=>d.salesDataStatus==="actual");
    const today=certified.find(d=>d.date===businessDate);
