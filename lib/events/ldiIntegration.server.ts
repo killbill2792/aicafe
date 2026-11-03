@@ -5,7 +5,10 @@ import type {CafeLocation} from "@/lib/data/cafeLocation.server";
 import {cityScopeKey,canonicalSourceUrl,type CityScope,type CityEventKind,type CityPlaceKind} from "./cityEventIdentity";
 import {upsertCityEventFact,recordCitySourceCoverage,upsertCafeNeighborhoodEvidence,
   linkCityEventToCafeEvent} from "./cityEventPersistence.server";
-import {researchCitySources} from "./citySourceResearch.server";
+import {createCitySourceResearch} from "./citySourceResearch.server";
+// B is the sole research implementation. Cap its per-source provider attempts here
+// so multiple cafés, monitoring and plan generation fit the existing 300s cron.
+const researchCitySources=createCitySourceResearch({maxSearches:3});
 import {defaultCityResearchSources,cityResearchDateSlices,type CityResearchSource,
   type CitySourceResearchResult} from "./citySourceResearch";
 import {researchNeighborhood} from "./neighborhoodResearch.server";
@@ -21,7 +24,7 @@ type CoverageRow={source_key:string;window_from:string;window_to:string;
 type NeighborhoodRow={scope:string;address_hash:string;status:string;
   retry_eligible:boolean;checked_at:string};
 export type LdiBudget={cityTasks:number;neighborhoodScopes:number;attempted:Set<string>};
-export const newLdiBudget=():LdiBudget=>({cityTasks:4,neighborhoodScopes:4,attempted:new Set()});
+export const newLdiBudget=():LdiBudget=>({cityTasks:6,neighborhoodScopes:4,attempted:new Set()});
 const complete=(status:string)=>status==="found"||status==="none_found";
 const hash=(input:string)=>createHash("sha256").update(input).digest("hex");
 const errorCode=(e:unknown)=>e&&typeof e==="object"&&"code" in e?String(e.code):"";
@@ -319,19 +322,27 @@ export async function scanSharedResearch(db:Db,input:{
   all=await allCoverage(db,cityKey);
   const pending=intended.filter(item=>!complete(
     matchingCoverage(all,item.key,item.from,item.to)?.status??"partial"));
+  const selected:typeof pending=[];
   for(const item of pending){
     const attemptKey=cityKey+"|"+item.key+"|"+item.from+"|"+item.to;
     if(input.budget.cityTasks<=0)break;
     if(input.budget.attempted.has(attemptKey))continue;
     input.budget.attempted.add(attemptKey);
     input.budget.cityTasks--;
-    try{
-      await studyOne(db,scope,item.source,item.from,item.to,window.reason,item.key);
-    }catch(error){
-      console.warn("ldi_city_source_failed",{kind:item.source.kind,
-        category:errorCode(error)||"research_or_store_failed"});
-      // Preserve the queued partial coverage for a subsequent scheduled retry.
-    }
+    selected.push(item);
+  }
+  // Independent official calendars can be searched together. Each B adapter
+  // still enforces <=3 paid HTTP attempts, three tasks at a time globally.
+  for(let index=0;index<selected.length;index+=3){
+    await Promise.all(selected.slice(index,index+3).map(async item=>{
+      try{
+        await studyOne(db,scope,item.source,item.from,item.to,window.reason,item.key);
+      }catch(error){
+        console.warn("ldi_city_source_failed",{kind:item.source.kind,
+          category:errorCode(error)||"research_or_store_failed"});
+        // Queued partial status remains durable for a subsequent retry.
+      }
+    }));
   }
   all=await allCoverage(db,cityKey);
   const completed=intended.every(item=>complete(
