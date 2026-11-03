@@ -7,14 +7,14 @@ export function eventThreadKey(date:string,eventId?:string,cityEventId?:string):
 
 /** Persist the saved event ID in the thread title to restore identity on reload. */
 export function eventThreadTitle(date:string,title:string,eventId?:string,cityEventId?:string):string {
-  const suffix=eventId&&cityEventId?" · event:"+eventId+" · city:"+cityEventId:
+  const suffix=eventId&&cityEventId?" · e:"+eventId+" · c:"+cityEventId:
     cityEventId?" · city:"+cityEventId:eventId?" · event:"+eventId:"";
   const prefix="Events · "+date+" · ";
   const safe=title.replace(/[\r\n<>]/g," ").trim().slice(0,Math.max(0,120-prefix.length-suffix.length));
   return prefix+safe+suffix;
 }
 export function eventContextFromTitle(title:string,threadId:string):EventChatContext|null {
-  const combined=/^Events · (\d{4}-\d{2}-\d{2}) · (.+) · event:([\da-f-]{36}) · city:([\da-f-]{36})$/i.exec(title);
+  const combined=/^Events · (\d{4}-\d{2}-\d{2}) · (.+) · (?:event|e):([\da-f-]{36}) · (?:city|c):([\da-f-]{36})$/i.exec(title);
   if(combined&&Number.isFinite(Date.parse(combined[1]+"T12:00:00Z")))
     return {date:combined[1],title:combined[2],eventId:combined[3],
       cityEventId:combined[4],threadId};
