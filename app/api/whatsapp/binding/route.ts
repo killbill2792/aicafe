@@ -35,8 +35,8 @@ export async function GET(){
       service.listThreads(0),
     ]);
     if(error)throw error;
-    const verifiedPhone=user.phone_confirmed_at&&/^\+[1-9][0-9]{7,14}$/.test(user.phone??"")
-      ?user.phone:null;
+    const verifiedPhone=user.phone_confirmed_at&&typeof user.phone==="string"&&
+      /^\+[1-9][0-9]{7,14}$/.test(user.phone)?user.phone:null;
     const active=bindings?.[0]??null;
     return conversationJson({
       verifiedPhone,
