@@ -2,7 +2,7 @@ import {describe, expect, it} from "vitest";
 import {
   NEIGHBORHOOD_MAX_OUTPUT_TOKENS, NEIGHBORHOOD_SCOPE_IDS,
   hasResearchableAddress, neighborhoodResearchPrompt, parseNeighborhoodResearch,
-  neighborhoodCitedUrls, neighborhoodOutputText, publicPlaceKey,
+  neighborhoodCitedUrls, neighborhoodOutputText, neighborhoodWebSearchCompleted, publicPlaceKey,
   summarizeNeighborhoodCoverage, type NeighborhoodAddress,
   type NeighborhoodSourceCoverage,
 } from "./neighborhoodResearch";
@@ -103,7 +103,7 @@ describe("LDI C public facts vs café demand hypotheses", () => {
 
   it("collects only provider-cited URLs, never arbitrary text or output JSON references", () => {
     const body = {status: "completed", output: [
-      {type: "web_search_call", action: {sources: [
+      {type: "web_search_call", status: "completed", action: {sources: [
         {url: place.sourceUrl}, {url: "http://unsafe.test"}, {url: place.sourceUrl},
       ]}},
       {type: "message", content: [{type: "output_text",
@@ -111,8 +111,10 @@ describe("LDI C public facts vs café demand hypotheses", () => {
         annotations: [{type: "url_citation", url: place.calendarUrl},
           {type: "not_a_citation", url: "https://wrong.org"}]}]},
     ]};
+    expect(neighborhoodWebSearchCompleted(body)).toBe(true);
     expect(neighborhoodCitedUrls(body)).toEqual(cited);
     expect(neighborhoodOutputText(body)).toContain("Civic Convention Center");
+    expect(neighborhoodWebSearchCompleted({output: [{type: "message", content: []}]})).toBe(false);
     expect(neighborhoodCitedUrls({output: [{type: "message", content:
       [{type: "output_text", text: "https://uncited.org"}]}]})).toEqual([]);
   });
