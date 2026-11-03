@@ -59,6 +59,8 @@ Existing authorized Events cron (initial / daily / Monday / verification)
 
 **Afterward:** existing monitors/reports save actual/provisional Toast evidence. Later Supervisor assessments read those recorded outcomes alongside other possible explanations. Owner statements are saved as owner facts only when the owner actually says them, not when AI hypothesizes them.
 
+**Ready-to-copy instructions:** [parallel workstream PR prompts](local-demand-intelligence-pr-prompts.md).
+
 ## Parallel implementation without parallel systems
 
 **Key distinction:** Independent research/storage/evidence modules may be coded in parallel, but there is still **ONE production Events pipeline**. No workstream may create a second cron, screen query, report loop, agent or competing writer. Starting a PR never waits for another PR to merge; **merging and releasing follow integration gates**.
