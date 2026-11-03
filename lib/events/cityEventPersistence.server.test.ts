@@ -182,8 +182,10 @@ describe("LDI A atomic shared persistence handoff",()=>{
   it("does not fuse a different venue and preserves legacy UUIDs and approvals",async()=>{
     const s=storage(),history={proposalEventIds:[OLD_A],approved:true,reportId:"existing-report"};
     const original=await upsertCityEventFact(s.db,candidate);
-    const other=await upsertCityEventFact(s.db,{...candidate,venueAddress:"14 Downtown St"});
+    const other=await upsertCityEventFact(s.db,{...candidate,venueAddress:"14 Downtown St",
+      sourceUrl:"https://second-hall.example/jazz"});
     expect(original.identityKey).not.toBe(other.identityKey);
+    expect(original.cityEventId).not.toBe(other.cityEventId);
     await expect(linkCityEventToCafeEvent(s.db,{businessId:A,cafeEventId:OLD_A,
       cityEventId:original.cityEventId})).resolves.toBe(OLD_A);
     await expect(linkCityEventToCafeEvent(s.db,{businessId:A,cafeEventId:OLD_A,
