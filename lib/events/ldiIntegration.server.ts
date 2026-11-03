@@ -16,6 +16,7 @@ import {hasResearchableAddress,NEIGHBORHOOD_SCOPE_IDS,
   type PublicDemandPlace} from "./neighborhoodResearch";
 import type {EventScanWindow} from "./eventsLookahead";
 import {stableMessageId} from "@/lib/ai/supervisor/loop/supabase.server";
+import {enrichCityEventFact,type ConfirmedEventEnrichment} from "./cityEventEnrichment.server";
 
 type Db=SupabaseClient;
 type CoverageRow={source_key:string;window_from:string;window_to:string;
@@ -23,8 +24,10 @@ type CoverageRow={source_key:string;window_from:string;window_to:string;
   status:string;search_attempted:boolean;last_completed_at:string|null};
 type NeighborhoodRow={scope:string;address_hash:string;status:string;
   retry_eligible:boolean;checked_at:string};
-export type LdiBudget={cityTasks:number;neighborhoodScopes:number;attempted:Set<string>};
-export const newLdiBudget=():LdiBudget=>({cityTasks:6,neighborhoodScopes:4,attempted:new Set()});
+export type LdiBudget={cityTasks:number;neighborhoodScopes:number;
+  enrichmentsRemaining:number;attempted:Set<string>};
+export const newLdiBudget=():LdiBudget=>({cityTasks:6,neighborhoodScopes:4,
+  enrichmentsRemaining:2,attempted:new Set()});
 const complete=(status:string)=>status==="found"||status==="none_found";
 const hash=(input:string)=>createHash("sha256").update(input).digest("hex");
 const errorCode=(e:unknown)=>e&&typeof e==="object"&&"code" in e?String(e.code):"";
@@ -52,10 +55,9 @@ function sourceKey(s:CityResearchSource):string{
   return s.officialUrl?"venue:"+hash(canonicalSourceUrl(s.officialUrl)):
     "category:"+s.id;
 }
-function eventKind(s:CityResearchSource):CityEventKind{
-  // Broad probes are not event-level classifications. Be conservative.
-  if(s.kind==="sports")return "sports";
-  if(s.kind==="festival")return "festival";
+function eventKind():CityEventKind{
+  // B returns only name, date and URL. Its SOURCE category does not verify an
+  // EVENT category (a sports calendar may include charity fairs, etc.).
   return "other";
 }
 const placeKind=(type:PublicDemandPlace["type"]):CityPlaceKind=>
@@ -171,21 +173,45 @@ function needsRefresh(r:CoverageRow|undefined,reason:EventScanWindow["reason"],t
     r.last_completed_at.slice(0,10)<today);
 }
 async function persistCandidate(db:Db,scope:CityScope,kind:CityEventKind,
-  candidate:{name:string;startDate:string;sourceUrl:string},checkedAt:string){
+  candidate:{name:string;startDate:string;sourceUrl:string},checkedAt:string,
+  enrichment:ConfirmedEventEnrichment|null){
   // B verifies exact dates, but accepts HTTP links for backward compatibility.
   // A deliberately accepts only HTTPS public provenance. No fabricated rewrite.
-  await upsertCityEventFact(db,{...scope,name:candidate.name,startDate:candidate.startDate,
-    kind,sourceUrl:candidate.sourceUrl,checkedAt});
+  const stored=await upsertCityEventFact(db,{...scope,name:candidate.name,
+    startDate:candidate.startDate,kind,sourceUrl:candidate.sourceUrl,checkedAt,
+    ...(enrichment?{endDate:enrichment.endDate,venue:enrichment.venue,
+      venueAddress:enrichment.venueAddress}:{})});
+  if(enrichment&&(enrichment.startTime||enrichment.endTime)){
+    // Supplemental hours live ON A's same canonical city row, with original
+    // cited event-page provenance; no parallel Events authority is introduced.
+    const patch:Record<string,unknown>={
+      time_source_url:enrichment.evidenceUrl,last_enriched_at:checkedAt,
+    };
+    if(enrichment.startTime)patch.start_time=enrichment.startTime;
+    if(enrichment.endTime)patch.end_time=enrichment.endTime;
+    const update=await db.from("city_events").update(patch).eq("id",stored.cityEventId);
+    assertOk(update.error);
+  }
 }
 async function studyOne(db:Db,scope:CityScope,source:CityResearchSource,
-  from:string,to:string,reason:EventScanWindow["reason"],key:string){
+  from:string,to:string,reason:EventScanWindow["reason"],key:string,
+  budget:LdiBudget){
   const result:CitySourceResearchResult=await researchCitySources({
     ...scope,window:{from,to,reason},sources:[source]});
   let rejected=0,saved=0;
   const checkedAt=new Date().toISOString();
   for(const coverage of result.sources){
     for(const event of coverage.events){
-      try{await persistCandidate(db,scope,eventKind(source),event,checkedAt);saved++;}
+      try{
+        let enrichment:ConfirmedEventEnrichment|null=null;
+        if(budget.enrichmentsRemaining>0&&
+          (source.kind==="city_calendar"||source.kind==="venue")){
+          budget.enrichmentsRemaining--;
+          enrichment=await enrichCityEventFact({...scope,...event});
+        }
+        await persistCandidate(db,scope,eventKind(),event,checkedAt,enrichment);
+        saved++;
+      }
       catch(error){
         // One invalid source must not erase valid event facts or mark coverage complete.
         if(errorCode(error)&&!["22023","23514"].includes(errorCode(error)))throw error;
@@ -210,10 +236,11 @@ async function studyOne(db:Db,scope:CityScope,source:CityResearchSource,
   return saved;
 }
 type CityRow={id:string;name:string;kind:string;start_date:string;end_date:string;
+  start_time:string|null;end_time:string|null;
   venue:string|null;venue_address:string|null;last_checked_at:string};
 async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:string,to:string){
   const city=await rows<CityRow>((offset,end)=>db.from("city_events")
-    .select("id,name,kind,start_date,end_date,venue,venue_address,last_checked_at")
+    .select("id,name,kind,start_date,end_date,start_time,end_time,venue,venue_address,last_checked_at")
     .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from)
     .order("start_date").order("id").range(offset,end),5000);
   if(!city.length)return 0;
@@ -264,6 +291,7 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
       const inserted=await db.from("cafe_events").upsert({
         id,business_id:businessId,name:e.name,kind:e.kind,
         start_date:e.start_date,end_date:e.end_date,
+        start_time:e.start_time,end_time:e.end_time,
         venue:e.venue,venue_address:e.venue_address,
         source_url:urls[0],status:"found",last_checked_at:e.last_checked_at,
       },{onConflict:"business_id,id",ignoreDuplicates:true});
@@ -336,7 +364,8 @@ export async function scanSharedResearch(db:Db,input:{
   for(let index=0;index<selected.length;index+=3){
     await Promise.all(selected.slice(index,index+3).map(async item=>{
       try{
-        await studyOne(db,scope,item.source,item.from,item.to,window.reason,item.key);
+        await studyOne(db,scope,item.source,item.from,item.to,
+          window.reason,item.key,input.budget);
       }catch(error){
         console.warn("ldi_city_source_failed",{kind:item.source.kind,
           category:errorCode(error)||"research_or_store_failed"});
