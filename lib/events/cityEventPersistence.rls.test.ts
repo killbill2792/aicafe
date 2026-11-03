@@ -1,6 +1,7 @@
 import {randomUUID} from "node:crypto";
 import {Client} from "pg";
 import {describe,expect,it} from "vitest";
+import {cityEventIdentity,type CityEventCandidate} from "./cityEventIdentity";
 
 /** Real Postgres RLS integration. Run ONLY against a disposable database after
  * staging migration 137, with two EXISTING owner memberships:
@@ -35,6 +36,45 @@ describe("LDI A real PostgreSQL owner RLS (disposable database)",()=>{
         "values('us|ca|berkeley',$1,'RLS fixture event','community','2035-01-15','2035-01-15',now()) returning id",
         [hex]);
       const cityId=event.rows[0].id as string;
+      // Exercise the REAL atomic SQL RPC (not a mocked storage double).
+      // A source alias must survive unknown -> named -> addressed enrichment.
+      const name="RLS RPC fixture "+randomUUID().slice(0,8);
+      const sourceA="https://example.org/events?event="+randomUUID().slice(0,8);
+      const sourceB="https://organizer.example.org/events?event="+randomUUID().slice(0,8);
+      const sourceC="https://campus.example.org/events?event="+randomUUID().slice(0,8);
+      const base:CityEventCandidate={city:"Berkeley",region:"CA",countryCode:"US",
+        name,kind:"community",startDate:"2035-01-19",sourceUrl:sourceA};
+      const saveEvent=async(input:CityEventCandidate):Promise<string>=>{
+        const p=cityEventIdentity(input);
+        const saved=await db.query(
+          "select public.ldi_upsert_city_event($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) as id",
+          [p.cityKey,p.identityKey,p.sourceIdentityKey,p.venueIdentityKey,
+            p.name,input.kind,p.startDate,p.endDate,p.sourceUrl,
+            "2035-01-10T12:00:00Z",p.venue,p.venueAddress,p.venueKey,p.venueAddressKey]);
+        return saved.rows[0].id as string;
+      };
+      const unknown=await saveEvent(base);
+      const named=await saveEvent({...base,venue:"Arts & Culture Hall"});
+      const addressed=await saveEvent({...base,venue:"Arts & Culture Hall",
+        venueAddress:"100 Center St"});
+      const spelling=await saveEvent({...base,venue:"Arts and Culture Hall",
+        venueAddress:"100 Center St",sourceUrl:sourceB});
+      const accented=await saveEvent({...base,venue:"Árts and Culture Hall",
+        venueAddress:"100 Center St",sourceUrl:sourceC});
+      expect(new Set([unknown,named,addressed,spelling,accented]).size).toBe(1);
+      await db.query("savepoint wrong_address");
+      await expect(saveEvent({...base,venue:"Arts & Culture Hall",
+        venueAddress:"101 Center St"})).rejects.toThrow();
+      await db.query("rollback to savepoint wrong_address");
+      const otherHall=await saveEvent({...base,venue:"West Hall",
+        venueAddress:"100 Center St",sourceUrl:"https://elsewhere.example.org/events"});
+      expect(otherHall).not.toBe(unknown);
+      expect((await db.query(
+        "select count(*)::integer as n from public.city_event_sources where city_event_id=$1",
+        [unknown])).rows[0].n).toBe(3);
+      expect((await db.query(
+        "select count(*)::integer as n from public.city_event_aliases where city_event_id=$1",
+        [unknown])).rows[0].n).toBe(4);
       const place=await db.query(
         "insert into public.city_places(city_key,identity_key,name,kind,source_url,last_checked_at) "+
         "values('us|ca|berkeley',$1,'RLS fixture campus','university','https://example.org/campus',now()) returning id",
@@ -68,6 +108,9 @@ describe("LDI A real PostgreSQL owner RLS (disposable database)",()=>{
           .toHaveLength(1);
         expect((await db.query("select city_event_id from public.city_event_sources where city_event_id=$1",[cityId])).rows)
           .toHaveLength(1);
+        expect((await db.query(
+          "select city_event_id from public.city_event_aliases where city_event_id=$1",
+          [unknown])).rows).toHaveLength(4);
         expect((await db.query("select id from public.city_places where id=$1",[placeId])).rows)
           .toHaveLength(1);
         const links=await db.query(

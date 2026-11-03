@@ -11,6 +11,8 @@ create table public.city_events (
   end_date date not null check (end_date >= start_date),
   venue text check (venue is null or length(venue) <= 200),
   venue_address text check (venue_address is null or length(venue_address) <= 500),
+  venue_key text check (venue_key is null or length(venue_key) between 1 and 200),
+  venue_address_key text check (venue_address_key is null or length(venue_address_key) between 1 and 500),
   last_checked_at timestamptz not null,
   created_at timestamptz not null default now()
 );
@@ -121,7 +123,8 @@ create function public.ldi_upsert_city_event(
   p_city_key text, p_identity_key text, p_source_identity_key text,
   p_venue_identity_key text, p_name text, p_kind text,
   p_start_date date, p_end_date date, p_source_url text,
-  p_checked_at timestamptz, p_venue text default null, p_venue_address text default null
+  p_checked_at timestamptz, p_venue text default null, p_venue_address text default null,
+  p_venue_key text default null, p_venue_address_key text default null
 ) returns uuid language plpgsql security invoker set search_path=public as $$
 declare
   result_id uuid;
@@ -147,26 +150,34 @@ begin
   end if;
   if cardinality(matching_ids)=1 then
     result_id:=matching_ids[1];
-    -- A different hall advertised on the same page is not corroboration.
-    if p_venue is not null and exists (
-      select 1 from public.city_events e where e.id=result_id and e.venue is not null
-        and regexp_replace(lower(e.venue),'[^[:alnum:]]','','g') <>
-            regexp_replace(lower(p_venue),'[^[:alnum:]]','','g')
+    -- Compare EXACTLY the normalized keys supplied by cityEventIdentity.ts;
+    -- never fuse two confirmed addresses for one source, and never reject
+    -- equivalent accent/ampersand spellings as separate venues.
+    if exists (
+      select 1 from public.city_events e where e.id=result_id and (
+        (e.venue_key is not null and p_venue_key is not null and e.venue_key <> p_venue_key)
+        or (e.venue_address_key is not null and p_venue_address_key is not null
+            and e.venue_address_key <> p_venue_address_key)
+      )
     ) then raise exception 'city_event_venue_conflict_review_required' using errcode='23514'; end if;
     update public.city_events set
       last_checked_at=greatest(last_checked_at,p_checked_at),
-      venue=coalesce(venue,p_venue),venue_address=coalesce(venue_address,p_venue_address)
+      venue=coalesce(venue,p_venue),venue_address=coalesce(venue_address,p_venue_address),
+      venue_key=coalesce(venue_key,p_venue_key),
+      venue_address_key=coalesce(venue_address_key,p_venue_address_key)
     where id=result_id and city_key=p_city_key and start_date=p_start_date;
     if not found then raise exception 'city_event_scope_conflict' using errcode='23514'; end if;
   else
     insert into public.city_events(city_key,identity_key,name,kind,start_date,end_date,
-      venue,venue_address,last_checked_at)
+      venue,venue_address,venue_key,venue_address_key,last_checked_at)
     values (p_city_key,p_identity_key,p_name,p_kind,p_start_date,p_end_date,
-      p_venue,p_venue_address,p_checked_at)
+      p_venue,p_venue_address,p_venue_key,p_venue_address_key,p_checked_at)
     on conflict(identity_key) do update set
       last_checked_at=greatest(city_events.last_checked_at,excluded.last_checked_at),
       venue=coalesce(city_events.venue,excluded.venue),
-      venue_address=coalesce(city_events.venue_address,excluded.venue_address)
+      venue_address=coalesce(city_events.venue_address,excluded.venue_address),
+      venue_key=coalesce(city_events.venue_key,excluded.venue_key),
+      venue_address_key=coalesce(city_events.venue_address_key,excluded.venue_address_key)
     where city_events.city_key=excluded.city_key and city_events.start_date=excluded.start_date
     returning id into result_id;
     if result_id is null then raise exception 'city_event_identity_conflict' using errcode='23514'; end if;
@@ -185,9 +196,9 @@ begin
       observed_at=greatest(city_event_sources.observed_at,excluded.observed_at);
   return result_id;
 end $$;
-revoke all on function public.ldi_upsert_city_event(text,text,text,text,text,text,date,date,text,timestamptz,text,text)
+revoke all on function public.ldi_upsert_city_event(text,text,text,text,text,text,date,date,text,timestamptz,text,text,text,text)
   from public,anon,authenticated;
-grant execute on function public.ldi_upsert_city_event(text,text,text,text,text,text,date,date,text,timestamptz,text,text)
+grant execute on function public.ldi_upsert_city_event(text,text,text,text,text,text,date,date,text,timestamptz,text,text,text,text)
   to service_role;
 
 -- Never count a retry as complete without found/none_found evidence; replay of

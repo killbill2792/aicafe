@@ -37,6 +37,7 @@ export async function upsertCityEventFact(db:SupabaseClient,
     p_end_date:identity.endDate,p_source_url:identity.sourceUrl,
     p_checked_at:validInstant(input.checkedAt),p_venue:identity.venue,
     p_venue_address:identity.venueAddress,
+    p_venue_key:identity.venueKey,p_venue_address_key:identity.venueAddressKey,
   });
   throwOnError(error);
   return {cityEventId:persistedId(data),identityKey:identity.identityKey,

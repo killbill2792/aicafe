@@ -66,6 +66,8 @@ export function cityEventIdentity(input:CityEventCandidate){
   const venue=input.venue?label(input.venue,200,"venue"):null;
   const venueAddress=input.venueAddress?label(input.venueAddress,500,"venue address"):null;
   const sourceUrl=canonicalSourceUrl(input.sourceUrl);
+  const venueKey=venue?clean(venue):null;
+  const venueAddressKey=venueAddress?clean(venueAddress):null;
   // This source anchor never changes as a listing becomes more detailed.
   const sourceIdentityKey=digest([cityKey,startDate,nameKey,
     "source:"+sourceUrl].join("\u001f"));
@@ -73,9 +75,9 @@ export function cityEventIdentity(input:CityEventCandidate){
   // address. Distinct halls at the SAME address are not interchangeable.
   // Unknown or incomplete venues stay source-scoped until corroborated.
   const venueIdentityKey=venue&&venueAddress?digest([cityKey,startDate,nameKey,
-    "venue:"+clean(venue),"address:"+clean(venueAddress)].join("\u001f")):null;
-  return {cityKey,name,nameKey,startDate,endDate,venue,venueAddress,sourceUrl,
-    sourceIdentityKey,venueIdentityKey,
+    "venue:"+venueKey,"address:"+venueAddressKey].join("\u001f")):null;
+  return {cityKey,name,nameKey,startDate,endDate,venue,venueAddress,
+    venueKey,venueAddressKey,sourceUrl,sourceIdentityKey,venueIdentityKey,
     identityKey:venueIdentityKey??sourceIdentityKey};
 }
 export function cityPlaceIdentity(input:CityPlaceCandidate){
