@@ -19,8 +19,15 @@ export type CityCatalogPage={available:boolean;missing:string|null;page:number;p
  startTime:string|null;endTime:string|null;timeSourceUrl:string|null;
  venue:string|null;venueAddress:string|null;checkedAt:string;
  sources:Array<{url:string;observedAt:string}>;cafeEventId:string|null}>};
+export type CityCoverageOverview={
+  status:"complete"|"partial"|"unsearched"|"unavailable";
+  researchedSourceWindows:number;successfulSourceWindows:number;
+  failedSourceWindows:number;partialSourceWindows:number;
+  unsearchedSourceWindows:number;lastCompletedAt:string|null;
+};
 export type SavedEventTimeline={
- cityCatalog?:CityCatalogPage;neighborhood?:Array<{placeId:string;name:string;kind:string;
+ cityCatalog?:CityCatalogPage;cityCoverage?:CityCoverageOverview;
+ neighborhood?:Array<{placeId:string;name:string;kind:string;
   address:string|null;sourceUrl:string;calendarUrl:string|null;visitorInfoUrl:string|null;
   visitorApproach:string|null;entrance:string|null;assessment:string;
   rationale:string|null;checkedAt:string}>;
@@ -75,10 +82,11 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
    readCafeEvents(db,scope.businessId,from,to),
    readOwnerProposals(db,scope,{capabilityId:"alex.event_readiness.v1",limit:200}),
  ]);
- const [events,cityCatalog,neighborhood]=await Promise.all([
+ const [events,cityCatalog,neighborhood,cityCoverage]=await Promise.all([
    overlayCityFacts(db,scope.businessId,legacyEvents),
    readCityEventCatalog(db,scope.businessId,from,to),
    readCafeNeighborhoodEvidence(db,scope.businessId),
+   readCityResearchCoverage(db,scope.businessId,from,to),
  ]);
  const plans=proposals.flatMap(p=>{
    const effect=p.canonical_effect_payload as Record<string,unknown>|null;
@@ -88,7 +96,7 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
  });
  const reports=await readOwnerReports(db,scope,plans.map(x=>x.p.id),{limit:200});
  const byProposal=new Map(reports.map(r=>[r.proposal_id,r]));
- return {events,cityCatalog,neighborhood,plans:plans.map(({p,effect})=>{
+ return {events,cityCatalog,neighborhood,cityCoverage,plans:plans.map(({p,effect})=>{
    const report=byProposal.get(p.id);
    return {proposalId:p.id,threadId:p.thread_id,status:p.status,revision:p.revision,
      startDate:String(effect.startDate),endDate:String(effect.endDate),
@@ -226,4 +234,43 @@ async function overlayCityFacts(db:SupabaseClient,businessId:string,
       venue:e.venue??fact.venue,venueAddress:e.venueAddress??fact.venue_address,
       sourceUrls:bySource.get(id)??[]};
   });
+}
+
+/** A's public source/window ledger is read through this SAME canonical Events
+ * facade, with the unsent/search-failed distinction preserved for the UI/chat. */
+export async function readCityResearchCoverage(db:SupabaseClient,businessId:string,
+  from:string,to:string):Promise<CityCoverageOverview>{
+  assertRange(from,to);
+  const empty=(status:CityCoverageOverview["status"]):CityCoverageOverview=>({
+    status,researchedSourceWindows:0,successfulSourceWindows:0,
+    failedSourceWindows:0,partialSourceWindows:0,
+    unsearchedSourceWindows:0,lastCompletedAt:null,
+  });
+  const cityKey=await cityKeyForCafe(db,businessId);
+  if(!cityKey)return empty("unavailable");
+  const {data,error}=await db.from("city_source_coverage")
+    .select("status,search_attempted,last_completed_at")
+    .eq("city_key",cityKey).lte("window_from",to).gte("window_to",from)
+    .order("window_from").limit(4000);
+  if(missingSchema(error))return empty("unavailable");
+  ensureShared(error);
+  const rows=data??[];
+  if(!rows.length)return empty("unsearched");
+  let successful=0,failed=0,partial=0,unsearched=0,attempted=0;
+  let latest:string|null=null;
+  for(const row of rows){
+    if(!row.search_attempted)unsearched++;
+    else attempted++;
+    if(row.status==="failed")failed++;
+    else if(row.status==="partial")partial++;
+    else if(row.status==="found"||row.status==="none_found")successful++;
+    if(row.last_completed_at&&(!latest||row.last_completed_at>latest))
+      latest=row.last_completed_at;
+  }
+  return {
+    status:unsearched||failed||partial?"partial":"complete",
+    researchedSourceWindows:attempted,successfulSourceWindows:successful,
+    failedSourceWindows:failed,partialSourceWindows:partial,
+    unsearchedSourceWindows:unsearched,lastCompletedAt:latest,
+  };
 }
