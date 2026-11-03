@@ -32,8 +32,9 @@ describe("G exact owner-selected city event via existing get_events and canonica
       },
     }));
     const result=await executeAgentTool("get_events",{from:date,to:date,cityEventId:exactId},
-      context(savedEvents as AgentToolContext["savedEvents"]));
-    expect(savedEvents).toHaveBeenCalledExactlyOnceWith(date,date,{cityEventId:exactId});
+      context(savedEvents as NonNullable<AgentToolContext["savedEvents"]>));
+    expect(savedEvents).toHaveBeenCalledTimes(1);
+    expect(savedEvents).toHaveBeenCalledWith(date,date,{cityEventId:exactId});
     expect(result.selectedCityEvent).toEqual(cityEvent);
     expect(result.cityEvents).toEqual([cityEvent]);
     expect(result.selectedCityEventId).toBe(exactId);
@@ -50,7 +51,7 @@ describe("G exact owner-selected city event via existing get_events and canonica
     }));
     const result=await executeAgentTool("get_events",
       {from:date,to:date,cityEventId:exactId},
-      context(savedEvents as AgentToolContext["savedEvents"]));
+      context(savedEvents as NonNullable<AgentToolContext["savedEvents"]>));
     expect(result.selectedCityEvent).toBeNull();
     expect(result.missing).toEqual(["selectedCityEventNotFound"]);
     expect(result.searched).toBe(false);
