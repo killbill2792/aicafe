@@ -93,7 +93,8 @@ export default function OwnerWhatsAppAlerts({copy}:{copy:Copy}){
     <p className="mt-2 text-[17px] leading-relaxed text-ink-muted">{copy.description}</p>
     {loading?<p className="mt-3 text-[17px] text-ink-muted">{copy.loading}</p>
       :setup?.binding?<>
-        <p className="mt-3 text-[17px] font-semibold text-ink">{setup.binding.phoneMatches&&setup.verifiedPhone\n          ?copy.connected+": "+setup.verifiedPhone:copy.phoneChanged}</p>
+        <p className="mt-3 text-[17px] font-semibold text-ink">{setup.binding.phoneMatches&&setup.verifiedPhone
+          ?copy.connected+": "+setup.verifiedPhone:copy.phoneChanged}</p>
         <button type="button" onClick={()=>void disconnect()} disabled={saving}
           className="mt-3 min-h-12 rounded-full border border-line px-5 text-[17px] font-bold text-ink disabled:opacity-50">
           {saving?copy.loading:copy.disconnect}
