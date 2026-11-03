@@ -316,10 +316,21 @@ The AI works out how to answer any question; no new tool or scenario per questio
 7. Owner-facing text in en/es/ar message files; never hard-code a currency; never log secrets or customer data.
 
 ## Now
+- [ ] **Local Demand Intelligence planning record (Nov 2)** — review and owner-approve [the ONE Events-path contract](docs/plans/local-demand-intelligence.md) before starting implementation. Docs-only planning PR; no production migration, deployment or automatic merge. Resolve the older unchecked Events Fix C ownership before overlapping UI/API/reader files.
 - [x] Set `OPENAI_API_KEY` in production before deploying #216 (receipts and statements now always use OpenAI).
 - [x] Owner: apply migration 122 (RLS on `businesses`, merged in #220) to production: `alter table public.businesses enable row level security;`
 - [x] Owner: set `DAILY_BRIEF_ENABLED=true` in Vercel production to turn on the morning brief (#226).
 - [x] Owner: apply migrations 123 (drop empty owner-initiative tables, #231), 124 (live today reading, #238) and 125 ("needs a look" cleanup, #240). The code works before 124 is applied (it reads Toast live).
+
+## Next — Local Demand Intelligence (single Events path)
+**Authoritative plan:** [local demand intelligence](docs/plans/local-demand-intelligence.md). One authorized `events-lookahead` research path; one canonical Events reader; one Supervisor loop/monitor/inbox. City event intelligence + automatic neighborhood demand intelligence + per-café performance learning. Zero owner-provided venue hints is a required cold-start case. Do not start or merge the following implementation PRs until the planning contract is approved; each starts from latest **merged** `main`, uses the predecessor's actual contract, and passes the full predecessor+new-PR integration gate before owner-approved merge. Separate chats may own separate PRs but must not silently implement parallel readers/writers.
+
+- [ ] **LDI PR 1 — canonical city-event identity and reader bridge:** additive owner-reviewed RLS migration; preserve `cafe_events` identities/proposals/history and one `readSavedEventTimeline`; two-café public-fact/private-data and Home/chat parity tests.
+- [ ] **LDI PR 2 — city-wide scheduled discovery and source coverage:** existing initial 14-day/daily +1/Monday research, venue calendars, general city/holidays, dedupe, source-level retry, bounded enrichment; same event writer/reader, no new cron or Home search.
+- [ ] **LDI PR 3 — zero-owner-input neighborhood discovery:** from saved café address, research evidenced nearby demand generators and calendar sources within the existing scheduled job; saved café-scoped context, one reader; no route provider without approval.
+- [ ] **LDI PR 4 — existing Supervisor café impact analysis:** include neighborhood, public event, owner, POS and prior-report evidence; allow bounded research and choosing relevant event IDs (not all same-day IDs); retire legacy chat live-search fallback after parity; no duplicate notice/approval/monitor.
+- [ ] **LDI PR 5 — learn from recorded café performance:** feed existing event live/final reports, certified Toast baseline and saved owner facts back into future Supervisor judgments; unknown remains unknown and correlation is not causation.
+- [ ] **LDI PR 6 — existing Events panel + final integration:** For My Café / All City Events from the same canonical reader, exact-event chat + source/freshness, EN/ES/AR RTL and mobile; cold-start-through-report regression, no search on view. **Gate:** reconcile older Events Fix C ownership first.
 
 ## Next — the AI reads all POS data (AGENTS.md 4b)
 - [x] 4a. Daily capture of every Toast endpoint (#218). Owner: run it once by hand, then set the repository variable `TOAST_DAILY_CAPTURE_ENABLED=true`.
