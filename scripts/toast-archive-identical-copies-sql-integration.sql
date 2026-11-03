@@ -95,6 +95,16 @@ BEGIN
  perform pg_temp.assert_true((select count(*)=2 from public.toast_raw_records
   where business_id=b and entity='order'),'one row per distinct version remains');
 
+ -- Rows archived before migration 128 have no seen_run_id; they are removed too.
+ insert into public.toast_raw_records(business_id,restaurant_guid,entity,entity_guid,business_date,
+  payload,payload_sha256,run_id,seen_run_id,capture_key,first_seen,last_seen)
+  values(b,r,'order',ord,d,v_shuffled,encode(sha256(convert_to(v_shuffled::text,'UTF8')),'hex'),
+   run_old,null,'test:legacy',now()-interval '5 days',now()-interval '5 days');
+ removed:=public.toast_archive_drop_identical_copies(b,d);
+ perform pg_temp.assert_true(removed=1,'a legacy copy without seen_run_id is removed, got '||removed);
+ perform pg_temp.assert_true(exists(select 1 from public.toast_raw_records where id=id_shuffled),
+  'the latest import row is still kept');
+
  delete from public.toast_raw_records where business_id=b and entity in ('check','payment');
 END $copies$;
 

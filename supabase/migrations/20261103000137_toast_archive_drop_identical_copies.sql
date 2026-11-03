@@ -60,8 +60,7 @@ begin
    row_number() over (
     partition by r.restaurant_guid,r.entity_guid,
      md5(public.toast_stable_json(r.payload)::text)
-    order by (d.last_import_run_id is not null and
-      (r.run_id=d.last_import_run_id or r.seen_run_id=d.last_import_run_id)) desc,
+    order by coalesce(r.run_id=d.last_import_run_id or r.seen_run_id=d.last_import_run_id,false) desc,
      r.last_seen desc,r.first_seen desc,r.id desc) as rank
   from public.toast_raw_records r
   left join public.toast_day_status d on d.business_id=r.business_id
@@ -72,8 +71,7 @@ begin
  delete from public.toast_raw_records r using versions v
  where r.id=v.id and v.rank>1
   -- Never remove a row the latest import reads.
-  and not (v.last_import_run_id is not null and
-   (v.run_id=v.last_import_run_id or v.seen_run_id=v.last_import_run_id));
+  and not coalesce(v.run_id=v.last_import_run_id or v.seen_run_id=v.last_import_run_id,false);
  get diagnostics n=row_count;
  return n;
 end $drop$;
