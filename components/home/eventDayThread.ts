@@ -43,7 +43,7 @@ export function eventThreadFromHistory(
 /** Persist a compact, explicit anchor with each owner message, without plan JSON. */
 export function eventOwnerMessage(text:string,context:EventChatContext|null):string {
   const trimmed=text.trim();
-  if(!context||!trimmed||/^@event\s/i.test(trimmed))return trimmed;
+  if(!context||!trimmed||/^@(event|city-event)\s/i.test(trimmed))return trimmed;
   const safeTitle=context.title.replace(/[\r\n<>]/g," ").trim().slice(0,100);
   const id=context.cityEventId?" [cityId:"+context.cityEventId+"]":
     context.eventId?" [id:"+context.eventId+"]":"";
