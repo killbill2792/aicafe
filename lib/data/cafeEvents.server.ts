@@ -1,5 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {readPrimaryLocation} from "./cafeLocation.server";
+import {cityScopeKey} from "@/lib/events/cityEventIdentity";
 import {readOwnerProposals,readOwnerReports,type OwnerScope} from "@/lib/ai/supervisor/loop/reads.server";
 
 export type CafeEvent={
@@ -9,9 +11,18 @@ export type CafeEvent={
  status:"found"|"cancelled"|"moved";foundAt:string;lastCheckedAt:string;
  lastAttemptedAt?:string|null;lastVerifiedAt?:string|null;verificationFailedAt?:string|null;
  verificationDetails?:unknown;
+ cityEventId?:string|null;sourceUrls?:string[];
 };
 export type EventChecklistTick={actionIndex:number;state:"done"|"dismissed"};
+export type CityCatalogPage={available:boolean;missing:string|null;page:number;pageSize:number;total:number;hasMore:boolean;
+ items:Array<{id:string;name:string;kind:string;startDate:string;endDate:string;
+ venue:string|null;venueAddress:string|null;checkedAt:string;
+ sources:Array<{url:string;observedAt:string}>;cafeEventId:string|null}>};
 export type SavedEventTimeline={
+ cityCatalog?:CityCatalogPage;neighborhood?:Array<{placeId:string;name:string;kind:string;
+  address:string|null;sourceUrl:string;calendarUrl:string|null;visitorInfoUrl:string|null;
+  visitorApproach:string|null;entrance:string|null;assessment:string;
+  rationale:string|null;checkedAt:string}>;
  events:CafeEvent[];
  plans:Array<{proposalId:string;threadId:string;status:string;revision:number;
    startDate:string;endDate:string;eventIds?:string[];summary:string;actions:unknown;expectedBusyHours:unknown;
@@ -59,9 +70,14 @@ export async function readEventChecklist(db:SupabaseClient,businessId:string,
 export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
   from:string,to:string):Promise<SavedEventTimeline>{
  assertRange(from,to);
- const [events,proposals]=await Promise.all([
+ const [legacyEvents,proposals]=await Promise.all([
    readCafeEvents(db,scope.businessId,from,to),
    readOwnerProposals(db,scope,{capabilityId:"alex.event_readiness.v1",limit:200}),
+ ]);
+ const [events,cityCatalog,neighborhood]=await Promise.all([
+   overlayCityFacts(db,scope.businessId,legacyEvents),
+   readCityEventCatalog(db,scope.businessId,from,to),
+   readCafeNeighborhoodEvidence(db,scope.businessId),
  ]);
  const plans=proposals.flatMap(p=>{
    const effect=p.canonical_effect_payload as Record<string,unknown>|null;
@@ -71,7 +87,7 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
  });
  const reports=await readOwnerReports(db,scope,plans.map(x=>x.p.id),{limit:200});
  const byProposal=new Map(reports.map(r=>[r.proposal_id,r]));
- return {events,plans:plans.map(({p,effect})=>{
+ return {events,cityCatalog,neighborhood,plans:plans.map(({p,effect})=>{
    const report=byProposal.get(p.id);
    return {proposalId:p.id,threadId:p.thread_id,status:p.status,revision:p.revision,
      startDate:String(effect.startDate),endDate:String(effect.endDate),
@@ -87,4 +103,121 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
        ?effect.importance:null,
      reportStatus:report?.status??null,report:report?.report??null};
  })};
+}
+
+
+type SharedRow={id:string;name:string;kind:string;start_date:string;end_date:string;
+  venue:string|null;venue_address:string|null;last_checked_at:string};
+type SourceRow={city_event_id:string;source_url:string;observed_at:string};
+type LinkRow={cafe_event_id:string;city_event_id:string};
+const missingSchema=(error:unknown)=>!!error&&typeof error==="object"&&"code" in error&&
+  ["42P01","PGRST205","PGRST204"].includes(String(error.code));
+const ensureShared=(error:unknown)=>{if(error)throw error;};
+async function sourceRows(db:SupabaseClient,ids:string[]):Promise<SourceRow[]>{
+  if(!ids.length)return [];
+  const {data,error}=await db.from("city_event_sources")
+    .select("city_event_id,source_url,observed_at").in("city_event_id",ids)
+    .order("observed_at",{ascending:false}).limit(2000);
+  ensureShared(error);
+  return (data??[]) as SourceRow[];
+}
+async function cityKeyForCafe(db:SupabaseClient,businessId:string){
+  const row=await readPrimaryLocation(db,businessId);
+  if(!row?.city||!row.region||!row.country_code)return null;
+  try{return cityScopeKey({city:row.city,region:row.region,countryCode:row.country_code});}
+  catch{return null;}
+}
+/** One RLS-scoped, date-bounded, paginated source of city facts.
+ * Do not run web research when an owner opens the panel. */
+export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
+  from:string,to:string,options:{page?:number;pageSize?:number}={}):Promise<CityCatalogPage>{
+  assertRange(from,to);
+  const page=Number.isInteger(options.page)&&options.page!>=0?options.page!:0;
+  const pageSize=Number.isInteger(options.pageSize)&&options.pageSize!>0?
+    Math.min(100,options.pageSize!):50;
+  const empty=(missing:string):CityCatalogPage=>({
+    available:false,missing,page,pageSize,total:0,hasMore:false,items:[]});
+  const cityKey=await cityKeyForCafe(db,businessId);
+  if(!cityKey)return empty("city_region_country_missing");
+  const {data,count,error}=await db.from("city_events")
+    .select("id,name,kind,start_date,end_date,venue,venue_address,last_checked_at",{count:"exact"})
+    .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from)
+    .order("start_date",{ascending:true}).order("id",{ascending:true})
+    .range(page*pageSize,(page+1)*pageSize-1);
+  if(missingSchema(error))return empty("migration_pending");
+  ensureShared(error);
+  const city=(data??[]) as SharedRow[];
+  const ids=city.map(row=>row.id);
+  const [sources,links]=await Promise.all([
+    sourceRows(db,ids),
+    ids.length?db.from("cafe_city_event_links").select("cafe_event_id,city_event_id")
+      .eq("business_id",businessId).in("city_event_id",ids):
+      Promise.resolve({data:[] as LinkRow[],error:null}),
+  ]);
+  ensureShared(links.error);
+  const bySource=new Map<string,Array<{url:string;observedAt:string}>>();
+  for(const s of sources)bySource.set(s.city_event_id,
+    [...(bySource.get(s.city_event_id)??[]),{url:s.source_url,observedAt:s.observed_at}]);
+  const byCity=new Map(((links.data??[]) as LinkRow[]).map(l=>[l.city_event_id,l.cafe_event_id]));
+  const total=count??city.length;
+  return {available:true,missing:null,page,pageSize,total,hasMore:(page+1)*pageSize<total,
+    items:city.map(e=>({id:e.id,name:e.name,kind:e.kind,
+      startDate:e.start_date,endDate:e.end_date,venue:e.venue,
+      venueAddress:e.venue_address,checkedAt:e.last_checked_at,
+      sources:bySource.get(e.id)??[],cafeEventId:byCity.get(e.id)??null}))};
+}
+/** Private owner-scoped evidence and source details; shared place facts have no
+ * café impact theory or POS data. */
+export async function readCafeNeighborhoodEvidence(db:SupabaseClient,businessId:string):
+  Promise<NonNullable<SavedEventTimeline["neighborhood"]>>{
+  const {data,error}=await db.from("cafe_neighborhood_evidence")
+    .select("place_id,assessment,rationale,checked_at")
+    .eq("business_id",businessId).order("checked_at",{ascending:false}).limit(100);
+  if(missingSchema(error))return [];
+  ensureShared(error);
+  const records=data??[];
+  if(!records.length)return [];
+  const places=await db.from("city_places")
+    .select("id,name,kind,address,source_url,calendar_url,visitor_info_url,visitor_approach,entrance")
+    .in("id",records.map(r=>r.place_id));
+  if(missingSchema(places.error))return [];
+  ensureShared(places.error);
+  const byId=new Map((places.data??[]).map(row=>[row.id,row]));
+  return records.flatMap(row=>{
+    const p=byId.get(row.place_id);
+    return p?[{placeId:row.place_id,name:p.name,kind:p.kind,address:p.address,
+      sourceUrl:p.source_url,calendarUrl:p.calendar_url,visitorInfoUrl:p.visitor_info_url,
+      visitorApproach:p.visitor_approach,entrance:p.entrance,
+      assessment:row.assessment,rationale:row.rationale,checkedAt:row.checked_at}]:[];
+  });
+}
+async function overlayCityFacts(db:SupabaseClient,businessId:string,
+  legacy:CafeEvent[]):Promise<CafeEvent[]>{
+  if(!legacy.length)return legacy;
+  const {data,error}=await db.from("cafe_city_event_links")
+    .select("cafe_event_id,city_event_id").eq("business_id",businessId)
+    .in("cafe_event_id",legacy.map(e=>e.id)).limit(2000);
+  if(missingSchema(error))return legacy;
+  ensureShared(error);
+  const links=(data??[]) as LinkRow[];
+  if(!links.length)return legacy;
+  const ids=[...new Set(links.map(l=>l.city_event_id))];
+  const [{data:city,error:cityError},sources]=await Promise.all([
+    db.from("city_events").select("id,name,kind,start_date,end_date,venue,venue_address,last_checked_at")
+      .in("id",ids),sourceRows(db,ids),
+  ]);
+  ensureShared(cityError);
+  const shared=new Map(((city??[]) as SharedRow[]).map(row=>[row.id,row]));
+  const byCafe=new Map(links.map(row=>[row.cafe_event_id,row.city_event_id]));
+  const bySource=new Map<string,string[]>();
+  for(const row of sources)bySource.set(row.city_event_id,
+    [...(bySource.get(row.city_event_id)??[]),row.source_url]);
+  return legacy.map(e=>{
+    const id=byCafe.get(e.id),fact=id?shared.get(id):null;
+    if(!id||!fact)return e;
+    return {...e,cityEventId:id,name:fact.name,kind:fact.kind,
+      startDate:fact.start_date,endDate:fact.end_date,
+      venue:e.venue??fact.venue,venueAddress:e.venueAddress??fact.venue_address,
+      sourceUrls:bySource.get(id)??[]};
+  });
 }
