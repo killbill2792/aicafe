@@ -1,5 +1,7 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
-import {eventFinalNarrative} from "./eventFinalReport.server";
+import {eventFinalNarrative,eventReportFactsHash,eventReportNumericEvidence} from "./eventFinalReport.server";
+import {effectHash} from "@/lib/ai/supervisor/loop/engine";
+import {checkNumbers} from "@/lib/ai/agent/checkNumbers";
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 
@@ -11,7 +13,7 @@ let saved:Record<string,unknown>|null=null;
 const reads:Record<string,unknown>={
   supervisor_reports:null,
   memberships:{role:"owner"},
-  businesses:{timezone:"America/Los_Angeles",is_demo:false},
+  businesses:{timezone:"America/Los_Angeles",currency:"USD",is_demo:false},
 };
 const db={from:(table:string)=>{
   const q={
@@ -35,6 +37,7 @@ const result={
 };
 beforeEach(()=>{
   saved=null;reads.memberships={role:"owner"};
+  reads.businesses={timezone:"America/Los_Angeles",currency:"USD",is_demo:false};
   vi.resetAllMocks();
   vi.mocked(runAgentTurn).mockResolvedValue({text:"AI-written, evidence-backed report."} as Awaited<ReturnType<typeof runAgentTurn>>);
 });
@@ -91,4 +94,72 @@ describe("event morning-after narrative",()=>{
     expect(await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       ["Halloween"],"Ready for the holiday",result,"insufficient_evidence")).toBeNull();
   });
+  it.each([
+    ["USD","$50.00","$40.00","$5.00"],
+    ["EUR","€50.00","€40.00","€5.00"],
+    [null,"50.00","40.00","5.00"],
+  ] as const)("formats daily and hourly money for café currency %s, leaving cents only as verifier evidence",
+    async(currency,actual,usual,hour)=>{
+      reads.businesses={timezone:"America/Los_Angeles",currency,is_demo:false};
+      await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
+        ["Halloween"],"Ready for the holiday",result,"complete");
+      const args=vi.mocked(runAgentTurn).mock.calls[0][0];
+      const serialized=String(args.memoryFacts);
+      const facts=JSON.parse(serialized.slice(serialized.indexOf("{")));
+      expect(facts.currency).toBe(currency);
+      expect(facts.days[0]).toMatchObject({actual,usual,
+        hours:[{hour:12,actual:hour,usual:currency===null?"4.00":
+          currency==="USD"?"$4.00":"€4.00"}]});
+      expect(facts.days[0]).not.toHaveProperty("actualCents");
+      expect(facts.days[0].hours[0]).not.toHaveProperty("usualCents");
+      expect(serialized).not.toContain("integer cents");
+      expect(args.previousEvidence).toEqual(eventReportNumericEvidence(result));
+      expect(args.previousEvidence?.[0].values).toContainEqual({
+        key:"2026-10-31/actualCents",value:5000,unit:"cents"});
+      expect(facts.moneyUnit).toContain(currency===null?"Currency is not set":"already formatted in "+currency);
+    });
+
+  it("scales the real Nov 2 totals and hourly cents exactly once",async()=>{
+    const day={...result.days[0],actualCents:135844,typicalCents:120605,
+      hours:[{hourLocal:7,actualCents:10550,usualCents:6135,changePercent:72}]};
+    await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
+      ["Festival"],"Prepare normally",{...result,days:[day]},"complete");
+    const serialized=String(vi.mocked(runAgentTurn).mock.calls[0][0].memoryFacts);
+    expect(serialized).toContain("$1,358.44");
+    expect(serialized).toContain("$1,206.05");
+    expect(serialized).toContain("$105.50");
+    expect(serialized).toContain("$61.35");
+    expect(serialized).not.toContain('"actualCents":135844');
+    expect(vi.mocked(runAgentTurn).mock.calls[0][0].previousEvidence?.[0].values)
+      .toContainEqual({key:"2026-10-31/7/actualCents",value:10550,unit:"cents"});
+  });
+
+  it("invalidates a legacy cached narrative once, then reuses the regenerated text",async()=>{
+    const legacy=effectHash({result,status:"complete",planSummary:"Ready for the holiday",
+      eventNames:["Halloween"]});
+    const modern=eventReportFactsHash(result,"complete","Ready for the holiday",["Halloween"]);
+    expect(legacy).not.toBe(modern);
+    saved={reportFactsHash:legacy,reportText:"Actual 5000 vs 4000",reportTextOrigin:"model"};
+    const updated=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
+      ["Halloween"],"Ready for the holiday",result,"complete");
+    expect(updated?.hash).toBe(modern);
+    expect(runAgentTurn).toHaveBeenCalledTimes(1);
+    saved={reportFactsHash:updated!.hash,reportText:updated!.text,reportTextOrigin:"model",
+      reportProvenance:updated!.provenance};
+    const reused=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
+      ["Halloween"],"Ready for the holiday",result,"complete");
+    expect(reused).toEqual(updated);
+    expect(runAgentTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps correct formatted money verified and rejects unsupported formatted amounts",()=>{
+    const evidence=eventReportNumericEvidence(result);
+    const good="Actual $50.00 vs usual $40.00; hourly $5.00 vs $4.00.";
+    expect(checkNumbers(good,"",[],"en",evidence)).toEqual([]);
+    const bad="Actual $999.00 vs usual $40.00.";
+    const rejected=checkNumbers(bad,"",[],"en",evidence);
+    expect(rejected).toEqual(expect.arrayContaining([
+      expect.objectContaining({text:"$999.00",start:bad.indexOf("$999.00")})]));
+  });
+
 });
