@@ -868,21 +868,23 @@ export default function SupervisorChatComposer({
   const durationLabel = String(Math.floor(elapsed / 60)) + ":" + String(elapsed % 60).padStart(2, "0");
   // A tap on a saved event opens that day in the same Supervisor conversation.
   const boardAskDisabled = !enabled || !canUseAi || sending || uploading || dictation === "recognizing" || resumedRunning;
-  const chatAboutEventDay=async(date:string,title:string,eventId?:string,existingThreadId?:string)=>{
+  const chatAboutEventDay=async(date:string,title:string,eventId?:string,existingThreadId?:string,
+    cityEventId?:string,draftPrompt?:string)=>{
     if(boardAskDisabled||openingEvent.current)return;
     openingEvent.current=true;
     try{
       // Existing plan threads represent a whole day, not one saved event.
-      if(existingThreadId&&!eventId){
+      if(existingThreadId&&!eventId&&!cityEventId){
         eventThreadIds.current.set(eventThreadKey(date),existingThreadId);
         selectThread(existingThreadId);
         setEventContext({date,title,threadId:existingThreadId});
+        if(draftPrompt)setDraft(draftPrompt);
         return;
       }
-      const recovered=eventThreadFromHistory(threads,date,eventId);
-      if(recovered)eventThreadIds.current.set(eventThreadKey(date,eventId),recovered);
+      const recovered=eventThreadFromHistory(threads,date,eventId,cityEventId);
+      if(recovered)eventThreadIds.current.set(eventThreadKey(date,eventId,cityEventId),recovered);
       const chosenId=await openEventDayThread({
-        date,title,eventId,known:eventThreadIds.current,
+        date,title,eventId,cityEventId,known:eventThreadIds.current,
         create:async title=>{
           // Existing owner-scoped thread API handles idempotency and permissions.
           const created=await jsonFrom<{thread:ConversationThread}>(await fetch("/api/ai/threads",{
@@ -894,7 +896,8 @@ export default function SupervisorChatComposer({
         },
         select:id=>selectThread(id),
       });
-      setEventContext({date,title,eventId,threadId:chosenId});
+      setEventContext({date,title,eventId,cityEventId,threadId:chosenId});
+      if(draftPrompt)setDraft(draftPrompt);
     }catch{
       setError(true);setFailureCode("agent_request_failed");
     }finally{openingEvent.current=false;}
@@ -902,7 +905,9 @@ export default function SupervisorChatComposer({
   // Only saved event facts are read on Home; no paid search starts when opening the panel.
   const comingUpCard = enabled && canUseAi ? <SavedEventsCard locale={locale}
     compact={hasChatMessages&&!startExpanded}
-    onChatAboutDay={(date,title,eventId,existingThreadId)=>void chatAboutEventDay(date,title,eventId,existingThreadId)} chatDisabled={boardAskDisabled}/> : undefined;
+    onChatAboutDay={(date,title,eventId,existingThreadId,cityEventId,draftPrompt)=>
+      void chatAboutEventDay(date,title,eventId,existingThreadId,cityEventId,draftPrompt)}
+    chatDisabled={boardAskDisabled}/> : undefined;
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
