@@ -5,7 +5,7 @@ import {conversationError,conversationJson,parseInput,readBoundedJson,requireSam
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
-import {readSavedEventTimeline,readEventChecklist} from "@/lib/data/cafeEvents.server";
+import {readSavedEventTimeline,readEventChecklist,readCityEventCatalog} from "@/lib/data/cafeEvents.server";
 import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {utcDateOffset} from "@/lib/ai/supervisor/loop/engine";
@@ -35,7 +35,18 @@ export async function GET(request:Request){
     }
     const identity=await readSupervisorCafeIdentity(scope.businessId);
     const today=identity.asOf;
-    const timeline=await readSavedEventTimeline(db,scope,utcDateOffset(today,-14),utcDateOffset(today,14));
+    const from=utcDateOffset(today,-14),to=utcDateOffset(today,14);
+    const params=new URL(request.url).searchParams;
+    const rawPage=params.get("cityPage"),rawSize=params.get("cityPageSize");
+    const page=rawPage===null?0:Number(rawPage);
+    const size=rawSize===null?50:Number(rawSize);
+    if(!Number.isInteger(page)||page<0||page>10000||
+      !Number.isInteger(size)||size<1||size>100)
+      throw new ConversationApiError(422,"invalid_city_catalog_page");
+    const timeline=await readSavedEventTimeline(db,scope,from,to);
+    if(page!==0||size!==50)
+      timeline.cityCatalog=await readCityEventCatalog(db,scope.businessId,from,to,
+        {page,pageSize:size});
     return conversationJson({today,currency:identity.currency,...timeline});
   }catch(error){return conversationError(error);}
 }
