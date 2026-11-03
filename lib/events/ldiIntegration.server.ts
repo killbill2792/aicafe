@@ -333,7 +333,12 @@ export async function scanSharedResearch(db:Db,input:{
   windowStart:string;associations:number}|null>{
   if(!await ldiSchemaReady(db))return null;
   const scope=cityScope(input.location);
-  if(!scope)return null; // Cannot invent a city, region or country to satisfy A.
+  if(!scope){
+    // After migration rollout, missing city/region/country is incomplete
+    // coverage, not a successful legacy search. Do not invent scope values.
+    return {completed:false,through:input.window.to,reason:input.window.reason,
+      windowStart:input.window.from,associations:0};
+  }
   const cityKey=cityScopeKey(scope);
   await neighborhood(db,input.businessId,input.location,scope,input.budget,input.checkedAt);
   const sources=await sourcesForCity(db,cityKey);
