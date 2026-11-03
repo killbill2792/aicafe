@@ -9,22 +9,22 @@ const state=vi.hoisted(()=>({
 }));
 vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({
   from:(table:string)=>{
-    const query={
-      select:()=>query,eq:()=>query,
-      maybeSingle:async()=>({data:table==="supervisor_reports"?state.previous:null,error:null}),
-      single:async()=>({data:{timezone:"America/Los_Angeles"},error:null}),
-      upsert:async(row:Record<string,unknown>)=>{
-        state.writes.push({table,operation:"upsert",row});
-        if(table==="supervisor_reports")state.previous={
-          report:row.report as Record<string,unknown>,status:String(row.status)};
-        return {error:null};
-      },
-      insert:async(row:Record<string,unknown>)=>{
-        state.writes.push({table,operation:"insert",row});return {error:null};
-      },
-      update:(row:Record<string,unknown>)=>{
-        state.writes.push({table,operation:"update",row});return query;
-      },
+    // Explicitly typed to avoid recursive inference in a self-returning query mock.
+    const query:Record<string,unknown>={};
+    for(const method of ["select","eq"])query[method]=()=>query;
+    query.maybeSingle=async()=>({data:table==="supervisor_reports"?state.previous:null,error:null});
+    query.single=async()=>({data:{timezone:"America/Los_Angeles"},error:null});
+    query.upsert=async(row:Record<string,unknown>)=>{
+      state.writes.push({table,operation:"upsert",row});
+      if(table==="supervisor_reports")state.previous={
+        report:row.report as Record<string,unknown>,status:String(row.status)};
+      return {error:null};
+    };
+    query.insert=async(row:Record<string,unknown>)=>{
+      state.writes.push({table,operation:"insert",row});return {error:null};
+    };
+    query.update=(row:Record<string,unknown>)=>{
+      state.writes.push({table,operation:"update",row});return query;
     };
     return query;
   },
