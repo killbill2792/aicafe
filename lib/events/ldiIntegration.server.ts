@@ -21,7 +21,8 @@ import {enrichCityEventFact,type ConfirmedEventEnrichment} from "./cityEventEnri
 type Db=SupabaseClient;
 type CoverageRow={source_key:string;window_from:string;window_to:string;
   scan_from:string;scan_to:string;window_reason:EventScanWindow["reason"];
-  status:string;search_attempted:boolean;last_completed_at:string|null};
+  status:string;search_attempted:boolean;is_scan_root:boolean;
+  last_completed_at:string|null};
 type NeighborhoodRow={scope:string;address_hash:string;status:string;
   retry_eligible:boolean;checked_at:string};
 export type LdiBudget={cityTasks:number;neighborhoodScopes:number;
@@ -159,18 +160,18 @@ async function sourcesForCity(db:Db,cityKey:string):Promise<CityResearchSource[]
 }
 async function allCoverage(db:Db,cityKey:string):Promise<CoverageRow[]>{
   return rows<CoverageRow>((from,to)=>db.from("city_source_coverage")
-    .select("source_key,window_from,window_to,scan_from,scan_to,window_reason,status,search_attempted,last_completed_at")
+    .select("source_key,window_from,window_to,scan_from,scan_to,window_reason,status,search_attempted,is_scan_root,last_completed_at")
     .eq("city_key",cityKey).order("scan_from").order("window_from")
     .range(from,to),5000);
 }
 function matchingCoverage(all:CoverageRow[],key:string,from:string,to:string){
   return all.find(r=>r.source_key===key&&r.window_from===from&&r.window_to===to);
 }
-function needsRefresh(r:CoverageRow|undefined,reason:EventScanWindow["reason"],today:string){
+function needsRefresh(r:CoverageRow|undefined,reason:EventScanWindow["reason"],epoch:string){
   if(!r||!complete(r.status))return true;
   // A Monday pass must see later announcements even if a prior scan covered the dates.
   return reason==="weekly"&&(!r.last_completed_at||
-    r.last_completed_at.slice(0,10)<today);
+    r.last_completed_at.slice(0,10)<epoch);
 }
 async function persistCandidate(db:Db,scope:CityScope,kind:CityEventKind,
   candidate:{name:string;startDate:string;sourceUrl:string},checkedAt:string,
@@ -307,7 +308,8 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
 export async function scanSharedResearch(db:Db,input:{
   businessId:string;location:CafeLocation;today:string;window:EventScanWindow;
   budget:LdiBudget;checkedAt:string;
-}):Promise<{completed:boolean;through:string;associations:number}|null>{
+}):Promise<{completed:boolean;through:string;reason:EventScanWindow["reason"];
+  windowStart:string;associations:number}|null>{
   if(!await ldiSchemaReady(db))return null;
   const scope=cityScope(input.location);
   if(!scope)return null; // Cannot invent a city, region or country to satisfy A.
@@ -315,38 +317,69 @@ export async function scanSharedResearch(db:Db,input:{
   await neighborhood(db,input.businessId,input.location,scope,input.budget,input.checkedAt);
   const sources=await sourcesForCity(db,cityKey);
   let all=await allCoverage(db,cityKey);
-  const older=all.filter(c=>!complete(c.status)&&c.scan_to>=input.today&&
-    c.scan_from<input.window.from).sort((a,b)=>a.scan_from.localeCompare(b.scan_from));
-  const window=older.length?{
+  // Only root/source-slice rows determine completion. Saturation creates
+  // child coverage records, but a child must never complete its parent.
+  const older=all.filter(c=>c.is_scan_root&&!complete(c.status)&&
+    c.scan_to>=addDays(input.today,-14)&&c.scan_from<=input.window.from)
+    .sort((a,b)=>a.scan_from.localeCompare(b.scan_from)||
+      a.scan_to.localeCompare(b.scan_to));
+  const window:EventScanWindow=older.length?{
     from:older[0].scan_from,to:older[0].scan_to,reason:older[0].window_reason,
   }:input.window;
-  const slices=cityResearchDateSlices(window.from,window.to);
-  const intended=sources.flatMap(source=>slices.map(slice=>({
-    source,key:sourceKey(source),...slice,
-  })));
-  const wanted=intended.filter(item=>needsRefresh(
-    matchingCoverage(all,item.key,item.from,item.to),window.reason,input.today));
-  const toQueue=wanted.filter(item=>!matchingCoverage(all,item.key,item.from,item.to));
-  if(toQueue.length){
-    const saved=await db.from("city_source_coverage").upsert(toQueue.map(item=>({
-      city_key:cityKey,source_key:item.key,window_from:item.from,window_to:item.to,
-      scan_from:window.from,scan_to:window.to,window_reason:window.reason,
-      status:"partial",search_attempted:false,last_checked_at:input.checkedAt,
-    })),{onConflict:"city_key,source_key,window_from,window_to",ignoreDuplicates:true});
-    assertOk(saved.error);
+
+  // Do NOT lose new entering dates during an initial or weekly retry. Queue
+  // one-day windows beyond the older scan's end; they remain retryable on disk.
+  // Monday's requested full weekly range is queued independently, even when
+  // an older partial day has priority.
+  const toQueue:EventScanWindow[]=[];
+  if(!older.length)toQueue.push(input.window);
+  else{
+    toQueue.push(window);
+    if(input.window.reason==="weekly")toQueue.push(input.window);
+    else{
+      const beginning=addDays(window.to,1)>input.window.from?
+        addDays(window.to,1):input.window.from;
+      for(let day=beginning;day<=input.window.to;day=addDays(day,1))
+        toQueue.push({from:day,to:day,reason:"new_day"});
+    }
   }
-  // Force Monday re-checks without dropping last_completed_at on prior successes.
-  const refresh=wanted.filter(item=>matchingCoverage(all,item.key,item.from,item.to)&&
-    complete(matchingCoverage(all,item.key,item.from,item.to)!.status));
-  for(const item of refresh){
-    const saved=await db.from("city_source_coverage").update({
-      status:"partial",search_attempted:false,scan_from:window.from,
-      scan_to:window.to,window_reason:window.reason,
-      last_checked_at:input.checkedAt,
-    }).eq("city_key",cityKey).eq("source_key",item.key)
-      .eq("window_from",item.from).eq("window_to",item.to);
-    assertOk(saved.error);
+  for(const proposed of toQueue){
+    const intendedForWindow=sources.flatMap(source=>
+      cityResearchDateSlices(proposed.from,proposed.to).map(slice=>({
+        source,key:sourceKey(source),...slice,
+      })));
+    const needs=intendedForWindow.filter(item=>needsRefresh(
+      matchingCoverage(all,item.key,item.from,item.to),
+      proposed.reason,proposed.from));
+    const missing=needs.filter(item=>!matchingCoverage(all,item.key,item.from,item.to));
+    if(missing.length){
+      const saved=await db.from("city_source_coverage").upsert(missing.map(item=>({
+        city_key:cityKey,source_key:item.key,window_from:item.from,window_to:item.to,
+        scan_from:proposed.from,scan_to:proposed.to,window_reason:proposed.reason,
+        status:"partial",is_scan_root:true,search_attempted:false,
+        last_checked_at:input.checkedAt,
+      })),{onConflict:"city_key,source_key,window_from,window_to",ignoreDuplicates:true});
+      assertOk(saved.error);
+    }
+    // A weekly recheck resets a previously completed source only ONCE. Its
+    // stable epoch is Monday's original window.from, never Tuesday's retry date.
+    const refresh=needs.filter(item=>{
+      const prior=matchingCoverage(all,item.key,item.from,item.to);
+      return prior&&complete(prior.status);
+    });
+    for(const item of refresh){
+      const saved=await db.from("city_source_coverage").update({
+        status:"partial",search_attempted:false,is_scan_root:true,
+        scan_from:proposed.from,scan_to:proposed.to,window_reason:proposed.reason,
+        last_checked_at:input.checkedAt,
+      }).eq("city_key",cityKey).eq("source_key",item.key)
+        .eq("window_from",item.from).eq("window_to",item.to);
+      assertOk(saved.error);
+    }
+    all=await allCoverage(db,cityKey);
   }
+  const intended=sources.flatMap(source=>cityResearchDateSlices(window.from,window.to)
+    .map(slice=>({source,key:sourceKey(source),...slice})));
   all=await allCoverage(db,cityKey);
   const pending=intended.filter(item=>!complete(
     matchingCoverage(all,item.key,item.from,item.to)?.status??"partial"));
@@ -374,8 +407,10 @@ export async function scanSharedResearch(db:Db,input:{
     }));
   }
   all=await allCoverage(db,cityKey);
-  const completed=intended.every(item=>complete(
-    matchingCoverage(all,item.key,item.from,item.to)?.status??"partial"));
+  const completed=intended.every(item=>{const row=matchingCoverage(all,item.key,item.from,item.to);
+    return !!row&&row.is_scan_root&&complete(row.status);
+  });
   const associations=await associateCityFacts(db,input.businessId,cityKey,window.from,window.to);
-  return {completed,through:window.to,associations};
+  return {completed,through:window.to,reason:window.reason,
+    windowStart:window.from,associations};
 }
