@@ -589,6 +589,7 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     const root=s.tables.city_source_coverage.find(r=>r.source_key===source&&
       r.window_from==="2026-11-03"&&r.window_to==="2026-11-09");
     expect(root).toMatchObject({status:"partial",is_scan_root:true});
+    const rootSnapshot={...root!};
     const jobs=planCityResearchJobs(s.tables.city_source_coverage,[
       {id:"city-calendar",name:"City",kind:"city_calendar"}],"2026-11-04");
     expect(jobs.map(j=>({from:j.from,to:j.to}))).toEqual([
@@ -605,7 +606,7 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     const updated=s.tables.city_source_coverage.find(r=>r.source_key===source&&
       r.window_from==="2026-11-03"&&r.window_to==="2026-11-09");
     expect(updated).toMatchObject({is_scan_root:true,status:"found"});
-    expect(reconciledCityRootStatus(root!,s.tables.city_source_coverage)).toBe("found");
+    expect(reconciledCityRootStatus(rootSnapshot,s.tables.city_source_coverage)).toBe("found");
     const coverage=await readCityResearchCoverage(s.db,cafeA,"2026-11-03","2026-11-16");
     expect(coverage.status).toBe("complete");
   });
