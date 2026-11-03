@@ -16,6 +16,7 @@ export type CafeEvent={
 export type EventChecklistTick={actionIndex:number;state:"done"|"dismissed"};
 export type CityCatalogPage={available:boolean;missing:string|null;page:number;pageSize:number;total:number;hasMore:boolean;
  items:Array<{id:string;name:string;kind:string;startDate:string;endDate:string;
+ startTime:string|null;endTime:string|null;timeSourceUrl:string|null;
  venue:string|null;venueAddress:string|null;checkedAt:string;
  sources:Array<{url:string;observedAt:string}>;cafeEventId:string|null}>};
 export type SavedEventTimeline={
@@ -107,11 +108,12 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
 
 
 type SharedRow={id:string;name:string;kind:string;start_date:string;end_date:string;
+  start_time:string|null;end_time:string|null;time_source_url:string|null;
   venue:string|null;venue_address:string|null;last_checked_at:string};
 type SourceRow={city_event_id:string;source_url:string;observed_at:string};
 type LinkRow={cafe_event_id:string;city_event_id:string};
 const missingSchema=(error:unknown)=>!!error&&typeof error==="object"&&"code" in error&&
-  ["42P01","PGRST205","PGRST204"].includes(String(error.code));
+  ["42P01","42703","PGRST205","PGRST204"].includes(String(error.code));
 const ensureShared=(error:unknown)=>{if(error)throw error;};
 async function sourceRows(db:SupabaseClient,ids:string[]):Promise<SourceRow[]>{
   if(!ids.length)return [];
@@ -140,7 +142,7 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
   const cityKey=await cityKeyForCafe(db,businessId);
   if(!cityKey)return empty("city_region_country_missing");
   const {data,count,error}=await db.from("city_events")
-    .select("id,name,kind,start_date,end_date,venue,venue_address,last_checked_at",{count:"exact"})
+    .select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at",{count:"exact"})
     .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from)
     .order("start_date",{ascending:true}).order("id",{ascending:true})
     .range(page*pageSize,(page+1)*pageSize-1);
@@ -162,7 +164,9 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
   const total=count??city.length;
   return {available:true,missing:null,page,pageSize,total,hasMore:(page+1)*pageSize<total,
     items:city.map(e=>({id:e.id,name:e.name,kind:e.kind,
-      startDate:e.start_date,endDate:e.end_date,venue:e.venue,
+      startDate:e.start_date,endDate:e.end_date,
+      startTime:e.start_time,endTime:e.end_time,timeSourceUrl:e.time_source_url,
+      venue:e.venue,
       venueAddress:e.venue_address,checkedAt:e.last_checked_at,
       sources:bySource.get(e.id)??[],cafeEventId:byCity.get(e.id)??null}))};
 }
@@ -203,9 +207,10 @@ async function overlayCityFacts(db:SupabaseClient,businessId:string,
   if(!links.length)return legacy;
   const ids=[...new Set(links.map(l=>l.city_event_id))];
   const [{data:city,error:cityError},sources]=await Promise.all([
-    db.from("city_events").select("id,name,kind,start_date,end_date,venue,venue_address,last_checked_at")
+    db.from("city_events").select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at")
       .in("id",ids),sourceRows(db,ids),
   ]);
+  if(missingSchema(cityError))return legacy;
   ensureShared(cityError);
   const shared=new Map(((city??[]) as SharedRow[]).map(row=>[row.id,row]));
   const byCafe=new Map(links.map(row=>[row.cafe_event_id,row.city_event_id]));
@@ -217,6 +222,7 @@ async function overlayCityFacts(db:SupabaseClient,businessId:string,
     if(!id||!fact)return e;
     return {...e,cityEventId:id,name:fact.name,kind:fact.kind,
       startDate:fact.start_date,endDate:fact.end_date,
+      startTime:e.startTime??fact.start_time,endTime:e.endTime??fact.end_time,
       venue:e.venue??fact.venue,venueAddress:e.venueAddress??fact.venue_address,
       sourceUrls:bySource.get(id)??[]};
   });
