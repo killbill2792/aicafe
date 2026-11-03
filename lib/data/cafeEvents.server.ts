@@ -25,8 +25,11 @@ export type CityCoverageOverview={
   failedSourceWindows:number;partialSourceWindows:number;
   unsearchedSourceWindows:number;lastCompletedAt:string|null;
 };
+export type NeighborhoodCoverageItem={scope:string;status:string;retryEligible:boolean;
+  checkedAt:string;lastCompletedAt:string|null;failureCategory:string|null};
 export type SavedEventTimeline={
  cityCatalog?:CityCatalogPage;cityCoverage?:CityCoverageOverview;
+ neighborhoodCoverage?:NeighborhoodCoverageItem[];
  neighborhood?:Array<{placeId:string;name:string;kind:string;
   address:string|null;sourceUrl:string;calendarUrl:string|null;visitorInfoUrl:string|null;
   visitorApproach:string|null;entrance:string|null;assessment:string;
@@ -78,12 +81,13 @@ export async function readEventChecklist(db:SupabaseClient,businessId:string,
 export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
   from:string,to:string):Promise<SavedEventTimeline>{
  assertRange(from,to);
- const [events,proposals,cityCatalog,neighborhood,cityCoverage]=await Promise.all([
+ const [events,proposals,cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage]=await Promise.all([
    readCanonicalCafeEvents(db,scope.businessId,from,to),
    readOwnerProposals(db,scope,{capabilityId:"alex.event_readiness.v1",limit:200}),
    readCityEventCatalog(db,scope.businessId,from,to),
    readCafeNeighborhoodEvidence(db,scope.businessId),
    readCityResearchCoverage(db,scope.businessId,from,to),
+   readNeighborhoodResearchCoverage(db,scope.businessId),
  ]);
  const plans=proposals.flatMap(p=>{
    const effect=p.canonical_effect_payload as Record<string,unknown>|null;
@@ -93,7 +97,7 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
  });
  const reports=await readOwnerReports(db,scope,plans.map(x=>x.p.id),{limit:200});
  const byProposal=new Map(reports.map(r=>[r.proposal_id,r]));
- return {events,cityCatalog,neighborhood,cityCoverage,plans:plans.map(({p,effect})=>{
+ return {events,cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage,plans:plans.map(({p,effect})=>{
    const report=byProposal.get(p.id);
    return {proposalId:p.id,threadId:p.thread_id,status:p.status,revision:p.revision,
      startDate:String(effect.startDate),endDate:String(effect.endDate),
@@ -280,4 +284,17 @@ export async function readCityResearchCoverage(db:SupabaseClient,businessId:stri
 export async function readCanonicalCafeEvents(db:SupabaseClient,businessId:string,
   from:string,to:string):Promise<CafeEvent[]>{
   return overlayCityFacts(db,businessId,await readCafeEvents(db,businessId,from,to));
+}
+
+/** Private neighborhood scope freshness, through the sole owner Events facade. */
+export async function readNeighborhoodResearchCoverage(db:SupabaseClient,businessId:string):
+  Promise<NeighborhoodCoverageItem[]>{
+  const {data,error}=await db.from("cafe_neighborhood_source_coverage")
+    .select("scope,status,retry_eligible,checked_at,last_completed_at,failure_category")
+    .eq("business_id",businessId).order("scope").limit(4);
+  if(missingSchema(error))return [];
+  ensureShared(error);
+  return (data??[]).map(r=>({scope:r.scope,status:r.status,
+    retryEligible:r.retry_eligible,checkedAt:r.checked_at,
+    lastCompletedAt:r.last_completed_at,failureCategory:r.failure_category}));
 }
