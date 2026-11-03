@@ -506,6 +506,31 @@ it("escalates cross-day payment recovery at its original deadline even after rei
  expect(f.certifiedVoids).toBe(false);
 });
 
+it("an exhausted payment recovery is re-checked daily without queueing another re-pull",async()=>{
+ const f=fakeDb(false);
+ const extra="ffffffff-ffff-4fff-8fff-ffffffffffff";
+ const orderId="11111111-1111-4111-8111-111111111111";
+ // State left by an earlier exhausted recovery: no repull marker, error kept.
+ Object.assign(f.item,{payment_repull_at:null,last_error_category:"unverified_payment_order",
+  last_recon_attempt_at:new Date(Date.now()-25*3600000).toISOString()});
+ f.setOrder({id:"canonical-order",toast_excluded:false,business_date:"2026-10-15"});
+ f.setOtherDay({import_state:"imported",rechecking_reason:null,
+  unparsed_count:1,coverage_complete:false});
+ mocked.request.mockImplementation(async(path:string)=>{
+  if(path.includes("paidBusinessDate"))return [payment,extra];
+  if(path.includes("/payments/"+extra))return {
+   guid:extra,orderGuid:orderId,paidBusinessDate:20261016};
+  if(path.includes("/orders/"+orderId))return {
+   guid:orderId,businessDate:20261015};
+  return orderWithAutoGratAndGiftCard();
+ });
+ await reconcileToastDays(f.db,p,Date.now()+20000);
+ expect(f.calls).not.toContain("toast_queue_backfill");
+ expect(f.item).toMatchObject({recon_state:"pending",internal_state:null,
+  payment_repull_at:null,last_error_category:"unverified_payment_order"});
+ expect(f.certifiedVoids).toBe(false);
+});
+
 describe("recovered Analytics pending reports",()=>{
  it("202 acceptance retires a 503 error without hiding an established mismatch",async()=>{
   const f=fakeDb(true);

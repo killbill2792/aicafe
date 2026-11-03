@@ -402,7 +402,11 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
   if(oe)throw new ToastApiError("unavailable");
   // Do not keep creating recovery jobs forever when Toast never supplies a
  // complete snapshot; escalate a six-hour unresolved discrepancy to attention.
- const repulled=Boolean(status.payment_repull_at)&&(
+ // A day whose recovery already ran out keeps its verdict on the daily
+ // re-check: re-pulling it again stored a fresh copy of the whole day each
+ // time and never changed what Toast returns.
+ const exhausted=status.last_error_category==="unverified_payment_order";
+ const repulled=exhausted||Boolean(status.payment_repull_at)&&(
   [...otherDays].every(date=>(otherStatus??[]).some(d=>
    d.business_date===date&&d.imported_at&&Date.parse(d.imported_at)>Date.parse(status.payment_repull_at!)))||
   Date.now()-Date.parse(status.payment_repull_at!)>6*3600000);

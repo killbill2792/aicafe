@@ -90,3 +90,33 @@ describe("Meta's seven ordered daily-brief values",()=>{
    expect(prepareMorningBrief({...shifted,today:"2026-11-02"},new Date("2026-11-02T16:00:00Z"))).toBeNull();
  });
 });
+
+describe("top drink from the café's own Toast categories",()=>{
+ // Seiyun's real Toast menu groups (Nov 2026): café-named, no drink flag from Toast.
+ const menu=[
+  {id:"saffron",name:"Saffron latte",base_name:null,category:"Specialty"},
+  {id:"adeni",name:"Adeni Tea",base_name:null,category:"Traditional"},
+  {id:"pumpkin",name:"Pumpkin Spice Latte",base_name:null,category:"FALL DRINKS"},
+  {id:"samosa",name:"Samosa",base_name:null,category:"Food"},
+  {id:"beans",name:"Coffee beans",base_name:null,category:"Retail"},
+ ];
+ const soldItems=[{id:"saffron",units:30},{id:"adeni",units:41},{id:"pumpkin",units:12},
+  {id:"samosa",units:60},{id:"beans",units:3}];
+ const labels=new Map([["Specialty",true],["Traditional",true],["FALL DRINKS",true],
+  ["Food",false],["Retail",false]]);
+ it("picks the best-selling drink and never food or retail",()=>{
+  const result=prepareMorningBrief(evidence({menu,soldItems,categoryLabels:labels}),now);
+  expect(result?.parameters.slice(2,5)).toEqual(["83","Adeni Tea","41"]);
+ });
+ it("waits when any sold category is not labeled yet, never a partial drink count",()=>{
+  const partial=new Map([["Specialty",true],["Food",false]]);
+  expect(prepareMorningBrief(evidence({menu,soldItems,categoryLabels:partial}),now)).toBeNull();
+  // An unsold unlabeled category does not hold the brief back.
+  const unsold=soldItems.filter(s=>s.id!=="adeni"&&s.id!=="pumpkin"&&s.id!=="beans");
+  expect(prepareMorningBrief(evidence({menu,soldItems:unsold,categoryLabels:partial}),now)
+   ?.parameters.slice(2,5)).toEqual(["30","Saffron latte","30"]);
+ });
+ it("skips the brief only when no sold drink is labeled at all",()=>{
+  expect(prepareMorningBrief(evidence({menu,soldItems,categoryLabels:new Map()}),now)).toBeNull();
+ });
+});

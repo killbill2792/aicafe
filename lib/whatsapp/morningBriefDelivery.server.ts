@@ -7,6 +7,7 @@ import {providerAllowed} from "./transport.server";
 import {validTemplateFields} from "./transport";
 import {briefWindow,briefDue} from "@/lib/operating/dailyBrief";
 import {readPreparedMorningBrief} from "./morningBrief.server";
+import {labelNewMenuCategories} from "@/lib/menu/drinkLabels.server";
 import {renderMorningBrief,type PreparedMorningBrief} from "./morningBrief";
 
 export type BriefScope={businessId:string;ownerUserId:string;threadId?:string;
@@ -45,6 +46,8 @@ export async function prepareBoundBrief(db:SupabaseClient,scope:BriefScope,now:D
   if(!binding||!scope.threadId||binding.threadId!==scope.threadId)return null;
   const w=briefWindow(now,scope.timezone);
   if(!w.readyToPublish||!w.beforeDeadline||!followupWindowCoversDay(binding,scope,now))return null;
+  // Label any menu category seen for the first time, so its drinks can count.
+  await labelNewMenuCategories(db,scope.businessId);
   const prepared=await readPreparedMorningBrief(db,{...scope,verifiedBinding:true,
     followupPermitted:true},now);
   if(!prepared||!validTemplateFields(prepared.parameters))return null;

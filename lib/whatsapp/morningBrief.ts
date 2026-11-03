@@ -12,6 +12,8 @@ export type MorningBriefEvidence={
   itemCoverage:boolean;
   soldItems:readonly {id:string;units:number}[];
   menu:readonly {id:string;name:string;base_name:string|null;category:string}[];
+  /** Saved drink / not-drink label per café menu category (menu_category_labels). */
+  categoryLabels?:ReadonlyMap<string,boolean>;
   savedEvents:readonly CafeEvent[];
   monitors:readonly OwnerProposalRow[];
   /** Verified binding/consent and permission to deliver a later alert are checked by PR A. */
@@ -25,8 +27,18 @@ export type PreparedMorningBrief={
     eventId:string;monitorProposalId:string};
 };
 
-const drinkCategories=new Set(["ESPRESSO_DRINK","BREWED_COFFEE","COLD_BREW","TEA","SPECIALTY_DRINK","drink"]);
-const otherCategories=new Set(["PASTRY","FOOD","RETAIL","food"]);
+/** The app's own menu category codes (manual and CSV menus). A POS category,
+ * named by the café, is labeled once by the AI (lib/menu/drinkLabels.server.ts). */
+export const APP_MENU_DRINK_CATEGORIES:ReadonlySet<string>=
+  new Set(["ESPRESSO_DRINK","BREWED_COFFEE","COLD_BREW","TEA","SPECIALTY_DRINK","drink"]);
+export const APP_MENU_OTHER_CATEGORIES:ReadonlySet<string>=new Set(["PASTRY","FOOD","RETAIL","food"]);
+/** true = drink, false = not a drink, null = not labeled yet. */
+function isDrinkCategory(category:string,labels:ReadonlyMap<string,boolean>|undefined):boolean|null{
+  if(APP_MENU_DRINK_CATEGORIES.has(category))return true;
+  if(APP_MENU_OTHER_CATEGORIES.has(category))return false;
+  const label=labels?.get(category.trim());
+  return label===undefined?null:label;
+}
 function safeText(value:string,max=160):string|null{
   // Meta body variables must not introduce line breaks, markup or control characters.
   const s=Array.from(value,ch=>{
@@ -98,9 +110,12 @@ export function prepareMorningBrief(e:MorningBriefEvidence,now:Date):PreparedMor
   let total=0;
   for(const sold of e.soldItems){
     const item=menu.get(sold.id);
-    if(!item||!Number.isSafeInteger(sold.units)||sold.units<0||
-      (!drinkCategories.has(item.category)&&!otherCategories.has(item.category)))return null;
-    if(!drinkCategories.has(item.category))continue;
+    if(!item||!Number.isSafeInteger(sold.units)||sold.units<0)return null;
+    // The fixed template cannot say "partial": a sold item whose category is not
+    // labeled yet would make "Drinks sold" and "Best seller" wrong, so wait for it.
+    const drink=isDrinkCategory(item.category,e.categoryLabels);
+    if(drink===null)return null;
+    if(!drink)continue;
     const name=safeText(item.base_name?.trim()||item.name,120);
     if(!name)return null;
     const next=(drinks.get(name)??0)+sold.units;
