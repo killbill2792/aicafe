@@ -90,7 +90,7 @@ function safeObservations(samples:readonly EventDemandSample[],proposalId:string
       const coverage=observation?.coverage;
       if(!dayPattern.test(s.business_date)||actual===null||
         (coverage!=="actual"&&coverage!=="provisional"))return [];
-      return [{date:s.business_date,coverage,actualCents:actual,
+      return [{date:s.business_date,coverage:coverage as "actual"|"provisional",actualCents:actual,
         typicalCents:integer(observation?.typicalCents),source:s.evidence_source}];
     }).sort((a,b)=>a.date.localeCompare(b.date)).slice(-6);
 }
