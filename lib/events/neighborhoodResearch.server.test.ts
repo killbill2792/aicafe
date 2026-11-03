@@ -19,7 +19,7 @@ const makeResponse = (places: unknown[], urls: string[] = [
 ], hasMore = false) => ({
   ok: true, status: 200, json: async () => ({
     status: "completed", output: [
-      {type: "web_search_call", action: {sources: urls.map(url => ({url}))}},
+      {type: "web_search_call", status: "completed", action: {sources: urls.map(url => ({url}))}},
       {type: "message", content: [{type: "output_text",
         text: JSON.stringify({places, hasMore})}]},
     ],
@@ -162,6 +162,18 @@ describe("LDI C OpenAI neighborhood research", () => {
     expect(bodies(fetcher)[0].text?.format?.name).toBe("neighborhood_places");
     expect(bodies(fetcher)[1].text).toBeUndefined();
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not mark a model-only empty list as completed source research", async () => {
+    const modelOnly = vi.fn(async () => ({ok: true, status: 200, json: async () => ({
+      status: "completed", output: [{type: "message", content: [{type: "output_text",
+        text: JSON.stringify({places: [], hasMore: false})}]}],
+    })}));
+    const result = await call(modelOnly)({address: market, scopes: ["workday"]});
+    expect(result).toMatchObject({outcome: "failed", publicPlaces: [],
+      coverage: [{scope: "workday", outcome: "failed", retryEligible: true,
+        failure: "search_not_run"}]});
+    expect(modelOnly).toHaveBeenCalledTimes(2);
   });
 
   it("treats a completed empty search differently from an uncited nonempty one", async () => {
