@@ -83,3 +83,7 @@ Each PR: **start from latest merged `main`**, one accountable owner, one concern
 - All EN/ES/AR owner-facing text uses `messages/`; use existing design system/accessible in-place Events panel. No new screen-only data path.
 - Every implementation PR: behavior tests, existing tests intact unless the specifically named behavior changes, `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run build`, green final-commit CI and independent Codex review with P1s fixed. **No autonomous PR merge, production migration or deployment.** Owner must approve migrations and rollout independently.
 - Explicit blocker: resolve the older Events Fix C status/ownership before touching its UI/API/reader files. Record existing conflicting implementation paths in PR review; do not add a new one or silently choose.
+
+## Reader pagination handoff
+
+The current canonical `readCafeEvents` limits rows to 500, the chat `get_events` result returns eight event records, and the saved Events API uses a bounded date window. City browsing must paginate through the SAME canonical reader (and keep the chat result compact), without a parallel screen query or unbounded model context. Include a test with more results than current per-call caps.
