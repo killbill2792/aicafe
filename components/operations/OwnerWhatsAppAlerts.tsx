@@ -3,12 +3,12 @@ import {useCallback,useEffect,useState} from "react";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
 
 type Thread={id:string;title:string|null};
-type Setup={verifiedPhone:string|null;binding:{id:string;threadId:string}|null;threads:Thread[];businessId:string};
+type Setup={verifiedPhone:string|null;binding:{id:string;threadId:string;phoneMatches:boolean}|null;threads:Thread[];businessId:string};
 type Copy={
   title:string;description:string;loading:string;saved:string;error:string;
   verifiedPhone:string;phoneLabel:string;sendCode:string;codeLabel:string;
   confirmCode:string;codeSent:string;threadLabel:string;connect:string;
-  disconnect:string;consent:string;connected:string;noThreads:string;
+  disconnect:string;consent:string;connected:string;noThreads:string;phoneChanged:string;
 };
 
 const validPhone=(s:string)=>/^\+[1-9][0-9]{7,14}$/.test(s);
@@ -92,8 +92,8 @@ export default function OwnerWhatsAppAlerts({copy}:{copy:Copy}){
     <h2 className="font-headline text-2xl font-bold text-ink">{copy.title}</h2>
     <p className="mt-2 text-[17px] leading-relaxed text-ink-muted">{copy.description}</p>
     {loading?<p className="mt-3 text-[17px] text-ink-muted">{copy.loading}</p>
-      :setup?.binding&&setup.verifiedPhone?<>
-        <p className="mt-3 text-[17px] font-semibold text-good">{copy.connected}: {setup.verifiedPhone}</p>
+      :setup?.binding?<>
+        <p className="mt-3 text-[17px] font-semibold text-ink">{setup.binding.phoneMatches&&setup.verifiedPhone\n          ?copy.connected+": "+setup.verifiedPhone:copy.phoneChanged}</p>
         <button type="button" onClick={()=>void disconnect()} disabled={saving}
           className="mt-3 min-h-12 rounded-full border border-line px-5 text-[17px] font-bold text-ink disabled:opacity-50">
           {saving?copy.loading:copy.disconnect}
