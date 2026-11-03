@@ -185,6 +185,17 @@ async function persistCandidate(db:Db,scope:CityScope,kind:CityEventKind,
     startDate:candidate.startDate,kind,sourceUrl:candidate.sourceUrl,checkedAt,
     ...(enrichment?{endDate:enrichment.endDate,venue:enrichment.venue,
       venueAddress:enrichment.venueAddress}:{})});
+  if(enrichment?.endDate){
+    // A's identity RPC uses end_date only on INSERT. An already discovered
+    // one-day fact must be extended when its original HTTPS event page later
+    // verifies multiple dates. Store the citation alongside the same city row.
+    // Never shrink an existing longer verified/legacy range in a retry.
+    const duration=await db.from("city_events").update({
+      end_date:enrichment.endDate,duration_source_url:enrichment.evidenceUrl,
+      duration_verified_at:checkedAt,
+    }).eq("id",stored.cityEventId).lte("end_date",enrichment.endDate);
+    assertOk(duration.error);
+  }
   if(enrichment&&(enrichment.startTime||enrichment.endTime)){
     // Supplemental hours live ON A's same canonical city row, with original
     // cited event-page provenance; no parallel Events authority is introduced.
