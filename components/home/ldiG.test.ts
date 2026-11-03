@@ -4,7 +4,7 @@ import {renderToStaticMarkup} from "react-dom/server";
 import {cafeHighlightedEvents,cityEventChatTarget,CityCatalogView,eventPlanFor} from "./SavedEventsCard";
 import {eventContextFromTitle,eventOwnerMessage,eventThreadFromHistory,eventThreadKey,
   eventThreadTitle,openEventDayThread} from "./eventDayThread";
-import type {CafeEvent,CityCatalogPage,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
+import type {CafeEvent,CityCatalogPage} from "@/lib/data/cafeEvents.server";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
