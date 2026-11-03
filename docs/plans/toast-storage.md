@@ -72,7 +72,8 @@ screens and chat read the same tables and must not change.
 6. **Done — migration 145: more organized fields.** Sales category was already on `order_lines.category`.
    Added: `order_lines.ordered_at` / `fulfillment_status` (when each item was rung up, kitchen status),
    `toast_payment_summaries.server_guid` / `paid_at` (who took each payment, when), `orders.service_charges_cents`
-   / `gratuity_cents` (same rule as the day totals). History filled once from the archive; older item lines first
+   / `gratuity_cents` (same rule as the day totals). History is filled by `select toast_fill_organized_fields()`, run
+   once after the migration (not inside it, so the column change never locks the tables for long); older item lines first
    get their Toast line ID where the match is certain (all 13,660 Seiyun lines matched in a production dry run).
    Toast has no "item made" time in the orders API; `fulfillment_status` is the kitchen state it does send.
 7. **WhatsApp brief sends every morning** (template unchanged, no new Meta approval):

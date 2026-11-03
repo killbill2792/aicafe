@@ -8,8 +8,9 @@
 --  * orders.service_charges_cents, gratuity_cents: service charges and gratuity on the
 --    order, with the same rule as the day totals (fundraising excluded).
 -- (Sales category was already on order_lines.category.)
--- History is filled once from the archive. Item lines written before migration 141 first
--- get their Toast line ID where the match is certain (see section 4).
+-- History is filled by toast_fill_organized_fields(), run once on its own after this
+-- migration (see the end of this file). Item lines written before migration 141 first get
+-- their Toast line ID where the match is certain.
 
 -- Safe casts for Toast text: null instead of an error for a malformed value.
 create or replace function public.toast_uuid_or_null(v text) returns uuid
@@ -446,10 +447,13 @@ begin
   select lk.*,row_number() over (partition by order_id,name,qty,voided,net order by id) rn from lk
  ), pairs as (
   select b.id line_id,a.guid,b.order_id from b join a using(order_id,name,qty,voided,net,rn)
+ ), nl as (select order_id,count(*) n from lk group by 1
+ ), ns as (select order_id,count(*) n from sk group by 1
+ ), pc as (select order_id,count(*) n from pairs group by 1
+ -- Each order's counts are taken once (not re-scanned per order): fast on a year of orders.
  ), whole as (
-  select p.order_id from pairs p group by p.order_id
-  having count(*)=(select count(*) from lk where lk.order_id=p.order_id)
-   and count(*)=(select count(*) from sk where sk.order_id=p.order_id)
+  select pc.order_id from pc join nl using(order_id) join ns using(order_id)
+  where pc.n=nl.n and pc.n=ns.n
  )
  update public.order_lines l set pos_line_id=p.guid
  from pairs p where l.id=p.line_id and p.order_id in (select order_id from whole);
@@ -503,8 +507,8 @@ end $fill$;
 revoke all on function public.toast_fill_organized_fields() from public,anon,authenticated;
 grant execute on function public.toast_fill_organized_fields() to service_role;
 
-do $fill_once$
-begin
- set local statement_timeout=0;
- perform public.toast_fill_organized_fields();
-end $fill_once$;
+-- The history fill is NOT run here: adding the columns locks these tables until the
+-- migration commits, so a long fill in the same transaction would block the app (and
+-- the SQL editor stops long statements). After this migration, run once on its own
+-- (row locks only, safe to re-run):
+--   select public.toast_fill_organized_fields();
