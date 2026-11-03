@@ -103,7 +103,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
           codeSent: t("whatsAppCodeSent"), threadLabel: t("whatsAppThreadLabel"),
           connect: t("whatsAppConnect"), disconnect: t("whatsAppDisconnect"),
           consent: t("whatsAppConsent"), connected: t("whatsAppConnected"),
-          noThreads: t("whatsAppNoThreads"),
+          noThreads: t("whatsAppNoThreads"), phoneChanged: t("whatsAppPhoneChanged"),
         }}/>}
         <Link href="/operations/suppliers"
           className="flex min-h-12 items-center justify-center self-start rounded-full border border-ink bg-card px-5 text-[17px] font-bold text-ink no-underline">
