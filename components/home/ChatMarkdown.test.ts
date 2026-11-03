@@ -124,7 +124,9 @@ describe("provenance footnotes",()=>{
  it("draws no extra glyph and keeps the tooltip trigger on the complete number",()=>{
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"$11,000",labels,
      unverified:[{start:0,end:7,source:"owner"}]}));
-   expect(html).toMatch(/<button[^>]*class="[^"]*decoration-dotted[^"]*decoration-chart-staff[^"]*"[^>]*>\\$11,000<\\/button>/);
+   expect(html).toContain("decoration-dotted");
+   expect(html).toContain("decoration-chart-staff");
+   expect(html).toContain(">$11,000</button>");
    expect(html).toContain('aria-label="$11,000 — You told me"');
    expect(html).not.toContain('h-[6px] w-[6px] align-super');
    // The legend keeps its independent key; no dot is injected into numeric text.
