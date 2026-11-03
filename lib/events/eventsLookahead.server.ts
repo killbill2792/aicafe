@@ -13,7 +13,8 @@ import {posFactReaders} from "@/lib/data/posFactReaders.server";
 import {typicalHourlySales} from "@/lib/metrics/core/dayOutlook";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {cafeCountry,holidaysBetween,addDays,weekdayOf} from "./holidays";
-import {eventIdentity,eventScanWindows,savedEventKind,type EventScanState} from "./eventsLookahead";
+import {eventIdentity,eventScanWindows,savedEventKind,dailyCafeScanOrder,
+  type EventScanState} from "./eventsLookahead";
 import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
 import {scanSharedResearch,newLdiBudget,type LdiBudget} from "./ldiIntegration.server";
@@ -394,11 +395,18 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
   const result:LookaheadRun={checked:0,scanned:0,planned:0,skipped:0,failed:0};
   // Shared across every authorized café in this SINGLE scheduled run.
   const researchBudget=newLdiBudget();
+  // Read all business IDs in stable pages BEFORE rotating. A per-page
+  // rotation would still starve cafés past the first 100 whenever that page
+  // consumed the global city-research budget.
+  const businesses:Business[]=[];
   for(let offset=0;;offset+=100){
     const page=await db.from("businesses").select("id,timezone,is_demo")
       .order("id").range(offset,offset+99);
     requireOk(page.error);
-    for(const b of (page.data??[]) as Business[]){
+    businesses.push(...(page.data??[]) as Business[]);
+    if((page.data??[]).length<100)break;
+  }
+  for(const b of dailyCafeScanOrder(businesses,now)){
       if(!b.timezone||b.is_demo)continue;
       result.checked++;
       try{
@@ -462,8 +470,6 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
         result.failed++;
         console.warn("events_lookahead_cafe_failed",{stage:"read_or_search"});
       }
-    }
-    if((page.data??[]).length<100)break;
   }
   return result;
 }

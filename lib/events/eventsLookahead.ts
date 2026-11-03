@@ -29,6 +29,17 @@ export function eventScanWindows(today:string,state:EventScanState|null,
     missed.push({from:today,to:horizon,reason:"weekly"});
   return missed;
 }
+/** Fair selection for one shared daily research budget. Stable UTC-day
+ * rotation prevents a café in the first DB page (or city) from permanently
+ * monopolizing all six city research attempts. All cafés are still processed
+ * through the SAME cron and approval/monitoring paths. */
+export function dailyCafeScanOrder<T>(cafes:readonly T[],now:Date):T[]{
+  if(cafes.length<2)return [...cafes];
+  const epochDay=Math.floor(now.getTime()/86_400_000);
+  if(!Number.isFinite(epochDay))throw new Error("invalid_scan_date");
+  const offset=((epochDay%cafes.length)+cafes.length)%cafes.length;
+  return [...cafes.slice(offset),...cafes.slice(0,offset)];
+}
 /** Supporting table has only these factual kinds; never turn crowd guesses
  * into café advice, or write unrecognized provider enums. */
 export function savedEventKind(kind:NearbyEvent["kind"]):string{
