@@ -51,8 +51,12 @@ screens and chat read the same tables and must not change.
 3. **Done — migration 141: organized tables, enforced.** Orders, payment facts, payment summaries, voids and
    rollups already had unique keys. Added: Toast line ID on order lines (one row per order + line ID) and one
    refund row per payment. Screens and the AI read `orders`, which was already one row per order.
-4. **Daily health check.** Cron writes one inbox item per café-day when: database > 70 % of plan, any
-   duplicate POS object, a daily total ≠ the POS day total, or unusual growth. Counts only in logs.
+4. **Done — migration 142: daily health check.** `/api/cron/data-health` (daily, 17:20 UTC) saves one row per
+   day: database size vs plan (> 70 %), sudden growth (> max(50 MB, 20 %)), POS objects stored more than once,
+   and café-days (last 30) whose stored orders ≠ the import total or the import total ≠ Toast's. Shown on
+   `/admin/health` (owner decision Nov 3: system alerts go to the admin page, not café inboxes). Counts only
+   in logs. First run will list repeated void, menu item, time entry, employee and job records: step 2
+   enforced one record per order only; the other entities need the same rule.
 5. **Real-messiness tests.** Fixtures with reordered lists, the same order on two pages, re-pulls, retries,
    partial days: same data in → same stored rows out.
 6. **More organized fields.** Toast sales category on order lines, item made/fulfilled times, server per
