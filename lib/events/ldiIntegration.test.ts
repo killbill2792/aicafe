@@ -322,8 +322,8 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     f.enrichment.mockResolvedValue({endDate:"2026-11-07",venue:null,
       venueAddress:null,startTime:null,endTime:null,
       evidenceUrl:"https://city.example.org/fair"});
-    await s.scoped(cafeA,"2026-11-09",{
-      from:"2026-11-09",to:"2026-11-22",reason:"weekly",
+    await s.scoped(cafeA,"2026-11-04",{
+      from:"2026-11-04",to:"2026-11-04",reason:"new_day",
     },generous());
     expect(s.tables.city_events).toHaveLength(1);
     expect(s.tables.city_events[0]).toMatchObject({
@@ -334,8 +334,8 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     f.enrichment.mockResolvedValue({endDate:"2026-11-05",venue:null,
       venueAddress:null,startTime:null,endTime:null,
       evidenceUrl:"https://city.example.org/fair"});
-    await s.scoped(cafeA,"2026-11-16",{
-      from:"2026-11-16",to:"2026-11-29",reason:"weekly",
+    await s.scoped(cafeA,"2026-11-09",{
+      from:"2026-11-04",to:"2026-11-17",reason:"weekly",
     },generous());
     expect(s.tables.city_events[0].end_date).toBe("2026-11-07");
     const catalog=await readCityEventCatalog(s.db,cafeA,"2026-11-06","2026-11-06");
