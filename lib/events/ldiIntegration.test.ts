@@ -18,7 +18,7 @@ vi.mock("@/lib/ai/supervisor/loop/reads.server",()=>({
   readOwnerProposals:async()=>[],readOwnerReports:async()=>[],
 }));
 
-import {newLdiBudget,scanSharedResearch} from "./ldiIntegration.server";
+import {newLdiBudget,scanSharedResearch,planCityResearchJobs} from "./ldiIntegration.server";
 import {readSavedEventTimeline,readCityEventCatalog} from "@/lib/data/cafeEvents.server";
 import {eventScanWindows} from "./eventsLookahead";
 
@@ -411,6 +411,136 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     expect(s.tables.city_source_coverage.some(row=>row.scan_from==="2026-11-03"&&
       row.status==="partial")).toBe(true);
   });
+  it("uses A's exact name canonicalization when matching legacy cancelled event UUIDs",async()=>{
+    const s=mockStore();
+    const legacyId="66666666-6666-4666-8666-666666666666";
+    const sourceUrl="https://city.example.org/events/cafe-jazz?utm_source=calendar";
+    s.tables.cafe_events.push({id:legacyId,business_id:cafeA,
+      name:"Café & Jazz",kind:"conference",start_date:"2026-11-04",
+      end_date:"2026-11-06",status:"cancelled",found_at:stamp,
+      source_url:"https://city.example.org/events/cafe-jazz",
+      last_checked_at:stamp});
+    f.city.mockImplementation(async ({sources,window}:Row)=>{
+      const source=sources[0];
+      const events=source.kind==="city_calendar"&&
+        window.from<="2026-11-04"&&window.to>="2026-11-04"?
+        [{name:"Cafe and Jazz",startDate:"2026-11-04",sourceUrl}]:[];
+      return {events,sources:[{sourceId:source.id,sourceKind:source.kind,
+        officialUrl:source.officialUrl??null,from:window.from,to:window.to,
+        reason:window.reason,checkedAt:stamp,
+        outcome:events.length?"found":"none_found",retryEligible:false,
+        failure:null,events}],duplicateCount:0,partial:false,retrySourceIds:[]};
+    });
+    const window=eventScanWindows("2026-11-03",null,"location")[0];
+    const budget={...newLdiBudget(),cityTasks:40};
+    await s.scoped(cafeA,"2026-11-03",window,budget);
+    expect(s.tables.cafe_events).toHaveLength(1);
+    expect(s.tables.cafe_events[0]).toMatchObject({
+      id:legacyId,name:"Café & Jazz",status:"cancelled",end_date:"2026-11-06"});
+    expect(s.tables.cafe_city_event_links).toEqual([expect.objectContaining({
+      business_id:cafeA,cafe_event_id:legacyId,city_event_id:cityId})]);
+    // A second café sees the same shared fact but does not acquire café A's
+    // private cancellation, approval thread, or legacy UUID.
+    await s.scoped(cafeB,"2026-11-03",window,{...newLdiBudget(),cityTasks:40});
+    expect(s.tables.cafe_events.find(r=>r.business_id===cafeA)).toMatchObject({
+      id:legacyId,status:"cancelled"});
+    expect(s.tables.cafe_city_event_links[1].cafe_event_id).not.toBe(legacyId);
+    const timeline=await readSavedEventTimeline(s.db,
+      {businessId:cafeA,ownerUserId:"owner-a"},"2026-11-04","2026-11-06");
+    expect(timeline.events).toHaveLength(1);
+    expect(timeline.events[0]).toMatchObject({
+      id:legacyId,status:"cancelled",endDate:"2026-11-06"});
+  });
+
+  it("batches consecutive pending daily dates per source without increasing six-call budget",async()=>{
+    const s=mockStore();
+    const initial=eventScanWindows("2026-11-03",null,"location")[0];
+    expect((await s.scoped(cafeA,"2026-11-03",initial,
+      {...newLdiBudget(),cityTasks:40}))?.completed).toBe(true);
+    let didBatch=false;
+    const missed:string[]=[];
+    for(let i=0;i<8;i++){
+      const from=new Date(Date.UTC(2026,10,17+i)).toISOString().slice(0,10);
+      const before=f.city.mock.calls.length;
+      const scanned=await s.scoped(cafeA,"2026-11-"+String(4+i).padStart(2,"0"),
+        {from,to:from,reason:"new_day"},{...newLdiBudget()});
+      const now=f.city.mock.calls.slice(before);
+      expect(now.length).toBeLessThanOrEqual(6);
+      if(now.some(([args])=>args.window.from<args.window.to))didBatch=true;
+      expect(scanned).not.toBeNull();
+      const pending=s.tables.city_source_coverage.filter(r=>
+        r.is_scan_root&&r.window_from<=from&&r.window_from>="2026-11-17"&&
+        !["found","none_found"].includes(r.status));
+      if(pending.length>1)missed.push(from);
+      // One newest-day gap is allowed; every earlier day must catch up.
+      expect(pending.every(r=>r.window_from===from)).toBe(true);
+    }
+    expect(missed).toEqual([]);
+    expect(didBatch).toBe(true);
+    expect(s.tables.city_source_coverage.filter(r=>r.is_scan_root&&
+      r.window_from>="2026-11-17"&&r.window_from<="2026-11-23"&&
+      ["found","none_found"].includes(r.status))).toHaveLength(7*7);
+  });
+
+  it("keeps every affected day retryable if a combined B research call is partial",async()=>{
+    const s=mockStore();
+    const initial=eventScanWindows("2026-11-03",null,"location")[0];
+    await s.scoped(cafeA,"2026-11-03",initial,{...newLdiBudget(),cityTasks:40});
+    await s.scoped(cafeA,"2026-11-04",
+      {from:"2026-11-17",to:"2026-11-17",reason:"new_day"},{...newLdiBudget()});
+    const original=f.city.getMockImplementation();
+    let failed=false;
+    f.city.mockImplementation(async(input:Row)=>{
+      if(input.window.from<input.window.to&&!failed){
+        failed=true;
+        const source=input.sources[0];
+        return {events:[],sources:[{sourceId:source.id,sourceKind:source.kind,
+          officialUrl:source.officialUrl??null,from:input.window.from,to:input.window.to,
+          reason:input.window.reason,checkedAt:stamp,outcome:"partial",
+          retryEligible:true,failure:"incomplete",events:[]}],
+          duplicateCount:0,partial:true,retrySourceIds:[source.id]};
+      }
+      return original!(input);
+    });
+    await s.scoped(cafeA,"2026-11-05",
+      {from:"2026-11-18",to:"2026-11-18",reason:"new_day"},{...newLdiBudget()});
+    const unresolved=s.tables.city_source_coverage.filter(r=>r.is_scan_root&&
+      r.window_from==="2026-11-17"&&r.status==="partial");
+    expect(unresolved).toHaveLength(1);
+    const source=unresolved[0].source_key;
+    expect(s.tables.city_source_coverage.find(r=>
+      r.is_scan_root&&r.window_from==="2026-11-18"&&r.source_key===source)?.status)
+      .toBe("partial");
+    await s.scoped(cafeA,"2026-11-06",
+      {from:"2026-11-19",to:"2026-11-19",reason:"new_day"},{...newLdiBudget()});
+    expect(s.tables.city_source_coverage.filter(r=>r.is_scan_root&&
+      r.source_key===source&&r.window_from==="2026-11-17")[0].status)
+      .toBe("none_found");
+  });
+
+  it("coalesces at most seven consecutive dates per source and never conflates separate sources",()=>{
+    const sources=[{id:"city-calendar",name:"City",kind:"city_calendar" as const},
+      {id:"arts",name:"Arts",kind:"arts" as const}];
+    const roots=Array.from({length:9},(_,i)=>({
+      source_key:i===8?"category:arts":"category:city-calendar",
+      window_from:new Date(Date.UTC(2026,10,17+i)).toISOString().slice(0,10),
+      window_to:new Date(Date.UTC(2026,10,17+i)).toISOString().slice(0,10),
+      scan_from:new Date(Date.UTC(2026,10,17+i)).toISOString().slice(0,10),
+      scan_to:new Date(Date.UTC(2026,10,17+i)).toISOString().slice(0,10),
+      window_reason:"new_day" as const,status:"partial",
+      search_attempted:false,is_scan_root:true,last_completed_at:null,
+    }));
+    const jobs=planCityResearchJobs(roots,sources,"2026-11-18");
+    expect(jobs).toHaveLength(3);
+    expect(jobs.filter(j=>j.key==="category:city-calendar")).toMatchObject([
+      {from:"2026-11-17",to:"2026-11-23",reason:"new_day"},
+      {from:"2026-11-24",to:"2026-11-24",reason:"new_day"},
+    ]);
+    expect(jobs.find(j=>j.key==="category:arts")).toMatchObject({
+      from:"2026-11-25",to:"2026-11-25"});
+    expect(jobs.flatMap(j=>j.roots)).toHaveLength(9);
+  });
+
   it("keeps confirmed legacy multi-day duration and original kind in the canonical overlay",async()=>{
     const s=mockStore();
     s.tables.cafe_events.push({id:"66666666-6666-4666-8666-666666666666",
