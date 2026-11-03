@@ -7,7 +7,7 @@ import {TEST_PHONE_NUMBER_ID} from "@/lib/whatsapp/transport";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 
-export const connectInput=z.strictObject({
+const connectInput=z.strictObject({
   threadId:z.uuid(),
   consent:z.literal(true),
 });
