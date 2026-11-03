@@ -205,6 +205,7 @@ async function studyOne(db:Db,scope:CityScope,source:CityResearchSource,
   let rejected=0,saved=0;
   const checkedAt=new Date().toISOString();
   for(const coverage of result.sources){
+    let coverageRejected=0;
     for(const event of coverage.events){
       try{
         let enrichment:ConfirmedEventEnrichment|null=null;
@@ -220,11 +221,22 @@ async function studyOne(db:Db,scope:CityScope,source:CityResearchSource,
         // One invalid source must not erase valid event facts or mark coverage complete.
         if(errorCode(error)&&!["22023","23514"].includes(errorCode(error)))throw error;
         rejected++;
+        coverageRejected++;
       }
     }
-    // Retain source-specific nested windows, including saturation and failures.
+    // A compact B child may be marked complete before A rejects one of its
+    // candidates. Never persist that child as complete: ancestor completion
+    // reconciles these child records and must require successful fact writes.
+    const persistedStatus=coverageRejected?"partial":coverage.outcome;
     await recordCitySourceCoverage(db,{...scope,sourceKey:key,from:coverage.from,to:coverage.to,
-      checkedAt:coverage.checkedAt,status:coverage.outcome});
+      checkedAt:coverage.checkedAt,status:persistedStatus});
+    if(coverageRejected){
+      const marked=await db.from("city_source_coverage").update({
+        failure_category:"invalid_source_url",
+      }).eq("city_key",cityScopeKey(scope)).eq("source_key",key)
+        .eq("window_from",coverage.from).eq("window_to",coverage.to);
+      assertOk(marked.error);
+    }
   }
   const statuses=result.sources.map(c=>c.outcome);
   const status=statuses.length===0?"failed":
@@ -444,7 +456,9 @@ async function studyBatchedDays(db:Db,scope:CityScope,job:CityResearchJob,
   });
   let rejected=0,saved=0;
   const checkedAt=new Date().toISOString();
+  const persistedCoverage:CitySourceResearchResult["sources"]=[];
   for(const coverage of result.sources){
+    let coverageRejected=0;
     for(const event of coverage.events){
       try{
         let enrichment:ConfirmedEventEnrichment|null=null;
@@ -458,25 +472,37 @@ async function studyBatchedDays(db:Db,scope:CityScope,job:CityResearchJob,
       }catch(error){
         if(errorCode(error)&&!["22023","23514"].includes(errorCode(error)))throw error;
         rejected++;
+        coverageRejected++;
       }
     }
-    // Split-window provenance is retained for diagnosing source saturation.
+    // Retain failed persistence on the exact child window rather than
+    // poisoning independent dates or completing an ancestor via this child.
+    const persisted={...coverage,
+      outcome:coverageRejected?"partial" as const:coverage.outcome,
+      failure:coverageRejected?"invalid_source_url":coverage.failure};
+    persistedCoverage.push(persisted);
     await recordCitySourceCoverage(db,{...scope,sourceKey:job.key,
       from:coverage.from,to:coverage.to,checkedAt:coverage.checkedAt,
-      status:coverage.outcome});
+      status:persisted.outcome});
+    if(coverageRejected){
+      const marked=await db.from("city_source_coverage").update({
+        failure_category:"invalid_source_url",
+      }).eq("city_key",cityScopeKey(scope)).eq("source_key",job.key)
+        .eq("window_from",coverage.from).eq("window_to",coverage.to);
+      assertOk(marked.error);
+    }
   }
   for(const root of job.roots){
     const day=root.window_from;
-    const covering=result.sources.filter(c=>c.from<=day&&c.to>=day);
-    const clean=covering.length>0&&!rejected&&covering.every(c=>complete(c.outcome));
+    const covering=persistedCoverage.filter(c=>c.from<=day&&c.to>=day);
+    const clean=covering.length>0&&covering.every(c=>complete(c.outcome));
     const found=covering.some(c=>c.events.some(e=>e.startDate===day));
     const status:CitySourceCoverageWrite["status"]=clean?
       (found?"found":"none_found"):
-      covering.some(c=>c.outcome==="partial")||rejected?"partial":"failed";
+      covering.some(c=>c.outcome==="partial")?"partial":"failed";
     await recordCitySourceCoverage(db,{...scope,sourceKey:job.key,
       from:day,to:day,checkedAt,status});
-    const failure=result.sources.find(c=>c.from<=day&&c.to>=day&&c.failure)?.failure??
-      (rejected?"invalid_source_url":null);
+    const failure=covering.find(c=>c.failure)?.failure??null;
     const updated=await db.from("city_source_coverage").update({
       search_attempted:true,failure_category:failure,
     }).eq("city_key",cityScopeKey(scope)).eq("source_key",job.key)
