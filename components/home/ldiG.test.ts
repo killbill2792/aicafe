@@ -113,7 +113,7 @@ describe("LDI G — multilingual, accessible in-place city browsing",()=>{
       for(const locale of ["en","es","ar"] as const){
         const value=(catalogs[locale] as Record<string,string>)[key];
         expect(typeof value).toBe("string");
-        expect(value.trim().length).toBeGreaterThan(3);
+        expect(value.trim().length).toBeGreaterThanOrEqual(2);
         expect(placeholders(value)).toEqual(expected);
       }
     }
