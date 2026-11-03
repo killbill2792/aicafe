@@ -62,8 +62,12 @@ screens and chat read the same tables and must not change.
    `fetched_at`/`last_seen` made each download look new; voids were keyed by order. Now each snapshot is filed
    under its source table's own unique key (enforced by the existing unique capture key), our bookkeeping times
    ignored, real changes logged, voids keyed by item. One-time collapse keeps the newest version (44 real time-entry changes logged).
-5. **Real-messiness tests.** Fixtures with reordered lists, the same order on two pages, re-pulls, retries,
-   partial days: same data in → same stored rows out.
+5. **Done — real-messiness tests.** App side (`lib/pos/toast/dayImport.test.ts`): shuffled lists in every order,
+   reordered pages, one order on two pages, an older version after a newer one, re-pulls → the exact same
+   import is sent. Database side (`scripts/toast-messy-import-sql-integration.sql`): re-pulls, shuffled lists and
+   pages, one order on two pages, a crashed run then a retry, a partial day then the full day → the same stored
+   rows as one clean import (orders, lines, archive, typed details, voids, refunds, card-fee facts, day totals,
+   rollup, change log); a real tip change → the new data plus exactly one change line.
 6. **More organized fields.** Toast sales category on order lines, item made/fulfilled times, server per
    payment, service charges — one additive change each.
 7. **WhatsApp brief sends every morning** (template unchanged, no new Meta approval):
