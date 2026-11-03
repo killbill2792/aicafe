@@ -24,7 +24,8 @@ type Db=SupabaseClient;
 type CoverageRow={source_key:string;window_from:string;window_to:string;
   scan_from:string;scan_to:string;window_reason:EventScanWindow["reason"];
   status:string;search_attempted:boolean;is_scan_root:boolean;
-  last_completed_at:string|null};
+  last_completed_at:string|null;last_checked_at?:string;
+  failure_category?:string|null};
 type NeighborhoodRow={scope:string;address_hash:string;status:string;
   retry_eligible:boolean;checked_at:string;last_completed_at:string|null};
 export type LdiBudget={cityTasks:number;neighborhoodScopes:number;
@@ -162,7 +163,7 @@ async function sourcesForCity(db:Db,cityKey:string):Promise<CityResearchSource[]
 }
 async function allCoverage(db:Db,cityKey:string):Promise<CoverageRow[]>{
   return rows<CoverageRow>((from,to)=>db.from("city_source_coverage")
-    .select("source_key,window_from,window_to,scan_from,scan_to,window_reason,status,search_attempted,is_scan_root,last_completed_at")
+    .select("source_key,window_from,window_to,scan_from,scan_to,window_reason,status,search_attempted,is_scan_root,last_completed_at,last_checked_at,failure_category")
     .eq("city_key",cityKey).order("scan_from").order("window_from")
     .range(from,to),5000);
 }
@@ -325,6 +326,58 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
   }
   return associated;
 }
+/** An initial or Monday root can be partially covered by narrower B
+ * saturation probes. They are diagnostic children, never independently
+ * authoritative root tasks. Only children researched in the SAME refresh
+ * epoch may complete that root. */
+function rootChildren(root:CoverageRow,all:readonly CoverageRow[]):CoverageRow[]{
+  if(root.window_reason==="new_day"||root.failure_category!=="invalid_shape")
+    return [];
+  const epoch=root.scan_from+"T00:00:00Z";
+  return all.filter(c=>!c.is_scan_root&&c.source_key===root.source_key&&
+    c.window_from>=root.window_from&&c.window_to<=root.window_to&&
+    c.window_from<=c.window_to&&(c.last_checked_at??"")>=epoch&&
+    (c.window_from!==root.window_from||c.window_to!==root.window_to));
+}
+function datesWithin(from:string,to:string):string[]{
+  const dates:string[]=[];
+  for(let date=from;date<=to&&dates.length<14;date=addDays(date,1))dates.push(date);
+  return dates;
+}
+/** Never count a child window as a completed root without provable coverage
+ * of EVERY date, including the full original Monday/initial time span. */
+export function reconciledCityRootStatus(root:CoverageRow,
+  all:readonly CoverageRow[]):"found"|"none_found"|null{
+  const children=rootChildren(root,all);
+  if(!children.length)return null;
+  const epoch=root.scan_from+"T00:00:00Z";
+  const completeChildren=children.filter(c=>complete(c.status)&&
+    c.last_completed_at!==null&&c.last_completed_at>=epoch);
+  if(!datesWithin(root.window_from,root.window_to).every(day=>
+    completeChildren.some(c=>c.window_from<=day&&c.window_to>=day)))return null;
+  return completeChildren.some(c=>c.status==="found")?"found":"none_found";
+}
+function outstandingCityRootWindows(root:CoverageRow,
+  all:readonly CoverageRow[]):Array<{from:string;to:string}>{
+  const children=rootChildren(root,all);
+  if(!children.length)return [{from:root.window_from,to:root.window_to}];
+  const epoch=root.scan_from+"T00:00:00Z";
+  const completeChildren=children.filter(c=>complete(c.status)&&
+    c.last_completed_at!==null&&c.last_completed_at>=epoch);
+  const planned=new Map<string,{from:string;to:string}>();
+  for(const day of datesWithin(root.window_from,root.window_to)){
+    if(completeChildren.some(c=>c.window_from<=day&&c.window_to>=day))continue;
+    const narrower=children.filter(c=>!complete(c.status)&&
+      c.window_from<=day&&c.window_to>=day).sort((a,b)=>
+      datesWithin(a.window_from,a.window_to).length-
+        datesWithin(b.window_from,b.window_to).length||
+      a.window_from.localeCompare(b.window_from));
+    const child=narrower[0],from=child?.window_from??root.window_from,
+      to=child?.window_to??root.window_to;
+    planned.set(from+"|"+to,{from,to});
+  }
+  return [...planned.values()];
+}
 /** A research request is one source/time window, never one date multiplied
  * by the number of cafés. Consecutive pending daily extensions for the SAME
  * source can share one bounded B search while each root day retains its own
@@ -349,8 +402,9 @@ export function planCityResearchJobs(all:readonly CoverageRow[],
       const group=daily.get(root.source_key)??[];
       group.push(root);daily.set(root.source_key,group);
     }else{
-      jobs.push({source,key:root.source_key,from:root.window_from,
-        to:root.window_to,reason:root.window_reason,roots:[root]});
+      for(const window of outstandingCityRootWindows(root,all))
+        jobs.push({source,key:root.source_key,from:window.from,
+          to:window.to,reason:root.window_reason,roots:[root]});
     }
   }
   for(const [key,group] of daily){
@@ -538,6 +592,22 @@ export async function scanSharedResearch(db:Db,input:{
         // Queued roots remain partial so the next cron can retry them.
       }
     }));
+  }
+  all=await allCoverage(db,cityKey);
+  // A saturated seven-day B attempt may have searched two subwindows, each
+  // still too crowded for the 5-event compact answer. Subsequent retries
+  // work on those narrower saved child windows. Only after they collectively
+  // cover the FULL original slice is its root marked complete.
+  for(const root of all.filter(c=>c.is_scan_root&&!complete(c.status))){
+    const status=reconciledCityRootStatus(root,all);
+    if(!status)continue;
+    await recordCitySourceCoverage(db,{...scope,sourceKey:root.source_key,
+      from:root.window_from,to:root.window_to,checkedAt:input.checkedAt,status});
+    const updated=await db.from("city_source_coverage").update({
+      search_attempted:true,failure_category:null,
+    }).eq("city_key",cityKey).eq("source_key",root.source_key)
+      .eq("window_from",root.window_from).eq("window_to",root.window_to);
+    assertOk(updated.error);
   }
   all=await allCoverage(db,cityKey);
   const completed=intended.every(item=>{const row=matchingCoverage(all,item.key,item.from,item.to);
