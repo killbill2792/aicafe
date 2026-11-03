@@ -50,8 +50,8 @@ function assertRange(from:string,to:string){
    throw new Error("Invalid café event range");
 }
 
-/** One owner-scoped source for saved event facts. Never performs web searches. */
-export async function readCafeEvents(db:SupabaseClient,businessId:string,
+/** Private raw table adapter. Public reads use readCafeEvents below. */
+async function readStoredCafeEvents(db:SupabaseClient,businessId:string,
   from:string,to:string):Promise<CafeEvent[]>{
  assertRange(from,to);
  const {data,error}=await db.from("cafe_events")
@@ -254,7 +254,8 @@ export async function readCityResearchCoverage(db:SupabaseClient,businessId:stri
   if(!cityKey)return empty("unavailable");
   const {data,error}=await db.from("city_source_coverage")
     .select("status,search_attempted,last_completed_at")
-    .eq("city_key",cityKey).lte("window_from",to).gte("window_to",from)
+    .eq("city_key",cityKey).eq("is_scan_root",true)
+    .lte("window_from",to).gte("window_to",from)
     .order("window_from").limit(4000);
   if(missingSchema(error))return empty("unavailable");
   ensureShared(error);
@@ -279,12 +280,16 @@ export async function readCityResearchCoverage(db:SupabaseClient,businessId:stri
   };
 }
 
-/** One canonical event-fact reader for Home, chat, Supervisor simulation and
- * scheduled revalidation. Retains existing UUIDs/status and staged fallback. */
-export async function readCanonicalCafeEvents(db:SupabaseClient,businessId:string,
+/** One canonical business-scoped event-fact reader for every consumer.
+ * The raw pre-migration table is private; both public export names below are
+ * the EXACT same function, with a safe legacy fallback before migrations 137/138.
+ * No scheduled research, search, or second overlay implementation here. */
+export async function readCafeEvents(db:SupabaseClient,businessId:string,
   from:string,to:string):Promise<CafeEvent[]>{
-  return overlayCityFacts(db,businessId,await readCafeEvents(db,businessId,from,to));
+  return overlayCityFacts(db,businessId,await readStoredCafeEvents(db,businessId,from,to));
 }
+export const readCanonicalCafeEvents=readCafeEvents;
+
 
 /** Private neighborhood scope freshness, through the sole owner Events facade. */
 export async function readNeighborhoodResearchCoverage(db:SupabaseClient,businessId:string):
