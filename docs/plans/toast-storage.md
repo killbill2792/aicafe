@@ -57,6 +57,11 @@ screens and chat read the same tables and must not change.
    `/admin/health` (owner decision Nov 3: system alerts go to the admin page, not café inboxes). Counts only
    in logs. First run will list repeated void, menu item, time entry, employee and job records: step 2
    enforced one record per order only; the other entities need the same rule.
+4b. **Done — migration 143: one record per staged object.** The first check (Nov 3) found ~2,200 extra rows:
+   migration 111 copies every update of our Toast tables (staff, jobs, menu, time entries, voids…) and our own
+   `fetched_at`/`last_seen` made each download look new; voids were keyed by order. Now each snapshot is filed
+   under its source table's own unique key (enforced by the existing unique capture key), our bookkeeping times
+   ignored, real changes logged, voids keyed by item. One-time collapse keeps the newest version (44 real time-entry changes logged).
 5. **Real-messiness tests.** Fixtures with reordered lists, the same order on two pages, re-pulls, retries,
    partial days: same data in → same stored rows out.
 6. **More organized fields.** Toast sales category on order lines, item made/fulfilled times, server per
