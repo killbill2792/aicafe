@@ -1505,6 +1505,7 @@
     "whatsAppConsent": "I own this phone and agree to receive AI Cafe Supervisor messages about this café on WhatsApp. I can disconnect any time.",
     "whatsAppConnected": "Connected to WhatsApp",
     "whatsAppNoThreads": "Start a Supervisor conversation in AI Cafe, then return here.",
+    "whatsAppPhoneChanged": "This number is no longer verified for the existing connection. Disconnect it, verify your current phone, then reconnect.",
     "supplierSourcesLink": "Supplier sources"
   },
   "CafeProfile": {
