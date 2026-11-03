@@ -1,0 +1,68 @@
+name: LDI G Events Browser Acceptance
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/[locale]/page.tsx'
+      - 'components/home/SavedEventsCard.tsx'
+      - 'components/home/EventsVisualFixture.tsx'
+      - 'scripts/ldi-g-visual-check.mjs'
+      - 'messages/en.json'
+      - 'messages/es.json'
+      - 'messages/ar.json'
+      - '.github/workflows/ldi-g-events-visual.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: development
+      EVENTS_VISUAL_FIXTURES: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      # This is a local-only acceptance fixture; never supply real café credentials.
+      NEXT_PUBLIC_SUPABASE_URL: ""
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ""
+      SUPABASE_SERVICE_ROLE_KEY: ""
+      OPENAI_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - name: Install locked app dependencies
+        run: npm ci
+      - name: Install isolated Playwright runner without modifying the lockfile
+        run: npm install --no-save --package-lock=false playwright@1.58.2
+      - name: Start real Next.js Home route with synthetic browser fixture
+        run: |
+          npm run dev -- --webpack --hostname 127.0.0.1 --port 3000 >/tmp/ldi-g-home.log 2>&1 &
+          echo $! >/tmp/ldi-g-home.pid
+          ready=0
+          for i in $(seq 1 90); do
+            if curl -fsS 'http://127.0.0.1:3000/en?fixture=events' >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+      - name: Verify Events UI at 390px and 1440px in EN, ES and Arabic RTL
+        run: node scripts/ldi-g-visual-check.mjs
+      - name: Upload anonymized fixture screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ldi-g-events-visual-screenshots
+          path: test-results/ldi-g-events/*.png
+          if-no-files-found: warn
+      - name: Show local fixture diagnostics on failure
+        if: failure()
+        run: tail -120 /tmp/ldi-g-home.log || true
+      - name: Stop local Next.js fixture
+        if: always()
+        run: |
+          if [ -f /tmp/ldi-g-home.pid ]; then kill "$(cat /tmp/ldi-g-home.pid)" || true; fi
