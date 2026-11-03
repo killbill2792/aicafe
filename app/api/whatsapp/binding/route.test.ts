@@ -47,9 +47,10 @@ beforeEach(()=>{
   currentUser={phone,phone_confirmed_at:"2026-11-01T01:00:00Z"};
   threadRow={id:thread};activeBindings=[];
   inserted.mockReset().mockResolvedValue({error:null});
-  updated.mockReset().mockReturnValue({eq:()=>({eq:async()=>({error:null})})});
+  updated.mockReset().mockImplementation(()=>{const q:{eq:(key:string,value:unknown)=>unknown}={eq:()=>q};\n    // Supabase's final chained update is thenable; resolve after all scope filters.\n    (q as unknown as {then:unknown}).then=(resolve:(v:unknown)=>unknown)=>Promise.resolve({error:null}).then(resolve);\n    return q;});
   from.mockClear();
-  mock.server.mockResolvedValue(db);
+  mock.server.mockClear().mockResolvedValue(db);
+  mock.scope.mockClear();
   mock.scope.mockResolvedValue({scope:{businessId:business,ownerUserId:owner},
     service:{listThreads:async()=>({items:[{id:thread,title:"My café",createdAt:"2026-11-01",updatedAt:"2026-11-01",lastMessageAt:null}]})}});
 });
