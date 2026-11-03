@@ -92,12 +92,39 @@ export function cityResearchPrompt(city:string,region:string|null,countryCode:st
     "No venue guesses, crowd estimates, commentary, markdown, or unsupported dates/URLs. "+
     "An empty answer does not prove the whole city has no events.";
 }
+/** Track rejected individual listings; the shared parser intentionally skips bad rows. */
+function responseRows(text:string):unknown[]|null{
+  let root:unknown;
+  try{root=JSON.parse(text.trim().replace(/^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$/gu,""));}catch{return null;}
+  if(Array.isArray(root))return root;
+  const pick=(value:unknown):unknown[]|null=>{
+    if(!value||typeof value!=="object"||Array.isArray(value))return null;
+    const record=value as Record<string,unknown>;
+    for(const key of ["events","results","items"])
+      if(Array.isArray(record[key]))return record[key] as unknown[];
+    return null;
+  };
+  const direct=pick(root);
+  if(direct)return direct;
+  if(root&&typeof root==="object")
+    for(const key of ["data","result","response"]){
+      const child=(root as Record<string,unknown>)[key];
+      if(Array.isArray(child))return child;
+      const nested=pick(child);
+      if(nested)return nested;
+    }
+  return null;
+}
 export function parseCityResearchEvents(text:string,from:string,to:string,source:CityResearchSource):
   {events:CityEventCandidate[];saturated:boolean;filtered:boolean}|null{
   // Reuse the existing forgiving Responses parser; project back to the original THREE fields.
   const parsed=parseNearbyEvents(text,from,to);
   if(parsed===null)return null;
-  const events:CityEventCandidate[]=[];let filtered=false;
+  const rows=responseRows(text);
+  // Bad dates, unsupported sources and out-of-window rows cannot count as completed coverage.
+  // Deduplicated valid rows do not count as missing evidence.
+  const rejected=rows?.some(row=>parseNearbyEvents(JSON.stringify({events:[row]}),from,to)?.length!==1)??false;
+  const events:CityEventCandidate[]=[];let filtered=rejected;
   const seen=new Set<string>();
   for(const item of parsed){
     const url=trustedUrl(item.sourceUrl);
@@ -110,5 +137,5 @@ export function parseCityResearchEvents(text:string,from:string,to:string,source
   }
   // A single compact answer is never treated as an unbounded event catalog.
   return {events:events.slice(0,CITY_RESEARCH_PER_CALL_LIMIT),
-    saturated:parsed.length>=CITY_RESEARCH_PER_CALL_LIMIT,filtered};
+    saturated:Math.max(parsed.length,rows?.length??0)>=CITY_RESEARCH_PER_CALL_LIMIT,filtered};
 }
