@@ -25,6 +25,8 @@ export type PosOrderLine = {
   voided: boolean;
   voidedBy: string | null;
   category?: string | null;
+  /** The POS's own ID for this line (Toast selection GUID); one row per ID per order. */
+  posLineId?: string | null;
 };
 
 export type PosOrder = {
