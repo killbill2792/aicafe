@@ -291,7 +291,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
     context:{
       asOf:today,timezone:b.timezone!,locale,threadId,
       webSearch:searchWeb,
-      savedEvents:(from,to)=>readSavedEventTimeline(db,scope,from,to),
+      savedEvents:(from,to,options)=>readSavedEventTimeline(db,scope,from,to,options),
       tools:{
         getProfitability:async()=>{throw new Error("tool_unavailable");},
         getSalesTrend:async()=>{throw new Error("tool_unavailable");},

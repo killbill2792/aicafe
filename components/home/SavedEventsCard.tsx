@@ -6,7 +6,7 @@ import {CalendarDays,ChevronLeft,ChevronRight,Lightbulb,X} from "lucide-react";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
-import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
+import type {CafeEvent,SavedEventTimeline,CityCatalogPage,CityCoverageOverview} from "@/lib/data/cafeEvents.server";
 import {EventReportCard} from "./EventReportCard";
 
 type Locale="en"|"es"|"ar";
@@ -15,6 +15,7 @@ type Plan=SavedEventTimeline["plans"][number];
 type Timeline=SavedEventTimeline&{today:string;currency?:string|null};
 type Tab="past"|"now"|"upcoming";
 type Panel="events"|"day"|null;
+type View="cafe"|"city";
 type Action={area:string;action:string;reason:string};
 
 /** Suggestions are read-only advice, never actionable checkboxes. */
@@ -95,6 +96,29 @@ export function eventChatTarget(date:string,event?:Pick<CafeEvent,"id"|"name">,
 }
 const planOn=(plans:readonly Plan[],date:string)=>
   plans.find(p=>p.startDate<=date&&p.endDate>=date);
+/** A discovery is NOT a café alert: only Supervisor-selected IDs are highlighted.
+ * Legacy day-only plans remain readable without attributing them to an event. */
+export function cafeHighlightedEvents(timeline:Pick<Timeline,"events"|"plans">,date:string):CafeEvent[]{
+  const ids=new Set(timeline.plans.filter(p=>p.startDate<=date&&p.endDate>=date)
+    .flatMap(p=>p.eventIds??[]));
+  return timeline.events.filter(e=>ids.has(e.id)&&e.startDate<=date&&e.endDate>=date);
+}
+export function cityEventChatTarget(item:CityCatalogPage["items"][number]){
+  // Keep the existing café thread key, but NEVER drop the shared city UUID:
+  // a linked event can still be beyond the chat's compact top-six/top-eight lists.
+  return {date:item.startDate,title:item.name,eventId:item.cafeEventId??undefined,
+    cityEventId:item.id};
+}
+const cityKindLabel=(kind:string,t:T)=>{
+  const known=["festival","conference","sports","parade","community","other"];
+  return t(known.includes(kind)?"kind"+kind.charAt(0).toUpperCase()+kind.slice(1):"kindOther");
+};
+const nextMonth=(month:string,delta:number)=>{
+  const d=new Date(month+"-01T00:00:00Z");
+  d.setUTCMonth(d.getUTCMonth()+delta);
+  return d.toISOString().slice(0,7);
+};
+const cityMonthEnd=(month:string)=>dayAt(nextMonth(month,1)+"-01",-1);
 /** A dated event can have multiple proposals. Never show another event's or day's
  * AI analysis; prefer the owner-approved choice over a draft on the same date. */
 export function eventPlanFor(plans:readonly Plan[],eventId:string,date:string):Plan|undefined{
@@ -215,9 +239,11 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
 }
 
 /** Existing AI proposal is date-scoped; never misrepresent it as verified event-specific analysis. */
-export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,locale,t,onChat}:{
+export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,locale,t,onChat,
+  cityCoverage,neighborhoodCoverage}:{
   plan:Plan|undefined;selectedEvent:CafeEvent|null;date:string;today:string;currency:string|null;
-  locale:Locale;t:T;onChat:()=>void;
+  locale:Locale;t:T;onChat:()=>void;cityCoverage?:CityCoverageOverview;
+  neighborhoodCoverage?:SavedEventTimeline["neighborhoodCoverage"];
 }){
   if(!plan)return <p className="rounded-xl bg-surface2 p-4 text-ink-muted">
     {selectedEvent?t("noEventInsight"):t("noPlan")}
@@ -226,8 +252,15 @@ export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,local
   return <section className="space-y-4 rounded-2xl border border-line bg-card p-4" aria-label={t("savedInsight")}>
     <div>
       <p className="text-[15px] font-semibold text-accent-text">{t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
-      {selectedEvent&&<p className="mt-1 text-[15px] text-ink-muted">{t("dayWideInsight",{date:dateLabel(date,locale,"long")})}</p>}
+      {selectedEvent&&(!plan.eventIds||plan.eventIds.length===0)&&<p className="mt-1 text-[15px] text-ink-muted">{t("dayWideInsight",{date:dateLabel(date,locale,"long")})}</p>}
       <p className="mt-2 break-words font-headline text-[20px] font-semibold leading-snug" dir="auto">{plan.summary}</p>
+    </div>
+    <div className="rounded-xl bg-surface2 p-3 text-[15px]" aria-label={t("outlookUncertainty")}>
+      <h4 className="font-semibold">{t("outlookUncertainty")}</h4>
+      <p>{t("demandUnknown")}</p>
+      {cityCoverage&&cityCoverage.status!=="complete"&&<p className="mt-1">{t("cityCoverageIncomplete")}</p>}
+      {neighborhoodCoverage?.some(scope=>scope.retryEligible||scope.status==="partial"||
+        scope.status==="failed")&&<p className="mt-1">{t("neighborhoodIncomplete")}</p>}
     </div>
     <PlanHours plan={plan} t={t}/>
     {actions.length>0&&<div className="space-y-2">
@@ -244,10 +277,172 @@ export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,local
   </section>;
 }
 
+
+/** City browsing consumes only the existing saved Events API and its canonical
+ * paginated catalog. Opening the panel never starts OpenAI research. */
+export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
+  today:string;locale:Locale;t:T;chatDisabled:boolean;
+  onAsk:(item:CityCatalogPage["items"][number])=>void;
+}){
+  const [month,setMonth]=useState(today.slice(0,7));
+  const [page,setPage]=useState(0);
+  const [kind,setKind]=useState("");
+  const [searchInput,setSearchInput]=useState("");
+  const [search,setSearch]=useState("");
+  const [catalog,setCatalog]=useState<CityCatalogPage|null>(null);
+  const [coverage,setCoverage]=useState<CityCoverageOverview|null>(null);
+  const [selected,setSelected]=useState<CityCatalogPage["items"][number]|null>(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState(false);
+  const [retry,setRetry]=useState(0);
+  const from=month+"-01",to=cityMonthEnd(month);
+  useEffect(()=>{
+    const controller=new AbortController();
+    const params=new URLSearchParams({cityFrom:from,cityTo:to,cityPage:String(page),
+      cityPageSize:"25"});
+    if(kind)params.set("cityKind",kind);
+    if(search)params.set("citySearch",search);
+    void fetch("/api/events/saved?"+params.toString(),{
+      cache:"no-store",signal:controller.signal,
+    }).then(async response=>{
+      if(!response.ok)throw new Error("city_catalog_unavailable");
+      const data=await response.json() as Timeline;
+      if(!data.cityCatalog||!Array.isArray(data.cityCatalog.items)||
+        data.cityCatalog.page!==page||data.cityCatalog.pageSize!==25)
+        throw new Error("invalid_city_catalog");
+      if(!controller.signal.aborted){
+        setCatalog(data.cityCatalog);setCoverage(data.cityCoverage??null);
+        setLoading(false);
+      }
+    }).catch(()=>{if(!controller.signal.aborted){setError(true);setLoading(false);}});
+    return ()=>controller.abort();
+  },[from,to,page,kind,search,retry]);
+
+  const choices=["","festival","conference","sports","parade","community","other"];
+  // Only input actions reset the loading state; the effect performs the fetch.
+  const beginRefresh=()=>{setLoading(true);setError(false);};
+  const changeMonth=(delta:number)=>{
+    beginRefresh();
+    setMonth(current=>nextMonth(current,delta));setPage(0);setSelected(null);
+  };
+  const applySearch=()=>{
+    beginRefresh();
+    setSearch(searchInput.trim().slice(0,80));setPage(0);setSelected(null);
+    // Search can intentionally recheck the same saved filter.
+    setRetry(v=>v+1);
+  };
+  const button="min-h-12 rounded-xl border border-line bg-surface2 px-3 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-40";
+  const checked=(value:string|null|undefined)=>value&&/^\d{4}-\d{2}-\d{2}/.test(value)?
+    dateLabel(value.slice(0,10),locale,"long"):t("researchUnknown");
+  const status=(item:CityCatalogPage["items"][number])=>item.status==="cancelled"?
+    t("cancelled"):item.status==="moved"?t("moved"):
+    item.status==="found"&&item.lastVerifiedAt?t("listedVerified"):t("sourceStatusUnknown");
+  if(selected)return <div className="space-y-4" data-testid="city-event-detail">
+    <button type="button" className={button} onClick={()=>setSelected(null)}>
+      <ChevronLeft size={18} className="me-1 inline rtl:rotate-180" aria-hidden="true"/>{t("backToCity")}
+    </button>
+    <article className="space-y-3 rounded-2xl border border-line bg-card p-4">
+      <p className="font-semibold text-accent-text">{dateLabel(selected.startDate,locale,"long")}
+        {selected.endDate!==selected.startDate?" – "+dateLabel(selected.endDate,locale,"long"):""}
+        {selected.startTime?" · "+selected.startTime:""}
+      </p>
+      <h4 className="break-words font-headline text-[22px] font-bold" dir="auto">{selected.name}</h4>
+      <p>{t("category")}: {cityKindLabel(selected.kind,t)}</p>
+      <p className="text-ink-muted">{selected.venue??t("venueUnknown")}</p>
+      <VenueMapLink address={selected.venueAddress} t={t}/>
+      <p className="text-[15px] text-ink-muted">{t("sourceStatus")}: {status(selected)}</p>
+      <p className="text-[15px] text-ink-muted">{t("researchedOn",{date:checked(selected.checkedAt)})}</p>
+      {selected.sources.some(source=>sourceUrl(source.url))?<ul className="space-y-2">
+        {selected.sources.filter(source=>sourceUrl(source.url)).map(source=><li key={source.url} className="break-all">
+          <a href={source.url} target="_blank" rel="noopener noreferrer"
+            className="inline-flex min-h-12 items-center text-accent-text underline">
+            {t("source")} · {source.url}
+          </a>
+          <p className="text-[15px] text-ink-muted">{t("researchedOn",{date:checked(source.observedAt)})}</p>
+        </li>)}
+      </ul>:<p className="text-ink-muted">{t("sourceUnknown")}</p>}
+      <p className="text-[15px] text-ink-muted">{t("cityUnknownDemand")}</p>
+      <button type="button" disabled={chatDisabled} onClick={()=>onAsk(selected)}
+        className="min-h-12 w-full rounded-xl bg-accent px-4 py-2 font-semibold text-on-accent disabled:opacity-50">
+        {t("askCitySupervisor")}
+      </button>
+    </article>
+  </div>;
+
+  return <div className="space-y-4" data-testid="city-events-catalog">
+    <p className="text-[16px] text-ink-muted">{t("cityCatalogScope")}</p>
+    <div className="flex items-center justify-between gap-2 rounded-xl bg-surface2 p-2">
+      <button type="button" className={button} onClick={()=>changeMonth(-1)}
+        aria-label={t("previousMonth")}><ChevronLeft className="rtl:rotate-180" aria-hidden="true"/></button>
+      <h4 className="text-center font-bold">{new Intl.DateTimeFormat(locale,{
+        timeZone:"UTC",month:"long",year:"numeric",
+      }).format(new Date(from+"T00:00:00Z"))}</h4>
+      <button type="button" className={button} onClick={()=>changeMonth(1)}
+        aria-label={t("nextMonth")}><ChevronRight className="rtl:rotate-180" aria-hidden="true"/></button>
+    </div>
+    <form className="flex flex-col gap-2 sm:flex-row" onSubmit={event=>{event.preventDefault();applySearch();}}>
+      <label className="min-w-0 flex-1">
+        <span className="mb-1 block font-semibold">{t("searchEvents")}</span>
+        <input type="search" maxLength={80} value={searchInput} onChange={e=>setSearchInput(e.target.value)}
+          className="min-h-12 w-full min-w-0 rounded-xl border border-line bg-card px-3 text-[17px]"
+          placeholder={t("searchEvents")}/>
+      </label>
+      <label className="min-w-0 flex-1">
+        <span className="mb-1 block font-semibold">{t("category")}</span>
+        <select value={kind} onChange={e=>{beginRefresh();setKind(e.target.value);setPage(0);}}
+          className="min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]">
+          {choices.map(choice=><option key={choice} value={choice}>{choice?cityKindLabel(choice,t):t("allCategories")}</option>)}
+        </select>
+      </label>
+      <button type="submit" className={button+" self-end"}>{t("searchButton")}</button>
+    </form>
+    {coverage&&<div role="status" className="rounded-xl bg-surface2 p-3 text-[15px]">
+      <p className="font-semibold">{t(coverage.status==="complete"?"cityCoverageRecorded":"cityCoverageIncomplete")}</p>
+      <p>{t("cityCoverageCounts",{checked:coverage.researchedSourceWindows,
+        failed:coverage.failedSourceWindows+coverage.partialSourceWindows+
+          coverage.unsearchedSourceWindows})}</p>
+      {coverage.lastCompletedAt&&<p>{t("researchedOn",{date:checked(coverage.lastCompletedAt)})}</p>}
+    </div>}
+    {loading?<p role="status">{t("loading")}</p>:
+      error?<div role="alert" className="space-y-2">
+        <p>{t("loadFailed")}</p>
+        <button type="button" onClick={()=>{beginRefresh();setRetry(v=>v+1);}} className={button}>{t("retry")}</button>
+      </div>:
+      !catalog?.available?<p role="status" className="rounded-xl bg-surface2 p-4">{t("cityUnavailable")}</p>:
+      <>
+        <p className="text-[15px] text-ink-muted" role="status">{t("cityResults",{
+          count:catalog.total,first:catalog.total===0?0:catalog.page*catalog.pageSize+1,
+          last:Math.min(catalog.total,(catalog.page+1)*catalog.pageSize)})}</p>
+        {catalog.items.length===0&&<p className="rounded-xl bg-surface2 p-4">{t("cityNoResults")}</p>}
+        <ul className="space-y-3">{catalog.items.map(item=><li key={item.id}>
+          <button type="button" onClick={()=>setSelected(item)}
+            className="w-full min-h-20 rounded-2xl border border-line bg-card p-4 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+            <p className="text-[15px] font-semibold text-accent-text">
+              {dateLabel(item.startDate,locale,"long")} · {cityKindLabel(item.kind,t)}
+            </p>
+            <h5 className="mt-1 break-words text-[19px] font-bold" dir="auto">{item.name}</h5>
+            <p className="mt-1 break-words text-[16px] text-ink-muted" dir="auto">
+              {item.venue??t("venueUnknown")}
+            </p>
+            <p className="text-[15px] text-ink-muted">{status(item)} · {t("researchedOn",{date:checked(item.checkedAt)})}</p>
+          </button>
+        </li>)}</ul>
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" className={button} disabled={catalog.page===0}
+            onClick={()=>{beginRefresh();setPage(p=>Math.max(0,p-1));}}>{t("previousPage")}</button>
+          <span className="text-[15px]">{t("pageNumber",{page:catalog.page+1})}</span>
+          <button type="button" className={button} disabled={!catalog.hasMore}
+            onClick={()=>{beginRefresh();setPage(p=>p+1);}}>{t("nextPage")}</button>
+        </div>
+      </>}
+  </div>;
+}
+
 /** Opens over the same Supervisor conversation. Reads saved PR 3 facts and loop plans only. */
 export default function SavedEventsCard({locale,chatDisabled,compact=false,onChatAboutDay}:{
   locale:Locale;chatDisabled:boolean;compact?:boolean;
-  onChatAboutDay:(date:string,title:string,eventId?:string,existingThreadId?:string)=>void;
+  onChatAboutDay:(date:string,title:string,eventId?:string,existingThreadId?:string,
+    cityEventId?:string,draftPrompt?:string)=>void;
 }){
   const t=useMemo(()=>createTranslator({locale,messages:{en,es,ar}[locale],namespace:"EventsPanel"}) as unknown as T,[locale]);
   const [timeline,setTimeline]=useState<Timeline|null>(null);
@@ -256,7 +451,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const [selected,setSelected]=useState<string|null>(null);
   const [selectedEventId,setSelectedEventId]=useState<string|null>(null);
   const [tab,setTab]=useState<Tab>("upcoming");
-  const [affectsOnly,setAffectsOnly]=useState(false);
+  const [view,setView]=useState<View>("cafe");
   const [calendar,setCalendar]=useState(false);
   const [month,setMonth]=useState<string|null>(null);
   const [sortByDate,setSortByDate]=useState(false);
@@ -291,16 +486,16 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const today=timeline.today;
   const days=eventStripDays(today);
   const lead=days.map(date=>({date,plan:planOn(timeline.plans,date),
-    events:eventsOn(timeline.events,date)}))
-    .find(d=>Boolean(d.plan)||d.events.length>0);
+    events:cafeHighlightedEvents(timeline,date)}))
+    .find(d=>Boolean(d.plan));
   const openDay=(date:string,eventId:string|null=null)=>{
-    setSelected(date);setSelectedEventId(eventId);setPanel("day");
+    setView("cafe");setSelected(date);setSelectedEventId(eventId);setPanel("day");
     setTab(date<today?"past":date===today?"now":"upcoming");setMonth(date.slice(0,7));
   };
   const openEvent=(event:CafeEvent,viewDate:string)=>openDay(eventDetailDay(event,viewDate),event.id);
-  const openEvents=(next:Tab="upcoming")=>{setPanel("events");setSelected(null);setSelectedEventId(null);setTab(next);setMonth(today.slice(0,7));};
+  const openEvents=(next:Tab="upcoming")=>{setView("cafe");setPanel("events");setSelected(null);setSelectedEventId(null);setTab(next);setMonth(today.slice(0,7));};
   const chosen=selected??today;
-  const allDayEvents=eventsOn(timeline.events,chosen);
+  const allDayEvents=cafeHighlightedEvents(timeline,chosen);
   const selectedEvent=selectedSavedEvent(timeline.events,chosen,selectedEventId);
   const plan=selectedEventId?
     (selectedEvent?eventPlanFor(timeline.plans,selectedEvent.id,chosen):undefined):
@@ -319,8 +514,16 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
     onChatAboutDay(target.date,target.title,target.eventId,target.existingThreadId);
     setPanel(null);
   };
-  const listDates=eventListDays(timeline,tab,affectsOnly,sortByDate);
-  const visibleEvents=(date:string)=>timeline.events.filter(e=>{
+  const askCity=(item:CityCatalogPage["items"][number])=>{
+    if(chatDisabled)return;
+    const target=cityEventChatTarget(item);
+    const prompt=t("askCityPrompt",{title:item.name,date:item.startDate,
+      source:item.sources[0]?.url??t("sourceUnknown")});
+    onChatAboutDay(target.date,target.title,target.eventId,undefined,target.cityEventId,prompt);
+    setPanel(null);
+  };
+  const listDates=eventListDays(timeline,tab,true,sortByDate);
+  const visibleEvents=(date:string)=>cafeHighlightedEvents(timeline,date).filter(e=>{
     const from=tab==="past"?dayAt(today,-14):tab==="now"?today:dayAt(today,1);
     return e.startDate<=date&&e.endDate>=date&&(e.startDate===date||(e.startDate<from&&date===from));
   });
@@ -347,11 +550,11 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
         {lead.plan?.summary&&<p className="mt-2 line-clamp-3 text-[17px] leading-relaxed text-ink" dir="auto">{lead.plan.summary}</p>}
         {lead.date===today&&liveEventHeadline(lead.plan,today,t)&&<p className="mt-2 rounded-xl bg-card p-2 text-[17px]">{liveEventHeadline(lead.plan,today,t)}</p>}
         <span className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text">{t("readInsights")} <ChevronRight size={19} className="ms-1 rtl:rotate-180" aria-hidden="true"/></span>
-      </button>:<p className="mb-3 text-[17px] leading-snug text-ink-muted">{t("nothingSaved")}</p>)}
+      </button>:<p className="mb-3 text-[17px] leading-snug text-ink-muted">{t("noCafeOutlook")}</p>)}
       {!compact&&<div className="grid grid-cols-7 gap-1">
         {days.map(date=>{
           const dayPlan=planOn(timeline.plans,date);
-          const events=eventsOn(timeline.events,date);
+          const events=cafeHighlightedEvents(timeline,date);
           const name=dateLabel(date,locale);
           return <button key={date} type="button" onClick={()=>openDay(date)}
             aria-label={name+" · "+(dayPlan?.summary??events.map(e=>e.name).join(", ")??"")}
@@ -365,26 +568,35 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
     </section>
     {panel&&<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 md:items-center"
       role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPanel(null);}}>
-      <section role="dialog" aria-modal="true" aria-label={panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}
+      <section role="dialog" aria-modal="true" aria-label={view==="city"?t("allCityEvents"):panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}
         dir={locale==="ar"?"rtl":"ltr"}
         className="flex max-h-[94dvh] w-full min-w-0 max-w-3xl flex-col overflow-hidden rounded-t-3xl bg-surface text-ink shadow-xl md:max-h-[90dvh] md:rounded-3xl">
         <header className="flex shrink-0 items-center gap-2 border-b border-line p-3">
           {panel==="day"&&<button type="button" onClick={()=>openEvents(tab)} aria-label={t("back")}
             className={button}><ChevronLeft size={20} className="rtl:rotate-180" aria-hidden="true"/></button>}
-          <h3 className="min-w-0 flex-1 break-words font-headline text-[20px] font-bold">{panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}</h3>
+          <h3 className="min-w-0 flex-1 break-words font-headline text-[20px] font-bold">{view==="city"?t("allCityEvents"):panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}</h3>
           <button type="button" onClick={()=>setPanel(null)} aria-label={t("close")} className={button}>
             <X size={22} aria-hidden="true"/></button>
         </header>
-        <div className="shrink-0 border-b border-line p-3">
+        {panel==="events"&&<div role="group" aria-label={t("viewChoice")}
+          className="grid shrink-0 grid-cols-2 gap-2 border-b border-line p-3">
+          {(["cafe","city"] as const).map(choice=><button key={choice} type="button"
+            aria-pressed={view===choice} onClick={()=>setView(choice)}
+            className={button+(view===choice?" bg-accent text-on-accent":" bg-surface2")}>
+            {t(choice==="cafe"?"forMyCafe":"allCityEvents")}
+          </button>)}
+        </div>}
+        {view==="cafe"&&<div className="shrink-0 border-b border-line p-3">
           <EventsTabs tab={tab} onChoose={next=>{setTab(next);setPanel("events");}} t={t}/>
-        </div>
+        </div>}
         <div className="min-h-0 min-w-0 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain p-3 text-[17px] leading-relaxed sm:p-5">
-          {panel==="events"?<>
+          {panel==="events"&&view==="city"?<CityCatalogView today={today} locale={locale} t={t}
+            chatDisabled={chatDisabled} onAsk={askCity}/>:
+            panel==="events"?<>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button type="button" className={button+" bg-surface2"} onClick={()=>setCalendar(v=>!v)}
                 aria-expanded={calendar}><CalendarDays size={19} className="me-2 inline" aria-hidden="true"/>{t("calendar")}</button>
-              <button type="button" className={button+" bg-surface2"} aria-pressed={affectsOnly}
-                onClick={()=>setAffectsOnly(v=>!v)}>{affectsOnly?t("affectsYou"):t("all")}</button>
+              <p className="text-[15px] text-ink-muted">{t("cafeSelectedHint")}</p>
               {tab==="upcoming"&&<button type="button" className={button+" bg-surface2"}
                 aria-pressed={sortByDate} onClick={()=>setSortByDate(v=>!v)}>{sortByDate?t("dateFirst"):t("importanceFirst")}</button>}
             </div>
@@ -435,13 +647,19 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                 <p className="text-[15px] text-ink-muted">{t("verificationPending")}</p>}
               {event.lastVerifiedAt&&<p className="text-[15px] text-ink-muted">{t("verifiedOn",{date:event.lastVerifiedAt.slice(0,10)})}</p>}
               <VenueMapLink address={event.venueAddress} t={t}/>
-              {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
-                href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
+              {[...new Set([event.sourceUrl,...(event.sourceUrls??[])]
+                .filter((url):url is string=>Boolean(sourceUrl(url))))].map((url,index,all)=>
+                <a key={url} className="ms-3 inline-flex min-h-12 max-w-full break-all items-center text-accent-text underline"
+                  href={url} target="_blank" rel="noopener noreferrer">
+                  {t("source")}{all.length>1?" "+(index+1):""}
+                </a>)}
+              <p className="text-[15px] text-ink-muted">{t("researchedOn",{date:event.lastCheckedAt.slice(0,10)})}</p>
               {!selectedEvent&&<button type="button" onClick={()=>chat(chosen,event)} disabled={chatDisabled}
                 className={button+" ms-3 text-accent-text underline"}>{t("chatAbout")}</button>}
             </article>)}
             <SavedEventAnalysis plan={plan} selectedEvent={selectedEvent} date={chosen}
               today={today} currency={timeline.currency??null} locale={locale} t={t}
+              cityCoverage={timeline.cityCoverage} neighborhoodCoverage={timeline.neighborhoodCoverage}
               onChat={()=>chat(chosen,selectedEvent??undefined)}/>
             {dayEvents.length===0&&!plan&&<p className="text-ink-muted">{t("noEvents")}</p>}
             <button type="button" onClick={()=>chat(chosen,selectedEvent??undefined)} disabled={chatDisabled}

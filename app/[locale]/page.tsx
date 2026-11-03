@@ -14,6 +14,7 @@ import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 
 import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
+import EventsVisualFixture from "@/components/home/EventsVisualFixture";
 import type {HomeStartPayload} from "@/components/home/DeferredChatStart";
 import {getCafeAccess} from "@/lib/access/access.server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
@@ -53,7 +54,15 @@ function isPeriod(value: string | undefined): value is Period {
   return value === "today" || value === "week" || value === "month";
 }
 
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string; thread?: string; experiment?: string }> }) {
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string; thread?: string; experiment?: string; fixture?: string }> }) {
+  // This is the existing Home route, never a standalone Events experience.
+  // Strictly development-only: preview and production builds cannot bypass auth.
+  if(process.env.NODE_ENV==="development"&&process.env.EVENTS_VISUAL_FIXTURES==="true"&&
+     (await searchParams).fixture==="events"){
+    const selected=await getLocale();
+    const fixtureLocale=selected==="es"||selected==="ar"?selected:"en";
+    return <PageShell wide><EventsVisualFixture locale={fixtureLocale}/></PageShell>;
+  }
   // Authorize the owner before starting any café-scoped data read or streaming the chat.
   const signedInUser = await timeReader("Home","requireOwnBusiness",requireOwnBusiness);
   const [requestedLocale, {period:periodParam,thread:initialThread,experiment:initialExperiment}] = await Promise.all([

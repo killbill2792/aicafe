@@ -137,8 +137,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       cafeLocation:async()=>readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
       webSearch:async(query,budget)=>{await assertCafeAiAccess(scope.businessId);return searchWeb(query,budget);},
-      savedEvents:async(from,to)=>readSavedEventTimeline(await getDb(),
-        {businessId:scope.businessId,ownerUserId:scope.ownerUserId},from,to),
+      savedEvents:async(from,to,options)=>readSavedEventTimeline(await getDb(),
+        {businessId:scope.businessId,ownerUserId:scope.ownerUserId},from,to,options),
       readWeekSchedule:weekStart=>external?
         getDb().then(client=>scopedWeekSchedule({weekStart},{client,businessId:scope.businessId,ownerUserId:scope.ownerUserId})):
         getWeekSchedule({weekStart}),

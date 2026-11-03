@@ -8,6 +8,10 @@ on:
       - 'supabase/migrations/**'
       - 'scripts/rls-all-public-tables.sql'
       - 'scripts/ldi-e-db-contract.sql'
+      # LDI G exercises the same canonical reader/API after migration and RLS replay.
+      - 'lib/data/cafeEvents.server.ts'
+      - 'app/api/events/saved/**'
+      - 'components/home/SavedEventsCard.tsx'
       - '.github/workflows/rls-every-table.yml'
   workflow_dispatch:
 concurrency:

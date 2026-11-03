@@ -10,7 +10,7 @@ describe("get_events: saved-only, owner-scoped read",()=>{
  it("publishes a strict schema and never accepts a café id from the model",async()=>{
   const tool=agentToolDefinitions.find(t=>t.name==="get_events");
   expect(tool?.strict).toBe(true);
-  expect(tool?.parameters.required).toEqual(["from","to"]);
+  expect(tool?.parameters.required).toEqual(["from","to","cityEventId"]);
   await expect(executeAgentTool("get_events",{from:"2026-10-01",to:"2026-10-31",businessId:"other"},
    context(vi.fn()))).rejects.toThrow();
  });

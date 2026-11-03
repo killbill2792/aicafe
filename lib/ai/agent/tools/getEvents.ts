@@ -1,7 +1,8 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 
-export const getEventsInput=z.strictObject({from:z.iso.date(),to:z.iso.date()});
+export const getEventsInput=z.strictObject({from:z.iso.date(),to:z.iso.date(),
+ cityEventId:z.uuid().nullish()});
 /** Keep chat tool evidence compact. Full readings remain in the one shared data reader. */
 function compactReport(raw:unknown):Record<string,unknown>|null{
  if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
@@ -17,16 +18,23 @@ export const savedEventsTools={
  get_events:{
   agentId:"alex",
   schema:getEventsInput,
-  description:"Read SAVED nearby events and holidays for any past or future date range (at most 90 days), including the owner's approved/draft event-readiness plans and existing Supervisor report status and measurements. Use for 'what is planned for Halloween?', 'how did Halloween go?', or events already found. No web search is triggered. Don't claim a plan was executed when still draft, and don't invent a report for missing evidence.",
+  description:"Read SAVED nearby events and holidays for any past or future date range (at most 90 days). If the owner selects a public city event ([cityId:UUID]), pass cityEventId to retrieve that EXACT saved city record even when outside the first six events, including confirmed venue, hours, sources, research freshness and saved verification status. including the owner's approved/draft event-readiness plans and existing Supervisor report status and measurements. Use for 'what is planned for Halloween?', 'how did Halloween go?', or events already found. No web search is triggered. Don't claim a plan was executed when still draft, and don't invent a report for missing evidence.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const v=getEventsInput.parse(raw);
    const ms=Date.parse(v.to+"T00:00:00Z")-Date.parse(v.from+"T00:00:00Z");
    if(v.from>v.to||ms>90*86400000)throw new Error("Invalid saved event range");
    if(!ctx.savedEvents)return {source:"cafe_events",period:{from:v.from,to:v.to},
      missing:["savedEventsUnavailable"],agentId:"alex"};
-   const result=await ctx.savedEvents(v.from,v.to);
-   return {source:"cafe_events",period:{from:v.from,to:v.to},missing:[],
+   const result=v.cityEventId?
+     await ctx.savedEvents(v.from,v.to,{cityEventId:v.cityEventId}):
+     await ctx.savedEvents(v.from,v.to);
+   const selectedCityEvent=v.cityEventId?
+     result.cityCatalog?.items.find(e=>e.id===v.cityEventId)??null:null;
+   return {source:"cafe_events",period:{from:v.from,to:v.to},
+     missing:v.cityEventId&&!selectedCityEvent?["selectedCityEventNotFound"]:[],
      agentId:"alex",unit:"cents",events:result.events.slice(0,8),
+     ...(v.cityEventId?{selectedCityEvent,
+       selectedCityEventId:v.cityEventId}:{}),
      // Same canonical saved read as Home; city catalog is paginated for screens.
      ...(result.cityCatalog?.available?{
        cityEvents:result.cityCatalog.items.slice(0,6),
