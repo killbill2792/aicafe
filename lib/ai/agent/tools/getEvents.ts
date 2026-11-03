@@ -34,6 +34,7 @@ export const savedEventsTools={
        cityEventPage:result.cityCatalog.page,
        omittedCityEvents:Math.max(0,result.cityCatalog.total-6),
      }:{}),
+     ...(result.cityCoverage?{cityResearchCoverage:result.cityCoverage}:{}),
      ...(result.neighborhood?.length?{
        neighborhood:result.neighborhood.slice(0,3).map(p=>({
          name:p.name,kind:p.kind,sourceUrl:p.sourceUrl,calendarUrl:p.calendarUrl,
@@ -42,7 +43,8 @@ export const savedEventsTools={
      }:{}),
      plans:result.plans.slice(0,5).map(p=>({...p,report:compactReport(p.report)})),
      omittedEvents:Math.max(0,result.events.length-8),omittedPlans:Math.max(0,result.plans.length-5),
-     searched:false,empty:result.events.length===0&&result.plans.length===0};
+     searched:false,empty:result.events.length===0&&result.plans.length===0&&
+       (!result.cityCatalog?.available||result.cityCatalog.total===0)};
   },
  },
 } as const;
