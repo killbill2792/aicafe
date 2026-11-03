@@ -3846,7 +3846,10 @@
     "kindSports": "Sports",
     "kindParade": "Parade",
     "kindCommunity": "Community",
-    "kindOther": "Other / not classified"
+    "kindOther": "Other / not classified",
+    "outlookUncertainty": "What is uncertain",
+    "demandUnknown": "This is a saved Supervisor judgment, not proof that this event caused or will cause additional café sales.",
+    "neighborhoodIncomplete": "Neighborhood research is incomplete; venue access or visitor movement may still be unknown."
   },
   "ComingUp": {
     "title": "Coming up",
