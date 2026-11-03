@@ -99,7 +99,12 @@ begin
     it.sha,p_run_id,p_run_id,p_page,it.source_index,it.capture_key);
    continue;
   end if;
-  if cur.payload_sha256<>it.sha then
+  if cur.payload_sha256<>it.sha
+   and coalesce(it.payload->>'modifiedDate','')<coalesce(cur.payload->>'modifiedDate','') then
+   -- An older version than the one stored (e.g. the same order twice on a page):
+   -- never replace newer data with older data.
+   continue;
+  elsif cur.payload_sha256<>it.sha then
    -- Real change (list order is already sorted by the app): log it, update in place.
    select coalesce(jsonb_agg(jsonb_build_object('path',d.path,'before',d.before,'after',d.after)
      order by d.path),'[]'::jsonb) into diff
