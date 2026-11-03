@@ -20,7 +20,7 @@ function response(value:unknown,{searched=true,cited=true}={}){
 }
 describe("bounded source-backed optional enrichment",()=>{
   it("saves only information supported by completed web search of the dated source",async()=>{
-    const request=vi.fn(async()=>response(details));
+    const request=vi.fn(async(_url:string,_init?:RequestInit)=>response(details));
     const enrich=createCityEventEnrichment({apiKey:"test",fetch:request as typeof fetch});
     expect(await enrich(candidate)).toEqual({
       venue:"Civic Hall",venueAddress:"20 Civic St",
