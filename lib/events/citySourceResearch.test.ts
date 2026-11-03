@@ -144,6 +144,26 @@ describe("LDI B city research contract",()=>{
     ]}),"2026-11-04","2026-11-04",venue);
     expect(parsed).toMatchObject({events:[event("Official concert")],filtered:true});
   });
+  it("keeps a good event but marks rejected dated listings as incomplete coverage",async()=>{
+    const web=vi.fn(async()=>completed([
+      event("Verified market"),event("Impossible date","2026-11-31")
+    ]));
+    const result=await createCitySourceResearch({fetch:web,apiKey:"test",now})(
+      input({from:"2026-11-04",to:"2026-11-04",reason:"new_day"},[venue]));
+    expect(result.events).toEqual([event("Verified market")]);
+    expect(result.sources[0]).toMatchObject({outcome:"partial",retryEligible:true});
+    expect(result.retrySourceIds).toEqual(["civic"]);
+  });
+  it("counts retries against the provider request cap, not logical windows",async()=>{
+    const web=vi.fn(async()=>incomplete());
+    const result=await createCitySourceResearch({fetch:web,apiKey:"test",
+      now,maxSearches:1})(input({from:"2026-11-04",to:"2026-11-04",
+      reason:"new_day"},[venue]));
+    expect(web).toHaveBeenCalledTimes(1);
+    expect(result.sources[0]).toMatchObject({
+      outcome:"failed",failure:"request_budget",retryEligible:true
+    });
+  });
   it("reports cross-domain source filtering as partial and schedules retry",async()=>{
     const web=vi.fn(async()=>completed([event("Bad source","2026-11-04",
       "https://unrelated.example.net/event")]));
