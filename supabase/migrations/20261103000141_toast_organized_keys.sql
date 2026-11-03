@@ -326,4 +326,3 @@ begin
  delete from public.toast_day_pages where run_id=p_run_id and business_date=p_business_date;
  return jsonb_build_object('orders',v_count,'net_sales_cents',v_net);
 end $$;
-
