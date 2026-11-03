@@ -472,7 +472,7 @@ begin
  -- Same rule as the parser: only checks that count (order and check not voided or
  -- deleted, not test mode or excess food); fundraising is not a service charge.
  with charges as (
-  select r.business_id,'toast:'||r.restaurant_guid::text||':'||r.entity_guid::text pos_order_id,
+  select r.business_id,r.business_date,'toast:'||r.restaurant_guid::text||':'||r.entity_guid::text pos_order_id,
    coalesce(sum(round((sc.value->>'chargeAmount')::numeric*100)) filter (where
     coalesce(sc.value->>'serviceChargeCategory','')<>'FUNDRAISING_CAMPAIGN'
     and coalesce((sc.value->>'gratuity')::boolean,false)=false),0)::bigint services,
@@ -490,11 +490,14 @@ begin
    and not coalesce((r.payload->>'excessFood')::boolean,false)
    and not coalesce((r.payload->>'createdInTestMode')::boolean,false)
    and not coalesce((c.value->>'deleted')::boolean,false) and not coalesce((c.value->>'voided')::boolean,false)
-  group by 1,2
+  group by 1,2,3
  )
  update public.orders o set service_charges_cents=ch.services,gratuity_cents=ch.gratuity
  from charges ch
+ -- An order Toast moved to another day can be archived under both dates: use only
+ -- the record filed under the order's own business date.
  where o.business_id=ch.business_id and o.pos_order_id=ch.pos_order_id
+  and o.business_date=ch.business_date
   and o.service_charges_cents is null and o.gratuity_cents is null;
 end $fill$;
 revoke all on function public.toast_fill_organized_fields() from public,anon,authenticated;

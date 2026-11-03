@@ -84,6 +84,10 @@ BEGIN
   payment_type,amount_cents,status)
  values(b,r,d,old_pay::text,'CASH',950,'actual');
 
+ -- Toast moved this order once: an older copy is still archived under the previous day.
+ insert into public.toast_raw_records(business_id,restaurant_guid,entity,entity_guid,business_date,payload,
+  payload_sha256,capture_key)
+ values(b,r,'order',old_ord,d-1,old_raw,repeat('b',64),'test:old-order-moved');
  perform public.toast_fill_organized_fields();
  select count(*) into n from public.order_lines where order_id=old_order_id
   and pos_line_id in (old_sel1::text,old_sel2::text) and ordered_at is not null and fulfillment_status is not null;
@@ -91,7 +95,7 @@ BEGIN
  perform pg_temp.assert_true((select count(distinct pos_line_id)=2 from public.order_lines where order_id=old_order_id),
   'two identical items get two different IDs');
  perform pg_temp.assert_true((select gratuity_cents=150 and service_charges_cents=0 from public.orders
-  where id=old_order_id),'older orders get their gratuity');
+  where id=old_order_id),'older orders get their gratuity once, not again from a moved copy');
  perform pg_temp.assert_true((select server_guid=srv and paid_at is not null from public.toast_payment_summaries
   where business_id=b and payment_ref=old_pay::text),'older payments get their server and paid time');
  -- Running it again changes nothing.
