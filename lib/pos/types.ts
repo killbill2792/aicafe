@@ -27,6 +27,9 @@ export type PosOrderLine = {
   category?: string | null;
   /** The POS's own ID for this line (Toast selection GUID); one row per ID per order. */
   posLineId?: string | null;
+  /** When the item was rung up (ISO time) and its kitchen status (Toast: NEW, HOLD, SENT, READY). */
+  orderedAt?: string | null;
+  fulfillmentStatus?: string | null;
 };
 
 export type PosOrder = {
@@ -45,6 +48,9 @@ export type PosOrder = {
   processingFeeCents: number;
   processingFeeStatus: ProcessingFeeStatus;
   netSalesCents: number;
+  /** Service charges (not gratuity, not fundraising) and gratuity on the order, in cents. */
+  serviceChargesCents?: number;
+  gratuityCents?: number;
   lines: PosOrderLine[];
 };
 

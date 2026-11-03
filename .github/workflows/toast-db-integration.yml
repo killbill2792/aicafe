@@ -18,6 +18,7 @@ on:
       - 'scripts/data-health-sql-integration.sql'
       - 'scripts/toast-one-object-sql-integration.sql'
       - 'scripts/toast-messy-import-sql-integration.sql'
+      - 'scripts/toast-organized-fields-sql-integration.sql'
       - 'supabase/migrations/*data_health*'
       - 'scripts/ai-toast-records-sql-integration.sql'
       - 'supabase/migrations/20261031000130_ai_reads_all_toast_fields.sql'
@@ -97,6 +98,8 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000141_toast_organized_keys.sql
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000145_toast_more_organized_fields.sql
       - name: Verify organized tables keep one row per order line and refunded payment
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
@@ -113,6 +116,10 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f scripts/toast-messy-import-sql-integration.sql
+      - name: Verify item timing, payment server and service charges are kept
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/toast-organized-fields-sql-integration.sql
       - name: Verify the AI can read every Toast field
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \

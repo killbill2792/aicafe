@@ -137,3 +137,25 @@ describe("Toast PR1 edge-case financial fixtures",()=>{
   }
  });
 });
+
+describe("Toast daily parser / more organized fields (plan step 6)",()=>{
+ it("keeps when each item was rung up and its kitchen status",()=>{
+  const x=parse({...order,checks:[{...check,selections:[{...check.selections[0],
+   createdDate:"2026-10-17T01:31:12.000-0700",fulfillmentStatus:"READY"}]}]});
+  expect(x.normalized?.lines[0].orderedAt).toBe("2026-10-17T08:31:12.000Z");
+  expect(x.normalized?.lines[0].fulfillmentStatus).toBe("READY");
+  const missing=parse(order);
+  expect(missing.normalized?.lines[0].orderedAt).toBeNull();
+  expect(missing.normalized?.lines[0].fulfillmentStatus).toBeNull();
+ });
+ it("puts service charges and gratuity on the order, never fundraising",()=>{
+  const x=parse({...order,checks:[{...check,amount:13,appliedServiceCharges:[
+   {chargeAmount:1.5,gratuity:false,serviceChargeCategory:"SERVICE_CHARGE"},
+   {chargeAmount:2,gratuity:true,serviceChargeCategory:"SERVICE_CHARGE"},
+   {chargeAmount:1,gratuity:false,serviceChargeCategory:"FUNDRAISING_CAMPAIGN"}]}]});
+  expect(x.normalized?.serviceChargesCents).toBe(150);
+  expect(x.normalized?.gratuityCents).toBe(200);
+  expect(x.normalized?.serviceChargesCents).toBe(x.serviceChargesCents);
+  expect(x.normalized?.gratuityCents).toBe(x.gratuityCents);
+ });
+});

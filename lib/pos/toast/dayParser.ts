@@ -40,6 +40,7 @@ const selection=z.object({
   salesCategory:z.object({name:z.string().nullish()}).passthrough().nullish(),
   quantity:money,price:money,preDiscountPrice:money,receiptLinePrice:money,tax:money,
   taxInclusion:z.string().nullish(),selectionType:z.string().nullish(),
+  createdDate:z.string().nullish(),fulfillmentStatus:z.string().nullish(),
   deferred:z.boolean().nullish(),voided:z.boolean().nullish(),
   voidDate:z.string().nullish(),voidBusinessDate:z.number().int().nullish(),voidReason:ref,
   refundDetails:z.object({refundAmount:money}).passthrough().nullish(),
@@ -221,6 +222,7 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
       name:s.displayName?.trim()||"Menu item",quantity:s.quantity??0,
       netSalesCents:s.voided?0:cents(s.price,w)-cents(s.refundDetails?.refundAmount,w),
       voided:Boolean(s.voided),voidedBy:null,
+      orderedAt:isoDate(s.createdDate)||null,fulfillmentStatus:s.fulfillmentStatus?.trim()||null,
       category:s.salesCategory?.name?.trim()||null,
       modifiers:normalizeToastModifiers(s.modifiers??[])});
    }
@@ -256,7 +258,8 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
   closedAt:isoDate(o.closedDate)||isoDate(o.openedDate)||new Date(requestedDay+"T12:00:00Z").toISOString(),
   grossSalesCents:before+discounts,discountsCents:discounts,refundsCents:refunds,
   taxCents:tax,tipCents:tips,netSalesCents:before-refunds,
-  processingFeeCents:0,processingFeeStatus:"missing",lines
+  processingFeeCents:0,processingFeeStatus:"missing",
+  serviceChargesCents:services,gratuityCents:gratuity,lines
  }:null;
  return {guid:o.guid,modifiedDate:isoDate(o.modifiedDate)||"",
   normalized,voids,refundFacts,paymentFacts,includedChecks,openChecks,
