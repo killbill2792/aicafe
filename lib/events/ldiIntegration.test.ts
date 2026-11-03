@@ -310,6 +310,40 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
       endDate:"2026-11-06",startTime:"09:00",endTime:"17:00"});
     expect(f.city.mock.calls[0][0].sources).toHaveLength(1);
   });
+  it("extends a previously discovered one-day city fact only with cited HTTPS end-date provenance",async()=>{
+    const s=mockStore();
+    const window=eventScanWindows("2026-11-03",null,"location")[0];
+    const generous=()=>({...newLdiBudget(),cityTasks:40});
+    // B first discovers a single date, with no second-pass evidence.
+    await s.scoped(cafeA,"2026-11-03",window,generous());
+    expect(s.tables.city_events).toHaveLength(1);
+    expect(s.tables.city_events[0].end_date).toBe("2026-11-04");
+    // Later rediscovery of the SAME fact obtains a cited multi-day end date.
+    f.enrichment.mockResolvedValue({endDate:"2026-11-07",venue:null,
+      venueAddress:null,startTime:null,endTime:null,
+      evidenceUrl:"https://city.example.org/fair"});
+    await s.scoped(cafeA,"2026-11-09",{
+      from:"2026-11-09",to:"2026-11-22",reason:"weekly",
+    },generous());
+    expect(s.tables.city_events).toHaveLength(1);
+    expect(s.tables.city_events[0]).toMatchObject({
+      end_date:"2026-11-07",
+      duration_source_url:"https://city.example.org/fair",
+    });
+    // A later null/shorter discovery cannot erase the extended public range.
+    f.enrichment.mockResolvedValue({endDate:"2026-11-05",venue:null,
+      venueAddress:null,startTime:null,endTime:null,
+      evidenceUrl:"https://city.example.org/fair"});
+    await s.scoped(cafeA,"2026-11-16",{
+      from:"2026-11-16",to:"2026-11-29",reason:"weekly",
+    },generous());
+    expect(s.tables.city_events[0].end_date).toBe("2026-11-07");
+    const catalog=await readCityEventCatalog(s.db,cafeA,"2026-11-06","2026-11-06");
+    expect(catalog.items).toMatchObject([{
+      id:cityId,endDate:"2026-11-07",
+    }]);
+  });
+
   it("never creates duplicate café plans for uncorroborated same-date titles from distinct URLs",async()=>{
     const s=mockStore();
     f.city.mockImplementation(async ({sources,window}:Row)=>{
