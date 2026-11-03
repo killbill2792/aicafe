@@ -296,7 +296,6 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
   const from=month+"-01",to=cityMonthEnd(month);
   useEffect(()=>{
     const controller=new AbortController();
-    setLoading(true);setError(false);
     const params=new URLSearchParams({cityFrom:from,cityTo:to,cityPage:String(page),
       cityPageSize:"25"});
     if(kind)params.set("cityKind",kind);
@@ -318,11 +317,17 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
   },[from,to,page,kind,search,retry]);
 
   const choices=["","festival","conference","sports","parade","community","other"];
+  // Only input actions reset the loading state; the effect performs the fetch.
+  const beginRefresh=()=>{setLoading(true);setError(false);};
   const changeMonth=(delta:number)=>{
+    beginRefresh();
     setMonth(current=>nextMonth(current,delta));setPage(0);setSelected(null);
   };
   const applySearch=()=>{
+    beginRefresh();
     setSearch(searchInput.trim().slice(0,80));setPage(0);setSelected(null);
+    // Search can intentionally recheck the same saved filter.
+    setRetry(v=>v+1);
   };
   const button="min-h-12 rounded-xl border border-line bg-surface2 px-3 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-40";
   const checked=(value:string|null|undefined)=>value&&/^\d{4}-\d{2}-\d{2}/.test(value)?
@@ -382,7 +387,7 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
       </label>
       <label className="min-w-0 flex-1">
         <span className="mb-1 block font-semibold">{t("category")}</span>
-        <select value={kind} onChange={e=>{setKind(e.target.value);setPage(0);}}
+        <select value={kind} onChange={e=>{beginRefresh();setKind(e.target.value);setPage(0);}}
           className="min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]">
           {choices.map(choice=><option key={choice} value={choice}>{choice?cityKindLabel(choice,t):t("allCategories")}</option>)}
         </select>
@@ -399,7 +404,7 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
     {loading?<p role="status">{t("loading")}</p>:
       error?<div role="alert" className="space-y-2">
         <p>{t("loadFailed")}</p>
-        <button type="button" onClick={()=>setRetry(v=>v+1)} className={button}>{t("retry")}</button>
+        <button type="button" onClick={()=>{beginRefresh();setRetry(v=>v+1);}} className={button}>{t("retry")}</button>
       </div>:
       !catalog?.available?<p role="status" className="rounded-xl bg-surface2 p-4">{t("cityUnavailable")}</p>:
       <>
@@ -422,10 +427,10 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
         </li>)}</ul>
         <div className="flex items-center justify-between gap-2">
           <button type="button" className={button} disabled={catalog.page===0}
-            onClick={()=>setPage(p=>Math.max(0,p-1))}>{t("previousPage")}</button>
+            onClick={()=>{beginRefresh();setPage(p=>Math.max(0,p-1));}}>{t("previousPage")}</button>
           <span className="text-[15px]">{t("pageNumber",{page:catalog.page+1})}</span>
           <button type="button" className={button} disabled={!catalog.hasMore}
-            onClick={()=>setPage(p=>p+1)}>{t("nextPage")}</button>
+            onClick={()=>{beginRefresh();setPage(p=>p+1);}}>{t("nextPage")}</button>
         </div>
       </>}
   </div>;
