@@ -83,12 +83,13 @@ export async function readEventChecklist(db:SupabaseClient,businessId:string,
 /** Both Supervisor chat and the future event panel use this saved-data view.
  * Plans/reports are read from the EXISTING Supervisor ledger, never copied. */
 export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
-  from:string,to:string):Promise<SavedEventTimeline>{
+  from:string,to:string,options:{cityEventId?:string}={}):Promise<SavedEventTimeline>{
  assertRange(from,to);
  const [events,proposals,cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage]=await Promise.all([
    readCanonicalCafeEvents(db,scope.businessId,from,to),
    readOwnerProposals(db,scope,{capabilityId:"alex.event_readiness.v1",limit:200}),
-   readCityEventCatalog(db,scope.businessId,from,to),
+   readCityEventCatalog(db,scope.businessId,from,to,
+     options.cityEventId?{page:0,pageSize:1,cityEventId:options.cityEventId}:{}),
    readCafeNeighborhoodEvidence(db,scope.businessId),
    readCityResearchCoverage(db,scope.businessId,from,to),
    readNeighborhoodResearchCoverage(db,scope.businessId),
@@ -145,7 +146,7 @@ async function cityKeyForCafe(db:SupabaseClient,businessId:string){
 /** One RLS-scoped, date-bounded, paginated source of city facts.
  * Do not run web research when an owner opens the panel. */
 export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
-  from:string,to:string,options:{page?:number;pageSize?:number;kind?:string;search?:string}={}):Promise<CityCatalogPage>{
+  from:string,to:string,options:{page?:number;pageSize?:number;kind?:string;search?:string;cityEventId?:string}={}):Promise<CityCatalogPage>{
   assertRange(from,to);
   const page=Number.isInteger(options.page)&&options.page!>=0?options.page!:0;
   const pageSize=Number.isInteger(options.pageSize)&&options.pageSize!>0?
@@ -161,6 +162,11 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
     .select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at",{count:"exact"})
     .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from);
   if(kind)query=query.eq("kind",kind);
+  if(options.cityEventId){
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(options.cityEventId))
+      throw new Error("invalid_city_event_id");
+    query=query.eq("id",options.cityEventId);
+  }
   // Escape LIKE wildcards so user input is a literal name fragment.
   if(search)query=query.ilike("name","%"+search.replace(/[%_\\]/g,match=>"\\"+match)+"%");
   const {data,count,error}=await query.order("start_date",{ascending:true})
