@@ -78,12 +78,9 @@ export async function readEventChecklist(db:SupabaseClient,businessId:string,
 export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
   from:string,to:string):Promise<SavedEventTimeline>{
  assertRange(from,to);
- const [legacyEvents,proposals]=await Promise.all([
-   readCafeEvents(db,scope.businessId,from,to),
+ const [events,proposals,cityCatalog,neighborhood,cityCoverage]=await Promise.all([
+   readCanonicalCafeEvents(db,scope.businessId,from,to),
    readOwnerProposals(db,scope,{capabilityId:"alex.event_readiness.v1",limit:200}),
- ]);
- const [events,cityCatalog,neighborhood,cityCoverage]=await Promise.all([
-   overlayCityFacts(db,scope.businessId,legacyEvents),
    readCityEventCatalog(db,scope.businessId,from,to),
    readCafeNeighborhoodEvidence(db,scope.businessId),
    readCityResearchCoverage(db,scope.businessId,from,to),
@@ -228,8 +225,11 @@ async function overlayCityFacts(db:SupabaseClient,businessId:string,
   return legacy.map(e=>{
     const id=byCafe.get(e.id),fact=id?shared.get(id):null;
     if(!id||!fact)return e;
-    return {...e,cityEventId:id,name:fact.name,kind:fact.kind,
-      startDate:fact.start_date,endDate:fact.end_date,
+    return {...e,cityEventId:id,name:fact.name,
+      // Compact three-field discovery never downgrades a documented category
+      // or shortens a confirmed multi-day event. Existing status is authoritative.
+      kind:fact.kind==="other"&&e.kind!=="other"?e.kind:fact.kind,
+      startDate:e.startDate,endDate:e.endDate>fact.end_date?e.endDate:fact.end_date,
       startTime:e.startTime??fact.start_time,endTime:e.endTime??fact.end_time,
       venue:e.venue??fact.venue,venueAddress:e.venueAddress??fact.venue_address,
       sourceUrls:bySource.get(id)??[]};
@@ -273,4 +273,11 @@ export async function readCityResearchCoverage(db:SupabaseClient,businessId:stri
     failedSourceWindows:failed,partialSourceWindows:partial,
     unsearchedSourceWindows:unsearched,lastCompletedAt:latest,
   };
+}
+
+/** One canonical event-fact reader for Home, chat, Supervisor simulation and
+ * scheduled revalidation. Retains existing UUIDs/status and staged fallback. */
+export async function readCanonicalCafeEvents(db:SupabaseClient,businessId:string,
+  from:string,to:string):Promise<CafeEvent[]>{
+  return overlayCityFacts(db,businessId,await readCafeEvents(db,businessId,from,to));
 }
