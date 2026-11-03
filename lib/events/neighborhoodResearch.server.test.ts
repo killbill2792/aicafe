@@ -205,6 +205,6 @@ describe("LDI C OpenAI neighborhood research", () => {
     ]);
     expect(result.coverage.every(s => s.failure === "http_error" && s.retryEligible)).toBe(true);
     expect(fetcher).toHaveBeenCalledTimes(8);
-    expect(requests.filter(q => q.includes("Scope:")).toHaveLength(8);
+    expect(requests.filter(q => q.includes("Scope:"))).toHaveLength(8);
   });
 });
