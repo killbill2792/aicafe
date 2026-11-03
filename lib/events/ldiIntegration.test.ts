@@ -4,9 +4,11 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 const f=vi.hoisted(()=>({
   city:vi.fn(),neighborhood:vi.fn(),writeCity:vi.fn(),writeCoverage:vi.fn(),
   writeNeighborhood:vi.fn(),link:vi.fn(),readLocation:vi.fn(),
+  enrichment:vi.fn(),
 }));
 vi.mock("./citySourceResearch.server",()=>({createCitySourceResearch:()=>f.city}));
 vi.mock("./neighborhoodResearch.server",()=>({researchNeighborhood:f.neighborhood}));
+vi.mock("./cityEventEnrichment.server",()=>({enrichCityEventFact:f.enrichment}));
 vi.mock("./cityEventPersistence.server",()=>({
   upsertCityEventFact:f.writeCity,recordCitySourceCoverage:f.writeCoverage,
   upsertCafeNeighborhoodEvidence:f.writeNeighborhood,linkCityEventToCafeEvent:f.link,
@@ -110,8 +112,10 @@ function mockStore(){
       e.start_date===input.startDate&&e.kind===input.kind);
     if(!event){
       event={id:cityId,city_key:"us|ca|example",name:input.name,kind:input.kind,
-        start_date:input.startDate,end_date:input.startDate,
-        venue:null,venue_address:null,last_checked_at:input.checkedAt};
+        start_date:input.startDate,end_date:input.endDate??input.startDate,
+        start_time:null,end_time:null,time_source_url:null,
+        venue:input.venue??null,venue_address:input.venueAddress??null,
+        last_checked_at:input.checkedAt};
       tables.city_events.push(event);
     }
     if(!tables.city_event_sources.some(s=>s.city_event_id===event.id&&
@@ -169,6 +173,7 @@ function neighborhoodFixture(scopes:string[]){
 }
 beforeEach(()=>{
   vi.clearAllMocks();
+  f.enrichment.mockResolvedValue(null);
   f.neighborhood.mockImplementation(async ({scopes}:{scopes:string[]})=>
     neighborhoodFixture(scopes));
   f.city.mockImplementation(async ({sources,window}:{
@@ -270,6 +275,24 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     await s.scoped(cafeA,"2026-11-09",weekly[0],{
       ...newLdiBudget(),cityTasks:40});
     expect(s.tables.city_events).toHaveLength(1);
+  });
+  it("retains optional cited venue, duration and hours without changing B's discovery format",async()=>{
+    const s=mockStore();
+    f.enrichment.mockResolvedValueOnce({endDate:"2026-11-06",venue:"Civic Hall",
+      venueAddress:"20 Civic St",startTime:"09:00",endTime:"17:00",
+      evidenceUrl:"https://city.example.org/fair"});
+    await s.scoped(cafeA,"2026-11-03",
+      eventScanWindows("2026-11-03",null,"hash")[0],
+      {...newLdiBudget(),cityTasks:40});
+    expect(s.tables.city_events[0]).toMatchObject({
+      venue:"Civic Hall",venue_address:"20 Civic St",end_date:"2026-11-06",
+      start_time:"09:00",end_time:"17:00",
+      time_source_url:"https://city.example.org/fair",
+    });
+    const page=await readCityEventCatalog(s.db,cafeA,"2026-11-03","2026-11-16");
+    expect(page.items[0]).toMatchObject({
+      endDate:"2026-11-06",startTime:"09:00",endTime:"17:00"});
+    expect(f.city.mock.calls[0][0].sources).toHaveLength(1);
   });
   it("pages an owner catalog past old 500-row caps; source URLs and null venues remain",async()=>{
     const s=mockStore();
