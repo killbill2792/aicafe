@@ -554,6 +554,16 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
 
   it("resumes a saturated initial seven-day source at its saved child windows, not the wide root",async()=>{
     const s=mockStore();
+    // Model migration 138's RPC guard: a scan-start timestamp older than a
+    // post-research root write is ignored. Completion must use a fresh time.
+    const realCoverageWrite=f.writeCoverage.getMockImplementation();
+    f.writeCoverage.mockImplementation(async(db:unknown,write:Row)=>{
+      const prior=s.tables.city_source_coverage.find(row=>
+        row.city_key==="us|ca|example"&&row.source_key===write.sourceKey&&
+        row.window_from===write.from&&row.window_to===write.to);
+      if(prior&&write.checkedAt<prior.last_checked_at)return;
+      return realCoverageWrite!(db,write);
+    });
     const expected=[{name:"Public concert",startDate:"2026-11-04",
       sourceUrl:"https://city.example.org/concert"}];
     const original=f.city.getMockImplementation();
@@ -614,6 +624,58 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
       Parameters<typeof reconciledCityRootStatus>[1])).toBe("found");
     const coverage=await readCityResearchCoverage(s.db,cafeA,"2026-11-03","2026-11-16");
     expect(coverage.status).toBe("complete");
+  });
+
+  it("narrows saturated multi-day new-day catch-up roots without re-searching the wide range",async()=>{
+    const s=mockStore(),original=f.city.getMockImplementation();
+    f.city.mockImplementation(async(input:Row)=>{
+      if(input.sources[0].id!=="city-calendar")return original!(input);
+      const make=(from:string,to:string,outcome:string):Row=>({
+        sourceId:"city-calendar",sourceKind:"city_calendar",officialUrl:null,
+        from,to,reason:input.window.reason,checkedAt:stamp,outcome,
+        retryEligible:outcome==="partial",
+        failure:outcome==="partial"?"invalid_shape":null,events:[],
+      });
+      let sources:Row[];
+      if(input.window.from==="2026-11-03"&&input.window.to==="2026-11-09"){
+        sources=[make("2026-11-03","2026-11-06","partial"),
+          make("2026-11-07","2026-11-09","partial")];
+      }else if(input.window.from==="2026-11-03"&&input.window.to==="2026-11-06"){
+        sources=[make("2026-11-03","2026-11-04","none_found"),
+          make("2026-11-05","2026-11-06","none_found")];
+      }else if(input.window.from==="2026-11-07"&&input.window.to==="2026-11-09"){
+        sources=[make("2026-11-07","2026-11-09","none_found")];
+      }else sources=[make(input.window.from,input.window.to,"none_found")];
+      return {events:[],sources,duplicateCount:0,
+        partial:sources.some(c=>c.outcome==="partial"),retrySourceIds:[]};
+    });
+    const catchup={from:"2026-11-03",to:"2026-11-09",reason:"new_day" as const};
+    const generous=()=>({...newLdiBudget(),cityTasks:40});
+    expect((await s.scoped(cafeA,"2026-11-03",catchup,generous()))?.completed)
+      .toBe(false);
+    const source="category:city-calendar";
+    const root=()=>s.tables.city_source_coverage.find(row=>row.is_scan_root&&
+      row.source_key===source&&row.window_from==="2026-11-03"&&
+      row.window_to==="2026-11-09");
+    expect(root()).toMatchObject({status:"partial",window_reason:"new_day"});
+    const jobs=planCityResearchJobs(s.tables.city_source_coverage as unknown as
+      Parameters<typeof planCityResearchJobs>[0],[
+      {id:"city-calendar",name:"City",kind:"city_calendar"}],"2026-11-04");
+    expect(jobs.map(job=>[job.from,job.to])).toEqual([
+      ["2026-11-03","2026-11-06"],["2026-11-07","2026-11-09"],
+    ]);
+    const calls=f.city.mock.calls.length;
+    expect((await s.scoped(cafeA,"2026-11-04",catchup,generous()))?.completed)
+      .toBe(true);
+    expect(f.city.mock.calls.slice(calls).filter(([args])=>
+      args.sources[0].id==="city-calendar").map(([args])=>[
+      args.window.from,args.window.to,
+    ])).toEqual([
+      ["2026-11-03","2026-11-06"],["2026-11-07","2026-11-09"],
+    ]);
+    expect(root()?.status).toBe("none_found");
+    expect((await readCityResearchCoverage(s.db,cafeA,"2026-11-03","2026-11-09"))
+      .status).toBe("complete");
   });
 
   it("does not complete saturated ancestor coverage when A rejects a nested candidate write",async()=>{
