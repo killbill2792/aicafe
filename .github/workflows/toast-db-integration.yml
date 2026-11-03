@@ -100,6 +100,8 @@ jobs:
             -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000141_toast_organized_keys.sql
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000145_toast_more_organized_fields.sql
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000146_toast_fill_in_steps.sql
       - name: Verify organized tables keep one row per order line and refunded payment
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
