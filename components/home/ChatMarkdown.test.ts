@@ -132,6 +132,19 @@ describe("provenance footnotes",()=>{
    expect(html).toContain('aria-expanded="false"');
    expect(html).not.toContain("group-hover:block");
  });
+ it("underlines complete money tokens in hourly chart-like labels without stray markers",()=>{
+   const text="Hourly chart: $105.50 / $61.35; day $1,358.44.";
+   const numbers=["$105.50","$61.35","$1,358.44"];
+   const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
+     unverified:numbers.map((n,i)=>({start:text.indexOf(n),end:text.indexOf(n)+n.length,
+       source:i===1?"estimate" as const:"owner" as const}))}));
+   for(const n of numbers)expect(html).toContain(">"+n+"</button>");
+   expect(html.match(/decoration-dotted/g)).toHaveLength(3);
+   expect(html).toContain("decoration-warn");
+   expect(html).toContain("decoration-chart-staff");
+   expect(html).not.toContain("align-super");
+   expect(html).not.toContain("h-[6px] w-[6px]");
+ });
  it("displays a checker-rejected historical duration as one complete warning",()=>{
    const text="Payroll is recorded for 90 days.";
    const start=text.indexOf("90");
