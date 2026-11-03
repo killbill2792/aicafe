@@ -48,8 +48,9 @@ screens and chat read the same tables and must not change.
    and `seen_run_id`; readers that select "the latest import's records" read the one current record for the
    day. One-time conversion: keep the newest version, turn older real versions into change lines, drop the
    rest. Fee trigger, typed facts, `toast_records_for` and the day check keep their outputs (tests prove it).
-3. **Organized tables, enforced.** Unique keys on orders, order lines and payment facts by POS GUID; writes
-   are upserts. Proves no double counting in screens or the AI's data.
+3. **Done — migration 141: organized tables, enforced.** Orders, payment facts, payment summaries, voids and
+   rollups already had unique keys. Added: Toast line ID on order lines (one row per order + line ID) and one
+   refund row per payment. Screens and the AI read `orders`, which was already one row per order.
 4. **Daily health check.** Cron writes one inbox item per café-day when: database > 70 % of plan, any
    duplicate POS object, a daily total ≠ the POS day total, or unusual growth. Counts only in logs.
 5. **Real-messiness tests.** Fixtures with reordered lists, the same order on two pages, re-pulls, retries,

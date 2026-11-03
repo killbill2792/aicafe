@@ -110,6 +110,8 @@ describe("Toast PR1 edge-case financial fixtures",()=>{
   expect(result.normalized?.netSalesCents).toBe(1500);
   expect(result.normalized?.lines).toHaveLength(1);
   expect(result.normalized?.lines[0].netSalesCents).toBe(1500);
+  // Each line carries Toast's selection GUID, the database key for one row per line.
+  expect(result.normalized?.lines[0].posLineId).toBe("33333333-3333-4333-8333-333333333333");
  });
  it("does not count voided, denied, cancelled or errored payment tips",()=>{
   const result=parse({...order,checks:[{...check,payments:[

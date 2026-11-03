@@ -217,7 +217,7 @@ export function parseToastBusinessOrder(payload:unknown,restaurantGuid:string,
    // Voided selections are retained with zero net and never count as sold.
    if(!deferred){
     if(!s.voided&&s.price==null)warn(w,"missing_selection_price");
-    lines.push({posItemId:s.item?.guid?"toast:"+restaurantGuid+":"+s.item.guid:null,
+    lines.push({posLineId:s.guid??null,posItemId:s.item?.guid?"toast:"+restaurantGuid+":"+s.item.guid:null,
       name:s.displayName?.trim()||"Menu item",quantity:s.quantity??0,
       netSalesCents:s.voided?0:cents(s.price,w)-cents(s.refundDetails?.refundAmount,w),
       voided:Boolean(s.voided),voidedBy:null,
