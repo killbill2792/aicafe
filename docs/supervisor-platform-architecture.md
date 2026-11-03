@@ -67,7 +67,7 @@ This table distinguishes observed repository behavior from desired future behavi
 | lib/operating/tasks.ts, reconcileTasks.ts, lib/data/operatingTasks.ts | Persisted Needs You/Handled/Watching task system, agent attribution (Alex/Olivia/Maya/Leo), owner responses and reconciliation | Not a generic durable executor; existing page reconciliation is not a reliable background scheduler. Extend this inbox instead of creating another |
 | lib/operating/events.ts, docs/09-ai-native-operating-system.md | In-process publish/subscribe event abstraction, typed operating signals and decisions | In-process notifications are not a durable job queue or at-least-once post-commit delivery |
 | lib/ai/conversations/usage.server.ts | Persistent token/call counts and nullable model-price cost estimates | Basis for shared limits, not evidence that every domain has latency/tool/scan limits |
-| app/api/cron/team-alerts/route.ts, lib/ai/notifications/whatsapp.server.ts | Opted-in, provider-dependent owner WhatsApp category alert; pre-send reservation / deduped delivery attempt, currently UTC-day behavior | Not a universal event evaluator, business-local quiet-hour scheduler or employee messaging service |
+| `app/api/cron/whatsapp-supervisor/route.ts`, `app/api/cron/daily-brief/route.ts` | Canonical owner WhatsApp Supervisor conversation and guarded morning brief | Legacy UTC-day task sender retired. Not a universal event evaluator or employee messaging service |
 | docs/supervisor-phase6-voice-attachments.md | Editable voice transcription and private PDF/image/text storage, unanalysed | Upload does **not** prove extracted employee availability, inventory counts or sales; currently no trusted CSV intake through Supervisor |
 | docs/supervisor-phase8-supplier-intelligence.md | Owner-reported supplier quotations and optional unverified public search snippets | Supplier quote != inventory, verified stock, invoice payment or supplier order |
 | docs/scheduling-architecture.md and **merged PRs #72/#75/#77/#84** | Owner-only, default-off manual scheduling foundation and availability UI plus merged PR #77 pure `lib/calc/scheduling/planner*` optimizer, independent assignment validator, and PR #84 default-off revisioned schedule-draft persistence (`lib/scheduling/planDrafts.server.ts`, migration `20261015000064_olivia_plan_drafts.sql`) | Code is merged into `main`, but production migration/flag activation are unverified; versioned schedule publishing, verified worker acceptance, and live Supervisor scheduling adapter remain unshipped |
@@ -919,7 +919,7 @@ Adopt typed versioned **business events** with businessId, domain/entity ID, rev
 
 Registered domain evaluators subscribe to a **bounded allowlist** (e.g. confirmed availability changed, approved schedule version published, canonical price cost changed, invoice due status supported) and to time-based café-local checks. Evaluator produces a typed finding fingerprint (tenant + capability + entity + source revision + period + rule version), evidence, severity, lifecycle and proposed owner action. Before creating a new task it atomically upserts/reconciles with existing **operating_tasks** statuses. Reevaluate/reopen when material evidence changes, do not recreate on page view or mark gaps "handled" until proven resolved. Existing Alex/Maya/Leo tasks and owner snoozes/resolutions must not be overwritten by a new general reconciler.
 
-Notification routing is downstream of verified persisted tasks/events: owner opted in, channel configured, confirmed destination, role still authorized, frequency/quiet hours checked in **business-local time**, privacy-safe template, rate cap, per-task and per-owner dedupe, actual provider receipt and audit. Current WhatsApp cron is UTC-day and is not yet a general event router; it must remain unchanged until a separately approved PR. Never notify employees or claim their acceptance via the existing owner WhatsApp path. Provider absent → in-app task, outbound result unavailable; "remind me tomorrow" requires a real persisted approved job, not just chat text.
+Notification routing is downstream of verified persisted tasks/events: owner opted in, channel configured, confirmed destination, role still authorized, frequency/quiet hours checked in **business-local time**, privacy-safe template, rate cap, per-task and per-owner dedupe, actual provider receipt and audit. The former UTC-day owner task-alert cron is retired; the canonical WhatsApp Supervisor cron is not a general event router and any expansion requires separate approval. Never notify employees or claim their acceptance via the existing owner WhatsApp path. Provider absent → in-app task, outbound result unavailable; "remind me tomorrow" requires a real persisted approved job, not just chat text.
 
 ### 10.1 Owner interruption policy: fewer interruptions, not more notifications
 
@@ -930,7 +930,7 @@ A domain evaluator produces **evidence-grounded findings**; a separate shared ve
 - **Make exceptions actionable:** every urgent interruption contains “what happened”, source/quality/freshness, why now, what needs a decision, an actual deadline or “no deadline recorded”, the consequence of inaction and a scoped trusted action link. Do not page for actions the system safely finished and verified.
 - **Report precise lifecycle:** evaluated → consolidated/suppressed/queued → provider-delivered → owner-acknowledged → issue-resolved/reopened. Sent ≠ read; read ≠ resolution; provider unavailable means in-app task, not “notified”. Reevaluate on relevant evidence revisions; consent revocation/quiet-hours changes invalidate pending sends.
 
-**Do not change** the current UTC-day owner WhatsApp cron in this PR. Require evaluated policies, permission, routing and notification regression tests before any later transport change.
+**Historical warning:** the UTC-day owner task-alert cron is now retired. Require evaluated policies, permission, routing and notification regression tests before any later change to the canonical WhatsApp channel.
 
 ### 10.2 Measured owner-time outcomes and safety scorecard
 
@@ -1120,7 +1120,7 @@ These are **contract traces**, not claims that the future features already run. 
 
 **R8 — "universal" routing becomes lowest-common-denominator domain logic:** registry protocol stays narrow; domain validation, solvers, financial formulas and source precedence remain specialist-owned/canonical.
 
-**R9 — Notifications and legal/privacy:** WhatsApp owner messages are opt-in and current UTC cron; avoid reusing as employee messaging or asserting location quiet hours without additional tests. Staging / counsel or compliance review as appropriate.
+**R9 — Notifications and legal/privacy:** canonical WhatsApp owner messages remain opt-in and guarded; the former UTC cron was retired. Do not reuse the owner channel for employees or assert quiet-hours compliance without tests. Staging / counsel or compliance review as appropriate.
 
 **R10 — Source freshness, legal and data reliability:** unsupported worker opt-in, hourly sales, tax/benefits and supplier quantities must not be generated by a model. Unknown data preserves unknown consequences.
 
