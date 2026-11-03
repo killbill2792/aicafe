@@ -649,7 +649,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
               <VenueMapLink address={event.venueAddress} t={t}/>
               {[...new Set([event.sourceUrl,...(event.sourceUrls??[])]
                 .filter((url):url is string=>Boolean(sourceUrl(url))))].map((url,index,all)=>
-                <a key={url} className="inline-flex min-h-12 max-w-full break-all items-center text-accent-text underline"
+                <a key={url} className="ms-3 inline-flex min-h-12 max-w-full break-all items-center text-accent-text underline"
                   href={url} target="_blank" rel="noopener noreferrer">
                   {t("source")}{all.length>1?" "+(index+1):""}
                 </a>)}
