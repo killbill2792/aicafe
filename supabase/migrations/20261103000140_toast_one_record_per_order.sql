@@ -142,7 +142,7 @@ grant execute on function public.toast_archive_page(uuid,date,integer,jsonb,bool
 create or replace function public.toast_archive_collapse_day(
  p_business_id uuid,p_business_date date
 ) returns integer language plpgsql security definer set search_path=public as $collapse$
-declare g record; v record; prev record; keep uuid; last_run uuid; n integer:=0; k integer; diff jsonb;
+declare g record; v record; prev record; has_prev boolean; keep uuid; last_run uuid; n integer:=0; k integer; diff jsonb;
 begin
  if auth.role() <> 'service_role' and current_user not in ('postgres','supabase_admin')
  then raise exception 'service role only'; end if;
@@ -160,14 +160,16 @@ begin
    and r.restaurant_guid is not distinct from g.restaurant_guid and r.entity_guid=g.entity_guid
   order by coalesce(r.run_id=last_run or r.seen_run_id=last_run,false) desc,
    r.last_seen desc,r.first_seen desc,r.id desc limit 1;
-  prev:=null;
+  -- A record is NULL-tested field by field ("prev is not null" is false when any
+  -- column is null), so track the previous version explicitly.
+  has_prev:=false;
   for v in
    select r.* from public.toast_raw_records r
    where r.business_id=p_business_id and r.business_date=p_business_date and r.entity='order'
     and r.restaurant_guid is not distinct from g.restaurant_guid and r.entity_guid=g.entity_guid
    order by r.first_seen,r.id
   loop
-   if prev is not null then
+   if has_prev then
     select coalesce(jsonb_agg(jsonb_build_object('path',d.path,'before',d.before,'after',d.after)
       order by d.path),'[]'::jsonb) into diff
     from public.toast_json_diff(public.toast_stable_json(prev.payload),
@@ -179,7 +181,7 @@ begin
       v.first_seen,diff);
     end if;
    end if;
-   prev:=v;
+   prev:=v;has_prev:=true;
   end loop;
   delete from public.toast_raw_records r
   where r.business_id=p_business_id and r.business_date=p_business_date and r.entity='order'
