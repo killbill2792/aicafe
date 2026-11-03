@@ -2,17 +2,22 @@ export type EventChatContext={date:string;title:string;threadId:string;eventId?:
 
 /** Individual saved events never share a thread solely because they share a date. */
 export function eventThreadKey(date:string,eventId?:string,cityEventId?:string):string{
-  return cityEventId?"city:"+cityEventId:eventId?"event:"+eventId:"day:"+date;
+  return eventId?"event:"+eventId:cityEventId?"city:"+cityEventId:"day:"+date;
 }
 
 /** Persist the saved event ID in the thread title to restore identity on reload. */
 export function eventThreadTitle(date:string,title:string,eventId?:string,cityEventId?:string):string {
-  const suffix=cityEventId?" · city:"+cityEventId:eventId?" · event:"+eventId:"";
+  const suffix=eventId&&cityEventId?" · event:"+eventId+" · city:"+cityEventId:
+    cityEventId?" · city:"+cityEventId:eventId?" · event:"+eventId:"";
   const prefix="Events · "+date+" · ";
   const safe=title.replace(/[\r\n<>]/g," ").trim().slice(0,Math.max(0,120-prefix.length-suffix.length));
   return prefix+safe+suffix;
 }
 export function eventContextFromTitle(title:string,threadId:string):EventChatContext|null {
+  const combined=/^Events · (\d{4}-\d{2}-\d{2}) · (.+) · event:([\da-f-]{36}) · city:([\da-f-]{36})$/i.exec(title);
+  if(combined&&Number.isFinite(Date.parse(combined[1]+"T12:00:00Z")))
+    return {date:combined[1],title:combined[2],eventId:combined[3],
+      cityEventId:combined[4],threadId};
   const city=/^Events · (\d{4}-\d{2}-\d{2}) · (.+) · city:([\da-f-]{36})$/i.exec(title);
   if(city&&Number.isFinite(Date.parse(city[1]+"T12:00:00Z")))
     return {date:city[1],title:city[2],cityEventId:city[3],threadId};
@@ -45,8 +50,8 @@ export function eventOwnerMessage(text:string,context:EventChatContext|null):str
   const trimmed=text.trim();
   if(!context||!trimmed||/^@(event|city-event)\s/i.test(trimmed))return trimmed;
   const safeTitle=context.title.replace(/[\r\n<>]/g," ").trim().slice(0,100);
-  const id=context.cityEventId?" [cityId:"+context.cityEventId+"]":
-    context.eventId?" [id:"+context.eventId+"]":"";
+  const id=(context.cityEventId?" [cityId:"+context.cityEventId+"]":"")+
+    (context.eventId?" [id:"+context.eventId+"]":"");
   return (context.cityEventId?"@city-event ":"@event ")+safeTitle+" ("+context.date+")"+id+"\n"+trimmed;
 }
 
