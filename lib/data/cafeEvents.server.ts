@@ -18,7 +18,8 @@ export type CityCatalogPage={available:boolean;missing:string|null;page:number;p
  items:Array<{id:string;name:string;kind:string;startDate:string;endDate:string;
  startTime:string|null;endTime:string|null;timeSourceUrl:string|null;
  venue:string|null;venueAddress:string|null;checkedAt:string;
- sources:Array<{url:string;observedAt:string}>;cafeEventId:string|null}>};
+ sources:Array<{url:string;observedAt:string}>;cafeEventId:string|null;
+  status:"found"|"cancelled"|"moved"|null;lastVerifiedAt:string|null}>};
 export type CityCoverageOverview={
   status:"complete"|"partial"|"unsearched"|"unavailable";
   researchedSourceWindows:number;successfulSourceWindows:number;
@@ -144,7 +145,7 @@ async function cityKeyForCafe(db:SupabaseClient,businessId:string){
 /** One RLS-scoped, date-bounded, paginated source of city facts.
  * Do not run web research when an owner opens the panel. */
 export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
-  from:string,to:string,options:{page?:number;pageSize?:number}={}):Promise<CityCatalogPage>{
+  from:string,to:string,options:{page?:number;pageSize?:number;kind?:string;search?:string}={}):Promise<CityCatalogPage>{
   assertRange(from,to);
   const page=Number.isInteger(options.page)&&options.page!>=0?options.page!:0;
   const pageSize=Number.isInteger(options.pageSize)&&options.pageSize!>0?
@@ -153,11 +154,21 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
     available:false,missing,page,pageSize,total:0,hasMore:false,items:[]});
   const cityKey=await cityKeyForCafe(db,businessId);
   if(!cityKey)return empty("city_region_country_missing");
-  const {data,count,error}=await db.from("city_events")
+  const validKinds=["festival","conference","sports","parade","community","other"];
+  const kind=options.kind&&validKinds.includes(options.kind)?options.kind:null;
+  const search=options.search?.trim().slice(0,80)??"";
+  let query=db.from("city_events")
+    .select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at",{count:"exact"})
+    .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from);
+  if(kind)query=query.eq("kind",kind);
+  // Escape SQL LIKE wildcards; search is a literal fragment, not a pattern supplied by the owner.
+  if(search)query=query.ilike("name","%"+search.replace(/[\\%_]/g,"\\  const {data,count,error}=await db.from("city_events")
     .select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at",{count:"exact"})
     .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from)
     .order("start_date",{ascending:true}).order("id",{ascending:true})
-    .range(page*pageSize,(page+1)*pageSize-1);
+    .range(page*pageSize,(page+1)*pageSize-1);")+"%");
+  const {data,count,error}=await query.order("start_date",{ascending:true})
+    .order("id",{ascending:true}).range(page*pageSize,(page+1)*pageSize-1);
   if(missingSchema(error))return empty("migration_pending");
   ensureShared(error);
   const city=(data??[]) as SharedRow[];
@@ -169,6 +180,12 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
       Promise.resolve({data:[] as LinkRow[],error:null}),
   ]);
   ensureShared(links.error);
+  const linkedIds=((links.data??[]) as LinkRow[]).map(l=>l.cafe_event_id);
+  const linked=linkedIds.length?await db.from("cafe_events")
+    .select("id,status,last_verified_at").eq("business_id",businessId).in("id",linkedIds):
+    {data:[] as Array<{id:string;status:string;last_verified_at:string|null}>,error:null};
+  ensureShared(linked.error);
+  const byLegacy=new Map((linked.data??[]).map(row=>[row.id,row]));
   const bySource=new Map<string,Array<{url:string;observedAt:string}>>();
   for(const s of sources)bySource.set(s.city_event_id,
     [...(bySource.get(s.city_event_id)??[]),{url:s.source_url,observedAt:s.observed_at}]);
@@ -180,7 +197,9 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
       startTime:e.start_time,endTime:e.end_time,timeSourceUrl:e.time_source_url,
       venue:e.venue,
       venueAddress:e.venue_address,checkedAt:e.last_checked_at,
-      sources:bySource.get(e.id)??[],cafeEventId:byCity.get(e.id)??null}))};
+      sources:bySource.get(e.id)??[],cafeEventId:byCity.get(e.id)??null,
+      status:(byLegacy.get(byCity.get(e.id)??"")?.status??null) as CityCatalogPage["items"][number]["status"],
+      lastVerifiedAt:byLegacy.get(byCity.get(e.id)??"")?.last_verified_at??null}))};
 }
 /** Private owner-scoped evidence and source details; shared place facts have no
  * café impact theory or POS data. */
