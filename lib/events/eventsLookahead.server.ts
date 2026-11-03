@@ -6,7 +6,7 @@ import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import type {SavedFact} from "@/lib/ownerFacts/inject";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
-import {readCafeEvents,readSavedEventTimeline,type CafeEvent} from "@/lib/data/cafeEvents.server";
+import {readCanonicalCafeEvents,readSavedEventTimeline,type CafeEvent} from "@/lib/data/cafeEvents.server";
 import {readOwnerProposals,readOwnerReports} from "@/lib/ai/supervisor/loop/reads.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
@@ -220,7 +220,7 @@ async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|"ar",
       },
       eventPlans:{propose:async input=>{
         // Race-safe: old facts may change during a long model call.
-        const latest=await readCafeEvents(db,b.id,day.date,day.date);
+        const latest=await readCanonicalCafeEvents(db,b.id,day.date,day.date);
         const stillFound=latest.filter(e=>e.status==="found")
           .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
         if(effectHash(eventPlanFacts(stillFound))!==day.hash||
