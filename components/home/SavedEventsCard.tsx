@@ -487,7 +487,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
     events:cafeHighlightedEvents(timeline,date)}))
     .find(d=>Boolean(d.plan));
   const openDay=(date:string,eventId:string|null=null)=>{
-    setSelected(date);setSelectedEventId(eventId);setPanel("day");
+    setView("cafe");setSelected(date);setSelectedEventId(eventId);setPanel("day");
     setTab(date<today?"past":date===today?"now":"upcoming");setMonth(date.slice(0,7));
   };
   const openEvent=(event:CafeEvent,viewDate:string)=>openDay(eventDetailDay(event,viewDate),event.id);
@@ -588,7 +588,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
           <EventsTabs tab={tab} onChoose={next=>{setTab(next);setPanel("events");}} t={t}/>
         </div>}
         <div className="min-h-0 min-w-0 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain p-3 text-[17px] leading-relaxed sm:p-5">
-          {view==="city"?<CityCatalogView today={today} locale={locale} t={t}
+          {panel==="events"&&view==="city"?<CityCatalogView today={today} locale={locale} t={t}
             chatDisabled={chatDisabled} onAsk={askCity}/>:
             panel==="events"?<>
             <div className="flex flex-wrap items-center justify-between gap-2">
