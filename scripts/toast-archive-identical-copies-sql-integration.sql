@@ -1,4 +1,4 @@
--- Migration 137: archive copies that differ only in the order of Toast's GUID
+-- Migration 138: archive copies that differ only in the order of Toast's GUID
 -- lists are removed; real changes and the latest import's rows are kept.
 -- Run ONLY against a disposable local Supabase after all migrations. Synthetic data, rolled back.
 \set ON_ERROR_STOP on
