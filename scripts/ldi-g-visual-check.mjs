@@ -72,6 +72,7 @@ try{
   const observations=[];
   let mockedReads=0;
   page.on("pageerror",error=>observations.push("pageerror: "+error.message));
+  page.on("console",message=>{if(message.type()==="error") observations.push("console: "+message.text().slice(0,200));});
   page.on("response",resp=>{if(resp.url().includes("/api/events/saved"))
     observations.push("events response: "+resp.status());});
   await page.route(/\/api\/events\/saved(?:\?.*)?$/,route=>{
@@ -81,7 +82,7 @@ try{
     });
   });
   try{
-   const nav=await page.goto(base+"/"+locale+"?fixture=events",{waitUntil:"networkidle",timeout:90000});
+   const nav=await page.goto(base+"/"+locale+"?fixture=events",{waitUntil:"domcontentloaded",timeout:30000});
    assert.equal(nav.status(),200,key+" fixture route");
    await page.locator('[data-testid="coming-up"]').waitFor({state:"visible",timeout:30000});
    // A public discovery with no selected plan is NOT a café recommendation.
@@ -135,11 +136,14 @@ try{
      key+" horizontal dialog overflow "+JSON.stringify(metrics));
    console.log("PASS Events "+key+" (café selection, city pagination, sources, exact chat, RTL)");
   }catch(error){
+    await page.screenshot({path:join(out,key+"-failure.png"),animations:"disabled",timeout:10000}).catch(()=>{});
     const shown=await page.locator('[data-testid="coming-up"]').allTextContents().catch(()=>[]);
     errors.push(key+": "+(error?.stack??String(error))+"\nmockedReads="+mockedReads+
       " screen="+JSON.stringify(shown)+" diagnostics="+JSON.stringify(observations));
   }
   finally{await page.close();}
+  // A first failure needs fixing; do not time out on six identical fixtures.
+  if(errors.length)break;
  }
 }finally{await browser.close();}
 if(errors.length)throw new Error("LDI G browser acceptance failed:\n"+errors.join("\n\n"));
