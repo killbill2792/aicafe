@@ -5,7 +5,7 @@ const f=vi.hoisted(()=>({
   city:vi.fn(),neighborhood:vi.fn(),writeCity:vi.fn(),writeCoverage:vi.fn(),
   writeNeighborhood:vi.fn(),link:vi.fn(),readLocation:vi.fn(),
 }));
-vi.mock("./citySourceResearch.server",()=>({researchCitySources:f.city}));
+vi.mock("./citySourceResearch.server",()=>({createCitySourceResearch:()=>f.city}));
 vi.mock("./neighborhoodResearch.server",()=>({researchNeighborhood:f.neighborhood}));
 vi.mock("./cityEventPersistence.server",()=>({
   upsertCityEventFact:f.writeCity,recordCitySourceCoverage:f.writeCoverage,
@@ -89,8 +89,6 @@ function mockStore(){
     address_line1:"100 Main Street",address_line2:null,postal_code:"90000",open_hours:null,
   }));
   f.writeCoverage.mockImplementation(async (_db:unknown,input:Row)=>{
-    const key=(r:Row)=>r.city_key===undefined?false:true;
-    void key;
     const row={city_key:"us|ca|example",source_key:input.sourceKey,
       window_from:input.from,window_to:input.to,status:input.status,
       last_checked_at:input.checkedAt,
