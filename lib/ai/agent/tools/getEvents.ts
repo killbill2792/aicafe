@@ -2,7 +2,7 @@ import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 
 export const getEventsInput=z.strictObject({from:z.iso.date(),to:z.iso.date(),
- cityEventId:z.uuid().optional()});
+ cityEventId:z.uuid().nullish()});
 /** Keep chat tool evidence compact. Full readings remain in the one shared data reader. */
 function compactReport(raw:unknown):Record<string,unknown>|null{
  if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
