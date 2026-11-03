@@ -40,8 +40,8 @@ export async function GET(){
     const active=bindings?.[0]??null;
     return conversationJson({
       verifiedPhone,
-      binding:active&&verifiedPhone&&active.wa_id===verifiedPhone.slice(1)
-        ?{id:active.id,threadId:active.thread_id}:null,
+      binding:active?{id:active.id,threadId:active.thread_id,
+        phoneMatches:verifiedPhone!==null&&active.wa_id===verifiedPhone.slice(1)}:null,
       threads:threads.items.map(thread=>({id:thread.id,title:thread.title})),
       businessId:scope.businessId,
     });
@@ -63,11 +63,13 @@ export async function POST(request:Request){
     if(threadError)throw threadError;
     if(!thread)throw new ConversationApiError(404,"thread_not_owned");
     const {data:existing,error:existingError}=await db.from("whatsapp_owner_bindings")
-      .select("id,thread_id").eq("phone_number_id",TEST_PHONE_NUMBER_ID)
-      .eq("wa_id",phone.slice(1)).eq("opted_in",true).is("revoked_at",null).limit(1);
+      .select("id,thread_id,wa_id").eq("business_id",scope.businessId)
+      .eq("owner_user_id",scope.ownerUserId).eq("phone_number_id",TEST_PHONE_NUMBER_ID)
+      .eq("opted_in",true).is("revoked_at",null).limit(1);
     if(existingError)throw existingError;
     if(existing?.length){
-      if(existing[0].thread_id===input.threadId)return conversationJson({connected:true});
+      if(existing[0].thread_id===input.threadId&&existing[0].wa_id===phone.slice(1))
+        return conversationJson({connected:true});
       throw new ConversationApiError(409,"disconnect_existing_binding_first");
     }
     const {error}=await db.from("whatsapp_owner_bindings").insert({
