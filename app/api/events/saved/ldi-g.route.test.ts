@@ -18,6 +18,10 @@ vi.mock("@/lib/ai/conversations/http.server",()=>({
 vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:f.access}));
 vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:f.db}));
 vi.mock("@/lib/ai/cafeTools.server",()=>({readSupervisorCafeIdentity:f.identity}));
+vi.mock("@/lib/ai/supervisor/loop/reads.server",()=>({readOwnerProposals:vi.fn()}));
+vi.mock("@/lib/ai/supervisor/loop/eventReadiness.server",()=>({
+  eventReadinessCapabilityId:"alex.event_readiness.v1",
+}));
 vi.mock("@/lib/data/cafeEvents.server",()=>({
   readSavedEventTimeline:f.timeline,readEventChecklist:vi.fn(),
   readCityEventCatalog:f.catalog,readCityResearchCoverage:f.coverage,
