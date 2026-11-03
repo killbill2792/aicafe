@@ -95,7 +95,6 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
       footer={<>
         {ownerCanSubscribe && <OwnerWhatsAppAlerts copy={{
           title: t("whatsAppAlertsTitle"), description: t("whatsAppAlertsDescription"),
-          enable: t("whatsAppAlertsEnable"), disable: t("whatsAppAlertsDisable"),
           loading: t("whatsAppAlertsLoading"), saved: t("whatsAppAlertsSaved"),
           error: t("whatsAppAlertsError"), verifiedPhone: t("whatsAppAlertsPhone"),
           phoneLabel: t("whatsAppPhoneLabel"), sendCode: t("whatsAppSendCode"),
