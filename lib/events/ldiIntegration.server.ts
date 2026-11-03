@@ -13,7 +13,7 @@ import {defaultCityResearchSources,cityResearchDateSlices,type CityResearchSourc
   type CitySourceResearchResult} from "./citySourceResearch";
 import {researchNeighborhood} from "./neighborhoodResearch.server";
 import {hasResearchableAddress,NEIGHBORHOOD_SCOPE_IDS,
-  type NeighborhoodScope,type PublicDemandPlace} from "./neighborhoodResearch";
+  type PublicDemandPlace} from "./neighborhoodResearch";
 import type {EventScanWindow} from "./eventsLookahead";
 import {stableMessageId} from "@/lib/ai/supervisor/loop/supabase.server";
 
