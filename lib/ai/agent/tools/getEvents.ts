@@ -35,6 +35,8 @@ export const savedEventsTools={
        omittedCityEvents:Math.max(0,result.cityCatalog.total-6),
      }:{}),
      ...(result.cityCoverage?{cityResearchCoverage:result.cityCoverage}:{}),
+     ...(result.neighborhoodCoverage?.length?{
+       neighborhoodResearchCoverage:result.neighborhoodCoverage}:{}),
      ...(result.neighborhood?.length?{
        neighborhood:result.neighborhood.slice(0,3).map(p=>({
          name:p.name,kind:p.kind,sourceUrl:p.sourceUrl,calendarUrl:p.calendarUrl,
