@@ -248,7 +248,7 @@ export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,local
   return <section className="space-y-4 rounded-2xl border border-line bg-card p-4" aria-label={t("savedInsight")}>
     <div>
       <p className="text-[15px] font-semibold text-accent-text">{t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
-      {selectedEvent&&<p className="mt-1 text-[15px] text-ink-muted">{t("dayWideInsight",{date:dateLabel(date,locale,"long")})}</p>}
+      {selectedEvent&&(!plan.eventIds||plan.eventIds.length===0)&&<p className="mt-1 text-[15px] text-ink-muted">{t("dayWideInsight",{date:dateLabel(date,locale,"long")})}</p>}
       <p className="mt-2 break-words font-headline text-[20px] font-semibold leading-snug" dir="auto">{plan.summary}</p>
     </div>
     <PlanHours plan={plan} t={t}/>
@@ -552,21 +552,31 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
     </section>
     {panel&&<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 md:items-center"
       role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPanel(null);}}>
-      <section role="dialog" aria-modal="true" aria-label={panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}
+      <section role="dialog" aria-modal="true" aria-label={view==="city"?t("allCityEvents"):panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}
         dir={locale==="ar"?"rtl":"ltr"}
         className="flex max-h-[94dvh] w-full min-w-0 max-w-3xl flex-col overflow-hidden rounded-t-3xl bg-surface text-ink shadow-xl md:max-h-[90dvh] md:rounded-3xl">
         <header className="flex shrink-0 items-center gap-2 border-b border-line p-3">
           {panel==="day"&&<button type="button" onClick={()=>openEvents(tab)} aria-label={t("back")}
             className={button}><ChevronLeft size={20} className="rtl:rotate-180" aria-hidden="true"/></button>}
-          <h3 className="min-w-0 flex-1 break-words font-headline text-[20px] font-bold">{panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}</h3>
+          <h3 className="min-w-0 flex-1 break-words font-headline text-[20px] font-bold">{view==="city"?t("allCityEvents"):panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}</h3>
           <button type="button" onClick={()=>setPanel(null)} aria-label={t("close")} className={button}>
             <X size={22} aria-hidden="true"/></button>
         </header>
-        <div className="shrink-0 border-b border-line p-3">
+        {panel==="events"&&<div role="group" aria-label={t("viewChoice")}
+          className="grid shrink-0 grid-cols-2 gap-2 border-b border-line p-3">
+          {(["cafe","city"] as const).map(choice=><button key={choice} type="button"
+            aria-pressed={view===choice} onClick={()=>setView(choice)}
+            className={button+(view===choice?" bg-accent text-on-accent":" bg-surface2")}>
+            {t(choice==="cafe"?"forMyCafe":"allCityEvents")}
+          </button>)}
+        </div>}
+        {view==="cafe"&&<div className="shrink-0 border-b border-line p-3">
           <EventsTabs tab={tab} onChoose={next=>{setTab(next);setPanel("events");}} t={t}/>
-        </div>
+        </div>}
         <div className="min-h-0 min-w-0 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain p-3 text-[17px] leading-relaxed sm:p-5">
-          {panel==="events"?<>
+          {view==="city"?<CityCatalogView today={today} locale={locale} t={t}
+            chatDisabled={chatDisabled} onAsk={askCity}/>:
+            panel==="events"?<>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button type="button" className={button+" bg-surface2"} onClick={()=>setCalendar(v=>!v)}
                 aria-expanded={calendar}><CalendarDays size={19} className="me-2 inline" aria-hidden="true"/>{t("calendar")}</button>
