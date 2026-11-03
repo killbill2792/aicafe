@@ -9,7 +9,7 @@ import {readSavedTodayLive} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import type {OwnerLoopScope,LoopProposal} from "./engine";
-import {readCanonicalCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
+import {readCafeEvents,readCanonicalCafeEvents,readEventChecklist} from "@/lib/data/cafeEvents.server";
 import {readDailyFacts} from "@/lib/data/dailyFacts.server";
 import {readItemSales,readDiscounts,readLaborEntries,readMenu} from "@/lib/data/canonical/reads.server";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
@@ -211,6 +211,27 @@ export function eventPlanFacts(events:readonly import("@/lib/data/cafeEvents.ser
   })).sort((a,b)=>a.id.localeCompare(b.id));
 }
 
+
+/** A scheduled assessment may propose any non-empty SUBSET of the confirmed
+ * events for this café-local day. Reject races, foreign UUIDs, stale or cancelled
+ * facts; the city catalog is not modified by selecting a subset. */
+export function selectedEventPlanFacts(
+  original:readonly import("@/lib/data/cafeEvents.server").CafeEvent[],
+  current:readonly import("@/lib/data/cafeEvents.server").CafeEvent[],
+  date:string,originalDayHash:string,ids:readonly string[]
+){
+  const currentDay=current.filter(e=>e.status==="found"&&
+    e.startDate<=date&&e.endDate>=date).sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
+  const initial=original.filter(e=>e.status==="found"&&
+    e.startDate<=date&&e.endDate>=date).sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
+  if(effectHash(eventPlanFacts(currentDay))!==originalDayHash||
+    effectHash(eventPlanFacts(initial))!==originalDayHash||
+    !ids.length||ids.length>8||new Set(ids).size!==ids.length)
+    throw new Error("event_facts_changed");
+  const selected=currentDay.filter(e=>ids.includes(e.id));
+  if(selected.length!==ids.length)throw new Error("event_facts_changed");
+  return eventPlanFacts(selected);
+}
 
 /** No new monitoring store: one sample per business day in supervisor_monitor_samples. */
 export const eventReadinessCapability=registerLoopCapability({
