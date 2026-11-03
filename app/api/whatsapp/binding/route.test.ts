@@ -47,7 +47,10 @@ beforeEach(()=>{
   currentUser={phone,phone_confirmed_at:"2026-11-01T01:00:00Z"};
   threadRow={id:thread};activeBindings=[];
   inserted.mockReset().mockResolvedValue({error:null});
-  updated.mockReset().mockImplementation(()=>{const q:{eq:(key:string,value:unknown)=>unknown}={eq:()=>q};\n    // Supabase's final chained update is thenable; resolve after all scope filters.\n    (q as unknown as {then:unknown}).then=(resolve:(v:unknown)=>unknown)=>Promise.resolve({error:null}).then(resolve);\n    return q;});
+  updated.mockReset().mockImplementation(()=>{const q:{eq:(key:string,value:unknown)=>unknown}={eq:()=>q};
+    // Supabase's final chained update is thenable; resolve after all scope filters.
+    (q as unknown as {then:unknown}).then=(resolve:(v:unknown)=>unknown)=>Promise.resolve({error:null}).then(resolve);
+    return q;});
   from.mockClear();
   mock.server.mockClear().mockResolvedValue(db);
   mock.scope.mockClear();
