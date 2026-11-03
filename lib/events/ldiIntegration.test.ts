@@ -18,8 +18,10 @@ vi.mock("@/lib/ai/supervisor/loop/reads.server",()=>({
   readOwnerProposals:async()=>[],readOwnerReports:async()=>[],
 }));
 
-import {newLdiBudget,scanSharedResearch,planCityResearchJobs} from "./ldiIntegration.server";
-import {readSavedEventTimeline,readCityEventCatalog} from "@/lib/data/cafeEvents.server";
+import {newLdiBudget,scanSharedResearch,planCityResearchJobs,
+  reconciledCityRootStatus} from "./ldiIntegration.server";
+import {readCafeEvents,readSavedEventTimeline,readCityEventCatalog,
+  readCityResearchCoverage} from "@/lib/data/cafeEvents.server";
 import {eventScanWindows} from "./eventsLookahead";
 
 // Dynamic Supabase query fixture deliberately models untyped table columns.
@@ -517,6 +519,14 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     expect(s.tables.city_source_coverage.filter(r=>r.is_scan_root&&
       r.source_key===source&&r.window_from==="2026-11-17")[0].status)
       .toBe("none_found");
+    // The failed combined search can leave a PARTIAL diagnostic child row,
+    // but never a false PARTIAL owner-facing city summary after root retries.
+    await s.scoped(cafeA,"2026-11-06",
+      {from:"2026-11-19",to:"2026-11-19",reason:"new_day"},{
+        ...newLdiBudget(),cityTasks:40});
+    const summary=await readCityResearchCoverage(s.db,cafeA,"2026-11-17","2026-11-19");
+    expect(summary.status).toBe("complete");
+    expect(summary.partialSourceWindows).toBe(0);
   });
 
   it("coalesces at most seven consecutive dates per source and never conflates separate sources",()=>{
@@ -542,6 +552,64 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     expect(jobs.flatMap(j=>j.roots)).toHaveLength(9);
   });
 
+  it("resumes a saturated initial seven-day source at its saved child windows, not the wide root",async()=>{
+    const s=mockStore();
+    const expected=[{name:"Public concert",startDate:"2026-11-04",
+      sourceUrl:"https://city.example.org/concert"}];
+    const original=f.city.getMockImplementation();
+    f.city.mockImplementation(async(input:Row)=>{
+      if(input.sources[0].id!=="city-calendar")return original!(input);
+      const coverage=(from:string,to:string,outcome:string,events:Row[]=[]):Row=>({
+        sourceId:input.sources[0].id,sourceKind:input.sources[0].kind,
+        officialUrl:null,from,to,reason:input.window.reason,checkedAt:stamp,
+        outcome,retryEligible:outcome==="partial",
+        failure:outcome==="partial"?"invalid_shape":null,events,
+      });
+      if(input.window.from==="2026-11-03"&&input.window.to==="2026-11-09")
+        return {events:expected,sources:[
+          coverage("2026-11-03","2026-11-06","partial",expected),
+          coverage("2026-11-07","2026-11-09","partial")],
+          duplicateCount:0,partial:true,retrySourceIds:["city-calendar"]};
+      if(input.window.from==="2026-11-03"&&input.window.to==="2026-11-06")
+        return {events:expected,sources:[
+          coverage("2026-11-03","2026-11-04","found",expected),
+          coverage("2026-11-05","2026-11-06","none_found")],
+          duplicateCount:0,partial:false,retrySourceIds:[]};
+      if(input.window.from==="2026-11-07"&&input.window.to==="2026-11-09")
+        return {events:[],sources:[
+          coverage("2026-11-07","2026-11-09","none_found")],
+          duplicateCount:0,partial:false,retrySourceIds:[]};
+      return original!(input);
+    });
+    const window=eventScanWindows("2026-11-03",null,"location")[0];
+    const first=await s.scoped(cafeA,"2026-11-03",window,{
+      ...newLdiBudget(),cityTasks:40});
+    expect(first?.completed).toBe(false);
+    const source="category:city-calendar";
+    const root=s.tables.city_source_coverage.find(r=>r.source_key===source&&
+      r.window_from==="2026-11-03"&&r.window_to==="2026-11-09");
+    expect(root).toMatchObject({status:"partial",is_scan_root:true});
+    const jobs=planCityResearchJobs(s.tables.city_source_coverage,[
+      {id:"city-calendar",name:"City",kind:"city_calendar"}],"2026-11-04");
+    expect(jobs.map(j=>({from:j.from,to:j.to}))).toEqual([
+      {from:"2026-11-03",to:"2026-11-06"},
+      {from:"2026-11-07",to:"2026-11-09"},
+    ]);
+    const calls=f.city.mock.calls.length;
+    expect((await s.scoped(cafeA,"2026-11-04",window,{
+      ...newLdiBudget(),cityTasks:40}))?.completed).toBe(true);
+    const retried=f.city.mock.calls.slice(calls).filter(([args])=>
+      args.sources[0].id==="city-calendar");
+    expect(retried.map(([args])=>[args.window.from,args.window.to])).toEqual([
+      ["2026-11-03","2026-11-06"],["2026-11-07","2026-11-09"]]);
+    const updated=s.tables.city_source_coverage.find(r=>r.source_key===source&&
+      r.window_from==="2026-11-03"&&r.window_to==="2026-11-09");
+    expect(updated).toMatchObject({is_scan_root:true,status:"found"});
+    expect(reconciledCityRootStatus(root!,s.tables.city_source_coverage)).toBe("found");
+    const coverage=await readCityResearchCoverage(s.db,cafeA,"2026-11-03","2026-11-16");
+    expect(coverage.status).toBe("complete");
+  });
+
   it("keeps confirmed legacy multi-day duration and original kind in the canonical overlay",async()=>{
     const s=mockStore();
     s.tables.cafe_events.push({id:"66666666-6666-4666-8666-666666666666",
@@ -562,6 +630,10 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
       ownerUserId:"owner-a"},"2026-11-04","2026-11-06");
     expect(timeline.events[0]).toMatchObject({cityEventId:cityId,
       startDate:"2026-11-04",endDate:"2026-11-06",kind:"conference"});
+    // WhatsApp, D's evidence reader, Home and chat call the SAME exported
+    // readCafeEvents implementation; no raw-vs-overlaid version may leak.
+    const whatsappAndEvidence=await readCafeEvents(s.db,cafeA,"2026-11-04","2026-11-06");
+    expect(whatsappAndEvidence).toEqual(timeline.events);
   });
   it("pages an owner catalog past old 500-row caps; source URLs and null venues remain",async()=>{
     const s=mockStore();
