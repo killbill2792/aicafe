@@ -104,8 +104,10 @@ export function cafeHighlightedEvents(timeline:Pick<Timeline,"events"|"plans">,d
   return timeline.events.filter(e=>ids.has(e.id)&&e.startDate<=date&&e.endDate>=date);
 }
 export function cityEventChatTarget(item:CityCatalogPage["items"][number]){
+  // Keep the existing café thread key, but NEVER drop the shared city UUID:
+  // a linked event can still be beyond the chat's compact top-six/top-eight lists.
   return {date:item.startDate,title:item.name,eventId:item.cafeEventId??undefined,
-    cityEventId:item.cafeEventId?undefined:item.id};
+    cityEventId:item.id};
 }
 const cityKindLabel=(kind:string,t:T)=>{
   const known=["festival","conference","sports","parade","community","other"];
