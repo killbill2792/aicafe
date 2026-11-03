@@ -34,7 +34,7 @@ export type CafeDemandHypothesis = {
 };
 export type NeighborhoodCoverageStatus = "found" | "none_found" | "partial" | "failed";
 export type NeighborhoodFailure = "not_configured" | "missing_address" | "timeout" |
-  "http_error" | "incomplete" | "invalid_response" | "unverified_sources";
+  "http_error" | "incomplete" | "invalid_response" | "unverified_sources" | "search_not_run";
 export type NeighborhoodSourceCoverage = {
   scope: NeighborhoodScope; categories: readonly DemandPlaceType[];
   outcome: NeighborhoodCoverageStatus; checkedAt: string; placesFound: number;
@@ -192,6 +192,14 @@ export function parseNeighborhoodResearch(json: string, scope: NeighborhoodScope
   return {publicPlaces, cafeHypotheses, discardedCandidates,
     candidateCount: raw.places.length,
     hasMore: raw.hasMore || raw.places.length > MAX_PLACES_PER_SCOPE};
+}
+
+/** A completed response with an empty places array is not proof that the model ever searched.
+ * Require the provider to report a completed web-search call for all research outcomes. */
+export function neighborhoodWebSearchCompleted(body: unknown): boolean {
+  return record(body) && Array.isArray(body.output) &&
+    body.output.some(item => record(item) && item.type === "web_search_call" &&
+      item.status === "completed");
 }
 
 /** Collect web_search_call sources and output_text URL citations; never trust JSON URLs alone. */
