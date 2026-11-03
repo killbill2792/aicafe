@@ -16,10 +16,14 @@ SELECT pg_temp.assert_true(NOT has_table_privilege('anon','public.data_health_ch
 DO $health$
 DECLARE
  b uuid:='bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbc0000'; r uuid:='bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbc0001';
- v uuid:='bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbc0002'; d date:=(now() at time zone 'utc')::date-1;
+ v uuid:='bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbc0002'; loc uuid:='bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbc0003'; d date:=(now() at time zone 'utc')::date-1;
  run uuid; res public.data_health_checks; f jsonb; size bigint:=pg_database_size(current_database());
 BEGIN
  insert into public.businesses(id,name,is_demo) values(b,'Health check test café',false);
+ insert into public.locations(id,business_id,name) values(loc,b,'Health check location');
+ perform public.toast_save_configuration(b,'https://ws-api.toasttab.com','health_client',
+  'synthetic_ciphertext',jsonb_build_array(jsonb_build_object('location_id',loc,'restaurant_guid',r)));
+ update public.toast_location_mappings set verified_at=now() where business_id=b;
  -- Yesterday's check was tiny, so today looks like sudden growth when the database is over 50 MB.
  insert into public.data_health_checks(checked_on,database_bytes,plan_bytes)
   values((now() at time zone 'utc')::date-1,1,8589934592);
