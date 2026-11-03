@@ -48,11 +48,22 @@ BEGIN
  perform pg_temp.assert_true((select count(*)=2 and count(distinct entity_guid)=2 and bool_and(entity_guid<>ord)
   from public.toast_raw_records where business_id=b and entity='void'),'each voided item is its own record');
 
+ -- A payment with two day events (different kinds or dates) keeps both: identity is
+ -- the source table's own key, not just the payment GUID.
+ perform public.toast_archive_stage_snapshot(jsonb_build_object('business_id',b,'restaurant_guid',r,
+  'payment_guid','cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcd0030','kind','captured','event_business_date','2026-10-01'),
+  'payment_day_event','toast_payment_day_events');
+ perform public.toast_archive_stage_snapshot(jsonb_build_object('business_id',b,'restaurant_guid',r,
+  'payment_guid','cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcd0030','kind','refunded','event_business_date','2026-10-02'),
+  'payment_day_event','toast_payment_day_events');
+ perform pg_temp.assert_true((select count(*)=2 from public.toast_raw_records
+  where business_id=b and entity='payment_day_event'),'two events of one payment are two records');
+
  -- The database refuses a second record for the same object.
  begin
   insert into public.toast_raw_records(business_id,restaurant_guid,entity,entity_guid,business_date,
    payload,payload_sha256,capture_key)
-  values(b,r,'job',job,null,'{}'::jsonb,repeat('e',64),'stage:toast_job_directory:second');
+  values(b,r,'job',job,null,'{}'::jsonb,repeat('e',64),'stage:toast_job_directory:key:'||r||'|'||job);
  exception when unique_violation then refused:=true;
  end;
  perform pg_temp.assert_true(refused,'a second job record is refused');
@@ -65,26 +76,25 @@ DECLARE
  emp uuid:='cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcd0110'; ord uuid:='cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcd0120';
  removed integer;
 BEGIN
- drop index public.toast_raw_records_one_object;
  insert into public.businesses(id,name,is_demo) values(b,'Collapse test café',false);
  insert into public.toast_raw_records(business_id,restaurant_guid,entity,entity_guid,business_date,
   payload,payload_sha256,capture_key,first_seen,last_seen)
  values
-  (b,r,'employee',emp,null,jsonb_build_object('employee_guid',emp,'name','Sam','fetched_at','1'),
-   repeat('1',64),'stage:e:1',now()-interval '3 days',now()-interval '3 days'),
-  (b,r,'employee',emp,null,jsonb_build_object('employee_guid',emp,'name','Sam','fetched_at','2'),
-   repeat('2',64),'stage:e:2',now()-interval '2 days',now()-interval '2 days'),
-  (b,r,'employee',emp,null,jsonb_build_object('employee_guid',emp,'name','Sam B','fetched_at','3'),
-   repeat('3',64),'stage:e:3',now()-interval '1 day',now()-interval '1 day'),
+  (b,r,'employee',emp,null,jsonb_build_object('restaurant_guid',r,'employee_guid',emp,'name','Sam','fetched_at','1'),
+   repeat('1',64),'stage:toast_employee_directory:1',now()-interval '3 days',now()-interval '3 days'),
+  (b,r,'employee',emp,null,jsonb_build_object('restaurant_guid',r,'employee_guid',emp,'name','Sam','fetched_at','2'),
+   repeat('2',64),'stage:toast_employee_directory:2',now()-interval '2 days',now()-interval '2 days'),
+  (b,r,'employee',emp,null,jsonb_build_object('restaurant_guid',r,'employee_guid',emp,'name','Sam B','fetched_at','3'),
+   repeat('3',64),'stage:toast_employee_directory:3',now()-interval '1 day',now()-interval '1 day'),
   -- Two voided items stored under their order's ID, each twice.
   (b,r,'void',ord,'2026-10-01',jsonb_build_object('order_guid',ord,'selection_guid','cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcd0121','last_seen','1'),
-   repeat('4',64),'stage:v:1',now()-interval '2 days',now()),
+   repeat('4',64),'stage:toast_void_facts:1',now()-interval '2 days',now()),
   (b,r,'void',ord,'2026-10-01',jsonb_build_object('order_guid',ord,'selection_guid','cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcd0121','last_seen','2'),
-   repeat('5',64),'stage:v:2',now()-interval '1 day',now()),
+   repeat('5',64),'stage:toast_void_facts:2',now()-interval '1 day',now()),
   (b,r,'void',ord,'2026-10-01',jsonb_build_object('order_guid',ord,'selection_guid','cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcd0122','last_seen','1'),
-   repeat('6',64),'stage:v:3',now()-interval '2 days',now()),
+   repeat('6',64),'stage:toast_void_facts:3',now()-interval '2 days',now()),
   (b,r,'void',ord,'2026-10-01',jsonb_build_object('order_guid',ord,'selection_guid','cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcd0122','last_seen','2'),
-   repeat('7',64),'stage:v:4',now()-interval '1 day',now());
+   repeat('7',64),'stage:toast_void_facts:4',now()-interval '1 day',now());
  removed:=public.toast_archive_collapse_snapshots();
  perform pg_temp.assert_true((select count(*)=1 and max(payload->>'name')='Sam B'
   from public.toast_raw_records where business_id=b and entity='employee'),'the newest employee version is kept');
