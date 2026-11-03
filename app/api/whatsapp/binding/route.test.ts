@@ -99,6 +99,22 @@ describe("owner WhatsApp binding",()=>{
       verified_at:"2026-11-01T01:00:00Z",
     }));
   });
+  it("accepts a verified Supabase phone stored as digits without a plus sign",async()=>{
+    currentUser={phone:"19515574877",phone_confirmed_at:"2026-11-01T01:00:00Z"};
+    const preview=await GET();
+    expect(preview.status).toBe(200);
+    expect(await preview.json()).toMatchObject({verifiedPhone:"+19515574877"});
+    const response=await POST(request({threadId:thread,consent:true}));
+    expect(response.status).toBe(201);
+    expect(inserted).toHaveBeenCalledWith(expect.objectContaining({
+      wa_id:"19515574877",business_id:business,owner_user_id:owner,
+    }));
+  });
+  it("rejects invalid confirmed phone values without creating a binding",async()=>{
+    currentUser={phone:"123abc",phone_confirmed_at:"2026-11-01T01:00:00Z"};
+    expect((await POST(request({threadId:thread,consent:true}))).status).toBe(422);
+    expect(inserted).not.toHaveBeenCalled();
+  });
   it("never silently replaces an existing selected thread",async()=>{
     activeBindings=[{id:"already",thread_id:"another"}];
     expect((await POST(request({threadId:thread,consent:true}))).status).toBe(409);
