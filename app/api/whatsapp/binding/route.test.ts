@@ -19,7 +19,7 @@ vi.mock("@/lib/ai/conversations/http.server",()=>({
     {error:error instanceof Error?error.message:"unknown"},
     {status:typeof error==="object"&&error&&"status" in error?Number(error.status):503}),
 }));
-import {GET,POST,DELETE,connectInput} from "./route";
+import {GET,POST,DELETE} from "./route";
 
 const business="f83ff25c-b593-4cf8-b2c1-5d5f3dd5f80e";
 const owner="ec885ae5-a344-4d74-a73e-11dab3bf51c9";
@@ -58,11 +58,18 @@ beforeEach(()=>{
     service:{listThreads:async()=>({items:[{id:thread,title:"My café",createdAt:"2026-11-01",updatedAt:"2026-11-01",lastMessageAt:null}]})}});
 });
 describe("owner WhatsApp binding",()=>{
-  it("requires explicit consent and valid thread",()=>{
-    expect(connectInput.safeParse({threadId:thread,consent:true}).success).toBe(true);
-    expect(connectInput.safeParse({threadId:thread,consent:false}).success).toBe(false);
-    expect(connectInput.safeParse({threadId:"bad",consent:true}).success).toBe(false);
-    expect(connectInput.safeParse({threadId:thread,consent:true,phone:"+15556667777"}).success).toBe(false);
+  it("requires explicit consent and a valid thread, and rejects extra fields",async()=>{
+    for(const body of [
+      {threadId:thread,consent:false},
+      {threadId:"bad",consent:true},
+      {threadId:thread,consent:true,phone:"+15556667777"},
+    ]){
+      const response=await POST(request(body));
+      expect(response.status).not.toBe(201);
+      expect(inserted).not.toHaveBeenCalled();
+    }
+    expect((await POST(request({threadId:thread,consent:true}))).status).toBe(201);
+    expect(inserted).toHaveBeenCalledTimes(1);
   });
   it("refuses unconfirmed phone before reading or writing a binding",async()=>{
     currentUser={phone,phone_confirmed_at:null};
