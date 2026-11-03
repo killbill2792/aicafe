@@ -52,11 +52,14 @@ function assertRange(from:string,to:string){
 
 /** Private raw table adapter. Public reads use readCafeEvents below. */
 async function readStoredCafeEvents(db:SupabaseClient,businessId:string,
-  from:string,to:string):Promise<CafeEvent[]>{
+  from:string,to:string,ids?:readonly string[]):Promise<CafeEvent[]>{
  assertRange(from,to);
- const {data,error}=await db.from("cafe_events")
+ let query=db.from("cafe_events")
    .select("id,name,kind,start_date,end_date,start_time,end_time,venue,venue_address,area_label,source_url,status,found_at,last_checked_at,last_verification_attempt_at,last_verified_at,verification_failed_at,verification_details")
-   .eq("business_id",businessId).lte("start_date",to).gte("end_date",from)
+   .eq("business_id",businessId);
+ query=ids?.length?query.in("id",[...ids]):
+   query.lte("start_date",to).gte("end_date",from);
+ const {data,error}=await query
    .order("start_date",{ascending:true}).order("id",{ascending:true}).limit(500);
  if(error)throw error;
  return (data??[]).map(row=>({
@@ -280,13 +283,52 @@ export async function readCityResearchCoverage(db:SupabaseClient,businessId:stri
   };
 }
 
+/** A shared, corroborated event can be extended past its original café
+ * row's end date. Query the linked city date range first, then fetch ONLY
+ * this café's existing UUIDs. Otherwise a later-day morning brief would see
+ * no raw row to overlay even though Home knows the confirmed later date.
+ * City paging is exhaustive; never treat a truncated page as no events. */
+async function extendedLinkedCafeIds(db:SupabaseClient,businessId:string,
+  from:string,to:string,already:ReadonlySet<string>):Promise<string[]>{
+  const cityKey=await cityKeyForCafe(db,businessId);
+  if(!cityKey)return [];
+  const matchingCityIds:string[]=[];
+  for(let page=0;;page++){
+    if(page>=100)throw new Error("city_events_date_range_too_large");
+    const {data,error}=await db.from("city_events").select("id")
+      .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from)
+      .order("id").range(page*200,page*200+199);
+    if(missingSchema(error))return [];
+    ensureShared(error);
+    matchingCityIds.push(...(data??[]).map(r=>r.id));
+    if((data??[]).length<200)break;
+  }
+  const result=new Set<string>();
+  for(let i=0;i<matchingCityIds.length;i+=100){
+    const {data,error}=await db.from("cafe_city_event_links")
+      .select("cafe_event_id,city_event_id").eq("business_id",businessId)
+      .in("city_event_id",matchingCityIds.slice(i,i+100));
+    if(missingSchema(error))return [];
+    ensureShared(error);
+    for(const link of data??[])
+      if(!already.has(link.cafe_event_id))result.add(link.cafe_event_id);
+  }
+  return [...result];
+}
 /** One canonical business-scoped event-fact reader for every consumer.
  * The raw pre-migration table is private; both public export names below are
  * the EXACT same function, with a safe legacy fallback before migrations 137/138.
  * No scheduled research, search, or second overlay implementation here. */
 export async function readCafeEvents(db:SupabaseClient,businessId:string,
   from:string,to:string):Promise<CafeEvent[]>{
-  return overlayCityFacts(db,businessId,await readStoredCafeEvents(db,businessId,from,to));
+  const raw=await readStoredCafeEvents(db,businessId,from,to);
+  const known=new Set(raw.map(e=>e.id));
+  const ids=await extendedLinkedCafeIds(db,businessId,from,to,known);
+  const extended:CafeEvent[]=[];
+  for(let i=0;i<ids.length;i+=100)
+    extended.push(...await readStoredCafeEvents(db,businessId,from,to,ids.slice(i,i+100)));
+  const canonical=await overlayCityFacts(db,businessId,[...raw,...extended]);
+  return canonical.filter(e=>e.startDate<=to&&e.endDate>=from);
 }
 export const readCanonicalCafeEvents=readCafeEvents;
 
