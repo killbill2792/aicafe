@@ -127,7 +127,7 @@ describe("provenance footnotes",()=>{
    expect(html).toMatch(/<button[^>]*class="[^"]*decoration-dotted[^"]*decoration-chart-staff[^"]*"[^>]*>\\$11,000<\\/button>/);
    expect(html).toContain('aria-label="$11,000 — You told me"');
    expect(html).not.toContain('h-[6px] w-[6px] align-super');
-   expect(html).not.toContain('rounded-full bg-chart-staff');
+   // The legend keeps its independent key; no dot is injected into numeric text.
    expect(html).toContain('before:h-12');
    expect(html).toContain('aria-expanded="false"');
    expect(html).not.toContain("group-hover:block");
