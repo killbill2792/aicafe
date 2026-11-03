@@ -108,10 +108,13 @@ describe("top drink from the café's own Toast categories",()=>{
   const result=prepareMorningBrief(evidence({menu,soldItems,categoryLabels:labels}),now);
   expect(result?.parameters.slice(2,5)).toEqual(["83","Adeni Tea","41"]);
  });
- it("still sends when a category is not labeled yet, leaving it out",()=>{
+ it("waits when any sold category is not labeled yet, never a partial drink count",()=>{
   const partial=new Map([["Specialty",true],["Food",false]]);
-  const result=prepareMorningBrief(evidence({menu,soldItems,categoryLabels:partial}),now);
-  expect(result?.parameters.slice(2,5)).toEqual(["30","Saffron latte","30"]);
+  expect(prepareMorningBrief(evidence({menu,soldItems,categoryLabels:partial}),now)).toBeNull();
+  // An unsold unlabeled category does not hold the brief back.
+  const unsold=soldItems.filter(s=>s.id!=="adeni"&&s.id!=="pumpkin"&&s.id!=="beans");
+  expect(prepareMorningBrief(evidence({menu,soldItems:unsold,categoryLabels:partial}),now)
+   ?.parameters.slice(2,5)).toEqual(["30","Saffron latte","30"]);
  });
  it("skips the brief only when no sold drink is labeled at all",()=>{
   expect(prepareMorningBrief(evidence({menu,soldItems,categoryLabels:new Map()}),now)).toBeNull();

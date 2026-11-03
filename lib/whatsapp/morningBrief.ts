@@ -111,8 +111,11 @@ export function prepareMorningBrief(e:MorningBriefEvidence,now:Date):PreparedMor
   for(const sold of e.soldItems){
     const item=menu.get(sold.id);
     if(!item||!Number.isSafeInteger(sold.units)||sold.units<0)return null;
-    // Not a drink, or a category not labeled yet: leave it out of the top drink.
-    if(isDrinkCategory(item.category,e.categoryLabels)!==true)continue;
+    // The fixed template cannot say "partial": a sold item whose category is not
+    // labeled yet would make "Drinks sold" and "Best seller" wrong, so wait for it.
+    const drink=isDrinkCategory(item.category,e.categoryLabels);
+    if(drink===null)return null;
+    if(!drink)continue;
     const name=safeText(item.base_name?.trim()||item.name,120);
     if(!name)return null;
     const next=(drinks.get(name)??0)+sold.units;
