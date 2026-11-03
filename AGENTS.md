@@ -87,7 +87,7 @@ void or refund).
   - **Organized tables** hold every field the app uses, also one row per order/item/payment by unique key,
     rebuilt from the raw record. Add columns as needed; never rename or drop ones in use.
   - **A daily health check** reports database size, duplicates, daily totals vs the POS day total and
-    sudden growth to the inbox. Storage tests use real POS messiness (reordered lists, repeats, re-pulls).
+    sudden growth on the admin page (`/admin/health`); café owners never see system alerts. Storage tests use real POS messiness (reordered lists, repeats, re-pulls).
 - **Every endpoint is captured.** Every Toast endpoint the café's credentials allow is captured on a schedule
   (`.github/workflows/toast-raw-capture-daily.yml`, last three closed days kept complete) into
   `toast_raw_samples`, with customer personal details removed and business data kept. Views read only
