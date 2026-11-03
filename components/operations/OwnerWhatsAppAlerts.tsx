@@ -13,6 +13,12 @@ type Copy={
 
 const validPhone=(s:string)=>/^\+[1-9][0-9]{7,14}$/.test(s);
 
+async function loadSetup():Promise<Setup>{
+  const response=await fetch("/api/whatsapp/binding",{cache:"no-store"});
+  if(!response.ok)throw new Error("binding_unavailable");
+  return response.json() as Promise<Setup>;
+}
+
 export default function OwnerWhatsAppAlerts({copy}:{copy:Copy}){
   const [setup,setSetup]=useState<Setup|null>(null);
   const [loading,setLoading]=useState(true);
@@ -25,18 +31,17 @@ export default function OwnerWhatsAppAlerts({copy}:{copy:Copy}){
   const [notice,setNotice]=useState("");
 
   const reload=useCallback(async()=>{
-    const res=await fetch("/api/whatsapp/binding",{cache:"no-store"});
-    if(!res.ok)throw new Error("binding_unavailable");
-    const data=await res.json() as Setup;
+    const data=await loadSetup();
     setSetup(data);
     return data;
   },[]);
   useEffect(()=>{
     let active=true;
-    void reload().catch(()=>{if(active)setNotice(copy.error)})
+    void loadSetup().then(data=>{if(active)setSetup(data)})
+      .catch(()=>{if(active)setNotice(copy.error)})
       .finally(()=>{if(active)setLoading(false)});
     return ()=>{active=false};
-  },[reload,copy.error]);
+  },[copy.error]);
 
   async function requestCode(){
     if(saving)return;

@@ -19,7 +19,7 @@ vi.mock("@/lib/ai/conversations/http.server",()=>({
     {error:error instanceof Error?error.message:"unknown"},
     {status:typeof error==="object"&&error&&"status" in error?Number(error.status):503}),
 }));
-import {GET,POST,DELETE,connectInput} from "./route";
+import {GET,POST,DELETE} from "./route";
 
 const business="f83ff25c-b593-4cf8-b2c1-5d5f3dd5f80e";
 const owner="ec885ae5-a344-4d74-a73e-11dab3bf51c9";
@@ -58,11 +58,18 @@ beforeEach(()=>{
     service:{listThreads:async()=>({items:[{id:thread,title:"My café",createdAt:"2026-11-01",updatedAt:"2026-11-01",lastMessageAt:null}]})}});
 });
 describe("owner WhatsApp binding",()=>{
-  it("requires explicit consent and valid thread",()=>{
-    expect(connectInput.safeParse({threadId:thread,consent:true}).success).toBe(true);
-    expect(connectInput.safeParse({threadId:thread,consent:false}).success).toBe(false);
-    expect(connectInput.safeParse({threadId:"bad",consent:true}).success).toBe(false);
-    expect(connectInput.safeParse({threadId:thread,consent:true,phone:"+15556667777"}).success).toBe(false);
+  it("requires explicit consent and a valid thread, and rejects extra fields",async()=>{
+    for(const body of [
+      {threadId:thread,consent:false},
+      {threadId:"bad",consent:true},
+      {threadId:thread,consent:true,phone:"+15556667777"},
+    ]){
+      const response=await POST(request(body));
+      expect(response.status).not.toBe(201);
+      expect(inserted).not.toHaveBeenCalled();
+    }
+    expect((await POST(request({threadId:thread,consent:true}))).status).toBe(201);
+    expect(inserted).toHaveBeenCalledTimes(1);
   });
   it("refuses unconfirmed phone before reading or writing a binding",async()=>{
     currentUser={phone,phone_confirmed_at:null};
@@ -91,6 +98,22 @@ describe("owner WhatsApp binding",()=>{
       business_id:business,owner_user_id:owner,thread_id:thread,opted_in:true,
       verified_at:"2026-11-01T01:00:00Z",
     }));
+  });
+  it("accepts a verified Supabase phone stored as digits without a plus sign",async()=>{
+    currentUser={phone:"19515574877",phone_confirmed_at:"2026-11-01T01:00:00Z"};
+    const preview=await GET();
+    expect(preview.status).toBe(200);
+    expect(await preview.json()).toMatchObject({verifiedPhone:"+19515574877"});
+    const response=await POST(request({threadId:thread,consent:true}));
+    expect(response.status).toBe(201);
+    expect(inserted).toHaveBeenCalledWith(expect.objectContaining({
+      wa_id:"19515574877",business_id:business,owner_user_id:owner,
+    }));
+  });
+  it("rejects invalid confirmed phone values without creating a binding",async()=>{
+    currentUser={phone:"123abc",phone_confirmed_at:"2026-11-01T01:00:00Z"};
+    expect((await POST(request({threadId:thread,consent:true}))).status).toBe(422);
+    expect(inserted).not.toHaveBeenCalled();
   });
   it("never silently replaces an existing selected thread",async()=>{
     activeBindings=[{id:"already",thread_id:"another"}];
