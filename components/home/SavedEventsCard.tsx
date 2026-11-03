@@ -266,6 +266,162 @@ export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,local
   </section>;
 }
 
+
+/** City browsing consumes only the existing saved Events API and its canonical
+ * paginated catalog. Opening the panel never starts OpenAI research. */
+export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
+  today:string;locale:Locale;t:T;chatDisabled:boolean;
+  onAsk:(item:CityCatalogPage["items"][number])=>void;
+}){
+  const [month,setMonth]=useState(today.slice(0,7));
+  const [page,setPage]=useState(0);
+  const [kind,setKind]=useState("");
+  const [searchInput,setSearchInput]=useState("");
+  const [search,setSearch]=useState("");
+  const [catalog,setCatalog]=useState<CityCatalogPage|null>(null);
+  const [coverage,setCoverage]=useState<CityCoverageOverview|null>(null);
+  const [selected,setSelected]=useState<CityCatalogPage["items"][number]|null>(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState(false);
+  const [retry,setRetry]=useState(0);
+  const from=month+"-01",to=cityMonthEnd(month);
+  useEffect(()=>{
+    const controller=new AbortController();
+    setLoading(true);setError(false);
+    const params=new URLSearchParams({cityFrom:from,cityTo:to,cityPage:String(page),
+      cityPageSize:"25"});
+    if(kind)params.set("cityKind",kind);
+    if(search)params.set("citySearch",search);
+    void fetch("/api/events/saved?"+params.toString(),{
+      cache:"no-store",signal:controller.signal,
+    }).then(async response=>{
+      if(!response.ok)throw new Error("city_catalog_unavailable");
+      const data=await response.json() as Timeline;
+      if(!data.cityCatalog||!Array.isArray(data.cityCatalog.items)||
+        data.cityCatalog.page!==page||data.cityCatalog.pageSize!==25)
+        throw new Error("invalid_city_catalog");
+      if(!controller.signal.aborted){
+        setCatalog(data.cityCatalog);setCoverage(data.cityCoverage??null);
+        setLoading(false);
+      }
+    }).catch(()=>{if(!controller.signal.aborted){setError(true);setLoading(false);}});
+    return ()=>controller.abort();
+  },[from,to,page,kind,search,retry]);
+
+  const choices=["","festival","conference","sports","parade","community","other"];
+  const changeMonth=(delta:number)=>{
+    setMonth(current=>nextMonth(current,delta));setPage(0);setSelected(null);
+  };
+  const applySearch=()=>{
+    setSearch(searchInput.trim().slice(0,80));setPage(0);setSelected(null);
+  };
+  const button="min-h-12 rounded-xl border border-line bg-surface2 px-3 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-40";
+  const checked=(value:string|null|undefined)=>value&&/^\d{4}-\d{2}-\d{2}/.test(value)?
+    dateLabel(value.slice(0,10),locale,"long"):t("researchUnknown");
+  const status=(item:CityCatalogPage["items"][number])=>item.status==="cancelled"?
+    t("cancelled"):item.status==="moved"?t("moved"):
+    item.status==="found"&&item.lastVerifiedAt?t("listedVerified"):t("sourceStatusUnknown");
+  if(selected)return <div className="space-y-4" data-testid="city-event-detail">
+    <button type="button" className={button} onClick={()=>setSelected(null)}>
+      <ChevronLeft size={18} className="me-1 inline rtl:rotate-180" aria-hidden="true"/>{t("backToCity")}
+    </button>
+    <article className="space-y-3 rounded-2xl border border-line bg-card p-4">
+      <p className="font-semibold text-accent-text">{dateLabel(selected.startDate,locale,"long")}
+        {selected.endDate!==selected.startDate?" – "+dateLabel(selected.endDate,locale,"long"):""}
+        {selected.startTime?" · "+selected.startTime:""}
+      </p>
+      <h4 className="break-words font-headline text-[22px] font-bold" dir="auto">{selected.name}</h4>
+      <p>{t("category")}: {cityKindLabel(selected.kind,t)}</p>
+      <p className="text-ink-muted">{selected.venue??t("venueUnknown")}</p>
+      <VenueMapLink address={selected.venueAddress} t={t}/>
+      <p className="text-[15px] text-ink-muted">{t("sourceStatus")}: {status(selected)}</p>
+      <p className="text-[15px] text-ink-muted">{t("researchedOn",{date:checked(selected.checkedAt)})}</p>
+      {selected.sources.length>0?<ul className="space-y-2">
+        {selected.sources.map(source=><li key={source.url} className="break-all">
+          <a href={source.url} target="_blank" rel="noopener noreferrer"
+            className="inline-flex min-h-12 items-center text-accent-text underline">
+            {t("source")} · {source.url}
+          </a>
+          <p className="text-[15px] text-ink-muted">{t("researchedOn",{date:checked(source.observedAt)})}</p>
+        </li>)}
+      </ul>:<p className="text-ink-muted">{t("sourceUnknown")}</p>}
+      <p className="text-[15px] text-ink-muted">{t("cityUnknownDemand")}</p>
+      <button type="button" disabled={chatDisabled} onClick={()=>onAsk(selected)}
+        className="min-h-12 w-full rounded-xl bg-accent px-4 py-2 font-semibold text-on-accent disabled:opacity-50">
+        {t("askCitySupervisor")}
+      </button>
+    </article>
+  </div>;
+
+  return <div className="space-y-4" data-testid="city-events-catalog">
+    <p className="text-[16px] text-ink-muted">{t("cityCatalogScope")}</p>
+    <div className="flex items-center justify-between gap-2 rounded-xl bg-surface2 p-2">
+      <button type="button" className={button} onClick={()=>changeMonth(-1)}
+        aria-label={t("previousMonth")}><ChevronLeft className="rtl:rotate-180" aria-hidden="true"/></button>
+      <h4 className="text-center font-bold">{new Intl.DateTimeFormat(locale,{
+        timeZone:"UTC",month:"long",year:"numeric",
+      }).format(new Date(from+"T00:00:00Z"))}</h4>
+      <button type="button" className={button} onClick={()=>changeMonth(1)}
+        aria-label={t("nextMonth")}><ChevronRight className="rtl:rotate-180" aria-hidden="true"/></button>
+    </div>
+    <form className="flex flex-col gap-2 sm:flex-row" onSubmit={event=>{event.preventDefault();applySearch();}}>
+      <label className="min-w-0 flex-1">
+        <span className="mb-1 block font-semibold">{t("searchEvents")}</span>
+        <input type="search" maxLength={80} value={searchInput} onChange={e=>setSearchInput(e.target.value)}
+          className="min-h-12 w-full min-w-0 rounded-xl border border-line bg-card px-3 text-[17px]"
+          placeholder={t("searchEvents")}/>
+      </label>
+      <label className="min-w-0 flex-1">
+        <span className="mb-1 block font-semibold">{t("category")}</span>
+        <select value={kind} onChange={e=>{setKind(e.target.value);setPage(0);}}
+          className="min-h-12 w-full rounded-xl border border-line bg-card px-3 text-[17px]">
+          {choices.map(choice=><option key={choice} value={choice}>{choice?cityKindLabel(choice,t):t("allCategories")}</option>)}
+        </select>
+      </label>
+      <button type="submit" className={button+" self-end"}>{t("searchButton")}</button>
+    </form>
+    {coverage&&<div role="status" className="rounded-xl bg-surface2 p-3 text-[15px]">
+      <p className="font-semibold">{t(coverage.status==="complete"?"cityCoverageRecorded":"cityCoverageIncomplete")}</p>
+      <p>{t("cityCoverageCounts",{checked:coverage.researchedSourceWindows,
+        failed:coverage.failedSourceWindows+coverage.partialSourceWindows+
+          coverage.unsearchedSourceWindows})}</p>
+      {coverage.lastCompletedAt&&<p>{t("researchedOn",{date:checked(coverage.lastCompletedAt)})}</p>}
+    </div>}
+    {loading?<p role="status">{t("loading")}</p>:
+      error?<div role="alert" className="space-y-2">
+        <p>{t("loadFailed")}</p>
+        <button type="button" onClick={()=>setRetry(v=>v+1)} className={button}>{t("retry")}</button>
+      </div>:
+      !catalog?.available?<p role="status" className="rounded-xl bg-surface2 p-4">{t("cityUnavailable")}</p>:
+      <>
+        <p className="text-[15px] text-ink-muted" role="status">{t("cityResults",{
+          count:catalog.total,first:catalog.total===0?0:catalog.page*catalog.pageSize+1,
+          last:Math.min(catalog.total,(catalog.page+1)*catalog.pageSize)})}</p>
+        {catalog.items.length===0&&<p className="rounded-xl bg-surface2 p-4">{t("cityNoResults")}</p>}
+        <ul className="space-y-3">{catalog.items.map(item=><li key={item.id}>
+          <button type="button" onClick={()=>setSelected(item)}
+            className="w-full min-h-20 rounded-2xl border border-line bg-card p-4 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+            <p className="text-[15px] font-semibold text-accent-text">
+              {dateLabel(item.startDate,locale,"long")} · {cityKindLabel(item.kind,t)}
+            </p>
+            <h5 className="mt-1 break-words text-[19px] font-bold" dir="auto">{item.name}</h5>
+            <p className="mt-1 break-words text-[16px] text-ink-muted" dir="auto">
+              {item.venue??t("venueUnknown")}
+            </p>
+            <p className="text-[15px] text-ink-muted">{status(item)} · {t("researchedOn",{date:checked(item.checkedAt)})}</p>
+          </button>
+        </li>)}</ul>
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" className={button} disabled={catalog.page===0}
+            onClick={()=>setPage(p=>Math.max(0,p-1))}>{t("previousPage")}</button>
+          <span className="text-[15px]">{t("pageNumber",{page:catalog.page+1})}</span>
+          <button type="button" className={button} disabled={!catalog.hasMore}
+            onClick={()=>setPage(p=>p+1)}>{t("nextPage")}</button>
+        </div>
+      </>}
+  </div>;
+}
+
 /** Opens over the same Supervisor conversation. Reads saved PR 3 facts and loop plans only. */
 export default function SavedEventsCard({locale,chatDisabled,compact=false,onChatAboutDay}:{
   locale:Locale;chatDisabled:boolean;compact?:boolean;
