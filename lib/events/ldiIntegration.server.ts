@@ -344,8 +344,8 @@ export function planCityResearchJobs(all:readonly CoverageRow[],
   const jobs:CityResearchJob[]=[];
   for(const root of roots){
     const source=keys.get(root.source_key)!;
-    if(root.window_reason==="new_day"&&root.window_from===root.window_to&&
-      root.scan_from===root.scan_to){
+    if(root.window_reason==="new_day"&&!root.search_attempted&&
+      root.window_from===root.window_to&&root.scan_from===root.scan_to){
       const group=daily.get(root.source_key)??[];
       group.push(root);daily.set(root.source_key,group);
     }else{
