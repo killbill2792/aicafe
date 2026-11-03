@@ -336,8 +336,8 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
       <VenueMapLink address={selected.venueAddress} t={t}/>
       <p className="text-[15px] text-ink-muted">{t("sourceStatus")}: {status(selected)}</p>
       <p className="text-[15px] text-ink-muted">{t("researchedOn",{date:checked(selected.checkedAt)})}</p>
-      {selected.sources.length>0?<ul className="space-y-2">
-        {selected.sources.map(source=><li key={source.url} className="break-all">
+      {selected.sources.some(source=>sourceUrl(source.url))?<ul className="space-y-2">
+        {selected.sources.filter(source=>sourceUrl(source.url)).map(source=><li key={source.url} className="break-all">
           <a href={source.url} target="_blank" rel="noopener noreferrer"
             className="inline-flex min-h-12 items-center text-accent-text underline">
             {t("source")} · {source.url}
