@@ -20,6 +20,8 @@ import {newLdiBudget,scanSharedResearch} from "./ldiIntegration.server";
 import {readSavedEventTimeline,readCityEventCatalog} from "@/lib/data/cafeEvents.server";
 import {eventScanWindows} from "./eventsLookahead";
 
+// Dynamic Supabase query fixture deliberately models untyped table columns.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row=Record<string,any>;
 type Tables=Record<string,Row[]>;
 const cityId="11111111-1111-4111-8111-111111111111";
