@@ -15,6 +15,7 @@ import {researchNeighborhood} from "./neighborhoodResearch.server";
 import {hasResearchableAddress,NEIGHBORHOOD_SCOPE_IDS,
   type PublicDemandPlace} from "./neighborhoodResearch";
 import type {EventScanWindow} from "./eventsLookahead";
+import {addDays} from "./holidays";
 import {stableMessageId} from "@/lib/ai/supervisor/loop/supabase.server";
 import {enrichCityEventFact,type ConfirmedEventEnrichment} from "./cityEventEnrichment.server";
 
