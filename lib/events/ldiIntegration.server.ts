@@ -343,8 +343,10 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
  * authoritative root tasks. Only children researched in the SAME refresh
  * epoch may complete that root. */
 function rootChildren(root:CoverageRow,all:readonly CoverageRow[]):CoverageRow[]{
-  if(root.window_reason==="new_day"||root.failure_category!=="invalid_shape")
-    return [];
+  // Individually accounted daily roots cannot borrow diagnostic coverage.
+  // Multi-day initial, Monday and catch-up roots can all be narrowed when B
+  // persists child scopes (including after candidate persistence failures).
+  if(root.window_from===root.window_to)return [];
   const epoch=root.scan_from+"T00:00:00Z";
   return all.filter(c=>!c.is_scan_root&&c.source_key===root.source_key&&
     c.window_from>=root.window_from&&c.window_to<=root.window_to&&
@@ -628,12 +630,20 @@ export async function scanSharedResearch(db:Db,input:{
   for(const root of all.filter(c=>c.is_scan_root&&!complete(c.status))){
     const status=reconciledCityRootStatus(root,all);
     if(!status)continue;
+    // Research writes use a post-search timestamp, later than the cron's
+    // start time. A's RPC discards stale writes, so reconcile at least as
+    // recently as the stored root, even under clock skew.
+    const completionTime=new Date(Math.max(Date.now(),
+      Date.parse(root.last_checked_at??input.checkedAt))).toISOString();
     await recordCitySourceCoverage(db,{...scope,sourceKey:root.source_key,
-      from:root.window_from,to:root.window_to,checkedAt:input.checkedAt,status});
+      from:root.window_from,to:root.window_to,checkedAt:completionTime,status});
+    // Only clear retry provenance if the RPC actually transitioned the root.
+    // Concurrent or rejected stale updates must leave child retries enabled.
     const updated=await db.from("city_source_coverage").update({
       search_attempted:true,failure_category:null,
     }).eq("city_key",cityKey).eq("source_key",root.source_key)
-      .eq("window_from",root.window_from).eq("window_to",root.window_to);
+      .eq("window_from",root.window_from).eq("window_to",root.window_to)
+      .eq("status",status);
     assertOk(updated.error);
   }
   all=await allCoverage(db,cityKey);
