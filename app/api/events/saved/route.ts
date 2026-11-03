@@ -5,7 +5,7 @@ import {conversationError,conversationJson,parseInput,readBoundedJson,requireSam
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
-import {readSavedEventTimeline,readEventChecklist,readCityEventCatalog} from "@/lib/data/cafeEvents.server";
+import {readSavedEventTimeline,readEventChecklist,readCityEventCatalog,readCityResearchCoverage} from "@/lib/data/cafeEvents.server";
 import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {utcDateOffset} from "@/lib/ai/supervisor/loop/engine";
@@ -43,10 +43,25 @@ export async function GET(request:Request){
     if(!Number.isInteger(page)||page<0||page>10000||
       !Number.isInteger(size)||size<1||size>100)
       throw new ConversationApiError(422,"invalid_city_catalog_page");
+    const cityFrom=params.get("cityFrom")??from,cityTo=params.get("cityTo")??to;
+    const validDay=(d:string)=>/^\\d{4}-\\d{2}-\\d{2}$/.test(d)&&
+      !Number.isNaN(Date.parse(d+"T00:00:00Z"))&&
+      new Date(d+"T00:00:00Z").toISOString().slice(0,10)===d;
+    const kind=params.get("cityKind")??"";
+    const search=params.get("citySearch")??"";
+    if(!validDay(cityFrom)||!validDay(cityTo)||cityFrom>cityTo||
+      Date.parse(cityTo+"T00:00:00Z")-Date.parse(cityFrom+"T00:00:00Z")>90*86400000||
+      (kind&&!["festival","conference","sports","parade","community","other"].includes(kind))||
+      search.length>80||/[\\u0000-\\u001f\\u007f]/u.test(search))
+      throw new ConversationApiError(422,"invalid_city_catalog_filter");
     const timeline=await readSavedEventTimeline(db,scope,from,to);
-    if(page!==0||size!==50)
-      timeline.cityCatalog=await readCityEventCatalog(db,scope.businessId,from,to,
-        {page,pageSize:size});
+    if(page!==0||size!==50||cityFrom!==from||cityTo!==to||kind||search){
+      [timeline.cityCatalog,timeline.cityCoverage]=await Promise.all([
+        readCityEventCatalog(db,scope.businessId,cityFrom,cityTo,
+          {page,pageSize:size,kind,search}),
+        readCityResearchCoverage(db,scope.businessId,cityFrom,cityTo),
+      ]);
+    }
     return conversationJson({today,currency:identity.currency,...timeline});
   }catch(error){return conversationError(error);}
 }
