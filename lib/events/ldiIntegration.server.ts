@@ -454,9 +454,11 @@ async function studyBatchedDays(db:Db,scope:CityScope,job:CityResearchJob,
     ...scope,window:{from:job.from,to:job.to,reason:"new_day"},
     sources:[job.source],
   });
-  let rejected=0,saved=0;
+  let saved=0;
   const checkedAt=new Date().toISOString();
-  const persistedCoverage:CitySourceResearchResult["sources"]=[];
+  const persistedCoverage:Array<{from:string;to:string;
+    outcome:CitySourceCoverageWrite["status"];failure:string|null;
+    events:CitySourceResearchResult["events"]}>=[];
   for(const coverage of result.sources){
     let coverageRejected=0;
     for(const event of coverage.events){
@@ -471,7 +473,6 @@ async function studyBatchedDays(db:Db,scope:CityScope,job:CityResearchJob,
         saved++;
       }catch(error){
         if(errorCode(error)&&!["22023","23514"].includes(errorCode(error)))throw error;
-        rejected++;
         coverageRejected++;
       }
     }
