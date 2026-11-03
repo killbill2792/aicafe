@@ -616,6 +616,72 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     expect(coverage.status).toBe("complete");
   });
 
+  it("does not complete saturated ancestor coverage when A rejects a nested candidate write",async()=>{
+    const s=mockStore();
+    const initial=eventScanWindows("2026-11-03",null,"location")[0];
+    const originalCity=f.city.getMockImplementation();
+    const originalWrite=f.writeCity.getMockImplementation();
+    let sourceFixed=false;
+    f.writeCity.mockImplementation(async(db:unknown,candidate:Row)=>{
+      if(candidate.sourceUrl.startsWith("http://"))
+        throw Object.assign(new Error("HTTPS provenance required"),{code:"22023"});
+      return originalWrite!(db,candidate);
+    });
+    f.city.mockImplementation(async(input:Row)=>{
+      if(input.sources[0].id!=="city-calendar")return originalCity!(input);
+      const coverage=(from:string,to:string,outcome:string,events:Row[]=[])=>({
+        sourceId:"city-calendar",sourceKind:"city_calendar",officialUrl:null,
+        from,to,reason:input.window.reason,checkedAt:stamp,outcome,
+        retryEligible:outcome==="partial",
+        failure:outcome==="partial"?"invalid_shape":null,events,
+      });
+      const event=[{name:"City arts fair",startDate:"2026-11-04",
+        sourceUrl:(sourceFixed?"https://":"http://")+"city.example.org/arts"}];
+      let sources:Row[];
+      if(input.window.from==="2026-11-03"&&input.window.to==="2026-11-09"){
+        sources=[coverage("2026-11-03","2026-11-06","partial"),
+          coverage("2026-11-07","2026-11-09","partial")];
+      }else if(input.window.from==="2026-11-03"&&input.window.to==="2026-11-06"){
+        // B says its child searches succeeded; A still rejects one source.
+        sources=[coverage("2026-11-03","2026-11-04","found",event),
+          coverage("2026-11-05","2026-11-06","none_found")];
+      }else if(input.window.from==="2026-11-03"&&input.window.to==="2026-11-04"){
+        sources=[coverage("2026-11-03","2026-11-04","found",event)];
+      }else if(input.window.from==="2026-11-07"&&input.window.to==="2026-11-09"){
+        sources=[coverage("2026-11-07","2026-11-09","none_found")];
+      }else sources=[coverage(input.window.from,input.window.to,"none_found")];
+      return {events:sources.flatMap(c=>c.events),sources,duplicateCount:0,
+        partial:sources.some(c=>c.outcome==="partial"),retrySourceIds:[]};
+    });
+    const generous=()=>({...newLdiBudget(),cityTasks:40});
+    expect((await s.scoped(cafeA,"2026-11-03",initial,generous()))?.completed)
+      .toBe(false);
+    expect((await s.scoped(cafeA,"2026-11-04",initial,generous()))?.completed)
+      .toBe(false);
+    const root=()=>s.tables.city_source_coverage.find(row=>
+      row.is_scan_root&&row.source_key==="category:city-calendar"&&
+      row.window_from==="2026-11-03"&&row.window_to==="2026-11-09");
+    const rejectedChild=s.tables.city_source_coverage.find(row=>
+      !row.is_scan_root&&row.source_key==="category:city-calendar"&&
+      row.window_from==="2026-11-03"&&row.window_to==="2026-11-04");
+    expect(rejectedChild).toMatchObject({
+      status:"partial",failure_category:"invalid_source_url"});
+    expect(root()?.status).toBe("partial");
+    expect(s.tables.city_events).toHaveLength(0);
+    const jobs=planCityResearchJobs(s.tables.city_source_coverage as unknown as
+      Parameters<typeof planCityResearchJobs>[0],[
+      {id:"city-calendar",name:"City",kind:"city_calendar"}],"2026-11-05");
+    expect(jobs.map(job=>[job.from,job.to])).toEqual([
+      ["2026-11-03","2026-11-04"],
+    ]);
+    sourceFixed=true;
+    expect((await s.scoped(cafeA,"2026-11-05",initial,generous()))?.completed)
+      .toBe(true);
+    expect(root()?.status).toBe("found");
+    expect(s.tables.city_events).toHaveLength(1);
+    expect(s.tables.city_event_sources[0].source_url)
+      .toBe("https://city.example.org/arts");
+  });
   it("keeps confirmed legacy multi-day duration and original kind in the canonical overlay",async()=>{
     const s=mockStore();
     s.tables.cafe_events.push({id:"66666666-6666-4666-8666-666666666666",
