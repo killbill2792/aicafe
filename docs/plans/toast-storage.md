@@ -69,8 +69,12 @@ screens and chat read the same tables and must not change.
    rows as one clean import (orders, lines, archive, typed details, voids, refunds, card-fee facts, day totals,
    rollup, change log); a real tip change → the new data plus exactly one change line.
    Found and fixed (migration 144): re-imports gave each refund snapshot a new row id, logged as a change.
-6. **More organized fields.** Toast sales category on order lines, item made/fulfilled times, server per
-   payment, service charges — one additive change each.
+6. **Done — migration 145: more organized fields.** Sales category was already on `order_lines.category`.
+   Added: `order_lines.ordered_at` / `fulfillment_status` (when each item was rung up, kitchen status),
+   `toast_payment_summaries.server_guid` / `paid_at` (who took each payment, when), `orders.service_charges_cents`
+   / `gratuity_cents` (same rule as the day totals). History filled once from the archive; older item lines first
+   get their Toast line ID where the match is certain (all 13,660 Seiyun lines matched in a production dry run).
+   Toast has no "item made" time in the orders API; `fulfillment_status` is the kitchen state it does send.
 7. **WhatsApp brief sends every morning** (template unchanged, no new Meta approval):
    - no verified event → "Today" says no major events were found nearby;
    - the same-weekday sales watch runs automatically for every café with the brief, so the template's
