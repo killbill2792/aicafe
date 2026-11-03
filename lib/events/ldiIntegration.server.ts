@@ -24,7 +24,7 @@ type CoverageRow={source_key:string;window_from:string;window_to:string;
   status:string;search_attempted:boolean;is_scan_root:boolean;
   last_completed_at:string|null};
 type NeighborhoodRow={scope:string;address_hash:string;status:string;
-  retry_eligible:boolean;checked_at:string};
+  retry_eligible:boolean;checked_at:string;last_completed_at:string|null};
 export type LdiBudget={cityTasks:number;neighborhoodScopes:number;
   enrichmentsRemaining:number;attempted:Set<string>};
 export const newLdiBudget=():LdiBudget=>({cityTasks:6,neighborhoodScopes:4,
@@ -91,7 +91,7 @@ async function neighborhood(db:Db,businessId:string,location:CafeLocation,scope:
     return;
   const addressHash=hash(location.label.trim().toLowerCase());
   const history=await rows<NeighborhoodRow>((from,to)=>db.from("cafe_neighborhood_source_coverage")
-    .select("scope,address_hash,status,retry_eligible,checked_at").eq("business_id",businessId)
+    .select("scope,address_hash,status,retry_eligible,checked_at,last_completed_at").eq("business_id",businessId)
     .range(from,to));
   const byScope=new Map(history.filter(r=>r.address_hash===addressHash).map(r=>[r.scope,r]));
   const due=NEIGHBORHOOD_SCOPE_IDS.filter(id=>{
@@ -136,7 +136,7 @@ async function neighborhood(db:Db,businessId:string,location:CafeLocation,scope:
       checked_at:coverage.checkedAt,failure_category:coverage.failure,
       places_found:coverage.placesFound,discarded_candidates:coverage.discardedCandidates,
       last_completed_at:complete(coverage.outcome)?coverage.checkedAt:
-        last?.address_hash===addressHash&&complete(last.status)?last.checked_at:null,
+        last?.address_hash===addressHash?last.last_completed_at:null,
     },{onConflict:"business_id,scope"});
     assertOk(written.error);
   }
@@ -168,7 +168,7 @@ function matchingCoverage(all:CoverageRow[],key:string,from:string,to:string){
   return all.find(r=>r.source_key===key&&r.window_from===from&&r.window_to===to);
 }
 function needsRefresh(r:CoverageRow|undefined,reason:EventScanWindow["reason"],epoch:string){
-  if(!r||!complete(r.status))return true;
+  if(!r||!r.is_scan_root||!complete(r.status))return true;
   // A Monday pass must see later announcements even if a prior scan covered the dates.
   return reason==="weekly"&&(!r.last_completed_at||
     r.last_completed_at.slice(0,10)<epoch);
@@ -391,7 +391,7 @@ export async function scanSharedResearch(db:Db,input:{
     // stable epoch is Monday's original window.from, never Tuesday's retry date.
     const refresh=needs.filter(item=>{
       const prior=matchingCoverage(all,item.key,item.from,item.to);
-      return prior&&complete(prior.status);
+      return prior&&(!prior.is_scan_root||complete(prior.status));
     });
     for(const item of refresh){
       const saved=await db.from("city_source_coverage").update({
