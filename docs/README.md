@@ -15,6 +15,7 @@ If any document conflicts with AGENTS.md, AGENTS.md wins.
 - [scheduling architecture](scheduling-architecture.md) — scheduling boundaries and contracts.
 - [team collaboration](team-collaboration.md) — human implementer and review workflow.
 - [plan: nearby events](plans/nearby-events.md) — nearby events, holidays and readiness: rules and PR order.
+- [plan: local demand intelligence](plans/local-demand-intelligence.md) — single-path city events, automatic neighborhood discovery, café impact, historical learning and merge-gated PR sequence.
 - [admin dashboard merge checklist](admin-dashboard-merge-checklist.md) — admin dashboard review checklist.
 - [auth pr133 testing](auth-pr133-testing.md) — authentication testing notes.
 

@@ -316,10 +316,27 @@ The AI works out how to answer any question; no new tool or scenario per questio
 7. Owner-facing text in en/es/ar message files; never hard-code a currency; never log secrets or customer data.
 
 ## Now
+- [ ] **Local Demand Intelligence plan (PR #329)** — owner-review the [single-path contract](docs/plans/local-demand-intelligence.md). Wave 1 parallel work may start independently; merges still require owner approval. Resolve the older Events Fix C ownership before integration UI/reader edits.
 - [x] Set `OPENAI_API_KEY` in production before deploying #216 (receipts and statements now always use OpenAI).
 - [x] Owner: apply migration 122 (RLS on `businesses`, merged in #220) to production: `alter table public.businesses enable row level security;`
 - [x] Owner: set `DAILY_BRIEF_ENABLED=true` in Vercel production to turn on the morning brief (#226).
 - [x] Owner: apply migrations 123 (drop empty owner-initiative tables, #231), 124 (live today reading, #238) and 125 ("needs a look" cleanup, #240). The code works before 124 is applied (it reads Toast live).
+
+## Next — Local Demand Intelligence (single Events path; parallel-safe PRs)
+**Contract:** [local demand intelligence](docs/plans/local-demand-intelligence.md), PR #329. One authorized `events-lookahead` cron, one event-fact authority and `lib/data/cafeEvents.server.ts` reader, one Supervisor loop/inbox/monitor/report. **A–D can start from latest `main` in parallel even while planning review runs**, with disjoint paths and complete independent tests; no branch waits on another unfinished feature. **E, F, G are merge-gated integration PRs.** No code/migrations/production changes in this planning PR. No automatic merge, SQL or deploy.
+
+**Wave 1 — parallel independent owned deliverables (owner-reviewed merge in any order):**
+- [ ] **LDI A — city event identity, source/coverage and neighborhood RLS storage**: own new migration(s), `lib/events/cityEventIdentity*`, `lib/events/cityEventPersistence*`; idempotence, two-café isolation, backward-compatible `cafe_events` identities; **A solely owns migration numbers**. No cron, main reader, agent or UI edits.
+- [ ] **LDI B — city event research adapter**: own new `lib/events/citySourceResearch*` and tests only. Dated-source JSON, venue/official-city calendars, source-level partial/retry, 14-day/one-day/Monday fixtures; no new cron or duplicate writer. E connects it.
+- [ ] **LDI C — cold-start neighborhood research adapter**: own new `lib/events/neighborhoodResearch*` and tests only. Address alone → sourced public places, calendars, café-specific hypotheses and unknowns; no maps provider or new scheduler. E connects/saves it.
+- [ ] **LDI D — performance evidence reader**: own new `lib/data/eventDemandEvidence.server.ts`, `lib/events/eventDemandEvidence*` and tests. Reuse existing owner facts, certified Toast baseline and Supervisor monitor/reports, coverage-aware, no invented causality; no second monitor. F consumes it.
+
+**Wave 2 — explicit integration owners (start planning now, merge only after prerequisites):**
+- [ ] **LDI E — research → persistence → canonical reader**: after **A+B+C** merge, own integration edits to existing lookahead/search and `lib/data/cafeEvents.server.ts`/API. Prove initial 14-day, daily +1, Monday recheck, per-source retry, city list, zero-hint neighborhood persistence, saved event/chat/Home parity. Resolve existing Events Fix C reader ownership before edits.
+- [ ] **LDI F — Supervisor → outcome learning**: after **E+D** merge, update scheduled Supervisor analysis and existing agent event tools, allow selection of specific relevant IDs, bounded research, deduplicated notices, owner action approvals, next-event learning; retire legacy chat live-search fallback. Same saved reader and existing monitor/report.
+- [ ] **LDI G — Events UI + final end-to-end release**: after **E+F** merge and Events Fix C ownership resolution, update existing in-place panel only (For My Café / All City Events), translations and UI tests. Prove address-only signup → source research → shared facts → café insight → live Toast → final report, exact event chat/visual parity, responsive EN/ES/AR, pagination and no Home-time search.
+
+**Handoff rule:** Every PR starts from actual latest merged `main`, updates only its own checkbox and uses recorded contract fixtures. Before final review rebase onto latest `main`, run all `AGENTS.md` checks, get independent Codex review, fix P1s, and demonstrate consuming the predecessor's **actual** export where required. Do not label a leaf adapter a fully connected feature. No integration “later” without an assigned E/F/G owner and explicit test. Gate merging as **A/B/C → E → F → G**, with **D → F**; among A/B/C/D no ordering dependency. No owner-authorized production migration/deployment/merge is implied.
 
 ## Next — the AI reads all POS data (AGENTS.md 4b)
 - [x] 4a. Daily capture of every Toast endpoint (#218). Owner: run it once by hand, then set the repository variable `TOAST_DAILY_CAPTURE_ENABLED=true`.
