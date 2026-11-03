@@ -89,6 +89,10 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f scripts/toast-one-record-sql-integration.sql
+      - name: Restore the latest day importer (the migration 103 re-check above replaced it)
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000141_toast_organized_keys.sql
       - name: Verify organized tables keep one row per order line and refunded payment
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
