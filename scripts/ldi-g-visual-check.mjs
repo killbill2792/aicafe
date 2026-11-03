@@ -67,8 +67,10 @@ const errors=[];
 try{
  for(const [locale,width,height] of configs){
   const key=locale+"-"+width, t=translations[locale];
+  // The app registers a fetch-forwarding PWA worker; browser fixtures need
+  // to intercept the actual /api/events/saved request, so block SW only here.
   const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:1,
-    locale,timezoneId:"America/Los_Angeles",reducedMotion:"reduce"});
+    locale,timezoneId:"America/Los_Angeles",reducedMotion:"reduce",serviceWorkers:"block"});
   const observations=[];
   let mockedReads=0;
   page.on("pageerror",error=>observations.push("pageerror: "+error.message));
