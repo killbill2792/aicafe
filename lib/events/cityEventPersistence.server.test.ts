@@ -144,7 +144,7 @@ describe("LDI A atomic shared persistence handoff",()=>{
       assessment:"potential",rationale:"Students may visit nearby"});
     expect(s.privateEvidence.get(B+"|"+PLACE_ID)).toEqual({
       assessment:"unknown",rationale:null});
-    expect(s.calls.filter(c=>c.name==="ldi_upsert_cafe_neighborhood"))
+    expect(s.calls.filter(c=>c.name==="ldi_upsert_cafe_neighborhood")
       .every(c=>c.args.p_business_id!==undefined)).toBe(true);
     expect(s.calls.find(c=>c.name==="ldi_upsert_cafe_neighborhood")?.args)
       .not.toHaveProperty("p_owner_facts");
