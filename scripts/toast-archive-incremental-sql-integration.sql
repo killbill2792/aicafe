@@ -79,8 +79,8 @@ BEGIN
  select count(*) into n from public.toast_raw_records where business_id=b and business_date=d;
  perform pg_temp.assert_true(n=1,'a failed import stores no copies');
 
- -- Import D: Toast changed the tip. Only the changed records are added; the
- -- old version is kept, and the fee row shows the new tip.
+ -- Import D: Toast changed the tip. Since migration 140 the one row is updated in
+ -- place and the change is logged; the fee row shows the new tip.
  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state)
   values(b,r,'repull_modified','running') returning id into run_d;
  insert into public.toast_day_pages(run_id,business_date,page,payload) values(run_d,d,1,changed);
@@ -89,7 +89,9 @@ BEGIN
  perform public.toast_archive_day_pages(run_d,d);
  delete from public.toast_day_pages where run_id=run_d;
  select count(*) into n from public.toast_raw_records where business_id=b and business_date=d;
- perform pg_temp.assert_true(n=2,'a changed order adds one new version of the order');
+ perform pg_temp.assert_true(n=1,'a changed order is updated in place (migration 140)');
+ perform pg_temp.assert_true((select count(*)=1 from public.toast_raw_changes
+  where business_id=b and entity_guid=ord),'the tip change is logged once');
  perform pg_temp.assert_true((select count(*)=1 from public.toast_payment_facts
   where business_id=b and business_date=d and tip_cents=200),'fee row uses the changed payment');
  perform pg_temp.assert_true((select count(*)=1 from public.toast_raw_records

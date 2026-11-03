@@ -775,7 +775,8 @@ BEGIN
  perform pg_temp.assert_true(not has_table_privilege('anon',
   'public.toast_order_typed_facts','SELECT'),
   'anonymous cannot read sanitized order details');
- -- A later version of the SAME source page/run must survive with a new hash.
+ -- A later version of the SAME source page/run must survive. Since migration 140
+ -- it survives as the one current row (latest content) plus a change-log line.
  update public.toast_day_pages set payload=jsonb_build_array(
   jsonb_build_object('guid',ord,'modifiedDate','2026-10-18T12:00:00Z',
   'checks',jsonb_build_array(jsonb_build_object(
@@ -787,9 +788,16 @@ BEGIN
   'guid',pay,'type','CASH','amount',12,'tipAmount',2)))))) where run_id=run
   and business_date='2026-10-18' and page=1;
  perform pg_temp.assert_true(
-  (select count(*)>before_count from public.toast_raw_records
-   where business_id=b and run_id=run),
-   'changed payload at same page/index archives another revision');
+  (select count(*)=before_count from public.toast_raw_records
+   where business_id=b and run_id=run and entity='order'),
+   'a changed order at the same page/index stays one row (migration 140)');
+ perform pg_temp.assert_true(
+  (select (payload->'checks'->0->'payments'->0->>'amount')::numeric=12
+   from public.toast_raw_records where business_id=b and entity='order' and entity_guid=ord),
+   'the one row holds the newest version (13:00, amount 12)');
+ perform pg_temp.assert_true(exists(select 1 from public.toast_raw_changes
+   where business_id=b and entity_guid=ord),
+   'the earlier version survives as a change-log line');
  perform public.toast_rebuild_day_payments(run,b,r,'2026-10-18',true);
  perform pg_temp.assert_true(
   (select count(*)=1 from public.toast_payment_summaries

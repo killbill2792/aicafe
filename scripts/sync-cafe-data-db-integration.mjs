@@ -187,7 +187,7 @@ try {
   await q("update toast_sync_runs set state = 'completed' where id = $1", [runIds.cur]);
   const archive = (run, tip, key) => q(`insert into toast_raw_records(business_id, restaurant_guid, entity, entity_guid, business_date, payload, payload_sha256, run_id, capture_key, source_page, source_index)
     values ($1, $2, 'order', $3, $4, $5::jsonb, md5($5::text) || md5($5::text), $6, $7, 1, 1)`, [S, G, orderGuid, archiveDay, JSON.stringify(orderPayload(tip)), run, key]);
-  await archive(runIds.old, 1, "old-version");
+  // One row per order since migration 140: the archive holds only the current version.
   await archive(runIds.cur, 2, "current-version");
   await q(`insert into toast_raw_records(business_id, restaurant_guid, entity, business_date, payload, payload_sha256, run_id, capture_key)
     values ($1, $2, 'check', $3, '{}', repeat('a', 64), $4, 'legacy-check-row')`, [S, G, archiveDay, runIds.cur]);
