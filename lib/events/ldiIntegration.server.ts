@@ -2,9 +2,10 @@ import "server-only";
 import {createHash} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {CafeLocation} from "@/lib/data/cafeLocation.server";
-import {cityScopeKey,canonicalSourceUrl,type CityScope,type CityEventKind,type CityPlaceKind} from "./cityEventIdentity";
+import {cityScopeKey,canonicalSourceUrl,canonicalEventNameKey,
+  type CityScope,type CityEventKind,type CityPlaceKind} from "./cityEventIdentity";
 import {upsertCityEventFact,recordCitySourceCoverage,upsertCafeNeighborhoodEvidence,
-  linkCityEventToCafeEvent} from "./cityEventPersistence.server";
+  linkCityEventToCafeEvent,type CitySourceCoverageWrite} from "./cityEventPersistence.server";
 import {createCitySourceResearch} from "./citySourceResearch.server";
 // B is the sole research implementation. Cap its per-source provider attempts here
 // so multiple cafés, monitoring and plan generation fit the existing 300s cron.
@@ -265,7 +266,7 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
   const bySource=new Map<string,string[]>();
   for(const e of existing)if(e.source_url){
     try{
-      const k=e.start_date+"|"+e.name.normalize("NFKC").toLowerCase()+"|"+
+      const k=e.start_date+"|"+canonicalEventNameKey(e.name)+"|"+
         canonicalSourceUrl(e.source_url);
       bySource.set(k,[...(bySource.get(k)??[]),e.id]);
     }catch{/* legacy non-HTTPS URLs cannot be confidently reconciled */ }
@@ -274,8 +275,7 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
   // public events. A reconciles when both independent listings establish the
   // same specific venue+address. Without corroboration, keep every fact in
   // the ALL CITY catalog, but do not create duplicate café/plan UUIDs.
-  const normalized=(name:string)=>name.normalize("NFKD").replace(/\p{M}/gu,"")
-    .toLowerCase().replace(/&/gu," and ").replace(/[^\p{L}\p{N}]+/gu," ").trim();
+  const normalized=canonicalEventNameKey;
   const groups=new Map<string,CityRow[]>();
   for(const e of city){
     const key=e.start_date+"|"+normalized(e.name);
@@ -288,7 +288,7 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
     if(!urls.length)continue;
     const matched=new Set<string>();
     for(const url of urls){
-      const k=e.start_date+"|"+e.name.normalize("NFKC").toLowerCase()+"|"+
+      const k=e.start_date+"|"+canonicalEventNameKey(e.name)+"|"+
         canonicalSourceUrl(url);
       for(const id of bySource.get(k)??[])matched.add(id);
     }
@@ -324,6 +324,112 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
     associated++;
   }
   return associated;
+}
+/** A research request is one source/time window, never one date multiplied
+ * by the number of cafés. Consecutive pending daily extensions for the SAME
+ * source can share one bounded B search while each root day retains its own
+ * success/partial/failure coverage record. Weekly and initial discovery stay
+ * distinct, preserving their independently refreshed windows. */
+export type CityResearchJob={
+  source:CityResearchSource;key:string;from:string;to:string;
+  reason:EventScanWindow["reason"];roots:CoverageRow[];
+};
+export function planCityResearchJobs(all:readonly CoverageRow[],
+  sources:readonly CityResearchSource[],today:string):CityResearchJob[]{
+  const keys=new Map(sources.map(source=>[sourceKey(source),source]));
+  const recent=addDays(today,-14);
+  const roots=all.filter(row=>row.is_scan_root&&!complete(row.status)&&
+    row.scan_to>=recent&&keys.has(row.source_key));
+  const daily=new Map<string,CoverageRow[]>();
+  const jobs:CityResearchJob[]=[];
+  for(const root of roots){
+    const source=keys.get(root.source_key)!;
+    if(root.window_reason==="new_day"&&root.window_from===root.window_to&&
+      root.scan_from===root.scan_to){
+      const group=daily.get(root.source_key)??[];
+      group.push(root);daily.set(root.source_key,group);
+    }else{
+      jobs.push({source,key:root.source_key,from:root.window_from,
+        to:root.window_to,reason:root.window_reason,roots:[root]});
+    }
+  }
+  for(const [key,group] of daily){
+    const source=keys.get(key)!;
+    const sorted=group.sort((a,b)=>a.window_from.localeCompare(b.window_from));
+    let buffer:CoverageRow[]=[];
+    const flush=()=>{
+      if(buffer.length)jobs.push({source,key,from:buffer[0].window_from,
+        to:buffer[buffer.length-1].window_to,
+        reason:"new_day",roots:buffer});
+      buffer=[];
+    };
+    for(const root of sorted){
+      if(buffer.length&&(root.window_from!==addDays(buffer[buffer.length-1].window_to,1)||
+        root.window_to>addDays(buffer[0].window_from,6)))flush();
+      buffer.push(root);
+    }
+    flush();
+  }
+  // Oldest missing dates first. Grouping lets six searches make progress on
+  // seven-or-more newly entering category sources without ever losing a day.
+  return jobs.sort((a,b)=>a.from.localeCompare(b.from)||
+    a.key.localeCompare(b.key)||a.to.localeCompare(b.to));
+}
+
+/** One bounded B lookup for adjacent saved new-day roots. No speculative
+ * completion: partial or failed B coverage leaves EVERY affected date retryable.
+ * A successful multi-day lookup marks each date independently, keeping the
+ * existing city/source/date ledger as the sole authority. */
+async function studyBatchedDays(db:Db,scope:CityScope,job:CityResearchJob,
+  budget:LdiBudget):Promise<number>{
+  if(job.roots.length===1)
+    return studyOne(db,scope,job.source,job.from,job.to,job.reason,job.key,budget);
+  const result:CitySourceResearchResult=await researchCitySources({
+    ...scope,window:{from:job.from,to:job.to,reason:"new_day"},
+    sources:[job.source],
+  });
+  let rejected=0,saved=0;
+  const checkedAt=new Date().toISOString();
+  for(const coverage of result.sources){
+    for(const event of coverage.events){
+      try{
+        let enrichment:ConfirmedEventEnrichment|null=null;
+        if(budget.enrichmentsRemaining>0&&
+          (job.source.kind==="city_calendar"||job.source.kind==="venue")){
+          budget.enrichmentsRemaining--;
+          enrichment=await enrichCityEventFact({...scope,...event});
+        }
+        await persistCandidate(db,scope,eventKind(),event,checkedAt,enrichment);
+        saved++;
+      }catch(error){
+        if(errorCode(error)&&!["22023","23514"].includes(errorCode(error)))throw error;
+        rejected++;
+      }
+    }
+    // Split-window provenance is retained for diagnosing source saturation.
+    await recordCitySourceCoverage(db,{...scope,sourceKey:job.key,
+      from:coverage.from,to:coverage.to,checkedAt:coverage.checkedAt,
+      status:coverage.outcome});
+  }
+  for(const root of job.roots){
+    const day=root.window_from;
+    const covering=result.sources.filter(c=>c.from<=day&&c.to>=day);
+    const clean=covering.length>0&&!rejected&&covering.every(c=>complete(c.outcome));
+    const found=covering.some(c=>c.events.some(e=>e.startDate===day));
+    const status:CitySourceCoverageWrite["status"]=clean?
+      (found?"found":"none_found"):
+      covering.some(c=>c.outcome==="partial")||rejected?"partial":"failed";
+    await recordCitySourceCoverage(db,{...scope,sourceKey:job.key,
+      from:day,to:day,checkedAt,status});
+    const failure=result.sources.find(c=>c.from<=day&&c.to>=day&&c.failure)?.failure??
+      (rejected?"invalid_source_url":null);
+    const updated=await db.from("city_source_coverage").update({
+      search_attempted:true,failure_category:failure,
+    }).eq("city_key",cityScopeKey(scope)).eq("source_key",job.key)
+      .eq("window_from",day).eq("window_to",day);
+    assertOk(updated.error);
+  }
+  return saved;
 }
 /** The ONE scheduled job's A+B+C handoff; never called from Home or chat.
  * Returns null only when the additive schema is not yet deployed. */
@@ -407,29 +513,29 @@ export async function scanSharedResearch(db:Db,input:{
   }
   const intended=sources.flatMap(source=>cityResearchDateSlices(window.from,window.to)
     .map(slice=>({source,key:sourceKey(source),...slice})));
+  // Plan across ALL queued root dates, not just the oldest incomplete scan:
+  // otherwise seven sources on every one-day extension would permanently
+  // outgrow the six-task daily budget. A grouped request must be contiguous,
+  // use one source, and never exceed B's seven-day subwindow.
   all=await allCoverage(db,cityKey);
-  const pending=intended.filter(item=>!complete(
-    matchingCoverage(all,item.key,item.from,item.to)?.status??"partial"));
-  const selected:typeof pending=[];
-  for(const item of pending){
-    const attemptKey=cityKey+"|"+item.key+"|"+item.from+"|"+item.to;
+  const pending=planCityResearchJobs(all,sources,input.today);
+  const selected:CityResearchJob[]=[];
+  for(const job of pending){
+    const attemptKey=cityKey+"|"+job.key+"|"+job.from+"|"+job.to;
     if(input.budget.cityTasks<=0)break;
     if(input.budget.attempted.has(attemptKey))continue;
     input.budget.attempted.add(attemptKey);
     input.budget.cityTasks--;
-    selected.push(item);
+    selected.push(job);
   }
-  // Independent official calendars can be searched together. Each B adapter
-  // still enforces <=3 paid HTTP attempts, three tasks at a time globally.
   for(let index=0;index<selected.length;index+=3){
-    await Promise.all(selected.slice(index,index+3).map(async item=>{
+    await Promise.all(selected.slice(index,index+3).map(async job=>{
       try{
-        await studyOne(db,scope,item.source,item.from,item.to,
-          window.reason,item.key,input.budget);
+        await studyBatchedDays(db,scope,job,input.budget);
       }catch(error){
-        console.warn("ldi_city_source_failed",{kind:item.source.kind,
+        console.warn("ldi_city_source_failed",{kind:job.source.kind,
           category:errorCode(error)||"research_or_store_failed"});
-        // Queued partial status remains durable for a subsequent retry.
+        // Queued roots remain partial so the next cron can retry them.
       }
     }));
   }

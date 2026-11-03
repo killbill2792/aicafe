@@ -16,6 +16,10 @@ const digest=(text:string)=>createHash("sha256").update(text,"utf8").digest("hex
 const clean=(text:string)=>text.normalize("NFKD").replace(/\p{M}/gu,"")
   .toLocaleLowerCase("en").replace(/&/gu," and ")
   .replace(/[^\p{L}\p{N}]+/gu," ").trim().replace(/\s+/gu," ");
+/** One canonical event-name key, shared by A's public identity and E's
+ * legacy café association. Keeps original UUIDs, cancellations and reports
+ * intact across accents, punctuation and &/and variants. */
+export const canonicalEventNameKey=(name:string):string=>clean(name);
 const nonblank=(value:string,max:number,field:string)=>{
   if(!value||!value.trim()||value.length>max)throw new Error("Invalid "+field);
   return value.trim();
