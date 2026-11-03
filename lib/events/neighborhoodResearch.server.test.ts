@@ -63,7 +63,7 @@ describe("LDI C OpenAI neighborhood research", () => {
     });
     expect(result.unknowns).toEqual(["visitor_count", "route_distance", "actual_cafe_demand"]);
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(String(fetcher.mock.calls[0][0])).toBe("https://api.openai.com/v1/responses");
+    expect(String((fetcher.mock.calls[0] as unknown[])[0])).toBe("https://api.openai.com/v1/responses");
     const body = bodies(fetcher)[0];
     expect(body).toMatchObject({model: "gpt-4.1-mini", store: false,
       max_output_tokens: 1200,
