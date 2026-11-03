@@ -8,6 +8,7 @@ const B="22222222-2222-4222-8222-222222222222";
 const OLD_A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const OLD_B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const EVENT_ID="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const OTHER_EVENT_ID="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const PLACE_ID="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const scope={city:"Berkeley",region:"CA",countryCode:"US"};
 const candidate={...scope,name:"Jazz & Art Night",kind:"community" as const,
@@ -17,7 +18,8 @@ const candidate={...scope,name:"Jazz & Art Night",kind:"community" as const,
 /** Recorded-contract DB double: one transactional RPC is a single canonical
  * event/source write, not independent inserts that can leave half a fact. */
 function storage(){
-  const city=new Map<string,{id:string;checkedAt:string;sources:Set<string>}>();
+  const city=new Map<string,{id:string;identityKey:string;venue:string|null;checkedAt:string;sources:Set<string>}>();
+  const aliases=new Map<string,string>();
   const places=new Map<string,string>();
   const privateEvidence=new Map<string,{assessment:string;rationale:string|null}>();
   const links=new Map<string,string>();
@@ -28,11 +30,23 @@ function storage(){
     calls.push({name,args});
     if(name==="ldi_upsert_city_event"){
       const key=String(args.p_identity_key),source=String(args.p_source_url);
-      const current=city.get(key)??{id:EVENT_ID,checkedAt:"",sources:new Set<string>()};
+      const keys=[args.p_source_identity_key,args.p_venue_identity_key]
+        .filter((v):v is string=>typeof v==="string");
+      const matches=new Set(keys.map(k=>aliases.get(k)).filter((v):v is string=>Boolean(v)));
+      if(matches.size>1)return {data:null,error:{message:"city_event_identity_conflict_review_required"}};
+      const id=[...matches][0]??[...city.values()].find(e=>e.identityKey===key)?.id??
+        (city.size===0?EVENT_ID:OTHER_EVENT_ID);
+      const current=city.get(id)??{id,identityKey:key,venue:null,checkedAt:"",sources:new Set<string>()};
+      if(current.venue&&args.p_venue&&
+        current.venue.toLowerCase().replace(/[^a-z0-9]/gu,"")!==
+        String(args.p_venue).toLowerCase().replace(/[^a-z0-9]/gu,""))
+        return {data:null,error:{message:"city_event_venue_conflict_review_required"}};
+      current.venue??=args.p_venue as string|null;
       current.sources.add(source);
       if(String(args.p_checked_at)>current.checkedAt)current.checkedAt=String(args.p_checked_at);
-      city.set(key,current);
-      return {data:current.id,error:null};
+      city.set(id,current);
+      for(const alias of keys)aliases.set(alias,id);
+      return {data:id,error:null};
     }
     if(name==="ldi_link_cafe_event"){
       const businessId=String(args.p_business_id),old=String(args.p_cafe_event_id);
@@ -85,7 +99,7 @@ function storage(){
     }),
   }));
   return {db:{rpc,from} as unknown as SupabaseClient,city,places,privateEvidence,
-    links,legacy,coverage,calls,rpc,from};
+    links,legacy,coverage,aliases,calls,rpc,from};
 }
 
 describe("LDI A atomic shared persistence handoff",()=>{
@@ -103,6 +117,39 @@ describe("LDI A atomic shared persistence handoff",()=>{
       "https://city.example/jazz","https://venue.example/jazz"]));
     expect(s.calls.filter(c=>c.name==="ldi_upsert_city_event")).toHaveLength(3);
     expect(s.calls.some(c=>c.args.p_business_id!==undefined&&c.name==="ldi_upsert_city_event")).toBe(false);
+  });
+  it("enriches a source-backed unknown venue without changing its canonical UUID",async()=>{
+    const s=storage();
+    const initial=await upsertCityEventFact(s.db,{...candidate,venue:null,venueAddress:null});
+    const named=await upsertCityEventFact(s.db,{...candidate,venue:"Plaza",venueAddress:null});
+    const addressed=await upsertCityEventFact(s.db,candidate);
+    const corroborated=await upsertCityEventFact(s.db,{...candidate,
+      sourceUrl:"https://organizer.example/jazz"});
+    expect(named.cityEventId).toBe(initial.cityEventId);
+    expect(addressed.cityEventId).toBe(initial.cityEventId);
+    expect(corroborated.cityEventId).toBe(initial.cityEventId);
+    expect(s.city.size).toBe(1);
+    expect(s.aliases.size).toBe(3); // first source, confirmed venue, second source
+    expect([...s.city.values()][0].sources).toEqual(new Set([
+      "https://city.example/jazz","https://organizer.example/jazz"]));
+  });
+  it("never conflates two separately named halls at the same address",async()=>{
+    const s=storage();
+    const one=await upsertCityEventFact(s.db,{...candidate,name:"Community Open Day",
+      venue:"Central Hall",venueAddress:"100 Center St"});
+    const two=await upsertCityEventFact(s.db,{...candidate,name:"Community Open Day",
+      venue:"West Hall",venueAddress:"100 Center St",
+      sourceUrl:"https://west.example/open-day"});
+    expect(one.identityKey).not.toBe(two.identityKey);
+    expect(one.cityEventId).not.toBe(two.cityEventId);
+    expect(s.city.size).toBe(2);
+  });
+  it("refuses conflicting verified halls from the same source",async()=>{
+    const s=storage();
+    await upsertCityEventFact(s.db,{...candidate,venue:"Central Hall"});
+    await expect(upsertCityEventFact(s.db,{...candidate,venue:"West Hall"}))
+      .rejects.toMatchObject({message:"city_event_venue_conflict_review_required"});
+    expect(s.city.size).toBe(1);
   });
   it("does not fuse a different venue and preserves legacy UUIDs and approvals",async()=>{
     const s=storage(),history={proposalEventIds:[OLD_A],approved:true,reportId:"existing-report"};

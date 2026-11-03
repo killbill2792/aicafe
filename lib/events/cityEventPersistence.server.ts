@@ -31,6 +31,8 @@ export async function upsertCityEventFact(db:SupabaseClient,
   const identity=cityEventIdentity(input);
   const {data,error}=await db.rpc("ldi_upsert_city_event",{
     p_city_key:identity.cityKey,p_identity_key:identity.identityKey,
+    p_source_identity_key:identity.sourceIdentityKey,
+    p_venue_identity_key:identity.venueIdentityKey,
     p_name:identity.name,p_kind:input.kind,p_start_date:identity.startDate,
     p_end_date:identity.endDate,p_source_url:identity.sourceUrl,
     p_checked_at:validInstant(input.checkedAt),p_venue:identity.venue,

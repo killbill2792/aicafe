@@ -66,12 +66,17 @@ export function cityEventIdentity(input:CityEventCandidate){
   const venue=input.venue?label(input.venue,200,"venue"):null;
   const venueAddress=input.venueAddress?label(input.venueAddress,500,"venue address"):null;
   const sourceUrl=canonicalSourceUrl(input.sourceUrl);
-  // Distinct venues never collide. If venue is missing, a source-specific
-  // identity is safer than merging similarly named same-day city events.
-  const discriminator=venueAddress?"address:"+clean(venueAddress):
-    venue?"venue:"+clean(venue):"source:"+sourceUrl;
+  // This source anchor never changes as a listing becomes more detailed.
+  const sourceIdentityKey=digest([cityKey,startDate,nameKey,
+    "source:"+sourceUrl].join("\u001f"));
+  // Strong cross-source reconciliation requires BOTH a named venue and its
+  // address. Distinct halls at the SAME address are not interchangeable.
+  // Unknown or incomplete venues stay source-scoped until corroborated.
+  const venueIdentityKey=venue&&venueAddress?digest([cityKey,startDate,nameKey,
+    "venue:"+clean(venue),"address:"+clean(venueAddress)].join("\u001f")):null;
   return {cityKey,name,nameKey,startDate,endDate,venue,venueAddress,sourceUrl,
-    identityKey:digest([cityKey,startDate,nameKey,discriminator].join("\u001f"))};
+    sourceIdentityKey,venueIdentityKey,
+    identityKey:venueIdentityKey??sourceIdentityKey};
 }
 export function cityPlaceIdentity(input:CityPlaceCandidate){
   const cityKey=cityScopeKey(input);

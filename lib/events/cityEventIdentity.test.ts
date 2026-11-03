@@ -24,6 +24,22 @@ describe("shared city identity",()=>{
     expect(cityEventIdentity({...base,city:"Oakland"}).identityKey).not.toBe(key);
     expect(cityEventIdentity({...base,name:"Jazz and Art Night"}).identityKey).not.toBe(key);
   });
+  it("retains distinct named halls at the same street address",()=>{
+    const hallOne=cityEventIdentity({...base,name:"Community Open Day",venue:"Central Hall"});
+    const hallTwo=cityEventIdentity({...base,name:"Community Open Day",venue:"West Hall"});
+    expect(hallOne.identityKey).not.toBe(hallTwo.identityKey);
+    expect(hallOne.venueIdentityKey).not.toBe(hallTwo.venueIdentityKey);
+  });
+  it("keeps its source anchor stable through unknown, named and addressed venue enrichment",()=>{
+    const unknown=cityEventIdentity({...base,venue:null,venueAddress:null});
+    const named=cityEventIdentity({...base,venueAddress:null});
+    const complete=cityEventIdentity(base);
+    expect(unknown.sourceIdentityKey).toBe(named.sourceIdentityKey);
+    expect(named.sourceIdentityKey).toBe(complete.sourceIdentityKey);
+    expect(unknown.venueIdentityKey).toBeNull();
+    expect(named.venueIdentityKey).toBeNull();
+    expect(complete.venueIdentityKey).not.toBeNull();
+  });
   it("refuses to fuse unknown-venue city listings from independent sources",()=>{
     const one=cityEventIdentity({...base,venue:null,venueAddress:null,sourceUrl:"https://a.example/agenda"});
     const two=cityEventIdentity({...base,venue:null,venueAddress:null,sourceUrl:"https://b.example/agenda"});

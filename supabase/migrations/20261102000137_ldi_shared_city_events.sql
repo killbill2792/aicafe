@@ -24,6 +24,14 @@ create table public.city_event_sources (
   primary key (city_event_id,source_url)
 );
 
+-- Stable source aliases persist across venue enrichment; only corroborated
+-- name + venue + address keys allow cross-source reconciliation.
+create table public.city_event_aliases (
+  alias_key text primary key check (alias_key ~ '^[0-9a-f]{64}$'),
+  city_event_id uuid not null references public.city_events(id) on delete restrict
+);
+create index city_event_aliases_event on public.city_event_aliases(city_event_id);
+
 -- One coverage result per public city/source/window; failed and partial scans
 -- do not erase the most recent COMPLETED (found/none_found) result.
 create table public.city_source_coverage (
@@ -64,7 +72,7 @@ create table public.cafe_city_event_links (
   primary key (business_id,cafe_event_id),
   unique (business_id,city_event_id),
   foreign key (business_id,cafe_event_id)
-    references public.cafe_events(business_id,id) on delete restrict
+    references public.cafe_events(business_id,id) on delete cascade
 );
 create index cafe_city_event_links_city on public.cafe_city_event_links(city_event_id);
 
@@ -81,20 +89,22 @@ create table public.cafe_neighborhood_evidence (
 
 alter table public.city_events enable row level security;
 alter table public.city_event_sources enable row level security;
+alter table public.city_event_aliases enable row level security;
 alter table public.city_source_coverage enable row level security;
 alter table public.city_places enable row level security;
 alter table public.cafe_city_event_links enable row level security;
 alter table public.cafe_neighborhood_evidence enable row level security;
-revoke all on public.city_events,public.city_event_sources,public.city_source_coverage,
+revoke all on public.city_events,public.city_event_sources,public.city_event_aliases,public.city_source_coverage,
   public.city_places,public.cafe_city_event_links,public.cafe_neighborhood_evidence
   from public,anon,authenticated;
-grant select on public.city_events,public.city_event_sources,public.city_source_coverage,
+grant select on public.city_events,public.city_event_sources,public.city_event_aliases,public.city_source_coverage,
   public.city_places,public.cafe_city_event_links,public.cafe_neighborhood_evidence to authenticated;
-grant all on public.city_events,public.city_event_sources,public.city_source_coverage,
+grant all on public.city_events,public.city_event_sources,public.city_event_aliases,public.city_source_coverage,
   public.city_places,public.cafe_city_event_links,public.cafe_neighborhood_evidence to service_role;
 -- These tables hold public sourced facts, not owner/POS-derived observations.
 create policy city_events_owner_catalog on public.city_events for select to authenticated using (true);
 create policy city_event_sources_owner_catalog on public.city_event_sources for select to authenticated using (true);
+create policy city_event_aliases_owner_catalog on public.city_event_aliases for select to authenticated using (true);
 create policy city_coverage_owner_catalog on public.city_source_coverage for select to authenticated using (true);
 create policy city_places_owner_catalog on public.city_places for select to authenticated using (true);
 create policy cafe_city_links_owner on public.cafe_city_event_links for select to authenticated
@@ -108,32 +118,76 @@ create policy cafe_neighborhood_owner on public.cafe_neighborhood_evidence for s
 -- First canonical identity wins; later independent sources fill missing venue
 -- facts without changing historical dates or changing existing event IDs.
 create function public.ldi_upsert_city_event(
-  p_city_key text, p_identity_key text, p_name text, p_kind text,
+  p_city_key text, p_identity_key text, p_source_identity_key text,
+  p_venue_identity_key text, p_name text, p_kind text,
   p_start_date date, p_end_date date, p_source_url text,
   p_checked_at timestamptz, p_venue text default null, p_venue_address text default null
 ) returns uuid language plpgsql security invoker set search_path=public as $$
-declare result_id uuid;
+declare
+  result_id uuid;
+  matching_ids uuid[];
+  keys text[];
+  current_key text;
 begin
-  insert into public.city_events(city_key,identity_key,name,kind,start_date,end_date,
-    venue,venue_address,last_checked_at)
-  values (p_city_key,p_identity_key,p_name,p_kind,p_start_date,p_end_date,
-    p_venue,p_venue_address,p_checked_at)
-  on conflict (identity_key) do update set
-    last_checked_at=greatest(city_events.last_checked_at,excluded.last_checked_at),
-    venue=coalesce(city_events.venue,excluded.venue),
-    venue_address=coalesce(city_events.venue_address,excluded.venue_address)
-  where city_events.city_key=excluded.city_key and city_events.start_date=excluded.start_date
-  returning id into result_id;
-  if result_id is null then raise exception 'city_event_identity_conflict' using errcode='23514'; end if;
+  if p_identity_key !~ '^[0-9a-f]{64}$' or
+    p_source_identity_key !~ '^[0-9a-f]{64}$' or
+    (p_venue_identity_key is not null and p_venue_identity_key !~ '^[0-9a-f]{64}$')
+  then raise exception 'invalid_city_event_identity' using errcode='23514'; end if;
+  keys:=case when p_venue_identity_key is null
+    then array[p_source_identity_key] else array[p_source_identity_key,p_venue_identity_key] end;
+  -- Serialize both same-source enrichment and cross-source venue writes.
+  -- Sorted advisory locks avoid deadlock when concurrent sources overlap.
+  for current_key in select distinct k from unnest(keys) as aliases(k) order by k loop
+    perform pg_advisory_xact_lock(hashtextextended('ldi-city-event:'||current_key,0));
+  end loop;
+  select array_agg(distinct city_event_id) into matching_ids
+    from public.city_event_aliases where alias_key=any(keys);
+  if cardinality(matching_ids)>1 then
+    raise exception 'city_event_identity_conflict_review_required' using errcode='23514';
+  end if;
+  if cardinality(matching_ids)=1 then
+    result_id:=matching_ids[1];
+    -- A different hall advertised on the same page is not corroboration.
+    if p_venue is not null and exists (
+      select 1 from public.city_events e where e.id=result_id and e.venue is not null
+        and regexp_replace(lower(e.venue),'[^[:alnum:]]','','g') <>
+            regexp_replace(lower(p_venue),'[^[:alnum:]]','','g')
+    ) then raise exception 'city_event_venue_conflict_review_required' using errcode='23514'; end if;
+    update public.city_events set
+      last_checked_at=greatest(last_checked_at,p_checked_at),
+      venue=coalesce(venue,p_venue),venue_address=coalesce(venue_address,p_venue_address)
+    where id=result_id and city_key=p_city_key and start_date=p_start_date;
+    if not found then raise exception 'city_event_scope_conflict' using errcode='23514'; end if;
+  else
+    insert into public.city_events(city_key,identity_key,name,kind,start_date,end_date,
+      venue,venue_address,last_checked_at)
+    values (p_city_key,p_identity_key,p_name,p_kind,p_start_date,p_end_date,
+      p_venue,p_venue_address,p_checked_at)
+    on conflict(identity_key) do update set
+      last_checked_at=greatest(city_events.last_checked_at,excluded.last_checked_at),
+      venue=coalesce(city_events.venue,excluded.venue),
+      venue_address=coalesce(city_events.venue_address,excluded.venue_address)
+    where city_events.city_key=excluded.city_key and city_events.start_date=excluded.start_date
+    returning id into result_id;
+    if result_id is null then raise exception 'city_event_identity_conflict' using errcode='23514'; end if;
+  end if;
+  foreach current_key in array keys loop
+    insert into public.city_event_aliases(alias_key,city_event_id)
+      values(current_key,result_id) on conflict(alias_key) do nothing;
+    if (select city_event_id from public.city_event_aliases where alias_key=current_key)
+      is distinct from result_id then
+      raise exception 'city_event_alias_conflict' using errcode='23514';
+    end if;
+  end loop;
   insert into public.city_event_sources(city_event_id,source_url,observed_name,observed_at)
     values (result_id,p_source_url,p_name,p_checked_at)
     on conflict (city_event_id,source_url) do update set
       observed_at=greatest(city_event_sources.observed_at,excluded.observed_at);
   return result_id;
 end $$;
-revoke all on function public.ldi_upsert_city_event(text,text,text,text,date,date,text,timestamptz,text,text)
+revoke all on function public.ldi_upsert_city_event(text,text,text,text,text,text,date,date,text,timestamptz,text,text)
   from public,anon,authenticated;
-grant execute on function public.ldi_upsert_city_event(text,text,text,text,date,date,text,timestamptz,text,text)
+grant execute on function public.ldi_upsert_city_event(text,text,text,text,text,text,date,date,text,timestamptz,text,text)
   to service_role;
 
 -- Never count a retry as complete without found/none_found evidence; replay of

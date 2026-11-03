@@ -87,6 +87,23 @@ describe("LDI A real PostgreSQL owner RLS (disposable database)",()=>{
         "values('us|ca|berkeley',$1,'Unauthorized','other','2035-01-16','2035-01-16',now())",
         [randomUUID().replace(/-/gu,"").repeat(2)])).rejects.toThrow();
       await db.query("rollback to savepoint denied_write");
+
+      // Legacy event deletion (including business/account cascade) deletes
+      // the association, never the independent public city fact.
+      await db.query("reset role");
+      const legacyForA=await db.query(
+        "select cafe_event_id from public.cafe_city_event_links where business_id=$1 and city_event_id=$2",
+        [settings.businessA,cityId]);
+      expect(legacyForA.rows).toHaveLength(1);
+      await db.query(
+        "delete from public.cafe_events where business_id=$1 and id=$2",
+        [settings.businessA,legacyForA.rows[0].cafe_event_id]);
+      expect((await db.query(
+        "select cafe_event_id from public.cafe_city_event_links where business_id=$1 and city_event_id=$2",
+        [settings.businessA,cityId])).rows).toHaveLength(0);
+      expect((await db.query("select id from public.city_events where id=$1",[cityId])).rows)
+        .toHaveLength(1);
+
     }finally{
       await db.query("rollback");
       await db.end();
