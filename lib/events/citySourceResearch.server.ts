@@ -75,6 +75,10 @@ export function createCitySourceResearch(deps:{
 
     const attempt=async(source:CityResearchSource,from:string,to:string,
       mode:"schema"|"preview"|"plain",number:number):Promise<SearchAttempt>=>{
+      // The budget counts provider HTTP attempts, not just logical source queries.
+      if(searches>=maxSearches)
+        return {ok:false,failure:"request_budget",status:null,retryEligible:true};
+      searches++;
       let status:number|null=null;
       try{
         const strict=mode!=="plain";
@@ -121,7 +125,6 @@ export function createCitySourceResearch(deps:{
       }
     };
     const request=async(source:CityResearchSource,from:string,to:string):Promise<SearchAttempt>=>{
-      searches++;
       const first=await attempt(source,from,to,"schema",1);
       if(first.ok)return first;
       if(first.status===400){
