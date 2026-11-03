@@ -48,6 +48,17 @@ BEGIN
  perform pg_temp.assert_true((select count(*)=2 and count(distinct entity_guid)=2 and bool_and(entity_guid<>ord)
   from public.toast_raw_records where business_id=b and entity='void'),'each voided item is its own record');
 
+ -- A refund re-inserted by a re-import gets a new row id: that is not a change.
+ perform public.toast_archive_stage_snapshot(jsonb_build_object('id',1,'business_id',b,'restaurant_guid',r,
+  'order_guid',ord,'payment_guid','cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcd0040','order_business_date','2026-10-01',
+  'amount_cents',100),'refund','toast_refund_facts');
+ perform public.toast_archive_stage_snapshot(jsonb_build_object('id',2,'business_id',b,'restaurant_guid',r,
+  'order_guid',ord,'payment_guid','cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcd0040','order_business_date','2026-10-01',
+  'amount_cents',100),'refund','toast_refund_facts');
+ perform pg_temp.assert_true((select count(*)=1 from public.toast_raw_records where business_id=b and entity='refund')
+  and not exists(select 1 from public.toast_raw_changes where business_id=b and entity='refund'),
+  'a new row id alone is not a change');
+
  -- A payment with two day events (different kinds or dates) keeps both: identity is
  -- the source table's own key, not just the payment GUID.
  perform public.toast_archive_stage_snapshot(jsonb_build_object('business_id',b,'restaurant_guid',r,

@@ -328,3 +328,89 @@ describe("permanent Toast location preflight (C1)",()=>{
   expect(mocked.request).not.toHaveBeenCalled();
  });
 });
+
+// Real Toast messiness (docs/plans/toast-storage.md step 5): Toast returns the same
+// day with lists shuffled, orders on different pages, the same order twice and older
+// versions after newer ones. Same data in must give exactly the same import out.
+describe("real Toast messiness: same data in, same import out",()=>{
+ const d="2026-10-16";
+ const tax=(i:number,amount:number)=>({guid:guid(90000+i),name:"Tax "+i,taxAmount:amount});
+ const mod=(i:number,price:number)=>({guid:guid(91000+i),displayName:"Oat milk "+i,price,quantity:1,
+  item:{guid:guid(92000+i)}});
+ // Two checks; taxes and modifiers on items; a voided item; a tip; a refund on one payment.
+ const messy=(i:number,tip=1,modified="2026-10-17T09:00:00+0000")=>({
+  guid:guid(i),businessDate:dayInt(d),modifiedDate:modified,openedDate:d+"T12:00:00+0000",
+  closedDate:d+"T12:30:00+0000",server:{guid:guid(93000)},diningOption:{name:"Dine In"},numberOfGuests:2,
+  checks:[
+   {guid:guid(i+40000),amount:12,taxAmount:1.08,paymentStatus:"CLOSED",
+    selections:[
+     {guid:guid(i+80000),item:{guid:guid(94001)},displayName:"Latte",quantity:1,price:6,tax:0.54,
+      salesCategory:{name:"Coffee"},appliedTaxes:[tax(1,0.5),tax(2,0.04)],modifiers:[mod(1,0.75),mod(2,0.5)]},
+     {guid:guid(i+80001),item:{guid:guid(94002)},displayName:"Cardamom chai",quantity:1,price:6,tax:0.54,
+      salesCategory:{name:"Tea"},appliedTaxes:[tax(3,0.5),tax(4,0.04)]},
+     {guid:guid(i+80002),item:{guid:guid(94003)},displayName:"Samosa",quantity:1,price:4,voided:true,
+      voidBusinessDate:dayInt(d),voidDate:d+"T12:10:00+0000",salesCategory:{name:"Food"}}],
+    payments:[{guid:guid(i+60000),type:"CREDIT",paymentStatus:"CAPTURED",amount:13.08,tipAmount:tip,
+     cardType:"VISA",cardEntryMode:"EMV_CHIP_SIGNATURE",originalProcessingFee:0.4}]},
+   {guid:guid(i+40001),amount:5,taxAmount:0,paymentStatus:"CLOSED",
+    selections:[{guid:guid(i+80003),item:{guid:guid(94004)},displayName:"Water",quantity:1,price:5,
+     salesCategory:{name:"Drinks"}}],
+    payments:[{guid:guid(i+60001),type:"CASH",paymentStatus:"CLOSED",amount:5,tipAmount:0,
+     refund:{refundAmount:2,tipRefundAmount:0,refundBusinessDate:dayInt(d)}}]}]
+ });
+ // Reverse every list inside an order (checks, items, taxes, modifiers, payments).
+ const shuffled=(o:unknown):unknown=>Array.isArray(o)?[...o].reverse().map(shuffled):
+  o&&typeof o==="object"?Object.fromEntries(Object.entries(o).map(([k,v])=>[k,shuffled(v)])):o;
+ async function importPages(pages:unknown[][]){
+  const f=fakeDatabase();
+  mocked.request.mockImplementation(async(path:string)=>pages[Number(path.match(/page=(\d+)/)?.[1]??0)-1]??[]);
+  await importToastBusinessDay(f.db,params(d));
+  expect(f.imports).toHaveLength(1);
+  const staged=[...f.stored.values()].flat().map(o=>JSON.stringify(o)).sort();
+  return {sent:f.imports[0],staged};
+ }
+ const orders=[messy(1),messy(2),messy(3)];
+
+ it("the clean day sends every item, void, tip and refund once",async()=>{
+  const {sent}=await importPages([orders]);
+  expect(sent.p_summary.order_count).toBe(3);
+  expect(sent.p_summary.unparsed_count).toBe(0);
+  const s=sent.p_summary as unknown as {voids:unknown[];refund_facts:{amount_cents:number}[];tip_cents:number};
+  expect(s.voids).toHaveLength(3);
+  expect(s.refund_facts.map(r=>r.amount_cents)).toEqual([200,200,200]);
+  expect(s.tip_cents).toBe(300);
+ });
+ it("shuffled lists inside every order give the same import and the same stored pages",async()=>{
+  const clean=await importPages([orders]);
+  const messyRun=await importPages([orders.map(shuffled)]);
+  expect(messyRun.sent).toEqual(clean.sent);
+  expect(messyRun.staged).toEqual(clean.staged);
+ });
+ it("orders in a different order on the page give the same import",async()=>{
+  const clean=await importPages([orders]);
+  const reversed=await importPages([[...orders].reverse()]);
+  expect(reversed.sent).toEqual(clean.sent);
+  expect(reversed.staged).toEqual(clean.staged);
+ });
+ it("the same order on two pages is imported once",async()=>{
+  const full=Array.from({length:100},(_,i)=>messy(i+10));
+  const once=await importPages([full,[messy(200)]]);
+  const twice=await importPages([full,[messy(200),shuffled(messy(10))]]);
+  expect(twice.sent.p_summary.order_count).toBe(101);
+  expect(twice.sent).toEqual(once.sent);
+ });
+ it("an older version after the newer one never replaces it, on any page",async()=>{
+  const newer=messy(1,3,"2026-10-18T09:00:00+0000"),older=messy(1,1,"2026-10-17T09:00:00+0000");
+  const full=Array.from({length:99},(_,i)=>messy(i+10));
+  const newerFirst=await importPages([[newer,...full],[older]]);
+  const olderFirst=await importPages([[older,...full],[newer]]);
+  expect(newerFirst.sent).toEqual(olderFirst.sent);
+  const tips=(newerFirst.sent.p_summary as unknown as {tip_cents:number}).tip_cents;
+  expect(tips).toBe(300+99*100);
+ });
+ it("a re-pull of an unchanged day sends exactly the same import",async()=>{
+  const first=await importPages([orders]);
+  const again=await importPages([orders.map(shuffled).reverse()]);
+  expect(again.sent).toEqual(first.sent);
+ });
+});
