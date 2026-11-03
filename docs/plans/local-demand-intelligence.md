@@ -1,0 +1,85 @@
+# Plan: Local Demand Intelligence — ONE Events path
+
+Status: **owner-requested planning record, November 2, 2026; implementation not started**. This is not permission to merge, deploy, run production SQL, change flags or purchase a provider. Read `AGENTS.md` and `PROGRESS.md` first; `AGENTS.md` wins. Preserve the historical `docs/plans/nearby-events.md`; its October 30 owner decision on automatic read-only observation and business-action approvals still applies.
+
+## Owner journey / definition of the product
+
+An owner supplies **only a café address**; POS history is useful but not required to start. Without interviewing the owner, AI CAFE researches the area's demand generators and the city's events. In the existing Events panel and Supervisor chat the owner can:
+
+- Browse **All City Events**: every *discovered* public event, with date, venue when confirmed, source, freshness, and honest incomplete coverage. Never falsely claim to list literally every city event.
+- Read **For My Café**: the same Supervisor's café-specific demand outlook and, when justified, concise preparation advice. It considers venue access, likely approaches, event hours, attendance, normal neighborhood patterns, competition, café opening hours, Toast baseline and uncertainty; no hardcoded radius/attendance-to-sales rule.
+- Open any city event and ask Supervisor to investigate it, including events Supervisor did not proactively highlight.
+- Benefit automatically from subsequent observations. Recorded Toast results, prior event reports, changing public facts and owner-supplied observations refine *future* judgments; owner feedback is optional, not a prerequisite.
+- Receive only deduplicated, useful proactive findings. Uncertain impact is **unknown**, not normal, zero, or proven extra sales. Association with increased sales is not proof of causation.
+
+Three linked kinds of knowledge: **city event intelligence** (public and reusable across cafés), **neighborhood demand intelligence** (place facts plus location-specific hypotheses), and **café performance intelligence** (private POS baseline, historical observations, owner facts and prior Supervisor reports).
+
+## Inspected current code and real gaps
+
+- `vercel.json` schedules **one** `/api/cron/events-lookahead` at `10 15 * * *` UTC. `lib/events/eventsLookahead.ts` selects initial 14-day, daily one entering day, and Monday full-window rediscovery. `lib/events/eventsLookahead.server.ts` checks café owner/AI access, runs those windows, saves events, verifies changes, then asks Supervisor for proposals.
+- `lib/events/nearbyEvents.ts` currently asks OpenAI to web-search approximately 2 miles around one café, plus holiday queries; it demands `{events:[{name,startDate,sourceUrl}]}`, **at most five** per prompt. `nearbyEventsSearch.server.ts` caps the combined result at **eight**, `max_output_tokens=1200`, with bounded fallback/retries; success/partial/failure must remain distinct.
+- `cafe_event_search_state` is **per café**, not a city/source coverage ledger. `cafe_events` stores café-scoped dated discoveries and verification. `eventIdentity` uses kind + name + date + URL; minor name differences can produce duplicate events. The minimal OpenAI response leaves saved `venue`, address and event time null. `upsert(...ignoreDuplicates:true)` preserves history but does not enrich an existing fact.
+- `eventVerification.server.ts` performs source-specific checks for **planned** events, limited to three/day, through the **same** lookahead job. Absence from web results never proves cancellation; preserve this.
+- `draftDay` in `eventsLookahead.server.ts` calls `runAgentTurn` with **only** `propose_event_plan`. It sees saved day facts, usual hourly sales, past reports and some `event_outcome:*` owner facts; it cannot follow up on missing venue/attendance/route evidence and requires the proposal's event IDs to equal **all** provided day events. It caps new day-plan notices at three/day.
+- One live observation path exists: `/api/cron/today-live` → `eventLiveWatch.server.ts` → existing Supervisor monitor samples (gated by Toast refresh, saved hours, data availability and Events enablement); next-day reconciliation is in the lookahead job. Do not build another monitor, report, inbox or approval path.
+- `lib/data/cafeEvents.server.ts::readSavedEventTimeline` supplies the existing canonical Events read for Home/API/chat. `components/home/SavedEventsCard.tsx` renders the in-place panel. `lib/ai/agent/tools/getEvents.ts` reads saved events. **Legacy divergence:** `lib/ai/agent/tools/events.ts::get_nearby_events` still has a fallback through `buildEventsOutlook` when the saved-events port is absent. Name this and retire the fallback after parity tests; never add a third query path.
+- `PROGRESS.md` still lists an unchecked **Events Fix C** owning the Events UI and canonical read/API. Treat this as an ownership/merge gate: check the actual PR/branch state and resolve it before overlapping files are edited. Do not silently replace its scope.
+
+## ONE production path and data authority
+
+```text
+Existing authorized Events cron (initial / daily / Monday / verification)
+  -> source-backed CITY + venue research and recorded coverage
+  -> ONE canonical public event identity/fact source
+  -> café's neighborhood demand context + private owner/POS facts
+  -> ONE existing Supervisor tool-calling loop (event selection / advice)
+  -> existing Supervisor proposals, messages, inbox, monitors and reports
+  -> ONE canonical Events reader -> existing in-place Events panel + chat
+  -> verified/partial Toast observations feed the next assessment
+```
+
+1. **One research runner:** extend `events-lookahead` and its existing search/verification helpers. Do not add per-category, per-café or neighborhood crons. Per-city/public searches should be reusable for cafés in the same city, with bounded source-specific coverage, retries and deduplication; café authorization remains mandatory before its personal analysis or paid café-specific work.
+2. **One authoritative event-fact source:** evolve the current Events data path to support shared city facts and per-café associations. New public event name/date/venue/source facts have **one canonical authority**; `cafe_events` keeps its existing IDs and historical proposal/report references, serving as a legacy snapshot/association during migration, not a competing second writable event database. All new/old readings resolve through **`lib/data/cafeEvents.server.ts`**, used by Home, chat and APIs. The first schema PR must state the authority and safe backfill, uniqueness, RLS and compatibility contract explicitly. Do not rewrite approved owner decisions or old report identities.
+3. **One neighborhood knowledge path:** scheduled address-based discovery (not an owner interview) identifies likely demand generators and their dated official calendars, locations, access/transport evidence and nearby alternatives. Public place facts may be reusable; café-specific hypotheses and owner facts remain private. Save sources, dates, uncertainty and refresh status. Research updates feed the *existing* event discovery and Supervisor; they are not a separate agent or event store.
+4. **One decision-maker:** existing Supervisor decides which specific event IDs warrant analysis and what to tell this café, with safe, bounded `web_search`/data tools available where needed. Code supplies facts, verified numeric calculations and scope; it does not assign a fixed impact score or rewrite the model's explanation. An event may remain in All City Events without a proactive plan.
+5. **One learning/monitoring loop:** reuse `owner_facts`, canonical Toast readers, `supervisor_proposals`, `supervisor_monitor_samples`, `supervisor_reports`, `operating_tasks` and `ai_messages`. Historical outcomes are evidence, not automatic attribution. Do not create an independent forecast, inbox, report or learning agent.
+6. **One UI/API:** extend the existing in-place Events panel; keep Past/Today/Upcoming, saved sources, exact-event drilldown and intentional "Chat about this." Add All City Events and For My Café as views over the same canonical reader, not separate search-on-open endpoints.
+
+**D3 route-provider decision is still binding:** no paid geocoding, maps-distance or foot-traffic provider is approved. Start with cited public directions, entrances, timing and transit evidence; when actual route metrics are missing, say so. A new route provider requires an explicit owner decision and a separate scoped integration; do not block the core product on it.
+
+## What OpenAI is sent and what gets saved
+
+**Discovery (existing compact factual web-search call, repeated by researched source/window):** "Find confirmed San Francisco public events between [dates] from this specific official venue calendar / city source. Give exactly name, local startDate and URL confirming the date; omit unsupported listings." Also retain a broad city catch-all and existing holidays. **Receive** compact, cited event candidates; **save** one canonical event fact and source/coverage evidence. If one source fails, mark only that scope incomplete and retry; do not claim the whole city was checked. Keep the existing 1,200-token cap and bounded retries.
+
+**Focused factual enrichment (only for selected candidates or missing high-value facts):** "From the event/organizer source, confirm venue/address, dates/hours, attendance, access information, and the URLs for each claim; return unknown for anything not established." **Save** bounded, provenance-tagged verified/unknown facts, not unbounded prose and not unsourced attendance guesses. Do not try a giant multi-event JSON response.
+
+**Neighborhood discovery (on first eligible scheduled run and later source-refresh):** "From this café's saved address, identify public destinations and regular activities that plausibly generate demand, official calendars and visitor approaches, with sources and uncertainty." **Save** public place identities/source coverage plus café-scoped hypotheses; do not invent historical business impact.
+
+**Supervisor impact turn:** Provide the current café identity/address/hours, discovered events and enrichment, neighborhood evidence, normal and prior comparable Toast observations, relevant prior event reports and owner facts. Ask: "Which specific events, if any, justify a café-specific insight? Investigate gaps within the tool budget; distinguish known, estimated and missing; explain likely direction and at most three useful actions. Never imply an actual purchase, POS, marketing or schedule change." **Save** selected-event reasoning as the existing Supervisor proposal/message and inbox item; weak-evidence events stay in the city catalog without noisy alerts.
+
+**Afterward:** existing monitors/reports save actual/provisional Toast evidence. Later Supervisor assessments read those recorded outcomes alongside other possible explanations. Owner statements are saved as owner facts only when the owner actually says them, not when AI hypothesizes them.
+
+## Small PRs with mandatory end-to-end handoffs
+
+Each PR: **start from latest merged `main`**, one accountable owner, one concern, aim <400 changed lines, exact owned paths listed in its PR, update **only its own PROGRESS checkbox**. Do not run parallel writers against the same files. Later PRs rebase on the merged predecessor, use its committed types/readers and verify its acceptance tests. No "done" merely because isolated unit tests pass.
+
+| PR | Ownership / concrete change | Integrated acceptance gate before owner-approved merge |
+| --- | --- | --- |
+| **1 — Canonical event identity** | RLS-safe shared public fact authority + source/legacy association, compatible mapping to `cafe_events` and **one** `readSavedEventTimeline` path; migration owner-reviewed, no production application. | Legacy event IDs, plans, reports, cancellations and source links still display identically in Home and chat; two cafés share a factual event without sharing owner data; test migration/backfill on disposable/staging DB. |
+| **2 — City discovery** | Extend existing `nearbyEventsSearch` / `scanCafe` through the canonical event writer: city-wide + source/venue-specific windows, source-level coverage, dedupe, targeted enrichment, bounded retries. No second cron or Home search. | First 14 days, daily +1 and Monday recheck all save/read via PR 1; one failed venue retries; duplicate spellings reconcile without merging unrelated events; every displayed city event has dated source; chat sees the same saved facts. |
+| **3 — Automatic neighborhood context** | One scheduled address-based research/refresh integrated into existing job and city source directory; one café-scoped canonical reader for place evidence; optional owner facts joined, not required. | New café with **zero** owner hints discovers supported nearby venues and calendar sources; two cafés in same city have different private neighborhood views; next PR can read the resulting evidence without recreating the search. |
+| **4 — Supervisor impact assessment** | Modify existing scheduled `runAgentTurn` context/tool allowance; use venue/neighborhood/Toast facts, permit selecting a **subset** of event IDs, preserve proposal/monitor identities, avoid unnecessary plans. Retire the old `get_nearby_events` live-search fallback after Home/chat parity. | In one fixture: a relevant conference is selected; a weak event stays browseable without alert; when only one of two same-day events matters, only that ID is linked; no duplicated inbox/monitor or rewritten approved plan; budget and tool-call tests pass. |
+| **5 — Performance learning** | Reuse existing event live/final reports and canonical Toast comparisons as previous-outcome evidence for subsequent Supervisor assessments; persist any necessary sourced factual summary through the existing lifecycle only. | Next comparable event reads prior real/partial observations and improves explanation; owner feedback optional, unknown never zero, no unsupported causal claim; daily/15-min/next-day reruns remain idempotent. |
+| **6 — Owner presentation + release integration** | Once older Events Fix C ownership is resolved, extend existing Events panel/API/chat from the **same** reader for All City Events + For My Café, with source/freshness, saved event drilldown and statuses. | Zero-owner-hint onboarding → source discovery → shared event → café-context assessment → event-day read → final report works for real/test café fixtures, and same event/source/assessment appears in chat + panel. Mobile 390px/desktop, EN/ES/AR RTL, no search on open; verify no unrelated regression. |
+
+**Dependency/merge order:** planning PR → 1 → 2 → 3 → 4 → 5 → 6. All can be implemented in small reviewed PRs, but **not independently merged against stale contracts**. If one PR grows too large, split it into narrower *fully wired* increments with explicit migration/reader compatibility and successor tests, rather than parallel alternative paths. A PR is not integration-complete until a reader/tool/UI or fixture consumes its output as specified. After each merge, rerun predecessor + next-PR contract tests from current `main`; after the last merge perform a full cold-start-to-report smoke test before production rollout.
+
+## Non-negotiable release and safety gates
+
+- Follow `AGENTS.md`: one Supervisor, no router/reviewer/subagents; typed strict tools; ≤6 model calls/≤8 tools/60s turn/1,200 output tokens per call; tool outputs compact; no model-written SQL or unreviewed money calculations. Record research costs/coverage and cap scheduled per-city/per-café work without silently dropping failed scopes.
+- One owner/café scope for all private knowledge; RLS on every exposed table, no cross-café POS/owner facts in shared city data, no provider keys/client leakage. Verify role/entitlement before paid café research.
+- All changes to POS, staff, menu, purchasing, hours, schedules or outbound communications still require the existing approval workflow. Read-only monitoring is automatic; **never** pretend a draft was approved or an action happened.
+- Never invent crowd size, customer counts, sales lift or walking traffic. Separate organizer-confirmed, model-estimated, owner-reported and observed data. No route-provider purchase until approved.
+- All EN/ES/AR owner-facing text uses `messages/`; use existing design system/accessible in-place Events panel. No new screen-only data path.
+- Every implementation PR: behavior tests, existing tests intact unless the specifically named behavior changes, `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run build`, green final-commit CI and independent Codex review with P1s fixed. **No autonomous PR merge, production migration or deployment.** Owner must approve migrations and rollout independently.
+- Explicit blocker: resolve the older Events Fix C status/ownership before touching its UI/API/reader files. Record existing conflicting implementation paths in PR review; do not add a new one or silently choose.
