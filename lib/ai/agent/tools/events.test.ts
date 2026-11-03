@@ -1,292 +1,105 @@
 import {describe,it,expect,vi} from "vitest";
 import {executeAgentTool,agentToolDefinitions,type AgentToolContext} from "./index";
-import {questionFromReasons} from "@/lib/ownerFacts/questions";
 import {cafeLocationFrom} from "@/lib/data/cafeLocation.server";
-import type {DailyFacts} from "@/lib/calc";
-import type {NearbyEventsSearch} from "@/lib/events/nearbyEvents";
 
-const day=(date:string,netSalesCents:number)=>({date,netSalesCents,ordersCount:0,drinksCount:0,ingredientsCents:0,
-  wagesCents:null,staffTaxCents:null,cardFeesCents:0,voidsCents:0,salesDataStatus:"actual"}) as DailyFacts;
-/** Café history: usual Saturdays $1,500, usual Fridays $1,000, Halloween 2025 (a Friday) $1,320. */
-const history=[
-  ...["2026-09-05","2026-09-12","2026-09-19","2026-09-26","2026-10-03","2026-10-10","2026-10-17","2026-10-24"].map(d=>day(d,150_000)),
-  ...["2026-10-02","2026-10-09","2026-10-16","2026-10-23"].map(d=>day(d,100_000)),
-  ...["2025-09-26","2025-10-03","2025-10-10","2025-10-17","2025-10-24"].map(d=>day(d,100_000)),
-  day("2025-10-31",132_000),
-];
-const location={label:"12 Main St, Austin, TX 78701, US",city:"Austin",region:"TX",postalCode:"78701",countryCode:"US",source:"profile" as const};
-const aiWeek={name:"Austin AI Week",startDate:"2026-11-02",endDate:"2026-11-05",venue:"Convention Center",distance:"0.4 mi",
-  kind:"conference" as const,expectedCrowd:"large" as const,sourceUrl:"https://example.org/ai-week",sourceName:"Example"};
+const date="2026-11-03";
+const snapshot={
+ events:[{id:"11111111-1111-4111-8111-111111111111",name:"Public market",
+   startDate:date,endDate:date,status:"found"}] as never[],
+ plans:[{proposalId:"22222222-2222-4222-8222-222222222222",
+   status:"draft",reportStatus:null}] as never[],
+ cityCatalog:{available:true,missing:null,page:0,pageSize:50,total:1,hasMore:false,
+   items:[{id:"33333333-3333-4333-8333-333333333333",name:"Public market",
+     startDate:date,endDate:date}]},
+ cityCoverage:{status:"partial",researchedSourceWindows:2,successfulSourceWindows:1,
+   failedSourceWindows:1,partialSourceWindows:0,unsearchedSourceWindows:0,lastCompletedAt:null},
+ neighborhood:[{name:"Convention center",kind:"convention",sourceUrl:"https://city.example/center",
+   calendarUrl:"https://city.example/calendar",assessment:"possible",rationale:"Nearby",
+   checkedAt:"2026-11-02T00:00:00Z"}],
+};
+const context=(over:Partial<AgentToolContext>={}):AgentToolContext=>({
+ asOf:date,timezone:"America/Los_Angeles",locale:"en",
+ tools:{} as AgentToolContext["tools"],...over,
+});
 
-function ctx(over:Partial<AgentToolContext>={}){
-  const getSalesTrend=vi.fn(async(p:{from:string;to:string})=>{
-    const value=history.filter(d=>d.date>=p.from&&d.date<=p.to);
-    return value.length?{available:true as const,value,quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}}:
-      {available:false as const,value:null,quality:{level:"low" as const,missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}};
-  });
-  const searchNearbyEvents=vi.fn<NearbyEventsSearch>(async()=>({available:true,events:[aiWeek]}));
-  const hours=["2026-09-05","2026-09-12","2026-09-19","2026-09-26","2026-10-03","2026-10-10","2026-10-17","2026-10-24"]
-    .map(date=>({date,hourLocal:14,locationId:null,netSalesCents:12_000,ordersCount:20}));
-  const good={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
-  const tools={getSalesTrend,
-    getPeakHours:vi.fn(async()=>({available:true as const,value:{hours},quality:good})),
-    getBusinessHours:vi.fn(async()=>({available:true as const,
-      value:{sat:[["08:00","18:00"]]},quality:good})),
-    getProductSales:vi.fn(async()=>({available:true as const,value:[
-      {id:"latte",name:"Latte",category:"drink" as const,units:18}],quality:good}))};
-  const readWeekSchedule=vi.fn(async()=>({ok:true as const,data:{timezone:"America/Chicago",
-    shifts:[{id:"s1",date:"2026-10-31",employeeId:"staff1",employeeName:"Jane",start:"09:00",
-      end:"17:00",paidMinutes:480,costCents:null,estimated:true}],posShifts:[]}}));
-  const c={asOf:"2026-10-30",locale:"en",timezone:"America/Chicago",
-    tools,cafeLocation:async()=>location,searchNearbyEvents,readWeekSchedule,ownerFacts:[],...over} as unknown as AgentToolContext;
-  return {c,getSalesTrend,searchNearbyEvents};
-}
-type Day={date:string;weekday:string;daysFromToday:number;holidays?:Array<{name:string}>;eventIds?:string[];
-  usualHourlySales?:Array<{hourLocal:number;typicalCents:number;sampleDays:number}>;
-  openingHours?:[string,string][]|null;scheduledPeople?:string[]|null;
-  lastHolidayTopItems?:Array<{name:string;units:number}>|null;savedAnswers?:Array<{key:string;value:unknown}>;
-  typicalSalesCents:number|null;lastTime?:{date:string;changePercent:number;netSalesCents:number;typicalCents:number;holiday:string}|null};
-
-describe("get_nearby_events",()=>{
-  it("is offered to the model as a strict tool",()=>{
-    const def=agentToolDefinitions.find(d=>d.name==="get_nearby_events");
-    expect(def?.strict).toBe(true);
-    expect(def?.parameters.required).toEqual(["start_date","days"]);
-  });
-
-  it("says tomorrow is Halloween, how last Halloween went, and the AI week nearby",async()=>{
-    const {c,searchNearbyEvents}=ctx();
-    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:null},c);
-    expect(r.period).toEqual({from:"2026-10-30",to:"2026-11-05"});
-    expect(r.missing).toEqual([]);
-    expect(r.notCovered).toEqual([]);
-    const days=r.days as Day[];
-    expect(days).toHaveLength(7);
-    const tomorrow=days[1];
-    expect(tomorrow).toMatchObject({date:"2026-10-31",weekday:"Saturday",daysFromToday:1,typicalSalesCents:150_000});
-    expect(tomorrow.holidays?.map(h=>h.name)).toEqual(["Halloween"]);
-    expect(tomorrow).not.toHaveProperty("decision");
-    expect(tomorrow.usualHourlySales).toEqual([{hourLocal:14,typicalCents:12_000,sampleDays:8}]);
-    expect(tomorrow.openingHours).toEqual([["08:00","18:00"]]);
-    expect(tomorrow.scheduledPeople).toEqual(["Jane"]);
-    expect(tomorrow.lastHolidayTopItems).toEqual([{name:"Latte",units:18}]);
-    // Last Halloween (Friday) vs usual Fridays before it: +32%, from the café's own Toast days.
-    expect(tomorrow.lastTime).toEqual({date:"2025-10-31",netSalesCents:132_000,typicalCents:100_000,
-      changePercent:32,sampleDays:5,holiday:"Halloween"});
-    expect(days[0]).toMatchObject({date:"2026-10-30",weekday:"Friday",typicalSalesCents:100_000});
-    expect(days[0].holidays).toEqual([]);
-    // The AI week shows on each of its days.
-    expect(days.filter(d=>d.eventIds?.includes("e1")).map(d=>d.date)).toEqual(["2026-11-02","2026-11-03","2026-11-04","2026-11-05"]);
-    expect(r.localEvents).toEqual([{id:"e1",...aiWeek}]);
-    expect(searchNearbyEvents).toHaveBeenCalledWith({location:location.label,city:"Austin",region:"TX",countryCode:"US",
-      from:"2026-10-30",to:"2026-11-05"});
-  });
-
-  it("includes a saved event outcome as evidence, never a code-written verdict",async()=>{
-    const {c}=ctx({ownerFacts:[{fact_key:"event_outcome:halloween:2025",value_json:"quieter",
-      unit:null,period_scope:null,created_at:"2026-10-30T00:00:00Z"}]});
-    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:2},c);
-    expect((r.days as Day[])[1].savedAnswers).toEqual([{key:"event_outcome:halloween:2025",value:"quieter"}]);
-    expect((r.days as Day[])[1]).not.toHaveProperty("decision");
-  });
-
-  it("leaves only the failed week unknown when the other week's schedule is readable",async()=>{
-    const {c}=ctx();
-    const original=c.readWeekSchedule!;
-    c.readWeekSchedule=async week=>{
-      if(week==="2026-11-02")throw new Error("schedule backend unavailable");
-      return original(week);
-    };
-    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:7},c);
-    const days=r.days as Array<Day&{scheduleStatus:string}>;
-    expect(days[1]).toMatchObject({date:"2026-10-31",scheduledPeople:["Jane"],scheduleStatus:"complete"});
-    expect(days[4]).toMatchObject({date:"2026-11-03",scheduledPeople:null,scheduleStatus:"unavailable"});
-    expect(r.scheduleUnavailableWeeks).toEqual(["2026-11-02"]);
-    expect(r.toastSchedulePartialWeeks).toEqual([]);
-    expect(r.notCovered).toContain("scheduleUnavailable");
-  });
-
-  it("keeps recorded staff and flags incomplete Toast schedules separately",async()=>{
-    const {c}=ctx();
-    const original=c.readWeekSchedule!;
-    c.readWeekSchedule=async week=>{
-      const result=await original(week);
-      return result.ok?{...result,data:{...result.data,posScheduleError:"timeout"}}:result;
-    };
-    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:2},c);
-    expect((r.days as Array<Day&{scheduleStatus:string}>)[1]).toMatchObject({
-      scheduledPeople:["Jane"],scheduleStatus:"partial"
-    });
-    expect((r.days as Array<Day&{scheduleStatus:string}>)[0]).toMatchObject({
-      scheduledPeople:[],scheduleStatus:"partial"
-    });
-    expect(r.scheduleUnavailableWeeks).toEqual([]);
-    expect(r.toastSchedulePartialWeeks).toEqual(["2026-10-26"]);
-    expect(r.notCovered).toContain("toastScheduleReadFailed");
-  });
-
-  it("passes partial canonical hourly import warnings through with usable medians",async()=>{
-    const {c}=ctx();
-    const original=c.tools.getPeakHours!;
-    c.tools.getPeakHours=async period=>{
-      const read=await original(period);
-      if(!read.available)return read;
-      return {...read,quality:{...read.quality,missingInputs:["toastImportIncompleteDays","hourlySalesUnavailable"],
-        notes:["hourly data partially imported"]}};
-    };
-    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:2},c);
-    expect((r.days as Day[])[1].usualHourlySales).toEqual([
-      {hourLocal:14,typicalCents:12_000,sampleDays:8}
-    ]);
-    expect(r.notCovered).toEqual(expect.arrayContaining(["toastImportIncompleteDays",
-      "hourlySalesUnavailable","hourly data partially imported"]));
-    expect(r.hourlySalesQuality).toMatchObject({
-      missingInputs:["toastImportIncompleteDays","hourlySalesUnavailable"],
-      notes:["hourly data partially imported"]
-    });
-  });
-
-  it("without an address still gives holidays and asks for the address, never searching blind",async()=>{
-    const {c,searchNearbyEvents}=ctx({cafeLocation:async()=>null});
-    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:2},c);
-    expect(r.missing).toEqual(["cafe_address"]);
-    expect(r.location).toBeNull();
-    expect((r.days as Day[])[1].holidays?.map(h=>h.name)).toEqual(["Halloween"]);
-    expect(searchNearbyEvents).not.toHaveBeenCalled();
-    // The automatic recovery card asks for exactly the address, as a text field.
-    const reasons=r.missing.map(key=>({kind:"missing" as const,key,tool:r.source}));
-    const card=questionFromReasons(reasons,[r],"anything happening nearby?","en",[]);
-    expect(card?.fields).toEqual([{key:"cafe_address",label:"your café's address (street, city and ZIP or postal code)",
-      inputType:"text",units:[],defaultUnit:""}]);
-    expect(card?.question).toContain("nearby events");
-    // Once the owner has answered, it is not asked again.
-    expect(questionFromReasons(reasons,[r],"x","en",
-      [{fact_key:"cafe_address",value_json:"12 Main St, Austin",created_at:"2026-10-30T00:00:00Z",unit:null,period_scope:null}])).toBeNull();
-  });
-
-  it("lets the model ask for the address with a localized text field",async()=>{
-    const {c}=ctx();
-    c.resolveState={asked:false} as unknown as AgentToolContext["resolveState"];
-    const r=await executeAgentTool("ask_owner",{question:"Where is your café?",kind:"facts",options:[],allowOther:false,
-      fields:[{key:"cafe_address",label:"Address",inputType:"text",units:[],defaultUnit:"",choices:null}]},{...c,locale:"es"});
-    expect(r.missing).toEqual([]);
-    expect(r.fields).toEqual([expect.objectContaining({key:"cafe_address",label:"la dirección de tu café (calle, ciudad y código postal)"})]);
-  });
-
-  it("keeps the sales and holiday answer when the web search fails",async()=>{
-    const {c}=ctx({searchNearbyEvents:async()=>({available:false,reason:"timeout"})});
-    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:3},c);
-    expect(r.notCovered).toEqual(["localEventsSearchFailed"]);
-    expect(r.localEvents).toEqual([]);
-    expect(r.localEventsSearched).toBe(false);
-    expect(r.missing).toEqual([]); // not something the owner can answer
-    expect((r.days as Day[])[1].lastTime?.changePercent).toBe(32);
-  });
-
-  it("says when there is no sales history instead of showing zero",async()=>{
-    const {c}=ctx();
-    (c.tools as {getSalesTrend:unknown}).getSalesTrend=async()=>({available:false,value:null,
-      quality:{level:"low",missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}});
-    const r=await executeAgentTool("get_nearby_events",{start_date:null,days:2},c);
-    const days=r.days as Day[];
-    expect(days[0].typicalSalesCents).toBeNull();
-    expect(days[1].lastTime).toBeNull();
-    expect(r.notCovered).toEqual(["noSalesHistory"]);
-  });
-
-  it("finds Labor Day ahead and compares with last Labor Day",async()=>{
-    const labor=[...["2025-07-28","2025-08-04","2025-08-11","2025-08-18","2025-08-25"].map(d=>day(d,80_000)),day("2025-09-01",60_000)];
-    const {c}=ctx({asOf:"2026-09-04"});
-    (c.tools as {getSalesTrend:unknown}).getSalesTrend=async(p:{from:string;to:string})=>{
-      const value=labor.filter(d=>d.date>=p.from&&d.date<=p.to);
-      return value.length?{available:true,value,quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}:
-        {available:false,value:null,quality:{level:"low",missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}};
-    };
-    const r=await executeAgentTool("get_nearby_events",{start_date:"2026-09-07",days:1},c);
-    const [monday]=r.days as Day[];
-    expect(monday.holidays?.map(h=>h.name)).toEqual(["Labor Day"]);
-    expect(monday.daysFromToday).toBe(3);
-    expect(monday.lastTime).toMatchObject({date:"2025-09-01",changePercent:-25});
-  });
-
-  it("does not look into the past or too far ahead",async()=>{
-    const {c}=ctx();
-    const past=await executeAgentTool("get_nearby_events",{start_date:"2026-10-01",days:1},c);
-    expect(past.period).toEqual({from:"2026-10-30",to:"2026-10-30"});
-    expect(past.notCovered).toEqual(["pastDatesNotCovered"]);
-    const far=await executeAgentTool("get_nearby_events",{start_date:"2027-06-01",days:1},c);
-    expect(far.notCovered).toEqual(["tooFarAhead"]);
-    expect(far.missing).toEqual([]);
-  });
-
-  it("never takes a location or café from the model",async()=>{
-    const {c}=ctx();
-    await expect(executeAgentTool("get_nearby_events",{start_date:null,days:null,location:"Paris"},c)).rejects.toThrow();
-  });
+describe("get_nearby_events compatibility: the single saved reader",()=>{
+ it("publishes the backward-compatible strict schema without accepting café/location IDs",async()=>{
+   const tool=agentToolDefinitions.find(t=>t.name==="get_nearby_events");
+   expect(tool?.strict).toBe(true);
+   expect(tool?.parameters.required).toEqual(["start_date","days"]);
+   await expect(executeAgentTool("get_nearby_events",
+     {start_date:null,days:null,businessId:"other"},context())).rejects.toThrow();
+ });
+ it("returns the EXACT same saved Events result as get_events and does not search",async()=>{
+   const savedEvents=vi.fn(async()=>snapshot as never);
+   const searchNearbyEvents=vi.fn(),webSearch=vi.fn();
+   const ctx=context({savedEvents,searchNearbyEvents,webSearch} as unknown as AgentToolContext);
+   const alias=await executeAgentTool("get_nearby_events",
+     {start_date:date,days:1},ctx);
+   const canonical=await executeAgentTool("get_events",{from:date,to:date},ctx);
+   expect(alias).toEqual(canonical);
+   expect(alias).toMatchObject({searched:false,cityEventTotal:1,
+     cityResearchCoverage:{status:"partial"},events:[{name:"Public market"}],
+     plans:[{status:"draft"}]});
+   expect(savedEvents).toHaveBeenCalledTimes(2);
+   expect(savedEvents).toHaveBeenCalledWith(date,date);
+   expect(searchNearbyEvents).not.toHaveBeenCalled();
+   expect(webSearch).not.toHaveBeenCalled();
+ });
+ it("does not turn an absent saved reader into an unsourced event or pay for discovery",async()=>{
+   const searchNearbyEvents=vi.fn();
+   const got=await executeAgentTool("get_nearby_events",
+     {start_date:null,days:null},context({searchNearbyEvents} as unknown as AgentToolContext));
+   expect(got).toMatchObject({source:"cafe_events",searched:false,
+     missing:["savedEventsUnavailable"],period:{from:date,to:"2026-11-09"}});
+   expect(searchNearbyEvents).not.toHaveBeenCalled();
+ });
+ it("supports exact past and future saved dates without a second outlook calculator",async()=>{
+   const savedEvents=vi.fn(async()=>snapshot as never);
+   await executeAgentTool("get_nearby_events",
+     {start_date:"2025-10-31",days:10},context({savedEvents}));
+   expect(savedEvents).toHaveBeenCalledWith("2025-10-31","2025-11-09");
+ });
+ it("preserves missing source coverage, rather than claiming no events were found",async()=>{
+   const savedEvents=vi.fn(async()=>({...snapshot,events:[],plans:[],
+     cityCatalog:{...snapshot.cityCatalog,total:0,items:[]}}) as never);
+   const got=await executeAgentTool("get_nearby_events",
+     {start_date:null,days:1},context({savedEvents}));
+   expect(got.empty).toBe(true);
+   expect(got.cityResearchCoverage).toMatchObject({status:"partial",failedSourceWindows:1});
+   expect(got.searched).toBe(false);
+ });
+ it("does not hide saved-read failures behind a live web-search fallback",async()=>{
+   const searchNearbyEvents=vi.fn();
+   await expect(executeAgentTool("get_nearby_events",
+     {start_date:null,days:1},context({
+       savedEvents:async()=>{throw new Error("canonical read failed");},
+       searchNearbyEvents,
+     }))).rejects.toThrow("canonical read failed");
+   expect(searchNearbyEvents).not.toHaveBeenCalled();
+ });
 });
 
 describe("café location",()=>{
-  const row={name:"Main",open_hours:null,address_line1:"12 Main St",address_line2:null,city:"Austin",region:"TX",postal_code:"78701",country_code:"us"};
-  const typed=[{fact_key:"cafe_address",value_json:"  5 Elm Rd,  Dallas ",created_at:"2026-10-30T00:00:00Z",unit:null,period_scope:null}];
-  it("uses the profile address first, then the owner's typed address",()=>{
-    expect(cafeLocationFrom(row,typed)).toEqual({label:"12 Main St, Austin, TX 78701, US",city:"Austin",region:"TX",
-      postalCode:"78701",countryCode:"US",source:"profile"});
-    expect(cafeLocationFrom({...row,city:null,postal_code:null},typed)).toEqual({label:"5 Elm Rd, Dallas",city:null,
-      region:null,postalCode:null,countryCode:"US",source:"owner"});
-    expect(cafeLocationFrom(null,[])).toBeNull();
-  });
-});
-
-describe("owner asks 'anything happening nearby?' in chat",()=>{
-  it("runs the tool, keeps the owner's numbers verified, and asks for the address when unknown",async()=>{
-    const {runAgentTurn}=await import("../loop.server");
-    const completed={type:"response.completed",response:{usage:{input_tokens:40,output_tokens:8,input_tokens_details:{cached_tokens:0}}}};
-    const rounds=(reply:string)=>[
-      [{type:"response.output_item.done",item:{type:"function_call",name:"get_nearby_events",arguments:"{\"start_date\":null,\"days\":null}",call_id:"c1"}},completed],
-      [{type:"response.output_text.delta",delta:reply},completed]];
-    const provider=(list:Array<Array<Record<string,unknown>>>)=>{let i=0;
-      return async function*(){for(const e of list[i++]??[])yield {...e,type:String(e.type)};};};
-    const {c}=ctx();
-    const turn=await runAgentTurn({ownerText:"Anything happening nearby?",context:c,
-      provider:provider(rounds("Tomorrow is Halloween (Saturday). Last Halloween you sold 32% more than a usual day. Estimate: afternoon hours could be busy; consider extra afternoon cover, pastry prep and a seasonal special. Austin AI Week runs Nov 2–5 near you."))});
-    expect(turn.tools).toContain("get_nearby_events");
-    expect(turn.unverified).toEqual([]);
-    expect(turn.text).toContain("Halloween");
-
-    const noAddress=ctx({cafeLocation:async()=>null}).c;
-    // The model, not a hidden intent router, calls ask_owner after the tool reports a missing address.
-    const askAddress={question:"What is your café's address? I'll check nearby events.",kind:"facts",
-      options:[],allowOther:false,fields:[{key:"cafe_address",label:"Café address",inputType:"text",
-        units:[],defaultUnit:"",choices:null}]};
-    const asked=await runAgentTurn({ownerText:"Anything happening nearby?",context:noAddress,
-      provider:provider([
-        [{type:"response.output_item.done",item:{type:"function_call",name:"get_nearby_events",
-          arguments:JSON.stringify({start_date:null,days:null}),call_id:"c1"}},completed],
-        [{type:"response.output_item.done",item:{type:"function_call",name:"ask_owner",
-          arguments:JSON.stringify(askAddress),call_id:"c2"}},completed],
-      ])});
-    const card=asked.results.find(r=>r.source==="ask_owner");
-    expect(card?.fields).toEqual([expect.objectContaining({key:"cafe_address",inputType:"text"})]);
-  });
-});
-
-describe("board and chat show the same days",()=>{
-  it("the chat and Home use exactly the same calendar, usual totals and hourly medians",async()=>{
-    const {buildEventsOutlook}=await import("@/lib/events/outlook");
-    const {c}=ctx();
-    const chat=await executeAgentTool("get_nearby_events",{start_date:null,days:null},c);
-    const board=await buildEventsOutlook({today:"2026-10-30",timezone:"America/Chicago",locale:"en",
-      readLocation:async()=>location,search:async()=>({available:true,events:[aiWeek]}),
-      readSales:async(from,to)=>history.filter(d=>d.date>=from&&d.date<=to).map(d=>({date:d.date,netSalesCents:d.netSalesCents})),
-      readHourlySales:async()=>({hours:["2026-09-05","2026-09-12","2026-09-19","2026-09-26","2026-10-03","2026-10-10","2026-10-17","2026-10-24"]
-        .map(date=>({date,hourLocal:14,netSalesCents:12_000})),
-        quality:{missingInputs:[],estimatedInputs:[],staleInputs:[],notes:[]}})});
-    if("tooFarAhead" in board)throw new Error("unexpected");
-    const shared=(days:readonly Record<string,unknown>[])=>days.map(d=>({
-      date:d.date,weekday:d.weekday,holidays:d.holidays,eventIds:d.eventIds,
-      typicalSalesCents:d.typicalSalesCents,lastTime:d.lastTime,usualHourlySales:d.usualHourlySales
-    }));
-    expect(shared(chat.days as Record<string,unknown>[])).toEqual(shared(board.days as unknown as Record<string,unknown>[]));
-    expect(chat.localEvents).toEqual(board.localEvents);
-  });
+ const row={name:"Main",open_hours:null,address_line1:"12 Main St",address_line2:null,city:"Austin",
+   region:"TX",postal_code:"78701",country_code:"us"};
+ const typed=[{fact_key:"cafe_address",value_json:"  5 Elm Rd,  Dallas ",
+   created_at:"2026-10-30T00:00:00Z",unit:null,period_scope:null}];
+ it("uses the profile address first, then the owner's typed address",()=>{
+   expect(cafeLocationFrom(row,typed)).toEqual({label:"12 Main St, Austin, TX 78701, US",
+     city:"Austin",region:"TX",postalCode:"78701",countryCode:"US",source:"profile"});
+   expect(cafeLocationFrom({...row,city:null,postal_code:null},typed)).toEqual({
+     label:"5 Elm Rd, Dallas",city:null,region:null,postalCode:null,
+     countryCode:"US",source:"owner"});
+   expect(cafeLocationFrom(null,[])).toBeNull();
+ });
+ it("keeps the localized saved-owner-fact question tool unchanged",async()=>{
+   const c=context({resolveState:{asked:false} as AgentToolContext["resolveState"]});
+   const r=await executeAgentTool("ask_owner",{question:"Where is your café?",kind:"facts",
+     options:[],allowOther:false,fields:[{key:"cafe_address",label:"Address",inputType:"text",
+       units:[],defaultUnit:"",choices:null}]},{...c,locale:"es"});
+   expect(r.missing).toEqual([]);
+   expect(r.fields).toEqual([expect.objectContaining({key:"cafe_address",
+     label:"la dirección de tu café (calle, ciudad y código postal)"})]);
+ });
 });
