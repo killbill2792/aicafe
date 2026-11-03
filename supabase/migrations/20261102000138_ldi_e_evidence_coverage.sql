@@ -38,6 +38,7 @@ alter table public.city_source_coverage
   add column scan_to date,
   add column window_reason text not null default 'initial',
   add column search_attempted boolean not null default true,
+  add column is_scan_root boolean not null default false,
   add column failure_category text;
 update public.city_source_coverage
 set scan_from = window_from, scan_to = window_to
@@ -52,6 +53,38 @@ alter table public.city_source_coverage
     (failure_category is null or length(failure_category) <= 80);
 create index city_source_coverage_pending_window
   on public.city_source_coverage(city_key,scan_to,scan_from,status);
+
+-- Migration 137's coverage RPC must insert valid scan bounds now that they
+-- are NOT NULL; PostgreSQL checks them before ON CONFLICT can update a queued
+-- root row. Split/child attempts create non-root rows with their true dates.
+create or replace function public.ldi_record_city_coverage(
+  p_city_key text, p_source_key text, p_from date, p_to date,
+  p_status text, p_checked_at timestamptz
+) returns void language plpgsql security invoker set search_path=public as $
+begin
+  insert into public.city_source_coverage(
+    city_key,source_key,window_from,window_to,scan_from,scan_to,
+    status,search_attempted,is_scan_root,last_checked_at,last_completed_at)
+  values (
+    p_city_key,p_source_key,p_from,p_to,p_from,p_to,
+    p_status,true,false,p_checked_at,
+    case when p_status in ('found','none_found') then p_checked_at else null end)
+  on conflict (city_key,source_key,window_from,window_to) do update set
+    status=case when excluded.last_checked_at>=city_source_coverage.last_checked_at
+      then excluded.status else city_source_coverage.status end,
+    search_attempted=case when excluded.last_checked_at>=city_source_coverage.last_checked_at
+      then true else city_source_coverage.search_attempted end,
+    last_checked_at=greatest(city_source_coverage.last_checked_at,excluded.last_checked_at),
+    last_completed_at=case
+      when excluded.last_completed_at is null then city_source_coverage.last_completed_at
+      else greatest(city_source_coverage.last_completed_at,excluded.last_completed_at) end;
+end $;
+-- Retain migration 137's revoked public/authenticated execute privileges;
+-- CREATE OR REPLACE changes the body, not function identity/ACL.
+revoke all on function public.ldi_record_city_coverage(
+  text,text,date,date,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.ldi_record_city_coverage(
+  text,text,date,date,text,timestamptz) to service_role;
 
 -- Neighborhood scope coverage belongs to the CAFÉ, not the shared place.
 -- A successful scope retains its completion timestamp after later failures.
