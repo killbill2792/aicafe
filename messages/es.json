@@ -3846,7 +3846,10 @@
     "kindSports": "Deportes",
     "kindParade": "Desfile",
     "kindCommunity": "Comunidad",
-    "kindOther": "Otro / sin clasificar"
+    "kindOther": "Otro / sin clasificar",
+    "outlookUncertainty": "Qué falta confirmar",
+    "demandUnknown": "Este es un análisis guardado del Supervisor, no una prueba de que el evento haya causado o vaya a causar más ventas.",
+    "neighborhoodIncomplete": "La investigación del vecindario está incompleta; quizá aún se desconozcan los accesos y movimientos de visitantes."
   },
   "ComingUp": {
     "title": "Próximamente",
