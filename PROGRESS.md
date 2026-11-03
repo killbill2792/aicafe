@@ -191,6 +191,8 @@ rules at the end of this section. One item = one small PR. Tick it here in the s
    `npm run build`, green CI and latest-head Codex review with P1s fixed.
    Mark this single checkbox complete only when **all three** work end-to-end.
 
+- [x] **Morning brief top drink uses the café's own Toast categories (Nov 3).** The brief only knew the app's own category codes (ESPRESSO_DRINK, PASTRY…), so every Seiyun item ("Specialty", "Traditional", "FALL DRINKS", "Food"…) cancelled the brief. Toast has no drink flag and each café names its categories, so the main model labels each new category once from its name and a few items (`lib/menu/drinkLabels.server.ts`), saved in `menu_category_labels` (migration 138, read via `lib/data/menuCategoryLabels.server.ts`). Top drink = best seller in a drink category; an unlabeled item is left out instead of cancelling the brief. Owner applies 138. Still required for a WhatsApp send: linked owner number, WhatsApp flags, owner message in the last 24 h, active weekday monitor and a verified event today.
+
 ### Owner actions
 - [x] Apply migrations 123 (drop owner-initiative tables), 124 (`toast_today_live`), 125 ("needs a look" cleanup) in Supabase.
 - [x] Decided (Oct 30): screen numbers (profit, labor cost, card fees, break-even, item cost) come only from their `lib/metrics/core` tools; everything else may be read with `describe_data`/`query_data` and computed with `calculate` (AGENTS.md 7.2).
