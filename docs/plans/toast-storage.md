@@ -42,7 +42,7 @@ screens and chat read the same tables and must not change.
 0. **Done — #339:** sort GUID lists before comparing; stop re-pulling exhausted days; cleanup migration
    138 (applied Nov 3); brief top drink from café categories (migration 139).
 1. **This PR:** the rule in AGENTS.md §4b and this plan. Docs only.
-2. **One raw record per order, enforced.** Unique key on (café, restaurant, entity, Toast GUID) for orders.
+2. **Done — migration 140: one raw record per order, enforced.** Unique key on (café, restaurant, entity, Toast GUID) for orders.
    Save becomes upsert with a list-order-insensitive comparison; a real change updates the record and writes
    a `toast_raw_changes` line (entity, GUID, field path, before, after, changed_at, run). Retire run-moving
    and `seen_run_id`; readers that select "the latest import's records" read the one current record for the

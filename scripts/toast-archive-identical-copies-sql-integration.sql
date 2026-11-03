@@ -6,6 +6,10 @@ BEGIN;
 CREATE FUNCTION pg_temp.assert_true(v boolean, note text) RETURNS void
 LANGUAGE plpgsql AS $$ BEGIN IF v IS DISTINCT FROM true THEN RAISE EXCEPTION 'TEST FAILURE: %', note; END IF; END $$;
 
+-- Since migration 140 the database refuses a second row for one order; this test
+-- builds the pre-140 copies migration 138 removes, so it lifts that rule (rolled back).
+DROP INDEX IF EXISTS public.toast_raw_records_one_order;
+
 DO $copies$
 DECLARE
  b uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccc00'; r uuid:='cccccccc-cccc-4ccc-8ccc-cccccccccc01';
