@@ -59,15 +59,34 @@ describe("LDI G — selective café outlook from the one saved Supervisor ledger
 });
 
 describe("LDI G — exact city event → ONE existing Supervisor thread",()=>{
-  it("uses a linked café UUID if present, but distinct city IDs for unlinked events",()=>{
+  it("uses a linked café thread UUID but keeps the canonical city UUID for every selection",()=>{
     const unlinked=cityEvent();
     const linked=cityEvent({cafeEventId:"11111111-1111-4111-8111-111111111111"});
     expect(cityEventChatTarget(unlinked)).toEqual({
       date:day,title:"Civic Fair",eventId:undefined,cityEventId:unlinked.id,
     });
     expect(cityEventChatTarget(linked)).toEqual({
-      date:day,title:"Civic Fair",eventId:linked.cafeEventId,cityEventId:undefined,
+      date:day,title:"Civic Fair",eventId:linked.cafeEventId,cityEventId:linked.id,
     });
+  });
+  it("preserves a linked café's existing thread while recovering exact city facts on reload",()=>{
+    const linked=cityEvent({cafeEventId:"99999999-9999-4999-8999-999999999999"});
+    const target=cityEventChatTarget(linked);
+    const title=eventThreadTitle(day,"Civic Fair",target.eventId,target.cityEventId);
+    expect(eventThreadKey(day,target.eventId,target.cityEventId))
+      .toBe(eventThreadKey(day,target.eventId));
+    expect(eventContextFromTitle(title,"thread-linked")).toEqual({
+      date:day,title:"Civic Fair",eventId:linked.cafeEventId,
+      cityEventId:linked.id,threadId:"thread-linked",
+    });
+    const historic=[{id:"already-open",title:eventThreadTitle(day,"Civic Fair",target.eventId)}];
+    expect(eventThreadFromHistory(historic,day,target.eventId,target.cityEventId)).toBe("already-open");
+    const question=eventOwnerMessage("Assess this linked event",{
+      date:day,title:"Civic Fair",eventId:target.eventId,
+      cityEventId:target.cityEventId,threadId:"thread-linked",
+    });
+    expect(question).toContain("[cityId:"+linked.id+"] [id:"+linked.cafeEventId+"]");
+    expect(question).toContain("@city-event Civic Fair ("+day+")");
   });
   it("preserves two unlinked city events on the same date in separate threads, even across reload",async()=>{
     const first="11111111-1111-4111-8111-111111111111";
