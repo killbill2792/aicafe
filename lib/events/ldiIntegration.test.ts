@@ -636,6 +636,33 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     const whatsappAndEvidence=await readCafeEvents(s.db,cafeA,"2026-11-04","2026-11-06");
     expect(whatsappAndEvidence).toEqual(timeline.events);
   });
+  it("includes enriched later dates even when the legacy café row ended earlier",async()=>{
+    const s=mockStore(),legacyId="77777777-7777-4777-8777-777777777777";
+    s.tables.cafe_events.push({id:legacyId,business_id:cafeA,
+      name:"Convention",kind:"conference",start_date:"2026-11-04",
+      end_date:"2026-11-04",start_time:null,end_time:null,venue:null,
+      venue_address:null,area_label:null,
+      source_url:"https://city.example.org/convention",
+      status:"found",found_at:stamp,last_checked_at:stamp});
+    s.tables.city_events.push({id:cityId,city_key:"us|ca|example",
+      name:"Convention",kind:"conference",start_date:"2026-11-04",
+      end_date:"2026-11-06",start_time:"09:00",end_time:"18:00",
+      venue:"Center",venue_address:"20 Main St",
+      time_source_url:"https://city.example.org/convention",
+      last_checked_at:stamp});
+    s.tables.city_event_sources.push({city_event_id:cityId,
+      source_url:"https://city.example.org/convention",observed_at:stamp});
+    s.tables.cafe_city_event_links.push({business_id:cafeA,
+      cafe_event_id:legacyId,city_event_id:cityId});
+    const saved=await readCafeEvents(s.db,cafeA,"2026-11-06","2026-11-06");
+    expect(saved).toMatchObject([{id:legacyId,endDate:"2026-11-06",
+      venue:"Center",startTime:"09:00",status:"found"}]);
+    const timeline=await readSavedEventTimeline(s.db,
+      {businessId:cafeA,ownerUserId:"owner-a"},"2026-11-06","2026-11-06");
+    expect(timeline.events).toEqual(saved);
+    expect(await readCafeEvents(s.db,cafeB,"2026-11-06","2026-11-06"))
+      .toEqual([]);
+  });
   it("pages an owner catalog past old 500-row caps; source URLs and null venues remain",async()=>{
     const s=mockStore();
     for(let i=0;i<540;i++)s.tables.city_events.push({
