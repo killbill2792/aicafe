@@ -30,7 +30,13 @@ alter table public.city_events
     (end_time is null or end_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
   add column time_source_url text check
     (time_source_url is null or (length(time_source_url) <= 2000 and time_source_url ~ '^https://')),
-  add column last_enriched_at timestamptz;
+  add column last_enriched_at timestamptz,
+  -- Verified multi-day dates use the cited event page, never B's compact
+  -- discovery output or an unsupported guessed duration.
+  add column duration_source_url text check
+    (duration_source_url is null or
+      (length(duration_source_url) <= 2000 and duration_source_url ~ '^https://')),
+  add column duration_verified_at timestamptz;
 
 -- Canonical city/source coverage remains A's only authority. Root scans and
 -- B's narrower child windows have distinct provenance.
