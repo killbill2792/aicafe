@@ -161,12 +161,8 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
     .select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at",{count:"exact"})
     .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from);
   if(kind)query=query.eq("kind",kind);
-  // Escape SQL LIKE wildcards; search is a literal fragment, not a pattern supplied by the owner.
-  if(search)query=query.ilike("name","%"+search.replace(/[\\%_]/g,"\\  const {data,count,error}=await db.from("city_events")
-    .select("id,name,kind,start_date,end_date,start_time,end_time,time_source_url,venue,venue_address,last_checked_at",{count:"exact"})
-    .eq("city_key",cityKey).lte("start_date",to).gte("end_date",from)
-    .order("start_date",{ascending:true}).order("id",{ascending:true})
-    .range(page*pageSize,(page+1)*pageSize-1);")+"%");
+  // Escape LIKE wildcards so user input is a literal name fragment.
+  if(search)query=query.ilike("name","%"+search.replace(/[%_\\]/g,match=>"\\"+match)+"%");
   const {data,count,error}=await query.order("start_date",{ascending:true})
     .order("id",{ascending:true}).range(page*pageSize,(page+1)*pageSize-1);
   if(missingSchema(error))return empty("migration_pending");
