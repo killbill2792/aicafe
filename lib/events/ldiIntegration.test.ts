@@ -107,16 +107,30 @@ function mockStore(){
         existing.last_completed_at});
     }else tables.city_source_coverage.push(row);
   });
+  // Emulate A's source identity / corroborated venue-address aliasing instead
+  // of incorrectly collapsing every same-name/date listing into one city row.
   f.writeCity.mockImplementation(async (_db:unknown,input:Row)=>{
-    let event=tables.city_events.find(e=>e.name===input.name&&
-      e.start_date===input.startDate&&e.kind===input.kind);
+    const source=tables.city_event_sources.find(s=>s.source_url===input.sourceUrl&&
+      tables.city_events.some(e=>e.id===s.city_event_id&&
+        e.start_date===input.startDate&&e.name===input.name));
+    let event=source?tables.city_events.find(e=>e.id===source.city_event_id):undefined;
+    if(!event&&input.venue&&input.venueAddress)
+      event=tables.city_events.find(e=>e.name===input.name&&
+        e.start_date===input.startDate&&e.venue===input.venue&&
+        e.venue_address===input.venueAddress);
     if(!event){
-      event={id:cityId,city_key:"us|ca|example",name:input.name,kind:input.kind,
+      const id=tables.city_events.length===0?cityId:
+        "55555555-5555-4555-8555-"+String(tables.city_events.length)
+          .padStart(12,"0");
+      event={id,city_key:"us|ca|example",name:input.name,kind:input.kind,
         start_date:input.startDate,end_date:input.endDate??input.startDate,
         start_time:null,end_time:null,time_source_url:null,
         venue:input.venue??null,venue_address:input.venueAddress??null,
         last_checked_at:input.checkedAt};
       tables.city_events.push(event);
+    }else{
+      event.venue??=input.venue??null;
+      event.venue_address??=input.venueAddress??null;
     }
     if(!tables.city_event_sources.some(s=>s.city_event_id===event.id&&
       s.source_url===input.sourceUrl))
@@ -293,6 +307,130 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     expect(page.items[0]).toMatchObject({
       endDate:"2026-11-06",startTime:"09:00",endTime:"17:00"});
     expect(f.city.mock.calls[0][0].sources).toHaveLength(1);
+  });
+  it("never creates duplicate café plans for uncorroborated same-date titles from distinct URLs",async()=>{
+    const s=mockStore();
+    f.city.mockImplementation(async ({sources,window}:Row)=>{
+      const source=sources[0];
+      const event=source.kind==="city_calendar"||source.kind==="venue"?
+        {name:"Civic Fair",startDate:"2026-11-04",
+          sourceUrl:source.kind==="venue"?
+            "https://hall.example.org/calendar/civic-fair":
+            "https://city.example.org/events/civic-fair"}:null;
+      const events=event&&window.from<="2026-11-04"&&window.to>="2026-11-04"?
+        [event]:[];
+      return {events,sources:[{sourceId:source.id,sourceKind:source.kind,
+        officialUrl:source.officialUrl??null,from:window.from,to:window.to,
+        reason:window.reason,checkedAt:stamp,
+        outcome:events.length?"found":"none_found",retryEligible:false,
+        failure:null,events}],duplicateCount:0,partial:false,retrySourceIds:[]};
+    });
+    await s.scoped(cafeA,"2026-11-03",
+      eventScanWindows("2026-11-03",null,"address")[0],
+      {...newLdiBudget(),cityTasks:40});
+    expect(s.tables.city_events).toHaveLength(2);
+    expect(s.tables.cafe_city_event_links).toHaveLength(0);
+    expect(s.tables.cafe_events).toHaveLength(0);
+    const page=await readCityEventCatalog(s.db,cafeA,"2026-11-03","2026-11-16");
+    expect(page.items).toHaveLength(2);
+    expect(page.items.every(e=>e.venue===null)).toBe(true);
+    expect(page.items.map(e=>e.sources[0].url).sort()).toEqual([
+      "https://city.example.org/events/civic-fair",
+      "https://hall.example.org/calendar/civic-fair",
+    ]);
+  });
+  it("reconciles distinct URLs only after matching cited venue and address",async()=>{
+    const s=mockStore();
+    f.city.mockImplementation(async ({sources,window}:Row)=>{
+      const source=sources[0];
+      const event=source.kind==="city_calendar"||source.kind==="venue"?
+        {name:"Civic Fair",startDate:"2026-11-04",
+          sourceUrl:source.kind==="venue"?
+            "https://hall.example.org/calendar/civic-fair":
+            "https://city.example.org/events/civic-fair"}:null;
+      const events=event&&window.from<="2026-11-04"&&window.to>="2026-11-04"?
+        [event]:[];
+      return {events,sources:[{sourceId:source.id,sourceKind:source.kind,
+        officialUrl:source.officialUrl??null,from:window.from,to:window.to,
+        reason:window.reason,checkedAt:stamp,
+        outcome:events.length?"found":"none_found",retryEligible:false,
+        failure:null,events}],duplicateCount:0,partial:false,retrySourceIds:[]};
+    });
+    f.enrichment.mockImplementation(async (event:Row)=>({
+      endDate:null,venue:"Civic Hall",venueAddress:"20 Civic St",
+      startTime:null,endTime:null,evidenceUrl:event.sourceUrl,
+    }));
+    await s.scoped(cafeA,"2026-11-03",
+      eventScanWindows("2026-11-03",null,"address")[0],
+      {...newLdiBudget(),cityTasks:40});
+    expect(s.tables.city_events).toHaveLength(1);
+    expect(s.tables.city_event_sources).toHaveLength(2);
+    expect(s.tables.cafe_city_event_links).toHaveLength(1);
+  });
+  it("keeps the Monday refresh epoch stable when Tuesday resumes incomplete work",async()=>{
+    const s=mockStore();
+    vi.useFakeTimers();
+    try{
+      vi.setSystemTime(new Date("2026-11-03T16:00:00Z"));
+      const initial=eventScanWindows("2026-11-03",null,"location")[0];
+      await s.scoped(cafeA,"2026-11-03",initial,{
+        ...newLdiBudget(),cityTasks:40});
+      vi.setSystemTime(new Date("2026-11-09T16:00:00Z"));
+      const week={from:"2026-11-09",to:"2026-11-22",reason:"weekly" as const};
+      expect((await s.scoped(cafeA,"2026-11-09",week,{
+        ...newLdiBudget(),cityTasks:4}))?.completed).toBe(false);
+      const mondaySuccess=s.tables.city_source_coverage.filter(r=>
+        r.scan_from==="2026-11-09"&&r.is_scan_root&&
+        ["found","none_found"].includes(r.status)).length;
+      expect(mondaySuccess).toBe(4);
+      vi.setSystemTime(new Date("2026-11-10T16:00:00Z"));
+      await s.scoped(cafeA,"2026-11-10",
+        {from:"2026-11-23",to:"2026-11-23",reason:"new_day"},{
+          ...newLdiBudget(),cityTasks:4});
+      const after=s.tables.city_source_coverage.filter(r=>
+        r.scan_from==="2026-11-09"&&r.is_scan_root&&
+        ["found","none_found"].includes(r.status)).length;
+      expect(after).toBe(8);
+    }finally{vi.useRealTimers();}
+  });
+  it("persists each entering day while a fourteen-day initial window is still retrying",async()=>{
+    const s=mockStore();
+    const first=eventScanWindows("2026-11-03",null,"address")[0];
+    const low=()=>({...newLdiBudget(),cityTasks:4});
+    expect((await s.scoped(cafeA,"2026-11-03",first,low()))?.completed)
+      .toBe(false);
+    await s.scoped(cafeA,"2026-11-04",
+      eventScanWindows("2026-11-04",null,"address")[0],low());
+    await s.scoped(cafeA,"2026-11-05",
+      eventScanWindows("2026-11-05",null,"address")[0],low());
+    for(const date of ["2026-11-17","2026-11-18"]){
+      expect(s.tables.city_source_coverage.some(row=>
+        row.window_from===date&&row.window_to===date&&
+        row.is_scan_root&&!row.search_attempted)).toBe(true);
+    }
+    expect(s.tables.city_source_coverage.some(row=>row.scan_from==="2026-11-03"&&
+      row.status==="partial")).toBe(true);
+  });
+  it("keeps confirmed legacy multi-day duration and original kind in the canonical overlay",async()=>{
+    const s=mockStore();
+    s.tables.cafe_events.push({id:"66666666-6666-4666-8666-666666666666",
+      business_id:cafeA,name:"Civic Fair",kind:"conference",
+      start_date:"2026-11-04",end_date:"2026-11-06",
+      start_time:null,end_time:null,venue:null,venue_address:null,
+      area_label:null,source_url:"https://city.example.org/events/civic-fair",
+      status:"found",found_at:stamp,last_checked_at:stamp});
+    s.tables.city_events.push({id:cityId,city_key:"us|ca|example",
+      name:"Civic Fair",kind:"other",start_date:"2026-11-04",
+      end_date:"2026-11-04",start_time:null,end_time:null,
+      venue:null,venue_address:null,last_checked_at:stamp});
+    s.tables.city_event_sources.push({city_event_id:cityId,
+      source_url:"https://city.example.org/events/civic-fair",observed_at:stamp});
+    s.tables.cafe_city_event_links.push({business_id:cafeA,
+      cafe_event_id:"66666666-6666-4666-8666-666666666666",city_event_id:cityId});
+    const timeline=await readSavedEventTimeline(s.db,{businessId:cafeA,
+      ownerUserId:"owner-a"},"2026-11-04","2026-11-06");
+    expect(timeline.events[0]).toMatchObject({cityEventId:cityId,
+      startDate:"2026-11-04",endDate:"2026-11-06",kind:"conference"});
   });
   it("pages an owner catalog past old 500-row caps; source URLs and null venues remain",async()=>{
     const s=mockStore();
