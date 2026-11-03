@@ -237,9 +237,11 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
 }
 
 /** Existing AI proposal is date-scoped; never misrepresent it as verified event-specific analysis. */
-export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,locale,t,onChat}:{
+export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,locale,t,onChat,
+  cityCoverage,neighborhoodCoverage}:{
   plan:Plan|undefined;selectedEvent:CafeEvent|null;date:string;today:string;currency:string|null;
-  locale:Locale;t:T;onChat:()=>void;
+  locale:Locale;t:T;onChat:()=>void;cityCoverage?:CityCoverageOverview;
+  neighborhoodCoverage?:SavedEventTimeline["neighborhoodCoverage"];
 }){
   if(!plan)return <p className="rounded-xl bg-surface2 p-4 text-ink-muted">
     {selectedEvent?t("noEventInsight"):t("noPlan")}
@@ -250,6 +252,13 @@ export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,local
       <p className="text-[15px] font-semibold text-accent-text">{t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
       {selectedEvent&&(!plan.eventIds||plan.eventIds.length===0)&&<p className="mt-1 text-[15px] text-ink-muted">{t("dayWideInsight",{date:dateLabel(date,locale,"long")})}</p>}
       <p className="mt-2 break-words font-headline text-[20px] font-semibold leading-snug" dir="auto">{plan.summary}</p>
+    </div>
+    <div className="rounded-xl bg-surface2 p-3 text-[15px]" aria-label={t("outlookUncertainty")}>
+      <h4 className="font-semibold">{t("outlookUncertainty")}</h4>
+      <p>{t("demandUnknown")}</p>
+      {cityCoverage&&cityCoverage.status!=="complete"&&<p className="mt-1">{t("cityCoverageIncomplete")}</p>}
+      {neighborhoodCoverage?.some(scope=>scope.retryEligible||scope.status==="partial"||
+        scope.status==="failed")&&<p className="mt-1">{t("neighborhoodIncomplete")}</p>}
     </div>
     <PlanHours plan={plan} t={t}/>
     {actions.length>0&&<div className="space-y-2">
@@ -631,13 +640,19 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
                 <p className="text-[15px] text-ink-muted">{t("verificationPending")}</p>}
               {event.lastVerifiedAt&&<p className="text-[15px] text-ink-muted">{t("verifiedOn",{date:event.lastVerifiedAt.slice(0,10)})}</p>}
               <VenueMapLink address={event.venueAddress} t={t}/>
-              {sourceUrl(event.sourceUrl)&&<a className="inline-flex min-h-12 items-center text-accent-text underline"
-                href={sourceUrl(event.sourceUrl)!} target="_blank" rel="noopener noreferrer">{t("source")}</a>}
+              {[...new Set([event.sourceUrl,...(event.sourceUrls??[])]
+                .filter((url):url is string=>Boolean(sourceUrl(url))))].map((url,index,all)=>
+                <a key={url} className="inline-flex min-h-12 max-w-full break-all items-center text-accent-text underline"
+                  href={url} target="_blank" rel="noopener noreferrer">
+                  {t("source")}{all.length>1?" "+(index+1):""}
+                </a>)}
+              <p className="text-[15px] text-ink-muted">{t("researchedOn",{date:event.lastCheckedAt.slice(0,10)})}</p>
               {!selectedEvent&&<button type="button" onClick={()=>chat(chosen,event)} disabled={chatDisabled}
                 className={button+" ms-3 text-accent-text underline"}>{t("chatAbout")}</button>}
             </article>)}
             <SavedEventAnalysis plan={plan} selectedEvent={selectedEvent} date={chosen}
               today={today} currency={timeline.currency??null} locale={locale} t={t}
+              cityCoverage={timeline.cityCoverage} neighborhoodCoverage={timeline.neighborhoodCoverage}
               onChat={()=>chat(chosen,selectedEvent??undefined)}/>
             {dayEvents.length===0&&!plan&&<p className="text-ink-muted">{t("noEvents")}</p>}
             <button type="button" onClick={()=>chat(chosen,selectedEvent??undefined)} disabled={chatDisabled}
