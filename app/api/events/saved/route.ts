@@ -44,7 +44,7 @@ export async function GET(request:Request){
       !Number.isInteger(size)||size<1||size>100)
       throw new ConversationApiError(422,"invalid_city_catalog_page");
     const cityFrom=params.get("cityFrom")??from,cityTo=params.get("cityTo")??to;
-    const validDay=(d:string)=>/^\\d{4}-\\d{2}-\\d{2}$/.test(d)&&
+    const validDay=(d:string)=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&
       !Number.isNaN(Date.parse(d+"T00:00:00Z"))&&
       new Date(d+"T00:00:00Z").toISOString().slice(0,10)===d;
     const kind=params.get("cityKind")??"";
@@ -52,7 +52,7 @@ export async function GET(request:Request){
     if(!validDay(cityFrom)||!validDay(cityTo)||cityFrom>cityTo||
       Date.parse(cityTo+"T00:00:00Z")-Date.parse(cityFrom+"T00:00:00Z")>90*86400000||
       (kind&&!["festival","conference","sports","parade","community","other"].includes(kind))||
-      search.length>80||/[\\u0000-\\u001f\\u007f]/u.test(search))
+      search.length>80||/[\u0000-\u001f\u007f]/u.test(search))
       throw new ConversationApiError(422,"invalid_city_catalog_filter");
     const timeline=await readSavedEventTimeline(db,scope,from,to);
     if(page!==0||size!==50||cityFrom!==from||cityTo!==to||kind||search){
