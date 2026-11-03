@@ -458,7 +458,7 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
     expect((await s.scoped(cafeA,"2026-11-03",initial,
       {...newLdiBudget(),cityTasks:40}))?.completed).toBe(true);
     let didBatch=false;
-    const missed:string[]=[];
+    const dailyBacklog:number[]=[];
     for(let i=0;i<8;i++){
       const from=new Date(Date.UTC(2026,10,17+i)).toISOString().slice(0,10);
       const before=f.city.mock.calls.length;
@@ -471,15 +471,16 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
       const pending=s.tables.city_source_coverage.filter(r=>
         r.is_scan_root&&r.window_from<=from&&r.window_from>="2026-11-17"&&
         !["found","none_found"].includes(r.status));
-      if(pending.length>1)missed.push(from);
-      // One newest-day gap is allowed; every earlier day must catch up.
+      dailyBacklog.push(pending.length);
+      // Eight sources (7 category + 1 official venue) against six calls/day:
+      // exactly two current-day roots remain, never an accumulating backlog.
       expect(pending.every(r=>r.window_from===from)).toBe(true);
     }
-    expect(missed).toEqual([]);
+    expect(dailyBacklog).toEqual(Array(8).fill(2));
     expect(didBatch).toBe(true);
     expect(s.tables.city_source_coverage.filter(r=>r.is_scan_root&&
       r.window_from>="2026-11-17"&&r.window_from<="2026-11-23"&&
-      ["found","none_found"].includes(r.status))).toHaveLength(7*7);
+      ["found","none_found"].includes(r.status))).toHaveLength(8*7);
   });
 
   it("keeps every affected day retryable if a combined B research call is partial",async()=>{
