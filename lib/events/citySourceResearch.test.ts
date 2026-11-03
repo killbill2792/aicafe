@@ -104,6 +104,37 @@ describe("LDI B city research contract",()=>{
     expect(second.text).toBeUndefined();
     expect([first.max_output_tokens,second.max_output_tokens]).toEqual([1200,1200]);
   });
+  it("does not record none_found when the model returned empty JSON without searching",async()=>{
+    const response=new Response(JSON.stringify({status:"completed",
+      output:[{type:"message",content:[{type:"output_text",text:'{"events":[]}'}]}]}),
+      {status:200});
+    const web=vi.fn().mockImplementationOnce(async()=>response)
+      .mockImplementationOnce(async()=>new Response(JSON.stringify({status:"completed",
+        output:[{type:"message",content:[{type:"output_text",text:'{"events":[]}'}]}]}),
+        {status:200}));
+    const result=await createCitySourceResearch({fetch:web,apiKey:"test",now})(
+      input({from:"2026-11-04",to:"2026-11-04",reason:"new_day"},[venue]));
+    expect(result.events).toEqual([]);
+    expect(result.sources).toEqual([expect.objectContaining({
+      sourceId:"civic",outcome:"failed",failure:"invalid_shape",retryEligible:true
+    })]);
+    expect(result.retrySourceIds).toEqual(["civic"]);
+    expect(result.partial).toBe(true);
+    expect(web).toHaveBeenCalledTimes(2);
+  });
+  it("rejects an unsuccessful web search even when the model invents an event",async()=>{
+    const web=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      output:[{type:"web_search_call",status:"failed"},
+        {type:"message",content:[{type:"output_text",
+          text:JSON.stringify({events:[event("Unverified market")]})}]}]}),{status:200}));
+    const result=await createCitySourceResearch({fetch:web,apiKey:"test",now})(
+      input({from:"2026-11-04",to:"2026-11-04",reason:"new_day"},[venue]));
+    expect(result.events).toEqual([]);
+    expect(result.sources[0]).toMatchObject({
+      outcome:"failed",failure:"invalid_shape",retryEligible:true
+    });
+    expect(web).toHaveBeenCalledTimes(2);
+  });
   it("keeps a successful source while another times out or receives 503; both remain distinct",async()=>{
     const web=vi.fn(async(_url:string|URL|Request,options?:RequestInit)=>{
       const body=JSON.parse(String(options?.body)) as {input:string};

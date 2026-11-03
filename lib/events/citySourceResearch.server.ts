@@ -108,6 +108,13 @@ export function createCitySourceResearch(deps:{
           return {ok:false,failure:"incomplete",status,retryEligible:true};
         if(body?.status==="failed"||body?.status==="in_progress")
           return {ok:false,failure:"invalid_shape",status,retryEligible:true};
+        // A model can emit valid JSON without using the web tool. Such a response
+        // is NOT evidence that its official source/calendar was actually checked.
+        const searchCalls=Array.isArray(body?.output)?body.output.filter(item=>
+          item&&typeof item==="object"&&
+          (item as {type?:unknown}).type==="web_search_call") as Array<{status?:unknown}>:[];
+        if(!searchCalls.length||searchCalls.some(call=>call.status!=="completed"))
+          return {ok:false,failure:"invalid_shape",status,retryEligible:true};
         const output=responseOutputText(data);
         if(!output?.trim())
           return {ok:false,failure:"missing_message",status,retryEligible:true};
