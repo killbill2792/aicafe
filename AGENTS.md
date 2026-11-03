@@ -77,8 +77,18 @@ the owner or the POS. They run daily, plus live checks every ~30 minutes while t
 urgent issues (nobody clocked in for a shift, sales far below normal, an item running out, an unusual
 void or refund).
 
-## 4b. POS data: keep everything, read everything, include today
-- **Keep everything.** Every Toast endpoint the café's credentials allow is captured on a schedule
+## 4b. POS data: keep every field, read everything, include today
+- **Keep every field, once.** "Keep everything" means every field the POS sends is kept; it never means
+  keeping copies. The owner rule (Nov 3, plan: `docs/plans/toast-storage.md`):
+  - **One current raw record per POS object** (order, payment, time entry…), with every field, filed under
+    its own business date. The database enforces it with a unique key; every save is "same → nothing,
+    different → update". Comparisons ignore list order (Toast reorders lists between downloads).
+  - **A change log** keeps real changes (field, before, after, when), never a second full copy.
+  - **Organized tables** hold every field the app uses, also one row per order/item/payment by unique key,
+    rebuilt from the raw record. Add columns as needed; never rename or drop ones in use.
+  - **A daily health check** reports database size, duplicates, daily totals vs the POS day total and
+    sudden growth to the inbox. Storage tests use real POS messiness (reordered lists, repeats, re-pulls).
+- **Every endpoint is captured.** Every Toast endpoint the café's credentials allow is captured on a schedule
   (`.github/workflows/toast-raw-capture-daily.yml`, last three closed days kept complete) into
   `toast_raw_samples`, with customer personal details removed and business data kept. Views read only
   the newest successful capture of each day.
