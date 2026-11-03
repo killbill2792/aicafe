@@ -194,9 +194,9 @@ async function studyOne(db:Db,scope:CityScope,source:CityResearchSource,
       checkedAt:coverage.checkedAt,status:coverage.outcome});
   }
   const statuses=result.sources.map(c=>c.outcome);
-  const status=rejected||result.partial?"partial":
+  const status=statuses.length===0?"failed":
     statuses.every(s=>s==="failed")?"failed":
-    saved>0?"found":"none_found";
+    rejected||result.partial?"partial":saved>0?"found":"none_found";
   await recordCitySourceCoverage(db,{...scope,sourceKey:key,from,to,checkedAt,status});
   const failure=result.sources.find(c=>c.failure)?.failure??(rejected?"invalid_source_url":null);
   const updated=await db.from("city_source_coverage").update({
@@ -252,7 +252,12 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
     // Multiple legacy rows are ambiguous; never guess which old UUID owns a plan.
     const id=matched.size===1?[...matched][0]:
       stableMessageId("ldi-city-cafe:"+businessId+":"+e.id);
-    if(matched.size!==1){
+    if(matched.size>1){
+      // Ambiguous historical aliases require review, not a new competing row.
+      console.warn("ldi_legacy_identity_ambiguous");
+      continue;
+    }
+    if(matched.size===0){
       const inserted=await db.from("cafe_events").upsert({
         id,business_id:businessId,name:e.name,kind:e.kind,
         start_date:e.start_date,end_date:e.end_date,
