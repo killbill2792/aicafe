@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fixtures = vi.hoisted(() => ({
   owner: vi.fn(),
@@ -57,6 +57,9 @@ const coverage = () => ({
 });
 
 describe("Olivia PR3B canonical saved-staff input boundary", () => {
+  // The published-shift fixture uses a fixed 2026 date; its "already started"
+  // expectation must not change when CI runs after that date.
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     fixtures.tables={
       employees:[employee(1)],locations:[{id:id(800),name:"Downtown",timezone:null}],
@@ -291,6 +294,8 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
   });
 
   it("loads only already-started published assignments as immutable replan inputs, including inactive staff and breaks",async()=>{
+    vi.useFakeTimers({toFake:["Date"]});
+    vi.setSystemTime(new Date("2026-10-20T12:00:00.000Z"));
     const seriesId=id(3000),revId=id(3001);
     fixtures.tables.scheduling_plan_series=[{id:seriesId,published_revision:1}];
     fixtures.tables.scheduling_plan_revisions=[{
