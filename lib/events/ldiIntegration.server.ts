@@ -269,6 +269,17 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
       bySource.set(k,[...(bySource.get(k)??[]),e.id]);
     }catch{/* legacy non-HTTPS URLs cannot be confidently reconciled */ }
   }
+  // Source-only B discoveries from different URLs are not proof of distinct
+  // public events. A reconciles when both independent listings establish the
+  // same specific venue+address. Without corroboration, keep every fact in
+  // the ALL CITY catalog, but do not create duplicate café/plan UUIDs.
+  const normalized=(name:string)=>name.normalize("NFKD").replace(/\p{M}/gu,"")
+    .toLowerCase().replace(/&/gu," and ").replace(/[^\p{L}\p{N}]+/gu," ").trim();
+  const groups=new Map<string,CityRow[]>();
+  for(const e of city){
+    const key=e.start_date+"|"+normalized(e.name);
+    groups.set(key,[...(groups.get(key)??[]),e]);
+  }
   let associated=0;
   for(const e of city){
     if(byCity.has(e.id))continue;
@@ -279,6 +290,16 @@ async function associateCityFacts(db:Db,businessId:string,cityKey:string,from:st
       const k=e.start_date+"|"+e.name.normalize("NFKC").toLowerCase()+"|"+
         canonicalSourceUrl(url);
       for(const id of bySource.get(k)??[])matched.add(id);
+    }
+    const peers=groups.get(e.start_date+"|"+normalized(e.name))??[];
+    const ambiguous=peers.some(other=>other.id!==e.id&&
+      (!e.venue||!e.venue_address||!other.venue||!other.venue_address));
+    // An exact legacy source match is historical identity evidence. A newly
+    // created café association without that match must not duplicate an
+    // uncorroborated source-only city listing.
+    if(ambiguous&&matched.size===0){
+      console.warn("ldi_unresolved_city_source_duplicates");
+      continue;
     }
     // Multiple legacy rows are ambiguous; never guess which old UUID owns a plan.
     const id=matched.size===1?[...matched][0]:
