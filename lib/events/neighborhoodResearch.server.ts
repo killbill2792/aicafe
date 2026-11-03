@@ -3,7 +3,7 @@ import {DEFAULT_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfi
 import {
   NEIGHBORHOOD_MAX_OUTPUT_TOKENS, NEIGHBORHOOD_SCOPES, NEIGHBORHOOD_SCOPE_IDS,
   NEIGHBORHOOD_UNKNOWNS, hasResearchableAddress, neighborhoodResearchJsonSchema,
-  neighborhoodResearchPrompt, parseNeighborhoodResearch, neighborhoodCitedUrls,
+  neighborhoodResearchPrompt, parseNeighborhoodResearch, neighborhoodWebSearchCompleted, neighborhoodCitedUrls,
   neighborhoodOutputText, publicPlaceKey, summarizeNeighborhoodCoverage,
   type NeighborhoodAddress, type NeighborhoodScope, type NeighborhoodFailure,
   type NeighborhoodResearchResult, type NeighborhoodSourceCoverage,
@@ -86,6 +86,7 @@ export function createNeighborhoodResearch(deps: {
         const status = (body as {status?: unknown}).status;
         if (status === "incomplete") return {ok: false, failure: "incomplete"};
         if (status !== "completed") return {ok: false, failure: "invalid_response"};
+        if (!neighborhoodWebSearchCompleted(body)) return {ok: false, failure: "search_not_run"};
         const output = neighborhoodOutputText(body);
         if (!output) return {ok: false, failure: "invalid_response"};
         const parsed = parseNeighborhoodResearch(output, scope,
