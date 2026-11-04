@@ -31,12 +31,27 @@ export const draftScheduleTools={draft_week_schedule:{
    return {employee_id:shift.employeeId,date:localDate,start:startLocal,end:endLocal,
     break_minutes:breakMinutes};
   });
+  const canPropose=proposedShifts.length>0&&proposedShifts.length<=60&&
+   proposedShifts.every(s=>s.break_minutes<=240&&s.start!==s.end);
+  let approval: {proposalId:string;revision:number;capabilityId:string}|null=null;
+  let approvalError:string|null=null;
+  if(canPropose&&ctx.proposals?.proposeStaff){
+   try {
+    // The existing authorized proposal writer creates ONE inert owner card.
+    // Only the owner's approval click may write dated draft shifts.
+    approval=await ctx.proposals.proposeStaff({name:"propose_schedule",
+     input:{week_start:start,shifts:proposedShifts}});
+   }catch{approvalError="approvalProposalUnavailable";}
+  }
   return {source:"olivia_schedule",period:{from:start,to:result.plan.horizonEnd},
-   agentId:"olivia",draft:true,saved:false,missing:result.notices.map(n=>n.code),
+   agentId:"olivia",draft:true,saved:false,
+   missing:[...result.notices.map(n=>n.code),...(approvalError?[approvalError]:[]),
+    ...(!canPropose?["approvalShiftLimitOrInvalidShift"]:[])],
    plannerStatus:result.plan.status,completeCoverage:best.completeCoverage,
    laborCost:best.cost,gaps:best.gaps,warnings:result.plan.warnings,
-   proposedShifts:proposedShifts.slice(0,60),
-   ...(proposedShifts.length>60?{missing:["approvalShiftLimit"],proposalReady:false}:{proposalReady:true}),
+   proposedShifts:proposedShifts.slice(0,12),
+   proposedShiftCount:proposedShifts.length,
+   proposalReady:canPropose, ...(approval??{}),
    approvalTool:"propose_schedule",weekStart:start};
  }
 }} as const;
