@@ -85,7 +85,7 @@ export async function readEventChecklist(db:SupabaseClient,businessId:string,
 export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
   from:string,to:string,options:{cityEventId?:string}={}):Promise<SavedEventTimeline>{
  assertRange(from,to);
- const [events,proposals,cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage]=await Promise.all([
+ const [events,proposals,cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage,location]=await Promise.all([
    readCanonicalCafeEvents(db,scope.businessId,from,to),
    readOwnerProposals(db,scope,{capabilityId:"alex.event_readiness.v1",limit:200}),
    readCityEventCatalog(db,scope.businessId,from,to,
@@ -93,6 +93,7 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
    readCafeNeighborhoodEvidence(db,scope.businessId),
    readCityResearchCoverage(db,scope.businessId,from,to),
    readNeighborhoodResearchCoverage(db,scope.businessId),
+   readPrimaryLocation(db,scope.businessId),
  ]);
  const plans=proposals.flatMap(p=>{
    const effect=p.canonical_effect_payload as Record<string,unknown>|null;
@@ -102,7 +103,8 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
  });
  const reports=await readOwnerReports(db,scope,plans.map(x=>x.p.id),{limit:200});
  const byProposal=new Map(reports.map(r=>[r.proposal_id,r]));
- return {events,cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage,plans:plans.map(({p,effect})=>{
+ return {events:visibleCafeEventListings(events,from,to,location),
+   cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage,plans:plans.map(({p,effect})=>{
    const report=byProposal.get(p.id);
    return {proposalId:p.id,threadId:p.thread_id,status:p.status,revision:p.revision,
      startDate:String(effect.startDate),endDate:String(effect.endDate),
@@ -348,9 +350,9 @@ export async function readCafeEvents(db:SupabaseClient,businessId:string,
   const extended:CafeEvent[]=[];
   for(let i=0;i<ids.length;i+=100)
     extended.push(...await readStoredCafeEvents(db,businessId,from,to,ids.slice(i,i+100)));
-  const canonical=await overlayCityFacts(db,businessId,[...raw,...extended]);
-  const location=await readPrimaryLocation(db,businessId);
-  return visibleCafeEventListings(canonical,from,to,location);
+  // Canonical facts are never filtered or deduplicated: scheduled verification,
+  // monitoring and alerts must see every saved identity, including remote ones.
+  return overlayCityFacts(db,businessId,[...raw,...extended]);
 }
 export const readCanonicalCafeEvents=readCafeEvents;
 
@@ -384,7 +386,11 @@ export function cafeEventInArea(event:EventArea,location:LocationArea|null):bool
   if(address.length<3||!location.region)return true;
   const clean=(value:string)=>value.normalize("NFKD").replace(/\p{M}/gu,"").toLowerCase()
     .replace(/[^a-z0-9]/gu,"");
-  const cafeRegion=clean(location.region),eventRegion=clean(address.at(-1)??"");
+  // A final US/USA/United States segment is country, not the state.
+  const tail=clean(address.at(-1)??"");
+  const regionPart=["us","usa","unitedstates","unitedstatesofamerica"].includes(tail)
+    ?address.at(-2):address.at(-1);
+  const cafeRegion=clean(location.region),eventRegion=clean(regionPart??"");
   if(!cafeRegion||!eventRegion)return true;
   // Reject only a verified difference between comparable region formats:
   // 'CA' vs 'California' cannot be conclusively compared without geocoding.
@@ -399,14 +405,33 @@ export function visibleCafeEventListings(canonical:readonly CafeEvent[],from:str
   location:LocationArea|null):CafeEvent[]{
   const events=canonical.filter(e=>e.startDate<=to&&e.endDate>=from)
     .filter(e=>cafeEventInArea(e,location));
-  const unique=new Map<string,CafeEvent>();
-  for(const e of events){
-    const key=e.startDate+"|"+canonicalEventNameKey(e.name);
-    const prior=unique.get(key);
-    if(!prior||Number(Boolean(e.lastVerifiedAt))>Number(Boolean(prior.lastVerifiedAt))||
-       (!prior.cityEventId&&!!e.cityEventId))unique.set(key,e);
+  const visible:CafeEvent[]=[];
+  for(const event of events){
+    const duplicateIndex=visible.findIndex(existing=>{
+      if(existing.startDate!==event.startDate||
+        canonicalEventNameKey(existing.name)!==canonicalEventNameKey(event.name))return false;
+      // Different canonical city IDs are distinct events even if titles match.
+      if(existing.cityEventId&&event.cityEventId&&existing.cityEventId!==event.cityEventId)
+        return false;
+      const clean=(value:string)=>value.normalize("NFKC").trim().toLowerCase();
+      // Contradictory known venues or addresses prevent merging.
+      if(existing.venue&&event.venue&&clean(existing.venue)!==clean(event.venue))return false;
+      if(existing.venueAddress&&event.venueAddress&&
+        clean(existing.venueAddress)!==clean(event.venueAddress))return false;
+      if(existing.cityEventId&&existing.cityEventId===event.cityEventId)return true;
+      if(existing.sourceUrl&&existing.sourceUrl===event.sourceUrl)return true;
+      // Distinct sources corroborate an identity only with the same named
+      // venue AND the same address, as in cityEventIdentity.
+      return !!existing.venue&&!!event.venue&&!!existing.venueAddress&&!!event.venueAddress&&
+        clean(existing.venue)===clean(event.venue)&&
+        clean(existing.venueAddress)===clean(event.venueAddress);
+    });
+    if(duplicateIndex<0){visible.push(event);continue;}
+    const previous=visible[duplicateIndex];
+    if(Number(Boolean(event.lastVerifiedAt))>Number(Boolean(previous.lastVerifiedAt))||
+      (!previous.cityEventId&&!!event.cityEventId))visible[duplicateIndex]=event;
   }
-  return [...unique.values()];
+  return visible;
 }
 
 /** Private neighborhood scope freshness, through the sole owner Events facade. */
