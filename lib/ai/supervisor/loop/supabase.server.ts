@@ -239,10 +239,30 @@ export class SupabaseLoopRepository implements LoopRepository{
     // the registered capability's verified report, not in a price-specific
     // task writer or a generic second inbox.
     const delivery=report.delivery;
-    // A format-only refresh updates the existing report row, never reposts it
-    // to ai_messages or opens another inbox notification.
-    if(!delivery||formattingOnly)return;
+    if(!delivery)return;
     const taskId="supervisor:"+p.capabilityId+":"+p.id;
+    if(formattingOnly){
+      // A saved report is NOT proof of delivery: an earlier attempt may have
+      // failed after the report upsert but before its inbox/chat writes.
+      // Existing rows are the durable delivery receipts (including legacy
+      // reports); do not add a second ledger or mark delivery prematurely.
+      const [taskSent,messageSent]=await Promise.all([
+        db.from("operating_tasks").select("id").eq("business_id",scope.businessId)
+          .eq("id",taskId).maybeSingle(),
+        db.from("ai_messages").select("id").eq("business_id",scope.businessId)
+          .eq("owner_user_id",scope.ownerUserId).eq("thread_id",p.threadId)
+          .eq("role","supervisor")
+          .contains("grounding",{evidence:[{
+            source:"operating_tasks",identifier:"supervisor-report:"+p.id,
+          }]})
+          .limit(1).maybeSingle(),
+      ]);
+      if(taskSent.error||messageSent.error)
+        failed(taskSent.error??messageSent.error,"Supervisor report delivery lookup unavailable");
+      // Both writes must have succeeded before a format-only refresh may
+      // skip the existing canonical delivery path. A partial write retries.
+      if(taskSent.data&&messageSent.data)return;
+    }
     const task=await db.from("operating_tasks").upsert({
       business_id:scope.businessId,id:taskId,agent_id:delivery.agentId,
       kind:delivery.taskKind,entity_type:delivery.entityType,entity_id:delivery.entityId,
