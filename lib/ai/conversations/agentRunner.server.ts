@@ -25,7 +25,10 @@ import {todaySoFarForBusiness} from "@/lib/data/todayLive.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
-import {readOwnerProposals,readOwnerReports} from "@/lib/ai/supervisor/loop/reads.server";
+import {readOwnerProposals,readOwnerReports,readOwnerPriceMonitorProposals} from "@/lib/ai/supervisor/loop/reads.server";
+import {mapPriceMonitorRows} from "@/lib/ai/agent/tools/priceMonitor";
+import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment";
+import {BOARD_PROPOSAL_STATUSES} from "@/lib/operating/board";
 import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
@@ -134,26 +137,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       readPriceMonitors:async()=>{
         const db=await getDb();
         const ownerScope={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
-        const rows=await readOwnerProposals(db,ownerScope,{limit:100});
-        const priceRows=rows.filter(r=>r.capability_id===priceExperimentCapabilityId||
-          r.capability_id===menuPriceChangeCapabilityId);
+        const priceRows=await readOwnerPriceMonitorProposals(db,ownerScope,
+          [priceExperimentCapabilityId,menuPriceChangeCapabilityId],BOARD_PROPOSAL_STATUSES);
         const reports=await readOwnerReports(db,ownerScope,priceRows.map(r=>r.id),{limit:100});
-        return priceRows.map(r=>{
-          const effect=r.canonical_effect_payload as Record<string,unknown>|null;
-          const spec=r.monitor_spec as Record<string,unknown>|null;
-          const durationDays=typeof spec?.durationDays==="number"&&Number.isSafeInteger(spec.durationDays)?spec.durationDays:null;
-          const startDate=r.monitoring_start_date;
-          const today=identity.asOf.slice(0,10);
-          const elapsed=startDate?Math.floor((Date.parse(today+"T00:00:00Z")-Date.parse(startDate+"T00:00:00Z"))/86400000)+1:null;
-          const report=reports.find(x=>x.proposal_id===r.id);
-          return {proposalId:r.id,threadId:r.thread_id,
-            productName:typeof effect?.productName==="string"?effect.productName:"Unknown item",
-            status:r.status,startDate,durationDays,
-            day:elapsed===null?null:Math.max(0,elapsed),
-            oldPriceCents:typeof effect?.oldPriceCents==="number"?effect.oldPriceCents:null,
-            newPriceCents:typeof effect?.newPriceCents==="number"?effect.newPriceCents:null,
-            reportStatus:report?.status??null};
-        });
+        return mapPriceMonitorRows(priceRows,reports,identity.asOf,identity.timezone);
       },
       // Toast credentials are service-role only; the café comes from the authenticated scope.
       readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId),
@@ -231,7 +218,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         if(!item)throw new ToolError("not_found");
         if(item.priceCents===null)throw new ToolError("validation","An open-price item has no confirmed starting price.");
         const increase=increaseCents??(newPriceCents===null?null:newPriceCents-item.priceCents);
-        if(increase===null||increase<=0)throw new ToolError("validation","price_increase_must_be_positive: Enter a positive price increase; monitoring an existing change does not require a new proposal.");
+        requirePositivePriceIncrease(increase);
         const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,productId,increase,days}));
         const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
           new SupabaseLoopRepository(),priceExperimentCapabilityId,{productId,increaseCents:increase},key);
