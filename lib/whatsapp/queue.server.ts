@@ -4,6 +4,7 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {activeBinding} from "./identity.server";
 import {buttonQuestion,buildOutbound,type Outbound,type TemplateFields} from "./transport";
 import {providerAllowed,sendMeta,type Channel} from "./transport.server";
+import {whatsappFreeTextAllowed} from "./supervisor";
 import type {Incoming} from "./webhook";
 
 const db=()=>createAdminSupabaseClient();
@@ -31,6 +32,8 @@ export async function recordSignedStatus(event:Extract<Incoming,{type:"status"}>
 export async function enqueueWhatsApp(
   bindingId:string,dedupeKey:string,outbound:Outbound,provenance:Record<string,unknown>,
   sourceMessageId:string,inReplyTo?:string,businessDate?:string,
+  /** Daily brief only: the café's own deadline (migration 148). */
+  sendBefore?:string,
 ):Promise<string> {
   const kind:Channel=outbound.kind==="daily_brief"?"daily_brief":"reply";
   // Provenance is supplied by the canonical producer, never invented by transport.
@@ -39,14 +42,18 @@ export async function enqueueWhatsApp(
     typeof provenance.period!=="string"||!provenance.source||!provenance.period||
     (kind==="reply"&&(!inReplyTo||businessDate!==undefined))||
     (kind==="daily_brief"&&(inReplyTo!==undefined||!businessDate||
-       !/^\d{4}-\d{2}-\d{2}$/.test(businessDate))))
+       !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)))||
+    (sendBefore!==undefined&&(kind!=="daily_brief"||!Number.isFinite(Date.parse(sendBefore)))))
     throw new Error("invalid_outbound");
   const {data,error}=await db().rpc("whatsapp_enqueue_outbound",{
     p_binding_id:bindingId,p_key:dedupeKey,p_kind:kind,
-    p_payload:outbound.kind==="daily_brief"?{fields:outbound.fields}:{text:outbound.text},
+    p_payload:outbound.kind==="daily_brief"?
+      {fields:outbound.fields,...(outbound.template?{template:outbound.template}:{})}:
+      {text:outbound.text},
     p_provenance:provenance,p_source_message_id:sourceMessageId,
     p_in_reply_to:inReplyTo??null,
     p_business_date:businessDate??null,
+    ...(sendBefore!==undefined?{p_send_before:sendBefore}:{}),
   });
   if(error||typeof data!=="string"||!uuid.test(data))throw new Error("queue_unavailable");
   return data;
@@ -113,15 +120,15 @@ export async function dispatchOutboundOnce(kind:Channel,send:typeof fetch=fetch)
      bound.ownerUserId!==lease.owner_user_id||bound.threadId!==lease.thread_id||
      bound.waId!==lease.wa_id||bound.phoneNumberId!==lease.phone_number_id)
     outcome={state:"failed",reason:"binding_revoked"};
-  else if(kind==="reply"&&(!bound.lastOwnerMessageAt||
-    (!Number.isFinite(Date.parse(bound.lastOwnerMessageAt))||
-     Date.now()<Date.parse(bound.lastOwnerMessageAt)||
-     Date.now()-Date.parse(bound.lastOwnerMessageAt)>=24*60*60*1000)))
+  // Free text only. A template brief is never held to the 24-hour window.
+  else if(kind==="reply"&&!whatsappFreeTextAllowed(bound.lastOwnerMessageAt))
     outcome={state:"failed",reason:"outside_service_window"};
   else {
-    const payload=lease.payload as {fields?:unknown;text?:unknown}|null;
-    const outbound:Outbound|null=kind==="daily_brief"&&Array.isArray(payload?.fields)?
-      {kind:"daily_brief",fields:payload.fields as unknown as TemplateFields}:
+    const payload=lease.payload as {fields?:unknown;text?:unknown;template?:unknown}|null;
+    const outbound:Outbound|null=kind==="daily_brief"&&Array.isArray(payload?.fields)&&
+      (payload.template===undefined||typeof payload.template==="string")?
+      {kind:"daily_brief",fields:payload.fields as unknown as TemplateFields,
+        ...(typeof payload.template==="string"?{template:payload.template}:{})}:
       kind==="reply"&&typeof payload?.text==="string"?
         {kind:"reply",text:payload.text}:null;
     const built=outbound&&buildOutbound(bound.waId,outbound);

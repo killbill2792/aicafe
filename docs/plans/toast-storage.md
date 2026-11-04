@@ -77,10 +77,13 @@ screens and chat read the same tables and must not change.
    locks the tables for long; one statement for all four hit the SQL editor's time limit); older item lines first
    get their Toast line ID where the match is certain (all 13,660 Seiyun lines matched in a production dry run).
    Toast has no "item made" time in the orders API; `fulfillment_status` is the kitchen state it does send.
-7. **WhatsApp brief sends every morning** (template unchanged, no new Meta approval):
+7. **Done — migration 148: WhatsApp brief sends every morning** (template unchanged, no new Meta approval; see AGENTS.md §4c):
    - no verified event → "Today" says no major events were found nearby;
-   - the same-weekday sales watch runs automatically for every café with the brief, so the template's
-     "I'm watching today's sales" is true;
+   - the same-weekday sales watch is NOT built yet (owner, Nov 4): the brief no longer waits for it, and the
+     current template's watch sentence carries "(automatic sales alerts are not on yet)" until the two
+     proposed templates without that sentence are approved;
    - the brief (an approved template) no longer needs an owner message in the last 24 h; later alerts follow
      Meta's 24 h rule and go to the in-app inbox outside it;
+   - it goes out per café, 30 minutes before opening (06:00 café time if hours are unknown), never blocked
+     by a missing extra, and every skip is recorded (`/admin/briefs`);
    - still required: a linked owner number and WhatsApp settings on in Vercel.

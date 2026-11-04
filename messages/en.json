@@ -3673,7 +3673,31 @@
     "taskTitle": "Morning brief",
     "netOnly": "Good morning. Yesterday: net sales {sales}. Cost coverage is incomplete.",
     "taskAction": "Open in chat",
-    "whatsappTemplate": "Good morning ☀️\n\nHere's {{1}}'s daily brief from Cafe Profit.\n\n*Yesterday*\n💰 Net sales: {{2}}\n☕ Drinks sold: {{3}}\n🏆 Best seller: {{4}}, with {{5}} sold\n\n📅 Today: {{6}}\n\nI'm watching today's sales against your usual {{7}} pattern and will message you if anything looks off.\n\nTap a question below, or reply with anything about your café."
+    "whatsappTemplate": "Good morning ☀️\n\nHere's {{1}}'s daily brief from Cafe Profit.\n\n*Yesterday*\n💰 Net sales: {{2}}\n☕ Drinks sold: {{3}}\n🏆 Best seller: {{4}}, with {{5}} sold\n\n📅 Today: {{6}}\n\nI'm watching today's sales against your usual {{7}} pattern and will message you if anything looks off.\n\nTap a question below, or reply with anything about your café.",
+    "whatsappTemplateEvent": "Good morning ☀️\n\nHere's {{1}}'s daily brief from Cafe Profit.\n\n*Yesterday*\n💰 Net sales: {{2}}\n🧾 Sold: {{3}}\n🏆 Best seller: {{4}}\n\n📅 Today: {{5}}\n\nTap a question below, or reply with anything about your café.",
+    "whatsappTemplateNoEvent": "Good morning ☀️\n\nHere's {{1}}'s daily brief from Cafe Profit.\n\n*Yesterday*\n💰 Net sales: {{2}}\n🧾 Sold: {{3}}\n🏆 Best seller: {{4}}\n\n📅 Coming up: {{5}}\n\nTap a question below, or reply with anything about your café.",
+    "blanks": {
+      "salesNotIn": "not in yet (your POS is still syncing)",
+      "currencyNotSet": "{amount} (currency not set)",
+      "itemsNotIn": "not in yet",
+      "allItemsCurrent": "{items} items in total (drink split not ready yet)",
+      "itemsWithDrinks": "{drinks} drinks, {items} items in total",
+      "itemsAll": "{items} items (drink split not ready yet)",
+      "bestNotIn": "not in yet",
+      "bestUnitsNotIn": "no item data",
+      "bestLine": "{name} ({units} sold)",
+      "eventVenue": " at {venue}",
+      "eventTime": " at {time}",
+      "eventUnconfirmed": "{event} (not confirmed yet)",
+      "nextEvent": "No events nearby today. Next: {event}, {day}",
+      "nextEventDistance": "No events nearby today. Next: {event}, {day}, {distance}",
+      "noEventsWeek": "No major events near you this week.",
+      "noConfirmedEvents": "No confirmed events near you this week.",
+      "eventsUnavailable": "Today's event check didn't finish.",
+      "weekdayNote": "{weekday} (automatic sales alerts are not on yet)",
+      "cafeFallback": "your café",
+      "unknownItem": "an item not on your menu"
+    }
   },
   "Goals": {
     "metric": {

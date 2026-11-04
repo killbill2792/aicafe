@@ -8,6 +8,7 @@ on:
       - 'supabase/migrations/**'
       - 'scripts/rls-all-public-tables.sql'
       - 'scripts/ldi-e-db-contract.sql'
+      - 'scripts/morning-brief-send-window-sql-integration.sql'
       # LDI G exercises the same canonical reader/API after migration and RLS replay.
       - 'lib/data/cafeEvents.server.ts'
       - 'app/api/events/saved/**'
@@ -44,6 +45,10 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f scripts/ldi-e-db-contract.sql
+      - name: Morning brief per-café send window (migration 148) on disposable PostgreSQL
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/morning-brief-send-window-sql-integration.sql
       - name: Stop disposable Supabase
         if: always()
         run: supabase stop --no-backup

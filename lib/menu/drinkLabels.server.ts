@@ -81,3 +81,25 @@ export async function labelNewMenuCategories(db:SupabaseClient,businessId:string
    {asked,saved,outcome,durationMs:Date.now()-started});
  }
 }
+
+/** Its own job (cron /api/cron/menu-labels), independent of the morning brief and
+ * of WhatsApp: label every café's new menu categories. One café's failure (logged
+ * inside labelNewMenuCategories) never stops the others; it is retried next run. */
+export async function labelAllCafesMenuCategories(db:SupabaseClient,
+ classify:DrinkClassifier=classifyWithOpenAi,deadlineMs=Date.now()+50_000):
+ Promise<{cafes:number;labeled:number;stoppedEarly:boolean}>{
+ let cafes=0,labeled=0;
+ for(let offset=0;;offset+=100){
+  const {data,error}=await db.from("businesses").select("id,is_demo")
+   .order("id",{ascending:true}).range(offset,offset+99);
+  if(error)throw new Error("businesses_unavailable");
+  for(const b of data??[]){
+   if(b.is_demo)continue;
+   if(Date.now()>=deadlineMs)return {cafes,labeled,stoppedEarly:true};
+   cafes++;
+   labeled+=await labelNewMenuCategories(db,String(b.id),classify);
+  }
+  if((data??[]).length<100)break;
+ }
+ return {cafes,labeled,stoppedEarly:false};
+}

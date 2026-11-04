@@ -95,6 +95,33 @@ describe("durable WhatsApp handoff",()=>{
     expect(await dispatchOutboundOnce("reply")).toBe("failed");
     expect(mocks.send).not.toHaveBeenCalled();
   });
+  it("holds only free text to the 24-hour window, never the template brief",async()=>{
+    const fields=["Cafe North","$10.00","1","Latte","1","No major events near you this week.","Monday"];
+    const brief={...lease,id:U,kind:"daily_brief",payload:{fields},
+      wa_id:bound.waId,phone_number_id:bound.phoneNumberId};
+    mocks.rpc.mockImplementation(async(name:string)=>{
+      if(name==="whatsapp_claim_outbound")return {data:brief,error:null};
+      return {data:true,error:null};
+    });
+    for(const lastOwnerMessageAt of [null,"2020-01-01T00:00:00Z"]){
+      mocks.active.mockResolvedValueOnce({...bound,lastOwnerMessageAt});
+      expect(await dispatchOutboundOnce("daily_brief")).toBe("accepted");
+    }
+    expect(mocks.send).toHaveBeenCalledTimes(2);
+    expect(mocks.send).toHaveBeenCalledWith("daily_brief",bound.waId,{kind:"daily_brief",fields},expect.any(Function));
+    // The same old owner message blocks a free-text follow-up.
+    const reply={...brief,kind:"reply",payload:{text:"Sales look slow today."}};
+    mocks.rpc.mockImplementation(async(name:string)=>{
+      if(name==="whatsapp_claim_outbound")return {data:reply,error:null};
+      return {data:true,error:null};
+    });
+    mocks.send.mockClear();mocks.rpc.mockClear();
+    mocks.active.mockResolvedValueOnce({...bound,lastOwnerMessageAt:"2020-01-01T00:00:00Z"});
+    expect(await dispatchOutboundOnce("reply")).toBe("failed");
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(mocks.rpc.mock.calls.find(args=>args[0]==="whatsapp_finish_outbound")?.[1])
+      .toMatchObject({p_outcome:"failed",p_error:"outside_service_window"});
+  });
   it("records accepted separately from delivered, preserves uncertain outcomes",async()=>{
     const out={...lease,id:U,kind:"reply",payload:{text:"Allowed text"},
       wa_id:bound.waId,phone_number_id:bound.phoneNumberId};
