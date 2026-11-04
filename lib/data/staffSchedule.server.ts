@@ -1,6 +1,7 @@
 import "server-only";
 import {formatInTimeZone} from "date-fns-tz";
 import {reconcileStaffCalendar,type CalendarEntry} from "@/lib/calc/scheduling/calendarEntries";
+import {projectVisibleStaffWeek} from "@/lib/calc/scheduling/schedulePresentation";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {timeReader} from "@/lib/perf/timeReader.server";
 import {readToastPlannedShifts} from "./toastScheduledShifts.server";
@@ -159,7 +160,10 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
  const calendarEntries=reconcileStaffCalendar(entries);
  const inWeek=mapped.filter(s=>s.date>=dates[0]&&s.date<=dates[6]);
  const displayTeam=peopleWithRetainedShifts(allEmployees,inWeek);
- const total=aggregateCosts(inWeek),gaps=coverageGaps(dates,mapped,openHours,
+ const projected=projectVisibleStaffWeek({shifts:inWeek,calendarEntries});
+ const total={...projected.total,
+   unknownCount:projected.total.unknownCount+(projected.hoursComplete?0:1)};
+ const gaps=coverageGaps(dates,mapped,openHours,
    ruleResult.data.coverage_enabled?ruleResult.data.min_headcount:0);
  return {ok:true as const,data:{
    dates,team,displayTeam,shifts:inWeek,posShifts,calendarEntries,calendarWarnings,posScheduleError,adjacentShifts:mapped.filter(s=>s.date<dates[0]||s.date>dates[6]),total,gaps,openHours,
