@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {readPrimaryLocation} from "./cafeLocation.server";
+import {readPrimaryLocation,readCafeLocation,type CafeLocation} from "./cafeLocation.server";
 import {cityScopeKey,canonicalEventNameKey} from "@/lib/events/cityEventIdentity";
 import {readOwnerProposals,readOwnerReports,type OwnerScope} from "@/lib/ai/supervisor/loop/reads.server";
 
@@ -349,20 +349,44 @@ export async function readCafeEvents(db:SupabaseClient,businessId:string,
   for(let i=0;i<ids.length;i+=100)
     extended.push(...await readStoredCafeEvents(db,businessId,from,to,ids.slice(i,i+100)));
   const canonical=await overlayCityFacts(db,businessId,[...raw,...extended]);
-  const local=await readPrimaryLocation(db,businessId);
-  return visibleCafeEventListings(canonical,from,to,local?.city??null);
+  const location=await readCafeLocation(db,businessId,[]);
+  return visibleCafeEventListings(canonical,from,to,location);
 }
 export const readCanonicalCafeEvents=readCafeEvents;
 
 
 
-/** Owner-facing projection of the ONE saved Events reader. It never deletes or
- * changes event facts, UUIDs, approvals, reports, or city-source provenance. */
+/** Location-aware evidence only: unknown venue positions stay visible.
+ * Saved explicit distance wins; otherwise a complete venue city/address can
+ * establish that a listing is outside the café's recorded municipality.
+ * The schema has no geocoded café/event coordinates, so never invent distance. */
+export function cafeEventInArea(event:Pick<CafeEvent,"venueAddress"|"areaLabel">,
+  location:Pick<CafeLocation,"city"|"region">|null):boolean{
+  if(!location?.city)return true;
+  const distance=event.areaLabel?.match(/\b(\d+(?:\.\d+)?)\s*(miles?|mi|kilometers?|km)\b/iu);
+  if(distance){
+    const amount=Number(distance[1]);
+    const miles=/^(km|kilometer)/iu.test(distance[2])?amount/1.609344:amount;
+    return miles<=40;
+  }
+  const address=event.venueAddress?.split(",").map(part=>part.trim()).filter(Boolean)??[];
+  // Only an unambiguous city + region address is strong enough to exclude.
+  if(address.length<2||!location.region)return true;
+  const clean=(value:string)=>value.normalize("NFKD").replace(/\p{M}/gu,"").toLowerCase()
+    .replace(/[^a-z0-9]/gu,"");
+  const region=clean(location.region);
+  const regionPart=clean(address.at(-1)??"");
+  if(!regionPart.startsWith(region)&&!region.startsWith(regionPart))return true;
+  const venueCity=clean(address.at(-2)??"");
+  return !venueCity||venueCity===clean(location.city);
+}
+
+/** Display projection over the ONE saved Events reader. Stored facts and
+ * approval identities are unchanged; unknown geography is never discarded. */
 export function visibleCafeEventListings(canonical:readonly CafeEvent[],from:string,to:string,
-  city:string|null):CafeEvent[]{
+  location:Pick<CafeLocation,"city"|"region">|null):CafeEvent[]{
   const events=canonical.filter(e=>e.startDate<=to&&e.endDate>=from)
-    .filter(e=>!(/\b(muir woods|yosemite)\b/i.test([e.name,e.venue,e.venueAddress,e.areaLabel].join(" "))&&
-      !!city&&![e.venueAddress,e.areaLabel].some(v=>v?.toLowerCase().includes(city.toLowerCase()))));
+    .filter(e=>cafeEventInArea(e,location));
   const unique=new Map<string,CafeEvent>();
   for(const e of events){
     const key=e.startDate+"|"+canonicalEventNameKey(e.name);
