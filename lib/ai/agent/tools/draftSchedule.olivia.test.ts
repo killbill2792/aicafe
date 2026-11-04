@@ -2,6 +2,7 @@ import {describe,it,expect,vi,beforeEach} from "vitest";
 const mocks=vi.hoisted(()=>({preview:vi.fn(),ownerSavings:vi.fn()}));
 vi.mock("@/lib/actions/oliviaPlanning",()=>({previewOliviaWeek:mocks.preview,previewOliviaOwnerSavings:mocks.ownerSavings}));
 import {draftScheduleTools} from "./draftSchedule";
+import {staffProposalTools} from "./staffProposals";
 import type {AgentToolContext} from "./index";
 const ctx:AgentToolContext={asOf:"2026-11-03",timezone:"America/Los_Angeles",locale:"en",
  tools:{} as AgentToolContext["tools"]};
@@ -32,10 +33,19 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
     best:{completeCoverage:true,cost:{cashWagesCents:30000},gaps:[],shifts}}});
   const proposeStaff=vi.fn().mockResolvedValue({proposalId:"22222222-2222-4222-8222-222222222222",
    revision:1,capabilityId:"olivia.staff_propose_schedule.v2"});
+  const turnCtx={...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}};
   const result=await draftScheduleTools.draft_week_schedule.execute(
-   {week_start:"2026-11-09",purpose:"draft"},{...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+   {week_start:"2026-11-09",purpose:"draft"},turnCtx);
   expect(proposeStaff).toHaveBeenCalledTimes(1);
   expect(proposeStaff.mock.calls[0][0].input.shifts).toHaveLength(14);
+  // Even if a model mistakenly calls the direct proposal tool afterward,
+  // the per-turn guard reuses the same card without a second write.
+  const repeated=await staffProposalTools.propose_schedule.execute({
+   week_start:"2026-11-09",shifts:proposeStaff.mock.calls[0][0].input.shifts
+  },turnCtx);
+  expect(repeated).toMatchObject({proposalId:"22222222-2222-4222-8222-222222222222",
+   duplicateSuppressed:true});
+  expect(proposeStaff).toHaveBeenCalledTimes(1);
   expect(result.proposedShifts).toHaveLength(14);
   expect(result).toMatchObject({proposalId:"22222222-2222-4222-8222-222222222222",
    approvalTool:"existing_card_created"});
