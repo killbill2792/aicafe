@@ -12,7 +12,7 @@ const schema=z.strictObject({week_start:monday.nullable()});
  */
 export const draftScheduleTools={draft_week_schedule:{
  agentId:"olivia",schema,
- description:"Use Olivia's canonical rules-aware planner to preview next week's staff roster. Returns a draft only; when the owner wants to apply it, pass the returned proposedShifts to propose_schedule for ONE owner approval card. Never say a preview was saved or published.",
+ description:"Use Olivia's canonical rules-aware planner to preview next week's staff roster. Creates ONE owner approval card for a schedule request itself. Never call propose_schedule again after this tool. Never say a preview was saved or published.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const {week_start}=schema.parse(raw);
   const start=week_start??nextMonday(ctx.asOf);
@@ -49,9 +49,9 @@ export const draftScheduleTools={draft_week_schedule:{
     ...(!canPropose?["approvalShiftLimitOrInvalidShift"]:[])],
    plannerStatus:result.plan.status,completeCoverage:best.completeCoverage,
    laborCost:best.cost,gaps:best.gaps,warnings:result.plan.warnings,
-   proposedShifts:proposedShifts.slice(0,12),
+   proposedShifts,
    proposedShiftCount:proposedShifts.length,
    proposalReady:canPropose, ...(approval??{}),
-   approvalTool:"propose_schedule",weekStart:start};
+   approvalTool:approval?"existing_card_created":"not_created",weekStart:start};
  }
 }} as const;
