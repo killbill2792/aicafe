@@ -547,7 +547,7 @@ export async function scanSharedResearch(db:Db,input:{
   // This is a PER-CAFÉ cap, not a counter taken from another café. Preserve
   // the ordinary six-task budget for follow-on daily runs.
   if(input.window.reason==="initial"&&input.budget.cityTasks===6)
-    input.budget.cityTasks=Math.max(input.budget.cityTasks,40,
+    input.budget.cityTasks=Math.max(input.budget.cityTasks,
       sources.length*4);
   let all=await allCoverage(db,cityKey);
   // Only root/source-slice rows determine completion. Saturation creates
