@@ -295,7 +295,8 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState(false);
   const [retry,setRetry]=useState(0);
-  const from=month+"-01",to=cityMonthEnd(month);
+  const from=month===today.slice(0,7)?today:month+"-01";
+  const to=month===today.slice(0,7)?dayAt(today,13):cityMonthEnd(month);
   useEffect(()=>{
     const controller=new AbortController();
     const params=new URLSearchParams({cityFrom:from,cityTo:to,cityPage:String(page),
