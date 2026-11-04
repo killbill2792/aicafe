@@ -147,7 +147,7 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
     }
    }
   }catch{calendarWarnings.push("oliviaDraftUnavailable");}
- }
+ }else calendarWarnings.push("oliviaDraftsDisabled");
  const calendarEntries=reconcileStaffCalendar(entries);
  const inWeek=mapped.filter(s=>s.date>=dates[0]&&s.date<=dates[6]);
  const displayTeam=peopleWithRetainedShifts(allEmployees,inWeek);
