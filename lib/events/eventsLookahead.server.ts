@@ -10,7 +10,7 @@ import {readEventDemandEvidence} from "@/lib/data/eventDemandEvidence.server";
 import {readCanonicalCafeEvents,readSavedEventTimeline,readCityResearchCoverage,type CafeEvent,type SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {cafeCountry,holidaysBetween,addDays,weekdayOf} from "./holidays";
-import {eventIdentity,eventScanWindows,savedEventKind,dailyCafeScanOrder,
+import {eventIdentity,cityScanWindows,savedEventKind,dailyCafeScanOrder,
   type EventScanState} from "./eventsLookahead";
 import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
@@ -105,9 +105,7 @@ export async function scanCafe(db:Db,b:Business,today:string,
   // a completed web search or prevent the initial search after address setup.
   const cityCoverage=location&&budget&&search===searchNearbyEvents&&location.city?
     await readCityResearchCoverage(db,b.id,today,addDays(today,13)):null;
-  const windows=cityCoverage?.status==="unsearched"?
-    [{from:today,to:addDays(today,13),reason:"initial" as const}]:
-    locationHash?eventScanWindows(today,state,locationHash):
+  const windows=locationHash?cityScanWindows(today,state,locationHash,cityCoverage?.status??null):
     [{from:today,to:addDays(today,13),reason:"initial" as const}];
   for(const range of windows){
     const now=new Date().toISOString();
