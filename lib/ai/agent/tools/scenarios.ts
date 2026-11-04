@@ -2,6 +2,7 @@ import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {resolveEntity,choicePayload,ownerNamedTarget,ownerChose} from "../resolve";
 import {simulateEconomics,type ScenarioDelta} from "@/lib/calc/supervisorEconomics";
+import {money,count,percent,type ExplainLine} from "../explain";
 const schema=z.strictObject({
  kind:z.enum(["bill","item_price","item_cost","shift","staff_wage","drinks","margin"]),
  itemId:z.uuid().nullable(),
@@ -92,13 +93,73 @@ export const scenarioTools={simulate_scenario:{
    }
   }
   const result=simulateEconomics(economics,delta);
+  // Explain the exact canonical what-if result; never recompute the business metric.
+  const explain:ExplainLine[]=[];
+  const add=(label:string,inputs:ExplainLine["inputs"],formula:ExplainLine["formula"],
+    value:number|null,basis:string)=>{
+    if(value===null)return;
+    explain.push({label,inputs,formula,result:money(value),period:null,
+      source:"scenario",provenance:"estimate",basis});
+  };
+  if(delta.kind==="price"){
+    const fee=economics.feeRate;
+    if(fee!==null&&result.weeklyChangeCents!==null){
+      add("Weekly price difference",[
+        {name:"New price",value:money(delta.newPriceCents)},
+        {name:"Old price",value:money(delta.oldPriceCents)}],
+        "subtract",delta.newPriceCents-delta.oldPriceCents,"projected");
+      add("Weekly gain after processing fees",[
+        {name:"New price",value:money(delta.newPriceCents)},
+        {name:"Old price",value:money(delta.oldPriceCents)},
+        {name:"Weekly units",value:count(delta.weeklyUnits)},
+        {name:"Processing fee rate",value:percent(Math.round(fee*10000))}],
+        "multiply",result.weeklyChangeCents,"projected");
+    }
+  }else if(delta.kind==="item_cost"){
+    add("Weekly item cost effect",[
+      {name:"Old cost",value:money(delta.oldCostCents)},
+      {name:"New cost",value:money(delta.newCostCents)},
+      {name:"Weekly units",value:count(delta.weeklyUnits)}],
+      "multiply",result.weeklyChangeCents,"projected");
+  }else if(delta.kind==="bill"){
+    add("Monthly bill effect",[{name:"Monthly bill change",value:money(delta.monthlyChangeCents)}],
+      "subtract",result.difference.monthlyProfitCents,"projected");
+  }else if(delta.kind==="shift"||delta.kind==="wage"){
+    add("Weekly staffing effect",delta.kind==="shift"?[
+      {name:"Hours change",value:count(delta.hoursChange)},
+      {name:"Shifts per week",value:count(delta.shiftsPerWeek)},
+      {name:"Hourly wage",value:money(delta.wageCents)},
+      {name:"Payroll tax",value:percent(Math.round(delta.payrollTaxRate*10000))}]:[
+      {name:"Weekly hours",value:count(delta.weeklyHours)},
+      {name:"Old wage",value:money(delta.oldWageCents)},
+      {name:"New wage",value:money(delta.newWageCents)},
+      {name:"Payroll tax",value:percent(Math.round(delta.payrollTaxRate*10000))}],
+      "multiply",result.weeklyChangeCents,"projected");
+  }else if(delta.kind==="drinks"){
+    if(economics.monthlyRevenue.valueCents!==null&&economics.ingredientRate!==null&&economics.feeRate!==null){
+      add("Monthly sales-volume effect",[
+        {name:"Monthly revenue",value:money(economics.monthlyRevenue.valueCents)},
+        {name:"Volume change",value:percent(Math.round(delta.changePercent*100))},
+        {name:"Ingredient rate",value:percent(Math.round(economics.ingredientRate*10000))},
+        {name:"Processing fee rate",value:percent(Math.round(economics.feeRate*10000))}],
+        "multiply",result.difference.monthlyProfitCents,"projected");
+    }
+  }
+  if(result.difference.monthlyProfitCents!==null&&result.weeklyChangeCents!==null&&
+      (delta.kind==="price"||delta.kind==="item_cost"||delta.kind==="shift"||delta.kind==="wage")){
+    add("Monthly equivalent of weekly change",[
+      {name:"Weekly change",value:money(result.weeklyChangeCents)},
+      {name:"Days in month",value:count(economics.daysInMonth)},
+      {name:"Days in week",value:count(7)}],
+      "prorate",result.difference.monthlyProfitCents,"projected");
+  }
   const observed=[result.before.monthlyProfitCents,
    result.before.monthlyTargetSalesCents,result.after.monthlyTargetSalesCents,result.before.monthlyBreakEvenCents,
    result.after.monthlyProfitCents,result.after.monthlyBreakEvenCents,
    result.difference.monthlyProfitCents,result.difference.monthlyBreakEvenCents,
    result.weeklyChangeCents,result.before.itemMarginCents,result.after.itemMarginCents];
   return {source:"scenario",period:null,agentId:"leo",status:"estimate",
-   input:delta,...result,numberEstimates:observed.filter((value):value is number=>value!==null)
+   input:delta,...result,explain,numberEstimates:observed.filter((value):value is number=>value!==null)
     .map(value=>({value,unit:"cents" as const,detail:"scenario"})),
    ...(result.after.drinksPerDay!==null?{numberEstimatesCounts:[result.after.drinksPerDay]}:{})};
  }
