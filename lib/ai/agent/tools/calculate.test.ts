@@ -4,7 +4,6 @@ import {schemas,executeAgentTool,agentToolDefinitions,type AgentToolContext,type
 import {SCREEN_NUMBERS,SCREEN_NUMBER_IDS} from "../screenNumbers";
 import {explainLineSchema} from "../explain";
 import {checkNumbers} from "../checkNumbers";
-import {classifyNeedsAsk} from "@/lib/ownerFacts/needsAsk";
 import {questionFromReasons} from "@/lib/ownerFacts/questions";
 
 const unavailable={available:false as const,value:null,quality:{level:"high" as const,missingInputs:["x"],estimatedInputs:[],staleInputs:[]}};
@@ -65,8 +64,8 @@ describe("calculate tool",()=>{
   it("a refusal never becomes an owner question",async()=>{
     const r=await calculateTools.calculate.execute({purpose:"x",screen_number:"none",
       inputs:[input("a","get_sales","totalCents")],steps:[{id:"y",label:"y",op:"sum",args:["a"]}]},ctx(turn));
-    expect(classifyNeedsAsk([r],"","")).toEqual([]);
-    expect(questionFromReasons(classifyNeedsAsk([r],"",""),[r],"","en",[])).toBeNull();
+    expect(r).toMatchObject({source:"calculate",missing:[],refused:"toolNotCalledThisTurn"});
+    expect(questionFromReasons([], [r], "", "en", [])).toBeNull();
   });
 });
 
