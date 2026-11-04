@@ -10,6 +10,7 @@ type Copy={howIGotThis:string;howCalculated:string;explainMissing:string;explain
  explainMultiply:string;explainSum:string;explainDivide:string;explainRatio:string;explainProrate:string;explainSubtract:string};
 const connector:Record<ExplainLine["formula"],string>={
  multiply:"×",sum:"+",divide:"÷",ratio:"÷",prorate:"×",subtract:"−",breakEven:"÷",
+ scenarioPrice:"×",scenarioCost:"×",scenarioShift:"×",scenarioWage:"×",scenarioVolume:"×",scenarioProrate:"÷",
 };
 const localeFormat:Record<Locale,string>={en:"en-US",es:"es-ES",ar:"ar"};
 function basisLabel(key:string,locale:Locale,provenance:ExplainLine["provenance"]):string{
@@ -82,18 +83,31 @@ export default function HowIGotThis({lines,locale,copy,currency}:{
  if(!lines.length)return null;
  return <details dir={locale==="ar"?"rtl":"ltr"} className="rounded-xl border border-line bg-surface2 text-ink">
    <summary className="flex min-h-12 cursor-pointer items-center rounded-xl px-4 py-3 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{lines.some(line=>line.source==="suggest_new_item_price")?copy.howCalculated:copy.howIGotThis}</summary>
-   <div className="space-y-3 border-t border-line px-4 py-3">{lines.map((line,i)=><p key={i} className="break-words text-[17px] leading-relaxed">
+   <div className="space-y-3 border-t border-line px-4 py-3">{lines.map((line,i)=>{
+     const shown=(index:number)=>formatCardValue(line.inputs[index].value,locale,currency);
+     return <p key={i} className="break-words text-[17px] leading-relaxed">
      <span className="font-semibold">{localizedLabel(line.label,locale)}: </span>
      {line.formula==="breakEven"&&line.inputs.length===5?
        <bdi dir="ltr">(
          {line.inputs.slice(0,2).map((item,j)=><span key={j}>
            {j>0?" + ":""}{localizedLabel(item.name,locale)}: {formatCardValue(item.value,locale,currency)}
          </span>)}
-       ) × {localizedLabel(line.inputs[2].name,locale)}: {formatCardValue(line.inputs[2].value,locale,currency)}
-       {" ÷ ("}
-       {" − "}{localizedLabel(line.inputs[3].name,locale)}: {formatCardValue(line.inputs[3].value,locale,currency)}
-       {" − "}{localizedLabel(line.inputs[4].name,locale)}: {formatCardValue(line.inputs[4].value,locale,currency)}
-       {") = "}{formatCardValue(line.result,locale,currency)}</bdi>:
+       ) {" ÷ (1 − (("}{localizedLabel(line.inputs[3].name,locale)}: {shown(3)}
+       {" + "}{localizedLabel(line.inputs[4].name,locale)}: {shown(4)}
+       {") ÷ "}{localizedLabel(line.inputs[2].name,locale)}: {shown(2)}
+       {")) = "}{formatCardValue(line.result,locale,currency)}</bdi>:
+     line.formula==="scenarioPrice"&&line.inputs.length===4?
+       <bdi dir="ltr">({shown(0)} − {shown(1)}) × {shown(2)} × (1 − {shown(3)}) = {formatCardValue(line.result,locale,currency)}</bdi>:
+     line.formula==="scenarioCost"&&line.inputs.length===3?
+       <bdi dir="ltr">({shown(0)} − {shown(1)}) × {shown(2)} = {formatCardValue(line.result,locale,currency)}</bdi>:
+     line.formula==="scenarioShift"&&line.inputs.length===4?
+       <bdi dir="ltr">−({shown(0)} × {shown(1)} × {shown(2)} × (1 + {shown(3)})) = {formatCardValue(line.result,locale,currency)}</bdi>:
+     line.formula==="scenarioWage"&&line.inputs.length===4?
+       <bdi dir="ltr">−({shown(0)} × ({shown(2)} − {shown(1)}) × (1 + {shown(3)})) = {formatCardValue(line.result,locale,currency)}</bdi>:
+     line.formula==="scenarioVolume"&&line.inputs.length===4?
+       <bdi dir="ltr">{shown(0)} × {shown(1)} × (1 − {shown(2)} − {shown(3)}) = {formatCardValue(line.result,locale,currency)}</bdi>:
+     line.formula==="scenarioProrate"&&line.inputs.length===3?
+       <bdi dir="ltr">{shown(0)} × {shown(1)} ÷ {shown(2)} = {formatCardValue(line.result,locale,currency)}</bdi>:
      line.source==="milk_swap"&&line.inputs.length===3&&line.inputs[2].name==="roundingStepCents"?
        <><span className="text-ink-muted">{({en,es,ar}[locale]).OwnerQuestions.howRoundUp}: </span>
        <bdi dir="ltr">ceil(max(0, {formatCardValue(line.inputs[0].value,locale,currency)}) ÷ {formatCardValue(line.inputs[1].value,locale,currency)} ÷ {formatCardValue(line.inputs[2].value,locale,currency)}) × {formatCardValue(line.inputs[2].value,locale,currency)} {"="} {formatCardValue(line.result,locale,currency)}</bdi></>:
@@ -110,6 +124,6 @@ export default function HowIGotThis({lines,locale,copy,currency}:{
      {line.provenance!=="recorded"&&<span className="ms-2 rounded-full bg-surface px-2 py-1 text-sm font-semibold text-ink-muted">
        {line.provenance==="ownerProvided"?copy.explainYouToldMe:line.provenance==="missing"?copy.explainMissing:copy.explainEstimate}
      </span>}
-   </p>)}</div>
+   </p>;})}</div>
  </details>;
 }
