@@ -1052,13 +1052,13 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
   return Math.abs(expected-toCents(v))<=1;
 }
 
-/** Shared owner-number rule: calculate must not accept invented model inputs. */
-export function ownerStatedAmounts(ownerText:string,locale:AgentLocale):Record<Kind,Set<number>>{
+/** Shared owner-number rule. Duration inclusion is opt-in for calculator inputs only;\n * reply verification keeps duration evidence scoped to its stated unit. */
+export function ownerStatedAmounts(ownerText:string,locale:AgentLocale,includeDurations=false):Record<Kind,Set<number>>{
   const allowed:Record<Kind,Set<number>>={money:new Set(),percent:new Set(),number:new Set()};
   const ownerNumbers=candidates(ownerText,locale);
-  ownerNumbers.forEach(v=>{if(!v.durationUnit)allowed[v.kind].add(v.value);});
+  ownerNumbers.forEach(v=>{if(includeDurations||!v.durationUnit)allowed[v.kind].add(v.value);});
   const ownerSpoken=spokenOwnerValues(ownerText,locale);
-  for(const spoken of ownerSpoken)if(!spoken.durationUnit)allowed[spoken.kind].add(spoken.value);
+  for(const spoken of ownerSpoken)if(includeDurations||!spoken.durationUnit)allowed[spoken.kind].add(spoken.value);
   for(const v of ownerNumbers){
     if(v.kind!=="number"||v.durationUnit)continue;
     const before=ownerText.slice(Math.max(0,v.start-90),v.start);
