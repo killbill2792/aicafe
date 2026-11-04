@@ -54,6 +54,13 @@ describe("Staff grid day, worker and week labor parity",()=>{
   const other=projectVisibleStaffWeek({shifts:[olivia],calendarEntries:[]});
   expect(other.hoursComplete).toBe(true);
   expect(other.toastAffectedEmployeeIds.has("amy")).toBe(false);
+  const unlinked=projectVisibleStaffWeek({shifts:[overtimeWeek],
+   calendarEntries:[{...entry("unlinked","2026-11-09","11:00","19:00","toast_planned"),
+    employeeId:null,employeeName:"Unknown Toast worker"}]});
+  expect(unlinked.hoursComplete).toBe(false);
+  expect(unlinked.toastAffectedEmployeeIds.has("amy")).toBe(true);
+  expect(unlinked.laborShifts).toEqual([]);
+
  });
  it("does not exclude Olivia revision drafts on days without Toast",()=>{
   const projection=projectVisibleStaffWeek({shifts:[],calendarEntries:[
