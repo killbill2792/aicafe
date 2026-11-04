@@ -139,7 +139,7 @@ describe("How I got this disclosure",()=>{
     expect(html).toContain(messages.OwnerQuestions.scenarioWeeklyPriceGain);
     for(const english of ["Weekly price difference","Weekly gain after processing fees","New price","Old price",
       "Weekly units","Processing fee rate"])expect(html).not.toContain(english);
-    expect(html).toContain("4,15".replace(",",locale==="ar"?"٫":"," ).slice(0,1));
+    expect(html).toContain("× (1 − ");
   });
  it("shows the exact core break-even equation, with each displayed input once",()=>{
   const breakEven=calculateBreakEvenSales({monthlyBillsCents:14000,monthlyStaffCents:6915,
