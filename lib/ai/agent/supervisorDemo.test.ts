@@ -113,7 +113,7 @@ describe("Supervisor owner demo: shared model and core metric paths",()=>{
     expect(result.days).toEqual([{date:"2026-11-03",netSalesCents:125396,provisional:true}]);
     expect(result.readAt).toBe("2026-11-03T19:00:00Z");
     expect(result.stale).toBe(true);
-    expect(result.freshnessLabel).toMatch(/^last updated \\d{2}:\\d{2}$/);
+    expect(result.freshnessLabel).toMatch(/^last updated \d{2}:\d{2}$/);
   });
   it("get_labor returns a percentage calculated by the existing core, with covered days",async()=>{
     const ctx=context();
