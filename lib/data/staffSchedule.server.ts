@@ -28,7 +28,7 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
  const owner=await staffReadScope(explicit);if(!owner.ok)return {ok:false as const,error:"unauthorized"};
  const dates=Array.from({length:7},(_,i)=>plusDays(p.data.weekStart,i));
  if(!owner.supabase||owner.businessId===DEMO_BUSINESS_ID)return {ok:true as const,data:{
-  dates,weekStart:p.data.weekStart,team:[],displayTeam:[],shifts:[],posShifts:[],calendarEntries:[] as CalendarEntry[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
+  dates,weekStart:p.data.weekStart,team:[],displayTeam:[],shifts:[],posShifts:[],calendarEntries:[] as CalendarEntry[],calendarWarnings:[] as string[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
   gaps:[],adjacentShifts:[],posScheduleError:null,openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],profileAvailability:[],readOnly:true,timezone:owner.timezone,countryCode:null as string|null
  }};
  // Start the optional external planned-shift read alongside the independent
@@ -84,11 +84,13 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
  });
  // Preserve POS evidence as evidence, not paid schedule estimates. The calendar
  // uses the SAME authorized owner scope as the existing staff reader.
+ const calendarWarnings:string[]=[];
  const supervisorOliviaDates=new Set(mapped.filter(s=>s.source==="olivia"&&s.status==="draft")
    .map(s=>s.date));
  const entries:CalendarEntry[]=posShifts.map(s=>({
   id:"toast-planned:"+s.id,employeeId:s.employeeId,employeeName:s.employeeName,
   date:formatInTimeZone(new Date(s.start),owner.timezone,"yyyy-MM-dd"),
+  endDate:formatInTimeZone(new Date(s.end),owner.timezone,"yyyy-MM-dd"),
   start:formatInTimeZone(new Date(s.start),owner.timezone,"HH:mm"),
   end:formatInTimeZone(new Date(s.end),owner.timezone,"HH:mm"),source:"toast_planned"
  }));
@@ -113,11 +115,12 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
    const person=allEmployees.find(p=>p.id===row.employee_id);
    entries.push({id:"toast-actual:"+row.id,employeeId:row.employee_id,
     employeeName:person?.name??"Toast team member",date,
+    endDate:row.clock_out?formatInTimeZone(new Date(row.clock_out),owner.timezone,"yyyy-MM-dd"):date,
     start:formatInTimeZone(new Date(row.clock_in),owner.timezone,"HH:mm"),
     end:row.clock_out?formatInTimeZone(new Date(row.clock_out),owner.timezone,"HH:mm"):"…",
     source:"toast_actual"});
   }
- }catch{/* Optional attendance read cannot erase known planned data. */}
+ }catch{calendarWarnings.push("toastActualUnavailable");}
  if(process.env.SCHEDULING_FOUNDATION_ENABLED==="true"&&
     process.env.SCHEDULING_PR3_DRAFTS_ENABLED==="true"){
   try {
@@ -143,7 +146,7 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
      }
     }
    }
-  }catch{/* Unavailable Olivia history must not hide Toast evidence. */}
+  }catch{calendarWarnings.push("oliviaDraftUnavailable");}
  }
  const calendarEntries=reconcileStaffCalendar(entries);
  const inWeek=mapped.filter(s=>s.date>=dates[0]&&s.date<=dates[6]);
@@ -151,7 +154,7 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
  const total=aggregateCosts(inWeek),gaps=coverageGaps(dates,mapped,openHours,
    ruleResult.data.coverage_enabled?ruleResult.data.min_headcount:0);
  return {ok:true as const,data:{
-   dates,team,displayTeam,shifts:inWeek,posShifts,calendarEntries,posScheduleError,adjacentShifts:mapped.filter(s=>s.date<dates[0]||s.date>dates[6]),total,gaps,openHours,
+   dates,team,displayTeam,shifts:inWeek,posShifts,calendarEntries,calendarWarnings,posScheduleError,adjacentShifts:mapped.filter(s=>s.date<dates[0]||s.date>dates[6]),total,gaps,openHours,
    currency:owner.currency,rules:ruleResult.data,
    availability:availability.data??[],profileAvailability:profileAvailability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone,countryCode:profile.data?.country_code??null
  }};
