@@ -120,7 +120,8 @@ export const staffTools = {
         ctx.tools.getOwnerMonthlyPayrollExtras?.().catch(()=>failedSlice("payrollExtrasReadFailed")),
         ctx.tools.getToastScopeCoverage?.().catch(()=>failedSlice("toastScopeReadFailed")),
         ctx.tools.getPosImportReviews?.().catch(()=>failedSlice("posStaffReviewsReadFailed")),
-        ctx.tools.getSalesTrend(p).catch(()=>failedSlice("salesReadFailed")),
+        ctx.tools.getSalesTrend?.(p).catch(()=>failedSlice("salesReadFailed"))??
+          Promise.resolve(failedSlice("salesReaderUnavailable")),
       ]);
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
         ...(labor.available?labor.value.filter(d=>d.wageStatus==="missing"||d.wagesCents===null||d.staffTaxCents===null)
@@ -154,7 +155,10 @@ export const staffTools = {
       const laborCostPercent=laborBasis&&salesCents!==null&&laborBasis.coveredDays>0?
         laborPercentForPeriod(laborBasis.knownLaborCents,salesCents):null;
       return {source:"labor_and_attendance",period:p,agentId:"olivia",dataNotes,
-        laborCostPercent,laborCostPercentBasis:laborBasis?.basis??null,
+        laborCostPercent,
+        laborCostPercentDisplay:laborCostPercent===null?null:
+          new Intl.NumberFormat(ctx.locale,{style:"percent",maximumFractionDigits:1}).format(laborCostPercent),
+        laborCostPercentBasis:laborBasis?.basis??null,
         laborCostPercentKnownLaborCents:laborBasis?.knownLaborCents??null,
         laborCostPercentSalesCents:salesCents,
         laborCostPercentCoveredDays:laborBasis?.coveredDays??null,
