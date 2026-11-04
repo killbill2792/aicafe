@@ -129,9 +129,17 @@ function isoDate(s:string|null|undefined):string|null{
 function known(w:Record<string,number>,value:string|null|undefined,allowed:readonly string[]){
  if(value&&!allowed.includes(value))warn(w,"unknown_shape");
 }
+/** A discount staff applied and then removed: Toast keeps it with processingState
+ * VOID. The same rule is used by the database (migration 150). */
+export function isRemovedToastDiscount(d:unknown):boolean{
+ return Boolean(d)&&typeof d==="object"&&(d as Record<string,unknown>).processingState==="VOID";
+}
 function addDiscounts(ds:z.infer<typeof discount>[]|null|undefined,checkLevel:boolean,w:Record<string,number>):number{
  let result=0;
  for(const d of ds??[]){
+  // A discount removed at the register stays on the order with processingState
+  // VOID (Toast's own reports leave it out). It never reduced the price.
+  if(isRemovedToastDiscount(d))continue;
   // Check-level discounts use discountAmount. Tax-inclusive selections use
   // the non-tax portion to avoid treating a tax adjustment as a sale.
   const value=checkLevel?d.discountAmount:d.nonTaxDiscountAmount??d.discountAmount;

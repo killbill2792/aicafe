@@ -98,3 +98,11 @@ screens and chat read the same tables and must not change.
    with status `provisional`. The job never writes to an imported day or to a record an import has staged.
    Storage: the records the import would write at 5 AM anyway, a few hours earlier. Check:
    `scripts/toast-live-archive-sql-integration.sql`.
+9. **Migration 150: discounts removed at the register are not counted (owner, Nov 4).** Toast keeps a discount
+   that staff applied and removed, with `processingState: "VOID"`; Toast's reports leave it out. We counted it
+   (Nov 2: 6 student discounts instead of Toast's 5, $6.69 instead of $5.81). Seiyun history: 4 such discounts
+   ($12.39) on Aug 30, Sep 14, Oct 19, Nov 2. Net sales were never affected. One rule everywhere: the day parser
+   (`isRemovedToastDiscount`, also used by today's live total), typed order details (rebuilt for affected orders),
+   and the AI's Toast records (kept, `counts_in_sales = false`). **After it ships:** re-import those 4 days
+   (one-day backfills) so their order and day discount totals are corrected. Check:
+   `scripts/toast-removed-discounts-sql-integration.sql`, `lib/pos/toast/removedDiscounts.test.ts`.
