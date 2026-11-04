@@ -1,12 +1,12 @@
 import {describe,it,expect,vi,beforeEach} from "vitest";
-const mocks=vi.hoisted(()=>({preview:vi.fn()}));
-vi.mock("@/lib/actions/oliviaPlanning",()=>({previewOliviaWeek:mocks.preview}));
+const mocks=vi.hoisted(()=>({preview:vi.fn(),ownerSavings:vi.fn()}));
+vi.mock("@/lib/actions/oliviaPlanning",()=>({previewOliviaWeek:mocks.preview,previewOliviaOwnerSavings:mocks.ownerSavings}));
 import {draftScheduleTools} from "./draftSchedule";
 import type {AgentToolContext} from "./index";
 const ctx:AgentToolContext={asOf:"2026-11-03",timezone:"America/Los_Angeles",locale:"en",
  tools:{} as AgentToolContext["tools"]};
 describe("Supervisor delegates to one Olivia scheduler",()=>{
- beforeEach(()=>mocks.preview.mockReset());
+ beforeEach(()=>{mocks.preview.mockReset();mocks.ownerSavings.mockReset();});
  it("previews Olivia and returns proposal-ready assignments without writing",async()=>{
   mocks.preview.mockResolvedValue({ok:true,locations:{location:"America/Los_Angeles"},
    notices:[],plan:{status:"feasible",horizonEnd:"2026-11-15",
@@ -39,6 +39,25 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   expect(result.proposedShifts).toHaveLength(14);
   expect(result).toMatchObject({proposalId:"22222222-2222-4222-8222-222222222222",
    approvalTool:"existing_card_created"});
+ });
+ it("answers zero-pay owner savings with no approval proposal",async()=>{
+  mocks.ownerSavings.mockResolvedValue({ok:true,
+   period:{from:"2026-11-09",to:"2026-11-15"},
+   baselineCashWagesCents:4000,withOwnerCashWagesCents:0,
+   savingsCents:4000,ownerMinutes:120,completeCoverage:true,
+   replacementRows:[{startAt:"2026-11-09T17:00:00Z",
+    endAt:"2026-11-09T19:00:00Z",paidMinutes:120,
+    baselineWorker:"Barista",baselineHourlyWageCents:2000}],
+   assumptions:[],warnings:[],notices:[],locations:{main:"America/Los_Angeles"}});
+  const proposeStaff=vi.fn();
+  const result=await draftScheduleTools.draft_week_schedule.execute(
+   {week_start:"2026-11-09",purpose:"owner_savings"},
+   {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+  expect(result).toMatchObject({source:"olivia_owner_what_if",
+   savingsCents:4000,approvalTool:"not_created",saved:false});
+  expect(proposeStaff).not.toHaveBeenCalled();
+  expect(mocks.preview).not.toHaveBeenCalled();
+  expect(mocks.ownerSavings).toHaveBeenCalledExactlyOnceWith({week:"2026-11-09"});
  });
  it("honors foundation feature gates without retrying a parallel scheduler",async()=>{
   mocks.preview.mockResolvedValue({ok:false,error:"disabled"});
