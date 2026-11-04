@@ -105,12 +105,12 @@ describe("agent route with background jobs enabled", () => {
     expect(fake.loopArgs[0]).toHaveProperty("ownerText");
     expect(typeof fake.loopArgs[0].takeFollowUps).toBe("function");
   });
-  it("folds a mid-run follow-up into the same answer", async () => {
+  it("keeps a mid-run owner question separate from the first answer", async () => {
     fake.followUps = [{ id: "77777777-7777-4777-8777-777777777777", text: "and oat milk?" }];
     const out = events(await (await post()).text());
-    expect(out.at(-1)!.data.absorbedOwnerMessageIds).toEqual(["77777777-7777-4777-8777-777777777777"]);
-    expect(fake.finished).toEqual([{ id: JOB, status: "done", replyMessageId: "reply-msg-1",
-      absorbedOwnerMessageIds: ["77777777-7777-4777-8777-777777777777"] }]);
+    expect(out.at(-1)!.data.absorbedOwnerMessageIds).toEqual([]);
+    expect(fake.finished).toEqual([{ id: JOB, status: "done", replyMessageId: "reply-msg-1" }]);
+    expect(fake.followUps).toEqual([{ id: "77777777-7777-4777-8777-777777777777", text: "and oat milk?" }]);
   });
   it("attaches a message sent while a turn is running and closes at once", async () => {
     fake.mode = "attached";

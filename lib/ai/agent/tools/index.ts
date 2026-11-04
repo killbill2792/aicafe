@@ -6,6 +6,7 @@ import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerCh
 
 import {money,count} from "../explain";
 import { staffTools } from "./staff";
+import {localizeQualityNotes} from "./qualityNotes";
 import { attentionTools } from "./attention";
 import {scheduleReadTools} from "./scheduleReads";
 import { hoursTools } from "./hours";
@@ -26,6 +27,7 @@ import {moneyChoiceCandidates,chosenMoneySource,replayedMoneyChoice} from "../re
 import {staffProposalTools} from "./staffProposals";
 import {memoryTools,type CafeMemoryPort} from "./memory";
 import {scenarioTools} from "./scenarios";
+import {calculateTools} from "./calculate";
 import {eventsTools} from "./events";
 import {savedEventsTools} from "./getEvents";
 import {eventPlanTools,type EventPlanPort} from "./eventPlan";
@@ -56,6 +58,8 @@ export type AgentToolContext = {
   canonicalData?:()=>Promise<DataQueryContext>;
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
+  ownerText?:string;
+  turnResults?:()=>ReadonlyArray<{name:string;result:AgentToolResult}>;
   resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;
@@ -97,7 +101,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -127,7 +131,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
-  get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar live provisional reading is attached when today is not imported.",
+  get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
   get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
 };
 /** OpenAI strict mode needs every property listed in `required` at every nesting level;
@@ -157,31 +161,6 @@ export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
-/** Present the shared Toast trust keys as ONE localized note per issue, while
- * retaining machine-readable missingInputs for existing quality consumers. */
-function localizeQualityNotes(keys:readonly string[],locale:AgentLocale):string[]{
- const copy={en,es,ar}[locale].DataNotes;
- const notes:string[]=[];
- for(const key of keys){
-  const match=/^toastDaysNeedLook:(\d+):([^:]+):(\d+)$/.exec(key);
-  if(match){
-   const extra=Number(match[3]);
-   notes.push(copy.toastDaysNeedLook.replace("{count}",match[1])
-    .replace("{dates}",match[2].replaceAll(", ",", ").replaceAll(",",", "))
-    .replace("{more}",extra?copy.toastMoreDays.replace("{count}",String(extra)):""));
-  }else if(key.startsWith("toastImportIncompleteDays:")){
-   const match=/^toastImportIncompleteDays:(\d+):([^:]+):(\d+)$/.exec(key);
-   if(match)notes.push(copy.toastImportIncompleteDays.replace("{count}",match[1])
-    .replace("{dates}",match[2].replaceAll(",",", "))
-    .replace("{more}",Number(match[3])?copy.toastMoreDays.replace("{count}",match[3]):""));
-  }else if(key==="toastDayStatusUnavailable")notes.push(copy.toastDayStatusUnavailable);
-  else if(key.startsWith("toastFailedNoCanonicalSales:"))
-   notes.push(copy.toastFailedNoCanonicalSales.replace("{dates}",key.slice("toastFailedNoCanonicalSales:".length).replaceAll(",",", ")));
-  else if(key.startsWith("toastDayStatusMissing:"))
-   notes.push(copy.toastDayStatusMissing.replace("{dates}",key.slice("toastDayStatusMissing:".length).replaceAll(",",", ")));
- }
- return [...new Set(notes)];
-}
 export const requestedPeriod=calcRequestedPeriod;
 
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
@@ -209,6 +188,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
   if(name==="milk_swap_price")return milkSwapTools.milk_swap_price.execute(raw,ctx);
   if(name==="simulate_scenario")return scenarioTools.simulate_scenario.execute(raw,ctx);
+  if(name==="calculate")return calculateTools.calculate.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
    if(name==="propose_purchases")return purchasesTools.propose_purchases.execute(raw,ctx);
   if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);
@@ -415,7 +395,29 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name!=="get_sales")throw new ToolError("not_supported");
   const slice=await ctx.tools.getSalesTrend(period);
   const salesNotes=localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale);
+  const liveToday=selection.todaySoFar?.available===true&&
+    period.from===ctx.asOf&&period.to===ctx.asOf&&
+    selection.todaySoFar.businessDate===period.from&&!selection.todayImported?
+    selection.todaySoFar:null;
+  if(!slice.available&&liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
+    coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
+    todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,
+    lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
+    provisional:true,readAt:liveToday.readAt,stale:liveToday.stale,
+    lastUpdated:liveToday.lastUpdated,freshnessLabel:liveToday.freshnessLabel,
+    missing:liveToday.missing,
+    netSalesCents:liveToday.netSalesCents,
+    days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
+    todaySoFar:liveToday};
   if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:salesNotes,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar};
+  if(liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
+    coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
+    todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,
+    lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
+    provisional:true,readAt:liveToday.readAt,missing:liveToday.missing,
+    netSalesCents:liveToday.netSalesCents,
+    days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
+    todaySoFar:liveToday};
   return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,agentId:"alex",unit:"cents",
     missing:slice.quality.missingInputs,dataNotes:salesNotes,netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};

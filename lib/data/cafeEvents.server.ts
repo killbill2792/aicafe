@@ -1,7 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {readPrimaryLocation} from "./cafeLocation.server";
-import {cityScopeKey} from "@/lib/events/cityEventIdentity";
+import {cityScopeKey,canonicalEventNameKey} from "@/lib/events/cityEventIdentity";
 import {readOwnerProposals,readOwnerReports,type OwnerScope} from "@/lib/ai/supervisor/loop/reads.server";
 
 export type CafeEvent={
@@ -85,7 +85,7 @@ export async function readEventChecklist(db:SupabaseClient,businessId:string,
 export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
   from:string,to:string,options:{cityEventId?:string}={}):Promise<SavedEventTimeline>{
  assertRange(from,to);
- const [events,proposals,cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage]=await Promise.all([
+ const [events,proposals,cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage,location]=await Promise.all([
    readCanonicalCafeEvents(db,scope.businessId,from,to),
    readOwnerProposals(db,scope,{capabilityId:"alex.event_readiness.v1",limit:200}),
    readCityEventCatalog(db,scope.businessId,from,to,
@@ -93,6 +93,7 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
    readCafeNeighborhoodEvidence(db,scope.businessId),
    readCityResearchCoverage(db,scope.businessId,from,to),
    readNeighborhoodResearchCoverage(db,scope.businessId),
+   readPrimaryLocation(db,scope.businessId),
  ]);
  const plans=proposals.flatMap(p=>{
    const effect=p.canonical_effect_payload as Record<string,unknown>|null;
@@ -102,7 +103,8 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
  });
  const reports=await readOwnerReports(db,scope,plans.map(x=>x.p.id),{limit:200});
  const byProposal=new Map(reports.map(r=>[r.proposal_id,r]));
- return {events,cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage,plans:plans.map(({p,effect})=>{
+ return {events:visibleCafeEventListings(events,from,to,location),
+   cityCatalog,neighborhood,cityCoverage,neighborhoodCoverage,plans:plans.map(({p,effect})=>{
    const report=byProposal.get(p.id);
    return {proposalId:p.id,threadId:p.thread_id,status:p.status,revision:p.revision,
      startDate:String(effect.startDate),endDate:String(effect.endDate),
@@ -348,11 +350,93 @@ export async function readCafeEvents(db:SupabaseClient,businessId:string,
   const extended:CafeEvent[]=[];
   for(let i=0;i<ids.length;i+=100)
     extended.push(...await readStoredCafeEvents(db,businessId,from,to,ids.slice(i,i+100)));
-  const canonical=await overlayCityFacts(db,businessId,[...raw,...extended]);
-  return canonical.filter(e=>e.startDate<=to&&e.endDate>=from);
+  // Canonical facts are never filtered or deduplicated: scheduled verification,
+  // monitoring and alerts must see every saved identity, including remote ones.
+  return overlayCityFacts(db,businessId,[...raw,...extended]);
 }
 export const readCanonicalCafeEvents=readCafeEvents;
 
+
+
+/** A 50 km area around the café when both positions are genuinely available.
+ * Current location/event tables do not require geocoded positions, so do not
+ * invent them: use the stored region fallback when either is missing. */
+export const CAFE_EVENT_RADIUS_KM=50;
+type EventGeo={latitude?:number|null;longitude?:number|null};
+type LocationArea={city:string|null;region:string|null}&EventGeo;
+type EventArea=Pick<CafeEvent,"venueAddress"|"areaLabel">&EventGeo;
+const validGeo=(p:EventGeo):p is {latitude:number;longitude:number}=>
+  typeof p.latitude==="number"&&typeof p.longitude==="number"&&
+  Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)&&
+  Math.abs(p.latitude)<=90&&Math.abs(p.longitude)<=180;
+export function cafeEventDistanceKm(a:{latitude:number;longitude:number},
+ b:{latitude:number;longitude:number}):number{
+  const radians=(d:number)=>d*Math.PI/180;
+  const phi1=radians(a.latitude),phi2=radians(b.latitude);
+  const dLat=radians(b.latitude-a.latitude),dLon=radians(b.longitude-a.longitude);
+  const haversine=Math.sin(dLat/2)**2+Math.cos(phi1)*Math.cos(phi2)*Math.sin(dLon/2)**2;
+  return 6371*2*Math.asin(Math.min(1,Math.sqrt(haversine)));
+}
+/** No cross-city exclusion for neighbouring municipalities in the same region. */
+export function cafeEventInArea(event:EventArea,location:LocationArea|null):boolean{
+  if(!location)return true;
+  if(validGeo(event)&&validGeo(location))
+    return cafeEventDistanceKm(location,event)<=CAFE_EVENT_RADIUS_KM;
+  const address=event.venueAddress?.split(",").map(part=>part.trim()).filter(Boolean)??[];
+  if(address.length<3||!location.region)return true;
+  const clean=(value:string)=>value.normalize("NFKD").replace(/\p{M}/gu,"").toLowerCase()
+    .replace(/[^a-z0-9]/gu,"");
+  // A final US/USA/United States segment is country, not the state.
+  const tail=clean(address.at(-1)??"");
+  const regionPart=["us","usa","unitedstates","unitedstatesofamerica"].includes(tail)
+    ?address.at(-2):address.at(-1);
+  // ZIP belongs to the address, never to the region. If an unknown numeric
+  // suffix remains, do not infer a different state and hide a local event.
+  const regionName=(regionPart??"").replace(/\s+\d{5}(?:-\d{4})?$/u,"").trim();
+  if(/\d/u.test(regionName))return true;
+  const cafeRegion=clean(location.region),eventRegion=clean(regionName);
+  if(!cafeRegion||!eventRegion)return true;
+  // Reject only a verified difference between comparable region formats:
+  // 'CA' vs 'California' cannot be conclusively compared without geocoding.
+  const comparable=(cafeRegion.length===2&&eventRegion.length===2)||
+    (cafeRegion.length>2&&eventRegion.length>2);
+  return !comparable||cafeRegion===eventRegion;
+}
+
+/** Display projection over the ONE saved Events reader. Stored facts and
+ * approval identities are unchanged; unknown geography is never discarded. */
+export function visibleCafeEventListings(canonical:readonly CafeEvent[],from:string,to:string,
+  location:LocationArea|null):CafeEvent[]{
+  const events=canonical.filter(e=>e.startDate<=to&&e.endDate>=from)
+    .filter(e=>cafeEventInArea(e,location));
+  const visible:CafeEvent[]=[];
+  for(const event of events){
+    const duplicateIndex=visible.findIndex(existing=>{
+      if(existing.startDate!==event.startDate||
+        canonicalEventNameKey(existing.name)!==canonicalEventNameKey(event.name))return false;
+      // Different canonical city IDs are distinct events even if titles match.
+      if(existing.cityEventId&&event.cityEventId&&existing.cityEventId!==event.cityEventId)
+        return false;
+      const clean=(value:string)=>value.normalize("NFKC").trim().toLowerCase();
+      // Contradictory known venues or addresses prevent merging.
+      if(existing.venue&&event.venue&&clean(existing.venue)!==clean(event.venue))return false;
+      if(existing.venueAddress&&event.venueAddress&&
+        clean(existing.venueAddress)!==clean(event.venueAddress))return false;
+      if(existing.cityEventId&&existing.cityEventId===event.cityEventId)return true;
+      if(existing.sourceUrl&&existing.sourceUrl===event.sourceUrl)return true;
+      // Distinct sources corroborate an identity only with the same named
+      // venue AND the same address, as in cityEventIdentity.
+      return !!existing.venue&&!!event.venue&&!!existing.venueAddress&&!!event.venueAddress&&
+        clean(existing.venue)===clean(event.venue)&&
+        clean(existing.venueAddress)===clean(event.venueAddress);
+    });
+    if(duplicateIndex<0){visible.push(event);continue;}
+    const previous=visible[duplicateIndex];
+    if(Number(Boolean(event.lastVerifiedAt))>Number(Boolean(previous.lastVerifiedAt))||
+      (!previous.cityEventId&&!!event.cityEventId))visible[duplicateIndex]=event;
+  }
+  return visible;
+}
 
 /** Private neighborhood scope freshness, through the sole owner Events facade. */
 export async function readNeighborhoodResearchCoverage(db:SupabaseClient,businessId:string):

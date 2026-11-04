@@ -32,12 +32,17 @@ export const savedEventsTools={
      result.cityCatalog?.items.find(e=>e.id===v.cityEventId)??null:null;
    return {source:"cafe_events",period:{from:v.from,to:v.to},
      missing:v.cityEventId&&!selectedCityEvent?["selectedCityEventNotFound"]:[],
-     agentId:"alex",unit:"cents",events:result.events.slice(0,8),
+     agentId:"alex",unit:"cents",events:[...result.events].sort((a,b)=>
+       (a.startDate&&b.startDate?a.startDate.localeCompare(b.startDate):0)||
+       Number(Boolean(b.lastVerifiedAt))-Number(Boolean(a.lastVerifiedAt)))
+       .slice(0,8),
      ...(v.cityEventId?{selectedCityEvent,
        selectedCityEventId:v.cityEventId}:{}),
      // Same canonical saved read as Home; city catalog is paginated for screens.
      ...(result.cityCatalog?.available?{
-       cityEvents:result.cityCatalog.items.slice(0,6),
+       cityEvents:[...result.cityCatalog.items].sort((a,b)=>
+         (a.startDate&&b.startDate?a.startDate.localeCompare(b.startDate):0)||
+       Number(Boolean(b.lastVerifiedAt))-Number(Boolean(a.lastVerifiedAt))).slice(0,6),
        cityEventTotal:result.cityCatalog.total,
        cityEventPage:result.cityCatalog.page,
        omittedCityEvents:Math.max(0,result.cityCatalog.total-6),

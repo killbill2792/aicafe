@@ -27,6 +27,11 @@ export function answeredOwnerMessageIds(messages: ConversationMessage[]): Set<st
   return ids;
 }
 
+/** A finished owner reply takes precedence over a stale running-job badge. */
+export function shouldShowRunningJob(job:AgentJob|null,messages:ConversationMessage[]):boolean{
+  return job?.status==="running"&&!answeredOwnerMessageIds(messages).has(job.ownerMessageId);
+}
+
 /** Owner messages a running job will still answer; never show "failed" for them. */
 export function inFlightOwnerMessageIds(job: AgentJob | null, extra: Iterable<string> = []): Set<string> {
   const ids = new Set(extra);

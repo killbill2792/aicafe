@@ -21,7 +21,7 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
 import {readSupervisorEconomics} from "@/lib/data/supervisorEconomics.server";
-import {todaySoFarForBusiness} from "@/lib/data/todayLive.server";
+import {todaySoFarForBusiness,TODAY_LIVE_FRESH_MS} from "@/lib/data/todayLive.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
@@ -143,7 +143,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         return mapPriceMonitorRows(priceRows,reports,identity.asOf,identity.timezone);
       },
       // Toast credentials are service-role only; the café comes from the authenticated scope.
-      readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId),
+      readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId,
+         {maxAgeMs:TODAY_LIVE_FRESH_MS}),
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
@@ -263,10 +264,17 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           supervisorLoopRegistry,new SupabaseLoopRepository(),staffCapabilityId(name),input,requestKey);
         return {proposalId:proposal.id,revision:proposal.revision,capabilityId:proposal.capabilityId};
       }} };
+    const location=await context.cafeLocation?.().catch(()=>null);
+    const cafeProfile="Café profile (authenticated, not owner message): "+JSON.stringify({
+      name:identity.cafeName,city:location?.city??null,region:location?.region??null,
+      country:location?.countryCode??null,currency:identity.currency,timezone:identity.timezone})+
+      ". For events, use the saved get_events/get_nearby_events information for this city and café; "+
+      "never ask the owner for their city when it is in this authenticated profile. "+
+      "If saved research is incomplete, say so; any web_search must include this café city.";
     const recordedIds=process.env.WHATSAPP_SUPERVISOR_ENABLED==="true"
       ?await recordedWhatsAppImageIds(scope,id,owner.id):null;
     const ownerImages=await readOwnerImages(scope,id,recordedIds??p.attachmentIds??[],p.externalClient);
-    const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages, history, context,businessId:scope.businessId,requestId:owner.id,
+    const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages, history, context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
       onTool:(name,agentId)=>{
@@ -279,13 +287,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(memory ? { memoryFacts: memory.facts, extraTools: [memory.tool] } : {}),
       ...(job && jobs ? {
         takeFollowUps: async(max: number):Promise<OwnerFollowUp[]> => {
-           // Once a second channel is enabled, NEVER take inbox messages here:
-           // the RPC atomically marks them absorbed, so filtering after taking
-           // already loses WhatsApp replies. The canonical job finisher will
-           // serialize each owner message as a distinct continuation instead.
-           // In web-only mode retain the original fast follow-up behavior.
-           if(external||process.env.WHATSAPP_SUPERVISOR_ENABLED==="true")return [];
-           return jobs.takeAgentJobInbox(job.id,max);
+           // A second question always receives its own serialized turn, on
+           // web as well as WhatsApp. Absorbing it into the first response
+           // interleaves independent owner questions and their answers.
+           void max;
+           return [];
          },
         onFollowUp: (count: number) => emit("followup", { count }),
       } : {}) });
