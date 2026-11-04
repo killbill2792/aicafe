@@ -64,7 +64,7 @@ function durationDays(spec:unknown){
   const d=spec&&typeof spec==="object"?(spec as {durationDays?:unknown}).durationDays:null;
   return Number.isSafeInteger(d)&&(d as number)>0?d as number:null;
 }
-const dayIndex=(from:string,to:string)=>Math.round((Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86_400_000)+1;
+export const monitorDayIndex=(from:string,to:string)=>Math.round((Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86_400_000)+1;
 
 /** `today` is the café-local date. Newest first; at most three of each. */
 export function buildOperatingBoard(proposals:readonly BoardProposalRow[],reports:readonly BoardReportRow[],
@@ -80,7 +80,7 @@ export function buildOperatingBoard(proposals:readonly BoardProposalRow[],report
     if(!["manual_confirmed","committed"].includes(p.status)||!p.monitoring_start_date)return [];
     const days=durationDays(p.monitor_spec);
     if(days===null)return [];
-    const day=dayIndex(p.monitoring_start_date,today);
+    const day=monitorDayIndex(p.monitoring_start_date,today);
     // A monitored change with no monitoring window (a plain price change) is not "running".
     if(day>days)return [];
     return [{proposalId:p.id,threadId:p.thread_id,capabilityId:p.capability_id,...effect,stage:"monitoring",day:Math.max(0,day),days}];
