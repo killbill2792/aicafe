@@ -1113,9 +1113,11 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   // to an old price superseded by another tool's fresh product observation.
   for(const item of itemPrices)allowed.money.add(item.priceCents);
   const menuPrices=itemPrices;
-  const ownerNumbers=ownerStatedAmounts(ownerText,locale);
+  const ownerNumbers=candidates(ownerText,locale);
+  const ownerSpoken=spokenOwnerValues(ownerText,locale);
+  const stated=ownerStatedAmounts(ownerText,locale);
   for(const kind of ["money","percent","number"] as const)
-    for(const amount of ownerNumbers[kind])allowed[kind].add(amount);
+    for(const amount of stated[kind])allowed[kind].add(amount);
   // Only reconciled, typed numeric evidence authorizes an amount.
   // Re-adding raw current-turn estimates here would resurrect a prior result
   // that a later tool result explicitly invalidated in this same turn.
