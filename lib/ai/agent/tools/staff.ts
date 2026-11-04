@@ -145,12 +145,12 @@ export const staffTools = {
         ...(reviews?.quality.missingInputs??[])];
       const failedReaders=["laborReadFailed","laborReaderUnavailable","staffAttendanceReadFailed","attendanceReaderUnavailable",
         "payrollExtrasReadFailed","toastScopeReadFailed","posStaffReviewsReadFailed"];
-      const salesNotes=localizeQualityNotes(salesWarnings,ctx.locale);
+      const salesNotes=sales.available?localizeQualityNotes(salesWarnings,ctx.locale):[];
       const dataNotes=[
         ...(readFailures.some(key=>failedReaders.includes(key))?
           [{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[]),
         ...salesNotes,
-        ...(salesWarnings.length&&!salesNotes.length?
+        ...(sales.available&&salesWarnings.length&&!salesNotes.length?
           [{en,es,ar}[ctx.locale].DataNotes.toastDayStatusUnavailable]:[]),
       ];
       // Core is the only labor percentage formula. Use matching recorded sales
