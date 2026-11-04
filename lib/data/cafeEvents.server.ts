@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {readPrimaryLocation,type CafeLocation} from "./cafeLocation.server";
+import {readPrimaryLocation} from "./cafeLocation.server";
 import {cityScopeKey,canonicalEventNameKey} from "@/lib/events/cityEventIdentity";
 import {readOwnerProposals,readOwnerReports,type OwnerScope} from "@/lib/ai/supervisor/loop/reads.server";
 
@@ -356,35 +356,47 @@ export const readCanonicalCafeEvents=readCafeEvents;
 
 
 
-/** Location-aware evidence only: unknown venue positions stay visible.
- * Saved explicit distance wins; otherwise a complete venue city/address can
- * establish that a listing is outside the café's recorded municipality.
- * The schema has no geocoded café/event coordinates, so never invent distance. */
-export function cafeEventInArea(event:Pick<CafeEvent,"venueAddress"|"areaLabel">,
-  location:Pick<CafeLocation,"city"|"region">|null):boolean{
-  if(!location?.city)return true;
-  const distance=event.areaLabel?.match(/\b(\d+(?:\.\d+)?)\s*(miles?|mi|kilometers?|km)\b/iu);
-  if(distance){
-    const amount=Number(distance[1]);
-    const miles=/^(km|kilometer)/iu.test(distance[2])?amount/1.609344:amount;
-    return miles<=40;
-  }
+/** A 50 km area around the café when both positions are genuinely available.
+ * Current location/event tables do not require geocoded positions, so do not
+ * invent them: use the stored region fallback when either is missing. */
+export const CAFE_EVENT_RADIUS_KM=50;
+type EventGeo={latitude?:number|null;longitude?:number|null};
+type LocationArea={city:string|null;region:string|null}&EventGeo;
+type EventArea=Pick<CafeEvent,"venueAddress"|"areaLabel">&EventGeo;
+const validGeo=(p:EventGeo):p is {latitude:number;longitude:number}=>
+  typeof p.latitude==="number"&&typeof p.longitude==="number"&&
+  Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)&&
+  Math.abs(p.latitude)<=90&&Math.abs(p.longitude)<=180;
+export function cafeEventDistanceKm(a:{latitude:number;longitude:number},
+ b:{latitude:number;longitude:number}):number{
+  const radians=(d:number)=>d*Math.PI/180;
+  const phi1=radians(a.latitude),phi2=radians(b.latitude);
+  const dLat=radians(b.latitude-a.latitude),dLon=radians(b.longitude-a.longitude);
+  const haversine=Math.sin(dLat/2)**2+Math.cos(phi1)*Math.cos(phi2)*Math.sin(dLon/2)**2;
+  return 6371*2*Math.asin(Math.min(1,Math.sqrt(haversine)));
+}
+/** No cross-city exclusion for neighbouring municipalities in the same region. */
+export function cafeEventInArea(event:EventArea,location:LocationArea|null):boolean{
+  if(!location)return true;
+  if(validGeo(event)&&validGeo(location))
+    return cafeEventDistanceKm(location,event)<=CAFE_EVENT_RADIUS_KM;
   const address=event.venueAddress?.split(",").map(part=>part.trim()).filter(Boolean)??[];
-  // Only an unambiguous city + region address is strong enough to exclude.
   if(address.length<3||!location.region)return true;
-  const clean=(value:string)=>value.normalize("NFKD").replace(/\p{M}/gu,"").toLowerCase()
+  const clean=(value:string)=>value.normalize("NFKD").replace(/\\p{M}/gu,"").toLowerCase()
     .replace(/[^a-z0-9]/gu,"");
-  const region=clean(location.region);
-  const regionPart=clean(address.at(-1)??"");
-  if(!regionPart.startsWith(region)&&!region.startsWith(regionPart))return false;
-  const venueCity=clean(address.at(-2)??"");
-  return !venueCity||venueCity===clean(location.city);
+  const cafeRegion=clean(location.region),eventRegion=clean(address.at(-1)??"");
+  if(!cafeRegion||!eventRegion)return true;
+  // Reject only a verified difference between comparable region formats:
+  // 'CA' vs 'California' cannot be conclusively compared without geocoding.
+  const comparable=(cafeRegion.length===2&&eventRegion.length===2)||
+    (cafeRegion.length>2&&eventRegion.length>2);
+  return !comparable||cafeRegion===eventRegion;
 }
 
 /** Display projection over the ONE saved Events reader. Stored facts and
  * approval identities are unchanged; unknown geography is never discarded. */
 export function visibleCafeEventListings(canonical:readonly CafeEvent[],from:string,to:string,
-  location:Pick<CafeLocation,"city"|"region">|null):CafeEvent[]{
+  location:LocationArea|null):CafeEvent[]{
   const events=canonical.filter(e=>e.startDate<=to&&e.endDate>=from)
     .filter(e=>cafeEventInArea(e,location));
   const unique=new Map<string,CafeEvent>();
