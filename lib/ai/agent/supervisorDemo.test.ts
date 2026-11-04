@@ -115,6 +115,28 @@ describe("Supervisor owner demo: shared model and core metric paths",()=>{
     expect(result.stale).toBe(true);
     expect(result.freshnessLabel).toMatch(/^last updated \d{2}:\d{2}$/);
   });
+  it.each([
+    ["failed Toast import","toastImportIncompleteDays:1:2026-11-02:0","Toast imports are not complete"],
+    ["unknown Toast import status","toastDayStatusUnavailable","day-status check failed"],
+  ])("marks labor percent partial on full sales days with %s",async(_,warning,note)=>{
+    const ctx=context();
+    const fullDays=["2026-11-02","2026-11-03"];
+    ctx.tools.getSalesTrend=vi.fn(async()=>({available:true,quality:{
+      ...quality,missingInputs:[warning],
+    },value:fullDays.map(date=>({date,netSalesCents:400000}))} as never));
+    ctx.tools.getLaborMetrics=vi.fn(async()=>({available:true,quality,
+      value:fullDays.map(date=>({date,wagesCents:100000,staffTaxCents:8000,
+        loadedStaffCostCents:108000,wageStatus:"actual"}))} as never));
+    const result=await staffTools.get_labor.execute({
+      period:{from:"2026-11-02",to:"2026-11-03"}},ctx);
+    expect(result.laborCostPercent).toBeCloseTo(216000/800000,8);
+    expect(result.laborCostPercentCoveredDays).toBe(2);
+    expect(result.laborCostPercentSalesDays).toBe(2);
+    expect(result.laborCostPercentPartial).toBe(true);
+    expect(result.missing).toContain(warning);
+    expect(result.dataNotes).toEqual(expect.arrayContaining([expect.stringContaining(note)]));
+  });
+
   it("get_labor returns a percentage calculated by the existing core, with covered days",async()=>{
     const ctx=context();
     ctx.tools.getSalesTrend=vi.fn(async()=>({available:true,quality,value:[
