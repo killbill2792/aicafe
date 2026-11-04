@@ -27,6 +27,8 @@ describe("one canonical café-event list projection",()=>{
       venueAddress:"10 Main St, Far City, CA",areaLabel:"105 km"},location)).toBe(false);
     expect(cafeEventInArea({...event("c","Far","2026-11-13"),
       venueAddress:"10 Main St, Other City, CA"},location)).toBe(false);
+    expect(cafeEventInArea({...event("e","Cross-state","2026-11-13"),
+      venueAddress:"1 East Ave, Portland, OR"},location)).toBe(false);
     expect(visibleCafeEventListings([event("d","Unknown","2026-11-13")],
       "2026-11-03","2026-11-16",location)).toHaveLength(1);
     expect(cafeEventInArea({venueAddress:"10 Main St, Other City, CA",areaLabel:null},null)).toBe(true);
