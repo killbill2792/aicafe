@@ -419,12 +419,18 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     period.from===ctx.asOf&&period.to===ctx.asOf&&!selection.todayImported?
     selection.todaySoFar:null;
   if(!slice.available&&liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
+    coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
+    todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,
+    lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
     provisional:true,readAt:liveToday.readAt,missing:liveToday.missing,
     netSalesCents:liveToday.netSalesCents,
     days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
     todaySoFar:liveToday};
   if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:salesNotes,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar};
   if(liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
+    coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
+    todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,
+    lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
     provisional:true,readAt:liveToday.readAt,missing:liveToday.missing,
     netSalesCents:liveToday.netSalesCents,
     days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
