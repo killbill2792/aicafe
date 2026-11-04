@@ -172,8 +172,13 @@ function annotatedText(
   const end=absoluteStart+text.length, out:ReactNode[]=[];
   let cursor=absoluteStart;
   const tokens=tokenizeNumbers(text,locale);
+  // A range such as “4–8:45 p.m.” is clock text, not a sourced quantity.
+  // Rendering only: the underlying number-checking evidence is untouched.
+  const clockRanges=[...text.matchAll(/\b\d{1,2}\s*[–-]\s*\d{1,2}:\d{2}(?:\s*[ap]\.?m\.?)?/giu)]
+    .map(m=>({start:m.index,end:m.index+m[0].length}));
   for(const token of tokens){
     const from=absoluteStart+token.start,to=absoluteStart+token.end;
+    if(clockRanges.some(range=>token.start<range.end&&token.end>range.start))continue;
     const matching=spans.filter(span=>span.start<to&&span.end>from);
     // Calendar/time-shaped tokens stay undecorated only when the checker has
     // NOT explicitly rejected them. Grounding always overrides cosmetics.
