@@ -252,19 +252,6 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     <div className="text-center font-semibold">{dayLabel(data.dates[0])} – {dayLabel(data.dates[6])}<div className="text-sm text-muted">{status}</div></div>
     <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")+7*86400000).toISOString().slice(0,10)}`} className="p-3"><span className="inline-block rtl:rotate-180">›</span></Link>
    </div>
-   {data.posShifts.length>0&&<section className="rounded-2xl border border-line bg-surface p-4">
-    <h2 className="text-lg font-bold">{t("toastPlannedTitle")}</h2>
-    <p className="mt-1 text-sm text-muted">{t("toastPlannedNotPaid")}</p>
-    <ul className="mt-3 space-y-2">{data.posShifts.map(shift=><li key={shift.id}
-      className="rounded-xl border border-line p-3">
-      <p className="font-semibold">{shift.employeeName}</p>
-      <p className="text-sm text-muted"><bdi>{new Intl.DateTimeFormat(locale,{
-       timeZone:data.timezone,dateStyle:"medium",timeStyle:"short"
-      }).format(new Date(shift.start))}</bdi> – <bdi>{new Intl.DateTimeFormat(locale,{
-       timeZone:data.timezone,dateStyle:"medium",timeStyle:"short"
-      }).format(new Date(shift.end))}</bdi></p>
-    </li>)}</ul>
-   </section>}
    <div className="grid grid-cols-3 gap-2 lg:grid-cols-4">{[
     [t("paidHours"),localized(hours(data.total.paidMinutes))],
     [t("wages"),wageSummary(data.total)],
@@ -298,6 +285,10 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         href={`/${locale}/more/cafe-profile?focus=hours`}>{t("setCafeHours")}</Link>}
       <strong className="ms-auto text-sm">{localized(totals.paidMinutes/60)} h · {wageSummary(totals)}{totals.estimated?" "+t("estimated"):""}</strong>
      </div>
+     <div className="my-2 space-y-1">{data.calendarEntries.filter(e=>e.date===d).map(e=><div key={e.id}
+      className={`rounded-lg border px-3 py-2 text-sm ${e.source==="ai_draft"?"border-dashed border-accent bg-accent-soft":e.source==="toast_actual"?"border-pos bg-pos-soft":"border-line bg-surface2"}`}>
+      <strong>{e.employeeName}</strong> · {e.start}–{e.end} · {e.source==="toast_actual"?t("toastActualLabel"):e.source==="toast_planned"?t("toastPlannedLabel"):t("aiDraftLabel")}
+     </div>)}</div>
      <DayTimeline date={d} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours} people={data.team}
       onShiftClick={data.readOnly?undefined:(id)=>openShift(d,id)}/>
      <div className="mt-3 flex flex-wrap gap-2">
@@ -308,7 +299,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      </div>
     </section>;
    })}</div>
-   <WeekGrid dates={data.dates} people={data.displayTeam} shifts={data.shifts} gaps={data.gaps}
+   <WeekGrid dates={data.dates} people={data.displayTeam} shifts={data.shifts} calendarEntries={data.calendarEntries} gaps={data.gaps}
     openHours={data.openHours} currency={data.currency} readOnly={data.readOnly} coverageEnabled={data.rules.coverage_enabled}
     onEdit={(d,id)=>openShift(d,id)} onAdd={(d,id)=>openShift(d,undefined,id)}/>
    <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4">
