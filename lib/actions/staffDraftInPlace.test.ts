@@ -1,6 +1,5 @@
-import {beforeEach,describe,expect,it,vi} from "vitest";
+import {beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-vi.mock("date-fns-tz",()=>({formatInTimeZone:()=>"2026-10-25"}));
 const scope={businessId:"11111111-1111-4111-8111-111111111111",
  ownerUserId:"22222222-2222-4222-8222-222222222222",
  threadId:"33333333-3333-4333-8333-333333333333"};
@@ -55,6 +54,7 @@ const input={week:"2026-10-26",threadId:"33333333-3333-4333-8333-333333333333",
  requestKey:"66666666-6666-4666-8666-666666666666",locale:"en"};
 
 beforeEach(()=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date("2026-10-25T18:00:00Z"));
  state.mode="ok";state.attempts=0;
  state.preview.mockReset();
  state.preview.mockResolvedValue({ok:true,locations:{cafe:"America/Los_Angeles"},
@@ -64,6 +64,7 @@ beforeEach(()=>{
     endAt:"2026-10-26T19:00:00Z",paidMinutes:180
    }]}}});
 });
+afterEach(()=>vi.useRealTimers());
 describe("owner staff draft idempotent retry",()=>{
  it("returns the exact shift preview for a safely created inert proposal",async()=>{
   const result=await draftStaffWeekInPlace(input);
