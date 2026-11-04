@@ -1,4 +1,6 @@
 import "server-only";
+import {formatInTimeZone} from "date-fns-tz";
+import {reconcileStaffCalendar,type CalendarEntry} from "@/lib/calc/scheduling/calendarEntries";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {timeReader} from "@/lib/perf/timeReader.server";
 import {readToastPlannedShifts} from "./toastScheduledShifts.server";
@@ -26,7 +28,7 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
  const owner=await staffReadScope(explicit);if(!owner.ok)return {ok:false as const,error:"unauthorized"};
  const dates=Array.from({length:7},(_,i)=>plusDays(p.data.weekStart,i));
  if(!owner.supabase||owner.businessId===DEMO_BUSINESS_ID)return {ok:true as const,data:{
-  dates,weekStart:p.data.weekStart,team:[],displayTeam:[],shifts:[],posShifts:[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
+  dates,weekStart:p.data.weekStart,team:[],displayTeam:[],shifts:[],posShifts:[],calendarEntries:[] as CalendarEntry[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
   gaps:[],adjacentShifts:[],posScheduleError:null,openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],profileAvailability:[],readOnly:true,timezone:owner.timezone,countryCode:null as string|null
  }};
  // Start the optional external planned-shift read alongside the independent
@@ -80,12 +82,68 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
      id:s.id as string,status:s.status as string,source:s.source as string,breakSource:s.break_source as string,
      employeeName:person?.name??"Unknown"};
  });
+ // Preserve POS evidence as evidence, not paid schedule estimates. The calendar
+ // uses the SAME authorized owner scope as the existing staff reader.
+ const entries:CalendarEntry[]=posShifts.map(s=>({
+  id:"toast-planned:"+s.id,employeeId:s.employeeId,employeeName:s.employeeName,
+  date:formatInTimeZone(new Date(s.start),owner.timezone,"yyyy-MM-dd"),
+  start:formatInTimeZone(new Date(s.start),owner.timezone,"HH:mm"),
+  end:formatInTimeZone(new Date(s.end),owner.timezone,"HH:mm"),source:"toast_planned"
+ }));
+ try {
+  const begin=new Date(Date.parse(dates[0]+"T00:00:00Z")-2*86400000).toISOString();
+  const finish=new Date(Date.parse(dates[6]+"T00:00:00Z")+3*86400000).toISOString();
+  const actual=await owner.supabase.from("timecards")
+   .select("id,employee_id,clock_in,clock_out,source_provider")
+   .eq("business_id",owner.businessId).eq("source_provider","toast")
+   .gte("clock_in",begin).lte("clock_in",finish).order("clock_in").limit(1001);
+  if(actual.error||!actual.data||actual.data.length>1000)throw new Error("Toast clock-ins unavailable");
+  for(const row of actual.data){
+   if(typeof row.clock_in!=="string")continue;
+   const date=formatInTimeZone(new Date(row.clock_in),owner.timezone,"yyyy-MM-dd");
+   if(date<dates[0]||date>dates[6])continue;
+   const person=allEmployees.find(p=>p.id===row.employee_id);
+   entries.push({id:"toast-actual:"+row.id,employeeId:row.employee_id,
+    employeeName:person?.name??"Toast team member",date,
+    start:formatInTimeZone(new Date(row.clock_in),owner.timezone,"HH:mm"),
+    end:row.clock_out?formatInTimeZone(new Date(row.clock_out),owner.timezone,"HH:mm"):"…",
+    source:"toast_actual"});
+  }
+ }catch{/* Optional attendance read cannot erase known planned data. */}
+ if(process.env.SCHEDULING_FOUNDATION_ENABLED==="true"&&
+    process.env.SCHEDULING_PR3_DRAFTS_ENABLED==="true"){
+  try {
+   const series=await owner.supabase.from("scheduling_plan_series")
+    .select("id,current_revision").eq("business_id",owner.businessId)
+    .eq("horizon_start",p.data.weekStart).maybeSingle();
+   if(series.error)throw series.error;
+   if(series.data?.current_revision){
+    const revision=await owner.supabase.from("scheduling_plan_revisions")
+     .select("id,status,scenario").eq("business_id",owner.businessId)
+     .eq("series_id",series.data.id).eq("revision",series.data.current_revision).maybeSingle();
+    if(revision.error)throw revision.error;
+    if(revision.data&&["draft","approved"].includes(revision.data.status)){
+     const plan=revision.data.scenario as {shifts?:Array<{employeeId:string;startAt:string;endAt:string}>}|null;
+     for(const [i,shift] of (plan?.shifts??[]).entries()){
+      const date=formatInTimeZone(new Date(shift.startAt),owner.timezone,"yyyy-MM-dd");
+      if(date<dates[0]||date>dates[6])continue;
+      entries.push({id:"ai-draft:"+revision.data.id+":"+i,employeeId:shift.employeeId,
+       employeeName:allEmployees.find(e=>e.id===shift.employeeId)?.name??"Team member",
+       date,start:formatInTimeZone(new Date(shift.startAt),owner.timezone,"HH:mm"),
+       end:formatInTimeZone(new Date(shift.endAt),owner.timezone,"HH:mm"),
+       source:"ai_draft"});
+     }
+    }
+   }
+  }catch{/* Unavailable Olivia history must not hide Toast evidence. */}
+ }
+ const calendarEntries=reconcileStaffCalendar(entries);
  const inWeek=mapped.filter(s=>s.date>=dates[0]&&s.date<=dates[6]);
  const displayTeam=peopleWithRetainedShifts(allEmployees,inWeek);
  const total=aggregateCosts(inWeek),gaps=coverageGaps(dates,mapped,openHours,
    ruleResult.data.coverage_enabled?ruleResult.data.min_headcount:0);
  return {ok:true as const,data:{
-   dates,team,displayTeam,shifts:inWeek,posShifts,posScheduleError,adjacentShifts:mapped.filter(s=>s.date<dates[0]||s.date>dates[6]),total,gaps,openHours,
+   dates,team,displayTeam,shifts:inWeek,posShifts,calendarEntries,posScheduleError,adjacentShifts:mapped.filter(s=>s.date<dates[0]||s.date>dates[6]),total,gaps,openHours,
    currency:owner.currency,rules:ruleResult.data,
    availability:availability.data??[],profileAvailability:profileAvailability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone,countryCode:profile.data?.country_code??null
  }};
