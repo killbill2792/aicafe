@@ -21,7 +21,7 @@ import {verifiedOliviaRuleProfile} from "./planPolicy.server";
 export type OliviaNotice = { code:
   | "wage_unknown" | "availability_missing" | "unconfirmed_absence"
   | "coverage_unconfirmed" | "no_active_staff" | "limits_missing"
-  | "legacy_schedules" | "policy_unverified" | "source_provisional";
+  | "legacy_schedules" | "policy_unverified" | "source_provisional" | "history_missing";
   employeeName?: string };
 
 export type OliviaBlocker = {code: "no_location" | "no_coverage" | "conflicting_limits"; employeeName?: string};
@@ -224,6 +224,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     const previousFrom=week>lastCompletedMonday?lastCompletedMonday:civilDateAdd(week,-7);
     const previousTo=civilDateAdd(previousFrom,6);
     const historicalSeed:NonNullable<PlannerInput["historicalSeed"]>=[];
+    let historicalCoverageMissing=false;
     const seeded=new Set<string>();
     const addSeed=(employeeId:string,date:string,startLocal:string,endLocal:string)=>{
       if(!employeeId)return;
@@ -245,7 +246,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
         formatInTimeZone(new Date(shift.start),timezone,"HH:mm"),
         formatInTimeZone(new Date(shift.end),timezone,"HH:mm"));
     }
-    } catch { /* Missing POS plan evidence is not permission to invent a shift. */ }
+    } catch { historicalCoverageMissing=true; }
     try {
     const first=new Date(Date.parse(previousFrom+"T00:00:00Z")-2*86400000).toISOString();
     const last=new Date(Date.parse(previousTo+"T00:00:00Z")+3*86400000).toISOString();
@@ -264,7 +265,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
         formatInTimeZone(new Date(shift.clock_in),timezone,"HH:mm"),
         formatInTimeZone(new Date(shift.clock_out),timezone,"HH:mm"));
     }
-    } catch { /* Keep planning possible with partial historical coverage. */ }
+    } catch { historicalCoverageMissing=true; }
     const sourceFingerprint = createHash("sha256").update(JSON.stringify({
       businessId,businessTimezone:business.data.timezone,rows,publishedRevision,
       startedPublishedShifts,historicalShiftWageRates,historicalSeed,
@@ -279,6 +280,8 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       notices.push({code, ...(employeeName ? {employeeName} : {})});
     };
     const blockers: OliviaBlocker[] = [];
+    if(historicalCoverageMissing)warn("history_missing",
+      "Previous Toast shift history could not be fully read. The draft uses confirmed staff rules without an assumed prior roster.");
 
     const locations: PlannerLocation[] = rows.locations.map(r => ({
       id: str(r.id), timezone: nullable(r.timezone) || str(business.data.timezone),
