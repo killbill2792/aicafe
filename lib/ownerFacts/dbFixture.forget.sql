@@ -1,4 +1,4 @@
--- Migration 152 on the isolated CI PostgreSQL only: forgetting a saved fact.
+-- Migration 153 on the isolated CI PostgreSQL only: forgetting a saved fact.
 set role authenticated;
 select set_config('request.jwt.claim.sub',(select user_a::text from public._owner_fact_test_ids),false);
 select public.save_owner_fact(business_a,'supplier','"Mill Street Dairy"'::jsonb) from public._owner_fact_test_ids;
