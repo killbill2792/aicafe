@@ -104,6 +104,7 @@ export const staffProposalTools=Object.fromEntries(
    if(!ctx.proposals?.proposeStaff)return {source:"staff_proposal",period:null,agentId:"olivia",
      draft:true,saved:false,missing:["proposalsUnavailable"]};
    const p=await ctx.proposals.proposeStaff({name,input});
+   if(name==="propose_schedule")ctx.scheduleProposalCreated=p;
    return {source:"staff_proposal",period:null,agentId:"olivia",draft:true,saved:false,
      missing:[],...p,
      ...(name==="propose_send_schedule"?{handoffNotice:scheduleDraftNotice(ctx.locale)}:{})};
