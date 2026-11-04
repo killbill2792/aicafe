@@ -8,7 +8,7 @@ export const dynamic="force-dynamic";
 export const maxDuration=300;
 const reply=(status:number,data:unknown)=>NextResponse.json(data,{status,headers:{"Cache-Control":"no-store"}});
 /** Every 15 minutes: save each Toast café's "today so far" (read-only Toast reads),
- * and keep today's finished orders from that same download (migration 150). */
+ * and keep today's finished orders from that same download (migration 151). */
 export async function GET(request:Request){
  if(!verifyBearer(request,process.env.CRON_SECRET))return reply(401,{error:"unauthorized"});
  if(process.env.TOAST_AUTO_IMPORT_ENABLED!=="true")return reply(503,{disabled:true});

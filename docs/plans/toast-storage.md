@@ -87,7 +87,7 @@ screens and chat read the same tables and must not change.
    - it goes out per café, 30 minutes before opening (06:00 café time if hours are unknown), never blocked
      by a missing extra, and every skip is recorded (`/admin/briefs`);
    - still required: a linked owner number and WhatsApp settings on in Vercel.
-8. **Migration 150: today's orders kept as they arrive (owner, Nov 4).** The 15-minute job already downloaded
+8. **Migration 151: today's orders kept as they arrive (owner, Nov 4).** The 15-minute job already downloaded
    every order of the day but kept only a summary, so "how many student discounts today?" could not be answered
    until 5 AM. Now it files each **closed** order from that same download (no extra Toast calls) into the same
    archive through the same writer as the import (`toast_archive_order`, shared): one record per order, same →
@@ -98,7 +98,7 @@ screens and chat read the same tables and must not change.
    with status `provisional`. The job never writes to an imported day or to a record an import has staged.
    Storage: the records the import would write at 5 AM anyway, a few hours earlier. Check:
    `scripts/toast-live-archive-sql-integration.sql`.
-9. **Migration 151: discounts removed at the register are not counted (owner, Nov 4).** Toast keeps a discount
+9. **Migration 152: discounts removed at the register are not counted (owner, Nov 4).** Toast keeps a discount
    that staff applied and removed, with `processingState: "VOID"`; Toast's reports leave it out. We counted it
    (Nov 2: 6 student discounts instead of Toast's 5, $6.69 instead of $5.81). Seiyun history: 4 such discounts
    ($12.39) on Aug 30, Sep 14, Oct 19, Nov 2. Net sales were never affected. One rule everywhere: the day parser

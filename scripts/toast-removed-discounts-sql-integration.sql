@@ -1,4 +1,4 @@
--- Migration 151: a discount removed at the register (processingState VOID) is not
+-- Migration 152: a discount removed at the register (processingState VOID) is not
 -- counted in typed order details, and the AI sees it with counts_in_sales = false.
 -- Run ONLY against a disposable local Supabase after all migrations. Synthetic data, rolled back.
 \set ON_ERROR_STOP on

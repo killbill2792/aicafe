@@ -162,7 +162,7 @@ begin
  end loop;
 end $rebuild$;
 
--- 3. As migration 150, with removed discounts marked as not counting.
+-- 3. As migration 151, with removed discounts marked as not counting.
 create or replace function public.toast_records_for(p_business_id uuid,p_from date,p_to date)
 returns table(business_id uuid,source text,source_ref text,status text,business_date date,
  record_type text,record_ref text,order_ref text,check_ref text,counts_in_sales boolean,data jsonb)
