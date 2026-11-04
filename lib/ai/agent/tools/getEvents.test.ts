@@ -42,6 +42,20 @@ describe("get_events: saved-only, owner-scoped read",()=>{
   expect(report.additionalDays).toBe(7);
   expect(JSON.stringify(r)).not.toContain('"hours"');
  });
+ it("returns the six earliest saved city events without changing their identities",async()=>{
+   const items=Array.from({length:8},(_,i)=>({
+     id:"city-"+i,name:"Event "+i,startDate:"2026-11-"+String(12-i).padStart(2,"0"),
+     lastVerifiedAt:i%2===0?"2026-11-01T10:00:00Z":null,
+   }));
+   const saved=vi.fn(async()=>({events:[],plans:[],cityCatalog:{
+     available:true,total:8,page:0,items,
+   }}));
+   const r=await executeAgentTool("get_events",{from:"2026-11-01",to:"2026-11-20"},
+     context(saved as unknown as AgentToolContext["savedEvents"]));
+   const city=r.cityEvents as typeof items;
+   expect(city.map(e=>e.id)).toEqual(["city-7","city-6","city-5","city-4","city-3","city-2"]);
+   expect(r.omittedCityEvents).toBe(2);
+ });
  it("does not turn missing storage or a reversed range into a false no-events answer",async()=>{
   const absent=await executeAgentTool("get_events",{from:"2026-10-30",to:"2026-11-01"},context(undefined));
   expect(absent.missing).toEqual(["savedEventsUnavailable"]);
