@@ -75,7 +75,16 @@ function choiceScore(employeeId:string,unit:DemandUnit,plan:ExpandedPlan,
   const minHoursPenalty=minimum==null?0:
     (Math.max(0,minimum-worked-minutes)-Math.max(0,minimum-worked))/10;
   const preference=softPenalty(employeeId,unit,plan);
-  const preferenceAndHours=preference+desiredPenalty+minHoursPenalty;
+  // A prior Toast assignment is only a soft tie-breaker after hard
+  // availability, qualifications, rest and hour limits have been checked.
+  const local=localParts(unit.start,plan.locations.get(unit.locationId)!.timezone);
+  const minute=local.hour*60+local.minute;
+  const from=(v:string)=>{const [h,m]=v.slice(0,5).split(":").map(Number);return h*60+m;};
+  const historical=input.historicalSeed?.some(seed=>seed.employeeId===employeeId &&
+   seed.weekday===local.weekday && minute>=from(seed.startLocal) &&
+   minute<from(seed.endLocal));
+  const preferenceAndHours=preference+desiredPenalty+minHoursPenalty-
+   (historical?2500:0);
   // Unknown wage is deliberately NOT treated as free. Owner hours are
   // always visible, and the owner_time scenario strongly avoids them.
   if(objective==="owner_time")return owner*300+unknown/30+preferenceAndHours;
