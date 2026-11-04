@@ -7,7 +7,7 @@ import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import type {SavedFact} from "@/lib/ownerFacts/inject";
 import {readCafeLocation,readPrimaryLocation} from "@/lib/data/cafeLocation.server";
 import {readEventDemandEvidence} from "@/lib/data/eventDemandEvidence.server";
-import {readCanonicalCafeEvents,readSavedEventTimeline,type CafeEvent,type SavedEventTimeline} from "@/lib/data/cafeEvents.server";
+import {readCanonicalCafeEvents,readSavedEventTimeline,readCityResearchCoverage,type CafeEvent,type SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {cafeCountry,holidaysBetween,addDays,weekdayOf} from "./holidays";
 import {eventIdentity,eventScanWindows,savedEventKind,dailyCafeScanOrder,
@@ -103,7 +103,11 @@ export async function scanCafe(db:Db,b:Business,today:string,
   let count=0;
   // With no known location, only persist calendar holidays; do not record
   // a completed web search or prevent the initial search after address setup.
-  const windows=locationHash?eventScanWindows(today,state,locationHash):
+  const cityCoverage=location&&budget&&search===searchNearbyEvents&&location.city?
+    await readCityResearchCoverage(db,b.id,today,addDays(today,13)):null;
+  const windows=cityCoverage?.status==="unsearched"?
+    [{from:today,to:addDays(today,13),reason:"initial" as const}]:
+    locationHash?eventScanWindows(today,state,locationHash):
     [{from:today,to:addDays(today,13),reason:"initial" as const}];
   for(const range of windows){
     const now=new Date().toISOString();
