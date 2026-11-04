@@ -415,7 +415,20 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name!=="get_sales")throw new ToolError("not_supported");
   const slice=await ctx.tools.getSalesTrend(period);
   const salesNotes=localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale);
+  const liveToday=selection.todaySoFar?.available===true&&
+    period.from===ctx.asOf&&period.to===ctx.asOf&&!selection.todayImported?
+    selection.todaySoFar:null;
+  if(!slice.available&&liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
+    provisional:true,readAt:liveToday.readAt,missing:liveToday.missing,
+    netSalesCents:liveToday.netSalesCents,
+    days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
+    todaySoFar:liveToday};
   if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:salesNotes,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar};
+  if(liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
+    provisional:true,readAt:liveToday.readAt,missing:liveToday.missing,
+    netSalesCents:liveToday.netSalesCents,
+    days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
+    todaySoFar:liveToday};
   return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,agentId:"alex",unit:"cents",
     missing:slice.quality.missingInputs,dataNotes:salesNotes,netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
