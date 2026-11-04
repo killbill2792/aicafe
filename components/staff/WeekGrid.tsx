@@ -8,8 +8,8 @@ import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import {dayTotals,personTotals,type DetailedShift,type PersonForSchedule,type ScheduleGap} from "@/lib/calc/scheduling/schedulePresentation";
 const fmt=(value:number|null,currency:string)=>value===null?"—":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(value/100);
 const h=(minutes:number)=>Number((minutes/60).toFixed(1))+" h";
-export default function WeekGrid({dates,people,shifts,calendarEntries=[],gaps,openHours,currency,readOnly,coverageEnabled,onAdd,onEdit}:{
- dates:string[];people:PersonForSchedule[];shifts:DetailedShift[];calendarEntries?:CalendarEntry[];gaps:ScheduleGap[];
+export default function WeekGrid({dates,people,shifts,costShifts=shifts,toastDates=new Set<string>(),calendarEntries=[],gaps,openHours,currency,readOnly,coverageEnabled,onAdd,onEdit}:{
+ dates:string[];people:PersonForSchedule[];shifts:DetailedShift[];costShifts?:DetailedShift[];toastDates?:ReadonlySet<string>;calendarEntries?:CalendarEntry[];gaps:ScheduleGap[];
  openHours:OpenHours|null;currency:string;readOnly:boolean;coverageEnabled:boolean;
  onAdd:(date:string,personId:string)=>void;onEdit:(date:string,id:string)=>void
 }){
@@ -35,7 +35,9 @@ export default function WeekGrid({dates,people,shifts,calendarEntries=[],gaps,op
        {windows===undefined?t("hoursNotSet"):windows.length?windows.map(w=>w.join("–")).join(", "):t("closed")}</span></th>;
     })}<th scope="col" className="p-3 text-end">{t("week")}</th></tr></thead>
    <tbody>{displayRows.map(({key,person,name},index)=>{
-    const week=person?personTotals(person.id,shifts):null;
+    const week=person?personTotals(person.id,costShifts):null;
+    const unknownPerson=calendarEntries.some(e=>e.source!=="ai_draft"&&
+     (e.employeeId===person?.id||calendarRowKey(e,knownIds)===key));
     return <tr key={key} className="border-b border-line"><th scope="row" className="p-3 text-start">
      <div className="flex items-center gap-2"><span className="grid size-10 place-items-center rounded-full bg-accent-soft font-bold text-accent-text">{name[0]}</span>
      <div><strong>{name}</strong>{person?.active===false&&
@@ -53,11 +55,11 @@ export default function WeekGrid({dates,people,shifts,calendarEntries=[],gaps,op
       <button disabled={readOnly||!person||person.active===false} aria-label={t("addPersonShift",{name,date})} onClick={()=>{if(person)onAdd(date,person.id);}}
        className="min-h-12 w-full text-muted hover:text-accent-text">+</button>
      </td>)}
-     <td className="p-2 text-end font-bold">{week?h(week.paidMinutes):"—"}<span className="block text-sm text-muted">{week?wageSummary(week):"—"}{week?.estimated?" "+t("estimated"):""}</span></td>
+     <td className="p-2 text-end font-bold">{week&&!unknownPerson?h(week.paidMinutes):"—"}<span className="block text-sm text-muted">{week?wageSummary({...week,unknownCount:week.unknownCount+(unknownPerson?1:0)}):"—"}{week?.estimated?" "+t("estimated"):""}</span></td>
     </tr>;
    })}</tbody>
    <tfoot className="font-semibold"><tr className="bg-surface2"><th className="p-3 text-start">{t("dayTotal")}</th>
-    {dates.map(date=>{const day=dayTotals(date,shifts);return <td key={date} className="p-2 text-center">{h(day.paidMinutes)}<span className="block text-sm text-muted">{wageSummary(day)}{day.estimated?" "+t("estimated"):""}</span></td>})}<td/></tr>
+    {dates.map(date=>{const day=dayTotals(date,costShifts),hasToast=toastDates.has(date);return <td key={date} className="p-2 text-center">{hasToast?"—":h(day.paidMinutes)}<span className="block text-sm text-muted">{wageSummary({...day,unknownCount:day.unknownCount+(hasToast?1:0)})}{day.estimated?" "+t("estimated"):""}</span></td>})}<td/></tr>
     <tr><th className="p-3 text-start">{t("coverage")}</th>{dates.map(date=>{
      const gap=gaps.find(g=>g.date===date),state=coverageVerification(date,openHours,coverageEnabled);
      const checked=state==="checked";
