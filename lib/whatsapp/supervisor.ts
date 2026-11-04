@@ -32,13 +32,20 @@ export function supervisorQuestionForWhatsApp(input: WhatsAppOwnerInput): string
   return WHATSAPP_QUICK_REPLY_QUESTIONS[payload as WhatsAppQuickReplyPayload];
 }
 
-/** A freeform WhatsApp reply is allowed only within 24h of a verified inbound
- * owner message, evaluated again immediately before sending, not at enqueue. */
+/** THE 24-hour rule (AGENTS.md §4c). Meta's customer-service window limits only
+ * FREE-TEXT messages: allowed within 24h of a verified inbound owner message,
+ * evaluated again immediately before sending, not at enqueue. An approved
+ * template (the morning brief) never needs it. Nothing else may re-implement this. */
 export function withinWhatsAppServiceWindow(inboundAt: string | number | Date, now = new Date()): boolean {
   const timestamp = new Date(inboundAt).getTime();
   const elapsed = now.getTime() - timestamp;
   return Number.isFinite(timestamp) && Number.isFinite(elapsed) && elapsed >= 0 &&
     elapsed < 24 * 60 * 60 * 1000;
+}
+/** A later free-text follow-up (e.g. a sales alert) may go out on WhatsApp only
+ * inside the window; outside it, skip WhatsApp (inbox only) or use a template. */
+export function whatsappFreeTextAllowed(lastOwnerMessageAt: string | null | undefined, now = new Date()): boolean {
+  return Boolean(lastOwnerMessageAt) && withinWhatsAppServiceWindow(lastOwnerMessageAt as string, now);
 }
 
 /** Never silently truncate or rewrite the model's answer. */

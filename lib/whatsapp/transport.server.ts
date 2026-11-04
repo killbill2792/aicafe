@@ -2,14 +2,25 @@ import "server-only";
 import {TEST_PHONE_NUMBER_ID,buildOutbound,type Outbound} from "./transport";
 export type SendResult={state:"accepted";wamid:string}|{state:"retry"|"failed"|"uncertain";reason:string};
 export type Channel="daily_brief"|"reply";
+/** Every setting that must be on before anything is sent, by name (never values).
+ * Empty = allowed. The test-brief button shows these names to the admin. */
+export function providerBlockers(kind:Channel):string[] {
+  const off=(name:string)=>process.env[name]!=="true";
+  const blockers=[
+    ...(off("WHATSAPP_PROVIDER_SEND_ENABLED")?["WHATSAPP_PROVIDER_SEND_ENABLED"]:[]),
+    ...(off("WHATSAPP_POLICY_APPROVED")?["WHATSAPP_POLICY_APPROVED"]:[]),
+    ...(kind==="daily_brief"
+      ?[...(off("WHATSAPP_OWNER_BRIEF_SEND_ENABLED")?["WHATSAPP_OWNER_BRIEF_SEND_ENABLED"]:[]),
+        ...(off("WHATSAPP_TEMPLATE_APPROVED")?["WHATSAPP_TEMPLATE_APPROVED"]:[])]
+      :off("WHATSAPP_OWNER_REPLY_SEND_ENABLED")?["WHATSAPP_OWNER_REPLY_SEND_ENABLED"]:[]),
+  ];
+  if(!(process.env.META_WHATSAPP_TOKEN||process.env.WHATSAPP_TOKEN))blockers.push("META_WHATSAPP_TOKEN");
+  if((process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID)!==TEST_PHONE_NUMBER_ID)
+    blockers.push("WHATSAPP_PHONE_NUMBER_ID (must be the Meta test number)");
+  return blockers;
+}
 export function providerAllowed(kind:Channel):boolean {
-  return process.env.WHATSAPP_PROVIDER_SEND_ENABLED==="true" &&
-    process.env.WHATSAPP_POLICY_APPROVED==="true" &&
-    (kind==="daily_brief" ? process.env.WHATSAPP_OWNER_BRIEF_SEND_ENABLED==="true" &&
-      process.env.WHATSAPP_TEMPLATE_APPROVED==="true" :
-      process.env.WHATSAPP_OWNER_REPLY_SEND_ENABLED==="true") &&
-    Boolean(process.env.META_WHATSAPP_TOKEN||process.env.WHATSAPP_TOKEN) &&
-    (process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID)===TEST_PHONE_NUMBER_ID;
+  return providerBlockers(kind).length===0;
 }
 /** API acceptance is NOT delivered. Timeouts/5xx/receipt ambiguity MUST NOT replay. */
 export async function sendMeta(kind:Channel,to:string,outbound:Outbound,send:typeof fetch=fetch):
