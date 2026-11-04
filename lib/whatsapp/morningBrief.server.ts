@@ -1,53 +1,41 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {readDailyFactRows} from "@/lib/data/dailyFacts.server";
-import {readPeriodItemSales} from "@/lib/data/periodItemSales.server";
+import {readPeriodSoldLines} from "@/lib/data/periodItemSales.server";
 import {readMenuCatalogRows} from "@/lib/data/menuCatalog.server";
 import {readMenuCategoryLabels} from "@/lib/data/menuCategoryLabels.server";
-import {readCafeEvents} from "@/lib/data/cafeEvents.server";
-import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
-import {prepareMorningBrief,type PreparedMorningBrief} from "./morningBrief";
-import {briefDue} from "@/lib/operating/dailyBrief";
+import {readCafeEvents,readCityResearchCoverage} from "@/lib/data/cafeEvents.server";
+import {addCalendarDays} from "@/lib/pos/toast/scheduleDates";
+import {buildBriefContent,type BriefContent,type MorningBriefEvidence} from "./morningBrief";
 
-export type MorningBriefRecipient={
-  businessId:string;ownerUserId:string;businessName:string;currency:string|null;
-  timezone:string;
-  today:string;yesterday:string;
-  /** A's binding/outbox adapter must verify both before calling this reader. */
-  verifiedBinding:boolean;followupPermitted:boolean;
-};
+export type BriefCafe={businessId:string;businessName:string;currency:string|null};
+export type BriefEvidenceResult={evidence:MorningBriefEvidence;content:BriefContent;
+  /** Yesterday's POS data is complete: certified sales and covered items. */
+  posComplete:boolean};
 
-/** A read-only adapter for PR A's future verified-recipient outbox.
- * Do not call the provider here; A owns opt-in, dedupe and delivery.
- * Missing sources and failed monitor eligibility simply make this channel ineligible. */
-export async function readPreparedMorningBrief(db:SupabaseClient,recipient:MorningBriefRecipient,
-  now:Date):Promise<PreparedMorningBrief|null>{
-  if(!recipient.verifiedBinding||!recipient.followupPermitted)return null;
-  // A message for a different UTC day (or an invalid IANA zone) cannot be
-  // made eligible by a caller supplying an arbitrary day or stale binding.
-  let local:{due:boolean;today:string;yesterday:string};
-  try{local=briefDue(now,recipient.timezone);}catch{return null;}
-  if(!local.due||local.today!==recipient.today||local.yesterday!==recipient.yesterday)return null;
-  const day={from:recipient.yesterday,to:recipient.yesterday};
-  const [daily,items,menu,events,monitors,categoryLabels]=await Promise.all([
-    readDailyFactRows(db,recipient.businessId,day.from,day.to),
-    readPeriodItemSales(db,recipient.businessId,day),
-    readMenuCatalogRows(db,recipient.businessId),
-    readCafeEvents(db,recipient.businessId,recipient.today,recipient.today),
-    readOwnerProposals(db,{businessId:recipient.businessId,ownerUserId:recipient.ownerUserId},
-      {statuses:["committed","manual_confirmed"],limit:100}),
-    readMenuCategoryLabels(db,recipient.businessId),
+/** Reads the brief's sources once per café, from the canonical readers.
+ * Every read is independent and caught: a failing source becomes "missing"
+ * in the brief, never a skipped brief. */
+export async function readBriefEvidence(db:SupabaseClient,cafe:BriefCafe,
+  day:{today:string;yesterday:string},now:Date):Promise<BriefEvidenceResult>{
+  const id=cafe.businessId,week={from:day.today,to:addCalendarDays(day.today,7)};
+  const [daily,sold,menu,labels,events,coverage]=await Promise.all([
+    readDailyFactRows(db,id,day.yesterday,day.yesterday).catch(()=>null),
+    readPeriodSoldLines(db,id,{from:day.yesterday,to:day.yesterday}),
+    readMenuCatalogRows(db,id).catch(()=>[]),
+    readMenuCategoryLabels(db,id).catch(()=>new Map<string,boolean>()),
+    readCafeEvents(db,id,week.from,week.to).catch(()=>null),
+    readCityResearchCoverage(db,id,week.from,week.to).catch(()=>null),
   ]);
-  const sales=daily.length===1&&daily[0].business_date===recipient.yesterday?daily[0]:null;
-  return prepareMorningBrief({
-    businessId:recipient.businessId,businessName:recipient.businessName,currency:recipient.currency,
-    today:recipient.today,yesterday:recipient.yesterday,
-    salesStatus:sales?.sales_data_status??null,
-    netSalesCents:sales?.net_sales_cents??null,
-    itemCoverage:items.covered,soldItems:items.soldItems,
+  const row=daily?.length===1&&daily[0].business_date===day.yesterday&&
+    daily[0].sales_data_status==="actual"&&Number.isSafeInteger(daily[0].net_sales_cents)?daily[0]:null;
+  const evidence:MorningBriefEvidence={
+    businessName:cafe.businessName,currency:cafe.currency,today:day.today,yesterday:day.yesterday,
+    netSalesCents:row?Number(row.net_sales_cents):null,
+    sold:{available:sold.available,linked:sold.linked,unlinked:sold.unlinked},
     menu:menu.map(m=>({id:m.id,name:m.name,base_name:m.base_name,category:m.category})),
-    categoryLabels,
-    savedEvents:events,monitors,
-    verifiedBinding:recipient.verifiedBinding,followupPermitted:recipient.followupPermitted,
-  },now);
+    categoryLabels:labels,
+    events:{available:events!==null,items:events??[],coverage:coverage?.status??null},
+  };
+  return {evidence,content:buildBriefContent(evidence,now),posComplete:Boolean(row)&&sold.available};
 }

@@ -1,98 +1,95 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {fromZonedTime} from "date-fns-tz";
 import {activeBinding,type BoundOwner} from "./identity.server";
 import {enqueueWhatsApp,dispatchOutboundOnce} from "./queue.server";
-import {providerAllowed} from "./transport.server";
-import {validTemplateFields} from "./transport";
-import {briefWindow,briefDue} from "@/lib/operating/dailyBrief";
-import {readPreparedMorningBrief} from "./morningBrief.server";
-import {labelNewMenuCategories} from "@/lib/menu/drinkLabels.server";
-import {renderMorningBrief,type PreparedMorningBrief} from "./morningBrief";
+import {providerAllowed,providerBlockers} from "./transport.server";
+import {localClock} from "@/lib/pos/toast/scheduleDates";
+import {briefTemplateFor} from "./briefTemplates";
+import {prepareMorningBrief,renderMorningBrief,type BriefContent,type PreparedMorningBrief} from "./morningBrief";
 
+/** The morning brief is an approved Meta TEMPLATE. Meta allows a template at any
+ * time, so this path never checks the 24-hour customer-service window (that rule
+ * is only for free text: whatsappFreeTextAllowed in ./supervisor). Safety kept:
+ * only a verified, opted-in, non-revoked owner binding; every send flag; the
+ * Meta test phone number; no replay on an ambiguous Meta response (queue).
+ * Every "no" carries a reason so the caller can record it. */
+export const BRIEF_SEND_MIGRATION="20261104000148_morning_brief_send_window.sql";
 export type BriefScope={businessId:string;ownerUserId:string;threadId?:string;
   businessName:string;currency:string|null;timezone:string;today:string;yesterday:string};
+export type Blocked={reason:string;details?:Record<string,unknown>};
 export type EligibleBrief={binding:BoundOwner;prepared:PreparedMorningBrief;websiteText:string};
 
-/** Read only PR A's explicitly selected, consented recipient. Never create a binding,
+/** Read only the explicitly selected, consented recipient. Never create a binding,
  * silently select a café, or infer WhatsApp ownership from the website session. */
 export async function eligibleBriefBinding(db:SupabaseClient,scope:Omit<BriefScope,"threadId">):
- Promise<BoundOwner|null>{
-  if(!providerAllowed("daily_brief")||
-     process.env.WHATSAPP_OWNER_REPLY_SEND_ENABLED!=="true"||
-     process.env.WHATSAPP_MONITOR_FOLLOWUP_APPROVED!=="true")return null;
+ Promise<{binding:BoundOwner}|Blocked>{
+  const settings=providerBlockers("daily_brief");
+  if(settings.length)return {reason:"whatsapp_setting_off",details:{settings}};
   const {data,error}=await db.from("whatsapp_owner_bindings").select("id")
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
     .eq("opted_in",true).is("revoked_at",null).limit(2);
-  if(error||data?.length!==1)return null;
+  if(error)return {reason:"whatsapp_binding_read_failed"};
+  if(!data?.length)return {reason:"no_linked_whatsapp_number"};
+  if(data.length>1)return {reason:"more_than_one_whatsapp_binding"};
   const binding=await activeBinding(data[0].id);
-  return binding?.businessId===scope.businessId&&binding.ownerUserId===scope.ownerUserId?binding:null;
+  if(!binding)return {reason:"whatsapp_binding_not_verified"};
+  if(binding.businessId!==scope.businessId||binding.ownerUserId!==scope.ownerUserId)
+    return {reason:"whatsapp_binding_other_cafe"};
+  return {binding};
 }
 
-/** A free-form follow-up can be promised only if the existing owner-opened
- * service window covers the café's operating-day observation horizon.
- * Any missing/invalid timestamp fails closed; a provider-send flag alone is NOT permission. */
-function followupWindowCoversDay(binding:BoundOwner,scope:BriefScope,now:Date):boolean{
-  const opened=Date.parse(binding.lastOwnerMessageAt??"");
-  if(!Number.isFinite(opened)||opened>now.getTime()||now.getTime()-opened>=86_400_000)return false;
-  const horizon=fromZonedTime(scope.today+"T20:00:00",scope.timezone).getTime();
-  return Number.isFinite(horizon)&&opened+86_400_000>horizon;
+/** The exact template blanks the website copy and the outbox both use. */
+export function prepareBoundBrief(content:BriefContent,binding:BoundOwner,threadId:string):
+ {brief:EligibleBrief}|Blocked{
+  if(binding.threadId!==threadId)return {reason:"whatsapp_binding_thread_mismatch"};
+  const template=briefTemplateFor(content.event.kind==="today");
+  const prepared=prepareMorningBrief(content,template);
+  if(!prepared)return {reason:"invalid_template_blanks",details:{template:template.name}};
+  return {brief:{binding,prepared,websiteText:renderMorningBrief(prepared)}};
 }
 
-/** Producer uses these EXACT parameters for the website copy and durable outbox.
- * No second event search, financial math or notification state. */
-export async function prepareBoundBrief(db:SupabaseClient,scope:BriefScope,now:Date,
-  binding:BoundOwner|null):Promise<EligibleBrief|null>{
-  if(!binding||!scope.threadId||binding.threadId!==scope.threadId)return null;
-  const w=briefWindow(now,scope.timezone);
-  if(!w.readyToPublish||!w.beforeDeadline||!followupWindowCoversDay(binding,scope,now))return null;
-  // Label any menu category seen for the first time, so its drinks can count.
-  await labelNewMenuCategories(db,scope.businessId);
-  const prepared=await readPreparedMorningBrief(db,{...scope,verifiedBinding:true,
-    followupPermitted:true},now);
-  if(!prepared||!validTemplateFields(prepared.parameters))return null;
-  return {binding,prepared,websiteText:renderMorningBrief(prepared.parameters)};
+/** The deadline-aware outbox claim (migration 148) is installed. */
+export async function whatsappBriefSendReady(db:SupabaseClient):Promise<boolean>{
+  const {data,error}=await db.rpc("whatsapp_brief_send_window_ready");
+  return !error&&data===true;
 }
 
-/** Queue one per (café, owner, local today), anchored to the original web brief.
- * PR A owns all unique indexes, verified bindings and actual provider dispatch. */
-export async function enqueueBoundBrief(input:EligibleBrief,scope:BriefScope,
-  websiteMessageId:string,now:Date):Promise<void>{
-  const w=briefWindow(now,scope.timezone);
-  if(!w.readyToPublish||!w.beforeDeadline||!providerAllowed("daily_brief")||
-    input.binding.businessId!==scope.businessId||
-    input.binding.ownerUserId!==scope.ownerUserId||
-    input.binding.threadId!==scope.threadId)return;
+/** Queue one per (café, owner, local today), anchored to the saved web brief. */
+export async function enqueueBoundBrief(db:SupabaseClient,input:EligibleBrief,scope:BriefScope,
+  websiteMessageId:string,sendBefore:string,now:Date):Promise<{outcome:"queued"}|(Blocked&{outcome:"skipped"|"failed"})>{
+  const settings=providerBlockers("daily_brief");
+  if(settings.length)return {outcome:"skipped",reason:"whatsapp_setting_off",details:{settings}};
+  if(!(Date.parse(sendBefore)>now.getTime()))
+    return {outcome:"skipped",reason:"past_send_deadline",details:{sendBefore}};
+  if(input.binding.businessId!==scope.businessId||input.binding.ownerUserId!==scope.ownerUserId||
+    input.binding.threadId!==scope.threadId)return {outcome:"skipped",reason:"whatsapp_binding_scope_mismatch"};
+  if(!await whatsappBriefSendReady(db))
+    return {outcome:"skipped",reason:"migration_missing",details:{migration:BRIEF_SEND_MIGRATION}};
   const live=await activeBinding(input.binding.id);
   if(!live||live.businessId!==scope.businessId||live.ownerUserId!==scope.ownerUserId||
-     live.threadId!==scope.threadId||!followupWindowCoversDay(live,scope,now))return;
-  await enqueueWhatsApp(live.id,
-    ["daily-brief",scope.businessId,scope.ownerUserId,scope.today].join(":"),
-    {kind:"daily_brief",fields:input.prepared.parameters},
-    {source:"canonical_daily_brief",period:input.prepared.businessDate,
-      eventId:input.prepared.provenance.eventId,
-      monitorId:input.prepared.provenance.monitorProposalId,
-      readerSources:input.prepared.provenance},
-    websiteMessageId,undefined,scope.today);
+     live.threadId!==scope.threadId)return {outcome:"skipped",reason:"whatsapp_binding_not_verified"};
+  try{
+    await enqueueWhatsApp(live.id,
+      ["daily-brief",scope.businessId,scope.ownerUserId,scope.today].join(":"),
+      {kind:"daily_brief",template:input.prepared.template.name,fields:input.prepared.fields},
+      {source:"canonical_daily_brief",period:input.prepared.businessDate,
+        template:input.prepared.template.name,readerSources:input.prepared.provenance},
+      websiteMessageId,undefined,scope.today,sendBefore);
+  }catch{return {outcome:"failed",reason:"whatsapp_queue_unavailable"};}
+  return {outcome:"queued"};
 }
 
-/** Send only through PR A's canonical worker and only when the staged SQL
- * claim-deadline guard is installed. No alternative queue or provider client.
- * A final request-time check prevents a lease obtained at 05:59:59 from
- * initiating a Meta send after 06:00. */
-function briefFollowupAllowed():boolean{
-  return providerAllowed("daily_brief")&&
-    process.env.WHATSAPP_OWNER_REPLY_SEND_ENABLED==="true"&&
-    process.env.WHATSAPP_MONITOR_FOLLOWUP_APPROVED==="true";
-}
+/** Send through the one canonical worker. A final request-time check makes sure
+ * the leased brief is still before its own café deadline and on its local day. */
 export async function dispatchDueMorningBriefs(db:SupabaseClient,
-  send:typeof fetch=fetch,clock:()=>Date=()=>new Date()):Promise<number>{
-  if(!briefFollowupAllowed())return 0;
-  const {data:ready,error}=await db.rpc("whatsapp_brief_dispatch_ready");
-  if(error||ready!==true)return 0;
+  send:typeof fetch=fetch,clock:()=>Date=()=>new Date()):Promise<{accepted:number}&Partial<Blocked>>{
+  const settings=providerBlockers("daily_brief");
+  if(settings.length)return {accepted:0,reason:"whatsapp_setting_off",details:{settings}};
+  if(!await whatsappBriefSendReady(db))
+    return {accepted:0,reason:"migration_missing",details:{migration:BRIEF_SEND_MIGRATION}};
   const guardedSend:typeof fetch=async(url,init)=>{
     const rejected=()=>new Response(null,{status:400});
-    if(!briefFollowupAllowed())return rejected();
+    if(!providerAllowed("daily_brief"))return rejected();
     if(typeof init?.body!=="string")return rejected();
     let to:string;
     try{
@@ -106,15 +103,16 @@ export async function dispatchDueMorningBriefs(db:SupabaseClient,
     const bound=await activeBinding(bindings[0].id);
     if(!bound||bound.waId!==to)return rejected();
     const [lease,cafe]=await Promise.all([
-      db.from("whatsapp_outbox").select("business_date")
+      db.from("whatsapp_outbox").select("business_date,send_before")
         .eq("binding_id",bound.id).eq("kind","daily_brief").eq("state","leased").limit(2),
       db.from("businesses").select("timezone").eq("id",bound.businessId).maybeSingle(),
     ]);
     if(lease.error||cafe.error||lease.data?.length!==1||!cafe.data?.timezone)return rejected();
-    const actual=clock(),due=briefDue(actual,cafe.data.timezone);
-    const window=briefWindow(actual,cafe.data.timezone);
-    if(!due.due||!window.readyToPublish||!window.beforeDeadline||
-       due.today!==lease.data[0].business_date||!briefFollowupAllowed())return rejected();
+    const actual=clock(),deadline=Date.parse(String(lease.data[0].send_before??""));
+    let today:string;
+    try{today=localClock(actual,cafe.data.timezone).today;}catch{return rejected();}
+    if(!(deadline>actual.getTime())||today!==lease.data[0].business_date||
+      !providerAllowed("daily_brief"))return rejected();
     return send(url,init);
   };
   let accepted=0;
@@ -124,5 +122,19 @@ export async function dispatchDueMorningBriefs(db:SupabaseClient,
     if(state==="accepted")accepted++;
     if(state==="retry"||state==="uncertain")break;
   }
-  return accepted;
+  return {accepted};
+}
+
+/** The one outbox hook for the morning brief, used by the cron and by the
+ * admin "Send test brief now" button, so both take the same path. */
+export function briefOutboxHook(db:SupabaseClient,now:Date){
+  return async(input:{businessId:string;ownerUserId:string;threadId:string;websiteMessageId:string;
+    businessName:string;currency:string|null;timezone:string;today:string;yesterday:string;
+    eligible:EligibleBrief|null;sendBefore:string})=>{
+    if(!input.eligible)return;
+    return enqueueBoundBrief(db,input.eligible,{
+      businessId:input.businessId,ownerUserId:input.ownerUserId,threadId:input.threadId,
+      businessName:input.businessName,currency:input.currency,timezone:input.timezone,
+      today:input.today,yesterday:input.yesterday},input.websiteMessageId,input.sendBefore,now);
+  };
 }

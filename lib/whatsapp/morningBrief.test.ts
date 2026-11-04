@@ -1,122 +1,165 @@
 import {describe,expect,it} from "vitest";
 import type {CafeEvent} from "@/lib/data/cafeEvents.server";
-import type {OwnerProposalRow} from "@/lib/ai/supervisor/loop/reads.server";
-import {prepareMorningBrief,renderMorningBrief,type MorningBriefEvidence} from "./morningBrief";
+import {buildBriefContent,briefTemplateFields,prepareMorningBrief,renderMorningBrief,
+  type MorningBriefEvidence} from "./morningBrief";
+import {CURRENT_TEMPLATE,EVENT_TEMPLATE,NO_EVENT_TEMPLATE,BRIEF_TEMPLATES,briefTemplateFor} from "./briefTemplates";
+import {buildOutbound,validTemplateFields} from "./transport";
 
-const now=new Date("2026-10-31T16:00:00.000Z");
+const now=new Date("2026-11-03T13:50:00.000Z"); // Tue 05:50 PST
 const event:CafeEvent={
-  id:"event-1",name:"Halloween festival",kind:"festival",startDate:"2026-10-31",
-  endDate:"2026-10-31",startTime:"15:00:00",endTime:null,venue:"Moscone Center",
-  venueAddress:null,areaLabel:null,sourceUrl:"https://example.org/festival",status:"found",
-  foundAt:"2026-10-27T18:00:00Z",lastCheckedAt:"2026-10-30T20:00:00Z",
-  lastVerifiedAt:"2026-10-30T20:00:00Z",
+  id:"event-1",name:"Night market",kind:"festival",startDate:"2026-11-03",
+  endDate:"2026-11-03",startTime:"15:00:00",endTime:null,venue:"Main Plaza",
+  venueAddress:null,areaLabel:"0.4 mi",sourceUrl:"https://example.org/market",status:"found",
+  foundAt:"2026-10-27T18:00:00Z",lastCheckedAt:"2026-11-02T20:00:00Z",
+  lastVerifiedAt:"2026-11-02T20:00:00Z",
 };
-const monitor:OwnerProposalRow={
- id:"monitor-1",thread_id:"thread-1",capability_id:"alex.daily_sales.v1",revision:1,
- status:"committed",canonical_effect_payload:{},baseline:{},
- monitor_spec:{metricScope:"same_weekday_sales",durationDays:7},
- monitoring_start_date:"2026-10-29",created_at:"2026-10-28T15:00:00Z",
-};
-function evidence(overrides:Partial<MorningBriefEvidence>={}):MorningBriefEvidence{
- return {businessId:"cafe-1",businessName:"Café One",currency:"EUR",
-   today:"2026-10-31",yesterday:"2026-10-30",netSalesCents:240000,salesStatus:"actual",
-   itemCoverage:true,
-   soldItems:[{id:"latte-small",units:5},{id:"latte-large",units:4},
-     {id:"tea",units:2},{id:"sandwich",units:7}],
-   menu:[{id:"latte-small",name:"Latte 12 oz",base_name:"Latte",category:"ESPRESSO_DRINK"},
-     {id:"latte-large",name:"Latte 16 oz",base_name:"Latte",category:"ESPRESSO_DRINK"},
-     {id:"tea",name:"Tea",base_name:null,category:"TEA"},
-     {id:"sandwich",name:"Sandwich",base_name:null,category:"FOOD"}],
-   savedEvents:[event],monitors:[monitor],verifiedBinding:true,followupPermitted:true,
-   ...overrides};
+// Seiyun's real Toast menu groups (Nov 2026): café-named, no drink flag from Toast.
+const menu=[
+  {id:"latte-12",name:"Latte 12 oz",base_name:"Latte",category:"Espresso"},
+  {id:"latte-16",name:"Latte 16 oz",base_name:"Latte",category:"Espresso"},
+  {id:"adeni",name:"Adeni Tea",base_name:null,category:"Traditional"},
+  {id:"samosa",name:"Samosa",base_name:null,category:"Food"},
+];
+const sold={available:true,linked:[{id:"latte-12",units:5},{id:"latte-16",units:4},
+  {id:"adeni",units:7},{id:"samosa",units:12}],unlinked:[]};
+function evidence(o:Partial<MorningBriefEvidence>={}):MorningBriefEvidence{
+  return {businessName:"Seiyun Yemeni Coffee",currency:"USD",today:"2026-11-03",yesterday:"2026-11-02",
+    netSalesCents:139262,sold,menu,categoryLabels:new Map(),
+    events:{available:true,items:[],coverage:"complete"},...o};
 }
-describe("Meta's seven ordered daily-brief values",()=>{
- it("uses covered drinks, groups sizes and retains canonical net sales, event and local weekday",()=>{
-   const result=prepareMorningBrief(evidence(),now);
-   expect(result).toEqual({netSalesCents:240000,parameters:["Café One","€2,400.00","11","Latte","9",
-     "Halloween festival at Moscone Center at 15:00","Saturday"],
-     businessDate:"2026-10-30",today:"2026-10-31",
-     provenance:{sales:"daily_rollups",items:"menu_item_quantities_sold",menu:"menu_items",
-       eventId:"event-1",monitorProposalId:"monitor-1"}});
- });
- it("skips missing, partial and unverified closed-day numbers, including missing currency",()=>{
-   for(const variant of [
-     {netSalesCents:null},{netSalesCents:NaN},{salesStatus:"missing"},
-     {salesStatus:null},{currency:null},{currency:"???"},{itemCoverage:false},
-     {soldItems:[]},{soldItems:[{id:"absent",units:12}]},
-     {soldItems:[{id:"tea",units:0}]},{soldItems:[{id:"tea",units:0.5}]},
-     {menu:[{id:"tea",name:"Tea",base_name:null,category:"unclassified"}]},
-   ])expect(prepareMorningBrief(evidence(variant as Partial<MorningBriefEvidence>),now)).toBeNull();
-   expect(prepareMorningBrief(evidence({netSalesCents:0}),now)?.parameters[1]).toBe("€0.00");
- });
- it("does not infer weekday monitoring from any unrelated or draft experiment",()=>{
-   for(const monitors of [
-     [],[{...monitor,status:"draft"}],[{...monitor,monitor_spec:{metricScope:"event",durationDays:7}}],
-     [{...monitor,monitor_spec:{metricScope:"same_weekday_sales",durationDays:1}}],
-     [{...monitor,monitoring_start_date:"2026-11-01"}],
-   ])expect(prepareMorningBrief(evidence({monitors}),now)).toBeNull();
-   expect(prepareMorningBrief(evidence({verifiedBinding:false}),now)).toBeNull();
-   expect(prepareMorningBrief(evidence({followupPermitted:false}),now)).toBeNull();
- });
- it("skips unsourced, cancelled, stale, failed or out-of-day events, not predicting impact",()=>{
-   for(const savedEvents of [
-     [],[{...event,status:"cancelled" as const}],[{...event,lastVerifiedAt:null}],
-     [{...event,sourceUrl:null}],[{...event,verificationFailedAt:"2026-10-31T01:00:00Z"}],
-     [{...event,startDate:"2026-11-01",endDate:"2026-11-01"}],
-     [{...event,lastVerifiedAt:"2026-10-20T00:00:00Z"}],
-   ])expect(prepareMorningBrief(evidence({savedEvents}),now)).toBeNull();
- });
- it("renders replacement tokens and nested placeholders literally",()=>{
-   const parameters=[...prepareMorningBrief(evidence(),now)!.parameters] as
-     [string,string,string,string,string,string,string];
-   parameters[0]="Coffee $$ $& {{2}}";
-   const text=renderMorningBrief(parameters);
-   expect(text).toContain("Here's Coffee $$ $& {{2}}'s daily brief");
-   expect(text).toContain("Net sales: €2,400.00");
- });
- it("sanitizes owner-facing provider fields and rejects excessively long values",()=>{
-   const result=prepareMorningBrief(evidence({businessName:"Café  *One*\n  <hello>",
-     savedEvents:[{...event,name:"Halloween\n *Festival*"}]}),now);
-   expect(result?.parameters[0]).toBe("Café One hello");
-   expect(result?.parameters[5]).toBe("Halloween Festival at Moscone Center at 15:00");
-   expect(prepareMorningBrief(evidence({businessName:"A".repeat(121)}),now)).toBeNull();
- });
- it("uses the local business day through DST boundaries, not the UTC weekday",()=>{
-   const shifted=evidence({today:"2026-11-01",yesterday:"2026-10-31",
-     savedEvents:[{...event,startDate:"2026-11-01",endDate:"2026-11-01",
-       lastVerifiedAt:"2026-11-01T15:30:00Z"}],
-     monitors:[{...monitor,monitoring_start_date:"2026-10-31"}]});
-   expect(prepareMorningBrief(shifted,new Date("2026-11-01T16:00:00Z"))?.parameters[6]).toBe("Sunday");
-   expect(prepareMorningBrief({...shifted,today:"2026-11-02"},new Date("2026-11-02T16:00:00Z"))).toBeNull();
- });
+const fieldsOf=(e:MorningBriefEvidence,template=CURRENT_TEMPLATE)=>
+  briefTemplateFields(buildBriefContent(e,now),template);
+
+describe("a plain day still gets a full brief",()=>{
+  it("no event, no recent owner message, unlabeled categories: sales, items, best seller and an event line",()=>{
+    const content=buildBriefContent(evidence(),now);
+    expect(content.hasSomethingToSay).toBe(true);
+    expect(fieldsOf(evidence())).toEqual(["Seiyun Yemeni Coffee","$1,392.62",
+      "28 items in total (drink split not ready yet)","Samosa","12",
+      "No major events near you this week.","Tuesday (automatic sales alerts are not on yet)"]);
+    expect(content.missing).toEqual(["drink_labels_incomplete"]);
+    expect(prepareMorningBrief(content,CURRENT_TEMPLATE)?.fields).toHaveLength(7);
+  });
+  it("uses drink counts and the best drink once every sold category is labeled, grouping sizes",()=>{
+    const labels=new Map([["Espresso",true],["Traditional",true],["Food",false]]);
+    expect(fieldsOf(evidence({categoryLabels:labels})).slice(2,5)).toEqual(["16","Latte","9"]);
+    expect(fieldsOf(evidence({categoryLabels:labels}),NO_EVENT_TEMPLATE).slice(2,4))
+      .toEqual(["16 drinks, 28 items in total","Latte (9 sold)"]);
+    // One unlabeled sold category falls back to all items, never a partial drink count.
+    const partial=new Map([["Espresso",true],["Food",false]]);
+    expect(fieldsOf(evidence({categoryLabels:partial}))[2]).toBe("28 items in total (drink split not ready yet)");
+  });
+  it("counts items missing from the menu by their POS name",()=>{
+    const e=evidence({sold:{available:true,linked:[{id:"latte-12",units:2}],
+      unlinked:[{name:"Jubani Coffee",category:null,units:6},{name:"Jubani Coffee",category:null,units:1}]}});
+    expect(fieldsOf(e).slice(2,5)).toEqual(["9 items in total (drink split not ready yet)","Jubani Coffee","7"]);
+  });
+  it("late POS sync: says plainly what is not in yet, never a zero",()=>{
+    const e=evidence({netSalesCents:null,sold:{available:false,linked:[],unlinked:[]}});
+    const content=buildBriefContent(e,now);
+    expect(content.hasSomethingToSay).toBe(true); // the event line still has something to say
+    expect(fieldsOf(e).slice(1,5)).toEqual(["not in yet (your POS is still syncing)","not in yet",
+      "not in yet","no item data"]);
+    expect(content.missing).toEqual(["sales_not_in","items_not_in"]);
+    expect(fieldsOf(evidence({netSalesCents:0}))[1]).toBe("$0.00");
+  });
+  it("a missing currency is said out loud instead of stopping the brief",()=>{
+    expect(fieldsOf(evidence({currency:null}))[1]).toBe("1,392.62 (currency not set)");
+  });
+  it("skips only when there is truly nothing to say",()=>{
+    const nothing=evidence({netSalesCents:null,sold:{available:false,linked:[],unlinked:[]},
+      events:{available:false,items:[],coverage:null}});
+    expect(buildBriefContent(nothing,now).hasSomethingToSay).toBe(false);
+    expect(buildBriefContent({...nothing,events:{available:true,items:[],coverage:"partial"}},now)
+      .hasSomethingToSay).toBe(false);
+  });
 });
 
-describe("top drink from the café's own Toast categories",()=>{
- // Seiyun's real Toast menu groups (Nov 2026): café-named, no drink flag from Toast.
- const menu=[
-  {id:"saffron",name:"Saffron latte",base_name:null,category:"Specialty"},
-  {id:"adeni",name:"Adeni Tea",base_name:null,category:"Traditional"},
-  {id:"pumpkin",name:"Pumpkin Spice Latte",base_name:null,category:"FALL DRINKS"},
-  {id:"samosa",name:"Samosa",base_name:null,category:"Food"},
-  {id:"beans",name:"Coffee beans",base_name:null,category:"Retail"},
- ];
- const soldItems=[{id:"saffron",units:30},{id:"adeni",units:41},{id:"pumpkin",units:12},
-  {id:"samosa",units:60},{id:"beans",units:3}];
- const labels=new Map([["Specialty",true],["Traditional",true],["FALL DRINKS",true],
-  ["Food",false],["Retail",false]]);
- it("picks the best-selling drink and never food or retail",()=>{
-  const result=prepareMorningBrief(evidence({menu,soldItems,categoryLabels:labels}),now);
-  expect(result?.parameters.slice(2,5)).toEqual(["83","Adeni Tea","41"]);
- });
- it("waits when any sold category is not labeled yet, never a partial drink count",()=>{
-  const partial=new Map([["Specialty",true],["Food",false]]);
-  expect(prepareMorningBrief(evidence({menu,soldItems,categoryLabels:partial}),now)).toBeNull();
-  // An unsold unlabeled category does not hold the brief back.
-  const unsold=soldItems.filter(s=>s.id!=="adeni"&&s.id!=="pumpkin"&&s.id!=="beans");
-  expect(prepareMorningBrief(evidence({menu,soldItems:unsold,categoryLabels:partial}),now)
-   ?.parameters.slice(2,5)).toEqual(["30","Saffron latte","30"]);
- });
- it("skips the brief only when no sold drink is labeled at all",()=>{
-  expect(prepareMorningBrief(evidence({menu,soldItems,categoryLabels:new Map()}),now)).toBeNull();
- });
+describe("events: always one line",()=>{
+  it("today's event, with or without fresh verification",()=>{
+    expect(fieldsOf(evidence({events:{available:true,items:[event],coverage:"complete"}}))[5])
+      .toBe("Night market at Main Plaza at 15:00");
+    for(const items of [[{...event,lastVerifiedAt:null}],[{...event,lastVerifiedAt:"2026-10-20T00:00:00Z"}],
+      [{...event,sourceUrl:null}],[{...event,verificationFailedAt:"2026-11-03T01:00:00Z"}]])
+      expect(fieldsOf(evidence({events:{available:true,items,coverage:"complete"}}))[5])
+        .toBe("Night market at Main Plaza at 15:00 (not confirmed yet)");
+  });
+  it("no event today: names the next one within 7 days with day and distance",()=>{
+    const later={...event,id:"e2",name:"Farmers market",startDate:"2026-11-07",endDate:"2026-11-07",startTime:null};
+    const tooLate={...event,id:"e3",startDate:"2026-11-11",endDate:"2026-11-11"};
+    expect(fieldsOf(evidence({events:{available:true,items:[tooLate,later],coverage:"partial"}}))[5])
+      .toBe("No events nearby today. Next: Farmers market at Main Plaza, Saturday, 0.4 mi");
+    expect(fieldsOf(evidence({events:{available:true,items:[{...later,areaLabel:null}],coverage:"complete"}}))[5])
+      .toBe("No events nearby today. Next: Farmers market at Main Plaza, Saturday");
+    expect(fieldsOf(evidence({events:{available:true,items:[{...later,areaLabel:null,lastVerifiedAt:null}],coverage:"complete"}}))[5])
+      .toBe("No events nearby today. Next: Farmers market at Main Plaza (not confirmed yet), Saturday");
+  });
+  it("no event this week: 'No major events' only when research completed",()=>{
+    const cancelled={...event,status:"cancelled" as const};
+    expect(fieldsOf(evidence({events:{available:true,items:[cancelled],coverage:"complete"}}))[5])
+      .toBe("No major events near you this week.");
+    expect(fieldsOf(evidence({events:{available:true,items:[],coverage:"unsearched"}}))[5])
+      .toBe("No confirmed events near you this week.");
+    expect(fieldsOf(evidence({events:{available:false,items:[],coverage:null}}))[5])
+      .toBe("Today's event check didn't finish.");
+  });
+  it("event today -> 4-button template; no event -> 3-button template (once Meta approves the split)",()=>{
+    expect(briefTemplateFor(true,"split")).toBe(EVENT_TEMPLATE);
+    expect(briefTemplateFor(false,"split")).toBe(NO_EVENT_TEMPLATE);
+    expect(briefTemplateFor(false,undefined)).toBe(CURRENT_TEMPLATE);
+    expect(briefTemplateFor(true,"anything-else")).toBe(CURRENT_TEMPLATE);
+    const buttons=(template:typeof CURRENT_TEMPLATE,e:MorningBriefEvidence)=>{
+      const p=prepareMorningBrief(buildBriefContent(e,now),template)!;
+      const out=buildOutbound("+15556506570",{kind:"daily_brief",template:p.template.name,fields:p.fields}) as
+        {template:{name:string;components:{type:string;parameters:{payload?:string;text?:string}[]}[]}};
+      return {name:out.template.name,body:out.template.components[0].parameters.map(x=>x.text),
+        buttons:out.template.components.slice(1).map(c=>c.parameters[0].payload)};
+    };
+    const withEvent=evidence({events:{available:true,items:[event],coverage:"complete"}});
+    expect(buttons(EVENT_TEMPLATE,withEvent)).toEqual({name:"cafe_profit_brief_event",
+      body:["Seiyun Yemeni Coffee","$1,392.62","28 items (drink split not ready yet)","Samosa (12 sold)",
+        "Night market at Main Plaza at 15:00"],
+      buttons:["money_went","peak_today","slowest_yesterday","event_today"]});
+    const plain=buttons(NO_EVENT_TEMPLATE,evidence());
+    expect(plain.buttons).toEqual(["money_went","peak_today","slowest_yesterday"]);
+    expect(plain.body[4]).toBe("No major events near you this week.");
+    expect(buttons(CURRENT_TEMPLATE,evidence()).buttons).toHaveLength(4);
+  });
+});
+
+describe("Meta blank rules",()=>{
+  it("no blank is ever empty, has a newline/tab or 4+ spaces, for every template and data shape",()=>{
+    const nasty="  Café\n\t*Bold*    <b>   ";
+    const shapes:MorningBriefEvidence[]=[evidence(),
+      evidence({businessName:"",netSalesCents:null,sold:{available:false,linked:[],unlinked:[]}}),
+      evidence({businessName:nasty,currency:null,
+        sold:{available:true,linked:[],unlinked:[{name:nasty,category:nasty,units:3}]},
+        events:{available:true,items:[{...event,name:nasty,venue:nasty,areaLabel:nasty}],coverage:"complete"}}),
+      evidence({businessName:"A".repeat(400),events:{available:true,
+        items:[{...event,name:"B".repeat(400),startDate:"2026-11-05",endDate:"2026-11-05"}],coverage:"partial"}}),
+      evidence({sold:{available:true,linked:[{id:"gone",units:2}],unlinked:[]}}),
+      evidence({events:{available:false,items:[],coverage:null}}),
+    ];
+    for(const e of shapes)for(const template of BRIEF_TEMPLATES){
+      const fields=fieldsOf(e,template);
+      expect(fields).toHaveLength(template.blanks.length);
+      expect(validTemplateFields(fields,template.blanks.length)).toBe(true);
+      for(const f of fields){
+        expect(f.length).toBeGreaterThan(0);
+        expect(f).not.toMatch(/[\r\n\t]| {4,}/);
+      }
+    }
+    expect(fieldsOf(shapes[1])[0]).toBe("your café");
+    expect(fieldsOf(shapes[4]).slice(3,5)).toEqual(["an item not on your menu","2"]);
+  });
+  it("renders replacement tokens and nested placeholders literally",()=>{
+    const p=prepareMorningBrief(buildBriefContent(evidence({businessName:"Coffee $$ $& {{2}}"}),now),CURRENT_TEMPLATE)!;
+    const text=renderMorningBrief(p);
+    expect(text).toContain("Here's Coffee $$ $& {{2}}'s daily brief");
+    expect(text).toContain("Net sales: $1,392.62");
+  });
+  it("uses the café-local weekday through DST, not the UTC one",()=>{
+    const sunday=evidence({today:"2026-11-01",yesterday:"2026-10-31"});
+    expect(fieldsOf(sunday)[6]).toBe("Sunday (automatic sales alerts are not on yet)");
+  });
 });
