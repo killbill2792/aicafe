@@ -6,6 +6,7 @@ import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerCh
 
 import {money,count} from "../explain";
 import { staffTools } from "./staff";
+import {localizeQualityNotes} from "./qualityNotes";
 import { attentionTools } from "./attention";
 import {scheduleReadTools} from "./scheduleReads";
 import { hoursTools } from "./hours";
@@ -157,31 +158,6 @@ export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
-/** Present the shared Toast trust keys as ONE localized note per issue, while
- * retaining machine-readable missingInputs for existing quality consumers. */
-function localizeQualityNotes(keys:readonly string[],locale:AgentLocale):string[]{
- const copy={en,es,ar}[locale].DataNotes;
- const notes:string[]=[];
- for(const key of keys){
-  const match=/^toastDaysNeedLook:(\d+):([^:]+):(\d+)$/.exec(key);
-  if(match){
-   const extra=Number(match[3]);
-   notes.push(copy.toastDaysNeedLook.replace("{count}",match[1])
-    .replace("{dates}",match[2].replaceAll(", ",", ").replaceAll(",",", "))
-    .replace("{more}",extra?copy.toastMoreDays.replace("{count}",String(extra)):""));
-  }else if(key.startsWith("toastImportIncompleteDays:")){
-   const match=/^toastImportIncompleteDays:(\d+):([^:]+):(\d+)$/.exec(key);
-   if(match)notes.push(copy.toastImportIncompleteDays.replace("{count}",match[1])
-    .replace("{dates}",match[2].replaceAll(",",", "))
-    .replace("{more}",Number(match[3])?copy.toastMoreDays.replace("{count}",match[3]):""));
-  }else if(key==="toastDayStatusUnavailable")notes.push(copy.toastDayStatusUnavailable);
-  else if(key.startsWith("toastFailedNoCanonicalSales:"))
-   notes.push(copy.toastFailedNoCanonicalSales.replace("{dates}",key.slice("toastFailedNoCanonicalSales:".length).replaceAll(",",", ")));
-  else if(key.startsWith("toastDayStatusMissing:"))
-   notes.push(copy.toastDayStatusMissing.replace("{dates}",key.slice("toastDayStatusMissing:".length).replaceAll(",",", ")));
- }
- return [...new Set(notes)];
-}
 export const requestedPeriod=calcRequestedPeriod;
 
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
