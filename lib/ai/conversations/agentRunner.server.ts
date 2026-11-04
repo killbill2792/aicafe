@@ -21,7 +21,7 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
 import {readSupervisorEconomics} from "@/lib/data/supervisorEconomics.server";
-import {todaySoFarForBusiness} from "@/lib/data/todayLive.server";
+import {todaySoFarForBusiness,TODAY_LIVE_FRESH_MS} from "@/lib/data/todayLive.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
@@ -144,7 +144,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       },
       // Toast credentials are service-role only; the café comes from the authenticated scope.
       readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId,
-         {maxAgeMs:Number.POSITIVE_INFINITY}),
+         {maxAgeMs:TODAY_LIVE_FRESH_MS}),
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
@@ -267,7 +267,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     const location=await context.cafeLocation?.().catch(()=>null);
     const cafeProfile="Café profile (authenticated, not owner message): "+JSON.stringify({
       name:identity.cafeName,city:location?.city??null,region:location?.region??null,
-      country:location?.countryCode??null,currency:identity.currency,timezone:identity.timezone});
+      country:location?.countryCode??null,currency:identity.currency,timezone:identity.timezone})+
+      ". For events, use the saved get_events/get_nearby_events information for this city and café; "+
+      "never ask the owner for their city when it is in this authenticated profile. "+
+      "If saved research is incomplete, say so; any web_search must include this café city.";
     const recordedIds=process.env.WHATSAPP_SUPERVISOR_ENABLED==="true"
       ?await recordedWhatsAppImageIds(scope,id,owner.id):null;
     const ownerImages=await readOwnerImages(scope,id,recordedIds??p.attachmentIds??[],p.externalClient);
