@@ -543,11 +543,13 @@ export async function scanSharedResearch(db:Db,input:{
   const cityKey=cityScopeKey(scope);
   await neighborhood(db,input.businessId,input.location,scope,input.budget,input.checkedAt);
   const sources=await sourcesForCity(db,cityKey);
-  let all=await allCoverage(db,cityKey);
-  // A first 14-day bootstrap needs 7 categories × 2 slices in one run;
-  // ordinary daily updates retain the six-task global fair-share budget.
+  // All categories and discovered venue sources get both initial seven-day slices.
+  // This is a PER-CAFÉ cap, not a counter taken from another café. Preserve
+  // the ordinary six-task budget for follow-on daily runs.
   if(input.window.reason==="initial"&&input.budget.cityTasks===6)
-    input.budget.cityTasks=14;
+    input.budget.cityTasks=Math.max(input.budget.cityTasks,
+      sources.length*cityResearchDateSlices(input.window.from,input.window.to).length);
+  let all=await allCoverage(db,cityKey);
   // Only root/source-slice rows determine completion. Saturation creates
   // child coverage records, but a child must never complete its parent.
   // The scheduled caller determines initial city windows from the canonical
