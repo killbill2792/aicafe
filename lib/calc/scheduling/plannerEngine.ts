@@ -60,7 +60,7 @@ function softPenalty(employeeId:string,unit:DemandUnit,plan:ExpandedPlan):number
   return penalty;
 }
 function choiceScore(employeeId:string,unit:DemandUnit,plan:ExpandedPlan,
-  objective:Objective,work:readonly WorkUnit[]):number {
+  input:PlannerInput,objective:Objective,work:readonly WorkUnit[]):number {
   const employee=plan.employees.find(e=>e.id===employeeId)!;
   const minutes=(unit.end-unit.start)/60000;
   const rate=workerWageRate(employee);
@@ -216,7 +216,7 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
     const next:State[]=[];
     const options=candidates.get(unit.id)??[];
     for(const state of frontier){
-      const ranked=options.map(id=>({id,score:choiceScore(id,unit,plan,objective,state.work)}))
+      const ranked=options.map(id=>({id,score:choiceScore(id,unit,plan,input,objective,state.work)}))
         .sort((a,b)=>a.score-b.score || a.id.localeCompare(b.id));
       for(const {id,score} of ranked){
         if(nodes>=maxNodes){exhausted=true;break;}
