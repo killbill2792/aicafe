@@ -1,6 +1,6 @@
 import type { PeakHourFacts, EmployeeSalesFacts, PayrollFacts } from "@/lib/data/posFactReaders.server";
 import type {UsageRow} from "@/lib/calc/usageVariance";
-import type { SchedulingDraftInputs } from "@/lib/calc/scheduling/draftWeek";
+import type { SchedulingDraftInputs } from "@/lib/calc/scheduling/schedulingDraftTypes";
 import type { OpenHours } from "@/lib/business/openHours";
 import type { CafeStateService } from "@/lib/operating/cafeState";
 import type { CafeDecision, CafeSignal, CafeStatePeriod, KnownSlice, CafePeriodProfitability, CafeLaborDay, BusinessCostSummary } from "@/lib/operating/types";
