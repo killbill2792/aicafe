@@ -24,7 +24,8 @@ const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalU
   "missingProductCostCount","drinksNeededPerDay","drinksPerHour","todayDrinks",
   "ordersCount","staffCount","shiftCount","employeesCount","attendanceCount",
   "timecardCount","onClockCount"]);
-const trustedCountKey=(key:string)=>COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
+const trustedCountKey=(key:string)=>key.includes("calculateResultCount")||
+  COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
   COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,""));
 
 /** Goal detail has generic "current / baseline / target / value" fields.
@@ -137,6 +138,22 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       values.push({key:valueKey,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
     };
     walk(r,"",0,rootScope);
+    // Only declared, typed calculate results count as arithmetic evidence.
+    if(r.source==="calculate"&&r.refused===undefined&&
+       Array.isArray(r.numberEstimates)&&r.result&&typeof r.result==="object"){
+      const value=r.result as Record<string,unknown>;
+      const amount=typeof value.valueCents==="number"?{unit:"cents" as const,n:value.valueCents}:
+        typeof value.valueBps==="number"?{unit:"bps" as const,n:value.valueBps}:
+        typeof value.quantity==="number"?{unit:"count" as const,n:value.quantity}:null;
+      if(amount&&Number.isSafeInteger(amount.n)&&r.numberEstimates.some(entry=>
+        entry&&typeof entry==="object"&&"unit" in entry&&"value" in entry&&
+        entry.unit===amount.unit&&entry.value===amount.n)){
+        const key=periodKey+"calculateResult"+(amount.unit==="cents"?"Cents":
+          amount.unit==="bps"?"Bps":"Count");
+        values.push({key,value:amount.n,unit:amount.unit});
+        invalidatedKeys.push(key);
+      }
+    }
     // Explanations are deterministic tool outputs. Only admit a line number
     // when its exact typed result was declared in that same tool\'s estimates.
     if(r.source==="new_item_price"&&Array.isArray(r.explain)&&Array.isArray(r.numberEstimates)){
@@ -1035,6 +1052,24 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
   return Math.abs(expected-toCents(v))<=1;
 }
 
+/** Shared owner-number rule. Duration inclusion is opt-in for calculator inputs only;\n * reply verification keeps duration evidence scoped to its stated unit. */
+export function ownerStatedAmounts(ownerText:string,locale:AgentLocale,includeDurations=false):Record<Kind,Set<number>>{
+  const allowed:Record<Kind,Set<number>>={money:new Set(),percent:new Set(),number:new Set()};
+  const ownerNumbers=candidates(ownerText,locale);
+  ownerNumbers.forEach(v=>{if(includeDurations||!v.durationUnit)allowed[v.kind].add(v.value);});
+  const ownerSpoken=spokenOwnerValues(ownerText,locale);
+  for(const spoken of ownerSpoken)if(includeDurations||!spoken.durationUnit)allowed[spoken.kind].add(spoken.value);
+  for(const v of ownerNumbers){
+    if(v.kind!=="number"||v.durationUnit)continue;
+    const before=ownerText.slice(Math.max(0,v.start-90),v.start);
+    const after=ownerText.slice(v.end,v.end+24);
+    if(/^\s*(?:drinks?|orders?|people|staff|items?|cups?|units?|hours?|days?|coffees?)\b/iu.test(after))continue;
+    if(/\b(?:price|cost|charge|rent|bill|fee|salary|wage|revenue|profit|latte|mocha|espresso|cappuccino|americano|tea|coffee|sandwich|croissant|muffin|brownie)\b[^.!?\n]{0,45}$/iu.test(before))
+      allowed.money.add(Math.round(v.value*100));
+  }
+  return allowed;
+}
+
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
   previousEvidence:readonly NumericEvidence[] = []): UnverifiedNumber[] {
@@ -1079,26 +1114,16 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   for(const item of itemPrices)allowed.money.add(item.priceCents);
   const menuPrices=itemPrices;
   const ownerNumbers=candidates(ownerText,locale);
-  // Time units are scoped evidence, never generic quantity allowances.
-  ownerNumbers.forEach(v=>{if(!v.durationUnit)allowed[v.kind].add(v.value);});
   const ownerSpoken=spokenOwnerValues(ownerText,locale);
-  for(const spoken of ownerSpoken)if(!spoken.durationUnit)allowed[spoken.kind].add(spoken.value);
+  const stated=ownerStatedAmounts(ownerText,locale);
+  for(const kind of ["money","percent","number"] as const)
+    for(const amount of stated[kind])allowed[kind].add(amount);
   // Only reconciled, typed numeric evidence authorizes an amount.
   // Re-adding raw current-turn estimates here would resurrect a prior result
   // that a later tool result explicitly invalidated in this same turn.
   // Assistant prose is NEVER numeric evidence, even if it had no unverified
   // chips. Clock formatting and list markers can pass without a source.
   // Only owner statements and typed tool evidence can authorize a claim.
-  // Explicit owner-provided quantities are not prices. Infer dollars only from
-  // a nearby monetary / menu-price statement, never from "sold 9 drinks".
-  for(const v of ownerNumbers){
-    if(v.kind!=="number"||v.durationUnit)continue;
-    const before=ownerText.slice(Math.max(0,v.start-90),v.start);
-    const after=ownerText.slice(v.end,v.end+24);
-    if(/^\s*(?:drinks?|orders?|people|staff|items?|cups?|units?|hours?|days?|coffees?)\b/iu.test(after))continue;
-    if(/\b(?:price|cost|charge|rent|bill|fee|salary|wage|revenue|profit|latte|mocha|espresso|cappuccino|americano|tea|coffee|sandwich|croissant|muffin|brownie)\b[^.!?\n]{0,45}$/iu.test(before))
-      allowed.money.add(Math.round(v.value*100));
-  }
   // Monetary evidence stays in cents. Check currency-less monetary wording
   // at each candidate, rather than authorizing the value as a generic count.
 
