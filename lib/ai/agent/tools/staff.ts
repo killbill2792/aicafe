@@ -163,6 +163,9 @@ export const staffTools = {
         laborCostPercentSalesCents:salesCents,
         laborCostPercentCoveredDays:laborBasis?.coveredDays??null,
         laborCostPercentSalesDays:sales.available?sales.value.length:null,
+        laborCostPercentPartial:!sales.available||!laborBasis||
+          sales.value.length<days(p.from,p.to)+1||
+          laborBasis.coveredDays<sales.value.length,
         ownerMonthlyPayrollExtrasCents,
         toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
         pendingPosStaffReviews:reviews?.available?reviews.value:null,
