@@ -27,7 +27,7 @@ import {explainLineSchema} from "@/lib/ai/agent/explain";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress from "./ChatJobProgress";
 import { useAgentJobWatcher } from "./useAgentJobWatcher";
-import { answeredOwnerMessageIds, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
+import { answeredOwnerMessageIds, shouldShowRunningJob, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
 import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
 import SupervisorExperiment from "./SupervisorExperiment";
 import ChatStart, {type ChatStartData,type ChatStartCopy} from "./ChatStart";
@@ -304,7 +304,7 @@ export default function SupervisorChatComposer({
     setReloadVersion((v) => v + 1);
     if (job.status === "failed") { setFailureCode(job.errorCode ?? "agent_turn_failed"); setError(true); }
   });
-  const resumedRunning = !sending && watcher.job?.status === "running";
+  const resumedRunning = !sending && shouldShowRunningJob(watcher.job,messages);
 
   function cleanupRecording() {
     recordingGeneration.current++;
@@ -609,7 +609,7 @@ export default function SupervisorChatComposer({
               jobConfirmed = true;
               setLiveJobId(event.jobId);
               if (event.mode === "continuation") {
-                setStreamedText(""); setLiveSteps([]); setLiveNote(liveCopy.continuing);
+                setLiveNote(liveCopy.continuing);
               } else if (event.mode !== "started") {
                 // Already running elsewhere (another tab, or a retry): hand over to the watcher.
                 finished = true; setLiveNote(liveCopy.followUpQueued);
@@ -640,6 +640,7 @@ export default function SupervisorChatComposer({
                 const page = await loadMessages(id);
                 setMessages(page.items); setNextOffset(page.nextOffset);
                 setOptimisticOwner(null); setStreamedText(""); setLiveNote(null);
+                setLiveJobId(null);
               }
             }
           }

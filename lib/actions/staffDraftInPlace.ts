@@ -6,7 +6,9 @@ import {readSchedulingDraftInputs} from "@/lib/data/schedulingDraftInputs.server
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {scheduleProposalReplacesSavedShifts} from "@/lib/calc/scheduling/staffDraftReview";
-import {draftWeekWithStaffIds,businessLocalDate} from "@/lib/calc/scheduling/draftWeek";
+import {formatInTimeZone} from "date-fns-tz";
+import {previewOliviaWeek} from "@/lib/actions/oliviaPlanning";
+import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import {staffProposalInputs} from "@/lib/ai/agent/tools/staffProposals";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {proposeLoop,ProposalRequestConflictError,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
@@ -54,22 +56,19 @@ export async function draftStaffWeekInPlace(raw:unknown){
     const slice=await readSchedulingDraftInputs(client,scope.businessId);
     if(!slice.available||slice.quality.missingInputs.length)
       return {ok:false as const,error:"missing"};
-    const today=businessLocalDate(new Date(),slice.value.timezone);
+    const today=formatInTimeZone(new Date(),slice.value.timezone,"yyyy-MM-dd");
     if(new Date(parsed.data.week+"T12:00:00Z").getUTCDay()!==1 ||
        parsed.data.week<today)return {ok:false as const,error:"week"};
     if(await hasSavedWeekShifts(client,scope.businessId,parsed.data.week))
       return {ok:false as const,error:"week_changed"};
-    const result=draftWeekWithStaffIds(slice.value,parsed.data.week);
-    if(result.missing.length)return {ok:false as const,error:"missing"};
-    const shifts=result.days.flatMap(day=>day.shifts.map(shift=>({
-      employee_id:shift.employeeId,date:day.date,start:shift.start,
-      end:shift.end,break_minutes:Math.round(
-        (Number(shift.end.slice(0,2))*60+Number(shift.end.slice(3,5))-
-         Number(shift.start.slice(0,2))*60-Number(shift.start.slice(3,5)))-
-         shift.paidHours*60)
-    })));
+    const planned=await previewOliviaWeek({week:parsed.data.week});
+    if(!planned.ok)return {ok:false as const,error:planned.error==="disabled"?"missing":"unavailable"};
+    const best=planned.plan.best;
+    if(!best||!best.completeCoverage||!best.hardConstraintsSatisfied)
+      return {ok:false as const,error:"missing"};
+    const shifts=oliviaProposalShifts(best.shifts,planned.locations);
     if(!shifts.length||shifts.length>60||
-      shifts.some(shift=>!shift.employee_id||shift.break_minutes<0||shift.break_minutes>240))
+       shifts.some(shift=>shift.break_minutes<0||shift.break_minutes>240))
       return {ok:false as const,error:"invalid"};
     const proposed=staffProposalInputs.propose_schedule.safeParse({
       week_start:parsed.data.week,shifts});
@@ -79,7 +78,7 @@ export async function draftStaffWeekInPlace(raw:unknown){
     if(!proposal)return {ok:false as const,error:"week_changed"};
     return {ok:true as const,proposalId:proposal.id,revision:proposal.revision,
       shifts:proposed.data.shifts,
-      costIsPartial:result.totals.costIsPartial,estimated:result.estimated.length>0,
+      costIsPartial:best.cost.costState!=="verified",estimated:best.cost.costState!=="verified",
       wageRates:wageRates(slice.value.employees)};
   }catch(error){
     // Lost-response retry with changed roster/hours must release the old key,
@@ -104,7 +103,7 @@ export async function reviseStaffWeekDraft(raw:unknown){
     const slice=await readSchedulingDraftInputs(client,scope.businessId);
     if(!slice.available||slice.quality.missingInputs.length)
       return {ok:false as const,error:"missing"};
-    const today=businessLocalDate(new Date(),slice.value.timezone);
+    const today=formatInTimeZone(new Date(),slice.value.timezone,"yyyy-MM-dd");
     if(new Date(parsed.data.week+"T12:00:00Z").getUTCDay()!==1||
        parsed.data.week<today)return {ok:false as const,error:"week"};
     if(parsed.data.shifts.length===0)return {ok:false as const,error:"invalid"};

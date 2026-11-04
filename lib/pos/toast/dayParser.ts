@@ -130,7 +130,7 @@ function known(w:Record<string,number>,value:string|null|undefined,allowed:reado
  if(value&&!allowed.includes(value))warn(w,"unknown_shape");
 }
 /** A discount staff applied and then removed: Toast keeps it with processingState
- * VOID. The same rule is used by the database (migration 150). */
+ * VOID. The same rule is used by the database (migration 151). */
 export function isRemovedToastDiscount(d:unknown):boolean{
  return Boolean(d)&&typeof d==="object"&&(d as Record<string,unknown>).processingState==="VOID";
 }

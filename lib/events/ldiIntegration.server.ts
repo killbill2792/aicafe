@@ -543,30 +543,39 @@ export async function scanSharedResearch(db:Db,input:{
   const cityKey=cityScopeKey(scope);
   await neighborhood(db,input.businessId,input.location,scope,input.budget,input.checkedAt);
   const sources=await sourcesForCity(db,cityKey);
+  // All categories and discovered venue sources get both initial seven-day slices.
+  // This is a PER-CAFÉ cap, not a counter taken from another café. Preserve
+  // the ordinary six-task budget for follow-on daily runs.
+  if(input.window.reason==="initial"&&input.budget.cityTasks===6)
+    input.budget.cityTasks=Math.max(input.budget.cityTasks,
+      sources.length*4);
   let all=await allCoverage(db,cityKey);
   // Only root/source-slice rows determine completion. Saturation creates
   // child coverage records, but a child must never complete its parent.
+  // The scheduled caller determines initial city windows from the canonical
+  // coverage ledger; this integration retains its requested window unchanged.
+  const requestedWindow=input.window;
   const older=all.filter(c=>c.is_scan_root&&!complete(c.status)&&
-    c.scan_to>=addDays(input.today,-14)&&c.scan_from<=input.window.from)
+    c.scan_to>=addDays(input.today,-14)&&c.scan_from<=requestedWindow.from)
     .sort((a,b)=>a.scan_from.localeCompare(b.scan_from)||
       a.scan_to.localeCompare(b.scan_to));
   const window:EventScanWindow=older.length?{
     from:older[0].scan_from,to:older[0].scan_to,reason:older[0].window_reason,
-  }:input.window;
+  }:requestedWindow;
 
   // Do NOT lose new entering dates during an initial or weekly retry. Queue
   // one-day windows beyond the older scan's end; they remain retryable on disk.
   // Monday's requested full weekly range is queued independently, even when
   // an older partial day has priority.
   const toQueue:EventScanWindow[]=[];
-  if(!older.length)toQueue.push(input.window);
+  if(!older.length)toQueue.push(requestedWindow);
   else{
     toQueue.push(window);
-    if(input.window.reason==="weekly")toQueue.push(input.window);
+    if(requestedWindow.reason==="weekly")toQueue.push(requestedWindow);
     else{
-      const beginning=addDays(window.to,1)>input.window.from?
-        addDays(window.to,1):input.window.from;
-      for(let day=beginning;day<=input.window.to;day=addDays(day,1))
+      const beginning=addDays(window.to,1)>requestedWindow.from?
+        addDays(window.to,1):requestedWindow.from;
+      for(let day=beginning;day<=requestedWindow.to;day=addDays(day,1))
         toQueue.push({from:day,to:day,reason:"new_day"});
     }
   }

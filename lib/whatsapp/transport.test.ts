@@ -77,7 +77,14 @@ describe("Meta Graph owner transport",()=>{
     expect(await sendMeta("daily_brief","15556506570",{kind:"daily_brief",fields},make(429)))
       .toEqual({state:"retry",reason:"rate_limited"});
     expect(await sendMeta("daily_brief","15556506570",{kind:"daily_brief",fields},make(400)))
-      .toEqual({state:"failed",reason:"provider_rejected"});
+      .toEqual({state:"failed",reason:"provider_rejected:http400"});
+    const rejected=make(400,{error:{message:"(#131030) Recipient phone number not in allowed list for 19515574877",
+      type:"OAuthException",code:131030,error_subcode:2494010,fbtrace_id:"Abc"}});
+    expect(await sendMeta("daily_brief","15556506570",{kind:"daily_brief",fields},rejected)).toEqual({state:"failed",
+      reason:"provider_rejected:131030/2494010 Recipient phone number not in allowed list for #"});
+    const badJson=vi.fn(async()=>({status:401,ok:false,json:async()=>{throw new Error("x");}}) as unknown as Response);
+    expect(await sendMeta("daily_brief","15556506570",{kind:"daily_brief",fields},badJson))
+      .toEqual({state:"failed",reason:"provider_rejected:http401"});
     expect(await sendMeta("daily_brief","15556506570",{kind:"daily_brief",fields},make(503)))
       .toEqual({state:"uncertain",reason:"provider_ambiguous"});
     expect(await sendMeta("daily_brief","15556506570",{kind:"daily_brief",fields},make(200)))

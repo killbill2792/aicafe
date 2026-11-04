@@ -16,7 +16,6 @@ import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
 import { projectCurrentStaff, projectBreakEven, projectRecurringSchedule } from "./conversations/domainProjections";
 import type { StaffRosterMember } from "@/lib/viewmodels/staffViewModel";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
-import { readPersistedOperatingTasks } from "@/lib/data/operatingTasks";
 import { SnapshotCafeStateService } from "@/lib/operating/cafeState";
 import { signalsFromPricing } from "@/lib/operating/signals";
 import { SupabaseDecisionStore } from "@/lib/operating/supabaseDecisionStore";
@@ -97,7 +96,12 @@ export function createOwnerScopedCafeTools(scope:ConversationScope,client:Supaba
       .flatMap((item) => item.pricing ? signalsFromPricing(item.id, item.pricing) : []),
     async (requested) => {
       assertBusiness(requested);
-      return readPersistedOperatingTasks(requested,browserSession?undefined:explicit);
+      // The same read-only inbox the Inbox, Home and the crons use: computed price
+      // reviews included, expired and repeated items settled. Loaded lazily so the
+      // UI reader stays out of this module graph until a task read is needed.
+      const { readInbox } = await import("@/lib/attention/getAttentionItems.server");
+      const inbox = await readInbox(browserSession ? {} : { scope: explicit, locale: "en" });
+      return [...inbox.tasks.needsYou, ...inbox.tasks.watching, ...inbox.tasks.handled];
     },
     supervisorFactReaders(client, businessId),
     supervisorHistoricalReaders(client, businessId),

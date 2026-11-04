@@ -1,4 +1,4 @@
--- Migration 149: the 15-minute job saves today's finished orders into the same
+-- Migration 150: the 15-minute job saves today's finished orders into the same
 -- one-record-per-order archive; screens only see them after the 5 AM import.
 -- Run ONLY against a disposable local Supabase after all migrations. Synthetic data, rolled back.
 \set ON_ERROR_STOP on

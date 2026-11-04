@@ -123,13 +123,16 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
   // Cost unavailability must not suppress verified sales: the legacy text labels missing costs.
   const state:Historical|null=await states(db).getHistoricalState(b.id,
     {from:schedule.yesterday,to:schedule.yesterday}).catch(()=>null);
-  const tasks=await db.from("operating_tasks").select("id",{count:"exact",head:true})
-    .eq("business_id",b.id).eq("status","needs_owner");
+  // The same read-only inbox reader as Home, the Inbox and chat: one count everywhere.
+  // An unreadable inbox says nothing about it (null), never "nothing needs you".
+  const needsOwner=await import("@/lib/attention/getAttentionItems.server")
+    .then(({readCafeNeedsYou})=>readCafeNeedsYou({client:db,businessId:b.id}))
+    .then(summary=>summary.count).catch(()=>null);
   // A test after opening still gets a short window to leave the outbox.
   const sendBefore=test?new Date(Math.max(Date.parse(schedule.sendBefore),
     now.getTime()+30*60_000)).toISOString():schedule.sendBefore;
   const ctx:CafeContext={db,b:{...b,timezone},schedule,now,kind:opts.kind,evidence,state,
-    needsOwner:tasks.error||typeof tasks.count!=="number"?null:tasks.count,sendBefore,outbox:opts.outbox};
+    needsOwner,sendBefore,outbox:opts.outbox};
   const results:OwnerBriefResult[]=[];
   for(const ownerId of [...new Set(owners)]){
     let result:OwnerBriefResult;

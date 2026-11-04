@@ -4,9 +4,17 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { storeDerivedOperatingTask } from "@/lib/data/operatingTasks";
 import { applyTaskResponse, type OperatingTask, type OperatingTaskResponse } from "@/lib/operating/tasks";
 
 const ownerDecisionSchema = z.object({ taskId: z.string().min(1).max(500), decision: z.enum(["keep_price", "later_7", "later_30", "later_change"]) });
+/** The price review exactly as the Inbox shows it right now (same read-only reader): a computed
+ * review, or a stored one the lifecycle has reopened (snooze due, keep-price cooldown over). */
+async function settledPriceReview(client: Awaited<ReturnType<typeof createServerSupabaseClient>>, businessId: string, taskId: string): Promise<OperatingTask | null> {
+  const { readInbox } = await import("@/lib/attention/getAttentionItems.server");
+  const inbox = await readInbox({ scope: { client, businessId }, locale: "en" });
+  return inbox.tasks.needsYou.find((task) => task.id === taskId && task.kind === "price_review" && task.status === "needs_owner") ?? null;
+}
 export type OwnerTaskDecisionResult = { ok: true } | { ok: false; error: string };
 
 export async function respondToPriceReview(input: unknown): Promise<OwnerTaskDecisionResult> {
@@ -16,9 +24,26 @@ export async function respondToPriceReview(input: unknown): Promise<OwnerTaskDec
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "not_signed_in" };
   const businessId = await getActiveBusinessId(user.id);
-  const { data: row, error: readError } = await supabase.from("operating_tasks")
+  const readRow = () => supabase.from("operating_tasks")
     .select("id, business_id, agent_id, kind, entity_type, entity_id, status, payload, confidence, evidence, created_at, resolved_at")
-    .eq("business_id", businessId).eq("id", parsed.data.taskId).single();
+    .eq("business_id", businessId).eq("id", parsed.data.taskId).maybeSingle();
+  let { data: row, error: readError } = await readRow();
+  if (!readError && row?.status !== "needs_owner") {
+    // The Inbox may show this review as actionable although the stored row is missing (computed
+    // on read) or still watching/handled (its snooze or 30-day cooldown is over). Persist what the
+    // owner sees before applying the click; the update only applies if the row is unchanged.
+    const settled = await settledPriceReview(supabase, businessId, parsed.data.taskId).catch(() => null);
+    if (!settled || settled.businessId !== businessId) return { ok: false, error: "task_not_available" };
+    if (!row) {
+      try { await storeDerivedOperatingTask(supabase, businessId, settled); } catch { return { ok: false, error: "task_not_available" }; }
+    } else {
+      const { error: reopenError } = await supabase.from("operating_tasks").update({ status: "needs_owner", payload: settled.payload,
+        resolved_at: null, updated_at: new Date().toISOString() })
+        .eq("business_id", businessId).eq("id", row.id).eq("status", row.status);
+      if (reopenError) return { ok: false, error: "task_not_available" };
+    }
+    ({ data: row, error: readError } = await readRow());
+  }
   if (readError || !row || row.kind !== "price_review" || row.status !== "needs_owner") return { ok: false, error: "task_not_available" };
 
   const task: OperatingTask = { id: row.id, businessId: row.business_id, agentId: row.agent_id, kind: row.kind,

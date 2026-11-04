@@ -29,4 +29,21 @@ describe("trusted explanation selection",()=>{
   expect(acceptedExplainLines([other],evidence,"Latte: $56,000.00",[],"en")).toEqual([]);
   expect(acceptedExplainLines([line],evidence,"Latte: $156,000.00",[],"en")).toEqual([]);
  });
+ it("accepts whole-dollar display rounding only for the exact verified cents result",()=>{
+  const rounded:ExplainLine={...line,source:"get_break_even",period:null,result:money(31216)};
+  const proof:NumericEvidence[]=[{tool:"break_even",values:[{key:"periodBreakEvenCents",unit:"cents",value:31216}]}];
+  expect(acceptedExplainLines([rounded],proof,"Break-even is $312 today",[],"en")).toEqual([rounded]);
+  expect(acceptedExplainLines([rounded],proof,"Break-even is $313 today",[],"en")).toEqual([]);
+  expect(acceptedExplainLines([rounded],proof,"Break-even is $312 today",[{start:14,end:18}],"en")).toEqual([]);
+ });
+ it("accepts sourced scenario and calculator lines but never a foreign tool's number",()=>{
+  const whatIf:ExplainLine={...line,source:"scenario",period:null,result:money(971)};
+  const calculated:ExplainLine={...line,source:"calculate",period:null,result:money(66000)};
+  const proofs:NumericEvidence[]=[{tool:"scenario",values:[{key:"weeklyChangeCents",unit:"cents",value:971}]},
+    {tool:"calculate",values:[{key:"calculateResultCents",unit:"cents",value:66000}]}];
+  expect(acceptedExplainLines([whatIf,calculated],proofs,"Gain $9.71; known costs $660",[],"en"))
+    .toEqual([whatIf,calculated]);
+  expect(acceptedExplainLines([whatIf],[proofs[1]],"Gain $9.71",[],"en")).toEqual([]);
+ });
+
 });

@@ -1,7 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {normalizeOpenHours} from "@/lib/business/openHours";
-import type {SchedulingDraftInputs} from "@/lib/calc/scheduling/draftWeek";
+import type {SchedulingDraftInputs} from "@/lib/calc/scheduling/schedulingDraftTypes";
 import type {KnownSlice} from "@/lib/operating/types";
 
 export async function readSchedulingDraftInputs(client:SupabaseClient,businessId:string):Promise<KnownSlice<SchedulingDraftInputs>> {

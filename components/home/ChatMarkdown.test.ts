@@ -95,6 +95,19 @@ describe("chat message rendering", () => {
 });
 
 describe("provenance footnotes",()=>{
+ it("never underlines the four in a clock range, but still underlines money",()=>{
+   const text="Doors 4–8:45 p.m.; sales $125.00";
+   const moneyStart=text.indexOf("$125.00");
+   const html=renderToStaticMarkup(createElement(ChatMarkdown,{
+     text,showLegend:false,unverified:[
+       {start:text.indexOf("4–8"),end:text.indexOf("4–8")+1,source:"unchecked"},
+       {start:moneyStart,end:moneyStart+7,source:"owner"},
+     ],
+   }));
+   expect(html).toContain("4–8:45 p.m.");
+   expect(html).toContain(">$125.00</button>");
+   expect(html.match(/decoration-dotted/g)).toHaveLength(1);
+ });
  const labels={owner:"You told me",estimate:"Estimate",unchecked:"Not checked against your records"};
  it("underlines the full verified money value and preserves an accessible source explanation",()=>{
    const text="$11,000 in sales";

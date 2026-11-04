@@ -120,7 +120,7 @@ describe("Olivia bounded reads",()=>{
     const r=await staffTools.get_schedule.execute({from:"2026-10-22",to:"2026-10-22"},ctx());
     expect(r.scheduleSet).toBe(true);
     expect(r.windowHasShifts).toBe(true);
-    expect((r.shifts as {id:string}[]).map(s=>s.id)).toEqual(["thu","inactive"]);
+    expect((r.shifts as {id:string}[]).map(s=>s.id)).toEqual(["inactive","thu"]);
     expect(r.missing).not.toContain("noShiftsInRequestedRange");
     expect(r.missing).not.toContain("moreShifts");
     expect(r.paidMinutes).toBeNull();
@@ -169,7 +169,10 @@ describe("Olivia bounded reads",()=>{
       const {weekStart}=raw as {weekStart:string};
       return {ok:true,data:{dates:Array.from({length:7},(_,i)=>new Date(
         Date.parse(weekStart+"T12:00:00Z")+i*86400000).toISOString().slice(0,10)),
-        team:[],shifts:[],posShifts:[overnight],timezone:"America/Los_Angeles",
+        team:[],shifts:[],posShifts:[overnight],calendarEntries:[{
+         id:"toast-night",employeeId:null,employeeName:"Taylor",locationId:"location-a",
+         date:"2026-10-25",endDate:"2026-10-26",start:"23:00",end:"04:00",source:"toast_planned"
+        }],timezone:"America/Los_Angeles",
         posScheduleError:null,adjacentShifts:[],openHours:null,rules:{coverage_enabled:false,min_headcount:0}}} as never;
     });
     const result=await staffTools.get_schedule.execute({from:"2026-10-24",to:"2026-10-26"},ctx());

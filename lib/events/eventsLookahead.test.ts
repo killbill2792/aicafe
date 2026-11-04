@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {eventScanWindows,eventIdentity,savedEventKind,dailyCafeScanOrder} from "./eventsLookahead";
+import {eventScanWindows,cityScanWindows,eventIdentity,savedEventKind,dailyCafeScanOrder} from "./eventsLookahead";
 
 const state=(scannedThroughDate:string,weeklyResearchedOn:string|null=null)=>({
   locationHash:"location-a",scannedThroughDate,weeklyResearchedOn,
@@ -27,6 +27,12 @@ describe("scheduled event discovery",()=>{
    expect(eventScanWindows("2026-11-02",null,"location-a")).toEqual([
      {from:"2026-11-02",to:"2026-11-15",reason:"initial"},
    ]);
+ });
+ it("an old nearby search marker cannot suppress a missing city research window",()=>{
+   expect(cityScanWindows("2026-11-03",state("2026-11-16"),"location-a","unsearched"))
+     .toEqual([{from:"2026-11-03",to:"2026-11-16",reason:"initial"}]);
+   expect(cityScanWindows("2026-11-03",state("2026-11-16"),"location-a","complete"))
+     .toEqual([]);
  });
  it("daily search adds exactly one new day and avoids repeat work",()=>{
    expect(eventScanWindows("2026-11-04",state("2026-11-16"),"location-a")).toEqual([
