@@ -80,7 +80,7 @@ describe("Supervisor owner demo: shared model and core metric paths",()=>{
         hasMore:false,missing:"unresearched"},
     }));
     const ctx=context();
-    ctx.savedEvents=savedEvents as AgentToolContext["savedEvents"];
+    ctx.savedEvents=savedEvents as unknown as AgentToolContext["savedEvents"];
     ctx.webSearch=webSearch;
     const seen:Record<string,unknown>[]=[];
     const provider:AgentProvider=async function* (params){
