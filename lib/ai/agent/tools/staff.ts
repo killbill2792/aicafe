@@ -8,6 +8,8 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { getWeekSchedule } from "@/lib/actions/schedule";
+import {laborForPeriod,laborPercentForPeriod} from "@/lib/metrics/core/labor";
+import {netSalesCentsForPeriod} from "@/lib/calc/profit";
 
 const failedSlice=(reason:string)=>({available:false as const,value:null,
  quality:{level:"low" as const,missingInputs:[reason],estimatedInputs:[] as string[],staleInputs:[] as string[]}});
@@ -108,7 +110,7 @@ export const staffTools = {
       const resolved=resolveOwnerPeriod(period.parse(raw).period,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
       if(resolved.status!=="resolved")return periodChoicePayload("labor_and_attendance",resolved);
       const p={from:resolved.value.from,to:resolved.value.to};
-      const [labor,attendance,ownerPayroll,toastScopes,reviews]=await Promise.all([
+      const [labor,attendance,ownerPayroll,toastScopes,reviews,sales]=await Promise.all([
         ctx.tools.getLaborMetrics?
           ctx.tools.getLaborMetrics(p).catch(()=>failedSlice("laborReadFailed")):
           Promise.resolve(failedSlice("laborReaderUnavailable")),
@@ -118,6 +120,7 @@ export const staffTools = {
         ctx.tools.getOwnerMonthlyPayrollExtras?.().catch(()=>failedSlice("payrollExtrasReadFailed")),
         ctx.tools.getToastScopeCoverage?.().catch(()=>failedSlice("toastScopeReadFailed")),
         ctx.tools.getPosImportReviews?.().catch(()=>failedSlice("posStaffReviewsReadFailed")),
+        ctx.tools.getSalesTrend(p).catch(()=>failedSlice("salesReadFailed")),
       ]);
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
         ...(labor.available?labor.value.filter(d=>d.wageStatus==="missing"||d.wagesCents===null||d.staffTaxCents===null)
@@ -140,7 +143,22 @@ export const staffTools = {
         "payrollExtrasReadFailed","toastScopeReadFailed","posStaffReviewsReadFailed"];
       const dataNotes=readFailures.some(key=>failedReaders.includes(key))?
         [{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[];
+      // Core is the only labor percentage formula. Use matching recorded sales
+      // days, and never turn missing wages or days into a complete percentage.
+      const laborBasis=labor.available&&sales.available?
+        laborForPeriod(sales.value.map(d=>({date:d.date})),labor.value.map(d=>({
+          date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
+          laborWageStatus:d.wageStatus==="missing"?"missing":d.wageStatus==="estimate"?"estimate":"actual",
+        }))):null;
+      const salesCents=sales.available?netSalesCentsForPeriod(sales.value):null;
+      const laborCostPercent=laborBasis&&salesCents!==null&&laborBasis.coveredDays>0?
+        laborPercentForPeriod(laborBasis.knownLaborCents,salesCents):null;
       return {source:"labor_and_attendance",period:p,agentId:"olivia",dataNotes,
+        laborCostPercent,laborCostPercentBasis:laborBasis?.basis??null,
+        laborCostPercentKnownLaborCents:laborBasis?.knownLaborCents??null,
+        laborCostPercentSalesCents:salesCents,
+        laborCostPercentCoveredDays:laborBasis?.coveredDays??null,
+        laborCostPercentSalesDays:sales.available?sales.value.length:null,
         ownerMonthlyPayrollExtrasCents,
         toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
         pendingPosStaffReviews:reviews?.available?reviews.value:null,
