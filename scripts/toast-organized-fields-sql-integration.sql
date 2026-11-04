@@ -88,7 +88,8 @@ BEGIN
  insert into public.toast_raw_records(business_id,restaurant_guid,entity,entity_guid,business_date,payload,
   payload_sha256,capture_key)
  values(b,r,'order',old_ord,d-1,old_raw,repeat('b',64),'test:old-order-moved');
- perform public.toast_fill_organized_fields();
+ -- The four fill steps, one statement each, as the owner runs them in production.
+ for step in 1..4 loop perform public.toast_fill_organized_fields(step); end loop;
  select count(*) into n from public.order_lines where order_id=old_order_id
   and pos_line_id in (old_sel1::text,old_sel2::text) and ordered_at is not null and fulfillment_status is not null;
  perform pg_temp.assert_true(n=2,'older lines get their Toast ID and timing, got '||n);
@@ -99,6 +100,8 @@ BEGIN
  perform pg_temp.assert_true((select server_guid=srv and paid_at is not null from public.toast_payment_summaries
   where business_id=b and payment_ref=old_pay::text),'older payments get their server and paid time');
  -- Running it again changes nothing.
+ perform pg_temp.assert_true(public.toast_fill_organized_fields(1)=0
+  and public.toast_fill_organized_fields(4)=0,'a step run twice fills nothing new');
  perform public.toast_fill_organized_fields();
  perform pg_temp.assert_true((select count(*)=2 from public.order_lines where order_id=old_order_id),
   'the fill adds no rows');
