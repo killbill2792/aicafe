@@ -1,5 +1,6 @@
 "use client";
 import {useTranslations} from "next-intl";
+import type {CalendarEntry} from "@/lib/calc/scheduling/calendarEntries";
 import type {OpenHours} from "@/lib/business/openHours";
 import {coverageVerification} from "@/lib/calc/scheduling/coverageGaps";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
@@ -7,8 +8,8 @@ import {costCompleteness} from "@/lib/calc/scheduling/shiftCost";
 import {dayTotals,personTotals,type DetailedShift,type PersonForSchedule,type ScheduleGap} from "@/lib/calc/scheduling/schedulePresentation";
 const fmt=(value:number|null,currency:string)=>value===null?"—":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(value/100);
 const h=(minutes:number)=>Number((minutes/60).toFixed(1))+" h";
-export default function WeekGrid({dates,people,shifts,gaps,openHours,currency,readOnly,coverageEnabled,onAdd,onEdit}:{
- dates:string[];people:PersonForSchedule[];shifts:DetailedShift[];gaps:ScheduleGap[];
+export default function WeekGrid({dates,people,shifts,calendarEntries=[],gaps,openHours,currency,readOnly,coverageEnabled,onAdd,onEdit}:{
+ dates:string[];people:PersonForSchedule[];shifts:DetailedShift[];calendarEntries?:CalendarEntry[];gaps:ScheduleGap[];
  openHours:OpenHours|null;currency:string;readOnly:boolean;coverageEnabled:boolean;
  onAdd:(date:string,personId:string)=>void;onEdit:(date:string,id:string)=>void
 }){
@@ -42,6 +43,11 @@ export default function WeekGrid({dates,people,shifts,gaps,openHours,currency,re
       {shifts.filter(s=>s.employeeId===person.id&&s.date===date).map(s=><button key={s.id}
        disabled={readOnly} onClick={()=>onEdit(date,s.id)} className={`min-h-12 w-full rounded-xl border px-2 py-1 text-start text-[13px] font-bold ${index%2?"border-pos/20 bg-pos-soft text-pos":"border-accent-text/20 bg-accent-soft text-accent-text"}`}>
        <span className="block">{s.start}–{s.end}</span><span className="block">{h(s.paidMinutes)} {t("paid")}{s.estimated?" · "+t("estimated"):""}</span></button>)}
+      {calendarEntries.filter(e=>e.employeeId===person.id&&e.date===date).map(e=><div key={e.id}
+       className={`mb-1 rounded-lg border px-2 py-1 text-[13px] ${e.source==="ai_draft"?"border-dashed border-accent bg-accent-soft":e.source==="toast_actual"?"border-pos bg-pos-soft":"border-line bg-surface2"}`}>
+       <span className="block font-semibold">{e.start}–{e.end}</span>
+       <span className="block">{e.source==="toast_actual"?t("toastActualLabel"):e.source==="toast_planned"?t("toastPlannedLabel"):t("aiDraftLabel")}</span>
+      </div>)}
       <button disabled={readOnly||person.active===false} aria-label={t("addPersonShift",{name:person.name,date})} onClick={()=>onAdd(date,person.id)}
        className="min-h-12 w-full text-muted hover:text-accent-text">+</button>
      </td>)}
