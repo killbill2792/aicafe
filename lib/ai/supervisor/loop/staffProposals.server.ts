@@ -8,7 +8,7 @@ import {readStaffProposalToken,readStaffProposalSources,readStaffProposalLocalDa
  type StaffProposalShift as Shift} from "@/lib/data/staffProposalSources.server";
 import {parseAvailabilityText} from "@/lib/calc/scheduling/parseAvailabilityText";
 import {assertStaffShiftPlan,formatStaffApprovalRuleValue,formatStaffShiftWithBreak} from "@/lib/calc/scheduling/staffProposalValidation";
-import {nextMonday} from "@/lib/calc/scheduling/draftWeek";
+import {nextMonday} from "@/lib/calc/scheduling/weekdayDates";
 import {staffProposalInputs,type StaffProposalName} from "@/lib/ai/agent/tools/staffProposals";
 import {registerLoopCapability,type OwnerLoopScope} from "./engine";
 
