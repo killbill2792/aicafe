@@ -138,15 +138,16 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       values.push({key:valueKey,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
     };
     walk(r,"",0,rootScope);
-    // The general calculator has no arbitrary number input: its results are
-    // produced from sourced values and are therefore trusted numeric evidence.
+    // Only declared, typed calculate results count as arithmetic evidence.
     if(r.source==="calculate"&&r.refused===undefined&&
-       r.result&&typeof r.result==="object"){
+       Array.isArray(r.numberEstimates)&&r.result&&typeof r.result==="object"){
       const value=r.result as Record<string,unknown>;
       const amount=typeof value.valueCents==="number"?{unit:"cents" as const,n:value.valueCents}:
         typeof value.valueBps==="number"?{unit:"bps" as const,n:value.valueBps}:
         typeof value.quantity==="number"?{unit:"count" as const,n:value.quantity}:null;
-      if(amount&&Number.isSafeInteger(amount.n)){
+      if(amount&&Number.isSafeInteger(amount.n)&&r.numberEstimates.some(entry=>
+        entry&&typeof entry==="object"&&"unit" in entry&&"value" in entry&&
+        entry.unit===amount.unit&&entry.value===amount.n)){
         const key=periodKey+"calculateResult"+(amount.unit==="cents"?"Cents":
           amount.unit==="bps"?"Bps":"Count");
         values.push({key,value:amount.n,unit:amount.unit});
