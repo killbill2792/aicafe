@@ -124,6 +124,23 @@ describe("How I got this disclosure",()=>{
     copy:en.SupervisorChat,currency:"USD"}));
   expect(html).toContain("$9.71 × 31 ÷ 7 = $43.00");
  });
+ it.each([["es",es],["ar",ar]] as const)(
+  "localizes scenario explanation headings and inputs in %s",(locale,messages)=>{
+    const scenario:ExplainLine={label:"Weekly price difference",
+      inputs:[{name:"New price",value:money(785)},{name:"Old price",value:money(775)}],
+      formula:"subtract",result:money(10),period:null,source:"scenario",provenance:"estimate"};
+    const second:ExplainLine={label:"Weekly gain after processing fees",
+      inputs:[{name:"New price",value:money(785)},{name:"Old price",value:money(775)},
+        {name:"Weekly units",value:count(82)},{name:"Processing fee rate",value:{kind:"percent",bps:415}}],
+      formula:"scenarioPrice",result:money(786),period:null,source:"scenario",provenance:"estimate"};
+    const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[scenario,second],
+      locale,copy:messages.SupervisorChat,currency:"EUR"}));
+    expect(html).toContain(messages.OwnerQuestions.scenarioPriceDifference);
+    expect(html).toContain(messages.OwnerQuestions.scenarioWeeklyPriceGain);
+    for(const english of ["Weekly price difference","Weekly gain after processing fees","New price","Old price",
+      "Weekly units","Processing fee rate"])expect(html).not.toContain(english);
+    expect(html).toContain("4,15".replace(",",locale==="ar"?"٫":"," ).slice(0,1));
+  });
  it("shows the exact core break-even equation, with each displayed input once",()=>{
   const breakEven=calculateBreakEvenSales({monthlyBillsCents:14000,monthlyStaffCents:6915,
     observedSalesCents:100000,observedIngredientCents:30000,observedProcessingFeesCents:3000});
