@@ -52,9 +52,36 @@ const calcLabels:Record<string,keyof typeof en.OwnerQuestions>={
  "wages":"howLabor","staffTax":"howLabor","paidTime":"howLabor",
  "hourlyWage":"howLabor","fixedPerOrder":"cardFixedFee",
  "drinksPerOrder":"howUnits","rate":"howFees","targetMargin":"howMargin",
+ "Weekly price difference":"scenarioPriceDifference",
+ "Weekly gain after processing fees":"scenarioWeeklyPriceGain",
+ "Weekly item cost effect":"scenarioItemCostEffect",
+ "Monthly bill effect":"scenarioBillEffect",
+ "Weekly staffing effect":"scenarioStaffEffect",
+ "Monthly sales-volume effect":"scenarioVolumeEffect",
+ "Monthly equivalent of weekly change":"scenarioMonthlyEquivalent",
+ "New price":"scenarioNewPrice",
+ "Old price":"scenarioOldPrice",
+ "Weekly units":"scenarioWeeklyUnits",
+ "Processing fee rate":"scenarioFeeRate",
+ "Old cost":"scenarioOldCost",
+ "New cost":"scenarioNewCost",
+ "Monthly bill change":"scenarioBillChange",
+ "Hours change":"scenarioHoursChange",
+ "Shifts per week":"scenarioShiftsPerWeek",
+ "Hourly wage":"scenarioHourlyWage",
+ "Payroll tax":"scenarioPayrollTax",
+ "Weekly hours":"scenarioWeeklyHours",
+ "Old wage":"scenarioOldWage",
+ "New wage":"scenarioNewWage",
+ "Monthly revenue":"scenarioMonthlyRevenue",
+ "Volume change":"scenarioVolumeChange",
+ "Ingredient rate":"scenarioIngredientRate",
+ "Weekly change":"scenarioWeeklyChange",
+ "Days in month":"scenarioDaysInMonth",
+ "Days in week":"scenarioDaysInWeek",
  "missing":"generic"
 };
-function localizedLabel(label:string,locale:Locale):string{
+export function localizedLabel(label:string,locale:Locale):string{
  const copy={en,es,ar}[locale].OwnerQuestions;
  const dynamic=label.startsWith("Processing fee:")?"howFees":null;
  const key=dynamic??calcLabels[label];
